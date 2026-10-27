@@ -14,6 +14,8 @@ import shapely
 from numpy.typing import NDArray
 from shapely.ops import unary_union
 
+from neurospatial.geometry._locators import _coordinate_roundoff
+
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
@@ -29,36 +31,74 @@ class Walls:
     ----------
     starts, ends : ndarray of float64, shape (n_segments, 2)
         Endpoints of every wall segment; zero-length segments are dropped.
+    one_sided : ndarray of bool, shape (n_segments,), optional
+        Segments of the arena's outline, open only on their left side (the
+        inside of a counter-clockwise outline or a clockwise hole). Other
+        segments, such as internal walls, are open on both sides. Default:
+        none are one-sided.
+
+    Notes
+    -----
+    A walker is on a wall when it lies within :attr:`tolerance` of it: the
+    rounding a point placed on the wall by arithmetic can carry at the
+    arena's coordinates. From there it may leave toward an open side; once
+    off, it never comes that close to a wall again.
     """
 
-    def __init__(self, starts: NDArray[np.float64], ends: NDArray[np.float64]) -> None:
+    def __init__(
+        self,
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        one_sided: NDArray[np.bool_] | None = None,
+    ) -> None:
         keep = np.any(starts != ends, axis=1)
+        if one_sided is None:
+            one_sided = np.zeros(len(starts), dtype=bool)
         self.starts = starts[keep]
         self.vectors = ends[keep] - starts[keep]
-        lengths = np.linalg.norm(self.vectors, axis=1)
+        self.one_sided = one_sided[keep]
+        self.lengths = np.linalg.norm(self.vectors, axis=1)
+        # Left normals: into the arena for an outline segment.
         self.normals = np.column_stack([-self.vectors[:, 1], self.vectors[:, 0]])
-        self.normals /= lengths[:, None]
-        self.squared_lengths = lengths**2
-        # Distance a walker can travel before it could reach a wall.
+        self.normals /= self.lengths[:, None]
+        self.squared_lengths = self.lengths**2
+        # A walker inside the walls has coordinates no larger than theirs.
+        reference = float(np.max(np.abs(np.concatenate([starts, ends])), initial=0.0))
+        self.tolerance = float(
+            _coordinate_roundoff(np.array([[reference]]), reference)[0]
+        )
+        # Distance a walker can travel before it could come within
+        # ``tolerance`` of a wall.
         self.clearance = 0.0
+
+    @staticmethod
+    def _segments(
+        lines: NDArray[np.object_],
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Starts and ends of the straight pieces of ``lines``, each (n, 2)."""
+        # A zero tolerance drops only vertices on a straight run of wall.
+        coords = [
+            shapely.get_coordinates(line) for line in shapely.simplify(lines, 0.0)
+        ]
+        if not coords:
+            return np.empty((0, 2)), np.empty((0, 2))
+        starts = np.concatenate([c[:-1] for c in coords])
+        ends = np.concatenate([c[1:] for c in coords])
+        return starts, ends
 
     @classmethod
     def from_geometry(cls, geometry: shapely.Geometry) -> Walls:
-        """The straight segments of lines or polygon boundaries."""
+        """The straight segments of lines or polygon boundaries, open on both sides."""
         lines = shapely.get_parts(shapely.line_merge(unary_union(geometry)))
-        # A zero tolerance drops only vertices on a straight run of wall.
-        lines = shapely.simplify(lines, 0.0)
-        coords = [shapely.get_coordinates(line) for line in lines]
-        starts = np.concatenate([c[:-1] for c in coords])
-        ends = np.concatenate([c[1:] for c in coords])
-        return cls(starts, ends)
+        return cls(*cls._segments(lines))
 
     @classmethod
     def enclosing(cls, env: Environment) -> Walls | None:
         """What keeps an animal inside ``env``: its outline and internal walls.
 
         The outline is the arena's polygon when it is known, else the outline
-        of the bins; None when neither is planar geometry.
+        of the bins; None when neither is planar geometry. Outline segments
+        are one-sided, open toward the inside.
         """
         from neurospatial.geometry import materialize_cells
 
@@ -69,7 +109,19 @@ class Walls:
                 domain = unary_union(list(materialize_cells(env.binning)))
             except ValueError:
                 return None
-        return cls.from_geometry(unary_union([domain.boundary, *arena.walls]))
+        # Counter-clockwise outlines and clockwise holes: the inside is on
+        # the left of every outline segment.
+        rings = shapely.get_rings(shapely.get_parts(shapely.orient_polygons(domain)))
+        outline = cls._segments(rings)
+        inner = cls._segments(
+            shapely.get_parts(shapely.line_merge(unary_union(list(arena.walls))))
+        )
+        one_sided = np.repeat([True, False], [len(outline[0]), len(inner[0])])
+        return cls(
+            np.concatenate([outline[0], inner[0]]),
+            np.concatenate([outline[1], inner[1]]),
+            one_sided,
+        )
 
     def distance(self, point: NDArray[np.float64]) -> float:
         """Distance from ``point``, shape (2,), to the nearest wall."""
@@ -103,10 +155,35 @@ class Walls:
     def first_hit(
         self, position: NDArray[np.float64], step: NDArray[np.float64]
     ) -> int | None:
-        """The first wall segment a step reaches, or None."""
-        along = self._hits(position[None, :], step[None, :])[0]
-        wall = int(np.argmin(along))
-        return wall if along[wall] <= 1 else None
+        """The first wall segment a step meets, or None.
+
+        A step from off a wall meets one when it crosses the wall or ends
+        within :attr:`tolerance` of it. A step from on a wall meets it when
+        the wall is one-sided and the step heads out of the open side; a
+        step along a wall or away from it does not.
+        """
+        moved = position + step
+        before = np.einsum("ij,ij->i", position - self.starts, self.normals)
+        after = np.einsum("ij,ij->i", moved - self.starts, self.normals)
+        on = np.abs(before) <= self.tolerance
+        # Fraction of the step travelled to the wall's line.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            reach = np.where(on, 0.0, before / (before - after))
+        contact = position + np.clip(reach, 0.0, 1.0)[:, None] * step
+        along = (
+            np.einsum("ij,ij->i", contact - self.starts, self.vectors)
+            / self.squared_lengths
+        )
+        slack = self.tolerance / self.lengths
+        within = (along >= -slack) & (along <= 1 + slack)
+        meets = np.where(
+            on,
+            self.one_sided & (after < before),
+            np.sign(before) * after <= self.tolerance,
+        )
+        reach = np.where(within & meets, reach, np.inf)
+        wall = int(np.argmin(reach))
+        return wall if np.isfinite(reach[wall]) else None
 
     def ray_distances(
         self, origins: NDArray[np.float64], angles: NDArray[np.float64]
@@ -148,6 +225,7 @@ class Walls:
 
         A step that would cross a wall is mirrored about it, up to twice (a
         corner); a walker still blocked, or one in ``"stop"`` mode, stays put.
+        A walker starting on a wall leaves it toward an open side.
         """
         length = float(np.linalg.norm(step))
         if length < self.clearance:
@@ -157,7 +235,7 @@ class Walls:
             wall = self.first_hit(position, step)
             if wall is None:
                 moved = position + step
-                self.clearance = self.distance(moved)
+                self._set_clearance(moved)
                 return moved, unit
             if boundary_mode == "stop":
                 break
@@ -166,5 +244,10 @@ class Walls:
             normal = self.normals[wall]
             step = step - 2 * (step @ normal) * normal
             unit = unit - 2 * (unit @ normal) * normal
-        self.clearance = self.distance(position)
+        self._set_clearance(position)
         return position, unit
+
+    def _set_clearance(self, position: NDArray[np.float64]) -> None:
+        # Keep unchecked steps out of the band within ``tolerance`` of a
+        # wall, allowing as much again for rounding in the distance.
+        self.clearance = self.distance(position) - 2 * self.tolerance

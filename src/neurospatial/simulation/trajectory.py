@@ -172,7 +172,10 @@ def simulate_trajectory_ou(
     the animal never steps through a divider. A step that would cross a wall
     is mirrored about the first wall it meets, using that wall's normal; if
     the mirrored step crosses a wall too (a corner), it is mirrored again,
-    and an animal still blocked after that waits one step. Elsewhere the
+    and an animal still blocked after that waits one step. An animal that
+    starts on the outline (to within rounding) leaves it only toward the
+    inside; one that starts on an internal wall may leave it to either side
+    and does not cross it afterward. Elsewhere the
     walls are the faces of the bins: a step that would leave the bins
     reverses each velocity component whose move alone would leave them.
 
