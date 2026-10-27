@@ -663,11 +663,12 @@ def align_continuous_to_events(
     For each event, every signal column (feature) is sampled at
     ``event + relative_times``, with ``relative_times = start + dt * j`` for
     every ``j >= 0`` before ``stop``. A value is taken only where the feature
-    was observed: at a valid sample's exact time, or inside a usable interval
-    between two valid samples. Nothing is interpolated across a gap longer
-    than ``max_gap``, an invalid sample, a declared break or an ``epochs``
-    edge, and nothing is extrapolated before the first or after the last
-    sample. This samples a signal; it does not bin or average it.
+    was observed: at a valid sample's exact time, or between two valid
+    samples. An invalid sample is treated as a deleted row, so values are
+    interpolated across it between the valid samples on either side. Nothing
+    is interpolated across a gap longer than ``max_gap``, a declared break or
+    an ``epochs`` edge, and nothing is extrapolated before the first or after
+    the last sample. This samples a signal; it does not bin or average it.
 
     With the default ``window_coverage="complete"``, an event is kept only
     when its whole window ``[event + start, event + stop)`` lies inside one

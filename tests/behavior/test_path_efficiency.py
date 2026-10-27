@@ -152,14 +152,33 @@ class TestTraveledPathLength:
 
         assert traveled_path_length(times, self.TWO_RECORDINGS) == 51.0
 
-    def test_nan_row_breaks_path_instead_of_poisoning(self):
+    def test_nan_row_is_bridged_like_a_deleted_row(self):
+        from neurospatial.behavior.navigation import traveled_path_length
+
+        times = np.arange(5) * 0.1
+        positions = np.array(
+            [[0.0, 0.0], [1.0, 0.0], [np.nan, np.nan], [2.0, 0.0], [3.0, 0.0]]
+        )
+        kept = [0, 1, 3, 4]
+
+        length = traveled_path_length(times, positions)
+
+        assert length == traveled_path_length(times[kept], positions[kept]) == 3.0
+
+    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+    def test_nan_row_gap_longer_than_max_gap_breaks_path(self, metric):
+        from neurospatial import Environment
         from neurospatial.behavior.navigation import traveled_path_length
 
         positions = np.array(
             [[0.0, 0.0], [1.0, 0.0], [np.nan, np.nan], [2.0, 0.0], [3.0, 0.0]]
         )
+        grid = np.c_[np.arange(-1.0, 5.0, 0.5), np.zeros(12)]
+        env = Environment.from_samples(grid, bin_size=1.0)
 
-        length = traveled_path_length(np.arange(5) * 0.1, positions)
+        length = traveled_path_length(
+            np.arange(5) * 0.1, positions, metric=metric, env=env, max_gap=0.15
+        )
 
         assert length == 2.0
 
@@ -382,8 +401,27 @@ class TestPathEfficiencyObservedSupport:
         env = Environment.from_samples(positions, bin_size=1.0)
         return env, cls.TIMES.copy(), positions, positions[-1].copy()
 
-    def test_lost_frame_no_longer_poisons_traveled_length(self):
-        """One lost frame leaves the observed travel measured, the ratios NaN."""
+    def test_lost_frame_is_bridged(self):
+        """One lost frame inside max_gap is bridged like a deleted row."""
+        from neurospatial.behavior.navigation import compute_path_efficiency
+
+        env, times, positions, goal = self._straight_run()
+        positions[5] = np.nan
+        kept = np.delete(np.arange(len(times)), 5)
+
+        result = compute_path_efficiency(
+            env, times, positions, goal, metric="euclidean"
+        )
+        deleted = compute_path_efficiency(
+            env, times[kept], positions[kept], goal, metric="euclidean"
+        )
+
+        assert result.traveled_length == deleted.traveled_length == 10.0
+        assert result.efficiency == deleted.efficiency == 1.0
+        assert result.angular_efficiency == deleted.angular_efficiency
+
+    def test_lost_stretch_longer_than_max_gap_leaves_ratios_nan(self):
+        """A loss longer than max_gap leaves the observed travel, ratios NaN."""
         from neurospatial.behavior.navigation import (
             compute_path_efficiency,
             traveled_path_length,
@@ -391,13 +429,16 @@ class TestPathEfficiencyObservedSupport:
 
         env, times, positions, goal = self._straight_run()
         positions[5] = np.nan
+        max_gap = 0.75 * (times[6] - times[4])
 
         result = compute_path_efficiency(
-            env, times, positions, goal, metric="euclidean"
+            env, times, positions, goal, metric="euclidean", max_gap=max_gap
         )
 
         assert result.traveled_length == 8.0
-        assert result.traveled_length == traveled_path_length(times, positions)
+        assert result.traveled_length == traveled_path_length(
+            times, positions, max_gap=max_gap
+        )
         # 10 / 8 = 1.25 would claim a path shorter than the shortest one.
         assert np.isnan(result.efficiency)
         assert np.isnan(result.angular_efficiency)

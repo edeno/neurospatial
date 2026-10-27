@@ -55,7 +55,7 @@ from neurospatial._units import same_coordinate_declaration
 from neurospatial._validation import validate_finite
 from neurospatial.animation._resources import _OwnedReaders
 from neurospatial.animation._sampling import (
-    observation_support,
+    observed_rows,
     resample,
     resolve_support,
     sample_at_times,
@@ -373,18 +373,22 @@ class PositionOverlay(_Overlay):
             name="PositionOverlay.positions",
             threshold=0.1,
         )
-        support = observation_support(
-            times, self.positions, max_gap=self.max_gap, break_before=self.break_before
+        positions, sample_valid, interval_valid = observed_rows(
+            times,
+            self.positions,
+            max_gap=self.max_gap,
+            break_before=self.break_before,
+            interp=self.interp,
         )
         return PositionData(
-            self.positions,
+            positions,
             self.color,
             self.size,
             self.trail_length,
             times=times,
             interp=self.interp,
-            sample_valid=support.sample_valid,
-            interval_valid=support.interval_mask,
+            sample_valid=sample_valid,
+            interval_valid=interval_valid,
         )
 
 
@@ -566,6 +570,7 @@ class BodypartOverlay(_Overlay):
             self.skeleton, bodypart_names, name="BodypartOverlay.skeleton"
         )
         times: NDArray[np.float64] | None = None
+        parts: dict[str, NDArray[np.float64]] = {}
         sample_valid: dict[str, NDArray[np.bool_]] = {}
         interval_valid: dict[str, NDArray[np.bool_]] = {}
         for part_name, part_data in self.data.items():
@@ -584,17 +589,21 @@ class BodypartOverlay(_Overlay):
                 )
             _validate_bounds(part_data, env.dimension_ranges, name=name, threshold=0.1)
             # Each keypoint has its own missing observations and support.
-            support = observation_support(
-                times, part_data, max_gap=self.max_gap, break_before=self.break_before
+            parts[part_name], sample_valid[part_name], interval_valid[part_name] = (
+                observed_rows(
+                    times,
+                    part_data,
+                    max_gap=self.max_gap,
+                    break_before=self.break_before,
+                    interp=self.interp,
+                )
             )
-            sample_valid[part_name] = support.sample_valid
-            interval_valid[part_name] = support.interval_mask
         if times is None:
             times = _sample_clock(
                 self.times, frame_times, n_frames, n_frames, name="BodypartOverlay"
             )
         return BodypartData(
-            dict(self.data),
+            parts,
             self.skeleton,
             self.colors or {},
             times=times,
@@ -788,18 +797,23 @@ class HeadDirectionOverlay(_Overlay):
             len(self.headings),
             name="HeadDirectionOverlay",
         )
-        support = observation_support(
-            times, self.headings, max_gap=self.max_gap, break_before=self.break_before
+        headings, sample_valid, interval_valid = observed_rows(
+            times,
+            self.headings,
+            max_gap=self.max_gap,
+            break_before=self.break_before,
+            interp=self.interp,
+            circular=np.ndim(self.headings) == 1,
         )
         return HeadDirectionData(
-            self.headings,
+            headings,
             self.color,
             self.length,
             self.width,
             times=times,
             interp=self.interp,
-            sample_valid=support.sample_valid,
-            interval_valid=support.interval_mask,
+            sample_valid=sample_valid,
+            interval_valid=interval_valid,
         )
 
 
@@ -1417,11 +1431,12 @@ class EventOverlay(_Overlay):
                     "EventOverlay.position_times must have one timestamp per "
                     "nonempty position sample."
                 )
-            support = observation_support(
+            support = observed_rows(
                 self.position_times,
                 self.positions,
                 max_gap=self.max_gap,
                 break_before=self.break_before,
+                interp=self.interp,
             )
         else:
             assert isinstance(self.event_positions, dict)
@@ -1510,13 +1525,14 @@ class EventOverlay(_Overlay):
                 assert self.positions is not None
                 assert self.position_times is not None
                 assert support is not None
+                rows, rows_valid, rows_intervals = support
                 positions_for_events = sample_at_times(
                     self.position_times,
-                    self.positions,
+                    rows,
                     filtered_times,
                     interp=self.interp,
-                    sample_valid=support.sample_valid,
-                    interval_valid=support.interval_mask,
+                    sample_valid=rows_valid,
+                    interval_valid=rows_intervals,
                 )
 
             # Compute frame indices (nearest frame for each event)
@@ -2441,15 +2457,16 @@ class ObjectVectorOverlay(_Overlay):
             name="ObjectVectorOverlay.animal_positions",
             threshold=0.1,
         )
-        support = observation_support(
+        animal_positions, sample_valid, interval_valid = observed_rows(
             times,
             self.animal_positions,
             max_gap=self.max_gap,
             break_before=self.break_before,
+            interp=self.interp,
         )
         return ObjectVectorData(
             self.object_positions,
-            self.animal_positions,
+            animal_positions,
             self.firing_rates,
             self.color,
             self.linewidth,
@@ -2458,8 +2475,8 @@ class ObjectVectorOverlay(_Overlay):
             self.object_size,
             times=times,
             interp=self.interp,
-            sample_valid=support.sample_valid,
-            interval_valid=support.interval_mask,
+            sample_valid=sample_valid,
+            interval_valid=interval_valid,
         )
 
 

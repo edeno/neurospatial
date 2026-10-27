@@ -17,6 +17,8 @@ def _mixed_result(**kwargs):
     """3 events, 4 times, 2 linear features."""
     signals = np.column_stack([TIMES, 2.0 * TIMES])
     signals[np.isclose(TIMES, 3.0), 1] = np.nan  # one unsupported cell
+    # Below two 0.125 s frames, so the missing sample is a tracking loss.
+    kwargs.setdefault("max_gap", 0.2)
     return align_continuous_to_events(
         TIMES,
         signals,
@@ -191,6 +193,7 @@ def _missing_at_zero_result():
         category_labels={0: {0: "a", 1: "b"}},
         interpolation={0: "previous"},
         window_coverage="partial",
+        max_gap=0.2,
     )
 
 

@@ -16,6 +16,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import (
     as_intervals,
+    drop_missing_samples,
     interval_valid_mask,
     times_in_intervals,
     validate_max_gap,
@@ -48,7 +49,8 @@ class RegionVisit:
         Original name from ``env.regions``.
     start_index, stop_index : int
         Bounds of the inside-region samples in the original input arrays:
-        ``position_bins[start_index:stop_index]``. Stop is exclusive.
+        ``position_bins[start_index:stop_index]``. Stop is exclusive. Invalid
+        samples in a bridged gap inside the visit lie within these bounds.
     start_time, end_time : float
         Observed bounds in seconds. Start is the first inside sample. End is
         the first outside sample for an observed exit, otherwise the last
@@ -140,9 +142,10 @@ def detect_region_visits(
     ----------
     position_bins : ndarray of integers, shape (n_samples,)
         Sample-aligned bins from ``env.bin_at(positions)``. Invalid bins
-        (negative or at least ``env.n_bins``) denote unknown observations and
-        break continuity. A valid bin outside every selected region is observed
-        travel, not an observation break.
+        (negative or at least ``env.n_bins``) denote unknown observations,
+        skipped as if their rows were deleted: the gap around them is bridged
+        when it is no longer than ``max_gap``. A valid bin outside every
+        selected region is observed travel, not an observation break.
     times : ndarray, shape (n_samples,)
         Finite, strictly increasing timestamps in seconds.
     env : Environment
@@ -153,8 +156,9 @@ def detect_region_visits(
         not share active bins; ambiguous membership raises rather than using
         the order of names as a priority rule.
     max_gap : float or None, default=0.5
-        Maximum interval in seconds treated as continuous. Equality passes.
-        None disables the gap threshold, but not invalid-bin or epoch breaks.
+        Maximum gap in seconds between consecutive valid samples treated as
+        continuous. Equality passes. None disables the gap threshold, but not
+        epoch breaks or declared breaks.
     epochs : (start, stop), array-like of shape (n, 2), or None
         Half-open event windows on the same clock as ``times``. IntervalSet-like
         inputs are also accepted. Only fully contained sampling intervals
@@ -189,8 +193,8 @@ def detect_region_visits(
     that region. An exit is observed at the first following outside sample.
     These are sampled crossing times, without sub-frame interpolation. A visit
     starting inside a region after a gap or a declared break is left-censored,
-    not a new entry. Invalid observations censor both adjacent runs and never
-    fabricate exits.
+    not a new entry. Invalid observations are skipped, so they never
+    fabricate exits; a gap longer than ``max_gap`` censors both adjacent runs.
 
     Use :func:`region_transitions` before filtering visits to obtain consecutive
     entry-to-entry pairs. Use ``detect_runs_between_regions`` instead when the
@@ -246,7 +250,11 @@ def detect_region_visits(
             )
         labels[mask] = label
 
-    valid = (bins >= 0) & (bins < env.n_bins)
+    # An invalid bin is a missing observation, skipped as if its row were
+    # deleted; indices are mapped back to the caller's rows below.
+    rows, breaks = drop_missing_samples((bins >= 0) & (bins < env.n_bins), breaks)
+    bins, clock = bins[rows], clock[rows]
+    valid = np.ones(bins.shape, dtype=bool)
     selected = valid.copy()
     if windows is not None:
         selected &= times_in_intervals(windows, clock)
@@ -290,8 +298,8 @@ def detect_region_visits(
                     visit_id=len(visits),
                     run_id=run_id,
                     region_name=names[label],
-                    start_index=start_index,
-                    stop_index=stop_index,
+                    start_index=int(rows[start_index]),
+                    stop_index=int(rows[stop_index - 1]) + 1,
                     start_time=float(clock[start_index]),
                     end_time=float(
                         clock[stop_index] if exit_observed else run_end_time

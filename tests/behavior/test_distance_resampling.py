@@ -7,7 +7,6 @@ import pytest
 
 from neurospatial.behavior import (
     ResampledPathResult,
-    compute_cumulative_distance,
     compute_speed,
     resample_by_distance,
 )
@@ -177,19 +176,28 @@ def test_declared_break_matches_separate_calls():
     np.testing.assert_array_equal(whole.run_sample_bounds, [[0, 49], [50, 89]])
 
 
-def test_nan_row_is_never_bridged():
+def test_nan_row_is_bridged_like_a_deleted_row():
     times = np.arange(20) * 0.1
     positions = _xline(np.arange(20.0), times)
     positions[10] = np.nan
     result = resample_by_distance(times, positions, spacing=0.3)
-    steps = compute_cumulative_distance(times, positions).step_lengths
+    kept = np.delete(np.arange(20), 10)
+    deleted = resample_by_distance(times[kept], positions[kept], spacing=0.3)
 
-    inexact = result.source_left != result.source_right
-    assert inexact.any()
-    np.testing.assert_array_equal(
-        result.source_right[inexact], result.source_left[inexact] + 1
-    )
-    assert np.isfinite(steps[result.source_left[inexact]]).all()
+    np.testing.assert_allclose(result.times, deleted.times)
+    np.testing.assert_allclose(result.positions, deleted.positions)
+    np.testing.assert_allclose(result.run_distance, deleted.run_distance)
+    np.testing.assert_array_equal(result.source_left, kept[deleted.source_left])
+    np.testing.assert_array_equal(result.source_right, kept[deleted.source_right])
+    assert 10 not in result.source_left and 10 not in result.source_right
+    np.testing.assert_array_equal(result.run_sample_bounds, [[0, 19]])
+
+
+def test_nan_row_gap_longer_than_max_gap_is_never_bridged():
+    times = np.arange(20) * 0.1
+    positions = _xline(np.arange(20.0), times)
+    positions[10] = np.nan
+    result = resample_by_distance(times, positions, spacing=0.3, max_gap=0.15)
     assert not ((result.times > times[9]) & (result.times < times[11])).any()
     assert 10 not in result.source_left and 10 not in result.source_right
     np.testing.assert_array_equal(result.run_sample_bounds, [[0, 9], [11, 19]])
@@ -248,7 +256,7 @@ def test_isolated_sample_produces_no_output():
     positions = np.array(
         [[0, 0], [np.nan, np.nan], [5, 5], [np.nan, np.nan], [1, 0], [2, 0]], float
     )
-    result = resample_by_distance(times, positions, spacing=0.5)
+    result = resample_by_distance(times, positions, spacing=0.5, max_gap=0.15)
     assert 2 not in result.source_left and 2 not in result.source_right
     np.testing.assert_array_equal(result.run_sample_bounds, [[4, 5]])
     np.testing.assert_allclose(result.positions[:, 0], [1, 1.5, 2])
@@ -322,7 +330,9 @@ def test_output_times_strictly_increasing_across_runs(two_epoch_recording):
     times = two_epoch_recording.times.copy()
     positions = two_epoch_recording.positions.copy()
     positions[[100, 2000, 2001, 7000]] = np.nan
-    result = resample_by_distance(times, positions, spacing=2.0, include_endpoint=True)
+    result = resample_by_distance(
+        times, positions, spacing=2.0, include_endpoint=True, max_gap=0.03
+    )
     assert result.run_path_lengths.size >= 4
     assert (np.diff(result.times) > 0).all()
     assert (np.diff(result.cumulative_distance) >= 0).all()

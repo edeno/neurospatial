@@ -33,7 +33,7 @@ def test_event_locations_respect_tracking_support(env, interp, gap):
     times = np.array([0.0, 0.2, 1.0, 1.2])
     positions = np.column_stack((times, times))
     breaks = None
-    max_gap = 0.5 if gap == "duration" else None
+    max_gap = None if gap == "break" else 0.5
     if gap == "break":
         breaks = np.array([False, False, True, False])
     elif gap == "missing":

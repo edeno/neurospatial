@@ -1039,19 +1039,26 @@ class TestVisibilityOccupancySupport:
         )
 
     @pytest.mark.parametrize("missing", ["position", "heading"])
-    def test_a_missing_sample_adds_nothing(self, open_square, walk, missing):
+    def test_a_missing_sample_is_a_deleted_row(self, open_square, walk, missing):
         times, positions, headings = walk
         positions, headings = positions.copy(), headings.copy()
         if missing == "position":
             positions[15, 1] = np.nan
         else:
             headings[15] = np.nan
+        kept = np.delete(np.arange(len(times)), 15)
 
         seen = self._seen(open_square, times, positions, headings)
+        deleted = self._seen(open_square, times[kept], positions[kept], headings[kept])
 
+        assert_allclose(seen, deleted, rtol=1e-12)
         dt = np.diff(times)
-        # Both intervals that touch sample 15 are unobserved.
-        assert_allclose(seen, dt.sum() - dt[14] - dt[15], rtol=1e-12)
+        # The gap around sample 15 is bridged and viewed from sample 14.
+        assert_allclose(seen, dt.sum(), rtol=1e-12)
+        # Shorter than that gap, max_gap leaves both of its intervals unobserved.
+        max_gap = 0.75 * (times[16] - times[14])
+        short = self._seen(open_square, times, positions, headings, max_gap=max_gap)
+        assert_allclose(short, dt.sum() - dt[14] - dt[15], rtol=1e-12)
 
     def test_the_last_sample_adds_no_time(self, open_square, walk):
         times, positions, headings = walk

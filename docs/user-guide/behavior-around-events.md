@@ -29,8 +29,10 @@ tracker lost the animal for 0.8 s around one reward.
 Some choices in the code:
 
 - **Lost frames are NaN rows.** Every function here treats a NaN row as a
-  missing sample: it gets NaN, and nothing is computed or interpolated across
-  it.
+  missing sample, exactly like a deleted row: it gets NaN, and it is bridged
+  only when the time between the observed samples around it is at most
+  `max_gap`. The 0.8 s loss here is longer, so nothing is computed or
+  interpolated across it.
 - **Speed** comes from `compute_speed`, which smooths the velocity with a
   0.1 s Gaussian so tracking jitter does not read as running.
 - **Heading** comes from `heading_from_velocity`: the direction of movement in
@@ -286,6 +288,13 @@ are angles in radians, and the mean is the direction of the average unit
 vector, not the average of the numbers. The slow frames already carry NaN
 heading, so the alignment treats them as unobserved for heading only.
 
+A stop is not a tracking loss, though. The alignment bridges any stretch of
+missing values no longer than `max_gap`, and the stop at the port lasts only
+0.2 s, as long as a burst of low-confidence frames. Bridging it would
+interpolate a heading through the animal's turn. This session has no dropped
+frames, so `max_gap=1.5 / 30` (one and a half frames) bridges nothing and keeps
+the undefined headings unobserved.
+
 <!-- docs-test: run setup=docs_behavior_around_reward -->
 ```python
 import matplotlib.pyplot as plt
@@ -305,6 +314,7 @@ partial = align_continuous_to_events(
     value_kinds={"heading": "circular", "texture": "categorical"},
     category_labels={"texture": {0: "smooth", 1: "rough"}},
     window_coverage="partial",
+    max_gap=1.5 / 30,  # a stop is not a dropped frame: do not bridge it
 )
 print(partial.events_table()["status"].value_counts().to_string())
 assert partial.n_events == 15

@@ -33,6 +33,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import (
+    hold_last_valid,
     interval_valid_mask,
     start_allocated_occupancy,
 )
@@ -179,13 +180,16 @@ def compute_directional_occupancy(
         headings, bin_size, angle_unit=angle_unit
     )
     n_bins = len(bin_centers)
+    observed = np.isfinite(headings)
     mask = interval_valid_mask(
         times,
         start_bin=frame_bins,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        sample_valid=observed,
     )
+    frame_bins = hold_last_valid(frame_bins, observed, fill=-1)
     occupancy = start_allocated_occupancy(frame_bins, np.diff(times), mask, n_bins)
     return occupancy, bin_centers
 
@@ -338,13 +342,16 @@ def bin_directional_spike_train(
         headings, bin_size, angle_unit=angle_unit
     )
     n_bins = len(bin_centers)
+    observed = np.isfinite(headings)
     mask = interval_valid_mask(
         times,
         start_bin=frame_bins,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        sample_valid=observed,
     )
+    frame_bins = hold_last_valid(frame_bins, observed, fill=-1)
     return count_spikes_by_frame(spike_times, times, frame_bins, mask, n_bins)
 
 
@@ -380,6 +387,7 @@ def prepare_directional_binning(
         spike_window=spike_window,
         break_before=break_before,
         samples="headings",
+        sample_valid=np.isfinite(headings),
     )
     return prepared, bin_centers
 

@@ -52,23 +52,38 @@ def test_break_before_first_sample_is_ignored():
     np.testing.assert_array_equal(base.run_ids, flagged.run_ids)
 
 
-def test_nan_row_breaks_the_path():
-    x = np.arange(5, dtype=float)
-    positions = np.c_[x, np.zeros(5)]
+def _nan_row_support(max_gap):
+    positions = np.c_[np.arange(5, dtype=float), np.zeros(5)]
     positions[2] = np.nan
-    s = validated_observations(
+    return validated_observations(
         np.arange(5) * 0.1,
         positions,
         call="f",
-        max_gap=0.5,
+        max_gap=max_gap,
         epochs=None,
         break_before=None,
         result="r",
     )[2]
-    np.testing.assert_array_equal(s.interval_mask, [True, False, False, True])
-    np.testing.assert_array_equal(s.run_ids, [0, 0, -1, 1, 1])
+
+
+def test_nan_row_is_bridged_like_a_deleted_row():
+    s = _nan_row_support(max_gap=0.5)
+    deleted = _support(np.delete(np.arange(5) * 0.1, 2), max_gap=0.5)
+    # The 0.2 s gap between samples 1 and 3 is bridged; the NaN sample is in
+    # no run, but the run spans it.
+    np.testing.assert_array_equal(s.interval_mask, [True, True, True, True])
+    np.testing.assert_array_equal(s.run_ids, [0, 0, -1, 0, 0])
+    np.testing.assert_array_equal(s.run_sample_bounds, [[0, 4]])
+    np.testing.assert_allclose(s.run_time_bounds, deleted.run_time_bounds)
     assert not s.sample_valid[2]
     assert not s.isolated.any()
+
+
+def test_nan_row_gap_longer_than_max_gap_breaks_the_path():
+    s = _nan_row_support(max_gap=0.15)
+    np.testing.assert_array_equal(s.interval_mask, [True, False, False, True])
+    np.testing.assert_array_equal(s.run_ids, [0, 0, -1, 1, 1])
+    np.testing.assert_array_equal(s.interval_gates, [True, False, False, True])
 
 
 @pytest.mark.filterwarnings("ignore:.*max_gap:UserWarning")
@@ -221,19 +236,22 @@ def _signals(times=_T5, signals=None, *, valid=None, **kwargs):
     )
 
 
-def test_signals_nan_in_one_feature_only_splits_that_feature():
+def test_signals_nan_in_one_feature_only_affects_that_feature():
     sig = np.ones((5, 2))
     sig[2, 1] = np.nan
     _, _, supports = _signals(signals=sig)
     assert len(supports) == 2
     np.testing.assert_array_equal(supports[0].run_ids, [0, 0, 0, 0, 0])
-    np.testing.assert_array_equal(supports[1].run_ids, [0, 0, -1, 1, 1])
+    np.testing.assert_array_equal(supports[1].run_ids, [0, 0, -1, 0, 0])
     assert not supports[1].sample_valid[2]
+    _, _, supports = _signals(signals=sig, max_gap=0.15)
+    np.testing.assert_array_equal(supports[0].run_ids, [0, 0, 0, 0, 0])
+    np.testing.assert_array_equal(supports[1].run_ids, [0, 0, -1, 1, 1])
 
 
 def test_signals_valid_one_dimensional_applies_to_every_feature():
     valid = np.array([True, True, False, True, True])
-    _, _, supports = _signals(signals=np.ones((5, 2)), valid=valid)
+    _, _, supports = _signals(signals=np.ones((5, 2)), valid=valid, max_gap=0.15)
     for support in supports:
         np.testing.assert_array_equal(support.run_ids, [0, 0, -1, 1, 1])
 
@@ -241,7 +259,7 @@ def test_signals_valid_one_dimensional_applies_to_every_feature():
 def test_signals_valid_two_dimensional_applies_per_feature():
     valid = np.ones((5, 2), dtype=bool)
     valid[2, 0] = False
-    _, _, supports = _signals(signals=np.ones((5, 2)), valid=valid)
+    _, _, supports = _signals(signals=np.ones((5, 2)), valid=valid, max_gap=0.15)
     np.testing.assert_array_equal(supports[0].run_ids, [0, 0, -1, 1, 1])
     np.testing.assert_array_equal(supports[1].run_ids, [0, 0, 0, 0, 0])
 
@@ -343,11 +361,12 @@ def test_signals_accept_integers_at_the_float64_limit():
     )
 
 
-def test_interval_gates_ignore_sample_validity():
-    """``interval_mask == interval_gates & valid[:-1] & valid[1:]``."""
+def test_interval_gates_are_evaluated_on_bridged_gaps():
+    """``interval_mask == interval_gates`` where both sides have a valid sample."""
     times = np.array([0.0, 0.1, 0.2, 0.3, 1.5, 1.6, 1.7, 1.8])
     positions = np.c_[np.arange(8.0), np.zeros(8)]
     positions[1] = np.nan
+    positions[7] = np.nan
     break_before = np.zeros(8, dtype=bool)
     break_before[6] = True
     s = validated_observations(
@@ -360,15 +379,14 @@ def test_interval_gates_ignore_sample_validity():
         result="r",
     )[2]
     # gap after sample 3 (1.2 s) and the break before sample 6 close gates;
-    # the NaN row does not.
+    # the NaN row inside a 0.2 s gap does not, and the trailing NaN row has
+    # no valid sample after it, so its interval is gated on its own samples.
     np.testing.assert_array_equal(
         s.interval_gates, [True, True, True, False, True, False, True]
     )
     np.testing.assert_array_equal(
-        s.interval_mask,
-        s.interval_gates & s.sample_valid[:-1] & s.sample_valid[1:],
+        s.interval_mask, [True, True, True, False, True, False, False]
     )
-    assert s.interval_mask.sum() < s.interval_gates.sum()
 
 
 @pytest.mark.parametrize("n", [1, 2])

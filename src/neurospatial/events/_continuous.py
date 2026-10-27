@@ -19,7 +19,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import intervals_contain
+from neurospatial._intervals import gap_endpoints, intervals_contain
 from neurospatial._observation import _MAX_EXACT_INTEGER
 from neurospatial._results import (
     as_label_array,
@@ -400,9 +400,11 @@ def _sample_feature(
     A query exactly at a sample time is a point observation: it is supported
     when that sample is valid and, if ``epochs`` is given, the instant lies in
     one half-open epoch row. Any other query is supported only inside a usable
-    interval ``[t_k, t_{k+1})`` of ``support``, so a value is never
-    interpolated across a gap, invalid sample, declared break or epoch edge,
-    and never extrapolated before the first or after the last sample.
+    interval of ``support`` and is interpolated between the valid samples
+    that bound its gap, so missing samples are skipped as if deleted, while a
+    value is never interpolated across a gap longer than ``max_gap``, a
+    declared break or an epoch edge, and never extrapolated before the first
+    or after the last sample.
 
     Parameters
     ----------
@@ -438,9 +440,11 @@ def _sample_feature(
     n_samples = times.size
     k = np.searchsorted(times, q, side="right") - 1
     k_safe = np.clip(k, 0, n_samples - 1)
-    exact = (k >= 0) & (times[k_safe] == q)
+    # A query at a missing sample's time is not an observation of it; like a
+    # query at a deleted row, it is sampled from the gap's bounding samples.
+    exact = (k >= 0) & (times[k_safe] == q) & support.sample_valid[k_safe]
 
-    at_sample = exact & support.sample_valid[k_safe]
+    at_sample = exact.copy()
     if epochs is not None:
         row = np.searchsorted(epochs[:, 0], q, side="right") - 1
         at_sample &= (row >= 0) & (q < epochs[np.maximum(row, 0), 1])
@@ -452,13 +456,16 @@ def _sample_feature(
     sampled = np.full(q.shape, np.nan)
     sampled[at_sample] = values[k[at_sample]]
 
-    left = k[between]
+    # Interpolate between the valid samples that bound the (bridged) gap, as
+    # if missing samples had been deleted.
+    start, end, _ = gap_endpoints(support.sample_valid)
+    left, right = start[k[between]], end[k[between]]
     x0 = values[left]
     if interpolation == "previous":
         sampled[between] = x0
     else:
-        weight = (q[between] - times[left]) / (times[left + 1] - times[left])
-        step = values[left + 1] - x0
+        weight = (q[between] - times[left]) / (times[right] - times[left])
+        step = values[right] - x0
         if interpolation == "circular":
             sampled[between] = x0 + weight * _wrap(step)
         elif interpolation == "linear":

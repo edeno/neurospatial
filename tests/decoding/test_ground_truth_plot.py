@@ -104,8 +104,14 @@ def test_gap_limit_can_be_disabled_without_extrapolating_or_filling_nan(env):
     np.testing.assert_allclose(
         result.error_against([0, 1], truth, max_gap=None), [np.nan, 0, 50, 100, np.nan]
     )
+    # A missing true position is bridged like a deleted row when the gap
+    # passes max_gap, and not otherwise.
     source = np.array([[0.0], [np.nan], [100.0]])
-    assert np.isnan(result.error_against([0, 0.5, 1], source, max_gap=None)[2])
+    np.testing.assert_allclose(
+        result.error_against([0, 0.5, 1], source, max_gap=None),
+        result.error_against([0, 1], truth, max_gap=None),
+    )
+    assert np.isnan(result.error_against([0, 0.5, 1], source, max_gap=0.75)[2])
 
 
 def test_truth_line_never_joins_distinct_runs_even_with_only_two_decode_rows(env):

@@ -34,6 +34,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    hold_last_valid,
     interval_valid_mask,
     start_allocated_occupancy,
 )
@@ -59,22 +60,34 @@ __all__ = [
 
 def _view_observation_mask(
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    gaze_offsets: NDArray[np.float64] | None,
     *,
     max_gap: float | None,
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
     break_before: NDArray[np.bool_] | None = None,
-) -> NDArray[np.bool_]:
-    """Resolve selected exposure before requiring bins at physical wall hits."""
+) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+    """Resolve selected exposure before requiring bins at physical wall hits.
+
+    A sample with a non-finite position, heading or gaze offset is missing
+    and is bridged like a deleted row. Returns the interval mask, shape
+    ``(n_samples - 1,)``, and the observed samples, shape ``(n_samples,)``.
+    """
+    observed = np.isfinite(positions).all(axis=1) & np.isfinite(headings)
+    if gaze_offsets is not None:
+        observed &= np.isfinite(gaze_offsets)
     mask = interval_valid_mask(
         times,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
         break_before=break_before,
+        sample_valid=observed,
     )
     mask &= np.diff(times) > 0
-    return mask
+    return mask, observed
 
 
 def require_allocentric_view(env: Environment, operation: str) -> None:
@@ -376,8 +389,14 @@ def compute_occupancy(
                 f"times length ({n_samples})"
             )
 
-    mask = _view_observation_mask(
-        times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
+    mask, observed = _view_observation_mask(
+        times,
+        positions,
+        headings,
+        gaze_offsets,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
     )
     view_bins = _precompute_view_bins(
         env,
@@ -389,6 +408,7 @@ def compute_occupancy(
         boundary_source=boundary_source,
         interval_mask=mask,
     )
+    view_bins = hold_last_valid(view_bins, observed, fill=-1)
     mask &= view_bins[:-1] >= 0
     return start_allocated_occupancy(view_bins, np.diff(times), mask, env.n_bins)
 
@@ -521,8 +541,14 @@ def bin_view_spike_train(
     # Validate times (minimum samples and monotonicity)
     _validate_times(times, context="bin_view_spike_train")
 
-    mask = _view_observation_mask(
-        times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
+    mask, observed = _view_observation_mask(
+        times,
+        positions,
+        headings,
+        gaze_offsets,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
     )
     view_bins = _precompute_view_bins(
         env,
@@ -534,6 +560,7 @@ def bin_view_spike_train(
         boundary_source=boundary_source,
         interval_mask=mask,
     )
+    view_bins = hold_last_valid(view_bins, observed, fill=-1)
     mask &= view_bins[:-1] >= 0
     return count_spikes_by_frame(spike_times, times, view_bins, mask, env.n_bins)
 
@@ -569,8 +596,11 @@ def prepare_view_binning(
     # Precompute view bins ONCE (shared across all neurons) unless the caller
     # already holds them for these exact samples and gaze settings.
     # This is the expensive computation - computed once instead of per-neuron
-    mask = _view_observation_mask(
+    mask, observed = _view_observation_mask(
         times,
+        positions,
+        headings,
+        None if gaze_offsets is None else np.asarray(gaze_offsets, dtype=np.float64),
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
@@ -588,7 +618,7 @@ def prepare_view_binning(
             interval_mask=mask,
         )
 
-    mask &= view_bins[:-1] >= 0
+    mask &= hold_last_valid(view_bins, observed, fill=-1)[:-1] >= 0
     n_bins = env.n_bins
     prepared = prepare_frame_binning(
         times,
@@ -599,6 +629,7 @@ def prepare_view_binning(
         spike_window=spike_window,
         interval_mask=mask,
         break_before=break_before,
+        sample_valid=observed,
     )
     return prepared
 

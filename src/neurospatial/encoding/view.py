@@ -86,6 +86,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    hold_last_valid,
     resolve_time_windows,
     run_time_bounds,
 )
@@ -2717,8 +2718,12 @@ def spatial_view_cell_significance(
         break_before, len(times), call="spatial_view_cell_significance"
     )
     options["break_before"] = breaks
-    mask = _view_observation_mask(
+    gaze_offsets = options["gaze_offsets"]
+    mask, observed_frames = _view_observation_mask(
         times,
+        positions,
+        headings,
+        None if gaze_offsets is None else np.asarray(gaze_offsets, dtype=np.float64),
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
@@ -2734,7 +2739,7 @@ def spatial_view_cell_significance(
         boundary_source=boundary_source,
         interval_mask=mask,
     )
-    mask &= frame_bins[:-1] >= 0
+    mask &= hold_last_valid(frame_bins, observed_frames, fill=-1)[:-1] >= 0
     windows = run_time_bounds(times, mask)
 
     # The gaze geometry depends only on the trajectory, so every shuffle

@@ -22,7 +22,8 @@ _ABAB = list("AABBAAAABB")
 def invalid_sample_result() -> LabelEpochsResult:
     valid = np.ones(10, dtype=bool)
     valid[6] = False
-    return labels_to_epochs(np.arange(10.0), _ABAB, valid=valid, max_gap=None)
+    # The 2 s gap around the invalid sample exceeds max_gap, so it splits.
+    return labels_to_epochs(np.arange(10.0), _ABAB, valid=valid, max_gap=1.5)
 
 
 def test_invalid_sample_splits_same_label(invalid_sample_result):
@@ -110,12 +111,25 @@ def test_single_sample_gives_empty_result():
 
 def test_label_with_no_supported_interval_is_not_a_key():
     valid = np.array([True, True, False, True])
-    r = labels_to_epochs(np.arange(4.0), list("ABAA"), valid=valid, max_gap=None)
+    r = labels_to_epochs(np.arange(4.0), list("ABAA"), valid=valid, max_gap=1.5)
     assert "B" in r.unsupported_labels
     assert "B" not in r
     with pytest.raises(KeyError, match="none of its intervals"):
         r["B"]
     assert r.summary()["n_unsupported_labels"] == 1
+
+
+def test_invalid_sample_in_bridged_gap_keeps_the_label():
+    valid = np.ones(10, dtype=bool)
+    valid[6] = False
+    r = labels_to_epochs(np.arange(10.0), _ABAB, valid=valid, max_gap=None)
+    kept = np.delete(np.arange(10), 6)
+    deleted = labels_to_epochs(
+        np.arange(10.0)[kept], [_ABAB[k] for k in kept], max_gap=None
+    )
+    np.testing.assert_array_equal(r["A"], [[0, 2], [4, 8]])
+    np.testing.assert_array_equal(r["A"], deleted["A"])
+    np.testing.assert_array_equal(r["B"], deleted["B"])
 
 
 def test_unknown_label_error_lists_labels(invalid_sample_result):
@@ -272,7 +286,7 @@ def test_epochs_table_and_summary(invalid_sample_result):
     assert df["label"].tolist() == ["A", "B", "A", "A", "B"]
     assert df["n_intervals"].tolist() == [2, 2, 1, 1, 1]
     assert df.attrs == {
-        "max_gap": None,
+        "max_gap": 1.5,
         "input_epochs": None,
         "missing_label": None,
         "n_declared_breaks": 0,
@@ -288,7 +302,7 @@ def test_epochs_table_and_summary(invalid_sample_result):
         "n_unsupported_intervals": 2,
         "n_missing_label_intervals": 0,
         "n_unsupported_labels": 0,
-        "max_gap": None,
+        "max_gap": 1.5,
     }
     for value in summary.values():
         assert value is None or type(value) in (int, float)

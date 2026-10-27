@@ -153,15 +153,17 @@ class AnimationField:
             if self.epochs is None
             else times_in_intervals(self.epochs, self.times)
         )
+        # A field row is never missing; epochs only decide which exact samples
+        # are shown, so the interval gates are those of every row.
         support = resolve_sample_support(
             self.times,
-            sample_valid,
+            np.ones(len(self.times), dtype=bool),
             max_gap=max_gap,
             epochs=self.epochs,
             break_before=self.break_before,
             result="the animation shows exact samples only",
         )
-        object.__setattr__(self, "sample_valid", _readonly(support.sample_valid))
+        object.__setattr__(self, "sample_valid", _readonly(sample_valid))
         # A held [start, stop) row needs no observation at its excluded stop.
         # Keep canonical interval gates separate from exact-sample membership.
         object.__setattr__(self, "interval_valid", _readonly(support.interval_gates))

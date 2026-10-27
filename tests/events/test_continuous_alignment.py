@@ -148,13 +148,28 @@ def test_window_coverage_outside_epochs():
     np.testing.assert_array_equal(result.event_status, ["retained", "outside_epochs"])
 
 
+def test_per_feature_invalid_samples_are_bridged_like_deleted_rows():
+    signals = np.column_stack([EIGHTHS, 2 * EIGHTHS])
+    valid = np.ones(signals.shape, dtype=bool)
+    valid[(EIGHTHS >= 5.75) & (EIGHTHS <= 6.0), 1] = False
+    result = align_continuous_to_events(
+        EIGHTHS, signals, [3.0, 6.0], (-0.5, 0.5), dt=0.25, valid=valid, max_gap=0.5
+    )
+    np.testing.assert_array_equal(result.event_status, ["retained", "retained"])
+    assert result.support.all()
+    # Feature 1 is the line 2 t, interpolated across its missing samples.
+    np.testing.assert_allclose(
+        result.values[1, :, 1], 2 * (6.0 + result.relative_times)
+    )
+
+
 def test_per_feature_validity_decides_coverage():
     signals = np.column_stack([EIGHTHS, 2 * EIGHTHS])
     valid = np.ones(signals.shape, dtype=bool)
     valid[(EIGHTHS >= 5.75) & (EIGHTHS <= 6.0), 1] = False
 
     complete = align_continuous_to_events(
-        EIGHTHS, signals, [3.0, 6.0], (-0.5, 0.5), dt=0.25, valid=valid
+        EIGHTHS, signals, [3.0, 6.0], (-0.5, 0.5), dt=0.25, valid=valid, max_gap=0.2
     )
     np.testing.assert_array_equal(
         complete.event_status, ["retained", "incomplete_support"]
@@ -168,6 +183,7 @@ def test_per_feature_validity_decides_coverage():
         dt=0.25,
         valid=valid,
         window_coverage="partial",
+        max_gap=0.2,
     )
     np.testing.assert_array_equal(partial.event_status, ["retained", "retained"])
     assert partial.support[1, :, 0].all()

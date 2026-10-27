@@ -1488,11 +1488,13 @@ def visibility_occupancy(
 
     Notes
     -----
-    Interval ``k`` adds time only when it passes ``max_gap``, lies inside
-    ``epochs``, is not crossed by a declared break, and both of its samples
-    have a finite position and heading. A tracking pause or the join between
-    two recordings is therefore not counted as viewing time. Viewsheds are
-    computed only for samples that start such an interval.
+    A sample without a finite position and heading is missing and is
+    treated as a deleted row: the gap between the observed samples around it
+    adds its time to the viewshed of the sample that starts it when the gap
+    passes ``max_gap``, lies inside ``epochs`` and is not crossed by a
+    declared break. A longer tracking pause or the join between two
+    recordings is therefore not counted as viewing time. Viewsheds are
+    computed only for samples that start such a gap.
 
     Examples
     --------
@@ -1512,6 +1514,7 @@ def visibility_occupancy(
     """
     from neurospatial._intervals import (
         as_intervals,
+        hold_last_valid,
         interval_valid_mask,
         validate_max_gap,
         warn_excluded_intervals,
@@ -1545,10 +1548,15 @@ def visibility_occupancy(
         return occupancy
 
     observed = np.isfinite(positions).all(axis=1) & np.isfinite(headings)
+    # A missing sample is bridged like a deleted row: the gap's time is
+    # viewed from the observed sample that starts it.
     usable = interval_valid_mask(
-        times, max_gap=max_gap, epochs=resolved_epochs, break_before=breaks
+        times,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        break_before=breaks,
+        sample_valid=observed,
     )
-    usable &= observed[:-1] & observed[1:]
     warn_excluded_intervals(
         times,
         usable,
@@ -1559,10 +1567,13 @@ def visibility_occupancy(
         result="no bin received viewing time",
     )
 
-    dt = np.diff(times)
+    held = hold_last_valid(np.arange(n_time), observed, fill=0)
+    dt = np.bincount(
+        held[:-1][usable], weights=np.diff(times)[usable], minlength=n_time
+    )
     no_cues = np.empty((0, 2))
     # Viewsheds are per-frame; compute them only for frames that add time.
-    for i in np.flatnonzero(usable & (dt > 0)):
+    for i in np.flatnonzero(dt > 0):
         result = _viewshed(
             binning,
             arena,

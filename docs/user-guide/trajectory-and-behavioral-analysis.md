@@ -70,7 +70,7 @@ Neurospatial provides a comprehensive suite of tools for analyzing animal trajec
 **The question.** Did the animal take the same route in two sessions? One
 session was filmed at 30 Hz while the animal ran at 22 cm/s; the other at
 120 Hz while it ran at 47 cm/s. Each session is two recordings joined into one
-array, and the tracker lost the animal for 0.3 s in each. Comparing the
+array, and the tracker lost the animal for 1.5 s in each. Comparing the
 sessions frame by frame or second by second mixes route differences with
 frame-rate and speed differences, and the joins and dropouts add distance the
 animal never ran.
@@ -100,7 +100,7 @@ radius = 40.0  # cm, circular track
 
 
 def simulate_session(frame_rate, running_speed):
-    """Two 20 s recordings on one clock, with a 0.3 s tracking dropout.
+    """Two 20 s recordings on one clock, with a 1.5 s tracking loss.
 
     The animal runs counterclockwise at a constant speed (cm/s). The second
     recording starts wherever the animal was put back on the track.
@@ -115,7 +115,7 @@ def simulate_session(frame_rate, running_speed):
     )
     positions = radius * np.column_stack([np.cos(angle), np.sin(angle)])  # cm
     dropout_start = rng.uniform(5.0, 15.0)
-    lost = (times >= dropout_start) & (times < dropout_start + 0.3)
+    lost = (times >= dropout_start) & (times < dropout_start + 1.5)
     positions[lost] = np.nan  # lost frames are missing, not zero
     return times, positions, recording_id
 
@@ -141,24 +141,27 @@ for name, (times, positions, recording_id) in sessions.items():
 
 # The numbers the text below quotes (atol = 0.6 * 10**-decimals)
 runs_30, total_30, time_30, unbroken_30 = quoted["30 Hz, 22 cm/s"]
-assert np.allclose(runs_30, [168.7, 263.3, 439.3], atol=0.06)
-assert np.allclose([total_30, unbroken_30], [871.2, 898.5], atol=0.06)
-assert np.isclose(time_30, 39.60, atol=0.006)
+assert np.allclose(runs_30, [168.7, 236.9, 439.3], atol=0.06)
+assert np.allclose([total_30, unbroken_30], [844.8, 872.1], atol=0.06)
+assert np.isclose(time_30, 38.40, atol=0.006)
 _, total_120, _, unbroken_120 = quoted["120 Hz, 47 cm/s"]
-assert np.allclose([total_120, unbroken_120], [1864.7, 1929.8], atol=0.06)
+assert np.allclose([total_120, unbroken_120], [1808.3, 1873.4], atol=0.06)
 ```
 
 Each session splits into three **runs**, stretches of continuous observation:
-the dropout ends the first and the new recording ends the second. The 30 Hz
-session prints runs of 168.7, 263.3 and 439.3 cm and a total of 871.2 cm in
-39.60 s of observed time, which is 22 cm/s times 39.60 s: nothing was added
-across the dropout or the join, and the lost frames did not turn the total
-into `NaN`. The 120 Hz session gives 1864.7 cm, likewise 47 cm/s times its
-observed time. `compute_cumulative_distance` returns the distance at every
+the tracking loss ends the first and the new recording ends the second. Lost
+frames are skipped as if their rows were deleted, so a loss counts as a break
+only when the time between the frames on either side exceeds `max_gap`; a
+shorter one, such as a few low-confidence frames, is bridged by the straight
+step between them. The 30 Hz session prints runs of 168.7, 236.9 and 439.3 cm
+and a total of 844.8 cm in 38.40 s of observed time, which is 22 cm/s times
+38.40 s: nothing was added across the loss or the join, and the lost frames
+did not turn the total into `NaN`. The 120 Hz session gives 1808.3 cm,
+likewise 47 cm/s times its observed time. `compute_cumulative_distance` returns the distance at every
 frame (`run_distance` restarts at 0 in each run, `cumulative_distance` keeps
 adding across runs); `traveled_path_length` returns only the total.
 
-Without `break_before` the totals are 898.5 and 1929.8 cm. The clock runs
+Without `break_before` the totals are 872.1 and 1873.4 cm. The clock runs
 straight from one file into the next, so nothing marks the join, and the
 27.3 cm and 65.1 cm jumps to where the animal was put back are counted as
 running. A break is seen only when you declare it: a time gap longer than
@@ -185,7 +188,7 @@ radius = 40.0  # cm, circular track
 
 
 def simulate_session(frame_rate, running_speed):
-    """Two 20 s recordings on one clock, with a 0.3 s tracking dropout.
+    """Two 20 s recordings on one clock, with a 1.5 s tracking loss.
 
     The animal runs counterclockwise at a constant speed (cm/s). The second
     recording starts wherever the animal was put back on the track.
@@ -200,7 +203,7 @@ def simulate_session(frame_rate, running_speed):
     )
     positions = radius * np.column_stack([np.cos(angle), np.sin(angle)])  # cm
     dropout_start = rng.uniform(5.0, 15.0)
-    lost = (times >= dropout_start) & (times < dropout_start + 0.3)
+    lost = (times >= dropout_start) & (times < dropout_start + 1.5)
     positions[lost] = np.nan  # lost frames are missing, not zero
     return times, positions, recording_id
 
@@ -219,7 +222,7 @@ for name, (times, positions, recording_id) in sessions.items():
     resampled[name] = path
     print(f"{name}: {len(times)} frames -> {path.times.size} samples 2 cm apart")
     counts.append((len(times), path.times.size))
-assert counts == [(1200, 437), (4800, 934)]
+assert counts == [(1200, 424), (4800, 906)]
 
 # Both sessions start at the same place. Compare them 1 s after the start ...
 (t_slow, xy_slow, _), (t_fast, xy_fast, _) = sessions.values()
@@ -270,13 +273,13 @@ assert np.allclose([1 / slow_stats[2], 1 / fast_stats[2]], [40.39, 40.02], atol=
 assert np.allclose([slow_stats[3], fast_stats[3]], [0.0183, 0.0098], atol=6e-5)
 ```
 
-**Equal distances, not equal times.** The 1200 frames at 30 Hz become 437
-samples and the 4800 frames at 120 Hz become 934: the faster animal covered
+**Equal distances, not equal times.** The 1200 frames at 30 Hz become 424
+samples and the 4800 frames at 120 Hz become 906: the faster animal covered
 more track, and the frame rate no longer sets the number of samples. One
 second after the start the two animals are 24.6 cm apart on the track, but the
-85 resampled samples of the first run (up to the dropout of the 30 Hz
-session) agree to within 0.0022 cm. Each run is resampled from its own start,
-so samples never bridge the dropout or the join. Each resampled sample keeps
+85 resampled samples of the first run (up to the tracking loss of the
+30 Hz session) agree to within 0.0022 cm. Each run is resampled from its own
+start, so samples never bridge the loss or the join. Each resampled sample keeps
 its time on the original clock (`path.times`) and the two original frames
 around it (`source_left`, `source_right`, `weights`); `path.samples_table()`
 lists them in one table.
@@ -306,8 +309,8 @@ track.
 
 The legacy `compute_trajectory_curvature` instead returns the turn per frame
 in radians (despite its name, it is not a curvature). It takes the same
-`break_before`, and the dropout splits the path, so no turn is computed or
-smoothed across the join or the lost frames. The turn per frame still depends
+`break_before`, and the tracking loss splits the path, so no turn is
+computed or smoothed across the join or the lost frames. The turn per frame still depends
 on the frame rate and the running speed: 0.0183 rad at 30 Hz and 0.0098 rad at
 120 Hz, the speed divided by the radius and by the frame rate. It differs
 between the sessions although the route is the same, so do not compare it
@@ -374,7 +377,7 @@ print(f"Turn variance: {turn_variance:.3f}")
 - Stationary periods (consecutive duplicate positions) are filtered out, so the
   output is shorter than `positions` and not aligned with your frames. It does
   not use times, so it bridges time gaps and recording breaks. For one angle per
-  frame that is `NaN` next to a dropout, gap or break, use
+  frame that is `NaN` at a missing frame and next to a long tracking loss or a break, use
   `compute_planar_turn_angles(times, positions)`
 - Uses vectorized NumPy operations for efficiency
 

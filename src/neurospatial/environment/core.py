@@ -277,12 +277,16 @@ class Environment(Generic[_C]):
     -----
     **Missing data.** NaN marks a missing value, never zero.
 
-    - Per-sample inputs (``bin_at``, ``contains``, ``nearest_bin``,
-      ``interpolate``, and the positions given to ``occupancy``,
-      ``bin_sequence`` and ``transitions``): a sample with a NaN coordinate
-      is missing. It gets bin ``-1``, ``False`` or a NaN value, and adds no
-      occupancy time and no transition. ``-1`` also marks samples outside the
+    - Per-sample queries (``bin_at``, ``contains``, ``nearest_bin``,
+      ``interpolate``): a sample with a NaN coordinate is missing. It gets bin
+      ``-1``, ``False`` or a NaN value. ``-1`` also marks samples outside the
       environment.
+    - Trajectories (the positions given to ``occupancy``, ``bin_sequence``
+      and ``transitions``): a sample with a NaN coordinate is missing and is
+      treated exactly like a deleted row, so a dropped frame and a
+      low-confidence frame give the same result. The gap between the valid
+      samples around it is bridged when it is no longer than ``max_gap``
+      (its time held at the sample before it) and excluded otherwise.
     - Explicit targets (``points=`` in ``distance_between``, ``distance_to``,
       ``neighbors`` and the other target queries) refuse NaN with an error,
       because a missing target has no answer. ``inf`` from
@@ -1859,15 +1863,15 @@ class Environment(Generic[_C]):
             Position coordinates matching environment dimensions, located as
             :meth:`bin_at` does: on an egocentric polar environment, each
             sample's ``(distance, angle)`` of the object or place the bins
-            describe, relative to the animal. With the default
+            describe, relative to the animal. A sample with a NaN
+            coordinate is missing and treated as a deleted row (see Missing
+            data in the class Notes). With the default
             ``time_allocation='start'``, an interval adds occupancy only when
-            both of its samples are inside the environment: one that starts or
-            ends outside, or at a sample with a NaN coordinate (missing; see
-            Missing data in the class Notes), adds none. This is the rule
+            both of its valid samples are inside the environment: one that
+            starts or ends outside adds none. This is the rule
             ``compute_spatial_rate`` applies to its spike counts and occupancy.
-            With ``time_allocation='linear'`` an interval with a NaN at either
-            end adds none, and an interval with an end outside the environment
-            adds only the time its straight path spends inside.
+            With ``time_allocation='linear'`` an interval with an end outside
+            the environment adds only the time its straight path spends inside.
         speed : NDArray[np.float64], shape (n_samples,), optional
             Instantaneous speed at each sample. If provided with min_speed,
             samples below threshold are excluded from occupancy calculation.

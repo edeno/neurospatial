@@ -33,7 +33,7 @@ def scene(env):
     fields = rng.random((len(CLOCK), env.n_bins))
     fields[5:7] = np.nan  # a recording gap
     walk = 2 + 6 * rng.random((len(CLOCK), 2))
-    walk[4] = np.nan  # a tracking dropout
+    walk[4] = np.nan  # a tracking dropout, longer than max_gap below
     video = VideoOverlay(
         rng.integers(0, 255, (6, 4, 4, 3), dtype=np.uint8),
         times=CLOCK[3:9],
@@ -42,10 +42,11 @@ def scene(env):
     )
     overlays = [
         video,
-        PositionOverlay(walk, CLOCK, trail_length=4),
+        PositionOverlay(walk, CLOCK, trail_length=4, max_gap=0.15),
         BodypartOverlay(
             {"nose": walk, "tail": walk + 0.5},
             CLOCK,
+            max_gap=0.15,
             skeleton=Skeleton(
                 name="m", nodes=("nose", "tail"), edges=(("nose", "tail"),)
             ),

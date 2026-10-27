@@ -255,11 +255,12 @@ def resample_by_distance(
     ``source_right``, ``weights``) let you recover time, speed or spikes at
     each sample.
 
-    Runs are separated wherever an interval is not usable: a missing sample, a
-    gap longer than ``max_gap``, an interval outside ``epochs``, or a declared
-    break. Each run is resampled on its own, starting from 0 at its first
-    sample; nothing is placed or interpolated across a break, and isolated
-    samples produce no output.
+    Missing samples (non-finite coordinates) are skipped as if their rows
+    were deleted. Runs are separated wherever the gap between consecutive
+    valid samples is not usable: longer than ``max_gap``, outside ``epochs``,
+    or across a declared break. Each run is resampled on its own, starting
+    from 0 at its first sample; nothing is placed or interpolated across a
+    break, and isolated samples produce no output.
 
     Parameters
     ----------
@@ -376,8 +377,9 @@ def resample_by_distance(
     weight_parts = [np.empty(0)]
     ends = [np.empty(0, dtype=bool)]
     run_ids = [np.empty(0, dtype=np.intp)]
-    for run, (first, last) in enumerate(support.run_sample_bounds):
-        run_cumulative = cumulative[first : last + 1] - cumulative[first]
+    # Missing samples inside a run are skipped, as if their rows were deleted.
+    for run, samples in enumerate(support.run_samples()):
+        run_cumulative = cumulative[samples] - cumulative[samples[0]]
         run_end = run_cumulative[-1]
         n_grid = int(np.floor((run_end + tol) / spacing))
         targets = np.minimum(spacing * np.arange(n_grid + 1), run_end)
@@ -390,13 +392,13 @@ def resample_by_distance(
         end = np.zeros(targets.size, dtype=bool)
         if include_endpoint and run_end - spacing * n_grid > tol:
             targets = np.r_[targets, run_end]
-            left = np.r_[left, last - first]
-            right = np.r_[right, last - first]
+            left = np.r_[left, samples.size - 1]
+            right = np.r_[right, samples.size - 1]
             weights = np.r_[weights, 0.0]
             end = np.r_[end, True]
         distances.append(targets)
-        lefts.append(first + left)
-        rights.append(first + right)
+        lefts.append(samples[left])
+        rights.append(samples[right])
         weight_parts.append(weights)
         ends.append(end)
         run_ids.append(np.full(targets.size, run, dtype=np.intp))

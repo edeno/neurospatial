@@ -47,7 +47,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals, intervals_contain, validate_max_gap
+from neurospatial._intervals import (
+    as_intervals,
+    hold_last_valid,
+    intervals_contain,
+    validate_max_gap,
+)
 from neurospatial._observation import (
     _validated_signal_times,
     label_codes,
@@ -412,7 +417,8 @@ class LabelEpochsResult(
         Index into ``labels`` of each interval, or -1 when the interval was
         not retained (unsupported or missing label).
     interval_supported : NDArray[np.bool_], shape (max(n_samples - 1, 0),)
-        True where both end samples are valid, the gap passes ``max_gap``, the
+        True where the gap between the valid samples around the interval
+        passes ``max_gap``, the
         interval lies inside one ``epochs`` row, and no break is declared.
     unsupported_labels : tuple of hashable
         Labels that start an interval but have no supported interval, in
@@ -519,7 +525,8 @@ class LabelEpochsResult(
         >>> from neurospatial.behavior import labels_to_epochs
         >>> times = np.arange(5) * 0.25
         >>> valid = np.array([True, True, True, False, True])
-        >>> conditions = labels_to_epochs(times, ["a", "a", "b", "c", "c"], valid=valid)
+        >>> labels = ["a", "a", "b", "c", "c"]
+        >>> conditions = labels_to_epochs(times, labels, valid=valid, max_gap=0.3)
         >>> len(conditions)
         1
         >>> conditions.unsupported_labels
@@ -693,10 +700,13 @@ def labels_to_epochs(
     together with the original ``times``, ``positions`` and ``spike_times``.
 
     Interval ``k`` is ``[times[k], times[k + 1])`` and carries the label of
-    its start sample, ``labels[k]``. It is kept when both end samples are
-    valid, the gap passes ``max_gap``, it lies inside one ``epochs`` row, no
-    break is declared before sample ``k + 1``, and its label is not missing.
-    Consecutive kept intervals with the same label form one epoch.
+    its start sample, ``labels[k]``. An unobserved sample (``valid`` False)
+    is skipped as if its row were deleted: an interval inside the gap
+    between two observed samples carries the label of the observed sample
+    that starts the gap. An interval is kept when its gap passes
+    ``max_gap``, lies inside one ``epochs`` row and contains no declared
+    break, and its label is not missing. Consecutive kept intervals with the
+    same label form one epoch.
 
     Parameters
     ----------
@@ -746,10 +756,10 @@ def labels_to_epochs(
     -----
     Time is allocated to the label at the start of each interval, so the
     final sample adds no time and a label held by a single sample before a
-    change contributes one interval. The same label after an invalid sample,
-    a gap longer than ``max_gap``, a declared break, an excluded window or a
-    different label starts a new epoch; no duration is inferred across any of
-    them. A label that starts intervals but has none kept is listed in
+    change contributes one interval. The same label after a gap longer than
+    ``max_gap`` (counting unobserved samples as missing rows), a declared
+    break, an excluded window or a different label starts a new epoch; no
+    duration is inferred across any of them. A label that starts intervals but has none kept is listed in
     ``unsupported_labels`` rather than returned with an empty window set.
 
     Labels here are disjoint by construction: each interval has one label.
@@ -765,11 +775,13 @@ def labels_to_epochs(
     >>> times = np.arange(10) / 10
     >>> labels = np.array(["out"] * 5 + ["in"] * 5)
     >>> valid = np.ones(10, dtype=bool)
-    >>> valid[7] = False  # tracking lost at 0.7 s
+    >>> valid[7] = False  # tracking lost at 0.7 s for one frame: bridged
     >>> conditions = labels_to_epochs(times, labels, valid=valid)
     >>> list(conditions)
     ['out', 'in']
     >>> conditions["in"]
+    array([[0.5, 0.9]])
+    >>> labels_to_epochs(times, labels, valid=valid, max_gap=0.15)["in"]
     array([[0.5, 0.6],
            [0.8, 0.9]])
 
@@ -800,7 +812,9 @@ def labels_to_epochs(
     breaks = validate_break_before(break_before, n_samples, call=call)
     windows = as_intervals(epochs, name="epochs")
 
-    codes, values = label_codes(label_array[:-1], missing_label)
+    sample_codes, values = label_codes(label_array[:-1], missing_label)
+    # An interval inside a bridged gap carries the label of the gap's start.
+    codes = hold_last_valid(sample_codes, sample_valid[:-1], fill=-1)
 
     support = resolve_sample_support(
         t,
@@ -821,7 +835,7 @@ def labels_to_epochs(
     retained = support.interval_mask & (codes >= 0)
     interval_labels = np.where(retained, remap[codes], -1).astype(np.intp)
     occurs = np.zeros(len(values), dtype=bool)
-    occurs[codes[codes >= 0]] = True
+    occurs[sample_codes[sample_codes >= 0]] = True
     unsupported = np.flatnonzero(occurs & (remap[:-1] < 0))
 
     return LabelEpochsResult(

@@ -62,6 +62,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    hold_last_valid,
     interval_valid_mask,
     resolve_time_windows,
     run_time_bounds,
@@ -4331,6 +4332,7 @@ def _object_vector_significance(
     from neurospatial.encoding._egocentric_counts import (
         _create_egocentric_environment,
         object_frame_bins,
+        observed_frames,
         resolve_object_positions,
     )
     from neurospatial.encoding._significance import (
@@ -4425,6 +4427,7 @@ def _object_vector_significance(
         metric=metric,
         env=env,
     )
+    tracked = observed_frames(positions, headings, object_positions)
     mask = interval_valid_mask(
         times,
         start_bin=frame_bins,
@@ -4432,11 +4435,15 @@ def _object_vector_significance(
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
         break_before=options["break_before"],
+        sample_valid=tracked,
     )
     windows = run_time_bounds(times, mask)
     _warn_if_directions_unsampled(
         start_allocated_occupancy(
-            frame_bins, np.diff(times), mask, n_distance_bins * n_direction_bins
+            hold_last_valid(frame_bins, tracked, fill=-1),
+            np.diff(times),
+            mask,
+            n_distance_bins * n_direction_bins,
         ),
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,

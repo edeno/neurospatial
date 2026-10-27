@@ -604,10 +604,12 @@ def _count_boundary_events(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], float, TimeSupport]:
     """Spike counts and boundary occupancy summed over every ray.
 
-    An interval counts when its start sample was observed and it passes the
+    An unobserved sample is skipped as if its row were deleted: an interval
+    counts when the gap between the observed samples around it passes the
     gap, window and declared-break checks; it then adds its duration, and each
-    of its spikes one count, to the bin of every ray of its start sample that
-    met a wall in range. Spikes and occupancy use the same intervals.
+    of its spikes one count, to the bin of every ray of the observed sample
+    that starts the gap and met a wall in range. Spikes and occupancy use the
+    same intervals.
 
     Returns
     -------
@@ -619,7 +621,7 @@ def _count_boundary_events(
     support : TimeSupport
         The retained intervals, for the result's analysis settings.
     """
-    from neurospatial._intervals import warn_excluded_intervals
+    from neurospatial._intervals import hold_last_valid, warn_excluded_intervals
     from neurospatial.encoding._egocentric_counts import BEYOND_RANGE
     from neurospatial.encoding._spatial_counts import prepare_frame_binning
 
@@ -631,7 +633,9 @@ def _count_boundary_events(
         epochs=epochs,
         break_before=break_before,
         spike_window=spike_window,
+        sample_valid=observed,
     )
+    frame_bins = hold_last_valid(frame_bins, observed, fill=-1)
     support = prepared.support
     mask = support.mask
     warn_excluded_intervals(

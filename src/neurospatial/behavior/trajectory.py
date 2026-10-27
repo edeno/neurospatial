@@ -28,6 +28,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     as_intervals,
+    gap_endpoints,
     observed_interval_mask,
     validate_max_gap,
 )
@@ -676,30 +677,23 @@ def heading_from_body_orientation(
                 ),
             )
         )
-    gates = observed_interval_mask(
+    observed &= _mask_in_intervals(
+        t, as_intervals(epochs, name="epochs"), closed="left"
+    )
+    # A missing frame is filled when it lies in a bridged gap between two
+    # observed frames, the same rule every analysis applies to missing samples.
+    bridged = observed_interval_mask(
         t,
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
+        sample_valid=observed,
         result="no missing frame is filled",
-    )
-    observed &= _mask_in_intervals(
-        t, as_intervals(epochs, name="epochs"), closed="left"
     )
     heading = np.full(t.size, np.nan)
     heading[observed] = np.arctan2(dy[observed], dx[observed])
-
-    # Fill a frame only between two observed frames joined by usable intervals.
-    index = np.arange(t.size)
-    previous = np.maximum.accumulate(np.where(observed, index, -1))
-    following = np.minimum.accumulate(np.where(observed, index, t.size)[::-1])[::-1]
-    fill = ~observed & (previous >= 0) & (following < t.size)
-    a, b = previous[fill], following[fill]
-    n_failed = np.r_[0, np.cumsum(~gates)]
-    bridged = n_failed[b] == n_failed[a]
-    if max_gap is not None:
-        bridged &= t[b] - t[a] <= max_gap
-    fill[fill] = bridged
+    fill = np.zeros(t.size, dtype=bool)
+    fill[:-1] = ~observed[:-1] & bridged
     return _interpolate_heading_circular(t, heading, fill)
 
 
@@ -882,20 +876,30 @@ def _planar_turns(
     epochs: Any,
     break_before: ArrayLike | None,
 ) -> tuple[
-    NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_]
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.bool_],
+    NDArray[np.float64],
 ]:
     """Incoming and outgoing displacement at each sample of a planar path.
+
+    Missing samples are skipped as if deleted: the neighbours of a valid
+    sample are the valid samples before and after it, across bridged gaps.
 
     Returns
     -------
     times : NDArray[np.float64], shape (n_samples,)
         Validated sample times in seconds.
     a, b : NDArray[np.float64], shape (n_samples, 2)
-        ``positions[i] - positions[i - 1]`` and ``positions[i + 1] - positions[i]``;
-        NaN rows where ``supported`` is False.
+        ``positions[i] - positions[h]`` and ``positions[j] - positions[i]``,
+        where ``h`` and ``j`` are the previous and next valid samples; NaN
+        rows where ``supported`` is False.
     supported : NDArray[np.bool_], shape (n_samples,)
-        True at interior samples whose two neighbouring intervals are both
-        usable and whose two displacements are both nonzero.
+        True at valid samples whose two neighbouring gaps are both usable and
+        whose two displacements are both nonzero.
+    span : NDArray[np.float64], shape (n_samples,)
+        ``times[j] - times[h]``; NaN where ``supported`` is False.
     """
     # Validate first so a swapped (positions, times) call gets that message.
     t, p, support = validated_observations(
@@ -925,16 +929,25 @@ def _planar_turns(
     n_samples = t.size
     a = np.full((n_samples, 2), np.nan)
     b = np.full((n_samples, 2), np.nan)
+    span = np.full(n_samples, np.nan)
     supported = np.zeros(n_samples, dtype=bool)
     if n_samples >= 3:
+        start, end, _ = gap_endpoints(support.sample_valid)
+        previous, following = start[:-1], end[1:]
         with np.errstate(invalid="ignore"):  # inf - inf on missing rows
-            a[1:-1] = p[1:-1] - p[:-2]
-            b[1:-1] = p[2:] - p[1:-1]
-        supported[1:-1] = support.interval_mask[:-1] & support.interval_mask[1:]
+            a[1:-1] = p[1:-1] - p[previous]
+            b[1:-1] = p[following] - p[1:-1]
+        span[1:-1] = t[following] - t[previous]
+        supported[1:-1] = (
+            support.sample_valid[1:-1]
+            & support.interval_mask[:-1]
+            & support.interval_mask[1:]
+        )
         supported &= np.any(a != 0, axis=1) & np.any(b != 0, axis=1)
     a[~supported] = np.nan
     b[~supported] = np.nan
-    return t, a, b, supported
+    span[~supported] = np.nan
+    return t, a, b, supported, span
 
 
 def _cross_2d(a: NDArray[np.float64], b: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -1051,7 +1064,7 @@ def compute_planar_turn_angles(
     >>> bool(np.allclose(turns[1:-1], 0.8 / 30))
     True
     """
-    _, a, b, _ = _planar_turns(
+    _, a, b, _, _ = _planar_turns(
         times,
         positions,
         call="compute_planar_turn_angles",
@@ -1173,7 +1186,7 @@ def compute_planar_curvature(
     >>> bool(np.allclose(reversed_path[1:-1], -1 / 7))
     True
     """
-    _, a, b, _ = _planar_turns(
+    _, a, b, _, _ = _planar_turns(
         times,
         positions,
         call="compute_planar_curvature",
@@ -1293,7 +1306,7 @@ def compute_movement_angular_velocity(
     >>> bool(np.allclose(clockwise[1:-1], -0.8))
     True
     """
-    t, a, b, _ = _planar_turns(
+    _, a, b, _, span = _planar_turns(
         times,
         positions,
         call="compute_movement_angular_velocity",
@@ -1302,9 +1315,7 @@ def compute_movement_angular_velocity(
         break_before=break_before,
     )
     angles = _signed_turns(a, b)
-    elapsed = np.full(t.size, np.nan)
-    elapsed[1:-1] = (t[2:] - t[:-2]) / 2
-    omega: NDArray[np.float64] = angles / elapsed
+    omega: NDArray[np.float64] = angles / (span / 2)
     return omega
 
 
@@ -1487,15 +1498,19 @@ def _observed_cumulative(
     Returns
     -------
     steps : NDArray[np.float64], shape (n_samples - 1,)
-        Interval lengths; NaN on unusable intervals.
+        Interval lengths; NaN on unusable intervals. A bridged gap's straight
+        displacement is the length of its last interval (the one ending at
+        the next valid sample); its other intervals are NaN.
     cumulative : NDArray[np.float64], shape (n_samples,)
         Distance accumulated over usable intervals only, so it is flat across
         every break. Defined for every sample, including those outside runs.
     """
+    start, end, _ = gap_endpoints(support.sample_valid)
     with np.errstate(invalid="ignore"):  # inf - inf on consecutive missing rows
-        raw = compute_step_lengths(positions, metric="euclidean")
-    steps = np.where(support.interval_mask, raw, np.nan)
-    cumulative = np.r_[0.0, np.cumsum(np.where(support.interval_mask, raw, 0.0))]
+        raw = np.linalg.norm(positions[end] - positions[start], axis=1)
+    counted = support.interval_mask & support.sample_valid[1:]
+    steps = np.where(counted, raw, np.nan)
+    cumulative = np.r_[0.0, np.cumsum(np.where(counted, raw, 0.0))]
     return steps, cumulative
 
 
@@ -1510,11 +1525,12 @@ def compute_cumulative_distance(
     """
     Compute observed distance travelled, never crossing a recording break.
 
-    Distance is added only over usable intervals: both samples have finite
-    coordinates, the time between them is at most ``max_gap``, they fall inside
-    one of ``epochs``, and no break is declared between them. A missing sample
-    or a break therefore splits the path into runs instead of adding the jump
-    across it or turning the total into NaN.
+    Distance is added between consecutive valid samples (finite
+    coordinates) when the time between them is at most ``max_gap``, they fall
+    inside one of ``epochs``, and no break is declared between them; missing
+    samples in between are skipped as if their rows were deleted. A longer
+    gap or a break therefore splits the path into runs instead of adding the
+    jump across it or turning the total into NaN.
 
     Parameters
     ----------
@@ -1613,16 +1629,27 @@ def compute_cumulative_distance(
 
 
 def _sample_dwell_times(
-    times: NDArray[np.float64], interval_mask: NDArray[np.bool_]
+    times: NDArray[np.float64],
+    interval_mask: NDArray[np.bool_],
+    sample_valid: NDArray[np.bool_],
 ) -> NDArray[np.float64]:
-    """Sample dwell from valid intervals, padding each run's final sample."""
-    from neurospatial._intervals import run_sample_bounds
+    """Sample dwell from valid intervals, padding each run's final sample.
+
+    A bridged gap's time goes to the valid sample that starts it, and each
+    run's last sample receives the median gap of the run, as if the missing
+    rows were deleted.
+    """
+    from neurospatial._intervals import hold_last_valid, run_sample_bounds
 
     dt = np.diff(times)
-    weights: NDArray[np.float64] = np.zeros(len(times), dtype=np.float64)
-    weights[:-1] = np.where(interval_mask, dt, 0.0)
+    held = hold_last_valid(np.arange(len(times)), sample_valid, fill=-1)[:-1]
+    used = interval_mask & (held >= 0)
+    weights: NDArray[np.float64] = np.bincount(
+        held[used], weights=dt[used], minlength=len(times)
+    ).astype(np.float64)
     for first, last in run_sample_bounds(interval_mask):
-        weights[last] = np.median(dt[first:last])
+        valid_times = times[first : last + 1][sample_valid[first : last + 1]]
+        weights[last] = np.median(np.diff(valid_times))
     return weights
 
 
@@ -1685,7 +1712,9 @@ def compute_home_range(
     not crossing a ``break_before``) is analyzed as a separate recording;
     no velocity or heading spans a pause.
 
-    When ``times`` is given, dwell comes only from valid intervals. Each
+    When ``times`` is given, dwell comes only from valid intervals. A sample
+    outside the environment (bin ``-1``) is missing, like a deleted row: a
+    bridged gap's time goes to the located sample before it. Each
     run's last sample receives that run's median interval duration; samples
     in no run receive zero dwell. Bins with zero observed dwell are omitted.
     No observed dwell gives an empty home
@@ -1775,11 +1804,17 @@ def compute_home_range(
             break_before, len(times), call="compute_home_range"
         )
         interval_mask = observed_interval_mask(
-            times, max_gap=max_gap, epochs=epochs, break_before=breaks
+            times,
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=breaks,
+            sample_valid=in_environment,
         )
         if len(position_bins) == 0:
             return np.array([], dtype=np.intp)
-        sample_weights = _sample_dwell_times(times, interval_mask)[in_environment]
+        sample_weights = _sample_dwell_times(times, interval_mask, in_environment)[
+            in_environment
+        ]
         # Sum dwell time per bin.
         unique_bins, inverse = np.unique(
             position_bins[in_environment], return_inverse=True
@@ -2204,14 +2239,23 @@ def compute_trajectory_curvature(
     >>> np.round(turns, 4).tolist()
     [0.0, 0.0, 1.5708, 0.0]
 
-    A missing row (lost tracking) is NaN and splits the path into two runs;
-    the turn is not computed across it:
+    A missing row (lost tracking) is NaN and is skipped as if deleted, so
+    the turns around it span the bridged gap:
 
     >>> times = np.arange(7) * 0.1
     >>> positions = np.array(
     ...     [[0.0, 0], [1, 0], [2, 0], [2, 1], [np.nan, np.nan], [3, 1], [3, 2]]
     ... )
     >>> turns = compute_trajectory_curvature(times, positions, smooth_window=None)
+    >>> np.round(turns, 4).tolist()
+    [0.0, 0.0, 1.5708, -1.5708, nan, 1.5708, 0.0]
+
+    A gap longer than ``max_gap`` splits the path into two runs, and no turn
+    is computed across it:
+
+    >>> turns = compute_trajectory_curvature(
+    ...     times, positions, smooth_window=None, max_gap=0.15
+    ... )
     >>> np.round(turns, 4).tolist()
     [0.0, 0.0, 1.5708, 0.0, nan, 0.0, 0.0]
 
@@ -2243,8 +2287,7 @@ def compute_trajectory_curvature(
         result="every curvature value is NaN",
     )
     curvature: NDArray[np.float64] = np.full(t.size, np.nan)
-    for first, last in support.run_sample_bounds:
-        run = slice(first, last + 1)
+    for run in support.run_samples():
         curvature[run] = _compute_trajectory_curvature_contiguous(
             p[run], t[run], smooth_window=smooth_window
         )

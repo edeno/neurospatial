@@ -169,11 +169,24 @@ def test_no_extrapolation_past_recording_edges():
     np.testing.assert_array_equal(values[2:], [0.0, 3.0])
 
 
-def test_invalid_sample_blocks_its_intervals_and_instant():
+def test_invalid_sample_is_bridged_like_a_deleted_row():
     x = TWO_RUNS.copy()
     x[3] = np.nan  # t = 0.375
     queries = [0.26, 0.3, 0.375, 0.45, 0.49, 0.25, 0.5]
     values, support = _sample(TWO_RUNS, x, queries)
+    kept = np.delete(np.arange(TWO_RUNS.size), 3)
+    deleted, deleted_support = _sample(TWO_RUNS[kept], x[kept], queries)
+    assert support.all()
+    np.testing.assert_array_equal(support, deleted_support)
+    np.testing.assert_allclose(values, deleted)
+    np.testing.assert_allclose(values, queries)  # the line x = t, interpolated
+
+
+def test_invalid_sample_beyond_max_gap_blocks_its_intervals_and_instant():
+    x = TWO_RUNS.copy()
+    x[3] = np.nan  # t = 0.375
+    queries = [0.26, 0.3, 0.375, 0.45, 0.49, 0.25, 0.5]
+    values, support = _sample(TWO_RUNS, x, queries, max_gap=0.2)
     np.testing.assert_array_equal(
         support, [False, False, False, False, False, True, True]
     )
@@ -184,7 +197,7 @@ def test_invalid_sample_blocks_its_intervals_and_instant():
 def test_infinite_sample_is_missing():
     x = TWO_RUNS.copy()
     x[3] = np.inf
-    values, support = _sample(TWO_RUNS, x, [0.3, 0.375])
+    values, support = _sample(TWO_RUNS, x, [0.3, 0.375], max_gap=0.2)
     assert not support.any()
     assert np.isnan(values).all()
 

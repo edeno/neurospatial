@@ -31,6 +31,9 @@ from numpy.typing import NDArray
 
 from neurospatial._intervals import (
     TimeSupport,
+    fill_missing_positions,
+    gap_endpoints,
+    hold_last_valid,
     interval_valid_mask,
     resolve_time_windows,
     run_time_bounds,
@@ -151,6 +154,7 @@ def prepare_linear_spatial_intervals(
             epochs=resolved_epochs,
             spike_window=resolved_spike_window,
             break_before=break_before,
+            sample_valid=np.asarray(np.isfinite(positions).all(axis=1), dtype=bool),
         )
     else:
         mask = np.array(interval_mask, dtype=bool, copy=True)
@@ -158,6 +162,8 @@ def prepare_linear_spatial_intervals(
             raise ValueError(
                 "interval_mask must contain one value per observation interval."
             )
+    # A bridged gap is one straight segment between its valid samples.
+    positions = fill_missing_positions(times, positions, time_allocation="linear")
     finite = np.all(np.isfinite(positions), axis=1)
     mask &= finite[:-1] & finite[1:] & (np.diff(times) > 0)
     pieces, occupancy = _polygon_linear_occupancy(
@@ -307,7 +313,11 @@ def resolve_speed(
         # consistently excludes the (non-existent) intervals on both sides.
         return np.zeros(len(times), dtype=np.float64)
     mask = interval_valid_mask(
-        times, max_gap=max_gap, epochs=None, break_before=break_before
+        times,
+        max_gap=max_gap,
+        epochs=None,
+        break_before=break_before,
+        sample_valid=np.asarray(np.isfinite(positions).all(axis=1), dtype=bool),
     )
     return smoothed_speed(times, positions, mask, smooth_window=DEFAULT_SPEED_SMOOTHING)
 
@@ -442,7 +452,8 @@ def _bin_spike_train_with_stats(
         n_after_time = len(spike_times_valid)
         if n_after_time == 0:
             return spike_counts, n_time_dropped, 0, n_total, 0
-        spike_bins = env.bin_at(positions[spike_interval])
+        held = fill_missing_positions(times, positions, time_allocation="start")
+        spike_bins = env.bin_at(held[spike_interval])
     else:
         runs = linear_intervals.support.runs
         if len(runs) == 0:
@@ -458,9 +469,12 @@ def _bin_spike_train_with_stats(
         # straight segment between its samples, so spikes take the bin of
         # their interpolated position.
         n_dims = positions.shape[1]
+        observed = np.isfinite(positions).all(axis=1)
         spike_positions = np.empty((n_after_time, n_dims), dtype=np.float64)
         for d in range(n_dims):
-            spike_positions[:, d] = np.interp(spike_times_valid, times, positions[:, d])
+            spike_positions[:, d] = np.interp(
+                spike_times_valid, times[observed], positions[observed, d]
+            )
         spike_bins = env.bin_at(spike_positions)
 
     valid_bins = spike_bins[spike_bins >= 0]
@@ -542,13 +556,18 @@ def prepare_frame_binning(
     interval_mask: NDArray[np.bool_] | None = None,
     break_before: NDArray[np.bool_] | None = None,
     samples: Literal["positions", "headings"] = "positions",
+    sample_valid: NDArray[np.bool_] | None = None,
 ) -> FrameBinning:
     """Resolve frame support once for counting and result provenance.
 
     A supplied ``interval_mask`` already includes temporal and bin validity
-    (including ``break_before``); geometry consumers can share that gate
-    without evaluating windows again. ``break_before`` is already validated.
-    ``samples`` names what ``frame_bins`` bins, for the empty-support warning.
+    (including ``break_before`` and ``sample_valid``); geometry consumers can
+    share that gate without evaluating windows again. ``break_before`` is
+    already validated. ``samples`` names what ``frame_bins`` bins, for the
+    empty-support warning. ``sample_valid`` (False at missing samples, such
+    as NaN coordinates or headings) bridges missing samples like deleted
+    rows: each missing frame holds the bin of the last valid frame, so a
+    bridged gap's time and spikes go to the bin where it started.
     """
     if interval_mask is None:
         mask = interval_valid_mask(
@@ -558,6 +577,7 @@ def prepare_frame_binning(
             epochs=epochs,
             spike_window=spike_window,
             break_before=break_before,
+            sample_valid=sample_valid,
         )
     else:
         # Geometry consumers may already have resolved the shared gate.
@@ -570,7 +590,8 @@ def prepare_frame_binning(
         max_gap=max_gap,
         break_before=break_before,
     )
-    return FrameBinning(times, frame_bins, n_bins, support, break_before, samples)
+    held = hold_last_valid(frame_bins, sample_valid, fill=-1)
+    return FrameBinning(times, held, n_bins, support, break_before, samples)
 
 
 def count_frames_and_occupancy(
@@ -682,6 +703,7 @@ def _spatial_interval_mask(
     from neurospatial._intervals import interval_valid_mask
 
     sample_bins = env.bin_at(positions)
+    valid = np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
     mask = interval_valid_mask(
         times,
         positions,
@@ -693,12 +715,15 @@ def _spatial_interval_mask(
         epochs=epochs,
         spike_window=spike_window,
         break_before=break_before,
+        sample_valid=valid,
     )
-    # Complete-case rule: an interval counts only when both of its samples are
-    # tracked inside the environment. One whose end sample is a dropout (NaN)
-    # or outside is left out of the spike counts and the occupancy alike,
-    # rather than imputing where the animal was.
-    return mask & (sample_bins[1:] >= 0)
+    # A missing (NaN) sample is bridged like a deleted row: the gap runs
+    # between the valid samples on either side. Complete-case rule: a gap
+    # counts only when both of those samples are inside the environment; one
+    # that ends outside is left out of the spike counts and the occupancy
+    # alike, rather than imputing where the animal was.
+    _, end, _ = gap_endpoints(valid)
+    return mask & (sample_bins[end] >= 0)
 
 
 def _resolve_spatial_time_support(
@@ -1286,7 +1311,7 @@ def compute_occupancy(
             spike_window=resolved_spike_window,
         )
     return start_allocated_occupancy(
-        env.bin_at(positions),
+        env.bin_at(fill_missing_positions(times, positions, time_allocation="start")),
         np.diff(times),
         interval_mask,
         env.n_bins,

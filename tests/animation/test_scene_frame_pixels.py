@@ -92,8 +92,9 @@ def recording():
 def test_position_marker_follows_the_recording_and_hides_when_missing(env, recording):
     positions = recording.copy()
     positions[2] = np.nan
+    # Below two frames, so the dropout is a tracking loss, not bridged.
     overlay = PositionOverlay(
-        positions, TIMES, color="red", size=12.0, interp="nearest"
+        positions, TIMES, color="red", size=12.0, interp="nearest", max_gap=0.15
     )
     with Animation(env, dark(env), overlays=[overlay]) as scene:
         _, at = render(scene, 0.1)

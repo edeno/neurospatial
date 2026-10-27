@@ -1429,10 +1429,10 @@ class TestEgocentricRateConvention:
 
 
 class TestEgocentricRateNaNHandling:
-    """NaN positions/headings are missing samples: dropped, not errors."""
+    """NaN positions/headings are missing samples, treated as deleted rows."""
 
     @pytest.mark.parametrize("nan_field", ["positions", "headings"])
-    def test_nan_samples_drop_exactly_their_intervals(
+    def test_nan_samples_equal_deleted_rows(
         self, ou_2min, ou_2min_env, noise_trains, nan_field
     ):
         from neurospatial.encoding.egocentric import compute_egocentric_rate
@@ -1454,9 +1454,18 @@ class TestEgocentricRateNaNHandling:
             obj,
             **settings,
         )
-        kept = np.ones(len(times) - 1, dtype=bool)
-        kept[drop[drop < len(times) - 1]] = False
-        assert np.sum(result.occupancy) == pytest.approx(np.diff(times)[kept].sum())
+        kept = np.setdiff1d(np.arange(len(times)), drop)
+        deleted = compute_egocentric_rate(
+            ou_2min_env,
+            spikes,
+            times[kept],
+            positions[kept],
+            headings[kept],
+            obj,
+            **settings,
+        )
+        np.testing.assert_allclose(result.occupancy, deleted.occupancy)
+        np.testing.assert_allclose(result.firing_rate, deleted.firing_rate)
         assert np.isfinite(np.nanmax(result.firing_rate))
 
 

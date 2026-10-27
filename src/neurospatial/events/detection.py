@@ -97,10 +97,13 @@ def add_positions(
     not crossing a ``break_before``) is analyzed as a separate recording;
     no velocity or heading spans a pause.
 
-    Positions are available only within each run's closed sample span
-    ``[times[first], times[last]]``. Events exactly at either endpoint get
-    that observed sample's position. Events strictly inside a pause, at
-    isolated samples or outside all observed spans have NaN coordinates.
+    Missing positions (NaN rows) are skipped as if their rows were deleted,
+    so an event in a bridged gap is interpolated between the valid samples
+    on either side. Positions are available only within each run's closed
+    sample span ``[times[first], times[last]]``. Events exactly at either
+    endpoint get that observed sample's position. Events strictly inside a
+    pause, at isolated samples or outside all observed spans have NaN
+    coordinates.
     Positions are never extrapolated outside the tracked span.
 
     This function only adds coordinate columns (x, y, z). It does not add
@@ -242,25 +245,25 @@ def add_positions(
         recording = recording_index(breaks)[sort_idx]
         sorted_breaks = np.r_[False, recording[1:] != recording[:-1]]
 
-    # Interpolate positions at event times
-    # Preserve linear interpolation only inside the tracked span.
-    from scipy.interpolate import interp1d
-
-    interpolated = np.empty((len(event_times), n_dims), dtype=np.float64)
-    for dim in range(n_dims):
-        interp_func = interp1d(
-            sorted_times,
-            sorted_positions[:, dim],
-            kind="linear",
-            bounds_error=False,
-            fill_value=np.nan,
-        )
-        interpolated[:, dim] = interp_func(event_times)
+    # Interpolate positions at event times between valid samples, skipping
+    # missing (NaN) rows as if deleted; the run bounds below keep it inside
+    # the tracked span.
+    valid = np.asarray(np.isfinite(sorted_positions).all(axis=1), dtype=bool)
+    interpolated = np.full((len(event_times), n_dims), np.nan, dtype=np.float64)
+    if valid.any():
+        for dim in range(n_dims):
+            interpolated[:, dim] = np.interp(
+                event_times, sorted_times[valid], sorted_positions[valid, dim]
+            )
 
     runs = run_time_bounds(
         sorted_times,
         observed_interval_mask(
-            sorted_times, max_gap=max_gap, epochs=epochs, break_before=sorted_breaks
+            sorted_times,
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=sorted_breaks,
+            sample_valid=valid,
         ),
     )
     observed = np.zeros(len(event_times), dtype=bool)

@@ -101,6 +101,7 @@ def _align_true_positions(
     if np.any(np.isinf(true_positions)):
         raise ValueError("true_positions contains Inf; use NaN for missing tracking.")
     from neurospatial._intervals import (
+        gap_endpoints,
         interval_valid_mask,
         validate_max_gap,
         warn_excluded_intervals,
@@ -121,7 +122,12 @@ def _align_true_positions(
         break_before=breaks,
         result="true positions are known only at exact sample times",
     )
-    continuous = finite[:-1] & finite[1:] & gates
+    # A missing true position is bridged like a deleted row: the gap between
+    # the finite samples around it is interpolated when it passes max_gap.
+    continuous = interval_valid_mask(
+        true_times, max_gap=max_gap, break_before=breaks, sample_valid=finite
+    )
+    gap_start, gap_end, _ = gap_endpoints(finite)
     source_runs = np.cumsum(np.r_[False, ~continuous], dtype=np.intp)
     run_ids = np.full(times.size, -1, dtype=np.intp)
     right = np.searchsorted(true_times, times, side="left")
@@ -135,18 +141,17 @@ def _align_true_positions(
     # interval from disappearing when finite observations are selected.
     between = (right > 0) & (right < true_times.size) & ~exact
     query = np.flatnonzero(between)
-    upper = right[query]
-    lower = upper - 1
-    widths = true_times[upper] - true_times[lower]
-    observed = continuous[lower]
-    query, lower, upper, widths = (
-        values[observed] for values in (query, lower, upper, widths)
+    interval = right[query] - 1
+    observed = continuous[interval]
+    query, interval = query[observed], interval[observed]
+    lower, upper = gap_start[interval], gap_end[interval]
+    fraction = (times[query] - true_times[lower]) / (
+        true_times[upper] - true_times[lower]
     )
-    fraction = (times[query] - true_times[lower]) / widths
     aligned[query] = true_positions[lower] + fraction[:, None] * (
         true_positions[upper] - true_positions[lower]
     )
-    run_ids[query] = source_runs[lower]
+    run_ids[query] = source_runs[interval]
     return aligned, run_ids
 
 

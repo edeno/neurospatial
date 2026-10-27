@@ -102,11 +102,13 @@ assert [101.0, 105.0] in np.round(conditions["outbound"], 6).tolist()
 
 `labels_to_epochs` turns one label per frame into time windows for each
 label. The time between two frames, `[times[k], times[k + 1])`, gets the label
-of the frame at its start. It is kept only when both frames were tracked
-(`valid`) and they are no more than `max_gap` (0.5 s) apart. Kept stretches
-with the same label join into one epoch; a tracking loss, a long gap or a
-change of label ends it, so the same label after a dropout starts a new
-epoch. The table lists each epoch with its label, start, stop and duration.
+of the frame at its start. An untracked frame (`valid` False) is skipped as if
+its row were deleted, so a time between frames is kept when the tracked
+frames around it are no more than `max_gap` (0.5 s) apart, and carries the
+label of the tracked frame that starts it. Kept stretches with the same label
+join into one epoch; a tracking loss longer than `max_gap` or a change of
+label ends it, so the same label after a long dropout starts a new epoch. The
+table lists each epoch with its label, start, stop and duration.
 
 Here the dropout starts exactly at the beginning of an outbound run
 (t = 100 s), so it shortens that run to 101–105 s instead of splitting it;

@@ -3567,6 +3567,7 @@ def head_direction_cell_significance(
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
         break_before=breaks,
+        sample_valid=np.isfinite(np.asarray(headings, dtype=np.float64)),
     )
     windows = run_time_bounds(times, mask)
 

@@ -260,12 +260,24 @@ def test_polygon_shared_edge_uses_single_bin_owner():
     np.testing.assert_array_equal(result, expected)
 
 
-def test_polygon_nonfinite_observation_drops_both_adjacent_intervals():
+def test_polygon_nonfinite_observation_is_bridged_like_a_deleted_row():
+    env = _one_cell_environment()
+    times = np.arange(0.0, 10.0, 2.0)
+    positions = np.array([[-1, 1], [1, 1], [np.nan, np.nan], [5, 1], [7, 1]])
+    result = env.occupancy(times, positions, max_gap=None, time_allocation="linear")
+    kept = [0, 1, 3, 4]
+    deleted = env.occupancy(
+        times[kept], positions[kept], max_gap=None, time_allocation="linear"
+    )
+    np.testing.assert_allclose(result, deleted, rtol=0, atol=1e-14)
+
+
+def test_polygon_nonfinite_observation_beyond_max_gap_drops_its_gap():
     env = _one_cell_environment()
     result = env.occupancy(
         np.arange(0.0, 10.0, 2.0),
         np.array([[-1, 1], [1, 1], [np.nan, np.nan], [5, 1], [7, 1]]),
-        max_gap=None,
+        max_gap=3.0,
         time_allocation="linear",
     )
     np.testing.assert_allclose(result, [2.0], rtol=0, atol=1e-14)

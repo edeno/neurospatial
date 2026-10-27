@@ -54,6 +54,7 @@ from numpy.typing import NDArray
 from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    hold_last_valid,
     interval_valid_mask,
     start_allocated_occupancy,
 )
@@ -485,6 +486,38 @@ BEYOND_RANGE = -2
 """Frame bin of a sample whose nearest object is beyond the polar range."""
 
 
+def observed_frames(
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
+    object_positions: NDArray[np.float64],
+) -> NDArray[np.bool_]:
+    """True for samples whose position, heading and objects were tracked.
+
+    Any other sample is missing: it is skipped as if its row were deleted,
+    and the gap around it is bridged when it is no longer than ``max_gap``.
+
+    Parameters
+    ----------
+    positions : ndarray, shape (n_time, 2)
+    headings : ndarray, shape (n_time,), or None
+    object_positions : ndarray, shape (n_objects, 2) or (n_time, n_objects, 2)
+
+    Returns
+    -------
+    ndarray of bool, shape (n_time,)
+    """
+    positions = np.asarray(positions, dtype=np.float64)
+    observed = np.asarray(
+        np.isfinite(positions.reshape(len(positions), -1)).all(axis=1), dtype=bool
+    )
+    if headings is not None:
+        observed &= np.isfinite(np.asarray(headings, dtype=np.float64)).ravel()
+    objects = np.asarray(object_positions, dtype=np.float64)
+    if objects.ndim == 3:
+        observed &= np.isfinite(objects).all(axis=(1, 2))
+    return observed
+
+
 def object_frame_bins(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
@@ -705,13 +738,16 @@ def compute_egocentric_occupancy(
         env=env,
     )
 
+    observed = observed_frames(positions, headings, object_positions)
     mask = interval_valid_mask(
         times,
         start_bin=bin_indices,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        sample_valid=observed,
     )
+    bin_indices = hold_last_valid(bin_indices, observed, fill=-1)
     occupancy = start_allocated_occupancy(bin_indices, np.diff(times), mask, n_bins)
     return occupancy, polar_env
 
@@ -869,13 +905,16 @@ def bin_egocentric_spike_train(
         metric=metric,
         env=env,
     )
+    observed = observed_frames(positions, headings, object_positions)
     mask = interval_valid_mask(
         times,
         start_bin=bin_indices,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        sample_valid=observed,
     )
+    bin_indices = hold_last_valid(bin_indices, observed, fill=-1)
     counts = count_spikes_by_frame(spike_times, times, bin_indices, mask, n_bins)
     return counts, polar_env
 
@@ -958,6 +997,7 @@ def prepare_egocentric_binning(
 
     # One temporal gate for the map and for the time its range left out: a
     # sample beyond the range passes the bin check here and is split off below.
+    observed = observed_frames(positions, headings, object_positions)
     gated = interval_valid_mask(
         times,
         start_bin=np.where(frame_bins == BEYOND_RANGE, 0, frame_bins),
@@ -965,8 +1005,9 @@ def prepare_egocentric_binning(
         epochs=epochs,
         spike_window=spike_window,
         break_before=break_before,
+        sample_valid=observed,
     )
-    starts = frame_bins[:-1]
+    starts = hold_last_valid(frame_bins, observed, fill=-1)[:-1]
     time_beyond = float(np.diff(times)[gated & (starts == BEYOND_RANGE)].sum())
     prepared = prepare_frame_binning(
         times,
@@ -977,6 +1018,7 @@ def prepare_egocentric_binning(
         spike_window=spike_window,
         interval_mask=gated & (starts >= 0),
         break_before=break_before,
+        sample_valid=observed,
     )
     return prepared, polar_env, time_beyond
 

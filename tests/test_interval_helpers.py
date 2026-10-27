@@ -249,7 +249,7 @@ def test_break_before_drops_only_the_interval_it_starts():
     mask = interval_valid_mask(times, max_gap=0.5, break_before=breaks)
     np.testing.assert_array_equal(mask, [True, True, False, True, True])
     runs = observed_runs(times, max_gap=0.5, epochs=None, break_before=breaks)
-    assert runs == [slice(0, 3), slice(3, 6)]
+    assert [run.tolist() for run in runs] == [[0, 1, 2], [3, 4, 5]]
 
 
 def test_break_before_matches_an_equivalent_gap():
