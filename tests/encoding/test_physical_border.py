@@ -4,6 +4,7 @@ from functools import partial
 
 import numpy as np
 import pytest
+import shapely
 from shapely.geometry import LineString, Point, box
 
 from neurospatial import Environment
@@ -425,6 +426,33 @@ def test_combined_component_without_walls_is_not_scored_against_other_walls(metr
         auto_bridge=False,
     )
     assert border_score(walled, field, metric=metric) > 0.5
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("start", range(20))
+def test_outline_walls_do_not_depend_on_where_the_ring_starts(start, reverse):
+    from neurospatial.encoding._physical_border import _polygon_rings, _split_walls
+
+    # The retained bins' outline of a 5x5 grid, with a vertex at every cell
+    # edge. Overlay operations may start this outline at any vertex, in
+    # either direction, depending on the platform.
+    vertices = np.asarray(box(10, 0, 15, 5).exterior.segmentize(1.0).coords)[:-1]
+    vertices = np.roll(vertices[::-1] if reverse else vertices, -start, axis=0)
+    rings = [(ring, False) for ring in _polygon_rings(shapely.Polygon(vertices))]
+    walls, closed = _split_walls(
+        rings, [], resolution=np.sqrt(0.5), scale=2.5, tolerance=1e-9
+    )
+    ends = {
+        frozenset(map(tuple, shapely.get_coordinates(shapely.boundary(wall))))
+        for wall in walls
+    }
+    assert ends == {
+        frozenset({(10.0, 0.0), (10.0, 5.0)}),
+        frozenset({(10.0, 5.0), (15.0, 5.0)}),
+        frozenset({(15.0, 5.0), (15.0, 0.0)}),
+        frozenset({(15.0, 0.0), (10.0, 0.0)}),
+    }
+    assert not any(closed)
 
 
 def _room_with_internal_wall(*, outline):

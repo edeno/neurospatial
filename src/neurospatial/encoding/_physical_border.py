@@ -363,8 +363,16 @@ def _pixel_footprints(arena: Arena) -> list[shapely.Geometry]:
 
 
 def _polygon_rings(polygonal: shapely.Geometry) -> list[shapely.LineString]:
-    """Exterior and hole rings of each polygon part, as closed lines."""
-    rings = shapely.get_rings(shapely.get_parts(polygonal))
+    """Exterior and hole rings of each polygon part, as closed lines.
+
+    Each ring starts at its lowest vertex (smallest x, then y) and runs in a
+    fixed direction. Overlay operations start an outline wherever their
+    floating-point path takes them, which differs between platforms; a ring
+    starting in the middle of a side keeps that collinear vertex through
+    simplification, which shortens both neighboring edges and can hide their
+    corners. No straight side passes through the lowest vertex.
+    """
+    rings = shapely.get_rings(shapely.get_parts(shapely.normalize(polygonal)))
     return [shapely.LineString(ring.coords) for ring in rings if ring.length > 0]
 
 
