@@ -663,6 +663,10 @@ def field_shape_metrics(
 
     Notes
     -----
+    **Weights**: each field bin is weighted by its rate times its measure
+    (``env.bin_sizes``), the firing it holds, so a large bin counts more than
+    a small one. On a regular grid the weight is the rate alone.
+
     **Eccentricity**: Computed from eigenvalues of the spatial covariance matrix
     of rate-weighted bin positions:
 
@@ -769,10 +773,10 @@ def field_shape_metrics(
         return result
 
     positions_valid = positions[valid_mask]
-    rates_valid = rates[valid_mask]
-
-    # Normalize rates to use as weights
-    rate_weights = rates_valid / np.sum(rates_valid)
+    # Weight each bin by the firing it holds, rate x measure, so the moments
+    # are those of the continuous field rather than of the bin count.
+    mass = rates[valid_mask] * _relative_measures(env.bin_sizes[field_bins][valid_mask])
+    rate_weights = mass / np.sum(mass)
 
     # Compute rate-weighted centroid
     centroid = np.sum(rate_weights[:, np.newaxis] * positions_valid, axis=0)
