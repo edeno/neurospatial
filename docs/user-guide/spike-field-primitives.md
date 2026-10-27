@@ -104,6 +104,20 @@ Use `method="binned", bandwidth=0.0` for an unsmoothed count/occupancy map.
 With positive bandwidth, `binned` smooths the rate after division; KDE methods
 smooth the numerator and denominator separately.
 
+### Running Only: `min_speed`
+
+By default every sample counts, including time at rest at reward sites and
+track ends. Spikes fired at rest, such as during sharp-wave ripples, then enter
+the map. In a simulated track session where the animal rested 27% of the time
+and the cell fired 3 Hz at rest, spatial information was 0.85-0.94 bits/spike
+without a speed gate and 1.55-1.84 with `min_speed=4.0` (cm/s), and the rest
+firing appeared as extra fields at both track ends. Place maps are usually built
+from running. There is no default threshold because the right one depends on the
+animal and the tracking: plot the speed distribution
+(`neurospatial.behavior.compute_speed`) and choose a value between the resting
+and running modes. The gate removes the same intervals from spikes and
+occupancy, so the rate stays correct.
+
 ## Parameter Order: Environment First
 
 Spatial encoding functions take the **environment first**. Other domains have

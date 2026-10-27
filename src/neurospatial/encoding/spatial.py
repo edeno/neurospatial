@@ -3311,6 +3311,15 @@ default="diffusion_kde"
         magnitude of the 0.1 s Gaussian-smoothed velocity, so tracking jitter
         at rest is not counted as running. Pass ``speed`` for another
         definition, such as speed along a linearized track.
+
+        **Choosing it.** Without a gate, time and spikes at rest (reward
+        sites, track ends) enter the map. On a simulated track where the
+        animal rested 27% of the time and fired 3 Hz at rest, spatial
+        information was 0.85-0.94 bits/spike without a gate and 1.55-1.84
+        with ``min_speed=4`` cm/s, and the rest firing made extra fields at
+        the track ends. No speed suits every recording: place maps are
+        usually built from running, so pick the threshold from your animal's
+        speed distribution, between the resting and running modes.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -3803,6 +3812,15 @@ default="diffusion_kde"
         filtering is applied. Auto-speed is :func:`neurospatial.behavior.compute_speed`, the
         magnitude of the 0.1 s Gaussian-smoothed velocity; pass an explicit
         ``speed`` for geodesic / linearized-track environments.
+
+        **Choosing it.** Without a gate, time and spikes at rest (reward
+        sites, track ends) enter the map. On a simulated track where the
+        animal rested 27% of the time and fired 3 Hz at rest, spatial
+        information was 0.85-0.94 bits/spike without a gate and 1.55-1.84
+        with ``min_speed=4`` cm/s, and the rest firing made extra fields at
+        the track ends. No speed suits every recording: place maps are
+        usually built from running, so pick the threshold from your animal's
+        speed distribution, between the resting and running modes.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -5466,6 +5484,15 @@ def has_place_field(
         magnitude of the 0.1 s Gaussian-smoothed velocity, so tracking jitter
         at rest is not counted as running. Pass ``speed`` for another
         definition, such as speed along a linearized track.
+
+        **Choosing it.** Without a gate, time and spikes at rest (reward
+        sites, track ends) enter the map. On a simulated track where the
+        animal rested 27% of the time and fired 3 Hz at rest, spatial
+        information was 0.85-0.94 bits/spike without a gate and 1.55-1.84
+        with ``min_speed=4`` cm/s, and the rest firing made extra fields at
+        the track ends. No speed suits every recording: place maps are
+        usually built from running, so pick the threshold from your animal's
+        speed distribution, between the resting and running modes.
     backend : {"numpy", "jax", "auto"}, default="numpy"
         Computation backend for rate map smoothing:
 
@@ -5729,6 +5756,15 @@ def is_place_cell(
         magnitude of the 0.1 s Gaussian-smoothed velocity, so tracking jitter
         at rest is not counted as running. Pass ``speed`` for another
         definition, such as speed along a linearized track.
+
+        **Choosing it.** Without a gate, time and spikes at rest (reward
+        sites, track ends) enter the map. On a simulated track where the
+        animal rested 27% of the time and fired 3 Hz at rest, spatial
+        information was 0.85-0.94 bits/spike without a gate and 1.55-1.84
+        with ``min_speed=4`` cm/s, and the rest firing made extra fields at
+        the track ends. No speed suits every recording: place maps are
+        usually built from running, so pick the threshold from your animal's
+        speed distribution, between the resting and running modes.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -6093,6 +6129,15 @@ def place_cell_significance(
         filtering is applied. Auto-speed is :func:`neurospatial.behavior.compute_speed`, the
         magnitude of the 0.1 s Gaussian-smoothed velocity; pass an explicit
         ``speed`` for geodesic / linearized-track environments.
+
+        **Choosing it.** Without a gate, time and spikes at rest (reward
+        sites, track ends) enter the map. On a simulated track where the
+        animal rested 27% of the time and fired 3 Hz at rest, spatial
+        information was 0.85-0.94 bits/spike without a gate and 1.55-1.84
+        with ``min_speed=4`` cm/s, and the rest firing made extra fields at
+        the track ends. No speed suits every recording: place maps are
+        usually built from running, so pick the threshold from your animal's
+        speed distribution, between the resting and running modes.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
