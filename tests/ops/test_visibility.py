@@ -522,6 +522,33 @@ class TestComputeViewedLocation:
                 positions, headings, method="ray_cast", boundary_source="analysis"
             )
 
+    def test_fixed_distance_needs_an_explicit_view_distance(self):
+        """No published distance applies to every species, task and arena."""
+        from neurospatial.ops.visibility import compute_viewed_location
+
+        positions = np.array([[5.0, 5.0]])
+        headings = np.array([0.0])
+
+        with pytest.raises(ValueError, match="needs view_distance"):
+            compute_viewed_location(positions, headings, method="fixed_distance")
+        with pytest.raises(ValueError, match="no meaning with method='ray_cast'"):
+            compute_viewed_location(
+                positions, headings, env=_open_box(20.0, 5.0), view_distance=10.0
+            )
+        with pytest.raises(ValueError, match="positive finite"):
+            compute_viewed_location(
+                positions, headings, method="fixed_distance", view_distance=0.0
+            )
+
+    def test_the_default_gaze_takes_the_first_wall(self):
+        """With no method, the viewed point is the wall, as in compute_view_rate."""
+        from neurospatial.ops.visibility import compute_viewed_location
+
+        viewed = compute_viewed_location(
+            np.array([[5.0, 5.0]]), np.array([0.0]), env=_open_box(20.0, 5.0)
+        )
+        assert_allclose(viewed, [[20.0, 5.0]], atol=1e-9)
+
     @pytest.mark.parametrize("boundary_source", ["physical", "analysis"])
     def test_ray_cast_reaches_a_distant_wall_by_default(self, boundary_source):
         """The default search reaches every wall, even in a 3 m arena."""
@@ -563,6 +590,7 @@ class TestComputeViewedLocation:
                 positions,
                 headings,
                 method=method,
+                view_distance=10.0 if method == "fixed_distance" else None,
                 gaze_offsets=offsets,
                 env=_open_box(20.0, 5.0),
             )

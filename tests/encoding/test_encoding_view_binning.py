@@ -1307,7 +1307,6 @@ class TestGazeModelGeometry:
             positions,
             headings,
             method="ray_cast",
-            view_distance=10.0,
             env=rectangular_env,
             max_distance=150.0,
             boundary_source="analysis",

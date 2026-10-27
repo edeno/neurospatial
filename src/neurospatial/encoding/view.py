@@ -1271,37 +1271,15 @@ def _resolve_view_distance(
         If ``view_distance`` is given with ``ray_cast``, is missing with
         ``fixed_distance``, or is not a positive finite number.
     """
-    from neurospatial._exceptions import _format_error
+    from neurospatial.ops.visibility import _resolve_gaze_distance
 
-    if gaze_model == "ray_cast":
-        if view_distance is not None:
-            raise ValueError(
-                _format_error(
-                    f"{context}: view_distance={view_distance!r} has no meaning "
-                    "with gaze_model='ray_cast'.",
-                    why="Why: ray casting takes the first wall along the gaze, at "
-                    "whatever distance it lies",
-                    fix="drop view_distance, or pass gaze_model='fixed_distance'",
-                )
-            )
-        return None
-    if view_distance is None:
-        raise ValueError(
-            _format_error(
-                f"{context}: gaze_model='fixed_distance' needs view_distance.",
-                why="Why: how far ahead an animal looks depends on the species, "
-                "task and arena, and no published value applies by default",
-                fix="pass view_distance, the distance along the gaze to the "
-                f"viewed point in the units of positions (env.units={env.units!r}), "
-                "or use gaze_model='ray_cast' to take the first wall",
-            )
-        )
-    if not (np.isfinite(view_distance) and view_distance > 0):
-        raise ValueError(
-            f"{context}: view_distance must be a positive finite distance, "
-            f"got {view_distance!r}."
-        )
-    return float(view_distance)
+    return _resolve_gaze_distance(
+        gaze_model,
+        view_distance,
+        units=env.units,
+        context=context,
+        argument="gaze_model",
+    )
 
 
 def _as_gaze_offsets(
