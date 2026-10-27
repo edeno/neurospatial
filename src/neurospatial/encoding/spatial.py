@@ -69,7 +69,6 @@ from neurospatial.encoding._base import (
     BandwidthRule,
     PopulationRateMixin,
     SingleUnitRateMixin,
-    _is_jax_array,
     _to_numpy,
 )
 from neurospatial.encoding._metrics import BatchScoresResult
@@ -692,7 +691,7 @@ def _screen_scores(
     """
     from neurospatial.encoding._metrics import batch_spatial_information
 
-    rates = np.atleast_2d(_to_numpy(_supported_rates(result)))
+    rates = np.atleast_2d(_to_numpy(result._supported_rates()))
     scores = {
         "spatial_information": np.asarray(
             batch_spatial_information(rates, _to_numpy(result.occupancy))
@@ -772,7 +771,7 @@ def _screen_outcomes(
     with np.errstate(invalid="ignore"):
         grid = scores["grid_score"] >= min_grid_score
     if grid.any():
-        rates = np.atleast_2d(_to_numpy(_supported_rates(result)))
+        rates = np.atleast_2d(_to_numpy(result._supported_rates()))
         grid[grid] = np.isfinite(_grid_spacings(result.env, rates[grid]))
     passed = {
         "spatial_information": _passes_information_screen(
@@ -856,7 +855,7 @@ def _spatial_summary_frame(
     )
     from neurospatial.encoding.border import _border_field_minimum
 
-    rates = np.atleast_2d(_to_numpy(_supported_rates(result)))
+    rates = np.atleast_2d(_to_numpy(result._supported_rates()))
     occupancy = _to_numpy(result.occupancy)
     peaks = np.atleast_2d(result.peak_location())
     scores, unavailable, inapplicable = _screen_scores(
@@ -1284,7 +1283,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         from neurospatial.encoding._metrics import spatial_information
 
         # Pass arrays directly - _metrics.py handles JAX dispatch
-        return spatial_information(_supported_rates(self), self.occupancy)
+        return spatial_information(self._supported_rates(), self.occupancy)
 
     def spatial_information_bias(self) -> float:
         """Expected spatial information of an untuned cell (bits/spike).
@@ -1427,7 +1426,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         from neurospatial.encoding._metrics import sparsity
 
         # Pass arrays directly - _metrics.py handles JAX dispatch
-        return sparsity(_supported_rates(self), self.occupancy)
+        return sparsity(self._supported_rates(), self.occupancy)
 
     def grid_score(self) -> float:
         """Grid score (hexagonal periodicity).
@@ -1502,7 +1501,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         from neurospatial.encoding.grid import grid_score as gs_func
         from neurospatial.encoding.grid import spatial_autocorrelation
 
-        firing_rate = _to_numpy(_supported_rates(self))
+        firing_rate = _to_numpy(self._supported_rates())
         finite = firing_rate[np.isfinite(firing_rate)]
         if finite.size == 0 or np.all(finite == finite[0]):
             # No spatial structure to autocorrelate: the score is undefined.
@@ -1585,7 +1584,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         )
         from neurospatial.encoding.grid import grid_properties as gp_func
 
-        firing_rate = _to_numpy(_supported_rates(self))
+        firing_rate = _to_numpy(self._supported_rates())
         autocorr = spatial_autocorrelation(self.env, firing_rate)
         # The autocorrelogram's square pixel side, a length; ``env.bin_sizes``
         # holds cell areas off a track.
@@ -1667,7 +1666,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         """
         from neurospatial.encoding.border import border_score as bs_func
 
-        firing_rate = _to_numpy(_supported_rates(self))
+        firing_rate = _to_numpy(self._supported_rates())
         env = self.env
         return bs_func(
             env,
@@ -1740,7 +1739,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         """
         from neurospatial.encoding.border import compute_region_coverage
 
-        firing_rate = _to_numpy(_supported_rates(self))
+        firing_rate = _to_numpy(self._supported_rates())
 
         # Threshold field at fraction of peak
         peak_rate = np.nanmax(firing_rate)
@@ -1826,7 +1825,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> isinstance(result.has_place_field(), bool)
         True
         """
-        firing_rate = _to_numpy(_supported_rates(self))
+        firing_rate = _to_numpy(self._supported_rates())
         fields = detect_place_fields(
             self.env,
             firing_rate,
@@ -2410,7 +2409,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         from neurospatial.encoding._metrics import batch_spatial_information
 
         # Pass arrays directly - _metrics.py handles JAX dispatch
-        return batch_spatial_information(_supported_rates(self), self.occupancy)
+        return batch_spatial_information(self._supported_rates(), self.occupancy)
 
     def spatial_information_bias(self) -> NDArray[np.float64]:
         """Expected spatial information of an untuned cell, per unit (bits/spike).
@@ -2504,7 +2503,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         from neurospatial.encoding._metrics import batch_sparsity
 
         # Pass arrays directly - _metrics.py handles JAX dispatch
-        return batch_sparsity(_supported_rates(self), self.occupancy)
+        return batch_sparsity(self._supported_rates(), self.occupancy)
 
     def grid_scores(self) -> BatchScoresResult:
         """Grid scores (hexagonal periodicity) for all neurons.
@@ -2559,7 +2558,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         """
         from neurospatial.encoding._metrics import batch_grid_scores
 
-        return batch_grid_scores(self.env, _to_numpy(_supported_rates(self)))
+        return batch_grid_scores(self.env, _to_numpy(self._supported_rates()))
 
     def border_scores(
         self,
@@ -2635,7 +2634,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
 
         return batch_border_scores(
             self.env,
-            _to_numpy(_supported_rates(self)),
+            _to_numpy(self._supported_rates()),
             threshold=threshold,
             min_area=min_area,
             metric=metric,
@@ -3064,29 +3063,6 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
 # ==============================================================================
 # Compute Functions
 # ==============================================================================
-
-
-def _supported_rates(result: SpatialRateResult | SpatialRatesResult) -> Any:
-    """Rates with every bin outside the occupancy support set to NaN.
-
-    A filled rate (``fill_value``) is a display or decoding convenience; the
-    bin was still unobserved, so metrics must not count it as observed
-    firing. JAX rates stay JAX arrays.
-
-    Returns
-    -------
-    array, shape (n_bins,) or (n_neurons, n_bins)
-        ``result``'s rates, NaN where the occupancy support is False.
-    """
-    from neurospatial.encoding._provenance import occupancy_support
-
-    rates = result._get_rates()
-    support = occupancy_support(result)
-    if _is_jax_array(rates):
-        import jax.numpy as jnp
-
-        return jnp.where(jnp.asarray(support), rates, jnp.nan)
-    return np.where(support, np.asarray(rates, dtype=np.float64), np.nan)
 
 
 def _fill_nan(rates: ArrayLike, fill_value: float) -> ArrayLike:
@@ -7473,7 +7449,7 @@ def spatial_cell_type_significance(
     grid_spacing = np.full(len(shuffled.unit_ids), np.nan)
     if "grid_score" not in shuffled.unavailable:
         grid_spacing = _grid_spacings(
-            env, np.atleast_2d(_supported_rates(shuffled.reference))
+            env, np.atleast_2d(shuffled.reference._supported_rates())
         )
     return CellTypeSignificanceResult(
         observed_scores=shuffled.observed,
@@ -7523,7 +7499,7 @@ def _shuffle_rate_maps(
 ) -> NDArray[np.float64]:
     """Supported rate maps of spike trains on the shared trajectory binning.
 
-    Matches ``_supported_rates(compute_spatial_rates(...))`` for the same
+    Matches ``compute_spatial_rates(...)._supported_rates()`` for the same
     trains and settings, without re-binning the trajectory.
 
     Returns
