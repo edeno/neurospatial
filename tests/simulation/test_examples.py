@@ -107,7 +107,8 @@ class TestOpenFieldSession:
 
     def test_open_field_session_generates_spikes(self):
         """open_field_session() should generate spikes."""
-        session = open_field_session(duration=30.0, n_place_cells=5, seed=42)
+        # Two minutes with fields on a 3 x 3 grid: the walk reaches some field.
+        session = open_field_session(duration=120.0, n_place_cells=9, seed=42)
 
         # At least some cells should have spikes
         total_spikes = sum(len(st) for st in session.spike_times)

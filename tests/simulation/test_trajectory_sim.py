@@ -128,32 +128,132 @@ class TestSimulateTrajectoryOU:
         for pos in positions:
             assert simple_2d_env.contains(pos)
 
-    @pytest.mark.parametrize("boundary_mode", ["reflect", "stop"])
-    def test_boundary_clamp_moves_to_nearby_bin(self, simple_2d_env, boundary_mode):
-        """A clamp at the wall lands next to the wall, not at a far corner.
+    def test_speed_has_the_requested_mean_and_spread(self):
+        """Speed is gamma(mean, std) at every time, not a constant."""
+        from scipy.stats import gamma
+        from shapely.geometry import box
 
-        ``bin_at`` returns -1 for a point outside, and -1 indexes the last bin
-        center, so a clamp built on it teleports the animal across the arena.
-        """
-        dt = 0.01
-        speed_mean = 20.0
+        from neurospatial import Environment
+
+        # A large arena keeps wall contacts rare.
+        env = Environment.from_polygon(box(0, 0, 400, 400), bin_size=10.0, units="cm")
+        dt = 0.05
+        positions, _times = simulate_trajectory_ou(
+            env,
+            duration=3000.0,
+            dt=dt,
+            speed_mean=15.0,
+            speed_std=8.0,
+            speed_units="cm",
+            seed=1,
+        )
+        speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / dt
+        # About 2100 independent samples (3000 s over twice the 0.7 s
+        # coherence time): the standard error of the mean is about 0.2 cm/s.
+        assert speed.mean() == pytest.approx(15.0, abs=0.8)
+        assert speed.std() == pytest.approx(8.0, abs=0.8)
+        expected = gamma.ppf([0.1, 0.5, 0.9], (15.0 / 8.0) ** 2, scale=8.0**2 / 15.0)
+        np.testing.assert_allclose(
+            np.percentile(speed, [10, 50, 90]), expected, rtol=0.1
+        )
+
+    def test_zero_speed_std_gives_a_constant_speed(self, simple_2d_env):
         positions, _times = simulate_trajectory_ou(
             simple_2d_env,
-            duration=60.0,
-            dt=dt,
-            speed_mean=speed_mean,
-            boundary_mode=boundary_mode,
-            seed=0,
+            duration=20.0,
+            dt=0.01,
+            speed_mean=10.0,
+            speed_std=0.0,
             speed_units="cm",
+            seed=2,
+        )
+        steps = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+        moving = steps > 0
+        assert moving.mean() > 0.99
+        np.testing.assert_allclose(steps[moving], 10.0 * 0.01, rtol=1e-9)
+
+    @pytest.mark.parametrize("angle", [0.0, np.pi / 6])
+    def test_a_bounce_mirrors_the_velocity_about_the_wall(self, angle):
+        """At a wall the component along it is kept and the one into it reversed."""
+        from shapely import affinity
+        from shapely.geometry import box
+
+        from neurospatial import Environment
+
+        square = affinity.rotate(box(0, 0, 100, 100), angle, use_radians=True)
+        env = Environment.from_polygon(square, bin_size=4.0, units="cm")
+        # Straight runs at constant speed: every change of step is a bounce.
+        positions, _times = simulate_trajectory_ou(
+            env,
+            duration=200.0,
+            dt=0.01,
+            speed_mean=20.0,
+            speed_std=0.0,
+            rotational_velocity_std=0.0,
+            speed_units="cm",
+            seed=3,
+        )
+        steps = np.diff(positions, axis=0)
+        changed = np.flatnonzero(np.any(~np.isclose(steps[1:], steps[:-1]), axis=1))
+        assert len(changed) > 20
+        before, after = steps[changed], steps[changed + 1]
+        normals = np.array(
+            [[np.cos(angle), np.sin(angle)], [-np.sin(angle), np.cos(angle)]]
+        )
+        # The step after the bounce is the mirror image about one wall.
+        mismatch = np.min(
+            [
+                np.linalg.norm(after - (before - 2 * (before @ n)[:, None] * n), axis=1)
+                for n in normals
+            ],
+            axis=0,
+        )
+        # Bounces off one wall, not into a corner, are the rule.
+        assert np.mean(mismatch < 1e-9) > 0.9
+        np.testing.assert_allclose(
+            np.linalg.norm(after, axis=1), np.linalg.norm(before, axis=1)
         )
 
-        steps = np.linalg.norm(np.diff(positions, axis=0), axis=1)
-        # One step moves at most 3 * speed_mean * dt; snapping to a bin center
-        # adds at most one bin diagonal.
-        bin_diagonal = np.linalg.norm(
-            [np.diff(edges).max() for edges in simple_2d_env.grid_edges]
+    @pytest.mark.parametrize("kind", ["internal wall", "hole"])
+    def test_never_crosses_a_divider(self, kind):
+        """A divider splits the arena: the animal goes around its end."""
+        import shapely
+        from shapely.geometry import LineString, box
+
+        from neurospatial import Environment
+        from neurospatial.geometry import OpenArena
+
+        arena = box(0, 0, 100, 100)
+        if kind == "internal wall":
+            wall = LineString([(52, 0), (52, 60)])  # on a bin edge
+            env = Environment.from_polygon(
+                arena,
+                bin_size=4.0,
+                units="cm",
+                arena=OpenArena(arena, walls={"divider": wall}),
+            )
+            divider = env.arena.walls[0]
+        else:
+            divider = box(48, 0, 52, 60)
+            env = Environment.from_polygon(
+                arena.difference(divider), bin_size=4.0, units="cm"
+            )
+        positions, _times = simulate_trajectory_ou(
+            env,
+            duration=900.0,
+            dt=1 / 30,
+            speed_mean=15.0,
+            speed_std=8.0,
+            speed_units="cm",
+            seed=2,
         )
-        assert steps.max() <= 3 * speed_mean * dt + bin_diagonal
+        steps = shapely.linestrings(np.stack([positions[:-1], positions[1:]], axis=1))
+        assert not shapely.intersects(steps, divider).any()
+        # Both sides below the divider's end are visited.
+        low = positions[:, 1] < 50
+        assert (positions[low, 0] < 48).any()
+        assert (positions[low, 0] > 52).any()
+        assert (env.bin_at(positions) >= 0).all()
 
     def test_reproducibility_with_seed(self, simple_2d_env):
         """Test that same seed produces same trajectory."""
