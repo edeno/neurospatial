@@ -1475,13 +1475,14 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     ) -> bool:
         """Detect whether the rate map has a place field; this is not a cell-type verdict.
 
-        Runs :func:`detect_place_fields` on this map. Independent 0.5 Hz
-        Poisson units with no spatial tuning had a detected
-        field in 11, 11, 20, 20 and 16 of 20 units at 1, 2, 5, 10 and 20 minutes
-        (30 Hz Ornstein-Uhlenbeck trajectory in a 100 x 100 cm arena, 5 cm bins,
-        diffusion KDE with a 5 cm bandwidth). Use
-        ``is_place_cell(..., criterion="shuffle")`` for a verdict that controls false
-        positives under the circular-shift null.
+        Runs :func:`detect_place_fields` on this map. Untuned Poisson units
+        firing at 1 Hz had a detected field in 20 of 20 units at 1, 2, 5, 10
+        and 20 minutes, and at 0.5 Hz in 20, 20, 20, 19 and 11 of 20 (30 Hz
+        Ornstein-Uhlenbeck trajectory at 15 cm/s in a 100 x 100 cm arena,
+        5 cm bins, diffusion KDE with a 5 cm bandwidth). Use
+        :func:`place_cell_significance` or
+        ``is_place_cell(..., criterion="shuffle")`` for a verdict that controls
+        false positives under the circular-shift null.
 
         Parameters
         ----------
@@ -5062,9 +5063,10 @@ def detect_place_fields(
         Fraction of each field's own peak rate that defines its boundary
         (0-1). 0.2 is the neurocode ``MapStats`` default [1]_.
     min_peak_rate : float, default=1.0
-        Smallest peak rate (Hz) that can start a field. 1 Hz is the minimum
-        peak in neurocode's ``MapStats`` and its place-cell pipeline [1]_
-        (also the FMAToolbox and opexebo default). Must be finite and >= 0.
+        Smallest peak rate (Hz) that can start a field. 1 Hz is ``minPeak``
+        of ``MapStats`` in FMAToolbox [2]_ and neurocode [1]_ and opexebo's
+        ``firing_field_min_peak`` [3]_; neurocode's 1-D
+        ``findPlaceFieldsAvg1D`` uses 2 Hz. Must be finite and >= 0.
     min_secondary_peak_fraction : float, default=0.0
         A field after the first must peak at least this fraction of the
         map's maximum rate. Must be in [0, 1]. The default keeps every peak
@@ -5151,11 +5153,23 @@ def detect_place_fields(
     (``bandwidth=0``) it is the peak bin. Field and region are compared by
     measure, so the rule does not depend on bin size.
 
-    **Segmentation is not cell classification.** An unmodulated or high-rate
-    map can contain detected regions. An explicit finite ``max_mean_rate``
-    filters the unweighted mean of spatial-bin rates; unequal occupancy makes
-    that different from total spikes divided by recording duration. Neither
-    the filter nor the resulting field count establishes cell identity.
+    **Segmentation is not a test.** The detector finds regions of elevated
+    rate; it does not ask whether they differ from chance. Every untuned
+    Poisson unit firing at 1 Hz or more had a field at every recording length
+    tried (1-20 min in a 1 m open field, 2-20 min on a 2 m track), and so did
+    every interneuron-like unit with a high, broadly modulated rate (15 Hz
+    plus a 5 Hz bump 40 cm wide on the track), whose field is the whole
+    track. Untuned 0.5 Hz units lose their field as the map converges below
+    ``min_peak_rate`` (7, 2, 0 and 0 of 20 on the track at 2, 5, 10 and
+    20 min). Use :func:`place_cell_significance` for a verdict.
+    neurocode's 1-D ``findPlaceFieldsAvg1D`` also drops fields longer than
+    60% of the track (``maxSize``) [1]_; a fraction of a track has no
+    counterpart in an open field, so no maximum is applied here. Filter the
+    fields on :func:`~neurospatial.encoding.field_size` if your protocol
+    needs one. An explicit finite ``max_mean_rate`` filters the unweighted
+    mean of spatial-bin rates; unequal occupancy makes that different from
+    total spikes divided by recording duration. Neither the filter nor the
+    resulting field count establishes cell identity.
 
     Examples
     --------
@@ -5183,6 +5197,8 @@ def detect_place_fields(
            https://github.com/ayalab1/neurocode
     .. [2] Zugaro, M. FMAToolbox, ``Analyses/MapStats.m``,
            https://github.com/michael-zugaro/FMAToolbox
+    .. [3] Kavli Institute (NTNU) opexebo, ``opexebo/defaults.py``,
+           https://github.com/kavli-ntnu/opexebo
     """
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
     if firing_rate.shape != (env.n_bins,):
@@ -5198,7 +5214,7 @@ def detect_place_fields(
             _format_error(
                 f"min_peak_rate must be a finite rate >= 0 Hz, got {min_peak_rate}.",
                 why="Why: it is the smallest peak rate that can start a field",
-                fix="pass min_peak_rate=1.0 (the neurocode default) or another rate in Hz",
+                fix="pass min_peak_rate=1.0 (the MapStats and opexebo default) or another rate in Hz",
             )
         )
     if not 0 <= min_secondary_peak_fraction <= 1:
@@ -5307,13 +5323,13 @@ def has_place_field(
     """Detect whether the rate map has a place field; this is not a cell-type verdict.
 
     Computes the rate map with :func:`compute_spatial_rate` and runs
-    :func:`detect_place_fields` on it. Independent 0.5 Hz Poisson units with
-    no spatial tuning had a detected
-    field in 11, 11, 20, 20 and 16 of 20 units at 1, 2, 5, 10 and 20 minutes
-    (30 Hz Ornstein-Uhlenbeck trajectory in a 100 x 100 cm arena, 5 cm bins,
-    diffusion KDE with a 5 cm bandwidth). Use
-    ``is_place_cell(..., criterion="shuffle")`` for a verdict that controls false
-    positives under the circular-shift null.
+    :func:`detect_place_fields` on it. Untuned Poisson units firing at 1 Hz
+    had a detected field in 20 of 20 units at 1, 2, 5, 10 and 20 minutes,
+    and at 0.5 Hz in 20, 20, 20, 19 and 11 of 20 (30 Hz Ornstein-Uhlenbeck
+    trajectory at 15 cm/s in a 100 x 100 cm arena, 5 cm bins, diffusion KDE
+    with a 5 cm bandwidth). Use :func:`place_cell_significance` or
+    ``is_place_cell(..., criterion="shuffle")`` for a verdict that controls
+    false positives under the circular-shift null.
 
     Parameters
     ----------

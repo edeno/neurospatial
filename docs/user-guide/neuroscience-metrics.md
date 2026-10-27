@@ -74,9 +74,16 @@ fields = detect_place_fields(env, rates.firing_rate,
   and does not identify interneurons or another cell type.
 - `detect_subfields`: Enable subfield discrimination (default True, following
   FMAToolbox and neurocode `MapStats`)
+- `min_peak_rate`: The smallest peak that starts a field (default 1 Hz, the
+  `minPeak` of FMAToolbox and neurocode `MapStats` and opexebo; neurocode's
+  1-D `findPlaceFieldsAvg1D` uses 2 Hz)
 
-Segmentation is descriptive: even a flat map can yield a region. Field count
-and `has_place_field` do not establish a place cell. Keep cell-type tests and
+Segmentation is descriptive, not a test: even a flat map can yield a region.
+In simulations, every untuned unit firing at 1 Hz or more had a "field" at
+every recording length from 1 to 20 minutes, and so did interneuron-like units
+with a high, broadly modulated rate, whose field covered the whole track. Field
+count and `has_place_field` do not establish a place cell; use
+`place_cell_significance` for a verdict. Keep cell-type tests and
 quality selection separate from map segmentation. To recover the previous
 10 Hz map-mean exclusion, pass `max_mean_rate=10.0` explicitly and inspect
 `fields.excluded_reason`; it remains `"mean_rate_above_threshold"` when the
