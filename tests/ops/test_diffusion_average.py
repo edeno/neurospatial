@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.encoding._smoothing import _binned
+from neurospatial.encoding._smoothing import smooth_rate_map
 from neurospatial.ops.mapping import resample_field
 from neurospatial.ops.smoothing import apply_kernel
 
@@ -108,11 +108,13 @@ def test_binned_unbiased_on_nonuniform_M(polar_env, uniform_env):
         rate = np.linspace(1.0, 5.0, n)
         rate[invalid] = np.nan
 
-        # Drive _binned via spike_counts/occupancy so raw_rate == rate on valid
+        # Drive binned smoothing via spike_counts/occupancy so raw_rate == rate on valid
         # bins and NaN on invalid (occupancy == 0 there).
         occupancy = valid.astype(np.float64)
         spike_counts = np.where(valid, rate, 0.0)
-        got = _binned(env, spike_counts, occupancy, bandwidth=4.0, min_occupancy=0.0)
+        got = smooth_rate_map(
+            env, spike_counts, occupancy, method="binned", bandwidth=4.0
+        )
 
         k_avg = env.compute_kernel(bandwidth=4.0, mode="average")
         expected_avg = _masked_average(k_avg, np.where(valid, rate, 0.0), valid)
