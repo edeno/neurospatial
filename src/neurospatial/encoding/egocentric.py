@@ -3445,30 +3445,30 @@ def _mean_resultant_length(
     return float(np.sqrt(x**2 + y**2))
 
 
-def object_vector_score(
-    rate_map: ObjectVectorRateResult | ArrayLike,
-    *,
-    max_distance_selectivity: float = 10.0,
-) -> float:
+def object_vector_score(rate_map: ObjectVectorRateResult | ArrayLike) -> float:
     """Combined distance and direction selectivity of an object-vector map.
 
     .. math::
 
-        s_{OV} = \\mathrm{clip}\\left(\\frac{s_d - 1}{s_d^* - 1}, 0, 1\\right)
-        \\, s_\\theta
+        s_{OV} = \\frac{1 - a_d}{1 - 1/K} \\, R_\\theta,
+        \\qquad a_d = \\frac{\\bar{f}^2}{\\overline{f^2}}
 
-    - The distance profile is each ring's mean rate over its direction bins;
-      :math:`s_d` is its peak divided by its mean.
+    Both profiles are taken over the complete rings, the :math:`K` rings
+    with a rate in every direction bin; around an object in open space they
+    form the disc out to the nearest wall.
+
+    - The distance profile :math:`f` is each complete ring's mean rate;
+      :math:`a_d` is its sparsity, from :math:`1/K` (all firing in one ring)
+      to 1 (flat), so the distance factor runs from 0 (flat) to 1 (one ring).
     - The direction profile is each direction bin's mean rate over the
-      complete rings, those with a rate in every direction bin;
-      :math:`s_\\theta` is its mean resultant length.
-    - :math:`s_d^*` is ``max_distance_selectivity``.
+      complete rings; :math:`R_\\theta` is its mean resultant length, from 0
+      (flat) to 1 (one direction).
 
     A map tuned to direction alone has a flat distance profile and scores
-    0, as does a map tuned to distance alone. Means skip unvisited (NaN)
-    bins, so missing coverage is not read as silence, and the direction
-    profile compares directions over the same rings, so a ring the animal
-    never reached behind the object does not make the rear look quiet.
+    0, as does a map tuned to distance alone. Because both profiles cover
+    the same rings and every direction, neither reads missing coverage as
+    tuning: a ring sampled only on one side of the object (beyond a wall)
+    is left out rather than biasing either profile.
 
     Parameters
     ----------
@@ -3478,29 +3478,33 @@ def object_vector_score(
         ``result.firing_rate.reshape(result.n_distance_bins,
         result.n_direction_bins)``. An array's direction bins are taken to
         span [-pi, pi) evenly, as the encoders build them.
-    max_distance_selectivity : float, default=10.0
-        Distance selectivity that maps to a distance factor of 1. Must be > 1.
 
     Returns
     -------
     float
         Score in [0, 1]; higher means sharper tuning to one distance and
-        one direction. NaN when no bin has a rate, when the map is silent
-        (peak / mean is 0 / 0), or when no ring has a rate in every
-        direction bin: a mean resultant length over an arc of directions
-        reads even flat firing as directional. An object near a wall
-        often leaves no complete ring; widen the coverage or choose a
-        shorter ``distance_range``.
+        one direction. NaN when fewer than two rings are complete (the
+        distance factor compares rings) or the complete rings are silent
+        (0 / 0).
 
     Raises
     ------
     ValueError
-        If ``max_distance_selectivity <= 1``, or ``rate_map`` is not 2-D.
+        If ``rate_map`` is not 2-D.
 
     Notes
     -----
+    The score describes the complete rings only. Near a wall or in a corner
+    they end close to the object, and a field beyond them does not count:
+    a real object-vector cell tuned 20 cm from an object near a wall can
+    score near 0. Read the map, or place the object away from the walls.
+
     This is a descriptive score with no null distribution; compare it with
-    shuffled spike trains before calling a cell object-vector tuned.
+    shuffled spike trains before calling a cell object-vector tuned. Within
+    one session a place field near the object scores like an object-vector
+    field; only a vector that follows the object when it is moved (vector
+    maps correlated across object positions, Høydal et al., 2019) tells
+    them apart.
 
     Examples
     --------
@@ -3521,11 +3525,6 @@ def object_vector_score(
     is_object_vector_cell : Classify neuron as OVC
     ObjectVectorRateResult.is_object_vector_cell : Classifier method on result object
     """
-    if max_distance_selectivity <= 1.0:
-        raise ValueError(
-            f"max_distance_selectivity must be > 1, got {max_distance_selectivity}"
-        )
-
     if isinstance(rate_map, ObjectVectorRateResult):
         tuning_curve = np.asarray(
             _to_numpy(rate_map.firing_rate), dtype=np.float64
@@ -3549,32 +3548,20 @@ def object_vector_score(
         direction_edges = np.linspace(-np.pi, np.pi, n_dir + 1)
         dir_bin_centers = (direction_edges[:-1] + direction_edges[1:]) / 2
 
-    finite = np.isfinite(tuning_curve)
-    if not finite.any():
+    disc = tuning_curve[np.isfinite(tuning_curve).all(axis=1)]
+    n_rings = len(disc)
+    if n_rings < 2:
         return float("nan")
-    # Mean over observed bins only; a NaN bin was not measured.
-    observed = np.where(finite, tuning_curve, 0.0)
-    complete = finite.all(axis=1)
-    if not complete.any():
+    distance_profile = disc.mean(axis=1)
+    mean_square = float(np.mean(distance_profile**2))
+    if mean_square == 0:
         return float("nan")
-    with np.errstate(invalid="ignore", divide="ignore"):
-        distance_profile = observed.sum(axis=1) / finite.sum(axis=1)
-    direction_profile = tuning_curve[complete].mean(axis=0)
-
-    rings = distance_profile[np.isfinite(distance_profile)]
-    mean_rate = float(np.mean(rings))
-    if mean_rate == 0:
-        return float("nan")
-    distance_selectivity = float(np.max(rings)) / mean_rate
-    normalized_dist_sel = float(
-        np.clip(
-            (distance_selectivity - 1.0) / (max_distance_selectivity - 1.0), 0.0, 1.0
-        )
-    )
+    sparsity = float(np.mean(distance_profile)) ** 2 / mean_square
+    distance_selectivity = (1.0 - sparsity) / (1.0 - 1.0 / n_rings)
     direction_selectivity = _mean_resultant_length(
-        dir_bin_centers, weights=direction_profile
+        dir_bin_centers, weights=disc.mean(axis=0)
     )
-    return float(np.clip(normalized_dist_sel * direction_selectivity, 0.0, 1.0))
+    return float(np.clip(distance_selectivity * direction_selectivity, 0.0, 1.0))
 
 
 def is_object_vector_cell(

@@ -2,9 +2,10 @@
 
 ``object_vector_score`` takes an object-vector result, or its rate map shaped
 ``(n_distance_bins, n_direction_bins)``, and returns a scalar in ``[0, 1]``:
-distance selectivity of the distance profile times direction selectivity of
-the direction profile. Most tests drive it on hand-built maps so the
-assertions exercise the score math itself.
+the normalized sparsity of the distance profile times the mean resultant
+length of the direction profile, both over the rings sampled in every
+direction. Most tests drive it on hand-built maps so the assertions exercise
+the score math itself.
 """
 
 import numpy as np
@@ -69,15 +70,15 @@ class TestObjectVectorScore:
             0.0, abs=1e-10
         )
 
-        # (b) A single nonzero bin: distance selectivity s_d = N_DIST*N_DIR = 120,
-        #     which clips normalized_dist_sel to 1.0; the direction marginal has
-        #     all mass at one angle so MRL = 1.0. Product = 1.0 * 1.0 = 1.0.
+        # (b) A single nonzero bin: the distance profile has all its rate in
+        #     one of K rings, sparsity 1/K, so (1 - 1/K) / (1 - 1/K) = 1; the
+        #     direction profile has all mass at one angle, MRL = 1.
         tc_delta = np.zeros((N_DIST, N_DIR))
         tc_delta[5, 6] = 1.0
         assert object_vector_score(tc_delta) == pytest.approx(1.0, abs=1e-10)
 
     def test_silent_map_is_nan(self):
-        # Peak / mean is 0 / 0 for a silent cell: undefined, not untuned.
+        # The sparsity is 0 / 0 for a silent cell: undefined, not untuned.
         tc = np.zeros((N_DIST, N_DIR))
         assert np.isnan(object_vector_score(tc))
 
@@ -86,11 +87,20 @@ class TestObjectVectorScore:
         tc = np.full((N_DIST, N_DIR), np.nan)
         assert np.isnan(object_vector_score(tc))
 
-    def test_invalid_max_distance_selectivity_raises(self):
-        tc = np.full((N_DIST, N_DIR), 0.1)
-        tc[5, 6] = 20.0
-        with pytest.raises(ValueError, match="max_distance_selectivity"):
-            object_vector_score(tc, max_distance_selectivity=1.0)
+    @pytest.mark.parametrize("n_rings", [5, 10, 40])
+    def test_one_bin_scores_one_on_any_grid(self, n_rings):
+        # The distance factor's bound is derived from the ring count, not a
+        # tuning constant, so all firing in one bin is a perfect score.
+        tc = np.zeros((n_rings, N_DIR))
+        tc[n_rings // 2, 6] = 3.0
+        assert object_vector_score(tc) == pytest.approx(1.0, abs=1e-10)
+
+    def test_fewer_than_two_complete_rings_is_nan(self):
+        # The distance factor compares rings; one ring has nothing to compare.
+        tc = np.full((N_DIST, N_DIR), np.nan)
+        tc[0] = 5.0
+        tc[1:, 6] = 20.0
+        assert np.isnan(object_vector_score(tc))
 
 
 def _von_mises(n: int, center: int, kappa: float = 4.0) -> np.ndarray:
@@ -118,6 +128,16 @@ class TestObjectVectorScoreProfiles:
         tc = np.tile((0.1 + 10 * _von_mises(N_DIST, 4))[:, None], (1, N_DIR))
         tc[3:6, :3] = np.nan
         assert object_vector_score(tc) == pytest.approx(0.0, abs=1e-10)
+
+    def test_rings_sampled_on_one_side_add_no_distance_tuning(self):
+        # Rate depends on direction alone, but the far rings were reached only
+        # in the preferred directions (the object near a wall). Their ring
+        # means are high, which a profile over every ring would read as
+        # distance tuning; over the complete rings the profile stays flat.
+        tc = np.tile(0.1 + 10 * _von_mises(N_DIR, 6), (N_DIST, 1))
+        tc[6:, :5] = np.nan
+        tc[6:, 8:] = np.nan
+        assert object_vector_score(tc) == pytest.approx(0.0, abs=1e-12)
 
     def test_partial_direction_coverage_is_nan(self):
         # Only a quarter of the directions observed (an object in a corner):
@@ -160,3 +180,44 @@ def test_result_input_matches_its_reshaped_rate_map():
         None, untuned, times, positions, obj, **settings
     )
     assert object_vector_score(result) > 5 * object_vector_score(control)
+
+
+def _open_field_cell(rate_fn, seed: int):
+    """20 minutes of uniform positions in a 100 cm box, object in the centre."""
+    from neurospatial import Environment
+    from neurospatial.simulation import generate_poisson_spikes
+
+    rng = np.random.default_rng(0)
+    times = np.arange(0, 1200, 1 / 30)
+    positions = rng.uniform(0, 100, (len(times), 2))
+    env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+    obj = np.array([[50.0, 50.0]])
+    delta = obj - positions  # animal to object
+    distance = np.hypot(*delta.T)
+    direction = np.arctan2(delta[:, 1], delta[:, 0])
+    spikes = generate_poisson_spikes(rate_fn(distance, direction), times, seed=seed)
+    return env, spikes, times, positions, obj
+
+
+def test_object_vector_cell_outscores_a_direction_only_cell_on_the_arena_grid():
+    """A bearing-only cell has no distance tuning, even where far rings are partial.
+
+    The default grid covers the box diagonal, so rings past 50 cm are sampled
+    only toward the corners.
+    """
+    from neurospatial.encoding import compute_object_vector_rate
+
+    def ovc(distance, direction):
+        tuned = np.exp(-0.5 * ((distance - 20) / 5) ** 2)
+        return 0.2 + 15 * tuned * np.exp(4 * (np.cos(direction - 0.5) - 1))
+
+    def bearing(distance, direction):
+        return 0.2 + 8 * np.exp(2 * (np.cos(direction - np.pi / 4) - 1))
+
+    scores = {}
+    for name, rate_fn, seed in (("ovc", ovc, 1), ("bearing", bearing, 2)):
+        env, spikes, times, positions, obj = _open_field_cell(rate_fn, seed)
+        result = compute_object_vector_rate(env, spikes, times, positions, obj)
+        scores[name] = object_vector_score(result)
+    assert scores["ovc"] > 0.3
+    assert scores["bearing"] < 0.05
