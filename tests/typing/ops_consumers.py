@@ -112,7 +112,7 @@ if TYPE_CHECKING:
         values: NDArray[np.float64],
         env: Environment[CartesianSystem],
     ) -> None:
-        boundary_geometry(binning, arena, "analysis")
+        boundary_geometry(binning, arena, "analysis", blocking="movement")
         analysis_interior(binning, arena)(centers)
         valid_observers(binning, arena, centers, "physical")
         line_of_sight_clear(binning, arena, centers[0], centers[1])
