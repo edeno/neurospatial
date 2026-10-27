@@ -272,6 +272,26 @@ def spatial_information(
     return float(_np_si(firing_rate_arr, occupancy_arr, base=base))
 
 
+def _rates_and_occupancy(
+    firing_rates: ArrayLike, occupancy: ArrayLike
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Rates ``(n_neurons, n_bins)`` and occupancy ``(n_bins,)`` as arrays, or raise."""
+    rates = np.asarray(firing_rates)
+    occ = np.asarray(occupancy)
+    if rates.ndim != 2:
+        raise ValueError(
+            f"firing_rates must be 2D (n_neurons, n_bins), got shape {rates.shape}"
+        )
+    if occ.ndim != 1:
+        raise ValueError(f"occupancy must be 1D (n_bins,), got shape {occ.shape}")
+    if rates.shape[1] != occ.shape[0]:
+        raise ValueError(
+            f"firing_rates has {rates.shape[1]} bins but "
+            f"occupancy has {occ.shape[0]} bins"
+        )
+    return rates, occ
+
+
 def batch_spatial_information(
     firing_rates: ArrayLike,
     occupancy: ArrayLike,
@@ -341,22 +361,7 @@ def batch_spatial_information(
         )
 
     # NumPy implementation — input validation here, kernel in _core_numpy.
-    firing_rates_arr = np.asarray(firing_rates)
-    occupancy_arr = np.asarray(occupancy)
-
-    if firing_rates_arr.ndim != 2:
-        raise ValueError(
-            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates_arr.shape}"
-        )
-    if occupancy_arr.ndim != 1:
-        raise ValueError(
-            f"occupancy must be 1D (n_bins,), got shape {occupancy_arr.shape}"
-        )
-    if firing_rates_arr.shape[1] != occupancy_arr.shape[0]:
-        raise ValueError(
-            f"firing_rates has {firing_rates_arr.shape[1]} bins but "
-            f"occupancy has {occupancy_arr.shape[0]} bins"
-        )
+    firing_rates_arr, occupancy_arr = _rates_and_occupancy(firing_rates, occupancy)
 
     from neurospatial.encoding._core_numpy import spatial_information_batch as _np_si
 
@@ -910,28 +915,12 @@ def batch_sparsity(
 
         return sparsity_batch(jnp.asarray(firing_rates), jnp.asarray(occupancy))
 
-    # NumPy implementation
-    firing_rates = np.asarray(firing_rates)
-    occupancy = np.asarray(occupancy)
-
-    # Validate shapes
-    if firing_rates.ndim != 2:
-        raise ValueError(
-            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates.shape}"
-        )
-
-    if occupancy.ndim != 1:
-        raise ValueError(f"occupancy must be 1D (n_bins,), got shape {occupancy.shape}")
-
-    if firing_rates.shape[1] != occupancy.shape[0]:
-        raise ValueError(
-            f"firing_rates has {firing_rates.shape[1]} bins but "
-            f"occupancy has {occupancy.shape[0]} bins"
-        )
+    # NumPy implementation — input validation here, kernel in _core_numpy.
+    firing_rates_arr, occupancy_arr = _rates_and_occupancy(firing_rates, occupancy)
 
     from neurospatial.encoding._core_numpy import sparsity_batch as _np_sp
 
-    return _np_sp(firing_rates, occupancy)
+    return _np_sp(firing_rates_arr, occupancy_arr)
 
 
 def batch_grid_scores(
