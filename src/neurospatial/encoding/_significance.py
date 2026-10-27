@@ -103,6 +103,56 @@ def run_shuffle_test(
     return observed, null
 
 
+def shuffle_information_verdict(
+    significance: Callable[[], ShuffleTestResult],
+    rate_map: Callable[[], Any],
+    *,
+    alpha: float | None,
+    min_info: float | None,
+    default_min_info: float,
+    kind: str,
+) -> bool:
+    """Shuffle verdict of an information-tuned cell type for one unit.
+
+    The unit is a ``kind`` cell when its circular-shift information test is
+    significant (``p < alpha``) and the bias-corrected information of its rate
+    map is at or above ``min_info``.
+
+    Parameters
+    ----------
+    significance : callable
+        Runs the unit's circular-shift test and returns its result.
+    rate_map : callable
+        Computes the unit's rate map. It is called only for a significant
+        unit, with warnings suppressed: the test already showed the warnings
+        of this same map.
+    alpha : float or None
+        Significance level; ``None`` uses ``_SHUFFLE_DEFAULTS["alpha"]``.
+    min_info : float or None
+        Cutoff on bias-corrected information (bits/spike); ``None`` uses
+        ``default_min_info``.
+    default_min_info : float
+        The cell type's default cutoff.
+    kind : str
+        Cell type named in the unknown-bias warning, such as ``"place"``.
+
+    Returns
+    -------
+    bool
+        Whether the unit is a ``kind`` cell.
+    """
+    from neurospatial.encoding._metrics import _beyond_bias
+
+    level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
+    if not significance().p_value < level:
+        return False
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        result = rate_map()
+    cutoff = default_min_info if min_info is None else min_info
+    return _beyond_bias(result, cutoff, kind=kind)
+
+
 def shuffle_pvalues(
     observed: NDArray[np.float64], null: NDArray[np.float64]
 ) -> NDArray[np.float64]:

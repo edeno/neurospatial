@@ -81,7 +81,6 @@ neurospatial.ops.visibility : Visibility and gaze computation
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -107,10 +106,10 @@ from neurospatial.encoding._base import (
     _to_numpy,
 )
 from neurospatial.encoding._significance import (
-    _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
     resolve_shuffle_settings,
+    shuffle_information_verdict,
 )
 from neurospatial.encoding._spatial_counts import (
     _warn_if_population_silent,
@@ -197,18 +196,6 @@ def _check_gaze_fields(result: ViewRateResult | ViewRatesResult) -> None:
         )
 
 
-def _view_classify(
-    result: ViewRateResult | ViewRatesResult,
-    *,
-    min_info: float,
-    bias: NDArray[np.float64] | None = None,
-) -> NDArray[np.bool_]:
-    """The shared rule: bias-corrected information at or above ``min_info``."""
-    from neurospatial.encoding._metrics import _debiased_information
-
-    return _debiased_information(result, bias) >= min_info
-
-
 def _view_summary_frame(
     result: ViewRateResult | ViewRatesResult, *, index: Sequence[Hashable]
 ) -> pd.DataFrame:
@@ -219,6 +206,7 @@ def _view_summary_frame(
     occupancy = _to_numpy(result.occupancy)
     from neurospatial.encoding._metrics import (
         _information_bias,
+        _information_screen,
         batch_spatial_information,
     )
 
@@ -231,7 +219,9 @@ def _view_summary_frame(
         "peak_x": peaks[:, 0],
         "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
         **result._accounting_columns(),
-        "is_spatial_view_cell": _view_classify(result, **VIEW_THRESHOLDS, bias=bias),
+        "is_spatial_view_cell": _information_screen(
+            result, default=VIEW_THRESHOLDS["min_info"], bias=bias
+        ),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["units"] = {
@@ -663,8 +653,11 @@ class ViewRateResult(SingleUnitRateMixin):
         spatial_information : Compute the spatial information metric
         peak_location : Get location of peak view response
         """
-        min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
-        return bool(_view_classify(self, min_info=min_info)[0])
+        from neurospatial.encoding._metrics import _information_screen
+
+        return bool(
+            _information_screen(self, min_info, default=VIEW_THRESHOLDS["min_info"])[0]
+        )
 
 
 @_copy_unit_table
@@ -1131,8 +1124,9 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         ViewRateResult.is_spatial_view_cell : Single-neuron classification
         spatial_information : The metric used for classification
         """
-        min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
-        return _view_classify(self, min_info=min_info)
+        from neurospatial.encoding._metrics import _information_screen
+
+        return _information_screen(self, min_info, default=VIEW_THRESHOLDS["min_info"])
 
     def summary_table(
         self,
@@ -2434,39 +2428,9 @@ def is_spatial_view_cell(
     breaks = validate_break_before(
         break_before, len(times), call="is_spatial_view_cell"
     )
-    if criterion == "shuffle":
-        label = 0 if unit_id is None else unit_id
-        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
-        shuffle_result = spatial_view_cell_significance(
-            env,
-            [spike_times],
-            times,
-            positions,
-            headings,
-            unit_ids=[label],
-            **resolve_shuffle_settings(n_shuffles, min_shift),
-            rng=rng,
-            gaze_model=gaze_model,
-            view_distance=view_distance,
-            gaze_offsets=gaze_offsets,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=breaks,
-            spike_window=spike_window,
-            method=method,
-            bandwidth=bandwidth,
-            min_occupancy=min_occupancy,
-            backend=backend,
-            boundary_source=boundary_source,
-        )[label]
-        if not shuffle_result.p_value < level:
-            return False
-    min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
-    with warnings.catch_warnings():
-        if criterion == "shuffle":
-            # The shuffle's observed map is this map; its warnings were shown.
-            warnings.simplefilter("ignore")
-        result = compute_view_rate(
+
+    def rate_map() -> ViewRateResult:
+        return compute_view_rate(
             env,
             spike_times,
             times,
@@ -2485,11 +2449,39 @@ def is_spatial_view_cell(
             backend=backend,
             boundary_source=boundary_source,
         )
-    if criterion == "shuffle":
-        from neurospatial.encoding._metrics import _beyond_bias
 
-        return _beyond_bias(result, min_info, kind="spatial view")
-    return result.is_spatial_view_cell(min_info=min_info)
+    if criterion == "shuffle":
+        label = 0 if unit_id is None else unit_id
+        return shuffle_information_verdict(
+            lambda: spatial_view_cell_significance(
+                env,
+                [spike_times],
+                times,
+                positions,
+                headings,
+                unit_ids=[label],
+                **resolve_shuffle_settings(n_shuffles, min_shift),
+                rng=rng,
+                gaze_model=gaze_model,
+                view_distance=view_distance,
+                gaze_offsets=gaze_offsets,
+                max_gap=max_gap,
+                epochs=epochs,
+                break_before=breaks,
+                spike_window=spike_window,
+                method=method,
+                bandwidth=bandwidth,
+                min_occupancy=min_occupancy,
+                backend=backend,
+                boundary_source=boundary_source,
+            )[label],
+            rate_map,
+            alpha=alpha,
+            min_info=min_info,
+            default_min_info=VIEW_THRESHOLDS["min_info"],
+            kind="spatial view",
+        )
+    return rate_map().is_spatial_view_cell(min_info=min_info)
 
 
 def spatial_view_cell_significance(

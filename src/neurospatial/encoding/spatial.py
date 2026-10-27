@@ -78,6 +78,7 @@ from neurospatial.encoding._significance import (
     check_criterion,
     check_mode_keywords,
     resolve_shuffle_settings,
+    shuffle_information_verdict,
 )
 
 if TYPE_CHECKING:
@@ -608,11 +609,6 @@ def _index_per_unit(value: Any, idx: int) -> Any:
     return arr[idx].item()
 
 
-def _passes_information_screen(info: ArrayLike, min_info: float) -> Any:
-    """Inclusive spatial-information screen shared by every place-cell screen."""
-    return np.asarray(info) >= min_info
-
-
 def _test_outcome(passed: NDArray[np.bool_], *, unknown: bool) -> NDArray[np.float64]:
     """One test's outcome per unit: 1.0 passes, 0.0 fails, NaN unknown."""
     if unknown:
@@ -774,9 +770,7 @@ def _screen_outcomes(
         rates = np.atleast_2d(_to_numpy(result._supported_rates()))
         grid[grid] = np.isfinite(_grid_spacings(result.env, rates[grid]))
     passed = {
-        "spatial_information": _passes_information_screen(
-            information, min_spatial_info
-        ),
+        "spatial_information": np.asarray(information) >= min_spatial_info,
         "grid_score": grid,
         "border_score": scores["border_score"] >= min_border_score,
     }
@@ -1896,13 +1890,12 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         check_criterion(
             criterion, ("threshold",), call="SpatialRateResult.is_place_cell"
         )
-        min_info = (
-            PLACE_SPATIAL_INFO_THRESHOLDS["min_info"] if min_info is None else min_info
-        )
-        from neurospatial.encoding._metrics import _debiased_information
+        from neurospatial.encoding._metrics import _information_screen
 
         return bool(
-            _passes_information_screen(_debiased_information(self)[0], min_info)
+            _information_screen(
+                self, min_info, default=PLACE_SPATIAL_INFO_THRESHOLDS["min_info"]
+            )[0]
         )
 
 
@@ -2899,14 +2892,10 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         For a shuffle test, call place_cell_significance(...)
         with the raw arrays; a result does not keep the arrays it was computed from.
         """
-        min_info = (
-            PLACE_SPATIAL_INFO_THRESHOLDS["min_info"] if min_info is None else min_info
-        )
-        from neurospatial.encoding._metrics import _debiased_information
+        from neurospatial.encoding._metrics import _information_screen
 
-        return cast(
-            "NDArray[np.bool_]",
-            _passes_information_screen(_debiased_information(self), min_info),
+        return _information_screen(
+            self, min_info, default=PLACE_SPATIAL_INFO_THRESHOLDS["min_info"]
         )
 
     def summary_table(
@@ -6194,43 +6183,9 @@ def is_place_cell(
         call="is_place_cell",
     )
     breaks = validate_break_before(break_before, len(times), call="is_place_cell")
-    if criterion == "shuffle":
-        label = 0 if unit_id is None else unit_id
-        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
-        shuffle_result = place_cell_significance(
-            env,
-            [spike_times],
-            times,
-            positions,
-            unit_ids=[label],
-            **resolve_shuffle_settings(n_shuffles, min_shift),
-            rng=rng,
-            method=method,
-            bandwidth=bandwidth,
-            min_occupancy=min_occupancy,
-            fill_value=fill_value,
-            penalty=penalty,
-            rank=rank,
-            pooled=pooled,
-            speed=speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=breaks,
-            spike_window=spike_window,
-            backend=backend,
-            warn_on_drop=warn_on_drop,
-        )[label]
-        if not shuffle_result.p_value < level:
-            return False
-    min_info = (
-        PLACE_SPATIAL_INFO_THRESHOLDS["min_info"] if min_info is None else min_info
-    )
-    with warnings.catch_warnings():
-        if criterion == "shuffle":
-            # The shuffle's observed map is this map; its warnings were shown.
-            warnings.simplefilter("ignore")
-        result = compute_spatial_rate(
+
+    def rate_map() -> SpatialRateResult:
+        return compute_spatial_rate(
             env,
             spike_times,
             times,
@@ -6251,11 +6206,41 @@ def is_place_cell(
             backend=backend,
             warn_on_drop=warn_on_drop,
         )
-    if criterion == "shuffle":
-        from neurospatial.encoding._metrics import _beyond_bias
 
-        return _beyond_bias(result, min_info, kind="place")
-    return result.is_place_cell(criterion="threshold", min_info=min_info)
+    if criterion == "shuffle":
+        label = 0 if unit_id is None else unit_id
+        return shuffle_information_verdict(
+            lambda: place_cell_significance(
+                env,
+                [spike_times],
+                times,
+                positions,
+                unit_ids=[label],
+                **resolve_shuffle_settings(n_shuffles, min_shift),
+                rng=rng,
+                method=method,
+                bandwidth=bandwidth,
+                min_occupancy=min_occupancy,
+                fill_value=fill_value,
+                penalty=penalty,
+                rank=rank,
+                pooled=pooled,
+                speed=speed,
+                min_speed=min_speed,
+                max_gap=max_gap,
+                epochs=epochs,
+                break_before=breaks,
+                spike_window=spike_window,
+                backend=backend,
+                warn_on_drop=warn_on_drop,
+            )[label],
+            rate_map,
+            alpha=alpha,
+            min_info=min_info,
+            default_min_info=PLACE_SPATIAL_INFO_THRESHOLDS["min_info"],
+            kind="place",
+        )
+    return rate_map().is_place_cell(criterion="threshold", min_info=min_info)
 
 
 def _rises_toward_a_neighbor(
@@ -6925,7 +6910,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         _warn_unknown_bias(passed[:, 0], debiased, kind="place")
         met = np.ones_like(passed)
         # Significant information is a place cell only beyond the untuned bias.
-        met[:, 0] = _passes_information_screen(debiased, min_info)
+        met[:, 0] = debiased >= min_info
         # A significant grid score is a grid cell only with a lattice to show.
         met[:, 1] = np.isfinite(self.grid_spacing)
         undetermined = cannot_reject & met

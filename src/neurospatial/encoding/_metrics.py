@@ -638,6 +638,41 @@ def _debiased_information(
     return information - (_information_bias(result) if bias is None else bias)
 
 
+def _information_screen(
+    result: Any,
+    min_info: float | None = None,
+    *,
+    default: float,
+    bias: NDArray[np.float64] | None = None,
+) -> NDArray[np.bool_]:
+    """Inclusive information screen of every unit of ``result``.
+
+    A unit passes when its bias-corrected information
+    (:func:`_debiased_information`) is at or above the cutoff; a NaN value
+    (silent unit, too few spikes) fails.
+
+    Parameters
+    ----------
+    result : rate result
+        A spatial, view or object-vector rate result, single or population.
+    min_info : float or None, default=None
+        Cutoff in bits/spike; ``None`` uses ``default``.
+    default : float
+        The cell type's default cutoff.
+    bias : ndarray, shape (n_units,), optional
+        :func:`_information_bias` of ``result`` when the caller already has
+        it, so its warning is not repeated.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_units,)
+        Whether each unit passes.
+    """
+    cutoff = default if min_info is None else min_info
+    passed: NDArray[np.bool_] = _debiased_information(result, bias) >= cutoff
+    return passed
+
+
 def _warn_unknown_bias(
     significant: NDArray[np.bool_], debiased: NDArray[np.float64], *, kind: str
 ) -> None:

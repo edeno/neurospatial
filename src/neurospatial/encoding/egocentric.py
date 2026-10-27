@@ -84,10 +84,10 @@ from neurospatial.encoding._polar_results import (
     resolve_polar_grid,
 )
 from neurospatial.encoding._significance import (
-    _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
     resolve_shuffle_settings,
+    shuffle_information_verdict,
 )
 from neurospatial.encoding._smoothing import _warn_if_fully_masked
 from neurospatial.encoding._spatial_counts import (
@@ -149,18 +149,6 @@ def _check_direction_frame(direction_frame: str, *, context: str) -> None:
         )
 
 
-def _object_vector_classify(
-    result: ObjectVectorRateResult | ObjectVectorRatesResult,
-    *,
-    min_info: float,
-    bias: NDArray[np.float64] | None = None,
-) -> NDArray[np.bool_]:
-    """The shared rule: bias-corrected information at or above ``min_info``."""
-    from neurospatial.encoding._metrics import _debiased_information
-
-    return _debiased_information(result, bias) >= min_info
-
-
 def _object_vector_summary_frame(
     result: ObjectVectorRateResult | ObjectVectorRatesResult,
     *,
@@ -171,7 +159,7 @@ def _object_vector_summary_frame(
     ``spatial_information`` and ``spatial_information_bias`` are the two
     terms of the information screen behind ``is_object_vector_cell``.
     """
-    from neurospatial.encoding._metrics import _information_bias
+    from neurospatial.encoding._metrics import _information_bias, _information_screen
 
     bias = _information_bias(result)
     return polar_summary_frame(
@@ -184,8 +172,8 @@ def _object_vector_summary_frame(
             "spatial_information_bias": bias,
         },
         classification={
-            "is_object_vector_cell": _object_vector_classify(
-                result, **OBJECT_VECTOR_THRESHOLDS, bias=bias
+            "is_object_vector_cell": _information_screen(
+                result, default=OBJECT_VECTOR_THRESHOLDS["min_info"], bias=bias
             )
         },
         extra_units={
@@ -748,10 +736,13 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         --------
         spatial_information : Compute the metric used for classification
         """
-        min_info = (
-            OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
+        from neurospatial.encoding._metrics import _information_screen
+
+        return bool(
+            _information_screen(
+                self, min_info, default=OBJECT_VECTOR_THRESHOLDS["min_info"]
+            )[0]
         )
-        return bool(_object_vector_classify(self, min_info=min_info)[0])
 
 
 @_copy_unit_table
@@ -1295,10 +1286,11 @@ class ObjectVectorRatesResult(
         ObjectVectorRateResult.is_object_vector_cell : Single-neuron classification
         spatial_information : The metric used for classification
         """
-        min_info = (
-            OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
+        from neurospatial.encoding._metrics import _information_screen
+
+        return _information_screen(
+            self, min_info, default=OBJECT_VECTOR_THRESHOLDS["min_info"]
         )
-        return _object_vector_classify(self, min_info=min_info)
 
     def summary_table(
         self,
@@ -3830,39 +3822,9 @@ def is_object_vector_cell(
     break_before = validate_break_before(
         break_before, len(times), call="is_object_vector_cell"
     )
-    if criterion == "shuffle":
-        label = 0 if unit_id is None else unit_id
-        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
-        shuffle_result = object_vector_cell_significance(
-            env,
-            [spike_times],
-            times,
-            positions,
-            object_positions,
-            unit_ids=[label],
-            **resolve_shuffle_settings(n_shuffles, min_shift),
-            rng=rng,
-            distance_range=distance_range,
-            distance_bin_size=distance_bin_size,
-            direction_bin_size=direction_bin_size,
-            metric=metric,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=break_before,
-            spike_window=spike_window,
-            method=method,
-            bandwidth=bandwidth,
-            min_occupancy=min_occupancy,
-            backend=backend,
-        )[label]
-        if not shuffle_result.p_value < level:
-            return False
-    min_info = OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
-    with warnings.catch_warnings():
-        if criterion == "shuffle":
-            # The shuffle's observed map is this map; its warnings were shown.
-            warnings.simplefilter("ignore")
-        result = compute_object_vector_rate(
+
+    def rate_map() -> ObjectVectorRateResult:
+        return compute_object_vector_rate(
             env,
             spike_times,
             times,
@@ -3881,11 +3843,39 @@ def is_object_vector_cell(
             min_occupancy=min_occupancy,
             backend=backend,
         )
-    if criterion == "shuffle":
-        from neurospatial.encoding._metrics import _beyond_bias
 
-        return _beyond_bias(result, min_info, kind="object-vector")
-    return result.is_object_vector_cell(min_info=min_info)
+    if criterion == "shuffle":
+        label = 0 if unit_id is None else unit_id
+        return shuffle_information_verdict(
+            lambda: object_vector_cell_significance(
+                env,
+                [spike_times],
+                times,
+                positions,
+                object_positions,
+                unit_ids=[label],
+                **resolve_shuffle_settings(n_shuffles, min_shift),
+                rng=rng,
+                distance_range=distance_range,
+                distance_bin_size=distance_bin_size,
+                direction_bin_size=direction_bin_size,
+                metric=metric,
+                max_gap=max_gap,
+                epochs=epochs,
+                break_before=break_before,
+                spike_window=spike_window,
+                method=method,
+                bandwidth=bandwidth,
+                min_occupancy=min_occupancy,
+                backend=backend,
+            )[label],
+            rate_map,
+            alpha=alpha,
+            min_info=min_info,
+            default_min_info=OBJECT_VECTOR_THRESHOLDS["min_info"],
+            kind="object-vector",
+        )
+    return rate_map().is_object_vector_cell(min_info=min_info)
 
 
 def is_egocentric_object_vector_cell(
@@ -4136,40 +4126,9 @@ def is_egocentric_object_vector_cell(
     break_before = validate_break_before(
         break_before, len(times), call="is_egocentric_object_vector_cell"
     )
-    if criterion == "shuffle":
-        label = 0 if unit_id is None else unit_id
-        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
-        shuffle_result = egocentric_object_vector_cell_significance(
-            env,
-            [spike_times],
-            times,
-            positions,
-            headings,
-            object_positions,
-            unit_ids=[label],
-            **resolve_shuffle_settings(n_shuffles, min_shift),
-            rng=rng,
-            distance_range=distance_range,
-            distance_bin_size=distance_bin_size,
-            direction_bin_size=direction_bin_size,
-            metric=metric,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=break_before,
-            spike_window=spike_window,
-            method=method,
-            bandwidth=bandwidth,
-            min_occupancy=min_occupancy,
-            backend=backend,
-        )[label]
-        if not shuffle_result.p_value < level:
-            return False
-    min_info = OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
-    with warnings.catch_warnings():
-        if criterion == "shuffle":
-            # The shuffle's observed map is this map; its warnings were shown.
-            warnings.simplefilter("ignore")
-        result = compute_egocentric_rate(
+
+    def rate_map() -> ObjectVectorRateResult:
+        return compute_egocentric_rate(
             env,
             spike_times,
             times,
@@ -4189,11 +4148,40 @@ def is_egocentric_object_vector_cell(
             min_occupancy=min_occupancy,
             backend=backend,
         )
-    if criterion == "shuffle":
-        from neurospatial.encoding._metrics import _beyond_bias
 
-        return _beyond_bias(result, min_info, kind="egocentric object-vector")
-    return result.is_object_vector_cell(min_info=min_info)
+    if criterion == "shuffle":
+        label = 0 if unit_id is None else unit_id
+        return shuffle_information_verdict(
+            lambda: egocentric_object_vector_cell_significance(
+                env,
+                [spike_times],
+                times,
+                positions,
+                headings,
+                object_positions,
+                unit_ids=[label],
+                **resolve_shuffle_settings(n_shuffles, min_shift),
+                rng=rng,
+                distance_range=distance_range,
+                distance_bin_size=distance_bin_size,
+                direction_bin_size=direction_bin_size,
+                metric=metric,
+                max_gap=max_gap,
+                epochs=epochs,
+                break_before=break_before,
+                spike_window=spike_window,
+                method=method,
+                bandwidth=bandwidth,
+                min_occupancy=min_occupancy,
+                backend=backend,
+            )[label],
+            rate_map,
+            alpha=alpha,
+            min_info=min_info,
+            default_min_info=OBJECT_VECTOR_THRESHOLDS["min_info"],
+            kind="egocentric object-vector",
+        )
+    return rate_map().is_object_vector_cell(min_info=min_info)
 
 
 def plot_object_vector_tuning(
