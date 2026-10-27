@@ -31,7 +31,6 @@ from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     format_times_positions_error,
     times_positions_problems,
-    validate_finite,
 )
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian, wrong_position_columns
@@ -40,7 +39,6 @@ __all__ = [
     "_validate_env_argument",
     "_validate_times",
     "require_planar",
-    "validate_classifier_trajectory",
     "validate_spike_times",
     "validate_spike_trains",
     "validate_trajectory",
@@ -418,47 +416,3 @@ def validate_trajectory(
             context=context,
             angle_unit_keyword=heading_unit is not None,
         )
-
-
-def validate_classifier_trajectory(
-    spike_times: NDArray[np.float64],
-    times: NDArray[np.float64],
-    headings: NDArray[np.float64],
-    *,
-    context: str,
-) -> None:
-    """Validate ``(spike_times, times, headings)`` for directional classifiers.
-
-    Raises on genuine input errors so they propagate instead of being
-    swallowed as a False classification. Does NOT enforce statistical
-    significance — that is decided after the (valid) computation.
-
-    ``headings`` are intentionally not passed through :func:`validate_finite`:
-    non-finite headings are a legitimate, droppable condition handled by the
-    directional binning layer (masked out of occupancy and spike counts), not
-    a hard error. The guard is for shape/length/timestamp sanity that should
-    surface as errors.
-
-    Parameters
-    ----------
-    spike_times : ndarray, shape (n_spikes,)
-        Spike timestamps in seconds.
-    times : ndarray, shape (n_samples,)
-        Timestamps of head direction samples in seconds.
-    headings : ndarray, shape (n_samples,)
-        Head direction at each time point.
-    context : str
-        Name of the calling function for error messages.
-
-    Raises
-    ------
-    ValueError
-        If lengths disagree, ``times`` is non-finite or not monotonically
-        non-decreasing, or ``spike_times`` is malformed.
-    """
-    times = np.asarray(times, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64)
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    validate_trajectory(times, headings=headings, context=context)
-    validate_finite(times, name="times")
-    validate_spike_times(spike_times, context=context)
