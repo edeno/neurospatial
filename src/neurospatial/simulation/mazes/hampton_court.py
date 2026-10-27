@@ -26,6 +26,10 @@ the 8 feet. Here the plan's walls stand on the grid, every gallery is 4
 inches wide, and partitions take the remaining space (3.6 cm between columns,
 3.1 cm between rows).
 
+The galleries are walled (``arena.outline == "wall"``): Small gives "the
+height of the sides" as 4 inches but not their material, so the walls are
+modeled as opaque.
+
 Reference: Small, W. S. (1901). Experimental study of the mental processes of
 the rat. II. American Journal of Psychology, 12(2), 206-239.
 https://doi.org/10.2307/1412534. Drawn as the Hampton Court maze in Wijnen et

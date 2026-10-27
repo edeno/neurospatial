@@ -11,6 +11,8 @@ track (150 cm long, 6 cm wide)": "Rats were motivated with droplets of
 sweetened milk, which were automatically dispensed in food wells located at
 the two ends of the track."
 
+The track is elevated, so its edges are drops (``arena.outline == "drop"``).
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes import make_linear_track, LinearTrackDims
@@ -29,13 +31,13 @@ from dataclasses import dataclass
 
 import networkx as nx
 
+from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
-    elevated_arena,
     make_corridor_polygon,
 )
 
@@ -161,7 +163,7 @@ def make_linear_track(
     env_2d = Environment.from_polygon(
         polygon=polygon,
         bin_size=bin_size,
-        arena=elevated_arena(polygon),
+        arena=OpenArena(polygon, outline="drop"),
         name="linear_track",
         connect_diagonal_neighbors=True,
     )

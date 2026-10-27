@@ -25,6 +25,11 @@ describes the Warner-Warden unit maze with an "entrance compartment" and a
 as food, but gives neither box's size. The two boxes are therefore landmarks
 with point regions at the ends of the first and last arms.
 
+The corridors are walled (``arena.outline == "wall"``): its dead ends are
+built so that an animal cannot see that a corridor ends before entering it
+(Wijnen et al., 2024). The wall material is not given; the walls are
+modeled as opaque.
+
 References
 ----------
 Warden, C. J. (1931). Animal Motivation: Experimental Studies on the Albino

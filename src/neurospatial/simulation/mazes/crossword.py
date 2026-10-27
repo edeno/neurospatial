@@ -23,6 +23,9 @@ figure, and each cap is a point region. "Distal cue cards were placed on the
 curtain surrounding the maze", with no published placement, so they are not
 landmarks.
 
+The tracks are open, with a 1.5 cm rim the animal sees over, so their edges
+are drops (``arena.outline == "drop"``).
+
 References
 ----------
 McNamara, C. G., Tejero-Cantero, Á., Trouche, S., Campo-Urriza, N., &
@@ -59,13 +62,13 @@ from itertools import pairwise
 import networkx as nx
 from shapely.geometry import box as shapely_box
 
+from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
-    elevated_arena,
     make_corridor_polygon,
     union_polygons,
 )
@@ -240,7 +243,7 @@ def make_crossword_maze(
     env_2d = Environment.from_polygon(
         polygon=floor,
         bin_size=bin_size,
-        arena=elevated_arena(floor),
+        arena=OpenArena(floor, outline="drop"),
         name="crossword_maze",
         connect_diagonal_neighbors=False,  # Manhattan grid only
     )

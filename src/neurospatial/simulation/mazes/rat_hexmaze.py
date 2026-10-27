@@ -15,6 +15,10 @@ well as a goal location". The rat apparatus's node spacing, bridge lengths and
 corridor width are not published; the defaults here are estimates (see
 :class:`RatHexmazeDims`).
 
+The corridors are walled (``arena.outline == "wall"``): in the mouse HexMaze
+"Gangways were enclosed by either 7.5- or 15-cm-tall white acrylic walls" and
+"Maze floor and walls were white and opaque" (Alonso et al., 2021).
+
 References
 ----------
 Alonso, A., Bokeria, L., van der Meij, J., Samanta, A., Eichler, R., Lotfi, A.,

@@ -10,6 +10,8 @@ in multi-maze experiments, providing a neutral environment for consolidation
 studies. A rest box holds no reward ports, start or goal boxes, or cues, so
 the maze has no landmarks.
 
+The box is walled (``arena.outline == "wall"``), with opaque walls.
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes import make_square_maze, SquareMazeDims

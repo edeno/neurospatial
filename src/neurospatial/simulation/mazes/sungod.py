@@ -17,6 +17,12 @@ The geometry has:
   of the box, the left and right center ports (6.9 cm apart) between it and
   the arms, and arm ports 1-8 at the arm ends
 
+The external walls are opaque (``arena.outline == "wall"``). The transparent
+walls between arms are the stretches of the floor's outline along each arm
+side that faces a neighbouring arm, named ``arm_k_wall_facing_arm_j`` with
+kind ``"transparent_wall"``: they keep the rat in its arm but not its view.
+The outer sides of arms 1 and 8 face no arm and are modeled as opaque.
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes.sungod import make_sungod_maze, SungodDims
@@ -41,9 +47,11 @@ from dataclasses import dataclass
 
 import networkx as nx
 import numpy as np
-from shapely.geometry import MultiPolygon, Polygon
+import shapely
+from shapely.geometry import LineString, MultiPolygon, Polygon
 from shapely.ops import unary_union
 
+from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
@@ -202,9 +210,12 @@ def make_sungod_maze(
     (150 uL).
 
     The published 16-inch external walls and the transparent internal walls
-    between arms are the edges of the floor; they are not declared as
-    separate named walls. Nor is the small plastic wall that kept the rat
-    from walking over the center ports, which the paper does not place.
+    between arms are the edges of the floor. The floor's outline is an opaque
+    wall, and each arm side facing a neighbouring arm is a named
+    ``"transparent_wall"`` on it (``arm_k_wall_facing_arm_j``), so gaze
+    analyses see through the arm dividers while movement analyses stop at
+    them. The small plastic wall that kept the rat from walking over the
+    center ports is not declared, because the paper does not place it.
 
     Landmarks, each a point with ``metadata["role"] == "reward_port"`` and
     ``metadata["port_type"]`` ``"home"``, ``"center"`` or ``"arm"``:
@@ -323,10 +334,23 @@ def make_sungod_maze(
         name: (x * scale - cx, y * scale - cy) for name, (x, y) in ports.items()
     }
 
+    # Opaque external walls, with transparent walls between neighbouring arms.
+    dividers, divider_names = _arm_dividers(
+        maze_polygon, arm_polygons, tolerance=buffer_distance
+    )
+    arena = OpenArena(
+        maze_polygon,
+        outline="wall",
+        walls=dividers,
+        wall_names=divider_names,
+        wall_kinds="transparent_wall",
+    )
+
     # Create 2D environment
     env_2d = Environment.from_polygon(
         polygon=maze_polygon,
         bin_size=bin_size,
+        arena=arena,
         name="sungod_maze",
         connect_diagonal_neighbors=True,
     )
@@ -353,6 +377,71 @@ def make_sungod_maze(
         )
 
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
+
+
+def _arm_dividers(
+    floor: Polygon, arms: list[Polygon], *, tolerance: float
+) -> tuple[list[LineString], list[str]]:
+    """The stretches of the floor's outline along the walls between arms.
+
+    Each arm's long side that faces a neighbouring arm is a transparent
+    divider. The floor is the union of the traced box and arms, grown by
+    ``tolerance`` and shrunk by half of it, so its outline runs a quarter of
+    ``tolerance`` from each traced side and an outline edge whose midpoint
+    is within ``tolerance`` of a side lies along it; the arms, 4.5-7.7 cm
+    wide, are far wider. Each divider is built from the outline's own
+    vertices, so it coincides with the outline exactly.
+
+    Parameters
+    ----------
+    floor : Polygon
+        The maze floor, in cm.
+    arms : list of Polygon
+        The traced arms in order 1-8, four-sided, in the floor's frame.
+    tolerance : float
+        The buffer the floor was smoothed with, in cm.
+
+    Returns
+    -------
+    walls : list of LineString
+        The divider stretches of the outline.
+    names : list of str
+        The wall each stretch belongs to: ``"arm_k_wall_facing_arm_j"`` for
+        arm ``k``'s side facing its neighbour ``j``. Arms 1 and 8 have one
+        such side each.
+    """
+    sides: dict[str, LineString] = {}
+    centroids = [np.array(arm.centroid.coords[0]) for arm in arms]
+    for k, arm in enumerate(arms):
+        corners = np.asarray(arm.exterior.coords)[:-1]
+        edges = [(corners[i], corners[(i + 1) % len(corners)]) for i in range(4)]
+        long_sides = sorted(edges, key=lambda e: -np.linalg.norm(e[1] - e[0]))[:2]
+        for j in (k - 1, k + 1):
+            if 0 <= j < len(arms):
+                side = min(
+                    long_sides,
+                    key=lambda e: np.linalg.norm((e[0] + e[1]) / 2 - centroids[j]),
+                )
+                sides[f"arm_{k + 1}_wall_facing_arm_{j + 1}"] = LineString(side)
+    ring = np.asarray(floor.exterior.coords)
+    midpoints = shapely.points((ring[:-1] + ring[1:]) / 2)
+    names = list(sides)
+    distance = np.array([shapely.distance(midpoints, sides[n]) for n in names])
+    owner = np.where(distance.min(axis=0) <= tolerance, distance.argmin(axis=0), -1)
+    # Start the walk at an edge that is no divider's, so no stretch wraps.
+    start = int(np.flatnonzero(owner < 0)[0])
+    order = np.roll(np.arange(len(owner)), -start)
+    walls: list[LineString] = []
+    wall_names: list[str] = []
+    run: list[int] = []
+    for edge in [*order, start]:
+        if run and owner[edge] != owner[run[-1]]:
+            if owner[run[-1]] >= 0:
+                walls.append(LineString(ring[[*run, run[-1] + 1]]))
+                wall_names.append(names[owner[run[-1]]])
+            run = []
+        run.append(edge)
+    return walls, wall_names
 
 
 def _arm_centerline(

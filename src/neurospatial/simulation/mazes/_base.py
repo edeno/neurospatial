@@ -98,11 +98,13 @@ class MazeEnvironments:
     and its real size, for visits and occupancy. The track carries the same
     landmarks as the 2-D maze.
 
-    A walled maze declares its outline as physical walls. An elevated maze
-    (an open track or platform, whose edges are drops the animal can see
-    past) declares none: ``env_2d.arena.outline`` is None,
-    so wall-based analyses such as border scores and ray-cast gaze refuse it
-    rather than treat the track's edges as walls.
+    Each maze declares what its edges are, as its source describes the
+    apparatus: ``env_2d.arena.outline`` is ``"wall"`` for a walled maze and
+    ``"drop"`` for an elevated track or platform, and named walls in
+    ``env_2d.arena.walls`` carry their own kinds (the Sungod maze's clear
+    walls between arms are ``"transparent_wall"``). Border scores and
+    boundary-vector analyses use every edge; a gaze stops only at opaque
+    walls, so it passes a drop edge or a clear wall.
 
     Examples
     --------
