@@ -286,35 +286,31 @@ def validate_simulation(
             skip_reasons[i] = "nonfinite_center_error"
             continue
 
-        # Compute true firing rate at each bin
-        # Use same model type to compute true field
-        if "width" in gt and "max_rate" in gt:
-            # Place cell - compute Gaussian field
+        # The true field's shape at each bin. Pearson correlation ignores a
+        # field's offset and positive scale, so the shape needs only the
+        # center and width: a unit Gaussian on a zero baseline.
+        if "width" in gt:
             from neurospatial.simulation.models import PlaceCellModel
 
-            # Create temporary model with ground truth parameters
-            temp_model = PlaceCellModel(
+            true_field = PlaceCellModel(
                 env,
                 center=true_center,
                 width=gt["width"],
-                max_rate=gt["max_rate"],
-                baseline_rate=gt.get("baseline_rate", 0.01),
-            )
-
-            # Compute true firing rate at bin centers
-            true_field = temp_model.firing_rate(env.bin_centers)
+                max_rate=1.0,
+                baseline_rate=0.0,
+            ).firing_rate(env.bin_centers)
         else:
             # Field-correlation validation is only implemented for place cells
             # (it reconstructs the ground-truth field from a Gaussian place
-            # model). Cells whose ground truth lacks the 'width'/'max_rate'
-            # place-cell parameters are skipped with a NaN correlation; warn so
-            # the skip is visible rather than silent.
+            # model). Cells whose ground truth lacks the place field 'width'
+            # are skipped with a NaN correlation; warn so the skip is visible
+            # rather than silent.
             import warnings
 
             warnings.warn(
                 f"{cell_key}: skipping field-correlation validation because its "
-                f"ground truth lacks place-cell parameters ('width' and "
-                f"'max_rate'); correlation set to NaN. Field correlation is only "
+                f"ground truth lacks the place field 'width'; correlation set "
+                f"to NaN. Field correlation is only "
                 f"implemented for place cells. Available ground-truth fields: "
                 f"{sorted(gt.keys())}.",
                 UserWarning,

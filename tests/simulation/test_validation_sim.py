@@ -733,3 +733,31 @@ class TestPlotSessionSummary:
             assert len(truncation_warnings) == 1
 
         plt.close(fig)
+
+
+def test_field_correlation_needs_only_center_and_width(simple_2d_env):
+    """Pearson correlation ignores the true field's baseline and peak rate."""
+    session = simulate_session(
+        simple_2d_env,
+        duration=30,
+        n_cells=3,
+        seed=0,
+        show_progress=False,
+        max_rate=20.0,
+        baseline_rate=0.01,
+        width=6.0,
+    )
+    shape_only = replace(
+        session,
+        ground_truth={
+            label: {"center": truth["center"], "width": truth["width"]}
+            for label, truth in session.ground_truth.items()
+        },
+    )
+    full = validate_simulation(session)
+    np.testing.assert_allclose(
+        validate_simulation(shape_only)["correlations"],
+        full["correlations"],
+        rtol=1e-12,
+    )
+    assert np.isfinite(full["correlations"]).any()
