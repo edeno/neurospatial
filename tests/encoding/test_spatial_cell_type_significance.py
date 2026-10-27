@@ -86,6 +86,7 @@ def test_result_layout_and_table(significance_recording):
     assert table.index.name == "unit_id" and table.index.tolist() == ["a", "b", "c"]
     assert list(table.columns) == [
         *STATISTICS,
+        "spatial_information_bias",
         *(f"{name}_p_value" for name in STATISTICS),
         *(f"{name}_null_percentile" for name in STATISTICS),
         *(f"passes_{name}" for name in STATISTICS),
@@ -200,6 +201,7 @@ def test_result_validates_shapes(observed, grid_spacing):
             bandwidth=5.0,
             boundary_source="physical",
             grid_spacing=np.zeros(grid_spacing),
+            spatial_information_bias=np.zeros(grid_spacing),
         )
 
 
@@ -367,6 +369,7 @@ def _rebuilt(result, **changes):
             "bandwidth",
             "boundary_source",
             "grid_spacing",
+            "spatial_information_bias",
             "unavailable_metrics",
             "inapplicable_metrics",
         )
@@ -399,3 +402,59 @@ def test_significant_grid_score_without_a_ring_is_not_grid(grid_and_hexless):
     for has_ring, rebuilt in ((True, with_ring), (False, without_ring)):
         is_grid = np.char.find(rebuilt.label_cell_types().astype(str), "grid") >= 0
         np.testing.assert_array_equal(is_grid, significant & has_ring)
+
+
+def test_place_needs_bias_corrected_information(ou_2min_env, ou_2min, noise_trains):
+    """Untuned units significant by chance have almost no information beyond bias."""
+    times, positions, _ = ou_2min
+    trains = noise_trains(120)
+    ids = [1, 17]  # the two untuned units whose information test has p < 0.05
+    result = spatial_cell_type_significance(
+        ou_2min_env,
+        [trains[i] for i in ids],
+        times,
+        positions,
+        unit_ids=ids,
+        n_shuffles=99,
+        rng=0,
+        boundary_source="analysis",
+    )
+    assert (result.p_values[:, 0] < 0.05).all()
+    debiased = result.observed_scores[:, 0] - result.spatial_information_bias
+    assert (debiased < 0.1).all()
+    table = result.summary_table()
+    assert not table["passes_spatial_information"].any()
+    assert "place" not in result.label_cell_types()
+    np.testing.assert_array_equal(
+        table["spatial_information_bias"], result.spatial_information_bias
+    )
+    # A lower cutoff restores the label of a significant unit.
+    labels = result.label_cell_types(min_spatial_info=-np.inf)
+    assert (labels[result.p_values[:, 1] >= 0.05] == "place").all()
+
+
+def test_undefined_information_bias_is_not_place(significance_recording):
+    """A unit with too few spikes for the bias correction is never place."""
+    r = significance_recording
+    result = spatial_cell_type_significance(
+        r.env,
+        r.trains,
+        r.times,
+        r.positions,
+        n_shuffles=39,
+        rng=0,
+        boundary_source="analysis",
+    )
+    observed = result.observed_scores.copy()
+    null = result.null_scores.copy()
+    observed[:, 0] = 2.0  # every information test significant
+    null[:, :, 0] = 0.0
+    rebuilt = _rebuilt(
+        result,
+        observed_scores=observed,
+        null_scores=null,
+        spatial_information_bias=np.array([np.nan, 0.1, 1.8]),
+    )
+    with pytest.warns(UserWarning, match="1 of 3 units"):
+        passes = rebuilt.summary_table()["passes_spatial_information"]
+    assert passes.tolist() == [False, True, False]

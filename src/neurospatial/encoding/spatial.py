@@ -6643,6 +6643,11 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         :meth:`SpatialRateResult.grid_properties` reads it. NaN when the map
         has no such ring or the grid score is unscored; such a unit is never
         labeled grid.
+    spatial_information_bias : ndarray, shape (n_units,)
+        Information an untuned cell would show on each observed map
+        (bits/spike), as :meth:`SpatialRatesResult.spatial_information_bias`
+        computes it. NaN for a silent unit or one with fewer spikes than the
+        map has independent bins; such a unit is never labeled place.
     unavailable_metrics : dict of str to str
         Why each unscored statistic has no score.
     inapplicable_metrics : tuple of str
@@ -6673,6 +6678,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
     ...     bandwidth=5.0,
     ...     boundary_source="physical",
     ...     grid_spacing=np.array([40.0]),
+    ...     spatial_information_bias=np.array([0.05]),
     ... )
     >>> result.p_values.tolist()
     [[0.05, 0.05, 0.05]]
@@ -6688,6 +6694,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
     bandwidth: float
     boundary_source: str
     grid_spacing: NDArray[np.float64]
+    spatial_information_bias: NDArray[np.float64]
     unavailable_metrics: Mapping[str, str] = field(default_factory=dict)
     inapplicable_metrics: tuple[str, ...] = ()
     p_values: NDArray[np.float64] = field(init=False)
@@ -6700,6 +6707,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         observed = np.asarray(self.observed_scores, dtype=np.float64)
         null = np.asarray(self.null_scores, dtype=np.float64)
         spacing = np.asarray(self.grid_spacing, dtype=np.float64)
+        bias = np.asarray(self.spatial_information_bias, dtype=np.float64)
         n_stats = len(self.statistics)
         if (
             observed.ndim != 2
@@ -6709,14 +6717,17 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             or null.shape[2] != n_stats
             or len(self.unit_ids) != observed.shape[0]
             or spacing.shape != (observed.shape[0],)
+            or bias.shape != (observed.shape[0],)
         ):
             raise ValueError(
                 "observed_scores must have shape (n_units, 3), null_scores "
-                "(n_units, n_shuffles, 3), and unit_ids and grid_spacing "
-                f"(n_units,); got {observed.shape}, {null.shape}, "
-                f"{np.shape(self.unit_ids)} and {spacing.shape}."
+                "(n_units, n_shuffles, 3), and unit_ids, grid_spacing and "
+                "spatial_information_bias (n_units,); got "
+                f"{observed.shape}, {null.shape}, {np.shape(self.unit_ids)}, "
+                f"{spacing.shape} and {bias.shape}."
             )
         object.__setattr__(self, "grid_spacing", spacing)
+        object.__setattr__(self, "spatial_information_bias", bias)
         object.__setattr__(self, "observed_scores", observed)
         object.__setattr__(self, "null_scores", null)
         object.__setattr__(self, "unit_ids", np.asarray(self.unit_ids))
@@ -6762,10 +6773,38 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             for k, name in enumerate(self.statistics)
         }
 
-    def _outcomes(self, alpha: float | None) -> dict[str, NDArray[np.float64]]:
+    def _outcomes(
+        self, alpha: float | None, min_spatial_info: float | None
+    ) -> dict[str, NDArray[np.float64]]:
+        from neurospatial._stacklevel import _external_stacklevel
+
         level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
+        min_info = (
+            PLACE_GRID_BORDER_THRESHOLDS["min_spatial_info"]
+            if min_spatial_info is None
+            else min_spatial_info
+        )
         with np.errstate(invalid="ignore"):
             passed = self.p_values < level
+        unknown_bias = passed[:, 0] & np.isnan(self.spatial_information_bias)
+        if unknown_bias.any():
+            warnings.warn(
+                f"{int(unknown_bias.sum())} of {len(self)} units have significant "
+                "spatial information but fewer spikes than their rate maps have "
+                "independent bins, so their information bias is unknown and "
+                "they are not labeled place.\n"
+                "Why: a place label needs information beyond what an untuned "
+                "cell shows on the same map, and with fewer spikes than "
+                "independent bins that amount cannot be estimated.\n"
+                "Fix: record longer, or use coarser bins or a larger bandwidth "
+                "(fewer independent bins).",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
+        # Significant information is a place cell only beyond the untuned bias.
+        passed[:, 0] &= _passes_information_screen(
+            self.observed_scores[:, 0] - self.spatial_information_bias, min_info
+        )
         # A significant grid score is a grid cell only with a lattice to show.
         passed[:, 1] &= np.isfinite(self.grid_spacing)
         return {
@@ -6777,7 +6816,12 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             for k, name in enumerate(self.statistics)
         }
 
-    def label_cell_types(self, *, alpha: float | None = None) -> NDArray[np.str_]:
+    def label_cell_types(
+        self,
+        *,
+        alpha: float | None = None,
+        min_spatial_info: float | None = None,
+    ) -> NDArray[np.str_]:
         """Label each unit from its three shuffle tests.
 
         Parameters
@@ -6785,6 +6829,13 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         alpha : float or None, default=None
             Significance level; a test passes when ``p_value < alpha``. None
             is 0.05.
+        min_spatial_info : float or None, default=None
+            Inclusive cutoff on bias-corrected spatial information
+            (``spatial_information - spatial_information_bias``, bits/spike)
+            that a significant unit must also reach to be ``"place"``. None
+            is 0.5, the cutoff of the fixed-threshold screen
+            (:meth:`SpatialRatesResult.label_cell_types`), a common screening
+            convention, not derived or calibrated.
 
         Returns
         -------
@@ -6793,8 +6844,9 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             border tests, each judged by its own p-value, and a grid label
             also needs a hexagonal first ring (finite :attr:`grid_spacing`);
             ``"place"`` for a
-            unit whose spatial information is significant and that is neither
-            a grid nor a border cell; ``"unclassified"`` for none;
+            unit whose spatial information is significant, whose
+            bias-corrected information reaches ``min_spatial_info``, and that
+            is neither a grid nor a border cell; ``"unclassified"`` for none;
             ``"undetermined"`` when a grid or border test applies to the
             environment but its score could not be computed (a
             ``UserWarning`` gives the reason). On a 1-D environment grid and
@@ -6815,9 +6867,14 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
                 UserWarning,
                 stacklevel=2,
             )
-        return _cell_type_labels(self._outcomes(alpha))
+        return _cell_type_labels(self._outcomes(alpha, min_spatial_info))
 
-    def summary_table(self, *, alpha: float | None = None) -> pd.DataFrame:
+    def summary_table(
+        self,
+        *,
+        alpha: float | None = None,
+        min_spatial_info: float | None = None,
+    ) -> pd.DataFrame:
         """Per-unit observed scores, null percentiles, p-values and labels.
 
         Parameters
@@ -6825,18 +6882,24 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         alpha : float or None, default=None
             Significance level for ``passes_*`` and ``cell_type``, and the
             null percentile reported, ``100 * (1 - alpha)``. None is 0.05.
+        min_spatial_info : float or None, default=None
+            Bias-corrected information cutoff of the place label; see
+            :meth:`label_cell_types`. None is 0.5 bits/spike.
 
         Returns
         -------
         pandas.DataFrame
             One row per unit, indexed by ``unit_id``: for each statistic in
-            :attr:`statistics` the observed score, ``<statistic>_p_value``
+            :attr:`statistics` the observed score, then
+            ``spatial_information_bias``, ``<statistic>_p_value``
             and ``<statistic>_null_percentile`` (the ``100 * (1 - alpha)``
             percentile of the unit's finite null scores), then
-            ``passes_<statistic>`` (``p_value < alpha``; ``<NA>`` when the
+            ``passes_<statistic>`` (``p_value < alpha``, with the place and
+            grid requirements of :meth:`label_cell_types`; ``<NA>`` when the
             statistic applies but could not be computed) and ``cell_type``
             from :meth:`label_cell_types`. ``df.attrs`` records ``alpha``,
-            ``null_percentile``, ``n_shuffles``, ``min_shift``,
+            ``classification_thresholds``, ``null_percentile``,
+            ``n_shuffles``, ``min_shift``,
             ``shuffle_type``, ``method``, ``bandwidth``, ``boundary_source``,
             ``units`` and any ``unavailable_metrics``.
         """
@@ -6850,16 +6913,23 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         columns: dict[str, Any] = {}
         for k, name in enumerate(self.statistics):
             columns[name] = self.observed_scores[:, k].copy()
+        columns["spatial_information_bias"] = self.spatial_information_bias.copy()
         for k, name in enumerate(self.statistics):
             columns[f"{name}_p_value"] = self.p_values[:, k].copy()
         for k, name in enumerate(self.statistics):
             columns[f"{name}_null_percentile"] = thresholds[:, k]
-        columns.update(_cell_type_columns(self._outcomes(level)))
+        min_info = (
+            PLACE_GRID_BORDER_THRESHOLDS["min_spatial_info"]
+            if min_spatial_info is None
+            else min_spatial_info
+        )
+        columns.update(_cell_type_columns(self._outcomes(level, min_info)))
         df = pd.DataFrame(
             columns, index=pd.Index(self.unit_ids.tolist(), name="unit_id")
         )
         df.attrs.update(
             alpha=level,
+            classification_thresholds={"min_spatial_info": min_info},
             null_percentile=percentile,
             n_shuffles=self.n_shuffles,
             min_shift=self.min_shift,
@@ -6867,7 +6937,11 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             method=self.method,
             bandwidth=self.bandwidth,
             boundary_source=self.boundary_source,
-            units={"spatial_information": "bits/spike", "min_shift": "s"},
+            units={
+                "spatial_information": "bits/spike",
+                "spatial_information_bias": "bits/spike",
+                "min_shift": "s",
+            },
         )
         if self.unavailable_metrics:
             df.attrs["unavailable_metrics"] = dict(self.unavailable_metrics)
@@ -6924,7 +6998,10 @@ def spatial_cell_type_significance(
     a hexagonal first ring of autocorrelogram peaks, a border cell a
     significant border score, and a cell that passes both is
     reported as ``"grid+border"``. A place cell has significant spatial
-    information and is neither. Use this for a verdict; the fixed cutoffs of
+    information, bias-corrected information
+    (``spatial_information - spatial_information_bias``) of at least
+    ``min_spatial_info`` (0.5 bits/spike by default, as on the screen), and
+    is neither. Use this for a verdict; the fixed cutoffs of
     :meth:`SpatialRatesResult.label_cell_types` are a screen.
 
     Parameters
@@ -7087,6 +7164,12 @@ def spatial_cell_type_significance(
         min_shift=min_shift,
         rng=rng,
     )
+    from neurospatial.encoding._metrics import _information_bias
+
+    with warnings.catch_warnings():
+        # Labeling reports the units whose bias is unknown, in terms of labels.
+        warnings.simplefilter("ignore", UserWarning)
+        bias = _information_bias(shuffled.reference)
     grid_spacing = np.full(len(shuffled.unit_ids), np.nan)
     if "grid_score" not in shuffled.unavailable:
         grid_spacing = _grid_spacings(
@@ -7101,6 +7184,7 @@ def spatial_cell_type_significance(
         bandwidth=shuffled.bandwidth,
         boundary_source=boundary_source,
         grid_spacing=grid_spacing,
+        spatial_information_bias=bias,
         unavailable_metrics=shuffled.unavailable,
         inapplicable_metrics=shuffled.inapplicable,
     )

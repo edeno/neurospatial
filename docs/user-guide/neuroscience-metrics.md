@@ -1071,7 +1071,11 @@ each unit's spikes once per shuffle and recomputes spatial information, grid
 score and border score from the same shifted trains. Its `summary_table()`
 gives each statistic's observed score, p-value and null percentile, and a
 `cell_type` label in which each type is judged by its own test (a unit that
-passes the grid and border tests is `"grid+border"`). Grid and border do not
+passes the grid and border tests is `"grid+border"`). A `"place"` label also
+needs the same bias-corrected information as the screen (0.5 bits/spike by
+default, `min_spatial_info=`): in a short recording an untuned unit can pass the
+information test by chance with almost no information beyond its bias, and is
+then `"unclassified"`. Grid and border do not
 apply on a 1-D track, and scores that cannot be computed (no measured walls
 for the physical border score) have NaN p-values with the reason recorded.
 
