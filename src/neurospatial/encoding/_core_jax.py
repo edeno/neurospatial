@@ -6,8 +6,6 @@ like ``(n_neurons, n_bins)`` and ``(n_bins,)``.
 
 Functions
 ---------
-compute_firing_rate_single
-    Convert spike counts and occupancy to firing rate for single neuron.
 compute_firing_rates_batch
     Convert spike counts and occupancy to firing rates for multiple neurons.
 spatial_information_single, spatial_information_batch
@@ -59,89 +57,12 @@ if TYPE_CHECKING:
     from jax import Array
 
 __all__ = [
-    "compute_firing_rate_single",
     "compute_firing_rates_batch",
     "sparsity_batch",
     "sparsity_single",
     "spatial_information_batch",
     "spatial_information_single",
 ]
-
-
-def compute_firing_rate_single(
-    spike_counts: Array,
-    occupancy: Array,
-    *,
-    min_occupancy: float = 0.0,
-) -> Array:
-    """Convert spike counts and occupancy to firing rate for single neuron.
-
-    Computes firing rate as spike_counts / occupancy, with handling for
-    low-occupancy bins.
-
-    Parameters
-    ----------
-    spike_counts : jax.Array, shape (n_bins,)
-        Number of spikes in each spatial bin.
-    occupancy : jax.Array, shape (n_bins,)
-        Time spent in each spatial bin (seconds).
-    min_occupancy : float, default=0.0
-        Minimum occupancy threshold. Bins with occupancy below this value
-        will have NaN firing rate. Use 0.0 to mask only zero-occupancy bins.
-
-    Returns
-    -------
-    jax.Array, shape (n_bins,)
-        Firing rate in Hz (spikes per second). Bins with insufficient
-        occupancy are set to NaN.
-
-    Notes
-    -----
-    This function performs the core rate computation:
-
-    .. math::
-
-        r_i = \\frac{n_i}{t_i}
-
-    where :math:`n_i` is the spike count and :math:`t_i` is the occupancy
-    time for bin :math:`i`.
-
-    This function is designed to be compatible with JAX transformations
-    like ``jit`` and ``vmap``.
-
-    Examples
-    --------
-    >>> import jax.numpy as jnp
-    >>> from neurospatial.encoding._core_jax import compute_firing_rate_single
-    >>> spike_counts = jnp.array([0, 5, 10, 5, 0], dtype=jnp.float64)
-    >>> occupancy = jnp.array([1.0, 1.0, 2.0, 1.0, 0.0], dtype=jnp.float64)
-    >>> rate = compute_firing_rate_single(spike_counts, occupancy)  # doctest: +SKIP
-    >>> rate  # doctest: +SKIP
-    Array([ 0.,  5.,  5.,  5., nan], dtype=float64)
-    """
-    spike_counts = jnp.asarray(spike_counts)
-    occupancy = jnp.asarray(occupancy)
-    # Pass min_occupancy at the same dtype as occupancy. Casting to float32
-    # would round the threshold and let JAX keep bins NumPy would mask
-    # (e.g. occupancy=0.100000001 vs min_occupancy=0.100000005 collapse to
-    # equal under float32).
-    out: Array = _firing_rate_kernel(
-        spike_counts,
-        occupancy,
-        jnp.asarray(min_occupancy, dtype=occupancy.dtype),
-    )
-    return out
-
-
-@jax.jit
-def _firing_rate_kernel(
-    spike_counts: Array, occupancy: Array, min_occupancy: Array
-) -> Array:
-    # Single mask covers both safe-divide (occupancy > 0) and the
-    # user threshold (occupancy >= min_occupancy). When min_occupancy == 0
-    # this collapses to the original "occupancy > 0" semantics.
-    valid = (occupancy > 0) & (occupancy >= min_occupancy)
-    return jnp.where(valid, spike_counts / occupancy, jnp.nan)
 
 
 def compute_firing_rates_batch(
@@ -152,8 +73,8 @@ def compute_firing_rates_batch(
 ) -> Array:
     """Convert spike counts and occupancy to firing rates for multiple neurons.
 
-    Batch version of :func:`compute_firing_rate_single` that operates on
-    multiple neurons efficiently using JAX vectorization.
+    Computes each rate as spike_counts / occupancy, NaN where the occupancy
+    is zero or below ``min_occupancy``.
 
     Parameters
     ----------
@@ -173,10 +94,8 @@ def compute_firing_rates_batch(
 
     Notes
     -----
-    This is the batch equivalent of :func:`compute_firing_rate_single`.
-    It broadcasts the occupancy array across all neurons for efficient
-    computation. When JAX is used, this function can leverage ``vmap``
-    for automatic vectorization.
+    The occupancy array broadcasts across all neurons. The function is
+    compatible with JAX transformations like ``jit`` and ``vmap``.
 
     Examples
     --------
@@ -196,7 +115,11 @@ def compute_firing_rates_batch(
     """
     spike_counts = jnp.asarray(spike_counts)
     occupancy = jnp.asarray(occupancy)
-    out: Array = _firing_rates_batch_kernel(
+    # Pass min_occupancy at the same dtype as occupancy. Casting to float32
+    # would round the threshold and let JAX keep bins NumPy would mask
+    # (e.g. occupancy=0.100000001 vs min_occupancy=0.100000005 collapse to
+    # equal under float32).
+    out: Array = _firing_rates_kernel(
         spike_counts,
         occupancy,
         jnp.asarray(min_occupancy, dtype=occupancy.dtype),
@@ -205,9 +128,12 @@ def compute_firing_rates_batch(
 
 
 @jax.jit
-def _firing_rates_batch_kernel(
+def _firing_rates_kernel(
     spike_counts: Array, occupancy: Array, min_occupancy: Array
 ) -> Array:
+    # Single mask covers both safe-divide (occupancy > 0) and the
+    # user threshold (occupancy >= min_occupancy). When min_occupancy == 0
+    # this collapses to the original "occupancy > 0" semantics.
     valid = (occupancy > 0) & (occupancy >= min_occupancy)
     return jnp.where(valid, spike_counts / occupancy, jnp.nan)
 

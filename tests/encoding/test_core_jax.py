@@ -100,6 +100,13 @@ def non_uniform_occupancy() -> jnp.ndarray:
     return jnp.array(occ)
 
 
+def _one_neuron(spike_counts, occupancy, **kwargs):
+    """One neuron's rate, shape ``(n_bins,)``, as a population of one."""
+    from neurospatial.encoding._core_jax import compute_firing_rates_batch
+
+    return compute_firing_rates_batch(spike_counts[None], occupancy, **kwargs)[0]
+
+
 # =============================================================================
 # Import Tests
 # =============================================================================
@@ -107,12 +114,6 @@ def non_uniform_occupancy() -> jnp.ndarray:
 
 class TestImports:
     """Tests for successful imports."""
-
-    def test_import_compute_firing_rate_single(self):
-        """compute_firing_rate_single should be importable."""
-        from neurospatial.encoding._core_jax import compute_firing_rate_single
-
-        assert callable(compute_firing_rate_single)
 
     def test_import_compute_firing_rates_batch(self):
         """compute_firing_rates_batch should be importable."""
@@ -122,51 +123,38 @@ class TestImports:
 
 
 # =============================================================================
-# Test compute_firing_rate_single
+# Test compute_firing_rates_batch on one neuron
 # =============================================================================
 
 
-class TestComputeFiringRateSingle:
-    """Tests for compute_firing_rate_single function."""
+class TestComputeFiringRateOneNeuron:
+    """compute_firing_rates_batch on a population of one."""
 
     def test_returns_jax_array(self, spike_counts_1d, occupancy):
         """Result should be a JAX array."""
-        from neurospatial.encoding._core_jax import compute_firing_rate_single
-
-        result = compute_firing_rate_single(spike_counts_1d, occupancy)
+        result = _one_neuron(spike_counts_1d, occupancy)
         assert is_jax_array(result)
 
     def test_output_shape_matches_input(self, spike_counts_1d, occupancy):
         """Output shape should match input shape."""
-        from neurospatial.encoding._core_jax import compute_firing_rate_single
-
-        result = compute_firing_rate_single(spike_counts_1d, occupancy)
+        result = _one_neuron(spike_counts_1d, occupancy)
         assert result.shape == spike_counts_1d.shape
 
     def test_correct_rate_computation(self, spike_counts_1d, occupancy):
         """Rate should be spike_counts / occupancy."""
-        from neurospatial.encoding._core_jax import compute_firing_rate_single
-
-        result = compute_firing_rate_single(spike_counts_1d, occupancy)
+        result = _one_neuron(spike_counts_1d, occupancy)
         expected = spike_counts_1d / occupancy
         assert_allclose(np.asarray(result), np.asarray(expected), rtol=1e-10)
 
     def test_zero_occupancy_gives_nan(self, spike_counts_1d, non_uniform_occupancy):
         """Zero occupancy should result in NaN."""
-        from neurospatial.encoding._core_jax import compute_firing_rate_single
-
-        result = compute_firing_rate_single(spike_counts_1d, non_uniform_occupancy)
-        result_np = np.asarray(result)
+        result_np = np.asarray(_one_neuron(spike_counts_1d, non_uniform_occupancy))
         # Bin 0 has zero occupancy
         assert np.isnan(result_np[0])
 
     def test_min_occupancy_threshold(self, spike_counts_1d, non_uniform_occupancy):
         """Bins below min_occupancy should be NaN."""
-        from neurospatial.encoding._core_jax import compute_firing_rate_single
-
-        result = compute_firing_rate_single(
-            spike_counts_1d, non_uniform_occupancy, min_occupancy=2.0
-        )
+        result = _one_neuron(spike_counts_1d, non_uniform_occupancy, min_occupancy=2.0)
         result_np = np.asarray(result)
         # Bins with occupancy < 2.0 should be NaN
         occupancy_np = np.asarray(non_uniform_occupancy)
@@ -175,22 +163,8 @@ class TestComputeFiringRateSingle:
 
     def test_non_negative_rates(self, spike_counts_1d, occupancy):
         """Firing rates should be non-negative."""
-        from neurospatial.encoding._core_jax import compute_firing_rate_single
-
-        result = compute_firing_rate_single(spike_counts_1d, occupancy)
-        result_np = np.asarray(result)
+        result_np = np.asarray(_one_neuron(spike_counts_1d, occupancy))
         assert np.all(result_np[~np.isnan(result_np)] >= 0)
-
-    def test_matches_numpy_implementation(self, spike_counts_1d, occupancy):
-        """JAX result should match NumPy implementation."""
-        from neurospatial.encoding._core_jax import compute_firing_rate_single
-        from neurospatial.encoding._core_numpy import (
-            compute_firing_rate_single as numpy_impl,
-        )
-
-        jax_result = compute_firing_rate_single(spike_counts_1d, occupancy)
-        numpy_result = numpy_impl(np.asarray(spike_counts_1d), np.asarray(occupancy))
-        assert_allclose(np.asarray(jax_result), numpy_result, rtol=1e-10)
 
 
 # =============================================================================
@@ -223,34 +197,20 @@ class TestComputeFiringRatesBatch:
         expected = spike_counts_2d / occupancy
         assert_allclose(np.asarray(result), np.asarray(expected), rtol=1e-10)
 
-    def test_matches_looped_single(self, spike_counts_2d, occupancy):
-        """Batch result should match looped single calls."""
-        from neurospatial.encoding._core_jax import (
-            compute_firing_rate_single,
-            compute_firing_rates_batch,
-        )
+    def test_each_row_matches_the_neuron_alone(self, spike_counts_2d, occupancy):
+        """A neuron's rate does not depend on the other neurons in the batch."""
+        from neurospatial.encoding._core_jax import compute_firing_rates_batch
 
         batch_result = compute_firing_rates_batch(spike_counts_2d, occupancy)
 
         for i in range(spike_counts_2d.shape[0]):
-            single_result = compute_firing_rate_single(spike_counts_2d[i], occupancy)
+            single_result = _one_neuron(spike_counts_2d[i], occupancy)
             assert_allclose(
                 np.asarray(batch_result[i]),
                 np.asarray(single_result),
                 rtol=1e-10,
                 equal_nan=True,
             )
-
-    def test_matches_numpy_implementation(self, spike_counts_2d, occupancy):
-        """JAX result should match NumPy implementation."""
-        from neurospatial.encoding._core_jax import compute_firing_rates_batch
-        from neurospatial.encoding._core_numpy import (
-            compute_firing_rates_batch as numpy_impl,
-        )
-
-        jax_result = compute_firing_rates_batch(spike_counts_2d, occupancy)
-        numpy_result = numpy_impl(np.asarray(spike_counts_2d), np.asarray(occupancy))
-        assert_allclose(np.asarray(jax_result), numpy_result, rtol=1e-10)
 
 
 # =============================================================================
@@ -260,50 +220,6 @@ class TestComputeFiringRatesBatch:
 
 class TestNumericalEquivalenceWithNumPy:
     """Tests verifying JAX and NumPy implementations produce same results."""
-
-    def test_firing_rate_single_matches(self, spike_counts_1d, occupancy):
-        """JAX and NumPy compute_firing_rate_single should match."""
-        from neurospatial.encoding._core_jax import (
-            compute_firing_rate_single as jax_impl,
-        )
-        from neurospatial.encoding._core_numpy import (
-            compute_firing_rate_single as numpy_impl,
-        )
-
-        jax_result = jax_impl(spike_counts_1d, occupancy)
-        numpy_result = numpy_impl(np.asarray(spike_counts_1d), np.asarray(occupancy))
-
-        assert_allclose(
-            np.asarray(jax_result),
-            numpy_result,
-            rtol=1e-10,
-            equal_nan=True,
-        )
-
-    def test_firing_rate_single_with_min_occupancy_matches(
-        self, spike_counts_1d, non_uniform_occupancy
-    ):
-        """JAX and NumPy should match with min_occupancy threshold."""
-        from neurospatial.encoding._core_jax import (
-            compute_firing_rate_single as jax_impl,
-        )
-        from neurospatial.encoding._core_numpy import (
-            compute_firing_rate_single as numpy_impl,
-        )
-
-        jax_result = jax_impl(spike_counts_1d, non_uniform_occupancy, min_occupancy=2.0)
-        numpy_result = numpy_impl(
-            np.asarray(spike_counts_1d),
-            np.asarray(non_uniform_occupancy),
-            min_occupancy=2.0,
-        )
-
-        assert_allclose(
-            np.asarray(jax_result),
-            numpy_result,
-            rtol=1e-10,
-            equal_nan=True,
-        )
 
     def test_firing_rates_batch_matches(self, spike_counts_2d, occupancy):
         """JAX and NumPy compute_firing_rates_batch should match."""
@@ -324,6 +240,33 @@ class TestNumericalEquivalenceWithNumPy:
             equal_nan=True,
         )
 
+    def test_firing_rates_with_min_occupancy_match(
+        self, spike_counts_1d, non_uniform_occupancy
+    ):
+        """JAX and NumPy should match with min_occupancy threshold."""
+        from neurospatial.encoding._core_jax import (
+            compute_firing_rates_batch as jax_impl,
+        )
+        from neurospatial.encoding._core_numpy import (
+            compute_firing_rates_batch as numpy_impl,
+        )
+
+        jax_result = jax_impl(
+            spike_counts_1d[None], non_uniform_occupancy, min_occupancy=2.0
+        )
+        numpy_result = numpy_impl(
+            np.asarray(spike_counts_1d)[None],
+            np.asarray(non_uniform_occupancy),
+            min_occupancy=2.0,
+        )
+
+        assert_allclose(
+            np.asarray(jax_result),
+            numpy_result,
+            rtol=1e-10,
+            equal_nan=True,
+        )
+
 
 # =============================================================================
 # Test JAX-Specific Features
@@ -332,19 +275,6 @@ class TestNumericalEquivalenceWithNumPy:
 
 class TestJAXSpecificFeatures:
     """Tests for JAX-specific features like JIT compilation."""
-
-    def test_jittable_firing_rate_single(self, spike_counts_1d, occupancy):
-        """compute_firing_rate_single should be JIT-compilable."""
-        import jax
-
-        from neurospatial.encoding._core_jax import compute_firing_rate_single
-
-        jitted_fn = jax.jit(compute_firing_rate_single)
-        result = jitted_fn(spike_counts_1d, occupancy)
-
-        # Should produce valid result
-        assert result.shape == spike_counts_1d.shape
-        assert is_jax_array(result)
 
     def test_jittable_firing_rates_batch(self, spike_counts_2d, occupancy):
         """compute_firing_rates_batch should be JIT-compilable."""
@@ -360,17 +290,21 @@ class TestJAXSpecificFeatures:
         assert is_jax_array(result)
 
     def test_vmap_over_neurons(self, spike_counts_2d, occupancy):
-        """Functions should work with vmap for vectorization."""
+        """The rate works with vmap for vectorization."""
         import jax
 
-        from neurospatial.encoding._core_jax import compute_firing_rate_single
+        from neurospatial.encoding._core_jax import compute_firing_rates_batch
 
         # vmap over neurons (first axis)
-        vmapped_fn = jax.vmap(compute_firing_rate_single, in_axes=(0, None))
+        vmapped_fn = jax.vmap(_one_neuron, in_axes=(0, None))
         result = vmapped_fn(spike_counts_2d, occupancy)
 
-        # Should produce same shape as batch function
-        assert result.shape == spike_counts_2d.shape
+        # Should produce the batch function's result
+        assert_allclose(
+            np.asarray(result),
+            np.asarray(compute_firing_rates_batch(spike_counts_2d, occupancy)),
+            rtol=1e-10,
+        )
 
 
 # =============================================================================
@@ -383,28 +317,22 @@ class TestEdgeCases:
 
     def test_all_zero_spike_counts(self, occupancy):
         """All zero spike counts should return all zeros."""
-        from neurospatial.encoding._core_jax import compute_firing_rate_single
-
         zero_counts = jnp.zeros(100, dtype=jnp.float64)
 
-        rate = compute_firing_rate_single(zero_counts, occupancy)
+        rate = _one_neuron(zero_counts, occupancy)
         assert_allclose(np.asarray(rate), 0.0, atol=1e-10)
 
     def test_single_bin(self):
         """Should handle single-bin case."""
-        from neurospatial.encoding._core_jax import compute_firing_rate_single
-
         spike_counts = jnp.array([5.0])
         occupancy = jnp.array([2.0])
 
-        result = compute_firing_rate_single(spike_counts, occupancy)
+        result = _one_neuron(spike_counts, occupancy)
         assert_allclose(np.asarray(result), [2.5], rtol=1e-10)
 
     def test_all_nan_occupancy(self, spike_counts_1d):
         """All zero occupancy should return all NaN."""
-        from neurospatial.encoding._core_jax import compute_firing_rate_single
-
         zero_occupancy = jnp.zeros(100, dtype=jnp.float64)
 
-        result = compute_firing_rate_single(spike_counts_1d, zero_occupancy)
+        result = _one_neuron(spike_counts_1d, zero_occupancy)
         assert np.all(np.isnan(np.asarray(result)))

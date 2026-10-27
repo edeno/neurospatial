@@ -6,8 +6,6 @@ like ``(n_neurons, n_bins)`` and ``(n_bins,)``.
 
 Functions
 ---------
-compute_firing_rate_single
-    Convert spike counts and occupancy to firing rate for single neuron.
 compute_firing_rates_batch
     Convert spike counts and occupancy to firing rates for multiple neurons.
 spatial_information_single, spatial_information_batch
@@ -36,79 +34,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 __all__ = [
-    "compute_firing_rate_single",
     "compute_firing_rates_batch",
     "sparsity_batch",
     "sparsity_single",
     "spatial_information_batch",
     "spatial_information_single",
 ]
-
-
-def compute_firing_rate_single(
-    spike_counts: NDArray[np.float64],
-    occupancy: NDArray[np.float64],
-    *,
-    min_occupancy: float = 0.0,
-) -> NDArray[np.float64]:
-    """Convert spike counts and occupancy to firing rate for single neuron.
-
-    Computes firing rate as spike_counts / occupancy, with handling for
-    low-occupancy bins.
-
-    Parameters
-    ----------
-    spike_counts : NDArray[np.float64], shape (n_bins,)
-        Number of spikes in each spatial bin.
-    occupancy : NDArray[np.float64], shape (n_bins,)
-        Time spent in each spatial bin (seconds).
-    min_occupancy : float, default=0.0
-        Minimum occupancy threshold. Bins with occupancy below this value
-        will have NaN firing rate. Use 0.0 to mask only zero-occupancy bins.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_bins,)
-        Firing rate in Hz (spikes per second). Bins with insufficient
-        occupancy are set to NaN.
-
-    Notes
-    -----
-    This function performs the core rate computation:
-
-    .. math::
-
-        r_i = \\frac{n_i}{t_i}
-
-    where :math:`n_i` is the spike count and :math:`t_i` is the occupancy
-    time for bin :math:`i`.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial.encoding._core_numpy import compute_firing_rate_single
-    >>> spike_counts = np.array([0, 5, 10, 5, 0], dtype=np.float64)
-    >>> occupancy = np.array([1.0, 1.0, 2.0, 1.0, 0.0], dtype=np.float64)
-    >>> rate = compute_firing_rate_single(spike_counts, occupancy)
-    >>> rate
-    array([ 0.,  5.,  5.,  5., nan])
-    """
-    spike_counts = np.asarray(spike_counts, dtype=np.float64)
-    occupancy = np.asarray(occupancy, dtype=np.float64)
-
-    # Compute firing rate with safe division
-    with np.errstate(divide="ignore", invalid="ignore"):
-        firing_rate = np.where(
-            occupancy > 0,
-            spike_counts / occupancy,
-            np.nan,
-        )
-
-    # Apply min_occupancy threshold
-    if min_occupancy > 0:
-        firing_rate = np.where(occupancy >= min_occupancy, firing_rate, np.nan)
-
-    return firing_rate.astype(np.float64)
 
 
 def compute_firing_rates_batch(
@@ -119,8 +50,8 @@ def compute_firing_rates_batch(
 ) -> NDArray[np.float64]:
     """Convert spike counts and occupancy to firing rates for multiple neurons.
 
-    Batch version of :func:`compute_firing_rate_single` that operates on
-    multiple neurons efficiently.
+    Computes each rate as spike_counts / occupancy, NaN where the occupancy
+    is zero or below ``min_occupancy``.
 
     Parameters
     ----------
@@ -140,9 +71,15 @@ def compute_firing_rates_batch(
 
     Notes
     -----
-    This is the batch equivalent of :func:`compute_firing_rate_single`.
-    It broadcasts the occupancy array across all neurons for efficient
-    computation.
+    This function performs the core rate computation:
+
+    .. math::
+
+        r_{ui} = \\frac{n_{ui}}{t_i}
+
+    where :math:`n_{ui}` is neuron :math:`u`'s spike count and :math:`t_i`
+    the occupancy time for bin :math:`i`. The occupancy array broadcasts
+    across all neurons.
 
     Examples
     --------
@@ -183,7 +120,7 @@ def spatial_information_single(
     occupancy: NDArray[np.float64],
     *,
     base: float = 2.0,
-) -> NDArray[np.float64]:
+) -> float:
     """Compute Skaggs spatial information (bits per spike) for a single neuron.
 
     NumPy mirror of :func:`neurospatial.encoding._core_jax.spatial_information_single`.
@@ -203,46 +140,14 @@ def spatial_information_single(
 
     Returns
     -------
-    NDArray[np.float64] (0-dim)
+    float
         Spatial information in bits per spike (if ``base=2.0``).
         NaN when total occupancy is zero or the mean rate is non-positive.
     """
-    firing_rate = np.asarray(firing_rate, dtype=np.float64)
-    occupancy = np.asarray(occupancy, dtype=np.float64)
-
-    valid = np.isfinite(firing_rate) & np.isfinite(occupancy)
-    firing_rate_clean = np.where(valid, firing_rate, 0.0)
-    occupancy_clean = np.where(valid, occupancy, 0.0)
-
-    occ_sum = occupancy_clean.sum()
-    occupancy_prob = np.where(
-        occ_sum > 0,
-        occupancy_clean / np.where(occ_sum > 0, occ_sum, 1.0),
-        np.zeros_like(occupancy_clean),
-    )
-
-    mean_rate = (occupancy_prob * firing_rate_clean).sum()
-    valid_mask = (occupancy_prob > 0) & (firing_rate_clean > 0)
-
-    with np.errstate(divide="ignore", invalid="ignore"):
-        ratio = np.where(
-            (mean_rate > 0) & valid_mask,
-            firing_rate_clean / np.where(mean_rate > 0, mean_rate, 1.0),
-            1.0,
-        )
-        # If the divide underflowed to zero (subnormal firing_rate / mean_rate),
-        # log(ratio) = -inf and ratio*log(ratio) = 0*-inf = NaN. Clamp to 1
-        # for those bins so they contribute 0 (limit r*log(r) as r->0+ is 0).
-        ratio = np.where(ratio > 0, ratio, 1.0)
-        log_ratio = np.log(ratio) / np.log(base)
-        contribution = np.where(
-            valid_mask & (mean_rate > 0),
-            occupancy_prob * ratio * log_ratio,
-            0.0,
-        )
-
-    information = np.maximum(contribution.sum(), 0.0)
-    return np.where((mean_rate > 0) & (occ_sum > 0), information, np.nan)
+    # One neuron is a population of one; ravel so any map shape is one row.
+    firing_rate = np.asarray(firing_rate, dtype=np.float64).reshape(1, -1)
+    occupancy = np.asarray(occupancy, dtype=np.float64).ravel()
+    return float(spatial_information_batch(firing_rate, occupancy, base=base)[0])
 
 
 def spatial_information_batch(
@@ -299,38 +204,16 @@ def spatial_information_batch(
 def sparsity_single(
     firing_rate: NDArray[np.float64],
     occupancy: NDArray[np.float64],
-) -> NDArray[np.float64]:
+) -> float:
     """Compute sparsity for a single neuron.
 
     NumPy mirror of :func:`neurospatial.encoding._core_jax.sparsity_single`.
     Returns NaN for a silent map or zero total occupancy; clamps to ``[0, 1]``.
     """
-    firing_rate = np.asarray(firing_rate, dtype=np.float64)
-    occupancy = np.asarray(occupancy, dtype=np.float64)
-
-    valid = np.isfinite(firing_rate) & np.isfinite(occupancy)
-    firing_rate_clean = np.where(valid, firing_rate, 0.0)
-    occupancy_clean = np.where(valid, occupancy, 0.0)
-
-    occ_sum = occupancy_clean.sum()
-    occupancy_prob = np.where(
-        occ_sum > 0,
-        occupancy_clean / np.where(occ_sum > 0, occ_sum, 1.0),
-        np.zeros_like(occupancy_clean),
-    )
-
-    # Sparsity is unchanged by rescaling rates; dividing by the peak keeps
-    # the squared moments from underflowing or overflowing.
-    peak = np.abs(firing_rate_clean).max(initial=0.0)
-    firing_rate_clean = firing_rate_clean / (peak if peak > 0 else 1.0)
-    numerator = (occupancy_prob * firing_rate_clean).sum() ** 2
-    denominator = (occupancy_prob * firing_rate_clean**2).sum()
-    sparsity_value = np.where(
-        denominator > 0,
-        numerator / np.where(denominator > 0, denominator, 1.0),
-        np.nan,
-    )
-    return np.clip(sparsity_value, 0.0, 1.0)
+    # One neuron is a population of one; ravel so any map shape is one row.
+    firing_rate = np.asarray(firing_rate, dtype=np.float64).reshape(1, -1)
+    occupancy = np.asarray(occupancy, dtype=np.float64).ravel()
+    return float(sparsity_batch(firing_rate, occupancy)[0])
 
 
 def sparsity_batch(
