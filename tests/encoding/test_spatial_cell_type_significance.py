@@ -626,3 +626,25 @@ def test_shuffle_count_that_limits_a_correction_is_named(
             with pytest.warns(UserWarning, match=f"n_shuffles >= {needed}"):
                 labels = result.label_cell_types(correction=correction)
         assert (labels[0] != "unclassified") == passes
+
+
+def _floor_unit_among_null_units(n_shuffles):
+    """Unit 0 has all three p-values at 1 / (n + 1); unit 1 has all at 1."""
+    return _synthetic(
+        [[1.0, 1.0, 1.0], [0.0, 0.0, 0.0]], np.full((2, n_shuffles, 3), 0.5)
+    )
+
+
+def test_named_shuffle_count_is_the_exact_boundary():
+    """BH passes 3 floor p-values of 6 tests when 6 p / 3 < alpha: p < 1 / 40.
+
+    6 / (3 * 0.05) is 39.999... in floating point, so truncating it names 39,
+    the count that already fails. The smallest count that passes is 40.
+    """
+    with pytest.warns(UserWarning, match="at least 40 finite null scores"):
+        labels = _floor_unit_among_null_units(39).label_cell_types(correction="fdr_bh")
+    assert labels[0] == "unclassified"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        labels = _floor_unit_among_null_units(40).label_cell_types(correction="fdr_bh")
+    assert labels[0] == "grid+border"

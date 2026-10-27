@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import warnings
 from collections import deque
-from collections.abc import Hashable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Hashable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, cast
@@ -6714,6 +6714,32 @@ def _benjamini_hochberg_adjusted(
     return result
 
 
+def _smallest_null_count(passes: Callable[[float], bool], estimate: float) -> int:
+    """Smallest n whose floor p-value ``1 / (1 + n)`` passes a cutoff.
+
+    Parameters
+    ----------
+    passes : callable
+        Whether a p-value passes, evaluated with the same floating-point
+        expression as the decision it predicts (for example
+        ``lambda p: p * m < alpha`` for Holm's first step), so rounding at the
+        boundary cannot name a count that still fails.
+    estimate : float
+        Approximate answer, such as ``m / alpha``; the search starts here.
+
+    Returns
+    -------
+    int
+        The number of finite null scores needed.
+    """
+    n = max(int(np.ceil(estimate)) - 1, 0)
+    while not passes(1.0 / (1.0 + n)):
+        n += 1
+    while n > 0 and passes(1.0 / n):
+        n -= 1
+    return n
+
+
 def _adjusted_p_values(
     p_values: NDArray[np.float64], correction: str | None
 ) -> NDArray[np.float64]:
@@ -6962,8 +6988,9 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
                 "1 / (n + 1); shifted maps without a defined score (a silent "
                 "shift, or a border map with no field) are left out of n.\n"
                 "Fix: run more shuffles, so that each test has at least "
-                f"{int(np.floor(1 / level))} finite null scores; "
-                "summary_table() reports them as <statistic>_n_finite_null.",
+                f"{_smallest_null_count(lambda p: p < level, 1 / level)} "
+                "finite null scores; summary_table() reports them as "
+                "<statistic>_n_finite_null.",
                 UserWarning,
                 stacklevel=_external_stacklevel(),
             )
@@ -6988,9 +7015,9 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         Such a test is as extreme as its shuffles can show, so the number of
         shuffles, not the data, decided it. Holm passes the smallest of a
         unit's m p-values when ``m p < alpha``, and Benjamini-Hochberg passes
-        k equal p-values of M tests when ``M p / k < alpha``; with the
-        smallest attainable p, ``1 / (n + 1)``, that gives the shuffle count
-        named in the message.
+        k equal p-values of M tests when ``M p / k < alpha``; the message
+        names the smallest n whose floor p-value ``1 / (n + 1)`` passes,
+        evaluated as the adjusted p-values are.
         """
         from neurospatial._stacklevel import _external_stacklevel
 
@@ -7000,21 +7027,24 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         if not limited.any():
             return
         if correction == "holm":
-            family = np.isfinite(adjusted).sum(axis=1)
-            needed = int(np.floor(family[limited.any(axis=1)].max() / level))
+            m = int(np.isfinite(adjusted).sum(axis=1)[limited.any(axis=1)].max())
+            needed = _smallest_null_count(lambda p: p * m < level, m / level)
         else:
-            needed = int(
-                np.floor(np.isfinite(adjusted).sum() / (at_floor.sum() * level))
+            total, tied = int(np.isfinite(adjusted).sum()), int(at_floor.sum())
+            needed = _smallest_null_count(
+                lambda p: p * total / tied < level, total / (tied * level)
             )
         warnings.warn(
             f"{int(limited.sum())} tests reached the smallest p-value their "
             f"shuffles allow, 1 / (n + 1), but fail correction={correction!r} "
             f"at alpha={level}, so the number of shuffles, not the data, "
             "decided them.\n"
-            "Why: a correction compares p-values with a fraction of alpha, "
-            "which a Monte Carlo p-value cannot go below 1 / (n_shuffles + 1) "
-            "to reach.\n"
-            f"Fix: rerun with n_shuffles >= {needed}.",
+            "Why: a correction compares p-values with a fraction of alpha, and "
+            "with n finite null scores a Monte Carlo p-value cannot go below "
+            "1 / (n + 1).\n"
+            "Fix: rerun with more shuffles, so that each test has at least "
+            f"{needed} finite null scores (n_shuffles >= {needed} when every "
+            "shifted map has a score).",
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
