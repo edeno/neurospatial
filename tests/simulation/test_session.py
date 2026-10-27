@@ -222,16 +222,24 @@ class TestSimulateSession:
         assert all(m.distance_tolerance == 5.0 for m in session.models)
 
     @pytest.mark.parametrize("cell_type", ["border", "mixed"])
-    def test_border_cells_need_a_border_width(self, connected_arena_env, cell_type):
-        """A border cell's tuning width has no default."""
-        with pytest.raises(ValueError, match="needs border_width"):
-            simulate_session(
-                connected_arena_env,
-                duration=1.0,
-                n_cells=5,
-                cell_type=cell_type,
-                show_progress=False,
-            )
+    def test_border_cells_default_to_a_physical_width(
+        self, connected_arena_env, cell_type
+    ):
+        """Without border_width, border cells use the 9.8 cm default."""
+        session = simulate_session(
+            connected_arena_env,
+            duration=1.0,
+            n_cells=5,
+            cell_type=cell_type,
+            show_progress=False,
+            seed=0,
+        )
+        tolerances = [
+            m.distance_tolerance
+            for m in session.models
+            if hasattr(m, "distance_tolerance")
+        ]
+        assert tolerances and all(t == pytest.approx(9.8) for t in tolerances)
 
     def test_simulate_session_grid_cells(self, simple_2d_env):
         """simulate_session() with cell_type='grid' should create grid cells."""

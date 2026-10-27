@@ -65,6 +65,19 @@ class TestObjectVectorCellModelCreation:
         assert model.preferred_distance == 10.0
         assert model.distance_width == 5.0
 
+    def test_default_distances_are_physical(self, object_positions):
+        """21.2 cm preferred distance and 6.9 cm width, in the env's units."""
+        from shapely.geometry import box
+
+        from neurospatial.simulation.models.object_vector_cells import (
+            ObjectVectorCellModel,
+        )
+
+        env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
+        model = ObjectVectorCellModel(env, object_positions=object_positions)
+        assert model.preferred_distance == pytest.approx(21.2)
+        assert model.distance_width == pytest.approx(6.9)
+
     def test_default_parameters(self, env, object_positions):
         """Model uses sensible defaults for optional parameters."""
         from neurospatial.simulation.models.object_vector_cells import (

@@ -92,13 +92,21 @@ from neurospatial._exceptions import _format_error
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import distance_field
 from neurospatial.ops.egocentric import compute_egocentric_bearing
-from neurospatial.simulation.models.base import geodesic_lookup_bins
+from neurospatial.simulation.models.base import default_length, geodesic_lookup_bins
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.ops._types import DistanceMetric
 
 __all__ = ["ObjectVectorCellModel"]
+
+#: Default preferred distance in centimeters: the mean object-to-field-center
+#: distance of the object-vector cells of Høydal et al. (2019).
+OVC_PREFERRED_DISTANCE_CM = 21.2
+
+#: Default distance tuning width in centimeters, derived from the same
+#: paper's field extents; see ``ObjectVectorCellModel`` Notes.
+OVC_DISTANCE_WIDTH_CM = 6.9
 
 
 class ObjectVectorCellModel:
@@ -113,10 +121,15 @@ class ObjectVectorCellModel:
         The spatial environment.
     object_positions : NDArray[np.float64], shape (n_objects, 2)
         Positions of objects in allocentric coordinates.
-    preferred_distance : float
-        Preferred distance from object in environment units.
-    distance_width : float
-        Distance tuning width (standard deviation of Gaussian).
+    preferred_distance : float, optional
+        Preferred distance from object in environment units. If None,
+        21.2 cm expressed in ``env.units``: the mean distance between object
+        and field centers of the object-vector cells of Høydal et al. (2019).
+    distance_width : float, optional
+        Distance tuning width (standard deviation of Gaussian) in
+        environment units. If None, 6.9 cm expressed in ``env.units`` (see
+        Notes). An environment without metric length units needs explicit
+        lengths.
     preferred_direction : float | None, optional
         Preferred animal-to-object direction in radians (default: None).
         If None, responds at the preferred distance in any direction.
@@ -205,6 +218,14 @@ class ObjectVectorCellModel:
 
     Notes
     -----
+    **Default distances**: Høydal et al. (2019) report, for mouse
+    object-vector cells, a mean distance of 21.2 cm from the object to the
+    field center and of 8.9 cm from the object to the field's contour, so a
+    field extends about 12.3 cm from its center toward the object. Reading
+    that contour as 20% of the peak rate (their border-field threshold; their
+    object-vector contour was set by the rate map's variability instead) and
+    the field as a Gaussian, ``σ = 12.3 / √(2 ln 5) = 6.9 cm``.
+
     **Distance Tuning**: Firing rate follows Gaussian around preferred_distance:
 
     .. math::
@@ -238,8 +259,8 @@ class ObjectVectorCellModel:
         env: Environment,
         *,
         object_positions: NDArray[np.float64],
-        preferred_distance: float,
-        distance_width: float,
+        preferred_distance: float | None = None,
+        distance_width: float | None = None,
         preferred_direction: float | None = None,
         direction_frame: Literal["allocentric", "egocentric"] = "allocentric",
         direction_kappa: float = 4.0,
@@ -281,6 +302,16 @@ class ObjectVectorCellModel:
                 f"got {object_positions.shape[1]} columns"
             )
             raise ValueError(msg)
+
+        call = "ObjectVectorCellModel()"
+        if preferred_distance is None:
+            preferred_distance = default_length(
+                env, OVC_PREFERRED_DISTANCE_CM, name="preferred_distance", call=call
+            )
+        if distance_width is None:
+            distance_width = default_length(
+                env, OVC_DISTANCE_WIDTH_CM, name="distance_width", call=call
+            )
 
         # Validate preferred_distance
         if preferred_distance < 0:

@@ -368,6 +368,15 @@ def walled_box():
 class TestBorderCellModel:
     """Firing from the exact distance to the nearest wall."""
 
+    def test_default_tolerance_is_physical(self, walled_box):
+        from shapely.geometry import box
+
+        from neurospatial.simulation.models import BorderCellModel
+
+        assert BorderCellModel(walled_box).distance_tolerance == pytest.approx(9.8)
+        metres = Environment.from_polygon(box(0, 0, 1, 1), bin_size=0.02, units="m")
+        assert BorderCellModel(metres).distance_tolerance == pytest.approx(0.098)
+
     def test_rate_follows_the_exact_distance_to_the_wall(self, walled_box):
         """No half-bin offset: the distance is measured to the wall itself."""
         from neurospatial.simulation.models import BorderCellModel
@@ -449,6 +458,19 @@ class TestBorderCellModel:
 
 class TestBoundaryVectorCellModel:
     """Every visible wall adds firing by its distance and direction."""
+
+    def test_defaults(self, walled_box):
+        """17.5 cm, a tolerance growing with distance, and a seeded direction."""
+        from neurospatial.simulation.models import BoundaryVectorCellModel
+
+        cell = BoundaryVectorCellModel(walled_box, seed=3)
+        assert cell.preferred_distance == pytest.approx(17.5)
+        assert cell.distance_tolerance == pytest.approx(17.5 / 12 + 8.0)
+        assert cell.direction_tolerance == pytest.approx(np.pi / 6)
+        again = BoundaryVectorCellModel(walled_box, seed=3)
+        assert again.preferred_direction == cell.preferred_direction
+        near = BoundaryVectorCellModel(walled_box, preferred_distance=6.0, seed=3)
+        assert near.distance_tolerance == pytest.approx(6.0 / 12 + 8.0)
 
     @staticmethod
     def _west_cell(env, **kwargs):

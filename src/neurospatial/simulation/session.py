@@ -8,8 +8,6 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import _format_error
-
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.simulation.models import NeuralModel
@@ -203,8 +201,8 @@ def simulate_session(
     cell_type : {'place', 'border', 'grid', 'mixed'}, optional
         Type of neurons to create (default: 'place').
         - 'place': All place cells
-        - 'border': All border cells (``BorderCellModel``; needs
-          ``border_width`` and an environment with declared walls)
+        - 'border': All border cells (``BorderCellModel``; needs an
+          environment with declared walls)
         - 'grid': All grid cells (requires 2D environment)
         - 'mixed': 60% place, 20% border, 20% grid
     trajectory_method : {'ou', 'sinusoidal', 'laps'}, optional
@@ -260,8 +258,9 @@ def simulate_session(
 
         **Border cell parameters** (cell_type='border' or 'mixed'):
 
-        - border_width : float - Required. Standard deviation of the distance
-          tuning in environment units (``distance_tolerance``)
+        - border_width : float - Standard deviation of the distance tuning in
+          environment units (``distance_tolerance``; default 9.8 cm in
+          ``env.units``, see ``BorderCellModel``)
         - distance : float - Preferred distance from the nearest wall
           (``preferred_distance``, default 0: firing along the walls)
         - max_rate : float - Peak firing rate in Hz (default: 15.0)
@@ -433,16 +432,6 @@ def simulate_session(
         border_cell_params["preferred_distance"] = kwargs.pop("distance")
     if "border_width" in kwargs:
         border_cell_params["distance_tolerance"] = kwargs.pop("border_width")
-    elif cell_type in ("border", "mixed"):
-        raise ValueError(
-            _format_error(
-                f"simulate_session(cell_type={cell_type!r}) needs border_width.",
-                why="Why: a border cell's tuning width has no default; it sets "
-                "how far from the walls the cell fires.",
-                fix="pass border_width in environment units, e.g. border_width=5.0 "
-                "for 5 cm",
-            )
-        )
 
     # GridCellModel-only parameters - remap convenience names to actual names.
     # Remapped parameters: spacing -> grid_spacing, orientation -> grid_orientation

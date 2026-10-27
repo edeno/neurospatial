@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from neurospatial.simulation.models.boundary_cells import BORDER_DISTANCE_TOLERANCE_CM
+
 if TYPE_CHECKING:
     from neurospatial.simulation.session import SimulationSession
 
@@ -553,7 +555,7 @@ def tmaze_alternation_session(
 
 def border_cell_session(
     *,
-    border_width: float,
+    border_width: float = BORDER_DISTANCE_TOLERANCE_CM,
     duration: float = 180.0,
     arena_shape: str = "square",
     arena_size: float = 100.0,
@@ -571,10 +573,11 @@ def border_cell_session(
 
     Parameters
     ----------
-    border_width : float
+    border_width : float, optional
         Standard deviation in cm of each border cell's distance tuning
         (``BorderCellModel(distance_tolerance=...)``): how far from the walls
-        the cells fire. It has no default; choose it for the cells you model.
+        the cells fire (default: 9.8, derived from mouse border fields; see
+        ``BorderCellModel``).
     duration : float, optional
         Session duration in seconds (default: 180.0).
     arena_shape : str, optional
@@ -754,6 +757,7 @@ def border_cell_session(
         ground_truth[cell_idx] = {
             "cell_type": "place",
             "center": center.tolist(),
+            "width": float(place_model.width),
             "max_rate": float(place_model.max_rate),
             "baseline_rate": float(place_model.baseline_rate),
         }
