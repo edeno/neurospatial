@@ -137,7 +137,8 @@ def times_positions_problems(
                     problems.append(
                         f"times must be monotonically non-decreasing; it decreases at "
                         f"{down.size} place(s), first {float(t[k])!r} -> {float(t[k + 1])!r} "
-                        f"at index {k}."
+                        f"at index {k}. To sort, index times and every per-sample "
+                        'array with order = np.argsort(times, kind="stable").'
                     )
     if p is not None and p.ndim not in (1, 2):
         problems.append(f"positions must be (n_samples, n_dims), got shape {p.shape}.")
@@ -245,14 +246,16 @@ def validate_strictly_increasing(times: NDArray[np.float64], *, call: str) -> No
 
 
 def format_times_positions_error(
-    problems: list[str], looks_swapped: bool, *, call: str
+    problems: list[str], looks_swapped: bool, *, call: str, positions: bool = True
 ) -> str:
+    """Format timestamp problems; ``positions=False`` for a call without positions."""
+    rows = " with one numeric positions row per timestamp" if positions else ""
     fix = (
         "Fix: did you pass positions before times? "
         f"Call {call}(..., times, positions, ...)."
         if looks_swapped
-        else "Fix: pass times as a sorted 1-D array of numeric timestamps in seconds with one "
-        "numeric positions row per timestamp."
+        else "Fix: pass times as a sorted 1-D array of numeric timestamps in seconds"
+        f"{rows}."
     )
     return (
         f"Invalid times/positions passed to {call}():\n- "

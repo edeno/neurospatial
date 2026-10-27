@@ -376,7 +376,12 @@ def validate_trajectory(
             )
     if problems:
         raise ValueError(
-            format_times_positions_error(problems, looks_swapped, call=context)
+            format_times_positions_error(
+                problems,
+                looks_swapped,
+                call=context,
+                positions=positions is not None,
+            )
         )
     if headings is not None and heading_unit != "deg":
         warn_if_angles_look_like_degrees(
