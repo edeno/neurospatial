@@ -962,3 +962,27 @@ def test_egocentric_model_requires_headings():
     assert model.firing_rate(np.array([[30, 50]]), headings=np.array([0]))[
         0
     ] == pytest.approx(model.max_rate)
+
+
+@pytest.mark.parametrize("kappa", [4.0, 1000.0])
+def test_sharp_direction_tuning_peaks_at_max_rate(kappa):
+    """A sharply tuned cell still fires max_rate at its preferred vector."""
+    from neurospatial import Environment
+    from neurospatial.simulation import ObjectVectorCellModel
+
+    env = Environment.from_samples(np.array([[0, 0], [50, 50], [100, 100]]), bin_size=5)
+    model = ObjectVectorCellModel(
+        env,
+        object_positions=np.array([[50.0, 50.0]]),
+        preferred_distance=20.0,
+        distance_width=5.0,
+        preferred_direction=0.0,  # the object is East of the animal
+        direction_kappa=kappa,
+        max_rate=20.0,
+        baseline_rate=0.0,
+    )
+    angle = np.pi / 2
+    rates = model.firing_rate(np.array([[30.0, 50.0], [50.0, 30.0]]))
+    np.testing.assert_allclose(
+        rates, [20.0, 20.0 * np.exp(kappa * (np.cos(angle) - 1.0))], atol=1e-12
+    )

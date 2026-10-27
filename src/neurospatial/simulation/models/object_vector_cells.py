@@ -473,12 +473,13 @@ class ObjectVectorCellModel:
                     positions, headings, self.object_positions
                 )
 
-            # Apply von Mises directional tuning
-            # von Mises: exp(κ * cos(θ - θ_pref)) / exp(κ)
+            # Apply von Mises directional tuning, peak 1 at θ_pref:
+            # exp(κ (cos(θ - θ_pref) - 1)), which equals exp(κ cos(θ - θ_pref))
+            # / exp(κ) without overflowing exp(κ) for a sharp cell.
             angle_diff = bearings - self.preferred_direction
             direction_response = np.exp(
-                self.direction_kappa * np.cos(angle_diff)
-            ) / np.exp(self.direction_kappa)
+                self.direction_kappa * (np.cos(angle_diff) - 1.0)
+            )
 
             # Combine distance and direction tuning
             combined_response = distance_response * direction_response
