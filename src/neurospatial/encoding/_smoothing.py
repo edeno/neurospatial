@@ -96,13 +96,9 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
         if per_cm is not None:
             bandwidth = 5.0 * per_cm
         else:
-            lengths = np.asarray(
-                [
-                    edge["distance"]
-                    for _, _, edge in env.connectivity.edges(data=True)
-                    if edge.get("distance", 0) > 0
-                ]
-            )
+            # The edge distances of env.connectivity, as one array.
+            distances = env.binning.connections.pair_distances
+            lengths = distances[distances > 0]
             if lengths.size == 0:
                 lengths = env.coordinate_system.fallback_lengths(env)
             bandwidth = 2.5 * float(np.median(lengths))
