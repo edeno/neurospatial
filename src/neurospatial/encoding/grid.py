@@ -91,6 +91,16 @@ _HEX_PERIOD = np.pi / 3
 # the period. When angles cluster near +/-15 degrees of the 0 / 60 degree
 # boundary, the axis flip correction is applied.
 _AXIS_FLIP_THRESHOLD = _HEX_PERIOD / 4
+# The peaks of a hexagon's first ring point in one direction modulo 60
+# degrees. The nearest other ring of a hexagonal lattice, its second ring at
+# sqrt(3) times the spacing, points 30 degrees away, as do half of a square
+# lattice's nearest peaks. Two peaks whose directions differ by less than the
+# midpoint, 15 degrees, can belong to one ring; more, and they cannot.
+_HEX_ANGLE_TOLERANCE = _HEX_PERIOD / 4
+# The peaks of a hexagon's first ring are equidistant from zero lag, and the
+# next lattice point in the same direction lies at twice the spacing. A peak
+# farther than the midpoint, 1.5 times the nearest peak, is not in the ring.
+_HEX_DISTANCE_RATIO = 1.5
 
 
 @dataclass(frozen=True, repr=False)
@@ -106,20 +116,23 @@ class GridProperties(ReadOnlyArraysMixin, ResultMixin):
     scale : float
         Grid spacing (distance between neighboring fields), in the
         environment's units: the median distance from zero lag to the peaks
-        in ``peak_coords``. NaN when fewer than 3 peaks were found.
+        in ``peak_coords``. NaN when ``score`` is NaN or ``peak_coords`` is
+        not the first ring of one hexagon (see :func:`grid_properties`).
     orientation : float
         Grid orientation in radians, range [0, pi/3): the angle of the field
         lattice in the environment's allocentric frame, from +x (East)
         counterclockwise toward +y (North), modulo pi/3, the period of a
-        hexagonal lattice. NaN when fewer than 3 peaks were found.
+        hexagonal lattice. NaN whenever ``scale`` is.
     orientation_std : float
         Standard deviation of the orientation estimates of the peaks, in
-        radians. Lower values indicate a more consistent orientation.
+        radians. Lower values indicate a more consistent orientation. NaN
+        whenever ``scale`` is.
     peak_coords : NDArray[np.float64], shape (n_peaks, 2)
-        Autocorrelogram peaks nearest zero lag, as ``(x_offset, y_offset)``
+        Autocorrelogram peaks of the first ring, as ``(x_offset, y_offset)``
         from zero lag in the environment's units (the same units as
-        ``scale``), along the environment's x and y. Six for a well-formed
-        grid; sorted by distance from zero lag. Read-only.
+        ``scale``), along the environment's x and y: of the peaks nearest
+        zero lag, those less than 1.5 times as far as the nearest one. Six
+        for a well-formed grid; sorted by distance from zero lag. Read-only.
 
     Examples
     --------
@@ -193,8 +206,8 @@ def spatial_autocorrelation(
         the smaller cell width. Zero lag is the center pixel and lags run to
         the full extent of the map in each direction, so for an ``(n_x,
         n_y)`` grid the map is ``(2 * n_x - 1, 2 * n_y - 1)``. Values in
-        [-1, 1]; NaN at shifts where fewer than 20 pairs of visited bins
-        overlap. When the two cell widths differ (by more than 1/100 of a
+        [-1, 1]; NaN at shifts where fewer than a quarter of the visited bins
+        (or fewer than 20 bins) overlap. When the two cell widths differ (by more than 1/100 of a
         cell across the grid) the lags along the wider axis are interpolated
         onto the finer spacing, so the map is larger along that axis.
 
@@ -220,12 +233,36 @@ def spatial_autocorrelation(
     the Pearson correlation over the pairs of bins that are both visited.
     Unvisited bins (NaN) and inactive grid cells are left out of each pair
     set rather than counted as zero firing, so a gap in coverage does not
-    pull correlations toward zero. Shifts with fewer than 20 overlapping
-    pairs are NaN: near the edge of the map so few bins overlap that their
-    correlation is mostly noise. The six
-    sums each correlation needs (pair count, the sums and sums of squares of
-    both sides, and the sum of products) are computed for all shifts at once
-    with zero-padded FFTs.
+    pull correlations toward zero. The six sums each correlation needs (pair
+    count, the sums and sums of squares of both sides, and the sum of
+    products) are computed for all shifts at once with zero-padded FFTs.
+
+    **Shifts with too little overlap are NaN.** A shift is kept when at least
+    a quarter of the visited bins, and at least 20 bins, overlap. The
+    sampling error of a correlation over ``n`` pairs of bins scales as
+    ``1 / sqrt(n)``, so the kept shifts are at most twice as noisy as zero
+    lag; farther out the correlation rests on a strip of bins along two
+    walls. The floor of 20 bins is the one of scaNpix (``spatialCrosscorr``)
+    and NeuroChaT (``spatial_corr_min_obs``) and decides only for maps of
+    fewer than 80 visited bins. In a square arena of side ``L`` a quarter of
+    the bins overlap out to ``0.75 L`` along the walls and ``0.71 L`` along
+    the diagonals.
+
+    The quarter was calibrated on simulated grid cells and on circular time
+    shifts (at least 20 s) of the spike trains of simulated grid, place and
+    untuned cells: 10 and 30 minute sessions in 0.5, 1 and 1.5 m square,
+    1.5 m circular and 1 x 2 m arenas, 2.5 cm bins, 100 shifts per cell.
+    With 20 bins as the only rule, the expanding annulus of
+    :func:`grid_score` reached shifts where only strips along two walls
+    overlap: the 95th percentile of the shuffled scores was 0.45-0.57, 7-11%
+    of them reached 0.4, and single place fields scored up to 0.75. With a
+    quarter, the 95th percentile was 0.41-0.48 (0.15 in the 0.5 m box), 1-8%
+    reached 0.4 and no place or untuned cell scored above 0.24. In arenas of
+    1 m and larger, grid cells with spacings up to 0.6 of the arena's side
+    kept median scores of 1.07-1.38; wider spacings score lower (0.64
+    instead of 1.29 for 80 cm in a 1 m box). Requiring half of the bins
+    removed most of the first ring of 50 cm grids in a 1 m box (median score
+    1.32 fell to 0.43).
 
     Interpretation:
 
@@ -545,9 +582,17 @@ def _uniform_spacing(edges: tuple[NDArray[np.float64], ...]) -> bool:
 
 
 # A lag's correlation needs at least this many pairs of visited bins that
-# overlap at that lag; fewer leave it NaN. Near the map's edge the overlap
-# shrinks to a few bins whose correlation is mostly noise.
+# overlap at that lag; fewer leave it NaN. Caswell Barry's spatialCrosscorr.m
+# in scaNpix and NeuroChaT's ``spatial_corr_min_obs`` default both use 20. It
+# decides only for maps of fewer than 80 visited bins; larger maps reach the
+# fraction below first.
 _MIN_OVERLAP_BINS = 20
+# A lag's correlation also needs at least this fraction of the map's visited
+# bins to overlap. The sampling error of a correlation over n pairs scales as
+# 1 / sqrt(n), so a lag over a quarter of the bins is at most twice as noisy
+# as zero lag. Calibrated on simulated grid cells and circularly time-shifted
+# shuffles (see spatial_autocorrelation).
+_MIN_OVERLAP_FRACTION = 0.25
 
 
 def _linear_autocorrelation(rate_map: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -567,7 +612,8 @@ def _linear_autocorrelation(rate_map: NDArray[np.float64]) -> NDArray[np.float64
     ndarray of float64, shape (2 * n_x - 1, 2 * n_y - 1)
         Correlation at lag ``(i - (n_x - 1), j - (n_y - 1))`` at index
         ``(i, j)``: zero lag is the center. NaN where fewer than
-        ``_MIN_OVERLAP_BINS`` pairs overlap or either side of the overlap is
+        ``_MIN_OVERLAP_BINS`` pairs, or fewer than ``_MIN_OVERLAP_FRACTION``
+        of the finite bins, overlap, or where either side of the overlap is
         constant.
     """
     valid = np.isfinite(rate_map)
@@ -609,8 +655,9 @@ def _linear_autocorrelation(rate_map: NDArray[np.float64]) -> NDArray[np.float64
         # A side of the overlap whose values are all equal has a variance of
         # rounding error only: its correlation is undefined.
         floor = 1e-9 * n_pairs**2
+        min_pairs = max(_MIN_OVERLAP_BINS, _MIN_OVERLAP_FRACTION * values.size)
         defined = (
-            (n_pairs >= _MIN_OVERLAP_BINS)
+            (n_pairs >= min_pairs)
             & (variance_first > floor)
             & (variance_second > floor)
         )
@@ -772,27 +819,45 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
        fields.
     2. Rotate the autocorrelogram by 30°, 60°, 90°, 120° and 150° about zero
        lag.
-    3. For each outer radius from twice the central-peak radius to the edge
-       of the map, in steps of one pixel, take the annulus between the
-       central peak and that radius, and compute the Pearson correlation
-       between the autocorrelogram and each rotation over the lags defined
-       in the map and in all five rotations:
+    3. For each outer radius from twice the central-peak radius to the
+       farthest lag defined in the map and in all five rotations, in steps
+       of one pixel, take the annulus between the central peak and that
+       radius, and compute the Pearson correlation between the
+       autocorrelogram and each rotation over the lags defined in the map
+       and in all five rotations:
        ``min(r60, r120) - max(r30, r90, r150)``. A neighboring field lies at
        least one central-peak diameter from zero lag, so a narrower annulus
        holds only the shoulder of the central peak; scaNpix likewise keeps
        its first annulus wider than a multiple of the inner radius.
     4. The score is the largest mean of three consecutive radii.
 
+    :func:`spatial_autocorrelation` leaves the shifts at which fewer than a
+    quarter of the visited bins overlap undefined, so the annulus stops where
+    the correlations still rest on most of the map. Sweeping it to the edge
+    of the map, as BNT does, lets correlations over strips of a few bins
+    along the walls decide the score; on circularly time-shifted shuffles
+    that put the 95th percentile at 0.45-0.57 and let single place fields
+    score up to 0.75.
+
     The 0.2 threshold and the factor of two are fixed module constants, not
     parameters.
 
     Sweeping the outer radius makes the score independent of the grid
     spacing and of the arena size, as long as the first ring of peaks lies
-    inside the map; a fixed annulus misses the ring of a widely spaced grid.
+    inside the defined lags, for spacings up to about 0.6 of the arena's
+    side; a fixed annulus misses the ring of a widely spaced grid.
 
     **Interpretation**:
 
-    - **score > 0.4**: hexagonal grid (a common grid-cell threshold)
+    - **higher scores**: stronger sixfold rotational symmetry. 0.4 is a
+      common screening convention for grid cells, not a verdict: on
+      circular time shifts of the spike trains of simulated grid, place and
+      untuned cells (0.5-1.5 m arenas, 10-30 minutes), 1-8% of the shuffled
+      maps scored 0.4 or more, and the 95th percentile of a single cell's
+      shuffled scores reached 0.61. Calling a cell a grid cell needs a null
+      distribution from your own recording: recompute the score after
+      circularly shifting the spike train in time (by at least 20 s), many
+      times, and compare the observed score with it.
     - **score ≈ 0**: no hexagonal structure (place cells, non-spatial cells)
     - **score < 0**: four-fold or other non-hexagonal symmetry
 
@@ -832,10 +897,6 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
     if np.isnan(central_radius):
         return np.nan
     edge = (min(centered.shape) - 1) // 2
-    radii = np.arange(int(np.ceil(_MIN_OUTER_RADIUS * central_radius)), edge + 1)
-    if radii.size < _N_SCORE_RADII:
-        return np.nan
-
     distance = _lag_distance(centered.shape)
     used = np.isfinite(centered) & (distance > central_radius) & (distance <= edge)
     rotations = []
@@ -843,6 +904,14 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
         rotated, defined = _rotate_about_zero_lag(centered, angle)
         rotations.append(rotated)
         used &= defined
+    if not used.any():
+        return np.nan
+    # The annulus grows only as far as the lags that are defined in the map
+    # and in every rotation; beyond them it would add no lags.
+    outer = int(np.floor(distance[used].max()))
+    radii = np.arange(int(np.ceil(_MIN_OUTER_RADIUS * central_radius)), outer + 1)
+    if radii.size < _N_SCORE_RADII:
+        return np.nan
 
     # Pearson correlation in every annulus at once: cumulative sums over the
     # lags sorted by distance, read at each outer radius.
@@ -1002,10 +1071,10 @@ def _find_autocorr_peaks(
 
     A peak is a local maximum outside the central peak (see
     :func:`grid_score`) whose correlation is at least ``threshold_rel`` times
-    the zero-lag correlation. Peaks closer together than the central peak's
-    radius are one field, of which the higher is kept. Both lengths come from
-    the field size in the map, so the search does not depend on the pixel
-    size.
+    the zero-lag correlation and whose eight neighbors are all defined lags.
+    Peaks closer together than the central peak's radius are one field, of
+    which the higher is kept. Both lengths come from the field size in the
+    map, so the search does not depend on the pixel size.
 
     Parameters
     ----------
@@ -1041,6 +1110,12 @@ def _find_autocorr_peaks(
         threshold_abs=threshold_rel * centered[tuple(center)],
         exclude_border=False,
     )
+    # A maximum on the edge of the defined lags is not confirmed: the
+    # correlation may keep rising into the lags beyond it.
+    interior = ndimage.binary_erosion(
+        valid, structure=np.ones((3, 3), dtype=bool), border_value=0
+    )
+    peaks = peaks[interior[peaks[:, 0], peaks[:, 1]]]
     offsets = peaks.astype(np.float64) - center
     distances = np.hypot(offsets[:, 0], offsets[:, 1])
     outside = distances > central_radius
@@ -1089,7 +1164,9 @@ def grid_scale(
 
     Grid scale is the characteristic distance between adjacent grid fields,
     computed as the median distance from the autocorrelogram center to the
-    6 nearest peaks (the first ring of hexagonal symmetry).
+    6 nearest peaks (the first ring of hexagonal symmetry). It is NaN unless
+    those peaks can be one hexagon, so a map without a lattice gets no
+    spacing.
 
     Parameters
     ----------
@@ -1106,13 +1183,18 @@ def grid_scale(
         lattice. At least 3.
     threshold_rel : float, default=0.1
         Minimum peak correlation as a fraction of the zero-lag correlation
-        (which is 1 for :func:`spatial_autocorrelation`). In [0, 1).
+        (which is 1 for :func:`spatial_autocorrelation`). In [0, 1). On
+        simulated grid cells and their time-shifted shuffles, 0.1 gave as
+        many correct spacings as 0 (91%) with fewer wrong ones (3% against
+        4%) and fewer spacings for shuffles (19% against 26%); 0.2 lost
+        correct spacings (87%).
 
     Returns
     -------
     scale : float
-        Grid spacing in the units of ``pixel_size``. NaN if fewer than 3 peaks
-        are found.
+        Grid spacing in the units of ``pixel_size``. NaN when the grid score
+        is NaN or the peaks nearest zero lag are not the first ring of one
+        hexagon (step 4 below): there is no lattice to read a spacing from.
 
     Raises
     ------
@@ -1130,9 +1212,33 @@ def grid_scale(
     2. Find local maxima outside it with correlation at least
        ``threshold_rel``; maxima closer together than the central peak's
        radius are one field. Both lengths follow the field size, so the
-       spacing does not depend on the pixel size.
-    3. Take the ``n_peaks`` maxima nearest zero lag and return the median of
-       their distances, converted to physical units with ``pixel_size``.
+       spacing does not depend on the pixel size. A maximum next to an
+       undefined lag is left out: the correlation may keep rising past the
+       lags :func:`spatial_autocorrelation` defines, so a ring beyond them
+       (spacings above about 0.6 of a square arena's side, 0.55 of a
+       circular arena's diameter) gives no spacing rather than a short one.
+    3. Take the ``n_peaks`` maxima nearest zero lag and keep those less than
+       1.5 times as far as the nearest: the first ring. The next lattice
+       point in a ring peak's direction lies at twice the spacing, so 1.5 is
+       the midpoint between the two.
+    4. The ring must be one hexagon: at least 3 peaks whose directions,
+       every two of them, differ by less than 15 degrees modulo 60 degrees.
+       The peaks of a hexagon point in one direction modulo 60 degrees,
+       while the second ring of a lattice and half of a square lattice's
+       nearest peaks point 30 degrees away; 15 degrees is the midpoint.
+       Otherwise the spacing is NaN, as it is when :func:`grid_score` is.
+    5. Return the median distance of the ring's peaks from zero lag,
+       converted to physical units with ``pixel_size``.
+
+    The checks need no score threshold. A grid score can be negative while
+    the ring is a hexagon (sparse, irregular fields), and a map without a
+    lattice still has local maxima: on smoothed random maps the median
+    distance to the six nearest maxima gave a spacing for 96 of 100 maps,
+    these checks for 23, and for 19% of circularly time-shifted shuffles of
+    simulated grid cells instead of all of them. Of the simulated grid cells
+    (30-90 cm spacings in 1-1.5 m arenas, 10 minutes) 91% got a spacing
+    within 10% of the truth (94% before), 3% a wrong one (6% before), and
+    the largest orientation error fell from 21 to 13 degrees.
 
     Examples
     --------
@@ -1169,12 +1275,45 @@ def grid_scale(
         436(7052), 801-806.
     """
     _validate_peak_arguments(autocorr_2d, pixel_size, n_peaks, threshold_rel)
-    peak_coords = _find_autocorr_peaks(
-        autocorr_2d, threshold_rel=threshold_rel, max_peaks=n_peaks
+    peak_coords, hexagonal = _first_ring(
+        _find_autocorr_peaks(
+            autocorr_2d, threshold_rel=threshold_rel, max_peaks=n_peaks
+        )
     )
-    if len(peak_coords) < 3:
+    if np.isnan(grid_score(autocorr_2d)) or not hexagonal:
         return np.nan
     return float(np.median(np.hypot(peak_coords[:, 0], peak_coords[:, 1]))) * pixel_size
+
+
+def _first_ring(
+    peak_coords: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], bool]:
+    """The peaks of a hexagon's first ring among the peaks nearest zero lag.
+
+    Parameters
+    ----------
+    peak_coords : NDArray[np.float64], shape (n_peaks, 2)
+        Peak offsets from zero lag, sorted by distance from it, in any one
+        length unit.
+
+    Returns
+    -------
+    ring : NDArray[np.float64], shape (n_ring, 2)
+        The peaks less than ``_HEX_DISTANCE_RATIO`` times as far from zero
+        lag as the nearest peak.
+    hexagonal : bool
+        True when ``ring`` has at least 3 peaks and the directions of every
+        two of them differ by less than ``_HEX_ANGLE_TOLERANCE`` modulo 60
+        degrees, so they can be one hexagon.
+    """
+    distances = np.hypot(peak_coords[:, 0], peak_coords[:, 1])
+    if len(distances) == 0:
+        return peak_coords, False
+    ring = peak_coords[distances < _HEX_DISTANCE_RATIO * distances[0]]
+    angles = np.arctan2(ring[:, 1], ring[:, 0])
+    difference = angles[:, None] - angles[None, :]
+    folded = np.abs((difference + _HEX_PERIOD / 2) % _HEX_PERIOD - _HEX_PERIOD / 2)
+    return ring, bool(len(ring) >= 3 and np.all(folded < _HEX_ANGLE_TOLERANCE))
 
 
 def grid_properties(
@@ -1208,7 +1347,7 @@ def grid_properties(
         first ring of a hexagonal lattice. At least 3.
     threshold_rel : float, default=0.1
         Minimum peak correlation as a fraction of the zero-lag correlation.
-        In [0, 1).
+        In [0, 1). See :func:`grid_scale` for its calibration.
 
     Returns
     -------
@@ -1225,10 +1364,12 @@ def grid_properties(
 
     Notes
     -----
-    Peaks are found as in :func:`grid_scale`. Orientation is the mean angle
-    of the peaks modulo 60 degrees, after moving angles near the 0/60
-    boundary to the side most peaks are on. Scale and orientation are NaN
-    when fewer than 3 peaks are found.
+    Peaks are found, and checked to be the first ring of one hexagon, as in
+    :func:`grid_scale`. Orientation is the mean angle of the peaks modulo 60
+    degrees, after moving angles near the 0/60 boundary to the side most
+    peaks are on. Scale, orientation and its spread are NaN when the score is
+    NaN or the peaks are not one hexagon's first ring; ``peak_coords`` still
+    holds the peaks found.
 
     Examples
     --------
@@ -1270,10 +1411,12 @@ def grid_properties(
     """
     _validate_peak_arguments(autocorr_2d, pixel_size, n_peaks, threshold_rel)
     score = grid_score(autocorr_2d)
-    peak_coords = _find_autocorr_peaks(
-        autocorr_2d, threshold_rel=threshold_rel, max_peaks=n_peaks
+    peak_coords, hexagonal = _first_ring(
+        _find_autocorr_peaks(
+            autocorr_2d, threshold_rel=threshold_rel, max_peaks=n_peaks
+        )
     )
-    if len(peak_coords) < 3:
+    if np.isnan(score) or not hexagonal:
         return GridProperties(
             score=score,
             scale=np.nan,

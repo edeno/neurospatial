@@ -682,15 +682,22 @@ print("Hexagonal rotational-symmetry score:", score)
 
 At each shift the autocorrelogram is the Pearson correlation between the map
 and its shifted copy over the bins visited in both, without wrapping around
-the arena; shifts with fewer than 20 overlapping bins are NaN. Unvisited bins
-are left out rather than counted as silent, but that does not remove sampling
-bias. The score sweeps an annulus from the edge of the central peak outward
-and keeps the best 60°-versus-30° rotational contrast, so it does not depend
-on the grid spacing as long as the first ring of fields fits in the arena. It
-is NaN when the central peak is not bounded inside the map or the arena is too
-small for an annulus around it. Inspect the rate map, autocorrelogram and
-occupancy together. A conventional score cutoff is not a calibrated
-significance test. On layouts without a rectangular grid (hexagonal bins,
+the arena. Shifts at which fewer than a quarter of the visited bins overlap
+are NaN: their correlation rests on a strip of bins along two walls and is
+more than twice as noisy as at zero lag. Unvisited bins are left out rather
+than counted as silent, but that does not remove sampling bias. The score
+sweeps an annulus from the edge of the central peak out to those shifts and
+keeps the best 60°-versus-30° rotational contrast, so it does not depend on
+the grid spacing as long as the first ring of fields fits, for spacings up to
+about 0.6 of the arena's side. It is NaN when the central peak is not bounded
+inside the defined shifts or the arena is too small for an annulus around it.
+`grid_properties` reads spacing and orientation only from peaks that can be one
+hexagon's first ring, and leaves them NaN otherwise. Inspect the rate map,
+autocorrelogram and occupancy together. A score of 0.4 is a common screening
+convention, not a significance test: on circularly time-shifted spike trains of
+simulated grid, place and untuned cells, 1-8% of the shuffled maps reached it.
+To call a grid cell, compare its score with the scores of its own spike train
+circularly shifted in time. On layouts without a rectangular grid (hexagonal bins,
 tracks, meshes) there is no grid score: `summary_table()` records it in
 `attrs["unavailable_metrics"]`. `spatial_autocorrelation_radial` from
 `neurospatial.encoding.grid` gives a distance-correlation profile there, but a

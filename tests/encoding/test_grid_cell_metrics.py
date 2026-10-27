@@ -13,8 +13,13 @@ from neurospatial import Environment
 
 
 def _direct_autocorrelation(rate_map: np.ndarray) -> np.ndarray:
-    """Pearson correlation at each lag over the overlapping finite bins, by loop."""
+    """Pearson correlation at each lag over the overlapping finite bins, by loop.
+
+    A lag is defined when at least 20 pairs and at least a quarter of the
+    finite bins overlap.
+    """
     n_x, n_y = rate_map.shape
+    min_pairs = max(20, np.isfinite(rate_map).sum() / 4)
     expected = np.full((2 * n_x - 1, 2 * n_y - 1), np.nan)
     for dx in range(1 - n_x, n_x):
         for dy in range(1 - n_y, n_y):
@@ -26,7 +31,7 @@ def _direct_autocorrelation(rate_map: np.ndarray) -> np.ndarray:
             ]
             both = np.isfinite(first) & np.isfinite(second)
             x, y = first[both], second[both]
-            if both.sum() >= 20 and np.ptp(x) > 0 and np.ptp(y) > 0:
+            if both.sum() >= min_pairs and np.ptp(x) > 0 and np.ptp(y) > 0:
                 expected[dx + n_x - 1, dy + n_y - 1] = np.corrcoef(x, y)[0, 1]
     return expected
 
@@ -42,16 +47,16 @@ def test_autocorrelation_is_pearson_over_overlapping_visited_bins(inactive):
     env = Environment.from_grid_mask(mask, (np.arange(10.0), np.arange(13.0)))
     rates = np.random.default_rng(3).gamma(2.0, 2.0, env.n_bins)
     rates[[3, 17, 40]] = np.nan
-    # Two silent rows make the overlap at a shift of 7 rows constant on one
-    # side, where the correlation is undefined.
-    rates[-24:] = 0.0
+    # Three silent rows make the overlap at a shift of 6 rows constant on one
+    # side, where the correlation is undefined although 36 pairs overlap.
+    rates[-36:] = 0.0
     rate_map = np.full(mask.shape, np.nan)
     rate_map[mask] = rates
 
     actual = spatial_autocorrelation(env, rates)
 
     assert actual.shape == (17, 23)
-    assert np.isnan(actual[8 + 7, 11])
+    assert np.isnan(actual[8 + 6, 11])
     np.testing.assert_allclose(actual[8, 11], 1.0, atol=1e-12)
     np.testing.assert_array_equal(
         np.isnan(actual), np.isnan(_direct_autocorrelation(rate_map))
@@ -63,19 +68,21 @@ def test_autocorrelation_is_pearson_over_overlapping_visited_bins(inactive):
 
 
 def test_autocorrelation_of_a_shifted_copy_is_not_wrapped():
-    """A shift by the map's own period correlates once; the circular map wrapped it."""
+    """A ramp correlates perfectly at every shift; wrapping it around would not."""
     from neurospatial.encoding.grid import spatial_autocorrelation
 
     mask = np.ones((30, 30), dtype=bool)
     env = Environment.from_grid_mask(mask, (np.arange(31.0),) * 2)
     x = env.bin_centers[:, 0]
     # A ramp along x: shifting by +k correlates perfectly with the overlap,
-    # while wrap-around would join the top of the ramp to its bottom.
+    # while wrap-around would join the top of the ramp to its bottom. Shifts
+    # up to 22 of 30 columns overlap in at least a quarter of the bins.
     autocorr = spatial_autocorrelation(env, x)
 
-    finite = np.isfinite(autocorr[29 + 1 : 29 + 25, 29])
+    finite = np.isfinite(autocorr[29 + 1 : 29 + 23, 29])
     assert finite.all()
-    np.testing.assert_allclose(autocorr[29 + 1 : 29 + 25, 29], 1.0, atol=1e-12)
+    np.testing.assert_allclose(autocorr[29 + 1 : 29 + 23, 29], 1.0, atol=1e-12)
+    assert np.isnan(autocorr[29 + 23, 29])
 
 
 class TestSpatialAutocorrelation:
@@ -268,15 +275,10 @@ class TestGridScore:
     """Tests for grid_score function."""
 
     def test_grid_score_anchor_perfect_hexagonal(self):
-        """Anchor test: Synthetic perfect hexagonal pattern should score > 0.3.
+        """A synthetic hexagonal autocorrelogram scores near the top of the range.
 
-        Mathematical reasoning:
-        - Perfect hexagonal symmetry has correlation at 60°, 120° rotations
-        - Grid score = min(r60, r120) - max(r30, r90, r150)
-        - For perfect hex: r60 ≈ r120 ≈ 1.0, r30 ≈ r90 ≈ r150 ≈ low
-        - Expected score > 0.3 (literature threshold for grid cells)
-
-        Reference: Langston et al. (2010) Science
+        Hexagonal symmetry correlates at 60° and 120° rotations and not at
+        30°, 90° and 150°, so min(r60, r120) - max(r30, r90, r150) is large.
         """
         from neurospatial.encoding.grid import grid_score
 
@@ -304,16 +306,9 @@ class TestGridScore:
 
         score = grid_score(autocorr)
 
-        # Perfect hexagonal pattern. Rotated about its zero-lag pixel, this
-        # synthetic Gaussian-peak autocorrelogram scores ~1.52 (1.40 when the
-        # rotation center sat half a pixel off zero lag); bracket it as
-        # 0.4 < score < 1.8, well above the 0.3 literature threshold and below
-        # the +2 theoretical maximum, so a regression that under- or
-        # over-scores hex symmetry fails.
-        assert 0.4 < score < 1.8, (
-            f"Expected grid score in (0.4, 1.8) for perfect hexagonal pattern, "
-            f"got {score}"
-        )
+        # Rotated about its zero-lag pixel, this synthetic Gaussian-peak
+        # autocorrelogram scores about 1.63.
+        assert 1.55 < score < 1.7, score
 
     def test_grid_score_anchor_isotropic_noise(self):
         """Anchor test: Isotropic random noise should have score near 0.
@@ -366,6 +361,64 @@ class TestGridScore:
         # Hexagonal pattern should produce positive score
         # (Not necessarily > 0.4 for this simplified pattern, but should be > 0)
         assert score > 0.0
+
+    def test_smooth_random_maps_rarely_reach_the_screening_value(self):
+        """Smooth maps without a lattice seldom score 0.4 or more.
+
+        Smoothed random maps resemble the rate maps of time-shifted spike
+        trains. When the annulus swept out to shifts where only strips along
+        two walls overlap, 13.5% of these maps reached 0.4 and the 95th
+        percentile was 0.60; keeping shifts where a quarter of the bins
+        overlap brings them to 5% and 0.40.
+        """
+        from scipy.ndimage import gaussian_filter
+
+        from neurospatial.encoding.grid import grid_score, spatial_autocorrelation
+
+        edges = np.arange(0.0, 102.5, 2.5)
+        env = Environment.from_grid_mask(
+            np.ones((40, 40), dtype=bool), grid_edges=(edges, edges)
+        )
+        rng = np.random.default_rng(0)
+        scores = np.array(
+            [
+                grid_score(
+                    spatial_autocorrelation(
+                        env, gaussian_filter(rng.gamma(1.0, 1.0, (40, 40)), 3.0).ravel()
+                    )
+                )
+                for _ in range(200)
+            ]
+        )
+
+        assert np.mean(scores >= 0.4) < 0.08
+        assert np.nanpercentile(scores, 95) < 0.45
+
+    @pytest.mark.parametrize(("side", "spacing"), [(100.0, 60.0), (150.0, 90.0)])
+    @pytest.mark.parametrize("orientation", [0.0, 0.3, 0.6, 0.9])
+    def test_grid_spaced_at_six_tenths_of_the_arena_scores_high(
+        self, side, spacing, orientation
+    ):
+        """The first ring of a grid spaced at 0.6 of the arena's side is scored."""
+        from neurospatial.encoding.grid import grid_score, spatial_autocorrelation
+
+        edges = np.arange(0.0, side + 1.25, 2.5)
+        n_cells = len(edges) - 1
+        env = Environment.from_grid_mask(
+            np.ones((n_cells, n_cells), dtype=bool), grid_edges=(edges, edges)
+        )
+        axes = spacing * np.array(
+            [
+                [np.cos(orientation), np.sin(orientation)],
+                [np.cos(orientation + np.pi / 3), np.sin(orientation + np.pi / 3)],
+            ]
+        )
+        steps = np.arange(-8, 9)
+        centers = np.stack(np.meshgrid(steps, steps), axis=-1).reshape(-1, 2) @ axes
+        squared = np.sum((env.bin_centers[:, None] - centers[None]) ** 2, axis=-1)
+        rate = np.exp(-squared / (2 * (0.15 * spacing) ** 2)).sum(axis=1)
+
+        assert grid_score(spatial_autocorrelation(env, rate)) > 1.2
 
     def test_place_cell_pattern_low_score(self):
         """A single place field's autocorrelogram has no hexagonal ring."""
@@ -658,11 +711,8 @@ class TestGridProperties:
         score_individual = grid_score(autocorr)
         scale_individual = grid_scale(autocorr, pixel_size=pixel_size)
 
-        # Score should match exactly
         assert props.score == score_individual
-
-        # Scale should match (within tolerance due to peak detection variance)
-        assert abs(props.scale - scale_individual) < 5.0
+        assert props.scale == scale_individual
 
     def test_grid_properties_raises_on_invalid_input(self):
         """Test raises ValueError on invalid input."""
@@ -692,6 +742,183 @@ class TestGridProperties:
         assert np.isnan(props.orientation_std)
         # n_peaks should be 0 for flat data
         assert props.n_peaks == 0
+
+
+def _autocorr_with_peaks(peaks: list[tuple[float, float]]) -> np.ndarray:
+    """Autocorrelogram with a central peak and point-symmetric peak pairs.
+
+    ``peaks`` holds ``(distance_px, angle_deg)`` of one peak of each pair.
+    """
+    size = 121
+    offsets = np.arange(size) - size // 2
+    x, y = np.meshgrid(offsets, offsets, indexing="ij")
+    autocorr = np.exp(-(x**2 + y**2) / (2 * 4.0**2))
+    for distance, angle in peaks:
+        for sign in (1, -1):
+            cx = sign * distance * np.cos(np.radians(angle))
+            cy = sign * distance * np.sin(np.radians(angle))
+            autocorr += 0.6 * np.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (2 * 4.0**2))
+    return autocorr / autocorr.max()
+
+
+class TestSpacingNeedsOneHexagon:
+    """Spacing and orientation are read only from a hexagon's first ring.
+
+    The nearest peaks of the autocorrelogram give a spacing only when they
+    can be one hexagon: their directions agree modulo 60 degrees to within
+    15 degrees (the second ring of a lattice, and half of a square lattice's
+    nearest peaks, point 30 degrees away), and peaks 1.5 or more times as far
+    as the nearest are not in the ring.
+    """
+
+    def test_hexagonal_ring_gives_its_spacing_and_orientation(self):
+        from neurospatial.encoding.grid import grid_properties
+
+        autocorr = _autocorr_with_peaks([(20.0, 10.0), (20.0, 70.0), (20.0, 130.0)])
+
+        props = grid_properties(autocorr, pixel_size=2.0)
+
+        assert props.n_peaks == 6
+        assert props.scale == pytest.approx(40.0, abs=1.0)
+        assert np.degrees(props.orientation) == pytest.approx(10.0, abs=2.0)
+
+    def test_fields_merged_into_two_directions_have_no_spacing(self):
+        """Wide fields leave peaks 23 degrees apart: not one hexagon.
+
+        With fields as wide as a third of the spacing, a 50 cm grid's map
+        left peaks at 61 cm (19 degrees) and 71 cm (42 degrees), and the
+        spacing read 66 cm.
+        """
+        from neurospatial.encoding.grid import grid_properties, grid_scale
+
+        autocorr = _autocorr_with_peaks([(24.4, 19.0), (28.4, 42.0)])
+
+        props = grid_properties(autocorr, pixel_size=2.5)
+
+        assert np.isfinite(props.score)
+        assert np.isnan(props.scale)
+        assert np.isnan(props.orientation)
+        assert np.isnan(props.orientation_std)
+        assert np.isnan(grid_scale(autocorr, pixel_size=2.5))
+
+    def test_second_ring_peaks_do_not_set_the_spacing(self):
+        """Oversmoothing left one direction of the ring and second-ring peaks.
+
+        A 45 cm grid smoothed with a 12 cm bandwidth kept a ring pair at
+        42 cm (30 degrees) beside second-ring peaks at 70 cm, and the spacing
+        read 70 cm.
+        """
+        from neurospatial.encoding.grid import grid_properties
+
+        autocorr = _autocorr_with_peaks([(17.0, 30.0), (27.8, 60.0), (28.4, 2.0)])
+
+        props = grid_properties(autocorr, pixel_size=2.5)
+
+        assert np.isnan(props.scale)
+        assert np.isnan(props.orientation)
+
+    def test_ring_with_one_direction_missing_keeps_its_spacing(self):
+        """Second-ring peaks among the six nearest are left out, not fatal."""
+        from neurospatial.encoding.grid import grid_properties
+
+        autocorr = _autocorr_with_peaks([(18.0, 38.0), (18.0, 98.0), (31.2, 8.0)])
+
+        props = grid_properties(autocorr, pixel_size=2.5)
+
+        assert props.n_peaks == 4
+        assert props.scale == pytest.approx(45.0, abs=1.5)
+        assert np.degrees(props.orientation) == pytest.approx(38.0, abs=3.0)
+
+    def test_square_lattice_has_no_hexagonal_spacing(self):
+        from neurospatial.encoding.grid import grid_properties
+
+        autocorr = _autocorr_with_peaks(
+            [(20.0, 0.0), (20.0, 90.0), (28.3, 45.0), (28.3, 135.0)]
+        )
+
+        props = grid_properties(autocorr, pixel_size=2.0)
+
+        assert np.isnan(props.scale)
+        assert np.isnan(props.orientation)
+
+    def test_no_spacing_when_the_score_is_undefined(self):
+        """An 80 cm grid in a 50 cm box has no bounded central peak."""
+        from neurospatial.encoding.grid import (
+            autocorrelation_pixel_size,
+            grid_properties,
+            spatial_autocorrelation,
+        )
+
+        edges = np.arange(0.0, 51.25, 2.5)
+        env = Environment.from_grid_mask(
+            np.ones((20, 20), dtype=bool), grid_edges=(edges, edges)
+        )
+        wavenumber = 4 * np.pi / (np.sqrt(3) * 80.0)
+        rate = np.exp(
+            sum(
+                np.cos(wavenumber * (env.bin_centers - 10.0) @ [np.cos(a), np.sin(a)])
+                for a in (0.3, 0.3 + np.pi / 3, 0.3 + 2 * np.pi / 3)
+            )
+        )
+
+        props = grid_properties(
+            spatial_autocorrelation(env, rate),
+            pixel_size=autocorrelation_pixel_size(env),
+        )
+
+        assert np.isnan(props.score)
+        assert np.isnan(props.scale)
+        assert np.isnan(props.orientation)
+
+    @pytest.mark.parametrize(("spacing", "expected"), [(60.0, 60.0), (85.0, np.nan)])
+    def test_a_ring_beyond_the_defined_lags_gives_no_spacing(self, spacing, expected):
+        """Maxima on the edge of the defined lags are not peaks.
+
+        The first ring of an 85 cm grid in a 1 m box lies where less than a
+        quarter of the map overlaps; the correlation still rising toward it
+        made maxima on the edge of the defined lags, and the spacing read
+        71 cm. A 60 cm ring lies inside and keeps its spacing.
+        """
+        from neurospatial.encoding.grid import grid_scale, spatial_autocorrelation
+
+        edges = np.arange(0.0, 101.25, 2.5)
+        env = Environment.from_grid_mask(
+            np.ones((40, 40), dtype=bool), grid_edges=(edges, edges)
+        )
+        wavenumber = 4 * np.pi / (np.sqrt(3) * spacing)
+        rate = np.exp(
+            sum(
+                np.cos(wavenumber * (env.bin_centers - 20.0) @ [np.cos(a), np.sin(a)])
+                for a in (0.3, 0.3 + np.pi / 3, 0.3 + 2 * np.pi / 3)
+            )
+        )
+
+        scale = grid_scale(spatial_autocorrelation(env, rate), pixel_size=2.5)
+
+        np.testing.assert_allclose(scale, expected, atol=1.5)
+
+    def test_smooth_random_maps_rarely_get_a_spacing(self):
+        """Without a hexagonal ring, most maps get no spacing (96% did before)."""
+        from scipy.ndimage import gaussian_filter
+
+        from neurospatial.encoding.grid import grid_scale, spatial_autocorrelation
+
+        edges = np.arange(0.0, 102.5, 2.5)
+        env = Environment.from_grid_mask(
+            np.ones((40, 40), dtype=bool), grid_edges=(edges, edges)
+        )
+        rng = np.random.default_rng(0)
+        scales = [
+            grid_scale(
+                spatial_autocorrelation(
+                    env, gaussian_filter(rng.gamma(1.0, 1.0, (40, 40)), 3.0).ravel()
+                ),
+                pixel_size=2.5,
+            )
+            for _ in range(100)
+        ]
+
+        assert np.mean(np.isfinite(scales)) < 0.35
 
 
 class TestFindAutocorrPeaks:
