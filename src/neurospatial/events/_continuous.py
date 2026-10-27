@@ -208,9 +208,9 @@ def _resolve_features(
             )
         unit = units_in.get(col)
         if kind == "circular":
-            if unit is None:
+            if unit is None or unit in _RADIAN_UNITS:
                 unit = "rad"
-            elif unit not in _RADIAN_UNITS:
+            else:
                 raise ValueError(
                     _format_error(
                         f"{call}: circular feature {fid!r} has unit {unit!r}.",

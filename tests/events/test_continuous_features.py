@@ -66,7 +66,7 @@ def test_valid_explicit_choices():
         feature_units={"heading": "radians"},
     )
     assert spec.interpolation == ("previous", "previous", "previous")
-    assert spec.units[1] == "radians"
+    assert spec.units[1] == "rad"  # every radian spelling is stored as "rad"
 
 
 @pytest.mark.parametrize(

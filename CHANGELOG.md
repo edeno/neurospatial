@@ -78,6 +78,14 @@ Fixed:
 - `event_count_in_window` and `event_indicator` refuse a NaN or infinite
   window bound (a NaN start gave negative counts) and 2-D time arrays.
   `time_to_nearest_event` refuses `max_time=nan`, which returned all NaN.
+- `ContinuousEventResult` turns list and tuple fields into arrays and tuples
+  before checking them: a list `event_status` passed the checks and then
+  reported 0 retained events. Construction also checks `dt`, `window`, that
+  `relative_times` is their query grid, `max_gap`, `epochs`, interpolation
+  per value kind, unique `feature_ids`, counts within the retained events,
+  finite values wherever `support` is True, and the unit of circular
+  features. `align_continuous_to_events` stores every radian spelling
+  (`"radian"`, `"radians"`) as `"rad"`.
 
 ### Encoding cleanup and faster analyses
 

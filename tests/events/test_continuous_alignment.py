@@ -488,6 +488,22 @@ def test_result_accepts_consistent_inputs():
     assert result.n_events == 1
 
 
+def test_result_list_fields_become_arrays_and_tuples():
+    """A list event_status passed the checks, then counted 0 retained events."""
+    inputs = _result_inputs()
+    inputs["event_status"] = ["retained", "outside_recording"]
+    inputs["value_kinds"] = ["linear"]
+    inputs["window"] = [0.0, 1.0]
+
+    result = ContinuousEventResult(**inputs)
+
+    assert result.n_events == 1
+    assert result.event_indices.tolist() == [0]
+    assert result.value_kinds == ("linear",)
+    assert result.window == (0.0, 1.0)
+    assert not result.event_status.flags.writeable
+
+
 @pytest.mark.parametrize(
     ("override", "match"),
     [
@@ -510,6 +526,24 @@ def test_result_accepts_consistent_inputs():
         (
             {"category_features": np.array([0], dtype=np.intp)},
             "one entry per category row",
+        ),
+        ({"dt": 0.0}, "dt must be a positive"),
+        ({"window": (1.0, 0.0)}, "start < stop"),
+        ({"relative_times": np.array([7.0, 8.0])}, "query grid"),
+        ({"max_gap": -3.0}, "max_gap must be None"),
+        ({"interpolation": ("spline",)}, "not allowed for linear"),
+        ({"epochs": np.array([1.0, 2.0, 3.0])}, "epochs must be None"),
+        (
+            {"counts": np.full((2, 1), 2, dtype=np.int64)},
+            r"counts must lie in \[0, 1\]",
+        ),
+        ({"counts": -np.ones((2, 1), dtype=np.int64)}, "counts must lie in"),
+        ({"values": np.full((1, 2, 1), np.nan)}, "finite wherever support"),
+        ({"feature_ids": np.array(["s", "s"])}, "feature_ids must be unique"),
+        ({"resultant_threshold": "0.1"}, "resultant_threshold must be finite"),
+        (
+            {"value_kinds": ("circular",), "interpolation": ("circular",)},
+            "circular features need unit 'rad'",
         ),
     ],
 )

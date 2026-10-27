@@ -24,6 +24,7 @@ from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
 from neurospatial._observation import validated_signals
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, as_label_array
 from neurospatial.events._continuous import (
+    _ALLOWED_INTERPOLATION,
     _EVENT_STATUSES,
     _VALUE_KINDS,
     _check_category_codes,
@@ -45,6 +46,21 @@ if TYPE_CHECKING:
 __all__ = ["ContinuousEventResult", "align_continuous_to_events"]
 
 _WINDOW_COVERAGES = ("complete", "partial")
+_REQUIRED_ARRAY_FIELDS = (
+    "relative_times",
+    "feature_ids",
+    "event_status",
+    "overlapping",
+    "counts",
+    "sums",
+    "sin_sums",
+    "cos_sums",
+    "category_features",
+    "category_codes",
+    "category_labels",
+    "category_counts",
+)
+_ARRAY_FIELDS = (*_REQUIRED_ARRAY_FIELDS, "epochs", "values", "support", "event_ids")
 _MEAN_STATUSES = ("defined", "no_support", "undefined_direction", "not_numeric")
 
 
@@ -147,6 +163,14 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
 
     def __post_init__(self) -> None:
         """Check that the fields describe one alignment, then own the arrays."""
+        # Normalize containers first, so a list field cannot pass the checks
+        # as an array and then be compared as a list by the derived counts.
+        for name in _ARRAY_FIELDS:
+            value = getattr(self, name)
+            if value is not None or name in _REQUIRED_ARRAY_FIELDS:
+                object.__setattr__(self, name, np.asarray(value))
+        for name in ("value_kinds", "interpolation", "feature_units", "window"):
+            object.__setattr__(self, name, tuple(getattr(self, name)))
         problems = self._inconsistencies()
         if problems:
             raise ValueError(
@@ -216,10 +240,73 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
                 f"values and support need shape {aligned}, one row per retained event"
             )
 
+        n_retained = aligned[0]
+        for name in ("counts", "category_counts"):
+            counts = np.asarray(getattr(self, name))
+            if counts.size and not (
+                (counts >= 0).all() and (counts <= n_retained).all()
+            ):
+                problems.append(f"{name} must lie in [0, {n_retained}] retained events")
+        if (
+            self.values is not None
+            and self.support is not None
+            and np.shape(self.values) == np.shape(self.support) == aligned
+            and not np.isfinite(np.asarray(self.values)[np.asarray(self.support)]).all()
+        ):
+            problems.append("values must be finite wherever support is True")
+
+        if len(set(feature_ids.tolist())) != n_features:
+            problems.append("feature_ids must be unique")
+        if len(self.value_kinds) == len(self.interpolation) == len(self.feature_units):
+            for kind, method, unit in zip(
+                self.value_kinds, self.interpolation, self.feature_units, strict=True
+            ):
+                if method not in _ALLOWED_INTERPOLATION.get(kind, ()):
+                    problems.append(
+                        f"interpolation {method!r} is not allowed for {kind}"
+                    )
+                if kind == "circular" and unit != "rad":
+                    problems.append(f"circular features need unit 'rad', got {unit!r}")
+
+        window = self.window
+        if not (
+            len(window) == 2
+            and all(_is_real_number(v) and np.isfinite(v) for v in window)
+            and window[0] < window[1]
+        ):
+            problems.append("window must be two finite seconds with start < stop")
+        elif not (_is_real_number(self.dt) and np.isfinite(self.dt) and self.dt > 0):
+            problems.append("dt must be a positive finite number of seconds")
+        elif not np.array_equal(relative_times, _relative_times(window, self.dt)):
+            problems.append("relative_times must be the query grid of window and dt")
+        if self.max_gap is not None and not (
+            _is_real_number(self.max_gap)
+            and np.isfinite(self.max_gap)
+            and self.max_gap > 0
+        ):
+            problems.append(
+                "max_gap must be None or a positive finite number of seconds"
+            )
+        if self.epochs is not None:
+            epochs = np.asarray(self.epochs)
+            if not (
+                epochs.ndim == 2
+                and epochs.shape[1] == 2
+                and np.isfinite(epochs).all()
+                and (epochs[:, 1] > epochs[:, 0]).all()
+            ):
+                problems.append(
+                    "epochs must be None or finite (n, 2) rows with start < stop"
+                )
+
         if self.window_coverage not in _WINDOW_COVERAGES:
             problems.append(f"window_coverage must be in {list(_WINDOW_COVERAGES)}")
         threshold = self.resultant_threshold
-        if not (np.isfinite(threshold) and 0.0 <= threshold <= 1.0):
+        if not (
+            _is_real_number(threshold)
+            and np.isfinite(threshold)
+            and 0.0 <= threshold <= 1.0
+        ):
             problems.append("resultant_threshold must be finite and in [0, 1]")
         return problems
 
@@ -823,17 +910,7 @@ def align_continuous_to_events(
     (None, 'rad')
     """
     call = "align_continuous_to_events"
-    _validate_window(window, context=call)
-    start, stop = float(window[0]), float(window[1])
-    if not start < stop:
-        raise ValueError(
-            _format_error(
-                f"{call}: window start ({start}) must be less than stop ({stop}).",
-                why="The window is the half-open interval [start, stop) of times "
-                "relative to each event, so it needs a positive length.",
-                fix="pass window=(-1.0, 2.0), in seconds",
-            )
-        )
+    start, stop = _validate_window(window, context=call)
     dt = _positive_number(dt, "dt", call=call)
     relative_times = _relative_times((start, stop), dt)
     if relative_times.size == 0:
