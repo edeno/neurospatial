@@ -90,6 +90,7 @@ from neurospatial.encoding._significance import (
 )
 from neurospatial.encoding._spatial_counts import (
     _warn_if_population_silent,
+    tracked_samples,
 )
 
 __all__ = [
@@ -2917,6 +2918,7 @@ def compute_directional_rates(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        tracked=tracked_samples(len(times), headings),
         break_before=breaks,
     )
 

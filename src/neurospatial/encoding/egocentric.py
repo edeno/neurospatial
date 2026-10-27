@@ -92,6 +92,7 @@ from neurospatial.encoding._significance import (
 from neurospatial.encoding._smoothing import _warn_if_fully_masked
 from neurospatial.encoding._spatial_counts import (
     _warn_if_population_silent,
+    tracked_samples,
 )
 
 if TYPE_CHECKING:
@@ -3354,6 +3355,7 @@ def _object_vector_rates(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        tracked=tracked_samples(len(times), positions, headings),
         break_before=breaks,
     )
 

@@ -834,6 +834,25 @@ _SILENCE_MIN_UNITS = 5
 _SILENCE_MIN_SECONDS = 60.0
 
 
+def tracked_samples(
+    n_samples: int, *signals: NDArray[np.float64] | None
+) -> NDArray[np.bool_]:
+    """True at samples where every given signal is finite, shape (n_samples,).
+
+    Parameters
+    ----------
+    n_samples : int
+    *signals : ndarray, shape (n_samples, ...), or None
+        Per-sample positions, headings or similar; None is skipped.
+    """
+    tracked = np.ones(n_samples, dtype=bool)
+    for signal in signals:
+        if signal is not None:
+            rows = np.asarray(signal, dtype=np.float64).reshape(n_samples, -1)
+            tracked &= np.isfinite(rows).all(axis=1)
+    return tracked
+
+
 def _warn_if_population_silent(
     spike_trains: Sequence[NDArray[np.float64]],
     times: NDArray[np.float64],
@@ -841,6 +860,7 @@ def _warn_if_population_silent(
     max_gap: float | None,
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
+    tracked: NDArray[np.bool_],
     break_before: NDArray[np.bool_] | None = None,
 ) -> None:
     """Warn once if every unit is silent for >= 60 s of tracked time.
@@ -849,7 +869,8 @@ def _warn_if_population_silent(
     explicit), for populations below ``_SILENCE_MIN_UNITS`` and for recordings
     shorter than ``_SILENCE_MIN_SECONDS``. Otherwise silence is measured over
     the maximal runs of intervals passing the max_gap, epochs and
-    break_before gates
+    break_before gates, with samples that are not ``tracked`` (shape
+    ``(n_samples,)``) bridged like deleted rows
     (``run_time_bounds``), independently of speed or frame-bin validity: inside
     a single run, from the run start to the first spike, between consecutive
     spikes of the merged train, and from the last spike to the run end, so a
@@ -865,7 +886,11 @@ def _warn_if_population_silent(
     observed_runs = run_time_bounds(
         times,
         interval_valid_mask(
-            times, max_gap=max_gap, epochs=epochs, break_before=break_before
+            times,
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=break_before,
+            sample_valid=tracked,
         ),
     )
     if observed_runs.shape[0] == 0:

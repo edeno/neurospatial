@@ -4401,6 +4401,7 @@ default="diffusion_kde"
     from neurospatial.encoding._spatial_counts import (
         _warn_if_population_silent,
         bin_spike_trains,
+        tracked_samples,
     )
     from neurospatial.encoding._validation import (
         validate_spike_trains,
@@ -4501,6 +4502,7 @@ default="diffusion_kde"
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        tracked=tracked_samples(len(times), positions),
         break_before=breaks,
     )
 

@@ -140,3 +140,22 @@ def test_boundary_vector_population_silence_warns_at_caller(continuous_recording
     assert len(silence) == 1
     assert "All 5 units are silent" in str(silence[0].message)
     assert silence[0].filename == __file__
+
+
+def test_population_silence_skips_lost_tracking_like_deleted_rows(
+    continuous_recording,
+):
+    """Silence during 79 s of NaN positions is not silence while tracked."""
+    r = continuous_recording
+    trains = []
+    for unit in range(5):
+        spikes = r.spike_times + 0.04 * unit
+        trains.append(spikes[(spikes < 40) | (spikes >= 121)])
+    lost = (r.times > 41) & (r.times < 120)
+    positions = r.positions.copy()
+    positions[lost] = np.nan
+    for times, rows in ((r.times, positions), (r.times[~lost], r.positions[~lost])):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            compute_spatial_rates(r.env, trains, times, rows, method="binned")
+        assert not any(str(w.message).startswith("All ") for w in caught)

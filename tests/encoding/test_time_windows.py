@@ -112,11 +112,10 @@ def test_silence_warning_uses_tracking_runs_not_view_bounds(
     frame_family, continuous_recording
 ):
     f, r = frame_family, continuous_recording
-    if f.name == "directional":
-        r = replace(r, headings=np.full_like(r.headings, np.nan))
-    elif f.name == "view":
-        r = replace(r, positions=np.full_like(r.positions, 1000.0))
-    else:
+    # Tracked positions far outside the arena have no frame bins. Every
+    # finite heading has a direction bin, and a NaN heading is not tracked,
+    # so the directional family has no such case.
+    if f.name != "directional":
         r = replace(r, positions=np.full_like(r.positions, 1000.0))
     spikes = [r.spike_times[r.spike_times >= 100]] * 5
     with pytest.warns(UserWarning, match="All 5 units are silent"):

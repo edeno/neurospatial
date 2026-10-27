@@ -980,7 +980,10 @@ def _boundary_vector_rates(
         resolve_spatial_bandwidth,
         smooth_rate_maps_batch,
     )
-    from neurospatial.encoding._spatial_counts import _warn_if_population_silent
+    from neurospatial.encoding._spatial_counts import (
+        _warn_if_population_silent,
+        tracked_samples,
+    )
     from neurospatial.encoding._validation import (
         _validate_env_argument,
         validate_spike_trains,
@@ -1027,6 +1030,7 @@ def _boundary_vector_rates(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        tracked=tracked_samples(len(times), positions, headings),
         break_before=breaks,
     )
 
