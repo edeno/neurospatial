@@ -41,33 +41,54 @@ def heading_correlation_time(
     Returns
     -------
     float
-        ``dt (1 + 2 Σ_{l=1}^{L-1} C(l))``, where ``C(l)`` is the
-        autocorrelation at lag ``l`` samples of the occupancy-centered heading
-        unit vector over analyzed intervals, ``L`` the first lag with
-        ``C(L) <= 0`` and ``dt`` the median sampling interval. Equals ``dt``
-        when headings are uncorrelated from sample to sample.
+        ``∫ C(τ) dτ`` over ``|τ| < L``, where ``C(τ)`` is the autocorrelation
+        at time lag ``τ`` of the occupancy-centered heading unit vector over
+        the analyzed time and ``L`` the first lag with ``C(L) <= 0``. Equals
+        the sampling interval when headings are uncorrelated from sample to
+        sample.
+
+    Notes
+    -----
+    The heading is a step function of time: each analyzed interval holds the
+    heading of the sample that starts it, and a missing sample holds the last
+    valid heading, exactly as when its row is deleted. The step function is
+    read at the midpoints of a regular grid whose step ``δ`` is the median
+    interval between observed samples, and ``∫ C(τ) dτ`` is the sum
+    ``δ (1 + 2 Σ_{l=1}^{L/δ-1} C(lδ))``. For regularly sampled headings the
+    grid points are the samples themselves. The estimate depends only on the
+    heading's time course, so a NaN row and a deleted row give the same
+    value, and irregular sampling is measured in seconds, not rows.
     """
     times = prepared.times
+    observed = times if prepared.sample_valid is None else times[prepared.sample_valid]
+    # Without two observed samples there is no sampling interval.
+    step = float(np.median(np.diff(observed))) if observed.size > 1 else np.nan
     valid = prepared.support.mask & (prepared.frame_bins[:-1] >= 0)
-    dt = float(np.median(np.diff(times)))
     if not valid.any():
-        return dt
-    bins = np.where(valid, prepared.frame_bins[:-1], 0)
+        return step
+    intervals = np.flatnonzero(valid)
+    start, stop = times[intervals[0]], times[intervals[-1] + 1]
+    midpoints = start + (np.arange(int(np.ceil((stop - start) / step))) + 0.5) * step
+    midpoints = midpoints[midpoints < stop]
+    # The interval that holds each grid point, and whether it is analyzed.
+    interval = np.searchsorted(times, midpoints, side="right") - 1
+    on_support = valid[interval]
     unit = np.stack([np.cos(bin_centers), np.sin(bin_centers)], axis=1)
-    durations = np.where(valid, np.diff(times), 0.0)
-    mean = durations @ unit[bins] / durations.sum()
-    centered = (unit[bins] - mean) * valid[:, None]  # (n_intervals, 2)
+    durations = np.diff(times)[intervals]
+    mean = durations @ unit[prepared.frame_bins[intervals]] / durations.sum()
+    bins = np.where(on_support, prepared.frame_bins[interval], 0)
+    centered = (unit[bins] - mean) * on_support[:, None]  # (n_grid, 2)
 
     n = len(centered)
     n_fft = next_fast_len(2 * n - 1, real=True)
     spectrum = rfft(centered, n_fft, axis=0)
     lagged = irfft((spectrum * spectrum.conj()).real.sum(axis=1), n_fft)[:n]
     if lagged[0] <= 0:
-        return dt
-    if valid.all():
+        return step
+    if on_support.all():
         n_pairs = np.arange(n, 0, -1, dtype=np.float64)
     else:
-        weights = rfft(valid.astype(np.float64), n_fft)
+        weights = rfft(on_support.astype(np.float64), n_fft)
         n_pairs = irfft((weights * weights.conj()).real, n_fft)[:n]
     # Lags with no analyzed pair carry no information; treat them as zero.
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -75,7 +96,7 @@ def heading_correlation_time(
     correlation = correlation / correlation[0]
     nonpositive = np.flatnonzero(correlation[1:] <= 0)
     end = int(nonpositive[0]) + 1 if nonpositive.size else n
-    return dt * (1.0 + 2.0 * float(correlation[1:end].sum()))
+    return step * (1.0 + 2.0 * float(correlation[1:end].sum()))
 
 
 def cosine_model_rates(
@@ -194,13 +215,14 @@ def spike_count_dispersion(
 
     Notes
     -----
-    Time is cut into windows of length ``Δ`` starting at ``times[0]``; each
-    analyzed sampling interval belongs to the window containing its start,
-    and each counted spike to its interval's window. ``y_w`` is the spike
-    count in window ``w`` and ``μ_w = Σ_{k∈w} dt_k r(θ_k)`` its expected
-    count under the fitted cosine model ``r`` (:func:`cosine_model_rates`),
-    summed exactly over the window's intervals, so headings may change
-    within a window.
+    Time is cut into windows of length ``Δ`` starting at the first analyzed
+    time; windows without analyzed time are skipped. ``y_w`` is the number
+    of counted spikes inside window ``w`` and ``μ_w = ∫_w r(θ(t)) dt`` its
+    expected count under the fitted cosine model ``r``
+    (:func:`cosine_model_rates`), integrated exactly over the window's
+    analyzed time, so headings may change within a window and a sampling
+    interval that crosses a window edge is split at the edge. Windows are
+    defined in time, so a NaN row and a deleted row give the same counts.
 
     **Window length.** The tuning statistic's score is
     ``S = Σ_k N_k g_k``, a sum over intervals of spike counts ``N_k`` times
@@ -216,26 +238,37 @@ def spike_count_dispersion(
     windows miss slow correlations; longer ones over-correct and cost power.
     """
     times = prepared.times
-    durations = np.diff(times)
     valid = prepared.support.mask & (prepared.frame_bins[:-1] >= 0)
     n_units = len(spike_trains)
     window = heading_correlation_time(prepared, bin_centers)
     intervals = np.flatnonzero(valid)
     if intervals.size == 0:
         return np.full(n_units, np.nan), window, None
-    # Interval start times increase, so window numbers are non-decreasing;
-    # renumber the windows that hold analyzed time 0, 1, 2, ...
-    window_of = np.floor((times[intervals] - times[0]) / window)
-    window_of = np.cumsum(np.diff(window_of, prepend=-1.0) > 0) - 1
-    n_windows = int(window_of[-1]) + 1
+    starts, stops = times[intervals], times[intervals + 1]
+    n_edges = int(np.ceil((stops[-1] - starts[0]) / window)) + 2
+    edges = starts[0] + window * np.arange(n_edges)
+    # Each analyzed interval is split into one piece per window it overlaps;
+    # every piece has positive length.
+    first = np.searchsorted(edges, starts, side="right") - 1
+    last = np.searchsorted(edges, stops, side="left") - 1
+    n_pieces = last - first + 1
+    piece_interval = np.repeat(intervals, n_pieces)
+    offsets = np.arange(n_pieces.sum()) - np.repeat(
+        np.cumsum(n_pieces) - n_pieces, n_pieces
+    )
+    piece_window = np.repeat(first, n_pieces) + offsets
+    piece_length = np.minimum(
+        times[piece_interval + 1], edges[piece_window + 1]
+    ) - np.maximum(times[piece_interval], edges[piece_window])
+    # Renumber the windows that hold analyzed time 0, 1, 2, ...
+    windows, piece_window = np.unique(piece_window, return_inverse=True)
+    n_windows = len(windows)
     dof = n_windows - _N_COSINE_PARAMETERS
     if dof < 1:
         return np.full(n_units, np.nan), window, None
-    interval_window = np.full(len(durations), -1, dtype=np.intp)
-    interval_window[intervals] = window_of
     # Seconds spent in each heading bin during each window.
     window_occupancy = coo_matrix(
-        (durations[intervals], (window_of, prepared.frame_bins[intervals])),
+        (piece_length, (piece_window, prepared.frame_bins[piece_interval])),
         shape=(n_windows, len(bin_centers)),
     ).tocsr()
     rates = cosine_model_rates(spike_counts, occupancy, bin_centers)
@@ -246,10 +279,13 @@ def spike_count_dispersion(
             continue
         expected = window_occupancy @ rates[unit]
         spikes = spikes[(spikes >= times[0]) & (spikes < times[-1])]
-        spike_windows = interval_window[np.searchsorted(times, spikes, "right") - 1]
-        observed = np.bincount(
-            spike_windows[spike_windows >= 0], minlength=n_windows
-        ).astype(np.float64)
+        spikes = spikes[valid[np.searchsorted(times, spikes, "right") - 1]]
+        # A spike in an analyzed interval lies in one of that interval's
+        # pieces, so its window holds analyzed time.
+        spike_windows = np.searchsorted(
+            windows, np.searchsorted(edges, spikes, side="right") - 1
+        )
+        observed = np.bincount(spike_windows, minlength=n_windows).astype(np.float64)
         # A window the model expects no spikes in adds nothing if it has none.
         with np.errstate(divide="ignore", invalid="ignore"):
             terms = (observed - expected) ** 2 / expected

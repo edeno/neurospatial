@@ -534,7 +534,12 @@ _WARN_ON_DROP_HINT = "Set warn_on_drop=False to suppress this warning."
 
 @dataclass(frozen=True)
 class FrameBinning:
-    """Prepared frame geometry and time support shared by counts and occupancy."""
+    """Prepared frame geometry and time support shared by counts and occupancy.
+
+    ``frame_bins`` holds each missing sample at the bin of the last valid
+    one; ``sample_valid`` (None when every sample is valid) records which
+    samples were observed.
+    """
 
     times: NDArray[np.float64]
     frame_bins: NDArray[np.intp]
@@ -542,6 +547,7 @@ class FrameBinning:
     support: TimeSupport
     break_before: NDArray[np.bool_] | None = None
     samples: Literal["positions", "headings"] = "positions"
+    sample_valid: NDArray[np.bool_] | None = None
 
     def count(
         self, spike_times: Sequence[NDArray[np.float64]], *, n_jobs: int = 1
@@ -596,7 +602,9 @@ def prepare_frame_binning(
         break_before=break_before,
     )
     held = hold_last_valid(frame_bins, sample_valid, fill=-1)
-    return FrameBinning(times, held, n_bins, support, break_before, samples)
+    return FrameBinning(
+        times, held, n_bins, support, break_before, samples, sample_valid
+    )
 
 
 def count_frames_and_occupancy(

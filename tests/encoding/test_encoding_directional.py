@@ -1187,6 +1187,55 @@ class TestTuningPvalueDispersion:
         window = heading_correlation_time(prepared, centers)
         assert window == pytest.approx(1 / 30, rel=0.1)
 
+    def test_dropped_frames_keep_the_correlation_time(
+        self, wandering_heading_session
+    ) -> None:
+        """The heading correlation time is measured in seconds, not rows.
+
+        Dropping a fifth of the frames leaves the heading's time course, and
+        so its correlation time, unchanged.
+        """
+        from neurospatial.encoding._directional_counts import (
+            prepare_directional_binning,
+        )
+        from neurospatial.encoding._directional_dispersion import (
+            heading_correlation_time,
+        )
+
+        times, headings = wandering_heading_session
+        kept = np.random.default_rng(41).random(times.size) >= 0.2
+        windows = []
+        for t, h in ((times, headings), (times[kept], headings[kept])):
+            prepared, centers = prepare_directional_binning(t, h, None)
+            windows.append(heading_correlation_time(prepared, centers))
+        assert windows[1] == pytest.approx(windows[0], rel=0.02)
+
+    def test_missing_headings_match_deleted_rows(
+        self, wandering_heading_session
+    ) -> None:
+        """A NaN heading row gives the same tuning test as deleting the row."""
+        from neurospatial.encoding import compute_directional_rate
+
+        times, headings = wandering_heading_session
+        lost = np.random.default_rng(42).random(times.size) < 0.2
+        lost[[0, -1]] = False
+        missing = np.where(lost, np.nan, headings)
+        spikes = _frame_poisson_spikes(times, 2.0 + 0.2 * np.cos(headings), seed=59)
+
+        with_nan = compute_directional_rate(spikes, times, missing)
+        deleted = compute_directional_rate(spikes, times[~lost], headings[~lost])
+        assert_array_equal(with_nan.occupancy, deleted.occupancy)
+        assert with_nan.analysis_settings["dispersion_window"] == pytest.approx(
+            deleted.analysis_settings["dispersion_window"], rel=1e-12
+        )
+        assert with_nan.dispersion_dof == deleted.dispersion_dof
+        assert with_nan.spike_count_dispersion == pytest.approx(
+            deleted.spike_count_dispersion, rel=1e-9
+        )
+        assert with_nan.tuning_pvalue() == pytest.approx(
+            deleted.tuning_pvalue(), rel=1e-9
+        )
+
     def test_cosine_model_reaches_the_likelihood_maximum(self) -> None:
         """The fitted cosine model solves its score equations to rounding.
 
