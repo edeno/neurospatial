@@ -41,15 +41,11 @@ from typing import TYPE_CHECKING
 
 import jax
 
-# Enable JAX's float64 mode globally. The encoding pipeline computes
-# spike-rate maps in float64 throughout (see compute_*_rate's explicit
-# `dtype=jnp.float64` casts) and the kernel comparisons are precision-
-# sensitive: e.g. a `min_occupancy` threshold differing from `occupancy`
-# in sub-float32 bits silently keeps bins under JAX's default x32 mode.
-# Doing this at JAX-backend import time is the standard pattern for
-# float64-required JAX libraries; it has no effect on processes that
-# never import the JAX backend.
-jax.config.update("jax_enable_x64", True)
+from neurospatial.encoding._backend import _enable_jax_float64
+
+# The JAX backend computes in float64; the backend normally turns it on when
+# it is chosen, and this covers direct imports (see _enable_jax_float64).
+_enable_jax_float64()
 
 import jax.numpy as jnp  # noqa: E402  -- must follow the x64 toggle above
 

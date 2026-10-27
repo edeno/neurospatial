@@ -92,6 +92,48 @@ def is_jax_available() -> bool:
         return False
 
 
+def _enable_jax_float64(*inputs: Any) -> None:
+    """Turn on JAX float64 before the JAX backend makes any array.
+
+    The encoding JAX paths compute rate maps in float64, and their comparisons
+    are precision-sensitive (a ``min_occupancy`` threshold compared with
+    occupancy in float32 keeps or drops bins differently). Enabling float64
+    when the backend is chosen, not when a JAX module is first imported, keeps
+    the precision independent of which call ran first.
+
+    Parameters
+    ----------
+    *inputs : Any
+        Arrays the caller is about to use. If float64 is off and one of them
+        is being traced, enabling it now would make the compiled function
+        expect float32 inputs and fail, so this raises instead.
+
+    Raises
+    ------
+    RuntimeError
+        If JAX float64 is off while ``inputs`` are traced (``jax.jit``,
+        ``jax.grad`` or ``jax.vmap``).
+    """
+    import jax
+
+    if jax.dtypes.canonicalize_dtype(np.float64) == np.float64:
+        return
+    if any(isinstance(value, jax.core.Tracer) for value in inputs):
+        from neurospatial._exceptions import _format_error
+
+        raise RuntimeError(
+            _format_error(
+                "JAX float64 is off while these inputs are traced by jax.jit, "
+                "jax.grad or jax.vmap.",
+                why="the JAX backend computes rate maps in float64; turning it on "
+                "during tracing leaves the compiled function expecting float32 "
+                "inputs.",
+                fix='call jax.config.update("jax_enable_x64", True) before tracing.',
+            )
+        )
+    jax.config.update("jax_enable_x64", True)
+
+
 def get_backend(name: BackendType) -> Any:
     """Get the array module for the specified backend.
 
@@ -150,12 +192,14 @@ def get_backend(name: BackendType) -> Any:
             raise ImportError(
                 f"JAX backend requested but JAX is not available.{platform_note}"
             )
+        _enable_jax_float64()
         import jax.numpy as jnp
 
         return jnp
 
     # name == "auto"
     if is_jax_available():
+        _enable_jax_float64()
         import jax.numpy as jnp
 
         return jnp
@@ -166,6 +210,7 @@ def get_backend_name(name: BackendType) -> ResolvedBackend:
     """Get the actual backend name that will be used.
 
     Resolves ``"auto"`` to the actual backend that would be selected.
+    Choosing JAX turns on JAX float64 (see :func:`_enable_jax_float64`).
 
     Parameters
     ----------
@@ -213,10 +258,12 @@ def get_backend_name(name: BackendType) -> ResolvedBackend:
             raise ImportError(
                 f"JAX backend requested but JAX is not available.{platform_note}"
             )
+        _enable_jax_float64()
         return "jax"
 
     # name == "auto"
     if is_jax_available():
+        _enable_jax_float64()
         return "jax"
     return "numpy"
 

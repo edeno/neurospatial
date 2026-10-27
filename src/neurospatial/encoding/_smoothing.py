@@ -388,6 +388,10 @@ def smooth_rate_maps_batch(
             f"spike_counts has {sc_shape[1]} bins but "
             f"env has {env.n_bins} bins (n_bins mismatch)"
         )
+    if backend == "jax":
+        from neurospatial.encoding._backend import _enable_jax_float64
+
+        _enable_jax_float64(spike_counts, occupancy, min_occupancy)
     # Refuse a negative, NaN or infinite threshold before dispatching. Under
     # jax.jit it may be traced, with no value to check until it runs.
     if not (backend == "jax" and _is_jax_tracer(min_occupancy)):

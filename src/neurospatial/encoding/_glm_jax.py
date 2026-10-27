@@ -33,13 +33,11 @@ import numpy as np
 import scipy.optimize
 from numpy.typing import NDArray
 
-# Enable JAX float64 mode globally (the standard pattern for float64-capable JAX
-# libraries; idempotent, no effect on processes that never import this module).
-# The MRF-GAM fit itself runs in float32 (``_FIT_DTYPE``) via explicit casts, so
-# this toggle only governs the *default* dtype of un-annotated literals -- it does
-# not upcast the float32 fit. It matches ``_core_jax``'s placement so both modules
-# agree on global config.
-jax.config.update("jax_enable_x64", True)
+from neurospatial.encoding._backend import _enable_jax_float64
+
+# The JAX backend computes in float64; the backend normally turns it on when
+# it is chosen, and this covers direct imports (see _enable_jax_float64).
+_enable_jax_float64()
 
 import jax.numpy as jnp  # noqa: E402  -- must follow the x64 toggle above
 from jax import lax  # noqa: E402
