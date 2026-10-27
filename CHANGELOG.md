@@ -2,6 +2,129 @@
 
 ## [Unreleased]
 
+### Encoding cleanup and faster analyses
+
+Single-unit and population rate maps now share one code path in every
+family, and the shuffle tests bin the trajectory once instead of once per
+shuffle. Rate maps, scores, p-values and labels for a given seed are
+unchanged, except where listed under "Breaking" and "Results that change"
+or at float rounding where noted.
+
+Breaking:
+
+- `fill_value` is removed from `compute_spatial_rate`,
+  `compute_spatial_rates`, `has_place_field`, `is_place_cell` and
+  `place_cell_significance`, and from `analysis_settings`. Rate maps always
+  store bins without enough occupancy as NaN: missing, not 0 Hz. The option
+  changed only the stored array; decoding, the predicates, the shuffle test
+  and every result metric already treated filled bins as missing, so passing
+  `fill_value=0.0` before `BayesianDecoder.from_rates` did nothing. For a tool
+  that needs finite values, fill a copy with `np.nan_to_num(rates.firing_rates)`
+  and keep `rates.spatial_support`; a zero-filled raw array still needs
+  `prior=rates.spatial_support * env.bin_sizes` to decode.
+
+Results that change:
+
+- `DirectionalPlaceFields.correlation`, `rate_map_correlations` and
+  `population_vector_correlation` call a correlation undefined by the rule
+  `field_stability` and `compare_spatial_rates` use: at least three points,
+  and a map is flat when its range is within 1e-12 of its largest rate. Two
+  shared bins gave exactly +/-1 and now give NaN; a 5 Hz map with 1e-15
+  rounding noise gave a finite r and now gives NaN.
+  `population_vector_correlation` needs at least three units: with two it
+  returned +/-1 at every location, and it now raises.
+- `object_vector_score` refuses a map with negative or infinite rates, for
+  example a baseline-subtracted or z-scored map. Random noise scored 1.0, and
+  an infinite bin silently dropped its ring. NaN bins are still unvisited.
+- The JAX backend turns on JAX float64 when it is chosen, not when one of
+  its modules is first imported. The first JAX analysis in a process could
+  run in float32 (directional rates and binned object-vector maps came back
+  float32, with JAX truncation warnings); every JAX call now computes in
+  float64. Choosing `backend="jax"` (or `"auto"` with JAX installed) sets
+  `jax_enable_x64` for the process, as the first JAX computation did before.
+- Binned smoothing on the JAX backend stays in JAX instead of round-tripping
+  through NumPy, so its rates can differ from before at float rounding (up to
+  2e-14 relative).
+- `ViewRatesResult.peak_locations()` uses the occupancy support and returns
+  NaN for a silent unit, matching `peak_location()` and `summary_table()`. It
+  could report a rate in a never-viewed bin and returned the first bin for
+  an all-zero map.
+
+Faster:
+
+- `place_cell_significance` and `spatial_cell_type_significance` bin the
+  trajectory once for all shuffles instead of once per unit and shuffle:
+  50 units with 100 shuffles took 2.0 s instead of 16 s at 2e5 samples and
+  8.6 s instead of 79 s at 1e6 samples.
+- `compute_spatial_rates` fills missing positions and bins the trajectory
+  once for the population instead of once per unit (1e6 samples, 100 units:
+  0.5 s instead of 1.8 s).
+- `head_direction_cell_significance`, `spatial_view_cell_significance`,
+  `object_vector_cell_significance` and
+  `egocentric_object_vector_cell_significance` (and the predicates with
+  `criterion="shuffle"`) reuse the observed binning, analyzed intervals and
+  occupancy in every shuffle and only recount spikes: about 2x faster for
+  head direction and object vectors, 1.4x for view cells.
+- Calling `spatial_information_bias()` on each unit of a population reuses
+  the population's estimate instead of recomputing it per unit (100 units,
+  1600 bins: 0.05 s instead of 5.8 s).
+- `population_coverage` diffuses all candidate field peaks in one batch
+  (about 5x faster).
+- `compute_field_emd` uses sparse transport constraints, and with
+  `metric="geodesic"` computes shortest paths only from bins with mass:
+  peak memory 634 MB to 15 MB for 214 active bins in a 10,000-bin arena, and
+  geodesic runs 5-10x faster.
+- `spatial_autocorrelation`, grid scores and their shuffles reuse the
+  terms that depend only on the map's missing bins (about 1.7x faster for
+  the autocorrelogram). Values change only at float rounding (relative
+  differences up to about 1e-14).
+- `compute_phase_precession` shuffles build their slope basis once (up to
+  about 2x faster), and the default smoothing bandwidth for environments
+  without metric units is found about 30x faster.
+- `grid_score`, `batch_grid_scores`, `grid_properties` and the grid
+  statistic of `spatial_cell_type_significance` build the five
+  autocorrelogram rotations once per map shape (`batch_grid_scores` on 100
+  maps: 100 ms instead of 180 ms; `spatial_cell_type_significance` for 50
+  units with 200 shuffles in a 100 cm box: 16 s instead of 25 s on one core).
+  Rotated autocorrelograms differ only at float rounding (up to 1.3e-14), and
+  seeded p-values are unchanged.
+- `import neurospatial.encoding` no longer imports matplotlib or
+  `scipy.stats` (median 0.22 s instead of 0.43 s).
+
+Messages that change:
+
+- A bad spike train in a `*_significance` function names the unit, e.g.
+  "place_cell_significance (neuron 1): spike_times must be ...".
+- Timestamp errors read the same in every family: "times has N non-finite
+  value(s), first at index I." and "times must be monotonically
+  non-decreasing; it decreases at N place(s), first a -> b at index K.".
+  Non-finite times no longer also report their ordering. Unsorted times say
+  how to sort them (`order = np.argsort(times, kind="stable")`, applied to
+  every per-sample array), and calls without positions are not told to pass
+  position rows.
+- `compute_object_vector_rate`, `compute_egocentric_rate` and
+  `compute_view_rates` check `method` (and, for views, `gaze_model` and
+  `view_distance`) before other settings, matching their single-unit or
+  population counterparts. An invalid `method` with no environment or a
+  unitless one used to report a misleading "needs a bandwidth" error.
+- `spatial_view_cell_significance` reports wrong-length `gaze_offsets` and
+  positions that do not match the environment with the same errors as
+  `compute_view_rates` (it raised a NumPy broadcasting error), and warns
+  once instead of twice about headings that look like degrees.
+- `object_vector_cell_significance`,
+  `egocentric_object_vector_cell_significance` and, without an environment,
+  `compute_object_vector_rates` report positions with the wrong number of
+  columns (for example `(n, 3)`) instead of raising a NumPy broadcasting
+  error.
+- `smooth_rate_maps_batch` refuses a negative, NaN or infinite
+  `min_occupancy` on the JAX backend too, so the view and object-vector
+  shuffle tests refuse it before shuffling. Every smoothing method compiles
+  under `jax.jit` with traced counts, occupancy and threshold; tracing with
+  JAX float64 off raises an error that says to enable `jax_enable_x64` first,
+  instead of failing with a buffer-size mismatch.
+- Single-unit `gaussian_kde` rate maps on the JAX backend can differ from
+  before at float rounding (about 1e-15 relative).
+
 ### Unequal bins and bin numbering
 
 Bins can differ in size (cells clipped by an outline or split by a wall,

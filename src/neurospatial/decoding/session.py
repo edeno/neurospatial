@@ -377,9 +377,7 @@ def decode_session(
 
     >>> from neurospatial.encoding import compute_spatial_rates
     >>> from neurospatial.decoding import bin_spikes_in_time, decode_position
-    >>> rates = compute_spatial_rates(
-    ...     env, spike_times, times, positions, bandwidth=5.0, fill_value=0.0
-    ... )
+    >>> rates = compute_spatial_rates(env, spike_times, times, positions, bandwidth=5.0)
     >>> counts, centers = bin_spikes_in_time(
     ...     spike_times, dt=0.1, t_start=times[0], t_stop=times[-1]
     ... )
@@ -609,24 +607,19 @@ def _fit_encoding_model(
     trains, _ = _as_spike_trains_with_ids(spike_times)
     # Mirror the encoder's method-specific validation (mutual exclusivity +
     # value domains) at the decoder boundary, reusing the SAME validator so
-    # the errors are identical. fill_value is not a decoder-exposed param, so
-    # it is passed as None here (the golden-path 0.0 fill for ratio methods is
-    # applied in the compute_spatial_rates call below, never for glm).
+    # the errors are identical.
     from neurospatial.encoding import _validate_spatial_method_params
 
     penalty, rank = _validate_spatial_method_params(
         method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
-        fill_value=None,
         penalty=penalty,
         rank=rank,
     )
     _method = cast("Literal['diffusion_kde', 'gaussian_kde', 'binned', 'glm']", method)
-    # glm produces finite rates everywhere (occupancy is a log-offset), so it
-    # needs no NaN fill. Ratio methods use finite placeholders; spatial_support
-    # separately excludes unsupported bins from the posterior in every path.
-    fill_value = None if method == "glm" else 0.0
+    # Unsupported bins stay NaN; spatial_support excludes them from the
+    # posterior.
     # The encoder owns spike/position coverage diagnostics and already
     # emits the spike-drop warning (and additionally an inactive-bin /
     # wrong-coordinate-frame warning the decode-time check cannot), so we
@@ -639,7 +632,6 @@ def _fit_encoding_model(
         bandwidth=bandwidth,
         method=_method,
         min_occupancy=min_occupancy,
-        fill_value=fill_value,
         penalty=penalty,
         rank=rank,
         speed=speed,

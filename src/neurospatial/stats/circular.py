@@ -113,7 +113,6 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.stats import chi2
 
 from neurospatial._angles import wrap_angle
 from neurospatial._results import ReadOnlyArraysMixin
@@ -141,16 +140,6 @@ __all__ = [  # noqa: RUF022
     "is_modulated",
     "plot_circular_basis_tuning",
 ]
-
-# Feature-detect scipy.stats.directional_stats (added in scipy 1.9.0)
-try:
-    from scipy.stats import directional_stats as _scipy_directional_stats
-
-    _HAS_DIRECTIONAL_STATS = True
-except ImportError:
-    _HAS_DIRECTIONAL_STATS = False
-    _scipy_directional_stats = None  # type: ignore[assignment,unused-ignore]
-
 
 # =============================================================================
 # Internal Helper Functions
@@ -242,8 +231,8 @@ def _mean_resultant_length(
     """
     Compute mean resultant length (Rayleigh vector length).
 
-    This is an internal helper function. Uses scipy.stats.directional_stats
-    when available (scipy >= 1.9.0), otherwise falls back to direct computation.
+    This is an internal helper function. Unweighted angles use
+    scipy.stats.directional_stats; weighted angles are averaged directly.
 
     Parameters
     ----------
@@ -281,15 +270,12 @@ def _mean_resultant_length(
         weights_norm = weights / weight_sum
         mean_cos = np.sum(weights_norm * cos_angles)
         mean_sin = np.sum(weights_norm * sin_angles)
-    elif _HAS_DIRECTIONAL_STATS:
-        # Use scipy when available (more thoroughly tested)
-        vectors = np.column_stack([cos_angles, sin_angles])
-        result = _scipy_directional_stats(vectors)
-        return float(result.mean_resultant_length)
     else:
-        # Fallback: direct computation
-        mean_cos = np.mean(cos_angles)
-        mean_sin = np.mean(sin_angles)
+        # Imported on use: scipy.stats adds ~0.2 s to importing the package.
+        from scipy.stats import directional_stats
+
+        vectors = np.column_stack([cos_angles, sin_angles])
+        return float(directional_stats(vectors).mean_resultant_length)
 
     return float(np.sqrt(mean_cos**2 + mean_sin**2))
 
@@ -770,8 +756,8 @@ def circular_linear_correlation(
     >>> r > 0.5 and p < 0.05  # Significant correlation
     True
     """
-    # chi2 is imported at module level; only pearsonr is needed locally.
-    from scipy.stats import pearsonr
+    # scipy.stats is imported on use; it adds ~0.2 s to importing the package.
+    from scipy.stats import chi2, pearsonr
 
     # Convert to arrays and radians if needed
     angles = np.asarray(angles, dtype=np.float64)
@@ -1294,6 +1280,8 @@ def _wald_test_magnitude(
     Uses the Wald test statistic: W = beta.T @ inv(cov) @ beta ~ chi2(2)
     where beta = [beta_sin, beta_cos].
     """
+    from scipy.stats import chi2
+
     beta = np.array([beta_sin, beta_cos])
 
     # Wald statistic: beta.T @ inv(cov) @ beta

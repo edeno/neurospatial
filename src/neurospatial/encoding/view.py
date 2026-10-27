@@ -81,7 +81,6 @@ neurospatial.ops.visibility : Visibility and gaze computation
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -93,9 +92,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
-    hold_last_valid,
     resolve_time_windows,
-    run_time_bounds,
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
@@ -107,10 +104,10 @@ from neurospatial.encoding._base import (
     _to_numpy,
 )
 from neurospatial.encoding._significance import (
-    _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
     resolve_shuffle_settings,
+    shuffle_information_verdict,
 )
 from neurospatial.encoding._spatial_counts import (
     _warn_if_population_silent,
@@ -122,9 +119,10 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
     from neurospatial._typing import SpikeTrainsLike
+    from neurospatial.encoding._spatial_counts import FrameBinning
     from neurospatial.environment import Environment
     from neurospatial.geometry._boundaries import BoundarySource
-    from neurospatial.ops._types import BackendType
+    from neurospatial.ops._types import BackendType, ResolvedBackend
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 
@@ -197,18 +195,6 @@ def _check_gaze_fields(result: ViewRateResult | ViewRatesResult) -> None:
         )
 
 
-def _view_classify(
-    result: ViewRateResult | ViewRatesResult,
-    *,
-    min_info: float,
-    bias: NDArray[np.float64] | None = None,
-) -> NDArray[np.bool_]:
-    """The shared rule: bias-corrected information at or above ``min_info``."""
-    from neurospatial.encoding._metrics import _debiased_information
-
-    return _debiased_information(result, bias) >= min_info
-
-
 def _view_summary_frame(
     result: ViewRateResult | ViewRatesResult, *, index: Sequence[Hashable]
 ) -> pd.DataFrame:
@@ -219,6 +205,7 @@ def _view_summary_frame(
     occupancy = _to_numpy(result.occupancy)
     from neurospatial.encoding._metrics import (
         _information_bias,
+        _information_screen,
         batch_spatial_information,
     )
 
@@ -231,7 +218,9 @@ def _view_summary_frame(
         "peak_x": peaks[:, 0],
         "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
         **result._accounting_columns(),
-        "is_spatial_view_cell": _view_classify(result, **VIEW_THRESHOLDS, bias=bias),
+        "is_spatial_view_cell": _information_screen(
+            result, default=VIEW_THRESHOLDS["min_info"], bias=bias
+        ),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["units"] = {
@@ -663,8 +652,11 @@ class ViewRateResult(SingleUnitRateMixin):
         spatial_information : Compute the spatial information metric
         peak_location : Get location of peak view response
         """
-        min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
-        return bool(_view_classify(self, min_info=min_info)[0])
+        from neurospatial.encoding._metrics import _information_screen
+
+        return bool(
+            _information_screen(self, min_info, default=VIEW_THRESHOLDS["min_info"])[0]
+        )
 
 
 @_copy_unit_table
@@ -928,23 +920,22 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         """Locations of peak firing for all neurons.
 
         Returns the spatial coordinates where each neuron shows maximum
-        firing rate when the animal *views* that location.
+        firing rate when the animal *views* that location, over the bins
+        viewed for at least ``min_occupancy``. The same array as the batch
+        form of :meth:`peak_location`.
 
         Returns
         -------
         ndarray, shape (n_neurons, n_dims)
             Spatial coordinates of the bins with maximum firing rate for
-            each neuron. Uses nanargmax to handle NaN values. Returns NaN
-            coordinates for neurons with all-NaN firing rates.
+            each neuron. NaN for a neuron with no viewed bin or no positive
+            rate: a silent map has no peak.
 
         Notes
         -----
         For spatial view cells, peak locations represent where each
         neuron fires most when the animal looks there, regardless of where
         the animal is positioned.
-
-        If all firing rates for a neuron are NaN, the peak location will
-        be NaN coordinates.
 
         Examples
         --------
@@ -968,20 +959,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         ViewRateResult.peak_location : Single-neuron version
         spatial_information : Quantify spatial selectivity
         """
-        firing_rates = _to_numpy(self.firing_rates)
-        n_neurons = firing_rates.shape[0]
-        n_dims = self.env.bin_centers.shape[1]
-
-        peak_locs = np.empty((n_neurons, n_dims), dtype=np.float64)
-        for i in range(n_neurons):
-            valid_mask = ~np.isnan(firing_rates[i])
-            if not np.any(valid_mask):
-                # All NaN - return NaN coordinates
-                peak_locs[i] = np.nan
-            else:
-                peak_idx = int(np.nanargmax(firing_rates[i]))
-                peak_locs[i] = self.env.bin_centers[peak_idx]
-        return peak_locs
+        return self.peak_location()
 
     def spatial_information(self) -> NDArray[np.float64]:
         """View spatial information for all neurons (bits per spike).
@@ -1131,8 +1109,9 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         ViewRateResult.is_spatial_view_cell : Single-neuron classification
         spatial_information : The metric used for classification
         """
-        min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
-        return _view_classify(self, min_info=min_info)
+        from neurospatial.encoding._metrics import _information_screen
+
+        return _information_screen(self, min_info, default=VIEW_THRESHOLDS["min_info"])
 
     def summary_table(
         self,
@@ -1341,18 +1320,27 @@ def _as_gaze_offsets(
     return offsets
 
 
-class _ViewCounts(NamedTuple):
-    """Unsmoothed view counts with the provenance used."""
+class _ViewSetup(NamedTuple):
+    """Validated view-rate inputs and the gaze binning shared by every unit."""
 
-    spike_counts: NDArray[np.float64]  # (n_units, n_bins), unsmoothed
-    occupancy: NDArray[np.float64]  # (n_bins,) seconds
-    analysis_settings: dict[str, Any]
-    n_spikes_outside_intervals: NDArray[np.int64]  # (n_units,) not analyzed
+    trains: list[NDArray[np.float64]]  # one spike-time array per unit, seconds
+    unit_ids: NDArray[Any]  # (n_units,)
+    labels_supplied: bool
+    prepared: FrameBinning
+    gaze_model: Literal["fixed_distance", "ray_cast"]
+    view_distance: float | None
+    gaze_offsets_given: bool
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"]
+    bandwidth: float
+    min_occupancy: float
+    backend: ResolvedBackend
+    boundary_source: BoundarySource
+    spike_window: NDArray[np.float64] | None
 
 
-def _count_views(
+def _view_setup(
     env: Environment,
-    spike_trains: Sequence[NDArray[np.float64]],
+    spike_times: Any,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -1362,64 +1350,110 @@ def _count_views(
     gaze_offsets: NDArray[np.float64] | None,
     max_gap: float | None,
     epochs: Any,
+    break_before: ArrayLike | None,
     spike_window: Any,
-    method: str,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"],
     bandwidth: float | None,
     min_occupancy: float,
-    backend: str,
+    backend: BackendType,
     boundary_source: BoundarySource,
-    view_bins: NDArray[np.intp] | None = None,
-    n_jobs: int = 1,
-    break_before: NDArray[np.bool_] | None = None,
-) -> _ViewCounts:
-    """Bin gaze locations, count spikes and build provenance for view rates.
+    unit_ids: NDArray[Any] | Sequence[Any] | None,
+    context: str,
+    single_unit: bool,
+) -> _ViewSetup:
+    """Validate view-rate inputs and bin the gaze once for every unit.
 
     Parameters
     ----------
-    env : Environment
-        Environment that defines the viewed bins.
-    spike_trains : sequence of ndarray of shape (n_spikes_i,)
-        Validated spike times, one array per unit.
-    times : ndarray of shape (n_time,)
-        Trajectory timestamps in seconds.
-    positions : ndarray of shape (n_time, n_dims)
-        Trajectory positions.
-    headings : ndarray of shape (n_time,)
-        Allocentric heading in radians.
-    gaze_model, view_distance, gaze_offsets, boundary_source
-        Validated gaze settings.
-    max_gap : float or None
-        Longest stretch of missing tracking, in seconds, to bridge: the time
-        between consecutive valid samples (a dropped frame and a NaN row are
-        the same missing sample). Longer gaps are excluded as tracking losses;
-        ``None`` bridges every gap. The default is calibrated for typical video
-        and DeepLabCut tracking; choose a value longer than routine dropped or
-        low-confidence frames and shorter than real tracking losses or pickups.
-    epochs, spike_window
-        Resolved time windows.
-    method, bandwidth, min_occupancy, backend
-        Resolved smoothing settings recorded in the provenance.
-    view_bins : ndarray of shape (n_time,), optional
-        Precomputed viewed bins for these exact samples and gaze settings.
-    n_jobs : int, default=1
-        Parallel jobs for spike counting.
-    break_before : ndarray of bool, shape (n_time,), or None
-        Validated declared recording breaks.
+    env, spike_times, times, positions, headings
+        As :func:`compute_view_rate` (``single_unit=True``: one spike-time
+        array) or :func:`compute_view_rates` (any population spike input).
+    gaze_model, view_distance, gaze_offsets, max_gap, epochs, break_before, \
+spike_window, method, bandwidth, min_occupancy, backend, boundary_source
+        As :func:`compute_view_rates`.
+    unit_ids : array-like or None
+        Population labels; ignored when ``single_unit``.
+    context : str
+        Public function name used in error and warning messages.
+    single_unit : bool
+        Validate ``spike_times`` as one unit's train, without unit labels and
+        without the population-silence warning.
 
     Returns
     -------
-    spike_counts : ndarray of shape (n_units, n_bins)
-        Spike counts per viewed bin.
-    occupancy : ndarray of shape (n_bins,)
-        Seconds spent viewing each bin.
-    analysis_settings : dict
-        Provenance settings for the result.
+    _ViewSetup
     """
-    from neurospatial.encoding._provenance import (
-        rate_analysis_settings,
-        spikes_outside_intervals,
+    from neurospatial._spikes import as_labelled_spike_trains
+    from neurospatial.encoding._backend import validate_and_resolve_backend
+    from neurospatial.encoding._smoothing import (
+        _validate_smoothing_parameters,
+        resolve_spatial_bandwidth,
+    )
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_spike_trains,
+        validate_trajectory,
     )
     from neurospatial.encoding._view_counts import prepare_view_binning
+
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    _check_view_env(env, context=context)
+
+    # Raises ValueError for unknown names and ImportError if jax is unavailable;
+    # "auto" resolves to "numpy" or "jax".
+    resolved_backend = validate_and_resolve_backend(backend)
+
+    _validate_gaze_model(gaze_model)
+    view_distance = _resolve_view_distance(
+        env, gaze_model, view_distance, context=context
+    )
+
+    resolved_bandwidth = resolve_spatial_bandwidth(env, bandwidth)
+    _validate_smoothing_parameters(method, resolved_bandwidth)
+
+    if single_unit:
+        trains = [np.asarray(spike_times, dtype=np.float64)]
+        resolved_unit_ids, labels_supplied = np.arange(1), False
+    else:
+        # Canonical list-of-arrays trains and their identity labels (default
+        # arange). A labelled input keeps its own labels; a differing
+        # unit_ids= raises.
+        trains, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
+            spike_times, unit_ids, context=context
+        )
+
+    times = np.asarray(times, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
+    headings = np.asarray(headings, dtype=np.float64)
+
+    validate_trajectory(
+        times,
+        positions=positions,
+        headings=headings,
+        context=context,
+        n_dims=env.n_dims,
+    )
+    if single_unit:
+        validate_spike_times(trains[0], context=context)
+    else:
+        validate_spike_trains(trains, context=context)
+    n_samples = len(times)
+    breaks = validate_break_before(break_before, n_samples, call=context)
+
+    offsets = _as_gaze_offsets(gaze_offsets, n_samples)
+
+    if not single_unit:
+        # Recording coverage uses tracked runs, independently of speed or
+        # frame bins.
+        _warn_if_population_silent(
+            trains,
+            times,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
+            tracked=tracked_samples(n_samples, positions, headings),
+            break_before=breaks,
+        )
 
     prepared = prepare_view_binning(
         env,
@@ -1428,32 +1462,177 @@ def _count_views(
         headings,
         gaze_model=gaze_model,
         view_distance=view_distance,
-        gaze_offsets=gaze_offsets,
+        gaze_offsets=offsets,
         max_gap=max_gap,
-        epochs=epochs,
-        spike_window=spike_window,
-        view_bins=view_bins,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
         boundary_source=boundary_source,
-        break_before=break_before,
+        break_before=breaks,
     )
-    spike_counts, occupancy = prepared.count(spike_trains, n_jobs=n_jobs)
+    return _ViewSetup(
+        trains,
+        resolved_unit_ids,
+        labels_supplied,
+        prepared,
+        gaze_model,
+        view_distance,
+        offsets is not None,
+        method,
+        resolved_bandwidth,
+        min_occupancy,
+        resolved_backend,
+        boundary_source,
+        resolved_spike_window,
+    )
+
+
+class _ViewRates(NamedTuple):
+    """Smoothed view rates with the provenance used."""
+
+    firing_rates: Any  # (n_units, n_bins) Hz, in the resolved backend's type
+    occupancy: Any  # (n_bins,) seconds, in the resolved backend's type
+    analysis_settings: dict[str, Any]
+    n_spikes_outside_intervals: NDArray[np.int64]  # (n_units,) not analyzed
+
+
+def _view_rates(env: Environment, setup: _ViewSetup, *, n_jobs: int) -> _ViewRates:
+    """Count every unit's spikes by viewed bin and smooth the rate maps.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment that defines the viewed bins.
+    setup : _ViewSetup
+        Validated inputs and gaze binning from :func:`_view_setup`.
+    n_jobs : int
+        Parallel jobs for spike counting.
+
+    Returns
+    -------
+    _ViewRates
+    """
+    from neurospatial.encoding._backend import _to_backend
+    from neurospatial.encoding._provenance import (
+        rate_analysis_settings,
+        spikes_outside_intervals,
+    )
+    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+
+    prepared = setup.prepared
+    spike_counts, occupancy = prepared.count(setup.trains, n_jobs=n_jobs)
     settings = rate_analysis_settings(
         prepared.support,
-        method=method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        backend=backend,
-        gaze_model=gaze_model,
-        view_distance=view_distance,
-        gaze_offsets_source="provided" if gaze_offsets is not None else None,
-        boundary_source=boundary_source if gaze_model != "fixed_distance" else None,
+        method=setup.method,
+        bandwidth=setup.bandwidth,
+        min_occupancy=setup.min_occupancy,
+        backend=setup.backend,
+        gaze_model=setup.gaze_model,
+        view_distance=setup.view_distance,
+        gaze_offsets_source="provided" if setup.gaze_offsets_given else None,
+        boundary_source=(
+            setup.boundary_source if setup.gaze_model != "fixed_distance" else None
+        ),
     )
-    return _ViewCounts(
-        spike_counts,
-        occupancy,
+    # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
+    if setup.trains:
+        firing_rates: ArrayLike = smooth_rate_maps_batch(
+            env,
+            spike_counts,
+            occupancy,
+            method=setup.method,
+            bandwidth=setup.bandwidth,
+            min_occupancy=setup.min_occupancy,
+            backend=setup.backend,
+        )
+    else:
+        firing_rates = np.empty((0, env.n_bins), dtype=np.float64)
+    return _ViewRates(
+        _to_backend(firing_rates, setup.backend, dtype=np.float64),
+        _to_backend(occupancy, setup.backend, dtype=np.float64),
         settings,
-        spikes_outside_intervals(spike_trains, prepared.support),
+        spikes_outside_intervals(setup.trains, prepared.support),
     )
+
+
+def _count_view_spikes(
+    spike_times: list[NDArray[np.float64]], prepared: FrameBinning, *, n_jobs: int
+) -> NDArray[np.float64]:
+    """Count each train by viewed bin on the prepared support, without warnings.
+
+    Returns
+    -------
+    ndarray, shape (n_units, n_bins)
+        The counts ``prepared.count`` returns for the same trains.
+    """
+    from neurospatial.encoding._spatial_counts import count_spikes_by_frame
+
+    frames = (
+        prepared.times,
+        prepared.frame_bins,
+        prepared.support.mask,
+        prepared.n_bins,
+    )
+    if spike_times and n_jobs != 1:
+        from joblib import Parallel, delayed
+
+        return np.asarray(
+            Parallel(n_jobs=n_jobs)(
+                delayed(count_spikes_by_frame)(train, *frames) for train in spike_times
+            ),
+            dtype=np.float64,
+        )
+    counts = np.zeros((len(spike_times), prepared.n_bins), dtype=np.float64)
+    for i, train in enumerate(spike_times):
+        counts[i] = count_spikes_by_frame(train, *frames)
+    return counts
+
+
+def _view_information(
+    env: Environment,
+    spike_times: list[NDArray[np.float64]],
+    setup: _ViewSetup,
+    occupancy: NDArray[np.float64],
+    *,
+    n_jobs: int,
+) -> NDArray[np.float64]:
+    """View information of spike trains on the shared gaze binning.
+
+    Matches ``compute_view_rates(...).spatial_information()`` for the same
+    trains and settings, without re-validating or re-binning the trajectory.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment that defines the viewed bins.
+    spike_times : list of ndarray
+        One spike-time array per unit, seconds.
+    setup : _ViewSetup
+        Validated settings and gaze binning from :func:`_view_setup`.
+    occupancy : ndarray, shape (n_bins,)
+        Seconds spent viewing each bin on ``setup.prepared``.
+    n_jobs : int
+        Parallel jobs for spike counting.
+
+    Returns
+    -------
+    ndarray, shape (n_units,)
+        Skaggs information in bits per spike.
+    """
+    from neurospatial.encoding._metrics import batch_spatial_information
+    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+
+    if not spike_times:
+        return np.empty(0, dtype=np.float64)
+    rates = smooth_rate_maps_batch(
+        env,
+        _count_view_spikes(spike_times, setup.prepared, n_jobs=n_jobs),
+        occupancy,
+        method=setup.method,
+        bandwidth=setup.bandwidth,
+        min_occupancy=setup.min_occupancy,
+        backend=setup.backend,
+    )
+    return batch_spatial_information(_to_numpy(rates), occupancy)
 
 
 def compute_view_rate(
@@ -1668,59 +1847,9 @@ def compute_view_rate(
     .. [1] Rolls, E. T., et al. (1997). Spatial view cells in the primate
            hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
     """
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-
-    from neurospatial.encoding._backend import (
-        is_jax_available,
-        validate_and_resolve_backend,
-    )
-    from neurospatial.encoding._smoothing import (
-        _validate_smoothing_parameters,
-        smooth_rate_map,
-    )
-    from neurospatial.encoding._validation import (
-        validate_spike_times,
-        validate_trajectory,
-    )
-
-    _check_view_env(env, context="compute_view_rate")
-
-    # Raises ValueError for unknown names and ImportError if jax is unavailable;
-    # "auto" resolves to "numpy" or "jax".
-    resolved_backend = validate_and_resolve_backend(backend)
-
-    _validate_gaze_model(gaze_model)
-    view_distance = _resolve_view_distance(
-        env, gaze_model, view_distance, context="compute_view_rate"
-    )
-
-    from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
-
-    bandwidth = resolve_spatial_bandwidth(env, bandwidth)
-    _validate_smoothing_parameters(method, bandwidth)
-
-    # Convert inputs to arrays
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    times = np.asarray(times, dtype=np.float64)
-    positions = np.asarray(positions, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64)
-
-    validate_trajectory(
-        times,
-        positions=positions,
-        headings=headings,
-        context="compute_view_rate",
-        n_dims=env.n_dims,
-    )
-    validate_spike_times(spike_times, context="compute_view_rate")
-    n_samples = len(times)
-    breaks = validate_break_before(break_before, n_samples, call="compute_view_rate")
-
-    gaze_offsets = _as_gaze_offsets(gaze_offsets, n_samples)
-
-    counts = _count_views(
+    setup = _view_setup(
         env,
-        [spike_times],
+        spike_times,
         times,
         positions,
         headings,
@@ -1728,50 +1857,31 @@ def compute_view_rate(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
         max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
+        epochs=epochs,
+        break_before=break_before,
+        spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
-        backend=resolved_backend,
+        backend=backend,
         boundary_source=boundary_source,
-        break_before=breaks,
+        unit_ids=None,
+        context="compute_view_rate",
+        single_unit=True,
     )
-    spike_counts = counts.spike_counts[0]
-
-    # Apply smoothing to compute firing rate
-    # smooth_rate_map dispatches to JAX or NumPy based on backend
-    firing_rate = smooth_rate_map(
-        env,
-        spike_counts,
-        counts.occupancy,
-        method=method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        backend=resolved_backend,
-    )
-
-    # Convert occupancy to JAX if JAX backend is selected
-    # (firing_rate is already JAX from smooth_rate_map)
-    occupancy_out: ArrayLike = counts.occupancy
-    if resolved_backend == "jax" and is_jax_available():
-        import jax.numpy as jnp
-
-        occupancy_out = jnp.asarray(counts.occupancy, dtype=jnp.float64)
-
-    # Return result
+    rates = _view_rates(env, setup, n_jobs=1)
     return ViewRateResult(
         min_occupancy=min_occupancy,
-        firing_rate=firing_rate,
-        occupancy=occupancy_out,
+        firing_rate=rates.firing_rates[0],
+        occupancy=rates.occupancy,
         env=env,
         gaze_model=gaze_model,
-        view_distance=view_distance,
+        view_distance=setup.view_distance,
         method=method,
-        bandwidth=bandwidth,
-        n_spikes_outside_intervals=int(counts.n_spikes_outside_intervals[0]),
-        spike_window=resolved_spike_window,
-        analysis_settings=counts.analysis_settings,
+        bandwidth=setup.bandwidth,
+        n_spikes_outside_intervals=int(rates.n_spikes_outside_intervals[0]),
+        spike_window=setup.spike_window,
+        analysis_settings=rates.analysis_settings,
     )
 
 
@@ -2047,7 +2157,7 @@ def compute_view_rates(
     .. [1] Rolls, E. T., et al. (1997). Spatial view cells in the primate
            hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
     """
-    return _compute_view_rates(
+    setup = _view_setup(
         env,
         spike_times,
         times,
@@ -2063,167 +2173,27 @@ def compute_view_rates(
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
-        n_jobs=n_jobs,
         backend=backend,
+        boundary_source=boundary_source,
         unit_ids=unit_ids,
-        boundary_source=boundary_source,
-    )
-
-
-def _compute_view_rates(
-    env: Environment,
-    spike_times: SpikeTrainsLike,
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    headings: NDArray[np.float64],
-    *,
-    gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
-    view_distance: float | None = None,
-    gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = DEFAULT_MAX_GAP,
-    epochs: Any = None,
-    break_before: ArrayLike | None = None,
-    spike_window: Any = None,
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
-    bandwidth: float | None = None,
-    min_occupancy: float = 0.0,
-    n_jobs: int = 1,
-    backend: BackendType = "numpy",
-    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
-    view_bins: NDArray[np.intp] | None = None,
-    boundary_source: BoundarySource = "physical",
-) -> ViewRatesResult:
-    """Body of :func:`compute_view_rates`; ``view_bins`` reuses gaze geometry."""
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-
-    from neurospatial._spikes import as_labelled_spike_trains
-    from neurospatial.encoding._backend import (
-        is_jax_available,
-        validate_and_resolve_backend,
-    )
-    from neurospatial.encoding._smoothing import (
-        _validate_smoothing_parameters,
-        smooth_rate_maps_batch,
-    )
-    from neurospatial.encoding._validation import (
-        validate_spike_trains,
-        validate_trajectory,
-    )
-
-    _check_view_env(env, context="compute_view_rates")
-
-    # Raises ValueError for unknown names and ImportError if jax is unavailable;
-    # "auto" resolves to "numpy" or "jax".
-    resolved_backend = validate_and_resolve_backend(backend)
-
-    from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
-
-    bandwidth = resolve_spatial_bandwidth(env, bandwidth)
-    _validate_smoothing_parameters(method, bandwidth)
-
-    _validate_gaze_model(gaze_model)
-    view_distance = _resolve_view_distance(
-        env, gaze_model, view_distance, context="compute_view_rates"
-    )
-
-    # Normalize spike times to canonical list-of-arrays format and resolve the
-    # per-unit identity labels (defaults to arange). A labelled input keeps its
-    # own labels; a differing unit_ids= raises.
-    spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
-        spike_times, unit_ids, context="compute_view_rates"
-    )
-    n_neurons = len(spike_times_list)
-
-    # Convert inputs to arrays
-    times = np.asarray(times, dtype=np.float64)
-    positions = np.asarray(positions, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64)
-
-    validate_trajectory(
-        times,
-        positions=positions,
-        headings=headings,
         context="compute_view_rates",
-        n_dims=env.n_dims,
+        single_unit=False,
     )
-    validate_spike_trains(spike_times_list, context="compute_view_rates")
-    n_samples = len(times)
-    breaks = validate_break_before(break_before, n_samples, call="compute_view_rates")
-
-    gaze_offsets = _as_gaze_offsets(gaze_offsets, n_samples)
-
-    # Recording coverage uses tracked runs, independently of speed or frame bins.
-    _warn_if_population_silent(
-        spike_times_list,
-        times,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        tracked=tracked_samples(len(times), positions, headings),
-        break_before=breaks,
-    )
-
-    counts = _count_views(
-        env,
-        spike_times_list,
-        times,
-        positions,
-        headings,
-        gaze_model=gaze_model,
-        view_distance=view_distance,
-        gaze_offsets=gaze_offsets,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        method=method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        backend=resolved_backend,
-        boundary_source=boundary_source,
-        view_bins=view_bins,
-        n_jobs=n_jobs,
-        break_before=breaks,
-    )
-
-    # Apply batch smoothing to compute firing rates
-    # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
-    if n_neurons == 0:
-        firing_rates: ArrayLike = np.empty((0, env.n_bins), dtype=np.float64)
-    else:
-        firing_rates = smooth_rate_maps_batch(
-            env,
-            counts.spike_counts,
-            counts.occupancy,
-            method=method,
-            bandwidth=bandwidth,
-            min_occupancy=min_occupancy,
-            backend=resolved_backend,
-        )
-
-    # Convert occupancy to JAX if JAX backend is selected
-    # (firing_rates is already JAX from smooth_rate_maps_batch)
-    occupancy_out: ArrayLike = counts.occupancy
-    if resolved_backend == "jax" and is_jax_available():
-        import jax.numpy as jnp
-
-        occupancy_out = jnp.asarray(counts.occupancy, dtype=jnp.float64)
-        firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
-
-    # Return result
+    rates = _view_rates(env, setup, n_jobs=n_jobs)
     return ViewRatesResult(
         min_occupancy=min_occupancy,
-        firing_rates=firing_rates,
-        occupancy=occupancy_out,
+        firing_rates=rates.firing_rates,
+        occupancy=rates.occupancy,
         env=env,
         gaze_model=gaze_model,
-        view_distance=view_distance,
+        view_distance=setup.view_distance,
         method=method,
-        bandwidth=bandwidth,
-        unit_ids=resolved_unit_ids if labels_supplied else None,
+        bandwidth=setup.bandwidth,
+        unit_ids=setup.unit_ids if setup.labels_supplied else None,
         unit_table=getattr(spike_times, "unit_table", None),
-        n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
-        spike_window=resolved_spike_window,
-        analysis_settings=counts.analysis_settings,
+        n_spikes_outside_intervals=rates.n_spikes_outside_intervals,
+        spike_window=setup.spike_window,
+        analysis_settings=rates.analysis_settings,
     )
 
 
@@ -2451,39 +2421,9 @@ def is_spatial_view_cell(
     breaks = validate_break_before(
         break_before, len(times), call="is_spatial_view_cell"
     )
-    if criterion == "shuffle":
-        label = 0 if unit_id is None else unit_id
-        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
-        shuffle_result = spatial_view_cell_significance(
-            env,
-            [spike_times],
-            times,
-            positions,
-            headings,
-            unit_ids=[label],
-            **resolve_shuffle_settings(n_shuffles, min_shift),
-            rng=rng,
-            gaze_model=gaze_model,
-            view_distance=view_distance,
-            gaze_offsets=gaze_offsets,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=breaks,
-            spike_window=spike_window,
-            method=method,
-            bandwidth=bandwidth,
-            min_occupancy=min_occupancy,
-            backend=backend,
-            boundary_source=boundary_source,
-        )[label]
-        if not shuffle_result.p_value < level:
-            return False
-    min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
-    with warnings.catch_warnings():
-        if criterion == "shuffle":
-            # The shuffle's observed map is this map; its warnings were shown.
-            warnings.simplefilter("ignore")
-        result = compute_view_rate(
+
+    def rate_map() -> ViewRateResult:
+        return compute_view_rate(
             env,
             spike_times,
             times,
@@ -2502,11 +2442,39 @@ def is_spatial_view_cell(
             backend=backend,
             boundary_source=boundary_source,
         )
-    if criterion == "shuffle":
-        from neurospatial.encoding._metrics import _beyond_bias
 
-        return _beyond_bias(result, min_info, kind="spatial view")
-    return result.is_spatial_view_cell(min_info=min_info)
+    if criterion == "shuffle":
+        label = 0 if unit_id is None else unit_id
+        return shuffle_information_verdict(
+            lambda: spatial_view_cell_significance(
+                env,
+                [spike_times],
+                times,
+                positions,
+                headings,
+                unit_ids=[label],
+                **resolve_shuffle_settings(n_shuffles, min_shift),
+                rng=rng,
+                gaze_model=gaze_model,
+                view_distance=view_distance,
+                gaze_offsets=gaze_offsets,
+                max_gap=max_gap,
+                epochs=epochs,
+                break_before=breaks,
+                spike_window=spike_window,
+                method=method,
+                bandwidth=bandwidth,
+                min_occupancy=min_occupancy,
+                backend=backend,
+                boundary_source=boundary_source,
+            )[label],
+            rate_map,
+            alpha=alpha,
+            min_info=min_info,
+            default_min_info=VIEW_THRESHOLDS["min_info"],
+            kind="spatial view",
+        )
+    return rate_map().is_spatial_view_cell(min_info=min_info)
 
 
 def spatial_view_cell_significance(
@@ -2697,115 +2665,58 @@ def spatial_view_cell_significance(
     >>> results[0].n_shuffles
     20
     """
-    from neurospatial._intervals import resolve_time_windows
-    from neurospatial._results import resolve_unit_ids
-    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._significance import (
         run_shuffle_test,
-        snapshot_options,
+        shuffle_inputs,
         to_shuffle_results,
     )
-    from neurospatial.encoding._validation import (
-        _validate_env_argument,
-        validate_spike_times,
-        validate_trajectory,
-    )
-    from neurospatial.encoding._view_counts import (
-        _precompute_view_bins,
-        _view_observation_mask,
-        require_allocentric_view,
-    )
 
-    trains, input_ids = _as_spike_trains_with_ids(spike_times)
-    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
-    times = np.array(times, dtype=np.float64, copy=True)
-    positions = np.array(positions, dtype=np.float64, copy=True)
-    headings = np.array(headings, dtype=np.float64, copy=True)
-    ids = np.array(
-        resolve_unit_ids(
-            unit_ids,
-            len(trains),
-            input_ids=input_ids,
-            context="spatial_view_cell_significance",
-        ),
-        copy=True,
-    )
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    options: dict[str, Any] = {
-        "gaze_model": gaze_model,
-        "boundary_source": boundary_source,
-        "view_distance": view_distance,
-        "gaze_offsets": gaze_offsets,
-        "max_gap": max_gap,
-        "method": method,
-        "bandwidth": bandwidth,
-        "min_occupancy": min_occupancy,
-        "n_jobs": n_jobs,
-        "backend": backend,
-    }
-    options = snapshot_options(
-        options,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        unit_ids=ids,
-    )
-    _validate_env_argument(
-        env,
-        context="spatial_view_cell_significance",
-        arguments="spike_times, times, positions, headings",
-    )
-    require_allocentric_view(env, "spatial_view_cell_significance()")
-    _validate_gaze_model(gaze_model)
-    options["view_distance"] = _resolve_view_distance(
-        env, gaze_model, view_distance, context="spatial_view_cell_significance"
-    )
-    validate_trajectory(
+    call = "spatial_view_cell_significance"
+    inputs = shuffle_inputs(
+        spike_times,
         times,
-        positions=positions,
-        headings=headings,
-        context="spatial_view_cell_significance",
+        (positions, headings),
+        unit_ids=unit_ids,
+        epochs=epochs,
+        spike_window=spike_window,
+        call=call,
     )
-    for train in trains:
-        validate_spike_times(train, context="spatial_view_cell_significance")
-    breaks = validate_break_before(
-        break_before, len(times), call="spatial_view_cell_significance"
-    )
-    options["break_before"] = breaks
-    gaze_offsets = options["gaze_offsets"]
-    mask, observed_frames = _view_observation_mask(
-        times,
-        positions,
-        headings,
-        None if gaze_offsets is None else np.asarray(gaze_offsets, dtype=np.float64),
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        break_before=options["break_before"],
-    )
-    frame_bins = _precompute_view_bins(
+    ids = inputs.unit_ids
+    positions, headings = inputs.copies
+    # The observed population map's validation, gaze binning and occupancy,
+    # with the caller's data-quality warnings, once; every shifted map reuses
+    # them (ray casting dominates the cost of one map).
+    setup = _view_setup(
         env,
+        inputs.trains,
+        inputs.times,
         positions,
         headings,
         gaze_model=gaze_model,
-        view_distance=options["view_distance"],
-        gaze_offsets=options["gaze_offsets"],
+        view_distance=view_distance,
+        gaze_offsets=gaze_offsets,
+        max_gap=max_gap,
+        epochs=inputs.epochs,
+        break_before=break_before,
+        spike_window=inputs.spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=backend,
         boundary_source=boundary_source,
-        interval_mask=mask,
+        unit_ids=None,
+        context=call,
+        single_unit=False,
     )
-    mask &= hold_last_valid(frame_bins, observed_frames, fill=-1)[:-1] >= 0
-    windows = run_time_bounds(times, mask)
+    _, occupancy = setup.prepared.count(setup.trains, n_jobs=n_jobs)
 
-    # The gaze geometry depends only on the trajectory, so every shuffle
-    # reuses frame_bins instead of recomputing it (ray casting dominates).
     def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
-        return _compute_view_rates(
-            env, shifted, times, positions, headings, **options, view_bins=frame_bins
-        ).spatial_information()
+        return _view_information(env, shifted, setup, occupancy, n_jobs=n_jobs)
 
     observed, null = run_shuffle_test(
         statistic,
-        trains,
-        windows,
+        setup.trains,
+        setup.prepared.support.runs,
         ids,
         n_shuffles=n_shuffles,
         min_shift=min_shift,

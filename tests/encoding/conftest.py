@@ -225,14 +225,13 @@ def significance_family(request):
         compute_name=compute_name,
         # The function each significance null calls; every family reuses its
         # trajectory binning or geometry through a private one, and the
-        # head-direction null counts spikes without estimating the
-        # spike-count dispersion.
+        # head-direction null recounts spikes on the observed binning.
         statistic_name={
             "place": "_spatial_scores",
-            "head_direction": "_count_directional",
-            "view": "_compute_view_rates",
-            "object_vector": "_object_vector_rates",
-            "egocentric_object_vector": "_object_vector_rates",
+            "head_direction": "_shifted_mean_vector_lengths",
+            "view": "_view_information",
+            "object_vector": "_object_vector_information",
+            "egocentric_object_vector": "_object_vector_information",
         }.get(name, compute_name),
         args=args,
         defaults=defaults,
@@ -254,15 +253,16 @@ def frame_family(request):
         "egocentric": "is_egocentric_object_vector_cell",
     }[name]
 
-    def args(recording, spikes=None, *, occupancy=False, kernel=False):
+    def args(recording, spikes=None):
         if name == "directional":
-            lead = () if occupancy else (spikes,)
-            values = (*lead, recording.times, recording.headings)
-            return (*values, np.pi / 30) if kernel else values
-        lead = () if name == "egocentric" and kernel else (recording.env,)
-        if not occupancy:
-            lead = (*lead, spikes)
-        values = (*lead, recording.times, recording.positions, recording.headings)
+            return (spikes, recording.times, recording.headings)
+        values = (
+            recording.env,
+            spikes,
+            recording.times,
+            recording.positions,
+            recording.headings,
+        )
         if name == "egocentric":
             values = (*values, np.array([[50.0, 50.0]]))
         return values
@@ -289,6 +289,32 @@ def frame_family(request):
     if name == "egocentric":
         defaults["distance_range"] = kernel_defaults["distance_range"] = (0, 100)
         kernel_defaults.update(n_distance_bins=20, n_direction_bins=12)
+
+    def prepare(recording, **kwargs):
+        """The family's shared trajectory binning, before any spikes are counted."""
+        kwargs = {**kernel_defaults, **kwargs}
+        if name == "directional":
+            prepared, _ = binning.prepare_directional_binning(
+                recording.times, recording.headings, np.pi / 30, **kwargs
+            )
+        elif name == "egocentric":
+            prepared, _, _ = binning.prepare_egocentric_binning(
+                recording.times,
+                recording.positions,
+                recording.headings,
+                np.array([[50.0, 50.0]]),
+                **kwargs,
+            )
+        else:
+            prepared = binning.prepare_view_binning(
+                recording.env,
+                recording.times,
+                recording.positions,
+                recording.headings,
+                **kwargs,
+            )
+        return prepared
+
     return SimpleNamespace(
         name=name,
         module=module,
@@ -298,13 +324,7 @@ def frame_family(request):
         plural=getattr(module, f"compute_{name}_rates"),
         predicate=getattr(module, predicate_name),
         defaults=defaults,
-        kernel_defaults=kernel_defaults,
-        count=getattr(binning, f"bin_{name}_spike_train"),
-        counts=getattr(binning, f"bin_{name}_spike_trains"),
-        occupancy=getattr(
-            binning,
-            "compute_occupancy" if name == "view" else f"compute_{name}_occupancy",
-        ),
+        prepare=prepare,
     )
 
 

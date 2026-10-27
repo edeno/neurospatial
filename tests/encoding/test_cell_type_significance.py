@@ -60,7 +60,6 @@ def test_shuffles_reuse_one_dense_eigensolve(monkeypatch, ou_2min, strong_field_
             "method": "gaussian_kde",
             "epochs": [[0, 25], [30, 60]],
             "min_occupancy": 0.2,
-            "fill_value": 0.0,
         },
     ],
 )
@@ -542,3 +541,30 @@ def test_object_significance_metric_errors_teach(
         assert "typo" in message and "euclidean" in message
     else:
         assert "env" in message
+
+
+@pytest.mark.parametrize(
+    "significance_family",
+    ["place", "view", "object_vector", "egocentric_object_vector"],
+    indirect=True,
+)
+@pytest.mark.parametrize("backend", ["numpy", "jax"])
+@pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
+@pytest.mark.parametrize("min_occupancy", [-1.0, np.nan, np.inf])
+def test_significance_refuses_invalid_min_occupancy(
+    significance_family, significance_recording, backend, method, min_occupancy
+):
+    """The shuffle paths build no result object, so the smoother must refuse."""
+    if backend == "jax":
+        pytest.importorskip("jax")
+    f, r = significance_family, significance_recording
+    with pytest.raises(ValueError, match="min_occupancy"):
+        f.function(
+            *f.args(r),
+            method=method,
+            backend=backend,
+            min_occupancy=min_occupancy,
+            n_shuffles=2,
+            min_shift=5,
+            rng=0,
+        )

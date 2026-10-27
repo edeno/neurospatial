@@ -50,8 +50,8 @@ NEUROSPATIAL_UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api_snapshot.
 - Angles are radians. Allocentric: 0 = East, +π/2 = North. Egocentric (animal
   frame): 0 = ahead, +π/2 = left, −π/2 = right, ±π = behind. Mixing the frames
   gives plausible but wrong results.
-- Missing is not zero. Rate maps keep unsupported bins NaN (`fill_value=None`),
-  and filling never changes `spatial_support`. Decode with
+- Missing is not zero. Rate maps always store unsupported bins as NaN; there
+  is no option to store a fill. Decode with
   `BayesianDecoder.from_rates(rates)` or pass the rate result itself to
   `decode_position`; bare zero-filled arrays need
   `prior=rates.spatial_support * env.bin_sizes`.

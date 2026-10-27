@@ -142,6 +142,22 @@ def test_threshold_constants_are_the_defaults(
     assert method(**criteria) == method(**criteria, **constant)
 
 
+def test_shuffle_defaults_have_one_source():
+    """Every shuffle test's signature defaults are the shared shuffle defaults."""
+    from neurospatial.encoding._significance import _SHUFFLE_DEFAULTS
+
+    tests = [
+        getattr(encoding, name)
+        for name in encoding.__all__
+        if name.endswith("_significance")
+    ]
+    assert len(tests) == 6
+    for fn in tests:
+        parameters = inspect.signature(fn).parameters
+        for name in ("n_shuffles", "min_shift"):
+            assert parameters[name].default == _SHUFFLE_DEFAULTS[name], fn.__name__
+
+
 def test_methods_have_no_shuffle(significance_family, significance_recording):
     f, r = significance_family, significance_recording
     rates = f.compute(*f.args(r), **f.defaults)

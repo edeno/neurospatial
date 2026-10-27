@@ -505,8 +505,9 @@ print(f"Spatial information: {result.spatial_information():.3f} bits/spike")
   `result.occupancy < min_occupancy`.
 - The default `0.0` disables this mask. It does not guarantee a finite rate
   in every bin: some bins may have no occupancy within the estimator's reach.
-- Masked rates remain `NaN` unless `fill_value` is supplied. A zero-filled map
-  still needs its occupancy map to distinguish missing support from silence.
+- Masked rates are stored as `NaN`: missing, not 0 Hz. A tool that needs
+  finite values can use `np.nan_to_num(rates.firing_rates)`, but then keep
+  `rates.spatial_support` to tell missing support from silence.
 - `bin_count_threshold` counts tracking samples during environment creation;
   it is separate from time observed during the selected analysis.
 - `method="glm"` uses its penalty/rank controls and rejects `min_occupancy`.
@@ -721,7 +722,7 @@ dt = 0.1
 
 rates = compute_spatial_rates(
     env, spike_times, times, positions, epochs=train,
-    spike_window=recording_windows, fill_value=0.0, unit_ids=[101, 202],
+    spike_window=recording_windows, unit_ids=[101, 202],
 )
 decoder = BayesianDecoder.from_rates(rates, dt=dt)
 result = decoder.predict(
@@ -1208,7 +1209,6 @@ rates = compute_spatial_rates(
     epochs=[windows["template"]],
     spike_window=[(0.0, 180.0)],
     bandwidth=5.0,
-    fill_value=0.0,
 )
 np.testing.assert_array_equal(rates.unit_ids, selected_ids)
 # Branch 1: maps + count columns in the same selected order.

@@ -31,15 +31,14 @@ from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     format_times_positions_error,
     times_positions_problems,
-    validate_finite,
 )
 from neurospatial.environment import Environment
-from neurospatial.geometry import wrong_position_columns
+from neurospatial.geometry import require_cartesian, wrong_position_columns
 
 __all__ = [
     "_validate_env_argument",
     "_validate_times",
-    "validate_classifier_trajectory",
+    "require_planar",
     "validate_spike_times",
     "validate_spike_trains",
     "validate_trajectory",
@@ -86,6 +85,42 @@ def _validate_env_argument(env: object, *, context: str, arguments: str) -> None
         )
 
 
+def require_planar(
+    env: Environment, operation: str, *, why: str, fix: str, plane_why: str
+) -> None:
+    """Refuse a polar, 1-D or 3-D environment for a map built in the (x, y) plane.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment passed with the positions.
+    operation : str
+        The refused call, e.g. ``"compute_view_rate()"``.
+    why : str
+        Why the operation needs Cartesian coordinates, for the polar refusal.
+    fix : str
+        How to fix the polar refusal.
+    plane_why : str
+        Why the operation needs the plane, for the 1-D or 3-D refusal.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar.
+    ValueError
+        If ``env`` is not two-dimensional.
+    """
+    require_cartesian(env.coordinate_system, operation, why=why, fix=fix)
+    if env.n_dims != 2:
+        raise ValueError(
+            _format_error(
+                f"{operation} needs a 2-D environment; got a {env.n_dims}-D one.",
+                why=f"Why: {plane_why}",
+                fix="build the environment from the animal's 2-D (x, y) positions",
+            )
+        )
+
+
 def _raise_input_problems(context: str, problems: list[tuple[str, str]]) -> None:
     """Report all input problems with their combined concrete fixes."""
     if not problems:
@@ -104,44 +139,11 @@ def _raise_input_problems(context: str, problems: list[tuple[str, str]]) -> None
     )
 
 
-def _time_problems(times: NDArray[np.float64]) -> list[tuple[str, str]]:
-    """Collect timestamp-shape, finite-value and ordering problems."""
-    problems = []
-    if times.ndim != 1:
-        return [
-            (
-                f"times must be 1D, got shape {times.shape}",
-                "pass times as a 1-D array of timestamps in seconds",
-            )
-        ]
-    if len(times) < 2:
-        problems.append(
-            (
-                f"At least 2 samples required, got {len(times)}",
-                "pass at least two timestamped position samples",
-            )
-        )
-    if not np.all(np.isfinite(times)):
-        n_bad = int(np.sum(~np.isfinite(times)))
-        problems.append(
-            (
-                f"times must be finite; got {n_bad} NaN/inf entries",
-                "remove non-finite timestamps and the corresponding sample rows",
-            )
-        )
-    decreasing = np.flatnonzero(np.diff(times) < 0)
-    if decreasing.size:
-        problems.append(
-            (
-                f"times must be monotonically non-decreasing (sorted); found {decreasing.size} decreasing interval(s) at indices {decreasing[:5].tolist()}",
-                "sort times and all corresponding sample rows with order = np.argsort(times)",
-            )
-        )
-    return problems
-
-
 def _validate_times(times: NDArray[np.float64], *, context: str) -> None:
     """Check finite, non-decreasing timestamps with at least two samples.
+
+    The same check, and the same messages, as :func:`validate_trajectory`
+    without positions or headings.
 
     Parameters
     ----------
@@ -155,7 +157,7 @@ def _validate_times(times: NDArray[np.float64], *, context: str) -> None:
     ValueError
         If the shape, sample count, finite values or ordering is invalid.
     """
-    _raise_input_problems(context, _time_problems(times))
+    validate_trajectory(times, context=context)
 
 
 def validate_spike_times(
@@ -351,18 +353,20 @@ def validate_trajectory(
     UserWarning
         When headings read as radians look like degrees.
     """
-    looks_swapped = False
-    if positions is None:
-        problems = [what for what, _ in _time_problems(times)]
-    else:
-        problems, looks_swapped = times_positions_problems(times, positions)
-        if times.ndim == 1 and len(times) < 2:
-            problems.append(f"At least 2 samples required, got {len(times)}.")
-        if n_dims is not None and (
+    problems, looks_swapped = times_positions_problems(times, positions)
+    # Without positions there is no argument to have swapped times with.
+    looks_swapped = looks_swapped and positions is not None
+    if times.ndim == 1 and len(times) < 2:
+        problems.append(f"At least 2 samples required, got {len(times)}.")
+    if (
+        positions is not None
+        and n_dims is not None
+        and (
             (positions.ndim == 1 and n_dims > 1)
             or (positions.ndim == 2 and positions.shape[1] != n_dims)
-        ):
-            problems.append(f"Got {wrong_position_columns(positions.shape, n_dims)}.")
+        )
+    ):
+        problems.append(f"Got {wrong_position_columns(positions.shape, n_dims)}.")
     if headings is not None:
         if headings.ndim != 1:
             problems.append(f"headings must be 1D, got shape {headings.shape}.")
@@ -372,7 +376,12 @@ def validate_trajectory(
             )
     if problems:
         raise ValueError(
-            format_times_positions_error(problems, looks_swapped, call=context)
+            format_times_positions_error(
+                problems,
+                looks_swapped,
+                call=context,
+                positions=positions is not None,
+            )
         )
     if headings is not None and heading_unit != "deg":
         warn_if_angles_look_like_degrees(
@@ -381,47 +390,3 @@ def validate_trajectory(
             context=context,
             angle_unit_keyword=heading_unit is not None,
         )
-
-
-def validate_classifier_trajectory(
-    spike_times: NDArray[np.float64],
-    times: NDArray[np.float64],
-    headings: NDArray[np.float64],
-    *,
-    context: str,
-) -> None:
-    """Validate ``(spike_times, times, headings)`` for directional classifiers.
-
-    Raises on genuine input errors so they propagate instead of being
-    swallowed as a False classification. Does NOT enforce statistical
-    significance — that is decided after the (valid) computation.
-
-    ``headings`` are intentionally not passed through :func:`validate_finite`:
-    non-finite headings are a legitimate, droppable condition handled by the
-    directional binning layer (masked out of occupancy and spike counts), not
-    a hard error. The guard is for shape/length/timestamp sanity that should
-    surface as errors.
-
-    Parameters
-    ----------
-    spike_times : ndarray, shape (n_spikes,)
-        Spike timestamps in seconds.
-    times : ndarray, shape (n_samples,)
-        Timestamps of head direction samples in seconds.
-    headings : ndarray, shape (n_samples,)
-        Head direction at each time point.
-    context : str
-        Name of the calling function for error messages.
-
-    Raises
-    ------
-    ValueError
-        If lengths disagree, ``times`` is non-finite or not monotonically
-        non-decreasing, or ``spike_times`` is malformed.
-    """
-    times = np.asarray(times, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64)
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    validate_trajectory(times, headings=headings, context=context)
-    validate_finite(times, name="times")
-    validate_spike_times(spike_times, context=context)

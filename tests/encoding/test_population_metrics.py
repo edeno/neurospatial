@@ -797,6 +797,23 @@ class TestRateMapCorrelations:
         assert corr_matrix.shape == (3, 3)
         assert np.isnan(corr_matrix).all()
 
+    def test_rate_map_correlations_map_flat_up_to_rounding_is_nan(self) -> None:
+        """Rates equal up to rounding, as smoothing leaves a flat map, are flat."""
+        rng = np.random.default_rng(42)
+        varying = rng.random((2, 50))
+        flat = 5.0 * (1.0 + 1e-15 * rng.standard_normal(50))
+        assert flat.max() > flat.min()  # the trap: an exact check passes it
+        corr_matrix = rate_map_correlations(np.vstack([varying[0], flat, varying[1]]))
+        assert np.isnan(corr_matrix[1]).all() and np.isnan(corr_matrix[:, 1]).all()
+        np.testing.assert_array_equal(
+            corr_matrix[np.ix_([0, 2], [0, 2])], rate_map_correlations(varying)
+        )
+
+    def test_rate_map_correlations_two_bins_is_all_nan(self) -> None:
+        """Two bins always correlate at +-1: the correlation is undefined."""
+        corr_matrix = rate_map_correlations(np.array([[1.0, 3.0], [2.0, 1.0]]))
+        assert np.isnan(corr_matrix).all()
+
     def test_rate_map_correlations_two_conditions(self) -> None:
         """Stacked conditions: the off-diagonal block's diagonal is per-map r."""
         rng = np.random.default_rng(42)
@@ -908,6 +925,17 @@ class TestPopulationVectorCorrelation:
         pv_other = population_vector_correlation(c, a)
         assert np.isnan(pv_other[1])
 
+    def test_location_flat_up_to_rounding_is_nan(self) -> None:
+        """Rates equal up to rounding, as smoothing leaves them, count as flat."""
+        a = self.DEMO.copy()
+        a[:, 1] = 2.0 * (1.0 + np.array([1e-15, -2e-15, 0.0]))
+        assert a[:, 1].max() > a[:, 1].min()  # the trap: an exact check passes it
+        c = self.DEMO + 1.0
+        c[:, 1] = [1.0, 4.0, 2.0]
+        assert np.isnan(population_vector_correlation(a, c)[1])
+        assert np.isnan(population_vector_correlation(c, a)[1])
+        assert np.isfinite(population_vector_correlation(a, c)[[0, 2]]).all()
+
     def test_shape_mismatch_raises(self) -> None:
         with pytest.raises(ValueError, match="same shape"):
             population_vector_correlation(np.ones((3, 4)), np.ones((3, 5)))
@@ -916,9 +944,12 @@ class TestPopulationVectorCorrelation:
         with pytest.raises(ValueError, match="2-D"):
             population_vector_correlation(np.ones(4), np.ones(4))
 
-    def test_one_unit_raises(self) -> None:
-        with pytest.raises(ValueError, match="at least two units"):
-            population_vector_correlation(np.ones((1, 4)), np.ones((1, 4)))
+    @pytest.mark.parametrize("n_units", [1, 2])
+    def test_fewer_than_three_units_raises(self, n_units: int) -> None:
+        """Two units always correlate at +-1, so the correlation is undefined."""
+        rates = np.random.default_rng(0).random((n_units, 4))
+        with pytest.raises(ValueError, match="at least three units"):
+            population_vector_correlation(rates, rates[:, ::-1])
 
     @pytest.mark.parametrize(
         "support",

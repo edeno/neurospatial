@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from scipy import stats
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import (
@@ -1163,6 +1162,8 @@ def _correlate(
     ).astype(np.str_)
     values_a, values_b = rate_a, rate_b
     if method == "spearman":
+        from scipy import stats
+
         values_a = stats.rankdata(
             np.where(common, rate_a, np.nan), axis=1, nan_policy="omit"
         )

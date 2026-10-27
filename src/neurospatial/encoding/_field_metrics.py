@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy import stats
 
 from neurospatial.geometry import require_cartesian
 
@@ -105,6 +104,69 @@ def _relative_measures(measures: NDArray[np.float64]) -> NDArray[np.float64]:
     """
     relative: NDArray[np.float64] = measures / np.max(measures, initial=0.0)
     return relative
+
+
+def _component_labels(env: Environment, mask: NDArray[np.bool_]) -> NDArray[np.intp]:
+    """Connected-component label of every bin, joining masked bins by open pairs.
+
+    Two bins in ``mask`` share a label when a path of open neighbor pairs
+    (``env.edge_pairs``, the edges of ``env.connectivity``)
+    joins them through bins in ``mask``. Walls close pairs, so they separate
+    components; a bin outside ``mask`` is a component of its own.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment whose neighbor pairs connect the bins.
+    mask : ndarray of bool, shape (n_bins,)
+        Bins that may join a component.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_bins,)
+        Component label of each bin.
+    """
+    from scipy.sparse import coo_array
+    from scipy.sparse.csgraph import connected_components
+
+    pairs = env.edge_pairs
+    linked = pairs[mask[pairs[:, 0]] & mask[pairs[:, 1]]]
+    graph = coo_array(
+        (np.ones(len(linked)), (linked[:, 0], linked[:, 1])),
+        shape=(env.n_bins, env.n_bins),
+    )
+    labels: NDArray[np.intp] = connected_components(graph, directed=False)[1]
+    return labels
+
+
+def _seed_component(
+    seed: int, mask: NDArray[np.bool_], env: Environment
+) -> NDArray[np.int64]:
+    """Sorted bins of ``mask`` connected to ``seed`` by open neighbor pairs.
+
+    The seed is always in its component, even outside ``mask``. Grid geometry
+    does not establish connectivity: walls close lattice pairs, and subsets
+    and restored grids keep diagonal ones, so the environment's pairs are
+    authoritative for every binning family.
+
+    Parameters
+    ----------
+    seed : int
+        Starting bin index.
+    mask : ndarray of bool, shape (n_bins,)
+        Candidate bins.
+    env : Environment
+        Environment whose neighbor pairs connect the bins.
+
+    Returns
+    -------
+    ndarray of int64, shape (n_component,)
+        Bin indices of the component, in increasing order.
+    """
+    candidates = mask.copy()
+    candidates[seed] = True
+    labels = _component_labels(env, candidates)
+    return np.flatnonzero(candidates & (labels == labels[seed])).astype(np.int64)
 
 
 def rate_map_centroid(
@@ -365,6 +427,8 @@ def field_stability(
     if _is_constant(paired, np.ones(paired.shape, dtype=bool)).any():
         return np.nan
 
+    from scipy import stats
+
     # Compute correlation
     if method == "pearson":
         correlation, _ = stats.pearsonr(map1_clean, map2_clean)
@@ -514,7 +578,9 @@ def rate_map_coherence(
     if np.std(bin_rates) == 0 or np.std(neighbor_rate_means) == 0:
         return np.nan
 
-    correlation, _ = stats.pearsonr(bin_rates, neighbor_rate_means)
+    from scipy.stats import pearsonr
+
+    correlation, _ = pearsonr(bin_rates, neighbor_rate_means)
     with np.errstate(divide="ignore"):
         return float(np.arctanh(correlation))
 
@@ -1174,7 +1240,7 @@ def compute_field_emd(
     **Computational complexity:**
 
     - Euclidean: O(n^2) for distance matrix + O(n^3) for optimization
-    - Geodesic: O(n^2 log n) for all-pairs shortest paths + O(n^3) for optimization
+    - Geodesic: shortest paths from each bin with mass + O(n^3) for optimization
 
     For large environments (n_bins > 1000), consider subsampling or using
     approximate methods.
@@ -1208,6 +1274,7 @@ def compute_field_emd(
     ... )
     >>> print(f"Euclidean EMD: {emd_euclidean:.3f}")  # doctest: +SKIP
     """
+    from scipy import sparse
     from scipy.optimize import linprog
     from scipy.spatial.distance import pdist, squareform
 
@@ -1307,10 +1374,9 @@ def compute_field_emd(
         dist_matrix = squareform(pdist(positions, metric="euclidean"))
 
     else:  # metric == "geodesic"
-        from neurospatial.ops.distance import geodesic_distance_matrix
+        from neurospatial.ops.distance import pairwise_distances
 
-        full_geodesic = geodesic_distance_matrix(env.connectivity, weight="distance")
-        dist_matrix = full_geodesic[np.ix_(active_bins, active_bins)]
+        dist_matrix = pairwise_distances(env.connectivity, active_bins)
 
     # Mass cannot travel between parts of the environment with no path
     # between them. Label each active bin by the first active bin it can
@@ -1342,14 +1408,18 @@ def compute_field_emd(
     # Row constraints: sum over j of T[i,j] = p[i]
     # Column constraints: sum over i of T[i,j] = q[j]
     #
-    # Vectorized construction using Kronecker products:
+    # Sparse construction using Kronecker products (2n² nonzeros of a
+    # (2n, n²) matrix, which dense would hold 432 MB at n = 300):
     # - Row constraints: each row i has 1s in columns [i*n, i*n+1, ..., i*n+n-1]
     #   This is kron(I_n, ones(1,n)) = block diagonal of row vectors
     # - Column constraints: each column j has 1s in columns [j, n+j, 2n+j, ...]
     #   This is kron(ones(1,n), I_n) = tiled identity matrices
-    row_constraints = np.kron(np.eye(n), np.ones((1, n)))  # Shape: (n, n*n)
-    col_constraints = np.kron(np.ones((1, n)), np.eye(n))  # Shape: (n, n*n)
-    a_eq = np.vstack([row_constraints, col_constraints])  # Shape: (2n, n*n)
+    ones_row = np.ones((1, n))
+    identity = sparse.eye(n)
+    a_eq = sparse.vstack(
+        [sparse.kron(identity, ones_row), sparse.kron(ones_row, identity)],
+        format="csc",
+    )  # Shape: (2n, n*n)
 
     b_eq = np.concatenate([p, q])
 

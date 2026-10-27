@@ -1,12 +1,13 @@
 """Tests for neurospatial.encoding._view_counts module.
 
 This module tests the view binning layer that converts spike trains
-and gaze data to spike counts and view occupancy arrays.
+and gaze data to spike counts and view occupancy arrays, through the path
+the encoders use: ``prepare_view_binning`` followed by ``FrameBinning.count``.
 
 The binning layer:
-- Create helper to compute view occupancy (time viewing each spatial bin)
-- Support gaze models: "fixed_distance", "ray_cast"
-- Convert (spike_times, times, positions, headings, gaze_model) -> (spike_counts, occupancy)
+- Computes view occupancy (time viewing each spatial bin)
+- Supports gaze models: "fixed_distance", "ray_cast"
+- Converts (spike_times, times, positions, headings, gaze_model) -> (spike_counts, occupancy)
 """
 
 from __future__ import annotations
@@ -16,6 +17,38 @@ import pytest
 from numpy.typing import NDArray
 
 from neurospatial import Environment
+from neurospatial.encoding._view_counts import prepare_view_binning
+from neurospatial.encoding.view import compute_view_rate
+
+
+def _bin(
+    env: Environment,
+    spike_trains: list[NDArray[np.float64]],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    n_jobs: int = 1,
+    **kwargs,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Counts ``(n_neurons, n_bins)`` and view occupancy ``(n_bins,)``."""
+    prepared = prepare_view_binning(env, times, positions, headings, **kwargs)
+    return prepared.count(spike_trains, n_jobs=n_jobs)
+
+
+def _counts(env, spikes, times, positions, headings, **kwargs):
+    """One neuron's spike counts, shape ``(n_bins,)``."""
+    return _bin(env, [spikes], times, positions, headings, **kwargs)[0][0]
+
+
+def _occupancy(env, times, positions, headings, **kwargs):
+    """View occupancy, shape ``(n_bins,)``."""
+    return _bin(env, [], times, positions, headings, **kwargs)[1]
+
+
+def _trajectory(data):
+    return data["times"], data["positions"], data["headings"]
+
 
 # ==============================================================================
 # Test fixtures
@@ -80,54 +113,25 @@ def multiple_neuron_spikes() -> list[NDArray[np.float64]]:
 
 
 # ==============================================================================
-# Test compute_occupancy
+# View occupancy
 # ==============================================================================
 
 
-class TestComputeViewOccupancy:
-    """Tests for compute_occupancy function."""
+class TestViewOccupancy:
+    """Time spent viewing each spatial bin."""
 
-    def test_function_is_importable(self) -> None:
-        """compute_occupancy should be importable from encoding._view_counts."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        assert compute_occupancy is not None
-
-    def test_returns_occupancy_array(
+    def test_occupancy_shape_and_dtype(
         self,
         simple_env: Environment,
         trajectory_data: dict,
     ) -> None:
-        """compute_occupancy should return view occupancy array in seconds."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        occupancy = compute_occupancy(
-            simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            boundary_source="analysis",
+        """View occupancy is a float64 array with shape (n_bins,)."""
+        occupancy = _occupancy(
+            simple_env, *_trajectory(trajectory_data), boundary_source="analysis"
         )
 
         assert isinstance(occupancy, np.ndarray)
         assert occupancy.dtype == np.float64
-
-    def test_occupancy_shape(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-    ) -> None:
-        """compute_occupancy should return array with shape (n_bins,)."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        occupancy = compute_occupancy(
-            simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            boundary_source="analysis",
-        )
-
         assert occupancy.shape == (simple_env.n_bins,)
 
     def test_occupancy_non_negative(
@@ -136,14 +140,8 @@ class TestComputeViewOccupancy:
         trajectory_data: dict,
     ) -> None:
         """View occupancy should all be non-negative."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        occupancy = compute_occupancy(
-            simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            boundary_source="analysis",
+        occupancy = _occupancy(
+            simple_env, *_trajectory(trajectory_data), boundary_source="analysis"
         )
 
         assert np.all(occupancy >= 0)
@@ -159,14 +157,8 @@ class TestComputeViewOccupancy:
         - Viewed locations falling outside the environment (reduces occupancy)
         - Floating point accumulation in dt computation (may slightly exceed)
         """
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        occupancy = compute_occupancy(
-            simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            boundary_source="analysis",
+        occupancy = _occupancy(
+            simple_env, *_trajectory(trajectory_data), boundary_source="analysis"
         )
 
         total_duration = trajectory_data["times"][-1] - trajectory_data["times"][0]
@@ -185,14 +177,8 @@ class TestComputeViewOccupancy:
         This tests the key concept: view occupancy is time *viewing* each bin,
         not time *at* each bin.
         """
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        occupancy = compute_occupancy(
-            simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            boundary_source="analysis",
+        occupancy = _occupancy(
+            simple_env, *_trajectory(trajectory_data), boundary_source="analysis"
         )
 
         # Compute position occupancy for comparison
@@ -205,26 +191,24 @@ class TestComputeViewOccupancy:
         assert not np.allclose(occupancy, position_occupancy)
 
 
-class TestComputeViewOccupancyGazeModels:
-    """Tests for gaze_model parameter in compute_occupancy."""
+class TestViewGazeModels:
+    """Tests for the gaze_model parameter."""
 
-    def test_fixed_distance_default(
+    def test_ray_cast_default(
         self,
         simple_env: Environment,
         trajectory_data: dict,
+        single_neuron_spikes: NDArray[np.float64],
     ) -> None:
-        """Default gaze_model should be 'fixed_distance'."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        occupancy = compute_occupancy(
+        """The default gaze model (ray_cast) views some bins."""
+        counts, occupancy = _bin(
             simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            [single_neuron_spikes],
+            *_trajectory(trajectory_data),
             boundary_source="analysis",
         )
 
-        # Should run without error and return valid array
+        assert counts.shape == (1, simple_env.n_bins)
         assert occupancy.shape == (simple_env.n_bins,)
         assert np.any(occupancy > 0)  # Some bins should be viewed
 
@@ -232,39 +216,19 @@ class TestComputeViewOccupancyGazeModels:
         self,
         simple_env: Environment,
         trajectory_data: dict,
+        single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Explicit 'fixed_distance' should work."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        occupancy = compute_occupancy(
+        counts, occupancy = _bin(
             simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            [single_neuron_spikes],
+            *_trajectory(trajectory_data),
             gaze_model="fixed_distance",
             view_distance=10.0,
             boundary_source="analysis",
         )
 
-        assert occupancy.shape == (simple_env.n_bins,)
-
-    def test_ray_cast_gaze_model(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-    ) -> None:
-        """'ray_cast' gaze model should work."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        occupancy = compute_occupancy(
-            simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            gaze_model="ray_cast",
-            boundary_source="analysis",
-        )
-
+        assert counts.shape == (1, simple_env.n_bins)
         assert occupancy.shape == (simple_env.n_bins,)
 
     def test_different_gaze_models_give_different_results(
@@ -273,23 +237,16 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """Different gaze models should produce different view occupancies."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        occ_fixed = compute_occupancy(
+        occ_fixed = _occupancy(
             simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             gaze_model="fixed_distance",
             view_distance=10.0,
             boundary_source="analysis",
         )
-
-        occ_ray = compute_occupancy(
+        occ_ray = _occupancy(
             simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             gaze_model="ray_cast",
             boundary_source="analysis",
         )
@@ -303,23 +260,16 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """Different view_distance values should give different results."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        occ_short = compute_occupancy(
+        occ_short = _occupancy(
             simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             gaze_model="fixed_distance",
             view_distance=5.0,
             boundary_source="analysis",
         )
-
-        occ_long = compute_occupancy(
+        occ_long = _occupancy(
             simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             gaze_model="fixed_distance",
             view_distance=20.0,
             boundary_source="analysis",
@@ -330,58 +280,29 @@ class TestComputeViewOccupancyGazeModels:
 
 
 # ==============================================================================
-# Test bin_view_spike_train (single neuron)
+# Spike counts for one neuron
 # ==============================================================================
 
 
-class TestBinViewSpikeTrain:
-    """Tests for bin_view_spike_train function (single neuron binning)."""
+class TestViewSpikeCounts:
+    """One neuron's spike counts per viewed bin."""
 
-    def test_function_is_importable(self) -> None:
-        """bin_view_spike_train should be importable from encoding._view_counts."""
-        from neurospatial.encoding._view_counts import bin_view_spike_train
-
-        assert bin_view_spike_train is not None
-
-    def test_returns_spike_counts(
+    def test_spike_counts_shape_and_dtype(
         self,
         simple_env: Environment,
         trajectory_data: dict,
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
-        """bin_view_spike_train should return spike counts array."""
-        from neurospatial.encoding._view_counts import bin_view_spike_train
-
-        spike_counts = bin_view_spike_train(
+        """Spike counts are float64 with shape (n_bins,)."""
+        spike_counts = _counts(
             simple_env,
             single_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             boundary_source="analysis",
         )
 
         assert isinstance(spike_counts, np.ndarray)
         assert spike_counts.dtype == np.float64
-
-    def test_spike_counts_shape(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        single_neuron_spikes: NDArray[np.float64],
-    ) -> None:
-        """bin_view_spike_train should return array with shape (n_bins,)."""
-        from neurospatial.encoding._view_counts import bin_view_spike_train
-
-        spike_counts = bin_view_spike_train(
-            simple_env,
-            single_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            boundary_source="analysis",
-        )
-
         assert spike_counts.shape == (simple_env.n_bins,)
 
     def test_spike_counts_non_negative(
@@ -391,14 +312,10 @@ class TestBinViewSpikeTrain:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Spike counts should all be non-negative."""
-        from neurospatial.encoding._view_counts import bin_view_spike_train
-
-        spike_counts = bin_view_spike_train(
+        spike_counts = _counts(
             simple_env,
             single_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             boundary_source="analysis",
         )
 
@@ -415,14 +332,10 @@ class TestBinViewSpikeTrain:
         Note: May be less if some viewed locations at spike times fall outside
         the environment.
         """
-        from neurospatial.encoding._view_counts import bin_view_spike_train
-
-        spike_counts = bin_view_spike_train(
+        spike_counts = _counts(
             simple_env,
             single_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             boundary_source="analysis",
         )
 
@@ -442,16 +355,10 @@ class TestBinViewSpikeTrain:
         trajectory_data: dict,
     ) -> None:
         """Empty spike train should produce all-zero spike counts."""
-        from neurospatial.encoding._view_counts import bin_view_spike_train
-
-        empty_spikes = np.array([])
-
-        spike_counts = bin_view_spike_train(
+        spike_counts = _counts(
             simple_env,
-            empty_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            np.array([]),
+            *_trajectory(trajectory_data),
             boundary_source="analysis",
         )
 
@@ -463,240 +370,47 @@ class TestBinViewSpikeTrain:
         simple_env: Environment,
         trajectory_data: dict,
     ) -> None:
-        """Spikes outside time range should be excluded."""
-        from neurospatial.encoding._view_counts import bin_view_spike_train
-
+        """Spikes outside time range are excluded, with a warning."""
         # Spikes at -1.0 and 20.0, both outside the 0-10 second range
         spikes_outside = np.array([-1.0, 20.0])
 
-        spike_counts = bin_view_spike_train(
-            simple_env,
-            spikes_outside,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            boundary_source="analysis",
-        )
+        with pytest.warns(UserWarning, match="outside"):
+            spike_counts = _counts(
+                simple_env,
+                spikes_outside,
+                *_trajectory(trajectory_data),
+                boundary_source="analysis",
+            )
 
         assert np.sum(spike_counts) == 0
 
 
-class TestBinViewSpikeTrainGazeModels:
-    """Tests for gaze_model parameter in bin_view_spike_train."""
-
-    def test_fixed_distance_default(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        single_neuron_spikes: NDArray[np.float64],
-    ) -> None:
-        """Default gaze_model should be 'fixed_distance'."""
-        from neurospatial.encoding._view_counts import bin_view_spike_train
-
-        spike_counts = bin_view_spike_train(
-            simple_env,
-            single_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            boundary_source="analysis",
-        )
-
-        assert spike_counts.shape == (simple_env.n_bins,)
-
-    def test_ray_cast_gaze_model(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        single_neuron_spikes: NDArray[np.float64],
-    ) -> None:
-        """'ray_cast' gaze model should work."""
-        from neurospatial.encoding._view_counts import bin_view_spike_train
-
-        spike_counts = bin_view_spike_train(
-            simple_env,
-            single_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            gaze_model="ray_cast",
-            boundary_source="analysis",
-        )
-
-        assert spike_counts.shape == (simple_env.n_bins,)
-
-
-class TestBinViewSpikeTrainValidation:
-    """Tests for input validation in bin_view_spike_train (single neuron)."""
-
-    def test_unsorted_times_raises_error(
-        self,
-        simple_env: Environment,
-    ) -> None:
-        """bin_view_spike_train should reject unsorted times.
-
-        This matches the validation behavior of bin_view_spike_trains (batch version).
-        """
-        from neurospatial.encoding._view_counts import bin_view_spike_train
-
-        times = np.array([0.0, 2.0, 1.0, 3.0])  # Not monotonic
-        positions = np.tile([50, 50], (4, 1))
-        headings = np.zeros(4)
-        spike_times = np.array([0.5, 1.5])
-
-        with pytest.raises(ValueError, match="monotonically non-decreasing"):
-            bin_view_spike_train(
-                simple_env,
-                spike_times,
-                times,
-                positions,
-                headings,
-                boundary_source="analysis",
-            )
-
-    def test_insufficient_samples_raises_error(
-        self,
-        simple_env: Environment,
-    ) -> None:
-        """bin_view_spike_train should reject fewer than 2 samples.
-
-        This matches the validation behavior of bin_view_spike_trains (batch version).
-        """
-        from neurospatial.encoding._view_counts import bin_view_spike_train
-
-        times = np.array([0.0])  # Only 1 sample
-        positions = np.array([[50, 50]])
-        headings = np.array([0.0])
-        spike_times = np.array([0.5])
-
-        with pytest.raises(ValueError, match="At least 2 samples"):
-            bin_view_spike_train(
-                simple_env,
-                spike_times,
-                times,
-                positions,
-                headings,
-                boundary_source="analysis",
-            )
-
-
 # ==============================================================================
-# Test bin_view_spike_trains (batch)
+# Populations
 # ==============================================================================
 
 
-class TestBinViewSpikeTrains:
-    """Tests for bin_view_spike_trains function (multiple neurons)."""
+class TestViewPopulationCounts:
+    """Spike counts for several neurons sharing one view occupancy."""
 
-    def test_function_is_importable(self) -> None:
-        """bin_view_spike_trains should be importable from encoding._view_counts."""
-        from neurospatial.encoding._view_counts import bin_view_spike_trains
-
-        assert bin_view_spike_trains is not None
-
-    def test_returns_spike_counts_and_occupancy(
+    def test_population_shapes_and_dtypes(
         self,
         simple_env: Environment,
         trajectory_data: dict,
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
-        """bin_view_spike_trains should return (spike_counts, occupancy) tuple."""
-        from neurospatial.encoding._view_counts import bin_view_spike_trains
-
-        result = bin_view_spike_trains(
+        """Counts are (n_neurons, n_bins); occupancy is (n_bins,); both float64."""
+        spike_counts, occupancy = _bin(
             simple_env,
             multiple_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            boundary_source="analysis",
-        )
-
-        assert isinstance(result, tuple)
-        assert len(result) == 2
-        spike_counts, occupancy = result
-        assert isinstance(spike_counts, np.ndarray)
-        assert isinstance(occupancy, np.ndarray)
-
-    def test_spike_counts_shape(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        multiple_neuron_spikes: list[NDArray[np.float64]],
-    ) -> None:
-        """Spike counts should have shape (n_neurons, n_bins)."""
-        from neurospatial.encoding._view_counts import bin_view_spike_trains
-
-        spike_counts, _ = bin_view_spike_trains(
-            simple_env,
-            multiple_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             boundary_source="analysis",
         )
 
         n_neurons = len(multiple_neuron_spikes)
         assert spike_counts.shape == (n_neurons, simple_env.n_bins)
-
-    def test_occupancy_shape(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        multiple_neuron_spikes: list[NDArray[np.float64]],
-    ) -> None:
-        """View occupancy should have shape (n_bins,)."""
-        from neurospatial.encoding._view_counts import bin_view_spike_trains
-
-        _, occupancy = bin_view_spike_trains(
-            simple_env,
-            multiple_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            boundary_source="analysis",
-        )
-
         assert occupancy.shape == (simple_env.n_bins,)
-
-    def test_spike_counts_dtype(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        multiple_neuron_spikes: list[NDArray[np.float64]],
-    ) -> None:
-        """Spike counts should be float64."""
-        from neurospatial.encoding._view_counts import bin_view_spike_trains
-
-        spike_counts, _ = bin_view_spike_trains(
-            simple_env,
-            multiple_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            boundary_source="analysis",
-        )
-
         assert spike_counts.dtype == np.float64
-
-    def test_occupancy_dtype(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        multiple_neuron_spikes: list[NDArray[np.float64]],
-    ) -> None:
-        """View occupancy should be float64."""
-        from neurospatial.encoding._view_counts import bin_view_spike_trains
-
-        _, occupancy = bin_view_spike_trains(
-            simple_env,
-            multiple_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            boundary_source="analysis",
-        )
-
         assert occupancy.dtype == np.float64
 
     def test_empty_neuron_has_zero_counts(
@@ -706,52 +420,50 @@ class TestBinViewSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """Neuron with no spikes should have all-zero counts."""
-        from neurospatial.encoding._view_counts import bin_view_spike_trains
-
-        spike_counts, _ = bin_view_spike_trains(
+        spike_counts, _ = _bin(
             simple_env,
             multiple_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             boundary_source="analysis",
         )
 
         # Neuron 3 has no spikes (empty array)
         assert np.all(spike_counts[3] == 0)
 
-    def test_consistent_with_single_neuron(
+    @pytest.mark.parametrize(
+        "gaze",
+        [{}, {"gaze_model": "fixed_distance", "view_distance": 10.0}],
+        ids=["ray_cast", "fixed_distance"],
+    )
+    def test_each_row_matches_the_neuron_alone(
         self,
         simple_env: Environment,
         trajectory_data: dict,
         multiple_neuron_spikes: list[NDArray[np.float64]],
+        gaze: dict,
     ) -> None:
-        """Batch result should be consistent with single-neuron results."""
-        from neurospatial.encoding._view_counts import (
-            bin_view_spike_train,
-            bin_view_spike_trains,
-        )
-
-        spike_counts_batch, _occupancy_batch = bin_view_spike_trains(
+        """A neuron's counts do not depend on the other neurons counted with it."""
+        spike_counts_population, _ = _bin(
             simple_env,
             multiple_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
+            **gaze,
             boundary_source="analysis",
         )
 
-        # Check each neuron matches single-neuron result
         for i, spikes in enumerate(multiple_neuron_spikes):
-            spike_counts_single = bin_view_spike_train(
+            spike_counts_single = _counts(
                 simple_env,
                 spikes,
-                trajectory_data["times"],
-                trajectory_data["positions"],
-                trajectory_data["headings"],
+                *_trajectory(trajectory_data),
+                **gaze,
                 boundary_source="analysis",
             )
-            np.testing.assert_array_equal(spike_counts_batch[i], spike_counts_single)
+            np.testing.assert_array_equal(
+                spike_counts_population[i],
+                spike_counts_single,
+                err_msg=f"Neuron {i} counts differ",
+            )
 
     def test_n_jobs_parameter(
         self,
@@ -760,24 +472,17 @@ class TestBinViewSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """n_jobs parameter should not change results."""
-        from neurospatial.encoding._view_counts import bin_view_spike_trains
-
-        spike_counts_serial, occupancy_serial = bin_view_spike_trains(
+        spike_counts_serial, occupancy_serial = _bin(
             simple_env,
             multiple_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             n_jobs=1,
             boundary_source="analysis",
         )
-
-        spike_counts_parallel, occupancy_parallel = bin_view_spike_trains(
+        spike_counts_parallel, occupancy_parallel = _bin(
             simple_env,
             multiple_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             n_jobs=2,
             boundary_source="analysis",
         )
@@ -785,56 +490,51 @@ class TestBinViewSpikeTrains:
         np.testing.assert_array_equal(spike_counts_serial, spike_counts_parallel)
         np.testing.assert_array_equal(occupancy_serial, occupancy_parallel)
 
-    def test_single_neuron_list(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        single_neuron_spikes: NDArray[np.float64],
-    ) -> None:
-        """Should handle list with single neuron."""
-        from neurospatial.encoding._view_counts import bin_view_spike_trains
-
-        spike_times_list = [single_neuron_spikes]
-
-        spike_counts, occupancy = bin_view_spike_trains(
-            simple_env,
-            spike_times_list,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            boundary_source="analysis",
-        )
-
-        assert spike_counts.shape == (1, simple_env.n_bins)
-        assert occupancy.shape == (simple_env.n_bins,)
-
-    def test_normalizes_input_via_as_spike_trains(
+    def test_view_bins_precomputed_once(
         self,
         simple_env: Environment,
         trajectory_data: dict,
     ) -> None:
-        """Should accept normalized input from as_spike_trains formats."""
-        from neurospatial.encoding._view_counts import bin_view_spike_trains
+        """Viewed bins are one index per sample, shared by every neuron.
 
-        # Test with 2D NaN-padded array (common format)
-        spikes_2d = np.array(
-            [
-                [0.5, 1.5, 2.5, np.nan],
-                [1.0, 2.0, np.nan, np.nan],
-                [0.25, np.nan, np.nan, np.nan],
-            ]
-        )
+        Supplying them skips the gaze computation and gives the same binning.
+        """
+        from neurospatial.encoding._view_counts import _precompute_view_bins
 
-        spike_counts, _occupancy = bin_view_spike_trains(
+        view_bins = _precompute_view_bins(
             simple_env,
-            spikes_2d,  # type: ignore[arg-type]
-            trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
+            gaze_model="fixed_distance",
+            view_distance=10.0,
             boundary_source="analysis",
         )
 
-        assert spike_counts.shape == (3, simple_env.n_bins)
+        # Should return bin indices for each timepoint
+        assert view_bins.shape == (len(trajectory_data["times"]),)
+        assert view_bins.dtype == np.intp
+        # Invalid views should be -1
+        assert np.all((view_bins >= -1) & (view_bins < simple_env.n_bins))
+
+        gaze = {"gaze_model": "fixed_distance", "view_distance": 10.0}
+        spikes = [np.array([0.5, 1.5, 2.5])]
+        computed = _bin(
+            simple_env,
+            spikes,
+            *_trajectory(trajectory_data),
+            **gaze,
+            boundary_source="analysis",
+        )
+        supplied = _bin(
+            simple_env,
+            spikes,
+            *_trajectory(trajectory_data),
+            **gaze,
+            view_bins=view_bins,
+            boundary_source="analysis",
+        )
+        for a, b in zip(computed, supplied, strict=True):
+            np.testing.assert_array_equal(a, b)
 
 
 # ==============================================================================
@@ -850,14 +550,12 @@ class TestViewBinningEdgeCases:
         simple_env: Environment,
     ) -> None:
         """Constant heading should view along one direction."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
         times = np.linspace(0, 10.0, 1000)
         # Animal at center, looking east (heading=0)
         positions = np.tile([50, 50], (1000, 1))
         headings = np.zeros(1000)  # Constant heading east
 
-        occupancy = compute_occupancy(
+        occupancy = _occupancy(
             simple_env,
             times,
             positions,
@@ -877,13 +575,11 @@ class TestViewBinningEdgeCases:
         simple_env: Environment,
     ) -> None:
         """A gaze that would leave the environment views its edge instead."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
         times = np.linspace(0, 10.0, 1000)
         positions = np.tile([5.0, 50.0], (1000, 1))
         headings = np.full(1000, np.pi)  # West; 20 cm ahead is outside
 
-        occupancy = compute_occupancy(
+        occupancy = _occupancy(
             simple_env,
             times,
             positions,
@@ -906,8 +602,6 @@ class TestViewBinningEdgeCases:
         simple_env: Environment,
     ) -> None:
         """Spikes at times with same view should be binned together."""
-        from neurospatial.encoding._view_counts import bin_view_spike_train
-
         times = np.linspace(0, 10.0, 1000)
         # Constant position and heading
         positions = np.tile([50, 50], (1000, 1))
@@ -916,7 +610,7 @@ class TestViewBinningEdgeCases:
         # Multiple spikes at various times
         spikes = np.array([0.5, 1.5, 2.5, 3.5, 4.5])
 
-        spike_counts = bin_view_spike_train(
+        spike_counts = _counts(
             simple_env,
             spikes,
             times,
@@ -933,22 +627,25 @@ class TestViewBinningEdgeCases:
 
 
 class TestViewBinningInputValidation:
-    """Tests for input validation in view binning functions."""
+    """Tests for input validation of view binning."""
 
     def test_mismatched_times_positions_length(
         self,
         simple_env: Environment,
     ) -> None:
         """Should raise error if times and positions have different lengths."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
         times = np.linspace(0, 10, 100)
         positions = np.random.rand(50, 2) * 100  # Different length
         headings = np.random.uniform(0, 2 * np.pi, 100)
 
         with pytest.raises(ValueError, match=r"length|shape|mismatch"):
-            compute_occupancy(
-                simple_env, times, positions, headings, boundary_source="analysis"
+            compute_view_rate(
+                simple_env,
+                np.array([1.0]),
+                times,
+                positions,
+                headings,
+                boundary_source="analysis",
             )
 
     def test_mismatched_times_headings_length(
@@ -956,15 +653,18 @@ class TestViewBinningInputValidation:
         simple_env: Environment,
     ) -> None:
         """Should raise error if times and headings have different lengths."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
         times = np.linspace(0, 10, 100)
         positions = np.random.rand(100, 2) * 100
         headings = np.random.uniform(0, 2 * np.pi, 50)  # Different length
 
         with pytest.raises(ValueError, match=r"length|shape|mismatch"):
-            compute_occupancy(
-                simple_env, times, positions, headings, boundary_source="analysis"
+            compute_view_rate(
+                simple_env,
+                np.array([1.0]),
+                times,
+                positions,
+                headings,
+                boundary_source="analysis",
             )
 
     def test_invalid_gaze_model(
@@ -973,16 +673,52 @@ class TestViewBinningInputValidation:
         trajectory_data: dict,
     ) -> None:
         """Should raise error for invalid gaze_model."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
         with pytest.raises(ValueError, match=r"gaze_model|invalid"):
-            compute_occupancy(
+            compute_view_rate(
                 simple_env,
-                trajectory_data["times"],
-                trajectory_data["positions"],
-                trajectory_data["headings"],
-                gaze_model="invalid_model",
-                boundary_source="analysis",  # type: ignore[arg-type]
+                np.array([1.0]),
+                *_trajectory(trajectory_data),
+                gaze_model="invalid_model",  # type: ignore[arg-type]
+                boundary_source="analysis",
+            )
+
+    @pytest.mark.parametrize(
+        ("short", "message"),
+        [
+            ("positions", r"times has 100 samples, positions has 90"),
+            ("headings", r"headings has 90 samples but times has 100"),
+            ("gaze_offsets", r"gaze_offsets has 90 samples but times has 100"),
+        ],
+    )
+    def test_samples_must_align_with_times(
+        self, simple_env: Environment, short: str, message: str
+    ) -> None:
+        """Every per-sample array has one row per timestamp."""
+        n = 100
+        data = {
+            "positions": np.full((n, 2), 50.0),
+            "headings": np.zeros(n),
+            "gaze_offsets": np.zeros(n),
+        }
+        data[short] = data[short][:90]
+        with pytest.raises(ValueError, match=message):
+            prepare_view_binning(
+                simple_env,
+                np.linspace(0, 10, n),
+                data["positions"],
+                data["headings"],
+                gaze_offsets=data["gaze_offsets"],
+                boundary_source="analysis",
+            )
+
+    def test_position_columns_must_match_env(self, simple_env: Environment) -> None:
+        with pytest.raises(ValueError, match=r"positions with shape \(100, 3\)"):
+            prepare_view_binning(
+                simple_env,
+                np.linspace(0, 10, 100),
+                np.full((100, 3), 50.0),
+                np.zeros(100),
+                boundary_source="analysis",
             )
 
     def test_insufficient_samples(
@@ -990,16 +726,60 @@ class TestViewBinningInputValidation:
         simple_env: Environment,
     ) -> None:
         """Should raise error with fewer than 2 samples."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
         times = np.array([0.0])  # Only 1 sample - need at least 2
         positions = np.array([[50, 50]])
         headings = np.array([0.0])
 
-        with pytest.raises(ValueError, match=r"2|samples"):
-            compute_occupancy(
+        with pytest.raises(ValueError, match="At least 2 samples"):
+            prepare_view_binning(
                 simple_env, times, positions, headings, boundary_source="analysis"
             )
+
+    def test_unsorted_times_raises_error(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """Unsorted times should raise ValueError.
+
+        searchsorted assumes sorted input. Unsorted times will silently
+        produce incorrect results without validation.
+        """
+        times = np.array([0.0, 2.0, 1.0, 3.0])  # Not sorted
+        positions = np.tile([50, 50], (4, 1))
+        headings = np.zeros(4)
+
+        with pytest.raises(ValueError, match="monotonically non-decreasing"):
+            prepare_view_binning(
+                simple_env, times, positions, headings, boundary_source="analysis"
+            )
+
+    def test_duplicate_times_allowed(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """Duplicate times (monotonically non-decreasing) should be allowed.
+
+        Times like [0, 1, 1, 2] are valid (non-decreasing but not strictly
+        increasing). The duplicate contributes 0 seconds.
+        """
+        times = np.array([0.0, 1.0, 1.0, 2.0])  # Duplicate at t=1
+        positions = np.tile([50, 50], (4, 1))
+        headings = np.zeros(4)
+
+        occupancy = _occupancy(
+            simple_env,
+            times,
+            positions,
+            headings,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            max_gap=None,
+            boundary_source="analysis",  # Coarse sampling is incidental to this test.
+        )
+
+        # 3 intervals: 1s, 0s, 1s = 2s total
+        total_occupancy = np.sum(occupancy)
+        assert abs(total_occupancy - 2.0) < 0.01
 
 
 # ==============================================================================
@@ -1023,8 +803,6 @@ class TestViewOccupancyNonUniformSampling:
         With non-uniform sampling, using median(dt) instead of actual dt
         gives incorrect total occupancy.
         """
-        from neurospatial.encoding._view_counts import compute_occupancy
-
         # Create non-uniform time samples: first half at 10Hz, second half at 100Hz
         times_slow = np.linspace(0, 5, 51)  # 50 intervals of 0.1s
         times_fast = np.linspace(5.01, 10, 500)  # 499 intervals of ~0.01s
@@ -1034,7 +812,7 @@ class TestViewOccupancyNonUniformSampling:
         positions = np.tile([50, 50], (n_samples, 1))  # Stationary
         headings = np.zeros(n_samples)  # Looking east
 
-        occupancy = compute_occupancy(
+        occupancy = _occupancy(
             simple_env,
             times,
             positions,
@@ -1066,13 +844,11 @@ class TestViewOccupancyNonUniformSampling:
         Occupancy uses (n-1) intervals from n samples. The last sample
         has no following interval to contribute.
         """
-        from neurospatial.encoding._view_counts import compute_occupancy
-
         times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])  # 5 samples, 4 intervals
         positions = np.tile([50, 50], (5, 1))
         headings = np.zeros(5)
 
-        occupancy = compute_occupancy(
+        occupancy = _occupancy(
             simple_env,
             times,
             positions,
@@ -1089,195 +865,6 @@ class TestViewOccupancyNonUniformSampling:
             f"Expected 4.0s (4 intervals), got {total_occupancy:.3f}s. "
             "Last frame may be incorrectly contributing to occupancy."
         )
-
-
-class TestTimesValidation:
-    """Tests for input validation of times array."""
-
-    def test_unsorted_times_raises_error(
-        self,
-        simple_env: Environment,
-    ) -> None:
-        """Unsorted times should raise ValueError.
-
-        searchsorted assumes sorted input. Unsorted times will silently
-        produce incorrect results without validation.
-        """
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        times = np.array([0.0, 2.0, 1.0, 3.0])  # Not sorted
-        positions = np.tile([50, 50], (4, 1))
-        headings = np.zeros(4)
-
-        with pytest.raises(ValueError, match=r"monotonic|sorted|increasing"):
-            compute_occupancy(
-                simple_env,
-                times,
-                positions,
-                headings,
-                boundary_source="analysis",
-            )
-
-    def test_duplicate_times_allowed(
-        self,
-        simple_env: Environment,
-    ) -> None:
-        """Duplicate times (monotonically non-decreasing) should be allowed.
-
-        Times like [0, 1, 1, 2] are valid (non-decreasing but not strictly
-        increasing). The duplicate contributes 0 seconds.
-        """
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        times = np.array([0.0, 1.0, 1.0, 2.0])  # Duplicate at t=1
-        positions = np.tile([50, 50], (4, 1))
-        headings = np.zeros(4)
-
-        occupancy = compute_occupancy(
-            simple_env,
-            times,
-            positions,
-            headings,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            max_gap=None,
-            boundary_source="analysis",  # Coarse sampling is incidental to this test.
-        )
-
-        # 3 intervals: 1s, 0s, 1s = 2s total
-        total_occupancy = np.sum(occupancy)
-        assert abs(total_occupancy - 2.0) < 0.01
-
-
-# ==============================================================================
-# Tests for view binning optimization (precomputation)
-# ==============================================================================
-
-
-class TestBinViewSpikeTrainsPrecomputation:
-    """Tests that bin_view_spike_trains precomputes shared quantities.
-
-    Bug: viewed_locations was recomputed for every neuron in the batch,
-    contradicting the docstring that says it precomputes shared quantities.
-    """
-
-    def test_batch_result_matches_sequential(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        multiple_neuron_spikes: list[NDArray[np.float64]],
-    ) -> None:
-        """Batch result should match sequential single-neuron calls."""
-        from neurospatial.encoding._view_counts import (
-            bin_view_spike_train,
-            bin_view_spike_trains,
-        )
-
-        # Get batch result
-        batch_counts, _batch_occupancy = bin_view_spike_trains(
-            simple_env,
-            multiple_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            boundary_source="analysis",
-        )
-
-        # Get sequential results
-        for i, spikes in enumerate(multiple_neuron_spikes):
-            single_counts = bin_view_spike_train(
-                simple_env,
-                spikes,
-                trajectory_data["times"],
-                trajectory_data["positions"],
-                trajectory_data["headings"],
-                gaze_model="fixed_distance",
-                view_distance=10.0,
-                boundary_source="analysis",
-            )
-            np.testing.assert_array_almost_equal(
-                batch_counts[i], single_counts, err_msg=f"Neuron {i} counts differ"
-            )
-
-    def test_view_bins_precomputed_once(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-    ) -> None:
-        """view_bins should be computed once and reused for all neurons.
-
-        This test verifies that viewed locations are precomputed by checking
-        that the internal implementation uses precomputed view_bins.
-        """
-        from neurospatial.encoding._view_counts import (
-            _precompute_view_bins,
-        )
-
-        # This internal function should exist for precomputation
-        view_bins = _precompute_view_bins(
-            simple_env,
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            boundary_source="analysis",
-        )
-
-        # Should return bin indices for each timepoint
-        assert view_bins.shape == (len(trajectory_data["times"]),)
-        assert view_bins.dtype == np.intp
-        # Invalid views should be -1
-        assert np.all((view_bins >= -1) & (view_bins < simple_env.n_bins))
-
-
-class TestBinViewSpikeTrainsValidation:
-    """Tests that bin_view_spike_trains validates times like compute_occupancy."""
-
-    def test_unsorted_times_raises_error(
-        self,
-        simple_env: Environment,
-    ) -> None:
-        """bin_view_spike_trains should reject unsorted times."""
-        from neurospatial.encoding._view_counts import bin_view_spike_trains
-
-        times = np.array([0.0, 2.0, 1.0, 3.0])  # Not monotonic
-        positions = np.tile([50, 50], (4, 1))
-        headings = np.zeros(4)
-        spike_times = [np.array([0.5, 1.5])]
-
-        with pytest.raises(ValueError, match="monotonically non-decreasing"):
-            bin_view_spike_trains(
-                simple_env,
-                spike_times,
-                times,
-                positions,
-                headings,
-                boundary_source="analysis",
-            )
-
-    def test_insufficient_samples_raises_error(
-        self,
-        simple_env: Environment,
-    ) -> None:
-        """bin_view_spike_trains should reject fewer than 2 samples."""
-        from neurospatial.encoding._view_counts import bin_view_spike_trains
-
-        times = np.array([0.0])  # Only 1 sample
-        positions = np.array([[50, 50]])
-        headings = np.array([0.0])
-        spike_times = [np.array([0.5])]
-
-        with pytest.raises(ValueError, match="At least 2 samples"):
-            bin_view_spike_trains(
-                simple_env,
-                spike_times,
-                times,
-                positions,
-                headings,
-                boundary_source="analysis",
-            )
 
 
 class TestGazeModelGeometry:

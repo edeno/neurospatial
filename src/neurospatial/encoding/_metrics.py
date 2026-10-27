@@ -36,7 +36,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -272,6 +272,26 @@ def spatial_information(
     return float(_np_si(firing_rate_arr, occupancy_arr, base=base))
 
 
+def _rates_and_occupancy(
+    firing_rates: ArrayLike, occupancy: ArrayLike
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Rates ``(n_neurons, n_bins)`` and occupancy ``(n_bins,)`` as arrays, or raise."""
+    rates = np.asarray(firing_rates)
+    occ = np.asarray(occupancy)
+    if rates.ndim != 2:
+        raise ValueError(
+            f"firing_rates must be 2D (n_neurons, n_bins), got shape {rates.shape}"
+        )
+    if occ.ndim != 1:
+        raise ValueError(f"occupancy must be 1D (n_bins,), got shape {occ.shape}")
+    if rates.shape[1] != occ.shape[0]:
+        raise ValueError(
+            f"firing_rates has {rates.shape[1]} bins but "
+            f"occupancy has {occ.shape[0]} bins"
+        )
+    return rates, occ
+
+
 def batch_spatial_information(
     firing_rates: ArrayLike,
     occupancy: ArrayLike,
@@ -341,22 +361,7 @@ def batch_spatial_information(
         )
 
     # NumPy implementation — input validation here, kernel in _core_numpy.
-    firing_rates_arr = np.asarray(firing_rates)
-    occupancy_arr = np.asarray(occupancy)
-
-    if firing_rates_arr.ndim != 2:
-        raise ValueError(
-            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates_arr.shape}"
-        )
-    if occupancy_arr.ndim != 1:
-        raise ValueError(
-            f"occupancy must be 1D (n_bins,), got shape {occupancy_arr.shape}"
-        )
-    if firing_rates_arr.shape[1] != occupancy_arr.shape[0]:
-        raise ValueError(
-            f"firing_rates has {firing_rates_arr.shape[1]} bins but "
-            f"occupancy has {occupancy_arr.shape[0]} bins"
-        )
+    firing_rates_arr, occupancy_arr = _rates_and_occupancy(firing_rates, occupancy)
 
     from neurospatial.encoding._core_numpy import spatial_information_batch as _np_si
 
@@ -490,10 +495,13 @@ def _count_to_rate(
     )
 
 
-# Private attribute that keeps ``V`` on the result that owns it. Results are
-# immutable, so ``V`` cannot go stale; it is not a dataclass field, so it is
-# outside equality, repr and ``dataclasses.replace``.
+# Private attributes that keep ``V`` on the result that owns it. Results are
+# immutable, so ``V`` cannot go stale; they are not dataclass fields, so they
+# are outside equality, repr and ``dataclasses.replace``. The GAM's ``V`` is
+# per unit. A linear estimator's ``V`` is one number per occupancy support,
+# kept in a mapping that a population shares with its single-unit results.
 _VARIANCE_CACHE = "_untuned_rate_variance"
+_SHARED_VARIANCE_CACHE = "_untuned_rate_variance_by_support"
 
 
 def _cached_variance(
@@ -502,33 +510,64 @@ def _cached_variance(
     """Per-unit ``V`` of ``result``, probed once and then reused.
 
     The probe pass costs about one rate computation per occupied bin, so the
-    screens (``classify``, ``label_cell_types``, ``summary_table``) share it.
+    screens (``classify``, ``label_cell_types``, ``summary_table``) share it,
+    and so do the single-unit results of a population (see
+    :func:`_share_variance_cache`).
     """
-    cached: NDArray[np.float64] | None = vars(result).get(_VARIANCE_CACHE)
-    if cached is not None:
-        return cached
     if result.method == "glm":
+        cached: NDArray[np.float64] | None = vars(result).get(_VARIANCE_CACHE)
+        if cached is not None:
+            return cached
         variance = _glm_untuned_rate_variance(result, mean_rates, support)
-    else:
-        variance = np.full(
-            mean_rates.size,
-            _untuned_rate_variance(
-                _count_to_rate(result),
-                np.asarray(result.occupancy, dtype=np.float64),
-                support,
-            ),
+        variance.flags.writeable = False
+        vars(result)[_VARIANCE_CACHE] = variance
+        return variance
+    shared: dict[bytes, float] = vars(result).setdefault(_SHARED_VARIANCE_CACHE, {})
+    key = support.tobytes()
+    if key not in shared:
+        shared[key] = _untuned_rate_variance(
+            _count_to_rate(result),
+            np.asarray(result.occupancy, dtype=np.float64),
+            support,
         )
+    variance = np.full(mean_rates.size, shared[key])
     variance.flags.writeable = False
-    vars(result)[_VARIANCE_CACHE] = variance
     return variance
 
 
-def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
+def _share_variance_cache(population: Any, unit: Any) -> None:
+    """Let a single-unit result reuse its population's untuned-rate variance.
+
+    For every estimator but the GAM, ``V`` depends only on the occupancy, the
+    estimator settings and the support, which a unit result takes from its
+    population, so the two share one cache keyed by the support. The GAM's
+    ``V`` depends on each unit's rate and penalty and is not shared.
+    """
+    if getattr(population, "method", None) != "glm":
+        vars(unit)[_SHARED_VARIANCE_CACHE] = vars(population).setdefault(
+            _SHARED_VARIANCE_CACHE, {}
+        )
+
+
+class _InformationBias(NamedTuple):
+    """Untuned-cell information bias of each unit, before any warning."""
+
+    bias: NDArray[np.float64]
+    """Expected untuned information (bits/spike), shape (n_units,); NaN for
+    silent units and units in ``too_few``."""
+    too_few: NDArray[np.bool_]
+    """Units with fewer spikes than independent bins, shape (n_units,)."""
+    effective_bins: float
+    """Independent bins of the worst ``too_few`` unit; NaN when there is none."""
+
+
+def _information_bias_terms(result: Any, *, base: float = 2.0) -> _InformationBias:
     """Expected plug-in Skaggs information of an untuned cell, per unit.
 
     The derivation is in the Notes of the result classes'
     ``spatial_information_bias``. Units with fewer spikes than the map has
-    effectively independent bins get NaN, with one warning naming how many.
+    effectively independent bins get NaN. This computation does not warn;
+    :func:`_information_bias` adds the warning.
 
     Parameters
     ----------
@@ -539,19 +578,20 @@ def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
 
     Returns
     -------
-    ndarray, shape (n_units,)
+    _InformationBias
         Expected information in bits per spike of an untuned Poisson cell
-        with each unit's mean rate, on this result's occupancy and estimator.
-        NaN for a silent unit and where the expansion does not hold.
+        with each unit's mean rate, on this result's occupancy and estimator,
+        and the units where the expansion does not hold.
     """
-    from neurospatial._stacklevel import _external_stacklevel
     from neurospatial.encoding._base import _to_numpy
 
     rates = np.atleast_2d(np.asarray(_to_numpy(result._get_rates()), np.float64))
     occupancy = np.asarray(_to_numpy(result.occupancy), dtype=np.float64)
     support = np.asarray(result.spatial_support, dtype=bool)
     if not support.any():
-        return np.full(len(rates), np.nan)
+        return _InformationBias(
+            np.full(len(rates), np.nan), np.zeros(len(rates), dtype=bool), np.nan
+        )
     dwell = occupancy[support]
     mean_rates = rates[:, support] @ dwell / dwell.sum()
     variance = _cached_variance(result, mean_rates, support)
@@ -562,12 +602,34 @@ def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
     # ``V / lam`` on average. The second-order bias breaks down once it
     # reaches 1: fewer spikes than independent bins.
     too_few = spiking & ~(variance <= mean_rates)
+    effective_bins = (
+        float(np.nanmax(variance[too_few]) * occupancy[occupancy > 0].sum())
+        if too_few.any()
+        else np.nan
+    )
+    return _InformationBias(
+        np.where(spiking & ~too_few, bias, np.nan), too_few, effective_bins
+    )
+
+
+def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
+    """:func:`_information_bias_terms`, warning once about too few spikes.
+
+    Returns
+    -------
+    ndarray, shape (n_units,)
+        The bias; NaN for silent units and units with fewer spikes than the
+        map has effectively independent bins, with one warning naming how
+        many.
+    """
+    from neurospatial._stacklevel import _external_stacklevel
+
+    terms = _information_bias_terms(result, base=base)
+    too_few = terms.too_few
     if too_few.any():
-        total = occupancy[occupancy > 0].sum()
-        effective_bins = float(np.nanmax(variance[too_few]) * total)
         warnings.warn(
-            f"{int(too_few.sum())} of {len(rates)} units have fewer spikes than "
-            f"their rate maps have independent bins (about {effective_bins:.0f}), "
+            f"{int(too_few.sum())} of {len(too_few)} units have fewer spikes than "
+            f"their rate maps have independent bins (about {terms.effective_bins:.0f}), "
             "so their information bias is NaN and they fail the information "
             "screen.\n"
             "Why: the bias of plug-in information is an expansion in "
@@ -581,7 +643,7 @@ def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-    return np.where(spiking & ~too_few, bias, np.nan)
+    return terms.bias
 
 
 def _debiased_information(
@@ -600,6 +662,41 @@ def _debiased_information(
         np.asarray(_to_numpy(result.spatial_information()), dtype=np.float64)
     )
     return information - (_information_bias(result) if bias is None else bias)
+
+
+def _information_screen(
+    result: Any,
+    min_info: float | None = None,
+    *,
+    default: float,
+    bias: NDArray[np.float64] | None = None,
+) -> NDArray[np.bool_]:
+    """Inclusive information screen of every unit of ``result``.
+
+    A unit passes when its bias-corrected information
+    (:func:`_debiased_information`) is at or above the cutoff; a NaN value
+    (silent unit, too few spikes) fails.
+
+    Parameters
+    ----------
+    result : rate result
+        A spatial, view or object-vector rate result, single or population.
+    min_info : float or None, default=None
+        Cutoff in bits/spike; ``None`` uses ``default``.
+    default : float
+        The cell type's default cutoff.
+    bias : ndarray, shape (n_units,), optional
+        :func:`_information_bias` of ``result`` when the caller already has
+        it, so its warning is not repeated.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_units,)
+        Whether each unit passes.
+    """
+    cutoff = default if min_info is None else min_info
+    passed: NDArray[np.bool_] = _debiased_information(result, bias) >= cutoff
+    return passed
 
 
 def _warn_unknown_bias(
@@ -649,11 +746,8 @@ def _beyond_bias(result: Any, min_info: float, *, kind: str) -> bool:
     ``min_info``. An unknown bias fails, with the warning of
     :func:`_warn_unknown_bias`.
     """
-    with warnings.catch_warnings():
-        # An unknown bias is reported below, in terms of the verdict.
-        warnings.simplefilter("ignore", UserWarning)
-        bias = _information_bias(result)
-    debiased = _debiased_information(result, bias)
+    # An unknown bias is reported below, in terms of the verdict.
+    debiased = _debiased_information(result, _information_bias_terms(result).bias)
     _warn_unknown_bias(np.array([True]), debiased, kind=kind)
     return bool(debiased[0] >= min_info)
 
@@ -821,28 +915,12 @@ def batch_sparsity(
 
         return sparsity_batch(jnp.asarray(firing_rates), jnp.asarray(occupancy))
 
-    # NumPy implementation
-    firing_rates = np.asarray(firing_rates)
-    occupancy = np.asarray(occupancy)
-
-    # Validate shapes
-    if firing_rates.ndim != 2:
-        raise ValueError(
-            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates.shape}"
-        )
-
-    if occupancy.ndim != 1:
-        raise ValueError(f"occupancy must be 1D (n_bins,), got shape {occupancy.shape}")
-
-    if firing_rates.shape[1] != occupancy.shape[0]:
-        raise ValueError(
-            f"firing_rates has {firing_rates.shape[1]} bins but "
-            f"occupancy has {occupancy.shape[0]} bins"
-        )
+    # NumPy implementation — input validation here, kernel in _core_numpy.
+    firing_rates_arr, occupancy_arr = _rates_and_occupancy(firing_rates, occupancy)
 
     from neurospatial.encoding._core_numpy import sparsity_batch as _np_sp
 
-    return _np_sp(firing_rates, occupancy)
+    return _np_sp(firing_rates_arr, occupancy_arr)
 
 
 def batch_grid_scores(
@@ -935,72 +1013,30 @@ def batch_grid_scores(
     neurospatial.encoding.grid.grid_score : Single autocorrelogram grid score
     neurospatial.encoding.grid.spatial_autocorrelation : Compute autocorrelation
     """
-    from neurospatial.encoding.grid import grid_score, spatial_autocorrelation
+    from neurospatial.encoding.grid import (
+        _require_rectangular_grid,
+        grid_score,
+        spatial_autocorrelation,
+    )
 
-    firing_rates = np.asarray(firing_rates)
-
-    # Validate shapes
-    if firing_rates.ndim != 2:
-        raise ValueError(
-            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates.shape}"
-        )
-
-    if firing_rates.shape[1] != env.n_bins:
-        raise ValueError(
-            f"firing_rates has {firing_rates.shape[1]} bins but "
-            f"env has {env.n_bins} bins"
-        )
-
-    n_neurons = firing_rates.shape[0]
-    scores = np.empty(n_neurons, dtype=np.float64)
-    failures = np.zeros(n_neurons, dtype=np.bool_)
-
+    firing_rates = _unit_maps(env, firing_rates)
     # The environment either has a rectangular lag grid or has no grid score
     # at all; refuse once, as spatial_autocorrelation does, rather than
     # returning NaN scores that read as "not a grid cell".
-    from neurospatial.encoding.grid import _require_rectangular_grid
-
     _require_rectangular_grid(env, "batch_grid_scores()")
 
-    for i in range(n_neurons):
-        firing_rate = firing_rates[i]
+    def score(firing_rate: NDArray[np.float64]) -> float:
+        # An all-NaN or constant map has no spatial structure to
+        # autocorrelate: its score is NaN, not a failure. Checking first lets
+        # the failure mask flag only true failures.
+        finite_rates = firing_rate[np.isfinite(firing_rate)]
+        if finite_rates.size == 0 or np.all(finite_rates == finite_rates[0]):
+            return np.nan
+        return grid_score(spatial_autocorrelation(env, firing_rate))
 
-        # Pre-check legitimate-NaN inputs before calling
-        # spatial_autocorrelation. Both conditions raise ValueError from
-        # inside spatial_autocorrelation, but they reflect properties of
-        # the input rate map (no spatial structure to autocorrelate),
-        # not a computation failure. Pre-checking lets the catch-all
-        # below flag only true failures.
-        finite_mask = np.isfinite(firing_rate)
-        if not np.any(finite_mask):
-            scores[i] = np.nan
-            continue
-        finite_rates = firing_rate[finite_mask]
-        if np.all(finite_rates == finite_rates[0]):
-            scores[i] = np.nan
-            continue
-
-        try:
-            autocorr = spatial_autocorrelation(env, firing_rate)
-            scores[i] = grid_score(autocorr)
-        except (ValueError, RuntimeError):
-            # Caught exception: record both NaN and the failure flag so
-            # the caller can distinguish this from a legitimate-NaN.
-            scores[i] = np.nan
-            failures[i] = True
-
-    n_failed = int(failures.sum())
-    if n_failed > 0:
-        warnings.warn(
-            f"batch_grid_scores: grid_score raised an exception for "
-            f"{n_failed} of {n_neurons} neuron"
-            f"{'' if n_neurons == 1 else 's'}; their scores were set to "
-            "NaN. Inspect the `failures` mask on the returned "
-            "BatchScoresResult to identify which neurons failed.",
-            UserWarning,
-            stacklevel=2,
-        )
-    return BatchScoresResult(scores=scores, failures=failures)
+    return _score_units(
+        firing_rates, score, caller="batch_grid_scores", scorer="grid_score"
+    )
 
 
 def batch_border_scores(
@@ -1109,61 +1145,92 @@ def batch_border_scores(
     from neurospatial.encoding._physical_border import border_geometry
     from neurospatial.encoding.border import _validate_border_arguments, border_score
 
-    firing_rates = np.asarray(firing_rates)
-
-    # Validate shapes
-    if firing_rates.ndim != 2:
-        raise ValueError(
-            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates.shape}"
-        )
-
-    if firing_rates.shape[1] != env.n_bins:
-        raise ValueError(
-            f"firing_rates has {firing_rates.shape[1]} bins but "
-            f"env has {env.n_bins} bins"
-        )
-
+    firing_rates = _unit_maps(env, firing_rates)
     # Invalid arguments and unavailable walls concern every neuron, so raise
     # them once here instead of recording a per-neuron failure.
     _validate_border_arguments(threshold, min_area, metric, boundary_source)
     border_geometry(env, boundary_source)
 
+    def score(firing_rate: NDArray[np.float64]) -> float:
+        return border_score(
+            env,
+            firing_rate,
+            threshold=threshold,
+            min_area=min_area,
+            metric=metric,  # type: ignore[arg-type]
+            boundary_source=boundary_source,
+        )
+
+    return _score_units(
+        firing_rates, score, caller="batch_border_scores", scorer="border_score"
+    )
+
+
+def _unit_maps(env: Environment, firing_rates: ArrayLike) -> NDArray[np.float64]:
+    """Rate maps as an array of shape ``(n_neurons, env.n_bins)``, or raise."""
+    maps = np.asarray(firing_rates)
+    if maps.ndim != 2:
+        raise ValueError(
+            f"firing_rates must be 2D (n_neurons, n_bins), got shape {maps.shape}"
+        )
+    if maps.shape[1] != env.n_bins:
+        raise ValueError(
+            f"firing_rates has {maps.shape[1]} bins but env has {env.n_bins} bins"
+        )
+    return maps
+
+
+def _score_units(
+    firing_rates: NDArray[np.float64],
+    score: Callable[[NDArray[np.float64]], float],
+    *,
+    caller: str,
+    scorer: str,
+) -> BatchScoresResult:
+    """Score each row of ``firing_rates``, recording failures as NaN.
+
+    A ``ValueError`` or ``RuntimeError`` from ``score`` sets that neuron's
+    score to NaN and its failure flag, and the batch warns once. A
+    ``NotImplementedError`` (a ``RuntimeError``) is missing scientific
+    support, an unavailable measurement rather than a numerical failure, so
+    it propagates.
+
+    Parameters
+    ----------
+    firing_rates : ndarray, shape (n_neurons, n_bins)
+        Rate map of each neuron.
+    score : callable
+        Score of one rate map.
+    caller, scorer : str
+        The batch function and the score it computes, named in the warning.
+
+    Returns
+    -------
+    BatchScoresResult
+        Scores and failure flags, one per neuron.
+    """
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)
     failures = np.zeros(n_neurons, dtype=np.bool_)
-
     for i in range(n_neurons):
-        firing_rate = firing_rates[i]
-
         try:
-            scores[i] = border_score(
-                env,
-                firing_rate,
-                threshold=threshold,
-                min_area=min_area,
-                metric=metric,  # type: ignore[arg-type]
-                boundary_source=boundary_source,
-            )
+            scores[i] = score(firing_rates[i])
         except NotImplementedError:
-            # Missing scientific support is an unavailable measurement, not a
-            # numerical failure that can be hidden in the batch failure mask.
             raise
         except (ValueError, RuntimeError):
-            # Caught exception: record both NaN and the failure flag so
-            # the caller can distinguish this from a legitimate-NaN.
             scores[i] = np.nan
             failures[i] = True
 
     n_failed = int(failures.sum())
     if n_failed > 0:
         warnings.warn(
-            f"batch_border_scores: border_score raised an exception for "
+            f"{caller}: {scorer} raised an exception for "
             f"{n_failed} of {n_neurons} neuron"
             f"{'' if n_neurons == 1 else 's'}; their scores were set to "
             "NaN. Inspect the `failures` mask on the returned "
             "BatchScoresResult to identify which neurons failed.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=3,
         )
     return BatchScoresResult(scores=scores, failures=failures)
 

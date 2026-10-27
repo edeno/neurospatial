@@ -49,12 +49,8 @@ def test_spikes_in_pause_are_ignored(gap_population):
     a = decode_session(r.env, trains, r.times, r.positions, **options)
     b = decode_session(r.env, added, r.times, r.positions, **options)
     np.testing.assert_array_equal(a.posterior, b.posterior)
-    a = compute_spatial_rates(
-        r.env, trains, r.times, r.positions, fill_value=0.0, **options
-    )
-    b = compute_spatial_rates(
-        r.env, added, r.times, r.positions, fill_value=0.0, **options
-    )
+    a = compute_spatial_rates(r.env, trains, r.times, r.positions, **options)
+    b = compute_spatial_rates(r.env, added, r.times, r.positions, **options)
     np.testing.assert_array_equal(a.firing_rates, b.firing_rates)
 
 
@@ -98,7 +94,7 @@ def test_immobility_still_decoded(gap_population):
 def test_decode_bounds_do_not_restrict_observed_runs(gap_population):
     r, trains = gap_population
     model = compute_spatial_rates(
-        r.env, trains, r.times, r.positions, method="binned", fill_value=0.0
+        r.env, trains, r.times, r.positions, method="binned"
     ).firing_rates
     result = BayesianDecoder.from_models(
         r.env, model, unit_ids=np.arange(len(trains))

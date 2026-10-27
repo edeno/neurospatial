@@ -4,7 +4,7 @@ import numpy as np
 from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment
-from neurospatial.encoding.spatial import _extract_connected_component_graph
+from neurospatial.encoding._field_metrics import _seed_component
 from neurospatial.environment._fields import face_geometry
 from neurospatial.layout import create_layout
 
@@ -18,7 +18,7 @@ def test_hex_logical_diagonals_do_not_join_unconnected_fields():
     mask = np.zeros(env.n_bins, dtype=bool)
     mask[[0, 5]] = True
     assert not env.connectivity.has_edge(0, 5)
-    np.testing.assert_array_equal(_extract_connected_component_graph(0, mask, env), [0])
+    np.testing.assert_array_equal(_seed_component(0, mask, env), [0])
 
 
 def test_legacy_grid_segmentation_follows_graph_despite_provenance():
@@ -42,9 +42,7 @@ def test_legacy_grid_segmentation_follows_graph_despite_provenance():
     # A detached provenance export cannot change the retained graph.
     env.layout_parameters["connect_diagonal_neighbors"] = False
     mask = np.array([True, False, False, True])
-    np.testing.assert_array_equal(
-        _extract_connected_component_graph(0, mask, env), [0, 3]
-    )
+    np.testing.assert_array_equal(_seed_component(0, mask, env), [0, 3])
 
 
 def test_explicit_bins_segment_using_supplied_diagonal_connections():
@@ -65,9 +63,7 @@ def test_explicit_bins_segment_using_supplied_diagonal_connections():
     )
     assert env._binning.grid_spec.connect_diagonal
     mask = np.array([True, False, False, True])
-    np.testing.assert_array_equal(
-        _extract_connected_component_graph(0, mask, env), [0, 3]
-    )
+    np.testing.assert_array_equal(_seed_component(0, mask, env), [0, 3])
 
 
 def test_pickle_preserves_segmentation_connections():
@@ -80,9 +76,7 @@ def test_pickle_preserves_segmentation_connections():
     )
     restored = pickle.loads(pickle.dumps(original))
     mask = np.array([True, False, False, True])
-    np.testing.assert_array_equal(
-        _extract_connected_component_graph(0, mask, restored), [0, 3]
-    )
+    np.testing.assert_array_equal(_seed_component(0, mask, restored), [0, 3])
 
 
 def test_from_layout_segmentation_keeps_resolved_default():
@@ -96,9 +90,7 @@ def test_from_layout_segmentation_keeps_resolved_default():
     # The engine's record keeps the default it resolved.
     assert env.layout_parameters["connect_diagonal_neighbors"] is True
     mask = np.array([True, False, False, True])
-    np.testing.assert_array_equal(
-        _extract_connected_component_graph(0, mask, env), [0, 3]
-    )
+    np.testing.assert_array_equal(_seed_component(0, mask, env), [0, 3])
 
 
 def test_supplied_arena_keeps_resolved_segmentation_default():
@@ -115,8 +107,6 @@ def test_supplied_arena_keeps_resolved_segmentation_default():
         arena=OpenArena(box(-1, -1, 3, 3)),
     )
     np.testing.assert_array_equal(
-        _extract_connected_component_graph(
-            0, np.array([True, False, False, True]), env
-        ),
+        _seed_component(0, np.array([True, False, False, True]), env),
         [0, 3],
     )

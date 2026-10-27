@@ -492,7 +492,7 @@ if position_units is None:
 env = Environment.from_samples(pos.positions, bin_size=5.0, units=position_units)
 rates = compute_spatial_rates(
     env, units.spike_times, pos.times, pos.positions, unit_ids=units.unit_ids,
-    epochs=epochs, spike_window=units.spike_window, fill_value=0.0,
+    epochs=epochs, spike_window=units.spike_window,
 )
 rate_table = rates.summary_table()
 print(rate_table)

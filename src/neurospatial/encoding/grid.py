@@ -58,11 +58,13 @@ Sargolini, F., Fyhn, M., Hafting, T., McNaughton, B. L., Witter, M. P., Moser, M
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy import fft, ndimage
+from scipy import fft, ndimage, special
+from scipy.sparse import coo_array, csr_array
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
@@ -597,6 +599,52 @@ _MIN_OVERLAP_BINS = 20
 _MIN_OVERLAP_FRACTION = 0.25
 
 
+def _padded_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
+    """FFT size that holds every 2D lag of a map without wrap-around."""
+    return tuple(fft.next_fast_len(2 * n - 1, real=True) for n in shape)
+
+
+def _padded_spectrum(array: NDArray[np.float64]) -> NDArray[np.complex128]:
+    """Real 2D spectrum of ``array`` zero-padded to :func:`_padded_shape`."""
+    return np.asarray(fft.rfft2(array, s=_padded_shape(array.shape)))
+
+
+def _overlap_sum(
+    first: NDArray[np.complex128],
+    second: NDArray[np.complex128],
+    shape: tuple[int, ...],
+) -> NDArray[np.float64]:
+    """``sum_i a[i] * b[i + lag]`` at every lag, from the padded spectra.
+
+    The padding leaves no wrap-around for lags up to ``n - 1`` in each
+    direction; zero lag is at the center of the ``(2 n_x - 1, 2 n_y - 1)``
+    result.
+    """
+    padded = _padded_shape(shape)
+    circular = fft.irfft2(np.conj(first) * second, s=padded)
+    rows = np.r_[padded[0] - shape[0] + 1 : padded[0], : shape[0]]
+    cols = np.r_[padded[1] - shape[1] + 1 : padded[1], : shape[1]]
+    return np.asarray(circular[np.ix_(rows, cols)], dtype=np.float64)
+
+
+@lru_cache(maxsize=8)
+def _mask_overlap(
+    shape: tuple[int, ...], valid_bytes: bytes
+) -> tuple[NDArray[np.complex128], NDArray[np.float64]]:
+    """Padded spectrum of a finite-bin mask and its pair count at every lag.
+
+    Rate maps of one recording share their finite bins, so the terms that
+    depend only on the mask are computed once per mask and reused. Both
+    arrays are read-only.
+    """
+    valid = np.frombuffer(valid_bytes, dtype=bool).reshape(shape)
+    mask_f = _padded_spectrum(valid.astype(np.float64))
+    n_pairs = np.rint(_overlap_sum(mask_f, mask_f, shape))
+    mask_f.setflags(write=False)
+    n_pairs.setflags(write=False)
+    return mask_f, n_pairs
+
+
 def _linear_autocorrelation(rate_map: NDArray[np.float64]) -> NDArray[np.float64]:
     """Pearson correlation of a rate map with itself at every 2D lag.
 
@@ -624,31 +672,16 @@ def _linear_autocorrelation(rate_map: NDArray[np.float64]) -> NDArray[np.float64
     # not change under it.
     values = rate_map[valid]
     standardized = np.where(valid, (rate_map - values.mean()) / values.std(), 0.0)
-    shape = tuple(2 * n - 1 for n in rate_map.shape)
-    padded = tuple(fft.next_fast_len(n, real=True) for n in shape)
-
-    def spectrum(array: NDArray[np.float64]) -> NDArray[np.complex128]:
-        return np.asarray(fft.rfft2(array, s=padded))
-
-    def overlap_sum(
-        first: NDArray[np.complex128], second: NDArray[np.complex128]
-    ) -> NDArray[np.float64]:
-        # sum_i a[i] * b[i + lag] over the zero-padded maps, for every lag up
-        # to n - 1 in each direction; the padding leaves no wrap-around.
-        circular = fft.irfft2(np.conj(first) * second, s=padded)
-        rows = np.r_[padded[0] - shape[0] // 2 : padded[0], : shape[0] // 2 + 1]
-        cols = np.r_[padded[1] - shape[1] // 2 : padded[1], : shape[1] // 2 + 1]
-        return np.asarray(circular[np.ix_(rows, cols)], dtype=np.float64)
-
-    mask_f = spectrum(valid.astype(np.float64))
-    x_f = spectrum(standardized)
-    xx_f = spectrum(standardized**2)
-    n_pairs = np.rint(overlap_sum(mask_f, mask_f))
-    sum_first = overlap_sum(x_f, mask_f)
-    sum_second = overlap_sum(mask_f, x_f)
-    sum_squares_first = overlap_sum(xx_f, mask_f)
-    sum_squares_second = overlap_sum(mask_f, xx_f)
-    sum_products = overlap_sum(x_f, x_f)
+    mask_f, n_pairs = _mask_overlap(valid.shape, valid.tobytes())
+    x_f = _padded_spectrum(standardized)
+    xx_f = _padded_spectrum(standardized**2)
+    sum_first = _overlap_sum(x_f, mask_f, valid.shape)
+    sum_squares_first = _overlap_sum(xx_f, mask_f, valid.shape)
+    sum_products = _overlap_sum(x_f, x_f, valid.shape)
+    # Summing over the second side of the overlap at a lag is summing over the
+    # first side at the opposite lag: the same sums, flipped about zero lag.
+    sum_second = sum_first[::-1, ::-1]
+    sum_squares_second = sum_squares_first[::-1, ::-1]
 
     with np.errstate(divide="ignore", invalid="ignore"):
         covariance = n_pairs * sum_products - sum_first * sum_second
@@ -896,11 +929,8 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
     edge = (min(centered.shape) - 1) // 2
     distance = _lag_distance(centered.shape)
     used = np.isfinite(centered) & (distance > central_radius) & (distance <= edge)
-    rotations = []
-    for angle in _ROTATION_ANGLES:
-        rotated, defined = _rotate_about_zero_lag(centered, angle)
-        rotations.append(rotated)
-        used &= defined
+    rotations, defined = _rotations_about_zero_lag(centered)
+    used &= defined.all(axis=0)
     if not used.any():
         return np.nan
     # The annulus grows only as far as the lags that are defined in the map
@@ -1027,34 +1057,89 @@ def _central_peak_radius(centered: NDArray[np.float64]) -> float:
     return float(np.sqrt(np.count_nonzero(region) / np.pi))
 
 
-def _rotate_about_zero_lag(
-    centered: NDArray[np.float64], angle: float
+def _rotations_about_zero_lag(
+    centered: NDArray[np.float64],
 ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
-    """Rotate a zero-lag-centered map, marking lags the rotation leaves undefined.
+    """Rotate a zero-lag-centered map by each of ``_ROTATION_ANGLES``.
 
     Parameters
     ----------
     centered : ndarray of float64, shape (n_x, n_y)
         Map with odd axes and zero lag at the middle index; NaN where
         undefined.
-    angle : float
-        Rotation in degrees.
 
     Returns
     -------
-    rotated : ndarray of float64, shape (n_x, n_y)
-        Bilinear rotation about the zero-lag pixel.
-    defined : ndarray of bool, shape (n_x, n_y)
+    rotated : ndarray of float64, shape (n_angles, n_x, n_y)
+        Bilinear rotation about the zero-lag pixel by each angle.
+    defined : ndarray of bool, shape (n_angles, n_x, n_y)
         Lags whose interpolated value uses only defined lags inside the map.
     """
     valid = np.isfinite(centered)
-    rotated = ndimage.rotate(
-        np.where(valid, centered, 0.0), angle, reshape=False, order=1, cval=0.0
+    columns = np.column_stack(
+        [np.where(valid, centered, 0.0).ravel(), valid.ravel().astype(np.float64)]
     )
-    coverage = ndimage.rotate(
-        valid.astype(np.float64), angle, reshape=False, order=1, cval=0.0
-    )
-    return np.asarray(rotated, dtype=np.float64), coverage > 1.0 - 1e-9
+    rotated_columns = _rotation_operator(centered.shape) @ columns
+    shape = (len(_ROTATION_ANGLES), *centered.shape)
+    rotated = rotated_columns[:, 0].reshape(shape)
+    coverage = rotated_columns[:, 1].reshape(shape)
+    return rotated, coverage > 1.0 - 1e-9
+
+
+@lru_cache(maxsize=8)
+def _rotation_operator(shape: tuple[int, ...]) -> csr_array:
+    """Bilinear rotations of a map of ``shape`` about its center, as a matrix.
+
+    The rotation is ``ndimage.rotate(map, angle, reshape=False, order=1,
+    cval=0.0)``, which is linear in the map: each rotated lag is a weighted
+    sum of the four lags around the point it samples, and a point outside
+    the map takes the value 0 (``mode="constant"`` does not interpolate
+    toward the edge). Building the weights once per shape turns the five
+    rotations of every map of that shape into one sparse product, equal to
+    ``ndimage.rotate`` up to rounding.
+
+    Parameters
+    ----------
+    shape : tuple of int
+        Map shape ``(n_x, n_y)``.
+
+    Returns
+    -------
+    scipy.sparse.csr_array, shape (n_angles * n_x * n_y, n_x * n_y)
+        Row ``k * n_x * n_y + p`` holds the weights of the flattened lags in
+        lag ``p`` of the rotation by ``_ROTATION_ANGLES[k]``.
+    """
+    n_lags = shape[0] * shape[1]
+    extent = np.asarray(shape, dtype=np.float64)[:, None] - 1.0
+    center = extent / 2
+    lags = np.indices(shape).reshape(2, -1).astype(np.float64)
+    rows, columns, weights = [], [], []
+    for k, angle in enumerate(_ROTATION_ANGLES):
+        # ndimage.rotate reads output lag ``q`` from ``matrix @ (q - c) + c``.
+        cos, sin = special.cosdg(angle), special.sindg(angle)
+        matrix = np.array([[cos, sin], [-sin, cos]])
+        source = matrix @ lags + (center - matrix @ center)
+        inside = np.flatnonzero(np.all((source >= 0) & (source <= extent), axis=0))
+        low = np.floor(source[:, inside])
+        fraction = source[:, inside] - low
+        low = low.astype(np.intp)
+        for step_x in (0, 1):
+            for step_y in (0, 1):
+                # A point on the far edge has fraction 0 toward the next lag.
+                x = np.minimum(low[0] + step_x, shape[0] - 1)
+                y = np.minimum(low[1] + step_y, shape[1] - 1)
+                weight_x = fraction[0] if step_x else 1.0 - fraction[0]
+                weight_y = fraction[1] if step_y else 1.0 - fraction[1]
+                rows.append(k * n_lags + inside)
+                columns.append(x * shape[1] + y)
+                weights.append(weight_x * weight_y)
+    operator = coo_array(
+        (np.concatenate(weights), (np.concatenate(rows), np.concatenate(columns))),
+        shape=(len(_ROTATION_ANGLES) * n_lags, n_lags),
+    ).tocsr()
+    for array in (operator.data, operator.indices, operator.indptr):
+        array.setflags(write=False)
+    return operator
 
 
 def _find_autocorr_peaks(

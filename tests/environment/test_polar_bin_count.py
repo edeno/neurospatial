@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.encoding._egocentric_counts import compute_egocentric_occupancy
+from neurospatial.encoding._egocentric_counts import prepare_egocentric_binning
 from neurospatial.encoding.egocentric import compute_egocentric_rate
 
 
@@ -60,7 +60,7 @@ def test_resolvable_excess_above_an_integer_still_adds_a_bin():
 
 def test_sixty_one_direction_occupancy_matches_the_published_bin_centers():
     """An object ahead occupies the zero-angle cell in the returned environment."""
-    occupancy, env = compute_egocentric_occupancy(
+    prepared, env, _ = prepare_egocentric_binning(
         np.array([0.0, 0.1]),
         np.zeros((2, 2)),
         np.zeros(2),
@@ -69,6 +69,7 @@ def test_sixty_one_direction_occupancy_matches_the_published_bin_centers():
         n_distance_bins=1,
         n_direction_bins=61,
     )
+    _, occupancy = prepared.count([])
     assert env.n_bins == occupancy.size == 61
     occupied = np.flatnonzero(occupancy)
     np.testing.assert_array_equal(occupied, [30])

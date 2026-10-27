@@ -7,7 +7,6 @@ from shapely.geometry import Polygon, box
 from neurospatial import Environment
 from neurospatial.encoding._spatial_counts import (
     _resolve_spatial_time_support,
-    bin_spike_train,
     bin_spike_trains,
     compute_occupancy,
     prepare_linear_spatial_intervals,
@@ -61,15 +60,15 @@ def test_counts_and_occupancy_share_half_open_retained_support(n_jobs):
     np.testing.assert_array_equal(counts, [[4], [0]])
     np.testing.assert_array_equal(occupancy, [4])
     np.testing.assert_array_equal(
-        bin_spike_train(
+        bin_spike_trains(
             env,
-            spikes,
+            [spikes],
             times,
             positions,
             time_allocation="linear",
             linear_intervals=record,
             warn_on_drop=False,
-        ),
+        )[0][0],
         [4],
     )
 
@@ -92,27 +91,25 @@ def test_linear_observation_gates_exclude_complete_intervals(gate):
     assert record.support.runs.shape == (0, 2)
     np.testing.assert_array_equal(record.occupancy, [0])
     np.testing.assert_array_equal(
-        bin_spike_train(
+        bin_spike_trains(
             env,
-            np.array([2.0, 6.0]),
+            [np.array([2.0, 6.0])],
             times,
             positions,
             time_allocation="linear",
             linear_intervals=record,
             warn_on_drop=False,
-        ),
+        )[0][0],
         [0],
     )
 
 
-@pytest.mark.parametrize(
-    "function", [bin_spike_train, compute_occupancy, bin_spike_trains]
-)
+@pytest.mark.parametrize("function", [compute_occupancy, bin_spike_trains])
 def test_binning_rejects_unknown_allocation(function):
     env = holed_cell()
     args = [env]
     if function is not compute_occupancy:
-        args.append(np.array([0.5]) if function is bin_spike_train else [])
+        args.append([])
     args.extend([np.array([0.0, 1.0]), np.array([[1.0, 1.0], [1.0, 1.0]])])
     with pytest.raises(ValueError, match="time_allocation"):
         function(*args, time_allocation="other")
@@ -174,15 +171,15 @@ def test_boundary_owned_spike_without_dwell_refuses_undefined_exposure(n_jobs):
     np.testing.assert_array_equal(env.bin_at(np.array([[1.0, 1.0]])), [3])
     with pytest.raises(ValueError, match=r"boundary ownership.*zero dwell"):
         if n_jobs is None:
-            bin_spike_train(
+            bin_spike_trains(
                 env,
-                np.array([1.0]),
+                [np.array([1.0])],
                 times,
                 positions,
                 time_allocation="linear",
                 linear_intervals=record,
                 warn_on_drop=False,
-            )
+            )[0][0]
         else:
             with parallel_backend("threading"):
                 bin_spike_trains(
@@ -212,15 +209,15 @@ def test_linear_fractional_support_refuses_unresolvable_absolute_clock():
     np.testing.assert_allclose(record.occupancy, [1e-5])
     np.testing.assert_array_equal(record.support.runs, [[0.5, 0.50001]])
     np.testing.assert_array_equal(
-        bin_spike_train(
+        bin_spike_trains(
             env,
-            np.array([0.5]),
+            [np.array([0.5])],
             elapsed,
             positions,
             time_allocation="linear",
             linear_intervals=record,
             warn_on_drop=False,
-        ),
+        )[0][0],
         [1],
     )
 

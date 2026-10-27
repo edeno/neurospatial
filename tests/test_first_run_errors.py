@@ -161,14 +161,30 @@ def test_trajectory_reports_time_and_heading_problems_together():
         )
     message = str(caught.value)
     assert "compute_directional_rate" in message
+    # Ordering is checked once the timestamps are finite, as for every
+    # (times, positions) pair.
+    assert "monotonically non-decreasing" not in message
     for problem in [
-        "finite",
-        "monotonically non-decreasing",
+        "non-finite",
         "headings must be 1D",
         "headings length (2)",
     ]:
         assert problem in message
     assert "Fix:" in message
+
+
+@pytest.mark.parametrize("with_positions", [True, False])
+def test_unsorted_times_say_how_to_sort(with_positions):
+    times = np.array([0.0, 2.0, 1.0, 3.0])
+    positions = np.zeros((4, 2)) if with_positions else None
+    with pytest.raises(ValueError) as caught:
+        validate_trajectory(times, positions=positions, context="decode_session")
+    message = str(caught.value)
+    assert "order = np.argsort(times" in message
+    fix = message.splitlines()[-1]
+    assert fix.startswith("Fix:")
+    # A call without positions is not told to pass position rows.
+    assert ("positions" in fix) is with_positions
 
 
 def test_spike_validation_reports_all_problems():

@@ -1,13 +1,12 @@
-"""Reconcile encoder ``fill_value`` masking with decoder NaN handling.
+"""Encoder masking of low-occupancy bins and decoder NaN handling.
 
 Covers the contract that low-occupancy bins masked by ``min_occupancy``:
 
-- stay NaN by default (``fill_value=None``, no behavior change),
-- become finite zero rate when ``fill_value=0.0`` is passed,
-- let the documented encode -> decode golden path compose with no manual
-  ``np.nan_to_num`` scrubbing,
-- and that a residual-NaN encoding model still decodes (NaN bins excluded)
-  while warning exactly once.
+- are stored as NaN (missing) and lie outside ``spatial_support``,
+- let the documented encode -> decode golden path (passing the rate result)
+  compose with no manual NaN scrubbing,
+- and that a raw residual-NaN encoding model still decodes (NaN bins
+  excluded) while warning exactly once.
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, encoding
 from neurospatial.decoding.posterior import decode_position
 from neurospatial.encoding.spatial import compute_spatial_rate, compute_spatial_rates
 
@@ -58,10 +57,10 @@ def low_occupancy_session() -> tuple[
     return env, spike_times_list, times, positions
 
 
-def test_spatial_rate_fill_value_zero(
+def test_low_occupancy_bins_are_stored_as_missing(
     low_occupancy_session: tuple[Environment, list[np.ndarray], np.ndarray, np.ndarray],
 ) -> None:
-    """fill_value=0.0 yields finite (zero) rates in low-occupancy bins."""
+    """Bins below min_occupancy are NaN in the stored rates, never zero."""
     env, spike_times_list, times, positions = low_occupancy_session
 
     result = compute_spatial_rate(
@@ -72,67 +71,38 @@ def test_spatial_rate_fill_value_zero(
         method="binned",
         bandwidth=0.0,
         min_occupancy=0.5,
-        fill_value=0.0,
     )
-
     firing_rate = np.asarray(result.firing_rate)
-    occupancy = np.asarray(result.occupancy)
-
-    # The masking actually fired (there are low-occupancy bins to fill).
-    low_occ = occupancy < 0.5
+    low_occ = np.asarray(result.occupancy) < 0.5
     assert low_occ.any(), "fixture should produce low-occupancy bins"
-
-    # No NaN anywhere, and the previously masked bins are exactly zero.
-    assert np.isfinite(firing_rate).all()
-    assert np.allclose(firing_rate[low_occ], 0.0)
+    assert np.isnan(firing_rate[low_occ]).all()
+    np.testing.assert_array_equal(result.spatial_support, np.isfinite(firing_rate))
 
 
-def test_spatial_rate_fill_value_none_preserves_nan(
-    low_occupancy_session: tuple[Environment, list[np.ndarray], np.ndarray, np.ndarray],
-) -> None:
-    """Default fill_value=None keeps NaN in masked bins (no behavior change)."""
+@pytest.mark.parametrize(
+    "function",
+    [
+        encoding.compute_spatial_rate,
+        encoding.compute_spatial_rates,
+        encoding.has_place_field,
+        encoding.is_place_cell,
+        encoding.place_cell_significance,
+    ],
+)
+def test_fill_value_is_not_a_parameter(function, low_occupancy_session) -> None:
+    """Rates keep missing bins NaN; there is no option to store a fill."""
     env, spike_times_list, times, positions = low_occupancy_session
-
-    # Explicit None and the default must agree, and both must preserve NaN.
-    result_default = compute_spatial_rate(
-        env,
-        spike_times_list[0],
-        times,
-        positions,
-        method="binned",
-        bandwidth=0.0,
-        min_occupancy=0.5,
-    )
-    result_none = compute_spatial_rate(
-        env,
-        spike_times_list[0],
-        times,
-        positions,
-        method="binned",
-        bandwidth=0.0,
-        min_occupancy=0.5,
-        fill_value=None,
-    )
-
-    fr_default = np.asarray(result_default.firing_rate)
-    fr_none = np.asarray(result_none.firing_rate)
-    occupancy = np.asarray(result_default.occupancy)
-
-    low_occ = occupancy < 0.5
-    assert low_occ.any(), "fixture should produce low-occupancy bins"
-    assert np.isnan(fr_default[low_occ]).all()
-    # Default == explicit None bit-for-bit (treating NaN as equal).
-    np.testing.assert_array_equal(
-        np.nan_to_num(fr_default, nan=-1.0), np.nan_to_num(fr_none, nan=-1.0)
-    )
+    with pytest.raises(TypeError, match="fill_value"):
+        function(env, spike_times_list, times, positions, fill_value=0.0)
 
 
 def test_encode_decode_golden_path(
     low_occupancy_session: tuple[Environment, list[np.ndarray], np.ndarray, np.ndarray],
 ) -> None:
-    """Documented min_occupancy=0.5, fill_value=0.0 -> decode runs end to end.
+    """min_occupancy=0.5 rates decode end to end when passed as the result.
 
-    No manual NaN scrubbing; ``decode_position(validate=True)`` does not raise.
+    No manual NaN scrubbing or fill; ``decode_position(validate=True)`` does
+    not raise, and unsupported bins get no posterior mass.
     """
     env, spike_times_list, times, positions = low_occupancy_session
 
@@ -144,10 +114,8 @@ def test_encode_decode_golden_path(
         method="binned",
         bandwidth=0.0,
         min_occupancy=0.5,
-        fill_value=0.0,
     )
-    encoding_models = np.asarray(rates.firing_rates)
-    assert np.isfinite(encoding_models).all()
+    assert not rates.spatial_support.all(), "fixture should leave unsupported bins"
 
     # Build a few time bins of spike counts.
     dt = 0.25
@@ -158,9 +126,10 @@ def test_encode_decode_golden_path(
     )
 
     # validate=True is the default; must not raise on this golden-path model.
-    result = decode_position(env, spike_counts, encoding_models, dt=dt)
+    result = decode_position(env, spike_counts, rates, dt=dt)
     assert result.posterior.shape == (n_time_bins, env.n_bins)
     np.testing.assert_allclose(result.posterior.sum(axis=1), 1.0, atol=1e-6)
+    assert np.all(result.posterior[:, ~rates.spatial_support] == 0.0)
 
 
 def test_decode_warns_on_nan_model(
@@ -169,7 +138,7 @@ def test_decode_warns_on_nan_model(
     """A model with NaN bins decodes (NaN bins excluded) and warns once."""
     env, spike_times_list, times, positions = low_occupancy_session
 
-    # fill_value=None -> NaN bins survive into the encoding model.
+    # The raw array keeps its NaN bins; passed bare, they reach the decoder.
     rates = compute_spatial_rates(
         env,
         spike_times_list,

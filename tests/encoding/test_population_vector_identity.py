@@ -215,6 +215,15 @@ def test_fewer_than_two_shared_units_is_refused(make, maps):
         population_vector_correlation(make(first[:2], [1, 2]), make(second[:2], [2, 3]))
 
 
+def test_two_shared_units_are_refused(make, maps):
+    """Two units always correlate at +-1 at every location: undefined."""
+    first, second = maps
+    with pytest.raises(ValueError, match="only units \\[2, 3\\] are recorded in both"):
+        population_vector_correlation(
+            make(first[:3], [1, 2, 3]), make(second[:3], [2, 3, 4])
+        )
+
+
 def test_spatial_support_with_results_is_refused(make, maps):
     first, second = maps
     rates_1, rates_2 = make(first, IDS), make(second, IDS)

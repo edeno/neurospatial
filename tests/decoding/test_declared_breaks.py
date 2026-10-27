@@ -118,7 +118,7 @@ def test_training_break_times_survive_from_rates(session):
 
     s = session
     rates = compute_spatial_rates(
-        s.env, s.trains, s.times, s.positions, fill_value=0.0, break_before=s.breaks
+        s.env, s.trains, s.times, s.positions, break_before=s.breaks
     )
     decoder = BayesianDecoder.from_rates(rates)
     assert decoder.analysis_settings["break_times"] == [s.times[s.k]]

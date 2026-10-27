@@ -251,8 +251,7 @@ The `PopulationCoverageResult` object contains:
 - `is_observed`: Bins with a finite rate for at least one neuron
 
 A bin that is NaN in every rate map was never visited (or fell below
-`min_occupancy`); it is neither covered nor a gap. Compute the rates with the
-default `fill_value=None` so these bins stay NaN.
+`min_occupancy`); it is neither covered nor a gap.
 
 **Computed properties** (standard hippocampal metrics):
 
@@ -384,8 +383,8 @@ as `part.bin_mapping_from(env).pairs` for a subset of the arena.
 With your own `(n_units, n_bins)` matrices, pass two arrays instead. Rows must
 then be the same units in the same order in both, and pass
 `spatial_support=rates_1.spatial_support & rates_2.spatial_support`:
-zero-filled maps (`fill_value=0`) read unvisited bins as 0 Hz, so without it
-unvisited bins are compared. See
+zero-filled maps (for example `np.nan_to_num`) read unvisited bins as 0 Hz,
+so without it unvisited bins are compared. See
 [Does the spatial map change between conditions?](population-analysis.md#does-the-spatial-map-change-between-conditions)
 for a worked remapping example.
 

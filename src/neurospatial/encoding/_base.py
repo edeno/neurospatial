@@ -284,17 +284,28 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         name = "firing_rates" if hasattr(self, "firing_rates") else "firing_rate"
         return getattr(self, name)
 
-    def _observed_rates(self) -> NDArray[np.float64]:
-        """Host rates with every bin outside the occupancy support set to NaN.
+    def _supported_rates(self) -> Any:
+        """Rates with every bin outside the occupancy support set to NaN.
 
-        A filled (``fill_value``) or model-extrapolated (``method="glm"``) rate
-        in a bin the animal never occupied is not an observation, so peaks
-        never land there.
+        A model-extrapolated (``method="glm"``) rate in a bin the animal
+        never occupied is not an observation, so metrics
+        and peaks must not count it as observed firing.
+
+        Returns
+        -------
+        array, shape (n_bins,) or (n_neurons, n_bins)
+            The rates, NaN where the occupancy support is False. JAX rates stay
+            JAX arrays; NumPy rates are float64.
         """
         from neurospatial.encoding._provenance import occupancy_support
 
-        rates = np.asarray(_to_numpy(self._get_rates()), dtype=np.float64)
-        return np.where(occupancy_support(self), rates, np.nan)
+        rates = self._get_rates()
+        support = occupancy_support(self)
+        if _is_jax_array(rates):
+            import jax.numpy as jnp
+
+            return jnp.where(jnp.asarray(support), rates, jnp.nan)
+        return np.where(support, np.asarray(rates, dtype=np.float64), np.nan)
 
     def peak_location(self) -> NDArray[np.float64]:
         """Peak firing locations in the result's coordinate space.
@@ -317,7 +328,9 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
             NaN for a unit with no supported rate or no positive rate: a
             silent map has no peak.
         """
-        rates = np.atleast_2d(self._observed_rates())
+        rates = np.atleast_2d(
+            np.asarray(_to_numpy(self._supported_rates()), dtype=np.float64)
+        )
         bin_centers = self._bin_centers
         n_dims = int(bin_centers.shape[1]) if bin_centers.ndim > 1 else 1
 
@@ -353,7 +366,9 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
             Peak firing rate(s).
             Scalar for single neuron, (n_neurons,) array for batch.
         """
-        rates = np.atleast_2d(self._observed_rates())
+        rates = np.atleast_2d(
+            np.asarray(_to_numpy(self._supported_rates()), dtype=np.float64)
+        )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN unit -> NaN
             result: NDArray[np.float64] = np.nanmax(rates, axis=1)
@@ -888,9 +903,10 @@ class PopulationRateMixin(_RateResultMixin, UnitSelectionMixin, Generic[_UnitRes
             windows and settings, and the population's unit-label provenance.
         """
         from neurospatial._results import label_at
+        from neurospatial.encoding._metrics import _share_variance_cache
 
         position = self._unit_position(idx)
-        return unit_class(
+        unit = unit_class(
             firing_rate=self._get_rates()[position],
             occupancy=self.occupancy,
             unit_id=label_at(self.unit_ids, position),
@@ -903,3 +919,5 @@ class PopulationRateMixin(_RateResultMixin, UnitSelectionMixin, Generic[_UnitRes
             _unit_ids_generated=self._unit_ids_generated,
             **fields,
         )
+        _share_variance_cache(self, unit)
+        return unit

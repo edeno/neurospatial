@@ -176,12 +176,13 @@ scientific question. The values above illustrate the API; no fixed occupancy
 threshold establishes reliable tuning or a confidence level. Inspect the
 occupancy map and sensitivity to parameter choices.
 
-Sub-threshold and unvisited bins are `NaN` unless `fill_value` is supplied.
-The smoothing kernel reaches unvisited bins, but a rate there would be
-extrapolated from observed bins, so no method reports one. Keep
-`result.occupancy` when using
-`fill_value=0.0`, since zero-filled missing support and observed silence can
-otherwise look identical. Check the NaN policy of each downstream statistic.
+Sub-threshold and unvisited bins are `NaN`: missing, not 0 Hz. The smoothing
+kernel reaches unvisited bins, but a rate there would be extrapolated from
+observed bins, so no method reports one. If a downstream tool needs finite
+values, fill a copy (`np.nan_to_num(result.firing_rate)`) and keep
+`result.spatial_support`, since zero-filled missing support and observed
+silence otherwise look identical. Check the NaN policy of each downstream
+statistic.
 
 ### Checking the Occupancy Mask
 
@@ -398,7 +399,7 @@ print(f"Spatial information: {np.sum(place_field > 0.5 * np.nanmax(place_field))
 For complete parameter descriptions and examples, see:
 
 - [`compute_spatial_rate()`](../api/neurospatial/encoding/spatial.md#neurospatial.encoding.spatial.compute_spatial_rate) - Place field computation
-- [`bin_spike_train()`](../api/neurospatial/encoding/_spatial_counts.md#neurospatial.encoding._spatial_counts.bin_spike_train) - Spike binning helper
+- [`bin_spike_trains()`](../api/neurospatial/encoding/_spatial_counts.md#neurospatial.encoding._spatial_counts.bin_spike_trains) - Spike binning helper
 - [`Environment.occupancy()`](../api/neurospatial/environment/core.md#neurospatial.environment.core.Environment.occupancy) - Occupancy computation
 - [`Environment.smooth()`](../api/neurospatial/environment/core.md#neurospatial.environment.core.Environment.smooth) - Spatial field smoothing
 

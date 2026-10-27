@@ -48,7 +48,7 @@ neurospatial.stats.circular : Circular statistics utilities
 from __future__ import annotations
 
 import warnings
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, cast
@@ -84,12 +84,15 @@ from neurospatial.encoding._base import (
     _to_numpy,
 )
 from neurospatial.encoding._significance import (
+    _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
     resolve_shuffle_settings,
 )
 from neurospatial.encoding._spatial_counts import (
+    FrameBinning,
     _warn_if_population_silent,
+    count_spikes_by_frame,
     tracked_samples,
 )
 
@@ -171,19 +174,12 @@ def _half_max_halfwidth(
 HEAD_DIRECTION_THRESHOLDS = MappingProxyType({"min_mvl": 0.4, "alpha": 0.05})
 
 
-def _directional_xarray_attrs(
-    result: DirectionalRateResult | DirectionalRatesResult,
-) -> dict[str, Any]:
-    """Coordinate and estimator metadata specific to this rate family."""
-    return {"units": "radians", "bin_size": result.bin_size}
-
-
 DIRECTIONAL_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
     {"binned": "none", "circular_gaussian": "positive"}
 )
 
 
-def _check_angular_bins(result: DirectionalRateResult | DirectionalRatesResult) -> int:
+def _check_angular_bins(result: _DirectionalRateMixin) -> int:
     """Refuse bin centers or a bin width that are not one circle of bins.
 
     Returns
@@ -220,7 +216,7 @@ def _check_angular_bins(result: DirectionalRateResult | DirectionalRatesResult) 
     return int(np.shape(centers)[0])
 
 
-def _check_spike_counts(result: DirectionalRateResult | DirectionalRatesResult) -> None:
+def _check_spike_counts(result: _DirectionalRateMixin) -> None:
     """Refuse spike counts that do not match the rates bin for bin."""
     if result.spike_counts is None:
         return
@@ -239,7 +235,7 @@ def _check_spike_counts(result: DirectionalRateResult | DirectionalRatesResult) 
         )
 
 
-def _check_dispersion(result: DirectionalRateResult | DirectionalRatesResult) -> None:
+def _check_dispersion(result: _DirectionalRateMixin) -> None:
     """Refuse a dispersion that is not one value >= 0 per unit, or a bad dof."""
     kind = type(result).__name__
     dispersion, dof = result.spike_count_dispersion, result.dispersion_dof
@@ -312,6 +308,46 @@ def _directional_mean_vector_length(rates: NDArray, centers: NDArray) -> float:
         return float(np.nan)
 
     return mean_resultant_length(centers[valid_mask], weights=rates[valid_mask])
+
+
+def _resultant(
+    rates: ArrayLike, centers: ArrayLike
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_]]:
+    """Rate-weighted mean cosine and sine of each unit's tuning curve.
+
+    Non-finite (unvisited) bins are dropped before the reduction, not
+    propagated, matching the single-unit circular statistics.
+
+    Parameters
+    ----------
+    rates : array-like of shape (n_units, n_bins)
+        Firing rates; NaN at unvisited bins.
+    centers : array-like of shape (n_bins,)
+        Bin centers in radians.
+
+    Returns
+    -------
+    mean_cos, mean_sin : ndarray of shape (n_units,)
+        Weighted means of ``cos(centers)`` and ``sin(centers)``.
+    valid : ndarray of bool, shape (n_units,)
+        False for a unit with no positive finite rate; its means are
+        meaningless.
+    """
+    rates = np.asarray(rates, dtype=np.float64)
+    centers = np.asarray(centers, dtype=np.float64)
+    finite_rates = np.where(np.isfinite(rates), rates, 0.0)
+    weight_sums = finite_rates.sum(axis=1)
+    valid = weight_sums > 0
+    weights_norm = finite_rates / np.where(valid, weight_sums, 1.0)[:, np.newaxis]
+    return weights_norm @ np.cos(centers), weights_norm @ np.sin(centers), valid
+
+
+def _mean_vector_lengths(rates: ArrayLike, centers: ArrayLike) -> NDArray[np.float64]:
+    """Mean vector length of each row of ``rates`` (n_units, n_bins); NaN if empty."""
+    mean_cos, mean_sin, valid = _resultant(rates, centers)
+    mvls: NDArray[np.float64] = np.sqrt(mean_cos**2 + mean_sin**2)
+    mvls[~valid] = np.nan
+    return mvls
 
 
 # Fewest spikes for which the tuning test returns a p-value. Calibrated by
@@ -546,6 +582,9 @@ def _head_direction_classify(
     """The shared MVL and occupancy-corrected tuning-test screen."""
     inputs = _tuning_inputs(result)
     _warn_if_headings_incomplete(inputs["occupancy"])
+    # The scalar helper, not _mean_vector_lengths: the screen must agree with
+    # mean_vector_length() exactly at an inclusive threshold, and the two
+    # reductions can differ in the last bit.
     mvls = np.array(
         [
             _directional_mean_vector_length(row, inputs["centers"])
@@ -612,9 +651,51 @@ def _directional_summary_frame(
     return df
 
 
+class _DirectionalRateMixin:
+    """Angular bins, export metadata and family checks of a directional result.
+
+    Hosts store ``bin_centers`` and ``bin_size`` (radians) on the dataclass,
+    since heading needs no Environment, and inherit
+    :class:`~neurospatial.encoding._base.SingleUnitRateMixin` or
+    :class:`~neurospatial.encoding._base.PopulationRateMixin` after this class.
+    """
+
+    bin_centers: ArrayLike
+    bin_size: float
+    spike_counts: ArrayLike | None
+    spike_count_dispersion: ArrayLike | None
+    dispersion_dof: int | None
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = DIRECTIONAL_ESTIMATORS
+
+    if TYPE_CHECKING:
+        # Provided by the rate-result base the host inherits after this class.
+        def _get_rates(self) -> ArrayLike: ...
+
+    def _xarray_attrs(self) -> dict[str, Any]:
+        return {"units": "radians", "bin_size": self.bin_size}
+
+    def _n_bins(self) -> int:
+        return _check_angular_bins(self)
+
+    def _check_family(self) -> None:
+        _check_spike_counts(self)
+        _check_dispersion(self)
+
+    @property
+    def _bin_centers(self) -> NDArray[np.float64]:
+        # Override SpatialResultMixin: directional results store bin centers
+        # directly on the dataclass (no Environment).
+        return np.asarray(self.bin_centers, dtype=np.float64)
+
+    def _bin_center_columns(self) -> dict[str, NDArray[np.float64]]:
+        # Directional results have no Environment; the bin center is the
+        # angular center (radians). Emit it under the shared vocabulary name.
+        return {"bin_center_angle": np.asarray(self.bin_centers, dtype=np.float64)}
+
+
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class DirectionalRateResult(SingleUnitRateMixin):
+class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
     """Result of directional rate computation for a single neuron.
 
     This class wraps a directional tuning curve with its associated metadata
@@ -768,25 +849,14 @@ class DirectionalRateResult(SingleUnitRateMixin):
         default=None, kw_only=True, repr=False, compare=False
     )
 
-    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = DIRECTIONAL_ESTIMATORS
     _unit_ids_generated: bool = field(
         default=False, kw_only=True, repr=False, compare=False
     )
-
-    def _xarray_attrs(self) -> dict[str, Any]:
-        return _directional_xarray_attrs(self)
 
     @property
     def method(self) -> str:
         """Estimator: ``"circular_gaussian"`` when smoothed, else ``"binned"``."""
         return "binned" if self.bandwidth is None else "circular_gaussian"
-
-    def _n_bins(self) -> int:
-        return _check_angular_bins(self)
-
-    def _check_family(self) -> None:
-        _check_spike_counts(self)
-        _check_dispersion(self)
 
     def summary_table(self) -> pd.DataFrame:
         """Per-unit metrics with the same columns as the population table.
@@ -836,17 +906,6 @@ class DirectionalRateResult(SingleUnitRateMixin):
             "preferred_direction": float(self.preferred_direction()),
             "mean_vector_length": float(self.mean_vector_length()),
         }
-
-    @property
-    def _bin_centers(self) -> NDArray[np.float64]:
-        # Override SpatialResultMixin: directional results store bin centers
-        # directly on the dataclass (no Environment).
-        return np.asarray(self.bin_centers, dtype=np.float64)
-
-    def _bin_center_columns(self) -> dict[str, NDArray[np.float64]]:
-        # Directional results have no Environment; the bin center is the
-        # angular center (radians). Emit it under the shared vocabulary name.
-        return {"bin_center_angle": np.asarray(self.bin_centers, dtype=np.float64)}
 
     def plot(
         self,
@@ -1535,7 +1594,9 @@ class DirectionalRateResult(SingleUnitRateMixin):
 @_copy_unit_table
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
+class DirectionalRatesResult(
+    _DirectionalRateMixin, PopulationRateMixin[DirectionalRateResult]
+):
     """Result of directional rate computation for multiple neurons.
 
     This class wraps directional tuning curves for a population of neurons
@@ -1710,36 +1771,14 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
         default=None, kw_only=True, repr=False, compare=False
     )
 
-    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = DIRECTIONAL_ESTIMATORS
     _unit_ids_generated: bool = field(
         default=False, kw_only=True, repr=False, compare=False
     )
-
-    def _xarray_attrs(self) -> dict[str, Any]:
-        return _directional_xarray_attrs(self)
 
     @property
     def method(self) -> str:
         """Estimator: ``"circular_gaussian"`` when smoothed, else ``"binned"``."""
         return "binned" if self.bandwidth is None else "circular_gaussian"
-
-    def _n_bins(self) -> int:
-        return _check_angular_bins(self)
-
-    def _check_family(self) -> None:
-        _check_spike_counts(self)
-        _check_dispersion(self)
-
-    @property
-    def _bin_centers(self) -> NDArray[np.float64]:
-        # Override SpatialResultMixin: directional results store bin centers
-        # directly on the dataclass (no Environment).
-        return np.asarray(self.bin_centers, dtype=np.float64)
-
-    def _bin_center_columns(self) -> dict[str, NDArray[np.float64]]:
-        # Directional results have no Environment; the bin center is the
-        # angular center (radians). Emit it under the shared vocabulary name.
-        return {"bin_center_angle": np.asarray(self.bin_centers, dtype=np.float64)}
 
     def __getitem__(self, idx: int) -> DirectionalRateResult:
         """Get single-neuron result by index.
@@ -1866,24 +1905,7 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
         --------
         DirectionalRateResult.preferred_direction : Single-neuron method
         """
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates, dtype=np.float64)
-        centers: NDArray[np.float64] = np.asarray(self.bin_centers, dtype=np.float64)
-
-        # Match the single-neuron path: NaN bins are dropped before the
-        # circular-mean reduction, not propagated through. Without this
-        # mask any NaN bin makes the whole row's direction NaN, which
-        # disagrees with iterating singles.
-        finite = np.isfinite(rates)
-        finite_rates = np.where(finite, rates, 0.0)
-
-        weight_sums = finite_rates.sum(axis=1)
-        valid = weight_sums > 0
-        safe_sums = np.where(valid, weight_sums, 1.0)
-        weights_norm = finite_rates / safe_sums[:, np.newaxis]
-
-        mean_cos = weights_norm @ np.cos(centers)
-        mean_sin = weights_norm @ np.sin(centers)
-
+        mean_cos, mean_sin, valid = _resultant(self.firing_rates, self.bin_centers)
         pref_dirs: NDArray[np.float64] = np.arctan2(mean_sin, mean_cos)
         pref_dirs[~valid] = np.nan
         return pref_dirs
@@ -1923,24 +1945,7 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
         --------
         DirectionalRateResult.mean_vector_length : Single-neuron method
         """
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates, dtype=np.float64)
-        centers: NDArray[np.float64] = np.asarray(self.bin_centers, dtype=np.float64)
-
-        # NaN bins are dropped before the reduction (see preferred_directions).
-        finite = np.isfinite(rates)
-        finite_rates = np.where(finite, rates, 0.0)
-
-        weight_sums = finite_rates.sum(axis=1)
-        valid = weight_sums > 0
-        safe_sums = np.where(valid, weight_sums, 1.0)
-        weights_norm = finite_rates / safe_sums[:, np.newaxis]
-
-        mean_cos = weights_norm @ np.cos(centers)
-        mean_sin = weights_norm @ np.sin(centers)
-
-        mvls: NDArray[np.float64] = np.sqrt(mean_cos**2 + mean_sin**2)
-        mvls[~valid] = np.nan
-        return mvls
+        return _mean_vector_lengths(self.firing_rates, self.bin_centers)
 
     def tuning_widths(self) -> NDArray[np.float64]:
         """Compute tuning widths (HWHM) for all neurons.
@@ -2227,6 +2232,7 @@ class _DirectionalCounts(NamedTuple):
     n_spikes_outside_intervals: NDArray[np.int64]  # (n_units,) not analyzed
     dispersion: NDArray[np.float64]  # (n_units,) spike-count dispersion
     dispersion_dof: int | None
+    binning: FrameBinning  # frame bins and interval support, for recounting
 
 
 def _check_smoothing_bandwidth(bandwidth: Any, angle_unit: str) -> None:
@@ -2248,18 +2254,15 @@ def _check_smoothing_bandwidth(bandwidth: Any, angle_unit: str) -> None:
         )
 
 
-def _smoothed_directional_rates(
-    spike_counts: NDArray[np.float64],
+def _directional_rate_estimator(
     occupancy: NDArray[np.float64],
     bandwidth: float | None,
     bin_size: float,
-) -> NDArray[np.float64]:
-    """Firing rates from counts and occupancy, each smoothed around the circle.
+) -> Callable[[NDArray[np.float64]], NDArray[np.float64]]:
+    """Rates from spike counts, with occupancy smoothed once around the circle.
 
     Parameters
     ----------
-    spike_counts : ndarray of shape (n_units, n_bins)
-        Unsmoothed spike counts.
     occupancy : ndarray of shape (n_bins,)
         Unsmoothed occupancy, seconds.
     bandwidth : float or None
@@ -2269,20 +2272,33 @@ def _smoothed_directional_rates(
 
     Returns
     -------
-    ndarray of shape (n_units, n_bins)
-        Rates in Hz; NaN at headings the animal never faced, even where
-        smoothing reaches them.
+    callable
+        Maps unsmoothed spike counts of shape (n_units, n_bins) to rates in
+        Hz of the same shape, counts and occupancy each smoothed around the
+        circle; NaN at headings the animal never faced, even where smoothing
+        reaches them.
     """
     unvisited = occupancy == 0
-    if bandwidth is not None:
+    sigma_bins = None if bandwidth is None else bandwidth / bin_size
+
+    def smooth(values: NDArray[np.float64]) -> NDArray[np.float64]:
+        if sigma_bins is None:
+            return values
         from scipy.ndimage import gaussian_filter1d
 
-        sigma_bins = bandwidth / bin_size
-        spike_counts = gaussian_filter1d(spike_counts, sigma_bins, axis=-1, mode="wrap")
-        occupancy = gaussian_filter1d(occupancy, sigma_bins, mode="wrap")
-    with np.errstate(divide="ignore", invalid="ignore"):
-        rates: NDArray[np.float64] = spike_counts / occupancy
-    rates[:, unvisited] = np.nan
+        smoothed: NDArray[np.float64] = gaussian_filter1d(
+            values, sigma_bins, axis=-1, mode="wrap"
+        )
+        return smoothed
+
+    smoothed_occupancy = smooth(occupancy)
+
+    def rates(spike_counts: NDArray[np.float64]) -> NDArray[np.float64]:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            result: NDArray[np.float64] = smooth(spike_counts) / smoothed_occupancy
+        result[:, unvisited] = np.nan
+        return result
+
     return rates
 
 
@@ -2412,6 +2428,7 @@ def _count_directional(
         ),
         dispersion=dispersion,
         dispersion_dof=dispersion_dof,
+        binning=prepared,
     )
 
 
@@ -2576,106 +2593,36 @@ def compute_directional_rate(
     ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
     ... )
     """
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-
-    from neurospatial.encoding._backend import (
-        is_jax_available,
-        validate_and_resolve_backend,
-    )
-    from neurospatial.encoding._validation import (
-        validate_spike_times,
-        validate_trajectory,
-    )
-
-    # Raises ValueError for unknown names and ImportError if jax is unavailable;
-    # "auto" resolves to "numpy" or "jax".
-    resolved_backend = validate_and_resolve_backend(backend)
-
-    # Validate angle_unit
-    if angle_unit not in ("rad", "deg"):
-        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
-
-    # Convert inputs to arrays (1D required; validated below)
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    times = np.asarray(times, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64)
-
-    validate_trajectory(
-        times,
-        headings=headings,
-        context="compute_directional_rate",
-        heading_unit=angle_unit,
-    )
-    validate_spike_times(spike_times, context="compute_directional_rate")
-    breaks = validate_break_before(
-        break_before, len(times), call="compute_directional_rate"
-    )
-
-    counts = _count_directional(
-        [spike_times],
+    population = _directional_rates(
+        spike_times,
         times,
         headings,
         bin_size=bin_size,
         bandwidth=bandwidth,
         angle_unit=angle_unit,
         max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        backend=resolved_backend,
-        break_before=breaks,
+        epochs=epochs,
+        break_before=break_before,
+        spike_window=spike_window,
+        n_jobs=1,
+        backend=backend,
+        unit_ids=None,
+        context="compute_directional_rate",
+        single_unit=True,
     )
-    spike_counts = counts.spike_counts[0]
-    occupancy = counts.occupancy
-    bin_centers = counts.bin_centers
-    actual_bin_size_rad = counts.bin_size
-    bandwidth_rad = counts.bandwidth
-    settings = counts.analysis_settings
-
-    # Apply smoothing if requested
-    if bandwidth_rad is not None:
-        from scipy.ndimage import gaussian_filter1d
-
-        # Convert bandwidth to number of bins
-        sigma_bins = bandwidth_rad / actual_bin_size_rad
-
-        # Apply circular Gaussian smoothing
-        # Use mode='wrap' for circular boundary conditions
-        spike_counts_smooth = gaussian_filter1d(
-            spike_counts, sigma=sigma_bins, mode="wrap"
-        )
-        occupancy_smooth = gaussian_filter1d(occupancy, sigma=sigma_bins, mode="wrap")
-    else:
-        spike_counts_smooth = spike_counts
-        occupancy_smooth = occupancy
-
-    # Compute firing rate (handle division by zero)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        firing_rate = spike_counts_smooth / occupancy_smooth
-        # Unvisited headings are unobserved, even where smoothing reaches them.
-        firing_rate[occupancy == 0] = np.nan
-
-    # Convert to JAX arrays if JAX backend is selected
-    occupancy_out: ArrayLike = occupancy
-    bin_centers_out: ArrayLike = bin_centers
-    if resolved_backend == "jax" and is_jax_available():
-        import jax.numpy as jnp
-
-        firing_rate = jnp.asarray(firing_rate)
-        occupancy_out = jnp.asarray(occupancy)
-        bin_centers_out = jnp.asarray(bin_centers)
-
+    unit = population[0]
     return DirectionalRateResult(
-        firing_rate=firing_rate,
-        occupancy=occupancy_out,
-        bin_centers=bin_centers_out,
-        bin_size=actual_bin_size_rad,
-        bandwidth=bandwidth_rad,
-        spike_counts=spike_counts,
-        n_spikes_outside_intervals=int(counts.n_spikes_outside_intervals[0]),
-        spike_count_dispersion=float(counts.dispersion[0]),
-        dispersion_dof=counts.dispersion_dof,
-        spike_window=resolved_spike_window,
-        analysis_settings=settings,
+        firing_rate=unit.firing_rate,
+        occupancy=unit.occupancy,
+        bin_centers=unit.bin_centers,
+        bin_size=unit.bin_size,
+        bandwidth=unit.bandwidth,
+        spike_counts=unit.spike_counts,
+        n_spikes_outside_intervals=unit.n_spikes_outside_intervals,
+        spike_count_dispersion=unit.spike_count_dispersion,
+        dispersion_dof=unit.dispersion_dof,
+        spike_window=unit.spike_window,
+        analysis_settings=unit.analysis_settings,
     )
 
 
@@ -2868,14 +2815,58 @@ def compute_directional_rates(
     ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
     ... )
     """
+    return _directional_rates(
+        spike_times,
+        times,
+        headings,
+        bin_size=bin_size,
+        bandwidth=bandwidth,
+        angle_unit=angle_unit,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        spike_window=spike_window,
+        n_jobs=n_jobs,
+        backend=backend,
+        unit_ids=unit_ids,
+        context="compute_directional_rates",
+        single_unit=False,
+    )
+
+
+def _directional_rates(
+    spike_times: SpikeTrainsLike,
+    times: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    bin_size: float | None,
+    bandwidth: float | None,
+    angle_unit: Literal["rad", "deg"],
+    max_gap: float | None,
+    epochs: Any,
+    break_before: ArrayLike | None,
+    spike_window: Any,
+    n_jobs: int,
+    backend: BackendType,
+    unit_ids: NDArray[Any] | Sequence[Any] | None,
+    context: str,
+    single_unit: bool,
+) -> DirectionalRatesResult:
+    """Validate, count every unit and estimate directional rates.
+
+    ``single_unit=True`` takes one spike train (an array), validates it as
+    one unit and skips the population-silence warning, which needs several
+    units.
+    """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
     from neurospatial._spikes import as_labelled_spike_trains
     from neurospatial.encoding._backend import (
-        is_jax_available,
+        _to_backend,
         validate_and_resolve_backend,
     )
     from neurospatial.encoding._validation import (
+        validate_spike_times,
         validate_spike_trains,
         validate_trajectory,
     )
@@ -2888,39 +2879,42 @@ def compute_directional_rates(
     if angle_unit not in ("rad", "deg"):
         raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
 
-    # Normalize spike times to canonical list-of-arrays format and resolve the
-    # per-unit identity labels (defaults to arange). A labelled input keeps its
-    # own labels; a differing unit_ids= raises.
-    spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
-        spike_times, unit_ids, context="compute_directional_rates"
-    )
-    n_neurons = len(spike_times_list)
+    if single_unit:
+        spike_times_list = [np.asarray(spike_times, dtype=np.float64)]
+        resolved_unit_ids, labels_supplied = None, False
+    else:
+        # Normalize spike times to canonical list-of-arrays format and resolve
+        # the per-unit identity labels (defaults to arange). A labelled input
+        # keeps its own labels; a differing unit_ids= raises.
+        spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
+            spike_times, unit_ids, context=context
+        )
 
     # Convert inputs to arrays (1D required; validated below)
     times = np.asarray(times, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
     validate_trajectory(
-        times,
-        headings=headings,
-        context="compute_directional_rates",
-        heading_unit=angle_unit,
+        times, headings=headings, context=context, heading_unit=angle_unit
     )
-    validate_spike_trains(spike_times_list, context="compute_directional_rates")
-    breaks = validate_break_before(
-        break_before, len(times), call="compute_directional_rates"
-    )
+    if single_unit:
+        validate_spike_times(spike_times_list[0], context=context)
+    else:
+        validate_spike_trains(spike_times_list, context=context)
+    breaks = validate_break_before(break_before, len(times), call=context)
 
-    # Recording coverage uses tracked runs, independently of speed or frame bins.
-    _warn_if_population_silent(
-        spike_times_list,
-        times,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        tracked=tracked_samples(len(times), headings),
-        break_before=breaks,
-    )
+    if not single_unit:
+        # Recording coverage uses tracked runs, independently of speed or
+        # frame bins.
+        _warn_if_population_silent(
+            spike_times_list,
+            times,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
+            tracked=tracked_samples(len(times), headings),
+            break_before=breaks,
+        )
 
     counts = _count_directional(
         spike_times_list,
@@ -2936,74 +2930,25 @@ def compute_directional_rates(
         n_jobs=n_jobs,
         break_before=breaks,
     )
-    spike_counts_batch = counts.spike_counts
-    occupancy = counts.occupancy
-    bin_centers = counts.bin_centers
-    n_bins = len(bin_centers)
-    actual_bin_size_rad = counts.bin_size
-    bandwidth_rad = counts.bandwidth
-    settings = counts.analysis_settings
-
-    # Handle empty neuron list
-    if n_neurons == 0:
-        empty_rates: ArrayLike = np.empty((0, n_bins), dtype=np.float64)
-        empty_counts: ArrayLike = np.empty((0, n_bins), dtype=np.float64)
-        occupancy_result: ArrayLike = occupancy
-        bin_centers_result: ArrayLike = bin_centers
-        if resolved_backend == "jax" and is_jax_available():
-            import jax.numpy as jnp
-
-            empty_rates = jnp.asarray(empty_rates)
-            occupancy_result = jnp.asarray(occupancy)
-            bin_centers_result = jnp.asarray(bin_centers)
-        return DirectionalRatesResult(
-            firing_rates=empty_rates,
-            occupancy=occupancy_result,
-            bin_centers=bin_centers_result,
-            bin_size=actual_bin_size_rad,
-            bandwidth=bandwidth_rad,
-            spike_counts=empty_counts,
-            unit_ids=resolved_unit_ids if labels_supplied else None,
-            unit_table=getattr(spike_times, "unit_table", None),
-            n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
-            spike_count_dispersion=counts.dispersion,
-            dispersion_dof=counts.dispersion_dof,
-            spike_window=resolved_spike_window,
-            analysis_settings=settings,
-        )
-
     # Rates from the unsmoothed counts; the counts stay unsmoothed for the
     # tuning test.
-    firing_rates = _smoothed_directional_rates(
-        spike_counts_batch, occupancy, bandwidth_rad, actual_bin_size_rad
-    )
-    spike_counts_all: ArrayLike = np.asarray(spike_counts_batch, dtype=np.float64)
-
-    # Convert to JAX arrays if JAX backend is selected
-    firing_rates_out: ArrayLike = firing_rates
-    occupancy_out: ArrayLike = occupancy
-    bin_centers_out: ArrayLike = bin_centers
-    if resolved_backend == "jax" and is_jax_available():
-        import jax.numpy as jnp
-
-        firing_rates_out = jnp.asarray(firing_rates)
-        occupancy_out = jnp.asarray(occupancy)
-        bin_centers_out = jnp.asarray(bin_centers)
-
+    firing_rates = _directional_rate_estimator(
+        counts.occupancy, counts.bandwidth, counts.bin_size
+    )(counts.spike_counts)
     return DirectionalRatesResult(
-        firing_rates=firing_rates_out,
-        occupancy=occupancy_out,
-        bin_centers=bin_centers_out,
-        bin_size=actual_bin_size_rad,
-        bandwidth=bandwidth_rad,
-        spike_counts=spike_counts_all,
+        firing_rates=_to_backend(firing_rates, resolved_backend),
+        occupancy=_to_backend(counts.occupancy, resolved_backend),
+        bin_centers=_to_backend(counts.bin_centers, resolved_backend),
+        bin_size=counts.bin_size,
+        bandwidth=counts.bandwidth,
+        spike_counts=counts.spike_counts,
         unit_ids=resolved_unit_ids if labels_supplied else None,
         unit_table=getattr(spike_times, "unit_table", None),
         n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
         spike_count_dispersion=counts.dispersion,
         dispersion_dof=counts.dispersion_dof,
         spike_window=resolved_spike_window,
-        analysis_settings=settings,
+        analysis_settings=counts.analysis_settings,
     )
 
 
@@ -3187,7 +3132,7 @@ def is_head_direction_cell(
     )
     if criterion == "shuffle":
         label = 0 if unit_id is None else unit_id
-        level = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
+        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
         shuffle_result = head_direction_cell_significance(
             [spike_times],
             times,
@@ -3380,6 +3325,47 @@ def plot_head_direction_tuning(
     return ax
 
 
+def _shifted_mean_vector_lengths(
+    spike_trains: Sequence[NDArray[np.float64]],
+    binning: FrameBinning,
+    rates_from_counts: Callable[[NDArray[np.float64]], NDArray[np.float64]],
+    bin_centers: NDArray[np.float64],
+    *,
+    n_jobs: int,
+) -> NDArray[np.float64]:
+    """Mean vector length of each train's tuning curve on a prepared binning.
+
+    Counts with the same frame bins and interval mask as the observed rates
+    and divides by the occupancy computed for them, so a shuffle redoes no
+    trajectory work.
+
+    Returns
+    -------
+    ndarray of shape (n_units,)
+    """
+    count_args = (
+        binning.times,
+        binning.frame_bins,
+        binning.support.mask,
+        binning.n_bins,
+    )
+    spike_counts = np.zeros((len(spike_trains), binning.n_bins), dtype=np.float64)
+    if len(spike_trains) and n_jobs != 1:
+        from joblib import Parallel, delayed
+
+        spike_counts = np.asarray(
+            Parallel(n_jobs=n_jobs)(
+                delayed(count_spikes_by_frame)(train, *count_args)
+                for train in spike_trains
+            ),
+            dtype=np.float64,
+        )
+    else:
+        for i, train in enumerate(spike_trains):
+            spike_counts[i] = count_spikes_by_frame(train, *count_args)
+    return _mean_vector_lengths(rates_from_counts(spike_counts), bin_centers)
+
+
 def head_direction_cell_significance(
     spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
@@ -3527,35 +3513,31 @@ def head_direction_cell_significance(
     >>> results[0].n_shuffles
     20
     """
-    from neurospatial._intervals import resolve_time_windows
-    from neurospatial._results import resolve_unit_ids
-    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._backend import validate_and_resolve_backend
     from neurospatial.encoding._directional_counts import directional_frame_bins
     from neurospatial.encoding._significance import (
         run_shuffle_test,
+        shuffle_inputs,
         snapshot_options,
         to_shuffle_results,
     )
     from neurospatial.encoding._validation import (
-        validate_spike_times,
+        validate_spike_trains,
         validate_trajectory,
     )
 
-    trains, input_ids = _as_spike_trains_with_ids(spike_times)
-    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
-    times = np.array(times, dtype=np.float64, copy=True)
-    headings = np.array(headings, dtype=np.float64, copy=True)
-    ids = np.array(
-        resolve_unit_ids(
-            unit_ids,
-            len(trains),
-            input_ids=input_ids,
-            context="head_direction_cell_significance",
-        ),
-        copy=True,
+    inputs = shuffle_inputs(
+        spike_times,
+        times,
+        (headings,),
+        unit_ids=unit_ids,
+        epochs=epochs,
+        spike_window=spike_window,
+        call="head_direction_cell_significance",
     )
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    trains, times, ids = inputs.trains, inputs.times, inputs.unit_ids
+    (headings,) = inputs.copies
+    resolved_epochs, resolved_spike_window = inputs.epochs, inputs.spike_window
     # Raises for unknown backends; the statistic itself only needs NumPy.
     validate_and_resolve_backend(backend)
     # Copies, so caller mutation during the shuffles cannot change the null.
@@ -3570,8 +3552,7 @@ def head_direction_cell_significance(
         context="head_direction_cell_significance",
         heading_unit=angle_unit,
     )
-    for train in trains:
-        validate_spike_times(train, context="head_direction_cell_significance")
+    validate_spike_trains(trains, context="head_direction_cell_significance")
     breaks = validate_break_before(
         break_before, len(times), call="head_direction_cell_significance"
     )
@@ -3587,34 +3568,39 @@ def head_direction_cell_significance(
     )
     windows = run_time_bounds(times, mask)
 
+    null_binning: tuple[Any, ...] | None = None
+
     def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
-        # The inputs were validated once above. The statistic is the MVL of
-        # the tuning curve, so the spike-count dispersion is not estimated.
-        counts = _count_directional(
-            shifted,
-            times,
-            headings,
-            bin_size=options["bin_size"],
-            bandwidth=options["bandwidth"],
-            angle_unit=angle_unit,
-            max_gap=options["max_gap"],
-            epochs=options["epochs"],
-            spike_window=options["spike_window"],
-            backend="numpy",
-            n_jobs=n_jobs,
-            break_before=breaks,
-            estimate_dispersion=False,
-        )
-        rates = _smoothed_directional_rates(
-            counts.spike_counts, counts.occupancy, counts.bandwidth, counts.bin_size
-        )
-        return DirectionalRatesResult(
-            firing_rates=rates,
-            occupancy=counts.occupancy,
-            bin_centers=counts.bin_centers,
-            bin_size=counts.bin_size,
-            bandwidth=counts.bandwidth,
-        ).mean_vector_lengths()
+        nonlocal null_binning
+        if null_binning is None:
+            # The first call counts the observed trains through the rate
+            # path, so its warnings and errors reach the caller; the shifted
+            # trains reuse its frame bins, support and smoothed occupancy.
+            # The statistic is the MVL of the tuning curve, so the spike-count
+            # dispersion is not estimated.
+            counts = _count_directional(
+                shifted,
+                times,
+                headings,
+                bin_size=options["bin_size"],
+                bandwidth=options["bandwidth"],
+                angle_unit=angle_unit,
+                max_gap=options["max_gap"],
+                epochs=options["epochs"],
+                spike_window=options["spike_window"],
+                backend="numpy",
+                n_jobs=n_jobs,
+                break_before=breaks,
+                estimate_dispersion=False,
+            )
+            null_binning = (
+                counts.binning,
+                _directional_rate_estimator(
+                    counts.occupancy, counts.bandwidth, counts.bin_size
+                ),
+                counts.bin_centers,
+            )
+        return _shifted_mean_vector_lengths(shifted, *null_binning, n_jobs=n_jobs)
 
     observed, null = run_shuffle_test(
         statistic,

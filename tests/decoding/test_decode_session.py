@@ -167,9 +167,7 @@ class TestDecodeSessionGoldenPath:
         env, spike_times, times, positions = _make_linear_track_sim(
             n_neurons=5, duration=10.0
         )
-        models = compute_spatial_rates(
-            env, spike_times, times, positions, fill_value=0.0
-        ).firing_rates
+        models = compute_spatial_rates(env, spike_times, times, positions).firing_rates
 
         for bad_value in (np.nan, np.inf):
             bad_times = times.copy()
@@ -184,9 +182,7 @@ class TestDecodeSessionGoldenPath:
         env, spike_times, times, positions = _make_linear_track_sim(
             n_neurons=5, duration=10.0
         )
-        models = compute_spatial_rates(
-            env, spike_times, times, positions, fill_value=0.0
-        ).firing_rates
+        models = compute_spatial_rates(env, spike_times, times, positions).firing_rates
 
         with pytest.raises(ValueError, match="1-D"):
             _decode_with_models(env, spike_times, times.reshape(-1, 1), models, dt=0.1)
@@ -243,7 +239,6 @@ class TestDecodeSessionEquivalence:
             bandwidth=5.0,
             method="diffusion_kde",
             min_occupancy=0.0,
-            fill_value=0.0,
         )
         firing_rates = rates_result.firing_rates  # (n_neurons, n_bins)
 
@@ -306,7 +301,6 @@ class TestDecodeSessionEquivalence:
             bandwidth=5.0,
             method="diffusion_kde",
             min_occupancy=0.0,
-            fill_value=0.0,
         )
         counts, centers = bin_spikes_in_time(
             spike_times,
@@ -363,7 +357,6 @@ class TestDecodeSessionEncodingModelsPassthrough:
             bandwidth=5.0,
             method="diffusion_kde",
             min_occupancy=0.0,
-            fill_value=0.0,
         )
         precomputed = rates_result.firing_rates  # (n_neurons, n_bins)
 
@@ -461,7 +454,6 @@ class TestDecodeSessionOutOfWindowWarning:
             bandwidth=5.0,
             method="diffusion_kde",
             min_occupancy=0.0,
-            fill_value=0.0,
         ).firing_rates
 
         # Units footgun: spike times in ms (~1000x), so (nearly) all fall
@@ -629,7 +621,6 @@ class TestDecodeSessionDtype:
             times_arr,
             positions,
             bandwidth=5.0,
-            fill_value=0.0,
             dtype=np.float64,
         ).firing_rates
         assert models64.dtype == np.float64
@@ -730,7 +721,6 @@ class TestDecodeSessionDtype:
             "bandwidth": 5.0,
             "method": "diffusion_kde",
             "min_occupancy": 0.0,
-            "fill_value": 0.0,
         }
         models32 = compute_spatial_rates(
             env, spike_times, times_arr, positions, dtype=np.float32, **kwargs
@@ -889,7 +879,6 @@ def _summary_reference(env, spike_times, times, positions, *, dt, time_chunk, **
         bandwidth=5.0,
         method="diffusion_kde",
         min_occupancy=0.0,
-        fill_value=0.0,
     )
     counts, centers = bin_spikes_in_time(
         spike_times, dt=dt, t_start=times_arr.min(), t_stop=times_arr.max()
@@ -1036,7 +1025,7 @@ class TestDecodeSessionSummaryStreaming:
         dt = 0.1
         times_arr = np.asarray(times, dtype=np.float64)
         models = compute_spatial_rates(
-            env, spike_times, times_arr, positions, fill_value=0.0
+            env, spike_times, times_arr, positions
         ).firing_rates
 
         counts, centers = bin_spikes_in_time(
