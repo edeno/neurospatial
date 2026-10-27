@@ -677,6 +677,32 @@ def _glm_summary_columns(
     return data
 
 
+def _border_baseline(
+    result: SpatialRateResult | SpatialRatesResult, boundary_source: BoundarySource
+) -> dict[str, float]:
+    """How much wall the occupancy observes, and the untuned border score.
+
+    Both depend on the environment and the occupancy support only, so they
+    are the same for every unit of a summary table.
+    """
+    from neurospatial.encoding._provenance import occupancy_support
+    from neurospatial.encoding.border import (
+        observed_wall_fraction,
+        untuned_border_score,
+    )
+
+    support = np.asarray(occupancy_support(result), dtype=bool)
+    observed = np.where(support, 1.0, np.nan)
+    return {
+        "border_observed_wall_fraction": observed_wall_fraction(
+            result.env, observed, boundary_source=boundary_source
+        ),
+        "border_score_untuned": untuned_border_score(
+            result.env, support=support, boundary_source=boundary_source
+        ),
+    }
+
+
 def _spatial_summary_frame(
     result: SpatialRateResult | SpatialRatesResult,
     *,
@@ -705,10 +731,12 @@ def _spatial_summary_frame(
     except NotImplementedError as exc:
         grid = np.full(len(rates), np.nan)
         unavailable["grid_score"] = str(exc)
+    border_attrs: dict[str, float] = {}
     try:
         border = batch_border_scores(
             result.env, rates, boundary_source=boundary_source
         ).scores
+        border_attrs = _border_baseline(result, boundary_source)
     except NotImplementedError as exc:
         border = np.full(len(rates), np.nan)
         unavailable["border_score"] = str(exc)
@@ -732,6 +760,7 @@ def _spatial_summary_frame(
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["border_boundary_source"] = boundary_source
     df.attrs["border_field_minimum"] = _border_field_minimum(result.env)
+    df.attrs.update(border_attrs)
     if unavailable:
         df.attrs["unavailable_metrics"] = unavailable
     df.attrs["method"] = result.method
@@ -941,7 +970,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         call place_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
         Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        is in ``df.attrs["method"]`` when recorded. The border score's
+        baseline is ``df.attrs["border_score_untuned"]``, the score of a map
+        that fires everywhere the animal was (0.5 in a convex arena), and
+        ``df.attrs["border_observed_wall_fraction"]`` is the fraction of the
+        walls' length that was observed.
 
         Examples
         --------
@@ -2417,8 +2450,8 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         min_border_score : float or None, default=None
             Minimum border score to be classified as a border cell. The
             default of 0.5 suits rectangular boxes, where a uniform map
-            scores about 0.5; on other shapes the same field scores
-            differently (a circular arena is one wall), so calibrate it there.
+            scores about 0.5; on other shapes a uniform map scores
+            differently (see ``untuned_border_score``), so calibrate it there.
         grid_scores : ndarray of shape (n_neurons,), optional
             Precomputed grid scores, one per neuron. When provided, these are
             used directly instead of recomputing via :meth:`grid_scores`. Must
@@ -2714,7 +2747,11 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         call place_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
         Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        is in ``df.attrs["method"]`` when recorded. The border score's
+        baseline is ``df.attrs["border_score_untuned"]``, the score of a map
+        that fires everywhere the animal was (0.5 in a convex arena), and
+        ``df.attrs["border_observed_wall_fraction"]`` is the fraction of the
+        walls' length that was observed.
 
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the

@@ -95,10 +95,10 @@ def border_score(
 
         - 'physical': the measured arena: the rings of its asserted footprint
           (for example ``Environment.from_polygon(outline, ...)``) and any
-          declared internal walls. Every piece of wall must be owned by a
-          retained bin with a finite firing rate: the bin whose cell touches
-          it or, where a curved or diagonal wall runs through a grid cell
-          that was not kept, the neighboring bin that owns positions there.
+          declared walls. Every piece of wall must be owned by a retained
+          bin: the bin whose cell touches it or, where a curved or diagonal
+          wall runs through a grid cell that was not kept, the neighboring
+          bin that owns positions there.
         - 'analysis': the outline of the retained bins (within the arena's
           domain, when known), plus declared internal walls. An approximation
           for arenas whose walls were not measured.
@@ -107,7 +107,8 @@ def border_score(
     -------
     float
         Border score in [-1, 1]. NaN when the map has no positive finite peak,
-        when no field reaches the minimum field size, or, with
+        when no field reaches the minimum field size, when no bin along any
+        wall has a finite rate (see :func:`observed_wall_fraction`), or, with
         ``metric='geodesic'``, when a field bin has no path to a wall.
 
     Raises
@@ -117,9 +118,9 @@ def border_score(
     NotImplementedError
         If the walls are unavailable: with ``boundary_source='physical'``, when
         the arena's footprint was not measured (or a combined component has
-        none), or a wall is owned by no retained bin with a finite firing
-        rate; with either source, when the bins are not exact planar cells.
-        Missing observations are not evidence of zero firing; choose
+        none), or a piece of wall lies outside every bin (bins built from
+        positions inside the outline, or a corridor narrower than a bin);
+        with either source, when the bins are not exact planar cells. Choose
         ``boundary_source='analysis'`` explicitly when the retained bins'
         outline is the intended measurement.
 
@@ -131,12 +132,29 @@ def border_score(
        connectivity graph) whose rate is at least ``threshold`` times the
        peak rate, each at least the minimum field size (``min_area``).
     2. *Walls*: each closed outline (an arena ring, or the retained bins'
-       outline) is split into separate walls at its corners, where it turns
-       by more than 50° within two bin widths. A rectangle has four walls; a
-       circle, or any outline that only curves gently, is one wall. Each named
-       internal wall (segments sharing a name) is one more wall.
-    3. *Coverage* ``cM``: the largest fraction of one wall's length touched by
-       the bins of one field, over all fields and walls.
+       outline) is split into walls at its corners, in physical units. A
+       polygon's vertices are corners unless they are samples of a curve:
+       a rectangle has four walls, a hexagon six and an octagon eight; a box
+       with rounded corners has four, and a hand-traced square four. A
+       closed outline without corners (a circle, an ellipse) is one ring.
+       Each declared wall (``OpenArena(walls={name: line})``, segments
+       sharing a name) is one wall; one that lies on the outline replaces
+       that piece of it, so walls can also be declared by hand. Corners are
+       found in physical units, not by a fixed angle: a vertex is a corner
+       when rounding it off would move the outline by more than the map's
+       resolution (half a bin's diagonal, or the outline's own roughness when
+       coarser), and a rounded or traced corner is a stretch that turns
+       faster than the arena's largest inscribed circle by more than that
+       resolution can explain.
+    3. *Coverage* ``cM``: the largest fraction of one wall's observed length
+       touched by the bins of one field, over all fields and walls. A piece
+       of wall is observed when a bin that owns it has a finite rate:
+       unvisited wall bins are missing, not uncovered, so they leave the
+       fraction to the observed part of the wall (see
+       :func:`observed_wall_fraction`). The wall a ring offers is any half of
+       it, following Høydal et al. (2018), whose border cells in a circular
+       arena cover about half of it: a field along half of a circular arena
+       covers its whole wall.
     4. *Distance* ``dm``: the firing-rate-weighted mean distance from the bins
        of all fields to the nearest wall, divided by the radius of the
        largest circle that fits in the arena without crossing a wall (half
@@ -150,11 +168,13 @@ def border_score(
     identify a border cell; ``SpatialRatesResult.label_cell_types`` also
     requires spatial information, and a shuffle test is needed for a verdict.
 
-    The usual cutoff of 0.5 was chosen for rectangular boxes. On other shapes
-    the same field gives a different score: a circular arena is one wall, so
-    a field along a quarter of it covers only 0.25 of its wall and scores
-    lower than the same field along one side of a square. Calibrate a cutoff
-    for non-rectangular arenas, for example against shuffled spike trains.
+    The usual cutoff of 0.5 was chosen for rectangular boxes, where a map
+    that fires everywhere scores 0.5. That untuned score depends on the
+    arena's shape (0.5 in convex arenas, higher in corridor mazes, lower on
+    a narrow track); :func:`untuned_border_score` reports it, and
+    ``summary_table()`` records it in ``df.attrs["border_score_untuned"]``.
+    Calibrate a cutoff for other arenas, for example against shuffled spike
+    trains.
 
     **Comparison with BNT and opexebo.** On a rectangular arena this is the
     border score of the BNT (Moser lab) and opexebo implementations, with
@@ -168,16 +188,22 @@ def border_score(
     (``threshold=0.3``, 200 cm²); BNT and opexebo take fields from their
     place-field detection (by default 0.2 of the peak, at least 9 bins and
     a peak of at least 1 Hz). (3) BNT and opexebo
-    look past unvisited bins along a wall for the first visited bin; here an
-    unvisited wall bin makes the physical score unavailable. This
-    implementation also scores polygonal, circular and multi-room arenas and
-    internal walls, which they do not.
+    look up to 8 bins inward past unvisited bins along a wall for the first
+    visited bin; here unvisited wall pieces are left out of the wall's
+    length instead. (4) For circular arenas BNT's ``borderScoreCircular``
+    keeps the whole ring (or user-given angular walls) and scales the
+    distance term by a sigmoid of coverage; here the ring's wall is its best
+    half, as in Høydal et al. (2018). This implementation also scores
+    polygonal and multi-room arenas and internal walls.
 
     References
     ----------
     Solstad, T., Boccara, C. N., Kropff, E., Moser, M. B., & Moser, E. I.
         (2008). Representation of geometric borders in the entorhinal cortex.
         Science, 322(5909), 1865-1868.
+    Høydal, Ø. A., Skytøen, E. R., Moser, M.-B., & Moser, E. I. (2018).
+        Object-vector coding in the medial entorhinal cortex. bioRxiv 286286.
+        https://doi.org/10.1101/286286
 
     Examples
     --------
@@ -202,6 +228,8 @@ def border_score(
 
     See Also
     --------
+    untuned_border_score : The score of a map that fires everywhere
+    observed_wall_fraction : How much of the walls a rate map observes
     compute_region_coverage : Field coverage of named regions
     neurospatial.encoding.SpatialRatesResult.label_cell_types : Cell-type labels
     """
@@ -211,20 +239,148 @@ def border_score(
         )
     _validate_border_arguments(threshold, min_area, metric, boundary_source)
 
-    from neurospatial.encoding._physical_border import (
-        _border_score,
-        _require_wall_rates,
-        border_geometry,
-    )
+    from neurospatial.encoding._physical_border import _border_score, border_geometry
 
     geometry = border_geometry(env, boundary_source)
-    if boundary_source == "physical":
-        _require_wall_rates(geometry, firing_rate)
-
     fields = _border_fields(env, firing_rate, threshold, min_area)
     if not fields:
         return np.nan
     return _border_score(fields, firing_rate, metric, geometry)
+
+
+def observed_wall_fraction(
+    env: Environment,
+    firing_rate: NDArray[np.float64],
+    *,
+    boundary_source: BoundarySource = "physical",
+) -> float:
+    """
+    Fraction of the walls' length along which a rate map is observed.
+
+    A piece of wall is observed when a bin that owns it (touches it) has a
+    finite firing rate. :func:`border_score` measures how much of a wall a
+    field covers on the observed part of that wall only, because a bin that
+    was never visited is missing, not silent.
+
+    Parameters
+    ----------
+    env : Environment
+        Planar environment whose bins are exact cells.
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        Spatial firing rate map (Hz). NaN marks unvisited bins.
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Which walls, as in :func:`border_score`.
+
+    Returns
+    -------
+    float
+        Observed wall length over total wall length, in [0, 1]. Border
+        scores rest on fewer observations as it drops; at 0 they are NaN.
+
+    Raises
+    ------
+    ValueError
+        If ``firing_rate`` has the wrong shape or ``boundary_source`` is
+        invalid.
+    NotImplementedError
+        If the walls are unavailable, as for :func:`border_score`.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import shapely
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.border import observed_wall_fraction
+    >>> env = Environment.from_polygon(
+    ...     shapely.box(0, 0, 100, 100), bin_size=2.5, units="cm"
+    ... )
+    >>> rates = np.ones(env.n_bins)
+    >>> rates[env.bin_centers[:, 0] < 2.5] = np.nan  # west column never visited
+    >>> round(observed_wall_fraction(env, rates), 4)  # 105 of 400 cm unobserved
+    0.7375
+    """
+    from neurospatial.encoding._physical_border import border_geometry, observed_lengths
+
+    if firing_rate.shape != (env.n_bins,):
+        raise ValueError(
+            f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
+        )
+    if boundary_source not in ("physical", "analysis"):
+        raise ValueError("boundary_source must be 'physical' or 'analysis'.")
+    geometry = border_geometry(env, boundary_source)
+    observed = observed_lengths(geometry, firing_rate).sum()
+    return float(observed / geometry.atom_length.sum())
+
+
+def untuned_border_score(
+    env: Environment,
+    *,
+    support: NDArray[np.bool_] | None = None,
+    min_area: float | None = None,
+    metric: DistanceMetric = "geodesic",
+    boundary_source: BoundarySource = "physical",
+) -> float:
+    """
+    Border score of a cell that fires equally everywhere it was observed.
+
+    A uniform map is one field that covers every wall, so it scores well above
+    0 although it carries no spatial information: 0.5 in a convex arena, more
+    in a maze of corridors (every bin is near a wall), less on a narrow linear
+    track. It is the baseline a border score should be compared with in this
+    environment.
+
+    Parameters
+    ----------
+    env : Environment
+        Planar environment whose bins are exact cells.
+    support : NDArray[np.bool_], shape (n_bins,), optional
+        Observed bins. Default: every bin.
+    min_area : float, optional
+        Smallest field area, as in :func:`border_score`.
+    metric : {'geodesic', 'euclidean'}, default='geodesic'
+        Distance from field bins to the nearest wall, as in
+        :func:`border_score`.
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Which walls, as in :func:`border_score`.
+
+    Returns
+    -------
+    float
+        The border score of a map equal to 1 on ``support`` and NaN off it.
+
+    Raises
+    ------
+    ValueError
+        If ``support`` has the wrong shape or an argument is invalid.
+    NotImplementedError
+        If the walls are unavailable, as for :func:`border_score`.
+
+    Examples
+    --------
+    >>> import shapely
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.border import untuned_border_score
+    >>> square = Environment.from_polygon(
+    ...     shapely.box(0, 0, 100, 100), bin_size=2.5, units="cm"
+    ... )
+    >>> round(untuned_border_score(square), 2)
+    0.5
+    """
+    if support is None:
+        support = np.ones(env.n_bins, dtype=bool)
+    support = np.asarray(support)
+    if support.shape != (env.n_bins,) or support.dtype != bool:
+        raise ValueError(
+            f"support must be a boolean array of shape ({env.n_bins},), got "
+            f"{support.dtype} of shape {support.shape}"
+        )
+    return border_score(
+        env,
+        np.where(support, 1.0, np.nan),
+        min_area=min_area,
+        metric=metric,
+        boundary_source=boundary_source,
+    )
 
 
 def _validate_border_arguments(
@@ -451,4 +607,6 @@ def compute_region_coverage(
 __all__ = [
     "border_score",
     "compute_region_coverage",
+    "observed_wall_fraction",
+    "untuned_border_score",
 ]
