@@ -3145,14 +3145,10 @@ def _smoothed_steps(
     -------
     starts, steps : ndarray, shape (n_steps, n_dims)
     """
-    from neurospatial._intervals import gap_endpoints
-
     if smoothed is None:
         smoothed = _time_smoothed_positions(times, positions, interval_mask)
-    first, last, _ = gap_endpoints(sample_valid)
-    counted = interval_mask & sample_valid[1:]
-    first, last = first[counted], last[counted]
-    return smoothed[first], smoothed[last] - smoothed[first]
+    starts, ends = _observed_steps(smoothed, sample_valid, interval_mask)
+    return starts, ends - starts
 
 
 def _time_smoothed_positions(
@@ -3252,10 +3248,9 @@ def _observed_steps(
     -------
     starts, ends : ndarray, shape (n_steps, n_dims)
     """
-    from neurospatial._intervals import gap_endpoints
+    from neurospatial.behavior._kinematics import observed_steps
 
-    first, last, _ = gap_endpoints(sample_valid)
-    counted = interval_mask & sample_valid[1:]
+    first, last, counted = observed_steps(sample_valid, interval_mask)
     return positions[first[counted]], positions[last[counted]]
 
 

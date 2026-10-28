@@ -53,6 +53,36 @@ def interval_velocity(
     return velocity
 
 
+def observed_steps(
+    sample_valid: NDArray[np.bool_], interval_mask: NDArray[np.bool_]
+) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.bool_]]:
+    """The observed step of each interval, between valid samples.
+
+    A bridged stretch of missing samples is one step, from the valid sample
+    before it to the valid sample after it, counted once: at the stretch's
+    last interval, the one ending at a valid sample.
+
+    Parameters
+    ----------
+    sample_valid : ndarray of bool, shape (n_samples,)
+        ``ObservationSupport.sample_valid``.
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        ``ObservationSupport.interval_mask`` of the same samples.
+
+    Returns
+    -------
+    start, end : ndarray of intp, shape (n_samples - 1,)
+        Samples the step of each interval runs between (``gap_endpoints``).
+    counted : ndarray of bool, shape (n_samples - 1,)
+        True at one interval per usable step.
+    """
+    from neurospatial._intervals import gap_endpoints
+
+    start, end, _ = gap_endpoints(sample_valid)
+    counted: NDArray[np.bool_] = interval_mask & sample_valid[1:]
+    return start, end, counted
+
+
 #: Speed below which an animal counts as stationary, in centimeters per second.
 DEFAULT_MIN_SPEED_CM_PER_S = 5.0
 

@@ -1630,10 +1630,11 @@ def _observed_cumulative(
         Distance accumulated over usable intervals only, so it is flat across
         every break. Defined for every sample, including those outside runs.
     """
-    start, end, _ = gap_endpoints(support.sample_valid)
+    from neurospatial.behavior._kinematics import observed_steps
+
+    start, end, counted = observed_steps(support.sample_valid, support.interval_mask)
     with np.errstate(invalid="ignore"):  # inf - inf on consecutive missing rows
         raw = np.linalg.norm(positions[end] - positions[start], axis=1)
-    counted = support.interval_mask & support.sample_valid[1:]
     steps = np.where(counted, raw, np.nan)
     cumulative = np.r_[0.0, np.cumsum(np.where(counted, raw, 0.0))]
     return steps, cumulative
