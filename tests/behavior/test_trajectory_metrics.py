@@ -43,11 +43,11 @@ class TestComputeTurnAngles:
         # Compute turn angles (continuous API - no env needed!)
         angles = compute_turn_angles(positions)
 
-        # Should have some non-zero angles (circular motion produces turns)
-        assert len(angles) > 0
-        non_zero_angles = angles[np.abs(angles) > 0.01]
-        # At least some turning should occur
-        assert len(non_zero_angles) > 0
+        # Equal chords of a counterclockwise circle turn by the angle they
+        # subtend, 2 pi / 99, at every vertex (the last point repeats the first
+        # in direction only, not position).
+        assert angles.shape == (n_points - 2,)
+        assert_allclose(angles, 2 * np.pi / (n_points - 1), rtol=1e-9)
 
     def test_turn_angles_range(self):
         """Test that turn angles are in [-π, π] range."""
@@ -85,9 +85,8 @@ class TestComputeTurnAngles:
 
         angles = compute_turn_angles(positions)
 
-        # Should only compute angles for actual movements
-        # Consecutive duplicates should be filtered out
-        assert len(angles) >= 0  # At least some angles computed
+        # Duplicates are dropped: 0, 10, 20, 30, 40, 50 leave four straight turns.
+        assert_allclose(angles, np.zeros(4), atol=0)
 
     def test_parameter_order(self):
         """Test that parameter is just positions (continuous API)."""
