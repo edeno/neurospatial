@@ -59,6 +59,7 @@ References
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -86,6 +87,15 @@ GEODESIC_DEFINITION = (
 # must land in the same or connected bins, so a probe step shorter than a bin
 # cannot skip a missing bin or a closed connection.
 _PROBE_FRACTION = 0.5
+# Probes sit at (k - 1 + _PROBE_PHASE) / n of the way, an irrational phase
+# (2 - sqrt(2)), so no probe lands exactly on an edge of a regular lattice
+# between bin centers, where half-open cells would break mirror symmetry.
+_PROBE_PHASE = 2.0 - 2.0**0.5
+# A stretch between two probes that are not in nearest-neighbor bins is
+# split at this fraction (sqrt(2) - 1) until its pieces are, or until a piece
+# is shorter than _SPLIT_RESOLUTION probe spacings.
+_SPLIT_AT = 2.0**0.5 - 1.0
+_SPLIT_RESOLUTION = 1e-2
 # Probe points located per call to ``Environment.bin_at``.
 _PROBE_CHUNK = 1_000_000
 # Soft memory budget of the per-target fields an environment keeps.
@@ -178,6 +188,10 @@ class EnvironmentPaths:
         self._spacing = (
             _PROBE_FRACTION * float(lengths.min()) if lengths.size else np.inf
         )
+        self._grid = _GridCells.of(self._locator, self._centers)
+        # Bins this close share a face: a straight stretch between them
+        # stays in the two.
+        self._nearest = float(lengths.min()) * (1 + 1e-6) if lengths.size else np.inf
         self._fields = _RootFields(n_bins)
         self._source_fields: dict[
             tuple[int, ...], tuple[NDArray[np.float64], NDArray[np.int32]]
@@ -545,6 +559,26 @@ class EnvironmentPaths:
         found: NDArray[np.bool_] = np.any(self._neighbors[a] == b[:, None], axis=1)
         return found
 
+    def _flanked(self, a: NDArray[np.intp], b: NDArray[np.intp]) -> NDArray[np.bool_]:
+        """Whether two connected bins have two open, face-sharing common neighbors.
+
+        A straight stretch from ``a`` to a diagonal neighbor ``b`` passes
+        through one of the two cells flanking their shared corner (or the
+        corner itself); when both flanking cells are bins joined to ``a``
+        and ``b``, every such stretch stays inside, so it need not be split.
+        """
+        neighbors_a = self._neighbors[a]
+        common = (neighbors_a[:, :, None] == self._neighbors[b][:, None, :]).any(
+            axis=2
+        ) & (neighbors_a >= 0)
+        cell = np.maximum(neighbors_a, 0)
+        centers = self._centers
+        near_a = np.linalg.norm(centers[cell] - centers[a][:, None, :], axis=2)
+        near_b = np.linalg.norm(centers[cell] - centers[b][:, None, :], axis=2)
+        flank = common & (near_a <= self._nearest) & (near_b <= self._nearest)
+        flanked: NDArray[np.bool_] = (flank.sum(axis=1) >= 2) & self._connected(a, b)
+        return flanked
+
     def _join(
         self,
         points: NDArray[np.float64],
@@ -646,28 +680,28 @@ class EnvironmentPaths:
         if rate is not None:
             cost[:] = 0.0
         previous = start_bins.astype(np.intp, copy=True)
-        done = np.zeros(n_segments, dtype=np.intp)  # sequence points located
+        done = np.zeros(n_segments, dtype=np.intp)  # points located so far
         active = np.arange(n_segments)
         batch = 8
         while active.size:
-            # Next points of each active segment: interior probes k / n_steps,
-            # and the end bin once the probes are exhausted.
+            # Next points of each active segment: probes 1 .. n_steps, then
+            # the end (point n_steps + 1).
             take = np.minimum(
-                n_steps[active] - done[active],
+                n_steps[active] + 1 - done[active],
                 max(1, min(batch, _PROBE_CHUNK // active.size)),
             )
             owner = np.repeat(np.arange(active.size), take)
             step = done[active][owner] + ragged_arange(take) + 1
             segment = active[owner]
-            at_end = step == n_steps[segment]
+            fraction = self._probe_fraction(step, n_steps[segment])
+            at_end = step == n_steps[segment] + 1
             located = np.empty(step.size, dtype=np.intp)
             located[at_end] = end_bins[segment[at_end]]
             probe = ~at_end
             if probe.any():
-                fraction = step[probe] / n_steps[segment[probe]]
                 located[probe] = self._cells(
                     starts[segment[probe]]
-                    + fraction[:, None]
+                    + fraction[probe, None]
                     * (ends[segment[probe]] - starts[segment[probe]])
                 )
             # Pairs: (previous point, first new), then consecutive new points.
@@ -675,28 +709,129 @@ class EnvironmentPaths:
             left = np.empty(step.size, dtype=np.intp)
             left[1:] = located[:-1]
             left[first] = previous[active]
-            bad = (left < 0) | (located < 0)
-            moved = ~bad & (left != located)
-            bad[moved] = ~self._connected(left[moved], located[moved])
+            bad = self._crossing_blocked(
+                left,
+                located,
+                segment,
+                self._probe_fraction(step - 1, n_steps[segment]),
+                fraction,
+                starts,
+                ends,
+            )
             blocked = np.bincount(owner[bad], minlength=active.size) > 0
             visible[active[blocked]] = False
             if rate is not None:
                 ok = ~bad
                 stretch = np.zeros(step.size)
-                stretch[ok] = 0.5 * (rate[left[ok]] + rate[located[ok]])
+                stretch[ok] = (
+                    0.5
+                    * (rate[left[ok]] + rate[located[ok]])
+                    * (
+                        fraction[ok]
+                        - self._probe_fraction(step[ok] - 1, n_steps[segment[ok]])
+                    )
+                )
                 cost[active] += (
                     np.bincount(owner, weights=stretch, minlength=active.size)
                     * lengths[active]
-                    / n_steps[active]
                 )
             previous[active] = located[first + take - 1]
             done[active] += take
-            active = active[~blocked & (done[active] < n_steps[active])]
+            active = active[~blocked & (done[active] < n_steps[active] + 1)]
             batch *= 2
         if rate is None:
             return visible, cost
         cost[~visible] = np.inf
         return visible, cost
+
+    @staticmethod
+    def _probe_fraction(
+        step: NDArray[np.intp], n_steps: NDArray[np.intp]
+    ) -> NDArray[np.float64]:
+        """Fraction of the way along a segment of point ``step`` (0 = start).
+
+        Probe ``k`` of ``n`` sits at ``(k - 1 + _PROBE_PHASE) / n``, so probes
+        are ``1 / n`` apart and never land exactly on a bin edge of a regular
+        lattice between bin centers; the end is point ``n + 1``.
+        """
+        fraction = (step - 1 + _PROBE_PHASE) / n_steps
+        fraction = np.where(step <= 0, 0.0, fraction)
+        result: NDArray[np.float64] = np.where(step > n_steps, 1.0, fraction)
+        return result
+
+    def _crossing_blocked(
+        self,
+        left: NDArray[np.intp],
+        right: NDArray[np.intp],
+        segment: NDArray[np.intp],
+        left_fraction: NDArray[np.float64],
+        right_fraction: NDArray[np.float64],
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+    ) -> NDArray[np.bool_]:
+        """Whether the stretch between consecutive points leaves the bins.
+
+        Points in one bin are joined inside it (cells are convex), and two
+        nearest neighbors (a shared face) must be connected. Between bins
+        farther apart, as when a stretch passes near a corner, the cells it
+        crosses must all be bins joined in turn: on a rectilinear grid they
+        are found exactly from the order of its axis crossings; otherwise
+        the stretch is split until its pieces join nearest neighbors, so a
+        corner it cuts through a missing or closed bin is caught.
+        """
+        bad = (left < 0) | (right < 0)
+        origin = np.flatnonzero(~bad & (left != right))
+        a, b, seg = left[origin], right[origin], segment[origin]
+        f0, f1 = left_fraction[origin], right_fraction[origin]
+        if self._grid is not None and origin.size:
+            span = ends[seg] - starts[seg]
+            walked, blocked = self._grid.walk(
+                a,
+                b,
+                starts[seg] + f0[:, None] * span,
+                starts[seg] + f1[:, None] * span,
+                self._connected,
+            )
+            bad[origin[walked & blocked]] = True
+            origin, a, b, seg = (x[~walked] for x in (origin, a, b, seg))
+            f0, f1 = f0[~walked], f1[~walked]
+        while origin.size:
+            gap = np.linalg.norm(self._centers[a] - self._centers[b], axis=1)
+            piece = (f1 - f0) * np.linalg.norm(ends[seg] - starts[seg], axis=1)
+            split = (gap > self._nearest) & (piece > _SPLIT_RESOLUTION * self._spacing)
+            split[split] = ~self._flanked(a[split], b[split])
+            joined = ~split
+            # Several pieces can share an origin: mark, never unmark.
+            bad[origin[joined][~self._connected(a[joined], b[joined])]] = True
+            keep = split & ~bad[origin]
+            origin, a, b, seg, f0, f1 = (
+                origin[keep],
+                a[keep],
+                b[keep],
+                seg[keep],
+                f0[keep],
+                f1[keep],
+            )
+            if not origin.size:
+                break
+            # Split at an irrational fraction, so the split point does not
+            # land on a bin edge either.
+            fm = f0 + _SPLIT_AT * (f1 - f0)
+            m = self._cells(starts[seg] + fm[:, None] * (ends[seg] - starts[seg]))
+            outside = m < 0
+            bad[origin[outside]] = True
+            inside = ~outside
+            origin, a, b, seg, m = (x[inside] for x in (origin, a, b, seg, m))
+            f0, f1, fm = f0[inside], f1[inside], fm[inside]
+            origin = np.r_[origin, origin]
+            a, b = np.r_[a, m], np.r_[m, b]
+            seg = np.r_[seg, seg]
+            f0, f1 = np.r_[f0, fm], np.r_[fm, f1]
+            # A piece within one bin stays inside it.
+            differ = a != b
+            origin, a, b, seg = (x[differ] for x in (origin, a, b, seg))
+            f0, f1 = f0[differ], f1[differ]
+        return bad
 
     def _grow(
         self,
@@ -960,6 +1095,111 @@ class EnvironmentPaths:
         )
         settled[chosen_node] = True
         return waiting
+
+
+class _GridCells:
+    """Grid cell of each bin on a rectilinear grid, for exact cell walks."""
+
+    def __init__(
+        self,
+        edges: tuple[NDArray[np.float64], ...],
+        flat_to_active: NDArray[np.intp],
+        shape: tuple[int, ...],
+        cell: NDArray[np.intp],
+    ) -> None:
+        self.edges = edges
+        self.flat_to_active = flat_to_active
+        self.shape = shape
+        self.cell = cell
+
+    @classmethod
+    def of(cls, locator: object, centers: NDArray[np.float64]) -> _GridCells | None:
+        """The grid of a rectilinear locator whose bins are its active cells."""
+        from neurospatial.geometry._locators import RectilinearLocator
+
+        if not isinstance(locator, RectilinearLocator) or not centers.size:
+            return None
+        cell = np.column_stack(
+            [
+                np.searchsorted(edge, centers[:, axis], side="right") - 1
+                for axis, edge in enumerate(locator.edges)
+            ]
+        )
+        shape = np.asarray(locator.shape)
+        if np.any((cell < 0) | (cell >= shape)):
+            return None
+        flat = np.ravel_multi_index(tuple(cell.T), locator.shape)
+        if not np.array_equal(locator.flat_to_active[flat], np.arange(len(centers))):
+            return None
+        return cls(locator.edges, locator.flat_to_active, locator.shape, cell)
+
+    def walk(
+        self,
+        a: NDArray[np.intp],
+        b: NDArray[np.intp],
+        p0: NDArray[np.float64],
+        p1: NDArray[np.float64],
+        connected: Callable[[NDArray[np.intp], NDArray[np.intp]], NDArray[np.bool_]],
+    ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+        """Walk the cells a stretch crosses from bin ``a`` to bin ``b``.
+
+        The stretch from ``p0`` (in ``a``) to ``p1`` (in ``b``) crosses each
+        cell boundary between them in the order of its crossing times; two
+        boundaries crossed at the same time (through an edge or a vertex)
+        are one step. Each step must enter a bin joined to the last.
+
+        Returns
+        -------
+        walked : ndarray of bool
+            The pair is resolved here (its cells differ by at most one on
+            every axis).
+        blocked : ndarray of bool
+            A walked stretch leaves the bins or crosses a closed connection.
+        """
+        start, stop = self.cell[a], self.cell[b]
+        step = stop - start
+        walked = np.all(np.abs(step) <= 1, axis=1)
+        blocked = np.zeros(a.size, dtype=bool)
+        rows = np.flatnonzero(walked)
+        start, step, p0, p1 = start[rows], step[rows], p0[rows], p1[rows]
+        n_dims = start.shape[1]
+        # Crossing time of each boundary on the way, inf on axes not crossed.
+        boundary = np.column_stack(
+            [
+                self.edges[axis][
+                    np.maximum(start[:, axis], start[:, axis] + step[:, axis])
+                ]
+                for axis in range(n_dims)
+            ]
+        )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            time = np.where(step != 0, (boundary - p0) / (p1 - p0), np.inf)
+        order = np.argsort(time, axis=1, kind="stable")
+        times = np.take_along_axis(time, order, axis=1)
+        # Crossings this close in time are one step through an edge or a
+        # vertex, so mirror-image stretches take the same steps.
+        tied = np.diff(times, axis=1) <= 1e-9
+        committed = a[rows].copy()
+        pending = start.copy()
+        index = np.arange(rows.size)
+        bad = np.zeros(rows.size, dtype=bool)
+        for k in range(n_dims):
+            moving = np.isfinite(times[:, k])
+            axis = order[:, k]
+            pending[index[moving], axis[moving]] += step[index[moving], axis[moving]]
+            last = ~np.isfinite(times[:, k + 1]) if k + 1 < n_dims else True
+            commit = moving & (last | ~tied[:, k] if k + 1 < n_dims else moving)
+            if not commit.any():
+                continue
+            enter = self.flat_to_active[
+                np.ravel_multi_index(tuple(pending[commit].T), self.shape)
+            ]
+            fails = enter < 0
+            fails[~fails] = ~connected(committed[commit][~fails], enter[~fails])
+            bad[commit] |= fails
+            committed[commit] = np.where(enter >= 0, enter, committed[commit])
+        blocked[rows] = bad
+        return walked, blocked
 
 
 class PairDistances:

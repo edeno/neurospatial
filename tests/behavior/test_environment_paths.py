@@ -319,3 +319,37 @@ class TestMeanSquareDisplacement:
             np.arange(3.0), positions, metric="geodesic", env=env, max_tau=1.0
         )
         np.testing.assert_allclose(result.msd, [138.0**2], rtol=1e-12)
+
+
+class TestMirrorSymmetry:
+    @pytest.fixture(scope="class")
+    def t_maze(self):
+        """A 5 cm T-maze: stem x in [42.5, 57.5), crossbar y in [47.5, 62.5)."""
+        stem_x, stem_y = np.meshgrid(np.linspace(45, 55, 5), np.linspace(0, 50, 20))
+        bar_x, bar_y = np.meshgrid(np.linspace(0, 100, 40), np.linspace(50, 60, 5))
+        samples = np.vstack(
+            [np.c_[stem_x.ravel(), stem_y.ravel()], np.c_[bar_x.ravel(), bar_y.ravel()]]
+        )
+        return Environment.from_samples(samples, bin_size=5.0)
+
+    def test_mirror_image_bins_are_equally_far_from_mirror_image_goals(self, t_maze):
+        from neurospatial.behavior import distance_to_region
+
+        centers = t_maze.bin_centers
+        left, right = t_maze.bin_at(np.array([[10.0, 55.0], [90.0, 55.0]]))
+        bins = np.arange(t_maze.n_bins)
+        mirror = t_maze.bin_at(np.c_[100.0 - centers[:, 0], centers[:, 1]])
+        to_left = distance_to_region(bins, t_maze, target_bins=int(left))
+        to_right = distance_to_region(mirror, t_maze, target_bins=int(right))
+        np.testing.assert_allclose(to_left, to_right, rtol=1e-12)
+
+    def test_a_line_cutting_a_corner_is_not_straight(self, t_maze):
+        from neurospatial.behavior import distance_to_region
+
+        # From (50, 35) in the stem to (40, 50) in the crossbar the straight
+        # line clips the missing cell left of the stem below the bar, so the
+        # path must turn at the stem's corner (42.5, 47.5) or later.
+        start, goal = t_maze.bin_at(np.array([[50.0, 35.0], [40.0, 50.0]]))
+        distance = distance_to_region(np.array([start]), t_maze, target_bins=int(goal))
+        around_corner = np.hypot(7.5, 12.5) + np.hypot(2.5, 2.5)
+        assert distance[0] >= around_corner - 1e-9
