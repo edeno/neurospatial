@@ -298,7 +298,7 @@ def _check_planar_geometry(geometry: Polygon | LineString, *, owner: str) -> Non
 # ---------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Region:
     """Immutable description of a spatial ROI.
 
@@ -377,6 +377,10 @@ class Region:
 
     def __str__(self) -> str:
         return self.name
+
+    # Value equality covers coordinate arrays and nested metadata, which have
+    # no hash, so regions are unhashable; key collections by region name.
+    __hash__ = None  # type: ignore[assignment]
 
     def __eq__(self, other: object) -> bool:
         """Compare region values, including point coordinates elementwise."""

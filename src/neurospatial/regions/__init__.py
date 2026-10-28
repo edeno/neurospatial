@@ -5,10 +5,11 @@ Immutable *continuous* ROI objects plus optional helpers.
 
 This sub-package offers:
 
-* :class:`Region`   - an immutable, hashable ROI (point or polygon)
-* :class:`Regions`  - a small `MutableMapping[str, Region]`
+* :class:`Region`   - an immutable ROI (point or polygon), compared by value
+  and unhashable; key collections by its name
+* :class:`Regions`  - a small `MutableMapping[str, Region]` builder
 * Lightweight import / export helpers
-* A single convenience plot function (Matplotlib & Shapely imported lazily)
+* A single convenience plot function (Matplotlib imported lazily)
 
 """
 

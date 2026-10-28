@@ -142,6 +142,21 @@ def test_region_point_value_equality():
     assert region != object()
 
 
+@pytest.mark.parametrize(
+    "region",
+    [
+        Region("pt", "point", [1.0, 2.0]),
+        Region("box", "polygon", shp.box(0, 0, 1, 1), metadata={"role": "reward"}),
+    ],
+    ids=["point", "polygon"],
+)
+def test_regions_compare_by_value_but_are_unhashable(region):
+    assert region == Region.from_dict(region.to_dict())
+    with pytest.raises(TypeError, match="unhashable"):
+        hash(region)
+    assert {region.name: region}[region.name] is region
+
+
 def test_regions_add_polygon_and_area():
     regs = Regions()
     poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
