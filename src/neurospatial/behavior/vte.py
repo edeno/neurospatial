@@ -458,7 +458,7 @@ def head_sweep_from_positions(
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit.
-        Minimum speed for valid heading (units/s).
+        Minimum speed for valid heading (units/s); finite and non-negative.
         Stationary periods are excluded.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
@@ -525,6 +525,7 @@ def head_sweep_from_positions(
     nan
     """
     from neurospatial.behavior._kinematics import _validate_velocity_positions
+    from neurospatial.behavior.decisions import _validated_min_speed
 
     raw_positions = positions
     times, positions, support = validated_observations(
@@ -537,6 +538,7 @@ def head_sweep_from_positions(
         result="no head sweep was observed",
     )
     _validate_velocity_positions(raw_positions, call="head_sweep_from_positions")
+    min_speed = _validated_min_speed(min_speed, call="head_sweep_from_positions")
     return _head_sweep(times, positions, support.interval_mask, min_speed=min_speed)
 
 
@@ -782,7 +784,7 @@ def compute_vte_trial(
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit.
-        Minimum speed for valid heading (units/s).
+        Minimum speed for valid heading (units/s); finite and non-negative.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -873,6 +875,7 @@ def compute_vte_trial(
     from neurospatial.behavior.decisions import (
         _pre_decision_window,
         _validated_entry_time,
+        _validated_min_speed,
         _validated_window_duration,
     )
 
@@ -891,6 +894,7 @@ def compute_vte_trial(
         window_duration, name="window_duration", call="compute_vte_trial"
     )
     entry_time = _validated_entry_time(times, entry_time, call="compute_vte_trial")
+    min_speed = _validated_min_speed(min_speed, call="compute_vte_trial")
     window = _pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
@@ -977,7 +981,7 @@ def compute_vte_session(
         In position units per second. None is 5 cm/s expressed in
         ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
         units that are not a metric length, pass it explicitly.
-        Minimum speed for valid heading (units/s).
+        Minimum speed for valid heading (units/s); finite and non-negative.
     alpha : float, default=0.5
         Weight for head sweep in VTE index (1-alpha for speed).
         Default 0.5 weights both equally.
@@ -1125,6 +1129,7 @@ def compute_vte_session(
         _first_entry,
         _in_epochs,
         _pre_decision_window,
+        _validated_min_speed,
         _validated_window_duration,
     )
 
@@ -1132,7 +1137,10 @@ def compute_vte_session(
     window_duration = _validated_window_duration(
         window_duration, name="window_duration", call="compute_vte_session"
     )
-    min_speed = resolve_min_speed(env, min_speed, call="compute_vte_session()")
+    min_speed = _validated_min_speed(
+        resolve_min_speed(env, min_speed, call="compute_vte_session()"),
+        call="compute_vte_session",
+    )
     # First pass: compute raw metrics for all trials
     raw_head_sweeps: list[float] = []
     raw_speeds: list[float] = []

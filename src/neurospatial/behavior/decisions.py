@@ -673,6 +673,22 @@ def extract_pre_decision_window(
     return times[window], positions[window]
 
 
+def _validated_min_speed(min_speed: float, *, call: str) -> float:
+    """A finite, non-negative heading speed gate in position units per second."""
+    value = float(min_speed)
+    if not (np.isfinite(value) and value >= 0):
+        raise ValueError(
+            f"{call}() needs a finite, non-negative min_speed; got "
+            f"{min_speed!r}.\n"
+            "Why: min_speed is the speed below which the direction of movement "
+            "is not observed; a NaN or negative gate would silently drop or "
+            "keep every heading.\n"
+            "Fix: pass min_speed in position units per second, e.g. 5.0 for "
+            "5 cm/s with positions in cm."
+        )
+    return value
+
+
 def _validated_window_duration(
     window_duration: float, *, name: str, call: str
 ) -> float:
@@ -753,7 +769,7 @@ def pre_decision_heading_stats(
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit.
-        Minimum speed for valid heading (units/s).
+        Minimum speed for valid heading (units/s); finite and non-negative.
         Stationary periods are excluded from statistics.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
@@ -840,6 +856,7 @@ def pre_decision_heading_stats(
         result="the heading statistics are NaN",
     )
     _validate_velocity_positions(raw_positions, call="pre_decision_heading_stats")
+    min_speed = _validated_min_speed(min_speed, call="pre_decision_heading_stats")
     return _heading_stats(times, positions, support.interval_mask, min_speed=min_speed)
 
 
@@ -1018,7 +1035,7 @@ def compute_pre_decision_metrics(
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit.
-        Minimum speed for valid heading (units/s).
+        Minimum speed for valid heading (units/s); finite and non-negative.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1092,6 +1109,7 @@ def compute_pre_decision_metrics(
         result="the pre-decision metrics are NaN",
     )
     _validate_velocity_positions(raw_positions, call="compute_pre_decision_metrics")
+    min_speed = _validated_min_speed(min_speed, call="compute_pre_decision_metrics")
     window_duration = _validated_window_duration(
         window_duration, name="window_duration", call="compute_pre_decision_metrics"
     )
@@ -1589,7 +1607,7 @@ def compute_decision_analysis(
         In position units per second. None is 5 cm/s expressed in
         ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
         units that are not a metric length, pass it explicitly.
-        Minimum speed for valid heading (units/s).
+        Minimum speed for valid heading (units/s); finite and non-negative.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1743,7 +1761,10 @@ def compute_decision_analysis(
 
     from neurospatial.behavior._kinematics import resolve_min_speed
 
-    min_speed = resolve_min_speed(env, min_speed, call="compute_decision_analysis()")
+    min_speed = _validated_min_speed(
+        resolve_min_speed(env, min_speed, call="compute_decision_analysis()"),
+        call="compute_decision_analysis",
+    )
     # Compute pre-decision metrics
     pre_decision = _pre_decision_metrics(
         times, positions, support, entry_time, pre_window, min_speed=min_speed

@@ -1462,3 +1462,59 @@ def test_decision_analysis_pre_window_must_be_positive(t_maze_environment):
             pre_window=0.0,
             min_speed=5.0,
         )
+
+
+def _min_speed_calls(env):
+    from neurospatial.behavior import (
+        compute_decision_analysis,
+        compute_pre_decision_metrics,
+        compute_vte_session,
+        compute_vte_trial,
+        head_sweep_from_positions,
+        pre_decision_heading_stats,
+    )
+
+    times, positions = _stem_right_then_back_left()
+    return {
+        "pre_decision_heading_stats": lambda v: pre_decision_heading_stats(
+            times, positions, min_speed=v
+        ),
+        "head_sweep_from_positions": lambda v: head_sweep_from_positions(
+            times, positions, min_speed=v
+        ),
+        "compute_pre_decision_metrics": lambda v: compute_pre_decision_metrics(
+            times, positions, 2.8, window_duration=1.0, min_speed=v
+        ),
+        "compute_vte_trial": lambda v: compute_vte_trial(
+            times, positions, 2.8, window_duration=1.0, min_speed=v
+        ),
+        "compute_decision_analysis": lambda v: compute_decision_analysis(
+            env,
+            times,
+            positions,
+            decision_region="center",
+            goal_regions=["left", "right"],
+            min_speed=v,
+        ),
+        "compute_vte_session": lambda v: compute_vte_session(
+            env, times, positions, decision_region="center", trials=[], min_speed=v
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "pre_decision_heading_stats",
+        "head_sweep_from_positions",
+        "compute_pre_decision_metrics",
+        "compute_vte_trial",
+        "compute_decision_analysis",
+        "compute_vte_session",
+    ],
+)
+@pytest.mark.parametrize("min_speed", [np.nan, -1.0, np.inf])
+def test_min_speed_must_be_finite_and_non_negative(t_maze_environment, name, min_speed):
+    """A NaN gate used to drop every heading silently, giving NaN statistics."""
+    with pytest.raises(ValueError, match="finite, non-negative min_speed"):
+        _min_speed_calls(t_maze_environment)[name](min_speed)
