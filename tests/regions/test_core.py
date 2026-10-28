@@ -121,6 +121,45 @@ def test_region_to_dict_and_from_dict_polygon():
     assert r2.metadata["label"] == "square"
 
 
+def test_region_from_dict_metadata_is_optional():
+    region = Region.from_dict({"name": "pt", "kind": "point", "geom": [1.0, 2.0]})
+    assert region.metadata == {}
+
+
+@pytest.mark.parametrize(
+    ("payload", "match"),
+    [
+        (
+            {"name": "goal", "kind": "polygon"},
+            r"Region 'goal' \(kind 'polygon'\) is missing \['geom'\]",
+        ),
+        (
+            {"kind": "point", "geom": [1, 2]},
+            r"A region record \(kind 'point'\) is missing \['name'\]",
+        ),
+        (
+            {"name": "goal", "kind": "point", "geom": [1, 2], "color": "red"},
+            r"Region 'goal' \(kind 'point'\) has unknown keys \['color'\]",
+        ),
+        (
+            {"name": "goal", "kind": "polygon", "geom": [[0, 0], [1, 0], [1, 1]]},
+            r"Region 'goal' \(kind 'polygon'\) has geometry shapely cannot read",
+        ),
+        (
+            {"name": "goal", "kind": "polygon", "geom": {"type": "Circle"}},
+            r"Region 'goal' \(kind 'polygon'\) has geometry shapely cannot read",
+        ),
+        (
+            {"name": "goal", "kind": "circle", "geom": [1, 2]},
+            "Region 'goal' has unknown kind",
+        ),
+    ],
+)
+def test_region_from_dict_errors_name_the_record(payload, match):
+    with pytest.raises(ValueError, match=match):
+        Region.from_dict(payload)
+
+
 def test_regions_add_point_and_remove():
     regs = Regions()
     r = regs.add("pt", point=[1, 2, 3])

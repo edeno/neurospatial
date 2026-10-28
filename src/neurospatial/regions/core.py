@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
 import numpy as np
 import shapely
 from numpy.typing import NDArray
+from shapely.errors import ShapelyError
 from shapely.geometry import LineString, Point, Polygon, mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.validation import explain_validity
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------
 PointCoords: TypeAlias = NDArray[np.float64] | Iterable[float] | Point
 Kind = Literal["point", "polygon"]
+_REGION_RECORD_KEYS = ("name", "kind", "geom")
 
 
 def _freeze_metadata(value: Any) -> Any:
@@ -447,26 +449,60 @@ class Region:
         Parameters
         ----------
         payload : Mapping[str, Any]
-            Dictionary containing region data with keys: 'name', 'kind', 'geom', 'metadata'.
+            A record as :meth:`to_dict` writes it: ``"name"``, ``"kind"``
+            and ``"geom"`` (point coordinates, or a GeoJSON polygon mapping),
+            and optionally ``"metadata"`` (empty when omitted).
 
         Returns
         -------
         Region
             Reconstructed Region instance.
 
+        Raises
+        ------
+        ValueError
+            If a required key is missing, a key is unknown, or the polygon
+            geometry cannot be read; and for any invalid name, geometry or
+            metadata, as the constructor does.
         """
-        kind_str = payload["kind"]
-        if kind_str not in ("point", "polygon"):
-            raise ValueError(f"Unknown kind {kind_str!r}")
-        kind: Kind = kind_str
-
-        if kind == "point":
-            data = np.asarray(payload["geom"], dtype=float)
-        else:  # kind == "polygon"
-            data = shape(payload["geom"])
+        name = payload.get("name")
+        kind = payload.get("kind")
+        record = "A region record" if name is None else f"Region {name!r}"
+        if kind is not None:
+            record += f" (kind {kind!r})"
+        missing = [key for key in _REGION_RECORD_KEYS if key not in payload]
+        if missing:
+            raise ValueError(
+                _format_error(
+                    f"{record} is missing {missing}.",
+                    fix="store each region as Region.to_dict() writes it: "
+                    "name, kind, geom and optional metadata",
+                )
+            )
+        unknown = sorted(set(payload) - {*_REGION_RECORD_KEYS, "metadata"}, key=str)
+        if unknown:
+            raise ValueError(
+                _format_error(
+                    f"{record} has unknown keys {unknown}.",
+                    fix="remove them, or move descriptive fields into the "
+                    "record's metadata",
+                )
+            )
+        data = payload["geom"]
+        if kind == "polygon":
+            try:
+                data = shape(data)
+            except (ShapelyError, AttributeError, KeyError, TypeError) as exc:
+                raise ValueError(
+                    _format_error(
+                        f"{record} has geometry shapely cannot read: {exc}.",
+                        fix="store the polygon as a GeoJSON mapping, as "
+                        "Region.to_dict() writes it",
+                    )
+                ) from exc
         return cls(
             name=payload["name"],
-            kind=kind,
+            kind=payload["kind"],
             data=data,
             metadata=payload.get("metadata", {}),
         )
