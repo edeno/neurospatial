@@ -150,6 +150,10 @@ Faster:
   units of 1e5 spikes take 1.4 s instead of 5.6 s and peak at 25 MB instead
   of 965 MB. Counts are unchanged.
 - `import neurospatial.events` no longer imports pandas.
+- `in_epochs`, `restrict_spike_trains` and pose heading find each time's
+  epoch with one binary search instead of comparing every time with every
+  epoch: 1e6 times against 1000 epochs take 9 ms instead of 1.2 s, without
+  the 1 GB times x epochs array. Masks are unchanged.
 
 ### Encoding cleanup and faster analyses
 

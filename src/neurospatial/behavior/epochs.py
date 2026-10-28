@@ -129,19 +129,16 @@ def _mask_in_intervals(
     if intervals.shape[0] == 0:
         return np.zeros(t_arr.shape, dtype=np.bool_)
 
+    # Rows are sorted and separated, so the only row that can hold a time is
+    # the last one starting at or before it. A NaN time sorts last and fails
+    # both comparisons.
     starts = intervals[:, 0]
-    ends = intervals[:, 1]
-    # Broadcast samples (..., 1) against intervals (n_intervals,) -> (..., n).
-    tt = t_arr[..., np.newaxis]
-    if closed == "both":
-        inside = (tt >= starts) & (tt <= ends)
-    elif closed == "left":
-        inside = (tt >= starts) & (tt < ends)
-    elif closed == "right":
-        inside = (tt > starts) & (tt <= ends)
-    else:  # "neither" (validated above)
-        inside = (tt > starts) & (tt < ends)
-    mask: NDArray[np.bool_] = np.any(inside, axis=-1)
+    row = np.searchsorted(starts, t_arr, side="right") - 1
+    start = starts[np.maximum(row, 0)]
+    end = intervals[np.maximum(row, 0), 1]
+    after_start = t_arr >= start if closed in ("both", "left") else t_arr > start
+    before_end = t_arr <= end if closed in ("both", "right") else t_arr < end
+    mask: NDArray[np.bool_] = (row >= 0) & after_start & before_end
     return mask
 
 
