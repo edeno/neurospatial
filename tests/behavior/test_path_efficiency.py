@@ -759,3 +759,58 @@ class TestErrorHandling:
             r"are empty",
         ):
             traveled_path_length(np.array([]), positions)
+
+    @pytest.mark.parametrize("goal", [[10.0], [10.0, 0.0, 0.0], [[10.0, 0.0]]])
+    def test_goal_of_wrong_shape_raises(self, goal):
+        """A one-coordinate goal used to broadcast: efficiency 1.414 on a 2-D run."""
+        from neurospatial.behavior.navigation import (
+            compute_path_efficiency,
+            shortest_path_length,
+        )
+
+        positions = np.column_stack([np.arange(11.0), np.zeros(11)])
+        env = Environment.from_samples(positions, bin_size=1.0)
+        with pytest.raises(ValueError, match="one coordinate per position dimension"):
+            compute_path_efficiency(
+                env, np.arange(11) / 10, positions, goal, metric="euclidean"
+            )
+        with pytest.raises(ValueError, match="one coordinate per position dimension"):
+            shortest_path_length(env, positions[0], goal, metric="euclidean")
+
+    def test_non_finite_goal_raises(self):
+        from neurospatial.behavior.navigation import compute_path_efficiency
+
+        positions = np.column_stack([np.arange(11.0), np.zeros(11)])
+        env = Environment.from_samples(positions, bin_size=1.0)
+        with pytest.raises(ValueError, match="goal with a non-finite coordinate"):
+            compute_path_efficiency(
+                env, np.arange(11) / 10, positions, [np.nan, 0.0], metric="euclidean"
+            )
+
+    @pytest.mark.parametrize("reference_speed", [0.0, -2.0, np.nan, np.inf])
+    def test_reference_speed_must_be_positive_and_finite(self, reference_speed):
+        """A non-positive speed gave -2.0 or ZeroDivisionError, not an error."""
+        from neurospatial.behavior.navigation import (
+            compute_path_efficiency,
+            time_efficiency,
+        )
+
+        positions = np.column_stack([np.arange(11.0), np.zeros(11)])
+        times = np.arange(11) / 10
+        env = Environment.from_samples(positions, bin_size=1.0)
+        with pytest.raises(ValueError, match="finite speed greater than zero"):
+            compute_path_efficiency(
+                env,
+                times,
+                positions,
+                positions[-1],
+                metric="euclidean",
+                reference_speed=reference_speed,
+            )
+        with pytest.raises(ValueError, match="finite speed greater than zero"):
+            time_efficiency(
+                times,
+                positions,
+                reference_speed=reference_speed,
+                optimal_distance=10.0,
+            )

@@ -2890,9 +2890,10 @@ def shortest_path_length(
     Raises
     ------
     ValueError
-        For ``metric="geodesic"``, if ``start`` or ``goal`` is outside the
-        environment or has NaN coordinates; the geodesic path starts and ends
-        at the bins that contain them, as in ``env.distance_between``.
+        If ``metric`` is not recognized, ``start`` is not one position, or
+        ``goal`` does not have the same shape as ``start`` or has a non-finite
+        coordinate. For ``metric="geodesic"``, also if ``start`` or ``goal``
+        is outside the environment or ``start`` has NaN coordinates.
     CartesianOnlyError
         For ``metric="geodesic"`` on an egocentric polar environment, whose
         bins are (distance, angle), not allocentric positions.
@@ -2902,8 +2903,18 @@ def shortest_path_length(
     >>> dist = shortest_path_length(env, start_pos, goal_pos)  # doctest: +SKIP
     >>> print(f"Shortest path: {dist:.1f} cm")  # doctest: +SKIP
     """
-    start = np.asarray(start)
-    goal = np.asarray(goal)
+    _require_path_metric(metric, call="shortest_path_length")
+    start = np.asarray(start, dtype=float)
+    if start.ndim != 1:
+        raise ValueError(
+            _format_error(
+                f"shortest_path_length() needs start with shape (n_dims,); got "
+                f"shape {start.shape}.",
+                why="start is one position.",
+                fix="pass a single position, e.g. positions[0].",
+            )
+        )
+    goal = _validated_goal(goal, start.size, call="shortest_path_length")
 
     if metric == "euclidean":
         return float(np.linalg.norm(goal - start))
@@ -2939,7 +2950,8 @@ def time_efficiency(
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Trajectory positions.
     reference_speed : float
-        Reference speed in environment units per second.
+        Reference speed in position units per second; finite and greater
+        than zero.
     optimal_distance : float
         Shortest-path distance from start to goal under the caller's chosen
         metric (Euclidean or geodesic). The optimal time is
@@ -2953,6 +2965,12 @@ def time_efficiency(
         trajectory has < 2 samples, ``actual_time <= 0``, or
         ``optimal_distance`` is non-finite.
 
+    Raises
+    ------
+    ValueError
+        If ``reference_speed`` is not a finite speed greater than zero, or
+        the inputs are malformed.
+
     Examples
     --------
     >>> eff = time_efficiency(
@@ -2962,6 +2980,7 @@ def time_efficiency(
     """
     from neurospatial._validation import validate_times_positions
 
+    _validate_reference_speed(reference_speed, call="time_efficiency")
     times, positions = validate_times_positions(
         times, positions, call="time_efficiency"
     )
@@ -3280,7 +3299,8 @@ def compute_path_efficiency(
         between disconnected bins contributes ``inf`` (so a complete path with
         such a step has ``traveled_length=inf`` and ``efficiency=0.0``).
     reference_speed : float, optional
-        Reference speed for time efficiency.
+        Reference speed for time efficiency, in position units per second;
+        finite and greater than zero. None leaves ``time_efficiency`` None.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -3313,8 +3333,10 @@ def compute_path_efficiency(
     ValueError
         If ``metric`` is not recognized, or if the inputs are empty or
         malformed (for example ``times`` not strictly increasing, or
-        ``break_before`` not a Boolean array with one entry per sample).
-        With ``metric="geodesic"``, also if the first observed position or
+        ``break_before`` not a Boolean array with one entry per sample),
+        ``goal`` does not have shape ``(n_dims,)`` or has a non-finite
+        coordinate, or ``reference_speed`` is not a finite speed greater than
+        zero. With ``metric="geodesic"``, also if the first observed position or
         ``goal`` is outside the environment, or no position is observed
         (raised by ``distance_between``). With ``metric="euclidean"`` a
         recording with no observed position gives ``shortest_length=nan``.
@@ -3379,7 +3401,9 @@ def compute_path_efficiency(
         break_before=break_before,
         result="no path was observed",
     )
-    goal = np.asarray(goal)
+    goal = _validated_goal(goal, positions_arr.shape[1], call="compute_path_efficiency")
+    if reference_speed is not None:
+        _validate_reference_speed(reference_speed, call="compute_path_efficiency")
 
     traveled, complete = _observed_path_length(
         positions_arr, support, metric=metric, env=env
@@ -3462,21 +3486,50 @@ def goal_vector(
 
 
 def _goal_vector(
-    positions: NDArray[np.float64], goal: NDArray[np.float64], *, call: str
+    positions: NDArray[np.float64], goal: ArrayLike, *, call: str
 ) -> NDArray[np.float64]:
     """``goal - positions``, naming ``call`` when the dimensions differ."""
-    goal = np.asarray(goal)
     positions = np.asarray(positions)
-    if goal.shape[0] != positions.shape[1]:
-        n_dims = positions.shape[1]
+    goal_arr = _validated_goal(goal, positions.shape[1], call=call)
+    vector: NDArray[np.float64] = goal_arr[np.newaxis, :] - positions
+    return vector
+
+
+def _validated_goal(goal: ArrayLike, n_dims: int, *, call: str) -> NDArray[np.float64]:
+    """Return ``goal`` as a finite float array of shape ``(n_dims,)``.
+
+    Parameters
+    ----------
+    goal : array-like
+        Goal position.
+    n_dims : int
+        Number of position dimensions.
+    call : str
+        Public function name, used in messages.
+
+    Raises
+    ------
+    ValueError
+        If ``goal`` does not have shape ``(n_dims,)`` or has a non-finite
+        coordinate. Without this check NumPy would broadcast a one-coordinate
+        goal against every position dimension.
+    """
+    goal_arr = np.asarray(goal, dtype=float)
+    if goal_arr.shape != (n_dims,):
+        n_goal = goal_arr.shape[0] if goal_arr.ndim == 1 else None
+        got = (
+            f"goal has {n_goal} coordinates but positions have {n_dims}"
+            if n_goal is not None
+            else f"goal has shape {goal_arr.shape}"
+        )
         raise ValueError(
             _format_error(
                 f"{call}() needs a goal with one coordinate per position "
-                f"dimension; goal has {goal.shape[0]} coordinates but positions "
-                f"have {n_dims}.",
+                f"dimension; {got}.",
                 why=(
-                    "Why: the vector to the goal is measured in the positions' "
-                    "coordinate frame."
+                    "the goal is a point in the positions' coordinate frame; a "
+                    "goal of another shape would be broadcast against every "
+                    "position dimension."
                 ),
                 fix=(
                     f"pass goal with shape ({n_dims},), in the same coordinates "
@@ -3484,8 +3537,36 @@ def _goal_vector(
                 ),
             )
         )
-    vector: NDArray[np.float64] = goal[np.newaxis, :] - positions
-    return vector
+    if not np.isfinite(goal_arr).all():
+        raise ValueError(
+            _format_error(
+                f"{call}() got a goal with a non-finite coordinate: {goal_arr}.",
+                why="no distance or direction to a missing goal can be measured.",
+                fix="pass the goal's finite coordinates.",
+            )
+        )
+    return goal_arr
+
+
+def _validate_reference_speed(reference_speed: float, *, call: str) -> None:
+    """Raise unless ``reference_speed`` is a finite positive speed."""
+    if not (np.isfinite(reference_speed) and reference_speed > 0):
+        raise ValueError(
+            _format_error(
+                f"{call}() got reference_speed={reference_speed!r}; it must be a "
+                "finite speed greater than zero.",
+                why=(
+                    "the optimal travel time is the shortest distance divided by "
+                    "reference_speed; a zero, negative or non-finite speed gives "
+                    "no travel time."
+                ),
+                fix=(
+                    "pass the animal's typical running speed in position units per "
+                    "second, e.g. reference_speed=20.0 for 20 cm/s with positions "
+                    "in cm."
+                ),
+            )
+        )
 
 
 def goal_direction(
