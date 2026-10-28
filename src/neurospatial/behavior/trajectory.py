@@ -1,17 +1,16 @@
 """Trajectory characterization metrics.
 
-This module provides functions for analyzing spatial trajectories, including
-turn angles, step lengths, home range estimation, and mean square displacement
-analysis. These metrics are commonly used in behavioral ecology and neuroscience
-to characterize movement patterns and spatial exploration.
+This module provides functions for analyzing spatial trajectories: running
+speed, movement and body heading, turn angles, planar curvature and the
+angular velocity of the movement direction, step lengths, cumulative
+distance travelled, home range estimation, and mean square displacement.
+These metrics are commonly used in behavioral ecology and neuroscience to
+characterize movement patterns and spatial exploration.
 
 References
 ----------
 .. [1] Traja: https://traja.readthedocs.io/ - Trajectory analysis toolkit
-.. [2] Fiaschi, L., Nair, R., Koethe, U., & Hamprecht, F. A. (2012).
-       "Learning to count with regression forest and structured labels."
-       ICPR 2012.
-.. [3] Kays, R., Crofoot, M. C., Jetz, W., & Wikelski, M. (2015).
+.. [2] Kays, R., Crofoot, M. C., Jetz, W., & Wikelski, M. (2015).
        "Terrestrial animal tracking as an eye on life and planet."
        Science, 348(6240), aaa2478.
 """
@@ -124,14 +123,18 @@ class CumulativeDistanceResult(ReadOnlyArraysMixin, ResultMixin):
     """Observed distance travelled, returned by ``compute_cumulative_distance``.
 
     Distances are Euclidean arclength along the observed polyline, in the
-    units of the positions. Intervals that are not usable (a missing sample, a
-    gap longer than ``max_gap``, outside ``epochs``, or a declared break)
-    add nothing, so distance never crosses a break.
+    units of the positions. A missing sample is bridged like a deleted row
+    when the valid samples around it are within ``max_gap``: the straight
+    displacement between them is counted once. Only a longer gap, an
+    ``epochs`` edge or a declared break splits a run, and those add nothing,
+    so distance never crosses a break.
 
     Attributes
     ----------
     step_lengths : NDArray[np.float64], shape (n_samples - 1,)
-        Length of each interval; NaN on unusable intervals.
+        Length of each interval; NaN on unusable intervals. A bridged gap's
+        displacement is stored on its last interval (the one ending at the
+        next valid sample) and its other intervals are NaN.
     run_distance : NDArray[np.float64], shape (n_samples,)
         Distance since the start of the sample's run (0 at each run start);
         NaN where ``run_ids == -1``.
@@ -209,14 +212,21 @@ def compute_speed(
     taken. Differencing raw positions instead turns camera jitter into
     speed: an animal sitting still with 0.5 cm of jitter reads about
     20 cm/s at 30 Hz and 200 cm/s at 500 Hz, so a ``min_speed`` filter would
-    keep nearly all of its rest. Every ``min_speed`` gate in the package
-    (rate maps, decoding, ``segment_by_velocity``, decision and goal
-    metrics) uses this speed, so passing ``speed=compute_speed(...)``
+    keep nearly all of its rest. The per-sample ``min_speed`` gates of rate
+    maps, decoding, ``segment_by_velocity`` and the decision and goal
+    metrics use this speed, so passing ``speed=compute_speed(...)``
     explicitly gives the same result as leaving it out, provided the gate
-    gets the same ``break_before``.
+    gets the same ``break_before``. ``detect_runs_between_regions`` is
+    different: its ``min_speed`` drops whole runs by their mean speed
+    between bin centres.
 
-    Speed is never smoothed across a declared break, a missing sample, a gap
-    longer than ``max_gap`` or the edge of an ``epochs`` window.
+    A missing sample is bridged like a deleted row when the valid samples
+    around it are within ``max_gap``. Speed is never smoothed across a longer
+    gap, the edge of an ``epochs`` window or a declared break.
+
+    All coordinate columns enter the speed: for 3-D tracking it is the 3-D
+    speed. ``heading_from_velocity`` uses x and y only; pass
+    ``positions[:, :2]`` for the horizontal speed.
 
     Parameters
     ----------
@@ -250,8 +260,8 @@ def compute_speed(
     -------
     speed : NDArray[np.float64], shape (n_samples,)
         Speed in position units per second (e.g. cm/s). NaN at missing
-        samples and at samples in no run (isolated by a gap, a declared break,
-        a missing neighbour or ``epochs``).
+        samples and at samples in no run (isolated by a gap longer than
+        ``max_gap``, a declared break or ``epochs``).
 
     Raises
     ------
@@ -322,10 +332,13 @@ def heading_from_velocity(
     ----------
     times : array-like, shape (n_time,)
         Finite, strictly increasing timestamps in seconds, one per position.
-    positions : NDArray, shape (n_time, 2)
-        Animal positions over time, in environment units (e.g. cm). A row with
-        a non-finite coordinate (NaN, for a lost frame) is a missing sample:
-        it has no heading, and no velocity is computed across it.
+    positions : NDArray, shape (n_time, n_dims)
+        Animal positions over time, in environment units (e.g. cm), with
+        ``n_dims >= 2``; only x and y are used, so the heading and the
+        ``min_speed`` gate are horizontal. A row with a non-finite coordinate
+        (NaN, for a lost frame) is a missing sample: it has no heading, and
+        it is bridged like a deleted row when the valid samples around it are
+        within ``max_gap``.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -395,7 +408,8 @@ def heading_from_velocity(
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``
     and not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause or a declared break.
+    no velocity or heading spans a longer gap, an ``epochs`` edge or a
+    declared break.
 
     Velocity is the centered secant of position over each sample's actual
     elapsed time (one-sided at a run's ends), smoothed separately within each
@@ -447,8 +461,8 @@ def heading_from_velocity(
     ... ).tolist()
     [0.0, 0.0, 0.0, 0.0, 1.57, 1.57, 1.57, 1.57]
 
-    A lost frame is a NaN row. It has no heading, and no velocity is
-    computed across it:
+    A lost frame is a NaN row. It has no heading, and its neighbours are
+    bridged as if the row were deleted:
 
     >>> times = np.arange(8) * 0.1  # s
     >>> positions = np.column_stack([np.arange(8.0), np.zeros(8)])  # cm
@@ -1027,8 +1041,10 @@ def compute_planar_turn_angles(
     ``a = positions[i] - positions[i - 1]`` to the outgoing displacement
     ``b = positions[i + 1] - positions[i]``, in the horizontal (x, y) plane.
     Positive turns are counterclockwise (to the animal's left, seen from above).
-    Only observed movement is used: a turn is never computed across a missing
-    sample, a time gap or a declared recording break.
+    A missing sample is skipped as if deleted when the valid samples around
+    it are within ``max_gap``: ``i - 1`` and ``i + 1`` are then the previous
+    and next valid samples. A turn is never computed across a longer gap, an
+    ``epochs`` edge or a declared break.
 
     Parameters
     ----------
@@ -1056,8 +1072,9 @@ def compute_planar_turn_angles(
     -------
     NDArray[np.float64], shape (n_samples,)
         Turn in radians, in ``(-pi, pi]``, aligned with ``times``. An exact
-        reversal is ``pi``. NaN at the first and last sample, at samples next to
-        a missing sample, time gap or break, and where the incoming or outgoing
+        reversal is ``pi``. NaN at missing samples, at the first and last
+        sample of each run (next to a gap longer than ``max_gap``, an
+        ``epochs`` edge or a break), and where the incoming or outgoing
         displacement is zero (the animal did not move, so there is no
         direction).
 
@@ -1141,9 +1158,10 @@ def compute_planar_curvature(
     positions ``i - 1``, ``i`` and ``i + 1`` in the horizontal (x, y) plane:
     0 on a straight segment, ``1 / r`` on a circle of radius ``r``. It is
     positive when the path bends counterclockwise (to the animal's left, seen
-    from above) and negative when it bends clockwise. Only observed movement is
-    used: curvature is never computed across a missing sample, a time gap or a
-    declared recording break.
+    from above) and negative when it bends clockwise. A missing sample is
+    skipped as if deleted when the valid samples around it are within
+    ``max_gap``; curvature is never computed across a longer gap, an
+    ``epochs`` edge or a declared break.
 
     Parameters
     ----------
@@ -1171,10 +1189,11 @@ def compute_planar_curvature(
     -------
     NDArray[np.float64], shape (n_samples,)
         Signed curvature in inverse position units (for example 1/cm), aligned
-        with ``times``. NaN at the first and last sample, at samples next to a
-        missing sample, time gap or break, where the incoming or outgoing
-        displacement is zero, and at a reversal of direction (no circle passes
-        through the three points).
+        with ``times``. NaN at missing samples, at the first and last sample
+        of each run (next to a gap longer than ``max_gap``, an ``epochs`` edge
+        or a break), where the incoming or outgoing displacement is zero, and
+        at a reversal of direction (no circle passes through the three
+        points).
 
     Raises
     ------
@@ -1272,11 +1291,13 @@ def compute_movement_angular_velocity(
 
     The movement direction is the direction of each observed displacement
     (allocentric: 0 = East, +pi/2 = North). At sample ``i`` the turn between the
-    incoming and outgoing displacement is divided by the time it took, the mean
-    of the two neighbouring intervals ``(times[i + 1] - times[i - 1]) / 2``.
-    Positive values are counterclockwise (to the animal's left, seen from
-    above). Only observed movement is used: nothing is computed across a missing
-    sample, a time gap or a declared recording break.
+    incoming and outgoing displacement is divided by the time it took, half
+    the time between the previous and next valid samples,
+    ``(times[next] - times[previous]) / 2``. Positive values are
+    counterclockwise (to the animal's left, seen from above). A missing sample
+    is skipped as if deleted when the valid samples around it are within
+    ``max_gap``; nothing is computed across a longer gap, an ``epochs`` edge
+    or a declared break.
 
     This is not head angular velocity. For head direction, unwrap the measured
     headings and difference them over time yourself.
@@ -1307,10 +1328,10 @@ def compute_movement_angular_velocity(
     -------
     NDArray[np.float64], shape (n_samples,)
         Angular velocity of the movement direction in rad/s, aligned with
-        ``times``. NaN wherever ``compute_planar_turn_angles`` is NaN: at the
-        first and last sample, next to a missing sample, time gap or break, and
-        where the animal did not move (a stationary sample has no direction and
-        none is interpolated).
+        ``times``. NaN wherever ``compute_planar_turn_angles`` is NaN: at
+        missing samples, at the first and last sample of each run, and where
+        the animal did not move (a stationary sample has no direction and none
+        is interpolated).
 
     Raises
     ------
@@ -1433,8 +1454,8 @@ def compute_step_lengths(
 
     **Geodesic distance** (graph-based):
 
-    Uses NetworkX shortest_path_length on env.connectivity graph with edge
-    weights. This respects environmental constraints (walls, obstacles) and is
+    Uses SciPy shortest paths (``geodesic_distance_matrix``) on the
+    ``env.connectivity`` graph with ``"distance"`` edge weights. This respects environmental constraints (walls, obstacles) and is
     appropriate for neuroscience applications with constrained environments.
 
     **When to use each**:
@@ -2311,9 +2332,10 @@ def compute_trajectory_curvature(
     of movement direction at each sample), not geometric curvature. For
     curvature in inverse length units use ``compute_planar_curvature``.
     Works for any number of columns (1D, 2D, 3D, N-D); with three or more
-    columns the turn is unsigned (see Notes). Only observed movement is used: no turn is computed
-    or smoothed across a missing sample, a time gap or a declared recording
-    break.
+    columns the turn is unsigned (see Notes). A missing sample is skipped as
+    if deleted when the valid samples around it are within ``max_gap``; no
+    turn is computed or smoothed across a longer gap, an ``epochs`` edge or a
+    declared break.
 
     Parameters
     ----------
