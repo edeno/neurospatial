@@ -705,3 +705,69 @@ class TestRegionLapsGoRoundTheLoop:
             (0.0, times[end_lap1]),
             (times[end_excursion], times[end_lap2]),
         ]
+
+
+class TestTemplateLapsSkipTurnBacks:
+    """An aborted excursion through the start line is not merged into a lap.
+
+    Ring of radius 30 cm, 3 cm bins, 30 Hz, laps starting at angle 0. A lap
+    boundary is the first sample in the start bin, so it may precede the
+    true boundary by the time to cross one bin, plus one sample.
+    """
+
+    FS = 30.0
+    BIN = 3.0
+    RADIUS = 30.0
+
+    def _env(self):
+        return Environment.from_samples(
+            _ring_arc(0, 2 * np.pi, 400, radius=self.RADIUS), bin_size=self.BIN
+        )
+
+    def _assert_laps(self, laps, expected):
+        """``expected`` holds (start, stop, lap duration) in seconds."""
+        circumference = 2 * np.pi * self.RADIUS
+        assert len(laps) == len(expected)
+        for lap, (start, stop, duration) in zip(laps, expected, strict=True):
+            tolerance = self.BIN / (circumference / duration) + 1.0 / self.FS
+            assert lap.start_time == pytest.approx(start, abs=tolerance)
+            assert lap.end_time == pytest.approx(stop, abs=tolerance)
+            assert lap.direction == "counter-clockwise"
+
+    @pytest.mark.parametrize("method", ["auto", "reference"])
+    @pytest.mark.parametrize("fraction", [0.4, 0.7])
+    def test_lap_excursion_lap(self, method, fraction):
+        """Lap (0-10 s), excursion out and back (8 s), lap (18-28 s)."""
+        from neurospatial.behavior.segmentation import detect_laps
+
+        env = self._env()
+        turn = fraction * 2 * np.pi
+        lap = _ring_arc(0, 2 * np.pi, 301)
+        excursion = np.r_[_ring_arc(0, turn, 121)[1:], _ring_arc(turn, 0, 121)[1:]]
+        positions = np.r_[lap, excursion, lap[1:]]
+        bins = env.bin_at(positions)
+        times = np.arange(len(positions)) / self.FS
+        kwargs = {"reference_lap": bins[:300]} if method == "reference" else {}
+        laps = detect_laps(bins, times, env, method=method, **kwargs)
+        self._assert_laps(laps, [(0.0, 10.0, 10.0), (18.0, 28.0, 10.0)])
+
+    def test_two_excursions_then_laps_at_varying_speed(self):
+        """Lap (10 s), two 4 s excursions, a 5 s lap and a 20 s lap."""
+        from neurospatial.behavior.segmentation import detect_laps
+
+        env = self._env()
+        turn = 0.3 * 2 * np.pi
+        out_back = np.r_[_ring_arc(0, turn, 61)[1:], _ring_arc(turn, 0, 61)[1:]]
+        positions = np.r_[
+            _ring_arc(0, 2 * np.pi, 301),
+            out_back,
+            out_back,
+            _ring_arc(0, 2 * np.pi, 151)[1:],
+            _ring_arc(0, 2 * np.pi, 601)[1:],
+        ]
+        bins = env.bin_at(positions)
+        times = np.arange(len(positions)) / self.FS
+        laps = detect_laps(bins, times, env, method="auto")
+        self._assert_laps(
+            laps, [(0.0, 10.0, 10.0), (18.0, 23.0, 5.0), (23.0, 43.0, 20.0)]
+        )

@@ -1600,15 +1600,21 @@ def detect_laps(
     - **Reference**: The first bin of ``reference_lap`` is the start line.
       Each pass through it (the anchor bin and its neighbors, so a fast
       animal cannot step over it) marks a candidate boundary, placed at the
-      pass's sample nearest the anchor bin. A lap runs from one boundary to
-      the next boundary at which the bins visited since the lap began
-      overlap the template's bins with Jaccard index >= ``min_overlap``.
-      Both bin sets are widened by one ring of neighbors first, so the
-      overlap compares routes rather than which bins a sparse sampling
-      happened to hit (``overlap_score`` reports this widened index).
-      Boundaries come from places, not sample counts, so laps run at any
-      speed are found whole; a pass without enough overlap (a turn back)
-      stays inside the lap. Each lap covers ``[boundary, next boundary)``.
+      pass's sample nearest the anchor bin; a pass after a stretch that
+      stays within one ring of the start line (jitter, a pause there) does
+      not count as a new one. A lap ends at the first boundary at which the
+      bins visited since some earlier boundary overlap the template's bins
+      with Jaccard index >= ``min_overlap``, and starts at the latest such
+      earlier boundary. Both bin sets are widened by one ring of neighbors
+      first, so the overlap compares routes rather than which bins a sparse
+      sampling happened to hit (``overlap_score`` reports this widened
+      index). Boundaries come from places, not sample counts, so laps run
+      at any speed are found whole. A turn back through the start line (an
+      aborted excursion, however far) belongs to no lap: the next lap
+      starts where it returned. A route that crosses its start line midway
+      (a figure-eight) is still one lap, since half of it alone does not
+      match the template. Each lap covers ``[boundary, boundary)``; laps
+      tile the recording when there are no turn backs.
     - **Auto**: As 'reference', with the first complete circuit as the
       template: from the first observed sample to the first return to its
       bin after a trip to the far side of the track (a bin at least half the
@@ -2105,18 +2111,53 @@ def _detect_laps_search_contiguous(
     min_overlap: float,
     direction: str,
 ) -> list[Lap]:
-    """Split one recording into laps at passes through the template's start."""
+    """Split one recording into laps at passes through the template's start.
+
+    A lap ends at the first pass ``p`` for which some stretch from an
+    earlier pass to ``p`` overlaps the template; it starts at the latest
+    such pass. A turn back through the start line (an aborted excursion)
+    therefore starts the next lap afresh instead of being merged into it,
+    while a lap whose route crosses the start line midway (a figure-eight)
+    is still found whole, because its second half alone does not match.
+    """
     laps: list[Lap] = []
-    boundaries = _pass_samples(position_bins, env, anchor, zone)
-    if not boundaries:
+    passes = _pass_samples(position_bins, env, anchor, zone)
+    if not passes:
         return laps
-    lap_start = boundaries[0]
+    # A pass after a stretch that never leaves one ring around the start
+    # zone (jitter across its edge, a pause at the start line) continues
+    # the previous pass.
+    near_zone = zone | (adjacency @ zone > 0)
+    boundaries = [passes[0]]
+    for candidate in passes[1:]:
+        if not near_zone[position_bins[boundaries[-1] : candidate]].all():
+            boundaries.append(candidate)
+    n_template = np.count_nonzero(template)
+    starts = [boundaries[0]]  # candidate lap starts since the last lap
+    pieces: list[NDArray[np.bool_]] = []  # widened bins between them
+    reach = np.zeros_like(template)  # widened bins since the last lap
     for candidate in boundaries[1:]:
-        lap_bins = position_bins[lap_start:candidate]
-        overlap = _widened_overlap(template, lap_bins, adjacency)
-        if overlap < min_overlap:
-            continue  # a turn back or a partial circuit: keep extending
-        lap_direction = _detect_lap_direction(env.bin_centers, lap_bins)
+        pieces.append(_widen(position_bins[starts[-1] : candidate], adjacency))
+        starts.append(candidate)
+        reach |= pieces[-1]
+        # Jaccard <= |template & bins| / |template|, and the bins of a stretch
+        # from a later start are a subset of reach: no start can match.
+        if np.count_nonzero(template & reach) < min_overlap * n_template:
+            continue
+        visited = np.zeros_like(template)
+        for k in range(len(pieces) - 1, -1, -1):  # latest start first
+            visited |= pieces[k]
+            overlap = np.count_nonzero(template & visited) / np.count_nonzero(
+                template | visited
+            )
+            if overlap >= min_overlap:
+                break
+        else:
+            continue
+        lap_start = starts[k]
+        lap_direction = _detect_lap_direction(
+            env.bin_centers, position_bins[lap_start:candidate]
+        )
         if direction == "both" or lap_direction == direction:
             laps.append(
                 Lap(
@@ -2126,7 +2167,8 @@ def _detect_laps_search_contiguous(
                     overlap_score=float(overlap),
                 )
             )
-        lap_start = candidate
+        starts, pieces = [candidate], []
+        reach = np.zeros_like(template)
     return laps
 
 

@@ -860,11 +860,13 @@ for i, lap in enumerate(laps):
    distance away)
 2. Candidate lap boundaries: each pass through the template's first bin (or
    a neighbor), at the sample nearest that bin
-3. A lap ends at the first boundary where the bins visited since it began
-   overlap the template's bins (both widened by one ring of neighbors) with
-   Jaccard index >= `min_overlap`; a turn back stays inside the lap
-4. Laps tile the recording as `[boundary, next boundary)`, so laps run at
-   any speed are found whole
+3. A lap ends at the first boundary where the bins visited since an earlier
+   boundary overlap the template's bins (both widened by one ring of
+   neighbors) with Jaccard index >= `min_overlap`, and starts at the latest
+   such boundary; laps run at any speed are found whole
+4. An aborted run that turns back through the start line belongs to no lap:
+   the next lap starts where it returned. Without turn backs, laps tile the
+   recording as `[boundary, next boundary)`
 
 ---
 
