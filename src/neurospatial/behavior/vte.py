@@ -524,6 +524,12 @@ def head_sweep_magnitude(headings: NDArray[np.float64]) -> float:
         Sum of absolute heading changes in radians.
         NaN if fewer than 2 headings are finite: no head sweep was observed.
 
+    Warns
+    -----
+    UserWarning
+        If ``headings`` look like degrees (values beyond 2π, all within ±360,
+        with steps larger than π).
+
     Notes
     -----
     This is the IdPhi measure of head sweeping at a choice point (integrated
@@ -553,7 +559,12 @@ def head_sweep_magnitude(headings: NDArray[np.float64]) -> float:
     >>> head_sweep_magnitude(np.array([0.5, np.nan]))
     nan
     """
+    from neurospatial.encoding._validation import warn_if_angles_look_like_degrees
+
     headings = np.asarray(headings, dtype=np.float64)
+    warn_if_angles_look_like_degrees(
+        headings, name="headings", context="head_sweep_magnitude()"
+    )
     valid_headings = headings[np.isfinite(headings)]
 
     if len(valid_headings) < 2:

@@ -204,6 +204,16 @@ class TestHeadSweepMagnitude:
 
         assert np.isnan(head_sweep_magnitude(headings))
 
+    def test_degree_headings_warn(self):
+        """Headings in degrees would be wrapped as radians into nonsense."""
+        from neurospatial.behavior.vte import head_sweep_magnitude
+
+        with pytest.warns(UserWarning, match="look like degrees"):
+            head_sweep_magnitude(np.array([0.0, 45.0, 0.0, 45.0, 0.0]))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            head_sweep_magnitude(np.radians([0.0, 45.0, 0.0, 45.0, 0.0]))
+
     def test_head_sweep_wraps_angles(self):
         """Test that heading differences are properly wrapped."""
         from neurospatial.behavior.vte import head_sweep_magnitude
