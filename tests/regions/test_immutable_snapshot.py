@@ -74,6 +74,8 @@ def test_nested_metadata_and_export_ownership(method):
         (np.array([1, 2]), "ndarray"),
         ({1, 2}, "set"),
         (np.int64(1), "int64"),
+        (np.float64(1.5), "float64"),
+        (np.bool_(True), "bool"),
         (object(), "object"),
     ],
 )
@@ -115,7 +117,7 @@ def test_metadata_must_be_a_mapping(metadata):
 
 
 def test_accepted_metadata_round_trips_through_standard_json():
-    metadata = {"number": np.float64(1.25), "flag": True, "missing": None}
+    metadata = {"number": 1.25, "flag": True, "missing": None}
     region = Region("goal", "point", [1, 2], metadata=metadata)
     assert region.metadata["number"] == 1.25
     reloaded = Region.from_dict(

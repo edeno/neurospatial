@@ -128,7 +128,9 @@ def _require_json_metadata(
             _require_json_metadata(
                 item, allow_nan=allow_nan, owner=owner, _path=f"{_path}[{index}]"
             )
-    elif value is not None and not isinstance(value, (str, bool, int, float)):
+    # Exact types: NumPy scalars such as np.float64 subclass float but are
+    # stored and shown as NumPy objects, unlike np.int64, which is refused.
+    elif value is not None and type(value) not in (str, bool, int, float):
         raise ValueError(
             _format_error(
                 f"{subject} value {_path} is a {type(value).__name__}, which "
