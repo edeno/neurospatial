@@ -195,197 +195,206 @@ class TestRegionsToJson:
             regions_from_json(json_path)
 
 
-class TestLoadLabelmeJson:
-    """Tests for load_labelme_json function."""
+def _write_labelme(tmp_path, shapes, **extra):
+    json_path = tmp_path / "frame.json"
+    json_path.write_text(json.dumps({"shapes": shapes, **extra}), encoding="utf-8")
+    return json_path
 
-    def test_basic_polygon(self, tmp_path):
-        """Test loading basic polygon from LabelMe JSON."""
-        json_data = {
-            "shapes": [
-                {
-                    "label": "reward_zone",
-                    "points": [[10, 10], [20, 10], [20, 20], [10, 20]],
-                    "shape_type": "polygon",
-                }
-            ]
+
+def _shape(label, points, shape_type="polygon"):
+    return {"label": label, "points": points, "shape_type": shape_type}
+
+
+class TestLoadLabelmeJson:
+    """load_labelme_json reads each LabelMe shape type as its geometry."""
+
+    def test_polygon_geometry_and_metadata(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path,
+            [_shape("reward_zone", [[10, 10], [20, 10], [20, 20], [10, 20]])],
+            imagePath="frame_0001.png",
+        )
+
+        region = load_labelme_json(json_path)["reward_zone"]
+
+        assert region.kind == "polygon"
+        assert region.data.bounds == (10.0, 10.0, 20.0, 20.0)
+        assert region.data.area == 100.0
+        assert dict(region.metadata) == {
+            "source_json": "frame.json",
+            "source_image": "frame_0001.png",
+            "coord_system": "pixels",
+            "label": "reward_zone",
+            "shape_type": "polygon",
         }
-        json_path = tmp_path / "test.json"
-        json_path.write_text(json.dumps(json_data))
+
+    def test_missing_shape_type_is_a_polygon(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path, [{"label": "zone", "points": [[0, 0], [4, 0], [4, 3]]}]
+        )
+
+        assert load_labelme_json(json_path)["zone"].data.area == 6.0
+
+    def test_rectangle_from_any_two_opposite_corners(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path, [_shape("box", [[30, 5], [10, 25]], "rectangle")]
+        )
+
+        box = load_labelme_json(json_path)["box"].data
+
+        assert box.bounds == (10.0, 5.0, 30.0, 25.0)
+        assert box.area == 400.0
+
+    def test_circle_from_centre_and_rim_point(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path, [_shape("well", [[50, 40], [53, 44]], "circle")]
+        )
+
+        circle = load_labelme_json(json_path)["well"].data
+
+        assert_allclose(circle.centroid.coords[0], (50.0, 40.0), atol=1e-9)
+        assert_allclose(circle.bounds, (45.0, 35.0, 55.0, 45.0))
+        assert circle.area == pytest.approx(np.pi * 25.0, rel=0.01)
+
+    def test_oriented_rectangle(self, tmp_path):
+        corners = [[0, 1], [1, 0], [3, 2], [2, 3]]
+        json_path = _write_labelme(
+            tmp_path, [_shape("tilted", corners, "oriented_rectangle")]
+        )
+
+        assert load_labelme_json(json_path)["tilted"].data.area == pytest.approx(4.0)
+
+    def test_point_and_points(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path,
+            [
+                _shape("start", [[50, 60]], "point"),
+                _shape("cue", [[1, 2], [3, 4]], "points"),
+            ],
+        )
 
         regions = load_labelme_json(json_path)
 
-        assert isinstance(regions, Regions)
-        assert len(regions) == 1
-        assert "reward_zone" in regions
-        assert regions["reward_zone"].kind == "polygon"
+        assert regions.list_names() == ["start", "cue_0", "cue_1"]
+        assert_allclose(regions["start"].data, (50.0, 60.0))
+        assert_allclose(regions["cue_1"].data, (3.0, 4.0))
+        assert regions["cue_1"].metadata["label"] == "cue"
 
-    def test_basic_point(self, tmp_path):
-        """Test loading point from LabelMe JSON."""
-        # Note: Single points become polygons with < 3 points and are skipped
-        # This matches the actual behavior - points need to be in a valid polygon format
-        json_data = {
-            "shapes": [
-                {"label": "start_point", "points": [[50, 50]], "shape_type": "point"}
-            ]
-        }
-        json_path = tmp_path / "points.json"
-        json_path.write_text(json.dumps(json_data))
+    def test_pixel_to_world_applied_after_building_shape(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path,
+            [
+                _shape("well", [[10, 10], [12, 10]], "circle"),
+                _shape("start", [[5, 6]], "point"),
+            ],
+        )
 
-        with pytest.warns(UserWarning, match="fewer than 3 points"):
-            regions = load_labelme_json(json_path)
+        regions = load_labelme_json(json_path, pixel_to_world=_scale(0.5))
 
-        # Single points are skipped since they can't form valid polygons
-        assert len(regions) == 0
+        assert regions["well"].data.area == pytest.approx(np.pi, rel=0.01)
+        assert_allclose(regions["start"].data, (2.5, 3.0))
+        assert "coord_system" not in regions["well"].metadata
+
+    def test_pixel_to_world_wrong_shape_raises(self, tmp_path):
+        json_path = _write_labelme(tmp_path, [_shape("zone", [[0, 0], [4, 0], [4, 3]])])
+
+        with pytest.raises(ValueError, match=r"frame\.json, shape 0"):
+            load_labelme_json(json_path, pixel_to_world=lambda p: p[:, :1])
 
     def test_custom_keys(self, tmp_path):
-        """Test loading with custom label and points keys."""
-        json_data = {
-            "shapes": [{"name": "region1", "coords": [[0, 0], [1, 0], [1, 1], [0, 1]]}]
-        }
-        json_path = tmp_path / "custom.json"
-        json_path.write_text(json.dumps(json_data))
+        json_path = _write_labelme(
+            tmp_path, [{"name": "region1", "coords": [[0, 0], [1, 0], [1, 1], [0, 1]]}]
+        )
 
         regions = load_labelme_json(json_path, label_key="name", points_key="coords")
 
-        assert len(regions) == 1
-        assert "region1" in regions
+        assert regions["region1"].data.area == 1.0
 
-    def test_empty_shapes(self, tmp_path):
-        """Test loading JSON with no shapes."""
-        json_data = {"shapes": []}
-        json_path = tmp_path / "empty.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.warns(UserWarning, match="No shapes found"):
-            regions = load_labelme_json(json_path)
-
-        assert len(regions) == 0
-
-    def test_missing_label(self, tmp_path):
-        """Test handling of shape with missing label."""
-        json_data = {
-            "shapes": [
-                {
-                    "points": [[10, 10], [20, 20]]
-                    # Missing "label" key
-                }
-            ]
-        }
-        json_path = tmp_path / "missing_label.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.warns(UserWarning, match="missing label"):
-            regions = load_labelme_json(json_path)
-
-        assert len(regions) == 0  # Shape should be skipped
-
-    def test_missing_points(self, tmp_path):
-        """Test handling of shape with missing points."""
-        json_data = {
-            "shapes": [
-                {
-                    "label": "test"
-                    # Missing "points" key
-                }
-            ]
-        }
-        json_path = tmp_path / "missing_points.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.warns(UserWarning, match="missing points"):
-            regions = load_labelme_json(json_path)
-
-        assert len(regions) == 0
-
-    def test_invalid_points_shape(self, tmp_path):
-        """Test handling of points with wrong shape."""
-        json_data = {
-            "shapes": [
-                {
-                    "label": "bad_shape",
-                    "points": [[10], [20]],  # Missing y coordinates
-                }
-            ]
-        }
-        json_path = tmp_path / "bad_shape.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.warns(UserWarning, match="not in \\(M, 2\\) format"):
-            regions = load_labelme_json(json_path)
-
-        assert len(regions) == 0
-
-    def test_too_few_points(self, tmp_path):
-        """Test handling of polygon with too few points."""
-        json_data = {
-            "shapes": [
-                {
-                    "label": "line",
-                    "points": [[10, 10], [20, 20]],  # Only 2 points
-                }
-            ]
-        }
-        json_path = tmp_path / "few_points.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.warns(UserWarning, match="fewer than 3 points"):
-            regions = load_labelme_json(json_path)
-
-        assert len(regions) == 0
-
-    def test_non_dict_shape(self, tmp_path):
-        """Test handling of non-dictionary shape."""
-        json_data = {"shapes": ["not a dict"]}
-        json_path = tmp_path / "non_dict.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.warns(UserWarning, match="not a dictionary"):
-            regions = load_labelme_json(json_path)
-
-        assert len(regions) == 0
-
-    def test_unexpected_polygon_error_propagates(self, tmp_path, monkeypatch):
-        """An unexpected error from polygon construction must propagate, not be
-        swallowed.
-
-        The ``except`` around ``shp.Polygon(...)`` is narrowed to
-        ``(TypeError, ValueError, ShapelyError)``; an unrelated error type
-        (e.g. ``KeyError``) should now surface rather than being silently
-        warned-and-skipped.
-        """
-        import neurospatial.regions.io as io_mod
-
-        def _boom(*_args, **_kwargs):
-            raise KeyError("unexpected")
-
-        monkeypatch.setattr(io_mod.shp, "Polygon", _boom)
-
-        json_data = {
-            "shapes": [
-                {"label": "region1", "points": [[0, 0], [10, 0], [10, 10], [0, 10]]}
-            ]
-        }
-        json_path = tmp_path / "boom.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.raises(KeyError, match="unexpected"):
-            load_labelme_json(json_path)
-
-    def test_shapes_key_format(self, tmp_path):
-        """Test loading JSON with explicit shapes key."""
-        # Implementation expects either {"shapes": [...]} or fallback to empty list if invalid
-        json_data = {
-            "shapes": [
-                {"label": "region1", "points": [[0, 0], [10, 0], [10, 10], [0, 10]]}
-            ]
-        }
-        json_path = tmp_path / "shapes_key.json"
-        json_path.write_text(json.dumps(json_data))
+    def test_top_level_list_of_shapes(self, tmp_path):
+        json_path = tmp_path / "bare.json"
+        json_path.write_text(json.dumps([_shape("a", [[0, 0], [2, 0], [0, 2]])]))
 
         regions = load_labelme_json(json_path)
 
-        assert len(regions) == 1
-        assert "region1" in regions
+        assert regions["a"].data.area == 2.0
+        assert "source_image" not in regions["a"].metadata
+
+    def test_repeated_labels_never_collide_with_literal_labels(self, tmp_path):
+        square = [[0, 0], [1, 0], [1, 1], [0, 1]]
+        json_path = _write_labelme(
+            tmp_path,
+            [
+                _shape("zone", square),
+                _shape("zone_0", square),
+                _shape("zone", square),
+                _shape("arena", square),
+            ],
+        )
+
+        regions = load_labelme_json(json_path)
+
+        assert regions.list_names() == ["zone_1", "zone_0", "zone_2", "arena"]
+        assert regions["zone_0"].metadata["label"] == "zone_0"
+        assert regions["zone_2"].metadata["label"] == "zone"
+
+    @pytest.mark.parametrize("shape_type", ["line", "linestrip"])
+    def test_open_line_raises_pointing_to_landmark(self, tmp_path, shape_type):
+        json_path = _write_labelme(
+            tmp_path, [_shape("wall", [[0, 0], [5, 0]], shape_type)]
+        )
+
+        with pytest.raises(ValueError, match=r"(?s)shape 0 \(label 'wall'\).*Landmark"):
+            load_labelme_json(json_path)
+
+    @pytest.mark.parametrize("shape_type", ["mask", "ellipse"])
+    def test_unsupported_shape_type_raises(self, tmp_path, shape_type):
+        json_path = _write_labelme(
+            tmp_path, [_shape("blob", [[0, 0], [5, 5]], shape_type)]
+        )
+
+        with pytest.raises(ValueError, match=f"shape_type '{shape_type}'"):
+            load_labelme_json(json_path)
+
+    @pytest.mark.parametrize(
+        ("shapes", "match"),
+        [
+            ([], "has no shapes"),
+            (["not a dict"], "shape 0 is a str"),
+            ([{"points": [[0, 0], [1, 0], [1, 1]]}], "shape 0 has label None"),
+            ([{"label": "", "points": [[0, 0], [1, 0], [1, 1]]}], "label ''"),
+            ([{"label": "zone"}], "no \\(x, y\\) point list"),
+            ([_shape("zone", [[10], [20]])], "no \\(x, y\\) point list"),
+            ([_shape("zone", [[0, 0], [1], [2, 2]])], "no \\(x, y\\) point list"),
+            ([_shape("zone", [[0, 0], [1, 1]])], "2 points; it needs at least 3"),
+            ([_shape("box", [[0, 0]], "rectangle")], "it needs exactly 2"),
+            ([_shape("box", [[0, 0], [0, 5]], "rectangle")], "not a valid area"),
+            (
+                [_shape("bowtie", [[0, 0], [2, 2], [2, 0], [0, 2]])],
+                "not a valid area: Self-intersection",
+            ),
+        ],
+    )
+    def test_malformed_shapes_raise(self, tmp_path, shapes, match):
+        json_path = _write_labelme(tmp_path, shapes)
+
+        with pytest.raises(ValueError, match=match):
+            load_labelme_json(json_path)
+
+    def test_valid_shape_before_malformed_one_is_not_returned(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path,
+            [_shape("ok", [[0, 0], [1, 0], [1, 1]]), _shape("bad", [[0, 0]])],
+        )
+
+        with pytest.raises(ValueError, match="shape 1 \\(label 'bad'\\)"):
+            load_labelme_json(json_path)
+
+    def test_missing_shapes_key_raises(self, tmp_path):
+        json_path = tmp_path / "other.json"
+        json_path.write_text(json.dumps({"annotations": []}))
+
+        with pytest.raises(ValueError, match="has no shapes"):
+            load_labelme_json(json_path)
 
 
 class TestParseCvatPoints:

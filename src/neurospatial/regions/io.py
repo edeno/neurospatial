@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import warnings
 import xml.etree.ElementTree as ET
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -21,11 +22,12 @@ import shapely.geometry as shp
 from numpy.typing import NDArray
 from shapely.errors import ShapelyError
 from shapely.geometry import MultiPolygon, Polygon
+from shapely.validation import explain_validity
 
 from neurospatial._exceptions import _format_error
 from neurospatial._validation import validate_finite_scalar
 
-from .core import Region, Regions
+from .core import Kind, Region, Regions
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -183,8 +185,146 @@ def regions_from_json(path: str | Path) -> Regions:
 
 
 # --------------------------------------------------------------------------
-# 2.  LabelMe / CVAT / VIA-style polygon JSON/XML  → Regions
+# 2.  LabelMe JSON and CVAT XML  → Regions
 # --------------------------------------------------------------------------
+def _unique_region_names(labels: Sequence[str]) -> list[str]:
+    """Name regions from their labels, one rule for every loader.
+
+    A label used once keeps its name. A repeated label becomes ``label_0``,
+    ``label_1``, … in file order, skipping any suffix that is already a label
+    or a generated name, so generated names never collide.
+    """
+    counts = Counter(labels)
+    taken = set(labels)
+    next_index: dict[str, int] = {}
+    names = []
+    for label in labels:
+        if counts[label] == 1:
+            names.append(label)
+            continue
+        index = next_index.get(label, 0)
+        while f"{label}_{index}" in taken:
+            index += 1
+        name = f"{label}_{index}"
+        taken.add(name)
+        next_index[label] = index + 1
+        names.append(name)
+    return names
+
+
+_LABELME_AREA_TYPES = ("polygon", "rectangle", "oriented_rectangle", "circle")
+_LABELME_POINT_TYPES = ("point", "points")
+_LINE_FIX = (
+    "draw the area as a polygon, or keep the line as a landmark with "
+    'neurospatial.Landmark(name, "line", points) in world coordinates'
+)
+
+
+def _labelme_shape(
+    shape: Any, index: int, json_path: Path, *, label_key: str, points_key: str
+) -> tuple[str, str, NDArray[np.float64]]:
+    """Return ``(label, shape_type, points)`` of one LabelMe shape, or raise."""
+    where = f"{json_path.name}, shape {index}"
+    if not isinstance(shape, dict):
+        raise ValueError(
+            _format_error(
+                f"{where} is a {type(shape).__name__}, not a shape object.",
+                fix="check that the file is a LabelMe annotation",
+            )
+        )
+    label = shape.get(label_key)
+    if not isinstance(label, str) or not label:
+        raise ValueError(
+            _format_error(
+                f"{where} has label {label!r} under key {label_key!r}.",
+                why="each region is named by its shape's label",
+                fix="give the shape a nonempty label, or pass label_key= "
+                "naming the key that holds it",
+            )
+        )
+    where = f"{where} (label {label!r})"
+    shape_type = shape.get("shape_type") or "polygon"
+    if shape_type in ("line", "linestrip"):
+        raise ValueError(
+            _format_error(
+                f"{where} is a {shape_type!r}: an open line is not a region.",
+                why="a region is an area or a point",
+                fix=_LINE_FIX,
+            )
+        )
+    if shape_type not in (*_LABELME_AREA_TYPES, *_LABELME_POINT_TYPES):
+        raise ValueError(
+            _format_error(
+                f"{where} has shape_type {shape_type!r}, which is not read.",
+                why="supported shape types are "
+                + ", ".join(
+                    repr(t) for t in (*_LABELME_AREA_TYPES, *_LABELME_POINT_TYPES)
+                ),
+                fix="redraw the area as a polygon; for a mask, decode it and "
+                "pass the image mask to mask_to_region",
+            )
+        )
+    raw = shape.get(points_key)
+    try:
+        points = np.asarray(raw, dtype=np.float64)
+    except (TypeError, ValueError):
+        points = np.empty(0)
+    if raw is None or points.ndim != 2 or points.shape[1] != 2 or not len(points):
+        raise ValueError(
+            _format_error(
+                f"{where} has no (x, y) point list under key {points_key!r}.",
+                fix="store the points as [[x, y], ...], or pass points_key= "
+                "naming the key that holds them",
+            )
+        )
+    if not np.isfinite(points).all():
+        raise ValueError(
+            _format_error(
+                f"{where} has non-finite point coordinates.",
+                fix="fix or delete the shape in LabelMe",
+            )
+        )
+    expected = {"rectangle": 2, "circle": 2, "point": 1, "oriented_rectangle": 4}
+    n_points = expected.get(shape_type)
+    if (n_points is not None and len(points) != n_points) or (
+        shape_type == "polygon" and len(points) < 3
+    ):
+        need = "at least 3" if n_points is None else f"exactly {n_points}"
+        raise ValueError(
+            _format_error(
+                f"{where} is a {shape_type!r} with {len(points)} points; "
+                f"it needs {need}.",
+                fix="fix or delete the shape in LabelMe",
+            )
+        )
+    return label, shape_type, points
+
+
+def _labelme_polygon(
+    shape_type: str, points: NDArray[np.float64], where: str
+) -> Polygon:
+    """Build the pixel polygon of a LabelMe area shape and check it."""
+    if shape_type == "rectangle":
+        (x0, y0), (x1, y1) = points.min(axis=0), points.max(axis=0)
+        polygon = shapely.box(x0, y0, x1, y1)
+    elif shape_type == "circle":
+        # LabelMe stores the centre and one point on the rim.
+        radius = float(np.hypot(*(points[1] - points[0])))
+        polygon = shp.Point(points[0]).buffer(radius)
+    else:  # polygon, oriented_rectangle
+        polygon = Polygon(points)
+    if polygon.is_empty or polygon.area <= 0 or not polygon.is_valid:
+        raise ValueError(
+            _format_error(
+                f"{where} is not a valid area: {explain_validity(polygon)}.",
+                why="a region polygon needs a positive area and edges that do "
+                "not cross",
+                fix="fix the shape's vertices in LabelMe",
+            )
+        )
+    return polygon
+
+
 def load_labelme_json(
     json_path: str | Path,
     *,
@@ -192,124 +332,118 @@ def load_labelme_json(
     label_key: str = "label",
     points_key: str = "points",
 ) -> Regions:
-    """Parse a *.json* file produced by many point-&-click ROI tools.
+    """Read the shapes of a LabelMe annotation file as regions.
+
+    Shapes are read by their ``shape_type`` (a missing type is a polygon, as
+    in LabelMe):
+
+    * ``"polygon"`` (3 or more vertices) and ``"oriented_rectangle"``
+      (4 corners) become polygons.
+    * ``"rectangle"`` (2 opposite corners) becomes an axis-aligned box.
+    * ``"circle"`` (centre and one rim point) becomes a 64-vertex polygon.
+    * ``"point"`` becomes a point region, and each point of ``"points"``
+      becomes its own point region.
+
+    Open ``"line"`` and ``"linestrip"`` shapes, masks and any other type raise.
+
+    Region names come from labels. A label used once keeps its name; a
+    repeated label becomes ``label_0``, ``label_1``, … in file order,
+    skipping any name that is already a label.
 
     Parameters
     ----------
     json_path : str or Path
-        Path to the JSON file.
+        Path to the LabelMe ``.json`` file: an object with a ``"shapes"``
+        list, or a bare list of shape objects.
     pixel_to_world : SpatialTransform, optional
-        Callable mapping `(N, 2)` **pixel** coordinates → `(N, 2)` **world**
-        coordinates (e.g., centimeters). If `None`, the coordinates are
-        assumed to be in pixels.
-    label_key : str, optional
-        Key in the JSON object that contains the region label.
-        Default is "label".
-    points_key : str, optional
-        Key in the JSON object that contains the list of points.
-        Default is "points".
+        Callable mapping ``(n, 2)`` pixel ``(x, y)`` coordinates to
+        ``(n, 2)`` world coordinates, such as
+        ``VideoCalibration.transform_px_to_cm``. Shapes are built in pixels
+        and their vertices are then transformed. If None, coordinates stay in
+        LabelMe's image pixels: ``x`` is the column, ``y`` the row (pointing
+        down), with the origin at the image's top-left corner.
+    label_key : str, default="label"
+        Key of each shape's label.
+    points_key : str, default="points"
+        Key of each shape's ``[[x, y], ...]`` points.
 
     Returns
     -------
     Regions
-        Every polygon becomes a :class:`Region` with ``kind="polygon"``.
+        One region per area or point, in file order. Each region's metadata
+        holds ``"label"`` (the label before any suffix), ``"shape_type"``,
+        ``"source_json"`` (the file name), ``"source_image"`` (LabelMe's
+        ``imagePath``, when present) and, without ``pixel_to_world``,
+        ``"coord_system": "pixels"``.
 
     Raises
     ------
     ValueError
-        If no shapes are found in the JSON file or if a shape is missing
-        required keys.
+        If the file has no shapes, a shape is not an object, has no label or
+        no ``(n, 2)`` points, has the wrong number of points for its type, is
+        an open line or an unsupported type, or is not a valid area; or if
+        ``pixel_to_world`` does not return finite ``(n, 2)`` coordinates. The
+        message names the file, the shape index and the label.
 
+    See Also
+    --------
+    neurospatial.annotation.regions_from_labelme : The same import with a
+        video calibration, recording the coordinate units.
+    load_cvat_xml : Read a CVAT export.
     """
-    data = json.loads(Path(json_path).read_text())
-    regions_list: list[Region] = []  # Renamed to avoid conflict with Regions class
-
-    # LabelMe puts shapes in a top-level list; CVAT stores under "shapes"
-    shapes_data = data.get("shapes", data if isinstance(data, list) else [])
-    if not isinstance(shapes_data, list):  # Ensure shapes_data is a list
+    path = Path(json_path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, dict):
+        shapes = data.get("shapes")
+        image_path = data.get("imagePath")
+    else:
+        shapes, image_path = data, None
+    if not isinstance(shapes, list) or not shapes:
         raise ValueError(
-            f"Expected 'shapes' to be a list, but got {type(shapes_data).__name__} in {json_path}",
+            _format_error(
+                f"{path.name} has no shapes.",
+                why='a LabelMe file lists its annotations under "shapes"',
+                fix="annotate at least one region in LabelMe and save, or check "
+                "that this is a LabelMe file",
+            )
         )
-    if not shapes_data:
-        warnings.warn(
-            f"No shapes found in {json_path}",
-            category=UserWarning,
-            stacklevel=2,
-        )  # Changed to warning, or could be error
-        return Regions([])  # Return empty Regions if no shapes
-
-    for i, obj in enumerate(shapes_data):
-        if not isinstance(obj, dict):
-            warnings.warn(
-                f"Shape at index {i} is not a dictionary, skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            continue
-
-        name = obj.get(label_key)
-        points_data = obj.get(points_key)
-
-        if name is None:
-            warnings.warn(
-                f"Shape at index {i} is missing label (key: '{label_key}'), skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            continue
-        if points_data is None:
-            warnings.warn(
-                f"Shape '{name}' (index {i}) is missing points (key: '{points_key}'), skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            continue
-
-        try:
-            pts_px: NDArray[np.float64] = np.asarray(points_data, dtype=float)  # (M, 2)
-            if pts_px.ndim != 2 or pts_px.shape[1] != 2:
-                warnings.warn(
-                    f"Points for shape '{name}' (index {i}) are not in (M, 2) format, skipping.",
-                    category=UserWarning,
-                    stacklevel=2,
+    parsed = [
+        _labelme_shape(shape, index, path, label_key=label_key, points_key=points_key)
+        for index, shape in enumerate(shapes)
+    ]
+    entries: list[tuple[str, str, Polygon | NDArray[np.float64], str]] = []
+    for index, (label, shape_type, points) in enumerate(parsed):
+        where = f"{path.name}, shape {index} (label {label!r})"
+        if shape_type in _LABELME_POINT_TYPES:
+            world = _pixels_to_world(points, pixel_to_world, where=where)
+            entries.extend((label, "point", point, shape_type) for point in world)
+        else:
+            polygon = _labelme_polygon(shape_type, points, where)
+            entries.append(
+                (
+                    label,
+                    "polygon",
+                    _polygon_to_world(polygon, pixel_to_world, where=where),
+                    shape_type,
                 )
-                continue
-        except ValueError as e:
-            warnings.warn(
-                f"Could not parse points for shape '{name}' (index {i}): {e}, skipping.",
-                category=UserWarning,
-                stacklevel=2,
             )
-            continue
-
-        pts_transformed = pixel_to_world(pts_px) if pixel_to_world else pts_px
-        # Ensure polygon has at least 3 points for a valid polygon
-        if len(pts_transformed) < 3:
-            warnings.warn(
-                f"Shape '{name}' (index {i}) has fewer than 3 points after processing, skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            continue
-        try:
-            poly = shp.Polygon(pts_transformed)
-        except (TypeError, ValueError, ShapelyError) as e:  # Polygon construction
-            warnings.warn(
-                f"Could not create polygon for shape '{name}' (index {i}): {e}, skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            continue
-
-        regions_list.append(
-            Region(
-                name=str(name),  # Ensure name is a string
-                kind="polygon",
-                data=poly,
-                metadata={"source_json": Path(json_path).name},
-            ),
+    base_metadata: dict[str, Any] = {"source_json": path.name}
+    if isinstance(image_path, str):
+        base_metadata["source_image"] = image_path
+    if pixel_to_world is None:
+        base_metadata["coord_system"] = "pixels"
+    names = _unique_region_names([label for label, *_ in entries])
+    return Regions(
+        Region(
+            name=name,
+            kind=cast("Kind", kind),
+            data=geometry,
+            metadata={**base_metadata, "label": label, "shape_type": shape_type},
         )
-    return Regions(regions_list)
+        for name, (label, kind, geometry, shape_type) in zip(
+            names, entries, strict=True
+        )
+    )
 
 
 def _rle_to_mask(rle: str, height: int, width: int) -> NDArray[np.uint8]:
@@ -462,8 +596,6 @@ def _create_cvat_region(
     additional_metadata: Mapping[str, Any] | None = None,
 ) -> Region:
     """Helper function to create a Region object for CVAT shapes."""
-    from neurospatial.regions.core import Kind
-
     if kind not in ("point", "polygon"):
         raise ValueError(f"Invalid kind: {kind!r}")
     # After validation, we know kind is either "point" or "polygon"

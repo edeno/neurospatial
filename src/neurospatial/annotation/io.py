@@ -19,6 +19,9 @@ def regions_from_labelme(
 ) -> Regions:
     """Load regions from LabelMe JSON with optional calibration.
 
+    Shape types, region naming and errors follow
+    :func:`neurospatial.regions.load_labelme_json`.
+
     Parameters
     ----------
     json_path : str or Path
@@ -33,11 +36,13 @@ def regions_from_labelme(
     Returns
     -------
     Regions
-        Loaded regions with coordinates in cm (if calibrated) or pixels.
+        Loaded regions with coordinates in cm (if calibrated) or in LabelMe's
+        image pixels (x = column, y = row pointing down).
+        ``metadata["coord_system"]`` is ``"cm"`` or ``"pixels"``.
 
     See Also
     --------
-    neurospatial.regions.io.load_labelme_json : Underlying implementation.
+    neurospatial.regions.load_labelme_json : Underlying implementation.
 
     Examples
     --------
