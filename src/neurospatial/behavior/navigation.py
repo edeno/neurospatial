@@ -3155,24 +3155,31 @@ def _time_smoothed_positions(
         widest = int(max(np.max(index - lo), np.max(hi - 1 - index)))
         # Weighted sums for the local fit p_j - p_i ~ a + b * (t_j - t_i),
         # in differences from each sample so a still animal stays exactly still.
-        s0 = np.zeros(run.size)
+        # Each sample weighs itself by 1; each pair (i, i + k) within reach
+        # adds to both samples, with lag and deviation negated for the later.
+        s0 = np.ones(run.size)
         s1 = np.zeros(run.size)
         s2 = np.zeros(run.size)
         m0 = np.zeros_like(p)
         m1 = np.zeros_like(p)
-        for offset in range(-widest, widest + 1):
-            other = np.clip(index + offset, 0, run.size - 1)
-            lag = t[other] - t
-            inside = (index + offset >= 0) & (index + offset < run.size)
-            weight = np.where(
-                inside & (np.abs(lag) <= reach), np.exp(-0.5 * (lag / sigma) ** 2), 0.0
-            )
-            s0 += weight
-            s1 += weight * lag
-            s2 += weight * lag**2
-            deviation = p[other] - p
-            m0 += weight[:, None] * deviation
-            m1 += (weight * lag)[:, None] * deviation
+        for k in range(1, widest + 1):
+            lag = t[k:] - t[:-k]
+            weight = np.where(lag <= reach, np.exp(-0.5 * (lag / sigma) ** 2), 0.0)
+            weighted_lag = weight * lag
+            weighted_square = weighted_lag * lag
+            deviation = p[k:] - p[:-k]
+            weighted_deviation = weight[:, None] * deviation
+            lagged_deviation = weighted_lag[:, None] * deviation
+            s0[:-k] += weight
+            s0[k:] += weight
+            s1[:-k] += weighted_lag
+            s1[k:] -= weighted_lag
+            s2[:-k] += weighted_square
+            s2[k:] += weighted_square
+            m0[:-k] += weighted_deviation
+            m0[k:] -= weighted_deviation
+            m1[:-k] += lagged_deviation
+            m1[k:] += lagged_deviation
         det = s0 * s2 - s1**2
         # A sample alone in its window (det ~ 0) keeps its own position.
         fitted = det > 1e-12 * s0 * np.maximum(s2, np.finfo(float).tiny)
