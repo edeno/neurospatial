@@ -88,6 +88,7 @@ from neurospatial._observation import (
 )
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_speed
+from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _safe_gather
 from neurospatial.geometry import require_cartesian
@@ -472,6 +473,8 @@ def decision_region_entry_time(
         strictly increasing, or if the trajectory never enters the region.
     TypeError
         If ``position_bins`` is not an integer array.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, env.n_bins)`` and is not ``-1``.
 
     Examples
     --------
@@ -490,8 +493,8 @@ def decision_region_entry_time(
     _require_region_mask(
         env, region, operation="decision_region_entry_time()", argument="region"
     )
-    position_bins = _validated_position_bins(
-        position_bins, times, call="decision_region_entry_time"
+    position_bins = validated_position_bins(
+        position_bins, env, call="decision_region_entry_time", times=times
     )
     times = _validated_signal_times(times, call="decision_region_entry_time")
     entry = _first_entry(
@@ -500,27 +503,6 @@ def decision_region_entry_time(
     if entry is None:
         raise ValueError(_never_enters_message(region, epochs=None))
     return float(times[entry])
-
-
-def _validated_position_bins(
-    position_bins: ArrayLike, times: ArrayLike, *, call: str
-) -> NDArray[np.int64]:
-    """1-D integer bins with one entry per timestamp."""
-    bins = np.asarray(position_bins)
-    n_times = np.shape(times)[0] if np.ndim(times) else 0
-    if bins.ndim != 1 or bins.shape[0] != n_times:
-        raise ValueError(
-            f"{call}() needs one position bin per timestamp; got position_bins "
-            f"of shape {bins.shape} and {n_times} timestamps.\n"
-            "Why: each sample's bin is matched to its time.\n"
-            "Fix: pass env.bin_at(positions) for the same samples as times."
-        )
-    if bins.size and bins.dtype.kind not in "iu":
-        raise TypeError(
-            f"{call}() needs integer position_bins from env.bin_at(); got dtype "
-            f"{bins.dtype}."
-        )
-    return bins.astype(np.int64, copy=False)
 
 
 def _first_entry(
@@ -1310,8 +1292,8 @@ def distance_to_decision_boundary(
     env : Environment
         Spatial environment.
     position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices along the trajectory; -1 (or any index outside
-        ``[0, env.n_bins)``) marks a sample outside every bin.
+        Bin indices along the trajectory, as from ``env.bin_at``; -1 marks a
+        sample outside every bin.
     goal_bins : list[int] or NDArray[np.int_]
         Bin indices of goal locations.
 
@@ -1324,6 +1306,16 @@ def distance_to_decision_boundary(
         the boundary; small values = uncommitted. NaN for a sample outside
         every bin; inf where the second-nearest goal is unreachable or with
         fewer than two goals (there is no boundary).
+
+    Raises
+    ------
+    TypeError
+        If ``position_bins`` or ``goal_bins`` is not integer bin indices.
+    ValueError
+        If ``position_bins`` is not 1-D.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, env.n_bins)`` (and, in
+        ``position_bins``, is not ``-1``).
 
     Notes
     -----
@@ -1357,6 +1349,9 @@ def distance_to_decision_boundary(
     """
     from neurospatial.environment import _validate_target_bins
 
+    position_bins = validated_position_bins(
+        position_bins, env, call="distance_to_decision_boundary"
+    )
     goal_bins_arr = _validate_target_bins(
         goal_bins,
         n_bins=env.n_bins,
@@ -1376,12 +1371,11 @@ def distance_to_decision_boundary(
 
     # For each trajectory bin, the boundary lies halfway between the two
     # nearest goals: (d2 - d1) / 2 after sorting the per-bin goal distances.
-    position_bins = np.asarray(position_bins).ravel()
     boundary_distances = np.full(len(position_bins), np.nan)
 
-    # Out-of-bounds (including negative) trajectory bins map to NaN; only valid
-    # bins are indexed into the goal-distance table to avoid fancy-index wrap.
-    valid = (position_bins >= 0) & (position_bins < env.n_bins)
+    # Samples outside the environment (-1) are NaN; only located bins are
+    # indexed into the goal-distance table to avoid fancy-index wrap.
+    valid = position_bins >= 0
     if not np.any(valid):
         return boundary_distances
 
@@ -1459,6 +1453,11 @@ def detect_boundary_crossings(
         If ``position_bins`` and ``times`` differ in length, if there are no
         samples, if ``times`` is not finite and strictly increasing, or if
         ``break_before`` is not a Boolean array with one entry per sample.
+    TypeError
+        If ``position_bins`` is not integer bin indices.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, len(voronoi_labels))`` and is not
+        ``-1``.
 
     Notes
     -----
@@ -1506,15 +1505,12 @@ def detect_boundary_crossings(
     >>> crossing_times.size, directions.shape
     (0, (0, 2))
     """
-    position_bins = np.asarray(position_bins, dtype=np.int64)
-    n_times = len(np.asarray(times))
-    if len(position_bins) != n_times:
-        raise ValueError(
-            f"position_bins and times must have same length; got "
-            f"{len(position_bins)} and {n_times}.\n"
-            "Why: each trajectory sample needs its corresponding timestamp.\n"
-            "Fix: pass one timestamp per position bin on the same clock."
-        )
+    position_bins = validated_position_bins(
+        position_bins,
+        call="detect_boundary_crossings",
+        times=times,
+        n_bins=np.shape(voronoi_labels)[0],
+    )
     times, _, _ = validated_signals(
         times,
         position_bins,

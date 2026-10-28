@@ -147,7 +147,7 @@ def _safe_gather(
 def _validated_samples(
     position_bins: ArrayLike, times: ArrayLike, env: Environment, *, call: str
 ) -> tuple[NDArray[np.int64], NDArray[np.float64]]:
-    """Check a bin trajectory and its timestamps; return int64 and float64 copies.
+    """Check a bin trajectory and its timestamps; return them as int64 and float64.
 
     ``position_bins`` must be integer bin indices of ``env`` or ``-1`` (outside
     the environment, as :meth:`Environment.bin_at` returns); a float array
@@ -155,27 +155,10 @@ def _validated_samples(
     strictly increasing, in seconds.
     """
     from neurospatial._observation import _validated_signal_times
-    from neurospatial.environment import _validate_target_bins
+    from neurospatial.behavior._position_bins import validated_position_bins
 
-    n_bins, n_times = np.shape(position_bins), np.shape(times)
-    if len(n_bins) != 1 or len(n_times) != 1 or n_bins != n_times:
-        raise ValueError(
-            _format_error(
-                f"position_bins and times must be 1-D with the same length; got "
-                f"shapes {n_bins} and {n_times}.",
-                why="each trajectory sample needs its corresponding timestamp.",
-                fix="pass one timestamp per position bin on the same clock.",
-            )
-        )
-    bins = _validate_target_bins(
-        position_bins,
-        n_bins=env.n_bins,
-        coordinates=env.coordinate_system,
-        operation=f"{call}()",
-        argument="position_bins",
-        allow_missing=True,
-    ).astype(np.int64)
-    if n_times[0] == 0:
+    bins = validated_position_bins(position_bins, env, call=call, times=times)
+    if bins.size == 0:
         return bins, np.asarray(times, dtype=np.float64)
     return bins, _validated_signal_times(times, call=call)
 

@@ -25,6 +25,7 @@ from neurospatial._intervals import (
     warn_excluded_intervals,
 )
 from neurospatial._observation import validate_break_before
+from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
@@ -231,10 +232,10 @@ def detect_region_visits(
     Parameters
     ----------
     position_bins : ndarray of integers, shape (n_samples,)
-        Sample-aligned bins from ``env.bin_at(positions)``. Invalid bins
-        (negative or at least ``env.n_bins``) denote unknown observations,
-        skipped as if their rows were deleted: the gap around them is bridged
-        when it is no longer than ``max_gap``. A valid bin outside every
+        Sample-aligned bins from ``env.bin_at(positions)``. Bin ``-1`` (a
+        position outside the environment) is an unknown observation, skipped
+        as if its row were deleted: the gap around it is bridged when it is
+        no longer than ``max_gap``. A valid bin outside every
         selected region is observed travel, not an observation break.
     times : ndarray, shape (n_samples,)
         Finite, strictly increasing timestamps in seconds.
@@ -277,6 +278,8 @@ def detect_region_visits(
         Boolean array with one entry per sample.
     TypeError
         If ``position_bins`` is not an integer array or names are not strings.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, env.n_bins)`` and is not ``-1``.
     RegionNotFoundError
         If a selected region does not exist.
 
@@ -293,17 +296,10 @@ def detect_region_visits(
     entry-to-entry pairs. Use ``detect_runs_between_regions`` instead when the
     desired interval starts at source exit.
     """
-    bins = np.asarray(position_bins)
+    bins = validated_position_bins(
+        position_bins, env, call="detect_region_visits", times=times
+    )
     clock = np.asarray(times, dtype=np.float64)
-    if bins.ndim != 1 or clock.ndim != 1 or bins.shape != clock.shape:
-        raise ValueError(
-            "position_bins and times must be 1-D arrays of equal length. "
-            f"Got {bins.shape} and {clock.shape}."
-        )
-    if bins.size and bins.dtype.kind not in "iu":
-        raise TypeError(
-            "position_bins must contain integer bin indices from env.bin_at()."
-        )
     if not np.isfinite(clock).all() or np.any(np.diff(clock) <= 0):
         raise ValueError("times must be finite and strictly increasing, in seconds.")
     validate_max_gap(max_gap)
@@ -345,7 +341,7 @@ def detect_region_visits(
 
     # An invalid bin is a missing observation, skipped as if its row were
     # deleted; indices are mapped back to the caller's rows below.
-    rows, breaks = drop_missing_samples((bins >= 0) & (bins < env.n_bins), breaks)
+    rows, breaks = drop_missing_samples(bins >= 0, breaks)
     bins, clock = bins[rows], clock[rows]
     valid = np.ones(bins.shape, dtype=bool)
     selected = valid.copy()

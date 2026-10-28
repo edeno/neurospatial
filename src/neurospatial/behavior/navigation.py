@@ -125,6 +125,7 @@ from neurospatial._intervals import (
 )
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._metric import metric_paths, require_metric
+from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.geometry import require_cartesian
 
@@ -700,49 +701,6 @@ def trials_to_region_arrays(
     return start_bins, goal_bins
 
 
-def _validated_position_bins(
-    position_bins: ArrayLike, env: Environment, *, operation: str
-) -> NDArray[np.intp]:
-    """Check per-sample bin indices: integers in ``[0, n_bins)`` or ``-1``.
-
-    ``-1`` is ``env.bin_at``'s marker for a position outside the environment
-    and becomes NaN downstream. Any other negative index would silently
-    count from the end of the bin arrays, and a float bin would be truncated
-    to an unrelated bin, so both are refused.
-
-    Parameters
-    ----------
-    position_bins : array-like of int, shape (n_samples,)
-        Bin index at each sample.
-    env : Environment
-        Environment the bins belong to.
-    operation : str
-        The call named in errors, e.g. ``"path_progress()"``.
-
-    Returns
-    -------
-    ndarray of intp, shape (n_samples,)
-    """
-    from neurospatial.environment._targets import _validate_target_bins
-
-    if np.ndim(position_bins) != 1:
-        raise ValueError(
-            _format_error(
-                f"{operation} got position_bins with shape {np.shape(position_bins)}.",
-                why="position_bins holds one bin index per sample.",
-                fix="pass a 1-D integer array, for example env.bin_at(positions)",
-            )
-        )
-    return _validate_target_bins(
-        position_bins,
-        n_bins=env.n_bins,
-        coordinates=env.coordinate_system,
-        operation=operation,
-        argument="position_bins",
-        allow_missing=True,
-    )
-
-
 def _bin_distances(
     env: Environment,
     bins: NDArray[np.intp],
@@ -899,9 +857,7 @@ def path_progress(
     """
     from neurospatial.environment import _validate_sample_targets
 
-    position_bins = _validated_position_bins(
-        position_bins, env, operation="path_progress()"
-    )
+    position_bins = validated_position_bins(position_bins, env, call="path_progress")
     n_samples = len(position_bins)
     # A single start or goal applies to every sample.
     start_bins, goal_bins = (
@@ -1028,8 +984,8 @@ def distance_to_region(
     """
     from neurospatial.environment import _validate_sample_targets
 
-    position_bins = _validated_position_bins(
-        position_bins, env, operation="distance_to_region()"
+    position_bins = validated_position_bins(
+        position_bins, env, call="distance_to_region"
     )
     targets, per_sample = _validate_sample_targets(
         target_bins,
@@ -1948,9 +1904,7 @@ def cost_to_goal(
     """
     from neurospatial.environment import _validate_sample_targets
 
-    position_bins = _validated_position_bins(
-        position_bins, env, operation="cost_to_goal()"
-    )
+    position_bins = validated_position_bins(position_bins, env, call="cost_to_goal")
     goals, per_sample = _validate_sample_targets(
         goal_bins,
         n_samples=len(position_bins),
@@ -2231,9 +2185,7 @@ def graph_turn_sequence(
             "positions, for example Environment.from_samples(positions, bin_size=...)"
         ),
     )
-    bins = _validated_position_bins(
-        position_bins, env, operation="graph_turn_sequence()"
-    )
+    bins = validated_position_bins(position_bins, env, call="graph_turn_sequence")
     if tolerance is None:
         tolerance = float(np.sqrt(2.0) * env.bin_spacing)
     elif not (np.isfinite(tolerance) and tolerance >= 0):
