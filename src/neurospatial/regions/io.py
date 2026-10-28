@@ -44,7 +44,9 @@ if TYPE_CHECKING:
 _SCHEMA_TAG = "Regions-v1"
 
 
-def regions_to_json(regions: Regions, path: str | Path, *, indent: int = 2) -> None:
+def regions_to_json(
+    regions: Mapping[str, Region], path: str | Path, *, indent: int = 2
+) -> None:
     """Write regions to a standard JSON file that any language can read.
 
     The file holds one object, ``{"format": "Regions-v1", "regions": [...]}``,
@@ -54,7 +56,7 @@ def regions_to_json(regions: Regions, path: str | Path, *, indent: int = 2) -> N
 
     Parameters
     ----------
-    regions : Regions
+    regions : Mapping[str, Region]
         Collection of regions to write.
     path : str or Path
         Destination file path.
@@ -1194,7 +1196,7 @@ def regions_to_dataframe(regions: Regions) -> pd.DataFrame:
 
     Parameters
     ----------
-    regions : Regions
+    regions : Mapping[str, Region]
         Collection of regions to summarize.
 
     Returns

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -25,7 +25,7 @@ from neurospatial.layout import (
     _plot_binning_field,
     _plot_track_linear,
 )
-from neurospatial.regions import Region, Regions
+from neurospatial.regions import Region
 from neurospatial.regions.plot import plot_regions
 
 if TYPE_CHECKING:
@@ -121,7 +121,7 @@ def _add_scale_bar_if_requested(
 def _plot(
     binning: Binning,
     connectivity: nx.Graph,
-    regions: Regions,
+    regions: Mapping[str, Region],
     labels: PlotLabels,
     ax: matplotlib.axes.Axes | None = None,
     show_regions: bool = True,

@@ -13,14 +13,14 @@ from neurospatial.io.nwb._adapters import position_units_from_series
 from neurospatial.io.nwb._core import _require_pynwb, logger
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from pynwb import NWBFile
 
     from neurospatial.environment import Environment
     from neurospatial.geometry import Arena
     from neurospatial.layout import LayoutType
-    from neurospatial.regions import Regions
+    from neurospatial.regions import Region
 
 ENVIRONMENT_SCHEMA_VERSION: str = "3.0"
 _READABLE_SCHEMA_VERSIONS: frozenset[str] = frozenset({"2.0", "3.0"})
@@ -275,7 +275,7 @@ def environment_from_position(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
     arena: Arena | None = None,
     wall_fit: Literal["snap", "split"] = "snap",
     layout: LayoutType | str = "RegularGrid",
@@ -317,7 +317,7 @@ def environment_from_position(
         ``units=`` to state the real unit.
     frame : str, optional
         Coordinate frame identifier for the environment.
-    regions : Regions, optional
+    regions : Mapping[str, Region], optional
         Named regions to snapshot with the environment.
     arena : Arena, optional
         Explicit continuous domain. See :meth:`Environment.from_samples`.

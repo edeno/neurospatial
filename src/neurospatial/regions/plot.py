@@ -14,7 +14,7 @@ from shapely.geometry.polygon import orient
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
 
-from .core import Regions
+from .core import Region
 
 if TYPE_CHECKING:
     import matplotlib.axes
@@ -44,7 +44,7 @@ def _polygon_path(polygon: Polygon) -> MplPath:
 
 
 def plot_regions(
-    regions: Regions,
+    regions: Mapping[str, Region],
     *,
     ax: matplotlib.axes.Axes | None = None,
     region_names: Sequence[str] | None = None,
@@ -57,7 +57,7 @@ def plot_regions(
 
     Parameters
     ----------
-    regions : Regions
+    regions : Mapping[str, Region]
         Collection to draw. Point regions must be 2-D.
     ax : matplotlib.axes.Axes, optional
         Destination Axes. If None, uses the current Axes (``plt.gca()``).

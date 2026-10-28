@@ -42,7 +42,7 @@ array([ True,  True, False])
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
@@ -52,7 +52,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import RegionNotFoundError, _format_error
 from neurospatial._validation import validate_finite_scalar
 
-from .core import Region, Regions
+from .core import Region
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -224,7 +224,7 @@ def _region_mask(
 
 def points_in_any_region(
     positions: ArrayLike,
-    regions: Regions,
+    regions: Mapping[str, Region],
     *,
     transform: SpatialTransform | None = None,
     point_radius: float | None = None,
@@ -237,7 +237,7 @@ def points_in_any_region(
     positions : array-like, shape (n_positions, 2)
         Positions in the regions' coordinates, or in the input space of
         ``transform`` when it is given. Every row must be finite.
-    regions : Regions
+    regions : Mapping[str, Region]
         Regions to test against; all of them are used.
     transform : SpatialTransform, optional
         Maps ``(n, 2)`` positions into the regions' coordinates, for example
@@ -310,7 +310,7 @@ def points_in_any_region(
 @overload
 def regions_containing_points(
     positions: ArrayLike,
-    regions: Regions,
+    regions: Mapping[str, Region],
     *,
     transform: SpatialTransform | None = ...,
     region_names: Sequence[str] | None = ...,
@@ -323,7 +323,7 @@ def regions_containing_points(
 @overload
 def regions_containing_points(
     positions: ArrayLike,
-    regions: Regions,
+    regions: Mapping[str, Region],
     *,
     transform: SpatialTransform | None = ...,
     region_names: Sequence[str] | None = ...,
@@ -336,7 +336,7 @@ def regions_containing_points(
 @overload
 def regions_containing_points(
     positions: ArrayLike,
-    regions: Regions,
+    regions: Mapping[str, Region],
     *,
     transform: SpatialTransform | None = ...,
     region_names: Sequence[str] | None = ...,
@@ -348,7 +348,7 @@ def regions_containing_points(
 
 def regions_containing_points(
     positions: ArrayLike,
-    regions: Regions,
+    regions: Mapping[str, Region],
     *,
     transform: SpatialTransform | None = None,
     region_names: Sequence[str] | None = None,
@@ -363,7 +363,7 @@ def regions_containing_points(
     positions : array-like, shape (n_positions, 2)
         Positions in the regions' coordinates, or in the input space of
         ``transform`` when it is given. Every row must be finite.
-    regions : Regions
+    regions : Mapping[str, Region]
         Regions to test against.
     transform : SpatialTransform, optional
         Maps ``(n, 2)`` positions into the regions' coordinates, for example
