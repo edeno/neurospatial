@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Regions cleanup and faster membership
+
+Region membership and region bin masks test raw coordinates against a
+prepared polygon instead of building one shapely point per position:
+`regions_containing_points` on 1e6 positions and 22 regions takes 0.6 s
+(was 3.6 s), with identical results. The LabelMe and CVAT readers share one
+pixel-frame shift and one region builder; their output is unchanged except
+LabelMe circle vertices, which can differ by float rounding (1e-15 px).
+
+- `Animation(..., show_regions=...)` frames, rendered or exported with
+  Matplotlib, leave a polygon region's holes unfilled; they were drawn
+  filled, so a ring-shaped region looked like a solid square.
+- The napari animation backend draws polygon regions with holes, like the
+  notebook widget, fastplotlib and exported files; it refused them.
+- neurospatial requires shapely 2.1 or newer (was 2.0). The fastplotlib
+  renderer and napari's holed regions triangulate polygons with
+  `shapely.constrained_delaunay_triangles`, which shapely 2.0 lacks.
+- `plot_regions` refuses a `world_to_pixel` that changes the shape of its
+  input or returns NaN, naming the region, instead of failing inside
+  Matplotlib.
+- `Regions.buffer` refuses NaN or infinite source coordinates as such; it
+  said the buffer "leaves nothing".
+- A transform passed to `points_in_any_region`, `regions_containing_points`
+  or the annotation readers reports a bad output in one message: the
+  transform's argument name, how many points failed and the first of them.
+
 ### Regions are validated, and annotation readers read what tools write
 
 A `Region` is checked when it is built, so every analysis that uses regions

@@ -115,7 +115,9 @@ class TestPreparePositions:
             out[1, 0] = np.inf
             return out
 
-        with pytest.raises(ValueError, match=r"transform\(positions\) has 1 row"):
+        with pytest.raises(
+            ValueError, match=r"transform returned non-finite coordinates for 1 of 3"
+        ):
             _prepare_positions(np.ones((3, 2)), blow_up)
 
 

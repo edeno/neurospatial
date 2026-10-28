@@ -6,7 +6,6 @@ Pure data layer for *continuous* regions of interest (ROIs).
 
 from __future__ import annotations
 
-import copy
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -97,14 +96,13 @@ def _thaw_metadata(value: Any, *, _active: set[int] | None = None) -> Any:
 
 
 def _require_json_metadata(
-    value: Any, *, allow_nan: bool, owner: str | None = None, _path: str = "metadata"
+    value: Any, *, owner: str | None = None, _path: str = "metadata"
 ) -> None:
-    """Reject metadata that JSON would coerce or cannot store.
+    """Reject metadata that standard JSON would coerce or cannot store.
 
-    Mapping keys must be strings at every level and leaves must be JSON
-    scalars. Non-finite floats are rejected unless ``allow_nan``; Python's JSON
-    reader restores ``NaN`` and ``Infinity`` exactly. ``owner``, such as
-    ``"Region 'goal'"``, names the record in the error.
+    Mapping keys must be strings at every level and leaves must be finite
+    JSON scalars. ``owner``, such as ``"Region 'goal'"``, names the record in
+    the error.
     """
     subject = "Metadata" if owner is None else f"{owner} metadata"
     if isinstance(value, Mapping):
@@ -120,14 +118,10 @@ def _require_json_metadata(
                         fix=f"use the string key str({key!r})",
                     )
                 )
-            _require_json_metadata(
-                item, allow_nan=allow_nan, owner=owner, _path=f"{_path}[{key!r}]"
-            )
+            _require_json_metadata(item, owner=owner, _path=f"{_path}[{key!r}]")
     elif isinstance(value, (list, tuple)):
         for index, item in enumerate(value):
-            _require_json_metadata(
-                item, allow_nan=allow_nan, owner=owner, _path=f"{_path}[{index}]"
-            )
+            _require_json_metadata(item, owner=owner, _path=f"{_path}[{index}]")
     # Exact types: NumPy scalars such as np.float64 subclass float but are
     # stored and shown as NumPy objects, unlike np.int64, which is refused.
     elif value is not None and type(value) not in (str, bool, int, float):
@@ -139,7 +133,7 @@ def _require_json_metadata(
                 "NumPy array with .tolist()",
             )
         )
-    elif not allow_nan and isinstance(value, float) and not np.isfinite(value):
+    elif isinstance(value, float) and not np.isfinite(value):
         raise ValueError(
             _format_error(
                 f"{subject} value {_path} is {value!r}, but metadata numbers "
@@ -170,7 +164,7 @@ def _owned_metadata(metadata: object, *, owner: str) -> Mapping[str, Any]:
                 fix="pass metadata without circular references",
             )
         ) from exc
-    _require_json_metadata(thawed, allow_nan=False, owner=owner)
+    _require_json_metadata(thawed, owner=owner)
     return cast("Mapping[str, Any]", _freeze_metadata(thawed))
 
 
@@ -628,7 +622,7 @@ class Regions(MutableMapping[str, Region]):
                 _require_region(region, key=None)
                 self[region.name] = region
 
-    def _check_insert(self, key: str, value: object) -> Region:
+    def _check_insert(self, key: str, value: object) -> None:
         """Refuse a non-Region, a name mismatch, or a dimension mismatch."""
         region = _require_region(value, key=key)
         if key != region.name:
@@ -648,7 +642,6 @@ class Regions(MutableMapping[str, Region]):
                     "coordinates in that environment's dimensions",
                 )
             )
-        return region
 
     def _mutable_store(self) -> dict[str, Region]:
         """Return the builder's store, refusing edits to a published snapshot."""
@@ -659,10 +652,6 @@ class Regions(MutableMapping[str, Region]):
             )
         return self._store
 
-    def _snapshot(self) -> Regions:
-        """Own an ordered, immutable store while sharing immutable Region values."""
-        return _snapshot_regions(self.values())
-
     @classmethod
     def _restore(cls, items: tuple[Region, ...], frozen: bool) -> Regions:
         regions = cls(items)
@@ -670,19 +659,7 @@ class Regions(MutableMapping[str, Region]):
             regions._store = MappingProxyType(regions._store)
         return regions
 
-    def __copy__(self) -> Regions:
-        return type(self)._restore(
-            tuple(self.values()), frozen=not isinstance(self._store, dict)
-        )
-
-    def __deepcopy__(self, memo: dict[int, Any]) -> Regions:
-        regions = type(self)._restore(
-            copy.deepcopy(tuple(self.values()), memo),
-            frozen=not isinstance(self._store, dict),
-        )
-        memo[id(self)] = regions
-        return regions
-
+    # Copy, deepcopy and pickle all rebuild through __reduce__.
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         return type(self)._restore, (
             tuple(self.values()),
@@ -935,10 +912,7 @@ class Regions(MutableMapping[str, Region]):
                     fix="pass point=, polygon= or metadata=",
                 )
             )
-        if name not in self:
-            raise RegionNotFoundError(name, available=list(self), argument=None)
-
-        old = self._store[name]
+        old = self[name]
         effective_metadata = old.metadata if metadata is None else metadata
         if point is not None:
             region = Region(name, "point", point, effective_metadata)
@@ -1083,7 +1057,7 @@ class Regions(MutableMapping[str, Region]):
                     )
                 )
         else:  # raw coords
-            arr = np.asarray(source, dtype=float)
+            arr = _owned_point(source, owner="buffer() source", shape_kinds={})
             if arr.shape != (2,):
                 raise ValueError(
                     _format_error(

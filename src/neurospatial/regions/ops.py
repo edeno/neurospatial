@@ -51,11 +51,13 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
 from neurospatial._validation import validate_finite_scalar
+from neurospatial.geometry._region_bins import polygon_bin_mask
 
 from .core import Region
 
 if TYPE_CHECKING:
     import pandas as pd
+    from shapely.geometry import Polygon
 
     from ..ops.transforms import SpatialTransform
 
@@ -75,6 +77,63 @@ def _refuse_non_finite_rows(array: NDArray[np.float64], *, name: str, fix: str) 
                 fix=fix,
             )
         )
+
+
+def _transform_points(
+    points: NDArray[np.float64],
+    transform: SpatialTransform | None,
+    *,
+    name: str,
+    where: str,
+) -> NDArray[np.float64]:
+    """Apply ``transform`` to ``(n, 2)`` points; refuse a reshaped or non-finite result.
+
+    Returns ``points`` unchanged when ``transform`` is None. ``name`` is the
+    argument that holds the transform and ``where`` names the points, for
+    the error.
+    """
+    if transform is None:
+        return points
+    mapped = np.asarray(transform(points), dtype=np.float64)
+    if mapped.shape != points.shape:
+        raise ValueError(
+            _format_error(
+                f"{name} returned shape {mapped.shape} for {where}; expected "
+                f"{points.shape}, one (x, y) row per point.",
+                why="regions are 2-D, so each (x, y) must map to one (x, y)",
+                fix="pass a transform that maps (n, 2) arrays to (n, 2) arrays, "
+                "such as VideoCalibration.transform_px_to_cm or a 2-D AffineND",
+            )
+        )
+    bad = ~np.isfinite(mapped).all(axis=1)
+    if bad.any():
+        first = int(np.argmax(bad))
+        raise ValueError(
+            _format_error(
+                f"{name} returned non-finite coordinates for {int(bad.sum())} of "
+                f"{len(mapped)} points of {where} (first: {points[first].tolist()}).",
+                why="a region needs finite coordinates",
+                fix="check that the transform is defined over all of these "
+                "points, for example that a homography does not send them to "
+                "infinity",
+            )
+        )
+    return mapped
+
+
+def _transform_polygon(
+    polygon: Polygon,
+    transform: SpatialTransform | None,
+    *,
+    name: str,
+    where: str,
+) -> Polygon:
+    """Apply :func:`_transform_points` to every vertex, holes included."""
+    if transform is None:
+        return polygon
+    return shapely.transform(
+        polygon, lambda xy: _transform_points(xy, transform, name=name, where=where)
+    )
 
 
 def _prepare_positions(
@@ -140,28 +199,29 @@ def _prepare_positions(
         "finite rows: keep = np.isfinite(positions).all(axis=1), then pass "
         "positions[keep] and treat the other rows as missing",
     )
-    if transform is None or len(array) == 0:
+    if len(array) == 0:
         return array
+    return _transform_points(array, transform, name="transform", where="positions")
 
-    mapped = np.asarray(transform(array), dtype=np.float64)
-    if mapped.shape != array.shape:
-        raise ValueError(
-            _format_error(
-                f"transform returned shape {mapped.shape} for positions of "
-                f"shape {array.shape}.",
-                why="each position must map to one (x, y) position in the "
-                "regions' coordinates.",
-                fix="pass a transform that maps (n, 2) arrays to (n, 2) arrays, "
-                "such as a 2-D AffineND",
+
+def _named_regions(
+    regions: Mapping[str, Region], region_names: str | Sequence[str] | None
+) -> list[str]:
+    """Return the names to use: all of ``regions``, or ``region_names`` checked.
+
+    A single string is one name, not its characters. A name not in ``regions``
+    raises :class:`~neurospatial.RegionNotFoundError` with the closest name.
+    """
+    if region_names is None:
+        return list(regions)
+    if isinstance(region_names, str):
+        region_names = [region_names]
+    for name in region_names:
+        if name not in regions:
+            raise RegionNotFoundError(
+                name, available=list(regions), argument="region_names", in_list=True
             )
-        )
-    _refuse_non_finite_rows(
-        mapped,
-        name="transform(positions)",
-        fix="check the transform: it maps finite positions to NaN or infinite "
-        "coordinates",
-    )
-    return mapped
+    return list(region_names)
 
 
 def _check_regions(selected: Sequence[Region], point_radius: float | None) -> None:
@@ -214,12 +274,8 @@ def _region_mask(
         assert point_radius is not None  # enforced by _check_regions
         offsets = positions - region.data
         distance = np.hypot(offsets[:, 0], offsets[:, 1])
-        if include_boundary:
-            return np.asarray(distance <= point_radius, dtype=bool)
-        return np.asarray(distance < point_radius, dtype=bool)
-    query = shapely.points(positions)
-    predicate = shapely.covers if include_boundary else shapely.contains
-    return np.asarray(predicate(region.data, query), dtype=bool)
+        return distance <= point_radius if include_boundary else distance < point_radius
+    return polygon_bin_mask(region.data, positions, include_boundary=include_boundary)
 
 
 def points_in_any_region(
@@ -296,10 +352,12 @@ def points_in_any_region(
 
     mask = np.zeros(len(transformed), dtype=bool)
     for region in selected:
-        if mask.all():
+        # Test only the positions no earlier region contains.
+        outside = np.flatnonzero(~mask)
+        if not outside.size:
             break
-        mask |= _region_mask(
-            transformed,
+        mask[outside] = _region_mask(
+            transformed[outside],
             region,
             point_radius=point_radius,
             include_boundary=include_boundary,
@@ -440,29 +498,20 @@ def regions_containing_points(
     """
     import pandas as pd
 
-    if isinstance(region_names, str):
-        region_names = [region_names]  # one name, not its characters
-    if region_names is None:
-        selected = list(regions.values())
-    else:
-        for name in region_names:
-            if name not in regions:
-                raise RegionNotFoundError(
-                    name, available=list(regions), argument="region_names", in_list=True
+    names = _named_regions(regions, region_names)
+    seen: set[str] = set()
+    for name in names:
+        if name in seen:
+            raise ValueError(
+                _format_error(
+                    f"region_names lists {name!r} more than once.",
+                    why="each region is one column of the membership table.",
+                    fix="pass each name once, for example "
+                    "list(dict.fromkeys(region_names))",
                 )
-        seen: set[str] = set()
-        for name in region_names:
-            if name in seen:
-                raise ValueError(
-                    _format_error(
-                        f"region_names lists {name!r} more than once.",
-                        why="each region is one column of the membership table.",
-                        fix="pass each name once, for example "
-                        "list(dict.fromkeys(region_names))",
-                    )
-                )
-            seen.add(name)
-        selected = [regions[name] for name in region_names]
+            )
+        seen.add(name)
+    selected = [regions[name] for name in names]
 
     transformed = _prepare_positions(positions, transform)
     _check_regions(selected, point_radius)

@@ -81,20 +81,10 @@ def _polygon_corners(polygons: Sequence[Polygon]) -> NDArray[np.float64]:
 def _polygon_patches(polygons: Sequence[Polygon]) -> list[Any]:
     """Build compound paths whose interior rings remain unfilled."""
     from matplotlib.patches import PathPatch
-    from matplotlib.path import Path
-    from shapely.geometry.polygon import orient
 
-    patches = []
-    for cell in polygons:
-        polygon = orient(cell, sign=1.0)
-        paths = []
-        for ring in (polygon.exterior, *polygon.interiors):
-            vertices = np.asarray(ring.coords)
-            codes = np.full(len(vertices), Path.LINETO, dtype=np.uint8)
-            codes[0], codes[-1] = Path.MOVETO, Path.CLOSEPOLY
-            paths.append(Path(vertices, codes))
-        patches.append(PathPatch(Path.make_compound_path(*paths)))
-    return patches
+    from neurospatial.regions.plot import _polygon_path
+
+    return [PathPatch(_polygon_path(cell)) for cell in polygons]
 
 
 def plot_polygon_cells(

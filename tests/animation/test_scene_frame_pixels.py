@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from matplotlib import colormaps
 from matplotlib.colors import to_rgb
+from shapely.geometry import Polygon
 
 from neurospatial import Environment, Regions
 from neurospatial.animation import Animation, AnimationField
@@ -232,3 +233,23 @@ def test_shown_regions_are_drawn_at_their_location(env):
         _, at_hidden = render(hidden, 0.0)
         assert at(75, 25).sum() > at_hidden(75, 25).sum() + 100
         np.testing.assert_array_equal(at(25, 75, radius=3), at_hidden(25, 75, radius=3))
+
+
+def test_polygon_region_hole_is_left_unfilled(env):
+    regions = Regions()
+    regions.add(
+        "ring",
+        polygon=Polygon(
+            [(20, 20), (80, 20), (80, 80), (20, 80)],
+            holes=[[(40, 40), (60, 40), (60, 60), (40, 60)]],
+        ),
+    )
+    env = env.with_regions(regions)
+    with (
+        Animation(env, dark(env), show_regions=["ring"], region_alpha=0.5) as shown,
+        Animation(env, dark(env)) as hidden,
+    ):
+        _, at = render(shown, 0.0)
+        _, at_hidden = render(hidden, 0.0)
+        assert at(30, 30).sum() > at_hidden(30, 30).sum() + 100
+        np.testing.assert_array_equal(at(50, 50, radius=3), at_hidden(50, 50, radius=3))

@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Point, box
 
-from neurospatial.regions import Region, Regions
+from neurospatial.regions import Region, Regions, _snapshot_regions
 
 
 def _restore(value: Any, method: str) -> Any:
@@ -181,7 +181,7 @@ _MUTATIONS: list[tuple[str, Callable[[Regions], Any]]] = [
 @pytest.mark.parametrize("empty", [False, True])
 def test_snapshot_rejects_every_mutator_including_noops(method, mutation, empty):
     builder = Regions() if empty else _builder()
-    snapshot = _restore(builder._snapshot(), method)
+    snapshot = _restore(_snapshot_regions(builder.values()), method)
     assert type(snapshot) is Regions
     before = list(snapshot)
     with pytest.raises(TypeError, match=r"read-only.*with_regions"):
@@ -192,7 +192,7 @@ def test_snapshot_rejects_every_mutator_including_noops(method, mutation, empty)
 @pytest.mark.parametrize("method", ["original", "copy", "deepcopy", "pickle"])
 def test_snapshot_read_helpers_and_mutable_builder_reconstruction(method, tmp_path):
     builder = _builder()
-    snapshot = _restore(builder._snapshot(), method)
+    snapshot = _restore(_snapshot_regions(builder.values()), method)
     assert list(snapshot) == ["goal", "arena"]
     assert list(snapshot.keys()) == ["goal", "arena"]
     assert len(snapshot) == 2

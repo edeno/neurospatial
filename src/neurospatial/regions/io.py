@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import xml.etree.ElementTree as ET
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -32,6 +32,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._validation import validate_finite_scalar
 
 from .core import Kind, Region, Regions
+from .ops import _transform_points, _transform_polygon
 
 if TYPE_CHECKING:
     from ..ops.transforms import SpatialTransform
@@ -61,12 +62,6 @@ def regions_to_json(
     indent : int, default=2
         Indentation of the JSON text, in spaces.
 
-    Raises
-    ------
-    ValueError
-        If a region holds a NaN or infinite coordinate or metadata value,
-        which standard JSON cannot store.
-
     See Also
     --------
     regions_from_json : Read the file back.
@@ -75,38 +70,11 @@ def regions_to_json(
         "format": _SCHEMA_TAG,
         "regions": [reg.to_dict() for reg in regions.values()],
     }
-    try:
-        text = json.dumps(payload, indent=indent, allow_nan=False)
-    except ValueError as exc:
-        bad = next(
-            (
-                region.name
-                for region in regions.values()
-                if not _is_standard_json(region.to_dict())
-            ),
-            None,
-        )
-        raise ValueError(
-            _format_error(
-                f"Cannot write {path}: region {bad!r} holds a NaN or infinite "
-                "coordinate or metadata value.",
-                why="standard JSON has no NaN or Infinity, and regions must "
-                "have finite coordinates",
-                fix="find and fix the non-finite value in that region's data "
-                "or metadata",
-            )
-        ) from exc
+    # Region refuses non-finite coordinates and metadata, so this cannot fail.
+    text = json.dumps(payload, indent=indent, allow_nan=False)
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(text, encoding="utf-8")
-
-
-def _is_standard_json(value: Any) -> bool:
-    try:
-        json.dumps(value, allow_nan=False)
-    except ValueError:
-        return False
-    return True
 
 
 def regions_from_json(path: str | Path) -> Regions:
@@ -191,60 +159,27 @@ def regions_from_json(path: str | Path) -> Regions:
 # --------------------------------------------------------------------------
 # 2.  Shared helpers: pixel coordinates, mask tracing, names
 # --------------------------------------------------------------------------
-def _pixels_to_world(
-    points_px: NDArray[np.float64],
+def _canvas_to_world(
+    geometry: Polygon | NDArray[np.float64],
     pixel_to_world: SpatialTransform | None,
     *,
     where: str,
-) -> NDArray[np.float64]:
-    """Apply ``pixel_to_world`` to ``(n, 2)`` pixel points and check its output.
+) -> Polygon | NDArray[np.float64]:
+    """Map an annotation tool's polygon or ``(n, 2)`` points to world units.
 
-    Returns ``points_px`` unchanged when ``pixel_to_world`` is None. ``where``
-    names the shape being converted for error messages.
+    LabelMe and CVAT put pixel ``(column, row)`` on ``[column, column + 1]``;
+    shifting half a pixel up and left centres it on ``(column, row)``, the
+    package's pixel frame, before ``pixel_to_world`` is applied.
     """
-    if pixel_to_world is None:
-        return points_px
-    world = np.asarray(pixel_to_world(points_px), dtype=np.float64)
-    if world.shape != points_px.shape:
-        raise ValueError(
-            _format_error(
-                f"pixel_to_world returned shape {world.shape} for {where}; "
-                f"expected {points_px.shape}, one (x, y) row per pixel point.",
-                why="regions are 2-D, so each pixel (x, y) must map to one "
-                "world (x, y)",
-                fix="pass a 2-D transform such as "
-                "VideoCalibration.transform_px_to_cm or a 2-D AffineND",
-            )
+    if isinstance(geometry, Polygon):
+        return _transform_polygon(
+            affinity.translate(geometry, -0.5, -0.5),
+            pixel_to_world,
+            name="pixel_to_world",
+            where=where,
         )
-    if not np.isfinite(world).all():
-        n_bad = int((~np.isfinite(world).all(axis=1)).sum())
-        raise ValueError(
-            _format_error(
-                f"pixel_to_world returned non-finite coordinates for {n_bad} "
-                f"of {len(world)} points of {where}.",
-                why="a region needs finite world coordinates",
-                fix="check that the transform is defined over the whole image, "
-                "for example that a homography does not send these pixels to "
-                "infinity",
-            )
-        )
-    return world
-
-
-def _polygon_to_world(
-    polygon: Polygon, pixel_to_world: SpatialTransform | None, *, where: str
-) -> Polygon:
-    """Map every ring of a pixel polygon, exterior and holes, to world units."""
-    if pixel_to_world is None:
-        return polygon
-    return Polygon(
-        _pixels_to_world(
-            np.asarray(polygon.exterior.coords), pixel_to_world, where=where
-        ),
-        [
-            _pixels_to_world(np.asarray(ring.coords), pixel_to_world, where=where)
-            for ring in polygon.interiors
-        ],
+    return _transform_points(
+        geometry - 0.5, pixel_to_world, name="pixel_to_world", where=where
     )
 
 
@@ -332,6 +267,49 @@ def _unique_region_names(labels: Sequence[str]) -> list[str]:
     return names
 
 
+def _labelled_regions(
+    loaded: Sequence[tuple[str, Polygon | NDArray[np.float64], str]],
+    metadata: Mapping[str, Any],
+    *,
+    pixel_to_world: SpatialTransform | None,
+    label_metadata: Callable[[str], Mapping[str, Any]] = lambda label: {},
+) -> Regions:
+    """Build an annotation file's regions, named by label, in file order.
+
+    ``loaded`` holds ``(label, geometry, shape_type)`` in world units: a
+    polygon, or ``(n, 2)`` points that each become a point region. Each
+    region's metadata is ``metadata``, ``"coord_system": "pixels"`` when
+    ``pixel_to_world`` is None, its ``label`` and ``shape_type``, then
+    ``label_metadata(label)``.
+    """
+    entries: list[tuple[str, Kind, Polygon | NDArray[np.float64], str]] = []
+    for label, geometry, shape_type in loaded:
+        if isinstance(geometry, Polygon):
+            entries.append((label, "polygon", geometry, shape_type))
+        else:
+            entries.extend((label, "point", point, shape_type) for point in geometry)
+    shared = dict(metadata)
+    if pixel_to_world is None:
+        shared["coord_system"] = "pixels"
+    names = _unique_region_names([label for label, *_ in entries])
+    return Regions(
+        Region(
+            name=name,
+            kind=kind,
+            data=geometry,
+            metadata={
+                **shared,
+                "label": label,
+                "shape_type": shape_type,
+                **label_metadata(label),
+            },
+        )
+        for name, (label, kind, geometry, shape_type) in zip(
+            names, entries, strict=True
+        )
+    )
+
+
 # --------------------------------------------------------------------------
 # 3.  LabelMe JSON and CVAT XML  → Regions
 # --------------------------------------------------------------------------
@@ -345,8 +323,11 @@ _LINE_FIX = (
 
 def _labelme_shape(
     shape: Any, index: int, json_path: Path, *, label_key: str, points_key: str
-) -> tuple[str, str, NDArray[np.float64]]:
-    """Return ``(label, shape_type, points)`` of one LabelMe shape, or raise."""
+) -> tuple[str, str, NDArray[np.float64], str]:
+    """Return ``(label, shape_type, points, where)`` of one LabelMe shape, or raise.
+
+    ``where`` names the shape, its file and label, for later errors.
+    """
     where = f"{json_path.name}, shape {index}"
     if not isinstance(shape, dict):
         raise ValueError(
@@ -420,7 +401,7 @@ def _labelme_shape(
                 fix="fix or delete the shape in LabelMe",
             )
         )
-    return label, shape_type, points
+    return label, shape_type, points, where
 
 
 def _labelme_polygon(
@@ -543,42 +524,26 @@ def load_labelme_json(
         _labelme_shape(shape, index, path, label_key=label_key, points_key=points_key)
         for index, shape in enumerate(shapes)
     ]
-    entries: list[tuple[str, Kind, Polygon | NDArray[np.float64], str]] = []
-    for index, (label, shape_type, corner_points) in enumerate(parsed):
-        where = f"{path.name}, shape {index} (label {label!r})"
-        # LabelMe draws pixel (c, r) on [c, c + 1] (its canvas paints the image
-        # from (0, 0) and clips points to [0, width]); centre pixels on (c, r).
-        points = corner_points - 0.5
-        if shape_type in _LABELME_POINT_TYPES:
-            world = _pixels_to_world(points, pixel_to_world, where=where)
-            entries.extend((label, "point", point, shape_type) for point in world)
-        else:
-            polygon = _labelme_polygon(shape_type, points, where)
-            entries.append(
-                (
-                    label,
-                    "polygon",
-                    _polygon_to_world(polygon, pixel_to_world, where=where),
-                    shape_type,
-                )
-            )
-    base_metadata: dict[str, Any] = {"source_json": path.name}
+    # LabelMe's canvas paints the image from (0, 0) and clips points to
+    # [0, width], so pixel (c, r) covers [c, c + 1]: the canvas frame.
+    loaded = [
+        (
+            label,
+            _canvas_to_world(
+                points
+                if shape_type in _LABELME_POINT_TYPES
+                else _labelme_polygon(shape_type, points, where),
+                pixel_to_world,
+                where=where,
+            ),
+            shape_type,
+        )
+        for label, shape_type, points, where in parsed
+    ]
+    metadata: dict[str, Any] = {"source_json": path.name}
     if isinstance(image_path, str):
-        base_metadata["source_image"] = image_path
-    if pixel_to_world is None:
-        base_metadata["coord_system"] = "pixels"
-    names = _unique_region_names([label for label, *_ in entries])
-    return Regions(
-        Region(
-            name=name,
-            kind=kind,
-            data=geometry,
-            metadata={**base_metadata, "label": label, "shape_type": shape_type},
-        )
-        for name, (label, kind, geometry, shape_type) in zip(
-            names, entries, strict=True
-        )
-    )
+        metadata["source_image"] = image_path
+    return _labelled_regions(loaded, metadata, pixel_to_world=pixel_to_world)
 
 
 # CVAT for images 1.1 children of <image> that become regions, and the
@@ -664,7 +629,7 @@ def _rle_to_mask(rle: str, width: int, height: int, *, where: str) -> NDArray[np
 def _cvat_mask_polygon(
     elem: ET.Element, where: str, image_size: tuple[int, int] | None
 ) -> Polygon:
-    """Trace a CVAT ``<mask>`` into one pixel polygon, keeping its holes."""
+    """Trace a CVAT ``<mask>`` into one canvas-pixel polygon, keeping its holes."""
     left, top, width, height = (
         _cvat_number(elem, key, where) for key in ("left", "top", "width", "height")
     )
@@ -712,9 +677,9 @@ def _cvat_mask_polygon(
                 "erase the others)",
             )
         )
-    # The tracer puts pixel (x, y) on [x - .5, x + .5], the package's pixel
-    # frame, so the mask needs only its offset in the image.
-    return affinity.translate(polygons[0], left, top)
+    # The tracer centres pixel (x, y) on (x, y); CVAT's other shapes are in
+    # its canvas frame, where pixel (x, y) covers [x, x + 1], so match them.
+    return affinity.translate(polygons[0], left + 0.5, top + 0.5)
 
 
 def _cvat_box_polygon(elem: ET.Element, where: str) -> Polygon:
@@ -770,16 +735,16 @@ def _cvat_rotated(
     return affinity.rotate(polygon, angle, origin=centre) if angle else polygon
 
 
-def _cvat_shape_geometries(
+def _cvat_shape_geometry(
     elem: ET.Element, where: str, image_size: tuple[int, int] | None
-) -> list[tuple[Kind, Polygon | NDArray[np.float64]]]:
-    """Pixel geometries of one CVAT shape: one entry, or one per point."""
+) -> Polygon | NDArray[np.float64]:
+    """One CVAT shape in canvas pixels: a polygon, or ``(n, 2)`` points."""
     tag = elem.tag
+    if tag in ("points", "polygon", "polyline"):
+        points = _parse_cvat_points(elem.get("points"), where=where)
     if tag == "points":
-        points = _parse_cvat_points(elem.get("points"), where=where)
-        return [("point", point) for point in points]
+        return points
     if tag == "polygon":
-        points = _parse_cvat_points(elem.get("points"), where=where)
         if len(points) < 3:
             raise ValueError(
                 _format_error(
@@ -789,7 +754,6 @@ def _cvat_shape_geometries(
             )
         polygon = Polygon(points)
     elif tag == "polyline":
-        points = _parse_cvat_points(elem.get("points"), where=where)
         if len(points) < 4 or not np.allclose(points[0], points[-1]):
             raise ValueError(
                 _format_error(
@@ -816,24 +780,17 @@ def _cvat_shape_geometries(
                 fix="delete the shape in CVAT, or draw the area as a polygon",
             )
         )
-    return [("polygon", _require_area(polygon, where, tool="CVAT"))]
+    return _require_area(polygon, where, tool="CVAT")
 
 
 def _get_label_colors(root: ET.Element) -> dict[str, str]:
     """Map each CVAT label name to its ``<color>`` from the export's meta."""
     label_colors: dict[str, str] = {}
-    labels_elem = root.find(".//labels")
-    if labels_elem is not None:
-        for label_elem in labels_elem.findall("label"):
-            name_elem = label_elem.find("name")
-            color_elem = label_elem.find("color")
-            if (
-                name_elem is not None
-                and name_elem.text
-                and color_elem is not None
-                and color_elem.text
-            ):
-                label_colors[name_elem.text.strip()] = color_elem.text.strip()
+    labels = root.find(".//labels")
+    for label_elem in labels.findall("label") if labels is not None else ():
+        name, color = label_elem.findtext("name"), label_elem.findtext("color")
+        if name and color:
+            label_colors[name.strip()] = color.strip()
     return label_colors
 
 
@@ -984,8 +941,6 @@ def load_cvat_xml(
     load_labelme_json : Read a LabelMe file.
     """
     path = Path(xml_path)
-    if not path.exists():
-        raise FileNotFoundError(f"XML file not found: {xml_path}")
     try:
         root = ET.parse(path).getroot()
     except ET.ParseError as e:
@@ -1026,7 +981,7 @@ def load_cvat_xml(
     image_size = _image_size(selected)
     label_colors = _get_label_colors(root)
 
-    entries: list[tuple[str, Kind, Polygon | NDArray[np.float64], str]] = []
+    loaded: list[tuple[str, Polygon | NDArray[np.float64], str]] = []
     for index, elem in enumerate(selected):
         if elem.tag in _CVAT_SKIPPED_TAGS:
             continue
@@ -1043,44 +998,21 @@ def load_cvat_xml(
                     fix="give the shape a label in CVAT and re-export",
                 )
             )
-        for kind, geometry in _cvat_shape_geometries(elem, where, image_size):
-            world: Polygon | NDArray[np.float64]
-            if isinstance(geometry, Polygon):
-                if elem.tag != "mask":
-                    geometry = affinity.translate(geometry, -0.5, -0.5)
-                world = _polygon_to_world(geometry, pixel_to_world, where=where)
-            else:
-                world = _pixels_to_world(
-                    geometry[np.newaxis] - 0.5, pixel_to_world, where=where
-                )[0]
-            entries.append((label, kind, world, elem.tag))
-
-    base_metadata: dict[str, Any] = {
-        "source_xml": path.name,
-        "source_image": image_name,
-        "image_id": image_id,
-    }
-    if pixel_to_world is None:
-        base_metadata["coord_system"] = "pixels"
-    names = _unique_region_names([label for label, *_ in entries])
-    regions = []
-    for name, (label, kind, geometry, tag) in zip(names, entries, strict=True):
-        color = label_colors.get(label)
-        regions.append(
-            Region(
-                name=name,
-                kind=kind,
-                data=geometry,
-                metadata={
-                    **base_metadata,
-                    "label": label,
-                    "shape_type": tag,
-                    "color": color,
-                    "plot_kwargs": {"color": color} if color else {},
-                },
-            )
+        geometry = _cvat_shape_geometry(elem, where, image_size)
+        loaded.append(
+            (label, _canvas_to_world(geometry, pixel_to_world, where=where), elem.tag)
         )
-    return Regions(regions)
+
+    def label_metadata(label: str) -> dict[str, Any]:
+        color = label_colors.get(label)
+        return {"color": color, "plot_kwargs": {"color": color} if color else {}}
+
+    return _labelled_regions(
+        loaded,
+        {"source_xml": path.name, "source_image": image_name, "image_id": image_id},
+        pixel_to_world=pixel_to_world,
+        label_metadata=label_metadata,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1191,8 +1123,11 @@ def mask_to_region(
                 "neurospatial.annotation.mask_to_polygons",
             )
         )
-    polygon = _polygon_to_world(
-        polygons[0], pixel_to_world, where=f"region {region_name!r}"
+    polygon = _transform_polygon(
+        polygons[0],
+        pixel_to_world,
+        name="pixel_to_world",
+        where=f"region {region_name!r}",
     )
     metadata: dict[str, Any] = {"source": "mask"}
     if pixel_to_world is None:

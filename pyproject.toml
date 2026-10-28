@@ -14,7 +14,7 @@ dependencies = [
     "scikit-image>=0.19.0",
     "scikit-learn>=1.2.0",
     "scipy>=1.10.0",
-    "shapely>=2.0.0",
+    "shapely>=2.1.0",
     "track-linearization>=2.4.0",
     "tqdm>=4.67.1",
 ]

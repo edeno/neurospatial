@@ -95,7 +95,7 @@ class AnnotationShape:
             raise ValueError("Shape metadata must be a mapping of JSON values.")
         metadata = _thaw_metadata(self.metadata)
         # Refused now rather than when the draft becomes a Region.
-        _require_json_metadata(metadata, allow_nan=False)
+        _require_json_metadata(metadata)
         object.__setattr__(self, "vertices", vertices)
         object.__setattr__(self, "metadata", _freeze_metadata(metadata))
 
