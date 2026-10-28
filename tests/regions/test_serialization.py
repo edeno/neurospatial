@@ -800,6 +800,15 @@ def _scale(factor: float):
 class TestMaskToRegion:
     """mask_to_region traces exact pixel cells into one polygon."""
 
+    def test_straight_edges_keep_only_their_corners(self):
+        mask = np.zeros((50, 30), dtype=bool)
+        mask[5:45, 5:15] = True  # a 40-row L
+        mask[35:45, 5:25] = True
+
+        polygon = mask_to_region(mask, region_name="L").data
+        assert len(polygon.exterior.coords) == 7  # six corners, closed
+        assert polygon.area == mask.sum()
+
     def test_outline_follows_pixel_cells_and_keeps_holes(self):
         mask = np.zeros((7, 9), dtype=bool)
         mask[1:6, 2:8] = True

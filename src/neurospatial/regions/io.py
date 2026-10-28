@@ -291,8 +291,13 @@ def _mask_to_pixel_polygons(
     _, stops = np.nonzero(edges == -1)
     if not rows.size:
         return []
-    merged = shapely.union_all(
-        shapely.box(starts - 0.5, rows - 0.5, stops - 0.5, rows + 0.5)
+    # The union keeps a vertex at every row along a straight edge; a zero
+    # tolerance drops only those collinear vertices, so the outline is exact.
+    merged = shapely.simplify(
+        shapely.union_all(
+            shapely.box(starts - 0.5, rows - 0.5, stops - 0.5, rows + 0.5)
+        ),
+        0.0,
     )
     polygons = [merged] if isinstance(merged, Polygon) else list(merged.geoms)
     if simplify_tolerance:
