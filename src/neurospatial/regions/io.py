@@ -484,8 +484,11 @@ def load_labelme_json(
         ``(n, 2)`` world coordinates, such as
         ``VideoCalibration.transform_px_to_cm``. Shapes are built in pixels
         and their vertices are then transformed. If None, coordinates stay in
-        LabelMe's image pixels: ``x`` is the column, ``y`` the row (pointing
-        down), with the origin at the image's top-left corner.
+        image pixels: ``x`` is the column, ``y`` the row (pointing down).
+        LabelMe puts pixel ``(column, row)`` on ``[column, column + 1]``;
+        shapes are moved half a pixel up and left so that pixel ``(x, y)`` is
+        centred on ``(x, y)``, as in video frames, :func:`mask_to_region` and
+        :class:`~neurospatial.ops.transforms.VideoCalibration`.
     label_key : str, default="label"
         Key of each shape's label.
     points_key : str, default="points"
@@ -536,8 +539,11 @@ def load_labelme_json(
         for index, shape in enumerate(shapes)
     ]
     entries: list[tuple[str, Kind, Polygon | NDArray[np.float64], str]] = []
-    for index, (label, shape_type, points) in enumerate(parsed):
+    for index, (label, shape_type, corner_points) in enumerate(parsed):
         where = f"{path.name}, shape {index} (label {label!r})"
+        # LabelMe draws pixel (c, r) on [c, c + 1] (its canvas paints the image
+        # from (0, 0) and clips points to [0, width]); centre pixels on (c, r).
+        points = corner_points - 0.5
         if shape_type in _LABELME_POINT_TYPES:
             world = _pixels_to_world(points, pixel_to_world, where=where)
             entries.extend((label, "point", point, shape_type) for point in world)

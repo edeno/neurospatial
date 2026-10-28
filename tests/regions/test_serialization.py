@@ -217,7 +217,8 @@ class TestLoadLabelmeJson:
         region = load_labelme_json(json_path)["reward_zone"]
 
         assert region.kind == "polygon"
-        assert region.data.bounds == (10.0, 10.0, 20.0, 20.0)
+        # LabelMe puts pixel (c, r) on [c, c + 1]; the pixel frame centres it.
+        assert region.data.bounds == (9.5, 9.5, 19.5, 19.5)
         assert region.data.area == 100.0
         assert dict(region.metadata) == {
             "source_json": "frame.json",
@@ -241,7 +242,7 @@ class TestLoadLabelmeJson:
 
         box = load_labelme_json(json_path)["box"].data
 
-        assert box.bounds == (10.0, 5.0, 30.0, 25.0)
+        assert box.bounds == (9.5, 4.5, 29.5, 24.5)
         assert box.area == 400.0
 
     def test_circle_from_centre_and_rim_point(self, tmp_path):
@@ -251,8 +252,8 @@ class TestLoadLabelmeJson:
 
         circle = load_labelme_json(json_path)["well"].data
 
-        assert_allclose(circle.centroid.coords[0], (50.0, 40.0), atol=1e-9)
-        assert_allclose(circle.bounds, (45.0, 35.0, 55.0, 45.0))
+        assert_allclose(circle.centroid.coords[0], (49.5, 39.5), atol=1e-9)
+        assert_allclose(circle.bounds, (44.5, 34.5, 54.5, 44.5))
         assert circle.area == pytest.approx(np.pi * 25.0, rel=0.01)
 
     def test_oriented_rectangle(self, tmp_path):
@@ -275,8 +276,8 @@ class TestLoadLabelmeJson:
         regions = load_labelme_json(json_path)
 
         assert list(regions) == ["start", "cue_0", "cue_1"]
-        assert_allclose(regions["start"].data, (50.0, 60.0))
-        assert_allclose(regions["cue_1"].data, (3.0, 4.0))
+        assert_allclose(regions["start"].data, (49.5, 59.5))
+        assert_allclose(regions["cue_1"].data, (2.5, 3.5))
         assert regions["cue_1"].metadata["label"] == "cue"
 
     def test_pixel_to_world_applied_after_building_shape(self, tmp_path):
@@ -291,8 +292,19 @@ class TestLoadLabelmeJson:
         regions = load_labelme_json(json_path, pixel_to_world=_scale(0.5))
 
         assert regions["well"].data.area == pytest.approx(np.pi, rel=0.01)
-        assert_allclose(regions["start"].data, (2.5, 3.0))
+        assert_allclose(regions["start"].data, (2.25, 2.75))  # (4.5, 5.5) / 2
         assert "coord_system" not in regions["well"].metadata
+
+    def test_a_polygon_along_pixel_edges_matches_mask_to_region(self, tmp_path):
+        # The outer edges of pixels (1..2, 0) in LabelMe's canvas frame.
+        json_path = _write_labelme(
+            tmp_path, [_shape("pair", [[1, 0], [3, 0], [3, 1], [1, 1]])]
+        )
+        mask = np.zeros((2, 4), dtype=bool)
+        mask[0, 1:3] = True
+
+        drawn = load_labelme_json(json_path)["pair"].data
+        assert drawn.equals(mask_to_region(mask, region_name="pair").data)
 
     def test_pixel_to_world_wrong_shape_raises(self, tmp_path):
         json_path = _write_labelme(tmp_path, [_shape("zone", [[0, 0], [4, 0], [4, 3]])])

@@ -63,7 +63,8 @@ class TestRegionsFromLabelme:
 
         poly = regions["test"].data
         bounds = poly.bounds
-        assert bounds[2] == pytest.approx(20.0)  # maxx scaled
+        # LabelMe's corner-frame x = 10 is pixel-frame x = 9.5, scaled by 2.
+        assert bounds[2] == pytest.approx(19.0)
 
     def test_custom_keys(self, tmp_path):
         """Use custom label and points keys."""
