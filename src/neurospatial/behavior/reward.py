@@ -83,7 +83,9 @@ def region_reward_field(
 
     - **Linear**: Linear decay from region boundary. Provides gradient
       information while maintaining clear boundaries. Distance computed
-      using graph connectivity (respects environment structure).
+      using graph connectivity (respects environment structure) and
+      normalized by the farthest bin that can reach the region. Bins that
+      cannot reach the region (another connected component) get 0.
 
     - **Gaussian**: Smooth falloff using Gaussian kernel smoothing.
       After smoothing, rescales so maximum *within the region* equals
@@ -139,46 +141,20 @@ def region_reward_field(
         reward = np.where(region_mask, reward_value, 0.0)
 
     elif decay == "linear":
-        # Linear decay from boundary using distance field
-        # Bins inside region get full reward
-        # Bins outside decay linearly based on distance to boundary
-        reward = np.ones(env.n_bins, dtype=np.float64) * reward_value
-
-        # For bins outside region, compute distance to boundary
-        # Find boundary bins (bins in region with at least one neighbor outside)
-        boundary_bins = []
-        region_bin_ids = np.where(region_mask)[0]
-
-        for bin_id in region_bin_ids:
-            neighbors = list(env.connectivity.neighbors(bin_id))
-            # Check if any neighbor is outside region
-            if any(not region_mask[n] for n in neighbors):
-                boundary_bins.append(bin_id)
-
-        if len(boundary_bins) == 0:
-            # Region has no boundary (entire environment or isolated bins)
-            # Just use binary mask
-            reward = np.where(region_mask, reward_value, 0.0)
-        else:
-            # Compute distance from all bins to boundary
-            distances = distance_field(env.connectivity, sources=boundary_bins)
-
-            # Inside region: full reward
-            reward[region_mask] = reward_value
-
-            # Outside region: linear decay
-            # Find max distance to normalize
-            outside_mask = ~region_mask
-            if outside_mask.any():
-                max_dist = distances[outside_mask].max()
-                if max_dist > 0:
-                    # Linear decay: reward = reward_value * (1 - d/max_d)
-                    # Clamp to [0, reward_value]
-                    reward[outside_mask] = reward_value * np.maximum(
-                        0, 1 - distances[outside_mask] / max_dist
-                    )
-                else:
-                    reward[outside_mask] = 0.0
+        # Geodesic distance to the nearest region bin: 0 inside the region,
+        # inf for bins that cannot reach it. A shortest path into the region
+        # enters through a boundary bin, so this is the distance from the
+        # region boundary.
+        distances = distance_field(
+            env.connectivity, sources=np.flatnonzero(region_mask)
+        )
+        reachable = np.isfinite(distances) & ~region_mask
+        reward = np.where(region_mask, reward_value, 0.0)
+        if reachable.any():
+            decay_length = distances[reachable].max()
+            reward[reachable] = reward_value * np.maximum(
+                0.0, 1.0 - distances[reachable] / decay_length
+            )
 
     elif decay == "gaussian":
         # Gaussian falloff using smoothing

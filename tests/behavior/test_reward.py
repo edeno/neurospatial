@@ -2,12 +2,31 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 from numpy.testing import assert_array_almost_equal
+from shapely.geometry import box
 
 from neurospatial import Environment, Regions
 from neurospatial.behavior.reward import goal_reward_field, region_reward_field
+
+
+@pytest.fixture
+def two_islands_env() -> Environment:
+    """Two disconnected 1-row tracks; region "goal" covers x = 0, 2, 4 cm.
+
+    Bin centres sit at x = 0, 2, ..., 20 (island A) and x = 60, ..., 80
+    (island B). Along island A the geodesic distance from bin x to the region
+    is ``x - 4``; island B cannot reach the region.
+    """
+    island_a = np.column_stack([np.linspace(0, 20, 200), np.zeros(200)])
+    island_b = np.column_stack([np.linspace(60, 80, 200), np.zeros(200)])
+    env = Environment.from_samples(np.vstack([island_a, island_b]), bin_size=2.0)
+    regions = Regions(env.regions.values())
+    regions.add("goal", polygon=box(-1, -1, 5, 1))
+    return env.with_regions(regions)
 
 
 class TestRegionRewardField:
@@ -117,6 +136,23 @@ class TestRegionRewardField:
             # Reward should be between 0 and 1 for outside bins
             assert np.all(reward[outside_bins] >= 0.0)
             assert np.all(reward[outside_bins] <= 1.0)
+
+    def test_linear_decay_with_unreachable_component(self, two_islands_env):
+        """Unreachable bins get 0; the reachable part decays to its farthest bin.
+
+        The farthest reachable bin is x = 20, 16 cm from the region, so the
+        reward at x is ``1 - (x - 4) / 16`` on island A and 0 on island B.
+        """
+        env = two_islands_env
+        x = env.bin_centers[:, 0]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            reward = region_reward_field(env, region_name="goal", decay="linear")
+
+        expected = np.where(x <= 4, 1.0, np.clip(1 - (x - 4) / 16, 0, None))
+        expected[x > 50] = 0.0
+        np.testing.assert_allclose(reward, expected, atol=1e-12)
+        assert reward[x == 12][0] == pytest.approx(0.5)
 
     def test_region_reward_field_gaussian(self):
         """Test Gaussian falloff with smooth decay."""
