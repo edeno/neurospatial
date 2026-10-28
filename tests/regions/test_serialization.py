@@ -15,7 +15,6 @@ from neurospatial.regions.io import (
     load_labelme_json,
     mask_to_region,
     regions_from_json,
-    regions_to_dataframe,
     regions_to_json,
 )
 
@@ -150,7 +149,7 @@ class TestRegionsToJson:
         # Stored metadata freezes lists to tuples; to_dict thaws them back.
         loaded_func = regions_from_json(func_path)
         loaded_method = Regions.from_json(method_path)
-        assert loaded_func.list_names() == loaded_method.list_names()
+        assert list(loaded_func) == list(loaded_method)
         assert loaded_func["box"].to_dict()["metadata"]["nested"]["k"] == [1, 2]
         assert loaded_method["box"].to_dict()["metadata"]["nested"]["k"] == [1, 2]
         assert loaded_func["pt"].metadata["id"] == 7
@@ -160,7 +159,7 @@ class TestRegionsToJson:
         regions_to_json(Regions([Region("a", "point", (1.0, 2.0))]), json_path)
         regions_to_json(Regions([Region("b", "point", (3.0, 4.0))]), json_path)
 
-        assert regions_from_json(json_path).list_names() == ["b"]
+        assert list(regions_from_json(json_path)) == ["b"]
 
     def test_non_finite_value_raises_naming_region(self, tmp_path):
         try:
@@ -275,7 +274,7 @@ class TestLoadLabelmeJson:
 
         regions = load_labelme_json(json_path)
 
-        assert regions.list_names() == ["start", "cue_0", "cue_1"]
+        assert list(regions) == ["start", "cue_0", "cue_1"]
         assert_allclose(regions["start"].data, (50.0, 60.0))
         assert_allclose(regions["cue_1"].data, (3.0, 4.0))
         assert regions["cue_1"].metadata["label"] == "cue"
@@ -333,7 +332,7 @@ class TestLoadLabelmeJson:
 
         regions = load_labelme_json(json_path)
 
-        assert regions.list_names() == ["zone_1", "zone_0", "zone_2", "arena"]
+        assert list(regions) == ["zone_1", "zone_0", "zone_2", "arena"]
         assert regions["zone_0"].metadata["label"] == "zone_0"
         assert regions["zone_2"].metadata["label"] == "zone"
 
@@ -489,7 +488,7 @@ class TestLoadCvatXml:
 
         regions = load_cvat_xml(xml_path)
 
-        assert regions.list_names() == ["feeder_0", "feeder_1"]
+        assert list(regions) == ["feeder_0", "feeder_1"]
         assert regions["feeder_1"].kind == "point"
         assert_allclose(regions["feeder_1"].data, (10.0, 20.0))
 
@@ -633,7 +632,7 @@ class TestLoadCvatXml:
             _image('<tag label="sleep" /><polygon label="a" points="0,0;2,0;0,2" />'),
         )
 
-        assert load_cvat_xml(xml_path).list_names() == ["a"]
+        assert list(load_cvat_xml(xml_path)) == ["a"]
 
     def test_repeated_labels_named_in_file_order_across_shape_types(self, tmp_path):
         xml_path = _write_cvat(
@@ -647,7 +646,7 @@ class TestLoadCvatXml:
 
         regions = load_cvat_xml(xml_path)
 
-        assert regions.list_names() == ["zone_1", "zone_0", "zone_2"]
+        assert list(regions) == ["zone_1", "zone_0", "zone_2"]
         assert regions["zone_1"].metadata["shape_type"] == "box"
         assert regions["zone_2"].data.area == 0.5
 
@@ -888,50 +887,3 @@ class TestPixelToWorldValidation:
             mask_to_region(
                 np.ones((2, 2), dtype=bool), region_name="r", pixel_to_world=to_nan
             )
-
-
-class TestRegionsToDataframe:
-    """Tests for regions_to_dataframe function."""
-
-    def test_basic_conversion(self):
-        """Test converting regions to DataFrame."""
-        poly = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-        regions = Regions(
-            [
-                Region(name="box", data=poly, kind="polygon"),
-                Region(name="pt", data=(5.0, 5.0), kind="point"),
-            ]
-        )
-
-        df = regions_to_dataframe(regions)
-
-        assert len(df) == 2
-        assert "name" in df.columns
-        assert "kind" in df.columns
-        assert "area" in df.columns
-
-    def test_polygon_area(self):
-        """Test that polygon area is calculated."""
-        poly = Polygon([(0, 0), (2, 0), (2, 2), (0, 2)])  # Area = 4
-        regions = Regions([Region(name="square", data=poly, kind="polygon")])
-
-        df = regions_to_dataframe(regions)
-
-        assert df.loc[0, "area"] == 4.0
-
-    def test_point_area_zero(self):
-        """Test that point regions have zero area."""
-        regions = Regions([Region(name="pt", data=(5.0, 5.0), kind="point")])
-
-        df = regions_to_dataframe(regions)
-
-        assert df.loc[0, "area"] == 0.0
-
-    def test_empty_regions(self):
-        """Test converting empty regions collection."""
-        regions = Regions([])
-
-        df = regions_to_dataframe(regions)
-
-        assert len(df) == 0
-        assert isinstance(df.columns, object)  # Has columns even if empty

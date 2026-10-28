@@ -34,8 +34,6 @@ from neurospatial._validation import validate_finite_scalar
 from .core import Kind, Region, Regions
 
 if TYPE_CHECKING:
-    import pandas as pd
-
     from ..ops.transforms import SpatialTransform
 
 # --------------------------------------------------------------------------
@@ -1186,35 +1184,3 @@ def mask_to_region(
     if pixel_to_world is None:
         metadata["coord_system"] = "pixels"
     return Region(name=region_name, kind="polygon", data=polygon, metadata=metadata)
-
-
-# --------------------------------------------------------------------------
-# 5.  Utility: Regions → pandas DataFrame
-# --------------------------------------------------------------------------
-def regions_to_dataframe(regions: Regions) -> pd.DataFrame:
-    """Return a *pandas* DataFrame summary.
-
-    Parameters
-    ----------
-    regions : Mapping[str, Region]
-        Collection of regions to summarize.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame with columns for region name, kind, area, and metadata.
-
-    """
-    import pandas as pd
-
-    records: list[Mapping[str, Any]] = []
-    for reg in regions.values():
-        rec = reg.to_dict()
-        if reg.kind == "polygon":
-            assert isinstance(reg.data, Polygon)
-            rec["area"] = float(reg.data.area)
-        else:
-            rec["area"] = 0.0
-        records.append(rec)
-
-    return pd.DataFrame.from_records(records)

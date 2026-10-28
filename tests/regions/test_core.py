@@ -5,6 +5,7 @@ import pytest
 import shapely
 import shapely.geometry as shp
 
+from neurospatial import Environment
 from neurospatial.regions.core import Region, Regions
 
 
@@ -701,3 +702,38 @@ def test_the_only_region_can_change_dimension():
     regs.add("goal", point=[1.0, 2.0])
     regs.set("goal", Region("goal", "point", [1.0, 2.0, 3.0]))
     assert regs["goal"].n_dims == 3
+
+
+def test_regions_table_has_one_row_per_region_with_its_measures():
+    from neurospatial.regions import regions_table
+
+    regions = Regions()
+    regions.add("arm", polygon=shp.Polygon([(0, 0), (4, 0), (4, 2), (0, 2)]))
+    regions.add("well", point=[10.0, 1.0], metadata={"reward": "milk"})
+    frame = regions_table(regions)
+    assert list(frame.index) == ["arm", "well"]
+    assert frame.index.name == "name"
+    assert list(frame.columns) == ["kind", "n_dims", "area", "center", "metadata"]
+    for name, row in frame.iterrows():
+        region = regions[name]
+        assert row["kind"] == region.kind
+        assert row["n_dims"] == region.n_dims
+        assert row["area"] == region.area
+        np.testing.assert_array_equal(row["center"], region.center)
+    assert frame.loc["arm", "area"] == 8.0
+    assert frame.loc["arm", "center"] == (2.0, 1.0)
+    assert frame.loc["well", "metadata"] == {"reward": "milk"}
+
+
+def test_regions_table_reads_a_published_snapshot_and_an_empty_collection():
+    from neurospatial.regions import regions_table
+
+    regions = Regions()
+    regions.add("well", point=[1.0, 1.0])
+    env = Environment.from_samples(
+        np.array([[0.0, 0.0], [2.0, 2.0]]), bin_size=1.0
+    ).with_regions(regions)
+    assert list(regions_table(env.regions).index) == ["well"]
+    empty = regions_table(Regions())
+    assert empty.empty
+    assert list(empty.columns) == ["kind", "n_dims", "area", "center", "metadata"]

@@ -11,7 +11,7 @@ from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
 
 import numpy as np
 import shapely
@@ -22,6 +22,9 @@ from shapely.geometry.base import BaseGeometry
 from shapely.validation import explain_validity
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
+
+if TYPE_CHECKING:
+    from pandas import DataFrame
 
 # ---------------------------------------------------------------------
 # Type aliases
@@ -1157,6 +1160,55 @@ class Regions(MutableMapping[str, Region]):
         from .io import regions_from_json
 
         return regions_from_json(path)
+
+
+def regions_table(regions: Mapping[str, Region]) -> DataFrame:
+    """Tabulate regions, one row per region in iteration order.
+
+    Parameters
+    ----------
+    regions : Mapping[str, Region]
+        Regions to tabulate, such as ``env.regions`` or a ``Regions`` builder.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Indexed by ``name``, with columns ``kind``, ``n_dims``, ``area``
+        (coordinate units squared; 0.0 for a point), ``center`` (a tuple of
+        ``n_dims`` coordinates; a polygon's centroid, which can lie outside a
+        non-convex polygon) and ``metadata`` (a plain ``dict``). For the
+        geometry itself use :func:`~neurospatial.regions.regions_to_json`.
+
+    Examples
+    --------
+    >>> from shapely.geometry import box
+    >>> from neurospatial import Regions
+    >>> from neurospatial.regions import regions_table
+    >>> regions = Regions()
+    >>> _ = regions.add("reward", polygon=box(0.0, 0.0, 10.0, 5.0))
+    >>> _ = regions.add("start", point=[50.0, 2.5])
+    >>> regions_table(regions)[
+    ...     ["kind", "area", "center"]
+    ... ]  # doctest: +NORMALIZE_WHITESPACE
+               kind  area       center
+    name
+    reward  polygon  50.0   (5.0, 2.5)
+    start     point   0.0  (50.0, 2.5)
+    """
+    import pandas as pd
+
+    return pd.DataFrame(
+        {
+            "kind": [region.kind for region in regions.values()],
+            "n_dims": [region.n_dims for region in regions.values()],
+            "area": [region.area for region in regions.values()],
+            "center": [tuple(region.center.tolist()) for region in regions.values()],
+            "metadata": [
+                _thaw_metadata(region.metadata) for region in regions.values()
+            ],
+        },
+        index=pd.Index([region.name for region in regions.values()], name="name"),
+    ).astype({"kind": object, "n_dims": np.int64, "area": np.float64})
 
 
 def _snapshot_regions(regions: Iterable[Region]) -> Regions:
