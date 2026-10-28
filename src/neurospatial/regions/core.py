@@ -303,20 +303,48 @@ class Region:
 
     Parameters
     ----------
-    name
-        Unique region identifier.
-    kind
-        Either ``"point"`` or ``"polygon"``.
-    data
-        • point → ``np.ndarray`` with shape ``(n_dims,)``
-        • polygon → :class:`shapely.geometry.Polygon` (always 2-D)
-    metadata
-        Optional, JSON-serialisable attributes (colour, label, …). Stored as a
-        recursively read-only mapping (:class:`types.MappingProxyType` at every
-        level, with lists frozen to tuples) so neither the top level nor any
-        nested container can be mutated after construction. Serialization via
-        :meth:`to_dict` thaws this back into plain ``dict``/``list`` data.
+    name : str
+        Unique, nonempty region identifier.
+    kind : {"point", "polygon"}
+        ``"point"`` for a location such as a reward well, ``"polygon"`` for
+        an area such as a goal zone.
+    data : array-like or shapely.geometry.Polygon
+        A point's coordinates, shape ``(n_dims,)`` (a shapely ``Point`` is
+        accepted), or a valid 2-D :class:`shapely.geometry.Polygon` with
+        positive area. Coordinates must be in the environment's units and
+        frame: a region drawn in video pixels covers the wrong bins of an
+        environment in centimeters.
+    metadata : mapping, optional
+        Standard-JSON attributes, such as ``{"role": "reward"}``: string keys
+        and finite numbers at every level. Stored as a recursively read-only
+        mapping (lists become tuples); :meth:`to_dict` thaws it back into
+        plain ``dict``/``list`` data.
 
+    Attributes
+    ----------
+    n_dims : int
+        Number of coordinates: the point's length, or 2 for a polygon.
+    area : float
+        Polygon area in coordinate units squared; 0.0 for a point.
+    center : ndarray of float64, shape (n_dims,)
+        The point, or the polygon's centroid, which can lie outside a
+        non-convex polygon.
+
+    Raises
+    ------
+    ValueError
+        If the name is empty, the kind is unknown, the point is not one
+        finite point, the polygon is empty, 3-D, non-finite, invalid or has
+        zero area, or the metadata is not standard JSON.
+    TypeError
+        If point data is a shapely shape other than a Point or not numbers,
+        polygon data is not a shapely Polygon, or metadata is not a mapping.
+
+    Notes
+    -----
+    A point's ``data`` is a read-only float64 copy, so editing the array the
+    region was built from does not move it. Regions compare by value and are
+    unhashable.
 
     Examples
     --------
@@ -324,6 +352,8 @@ class Region:
     >>> goal = Region(name="goal", kind="point", data=[5.0, 5.0])
     >>> goal.n_dims
     2
+    >>> goal.center.tolist()
+    [5.0, 5.0]
     """
 
     name: str
