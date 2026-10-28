@@ -20,7 +20,7 @@ from neurospatial.behavior.navigation import (
     instantaneous_goal_alignment,
 )
 
-EAST = "0\u201345\u00b0"  # the 0-45 degree sector label
+EAST = "0\u00b0"  # the sector centred on East
 
 
 def _times(n: int) -> np.ndarray:

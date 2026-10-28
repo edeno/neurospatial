@@ -2260,10 +2260,11 @@ def heading_direction_labels(
 ) -> NDArray[np.object_]:
     """Generate per-timepoint direction labels from heading angle.
 
-    Bins the direction of movement into sectors (e.g., "0-45 deg",
-    "45-90 deg", ...), labels an observed animal that is not moving
-    "stationary", and leaves samples with no observed movement unlabeled
-    (``None``).
+    Bins the direction of movement into sectors centred on evenly spaced
+    allocentric directions (with the default 8: ``"0°"`` East, ``"45°"``,
+    ``"90°"`` North, ..., ``"180°"`` West, ``"-135°"``, ``"-90°"`` South,
+    ``"-45°"``), labels an observed animal that is not moving "stationary",
+    and leaves samples with no observed movement unlabeled (``None``).
 
     Parameters
     ----------
@@ -2279,12 +2280,13 @@ def heading_direction_labels(
         Precomputed heading angle in radians; NaN where the direction of
         movement is unknown.
     n_directions : int, default=8
-        Number of direction bins. Default 8 creates 45 deg bins.
+        Number of direction sectors, a positive integer. Default 8 creates
+        45° sectors centred on East, North-East, North, and so on.
     min_speed : float
-        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
-        with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit. Observed samples slower than this,
-        or not moving at all, are labeled "stationary".
+        Required, finite and ``>= 0``, in position units per second (e.g.
+        ``5.0`` for 5 cm/s with positions in cm): this function sees no
+        environment, so it cannot know the positions' unit. Observed samples
+        slower than this, or not moving at all, are labeled "stationary".
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -2292,41 +2294,57 @@ def heading_direction_labels(
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
+        Trajectory mode only.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
-        means unrestricted.
+        means unrestricted. Trajectory mode only.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
-        time. Entry 0 is ignored.
+        time. Entry 0 is ignored. Trajectory mode only.
 
     Returns
     -------
     NDArray[np.object_], shape (n_samples,)
-        One label per timepoint, of three kinds: a direction sector such as
-        ``"0–45°"`` where the animal moves (speed above zero and at least
-        ``min_speed``); ``"stationary"`` where it was observed but not moving;
-        ``None`` where it was not observed, or (precomputed input) moving in an
-        unknown direction.
+        One label per timepoint, of three kinds: a direction sector named by
+        its centre direction, such as ``"90°"``, where the animal moves (speed
+        above zero and at least ``min_speed``); ``"stationary"`` where it was
+        observed but not moving; ``None`` where it was not observed, or
+        (precomputed input) moving in an unknown direction.
 
     Raises
     ------
     ValueError
-        In trajectory mode, if ``times`` and ``positions`` are empty, have
-        different lengths, ``times`` is not finite and strictly increasing,
-        ``positions`` has no x and y columns, or ``break_before`` is not a
-        Boolean array with one entry per sample. With precomputed input, if
-        ``speed`` and ``heading`` differ in length or ``break_before`` is
-        given.
+        If ``min_speed`` is not finite and non-negative, or ``n_directions``
+        is not a positive integer. In trajectory mode, if ``times`` and
+        ``positions`` are empty, have different lengths, ``times`` is not
+        finite and strictly increasing, ``positions`` has no x and y columns,
+        or ``break_before`` is not a Boolean array with one entry per sample.
+        With precomputed input, if ``speed`` and ``heading`` differ in length,
+        or ``epochs``, ``break_before`` or a non-default ``max_gap`` is given.
+
+    Warns
+    -----
+    UserWarning
+        If a precomputed ``heading`` looks like degrees instead of radians.
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause. A missing position (a NaN row) is
-    skipped as if its row were deleted.
+    Sector ``k`` is centred on ``k * 360 / n_directions`` degrees
+    (allocentric: 0° = East, 90° = North) and spans half a sector width on
+    either side, half-open: its clockwise edge belongs to it. Centring the
+    sectors on the cardinal directions keeps a run along a cardinal
+    direction in one label despite tracking jitter; edges on 0° would split
+    an eastward run between two labels. Labels are the centre angles in
+    ``(-180, 180]``, rounded to 0.1°.
+
+    In trajectory mode the speed and heading are computed along each run of
+    observed samples. A NaN row is bridged like a deleted row when valid
+    neighbours are within ``max_gap``; only a longer gap, an ``epochs`` edge
+    or a declared ``break_before`` splits a run, and no velocity or heading
+    spans such a split.
 
     In trajectory mode, speed and heading come from the Gaussian-smoothed
     velocity of :func:`compute_speed`, so tracking jitter at rest is
@@ -2356,7 +2374,7 @@ def heading_direction_labels(
     >>> positions[5] = np.nan  # a lost frame
     >>> labels = heading_direction_labels(times, positions, min_speed=5.0)
     >>> labels[0], labels[5], labels[-1]
-    ('45–90°', None, 'stationary')
+    ('45°', None, 'stationary')
 
     Precomputed speed and heading (radians, 0 = East) are binned directly; a
     NaN speed was not observed:
@@ -2366,7 +2384,7 @@ def heading_direction_labels(
     ...     heading=np.array([0.3, 0.3, 0.3]),
     ...     min_speed=5.0,
     ... ).tolist()
-    ['0–45°', 'stationary', None]
+    ['0°', 'stationary', None]
 
     ``"stationary"`` is an ordinary label for the place-field helper, which
     drops it only when told to:
@@ -2384,7 +2402,7 @@ def heading_direction_labels(
     ...     max_gap=None,
     ... )
     >>> sorted(fields.labels)
-    ['45–90°', 'stationary']
+    ['45°', 'stationary']
     >>> fields = compute_directional_place_fields(
     ...     env,
     ...     np.array([0.5, 1.5]),
@@ -2396,12 +2414,34 @@ def heading_direction_labels(
     ...     missing_label="stationary",
     ... )
     >>> sorted(fields.labels)
-    ['45–90°']
+    ['45°']
 
     See Also
     --------
     goal_pair_direction_labels : Direction labels for trialized tasks
     """
+    if not (np.isfinite(min_speed) and min_speed >= 0):
+        raise ValueError(
+            _format_error(
+                f"heading_direction_labels() got min_speed={min_speed!r}.",
+                why="min_speed is a speed in position units per second; NaN "
+                "would label every sample 'stationary'.",
+                fix="pass a finite min_speed >= 0, e.g. 5.0 for 5 cm/s with "
+                "positions in cm",
+            )
+        )
+    if (
+        isinstance(n_directions, bool)
+        or not isinstance(n_directions, (int, np.integer))
+        or n_directions <= 0
+    ):
+        raise ValueError(
+            _format_error(
+                f"heading_direction_labels() got n_directions={n_directions!r}.",
+                why="n_directions is the number of direction sectors.",
+                fix="pass a positive integer, e.g. 8 for 45° sectors",
+            )
+        )
     has_precomputed = speed is not None or heading is not None
     has_trajectory = times is not None or positions is not None
 
@@ -2419,19 +2459,37 @@ def heading_direction_labels(
                 f"Speed and heading arrays must have the same length. "
                 f"Got speed: {len(speed_arr)}, heading: {len(heading_arr)}."
             )
-        if break_before is not None:
+        given = [
+            name
+            for name, used in (
+                ("epochs", epochs is not None),
+                ("max_gap", max_gap != DEFAULT_MAX_GAP),
+                ("break_before", break_before is not None),
+            )
+            if used
+        ]
+        if given:
+            names = ", ".join(given)
             raise ValueError(
                 _format_error(
-                    "heading_direction_labels() got break_before with "
+                    f"heading_direction_labels() got {names} with "
                     "precomputed speed and heading.",
-                    why="Recording breaks apply to the velocity computed from "
-                    "times and positions; precomputed speed and heading are "
-                    "labeled as given.",
-                    fix="pass times and positions with break_before instead of "
-                    "speed and heading, or compute them with break_before "
-                    "(e.g. compute_speed(times, positions, break_before=...)).",
+                    why="Time support (epochs, max_gap, break_before) applies "
+                    "to the velocity computed from times and positions; "
+                    "precomputed speed and heading are labeled as given, so "
+                    "it would be silently ignored.",
+                    fix=f"pass times and positions with {names} instead of "
+                    "speed and heading, or compute them with it "
+                    f"(e.g. compute_speed(times, positions, {given[0]}=...)).",
                 )
             )
+        from neurospatial.encoding._validation import (
+            warn_if_angles_look_like_degrees,
+        )
+
+        warn_if_angles_look_like_degrees(
+            heading_arr, name="heading", context="heading_direction_labels"
+        )
 
         observed = np.isfinite(speed_arr)
 
@@ -2474,23 +2532,18 @@ def heading_direction_labels(
             "Neither was provided."
         )
 
-    bin_edges_rad = np.linspace(-np.pi, np.pi, n_directions + 1)
-    bin_edges_deg = np.linspace(-180.0, 180.0, n_directions + 1)
-
-    # Build bin labels
-    bin_labels = [
-        f"{round(bin_edges_deg[i]):.0f}\u2013{round(bin_edges_deg[i + 1]):.0f}\u00b0"
-        for i in range(n_directions)
-    ]
-    bin_labels_arr = np.array(bin_labels, dtype=object)
-
-    # Vectorized label assignment
-    # Normalize headings to [-π, π]
-    heading_normalized = np.arctan2(np.sin(heading_arr), np.cos(heading_arr))
-
-    # Digitize all headings at once
-    bin_indices = np.digitize(heading_normalized, bin_edges_rad[1:], right=False)
-    bin_indices = np.clip(bin_indices, 0, n_directions - 1)
+    # Sector k is centred on k * width and spans [centre - width/2,
+    # centre + width/2), so a run along a cardinal direction stays in one
+    # sector despite jitter.
+    width = 2 * np.pi / n_directions
+    centres_deg = np.degrees(np.arange(n_directions) * width)
+    centres_deg = np.where(centres_deg > 180.0, centres_deg - 360.0, centres_deg)
+    bin_labels_arr = np.array(
+        [f"{round(float(c), 1):g}°" for c in centres_deg], dtype=object
+    )
+    with np.errstate(invalid="ignore"):
+        sector = np.floor(heading_arr / width + 0.5)
+    bin_indices = np.mod(np.nan_to_num(sector), n_directions).astype(np.intp)
 
     # The direction of movement exists only where the animal moves. An observed
     # animal that does not move is "stationary"; an unobserved sample, or a

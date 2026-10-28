@@ -15,6 +15,7 @@ from neurospatial.behavior import (
     distance_to_region,
     distance_to_reward,
     graph_turn_sequence,
+    heading_direction_labels,
     path_progress,
 )
 
@@ -326,3 +327,84 @@ class TestDistanceToReward:
                 metric="euclidean",
             )
         assert np.all(np.isnan(result))
+
+
+class TestHeadingDirectionLabels:
+    def test_jittered_eastward_run_is_one_label(self):
+        """Sectors are centred on the cardinal directions, so East is not split.
+
+        With sector edges at 0 and +-pi a noisy eastward run used to split
+        about half and half between two labels.
+        """
+        rng = np.random.default_rng(0)
+        t = np.arange(0, 10, 1 / 30)
+        x = np.r_[np.linspace(0, 100, 150), np.linspace(100, 0, 150)]
+        y = rng.normal(0, 0.3, len(x))
+        labels = heading_direction_labels(t, np.c_[x, y], min_speed=5.0)
+        assert set(labels[5:145]) == {"0°"}
+        assert set(labels[155:295]) == {"180°"}
+
+    @pytest.mark.parametrize(
+        ("heading", "n_directions", "expected"),
+        [
+            (0.0, 8, "0°"),
+            (np.pi / 2, 8, "90°"),
+            (-np.pi / 2, 8, "-90°"),
+            (np.pi, 8, "180°"),
+            (-np.pi, 8, "180°"),
+            (np.pi / 4, 8, "45°"),
+            (-3 * np.pi / 4, 8, "-135°"),
+            # A sector is half-open [centre - w/2, centre + w/2): its
+            # clockwise edge belongs to it.
+            (np.pi / 8, 8, "45°"),
+            (np.pi / 8 - 1e-9, 8, "0°"),
+            (np.pi / 3, 4, "90°"),
+            (2.0, 3, "120°"),
+            (0.3, 16, "22.5°"),
+        ],
+    )
+    def test_sector_labels_are_the_centre_direction(
+        self, heading, n_directions, expected
+    ):
+        labels = heading_direction_labels(
+            speed=np.array([10.0]),
+            heading=np.array([heading]),
+            n_directions=n_directions,
+            min_speed=5.0,
+        )
+        assert labels.tolist() == [expected]
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{"epochs": (0.0, 1.0)}, {"max_gap": 0.2}, {"max_gap": None}],
+    )
+    def test_time_support_with_precomputed_input_is_refused(self, kwargs):
+        """Precomputed speed and heading have no times to gate."""
+        with pytest.raises(ValueError, match=r"precomputed"):
+            heading_direction_labels(
+                speed=np.ones(3), heading=np.zeros(3), min_speed=0.5, **kwargs
+            )
+
+    @pytest.mark.parametrize("min_speed", [np.nan, -1.0, np.inf])
+    def test_min_speed_must_be_finite_and_non_negative(self, min_speed):
+        with pytest.raises(ValueError, match=r"min_speed"):
+            heading_direction_labels(
+                speed=np.ones(3), heading=np.zeros(3), min_speed=min_speed
+            )
+
+    @pytest.mark.parametrize("n_directions", [0, -4, 2.5])
+    def test_n_directions_must_be_a_positive_integer(self, n_directions):
+        with pytest.raises(ValueError, match=r"n_directions"):
+            heading_direction_labels(
+                speed=np.ones(3),
+                heading=np.zeros(3),
+                n_directions=n_directions,
+                min_speed=0.5,
+            )
+
+    def test_heading_in_degrees_warns(self):
+        heading = np.array([10.0, 200.0, 350.0, 90.0])
+        with pytest.warns(UserWarning, match=r"degrees"):
+            heading_direction_labels(
+                speed=np.full(4, 10.0), heading=heading, min_speed=5.0
+            )
