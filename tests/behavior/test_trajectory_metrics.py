@@ -295,6 +295,41 @@ class TestComputeHomeRange:
         with pytest.raises(ValueError, match="same length"):
             compute_home_range(position_bins, times=times)
 
+    @pytest.mark.parametrize(
+        "times",
+        [
+            np.array([0.3, 0.2, 0.1, 0.0]),
+            np.array([0.0, np.nan, 0.2, 0.3]),
+            np.array([0.0, 0.1, 0.1, 0.2]),
+        ],
+        ids=["reversed", "nan", "repeated"],
+    )
+    def test_invalid_times_raise(self, times):
+        with pytest.raises(ValueError, match="times"):
+            compute_home_range(np.array([0, 1, 1, 2]), times=times)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{"epochs": (0.0, 1.0)}, {"max_gap": 0.5}, {"max_gap": None}],
+        ids=["epochs", "max_gap", "max_gap_none"],
+    )
+    def test_time_gates_without_times_raise(self, kwargs):
+        with pytest.raises(ValueError, match="without times"):
+            compute_home_range(np.array([0, 0, 1]), **kwargs)
+
+    @pytest.mark.parametrize("percentile", [0.0, -10.0, 100.5, np.nan])
+    def test_percentile_outside_0_100_raises(self, percentile):
+        with pytest.raises(ValueError, match="percentile"):
+            compute_home_range(np.array([0, 0, 1]), percentile=percentile)
+
+    def test_fractional_percentile_gets_a_hint(self):
+        with pytest.raises(ValueError, match=r"percentile=95"):
+            compute_home_range(np.array([0, 0, 1]), percentile=0.95)
+
+    def test_float_bins_raise(self):
+        with pytest.raises(TypeError, match="integer"):
+            compute_home_range(np.array([0.0, 1.7, 2.0]))
+
 
 class TestMeanSquareDisplacement:
     """Test mean_square_displacement function."""

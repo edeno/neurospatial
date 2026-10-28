@@ -1739,14 +1739,16 @@ def compute_home_range(
         sample outside the environment or missing; it is in no bin, so it
         adds nothing to the home range or to the total time.
     times : NDArray[np.float64], shape (n_samples,), optional
-        Timestamps (seconds) for each sample. When provided, occupancy is
-        time-weighted: each sample contributes its observed interval dwell rather than a unit count. This is more accurate for
-        non-uniformly sampled trajectories. Each run's final sample is assigned
+        Finite, strictly increasing timestamps (seconds), one per sample.
+        When provided, occupancy is time-weighted: each sample contributes its
+        observed interval dwell rather than a unit count. This is more
+        accurate for non-uniformly sampled trajectories. Each run's final sample is assigned
         that run's median interval (it has no successor within the run). When ``None``
         (default), occupancy is the visit count per bin, which is correct only
         when sampling is uniform.
     percentile : float, default=95.0
-        Percentile of time to include in home range (0 to 100). Common values:
+        Percent of observed time the home range holds, in ``(1, 100]``
+        (percent, not a fraction). Common values:
         - 50%: core area (most frequently used)
         - 95%: standard home range
         - 100%: all visited bins
@@ -1757,11 +1759,12 @@ def compute_home_range(
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
+        A value other than the default requires ``times``.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
-        means unrestricted.
+        means unrestricted. Requires ``times``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -1771,6 +1774,17 @@ def compute_home_range(
     -------
     NDArray[np.int_], shape (n_bins_in_range,)
         Bin indices in the home range, sorted by occupancy (most visited first).
+
+    Raises
+    ------
+    TypeError
+        If ``position_bins`` is not an integer array.
+    ValueError
+        If ``position_bins`` holds a value below -1; if ``percentile`` is not
+        in ``(1, 100]``; if ``times`` is not finite, strictly increasing and
+        one per sample; if ``break_before`` is not a Boolean array with one
+        entry per sample; or if ``max_gap``, ``epochs`` or ``break_before`` is
+        given without ``times``.
 
     Notes
     -----
@@ -1784,8 +1798,8 @@ def compute_home_range(
     run's last sample receives that run's median interval duration; samples
     in no run receive zero dwell. Bins with zero observed dwell are omitted.
     No observed dwell gives an empty home
-    range. With ``times=None``, counts are used, time gates are unused and
-    ``break_before`` raises.
+    range. With ``times=None``, counts are used, and ``max_gap``, ``epochs``
+    or ``break_before`` raise because they are judged on the clock.
 
     The home range is computed by:
     1. Computing occupancy per bin (visit counts, or time-weighted dwell time
@@ -1826,7 +1840,34 @@ def compute_home_range(
            and variance of home range size estimates." Journal of Animal
            Ecology, 75(6), 1393-1405.
     """
+    call = "compute_home_range"
     position_bins = np.asarray(position_bins)
+    if position_bins.size and position_bins.dtype.kind not in "iu":
+        raise TypeError(
+            _format_error(
+                f"{call}() needs integer bin indices; got position_bins of dtype "
+                f"{position_bins.dtype}.",
+                why="a fractional bin index is not a bin, and truncating it "
+                "would silently move samples to another bin.",
+                fix="pass bins from env.bin_at(positions).",
+            )
+        )
+    if not (np.isfinite(percentile) and 1.0 < percentile <= 100.0):
+        hint = (
+            f" Did you mean percentile={percentile * 100:g}? percentile is in "
+            "percent, not a fraction."
+            if 0.0 < percentile <= 1.0
+            else ""
+        )
+        raise ValueError(
+            _format_error(
+                f"{call}() needs percentile in (1, 100]; got {percentile!r}.{hint}",
+                why="percentile is the percent of observed time the home range "
+                "holds: 50 for a core area, 95 for the usual home range, 100 "
+                "for every visited bin.",
+                fix="pass percentile=95.0 or another percent above 1.",
+            )
+        )
     if (position_bins < -1).any():
         raise ValueError(
             _format_error(
@@ -1840,14 +1881,24 @@ def compute_home_range(
     in_environment = position_bins >= 0
 
     if times is None:
-        if break_before is not None:
+        time_gates = [
+            name
+            for name, given in (
+                ("max_gap", max_gap != DEFAULT_MAX_GAP),
+                ("epochs", epochs is not None),
+                ("break_before", break_before is not None),
+            )
+            if given
+        ]
+        if time_gates:
             raise ValueError(
                 _format_error(
-                    "compute_home_range() got break_before without times.",
-                    why="Without times the home range counts samples per bin, "
-                    "and a recording break does not change a count.",
-                    fix="pass times= to weight each bin by the dwell time "
-                    "observed within each recording, or drop break_before.",
+                    f"{call}() got {', '.join(time_gates)} without times.",
+                    why="Without times the home range counts samples per bin; "
+                    "gaps, epochs and recording breaks are judged on the "
+                    "clock, so they would be silently ignored.",
+                    fix=f"pass times= to weight each bin by the dwell time "
+                    f"observed inside them, or drop {', '.join(time_gates)}.",
                 )
             )
         # Count-based occupancy (assumes uniform sampling).
@@ -1857,18 +1908,15 @@ def compute_home_range(
         occupancy = occupancy.astype(np.float64)
     else:
         # Time-weighted occupancy: each sample contributes its dwell time.
-        times = np.asarray(times, dtype=np.float64)
+        from neurospatial._observation import _validated_signal_times
+
+        times = _validated_signal_times(times, call=call)
         if len(times) != len(position_bins):
             raise ValueError(
                 f"times and position_bins must have same length. "
                 f"Got {len(times)} and {len(position_bins)}."
             )
-        from neurospatial._intervals import observed_interval_mask
-        from neurospatial._observation import validate_break_before
-
-        breaks = validate_break_before(
-            break_before, len(times), call="compute_home_range"
-        )
+        breaks = validate_break_before(break_before, len(times), call=call)
         interval_mask = observed_interval_mask(
             times,
             max_gap=max_gap,
@@ -1876,8 +1924,6 @@ def compute_home_range(
             break_before=breaks,
             sample_valid=in_environment,
         )
-        if len(position_bins) == 0:
-            return np.array([], dtype=np.intp)
         sample_weights = _sample_dwell_times(times, interval_mask, in_environment)[
             in_environment
         ]
