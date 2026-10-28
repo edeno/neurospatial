@@ -445,6 +445,59 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
 # =============================================================================
 
 
+def _warn_if_no_trial_overlaps(
+    times: NDArray[np.float64],
+    trials: list[Trial],
+    *,
+    call: str,
+    result: str,
+) -> None:
+    """Warn when trials exist but none of them contains a sample of ``times``.
+
+    That almost always means the trials and ``times`` are on different
+    clocks (for example milliseconds against seconds), which would otherwise
+    give a silent all-missing result.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Sample times in seconds.
+    trials : list of Trial
+        Trials with ``start_time`` and ``end_time`` in seconds.
+    call : str
+        Public function name for the message.
+    result : str
+        What the caller returns everywhere in that case, e.g. ``"NaN"``.
+    """
+    import warnings
+
+    from neurospatial._stacklevel import _external_stacklevel
+
+    if len(trials) == 0 or len(times) == 0:
+        return
+    starts = np.array([trial.start_time for trial in trials], dtype=np.float64)
+    ends = np.array([trial.end_time for trial in trials], dtype=np.float64)
+    # Each trial's first sample at or after its start; it is inside the trial
+    # when it is not after the trial's end.
+    ordered = np.sort(times)
+    first = np.searchsorted(ordered, starts, side="left")
+    inside = (first < len(ordered)) & (
+        ordered[np.minimum(first, len(ordered) - 1)] <= ends
+    )
+    if inside.any():
+        return
+    warnings.warn(
+        f"{call}: none of the {len(trials)} trials (spanning "
+        f"[{starts.min():g}, {ends.max():g}] s) contains a sample of times "
+        f"(spanning [{ordered[0]:g}, {ordered[-1]:g}] s), so every output is "
+        f"{result}. Fix: check that the trials and times are on the same "
+        "clock, in seconds (for example trials from segment_trials() on the "
+        "same recording).",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
 def trials_to_region_arrays(
     trials: list[Trial],
     times: NDArray[np.float64],
@@ -470,6 +523,12 @@ def trials_to_region_arrays(
         Start bin index at each timepoint (-1 outside trials).
     goal_bins : NDArray[np.int_], shape (n_samples,)
         Goal bin index at each timepoint (-1 outside trials).
+
+    Warns
+    -----
+    UserWarning
+        If there are trials but none contains a sample of ``times`` (usually
+        trials on a different clock).
 
     Notes
     -----
@@ -507,6 +566,10 @@ def trials_to_region_arrays(
     path_progress : Compute normalized path progress
     distance_to_region : Distance to target region
     """
+    times = np.asarray(times, dtype=np.float64)
+    _warn_if_no_trial_overlaps(
+        times, trials, call="trials_to_region_arrays()", result="-1"
+    )
     # Initialize arrays with -1 (invalid bin)
     start_bins = np.full(len(times), -1, dtype=np.int_)
     goal_bins = np.full(len(times), -1, dtype=np.int_)
@@ -1969,13 +2032,22 @@ def time_to_goal(
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for entire session.
     trials : list[Trial]
-        Trial segmentation from segment_trials(). Only successful trials
-        (trial.success=True) are included.
+        Trial segmentation from segment_trials(). Only trials that reached
+        their goal (``trial.success``) are included; timed-out and censored
+        trials, whose arrival was never observed, are not.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Time in seconds until goal arrival. NaN outside successful trials.
+        Time in seconds until goal arrival, for samples with
+        ``start_time <= t <= end_time`` of a successful trial. NaN outside
+        successful trials.
+
+    Warns
+    -----
+    UserWarning
+        If there are trials but none contains a sample of ``times`` (usually
+        trials on a different clock).
 
     Examples
     --------
@@ -1988,9 +2060,14 @@ def time_to_goal(
     segment_trials : Segment trajectory into trials
     path_progress : Normalized progress along path
     """
+    times = np.asarray(times, dtype=np.float64)
+    _warn_if_no_trial_overlaps(times, trials, call="time_to_goal()", result="NaN")
     ttg = np.full(len(times), np.nan, dtype=np.float64)
 
     for trial in trials:
+        # Only an observed arrival has a time to goal: timed-out and censored
+        # trials (cut off by a gap, an epoch edge, a break or the end of the
+        # recording) never reached it.
         if not trial.success:
             continue
 
@@ -2216,6 +2293,12 @@ def goal_pair_direction_labels(
         Direction label for each timepoint using arrow notation, dtype
         ``object``; ``None`` outside every completed trial.
 
+    Warns
+    -----
+    UserWarning
+        If there are trials but none contains a sample of ``times`` (usually
+        trials on a different clock).
+
     Examples
     --------
     >>> import numpy as np
@@ -2234,6 +2317,10 @@ def goal_pair_direction_labels(
     """
     from neurospatial.behavior.segmentation import _interval_labels
 
+    times = np.asarray(times, dtype=np.float64)
+    _warn_if_no_trial_overlaps(
+        times, trials, call="goal_pair_direction_labels()", result="None"
+    )
     intervals = [
         (
             trial.start_time,

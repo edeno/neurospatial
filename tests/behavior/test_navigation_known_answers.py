@@ -14,10 +14,14 @@ from neurospatial.behavior import (
     cost_to_goal,
     distance_to_region,
     distance_to_reward,
+    goal_pair_direction_labels,
     graph_turn_sequence,
     heading_direction_labels,
     path_progress,
+    time_to_goal,
+    trials_to_region_arrays,
 )
+from neurospatial.behavior.segmentation import Trial
 
 
 @pytest.fixture(scope="module")
@@ -408,3 +412,70 @@ class TestHeadingDirectionLabels:
             heading_direction_labels(
                 speed=np.full(4, 10.0), heading=heading, min_speed=5.0
             )
+
+
+class TestTrialHelpersOnAnotherClock:
+    """Trials on a different clock than ``times`` warn instead of silently
+    returning all NaN / -1 / None."""
+
+    @pytest.fixture
+    def env_with_regions(self, corridor):
+        from shapely.geometry import box
+
+        from neurospatial import Regions
+
+        regions = Regions(corridor.regions.values())
+        regions.add("home", polygon=box(0, -1, 5, 1))
+        regions.add("goal", polygon=box(95, -1, 100, 1))
+        return corridor.with_regions(regions)
+
+    @staticmethod
+    def _trials(scale: float = 1.0) -> list[Trial]:
+        return [
+            Trial(
+                start_time=1.0 * scale,
+                end_time=4.0 * scale,
+                start_region="home",
+                end_region="goal",
+                success=True,
+            )
+        ]
+
+    def test_time_to_goal_warns(self):
+        times = np.arange(10.0)
+        with pytest.warns(UserWarning, match=r"same clock"):
+            result = time_to_goal(times, self._trials(scale=1000.0))
+        assert np.all(np.isnan(result))
+
+    def test_goal_pair_direction_labels_warns(self):
+        times = np.arange(10.0)
+        with pytest.warns(UserWarning, match=r"same clock"):
+            labels = goal_pair_direction_labels(times, self._trials(scale=1000.0))
+        assert labels.tolist() == [None] * 10
+
+    def test_trials_to_region_arrays_warns(self, env_with_regions):
+        times = np.arange(10.0)
+        with pytest.warns(UserWarning, match=r"same clock"):
+            start_bins, goal_bins = trials_to_region_arrays(
+                self._trials(scale=1000.0), times, env_with_regions
+            )
+        assert np.all(start_bins == -1)
+        assert np.all(goal_bins == -1)
+
+    def test_overlapping_trials_do_not_warn(self, env_with_regions):
+        import warnings
+
+        times = np.arange(10.0)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            ttg = time_to_goal(times, self._trials())
+            goal_pair_direction_labels(times, self._trials())
+            trials_to_region_arrays(self._trials(), times, env_with_regions)
+        np.testing.assert_array_equal(ttg[1:5], [3.0, 2.0, 1.0, 0.0])
+
+    def test_no_trials_do_not_warn(self):
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert np.all(np.isnan(time_to_goal(np.arange(5.0), [])))
