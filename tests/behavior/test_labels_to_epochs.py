@@ -119,6 +119,50 @@ def test_label_with_no_supported_interval_is_not_a_key():
     assert r.summary()["n_unsupported_labels"] == 1
 
 
+def test_unsupported_label_error_names_the_real_causes():
+    """The KeyError names gap/break/epochs/recording-edge causes, not the end sample.
+
+    Sample 3 is unobserved: at max_gap=0.15 the 0.2 s gap around it is a
+    tracking loss, so both intervals of label "b" are unsupported. With the
+    default max_gap the same unobserved end sample is bridged and "b" keeps
+    the epoch [0.2, 0.4).
+    """
+    times = np.arange(6) * 0.1
+    labels = ["a", "a", "b", "b", "c", "c"]
+    valid = np.array([True, True, True, False, True, True])
+    bridged = labels_to_epochs(times, labels, valid=valid)
+    np.testing.assert_allclose(bridged["b"], [[0.2, 0.4]])
+
+    r = labels_to_epochs(times, labels, valid=valid, max_gap=0.15)
+    assert r.unsupported_labels == ("b",)
+    with pytest.raises(KeyError) as info:
+        r["b"]
+    message = str(info.value)
+    assert "invalid end sample" not in message
+    for cause in ("longer than max_gap", "declared break", "outside epochs", "last"):
+        assert cause in message
+
+
+def test_trailing_unobserved_samples_leave_their_intervals_out():
+    """Intervals after the last observed sample are unsupported."""
+    times = np.arange(6) * 0.1
+    valid = np.array([True, True, True, True, False, False])
+    r = labels_to_epochs(times, ["a", "a", "b", "b", "c", "c"], valid=valid)
+    np.testing.assert_array_equal(r.interval_supported, [1, 1, 1, 0, 0])
+    np.testing.assert_allclose(r["b"], [[0.2, 0.3]])
+    assert r.unsupported_labels == ("c",)
+
+
+def test_valid_flags_error_describes_bridging():
+    """The malformed-valid error says unobserved samples are bridged."""
+    with pytest.raises(ValueError, match="valid") as info:
+        labels_to_epochs(np.arange(4.0), list("aabb"), valid=np.ones(4, dtype=int))
+    message = str(info.value)
+    assert "both of its end samples" not in message
+    assert "as if its row were deleted" in message
+    assert "max_gap" in message
+
+
 def test_invalid_sample_in_bridged_gap_keeps_the_label():
     valid = np.ones(10, dtype=bool)
     valid[6] = False

@@ -26,7 +26,9 @@ restrict_spike_trains
 labels_to_epochs
     Turn one label per sample (task phase, running direction, trial type) into
     half-open ``[start, stop)`` epochs per label, ready to pass as ``epochs=``
-    to an analysis. Missing samples, gaps and breaks end an epoch.
+    to an analysis. A missing sample is bridged like a deleted row when the
+    gap around it is no longer than ``max_gap``; a longer gap, a declared
+    break or an ``epochs`` edge ends an epoch.
 
 Aligned vs ragged
 -----------------
@@ -420,8 +422,9 @@ class LabelEpochsResult(
         not retained (unsupported or missing label).
     interval_supported : NDArray[np.bool_], shape (max(n_samples - 1, 0),)
         True where the gap between the valid samples around the interval
-        passes ``max_gap``, the
-        interval lies inside one ``epochs`` row, and no break is declared.
+        passes ``max_gap``, the interval lies inside one ``epochs`` row, and
+        no break is declared. Intervals before the first or after the last
+        valid sample are False.
     unsupported_labels : tuple of hashable
         Labels that start an interval but have no supported interval, in
         first-seen order. They are not keys.
@@ -484,8 +487,10 @@ class LabelEpochsResult(
             if label in self.unsupported_labels:
                 why = (
                     f"label {label!r} occurs but none of its intervals is "
-                    "supported: each has an invalid end sample, a gap longer "
-                    "than max_gap, a declared break, or lies outside epochs."
+                    "supported: each lies in a gap between observed samples "
+                    "longer than max_gap, crosses a declared break, lies "
+                    "outside epochs, or comes before the first or after the "
+                    "last observed sample."
                 )
             else:
                 why = f"label {label!r} starts no interval."
@@ -659,8 +664,9 @@ def _validated_sample_flags(valid: Any, n_samples: int) -> NDArray[np.bool_]:
             _format_error(
                 "labels_to_epochs() needs valid to be a Boolean array of shape "
                 f"({n_samples},); got dtype {flags.dtype} and shape {flags.shape}.",
-                why="valid marks the samples that were observed; an interval is "
-                "used only when both of its end samples are valid.",
+                why="valid marks the samples that were observed. An unobserved "
+                "sample is skipped as if its row were deleted: the gap around it "
+                "is bridged when it is no longer than max_gap.",
                 fix="pass a Boolean array with one entry per sample, e.g. "
                 "valid = np.isfinite(positions).all(axis=1)",
             )
