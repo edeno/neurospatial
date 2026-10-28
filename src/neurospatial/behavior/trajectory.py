@@ -1024,7 +1024,13 @@ def _planar_turns(
     max_gap: float | None,
     epochs: Any,
     break_before: ArrayLike | None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+) -> tuple[
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    ObservationSupport,
+]:
     """Incoming and outgoing displacement at each sample of a planar path.
 
     Missing samples are skipped as if deleted: the neighbours of a valid
@@ -1040,6 +1046,10 @@ def _planar_turns(
         where ``h`` and ``j`` are the previous and next valid samples.
     span : NDArray[np.float64], shape (n_samples,)
         ``times[j] - times[h]`` in seconds.
+    times : NDArray[np.float64], shape (n_samples,)
+        The validated sample times.
+    support : ObservationSupport
+        The observed runs; no output combines samples from different runs.
     """
     # Validate first so a swapped (positions, times) call gets that message.
     t, p, support = validated_observations(
@@ -1073,13 +1083,14 @@ def _planar_turns(
     a[~supported] = np.nan
     b[~supported] = np.nan
     span[~supported] = np.nan
-    return a, b, span
+    return a, b, span, t, support
 
 
 def compute_planar_turn_angles(
     times: ArrayLike,
     positions: ArrayLike,
     *,
+    smooth_window: float = 0.0,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -1093,8 +1104,8 @@ def compute_planar_turn_angles(
     Positive turns are counterclockwise (to the animal's left, seen from above).
     A missing sample is skipped as if deleted when the valid samples around
     it are within ``max_gap``: ``i - 1`` and ``i + 1`` are then the previous
-    and next valid samples. A turn is never computed across a longer gap, an
-    ``epochs`` edge or a declared break.
+    and next valid samples. A turn is never computed or smoothed across a
+    longer gap, an ``epochs`` edge or a declared break.
 
     Parameters
     ----------
@@ -1103,6 +1114,12 @@ def compute_planar_turn_angles(
     positions : ArrayLike, shape (n_samples, 2)
         x, y positions in physical units. Rows with a non-finite coordinate are
         missing. Exactly two columns are required.
+    smooth_window : float, default=0.0
+        Standard deviation, in seconds, of a Gaussian in time that averages
+        the turns within each run. 0 returns the raw turn at each sample.
+        For example, 0.2 s (a standard deviation of 6 frames at 30 Hz, 12 at
+        60 Hz) suits 30-60 Hz video tracking; use 0.05-0.1 s at 120 Hz or
+        more, or for fast animals, to keep rapid turns.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1121,12 +1138,13 @@ def compute_planar_turn_angles(
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Turn in radians, in ``(-pi, pi]``, aligned with ``times``. An exact
-        reversal is ``pi``. NaN at missing samples, at the first and last
-        sample of each run (next to a gap longer than ``max_gap``, an
+        Turn in radians, aligned with ``times``. Raw turns are in
+        ``(-pi, pi]``, and an exact reversal is ``pi``; smoothed turns are
+        local means of raw turns. NaN at missing samples, at the first and
+        last sample of each run (next to a gap longer than ``max_gap``, an
         ``epochs`` edge or a break), and where the incoming or outgoing
         displacement is zero (the animal did not move, so there is no
-        direction).
+        direction). Smoothing keeps these samples NaN.
 
     Raises
     ------
@@ -1134,8 +1152,8 @@ def compute_planar_turn_angles(
         If ``positions`` does not have exactly two columns, ``times`` and
         ``positions`` are empty, swapped or misaligned, ``times`` is not
         strictly increasing, ``max_gap`` is not positive and finite or
-        ``None``, or ``break_before`` is not a Boolean array with one entry per
-        sample.
+        ``None``, ``break_before`` is not a Boolean array with one entry per
+        sample, or ``smooth_window`` is not a finite number of seconds >= 0.
 
     Notes
     -----
@@ -1146,9 +1164,21 @@ def compute_planar_turn_angles(
     ``compute_planar_curvature``.
 
     Tracking jitter makes small displacements point in random directions, so
-    turns at slow speeds are noisy. Resample the path at a spacing you choose
-    with ``resample_by_distance`` first, or smooth the positions explicitly;
-    this function does no smoothing.
+    turns at slow speeds are noisy. ``smooth_window`` averages the turns over
+    time; alternatively, resample the path at a spacing you choose with
+    ``resample_by_distance`` first.
+
+    Smoothing replaces each defined turn by the weighted mean of the defined
+    turns of its run, with weight ``exp(-dt**2 / (2 * smooth_window**2))``
+    for samples ``dt`` seconds apart, cut at ``4 * smooth_window``. Weights use
+    the sample times, so irregular sampling and bridged dropped frames are
+    handled, and samples on either side of a bridged gap longer than four
+    windows are not mixed. Undefined turns get no weight, so they neither
+    pull real turns toward zero nor receive a value. Turns are averaged as
+    numbers, not as directions: the mean of a turn of ``pi`` and one of
+    ``-pi + 0.1`` is about ``0.05``, so smoothed values near reversals are
+    small rather than near ``pi``. A constant turn, as on a circle run at
+    constant speed, is unchanged by smoothing.
 
     For 3-D tracking, pass ``positions[:, :2]`` to analyze turns in the
     horizontal plane.
@@ -1181,8 +1211,17 @@ def compute_planar_turn_angles(
     >>> turns = compute_planar_turn_angles(times, positions)
     >>> bool(np.allclose(turns[1:-1], 0.8 / 30))
     True
+
+    Smoothing over 0.2 s leaves that constant turn unchanged, and the first
+    and last samples still have no turn:
+
+    >>> smoothed = compute_planar_turn_angles(times, positions, smooth_window=0.2)
+    >>> bool(np.isnan(smoothed[[0, -1]]).all())
+    True
+    >>> bool(np.allclose(smoothed[1:-1], 0.8 / 30))
+    True
     """
-    a, b, _ = _planar_turns(
+    a, b, _, t, support = _planar_turns(
         times,
         positions,
         call="compute_planar_turn_angles",
@@ -1190,7 +1229,82 @@ def compute_planar_turn_angles(
         epochs=epochs,
         break_before=break_before,
     )
-    return signed_turns(a, b)
+    if (
+        isinstance(smooth_window, (bool, np.bool_))
+        or not isinstance(smooth_window, (int, float, np.integer, np.floating))
+        or not np.isfinite(smooth_window)
+        or smooth_window < 0
+    ):
+        raise ValueError(
+            _format_error(
+                f"compute_planar_turn_angles() needs smooth_window to be a "
+                f"finite number of seconds >= 0; got {smooth_window!r}.",
+                why="smooth_window is the standard deviation of the Gaussian "
+                "that averages the turns over time.",
+                fix="pass smooth_window=0.0 for raw turns, or a positive "
+                "number of seconds such as 0.2 for 30-60 Hz tracking.",
+            )
+        )
+    turns = signed_turns(a, b)
+    if smooth_window > 0:
+        turns = _smooth_in_time(
+            turns, t, support.run_sample_bounds, float(smooth_window)
+        )
+    return turns
+
+
+def _smooth_in_time(
+    values: NDArray[np.float64],
+    times: NDArray[np.float64],
+    run_bounds: NDArray[np.intp],
+    sigma: float,
+) -> NDArray[np.float64]:
+    """Gaussian-weighted mean in time of the finite values of each run.
+
+    Each finite value becomes the mean of the finite values of its run,
+    weighted by a Gaussian of their time difference (standard deviation
+    ``sigma`` seconds, cut at four standard deviations). Non-finite values get
+    no weight and stay NaN, and runs are smoothed independently.
+
+    Parameters
+    ----------
+    values : NDArray[np.float64], shape (n_samples,)
+    times : NDArray[np.float64], shape (n_samples,)
+        Strictly increasing, in seconds.
+    run_bounds : NDArray[np.intp], shape (n_runs, 2)
+        Inclusive first and last sample of each run.
+    sigma : float
+        Positive standard deviation in seconds.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_samples,)
+    """
+    reach = 4.0 * sigma
+    smoothed = np.full(values.shape, np.nan)
+    for first, last in run_bounds:
+        v = values[first : last + 1]
+        t = times[first : last + 1]
+        defined = np.isfinite(v)
+        if not defined.any():
+            continue
+        value = np.where(defined, v, 0.0)
+        weight = defined.astype(np.float64)
+        total = value.copy()
+        norm = weight.copy()
+        # The window is symmetric, so the widest forward reach bounds the lags.
+        hi = np.searchsorted(t, t + reach, side="right")
+        widest = int(np.max(hi - 1 - np.arange(t.size)))
+        # Each pair (i, i + k) within reach adds to both samples.
+        for k in range(1, widest + 1):
+            lag = t[k:] - t[:-k]
+            w = np.where(lag <= reach, np.exp(-0.5 * (lag / sigma) ** 2), 0.0)
+            total[:-k] += w * value[k:]
+            norm[:-k] += w * weight[k:]
+            total[k:] += w * value[:-k]
+            norm[k:] += w * weight[:-k]
+        smoothed[first : last + 1][defined] = total[defined] / norm[defined]
+    return smoothed
 
 
 def compute_planar_curvature(
@@ -1310,7 +1424,7 @@ def compute_planar_curvature(
     >>> bool(np.allclose(reversed_path[1:-1], -1 / 7))
     True
     """
-    a, b, _ = _planar_turns(
+    a, b, _, _, _ = _planar_turns(
         times,
         positions,
         call="compute_planar_curvature",
@@ -1436,7 +1550,7 @@ def compute_movement_angular_velocity(
     >>> bool(np.allclose(clockwise[1:-1], -0.8))
     True
     """
-    a, b, span = _planar_turns(
+    a, b, span, _, _ = _planar_turns(
         times,
         positions,
         call="compute_movement_angular_velocity",

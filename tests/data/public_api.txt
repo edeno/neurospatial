@@ -95,7 +95,7 @@ neurospatial.behavior.compute_home_range(position_bins, *, times=None, percentil
 neurospatial.behavior.compute_movement_angular_velocity(times, positions, *, max_gap=1.0, epochs=None, break_before=None)
 neurospatial.behavior.compute_path_efficiency(env, times, positions, goal, *, metric='geodesic', reference_speed=None, max_gap=1.0, epochs=None, break_before=None)
 neurospatial.behavior.compute_planar_curvature(times, positions, *, max_gap=1.0, epochs=None, break_before=None)
-neurospatial.behavior.compute_planar_turn_angles(times, positions, *, max_gap=1.0, epochs=None, break_before=None)
+neurospatial.behavior.compute_planar_turn_angles(times, positions, *, smooth_window=0.0, max_gap=1.0, epochs=None, break_before=None)
 neurospatial.behavior.compute_pre_decision_metrics(times, positions, entry_time, *, window_duration, min_speed, max_gap=1.0, epochs=None, break_before=None)
 neurospatial.behavior.compute_speed(times, positions, *, smooth_window=0.1, max_gap=1.0, epochs=None, break_before=None)
 neurospatial.behavior.compute_step_lengths(positions, *, metric='euclidean', env=None)
