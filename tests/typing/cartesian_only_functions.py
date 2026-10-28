@@ -65,6 +65,11 @@ if TYPE_CHECKING:
         graph_turn_sequence(polar, bins)  # type: ignore[arg-type]
         detect_laps(bins, values, cartesian)
         detect_laps(bins, values, polar)  # type: ignore[arg-type]
+        # The behavior geodesic is a path through allocentric space.
+        path_progress(bins, cartesian, start_bins=bins, goal_bins=bins)
+        path_progress(bins, polar, start_bins=bins, goal_bins=bins)  # type: ignore[arg-type]
+        distance_to_region(bins, cartesian, target_bins=bins)
+        distance_to_region(bins, polar, target_bins=bins)  # type: ignore[arg-type]
 
     def _graph_modes_accept_polar(
         polar: Environment[EgocentricPolarSystem],
@@ -75,8 +80,6 @@ if TYPE_CHECKING:
         rate_map_centroid(polar, values, bins, method="geodesic")
         compute_field_emd(polar, values, values, metric="geodesic")
         select_basis_centers(polar, n_centers=5, method="farthest_point")
-        path_progress(bins, polar, start_bins=bins, goal_bins=bins)
-        distance_to_region(bins, polar, target_bins=bins)
         trajectory_similarity(bins, bins, polar, method="jaccard")
         # Posterior means are egocentric-plane centroids on polar environments.
         mean_position(polar, values)

@@ -805,7 +805,7 @@ def _bin_distances(
 
 def path_progress(
     position_bins: NDArray[np.int_],
-    env: Environment,
+    env: Environment[CartesianSystem],
     *,
     start_bins: NDArray[np.int_],
     goal_bins: NDArray[np.int_],
@@ -961,7 +961,7 @@ def path_progress(
 
 def distance_to_region(
     position_bins: NDArray[np.int_],
-    env: Environment,
+    env: Environment[CartesianSystem],
     *,
     target_bins: NDArray[np.int_] | int,
     metric: DistanceMetric = "geodesic",
@@ -1868,7 +1868,7 @@ def _find_region_boundary_bins(env: Environment, region_name: str) -> list[int]:
 
 def cost_to_goal(
     position_bins: NDArray[np.int_],
-    env: Environment,
+    env: Environment[CartesianSystem],
     *,
     goal_bins: NDArray[np.int_] | int,
     cost_map: NDArray[np.float64] | None = None,

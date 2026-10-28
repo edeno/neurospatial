@@ -95,6 +95,7 @@ from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.geometry import CartesianSystem
 
 __all__ = [
     # Decision analysis dataclasses
@@ -1187,7 +1188,7 @@ _TIE_RTOL = 1e-9
 
 
 def geodesic_voronoi_labels(
-    env: Environment,
+    env: Environment[CartesianSystem],
     goal_bins: list[int] | NDArray[np.int_],
 ) -> NDArray[np.int_]:
     """Label each bin by its nearest goal using geodesic distance.
@@ -1294,7 +1295,7 @@ def _goal_fields(
 
 
 def distance_to_decision_boundary(
-    env: Environment,
+    env: Environment[CartesianSystem],
     position_bins: NDArray[np.int_],
     goal_bins: list[int] | NDArray[np.int_],
 ) -> NDArray[np.float64]:

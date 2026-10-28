@@ -23,6 +23,7 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.geometry import CartesianSystem
 
 from neurospatial._exceptions import _format_error
 from neurospatial._validation import validate_finite_scalar
@@ -238,7 +239,7 @@ def _reject_unused_parameter(
 
 
 def goal_reward_field(
-    env: Environment,
+    env: Environment[CartesianSystem],
     goal_bins: int | list[int] | NDArray[np.int_],
     *,
     decay: Literal["linear", "exponential", "inverse"] = "exponential",
