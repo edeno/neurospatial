@@ -297,6 +297,12 @@ class Crossing:
 class Run(ReadOnlyArraysMixin):
     """One attempt to travel from a source region to a target region.
 
+    A run starts at the first sample outside ``source_region`` after the
+    animal leaves it and ends at the first of: entry to ``target_region``,
+    re-entry to ``source_region``, the deadline ``max_duration``, or the end
+    of the observed stretch of recording. Runs from one detection never
+    overlap.
+
     Attributes
     ----------
     start_time : float
@@ -314,7 +320,8 @@ class Run(ReadOnlyArraysMixin):
           ``end_time`` is the first sample inside it.
         - ``'timeout'``: ``max_duration`` elapsed first; ``end_time`` is the
           last sample within it.
-        - ``'returned'``: re-entered ``source_region`` first.
+        - ``'returned'``: re-entered ``source_region`` first (an abandoned
+          excursion); ``end_time`` is the first sample back inside it.
         - ``'censored'``: observation stopped first (a tracking gap longer
           than ``max_gap``, an ``epochs`` edge, a ``break_before`` or the end
           of the recording); ``end_time`` is the last observed sample, and
@@ -655,9 +662,10 @@ def detect_runs_between_regions(
     """Detect runs from source region to target region.
 
     Identifies behavioral epochs where the animal exits the source region,
-    travels through the environment, and either reaches the target region
-    (successful run) or times out (failed run). Useful for analyzing
-    goal-directed navigation, learning trajectories, and spatial strategies.
+    travels through the environment, and either reaches the target region,
+    times out, returns to the source, or stops being observed. Useful for
+    analyzing goal-directed navigation, learning trajectories, and spatial
+    strategies.
 
     Parameters
     ----------
@@ -748,14 +756,21 @@ def detect_runs_between_regions(
     while observed.
 
     A run is defined as:
-    1. Exit from source region
+    1. Exit from source region (the first sample outside it)
     2. Trajectory through environment
-    3. Either entry to target (``'reached'``), timeout (``'timeout'``) or the
-       end of observation (``'censored'``)
+    3. Whichever comes first: entry to the target (``'reached'``), re-entry
+       to the source (``'returned'``), ``max_duration`` elapsing
+       (``'timeout'``, ending at the last sample within it) or the end of
+       observation (``'censored'``)
 
-    Runs are filtered by:
-    - Duration must be >= min_duration and <= max_duration
-    - Optional velocity threshold (if specified)
+    Only the last exit before an arrival can start a reached run: an
+    excursion that comes back to the source is its own ``'returned'`` run,
+    so runs never overlap and a walk back home is never part of a run away
+    from it.
+
+    Runs shorter than ``min_duration`` are dropped, whatever their outcome;
+    no run lasts longer than ``max_duration``. With ``min_speed``, runs
+    whose mean bin-center speed is below it are dropped too.
 
     This function is commonly used in:
     - Spatial alternation tasks (T-maze, Y-maze)
@@ -886,12 +901,13 @@ def _detect_runs_between_regions_contiguous(
         # slice position_bins[exit_idx : end_idx + 1]. Both the stored path and
         # the optional velocity filter are derived from this one slice so they
         # can never diverge (e.g. by an off-by-one at the timeout boundary).
-        # A run that reaches the end of the recording is censored: its result
-        # is unknown.
+        # Only the last exit before the target counts: re-entering the source
+        # ends the attempt ("returned"), so runs never overlap. A run that
+        # reaches the end of the recording is censored: its result is unknown.
         outcome: Outcome = "censored"
         end_idx = exit_idx
 
-        for j in range(exit_idx + 1, len(position_bins)):
+        for j in range(exit_idx, len(position_bins)):
             elapsed = times[j] - start_time
 
             # Check timeout (do not include the timing-out sample in the run)
@@ -901,9 +917,15 @@ def _detect_runs_between_regions_contiguous(
 
             end_idx = j
 
-            # Check if reached target
             if in_target[j]:
                 outcome = "reached"
+                break
+            if in_source[j]:
+                outcome = "returned"
+                break
+            if elapsed >= max_duration:
+                # The deadline passed at this sample without an arrival.
+                outcome = "timeout"
                 break
 
         run_slice = slice(exit_idx, end_idx + 1)
@@ -1919,8 +1941,10 @@ def running_direction_labels(
         :func:`detect_runs_between_regions`. Default None.
     successful_only : bool, optional
         If True (default), only runs that reached their target contribute
-        labels; timed-out runs stay ``None``. If False, timed-out runs are
-        labeled by their attempted direction.
+        labels. If False, timed-out, returned and censored runs are labeled
+        by their attempted direction too, unless they overlap a run that
+        reached its target (an attempt toward one end region that reached
+        another is not a failed attempt).
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1965,9 +1989,12 @@ def running_direction_labels(
     not crossing a ``break_before``) is analyzed as a separate recording;
     no segment spans a pause.
 
-    Outbound and inbound runs are detected independently per end region (start
-    -> end and end -> start). Where intervals overlap, inbound labels are
-    applied after outbound (last-writer-wins); on a well-behaved out-and-back
+    Outbound and inbound runs are detected per end region (start -> end and
+    end -> start) with :func:`detect_runs_between_regions`, so each run ends
+    when the animal re-enters the region it left: on a W-track, center ->
+    left -> center -> right gives outbound, inbound, outbound runs, never one
+    run spanning the trip home. Where intervals still overlap, inbound labels
+    are applied after outbound (last-writer-wins); on an out-and-back
     trajectory the two never overlap, yielding contiguous ``"outbound"`` then
     ``"inbound"`` stretches separated by ``None`` at the turnaround.
 
@@ -2025,7 +2052,7 @@ def running_direction_labels(
         break_before, len(times), call="running_direction_labels"
     )
 
-    intervals: list[tuple[float, float, object]] = []
+    runs: list[tuple[Run, str]] = []
     for end_region in end_region_names:
         outbound_runs = detect_runs_between_regions(
             position_bins,
@@ -2053,15 +2080,25 @@ def running_direction_labels(
             epochs=epochs,
             break_before=breaks,
         )
-        for run in outbound_runs:
-            if successful_only and not run.success:
-                continue
-            intervals.append((run.start_time, run.end_time, "outbound"))
-        for run in inbound_runs:
-            if successful_only and not run.success:
-                continue
-            intervals.append((run.start_time, run.end_time, "inbound"))
+        runs.extend((run, "outbound") for run in outbound_runs)
+        runs.extend((run, "inbound") for run in inbound_runs)
 
+    reached = [run for run, _ in runs if run.success]
+    intervals: list[tuple[float, float, object]] = []
+    for run, label in runs:
+        if not run.success and (
+            successful_only
+            # An attempt toward one end region that overlaps a run that
+            # reached another (or came home) was not a failed attempt.
+            or any(
+                run.start_time < other.end_time and other.start_time < run.end_time
+                for other in reached
+            )
+        ):
+            continue
+        intervals.append((run.start_time, run.end_time, label))
+    # Inbound after outbound, as documented (last-writer-wins on overlap).
+    intervals.sort(key=lambda interval: interval[2] == "inbound")
     return _interval_labels(times, intervals)
 
 

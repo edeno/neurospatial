@@ -623,3 +623,78 @@ class TestRunRecord:
         assert run.outcome == "censored"
         assert run.end_time == times[-1]
         assert (run.source_region, run.target_region) == ("home", "reward")
+
+
+def _w_track():
+    """Center well at 50 cm, end wells at 0 and 100 cm of a 2 cm-bin corridor.
+
+    One sample every 2 cm at 10 Hz, on bin centers, so region membership
+    changes at known samples: center -> left -> center -> right -> center.
+    """
+    from shapely.geometry import box
+
+    xs = np.linspace(0.0, 100.0, 401)
+    env = Environment.from_samples(np.c_[xs, np.zeros_like(xs)], bin_size=2.0)
+    regions = Regions(env.regions.values())
+    regions.add("center", polygon=box(45.0, -5.0, 55.0, 5.0))  # bins 46-54
+    regions.add("left", polygon=box(-5.0, -5.0, 5.0, 5.0))  # bins 0-4
+    regions.add("right", polygon=box(95.0, -5.0, 105.0, 5.0))  # bins 96-100
+    env = env.with_regions(regions)
+    x = np.r_[
+        [50.0] * 5,  # 0-4
+        np.arange(48, -2, -2),  # 5-29: leave center at 7 (44 cm), left at 27
+        [0.0] * 5,  # 30-34
+        np.arange(2, 52, 2),  # 35-59: leave left at 37, center at 57
+        [50.0] * 3,  # 60-62
+        np.arange(52, 102, 2),  # 63-87: leave center at 65, right at 85
+        [100.0] * 5,  # 88-92
+        np.arange(98, 48, -2),  # 93-117: leave right at 95, center at 115
+        [50.0] * 5,  # 118-122
+    ]
+    times = np.arange(x.size) / 10.0
+    return env, env.bin_at(np.c_[x, np.zeros_like(x)]), times
+
+
+class TestRunsEndOnSourceReentry:
+    """A source re-entry ends the attempt; runs never overlap."""
+
+    @pytest.mark.parametrize(
+        ("source", "target", "expected"),
+        [
+            ("center", "left", [(0.7, 2.7, "reached"), (6.5, 11.5, "returned")]),
+            ("center", "right", [(0.7, 5.7, "returned"), (6.5, 8.5, "reached")]),
+            ("left", "center", [(3.7, 5.7, "reached")]),
+            ("right", "center", [(9.5, 11.5, "reached")]),
+        ],
+    )
+    def test_w_track_runs(self, source, target, expected):
+        from neurospatial.behavior.segmentation import detect_runs_between_regions
+
+        env, bins, times = _w_track()
+        runs = detect_runs_between_regions(
+            bins, times, env, source=source, target=target
+        )
+        got = [(run.start_time, run.end_time, run.outcome) for run in runs]
+        assert len(got) == len(expected)
+        for (s, e, o), (es, ee, eo) in zip(got, expected, strict=True):
+            assert (s, e, o) == pytest.approx((es, ee, eo))
+
+    @pytest.mark.parametrize("successful_only", [True, False])
+    def test_w_track_running_direction_labels(self, successful_only):
+        from neurospatial.behavior.segmentation import running_direction_labels
+
+        env, bins, times = _w_track()
+        labels = running_direction_labels(
+            bins,
+            times,
+            env,
+            start_region="center",
+            end_regions=["left", "right"],
+            successful_only=successful_only,
+        )
+        expected = np.full(times.size, None, dtype=object)
+        expected[7:27] = "outbound"  # [0.7, 2.7) center -> left
+        expected[37:57] = "inbound"  # [3.7, 5.7) left -> center
+        expected[65:85] = "outbound"  # [6.5, 8.5) center -> right
+        expected[95:115] = "inbound"  # [9.5, 11.5) right -> center
+        assert labels.tolist() == expected.tolist()
