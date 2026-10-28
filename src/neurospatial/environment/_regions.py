@@ -45,23 +45,58 @@ def _region_values(regions: Mapping[object, object]) -> list[Region]:
     return values
 
 
-def _relabeled_regions(regions: Regions, units: str | None) -> Regions:
-    """Return ``regions`` with each recorded ``coord_system`` set to ``units``.
+def _relabeled_region(
+    region: Region, old_units: str | None, new_units: str | None
+) -> Region:
+    """Return ``region`` with its unit label moved from ``old_units`` to ``new_units``.
 
-    Regions share the environment's coordinates, so relabelling the
-    environment's units relabels theirs; None drops the label.
+    Used when the environment's unit label changes but its coordinates keep
+    their lengths. A region's recorded ``metadata["coord_system"]`` follows
+    the environment's only when the two agreed; a region with its own label
+    on an unlabelled environment keeps it, and labelling such an
+    environment in other units is refused because nothing converted the
+    region's coordinates.
+
+    Raises
+    ------
+    ValueError
+        If the region records units other than ``old_units`` and
+        ``new_units`` is set and differs from them.
     """
-    relabeled = []
-    for region in regions.values():
-        metadata = dict(region.metadata)
-        if "coord_system" in metadata:
-            if units is None:
-                del metadata["coord_system"]
-            else:
-                metadata["coord_system"] = units
-            region = Region(region.name, region.kind, region.data, metadata)
-        relabeled.append(region)
-    return _snapshot_regions(relabeled)
+    label = region.metadata.get("coord_system")
+    if label is None or label == new_units:
+        return region
+    metadata = dict(region.metadata)
+    if label == old_units:
+        if new_units is None:
+            del metadata["coord_system"]
+        else:
+            metadata["coord_system"] = new_units
+        return Region(region.name, region.kind, region.data, metadata)
+    if new_units is None:
+        return region
+    raise ValueError(
+        _format_error(
+            f"Region {region.name!r} is in {label!r} (its "
+            f"metadata['coord_system']), but the environment is being labelled "
+            f"{new_units!r} without converting its coordinates.",
+            why="Why: a unit label describes coordinates and never rescales "
+            f"them, so the region would stay in {label!r} on an environment "
+            f"in {new_units!r} and cover the wrong bins.",
+            fix=f"convert the coordinates with apply_transform(transform, "
+            f"units={new_units!r}) using a {label}-to-{new_units} transform, "
+            "or load the annotation with its calibration",
+        )
+    )
+
+
+def _relabeled_regions(
+    regions: Regions, old_units: str | None, new_units: str | None
+) -> Regions:
+    """Return ``regions`` relabelled from ``old_units`` to ``new_units``."""
+    return _snapshot_regions(
+        _relabeled_region(region, old_units, new_units) for region in regions.values()
+    )
 
 
 def _owned_regions(regions: object, n_dims: int, units: str | None) -> Regions:

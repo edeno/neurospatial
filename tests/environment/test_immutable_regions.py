@@ -234,3 +234,33 @@ def test_relabelling_units_relabels_the_regions(new_units):
         pixels.with_metadata(name="x").regions["reward"].metadata["coord_system"]
         == "pixels"
     )
+
+
+def _unlabeled_with_pixel_regions():
+    edges = np.arange(0.0, 1001.0, 100.0)
+    return Environment.from_grid_mask(
+        np.ones((10, 10), dtype=bool), grid_edges=(edges, edges)
+    ).with_regions(_drawn("pixels"))
+
+
+def test_labelling_an_unlabeled_environment_cannot_relabel_pixel_regions():
+    from neurospatial.ops.transforms import translate
+
+    env = _unlabeled_with_pixel_regions()
+    with pytest.raises(ValueError, match="without converting its coordinates"):
+        env.with_metadata(units="cm")
+    # A length-preserving transform converts no units either.
+    with pytest.raises(ValueError, match="without converting its coordinates"):
+        env.apply_transform(translate(5.0, 0.0), units="cm")
+    # Labelling it in the regions' own units is consistent.
+    labeled = env.with_metadata(units="pixels")
+    assert labeled.regions["reward"].metadata["coord_system"] == "pixels"
+
+
+def test_a_converting_transform_moves_pixel_regions_of_an_unlabeled_environment():
+    from neurospatial.ops.transforms import AffineND
+
+    env = _unlabeled_with_pixel_regions()
+    cm = env.apply_transform(AffineND(np.diag([0.1, 0.1, 1.0])), units="cm")
+    assert cm.regions["reward"].metadata["coord_system"] == "cm"
+    assert cm.regions["reward"].data.equals(box(40.0, 40.0, 60.0, 60.0))

@@ -607,7 +607,9 @@ class Environment(Generic[_C]):
             New labels. Omission preserves the label; None clears it.
             Labels describe existing coordinates and never rescale them.
             Regions share these coordinates, so a new ``units`` label also
-            replaces each region's recorded ``metadata["coord_system"]``.
+            replaces each region's recorded ``metadata["coord_system"]`` when
+            it matched the old label. A region recorded in other units than
+            the new label is refused, since relabelling converts nothing.
 
         Returns
         -------
@@ -620,7 +622,9 @@ class Environment(Generic[_C]):
             self._metadata, name=name, units=units, frame=frame
         )
         if result.units != self.units:
-            result._regions = _relabeled_regions(self._regions, result.units)
+            result._regions = _relabeled_regions(
+                self._regions, self.units, result.units
+            )
         return result
 
     def with_regions(self, regions: Mapping[str, Region]) -> Self:
@@ -3111,6 +3115,7 @@ class Environment(Generic[_C]):
             arena=self._arena,
             cache=self._cache,
             units=self.units if isinstance(units, _Unset) else units,
+            old_units=self.units,
         )
         scale = derivation.length_scale
         if (
