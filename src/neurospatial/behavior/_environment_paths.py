@@ -11,7 +11,11 @@ grid, and positions inside one bin all read the same distance.
 1. When the straight segment between the two positions stays inside the
    environment, the distance is the segment's Euclidean length. The segment
    is probed at a quarter of the shortest graph edge (a quarter bin on a
-   regular grid), so it may cut across a missing bin by less than that.
+   regular grid): every probe must lie in a bin, and consecutive probes in
+   the same bin or in two bins joined by an open connection, so a segment
+   across a wall (which closes the connection between the bins on its two
+   sides) or an outline slit is not straight. It may cut across a missing
+   bin's corner by less than a quarter bin.
 2. Otherwise the path goes around walls: take the bin-graph shortest path
    between the positions' bins and pull it taut, replacing runs of waypoints
    by straight segments that stay inside the environment (the post-smoothing
@@ -68,6 +72,14 @@ class EnvironmentPaths:
         self._adjacency = _bin_adjacency(
             env.connectivity, weight="distance", operation="geodesic path length"
         )
+        # Each bin's open neighbors, padded with -1, for connection tests.
+        degree = np.diff(self._adjacency.indptr)
+        self._neighbors = np.full(
+            (self._centers.shape[0], int(degree.max(initial=0))), -1, np.intp
+        )
+        self._neighbors[
+            np.repeat(np.arange(degree.size), degree), ragged_arange(degree)
+        ] = self._adjacency.indices
         lengths = self._adjacency.data[self._adjacency.data > 0]
         self._spacing = (
             _PROBE_FRACTION * float(lengths.min()) if lengths.size else np.inf
@@ -93,33 +105,40 @@ class EnvironmentPaths:
         Returns
         -------
         ndarray of bool, shape (n_segments,)
-            True when every probe point along the segment lies in a bin.
+            True when every probe point along the segment lies in a bin and
+            consecutive probes (endpoints included) lie in the same bin or
+            in two bins joined by an open connection.
         """
         n_segments = starts.shape[0]
         clear = np.ones(n_segments, dtype=bool)
         if n_segments == 0 or not np.isfinite(self._spacing):
             return clear
         lengths = np.linalg.norm(ends - starts, axis=1)
-        # Interior probes at k / n_probe of the way, k = 1 .. n_probe - 1.
+        # Points at k / (n_interior + 1) of the way, k = 0 .. n_interior + 1.
         n_interior = np.ceil(lengths / self._spacing).astype(np.intp) - 1
-        n_interior = np.maximum(n_interior, 0)
+        size = np.maximum(n_interior, 0) + 2
         bounds = np.searchsorted(
-            np.cumsum(n_interior),
-            np.arange(_PROBE_CHUNK, int(n_interior.sum()), _PROBE_CHUNK),
+            np.cumsum(size), np.arange(_PROBE_CHUNK, int(size.sum()), _PROBE_CHUNK)
         )
         for chunk in np.split(np.arange(n_segments), bounds):
-            counts = n_interior[chunk]
-            if not counts.sum():
+            if not chunk.size:
                 continue
-            segment = np.repeat(chunk, counts)
-            fraction = (ragged_arange(counts) + 1) / (counts + 1)[
-                np.repeat(np.arange(chunk.size), counts)
-            ]
-            probes = starts[segment] + fraction[:, None] * (
-                ends[segment] - starts[segment]
+            counts = size[chunk]
+            owner = np.repeat(np.arange(chunk.size), counts)
+            fraction = ragged_arange(counts) / (counts - 1)[owner]
+            segment = chunk[owner]
+            located = self.bins(
+                starts[segment] + fraction[:, None] * (ends[segment] - starts[segment])
             )
-            outside = self.bins(probes) < 0
-            clear[np.unique(segment[outside])] = False
+            # Consecutive points of one segment.
+            same = owner[1:] == owner[:-1]
+            left, right = located[:-1][same], located[1:][same]
+            bad = (left < 0) | (right < 0)
+            moved = ~bad & (left != right)
+            bad[moved] = ~np.any(
+                self._neighbors[left[moved]] == right[moved][:, None], axis=1
+            )
+            clear[chunk[np.unique(owner[1:][same][bad])]] = False
         return clear
 
     def to_point(
