@@ -11,7 +11,7 @@ This module provides functions for aligning neural data to events:
 from __future__ import annotations
 
 import warnings
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -22,11 +22,9 @@ from neurospatial._intervals import (
     ragged_arange,
     resolve_time_windows,
 )
+from neurospatial._results import resolve_unit_ids
 from neurospatial._spikes import _as_spike_trains_with_ids
-from neurospatial._time_bins import (
-    _count_spikes_in_time_bins,
-    _time_bin_rounding,
-)
+from neurospatial._time_bins import _time_bin_rounding
 from neurospatial.events._core import (
     PeriEventResult,
     PopulationPeriEventResult,
@@ -110,32 +108,19 @@ def align_spikes_to_events(
     spike_times = _finite_times(spike_times, "spike_times")
     event_times = _finite_times(event_times, "event_times")
 
-    # Handle empty cases
-    if event_times.size == 0:
-        return []
+    spikes = _sorted_times(spike_times)
+    # Spikes in each half-open window [event + start, event + stop).
+    first = np.searchsorted(spikes, event_times + window[0], side="left")
+    stop = np.searchsorted(spikes, event_times + window[1], side="left")
+    return [
+        spikes[i:j] - event
+        for i, j, event in zip(first, stop, event_times, strict=True)
+    ]
 
-    # Sort spike times for efficient searching
-    sorted_spikes = np.sort(spike_times)
 
-    # Process each event
-    result: list[NDArray[np.float64]] = []
-
-    for event_t in event_times:
-        # Compute window bounds in absolute time
-        t_start = event_t + window[0]
-        t_end = event_t + window[1]
-
-        # Spikes in the half-open window [t_start, t_end).
-        idx_start = np.searchsorted(sorted_spikes, t_start, side="left")
-        idx_end = np.searchsorted(sorted_spikes, t_end, side="left")
-
-        # Extract spikes in window and compute relative times
-        spikes_in_window = sorted_spikes[idx_start:idx_end]
-        relative_times = spikes_in_window - event_t
-
-        result.append(relative_times)
-
-    return result
+def _sorted_times(times: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Return ``times`` in increasing order, sorting only when needed."""
+    return times if bool(np.all(times[1:] >= times[:-1])) else np.sort(times)
 
 
 def _keep_observed_events(
@@ -151,8 +136,7 @@ def _keep_observed_events(
             keep &= intervals_contain(
                 windows, event_times + window[0], event_times + window[1]
             )
-    n_dropped = int(event_times.size - keep.sum())
-    if n_dropped == event_times.size:
+    if not keep.any():
         raise ValueError(
             f"All {event_times.size} events were dropped from the peri-event "
             f"histogram: no event's window [event{window[0]:+g} s, "
@@ -164,13 +148,20 @@ def _keep_observed_events(
     return event_times[keep], np.flatnonzero(keep)
 
 
-def _iter_peri_event_bin_edges(
+def _peri_event_bin_edges(
     event_times: NDArray[np.float64],
     window: tuple[float, float],
     bin_edges: NDArray[np.float64],
     bin_size: float,
-) -> Iterator[NDArray[np.float64]]:
-    """Yield the absolute bin edges shared by histogram counting and rasters."""
+) -> NDArray[np.float64]:
+    """Absolute bin edges shared by histogram counting and rasters.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_events, n_bins + 1)
+        Each event's bin edges on the recording clock, clamped to its window
+        stop, so every row is non-decreasing.
+    """
     windows = np.c_[event_times + window[0], event_times + window[1]]
     _time_bin_rounding(
         windows,
@@ -182,31 +173,84 @@ def _iter_peri_event_bin_edges(
             "(keep the relative window unchanged), or use a larger bin_size."
         ),
     )
-    for event, bounds in zip(event_times, windows, strict=True):
-        yield np.minimum(event + bin_edges, bounds[1])
+    edges: NDArray[np.float64] = np.minimum(
+        event_times[:, None] + bin_edges, windows[:, 1:]
+    )
+    return edges
 
 
-def _count_peri_event_bins(
-    spike_times: NDArray[np.float64],
-    event_times: NDArray[np.float64],
+def _peri_event_histograms(
+    trains: Sequence[NDArray[np.float64]],
+    event_times: Any,
     window: tuple[float, float],
-    bin_edges: NDArray[np.float64],
     bin_size: float,
-) -> NDArray[np.float64]:
-    """Count on the absolute clock without rounding spikes across boundaries."""
+    epochs: Any,
+    spike_window: Any,
+    *,
+    context: str,
+) -> tuple[
+    NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], NDArray[np.intp], int
+]:
+    """Per-unit PSTHs of finite 1-D spike trains, one unit in memory at a time.
+
+    ``window`` is already validated, so its wide-window warning points at the
+    public caller.
+
+    Returns
+    -------
+    histograms, sem : NDArray[np.float64], shape (n_units, n_bins)
+        Each unit's mean count per bin across retained events and its SEM.
+    mean_sem : NDArray[np.float64], shape (n_bins,)
+        SEM across events of each event's mean over units.
+    event_indices : NDArray[np.intp], shape (n_events,)
+        Input positions of the retained events.
+    n_dropped : int
+        Events whose windows leave ``epochs`` or ``spike_window``.
+    """
+    bin_edges = _psth_bins(window, bin_size, context=context)
+    event_times = _finite_times(event_times, "event_times")
+    if event_times.size == 0:
+        raise ValueError(
+            "event_times is empty.\n"
+            "  WHY: Cannot compute PSTH without events to align to.\n"
+            "  Fix: Provide at least one event time."
+        )
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    n_input_events = event_times.size
+    event_times, event_indices = _keep_observed_events(
+        event_times, window, resolved_epochs, resolved_spike_window
+    )
+    n_events = event_times.size
+    if n_events == 1:
+        warnings.warn(
+            "Computing PSTH with single event - SEM is undefined (will be NaN).",
+            UserWarning,
+            stacklevel=3,
+        )
+
     # Count on the absolute clock, not on relative times: subtraction can move
     # an exact boundary spike across a bin edge.
-    spikes = np.sort(_finite_times(spike_times, "spike_times"))
-    histograms = np.zeros((event_times.size, bin_edges.size - 1), dtype=np.float64)
-    for i, edges in enumerate(
-        _iter_peri_event_bin_edges(event_times, window, bin_edges, bin_size)
-    ):
-        start = np.searchsorted(spikes, edges[0], side="left")
-        stop = np.searchsorted(spikes, edges[-1], side="left")
-        histograms[i] = _count_spikes_in_time_bins(
-            [spikes[start:stop]], edges[:-1], edges[1:]
-        )[:, 0]
-    return histograms
+    edges = _peri_event_bin_edges(event_times, window, bin_edges, bin_size)
+    n_bins = bin_edges.size - 1
+    histograms = np.empty((len(trains), n_bins), dtype=np.float64)
+    sem = np.full((len(trains), n_bins), np.nan, dtype=np.float64)
+    count_sum = np.zeros((n_events, n_bins), dtype=np.float64)
+    for unit, train in enumerate(trains):
+        counts = np.diff(np.searchsorted(_sorted_times(train), edges), axis=1).astype(
+            np.float64
+        )
+        histograms[unit] = counts.mean(axis=0)
+        if n_events > 1:
+            sem[unit] = counts.std(axis=0, ddof=1) / np.sqrt(n_events)
+        count_sum += counts
+
+    # The population mean's SEM is across events of each event's mean over
+    # units, the same estimand as each unit's SEM.
+    mean_sem = np.full(n_bins, np.nan, dtype=np.float64)
+    if n_events > 1:
+        per_event_mean = count_sum / len(trains)
+        mean_sem = per_event_mean.std(axis=0, ddof=1) / np.sqrt(n_events)
+    return histograms, sem, mean_sem, event_indices, n_input_events - n_events
 
 
 def peri_event_histogram(
@@ -311,54 +355,20 @@ def peri_event_histogram(
     >>> rate = result.firing_rate  # spikes/second
     """
     window = _validate_window(window, context="peri_event_histogram")
-    bin_edges, _ = _psth_bins(window, bin_size, context="peri_event_histogram")
     spike_times = _finite_times(spike_times, "spike_times")
-    event_times = _finite_times(event_times, "event_times")
-
-    # Validate event_times not empty
-    if event_times.size == 0:
-        raise ValueError(
-            "event_times is empty.\n"
-            "  WHY: Cannot compute PSTH without events to align to.\n"
-            "  Fix: Provide at least one event time."
-        )
-
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    n_input_events = event_times.size
-    event_times, event_indices = _keep_observed_events(
-        event_times, window, resolved_epochs, resolved_spike_window
+    histograms, sem, _, event_indices, n_dropped = _peri_event_histograms(
+        [spike_times],
+        event_times,
+        window,
+        bin_size,
+        epochs,
+        spike_window,
+        context="peri_event_histogram",
     )
-    n_dropped = int(n_input_events - event_indices.size)
-    n_events = len(event_times)
-
-    # Warn about single event
-    if n_events == 1:
-        warnings.warn(
-            "Computing PSTH with single event - SEM is undefined (will be NaN).",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    n_bins = bin_edges.size - 1
-
-    # Compute histogram for each event
-    histograms = _count_peri_event_bins(
-        spike_times, event_times, window, bin_edges, bin_size
-    )
-
-    # Compute mean and SEM
-    mean_histogram = histograms.mean(axis=0)
-
-    if n_events > 1:
-        # SEM = std / sqrt(n)
-        sem = histograms.std(axis=0, ddof=1) / np.sqrt(n_events)
-    else:
-        sem = np.full(n_bins, np.nan, dtype=np.float64)
-
     return PeriEventResult(
-        histogram=mean_histogram,
-        sem=sem,
-        n_events=n_events,
+        histogram=histograms[0],
+        sem=sem[0],
+        n_events=event_indices.size,
         window=window,
         bin_size=bin_size,
         n_events_dropped=n_dropped,
@@ -493,76 +503,18 @@ def population_peri_event_histogram(
         )
     context = "population_peri_event_histogram"
     window = _validate_window(window, context=context)
-    bin_edges, _ = _psth_bins(window, bin_size, context=context)
-    trains = [_finite_times(train, "spike_times") for train in trains]
-    event_times = _finite_times(event_times, "event_times")
-
-    # Validate event_times not empty
-    if event_times.size == 0:
-        raise ValueError(
-            "event_times is empty.\n"
-            "  WHY: Cannot compute PSTH without events to align to.\n"
-            "  Fix: Provide at least one event time."
-        )
-
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    n_input_events = event_times.size
-    event_times, event_indices = _keep_observed_events(
-        event_times, window, resolved_epochs, resolved_spike_window
+    histograms, sem, mean_sem, event_indices, n_dropped = _peri_event_histograms(
+        trains, event_times, window, bin_size, epochs, spike_window, context=context
     )
-    n_dropped = int(n_input_events - event_indices.size)
-    n_units = len(trains)
-    n_events = len(event_times)
-
-    # Resolve and validate per-unit identity labels (defaults to arange). A
-    # labelled input keeps its own labels; a differing unit_ids= raises.
-    from neurospatial._results import resolve_unit_ids
-
+    # A labelled input keeps its own labels; a differing unit_ids= raises.
     resolved_unit_ids = resolve_unit_ids(
-        unit_ids,
-        n_units,
-        context="population_peri_event_histogram",
-        input_ids=extracted_ids,
+        unit_ids, len(trains), context=context, input_ids=extracted_ids
     )
-
-    # Warn about single event
-    if n_events == 1:
-        warnings.warn(
-            "Computing PSTH with single event - SEM is undefined (will be NaN).",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    n_bins = bin_edges.size - 1
-
-    # Compute per-unit histograms
-    # Shape: (n_units, n_events, n_bins)
-    all_histograms = np.zeros((n_units, n_events, n_bins), dtype=np.float64)
-
-    for unit_idx, train in enumerate(trains):
-        all_histograms[unit_idx] = _count_peri_event_bins(
-            train, event_times, window, bin_edges, bin_size
-        )
-
-    # Compute per-unit mean and SEM across events
-    # histograms shape: (n_units, n_bins)
-    histograms = all_histograms.mean(axis=1)
-
-    # The population mean's SEM is across events of each event's mean over
-    # units, the same estimand as each unit's SEM.
-    per_event_mean = all_histograms.mean(axis=0)
-    if n_events > 1:
-        sem = all_histograms.std(axis=1, ddof=1) / np.sqrt(n_events)
-        mean_sem = per_event_mean.std(axis=0, ddof=1) / np.sqrt(n_events)
-    else:
-        sem = np.full((n_units, n_bins), np.nan, dtype=np.float64)
-        mean_sem = np.full(n_bins, np.nan, dtype=np.float64)
-
     return PopulationPeriEventResult(
         histograms=histograms,
         sem=sem,
         mean_sem=mean_sem,
-        n_events=n_events,
+        n_events=event_indices.size,
         window=window,
         bin_size=bin_size,
         unit_ids=resolved_unit_ids,

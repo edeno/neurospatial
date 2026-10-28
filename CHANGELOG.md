@@ -99,6 +99,14 @@ Fixed:
   features. `align_continuous_to_events` stores every radian spelling
   (`"radian"`, `"radians"`) as `"rad"`.
 
+Faster:
+
+- `peri_event_histogram` and `population_peri_event_histogram` count every
+  event at once and keep one unit's counts in memory at a time. With 1e4
+  events, one unit of 1e6 spikes takes 20 ms instead of 115 ms, and 100
+  units of 1e5 spikes take 1.4 s instead of 5.6 s and peak at 25 MB instead
+  of 965 MB. Counts are unchanged.
+
 ### Encoding cleanup and faster analyses
 
 Single-unit and population rate maps now share one code path in every

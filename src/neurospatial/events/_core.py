@@ -124,8 +124,8 @@ def _validate_window(
 
 def _make_bin_edges(
     window: tuple[float, float], bin_size: float
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Build PSTH bin edges and centers that stay within the window.
+) -> NDArray[np.float64]:
+    """Build PSTH bin edges that stay within the window.
 
     When ``window_duration`` is not an integer multiple of ``bin_size``,
     the trailing partial bin is dropped rather than appended. This keeps
@@ -149,20 +149,17 @@ def _make_bin_edges(
     bin_edges : NDArray[np.float64], shape (n_bins + 1,)
         Bin edges from ``window[0]`` up to ``window[0] + n_bins * bin_size``,
         which never exceeds ``window[1]``.
-    bin_centers : NDArray[np.float64], shape (n_bins,)
-        Centers of each full bin; all lie within ``[window[0], window[1]]``.
     """
     left, right = _time_bins_in_windows(
         np.asarray([window], dtype=np.float64), bin_size
     )
-    edges = np.r_[left, right[-1]] if left.size else np.array([window[0]])
-    return edges, left + bin_size / 2
+    return np.r_[left, right[-1]] if left.size else np.array([window[0]])
 
 
 def _psth_bins(
     window: tuple[float, float], bin_size: Any, *, context: str
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Validate ``bin_size`` for a valid window; return bin edges and centers.
+) -> NDArray[np.float64]:
+    """Validate ``bin_size`` for a valid window; return the bin edges.
 
     Raises
     ------
@@ -183,8 +180,8 @@ def _psth_bins(
                 fix="pass bin_size=0.025 (25 ms)",
             )
         )
-    edges, centers = _make_bin_edges(window, float(bin_size))
-    if centers.size == 0:
+    edges = _make_bin_edges(window, float(bin_size))
+    if edges.size < 2:
         raise ValueError(
             _format_error(
                 f"{context}: bin_size={bin_size:g} s is longer than the "
@@ -194,7 +191,7 @@ def _psth_bins(
                 fix="choose a bin_size no larger than the window, e.g. bin_size=0.025",
             )
         )
-    return edges, centers
+    return edges
 
 
 def _validated_psth_fields(
@@ -206,7 +203,7 @@ def _validated_psth_fields(
     standing for the number of bins implied by ``window`` and ``bin_size``.
     """
     window = _validate_window(result.window, context=context, warn_wide=False)
-    _, centers = _psth_bins(window, result.bin_size, context=context)
+    n_bins = _psth_bins(window, result.bin_size, context=context).size - 1
     object.__setattr__(result, "window", window)
     object.__setattr__(result, "bin_size", float(result.bin_size))
     for name in ("n_events", "n_events_dropped"):
@@ -223,11 +220,11 @@ def _validated_psth_fields(
         )
     for name, shape in arrays.items():
         array = np.asarray(getattr(result, name), dtype=np.float64)
-        expected = tuple(centers.size if n == -1 else n for n in shape)
+        expected = tuple(n_bins if n == -1 else n for n in shape)
         if array.shape != expected:
             raise ValueError(
                 f"{context}: {name} has shape {array.shape}; window={window} "
-                f"with bin_size={result.bin_size:g} s gives {centers.size} bins, "
+                f"with bin_size={result.bin_size:g} s gives {n_bins} bins, "
                 f"so it needs shape {expected}."
             )
         if np.any(array < 0):
@@ -243,7 +240,7 @@ def _validated_psth_fields(
 
 def _pre_event_bins(window: tuple[float, float], bin_size: float) -> NDArray[np.bool_]:
     """Bins that end at or before the event, up to float rounding of the edges."""
-    edges, _ = _make_bin_edges(window, bin_size)
+    edges = _make_bin_edges(window, bin_size)
     rounding = _time_bin_rounding(np.asarray([window]), bin_size)[0]
     pre: NDArray[np.bool_] = edges[1:] <= rounding
     return pre
@@ -276,7 +273,7 @@ class _PeriEventExports:
     @property
     def bin_centers(self) -> NDArray[np.float64]:
         """Bin centers relative to the event (s), shape ``(n_bins,)``."""
-        return _make_bin_edges(self.window, self.bin_size)[1]
+        return _make_bin_edges(self.window, self.bin_size)[:-1] + self.bin_size / 2
 
     def _table_attrs(self) -> dict[str, Any]:
         """Analysis settings stored in ``df.attrs`` of every table."""

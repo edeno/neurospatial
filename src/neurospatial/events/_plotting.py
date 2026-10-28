@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.events._core import PeriEventResult, _make_bin_edges
-from neurospatial.events.alignment import _iter_peri_event_bin_edges
+from neurospatial.events.alignment import _peri_event_bin_edges, _sorted_times
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -139,7 +139,7 @@ def plot_peri_event_response(
             "(n_events + n_events_dropped). Pass the complete original event array, "
             "including excluded events, in its original order."
         )
-    bin_edges, _ = _make_bin_edges(result.window, result.bin_size)
+    bin_edges = _make_bin_edges(result.window, result.bin_size)
     if axes is not None:
         try:
             raster_ax, histogram_ax = axes
@@ -155,23 +155,17 @@ def plot_peri_event_response(
             raise ValueError("axes must contain two distinct Matplotlib Axes.")
 
     selected_events = event_times[result.event_indices]
-    spikes = np.sort(spike_times)
-    aligned = []
-    for event, edges in zip(
-        selected_events,
-        _iter_peri_event_bin_edges(
-            selected_events, result.window, bin_edges, result.bin_size
-        ),
-        strict=True,
-    ):
-        first, stop = np.searchsorted(spikes, [edges[0], edges[-1]], side="left")
-        aligned.append(
-            np.clip(
-                spikes[first:stop] - event,
-                bin_edges[0],
-                np.nextafter(bin_edges[-1], bin_edges[0]),
-            )
-        )
+    spikes = _sorted_times(spike_times)
+    edges = _peri_event_bin_edges(
+        selected_events, result.window, bin_edges, result.bin_size
+    )
+    first = np.searchsorted(spikes, edges[:, 0], side="left")
+    stop = np.searchsorted(spikes, edges[:, -1], side="left")
+    below_stop = np.nextafter(bin_edges[-1], bin_edges[0])
+    aligned = [
+        np.clip(spikes[i:j] - event, bin_edges[0], below_stop)
+        for i, j, event in zip(first, stop, selected_events, strict=True)
+    ]
 
     if axes is None:
         _, (raster_ax, histogram_ax) = plt.subplots(
