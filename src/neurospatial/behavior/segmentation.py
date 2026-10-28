@@ -2228,7 +2228,7 @@ def running_direction_labels(
     min_duration: float = 0.5,
     max_duration: float = 10.0,
     min_speed: float | None = None,
-    successful_only: bool = True,
+    success_only: bool = True,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -2273,7 +2273,7 @@ def running_direction_labels(
     min_speed : float or None, optional
         Optional minimum (bin-quantized) speed, forwarded to
         :func:`detect_runs_between_regions`. Default None.
-    successful_only : bool, optional
+    success_only : bool, optional
         If True (default), only runs that reached their target contribute
         labels. If False, timed-out, returned and censored runs are labeled
         by their attempted direction too, unless they overlap a run that
@@ -2432,7 +2432,7 @@ def running_direction_labels(
     intervals: list[tuple[float, float, object]] = []
     for run, label in runs:
         if not run.success and (
-            successful_only
+            success_only
             # An attempt toward one end region that overlaps a run that
             # reached another (or came home) was not a failed attempt.
             or any(

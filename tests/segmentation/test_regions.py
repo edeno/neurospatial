@@ -684,8 +684,8 @@ class TestRunsEndOnSourceReentry:
         for (s, e, o), (es, ee, eo) in zip(got, expected, strict=True):
             assert (s, e, o) == pytest.approx((es, ee, eo))
 
-    @pytest.mark.parametrize("successful_only", [True, False])
-    def test_w_track_running_direction_labels(self, successful_only):
+    @pytest.mark.parametrize("success_only", [True, False])
+    def test_w_track_running_direction_labels(self, success_only):
         from neurospatial.behavior.segmentation import running_direction_labels
 
         env, bins, times = _w_track()
@@ -695,7 +695,7 @@ class TestRunsEndOnSourceReentry:
             env,
             start_region="center",
             end_regions=["left", "right"],
-            successful_only=successful_only,
+            success_only=success_only,
         )
         expected = np.full(times.size, None, dtype=object)
         expected[7:27] = "outbound"  # [0.7, 2.7) center -> left
