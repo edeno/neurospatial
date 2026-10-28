@@ -468,10 +468,10 @@ class _OpenPaths(EnvironmentPaths):
         # Each bin's open neighbors, padded with -1: a membership test reads
         # one short row instead of searching every connection.
         degree = np.diff(adjacency.indptr)
+        # Row (bin) of each stored connection.
+        self._edge_rows = np.repeat(np.arange(n_bins), degree)
         self._neighbors = np.full((n_bins, int(degree.max(initial=0))), -1, np.intp)
-        self._neighbors[np.repeat(np.arange(n_bins), degree), ragged_arange(degree)] = (
-            adjacency.indices
-        )
+        self._neighbors[self._edge_rows, ragged_arange(degree)] = adjacency.indices
         lengths = adjacency.data[adjacency.data > 0]
         self._spacing = (
             _PROBE_FRACTION * float(lengths.min()) if lengths.size else np.inf
@@ -1000,19 +1000,19 @@ class _OpenPaths(EnvironmentPaths):
                     for s in source_sets
                 ]
             )
-        # Oriented edges u -> v with g[u] < g[v], as global ids f * n + bin.
-        u_bin = np.repeat(np.arange(n_bins), np.diff(self._adjacency.indptr))
-        v_bin = self._adjacency.indices.astype(np.intp)
-        g_u, g_v = graph[:, u_bin], graph[:, v_bin]
+        # In-edges v <- u of each node v from its nearer neighbors u
+        # (g[u] < g[v]), as global ids f * n + bin. The bin graph is
+        # symmetric with sorted rows, so reading row v as v's in-edges lists
+        # them grouped by (field, v) and then by u, with no sort.
+        v_bin, u_bin = self._edge_rows, self._adjacency.indices
+        g_v, g_u = graph[:, v_bin], graph[:, u_bin]
         with np.errstate(invalid="ignore"):
             oriented = np.isfinite(g_v) & (g_u < g_v - _GRAPH_RTOL * g_v)
         field_of, edge_of = np.nonzero(oriented)
-        src = field_of * n_bins + u_bin[edge_of]
         dst = field_of * n_bins + v_bin[edge_of]
+        in_src = field_of * n_bins + u_bin[edge_of]
         n_nodes = n_sets * n_bins
-        order_in = np.argsort(dst, kind="stable")
-        in_src = src[order_in]
-        in_ptr = np.searchsorted(dst[order_in], np.arange(n_nodes + 1))
+        in_ptr = np.r_[0, np.cumsum(np.bincount(dst, minlength=n_nodes))]
 
         length = np.full(n_nodes, np.inf)
         anchor = np.full(n_nodes, -1, dtype=np.int32)
