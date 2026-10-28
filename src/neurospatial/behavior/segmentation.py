@@ -96,6 +96,7 @@ from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
+    from neurospatial.behavior._environment_paths import EnvironmentPaths
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
 
@@ -3398,11 +3399,16 @@ def detect_goal_directed_runs(
         break_before, len(times), call="detect_goal_directed_runs"
     )
 
+    from neurospatial.behavior._environment_paths import environment_paths
     from neurospatial.ops.distance import _bin_adjacency
     from neurospatial.ops.mapping import regions_to_mask
 
-    goal_bins = np.flatnonzero(regions_to_mask(env, [goal_region]))
-    distance_to_goal = _distance_to_bins(env, goal_bins)
+    # Path distances between bin centers on the connectivity graph; inf for
+    # bins that cannot reach the goal.
+    paths = environment_paths(env, call="detect_goal_directed_runs")
+    distance_to_goal = paths.from_bins(
+        np.flatnonzero(regions_to_mask(env, [goal_region]))
+    )
     edges = _bin_adjacency(
         env.connectivity, weight="distance", operation="detect_goal_directed_runs()"
     )
@@ -3418,7 +3424,7 @@ def detect_goal_directed_runs(
             _detect_goal_directed_runs_contiguous(
                 position_bins[run],
                 times[run],
-                env=env,
+                paths=paths,
                 edges=edges,
                 distance_to_goal=distance_to_goal,
                 directedness_threshold=directedness_threshold,
@@ -3426,35 +3432,6 @@ def detect_goal_directed_runs(
             )
         )
     return np.array(results, dtype=np.float64).reshape(-1, 2)
-
-
-def _distance_to_bins(
-    env: Environment, targets: NDArray[np.intp]
-) -> NDArray[np.float64]:
-    """Geodesic distance from every bin to the nearest of ``targets``.
-
-    The one place the goal-directed runs measure distance to the goal; inf
-    for bins that cannot reach it.
-    """
-    from neurospatial.behavior._environment_paths import environment_paths
-
-    return environment_paths(env, call="detect_goal_directed_runs").from_bins(
-        np.unique(np.asarray(targets, dtype=np.intp))
-    )
-
-
-def _step_lengths(env: Environment, bins: NDArray[np.int64]) -> NDArray[np.float64]:
-    """Geodesic distance between consecutive bins, shape ``(len(bins) - 1,)``.
-
-    The one place the goal-directed runs measure path length. Both bins of
-    every step the caller sums lie in the goal's connected component, so
-    every step is finite.
-    """
-    from neurospatial.behavior._environment_paths import environment_paths
-
-    return environment_paths(env, call="detect_goal_directed_runs").between_bins(
-        bins[:-1], bins[1:]
-    )
 
 
 def _approach_bouts(
@@ -3490,7 +3467,7 @@ def _detect_goal_directed_runs_contiguous(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     *,
-    env: Environment,
+    paths: EnvironmentPaths,
     edges: Any,
     distance_to_goal: NDArray[np.float64],
     directedness_threshold: float,
@@ -3503,7 +3480,11 @@ def _detect_goal_directed_runs_contiguous(
     # be jitter across a bin edge; anything larger is movement. The factor
     # allows for rounding in the summed edge lengths.
     tolerance = float(edges.max()) * (1 + 1e-9) if edges.nnz else 0.0
-    path = np.r_[0.0, np.cumsum(_step_lengths(env, position_bins))]
+    # Both bins of every step summed below lie in the goal's connected
+    # component, so every summed step is finite.
+    path = np.r_[
+        0.0, np.cumsum(paths.between_bins(position_bins[:-1], position_bins[1:]))
+    ]
     rows: list[tuple[float, float]] = []
     # Samples that cannot reach the goal split the recording.
     finite = np.r_[False, np.isfinite(distances), False]

@@ -182,8 +182,10 @@ def region_reward_field(
         # inf for bins that cannot reach it. A shortest path into the region
         # enters through a boundary bin, so this is the distance from the
         # region boundary.
-        distances = _geodesic_from_bins(
-            env, np.flatnonzero(region_mask), call="region_reward_field"
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        distances = environment_paths(env, call="region_reward_field").from_bins(
+            np.flatnonzero(region_mask)
         )
         reachable = np.isfinite(distances) & ~region_mask
         reward = np.where(region_mask, reward_value, 0.0)
@@ -359,8 +361,10 @@ def goal_reward_field(
         argument="goal_bins",
     ).tolist()
 
-    distances = _geodesic_from_bins(
-        env, np.unique(goal_bins_list), call="goal_reward_field"
+    from neurospatial.behavior._environment_paths import environment_paths
+
+    distances = environment_paths(env, call="goal_reward_field").from_bins(
+        np.unique(goal_bins_list)
     )
 
     # Unreachable bins have d = inf, which every decay below maps to 0.
@@ -378,20 +382,3 @@ def goal_reward_field(
         reward = scale / (1 + distances)
 
     return reward
-
-
-def _geodesic_from_bins(
-    env: Environment, source_bins: NDArray[np.intp], *, call: str
-) -> NDArray[np.float64]:
-    """Geodesic distance from every bin center to the nearest source bin center.
-
-    Raises
-    ------
-    CartesianOnlyError
-        If ``env`` is an egocentric polar environment.
-    """
-    from neurospatial.behavior._environment_paths import environment_paths
-
-    return environment_paths(env, call=call).from_bins(
-        np.asarray(source_bins, dtype=np.intp)
-    )
