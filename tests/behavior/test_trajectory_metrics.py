@@ -121,6 +121,22 @@ class TestComputeStepLengths:
     def test_one_position_has_no_step(self):
         assert compute_step_lengths(np.zeros((1, 2))).shape == (0,)
 
+    @pytest.mark.parametrize(
+        "function",
+        [
+            lambda **kw: compute_step_lengths(np.zeros((3, 2)), **kw),
+            lambda **kw: mean_square_displacement(
+                np.arange(3.0), np.zeros((3, 2)), **kw
+            ),
+        ],
+        ids=["step_lengths", "msd"],
+    )
+    def test_unknown_metric_and_geodesic_without_env_raise(self, function):
+        with pytest.raises(ValueError, match="must be 'euclidean' or 'geodesic'"):
+            function(metric="manhattan")
+        with pytest.raises(ValueError, match="requires env"):
+            function(metric="geodesic")
+
     def test_step_lengths_straight_line(self):
         """Test step lengths on a straight 1D trajectory with Euclidean distance."""
         # Create straight line trajectory (continuous positions)
