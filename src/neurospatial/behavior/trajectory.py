@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._angles import cross_2d, signed_turns, unit_vector_angles
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
@@ -866,8 +867,8 @@ def compute_turn_angles(
     Returns
     -------
     NDArray[np.float64], shape (n_angles,)
-        Turn angles in radians, in the range [-π, π] (unsigned, in [0, π],
-        for three or more columns; see Notes). Consecutive duplicate
+        Turn angles in radians, in the range (-π, π]: a reversal is +π
+        (unsigned, in [0, π], for three or more columns; see Notes). Consecutive duplicate
         positions (stationary periods) are dropped first, so the length is
         ``n_unique - 2``, where ``n_unique`` is the number of positions left,
         not ``n_samples - 2``. A turn whose incoming or outgoing step touches a
@@ -888,7 +889,8 @@ def compute_turn_angles(
     where :math:`v_i` is the movement vector from position i-1 to position i.
 
     With ``v1`` and ``v2`` the incoming and outgoing movement vectors, the
-    planar angle is ``atan2(v1_x * v2_y - v1_y * v2_x, v1 . v2)``. One column
+    planar angle is ``atan2(v1_x * v2_y - v1_y * v2_x, v1 . v2)``, with a
+    reversal reported as +π (as ``compute_planar_turn_angles``). One column
     gives 0 (same direction) or π (reversal). With three or more columns
     a turn has no sign without a reference axis, so the result is the
     unsigned angle between ``v1`` and ``v2`` in the full space, in
@@ -990,19 +992,13 @@ def compute_turn_angles(
     n_dims = vectors.shape[1]
     angles: NDArray[np.float64]
     if n_dims == 2:
-        # 2D cross product (scalar): v1[0]*v2[1] - v1[1]*v2[0]
-        cross = v1[:, 0] * v2[:, 1] - v1[:, 1] * v2[:, 0]
-        # Dot product
-        dot = np.sum(v1 * v2, axis=1)
-        angles = np.arctan2(cross, dot)
+        angles = signed_turns(v1, v2)
     elif n_dims > 2:
-        # Unsigned angle between the full vectors (no turn sign exists in 3D
-        # without a reference axis), by Kahan's formula, accurate near 0 and
-        # pi: 2 atan2(|u - w|, |u + w|) for unit vectors u, w.
-        u = v1 / np.linalg.norm(v1, axis=1, keepdims=True)
-        w = v2 / np.linalg.norm(v2, axis=1, keepdims=True)
-        angles = 2.0 * np.arctan2(
-            np.linalg.norm(u - w, axis=1), np.linalg.norm(u + w, axis=1)
+        # Unsigned angle between the full vectors: no turn sign exists in 3D
+        # without a reference axis.
+        angles = unit_vector_angles(
+            v1 / np.linalg.norm(v1, axis=1, keepdims=True),
+            v2 / np.linalg.norm(v2, axis=1, keepdims=True),
         )
     else:
         # 1D: 0 if same direction, π if opposite, NaN next to a missing
@@ -1081,21 +1077,6 @@ def _planar_turns(
     b[~supported] = np.nan
     span[~supported] = np.nan
     return t, a, b, supported, span
-
-
-def _cross_2d(a: NDArray[np.float64], b: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Z component of the cross product ``a x b``; ``a``, ``b`` are ``(n, 2)``."""
-    cross: NDArray[np.float64] = a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]
-    return cross
-
-
-def _signed_turns(
-    a: NDArray[np.float64], b: NDArray[np.float64]
-) -> NDArray[np.float64]:
-    """Turn from ``a`` to ``b`` in ``(-pi, pi]``; ``a``, ``b`` are ``(n, 2)``."""
-    angles: NDArray[np.float64] = np.arctan2(_cross_2d(a, b), np.sum(a * b, axis=1))
-    angles[angles == -np.pi] = np.pi  # a reversal is pi, not -pi
-    return angles
 
 
 def compute_planar_turn_angles(
@@ -1212,7 +1193,7 @@ def compute_planar_turn_angles(
         epochs=epochs,
         break_before=break_before,
     )
-    return _signed_turns(a, b)
+    return signed_turns(a, b)
 
 
 def compute_planar_curvature(
@@ -1340,7 +1321,7 @@ def compute_planar_curvature(
         epochs=epochs,
         break_before=break_before,
     )
-    cross = _cross_2d(a, b)
+    cross = cross_2d(a, b)
     chord = np.linalg.norm(a + b, axis=1)
     denominator = np.linalg.norm(a, axis=1) * np.linalg.norm(b, axis=1) * chord
     with np.errstate(invalid="ignore"):  # 0 / 0 at an equal-length reversal
@@ -1466,7 +1447,7 @@ def compute_movement_angular_velocity(
         epochs=epochs,
         break_before=break_before,
     )
-    angles = _signed_turns(a, b)
+    angles = signed_turns(a, b)
     omega: NDArray[np.float64] = angles / (span / 2)
     return omega
 
@@ -2427,7 +2408,7 @@ def compute_trajectory_curvature(
     - Optional temporal smoothing
 
     `compute_turn_angles()` uses atan2(cross, dot) for signed angles in
-    [-π, π], drops stationary repeats, and returns at most (n_samples - 2)
+    (-π, π], drops stationary repeats, and returns at most (n_samples - 2)
     angles. Each angle is assigned to the original index of its middle position
     after consecutive duplicates are removed (keeping their first sample).
     Stationary repeats and the first and last retained positions of a run

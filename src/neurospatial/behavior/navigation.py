@@ -2208,10 +2208,10 @@ def graph_turn_sequence(
     if len(corners) < 3:
         return ""
 
+    from neurospatial._angles import signed_turns
+
     legs = np.diff(corners, axis=0)
-    cross = legs[:-1, 0] * legs[1:, 1] - legs[:-1, 1] * legs[1:, 0]
-    dot = np.sum(legs[:-1] * legs[1:], axis=1)
-    angle = np.arctan2(cross, dot)
+    angle = signed_turns(legs[:-1], legs[1:])
     # Counterclockwise (angle > 0) in a y-up frame is the animal's left.
     turns = angle[(angle != 0) & (np.abs(angle) <= _MAX_TURN_ANGLE)]
     return "-".join("left" if turn > 0 else "right" for turn in turns)
@@ -3294,10 +3294,11 @@ def _angular_efficiency(
         defined = (step_norm > 0) & (goal_norm > 0)
     if not defined.any():
         return np.nan
-    u = step[defined] / step_norm[defined, None]
-    v = to_goal[defined] / goal_norm[defined, None]
-    angle = 2.0 * np.arctan2(
-        np.linalg.norm(u - v, axis=1), np.linalg.norm(u + v, axis=1)
+    from neurospatial._angles import unit_vector_angles
+
+    angle = unit_vector_angles(
+        step[defined] / step_norm[defined, None],
+        to_goal[defined] / goal_norm[defined, None],
     )
     # Mean angle per unit of distance traveled.
     weight = step_norm[defined]

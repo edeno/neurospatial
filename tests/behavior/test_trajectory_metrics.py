@@ -100,6 +100,23 @@ class TestComputeTurnAngles:
         positions = np.array([[0.0], [1.0], [3.0], [2.0]])
         assert_allclose(compute_turn_angles(positions), [0.0, np.pi], rtol=0, atol=0)
 
+    @pytest.mark.parametrize(
+        "positions",
+        [
+            [[2.0, 0.0], [1.0, 0.0], [2.0, 0.0]],  # cross product -0.0
+            [[0.0, 0.0], [1.0, 0.0], [0.0, 0.0]],  # cross product +0.0
+            [[0.0, 2.0], [0.0, 1.0], [0.0, 2.0]],
+        ],
+    )
+    def test_planar_reversal_is_plus_pi_as_in_planar_turn_angles(self, positions):
+        """A reversal is +π, never -π, whichever way the path runs."""
+        from neurospatial.behavior.trajectory import compute_planar_turn_angles
+
+        positions = np.array(positions)
+        planar = compute_planar_turn_angles(np.arange(3) * 0.1, positions)
+        assert compute_turn_angles(positions).tolist() == [np.pi]
+        assert planar[1] == np.pi
+
     def test_one_dimensional_missing_sample_is_nan_not_a_reversal(self):
         """A dropout is not a reversal; it is NaN, as in two dimensions."""
         positions = np.array([[0.0], [1.0], [np.nan], [3.0], [4.0]])
