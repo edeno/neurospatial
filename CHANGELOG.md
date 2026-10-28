@@ -99,6 +99,15 @@ Fixed:
   event from `peri_event_histogram`, marked it `outside_epochs` in
   `align_continuous_to_events` and gave NaN in `event_count_in_window`, so
   identical trials were kept or dropped by where they fell on the clock.
+- `time_to_nearest_event(signed=True, max_time=..., epochs=...)` is NaN
+  where an unrecorded event could be nearer than the true nearest event,
+  not only nearer than `max_time`: the sign of a clipped value comes from
+  the true nearest event, so a seen event 5 s back read as +`max_time`
+  although an unseen one 2.6 s ahead was possible. Without any event,
+  `signed=False` with `max_time` gives `max_time` (no event is nearer),
+  checked against `epochs` like any other value, instead of all NaN; a
+  session without rewards is a known covariate, as in
+  `event_count_in_window`.
 - `time_to_nearest_event` refuses `max_time=True`, which clipped every
   value to 1 s, and an infinite or non-numeric `max_time`; pass `None` for
   no clipping.

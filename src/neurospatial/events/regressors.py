@@ -94,8 +94,10 @@ def time_to_nearest_event(
         Time to nearest event (seconds).
         - signed=True: Negative before event, positive after, zero at event.
         - signed=False: Absolute distance to nearest event.
-        - NaN when no events are provided, and with ``epochs`` where an
-          unrecorded event could be nearer.
+        - NaN without any event (unless ``signed=False`` with ``max_time``:
+          no event is nearer than ``max_time``), and with ``epochs`` where
+          an unrecorded event could be nearer or, for ``signed=True``, on the
+          other side.
 
     Raises
     ------
@@ -174,10 +176,6 @@ def time_to_nearest_event(
     if len(times) == 0:
         return np.array([], dtype=np.float64)
 
-    # Handle empty events
-    if len(event_times) == 0:
-        return np.full(len(times), np.nan, dtype=np.float64)
-
     # Sort events (handles unsorted input)
     sorted_events = np.sort(event_times)
 
@@ -204,30 +202,27 @@ def time_to_nearest_event(
     has_right = idx_right < n_events
     dist_right[has_right] = sorted_events[idx_right[has_right]] - times[has_right]
 
-    # Select nearest event
-    # For ties (dist_left == dist_right), prefer left (earlier) event
-    use_left = dist_left <= dist_right
+    # Infinite when there are no events at all.
+    distance = np.minimum(dist_left, dist_right)
+    if signed:
+        # Ties prefer the earlier event: positive after it, negative before
+        # the next. Without any event there is no side.
+        result = np.where(dist_left <= dist_right, dist_left, -dist_right)
+        result[np.isinf(distance)] = np.nan
+    else:
+        result = distance.copy()
+    result = result + 0.0  # -0.0 -> 0.0
 
-    # Compute signed time to nearest event
-    result = np.empty(n_samples, dtype=np.float64)
-    result[use_left] = dist_left[use_left]  # Positive (after left event)
-    result[~use_left] = -dist_right[~use_left]  # Negative (before right event)
-
-    # Convert to unsigned if requested
-    if not signed:
-        result = np.abs(result)
-
-    # Convert -0.0 to 0.0 for cleaner output
-    result = result + 0.0  # Adding 0.0 converts -0.0 to 0.0
-
-    # Apply max_time clipping
     if max_time is not None:
         result = np.clip(result, -max_time if signed else 0.0, max_time)
+    result[np.isinf(result)] = np.nan
 
     if recorded is not None:
-        # The value is known when no unseen event could be nearer: the open
-        # interval (t - d, t + d) is recorded, which holds trivially at d = 0.
-        reach = np.abs(result)
+        # The value is known when no unseen event could change it: no event
+        # in the unrecorded time is nearer than the distance that decides it.
+        # A clipped unsigned value is decided within max_time; a signed value
+        # reports the side of the true nearest event, however far it is.
+        reach = distance if signed else result
         starts, stops = _inner_bounds(times - reach, times + reach)
         known = (reach == 0) | intervals_contain(recorded, starts, stops)
         result[~known] = np.nan
