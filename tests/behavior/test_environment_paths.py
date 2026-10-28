@@ -455,3 +455,23 @@ class TestGeodesicGoalDirection:
             times, positions, positions[-1], metric="geodesic", env=env
         )
         assert efficiency == pytest.approx(1.0, abs=1e-12)
+
+
+class TestTargetOutsideTheEnvironment:
+    """A target outside the environment has no path to it: NaN, not a value."""
+
+    @pytest.fixture(scope="class", params=["arena", "track"])
+    def env_and_outside(self, request, divider_arena):
+        if request.param == "arena":
+            return divider_arena, np.array([150.0, 50.0])
+        return _w_track(2.0, 10.0), np.array([0.0, -50.0])
+
+    def test_to_point_and_directions_are_nan(self, env_and_outside):
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        env, outside = env_and_outside
+        paths = environment_paths(env, call="test")
+        assert paths.bins(outside[None, :])[0] == -1
+        points = env.bin_centers[:: max(1, env.n_bins // 10)]
+        assert np.isnan(paths.to_point(points, outside)).all()
+        assert np.isnan(paths.directions(points, outside)).all()

@@ -223,20 +223,22 @@ class EnvironmentPaths:
         points : ndarray, shape (n_points, n_dims)
             Positions; NaN rows and rows outside the environment give NaN.
         target : ndarray, shape (n_dims,)
-            A finite position inside the environment (the caller checks).
+            A position; outside the environment (or NaN) every length is NaN.
 
         Returns
         -------
         ndarray, shape (n_points,)
             Path lengths; ``inf`` for points disconnected from the target.
         """
+        root = int(self.bins(target[None, :])[0])
+        out = np.full(points.shape[0], np.nan)
+        if root < 0:
+            return out
         if self._track is not None:
             return self._track.between(
                 points, np.broadcast_to(target, points.shape), self.bins(points)
             )
-        root = int(self.bins(target[None, :])[0])
         point_bins = self.bins(points)
-        out = np.full(points.shape[0], np.nan)
         rows = np.flatnonzero(point_bins >= 0)
         fields = self._fields
         fields.ensure(self, np.array([root]))
@@ -394,7 +396,8 @@ class EnvironmentPaths:
         points : ndarray, shape (n_points, n_dims)
             Positions; NaN rows and rows outside the environment give NaN.
         target : ndarray, shape (n_dims,)
-            A finite position inside the environment.
+            A position; outside the environment (or NaN) every direction is
+            NaN.
 
         Returns
         -------
@@ -405,12 +408,14 @@ class EnvironmentPaths:
             the target. NaN where it is undefined: at the target, at a point
             disconnected from it, or outside the environment.
         """
+        root = int(self.bins(target[None, :])[0])
+        out = np.full(points.shape, np.nan)
+        if root < 0:
+            return out
         point_bins = self.bins(points)
         if self._track is not None:
             return self._track.directions(points, target, point_bins)
-        root = int(self.bins(target[None, :])[0])
         self._fields.ensure(self, np.array([root]))
-        out = np.full(points.shape, np.nan)
         rows = np.flatnonzero(point_bins >= 0)
         a = point_bins[rows]
         field_row = self._fields.row_of_root[root]
