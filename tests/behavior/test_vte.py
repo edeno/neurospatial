@@ -669,6 +669,30 @@ class TestComputeVTEIndex:
 # =============================================================================
 
 
+@pytest.mark.parametrize("alpha", [-0.1, 1.5, np.nan])
+def test_vte_index_alpha_must_be_a_weight(alpha):
+    from neurospatial.behavior.vte import compute_vte_index
+
+    with pytest.raises(ValueError, match=r"alpha in \[0, 1\]"):
+        compute_vte_index(1.0, 1.0, alpha=alpha)
+
+
+def test_session_alpha_and_threshold_are_validated(t_maze_environment):
+    from neurospatial.behavior.vte import compute_vte_session
+
+    times, positions, trials = _t_maze_session([2.0, 4.0])
+    kwargs = {**_SESSION_KWARGS, "trials": trials}
+    with pytest.raises(ValueError, match=r"alpha in \[0, 1\]"):
+        compute_vte_session(t_maze_environment, times, positions, alpha=2.0, **kwargs)
+    with pytest.raises(ValueError, match="finite vte_threshold"):
+        compute_vte_session(
+            t_maze_environment,
+            times,
+            positions,
+            **{**kwargs, "vte_threshold": np.nan},
+        )
+
+
 class TestClassifyVTE:
     """Test classify_vte() function."""
 
@@ -687,10 +711,23 @@ class TestClassifyVTE:
         assert classify_vte(-0.5, threshold=0.5) is False
 
     def test_at_threshold(self):
-        """Test that index at threshold returns False (> not >=)."""
+        """A threshold screen is inclusive: an index at the threshold is VTE."""
         from neurospatial.behavior.vte import classify_vte
 
-        assert classify_vte(0.5, threshold=0.5) is False
+        assert classify_vte(0.5, threshold=0.5) is True
+
+    def test_unmeasured_index_is_unclassified(self):
+        """A NaN index is missing evidence, not evidence against VTE."""
+        from neurospatial.behavior.vte import classify_vte
+
+        assert classify_vte(np.nan, threshold=0.5) is None
+
+    @pytest.mark.parametrize("threshold", [np.nan, np.inf])
+    def test_threshold_must_be_finite(self, threshold):
+        from neurospatial.behavior.vte import classify_vte
+
+        with pytest.raises(ValueError, match="finite threshold"):
+            classify_vte(1.0, threshold=threshold)
 
 
 # =============================================================================

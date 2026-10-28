@@ -823,15 +823,20 @@ def compute_vte_index(
     z_head_sweep : float
         Z-scored head sweep magnitude.
     z_speed_inv : float
-        Z-scored inverse speed.
+        Negated z-scored speed (higher = slower).
     alpha : float, default=0.5
-        Weight for head sweep (1-alpha for speed).
+        Weight for head sweep (1-alpha for speed), in [0, 1].
         Default 0.5 weights both equally.
 
     Returns
     -------
     float
-        Combined VTE index.
+        Combined VTE index; NaN when either z-score is NaN.
+
+    Raises
+    ------
+    ValueError
+        If ``alpha`` is not in [0, 1].
 
     Examples
     --------
@@ -841,28 +846,54 @@ def compute_vte_index(
     >>> compute_vte_index(2.0, 0.0, alpha=1.0)  # Head sweep only
     2.0
     """
+    alpha = _validated_alpha(alpha, call="compute_vte_index")
     return alpha * z_head_sweep + (1 - alpha) * z_speed_inv
+
+
+def _validated_alpha(alpha: float, *, call: str) -> float:
+    """A head-sweep weight in [0, 1]."""
+    value = float(alpha)
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(
+            f"{call}() needs alpha in [0, 1]; got {alpha!r}.\n"
+            "Why: alpha weights the head-sweep z-score and 1 - alpha the "
+            "slowness z-score, so outside [0, 1] one of them counts against "
+            "VTE.\n"
+            "Fix: pass alpha=0.5 to weight both equally, 1.0 for head sweep "
+            "only or 0.0 for slowness only."
+        )
+    return value
 
 
 def classify_vte(
     vte_index: float,
     *,
     threshold: float = 0.5,
-) -> bool:
+) -> bool | None:
     """Classify trial as VTE based on VTE index.
+
+    A threshold screen on the session-relative VTE index, not a statistical
+    test.
 
     Parameters
     ----------
     vte_index : float
         Combined VTE index.
     threshold : float, default=0.5
-        Classification threshold.
-        Trial is VTE if vte_index > threshold.
+        Classification threshold (finite). Trial is VTE if
+        ``vte_index >= threshold``.
 
     Returns
     -------
-    bool
-        True if trial is classified as VTE.
+    bool or None
+        True if the trial is classified as VTE, False if not, and None for a
+        NaN ``vte_index``: nothing was measured, which is not evidence
+        against VTE.
+
+    Raises
+    ------
+    ValueError
+        If ``threshold`` is not finite.
 
     Examples
     --------
@@ -871,8 +902,19 @@ def classify_vte(
     True
     >>> classify_vte(0.3, threshold=0.5)
     False
+    >>> classify_vte(float("nan")) is None
+    True
     """
-    return vte_index > threshold
+    if not np.isfinite(threshold):
+        raise ValueError(
+            f"classify_vte() needs a finite threshold; got {threshold!r}.\n"
+            "Why: no VTE index compares meaningfully with a NaN or infinite "
+            "threshold.\n"
+            "Fix: pass a finite threshold on the VTE index, e.g. threshold=0.5."
+        )
+    if np.isnan(vte_index):
+        return None
+    return bool(vte_index >= threshold)
 
 
 # =============================================================================
@@ -1111,11 +1153,11 @@ def compute_vte_session(
         units that are not a metric length, pass it explicitly.
         Minimum speed for valid heading (units/s); finite and non-negative.
     alpha : float, default=0.5
-        Weight for head sweep in VTE index (1-alpha for speed).
+        Weight for head sweep in VTE index (1-alpha for speed), in [0, 1].
         Default 0.5 weights both equally.
     vte_threshold : float, default=0.5
-        Threshold for VTE classification.
-        Trial is VTE if vte_index > threshold.
+        Threshold for VTE classification (finite).
+        Trial is VTE if ``vte_index >= vte_threshold``.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1152,8 +1194,9 @@ def compute_vte_session(
         If ``decision_region`` is not in ``env.regions``, if there are no
         samples, if ``times`` is not finite and strictly increasing, if
         ``break_before`` is not a Boolean array with one entry per sample, if
-        positions has fewer than two coordinates (x and y), or if
-        ``window_duration`` is not finite and positive.
+        positions has fewer than two coordinates (x and y), if
+        ``window_duration`` is not finite and positive, if ``alpha`` is not
+        in [0, 1], or if ``vte_threshold`` is not finite.
 
     Warns
     -----
@@ -1274,6 +1317,16 @@ def compute_vte_session(
     window_duration = _validated_window_duration(
         window_duration, name="window_duration", call="compute_vte_session"
     )
+    alpha = _validated_alpha(alpha, call="compute_vte_session")
+    if not np.isfinite(vte_threshold):
+        raise ValueError(
+            f"compute_vte_session() needs a finite vte_threshold; got "
+            f"{vte_threshold!r}.\n"
+            "Why: no VTE index compares meaningfully with a NaN or infinite "
+            "threshold.\n"
+            "Fix: pass a finite threshold on the VTE index, e.g. "
+            "vte_threshold=0.5."
+        )
     min_speed = _validated_min_speed(
         resolve_min_speed(env, min_speed, call="compute_vte_session()"),
         call="compute_vte_session",
@@ -1317,11 +1370,7 @@ def compute_vte_session(
                 min_observed_speed=m.min_observed_speed,
                 z_speed_inverse=float(z_speed),
                 vte_index=float(vte_idx),
-                is_vte=(
-                    None
-                    if np.isnan(vte_idx)
-                    else classify_vte(vte_idx, threshold=vte_threshold)
-                ),
+                is_vte=classify_vte(vte_idx, threshold=vte_threshold),
                 window_start=m.window_start,
                 window_end=m.window_end,
                 status=m.status,
