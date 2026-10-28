@@ -1023,31 +1023,22 @@ def _planar_turns(
     max_gap: float | None,
     epochs: Any,
     break_before: ArrayLike | None,
-) -> tuple[
-    NDArray[np.float64],
-    NDArray[np.float64],
-    NDArray[np.float64],
-    NDArray[np.bool_],
-    NDArray[np.float64],
-]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     """Incoming and outgoing displacement at each sample of a planar path.
 
     Missing samples are skipped as if deleted: the neighbours of a valid
     sample are the valid samples before and after it, across bridged gaps.
 
+    A sample has a turn when it is valid, both neighbouring gaps are usable
+    and both displacements are nonzero; every output is NaN elsewhere.
+
     Returns
     -------
-    times : NDArray[np.float64], shape (n_samples,)
-        Validated sample times in seconds.
     a, b : NDArray[np.float64], shape (n_samples, 2)
         ``positions[i] - positions[h]`` and ``positions[j] - positions[i]``,
-        where ``h`` and ``j`` are the previous and next valid samples; NaN
-        rows where ``supported`` is False.
-    supported : NDArray[np.bool_], shape (n_samples,)
-        True at valid samples whose two neighbouring gaps are both usable and
-        whose two displacements are both nonzero.
+        where ``h`` and ``j`` are the previous and next valid samples.
     span : NDArray[np.float64], shape (n_samples,)
-        ``times[j] - times[h]``; NaN where ``supported`` is False.
+        ``times[j] - times[h]`` in seconds.
     """
     # Validate first so a swapped (positions, times) call gets that message.
     t, p, support = validated_observations(
@@ -1081,7 +1072,7 @@ def _planar_turns(
     a[~supported] = np.nan
     b[~supported] = np.nan
     span[~supported] = np.nan
-    return t, a, b, supported, span
+    return a, b, span
 
 
 def compute_planar_turn_angles(
@@ -1190,7 +1181,7 @@ def compute_planar_turn_angles(
     >>> bool(np.allclose(turns[1:-1], 0.8 / 30))
     True
     """
-    _, a, b, _, _ = _planar_turns(
+    a, b, _ = _planar_turns(
         times,
         positions,
         call="compute_planar_turn_angles",
@@ -1318,7 +1309,7 @@ def compute_planar_curvature(
     >>> bool(np.allclose(reversed_path[1:-1], -1 / 7))
     True
     """
-    _, a, b, _, _ = _planar_turns(
+    a, b, _ = _planar_turns(
         times,
         positions,
         call="compute_planar_curvature",
@@ -1444,7 +1435,7 @@ def compute_movement_angular_velocity(
     >>> bool(np.allclose(clockwise[1:-1], -0.8))
     True
     """
-    _, a, b, _, span = _planar_turns(
+    a, b, span = _planar_turns(
         times,
         positions,
         call="compute_movement_angular_velocity",
