@@ -155,9 +155,9 @@ class TestDecisionRegionEntryTime:
             position_bins, times, env, region="center"
         )
 
-        # Center region is at y=55, trajectory goes from y=0 to y=60 over 10s
-        # Entry should be around t = 10 * (55/60) ≈ 9.2s (accounting for bin discretization)
-        assert 7.0 < entry_time <= 10.0
+        # The center bin spans y in [52.5, 57.5); y = 60 k / 99 first reaches
+        # it at sample k = 87.
+        assert entry_time == times[87]
 
     def test_raises_if_never_enters(self, t_maze_environment):
         """Test ValueError if trajectory never enters region."""
@@ -178,6 +178,27 @@ class TestDecisionRegionEntryTime:
 
         with pytest.raises(ValueError, match="never enters"):
             decision_region_entry_time(position_bins, times, env, region="center")
+
+    def test_validates_bins_and_times(self, t_maze_environment):
+        from neurospatial.behavior.decisions import decision_region_entry_time
+
+        env = t_maze_environment
+        bins = env.bin_at(np.column_stack([np.full(5, 50.0), np.linspace(40, 56, 5)]))
+        times = np.arange(5) / 10
+        with pytest.raises(ValueError, match="one position bin per timestamp"):
+            decision_region_entry_time(bins, times[:4], env, region="center")
+        with pytest.raises(ValueError, match="non-decreasing"):
+            decision_region_entry_time(bins, times[::-1], env, region="center")
+        with pytest.raises(ValueError, match="strictly increasing"):
+            decision_region_entry_time(
+                bins, np.r_[0.0, times[:4]], env, region="center"
+            )
+        with pytest.raises(ValueError, match="finite"):
+            decision_region_entry_time(
+                bins, np.r_[times[:4], np.nan], env, region="center"
+            )
+        with pytest.raises(TypeError, match="integer position_bins"):
+            decision_region_entry_time(bins.astype(float), times, env, region="center")
 
 
 # =============================================================================
@@ -557,6 +578,20 @@ class TestComputePreDecisionMetrics:
 # =============================================================================
 
 
+def _stem_right_then_back_left():
+    """Up the T-maze stem, east to the right goal, then west past the center.
+
+    10 Hz. The stem (0-2.9 s) enters the center bin at 2.8 s; the east leg
+    (3.0-5.9 s) reaches the right goal; the return leg (6.0-10.0 s) walks
+    west 2 cm per sample from x = 90 cm and re-enters the center bin
+    (x < 52.5 cm) at x = 52 cm, 7.9 s.
+    """
+    times = np.arange(101) / 10
+    x = np.r_[np.full(30, 50.0), np.linspace(50, 90, 30), 90 - 2.0 * np.arange(41)]
+    y = np.r_[np.linspace(5, 55, 30), np.full(71, 55.0)]
+    return times, np.column_stack([x, y])
+
+
 class TestComputeDecisionAnalysis:
     """Test compute_decision_analysis function."""
 
@@ -629,6 +664,43 @@ class TestComputeDecisionAnalysis:
         for goals in (["left", "right"], ["right", "left"]):
             assert self._chosen_goal_region(t_maze_environment, x, y, goals) == (
                 "right"
+            )
+
+    def test_entry_is_searched_inside_epochs(self, t_maze_environment):
+        """Epochs (4, 10) s skip the 2.8 s entry and use the return at 7.9 s."""
+        from neurospatial.behavior.decisions import compute_decision_analysis
+
+        times, positions = _stem_right_then_back_left()
+        kwargs = {
+            "decision_region": "center",
+            "goal_regions": ["left", "right"],
+            "min_speed": 5.0,
+        }
+        whole = compute_decision_analysis(
+            t_maze_environment, times, positions, **kwargs
+        )
+        assert_allclose(whole.entry_time, 2.8, rtol=1e-12)
+        assert whole.chosen_goal == 1
+        late = compute_decision_analysis(
+            t_maze_environment, times, positions, epochs=(4.0, 10.0), **kwargs
+        )
+        assert_allclose(late.entry_time, 7.9, rtol=1e-12)
+        assert late.chosen_goal == 0
+        assert late.pre_decision.n_samples == 10
+
+    def test_no_entry_inside_epochs_raises(self, t_maze_environment):
+        from neurospatial.behavior.decisions import compute_decision_analysis
+
+        times, positions = _stem_right_then_back_left()
+        with pytest.raises(ValueError, match="never enters region 'center' inside"):
+            compute_decision_analysis(
+                t_maze_environment,
+                times,
+                positions,
+                decision_region="center",
+                goal_regions=["left", "right"],
+                min_speed=5.0,
+                epochs=(3.5, 6.0),
             )
 
     def test_single_goal_has_no_boundary(self, t_maze_environment):

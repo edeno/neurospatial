@@ -1019,8 +1019,9 @@ def compute_vte_session(
     ``epochs``, not crossing a missing row or a ``break_before``) is analyzed
     as a separate recording; no velocity or heading spans a pause.
 
-    Each pre-decision window uses only its trial samples and the time
-    segment containing the decision-region entry. Result window bounds
+    A trial's decision-region entry is its first sample inside both the
+    region and ``epochs``. Each pre-decision window uses only its trial
+    samples and the time segment containing that entry. Result window bounds
     describe the requested window clipped at the trial start; fewer samples
     may be available within that window.
 
@@ -1108,8 +1109,9 @@ def compute_vte_session(
         resolve_min_speed,
     )
     from neurospatial.behavior.decisions import (
+        _first_entry,
+        _in_epochs,
         _pre_decision_window,
-        decision_region_entry_time,
     )
 
     _validate_velocity_positions(raw_positions, call="compute_vte_session")
@@ -1120,6 +1122,8 @@ def compute_vte_session(
     trial_windows: list[tuple[float, float]] = []  # (window_start, window_end)
     raw_min_speeds: list[float] = []
 
+    region_bins = env.bins_in_region(decision_region)
+    in_epochs = _in_epochs(times, support.epochs)
     for trial in trials:
         # The trial's samples, start_time <= t <= end_time, are contiguous.
         first = int(np.searchsorted(times, trial.start_time, side="left"))
@@ -1127,13 +1131,11 @@ def compute_vte_session(
         if stop <= first:
             continue
         trial_times = times[first:stop]
-        trial_bins = env.bin_at(positions[first:stop])
-
-        try:
-            entry_time = decision_region_entry_time(
-                trial_bins, trial_times, env, region=decision_region
-            )
-        except ValueError:
+        # The entry is the trial's first decision-region sample inside epochs.
+        entry = _first_entry(
+            env.bin_at(positions[first:stop]), region_bins, in_epochs[first:stop]
+        )
+        if entry is None:
             # Trial never enters the decision region - skip it, but emit a
             # warning so silently dropped trials are observable to the caller.
             warnings.warn(
@@ -1144,6 +1146,7 @@ def compute_vte_session(
                 stacklevel=2,
             )
             continue
+        entry_time = float(trial_times[entry])
 
         # The pre-decision window comes from this trial's samples only, so it
         # stops at the trial start; the trial's interval gates are the

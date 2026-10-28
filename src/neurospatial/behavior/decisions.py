@@ -77,9 +77,11 @@ from neurospatial._intervals import (
     as_intervals,
     interval_valid_mask,
     run_sample_bounds,
+    times_in_intervals,
 )
 from neurospatial._observation import (
     ObservationSupport,
+    _validated_signal_times,
     validate_break_before,
     validated_observations,
     validated_signals,
@@ -368,9 +370,10 @@ def decision_region_entry_time(
     Parameters
     ----------
     position_bins : NDArray[np.int64], shape (n_samples,)
-        Sequence of bin indices representing the trajectory.
+        Bin index of each sample, from ``env.bin_at``; -1 marks a sample
+        outside every bin.
     times : NDArray[np.float64], shape (n_samples,)
-        Timestamps corresponding to position bins (seconds).
+        Timestamps in seconds; finite and strictly increasing.
     env : Environment
         Environment with region definitions.
     region : str
@@ -379,39 +382,96 @@ def decision_region_entry_time(
     Returns
     -------
     float
-        Time of first entry to the decision region (seconds).
+        Time of the first sample inside the decision region (seconds).
 
     Raises
     ------
     ValueError
-        If region not found in env.regions.
-    ValueError
-        If trajectory never enters the region.
+        If region not found in env.regions, if ``position_bins`` and
+        ``times`` differ in length, if ``times`` is empty, not finite or not
+        strictly increasing, or if the trajectory never enters the region.
+    TypeError
+        If ``position_bins`` is not an integer array.
 
     Examples
     --------
-    >>> entry_time = decision_region_entry_time(
-    ...     position_bins, times, env, "center"
-    ... )  # doctest: +SKIP
-    >>> print(f"Entered decision region at t={entry_time:.2f}s")  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment, Regions
+    >>> from neurospatial.behavior import decision_region_entry_time
+    >>> env = Environment.from_samples(np.arange(101.0)[:, None], bin_size=10.0)
+    >>> regions = Regions()
+    >>> _ = regions.add("center", point=(50.0,))
+    >>> env = env.with_regions(regions)
+    >>> times = np.arange(11) / 10  # s
+    >>> position_bins = env.bin_at(10.0 * np.arange(11)[:, None])  # 100 cm/s
+    >>> decision_region_entry_time(position_bins, times, env, region="center")
+    0.5
     """
     _require_region_mask(
         env, region, operation="decision_region_entry_time()", argument="region"
     )
+    position_bins = _validated_position_bins(
+        position_bins, times, call="decision_region_entry_time"
+    )
+    times = _validated_signal_times(times, call="decision_region_entry_time")
+    entry = _first_entry(
+        position_bins, env.bins_in_region(region), np.ones(times.shape, dtype=bool)
+    )
+    if entry is None:
+        raise ValueError(_never_enters_message(region, epochs=None))
+    return float(times[entry])
 
-    # Get bins in the region
-    region_bins = env.bins_in_region(region)
-    region_bin_set = set(region_bins)
 
-    # Find first entry
-    for i, bin_idx in enumerate(position_bins):
-        if bin_idx in region_bin_set:
-            return float(times[i])
+def _validated_position_bins(
+    position_bins: ArrayLike, times: ArrayLike, *, call: str
+) -> NDArray[np.int64]:
+    """1-D integer bins with one entry per timestamp."""
+    bins = np.asarray(position_bins)
+    n_times = np.shape(times)[0] if np.ndim(times) else 0
+    if bins.ndim != 1 or bins.shape[0] != n_times:
+        raise ValueError(
+            f"{call}() needs one position bin per timestamp; got position_bins "
+            f"of shape {bins.shape} and {n_times} timestamps.\n"
+            "Why: each sample's bin is matched to its time.\n"
+            "Fix: pass env.bin_at(positions) for the same samples as times."
+        )
+    if bins.size and bins.dtype.kind not in "iu":
+        raise TypeError(
+            f"{call}() needs integer position_bins from env.bin_at(); got dtype "
+            f"{bins.dtype}."
+        )
+    return bins.astype(np.int64, copy=False)
 
-    raise ValueError(
-        f"Trajectory never enters region '{region}'. "
-        f"Check that the trajectory passes through the decision region, "
-        f"or verify region bounds with env.regions['{region}']."
+
+def _first_entry(
+    position_bins: NDArray[np.int64],
+    region_bins: NDArray[np.int_],
+    observed: NDArray[np.bool_],
+) -> int | None:
+    """Index of the first observed sample inside the region; None if none."""
+    hits = np.flatnonzero(observed & np.isin(position_bins, region_bins))
+    return int(hits[0]) if hits.size else None
+
+
+def _in_epochs(
+    times: NDArray[np.float64], epochs: NDArray[np.float64] | None
+) -> NDArray[np.bool_]:
+    """Samples inside the half-open ``epochs`` windows (all without epochs)."""
+    if epochs is None:
+        return np.ones(times.shape, dtype=bool)
+    return times_in_intervals(epochs, times)
+
+
+def _never_enters_message(region: str, *, epochs: Any) -> str:
+    where = " inside epochs" if epochs is not None else ""
+    return (
+        f"Trajectory never enters region '{region}'{where}.\n"
+        "Why: the decision-region entry time is the first sample inside the "
+        "region.\n"
+        "Fix: check that the trajectory passes through the decision region "
+        f"(verify its bounds with env.regions['{region}'])"
+        + (" during the epochs" if epochs is not None else "")
+        + "."
     )
 
 
@@ -1436,6 +1496,11 @@ def compute_decision_analysis(
     their goal label is -1 and their boundary distance NaN. Per-sample goal
     labels and boundary distances keep the input length.
 
+    The decision-region entry is the first sample inside both the region
+    and ``epochs``, and the chosen goal is the first goal region occupied by
+    a sample inside ``epochs`` from then on; samples outside ``epochs`` are
+    never used.
+
     Examples
     --------
     >>> import numpy as np
@@ -1521,10 +1586,12 @@ def compute_decision_analysis(
     # Get position bins
     position_bins = env.bin_at(positions)
 
-    # Find entry time to decision region
-    entry_time = decision_region_entry_time(
-        position_bins, times, env, region=decision_region
-    )
+    # The entry is the first decision-region sample inside the epochs.
+    in_epochs = _in_epochs(times, support.epochs)
+    entry = _first_entry(position_bins, env.bins_in_region(decision_region), in_epochs)
+    if entry is None:
+        raise ValueError(_never_enters_message(decision_region, epochs=epochs))
+    entry_time = float(times[entry])
 
     from neurospatial.behavior._kinematics import resolve_min_speed
 
@@ -1574,7 +1641,7 @@ def compute_decision_analysis(
         pre_decision=pre_decision,
         boundary=boundary,
         chosen_goal=_first_goal_entered(
-            env, position_bins, times, goal_regions, after=entry_time
+            env, position_bins[entry:], goal_regions, in_epochs[entry:]
         ),
     )
 
@@ -1582,21 +1649,20 @@ def compute_decision_analysis(
 def _first_goal_entered(
     env: Environment,
     position_bins: NDArray[np.int64],
-    times: NDArray[np.float64],
     goal_regions: list[str],
-    *,
-    after: float,
+    observed: NDArray[np.bool_],
 ) -> int | None:
-    """Index of the first goal region occupied at or after ``after``; None if none.
+    """Index of the first goal region occupied by an observed sample; None if none.
 
-    Goal occupancy before the decision-region entry (for example the goal
-    the trial started from) does not count. A sample inside several goal
-    regions picks the first of them in ``goal_regions`` order.
+    The caller passes the samples from the decision-region entry on, so goal
+    occupancy before it (for example the goal the trial started from) does
+    not count. A sample inside several goal regions picks the first of them
+    in ``goal_regions`` order.
     """
     in_goal = np.stack(
         [np.isin(position_bins, env.bins_in_region(name)) for name in goal_regions]
     )
-    reached = np.flatnonzero((times >= after) & in_goal.any(axis=0))
+    reached = np.flatnonzero(observed & in_goal.any(axis=0))
     if reached.size == 0:
         return None
     return int(np.argmax(in_goal[:, reached[0]]))

@@ -315,18 +315,18 @@ def test_vte_session_keeps_trial_clamp_and_observed_window(pause_track):
 
 
 def test_decision_analysis_forwards_windows(pause_track):
+    """The target is entered only after 1100 s, outside epochs (0, 100) s."""
     r = pause_track
-    result = compute_decision_analysis(
-        r.env,
-        r.times,
-        r.positions,
-        decision_region="target",
-        goal_regions=["source", "target"],
-        pre_window=1001,
-        epochs=(0, 100),
-    )
-    assert result.pre_decision.n_samples == 0
-    assert result.boundary.crossing_times == []
+    with pytest.raises(ValueError, match="never enters region 'target' inside"):
+        compute_decision_analysis(
+            r.env,
+            r.times,
+            r.positions,
+            decision_region="target",
+            goal_regions=["source", "target"],
+            pre_window=1001,
+            epochs=(0, 100),
+        )
 
 
 def test_max_gap_none_preserves_requested_window(pause_track):

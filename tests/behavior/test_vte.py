@@ -1391,3 +1391,42 @@ def test_no_variation_warning_points_at_the_call_site(t_maze_environment):
         )
     assert record
     assert {w.filename for w in record} == {__file__}
+
+
+def test_session_entry_is_searched_inside_epochs(t_maze_environment):
+    """Epochs (4, 10) s skip the 2.8 s entry and use the return at 7.9 s."""
+    from neurospatial.behavior.segmentation import Trial
+    from neurospatial.behavior.vte import compute_vte_session
+
+    # Up the stem into the center bin at 2.8 s, east to the right goal, then
+    # west 2 cm per sample from x = 90 cm back into the center bin at 7.9 s.
+    times = np.arange(101) / 10
+    x = np.r_[np.full(30, 50.0), np.linspace(50, 90, 30), 90 - 2.0 * np.arange(41)]
+    y = np.r_[np.linspace(5, 55, 30), np.full(71, 55.0)]
+    positions = np.column_stack([x, y])
+    trials = [
+        Trial(
+            start_time=0.0,
+            end_time=10.0,
+            start_region="start",
+            end_region="left",
+            success=True,
+        )
+    ]
+    kwargs = {"decision_region": "center", "window_duration": 1.0, "min_speed": 5.0}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # one trial: no z-score spread
+        whole = compute_vte_session(
+            t_maze_environment, times, positions, trials=trials, **kwargs
+        )
+        late = compute_vte_session(
+            t_maze_environment,
+            times,
+            positions,
+            trials=trials,
+            epochs=(4.0, 10.0),
+            **kwargs,
+        )
+    assert_allclose(whole.trial_results[0].window_end, 2.8, rtol=1e-12)
+    assert_allclose(late.trial_results[0].window_end, 7.9, rtol=1e-12)
+    assert_allclose(late.trial_results[0].mean_speed, 20.0, rtol=1e-9)
