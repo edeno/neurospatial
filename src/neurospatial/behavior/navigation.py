@@ -201,11 +201,12 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     time_efficiency : float or None
         Ratio T_optimal / T_actual if reference_speed provided, else None.
     angular_efficiency : float
-        1 - mean(|delta_theta|) / pi. Range [0, 1].
-        Value of 1.0 indicates heading directly toward goal at all times.
-        From compute_path_efficiency(): NaN unless the path is completely
-        observed; 1.0 for a complete path of two samples (no turns possible).
-        From subgoal_efficiency(): 1.0 for a segment of fewer than three samples.
+        ``1 - mean(angle) / pi``, where ``angle`` is the angle between each
+        observed step and the direction from the step's start to the goal
+        (see :func:`angular_efficiency`). Range [0, 1]: 1.0 for a run
+        straight toward the goal, 0.5 for steps perpendicular to it, 0.0 for
+        a run straight away. NaN when no step has a defined direction (no
+        movement, or fewer than two observed samples).
     start_position : NDArray[np.float64]
         Start position coordinates, shape (n_dims,).
     goal_position : NDArray[np.float64]
@@ -2980,55 +2981,147 @@ def time_efficiency(
 
 
 def angular_efficiency(
-    positions: NDArray[np.float64],
-    goal: NDArray[np.float64],
+    times: ArrayLike,
+    positions: ArrayLike,
+    goal: ArrayLike,
+    *,
+    max_gap: float | None = DEFAULT_MAX_GAP,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> float:
-    """Compute angular path efficiency toward goal.
+    """Compute how directly each step heads toward the goal.
 
-    Measures how directly the animal heads toward the goal throughout
-    the trajectory.
+    For every observed step, the angle between the step's direction and the
+    direction from the step's start to the goal is measured; the result is
+    ``1 - mean(angle) / pi``. A run straight toward the goal scores 1, a run
+    straight away scores 0, and steps perpendicular to the goal direction
+    score 0.5.
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates in allocentric frame.
-    goal : NDArray[np.float64], shape (n_dims,)
-        Goal position in allocentric frame.
+    times : ArrayLike, shape (n_samples,)
+        Sample times in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples, n_dims) or (n_samples,)
+        Position coordinates in allocentric frame. Rows with a non-finite
+        coordinate are missing.
+    goal : ArrayLike, shape (n_dims,)
+        Goal position, in the coordinates and units of ``positions``.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
+    epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
+        Half-open ``[start, stop)`` windows in seconds, on the clock of
+        ``times``. A step must lie inside one window.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
     float
-        Angular efficiency in range [0, 1].
-        Returns 1.0 for paths with < 3 positions.
-        Returns NaN if all positions are identical.
+        Angular efficiency in ``[0, 1]``. NaN when no step has a defined
+        direction toward the goal: fewer than two observed samples, the
+        animal never moves, or every step starts at the goal.
+
+    Raises
+    ------
+    ValueError
+        If the inputs are empty or malformed, or ``goal`` does not have one
+        coordinate per position dimension.
 
     Notes
     -----
-    Computed as: 1 - mean(|delta_theta|) / pi
+    A step joins two consecutive valid samples. A NaN row is bridged like a
+    deleted row when its valid neighbours are no more than ``max_gap`` apart;
+    only a longer gap, an ``epochs`` edge or a declared break leaves the step
+    out. A step of zero length has no direction and is left out, as is a
+    step that starts at the goal (no goal direction).
+
+    The angle between step ``s`` and goal direction ``g`` is computed as
+    ``2 * arctan2(|u - v|, |u + v|)`` with unit vectors ``u = s / |s|`` and
+    ``v = g / |g|``. In 2-D it equals ``|wrap(step_heading - goal_bearing)|``,
+    and it is defined the same way for 1-D and 3-D positions.
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial.behavior import angular_efficiency
+    >>> times = np.array([0.0, 0.1, 0.2])
     >>> positions = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
-    >>> angular_efficiency(positions, goal=np.array([2.0, 0.0]))
+    >>> angular_efficiency(times, positions, np.array([10.0, 0.0]))  # toward
     1.0
+    >>> angular_efficiency(times, positions, np.array([-10.0, 0.0]))  # away
+    0.0
     """
-    from neurospatial.behavior.trajectory import compute_turn_angles
+    from neurospatial._observation import validated_observations
 
-    if len(positions) < 3:
-        return 1.0
+    _, positions_arr, support = validated_observations(
+        times,
+        positions,
+        call="angular_efficiency",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="the angular efficiency is NaN",
+    )
+    starts, ends = _observed_steps(positions_arr, support)
+    return _angular_efficiency(starts, ends, goal, call="angular_efficiency")
 
-    if np.ptp(positions, axis=0).max() < 1e-10:
+
+def _observed_steps(
+    positions: NDArray[np.float64], support: ObservationSupport
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Start and end positions of each usable step between valid samples.
+
+    A bridged stretch of missing samples is one step, from the valid sample
+    before it to the valid sample after it.
+
+    Returns
+    -------
+    starts, ends : ndarray, shape (n_steps, n_dims)
+    """
+    from neurospatial._intervals import gap_endpoints
+
+    first, last, _ = gap_endpoints(support.sample_valid)
+    counted = support.interval_mask & support.sample_valid[1:]
+    return positions[first[counted]], positions[last[counted]]
+
+
+def _angular_efficiency(
+    starts: NDArray[np.float64],
+    ends: NDArray[np.float64],
+    goal: ArrayLike,
+    *,
+    call: str,
+) -> float:
+    """``1 - mean(angle) / pi`` over steps with a defined goal-relative angle.
+
+    Parameters
+    ----------
+    starts, ends : ndarray, shape (n_steps, n_dims)
+        Step endpoints.
+    goal : array-like, shape (n_dims,)
+    call : str
+        Public function name, used in the goal-dimension error.
+    """
+    to_goal = _goal_vector(starts, np.asarray(goal, dtype=float), call=call)
+    step = ends - starts
+    step_norm = np.linalg.norm(step, axis=1)
+    goal_norm = np.linalg.norm(to_goal, axis=1)
+    defined = (step_norm > 0) & (goal_norm > 0)
+    if not defined.any():
         return np.nan
-
-    angles = compute_turn_angles(positions)
-
-    if len(angles) == 0:
-        return 1.0
-
-    mean_abs_angle = np.mean(np.abs(angles))
-    return float(1.0 - mean_abs_angle / np.pi)
+    u = step[defined] / step_norm[defined, None]
+    v = to_goal[defined] / goal_norm[defined, None]
+    angle = 2.0 * np.arctan2(
+        np.linalg.norm(u - v, axis=1), np.linalg.norm(u + v, axis=1)
+    )
+    return float(1.0 - np.mean(angle / np.pi))
 
 
 def subgoal_efficiency(
@@ -3096,7 +3189,12 @@ def subgoal_efficiency(
             else:
                 eff = np.nan
 
-            ang_eff = angular_efficiency(segment_positions, subgoal)
+            ang_eff = _angular_efficiency(
+                segment_positions[:-1],
+                segment_positions[1:],
+                subgoal,
+                call="subgoal_efficiency",
+            )
 
             segment_results.append(
                 PathEfficiencyResult(
@@ -3228,15 +3326,18 @@ def compute_path_efficiency(
     by the straight step between its neighbours when they are no more than
     ``max_gap`` apart, while a longer gap, a declared break or an interval
     outside ``epochs`` is left out, and it is ``nan`` when nothing was
-    observed (including a single sample). ``efficiency`` and
-    ``angular_efficiency`` compare the whole route with the shortest one, so
-    they are ``nan`` unless every interval from the first to the last observed
-    sample is usable; with an unbridged stretch the observed length underestimates
-    the route and the ratio would be biased upward. ``shortest_length`` and
-    the wall-clock ``time_efficiency`` keep their meanings. When a long
-    tracking loss makes a trial's efficiency ``nan``, report its
-    ``traveled_length`` instead, or restrict the analysis to completely
-    observed trials.
+    observed (including a single sample). ``efficiency`` compares the whole
+    route with the shortest one, so it is ``nan`` unless every interval from
+    the first to the last observed sample is usable; with an unbridged
+    stretch the observed length underestimates the route and the ratio would
+    be biased upward. ``shortest_length`` and the wall-clock
+    ``time_efficiency`` keep their meanings. When a long tracking loss makes
+    a trial's efficiency ``nan``, report its ``traveled_length`` instead, or
+    restrict the analysis to completely observed trials.
+
+    ``angular_efficiency`` is a mean over the observed steps, as returned by
+    :func:`angular_efficiency` with the same arguments, so a tracking loss
+    removes steps from the mean but does not bias it.
 
     Examples
     --------
@@ -3283,6 +3384,9 @@ def compute_path_efficiency(
     traveled, complete = _observed_path_length(
         positions_arr, support, metric=metric, env=env
     )
+    ang_eff = _angular_efficiency(
+        *_observed_steps(positions_arr, support), goal, call="compute_path_efficiency"
+    )
     # Missing rows before the first or after the last observed sample are
     # deleted rows: the path starts and ends where the animal was observed.
     observed = np.flatnonzero(support.sample_valid)
@@ -3305,12 +3409,6 @@ def compute_path_efficiency(
             reference_speed=reference_speed,
             optimal_distance=shortest,
         )
-
-    ang_eff = (
-        angular_efficiency(positions_arr[np.isfinite(positions_arr).all(axis=1)], goal)
-        if complete
-        else np.nan
-    )
 
     return PathEfficiencyResult(
         traveled_length=traveled,

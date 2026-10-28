@@ -79,7 +79,10 @@ def test_head_sweep_sums_runs(two_epoch_recording):
 
 
 def test_path_efficiency_counts_observed_travel_across_pause(two_epoch_recording):
-    from neurospatial.behavior.navigation import traveled_path_length
+    from neurospatial.behavior.navigation import (
+        angular_efficiency,
+        traveled_path_length,
+    )
 
     r = two_epoch_recording
     result = compute_path_efficiency(
@@ -101,7 +104,11 @@ def test_path_efficiency_counts_observed_travel_across_pause(two_epoch_recording
         first.traveled_length + second.traveled_length, rel=1e-12
     )
     assert np.isnan(result.efficiency)
-    assert np.isnan(result.angular_efficiency)
+    # A mean over the observed steps of both epochs; the pause is no step.
+    assert result.angular_efficiency == angular_efficiency(
+        r.times, r.positions, r.positions[-1]
+    )
+    assert np.isfinite(result.angular_efficiency)
     assert np.isfinite(result.shortest_length)
     assert np.isfinite(result.time_efficiency)
     assert np.isfinite(first.traveled_length)

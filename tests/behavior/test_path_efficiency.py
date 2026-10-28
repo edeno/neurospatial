@@ -390,7 +390,9 @@ class TestPathEfficiencyObservedSupport:
             np.sum(compute_step_lengths(r.positions, metric=metric, env=r.env))
         )
         assert result.efficiency == result.shortest_length / result.traveled_length
-        assert result.angular_efficiency == angular_efficiency(r.positions, goal)
+        assert result.angular_efficiency == angular_efficiency(
+            r.times, r.positions, goal
+        )
 
     POSITIONS = np.column_stack([np.arange(11.0), np.zeros(11)])  # cm
     TIMES = np.arange(11) / 10  # seconds
@@ -441,7 +443,8 @@ class TestPathEfficiencyObservedSupport:
         )
         # 10 / 8 = 1.25 would claim a path shorter than the shortest one.
         assert np.isnan(result.efficiency)
-        assert np.isnan(result.angular_efficiency)
+        # Every observed step heads straight to the goal.
+        assert result.angular_efficiency == 1.0
         assert result.shortest_length == 10.0
 
     def test_declared_break_equals_separate_calls(self):
@@ -473,7 +476,7 @@ class TestPathEfficiencyObservedSupport:
             times, positions, break_before=break_before
         )
         assert np.isnan(result.efficiency)
-        assert np.isnan(result.angular_efficiency)
+        assert result.angular_efficiency == 1.0
 
     def test_single_sample_has_no_observed_path(self):
         """One sample is no observed path: NaN, not a stationary or direct one."""
@@ -531,7 +534,6 @@ class TestPathEfficiencyObservedSupport:
             times, positions, metric="geodesic", env=env
         )
         assert np.isnan(result.efficiency)
-        assert np.isnan(result.angular_efficiency)
 
     def test_repeated_timestamp_and_empty_input_raise(self):
         """The clock must be strictly increasing and hold at least one sample."""
@@ -570,57 +572,96 @@ class TestPathEfficiencyObservedSupport:
 
 
 class TestAngularEfficiency:
-    """Test angular_efficiency function."""
+    """angular_efficiency scores each step's direction against the goal's."""
 
-    def test_straight_to_goal_is_one(self):
-        """Test that heading directly to goal gives efficiency ~1.0."""
+    TIMES = np.arange(21) / 10  # s
+    EAST_RUN = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])  # cm
+
+    def test_run_toward_goal_is_one(self):
         from neurospatial.behavior.navigation import angular_efficiency
 
-        # Straight line toward goal at (100, 0)
-        positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
-        goal = np.array([100.0, 0.0])
-
-        eff = angular_efficiency(positions, goal)
-
-        # Should be very close to 1.0 (always heading toward goal)
-        assert eff > 0.9
-
-    def test_less_than_3_positions_returns_one(self):
-        """Test that < 3 positions returns 1.0 (no turns possible)."""
-        from neurospatial.behavior.navigation import angular_efficiency
-
-        positions = np.array([[0.0, 0.0], [10.0, 0.0]])
-        goal = np.array([50.0, 0.0])
-
-        eff = angular_efficiency(positions, goal)
-
+        eff = angular_efficiency(self.TIMES, self.EAST_RUN, np.array([150.0, 0.0]))
         assert eff == 1.0
 
-    def test_identical_positions_returns_nan(self):
-        """Test that all identical positions returns NaN."""
+    def test_run_away_from_goal_is_zero(self):
+        """The same straight run scores 0 when the goal is behind it."""
+        from neurospatial.behavior.navigation import angular_efficiency
+
+        eff = angular_efficiency(self.TIMES, self.EAST_RUN, np.array([-500.0, 0.0]))
+        assert eff == 0.0
+
+    def test_steps_perpendicular_to_goal_are_one_half(self):
+        """Each step East with the goal due North of its start scores 0.5."""
+        from neurospatial.behavior.navigation import angular_efficiency
+
+        times = np.array([0.0, 0.1])
+        positions = np.array([[0.0, 0.0], [1.0, 0.0]])
+        eff = angular_efficiency(times, positions, np.array([0.0, 5.0]))
+        assert eff == pytest.approx(0.5, abs=1e-15)
+
+    def test_mean_over_steps(self):
+        """One step toward (angle 0) and one at 90 degrees (pi/2) give 0.75."""
+        from neurospatial.behavior.navigation import angular_efficiency
+
+        times = np.array([0.0, 0.1, 0.2])
+        # Goal at (1, 10): from (1, 0) it is due North, the second step East.
+        positions = np.array([[1.0, -10.0], [1.0, 0.0], [2.0, 0.0]])
+        eff = angular_efficiency(times, positions, np.array([1.0, 10.0]))
+        assert eff == pytest.approx(0.75, abs=1e-15)
+
+    def test_independent_of_goal_distance_along_heading(self):
+        """The old turn-angle score could not tell these goals apart."""
+        from neurospatial.behavior.navigation import angular_efficiency
+
+        toward = angular_efficiency(self.TIMES, self.EAST_RUN, np.array([150.0, 0.0]))
+        away = angular_efficiency(self.TIMES, self.EAST_RUN, np.array([-150.0, 0.0]))
+        assert (toward, away) == (1.0, 0.0)
+
+    def test_two_samples_define_one_step(self):
+        from neurospatial.behavior.navigation import angular_efficiency
+
+        eff = angular_efficiency(
+            np.array([0.0, 0.1]), self.EAST_RUN[:2], np.array([150.0, 0.0])
+        )
+        assert eff == 1.0
+
+    def test_identical_positions_return_nan(self):
+        """No movement means no direction: NaN, not a perfect score."""
         from neurospatial.behavior.navigation import angular_efficiency
 
         positions = np.tile([50.0, 50.0], (10, 1))
-        goal = np.array([100.0, 0.0])
-
-        eff = angular_efficiency(positions, goal)
-
+        eff = angular_efficiency(np.arange(10) / 10, positions, np.array([0.0, 0.0]))
         assert np.isnan(eff)
 
-    def test_returns_value_in_zero_one(self):
-        """Test that angular efficiency is in [0, 1] range."""
+    def test_long_tracking_loss_drops_its_step(self):
+        """A gap longer than max_gap is no step; a backtrack across it is ignored."""
         from neurospatial.behavior.navigation import angular_efficiency
 
-        # Meandering trajectory
-        t = np.linspace(0, 4 * np.pi, 100)
-        x = t * 5 + 20 * np.sin(t)
-        y = 20 * np.cos(t)
-        positions = np.column_stack([x, y])
+        times = np.array([0.0, 0.1, 5.0, 5.1])
+        # The pickup jumps back West across a 4.9 s gap: not a step.
+        positions = np.array([[0.0, 0.0], [1.0, 0.0], [-20.0, 0.0], [-19.0, 0.0]])
         goal = np.array([100.0, 0.0])
+        assert angular_efficiency(times, positions, goal) == 1.0
+        assert angular_efficiency(times, positions, goal, max_gap=None) == (
+            pytest.approx(1.0 - (1 / 3))
+        )
 
-        eff = angular_efficiency(positions, goal)
+    def test_lost_frame_is_bridged_like_a_deleted_row(self):
+        from neurospatial.behavior.navigation import angular_efficiency
 
-        assert 0.0 <= eff <= 1.0
+        positions = self.EAST_RUN.copy()
+        positions[[5, 6]] = [[50.0, 50.0], [np.nan, np.nan]]
+        kept = np.delete(np.arange(21), 6)
+        goal = np.array([150.0, 0.0])
+        assert angular_efficiency(self.TIMES, positions, goal) == angular_efficiency(
+            self.TIMES[kept], positions[kept], goal
+        )
+
+    def test_goal_dimension_mismatch_raises(self):
+        from neurospatial.behavior.navigation import angular_efficiency
+
+        with pytest.raises(ValueError, match="one coordinate per position"):
+            angular_efficiency(self.TIMES, self.EAST_RUN, np.array([1.0, 2.0, 3.0]))
 
 
 class TestTimeEfficiency:

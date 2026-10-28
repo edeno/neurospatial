@@ -70,8 +70,8 @@ class TestNavigationFunctionality:
         )
         goal = np.array([100.0, 0.0])
 
-        eff = angular_efficiency(positions, goal)
-        assert eff >= 0.95  # Should be close to 1.0
+        eff = angular_efficiency(np.arange(5) / 10, positions, goal)
+        assert eff == 1.0
 
     def test_path_efficiency_result_summary(self):
         """Test PathEfficiencyResult has working summary method."""
