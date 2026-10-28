@@ -7,63 +7,6 @@ from numpy.testing import assert_allclose
 from neurospatial import Environment, Regions
 
 # =============================================================================
-# Test Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def simple_2d_environment():
-    """Create a simple 2D environment for testing."""
-    x = np.linspace(0, 100, 50)
-    y = np.linspace(0, 100, 50)
-    xx, yy = np.meshgrid(x, y)
-    sample_positions = np.column_stack([xx.ravel(), yy.ravel()])
-    return Environment.from_samples(sample_positions, bin_size=5.0)
-
-
-@pytest.fixture
-def t_maze_environment():
-    """Create a T-maze environment with regions for testing.
-
-    Layout:
-        left (goal)  ---  center  ---  right (goal)
-                            |
-                            |
-                          start
-    """
-    # Create T-maze shape
-    # Vertical stem (y: 0 to 50)
-    stem_x = np.linspace(45, 55, 5)
-    stem_y = np.linspace(0, 50, 20)
-    stem_xx, stem_yy = np.meshgrid(stem_x, stem_y)
-
-    # Horizontal bar (y: 50 to 60)
-    bar_x = np.linspace(0, 100, 40)
-    bar_y = np.linspace(50, 60, 5)
-    bar_xx, bar_yy = np.meshgrid(bar_x, bar_y)
-
-    # Combine
-    positions = np.vstack(
-        [
-            np.column_stack([stem_xx.ravel(), stem_yy.ravel()]),
-            np.column_stack([bar_xx.ravel(), bar_yy.ravel()]),
-        ]
-    )
-
-    env = Environment.from_samples(positions, bin_size=5.0)
-
-    # Add regions (point regions - the bin containing each point)
-    region_builder = Regions(env.regions.values())
-    region_builder.add("start", point=(50.0, 5.0))
-    region_builder.add("center", point=(50.0, 55.0))
-    region_builder.add("left", point=(10.0, 55.0))
-    region_builder.add("right", point=(90.0, 55.0))
-    env = env.with_regions(region_builder)
-
-    return env
-
-
-# =============================================================================
 # Test PreDecisionMetrics Dataclass
 # =============================================================================
 

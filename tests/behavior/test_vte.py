@@ -10,69 +10,18 @@ Key metrics:
 - VTE index: Combined head sweep + slowness measure
 """
 
+import itertools
 import warnings
 
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial import Environment, Regions
+from neurospatial import Regions
 
 # =============================================================================
-# Test Fixtures
+# Test helpers
 # =============================================================================
-
-
-@pytest.fixture
-def simple_2d_environment():
-    """Create a simple 2D environment for testing."""
-    x = np.linspace(0, 100, 50)
-    y = np.linspace(0, 100, 50)
-    xx, yy = np.meshgrid(x, y)
-    sample_positions = np.column_stack([xx.ravel(), yy.ravel()])
-    return Environment.from_samples(sample_positions, bin_size=5.0)
-
-
-@pytest.fixture
-def t_maze_environment():
-    """Create a T-maze environment with regions for testing.
-
-    Layout:
-        left (goal)  ---  center  ---  right (goal)
-                            |
-                            |
-                          start
-    """
-    # Create T-maze shape
-    # Vertical stem (y: 0 to 50)
-    stem_x = np.linspace(45, 55, 5)
-    stem_y = np.linspace(0, 50, 20)
-    stem_xx, stem_yy = np.meshgrid(stem_x, stem_y)
-
-    # Horizontal bar (y: 50 to 60)
-    bar_x = np.linspace(0, 100, 40)
-    bar_y = np.linspace(50, 60, 5)
-    bar_xx, bar_yy = np.meshgrid(bar_x, bar_y)
-
-    # Combine
-    positions = np.vstack(
-        [
-            np.column_stack([stem_xx.ravel(), stem_yy.ravel()]),
-            np.column_stack([bar_xx.ravel(), bar_yy.ravel()]),
-        ]
-    )
-
-    env = Environment.from_samples(positions, bin_size=5.0)
-
-    # Add regions (point regions - the bin containing each point)
-    region_builder = Regions(env.regions.values())
-    region_builder.add("start", point=(50.0, 5.0))
-    region_builder.add("center", point=(50.0, 55.0))
-    region_builder.add("left", point=(10.0, 55.0))
-    region_builder.add("right", point=(90.0, 55.0))
-    env = env.with_regions(region_builder)
-
-    return env
 
 
 def _zigzag(n_samples):
@@ -881,23 +830,24 @@ class TestComputeVTETrial:
 class TestComputeVTESession:
     """Test compute_vte_session() function."""
 
-    def test_high_head_sweep_low_speed_is_vte(self, t_maze_environment):
-        """Test that high head sweep + low speed is classified as VTE."""
+    def test_scanning_trial_has_the_larger_head_sweep(self, t_maze_environment):
+        """A zig-zag approach sweeps its heading; a straight one does not.
+
+        Both rise 26 cm in 59 frames at 30 Hz; the zig-zag also moves
+        sideways, so it is the faster of the two. The straight approach has
+        no head sweep and runs at exactly 26 * 30 / 59 cm/s.
+        """
         from neurospatial.behavior.segmentation import Trial
         from neurospatial.behavior.vte import compute_vte_session
 
         env = t_maze_environment
-
-        # Create trials with different behaviors
-        # Trial 1: High head sweep, low speed (VTE-like)
-        # Trial 2: Low head sweep, high speed (non-VTE)
 
         # Build continuous position data for entire session
         n_per_trial = 60
         sample_rate = 30  # 30 Hz
         dt = 1.0 / sample_rate
 
-        # Trial 1: Slow, head-scanning trajectory approaching center
+        # Trial 1: head-scanning trajectory approaching center
         t1_times = np.arange(n_per_trial) * dt
         t1_x = np.linspace(50, 50, n_per_trial)  # Stay at x=50
         t1_y = np.linspace(30, 56, n_per_trial)  # Move up into the center
@@ -905,7 +855,7 @@ class TestComputeVTESession:
         # Add zigzag to create head scanning
         t1_x = t1_x + 5 * np.sin(np.linspace(0, 8 * np.pi, n_per_trial))
 
-        # Trial 2: Fast, straight trajectory approaching center
+        # Trial 2: straight trajectory approaching center
         t2_times = t1_times[-1] + dt + np.arange(n_per_trial) * dt
         t2_x = np.linspace(50, 50, n_per_trial)
         t2_y = np.linspace(30, 56, n_per_trial)
@@ -949,12 +899,13 @@ class TestComputeVTESession:
         # Both trials reach the center
         assert len(result.trial_results) == 2
         scanning, straight = result.trial_results
-        assert scanning.head_sweep_magnitude > straight.head_sweep_magnitude
-
-        # Session statistics should be computed
-        assert result.mean_head_sweep >= 0
-        assert result.std_head_sweep >= 0
-        assert result.mean_speed >= 0
+        assert straight.head_sweep_magnitude == 0.0
+        assert scanning.head_sweep_magnitude > 0.0
+        assert_allclose(straight.mean_speed, 26 * 30 / 59, rtol=1e-12)
+        assert scanning.mean_speed > straight.mean_speed
+        assert_allclose(
+            result.mean_head_sweep, scanning.head_sweep_magnitude / 2, rtol=1e-12
+        )
 
     def test_no_valid_trials_returns_empty_result(self, t_maze_environment):
         """Test that no valid trials returns empty session result."""
@@ -1105,10 +1056,19 @@ class TestComputeVTESession:
             env=env,
             window_duration=0.5,
             min_speed=0.5,
-            alpha=0.5,
+            # At alpha = 0.5 the faster zig-zags' head-sweep and speed
+            # z-scores cancel exactly, putting every index on the threshold.
+            alpha=0.7,
             vte_threshold=0.0,
         )
 
+        assert [t.is_vte for t in result.trial_results] == [
+            True,
+            False,
+            True,
+            False,
+            True,
+        ]
         # Check consistency: n_vte_trials matches is_vte count
         assert result.n_vte_trials == sum(1 for t in result.trial_results if t.is_vte)
 
@@ -1568,3 +1528,196 @@ def test_trial_result_validates_status_and_window():
         VTETrialResult(**{**fields, "status": "no_entry", "is_vte": False})
     plain = VTETrialResult(**{**fields, "mean_speed": np.float64(10.0)})
     assert type(plain.mean_speed) is float
+
+
+# =============================================================================
+# Known answers
+# =============================================================================
+
+_FS = 30  # Hz
+
+
+def _stem_scan(t0, n_reversals, speed):
+    """Up the stem at x = 50 cm, reversing direction ``n_reversals`` times.
+
+    ``n_reversals`` is even: the animal goes 6 cm up and back down
+    ``n_reversals / 2`` times, starting at y = 20 cm, then runs up into the
+    center bin at y = 56 cm, at a
+    constant ``speed`` (cm/s) between reversals, sampled at 30 Hz. Each
+    reversal turns the direction of movement by exactly pi, and the animal
+    is slower than any positive ``min_speed`` at the turning point, so IdPhi
+    is ``n_reversals * pi``.
+    """
+    turns = [20.0]
+    for k in range(n_reversals):
+        turns.append(turns[-1] + (6.0 if k % 2 == 0 else -6.0))
+    turns.append(56.0)
+    y = [turns[0]]
+    for start, stop in itertools.pairwise(turns):
+        n = round(abs(stop - start) / speed * _FS)
+        y.extend(np.linspace(start, stop, n + 1)[1:])
+    y = np.asarray(y)
+    times = t0 + np.arange(y.size) / _FS
+    return times, np.column_stack([np.full(y.size, 50.0), y])
+
+
+def _stem_run(t0, speed):
+    """Straight up the stem from y = 20 to 56 cm at a constant speed (cm/s)."""
+    y = np.arange(20.0, 56.0 + 1e-9, speed / _FS)
+    times = t0 + np.arange(y.size) / _FS
+    return times, np.column_stack([np.full(y.size, 50.0), y])
+
+
+def test_head_sweep_counts_each_reversal_as_pi():
+    from neurospatial.behavior.vte import head_sweep_from_positions
+
+    for n_reversals in (0, 2, 4, 6):
+        times, positions = _stem_scan(0.0, n_reversals, speed=8.0)
+        assert_allclose(
+            head_sweep_from_positions(times, positions, min_speed=2.0),
+            n_reversals * np.pi,
+            rtol=1e-12,
+            atol=1e-12,
+        )
+
+
+def _circle(n_revolutions, fs=30, radius=20.0, period=4.0):
+    """Constant-speed counter-clockwise circling, ``period`` s per revolution."""
+    times = np.arange(0, n_revolutions * period, 1 / fs)
+    angle = 2 * np.pi * times / period
+    return times, radius * np.column_stack([np.cos(angle), np.sin(angle)])
+
+
+def test_head_sweep_of_a_full_circle_is_two_pi():
+    """Each extra revolution adds exactly 2 pi.
+
+    The first revolution falls short of 2 pi only by its edges: the last
+    sample is one frame short of a full turn, and the velocity smoothing
+    (sigma 0.1 s) cannot see past the ends of the recording, which costs at
+    most the angle turned in one smoothing width.
+    """
+    from neurospatial.behavior.vte import head_sweep_from_positions
+
+    for fs in (30, 120):
+        one = head_sweep_from_positions(*_circle(1, fs=fs), min_speed=1.0)
+        two = head_sweep_from_positions(*_circle(2, fs=fs), min_speed=1.0)
+        assert_allclose(two - one, 2 * np.pi, rtol=1e-9)
+        omega = 2 * np.pi / 4.0  # rad/s
+        assert 0 < 2 * np.pi - one < omega * (1 / fs + 0.1)
+
+
+def test_head_sweep_is_invariant_to_rotation_translation_clock_and_units():
+    from neurospatial.behavior.vte import head_sweep_from_positions
+
+    times, positions = _circle(1)
+    times_zz, positions_zz = _zigzag(41)
+    angle = 0.7
+    rotation = np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    for t, p, min_speed in [(times, positions, 1.0), (times_zz, positions_zz, 0.1)]:
+        expected = head_sweep_from_positions(t, p, min_speed=min_speed)
+        assert expected > 0
+        moved = p @ rotation.T + np.array([37.0, -12.0])
+        assert_allclose(
+            head_sweep_from_positions(t + 1000.0, moved, min_speed=min_speed),
+            expected,
+            rtol=1e-9,
+        )
+        # The same path in meters, with the gate in meters per second.
+        assert_allclose(
+            head_sweep_from_positions(t, p / 100, min_speed=min_speed / 100),
+            expected,
+            rtol=1e-9,
+        )
+
+
+def test_vte_trial_straight_constant_speed():
+    """A straight 20 cm/s run: no head sweep and a measured 20 cm/s."""
+    from neurospatial.behavior.vte import compute_vte_trial
+
+    times = np.arange(90) / _FS
+    positions = np.column_stack([20.0 * times, np.full(90, 50.0)])
+    result = compute_vte_trial(
+        times, positions, entry_time=2.0, window_duration=1.0, min_speed=5.0
+    )
+    assert result.head_sweep_magnitude == 0.0
+    assert_allclose(result.mean_speed, 20.0, rtol=1e-12)
+    assert_allclose(result.min_observed_speed, 20.0, rtol=1e-12)
+    assert (result.window_start, result.window_end) == (1.0, 2.0)
+    assert result.status == "ok"
+    assert result.is_vte is None
+
+
+def test_session_z_scores_vte_index_and_verdicts(t_maze_environment):
+    """Two slow scanning trials and two fast straight controls.
+
+    The scanning trials reverse 2 and 4 times (IdPhi 2 pi and 4 pi); the
+    controls run straight (IdPhi 0) at 20 and 30 cm/s. Head-sweep z-scores
+    over [2, 4, 0, 0] pi are [1, 5, -3, -3] / sqrt(11) (population std).
+    """
+    from neurospatial.behavior.segmentation import Trial
+    from neurospatial.behavior.vte import compute_vte_session, compute_vte_trial
+
+    pieces = [
+        _stem_scan(0.0, 2, speed=8.0),
+        _stem_scan(10.0, 4, speed=8.0),
+        _stem_run(20.0, speed=20.0),
+        _stem_run(25.0, speed=30.0),
+    ]
+    times = np.concatenate([t for t, _ in pieces])
+    positions = np.vstack([p for _, p in pieces])
+    trials = [
+        Trial(
+            start_time=t[0],
+            end_time=t[-1],
+            start_region="start",
+            end_region="center",
+            success=True,
+        )
+        for t, _ in pieces
+    ]
+    alpha, threshold = 0.3, 0.5
+    result = compute_vte_session(
+        t_maze_environment,
+        times,
+        positions,
+        decision_region="center",
+        trials=trials,
+        window_duration=30.0,  # clipped at each trial start
+        min_speed=2.0,
+        alpha=alpha,
+        vte_threshold=threshold,
+    )
+    table = result.trials_table()
+
+    assert_allclose(
+        table["head_sweep_magnitude"], [2 * np.pi, 4 * np.pi, 0, 0], atol=1e-12
+    )
+    assert_allclose(
+        table["z_head_sweep"], np.array([1, 5, -3, -3]) / np.sqrt(11), rtol=1e-12
+    )
+    speeds = table["mean_speed"].to_numpy()
+    assert_allclose(speeds[2:], [20.0, 30.0], rtol=1e-12)
+    for i in (0, 1):  # the scanning speeds are those of the windows alone
+        trial = result.trial_results[i]
+        alone = compute_vte_trial(
+            times,
+            positions,
+            trial.window_end,
+            window_duration=trial.window_end - trial.window_start,
+            min_speed=2.0,
+            break_before=times == trial.window_start,
+        )
+        assert_allclose(speeds[i], alone.mean_speed, rtol=1e-12)
+        assert speeds[i] < 8.0  # slowed by the reversals
+    z_speed = -(speeds - speeds.mean()) / speeds.std()
+    assert_allclose(table["z_speed_inverse"], z_speed, rtol=1e-12)
+    vte_index = alpha * np.array([1, 5, -3, -3]) / np.sqrt(11) + (1 - alpha) * z_speed
+    assert_allclose(table["vte_index"], vte_index, rtol=1e-12)
+    assert table["is_vte"].tolist() == list(vte_index >= threshold)
+    assert table["is_vte"].tolist() == [True, True, False, False]
+    assert result.n_vte_trials == 2
+    assert result.vte_fraction == 0.5
+    assert_allclose(result.mean_head_sweep, 1.5 * np.pi, rtol=1e-12)
+    assert_allclose(result.std_head_sweep, np.pi * np.sqrt(11) / 2, rtol=1e-12)
