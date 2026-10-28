@@ -1431,7 +1431,7 @@ def compute_step_lengths(
     ------
     ValueError
         If metric="geodesic" but env is None.
-        If positions is not a 2D array.
+        If positions is not a 2D array or has no rows.
         If metric is not "euclidean" or "geodesic".
 
     Notes
@@ -1508,6 +1508,9 @@ def compute_step_lengths(
         raise ValueError(
             f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"
         )
+
+    if len(positions) == 0:
+        raise empty_samples_error("compute_step_lengths", ("positions",))
 
     if metric not in ("euclidean", "geodesic"):
         raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")

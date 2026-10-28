@@ -113,6 +113,15 @@ class TestComputeTurnAngles:
 class TestComputeStepLengths:
     """Test compute_step_lengths function."""
 
+    def test_empty_positions_raise_a_clear_error(self):
+        with pytest.raises(
+            ValueError, match=r"compute_step_lengths\(\) got no samples"
+        ):
+            compute_step_lengths(np.empty((0, 2)))
+
+    def test_one_position_has_no_step(self):
+        assert compute_step_lengths(np.zeros((1, 2))).shape == (0,)
+
     def test_step_lengths_straight_line(self):
         """Test step lengths on a straight 1D trajectory with Euclidean distance."""
         # Create straight line trajectory (continuous positions)
