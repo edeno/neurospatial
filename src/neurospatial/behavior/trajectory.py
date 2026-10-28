@@ -882,20 +882,10 @@ def compute_turn_angles(
     # Compute movement vectors (differences between consecutive positions)
     vectors = np.diff(unique_positions, axis=0)  # shape (n_unique-1, n_dims)
 
-    # Need at least 2 vectors to compute turn angles
-    if len(vectors) < 2:
-        return np.array([], dtype=np.float64)
-
-    # Vectorized turn angle computation
+    # Vectorized turn angle computation. Consecutive retained positions
+    # differ, so no step has zero length (NaN rows give NaN steps).
     v1 = vectors[:-1]  # shape (n_angles, n_dims)
     v2 = vectors[1:]  # shape (n_angles, n_dims)
-
-    # Compute vector norms
-    norms1 = np.linalg.norm(v1, axis=1)
-    norms2 = np.linalg.norm(v2, axis=1)
-
-    # Handle zero-length vectors
-    zero_mask = (norms1 == 0) | (norms2 == 0)
 
     n_dims = vectors.shape[1]
     angles: NDArray[np.float64]
@@ -909,9 +899,8 @@ def compute_turn_angles(
         # Unsigned angle between the full vectors (no turn sign exists in 3D
         # without a reference axis), by Kahan's formula, accurate near 0 and
         # pi: 2 atan2(|u - w|, |u + w|) for unit vectors u, w.
-        with np.errstate(invalid="ignore", divide="ignore"):
-            u = v1 / norms1[:, np.newaxis]
-            w = v2 / norms2[:, np.newaxis]
+        u = v1 / np.linalg.norm(v1, axis=1, keepdims=True)
+        w = v2 / np.linalg.norm(v2, axis=1, keepdims=True)
         angles = 2.0 * np.arctan2(
             np.linalg.norm(u - w, axis=1), np.linalg.norm(u + w, axis=1)
         )
@@ -921,9 +910,6 @@ def compute_turn_angles(
         product = v1[:, 0] * v2[:, 0]
         angles = np.where(product > 0, 0.0, np.pi)
         angles[np.isnan(product)] = np.nan
-
-    # Set zero-length vector pairs to 0
-    angles[zero_mask] = 0.0
 
     return angles
 
