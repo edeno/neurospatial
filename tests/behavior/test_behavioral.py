@@ -940,14 +940,14 @@ def test_compute_trajectory_curvature_2d_straight():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
     assert curvature.shape == (20,), "Output length should match input (n_samples)"
-    assert np.allclose(curvature, 0.0, atol=0.01), (
-        "Straight line should have near-zero curvature"
-    )
+    # The first and last samples have no turn; every interior turn is zero.
+    assert np.isnan(curvature[[0, -1]]).all()
+    np.testing.assert_allclose(curvature[1:-1], 0.0, atol=1e-12)
 
 
 def test_compute_trajectory_curvature_2d_left_turn():
@@ -966,7 +966,7 @@ def test_compute_trajectory_curvature_2d_left_turn():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
@@ -994,7 +994,7 @@ def test_compute_trajectory_curvature_2d_right_turn():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
@@ -1007,7 +1007,7 @@ def test_compute_trajectory_curvature_2d_right_turn():
 
 
 def test_compute_trajectory_curvature_3d():
-    """Test curvature for 3D trajectory (uses first 2 dims)."""
+    """A 3-D turn inside a horizontal plane is the right angle it makes."""
     from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Create 3D trajectory with left turn in XY plane, constant Z
@@ -1021,14 +1021,13 @@ def test_compute_trajectory_curvature_3d():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions_3d)) * 0.1, positions_3d, smooth_window=None
+        np.arange(len(positions_3d)) * 0.1, positions_3d, smooth_window=0.0
     )
 
     # Assertions
     assert curvature.shape == (3,), "Output length should match input"
-    # Should detect left turn from first 2 dimensions (ignoring Z)
-    assert curvature[1] > 0, "Left turn in XY plane should have positive curvature"
-    assert np.isclose(curvature[1], np.pi / 2, atol=0.1), "Should match 2D left turn"
+    # With three columns the turn is the unsigned 3-D angle: pi/2 here.
+    np.testing.assert_allclose(curvature[1], np.pi / 2, rtol=1e-15)
 
 
 def test_compute_trajectory_curvature_smoothing():
@@ -1044,13 +1043,13 @@ def test_compute_trajectory_curvature_smoothing():
     times = np.linspace(0, 10, 100)  # 10 seconds total
 
     # Compute curvature with and without smoothing
-    curvature_raw = compute_trajectory_curvature(times, positions, smooth_window=None)
+    curvature_raw = compute_trajectory_curvature(times, positions, smooth_window=0.0)
     curvature_smooth = compute_trajectory_curvature(times, positions, smooth_window=0.5)
 
     # Assertions
     assert curvature_raw.shape == curvature_smooth.shape == (100,)
     # Smoothed version should have lower variance
-    assert np.std(curvature_smooth) < np.std(curvature_raw), (
+    assert np.nanstd(curvature_smooth) < np.nanstd(curvature_raw), (
         "Smoothing should reduce variance"
     )
 
@@ -1066,7 +1065,7 @@ def test_compute_trajectory_curvature_output_length():
 
         # Compute curvature
         curvature = compute_trajectory_curvature(
-            np.arange(len(positions)) * 0.1, positions, smooth_window=None
+            np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
         )
 
         # Assertion: output length should match input
@@ -1093,7 +1092,7 @@ def test_compute_trajectory_curvature_multiple_turns():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
@@ -1123,7 +1122,7 @@ def test_compute_trajectory_curvature_circular_arc():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
@@ -1163,7 +1162,7 @@ def test_compute_trajectory_curvature_s_curve():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
@@ -1203,7 +1202,7 @@ def test_compute_trajectory_curvature_zigzag():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
@@ -1714,7 +1713,7 @@ def test_path_progress_array_length_mismatch():
 
 
 def test_compute_trajectory_curvature_edge_case_few_positions():
-    """Test curvature with < 3 unique positions returns zeros."""
+    """A stationary animal has no turn: every sample is NaN, not zero."""
     from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Only 2 unique positions (straight line)
@@ -1723,9 +1722,8 @@ def test_compute_trajectory_curvature_edge_case_few_positions():
 
     curvature = compute_trajectory_curvature(times, positions, max_gap=None)
 
-    # Should return zeros (no curvature possible)
     assert curvature.shape == (3,)
-    assert np.allclose(curvature, 0.0)
+    assert np.isnan(curvature).all()
 
 
 def test_cost_to_goal_dynamic_goal_with_cost_map(simple_environment_with_regions):

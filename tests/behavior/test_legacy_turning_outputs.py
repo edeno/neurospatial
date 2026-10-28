@@ -31,10 +31,11 @@ def test_three_dimensional_turn_is_the_unsigned_angle_between_steps():
 
 def test_three_dimensional_curvature_is_the_unsigned_angle_between_steps():
     np.testing.assert_allclose(
-        compute_trajectory_curvature(_THREE_D_TIMES, _THREE_D, smooth_window=None),
-        [0.0, np.pi / 3, 0.0],
+        compute_trajectory_curvature(_THREE_D_TIMES, _THREE_D, smooth_window=0.0),
+        [np.nan, np.pi / 3, np.nan],
         rtol=1e-15,
         atol=1e-15,
+        equal_nan=True,
     )
 
 
@@ -57,12 +58,15 @@ def test_turn_angles_drop_duplicate_positions():
     )
 
 
+# The run's ends and the stationary repeat have no turn: NaN (they were 0.0,
+# which smoothing then spread into the real turns).
 def test_curvature_without_smoothing_places_angle_at_retained_middle_sample():
     np.testing.assert_allclose(
         compute_trajectory_curvature(
-            _WITH_DUPLICATE_TIMES, _WITH_DUPLICATE, smooth_window=None
+            _WITH_DUPLICATE_TIMES, _WITH_DUPLICATE, smooth_window=0.0
         ),
-        [0.0, 0.0, 0.0, np.pi / 2, 0.0],
+        [np.nan, 0.0, np.nan, np.pi / 2, np.nan],
+        equal_nan=True,
         **_TOL,
     )
 

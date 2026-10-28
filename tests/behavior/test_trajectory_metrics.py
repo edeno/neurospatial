@@ -605,11 +605,13 @@ class TestCurvatureSampleAlignment:
         positions = np.array([[0.0, 0.0]] * 6 + [[1.0, 0.0], [1.0, 1.0]])
         times = np.arange(8) * 0.1
 
-        curvature = compute_trajectory_curvature(times, positions, smooth_window=None)
+        curvature = compute_trajectory_curvature(times, positions, smooth_window=0.0)
 
-        expected = np.zeros(8)
+        # Only the retained middle position (sample 6) has a turn; the
+        # stationary repeats and the run's ends are NaN.
+        expected = np.full(8, np.nan)
         expected[6] = np.pi / 2
-        assert_allclose(curvature, expected)
+        assert_allclose(curvature, expected, equal_nan=True)
 
     def test_stationary_vertex_preserves_retained_turn_indices(self):
         positions = np.array(
@@ -625,11 +627,11 @@ class TestCurvatureSampleAlignment:
         )
         times = np.arange(len(positions)) * 0.1
 
-        curvature = compute_trajectory_curvature(times, positions, smooth_window=None)
+        curvature = compute_trajectory_curvature(times, positions, smooth_window=0.0)
 
-        expected = np.zeros(len(positions))
+        expected = np.full(len(positions), np.nan)
         expected[[1, 4]] = [np.pi / 2, -np.pi / 2]
-        assert_allclose(curvature, expected)
+        assert_allclose(curvature, expected, equal_nan=True)
 
     def test_smoothing_stays_at_turn_time_and_within_observed_run(self):
         first = np.column_stack([np.arange(8.0), np.zeros(8)])
@@ -642,12 +644,48 @@ class TestCurvatureSampleAlignment:
             times, np.vstack([first, second]), smooth_window=0.1
         )
 
-        assert_allclose(curvature[:8], 0.0)
-        assert np.argmax(curvature) == 8 + 6
+        assert np.isnan(curvature[[0, 7]]).all()
+        assert_allclose(curvature[1:7], 0.0)
+        assert np.nanargmax(curvature) == 8 + 6
         expected_second = compute_trajectory_curvature(
             times[8:], second, smooth_window=0.1
         )
         assert_allclose(curvature[8:], expected_second)
+
+
+class TestCurvatureSmoothing:
+    """Smoothing averages defined turns only; 0 disables it."""
+
+    TIMES = np.arange(0, 5, 1 / 30)
+    CIRCLE = 7.0 * np.c_[np.cos(0.8 * TIMES), np.sin(0.8 * TIMES)]
+
+    def test_zero_window_is_unsmoothed_not_nan(self):
+        turns = compute_trajectory_curvature(self.TIMES, self.CIRCLE, smooth_window=0)
+        assert_allclose(turns[1:-1], 0.8 / 30, rtol=1e-9)
+
+    def test_constant_turn_survives_smoothing_up_to_the_run_ends(self):
+        # The undefined first and last turns used to count as zero, so the
+        # smoothed turn at the run start read 0.87 of the true 0.8 / 30 rad.
+        turns = compute_trajectory_curvature(self.TIMES, self.CIRCLE, smooth_window=0.2)
+        assert np.isnan(turns[[0, -1]]).all()
+        assert_allclose(turns[1:-1], 0.8 / 30, rtol=1e-9)
+
+    def test_pause_is_not_averaged_in_as_zero_turn(self):
+        # Turning left 0.1 rad per step, with a 10-sample pause in the middle.
+        heading = 0.1 * np.arange(20)
+        steps = np.c_[np.cos(heading), np.sin(heading)]
+        path = np.vstack([[0.0, 0.0], np.cumsum(steps, axis=0)])
+        path = np.insert(path, 10, np.repeat(path[10:11], 10, axis=0), axis=0)
+        times = np.arange(len(path)) * 0.1
+        turns = compute_trajectory_curvature(times, path, smooth_window=0.3)
+        defined = np.isfinite(turns)
+        assert defined.sum() == 19
+        assert_allclose(turns[defined], 0.1, rtol=1e-9)
+
+    @pytest.mark.parametrize("window", [-0.1, np.nan, np.inf, None])
+    def test_invalid_window_raises(self, window):
+        with pytest.raises(ValueError, match="smooth_window"):
+            compute_trajectory_curvature(self.TIMES, self.CIRCLE, smooth_window=window)
 
 
 class TestCurvatureObservationSupport:
@@ -668,11 +706,16 @@ class TestCurvatureObservationSupport:
         )
 
         curvature = compute_trajectory_curvature(
-            times, positions, smooth_window=None, max_gap=0.15
+            times, positions, smooth_window=0.0, max_gap=0.15
         )
 
+        # Run ends have no turn, and the two-sample second run has none at all.
         assert_allclose(
-            curvature, [0, 0, np.pi / 2, 0, np.nan, 0, 0], rtol=0, atol=1e-15
+            curvature,
+            [np.nan, 0, np.pi / 2, np.nan, np.nan, np.nan, np.nan],
+            rtol=0,
+            atol=1e-15,
+            equal_nan=True,
         )
 
     def test_missing_row_is_bridged_like_a_deleted_row(self):
@@ -698,8 +741,10 @@ class TestCurvatureObservationSupport:
 
         curvature = compute_trajectory_curvature(times, positions, max_gap=0.15)
 
-        assert np.isnan(curvature[10])
-        assert np.isfinite(np.delete(curvature, 10)).all()
+        # Each run's ends (samples 0, 9, 11, 19) have no turn.
+        np.testing.assert_array_equal(
+            np.flatnonzero(np.isnan(curvature)), [0, 9, 10, 11, 19]
+        )
         assert_allclose(
             np.delete(curvature, 10),
             np.r_[

@@ -248,7 +248,8 @@ def test_curvature_isolated_sample_nan(two_epoch_recording):
         alone = compute_trajectory_curvature(r.times[run], r.positions[run])
         rows = [selected.index(i) for i in run]
         np.testing.assert_allclose(curvature[rows], alone, rtol=1e-12)
-        assert np.isfinite(alone).all()
+        # A three-sample run has one turn, at its middle sample.
+        np.testing.assert_array_equal(np.isfinite(alone), [False, True, False])
 
 
 def test_goal_metrics_keep_known_wall_clock_time(two_epoch_recording):

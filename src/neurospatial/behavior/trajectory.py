@@ -2311,7 +2311,7 @@ def compute_trajectory_curvature(
     times: ArrayLike,
     positions: ArrayLike,
     *,
-    smooth_window: float | None = 0.2,
+    smooth_window: float = 0.2,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -2333,13 +2333,13 @@ def compute_trajectory_curvature(
     positions : ArrayLike, shape (n_samples,) or (n_samples, n_dims)
         Position coordinates over time in any dimensional space. Rows with a
         non-finite coordinate are missing.
-    smooth_window : float or None, default=0.2
+    smooth_window : float, default=0.2
         Standard deviation, in seconds, of the Gaussian that smooths the turn
-        angles within each run (0.2 s suits 30-60 Hz tracking). ``None``
-        disables smoothing.
+        angles within each run (0.2 s suits 30-60 Hz tracking). 0 disables
+        smoothing.
 
         **Important**: For high-speed tracking (120+ Hz) or fast-moving animals,
-        use shorter windows (0.05-0.1s) or disable smoothing (smooth_window=None)
+        use shorter windows (0.05-0.1s) or disable smoothing (smooth_window=0)
         to preserve rapid turns.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
@@ -2365,34 +2365,39 @@ def compute_trajectory_curvature(
         - Positive values: counterclockwise turn (left in 2D top-down view)
         - Negative values: clockwise turn (right in 2D top-down view)
         - Zero: straight movement
-        - NaN: missing samples and samples in no run (isolated by a gap, a
-          declared break, a missing neighbour or ``epochs``)
+        - NaN: where no turn is defined: missing samples, the first and last
+          sample of each run, repeated (stationary) positions after the
+          first, and samples in no run (isolated by a long gap, a declared
+          break or ``epochs``)
 
     Raises
     ------
     ValueError
         If ``times`` and ``positions`` are empty, swapped or misaligned,
         ``times`` is not strictly increasing, ``max_gap`` is not positive and
-        finite or ``None``, or ``break_before`` is not a Boolean array with
-        one entry per sample.
+        finite or ``None``, ``smooth_window`` is not a finite number >= 0, or
+        ``break_before`` is not a Boolean array with one entry per sample.
 
     Notes
     -----
-    A run is a stretch of observed samples with no missing row, no gap longer
-    than ``max_gap``, no ``epochs`` edge and no declared break. Each run is
-    analyzed as a separate recording: turn angles are computed and smoothed
-    within it, so a missing row or a break never spreads into its neighbours.
+    A missing row is bridged like a deleted row when the valid samples around
+    it are within ``max_gap``; only a longer gap, an ``epochs`` edge or a
+    declared break splits a run. Each run is analyzed as a separate
+    recording: turn angles are computed and smoothed within it, so a break
+    never spreads into its neighbours.
 
     Within a run this function wraps `compute_turn_angles()` and adds:
     - Mapping to the original sample positions
     - Optional temporal smoothing
 
-    `compute_turn_angles()` uses atan2(cross, dot) for proper signed angles in [-π, π],
-    filters stationary periods automatically, and returns at most (n_samples - 2)
+    `compute_turn_angles()` uses atan2(cross, dot) for signed angles in
+    [-π, π], drops stationary repeats, and returns at most (n_samples - 2)
     angles. Each angle is assigned to the original index of its middle position
     after consecutive duplicates are removed (keeping their first sample).
-    Stationary duplicates and the first and last retained positions of a run
-    have zero turn before smoothing, preserving the timestamps of actual turns.
+    Stationary repeats and the first and last retained positions of a run
+    have no turn, so they are NaN rather than zero. Smoothing averages only
+    the defined turns (a normalized Gaussian convolution), so an undefined
+    turn neither pulls real turns toward zero nor receives a value.
 
     For positions with three or more columns the turn is the unsigned angle
     between consecutive steps in the full space, in ``[0, π]`` (as in
@@ -2412,16 +2417,18 @@ def compute_trajectory_curvature(
 
     >>> times = np.arange(20) / 30  # 30 Hz, seconds
     >>> positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
-    >>> bool(np.allclose(compute_trajectory_curvature(times, positions), 0.0))
+    >>> turns = compute_trajectory_curvature(times, positions)
+    >>> bool(np.isnan(turns[[0, -1]]).all() and np.allclose(turns[1:-1], 0.0))
     True
 
-    A right-angle left turn, without smoothing:
+    A right-angle left turn, without smoothing. The first and last samples
+    have no turn:
 
     >>> times = np.arange(4) * 0.1
     >>> positions = np.array([[0.0, 0], [1, 0], [2, 0], [2, 1]])
-    >>> turns = compute_trajectory_curvature(times, positions, smooth_window=None)
+    >>> turns = compute_trajectory_curvature(times, positions, smooth_window=0.0)
     >>> np.round(turns, 4).tolist()
-    [0.0, 0.0, 1.5708, 0.0]
+    [nan, 0.0, 1.5708, nan]
 
     A missing row (lost tracking) is NaN and is skipped as if deleted, so
     the turns around it span the bridged gap:
@@ -2430,27 +2437,36 @@ def compute_trajectory_curvature(
     >>> positions = np.array(
     ...     [[0.0, 0], [1, 0], [2, 0], [2, 1], [np.nan, np.nan], [3, 1], [3, 2]]
     ... )
-    >>> turns = compute_trajectory_curvature(times, positions, smooth_window=None)
+    >>> turns = compute_trajectory_curvature(times, positions, smooth_window=0.0)
     >>> np.round(turns, 4).tolist()
-    [0.0, 0.0, 1.5708, -1.5708, nan, 1.5708, 0.0]
+    [nan, 0.0, 1.5708, -1.5708, nan, 1.5708, nan]
 
     A gap longer than ``max_gap`` splits the path into two runs, and no turn
-    is computed across it:
+    is computed across it; the two-sample second run has no turn at all:
 
     >>> turns = compute_trajectory_curvature(
-    ...     times, positions, smooth_window=None, max_gap=0.15
+    ...     times, positions, smooth_window=0.0, max_gap=0.15
     ... )
     >>> np.round(turns, 4).tolist()
-    [0.0, 0.0, 1.5708, 0.0, nan, 0.0, 0.0]
+    [nan, 0.0, 1.5708, nan, nan, nan, nan]
+
+    Smoothing averages only defined turns, so running a circle reads the
+    true turn per sample (0.8 rad/s at 30 Hz) from the first defined sample:
+
+    >>> times = np.arange(0, 5, 1 / 30)
+    >>> circle = 7.0 * np.c_[np.cos(0.8 * times), np.sin(0.8 * times)]
+    >>> turns = compute_trajectory_curvature(times, circle)
+    >>> bool(np.allclose(turns[1:-1], 0.8 / 30))
+    True
 
     With three columns the turn is the unsigned 3-D angle between the two
     steps, π/3 here, not the signed π/2 of the x-y projection:
 
     >>> times = np.array([0.0, 0.1, 0.2])
     >>> x = np.array([[0.0, 0, 0], [1, 0, 1], [1, 1, 2]])
-    >>> round(float(compute_trajectory_curvature(times, x, smooth_window=None)[1]), 12)
+    >>> round(float(compute_trajectory_curvature(times, x, smooth_window=0)[1]), 12)
     1.047197551197
-    >>> float(compute_trajectory_curvature(times, x[:, :2], smooth_window=None)[1])
+    >>> float(compute_trajectory_curvature(times, x[:, :2], smooth_window=0)[1])
     1.5707963267948966
 
     See Also
@@ -2469,6 +2485,21 @@ def compute_trajectory_curvature(
         break_before=break_before,
         result="every curvature value is NaN",
     )
+    if not (
+        isinstance(smooth_window, (int, float, np.number))
+        and np.isfinite(smooth_window)
+        and smooth_window >= 0
+    ):
+        raise ValueError(
+            _format_error(
+                f"compute_trajectory_curvature() needs smooth_window to be a "
+                f"finite number of seconds >= 0; got {smooth_window!r}.",
+                why="smooth_window is the standard deviation of the Gaussian "
+                "that smooths the turns over time.",
+                fix="pass smooth_window=0.0 for no smoothing, or a positive "
+                "number of seconds such as 0.2.",
+            )
+        )
     curvature: NDArray[np.float64] = np.full(t.size, np.nan)
     for run in support.run_samples():
         curvature[run] = _compute_trajectory_curvature_contiguous(
@@ -2481,26 +2512,29 @@ def _compute_trajectory_curvature_contiguous(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
     *,
-    smooth_window: float | None,
+    smooth_window: float,
 ) -> NDArray[np.float64]:
-    """Map angles to their original samples and smooth within one recording."""
+    """Map angles to their original samples and smooth within one recording.
+
+    Samples without a turn (the run's ends and stationary repeats) are NaN.
+    Smoothing is a normalized convolution over the defined turns only, so an
+    undefined turn neither counts as zero nor gets a value.
+    """
     angles = compute_turn_angles(positions)
-    n_samples = len(positions)
-    curvature = np.zeros(n_samples, dtype=np.float64)
+    curvature = np.full(len(positions), np.nan, dtype=np.float64)
     if len(angles):
         changed = np.any(positions[1:] != positions[:-1], axis=1)
         retained_indices = np.flatnonzero(np.r_[True, changed])
         curvature[retained_indices[1:-1]] = angles
 
-    # Optional temporal smoothing
-    if smooth_window is not None:
+    defined = np.isfinite(curvature)
+    if smooth_window > 0 and defined.any():
         from scipy.ndimage import gaussian_filter1d
 
-        # Compute sigma from time resolution
-        dt_median = np.median(np.diff(times))
-        sigma = smooth_window / dt_median
-
-        # Apply Gaussian smoothing
-        curvature = gaussian_filter1d(curvature, sigma=sigma)
-
+        sigma = smooth_window / float(np.median(np.diff(times)))
+        weight = gaussian_filter1d(defined.astype(np.float64), sigma, mode="constant")
+        total = gaussian_filter1d(
+            np.where(defined, curvature, 0.0), sigma, mode="constant"
+        )
+        curvature[defined] = total[defined] / weight[defined]
     return curvature
