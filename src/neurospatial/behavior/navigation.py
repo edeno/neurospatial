@@ -1688,6 +1688,7 @@ def cost_to_goal(
     """Compute cost-to-goal incorporating terrain difficulty and learned costs.
 
     Unlike simple geometric distance, cost-to-goal accounts for:
+
     - Movement difficulty (e.g., barriers, narrow passages)
     - Learned avoidance (e.g., punishment zones, risky areas)
 
@@ -1696,7 +1697,8 @@ def cost_to_goal(
     Parameters
     ----------
     position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices over time.
+        Bin indices over time, as from ``env.bin_at``; ``-1`` marks a sample
+        outside the environment (NaN).
     env : Environment
         Spatial environment.
     goal_bins : NDArray[np.int_] or int
@@ -1704,23 +1706,54 @@ def cost_to_goal(
         array, in ``[0, n_bins)``), or an array of shape ``(n_samples,)``
         (dynamic goal, where ``-1`` marks a sample with no goal).
     cost_map : NDArray[np.float64], shape (n_bins,), optional
-        Per-bin traversal cost. Default: uniform cost (geodesic distance).
+        Extra cost per unit length of travel through each bin, dimensionless
+        and ``>= 0``: ``0`` is plain travel and ``9`` makes moving through
+        the bin cost ten times its length. Default: no extra cost.
     terrain_difficulty : NDArray[np.float64], shape (n_bins,), optional
-        Movement difficulty multiplier per bin. Default: 1.0 (uniform).
+        Movement difficulty multiplier per bin, dimensionless and ``> 0``.
+        Default: 1.0 (uniform).
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Cost-to-goal from current position. Lower cost = preferred path.
+        Cost of the cheapest path from the current bin to the goal bin, in
+        the environment's length units (e.g. cm) weighted by the cost rate.
+        With neither ``cost_map`` nor ``terrain_difficulty`` it is the
+        geodesic distance. Lower cost = preferred path. NaN where the
+        position or the goal is ``-1``; ``inf`` where no path exists.
+
+    Raises
+    ------
+    ValueError
+        If ``cost_map`` or ``terrain_difficulty`` does not have shape
+        ``(n_bins,)`` or holds a non-finite value, a ``cost_map`` entry is
+        negative, or a ``terrain_difficulty`` entry is not positive.
+    TypeError
+        If ``position_bins`` or ``goal_bins`` is not integer bin indices.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
+
+    Notes
+    -----
+    Each bin has a cost rate per unit length,
+    ``rate = terrain_difficulty * (1 + cost_map)``. Travel cost is the
+    integral of the rate along the path, with the rate varying linearly
+    between bin centers, so a graph edge of length ``d`` between bins ``u``
+    and ``v`` costs ``d * (rate[u] + rate[v]) / 2``. Because cost is per unit
+    length, the result does not depend on the bin size: on a 100 cm corridor
+    with ``cost_map = np.ones(n_bins)``, a bin 80 cm from the goal costs 160
+    at every bin size, and a 20 cm stretch with ``cost_map = 9`` adds
+    ``9 * 20 = 180``. A uniform ``cost_map`` only rescales every cost, so it
+    never changes which path is cheapest.
 
     Examples
     --------
     >>> # Simple: uniform cost (equivalent to geodesic distance)
     >>> cost = cost_to_goal(position_bins, env, goal_bins=goal_bin)  # doctest: +SKIP
 
-    >>> # Learned avoidance: avoid punishment zone
-    >>> cost_map = np.ones(env.n_bins)  # doctest: +SKIP
-    >>> cost_map[punishment_bins] = 10.0  # doctest: +SKIP
+    >>> # Learned avoidance: crossing a punished bin costs ten times its length
+    >>> cost_map = np.zeros(env.n_bins)  # doctest: +SKIP
+    >>> cost_map[punishment_bins] = 9.0  # doctest: +SKIP
     >>> cost = cost_to_goal(
     ...     position_bins, env, goal_bins=goal_bin, cost_map=cost_map
     ... )  # doctest: +SKIP
@@ -1753,21 +1786,18 @@ def cost_to_goal(
             metric="geodesic",
         )
 
-    # Case 2: Cost modifications - build weighted graph
+    # Case 2: per-bin cost rate per unit length, integrated along each edge
+    # with the trapezoidal rule.
+    extra = _validated_bin_values(
+        cost_map, env, name="cost_map", default=0.0, positive=False
+    )
+    difficulty = _validated_bin_values(
+        terrain_difficulty, env, name="terrain_difficulty", default=1.0, positive=True
+    )
+    rate = difficulty * (1.0 + extra)
     g_weighted = env.connectivity.copy()
-
     for u, v, data in g_weighted.edges(data=True):
-        base_dist = data["distance"]
-
-        if terrain_difficulty is not None:
-            difficulty = (terrain_difficulty[u] + terrain_difficulty[v]) / 2.0
-            base_dist *= difficulty
-
-        if cost_map is not None:
-            cost = (cost_map[u] + cost_map[v]) / 2.0
-            base_dist += cost
-
-        g_weighted[u][v]["weight"] = base_dist
+        data["weight"] = data["distance"] * (rate[u] + rate[v]) / 2.0
 
     if not per_sample:
         dist_field = distance_field(g_weighted, goals, weight="weight")
@@ -1792,6 +1822,75 @@ def cost_to_goal(
         costs[invalid_mask] = np.nan
 
         return costs
+
+
+def _validated_bin_values(
+    values: ArrayLike | None,
+    env: Environment,
+    *,
+    name: str,
+    default: float,
+    positive: bool,
+) -> NDArray[np.float64]:
+    """Check a per-bin cost array: shape ``(n_bins,)``, finite, and in range.
+
+    Parameters
+    ----------
+    values : array-like, shape (n_bins,), or None
+        Per-bin values; None means ``default`` everywhere.
+    env : Environment
+        Environment whose bins the values describe.
+    name : str
+        Argument name shown in errors.
+    default : float
+        Value of every bin when ``values`` is None.
+    positive : bool
+        Require ``> 0`` (a multiplier) instead of ``>= 0`` (an extra cost).
+
+    Returns
+    -------
+    ndarray, shape (n_bins,)
+    """
+    if values is None:
+        return np.full(env.n_bins, default)
+    array = np.asarray(values, dtype=np.float64)
+    if array.shape != (env.n_bins,):
+        raise ValueError(
+            _format_error(
+                f"cost_to_goal() got {name} with shape {array.shape}, but the "
+                f"environment has {env.n_bins} bins.",
+                why=f"{name} holds one value per bin.",
+                fix=f"pass an array of shape ({env.n_bins},), for example "
+                f"np.full(env.n_bins, {default})",
+            )
+        )
+    if not np.all(np.isfinite(array)):
+        raise ValueError(
+            _format_error(
+                f"cost_to_goal() got {np.count_nonzero(~np.isfinite(array))} "
+                f"non-finite value(s) in {name}; every value must be finite.",
+                why="a NaN or infinite edge weight makes every cost infinite "
+                "or undefined.",
+                fix=f"fill unknown bins with {default} (no change) or remove "
+                "impassable bins from the environment",
+            )
+        )
+    bad = array <= 0 if positive else array < 0
+    if np.any(bad):
+        rule = "are not positive" if positive else "are negative"
+        raise ValueError(
+            _format_error(
+                f"cost_to_goal() got {np.count_nonzero(bad)} value(s) in {name} "
+                f"that {rule}; the smallest is {array.min():g}.",
+                why="shortest paths need positive edge weights: a zero "
+                "difficulty makes travel free and a negative cost makes a "
+                "loop endlessly cheaper.",
+                fix=f"use {name} > 0 as a multiplier"
+                if positive
+                else f"use {name} >= 0, with 0 for plain travel",
+            )
+        )
+    return array
 
 
 def time_to_goal(

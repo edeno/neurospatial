@@ -87,3 +87,88 @@ class TestPositionBinsValidation:
         result = call(np.array([0, -1, 5]), corridor)
         assert np.isnan(result[1])
         np.testing.assert_allclose(result[[0, 2]], [5.0, 0.0])
+
+
+def _corridor(bin_size: float) -> Environment:
+    """A 100 cm corridor of ``bin_size`` cm bins centred at b/2, 3b/2, ..."""
+    x = np.arange(bin_size / 2, 100.0, bin_size)
+    return Environment.from_samples(np.c_[x, np.zeros_like(x)], bin_size=bin_size)
+
+
+class TestCostToGoal:
+    """Cost is a per-unit-length rate integrated along the path.
+
+    The start bin centre is at 20 - b/2 and the goal bin centre at 100 - b/2,
+    80 cm apart for every bin size b.
+    """
+
+    @pytest.mark.parametrize("bin_size", [1.0, 2.0, 5.0])
+    def test_uniform_cost_scales_the_length_independent_of_bin_size(self, bin_size):
+        env = _corridor(bin_size)
+        start = _bin(env, 20 - bin_size / 2)
+        goal = _bin(env, 100 - bin_size / 2)
+        bins = np.array([start, goal])
+        ones = np.ones(env.n_bins)
+
+        np.testing.assert_allclose(cost_to_goal(bins, env, goal_bins=goal), [80, 0])
+        np.testing.assert_allclose(
+            cost_to_goal(bins, env, goal_bins=goal, cost_map=np.zeros(env.n_bins)),
+            [80, 0],
+        )
+        np.testing.assert_allclose(
+            cost_to_goal(bins, env, goal_bins=goal, cost_map=ones), [160, 0]
+        )
+        np.testing.assert_allclose(
+            cost_to_goal(bins, env, goal_bins=goal, terrain_difficulty=2 * ones),
+            [160, 0],
+        )
+        np.testing.assert_allclose(
+            cost_to_goal(
+                bins, env, goal_bins=goal, cost_map=ones, terrain_difficulty=2 * ones
+            ),
+            [320, 0],
+        )
+
+    @pytest.mark.parametrize("bin_size", [1.0, 2.0, 5.0])
+    def test_a_punished_stretch_adds_its_length_times_the_cost(self, bin_size):
+        """Bins centred in [40, 60) cost 9 extra per cm: 80 + 9 * 20 = 260."""
+        env = _corridor(bin_size)
+        start = _bin(env, 20 - bin_size / 2)
+        goal = _bin(env, 100 - bin_size / 2)
+        centers = env.bin_centers[:, 0]
+        cost_map = np.where((centers >= 40) & (centers < 60), 9.0, 0.0)
+
+        result = cost_to_goal(np.array([start]), env, goal_bins=goal, cost_map=cost_map)
+
+        np.testing.assert_allclose(result, [260.0])
+
+    @pytest.mark.parametrize(
+        ("name", "kind", "match"),
+        [
+            ("cost_map", "negative", r"cost_map.*negative"),
+            ("cost_map", "nan", r"cost_map.*finite"),
+            ("cost_map", "short", r"cost_map.*shape"),
+            ("terrain_difficulty", "zero", r"terrain_difficulty.*positive"),
+            ("terrain_difficulty", "nan", r"terrain_difficulty.*finite"),
+            ("terrain_difficulty", "short", r"terrain_difficulty.*shape"),
+        ],
+    )
+    def test_invalid_costs_are_refused(self, corridor, name, kind, match):
+        """A negative weight hung Dijkstra; NaN silently gave inf everywhere."""
+        values = {
+            "negative": np.r_[-1.0, np.zeros(corridor.n_bins - 1)],
+            "zero": np.r_[0.0, np.ones(corridor.n_bins - 1)],
+            "nan": np.r_[np.nan, np.ones(corridor.n_bins - 1)],
+            "short": np.ones(corridor.n_bins - 1),
+        }[kind]
+        with pytest.raises(ValueError, match=match):
+            cost_to_goal(np.array([0, 1]), corridor, goal_bins=5, **{name: values})
+
+    def test_samples_outside_the_environment_are_nan(self, corridor):
+        result = cost_to_goal(
+            np.array([0, -1]),
+            corridor,
+            goal_bins=5,
+            cost_map=np.ones(corridor.n_bins),
+        )
+        np.testing.assert_array_equal(result, [10.0, np.nan])
