@@ -235,14 +235,21 @@ def test_pre_decision_window_stays_in_run(pause_track):
     assert metrics.mean_speed == 0
 
 
-@pytest.mark.parametrize("entry", [500.0, 1200.0])
-def test_entry_outside_observed_runs_has_empty_window(pause_track, entry):
+def test_entry_in_tracking_gap_has_empty_window(pause_track):
     r = pause_track
     times, positions = extract_pre_decision_window(
-        r.times, r.positions, entry_time=entry, window_duration=1001
+        r.times, r.positions, entry_time=500.0, window_duration=1001
     )
     assert positions.shape == (0, 2)
     assert times.shape == (0,)
+
+
+def test_entry_after_the_recording_raises(pause_track):
+    r = pause_track
+    with pytest.raises(ValueError, match="outside the recording"):
+        extract_pre_decision_window(
+            r.times, r.positions, entry_time=1200.0, window_duration=1001
+        )
 
 
 @pytest.mark.parametrize(

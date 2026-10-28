@@ -496,9 +496,11 @@ def extract_pre_decision_window(
         Full trajectory positions. A row with a non-finite coordinate (NaN, for
         a lost frame) is a missing sample.
     entry_time : float
-        Time of decision region entry (seconds).
+        Time of decision region entry, in seconds on the clock of ``times``;
+        within ``[times[0], times[-1]]``.
     window_duration : float
-        Duration of pre-decision window to extract (seconds).
+        Duration of pre-decision window to extract (seconds); finite and
+        positive.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -529,8 +531,9 @@ def extract_pre_decision_window(
     ------
     ValueError
         If there are no samples, if ``times`` is not finite and strictly
-        increasing, or if ``break_before`` is not a Boolean array with one
-        entry per sample.
+        increasing, if ``break_before`` is not a Boolean array with one
+        entry per sample, if ``window_duration`` is not finite and positive,
+        or if ``entry_time`` is outside the recording.
 
     Notes
     -----
@@ -579,10 +582,51 @@ def extract_pre_decision_window(
         break_before=break_before,
         result="no pre-decision window was observed",
     )
+    window_duration = _validated_window_duration(
+        window_duration, name="window_duration", call="extract_pre_decision_window"
+    )
+    entry_time = _validated_entry_time(
+        times, entry_time, call="extract_pre_decision_window"
+    )
     window = _pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
     return times[window], positions[window]
+
+
+def _validated_window_duration(
+    window_duration: float, *, name: str, call: str
+) -> float:
+    """A finite, positive pre-decision window length in seconds."""
+    duration = float(window_duration)
+    if not (np.isfinite(duration) and duration > 0):
+        raise ValueError(
+            f"{call}() needs a finite, positive {name} in seconds; got "
+            f"{window_duration!r}.\n"
+            "Why: the pre-decision window is the stretch of time before the "
+            "decision-region entry; an empty or reversed window measures "
+            "nothing.\n"
+            f"Fix: pass {name} as the window length in seconds, e.g. {name}=1.0."
+        )
+    return duration
+
+
+def _validated_entry_time(
+    times: NDArray[np.float64], entry_time: float, *, call: str
+) -> float:
+    """A finite entry time inside the recording, ``[times[0], times[-1]]``."""
+    entry = float(entry_time)
+    if not (np.isfinite(entry) and times[0] <= entry <= times[-1]):
+        raise ValueError(
+            f"{call}() got entry_time={entry_time!r}, outside the recording "
+            f"[{times[0]:g}, {times[-1]:g}] s.\n"
+            "Why: the pre-decision window ends at the entry time, so an entry "
+            "the recording does not cover has no window.\n"
+            "Fix: pass the decision-region entry in seconds on the same clock "
+            "as times (a millisecond entry_time with times in seconds lands "
+            "past the recording), e.g. from decision_region_entry_time()."
+        )
+    return entry
 
 
 def _pre_decision_window(
@@ -886,9 +930,11 @@ def compute_pre_decision_metrics(
         Full trajectory positions, ``n_dims >= 2``. A row with a non-finite
         coordinate (NaN, for a lost frame) is a missing sample.
     entry_time : float
-        Time of decision region entry (seconds).
+        Time of decision region entry, in seconds on the clock of ``times``;
+        within ``[times[0], times[-1]]``.
     window_duration : float
-        Duration of pre-decision window to analyze (seconds).
+        Duration of pre-decision window to analyze (seconds); finite and
+        positive.
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
@@ -921,8 +967,9 @@ def compute_pre_decision_metrics(
     ------
     ValueError
         If there are no samples, if ``times`` is not finite and strictly
-        increasing, or if ``break_before`` is not a Boolean array with one
-        entry per sample.
+        increasing, if ``break_before`` is not a Boolean array with one
+        entry per sample, if ``window_duration`` is not finite and positive,
+        or if ``entry_time`` is outside the recording.
 
     Notes
     -----
@@ -966,6 +1013,12 @@ def compute_pre_decision_metrics(
         result="the pre-decision metrics are NaN",
     )
     _validate_velocity_positions(raw_positions, call="compute_pre_decision_metrics")
+    window_duration = _validated_window_duration(
+        window_duration, name="window_duration", call="compute_pre_decision_metrics"
+    )
+    entry_time = _validated_entry_time(
+        times, entry_time, call="compute_pre_decision_metrics"
+    )
     return _pre_decision_metrics(
         times,
         positions,
@@ -1446,7 +1499,8 @@ def compute_decision_analysis(
         one-goal list. With one goal there is no decision boundary and
         ``result.boundary`` is None.
     pre_window : float, default=1.0
-        Duration of pre-decision window to analyze (seconds).
+        Duration of pre-decision window to analyze (seconds); finite and
+        positive.
     min_speed : float or None, default=None
         In position units per second. None is 5 cm/s expressed in
         ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
@@ -1483,8 +1537,9 @@ def compute_decision_analysis(
         if goal_regions is empty.
     ValueError
         If positions and times have different lengths, if there are no
-        samples, if ``times`` is not finite and strictly increasing, or if
-        ``break_before`` is not a Boolean array with one entry per sample.
+        samples, if ``times`` is not finite and strictly increasing, if
+        ``break_before`` is not a Boolean array with one entry per sample, or
+        if ``pre_window`` is not finite and positive.
 
     Notes
     -----
@@ -1556,6 +1611,9 @@ def compute_decision_analysis(
         result="the pre-decision metrics are NaN and no boundary crossing was observed",
     )
     _validate_velocity_positions(raw_positions, call="compute_decision_analysis")
+    pre_window = _validated_window_duration(
+        pre_window, name="pre_window", call="compute_decision_analysis"
+    )
 
     # Validate regions exist
     _require_region_mask(

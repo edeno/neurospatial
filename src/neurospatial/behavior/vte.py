@@ -773,9 +773,10 @@ def compute_vte_trial(
         with a non-finite coordinate (NaN, for a lost frame) is a missing
         sample.
     entry_time : float
-        Time of decision region entry (seconds).
+        Time of decision region entry, in seconds on the clock of ``times``;
+        within ``[times[0], times[-1]]``.
     window_duration : float
-        Duration of pre-decision window (seconds).
+        Duration of pre-decision window (seconds); finite and positive.
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
@@ -814,7 +815,9 @@ def compute_vte_trial(
     ValueError
         If there are no samples, if ``times`` is not finite and strictly
         increasing, if ``break_before`` is not a Boolean array with one entry
-        per sample, or if positions has fewer than two coordinates (x and y).
+        per sample, if positions has fewer than two coordinates (x and y), if
+        ``window_duration`` is not finite and positive, or if ``entry_time``
+        is outside the recording.
 
     Notes
     -----
@@ -866,7 +869,11 @@ def compute_vte_trial(
     (nan, nan)
     """
     from neurospatial.behavior._kinematics import _validate_velocity_positions
-    from neurospatial.behavior.decisions import _pre_decision_window
+    from neurospatial.behavior.decisions import (
+        _pre_decision_window,
+        _validated_entry_time,
+        _validated_window_duration,
+    )
 
     raw_positions = positions
     times, positions, support = validated_observations(
@@ -879,6 +886,10 @@ def compute_vte_trial(
         result="no VTE metric was observed",
     )
     _validate_velocity_positions(raw_positions, call="compute_vte_trial")
+    window_duration = _validated_window_duration(
+        window_duration, name="window_duration", call="compute_vte_trial"
+    )
+    entry_time = _validated_entry_time(times, entry_time, call="compute_vte_trial")
     window = _pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
@@ -957,7 +968,7 @@ def compute_vte_session(
     trials : list[Trial]
         Trial segmentation from segment_trials().
     window_duration : float, default=1.0
-        Duration of pre-decision window in seconds.
+        Duration of pre-decision window in seconds; finite and positive.
         Typical values: 0.5-2.0s depending on maze size and task.
         The window is clipped at the trial start; samples before
         ``trial.start_time`` are never used.
@@ -1003,8 +1014,9 @@ def compute_vte_session(
     ValueError
         If ``decision_region`` is not in ``env.regions``, if there are no
         samples, if ``times`` is not finite and strictly increasing, if
-        ``break_before`` is not a Boolean array with one entry per sample, or
-        if positions has fewer than two coordinates (x and y).
+        ``break_before`` is not a Boolean array with one entry per sample, if
+        positions has fewer than two coordinates (x and y), or if
+        ``window_duration`` is not finite and positive.
 
     Warns
     -----
@@ -1112,9 +1124,13 @@ def compute_vte_session(
         _first_entry,
         _in_epochs,
         _pre_decision_window,
+        _validated_window_duration,
     )
 
     _validate_velocity_positions(raw_positions, call="compute_vte_session")
+    window_duration = _validated_window_duration(
+        window_duration, name="window_duration", call="compute_vte_session"
+    )
     min_speed = resolve_min_speed(env, min_speed, call="compute_vte_session()")
     # First pass: compute raw metrics for all trials
     raw_head_sweeps: list[float] = []

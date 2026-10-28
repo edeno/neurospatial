@@ -1278,3 +1278,78 @@ def test_decision_functions_one_dimensional_positions_raise(
     match = rf"got shape \({n_samples},\)(.|\n)*heading .*needs both x and y"
     with pytest.raises(ValueError, match=match):
         calls[name](10 * times)
+
+
+def _window_calls():
+    from neurospatial.behavior import (
+        compute_pre_decision_metrics,
+        compute_vte_trial,
+        extract_pre_decision_window,
+    )
+
+    return {
+        "extract_pre_decision_window": lambda t, p, entry, duration: (
+            extract_pre_decision_window(t, p, entry, window_duration=duration)
+        ),
+        "compute_pre_decision_metrics": lambda t, p, entry, duration: (
+            compute_pre_decision_metrics(
+                t, p, entry, window_duration=duration, min_speed=1.0
+            )
+        ),
+        "compute_vte_trial": lambda t, p, entry, duration: compute_vte_trial(
+            t, p, entry, window_duration=duration, min_speed=1.0
+        ),
+    }
+
+
+_WINDOW_CALL_NAMES = [
+    "extract_pre_decision_window",
+    "compute_pre_decision_metrics",
+    "compute_vte_trial",
+]
+
+
+@pytest.mark.parametrize("name", _WINDOW_CALL_NAMES)
+@pytest.mark.parametrize("duration", [0.0, -1.0, np.nan, np.inf])
+def test_window_duration_must_be_finite_and_positive(eastward_path, name, duration):
+    times, positions = eastward_path
+    with pytest.raises(ValueError, match="finite, positive window_duration"):
+        _window_calls()[name](times, positions, 2.0, duration)
+
+
+@pytest.mark.parametrize("name", _WINDOW_CALL_NAMES)
+@pytest.mark.parametrize("entry_time", [np.nan, -1.0, 2000.0])
+def test_entry_time_must_lie_in_the_recording(eastward_path, name, entry_time):
+    """A NaN entry, one before the recording, or a millisecond entry raise."""
+    times, positions = eastward_path
+    with pytest.raises(ValueError, match="outside the recording"):
+        _window_calls()[name](times, positions, entry_time, 1.0)
+
+
+def test_entry_inside_a_tracking_gap_keeps_the_empty_window():
+    """An entry inside a gap longer than max_gap lies in no segment: no window."""
+    from neurospatial.behavior import extract_pre_decision_window
+
+    times = np.r_[np.arange(10) / 10, 5.0 + np.arange(10) / 10]
+    positions = np.column_stack([10 * times, np.zeros(20)])
+    window_times, window_positions = extract_pre_decision_window(
+        times, positions, 3.0, window_duration=1.0
+    )
+    assert window_times.size == 0
+    assert window_positions.shape == (0, 2)
+
+
+def test_decision_analysis_pre_window_must_be_positive(t_maze_environment):
+    from neurospatial.behavior import compute_decision_analysis
+
+    times, positions = _stem_right_then_back_left()
+    with pytest.raises(ValueError, match="finite, positive pre_window"):
+        compute_decision_analysis(
+            t_maze_environment,
+            times,
+            positions,
+            decision_region="center",
+            goal_regions=["left", "right"],
+            pre_window=0.0,
+            min_speed=5.0,
+        )
