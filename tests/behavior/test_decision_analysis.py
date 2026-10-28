@@ -806,7 +806,7 @@ class TestComputeDecisionAnalysis:
     def test_empty_goal_list_raises(self, t_maze_environment):
         from neurospatial.behavior.decisions import compute_decision_analysis
 
-        with pytest.raises(ValueError, match="empty goal_regions"):
+        with pytest.raises(ValueError, match="goal_regions cannot be empty"):
             compute_decision_analysis(
                 t_maze_environment,
                 np.arange(30) / 10,

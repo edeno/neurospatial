@@ -97,7 +97,7 @@ from neurospatial.behavior._decision_windows import (
 from neurospatial.behavior._kinematics import validated_min_speed
 from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.behavior._region_bins import region_representative_bin
-from neurospatial.behavior.segmentation import _safe_gather
+from neurospatial.behavior.segmentation import _region_names, _safe_gather
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -1651,16 +1651,12 @@ def compute_decision_analysis(
         operation="compute_decision_analysis()",
         argument="decision_region",
     )
-    if isinstance(goal_regions, str):
-        goal_regions = [goal_regions]
-    if len(goal_regions) == 0:
-        raise ValueError(
-            "compute_decision_analysis() got an empty goal_regions list.\n"
-            "Why: the chosen goal and the decision boundary are defined by the "
-            "goals the animal can choose between.\n"
-            "Fix: pass the names of the goal regions, e.g. "
-            "goal_regions=['left', 'right']."
-        )
+    goal_regions = _region_names(
+        goal_regions,
+        argument="goal_regions",
+        why="the chosen goal and the decision boundary are defined by the goals "
+        "the animal can choose between.",
+    )
     for goal_region in goal_regions:
         _require_region_mask(
             env,
@@ -1690,16 +1686,11 @@ def compute_decision_analysis(
 
     # Compute boundary metrics. Each goal region is represented by its
     # centroid bin, as in trials_to_region_arrays.
-    goal_bins = []
+    goal_bins: list[int] = []
     for r in goal_regions:
         goal_bin = region_representative_bin(env, r)
-        if goal_bin is not None:
-            goal_bins.append(goal_bin)
-        else:
-            raise ValueError(
-                f"Goal region '{r}' contains no bins. "
-                f"Check that the region is within the environment bounds."
-            )
+        assert goal_bin is not None  # _require_region_mask refused empty regions
+        goal_bins.append(goal_bin)
     position_bins = np.asarray(position_bins, dtype=np.int64)
     boundary = None
     if len(goal_bins) >= 2:

@@ -179,10 +179,17 @@ def _validate_durations(min_duration: float, max_duration: float, *, call: str) 
         )
 
 
-def _region_names(regions: str | Sequence[str], *, argument: str) -> list[str]:
+def _region_names(
+    regions: str | Sequence[str],
+    *,
+    argument: str,
+    why: str = "each attempt must finish at a named region.",
+) -> list[str]:
     """One region name or a sequence of them, as a list.
 
     A plain string is one name; iterating it would give its characters.
+    ``why`` explains, in the error for an empty sequence, what the regions
+    are for.
     """
     names = [regions] if isinstance(regions, str) else list(regions)
     if not names:
@@ -190,7 +197,7 @@ def _region_names(regions: str | Sequence[str], *, argument: str) -> list[str]:
             _format_error(
                 f"{argument} cannot be empty",
                 fix=f"pass {argument}=['goal']",
-                why="each attempt must finish at a named region.",
+                why=why,
             )
         )
     return names
@@ -657,8 +664,7 @@ def detect_region_crossings(
     >>> len(crossings) > 0  # Should detect entries and exits
     True
     """
-    # Validate inputs
-    _require_region_mask(
+    region_mask = _require_region_mask(
         env, region_name, operation="detect_region_crossings()", argument="region_name"
     )
     _check_choice(
@@ -683,7 +689,7 @@ def detect_region_crossings(
             _detect_region_crossings_contiguous(
                 position_bins[run],
                 times[run],
-                env,
+                region_mask,
                 region_name=region_name,
                 direction=direction,
             )
@@ -694,17 +700,15 @@ def detect_region_crossings(
 def _detect_region_crossings_contiguous(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
-    env: Environment,
+    region_mask: NDArray[np.bool_],
     *,
     region_name: str,
     direction: Literal["both", "entry", "exit"] = "both",
 ) -> list[Crossing]:
-    """Detect crossings within one recording, after public input validation."""
-    # Get bins in region using existing regions_to_mask functionality
-    from neurospatial.ops.mapping import regions_to_mask
+    """Detect crossings within one recording, after public input validation.
 
-    region_mask = regions_to_mask(env, [region_name])
-
+    ``region_mask`` (shape ``(n_bins,)``) marks the region's bins.
+    """
     # Check which trajectory samples are in region
     position_bins = np.asarray(position_bins, dtype=np.int64)
     in_region = _safe_gather(region_mask, position_bins, fill=False)
@@ -921,20 +925,13 @@ def detect_runs_between_regions(
     True
     """
     if min_speed is not None:
-        require_cartesian(
-            env.coordinate_system,
-            "detect_runs_between_regions(min_speed=...)",
-            why=(
-                "Run speed comes from the Cartesian distance between successive bin "
-                "centers."
-            ),
-            fix="pass min_speed=None to detect runs from region entries alone",
-        )
-    # Validate inputs
-    for name, argument in ((source, "source"), (target, "target")):
-        _require_region_mask(
+        _require_run_speed_frame(env, call="detect_runs_between_regions")
+    masks = {
+        name: _require_region_mask(
             env, name, operation="detect_runs_between_regions()", argument=argument
         )
+        for name, argument in ((source, "source"), (target, "target"))
+    }
     _validate_durations(min_duration, max_duration, call="detect_runs_between_regions")
     validate_finite_scalar(
         min_speed, name="min_speed", positive=False, none_allowed=True
@@ -961,12 +958,27 @@ def detect_runs_between_regions(
                 env,
                 source=source,
                 target=target,
+                source_mask=masks[source],
+                target_mask=masks[target],
                 min_duration=min_duration,
                 max_duration=max_duration,
                 min_speed=min_speed,
             )
         )
     return results
+
+
+def _require_run_speed_frame(env: Environment, *, call: str) -> None:
+    """Refuse ``min_speed`` on a polar environment: run speed is Cartesian."""
+    require_cartesian(
+        env.coordinate_system,
+        f"{call}(min_speed=...)",
+        why=(
+            "Run speed comes from the Cartesian distance between successive bin "
+            "centers."
+        ),
+        fix="pass min_speed=None to detect runs from region entries alone",
+    )
 
 
 def _detect_runs_between_regions_contiguous(
@@ -976,17 +988,17 @@ def _detect_runs_between_regions_contiguous(
     *,
     source: str,
     target: str,
+    source_mask: NDArray[np.bool_],
+    target_mask: NDArray[np.bool_],
     min_duration: float = 0.5,
     max_duration: float = 10.0,
     min_speed: float | None = None,
 ) -> list[Run]:
-    """Analyze one recording after the public input validation."""
-    # Get region masks
-    from neurospatial.ops.mapping import regions_to_mask
+    """Analyze one recording after the public input validation.
 
-    source_mask = regions_to_mask(env, [source])
-    target_mask = regions_to_mask(env, [target])
-
+    ``source_mask`` and ``target_mask`` (shape ``(n_bins,)``) mark the bins
+    of ``source`` and ``target``.
+    """
     # Check which samples are in each region
     in_source = _safe_gather(source_mask, position_bins, fill=False)
     in_target = _safe_gather(target_mask, position_bins, fill=False)
@@ -1685,7 +1697,7 @@ def detect_laps(
                     why="Why: a region-based lap starts and ends at a named region.",
                 )
             )
-        _require_region_mask(
+        start_mask = _require_region_mask(
             env, start_region, operation="detect_laps()", argument="start_region"
         )
 
@@ -1702,12 +1714,7 @@ def detect_laps(
     )
     laps: list[Lap] = []
     if method == "region":
-        assert start_region is not None
-        from neurospatial.ops.mapping import regions_to_mask
-
-        sides = _region_sides(
-            env, np.asarray(regions_to_mask(env, [start_region]), dtype=bool)
-        )
+        sides = _region_sides(env, start_mask)
         if sides is None:
             raise ValueError(
                 _format_error(
@@ -2358,15 +2365,17 @@ def running_direction_labels(
     Raises
     ------
     ValueError
-        If ``start_region`` or any end region is not in ``env.regions``
-        (raised by :func:`detect_runs_between_regions`), or if
-        ``position_bins`` and ``times`` are not 1-D with the same length,
-        times are not finite and strictly increasing, or a bin index is
-        neither -1 nor a bin of ``env``.
+        If ``start_region`` or any end region is not in ``env.regions``,
+        or if ``position_bins`` and ``times`` are not 1-D with the same
+        length, times are not finite and strictly increasing, or a bin index
+        is neither -1 nor a bin of ``env``.
     TypeError
         If position_bins does not hold integer bin indices.
     ValueError
         If ``break_before`` is not a Boolean array with one entry per sample.
+    CartesianOnlyError
+        If ``min_speed`` is given and ``env`` is polar: run speed comes from
+        Cartesian distances between bin centers.
 
     See Also
     --------
@@ -2423,14 +2432,16 @@ def running_direction_labels(
 
     end_region_names = _region_names(end_regions, argument="end_regions")
     _validate_durations(min_duration, max_duration, call="running_direction_labels")
-    _require_region_mask(
-        env,
-        start_region,
-        operation="running_direction_labels()",
-        argument="start_region",
-    )
+    masks = {
+        start_region: _require_region_mask(
+            env,
+            start_region,
+            operation="running_direction_labels()",
+            argument="start_region",
+        )
+    }
     for end_region in end_region_names:
-        _require_region_mask(
+        masks[end_region] = _require_region_mask(
             env,
             end_region,
             operation="running_direction_labels()",
@@ -2440,37 +2451,41 @@ def running_direction_labels(
     breaks = validate_break_before(
         break_before, len(times), call="running_direction_labels"
     )
+    if min_speed is not None:
+        _require_run_speed_frame(env, call="running_direction_labels")
+    validate_finite_scalar(
+        min_speed, name="min_speed", positive=False, none_allowed=True
+    )
+    recordings = _event_runs(
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
+        sample_valid=_located(position_bins, env),
+    )
 
     runs: list[tuple[Run, str]] = []
     for end_region in end_region_names:
-        outbound_runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source=start_region,
-            target=end_region,
-            min_duration=min_duration,
-            max_duration=max_duration,
-            min_speed=min_speed,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=breaks,
-        )
-        inbound_runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source=end_region,
-            target=start_region,
-            min_duration=min_duration,
-            max_duration=max_duration,
-            min_speed=min_speed,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=breaks,
-        )
-        runs.extend((run, "outbound") for run in outbound_runs)
-        runs.extend((run, "inbound") for run in inbound_runs)
+        for source, target, label in (
+            (start_region, end_region, "outbound"),
+            (end_region, start_region, "inbound"),
+        ):
+            for recording in recordings:
+                runs.extend(
+                    (run, label)
+                    for run in _detect_runs_between_regions_contiguous(
+                        position_bins[recording],
+                        times[recording],
+                        env,
+                        source=source,
+                        target=target,
+                        source_mask=masks[source],
+                        target_mask=masks[target],
+                        min_duration=min_duration,
+                        max_duration=max_duration,
+                        min_speed=min_speed,
+                    )
+                )
 
     reached = [run for run, _ in runs if run.success]
     intervals: list[tuple[float, float, object]] = []
@@ -2717,20 +2732,21 @@ def segment_trials(
            types of memory episodes occurring in the same location. Neuron,
            27(3), 623-633.
     """
-    # Validate inputs
-    _require_region_mask(
+    start_mask = _require_region_mask(
         env, start_region, operation="segment_trials()", argument="start_region"
     )
 
     end_regions = _region_names(end_regions, argument="end_regions")
-    for region in end_regions:
-        _require_region_mask(
+    end_masks = {
+        region: _require_region_mask(
             env,
             region,
             operation="segment_trials()",
             argument="end_regions",
             in_list=True,
         )
+        for region in end_regions
+    }
 
     # Prevent start_region from being in end_regions (typical neuroscience practice)
     if start_region in end_regions:
@@ -2758,9 +2774,9 @@ def segment_trials(
             _segment_trials_contiguous(
                 position_bins[run],
                 times[run],
-                env,
                 start_region=start_region,
-                end_regions=end_regions,
+                start_mask=start_mask,
+                end_masks=end_masks,
                 min_duration=min_duration,
                 max_duration=max_duration,
             )
@@ -2771,20 +2787,18 @@ def segment_trials(
 def _segment_trials_contiguous(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
-    env: Environment,
     *,
     start_region: str,
-    end_regions: list[str],
+    start_mask: NDArray[np.bool_],
+    end_masks: dict[str, NDArray[np.bool_]],
     min_duration: float = 1.0,
     max_duration: float = 15.0,
 ) -> list[Trial]:
-    """Analyze one recording after the public input validation."""
-    # Get region masks using existing functionality
-    from neurospatial.ops.mapping import regions_to_mask
+    """Analyze one recording after the public input validation.
 
-    start_mask = regions_to_mask(env, [start_region])
-    end_masks = {region: regions_to_mask(env, [region]) for region in end_regions}
-
+    ``start_mask`` and each of ``end_masks`` (shape ``(n_bins,)``) mark a
+    region's bins; ``end_masks`` is in ``end_regions`` order.
+    """
     # Check which trajectory samples are in which regions. Unlocated samples
     # were removed by the caller and the gaps around them bridged.
     position_bins = np.asarray(position_bins, dtype=np.int64)
