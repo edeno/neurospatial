@@ -25,6 +25,9 @@ next lap afresh: the joined lap fixture jumps back to the lap start at 100 s,
 which now ends the region lap begun at 88.6 s on the other side of the start
 region and starts the template laps at the jump. ``detect_goal_directed_runs``
 was captured again when each approach to the goal became its own row.
+``compute_decision_analysis`` was captured again when decision boundaries
+began to use the geodesic distance of the path module (the shortest path
+inside the environment between bin centers) instead of the bin graph.
 """
 
 import json

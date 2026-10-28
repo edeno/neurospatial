@@ -12,6 +12,12 @@ difference of ``compute_speed`` (``smooth_window`` in seconds). The
 fields became ``min_observed_speed`` and VTE sessions began keeping one
 result (with a ``status``) per input trial; the session's second trial,
 which never enters the decision region, is now kept as ``"no_entry"``.
+The ``compute_path_efficiency``, ``compute_path_efficiency_geodesic`` and
+``approach_rate_geodesic`` entries were captured again when angular
+efficiency began to weight each step by its length (and, under the geodesic
+metric, to follow the direction of the shortest path inside the
+environment), and geodesic distances began to be any-angle paths that keep
+out of missing cells.
 """
 
 import json
