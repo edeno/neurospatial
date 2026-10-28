@@ -12,7 +12,11 @@ from shapely.geometry import LineString, Polygon, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
-from neurospatial.behavior import shortest_path_length, traveled_path_length
+from neurospatial.behavior import (
+    compute_step_lengths,
+    shortest_path_length,
+    traveled_path_length,
+)
 
 # A 100 x 100 cm arena of 5 cm bins with a wall along x = 50 from y = 0 to
 # y = 70: the two sides meet only above the wall's end at (50, 70).
@@ -576,3 +580,89 @@ def test_clean_hexagon_boxes_give_the_probe_walks_visibility(walled_hex_arena):
     expected, _ = probed._trace(starts, ends, a, b)
     assert 500 < visible.sum() < visible.size - 500
     np.testing.assert_array_equal(visible, expected)
+
+
+def _l_shape(diagonal):
+    """Three 1 cm cells of an L, the cell at x in [0, 1], y in [1, 2] missing."""
+    edges = np.array([0.0, 1.0, 2.0])
+    return Environment.from_grid_mask(
+        np.array([[True, False], [True, True]]),
+        (edges, edges),
+        connect_diagonal_neighbors=diagonal,
+    )
+
+
+class TestStraightLinesFromPositionsStayInside:
+    """Bin centers that see each other do not make two positions in those
+    bins a straight line apart: the line from a position is checked."""
+
+    # Either side of the missing cell's corner at (1, 1): any path inside
+    # goes around it, at least |p - corner| + |corner - q| long.
+    L_POINTS = np.array([[0.1, 0.9], [1.1, 1.9]])
+    L_CORNER = np.array([1.0, 1.0])
+
+    def _l_bound(self):
+        p, q = self.L_POINTS
+        return np.linalg.norm(p - self.L_CORNER) + np.linalg.norm(q - self.L_CORNER)
+
+    @pytest.mark.parametrize("diagonal", [True, False])
+    def test_positions_beside_a_missing_cell_go_around_its_corner(self, diagonal):
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        env = _l_shape(diagonal)
+        p, q = self.L_POINTS
+        bound = self._l_bound()
+        paths = environment_paths(env, call="test")
+        lengths = [
+            shortest_path_length(env, p, q),
+            compute_step_lengths(self.L_POINTS, metric="geodesic", env=env)[0],
+            paths.to_point(p[None, :], q)[0],
+            paths.pairwise(self.L_POINTS).between(np.array([0]), np.array([1]))[0],
+        ]
+        assert np.all(np.array(lengths) >= bound - 1e-12)
+
+    def test_direction_from_beside_a_missing_cell_does_not_cross_it(self):
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        env = _l_shape(True)
+        p, q = self.L_POINTS
+        direction = environment_paths(env, call="test").directions(p[None, :], q)[0]
+        # The straight line to q enters the missing cell within 0.15 cm; the
+        # path heads for a bin center inside the environment instead.
+        steps = p + np.linspace(0.0, 0.5, 51)[:, None] * direction
+        assert np.all(env.bin_at(steps) >= 0)
+
+    def test_distance_to_the_nearest_of_several_bins_goes_around_the_corner(self):
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        x_edges, y_edges = np.array([0.0, 1.0, 2.0, 3.0]), np.array([0.0, 1.0, 2.0])
+        mask = np.array([[True, False], [True, True], [True, True]])
+        env = Environment.from_grid_mask(mask, (x_edges, y_edges))
+        sources = env.bin_at(np.array([[1.5, 1.5], [2.5, 0.5]]))
+        p = self.L_POINTS[:1]
+        # Around the corner at (1, 1) to (1.5, 1.5), or straight along the
+        # bottom row to (2.5, 0.5).
+        bound = min(
+            np.linalg.norm(p[0] - self.L_CORNER) + np.linalg.norm([0.5, 0.5]),
+            np.linalg.norm(p[0] - [2.5, 0.5]),
+        )
+        distance = environment_paths(env, call="test").from_bins_at(sources, p)[0]
+        assert distance >= bound - 1e-12
+
+    def test_positions_either_side_of_a_wall_end_go_around_it(self, divider_arena):
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        # The bins' centers see each other above the wall's end, but the line
+        # between the positions crosses the wall at y = 65.3.
+        p, q = np.array([49.9, 65.1]), np.array([54.9, 75.1])
+        bound = np.linalg.norm(p - WALL_END) + np.linalg.norm(q - WALL_END)
+        paths = environment_paths(divider_arena, call="test")
+        points = np.array([p, q])
+        lengths = [
+            shortest_path_length(divider_arena, p, q),
+            paths.to_point(p[None, :], q)[0],
+            paths.pairwise(points).between(np.array([0]), np.array([1]))[0],
+        ]
+        assert np.all(np.array(lengths) >= bound - 1e-12)
+        direction = paths.directions(p[None, :], q)[0]
+        assert direction[0] < 0  # away from the wall, not through it

@@ -40,12 +40,18 @@ space instead:
    sees the target's bin center, the distance is the straight
    ``|p - target|``; otherwise it is ``|p - anchor|`` plus the anchor's path,
    with the path's last leg ending at the target itself rather than at its
-   bin center. Visibility is decided between the two bin centers, so near a
-   wall end a position can be up to a bin's width from where the straight
-   line actually becomes blocked. Two positions in one bin or in two
-   connected bins are always the straight line apart. Toward several source
-   bins at once, a position leaves for the anchor of its own bin or, when
-   visible from it, of a neighboring bin.
+   bin center. Which of the two is used is decided between the bin centers,
+   so near a wall end a position can be up to a bin's width from where the
+   straight line actually becomes blocked; but a leg that starts or ends at
+   a position (the straight line, the leg to the anchor, the last leg) is
+   used only where it is itself visible. Where it is not, the path goes
+   through the bin's own center or ends through the target bin's center,
+   whichever is shortest, so no path cuts a corner that the bin centers
+   clear. Two positions in one bin are always the straight line apart, and
+   two in connected bins are when that line is visible. Toward several
+   source bins at once, a position leaves for the anchor of its own bin or
+   of a neighboring bin, whichever it sees, or else through its bin's
+   center.
 
 **Track environments** (``Environment.from_graph``, ``linear_track``,
 ``maze``) are one-dimensional: the distance is measured along the track graph
@@ -543,7 +549,7 @@ class _OpenPaths(EnvironmentPaths):
             np.full(points.shape[0], root),
             (fields.length, fields.anchor, fields.lead),
             np.full(points.shape[0], fields.row_of_root[root]),
-        )
+        )[0]
 
     def _between(
         self,
@@ -553,8 +559,14 @@ class _OpenPaths(EnvironmentPaths):
         end_bins: NDArray[np.intp],
     ) -> NDArray[np.float64]:
         out = np.empty(starts.shape[0])
-        # Points in one bin or in two connected bins see each other.
-        straight = (start_bins == end_bins) | self._connected(start_bins, end_bins)
+        # Points in one bin see each other (cells are convex); points in two
+        # connected bins do when the segment between them stays inside.
+        straight = start_bins == end_bins
+        joined = np.flatnonzero(~straight & self._connected(start_bins, end_bins))
+        if joined.size:
+            straight[joined] = self._sees(
+                starts[joined], ends[joined], start_bins[joined], end_bins[joined]
+            )
         out[straight] = np.linalg.norm(ends[straight] - starts[straight], axis=1)
         rest = np.flatnonzero(~straight)
         if not rest.size:
@@ -570,7 +582,7 @@ class _OpenPaths(EnvironmentPaths):
                 b[kept],
                 (fields.length, fields.anchor, fields.lead),
                 fields.row_of_root[b[kept]],
-            )
+            )[0]
         # Other targets: grow each field only as far as its start bins.
         grow = np.flatnonzero(~kept)
         if grow.size:
@@ -597,7 +609,7 @@ class _OpenPaths(EnvironmentPaths):
                 b[grow],
                 grown,  # type: ignore[arg-type]
                 field_rows,
-            )
+            )[0]
         return out
 
     def _directions(
@@ -610,16 +622,19 @@ class _OpenPaths(EnvironmentPaths):
         fields = self._fields
         fields.ensure(self, np.array([root]))
         out = np.full(points.shape, np.nan)
-        field_row = fields.row_of_root[root]
-        anchor = fields.anchor[field_row, point_bins]
-        reachable = np.isfinite(fields.length[field_row, point_bins])
-        straight = (point_bins == root) | (anchor == root)
-        waypoint = np.where(
-            straight[:, None], target[None, :], self._centers[np.maximum(anchor, 0)]
+        length, waypoint = self._join(
+            points,
+            point_bins,
+            np.broadcast_to(target, points.shape),
+            np.full(points.shape[0], root),
+            (fields.length, fields.anchor, fields.lead),
+            np.full(points.shape[0], fields.row_of_root[root]),
+            waypoints=True,
         )
+        assert waypoint is not None
         vector = waypoint - points
         norm = np.linalg.norm(vector, axis=1)
-        defined = reachable & (norm > 0)
+        defined = np.isfinite(length) & (norm > 0)
         out[defined] = vector[defined] / norm[defined, None]
         return out
 
@@ -634,10 +649,18 @@ class _OpenPaths(EnvironmentPaths):
             return self._to_point(points, point_bins, self._centers[source], source)
         length, anchor = self._source_field(source_bins)
         n_points = points.shape[0]
-        # Candidate corners: the anchor of the point's bin (its center sees
-        # it) and, when the point sees them, the anchors of the bin's open
-        # neighbors, so the nearest source is chosen from the point itself.
+        # Candidate corners: the anchor of the point's bin and the anchors of
+        # the bin's open neighbors, each where the point sees it, so the
+        # nearest source is chosen from the point itself. Where the point
+        # does not see its bin's anchor, it goes through its bin's center,
+        # which it sees.
         own = anchor[point_bins].astype(np.intp)
+        check = np.flatnonzero((own >= 0) & (own != point_bins))
+        if check.size:
+            hidden = ~self._sees(
+                points[check], self._centers[own[check]], point_bins[check], own[check]
+            )
+            own[check[hidden]] = point_bins[check[hidden]]
         neighbors = self._neighbors[point_bins]
         open_neighbor = neighbors >= 0
         owner = np.repeat(np.arange(n_points), open_neighbor.sum(axis=1))
@@ -726,7 +749,9 @@ class _OpenPaths(EnvironmentPaths):
         roots: NDArray[np.intp],
         fields: tuple[NDArray[np.float64], NDArray[np.int32], NDArray[np.int32]],
         field_rows: NDArray[np.intp],
-    ) -> NDArray[np.float64]:
+        *,
+        waypoints: bool = False,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
         """Join each point to its target through the target bin's field.
 
         Parameters
@@ -742,27 +767,206 @@ class _OpenPaths(EnvironmentPaths):
             (n_fields, n_bins); each point's bin is reached in its field.
         field_rows : ndarray of int, shape (n,)
             Row of each target's field.
+        waypoints : bool
+            Also return each path's first waypoint.
+
+        Returns
+        -------
+        length : ndarray, shape (n,)
+        waypoint : ndarray, shape (n, n_dims), or None
+            See :meth:`_route`.
         """
         length_of, anchor_of, lead_of = fields
         anchor = anchor_of[field_rows, point_bins].astype(np.intp)
         length = length_of[field_rows, point_bins]
-        out = np.full(points.shape[0], np.inf)
+        reached = np.isfinite(length)
+        corner = np.maximum(anchor, 0)
+        corner_length = np.where(reached, length_of[field_rows, corner], np.inf)
+        lead = lead_of[field_rows, corner].astype(np.intp)
         straight = (point_bins == roots) | (anchor == roots)
-        out[straight] = np.linalg.norm(targets[straight] - points[straight], axis=1)
-        around = np.flatnonzero(~straight & np.isfinite(length))
-        if around.size:
-            corner = anchor[around]
-            lead_center = self._centers[lead_of[field_rows[around], corner]]
-            root_center = self._centers[roots[around]]
+        around = np.full(points.shape[0], np.inf)
+        rows = np.flatnonzero(~straight & reached)
+        if rows.size:
+            lead_center = self._centers[lead[rows]]
+            root_center = self._centers[roots[rows]]
             # The field's last leg ends at the root bin's center; end it at
             # the target instead.
-            out[around] = (
-                np.linalg.norm(points[around] - self._centers[corner], axis=1)
-                + length_of[field_rows[around], corner]
+            around[rows] = (
+                np.linalg.norm(points[rows] - self._centers[corner[rows]], axis=1)
+                + length_of[field_rows[rows], corner[rows]]
                 - np.linalg.norm(lead_center - root_center, axis=1)
-                + np.linalg.norm(lead_center - targets[around], axis=1)
+                + np.linalg.norm(lead_center - targets[rows], axis=1)
             )
-        return out
+        return self._route(
+            points,
+            point_bins,
+            targets,
+            roots,
+            straight,
+            corner,
+            corner_length,
+            lead,
+            around,
+            waypoints=waypoints,
+        )
+
+    def _route(
+        self,
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+        targets: NDArray[np.float64],
+        roots: NDArray[np.intp],
+        straight: NDArray[np.bool_],
+        corner: NDArray[np.intp],
+        corner_length: NDArray[np.float64],
+        lead: NDArray[np.intp],
+        around: NDArray[np.float64],
+        *,
+        waypoints: bool = False,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
+        """Path from each point to its target, with the legs at positions checked.
+
+        A field's line of sight is decided between bin centers. The legs of
+        a path that start or end at a position (the point straight to the
+        target, the point to its bin's anchor, the last waypoint to the
+        target) are taken only where they stay inside (:meth:`_sees`), so a
+        path never cuts a corner its bin centers clear. Where one is
+        blocked, the path is the shortest of the routes whose legs stay
+        inside: from the point to its bin's anchor or to its bin's own
+        center (inside the bin's convex cell), then along the field, ending
+        at the target from the path's last waypoint or from the root bin's
+        center. The bin's own path has length ``|center - anchor| +
+        length[anchor]``, as the field sums it.
+
+        Parameters
+        ----------
+        points, targets : ndarray, shape (n, n_dims)
+            Positions, in ``point_bins`` and ``roots``.
+        point_bins, roots : ndarray of int, shape (n,)
+        straight : ndarray of bool, shape (n,)
+            The field takes the point straight to its target.
+        corner : ndarray of int, shape (n,)
+            Anchor of each point's bin.
+        corner_length : ndarray, shape (n,)
+            Field length from the anchor's center; ``inf`` where the point's
+            bin is not reached.
+        lead : ndarray of int, shape (n,)
+            Last waypoint before the root on the anchor's path.
+        around : ndarray, shape (n,)
+            Length through the anchor, ending at the target from ``lead``,
+            where the path is not straight.
+        waypoints : bool
+            Also return each path's first waypoint.
+
+        Returns
+        -------
+        length : ndarray, shape (n,)
+            ``inf`` where the point's bin is not reached.
+        waypoint : ndarray, shape (n, n_dims), or None
+            The first point the path heads for after the point itself (the
+            target, a bin center), NaN where it is not reached.
+        """
+        n = points.shape[0]
+        centers = self._centers
+        out = np.full(n, np.inf)
+        waypoint = np.full(points.shape, np.nan) if waypoints else None
+        direct = straight.copy()
+        check = np.flatnonzero(straight & (point_bins != roots))
+        if check.size:
+            direct[check] = self._sees(
+                points[check], targets[check], point_bins[check], roots[check]
+            )
+        out[direct] = np.linalg.norm(targets[direct] - points[direct], axis=1)
+        if waypoint is not None:
+            waypoint[direct] = targets[direct]
+        rest = np.flatnonzero(~direct & np.isfinite(corner_length))
+        if not rest.size:
+            return out, waypoint
+        p, a, t, r = points[rest], point_bins[rest], targets[rest], roots[rest]
+        c, c_length, c_lead = corner[rest], corner_length[rest], lead[rest]
+        # The last waypoint on the own center's path: the bin itself when
+        # its anchor is the root, else the anchor's.
+        own_lead = np.where(c == r, a, c_lead)
+        # Legs to check: point to anchor (never in the point's own bin
+        # here), and last waypoint to target unless it is the root's center.
+        m = rest.size
+        index = np.arange(m)
+        last_from = np.flatnonzero(c_lead != r)
+        own_from = np.flatnonzero(c == r)
+        legs = np.r_[index, last_from, own_from]
+        leg_start = np.r_[c, c_lead[last_from], a[own_from]]
+        sees = self._sees(
+            np.r_[p, centers[leg_start[m:]]],
+            np.r_[centers[c], t[legs[m:]]],
+            np.r_[a, leg_start[m:]],
+            np.r_[c, r[legs[m:]]],
+        )
+        first = sees[:m]
+        last = c_lead == r
+        last[last_from] = sees[m : m + last_from.size]
+        own_last = last.copy()
+        own_last[own_from] = sees[m + last_from.size :]
+        tail = np.linalg.norm(centers[r] - t, axis=1)
+        via = np.linalg.norm(p - centers[c], axis=1) + c_length
+        own = np.linalg.norm(p - centers[a], axis=1) + (
+            np.linalg.norm(centers[a] - centers[c], axis=1) + c_length
+        )
+        options = np.stack(
+            [
+                np.where(
+                    first & last,
+                    via
+                    - np.linalg.norm(centers[c_lead] - centers[r], axis=1)
+                    + np.linalg.norm(centers[c_lead] - t, axis=1),
+                    np.inf,
+                ),
+                np.where(first, via + tail, np.inf),
+                np.where(
+                    own_last,
+                    own
+                    - np.linalg.norm(centers[own_lead] - centers[r], axis=1)
+                    + np.linalg.norm(centers[own_lead] - t, axis=1),
+                    np.inf,
+                ),
+                own + tail,
+            ]
+        )
+        choice = np.argmin(options, axis=0)
+        value = options[choice, index]
+        # Where the field's own legs stay inside, its length is kept.
+        kept = first & last & ~straight[rest]
+        value[kept] = around[rest[kept]]
+        out[rest] = value
+        if waypoint is not None:
+            to_corner = kept | (choice <= 1)
+            first_point = np.where(to_corner[:, None], centers[c], centers[a])
+            # From the own center itself, the path heads on to the target
+            # (the center sees it) or to the anchor.
+            at_center = np.flatnonzero(~to_corner & np.all(p == centers[a], axis=1))
+            onward = (choice[at_center] == 2) & (own_lead[at_center] == a[at_center])
+            first_point[at_center] = np.where(
+                onward[:, None], t[at_center], centers[c[at_center]]
+            )
+            waypoint[rest] = first_point
+        return out, waypoint
+
+    def _sees(
+        self,
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        start_bins: NDArray[np.intp],
+        end_bins: NDArray[np.intp],
+    ) -> NDArray[np.bool_]:
+        """Whether each straight segment between two points stays inside.
+
+        Parameters
+        ----------
+        starts, ends : ndarray, shape (n, n_dims)
+            Points in ``start_bins`` and ``end_bins``.
+        start_bins, end_bins : ndarray of int, shape (n,)
+        """
+        visible, _ = self._trace(starts, ends, start_bins, end_bins)
+        return visible
 
     def _source_field(
         self, source_bins: NDArray[np.intp]
@@ -1979,6 +2183,7 @@ class _OpenPairDistances(PairDistances):
 
     def __init__(self, paths: _OpenPaths, points: NDArray[np.float64]) -> None:
         super().__init__(paths, points)
+        self._paths = paths
         centers = self._centers = paths._centers
         n_bins, n_dims = centers.shape
         roots = np.unique(self._bins[self._bins >= 0])
@@ -2026,17 +2231,30 @@ class _OpenPairDistances(PairDistances):
     def _between(
         self, first: NDArray[np.intp], second: NDArray[np.intp]
     ) -> NDArray[np.float64]:
-        a, row = self._bins[first], self._row_of[self._bins[second]]
+        a, b = self._bins[first], self._bins[second]
+        row = self._row_of[b]
         starts, ends = self._points[first], self._points[second]
         centers = self._centers
-        corner, lead = self._corner[row, a], self._lead[row, a]
+        corner = self._corner[row, a].astype(np.intp)
+        lead = self._lead[row, a].astype(np.intp)
+        rest = self._rest[row, a]
         around = (
             np.linalg.norm(starts - centers[corner], axis=1)
-            + self._rest[row, a]
+            + rest
             + np.linalg.norm(centers[lead] - ends, axis=1)
         )
-        distances: NDArray[np.float64] = np.where(
-            self._straight[row, a], np.linalg.norm(ends - starts, axis=1), around
+        # The tables hold each path between bin centers; the legs at the
+        # positions are checked as for single pairs.
+        distances, _ = self._paths._route(
+            starts,
+            a,
+            ends,
+            b,
+            self._straight[row, a],
+            corner,
+            rest + np.linalg.norm(centers[lead] - centers[b], axis=1),
+            lead,
+            around,
         )
         return distances
 
