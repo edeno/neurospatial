@@ -20,11 +20,13 @@ every position in a bin the same distance. This module measures in continuous
 space instead:
 
 1. A straight segment between two bin centers is *visible* when it stays
-   inside the environment: probed every half of the shortest bin-graph edge,
-   every probe lies in a bin's cell, and consecutive probes lie in the same
-   bin or in two bins joined by an open connection. A wall closes the
-   connection between the bins on its two sides, so a segment across a wall
-   is not visible.
+   inside the environment: probed every half of the shortest bin-graph edge
+   (never exactly on a lattice edge), every probe lies in a bin's cell, and
+   every cell it crosses between two probes is a bin joined to the last by an
+   open connection (on a rectilinear grid found exactly from the order of its
+   axis crossings). A wall closes the connection between the bins on its two
+   sides, so a segment across a wall is not visible, and the test is the same
+   for a segment and its mirror image.
 2. From the center of the target's bin, the any-angle shortest path to every
    bin center is grown outward in order of bin-graph distance (Theta*; Nash
    et al. 2007): each bin connects straight to the target when visible, else
@@ -40,7 +42,10 @@ space instead:
    with the path's last leg ending at the target itself rather than at its
    bin center. Visibility is decided between the two bin centers, so near a
    wall end a position can be up to a bin's width from where the straight
-   line actually becomes blocked.
+   line actually becomes blocked. Two positions in one bin or in two
+   connected bins are always the straight line apart. Toward several source
+   bins at once, a position leaves for the anchor of its own bin or, when
+   visible from it, of a neighboring bin.
 
 **Track environments** (``Environment.from_graph``, ``linear_track``,
 ``maze``) are one-dimensional: the distance is measured along the track graph
@@ -74,14 +79,6 @@ if TYPE_CHECKING:
 
     from neurospatial.environment import Environment
     from neurospatial.geometry._binning import TrackLinearization
-
-# One sentence, reused by every behavior ``metric`` docstring and the user
-# guide, so "geodesic" reads the same everywhere.
-GEODESIC_DEFINITION = (
-    "the length of the shortest path between two positions that stays inside "
-    "the environment: it goes around walls and never leaves the environment, "
-    "and on a track it runs along the track's centerline"
-)
 
 # Probe a segment every half of the shortest graph edge. Consecutive probes
 # must land in the same or connected bins, so a probe step shorter than a bin
