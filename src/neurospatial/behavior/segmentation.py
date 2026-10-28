@@ -49,22 +49,24 @@ trajectory_similarity
     Compare similarity between two trajectories
 detect_goal_directed_runs
     Goal-directed stretches of recording, as an (n, 2) array
+laps_to_direction_labels
+    Per-sample direction labels from detected laps
+runs_to_direction_labels
+    Per-sample labels from detected runs
+running_direction_labels
+    Per-sample inbound/outbound labels on a linear or W-track
 
 Classes
 -------
 Trial
-    Dataclass representing a behavioral trial with fields:
-    - start_time: Trial onset time
-    - end_time: Trial offset time
-    - start_region: Region where trial started
-    - end_region: Region reached (None unless outcome is 'reached')
-    - outcome: 'reached', 'timeout', 'returned' or 'censored'
+    One trial: start_time, end_time, start_region, end_region (None unless
+    reached) and outcome ('reached', 'timeout', 'returned' or 'censored')
 Crossing
-    Dataclass for region entry/exit events
+    One region entry or exit
 Lap
-    Dataclass for lap detection results
+    One lap on a circular track
 Run
-    Dataclass for runs between regions
+    One attempt to travel from a source region to a target region
 """
 
 from __future__ import annotations
@@ -610,9 +612,6 @@ def detect_region_crossings(
     Useful for analyzing exploration patterns, region preference, and behavioral
     transitions.
 
-    The :class:`~neurospatial.Environment` holding the region definition is
-    passed positionally as the third argument in the new (0.6+) call form.
-
     Parameters
     ----------
     position_bins : NDArray[np.int64], shape (n_samples,)
@@ -675,9 +674,11 @@ def detect_region_crossings(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no segment spans a pause.
+    A missing sample (bin ``-1``, outside the environment) is skipped as if
+    its row were deleted, and the gap around it is bridged when the valid
+    samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
+    ``break_before`` splits the recording; each resulting stretch is analyzed
+    on its own, so no segment spans a pause.
 
     A crossing is detected when the trajectory transitions from outside to inside
     the region (entry) or inside to outside (exit). The crossing time is assigned
@@ -847,12 +848,13 @@ def detect_runs_between_regions(
         Maximum run duration in seconds. Default: 10.0.
         Runs exceeding this are marked as failed (timeout).
     min_speed : float or None, optional
-        Minimum velocity (bin-center units/second) to count as
-        movement. Velocity is computed from consecutive
-        ``env.bin_centers[position_bins[i]]`` rather than continuous
-        positions, so the value is bin-quantized; pre-filter on
-        continuous positions if you need true sub-bin precision.
-        If None, no velocity filtering is applied. Default: None.
+        Drop runs whose mean speed is below this value (position units per
+        second). A run's mean speed is the mean, over consecutive sample
+        pairs, of the distance between their bin centers divided by the
+        elapsed time, so it is bin-quantized and does not gate individual
+        samples; to restrict runs to movement on continuous positions, pass
+        movement epochs from :func:`segment_by_velocity` as ``epochs``.
+        If None (default), no speed filtering is applied.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -911,9 +913,11 @@ def detect_runs_between_regions(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no segment spans a pause.
+    A missing sample (bin ``-1``, outside the environment) is skipped as if
+    its row were deleted, and the gap around it is bridged when the valid
+    samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
+    ``break_before`` splits the recording; each resulting stretch is analyzed
+    on its own, so no segment spans a pause.
 
     A run in progress when a recording ends is emitted there with
     ``outcome='censored'``: it neither reached the target nor timed out
@@ -1162,13 +1166,13 @@ def segment_by_velocity(
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
-    """Segment trajectory into movement and rest periods based on velocity.
+    """Find movement epochs: stretches where speed stays above a threshold.
 
-    Uses hysteresis thresholding to classify trajectory epochs as movement
-    (velocity above ``min_speed``) or rest (velocity below it). Filters out
-    brief segments shorter than ``min_duration``. Useful for identifying
-    behavioral states, analyzing exploration patterns, and preprocessing
-    for place field analysis.
+    Uses hysteresis thresholding on the smoothed speed to find movement
+    epochs and returns them as ``[start, stop)`` rows; time outside every
+    row is rest or unobserved. Epochs shorter than ``min_duration`` are
+    dropped. Useful for running-bout analysis and for restricting place-field
+    and decoding analyses to movement with ``epochs=``.
 
     Parameters
     ----------
@@ -1236,23 +1240,26 @@ def segment_by_velocity(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no segment spans a pause.
+    A missing sample (a position row with a NaN coordinate) is skipped as if
+    its row were deleted, and the gap around it is bridged when the valid
+    samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
+    ``break_before`` splits the recording; each resulting stretch is analyzed
+    on its own, so no segment spans a pause.
 
     Smoothing and hysteresis are applied separately within each recording.
     A movement epoch in progress at its end is truncated there.
 
-    Velocity is computed as Euclidean distance between consecutive samples
-    divided by time difference. Velocities are smoothed using a moving average
-    to reduce noise from measurement errors. The moving average uses
-    edge-value (boundary-reflecting) padding so that velocity is not
-    artificially suppressed at the start and end of the recording; this
-    preserves movement epochs that extend to the recording boundary.
+    Speed is the speed of :func:`compute_speed`: the centered-secant velocity
+    ``(p[i+1] - p[i-1]) / (t[i+1] - t[i-1])`` (one-sided at the ends of a
+    recording), each component smoothed with a Gaussian of standard
+    deviation ``smooth_window`` seconds (edges extended with the nearest
+    value, ``mode="nearest"``, so movement that reaches the end of a
+    recording is not suppressed), then its magnitude.
 
     Hysteresis thresholding prevents "flickering" near the threshold:
-    - Movement starts when velocity exceeds ``min_speed``
-    - Movement continues until velocity drops below ``min_speed / hysteresis``
+    - Movement starts at the first sample whose speed exceeds ``min_speed``
+    - Movement continues until speed drops below ``min_speed / hysteresis``;
+      the epoch's ``stop`` is that first slower sample
     - This creates a "buffer zone" for stable state transitions
 
     Common use cases:
@@ -1385,7 +1392,7 @@ def _segment_by_velocity_contiguous(
 
 
 # =============================================================================
-# Functions from laps.py
+# Laps
 # =============================================================================
 
 
@@ -1577,9 +1584,11 @@ def detect_laps(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no segment spans a pause.
+    A missing sample (bin ``-1``, outside the environment) is skipped as if
+    its row were deleted, and the gap around it is bridged when the valid
+    samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
+    ``break_before`` splits the recording; each resulting stretch is analyzed
+    on its own, so no segment spans a pause.
 
     Laps never span recordings. Samples outside the environment are left
     out as if their rows were deleted.
@@ -1623,7 +1632,7 @@ def detect_laps(
 
     **Applications:**
 
-    - Lap-by-lap learning curves (Barnes et al., 1997)
+    - Lap-by-lap learning curves
     - Trajectory stereotypy quantification
     - Performance variability across trials
     - Spatial strategy consistency
@@ -1709,15 +1718,6 @@ def detect_laps(
     ... )
     >>> "counter-clockwise" in fields.firing_rates
     True
-
-    References
-    ----------
-    .. [1] Barnes, C. A., Suster, M. S., Shen, J., & McNaughton, B. L. (1997).
-           Multistability of cognitive maps in the hippocampus of old rats.
-           Nature, 388(6639), 272-275.
-    .. [2] Dupret, D., O'Neill, J., Pleydell-Bouverie, B., & Csicsvari, J. (2010).
-           The reorganization and reactivation of hippocampal maps predict
-           spatial memory performance. Nature Neuroscience, 13(8), 995-1002.
     """
     require_cartesian(
         env.coordinate_system,
@@ -2191,9 +2191,8 @@ def running_direction_labels(
 ) -> NDArray[np.object_]:
     """Label per-timepoint inbound/outbound running direction on a linear track.
 
-    First-class inbound/outbound labeler for linear / W-track tasks, so users no
-    longer have to invent end-region names and stitch
-    :func:`detect_runs_between_regions` together by hand. Outbound runs go from
+    Inbound/outbound labeler for linear-track and W-track tasks, built on
+    :func:`detect_runs_between_regions`. Outbound runs go from
     ``start_region`` to an end region; inbound runs come back from an end region
     to ``start_region``. Every sample inside an outbound run is labeled
     ``"outbound"``, every sample inside an inbound run ``"inbound"``, and all
@@ -2281,9 +2280,11 @@ def running_direction_labels(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no segment spans a pause.
+    A missing sample (bin ``-1``, outside the environment) is skipped as if
+    its row were deleted, and the gap around it is bridged when the valid
+    samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
+    ``break_before`` splits the recording; each resulting stretch is analyzed
+    on its own, so no segment spans a pause.
 
     Outbound and inbound runs are detected per end region (start -> end and
     end -> start) with :func:`detect_runs_between_regions`, so each run ends
@@ -2395,7 +2396,7 @@ def running_direction_labels(
 
 
 # =============================================================================
-# Functions from trials.py
+# Trials
 # =============================================================================
 
 
@@ -2515,9 +2516,11 @@ def segment_trials(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no segment spans a pause.
+    A missing sample (bin ``-1``, outside the environment) is skipped as if
+    its row were deleted, and the gap around it is bridged when the valid
+    samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
+    ``break_before`` splits the recording; each resulting stretch is analyzed
+    on its own, so no segment spans a pause.
 
     A trial in progress when a recording ends is emitted there with
     ``outcome='censored'``, as at the end of a complete recording. Leave
@@ -2751,7 +2754,7 @@ def _segment_trials_contiguous(
 
 
 # =============================================================================
-# Functions from similarity.py
+# Trajectory similarity and goal-directed runs
 # =============================================================================
 
 
@@ -2765,8 +2768,8 @@ def trajectory_similarity(
     """Compute similarity between two trajectories.
 
     Compares spatial paths using various metrics. Useful for identifying
-    stereotyped behaviors, replay analysis, and comparing navigation strategies
-    across trials or sessions.
+    stereotyped behaviors and comparing navigation strategies across trials
+    or sessions.
 
     Parameters
     ----------
@@ -2783,9 +2786,11 @@ def trajectory_similarity(
         - 'jaccard': Area (or length, or volume) of the visited bins that
           both trajectories share, over the area either visits. Range [0, 1].
         - 'correlation': Pearson correlation of the positions along the
-          track. Needs a 1-D environment or a linearized track. Range [0, 1].
-        - 'hausdorff': Hausdorff distance between paths, normalized. Range [0, 1].
-        - 'dtw': Dynamic time warping distance, normalized. Range [0, 1].
+          track, with negative correlations reported as 0. Needs a 1-D
+          environment or a linearized track. Range [0, 1].
+        - 'hausdorff': 1 - Hausdorff distance / environment extent. Range [0, 1].
+        - 'dtw': 1 - dynamic time warping distance / its largest possible
+          value in this environment. Range [0, 1].
         Default is 'jaccard'.
 
     Returns
@@ -2830,9 +2835,11 @@ def trajectory_similarity(
     **Correlation** measures sequential similarity by computing the Pearson
     correlation between the two sequences of positions along the track: the
     linear position of each visited bin on a linearized track, or its
-    coordinate in a 1-D environment. Sensitive to order and timing. A 2-D
-    or 3-D path has no single coordinate to correlate; use ``'dtw'`` or
-    ``'hausdorff'`` there.
+    coordinate in a 1-D environment. Sensitive to order and timing. A
+    negative correlation (for example a run in the opposite direction) is
+    reported as 0, so the score cannot tell anti-correlated from unrelated
+    paths. A 2-D or 3-D path has no single coordinate to correlate; use
+    ``'dtw'`` or ``'hausdorff'`` there.
 
     **Hausdorff distance** measures maximum deviation between trajectories:
 
@@ -2842,10 +2849,18 @@ def trajectory_similarity(
                             \\sup_{b \\in B} \\inf_{a \\in A} d(a, b)\\}
 
     Converted to similarity as :math:`1 - d_H / d_{max}` where :math:`d_{max}`
-    is the environment extent.
+    is the environment extent (the diagonal of the bin centers' bounding box).
 
     **Dynamic time warping (DTW)** finds optimal alignment between trajectories
     allowing temporal shifts. Useful for comparing paths with different speeds.
+    The summed cost of the optimal alignment is divided by
+    :math:`\\max(n_1, n_2)\\, d_{max}`: a diagonal alignment path has
+    :math:`\\max(n_1, n_2)` steps and no step costs more than :math:`d_{max}`,
+    so the optimum can never exceed it.
+
+    Both Hausdorff and DTW scores are relative to the environment's size:
+    the same two paths, 5 cm apart, score higher in a 10 m arena than on a 1
+    m track. Compare these scores only between paths in one environment.
 
     Samples with bin ``-1`` have no place in the environment. Jaccard,
     Hausdorff and DTW use only each trajectory's samples inside the
@@ -2882,14 +2897,6 @@ def trajectory_similarity(
     >>> reverse = trajectory_similarity(outbound, inbound, track, method="correlation")
     >>> print(f"same run: {same:.2f}, reverse run: {reverse:.2f}")
     same run: 1.00, reverse run: 0.00
-
-    References
-    ----------
-    .. [1] Pfeiffer, B. E., & Foster, D. J. (2013). Hippocampal place-cell
-           sequences depict future paths to remembered goals. *Nature*,
-           497(7447), 74-79.
-    .. [2] Davidson, T. J., Kloosterman, F., & Wilson, M. A. (2009).
-           Hippocampal replay of extended experience. *Neuron*, 63(4), 497-507.
     """
     # Input validation
     if len(position_bins1) == 0 or len(position_bins2) == 0:
@@ -3022,8 +3029,8 @@ def trajectory_similarity(
         # Compute DTW distance using dynamic programming
         dtw_distance = _dtw_distance(pos1, pos2)
 
-        # Normalize by path lengths
-        # Theoretical max DTW = max(len1, len2) * max_bin_distance
+        # Normalize by the largest possible optimal cost: the diagonal path
+        # has max(len1, len2) steps, each at most the environment's extent.
         extent = np.ptp(env.bin_centers, axis=0)
         max_bin_distance = np.linalg.norm(extent)
         max_dtw = max(len(pos1), len(pos2)) * max_bin_distance
@@ -3161,11 +3168,11 @@ def detect_goal_directed_runs(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no segment spans a pause. A sample
-    outside the environment (bin ``-1``) is missing and skipped as if its row
-    were deleted; the gap around it counts toward ``max_gap``.
+    A missing sample (bin ``-1``, outside the environment) is skipped as if
+    its row were deleted, and the gap around it is bridged when the valid
+    samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
+    ``break_before`` splits the recording; each resulting stretch is analyzed
+    on its own, so no segment spans a pause.
 
     Each recording supplies one candidate spanning its complete observed
     sample run; this function does not split repeated approaches into separate
@@ -3184,47 +3191,36 @@ def detect_goal_directed_runs(
 
     A straight path toward goal has :math:`D \\approx 1.0`, while a random
     walk has :math:`D \\approx 0.0`. Negative values indicate movement away
-    from goal.
-
-    This metric is used to identify replay events where hippocampal place cells
-    reactivate in sequences representing paths to remembered goals [1]_.
+    from goal. Distances are path distances between bin centers on the
+    environment's connectivity graph.
 
     Examples
     --------
-    Detect goal-directed runs in a linear track:
+    A straight approach to a goal well at the end of a 100 cm corridor:
 
-    >>> import numpy as np  # doctest: +SKIP
-    >>> from shapely.geometry import Point  # doctest: +SKIP
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.behavior.segmentation import (
-    ...     detect_goal_directed_runs,
-    ... )  # doctest: +SKIP
-    >>> positions = np.linspace(0, 100, 100)[:, None]  # doctest: +SKIP
-    >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
-    >>> goal_center = env.bin_centers[-1]  # doctest: +SKIP
-    >>> goal_polygon = Point(float(goal_center[0]), 0.0).buffer(5.0)  # doctest: +SKIP
-    >>> from neurospatial.regions import Regions  # doctest: +SKIP
-    >>> regions = Regions(env.regions.values())  # doctest: +SKIP
-    >>> regions.add("goal", polygon=goal_polygon)  # doctest: +SKIP
-    >>> env = env.with_regions(regions)  # doctest: +SKIP
-    >>> position_bins = np.arange(0, 40, dtype=np.int64)  # doctest: +SKIP
-    >>> times = np.linspace(0, 10, len(position_bins))  # doctest: +SKIP
-    >>> runs = detect_goal_directed_runs(  # doctest: +SKIP
-    ...     position_bins,  # doctest: +SKIP
-    ...     times,  # doctest: +SKIP
-    ...     env,  # doctest: +SKIP
-    ...     goal_region="goal",  # doctest: +SKIP
-    ...     directedness_threshold=0.7,  # doctest: +SKIP
-    ...     min_progress=10.0,  # doctest: +SKIP
-    ... )  # doctest: +SKIP
-    >>> print(f"Detected {len(runs)} goal-directed run(s)")  # doctest: +SKIP
-    Detected 1 goal-directed run(s)
+    >>> import numpy as np
+    >>> from shapely.geometry import box
+    >>> from neurospatial import Environment
+    >>> from neurospatial.regions import Regions
+    >>> from neurospatial.behavior.segmentation import detect_goal_directed_runs
+    >>> track = np.c_[np.linspace(0, 100, 401), np.zeros(401)]
+    >>> env = Environment.from_samples(track, bin_size=2.0).with_metadata(units="cm")
+    >>> regions = Regions(env.regions.values())
+    >>> _ = regions.add("goal", polygon=box(95, -5, 105, 5))
+    >>> env = env.with_regions(regions)
+    >>> x = np.linspace(10, 90, 41)  # 80 cm toward the goal in 4 s
+    >>> position_bins = env.bin_at(np.c_[x, np.zeros_like(x)])
+    >>> times = np.arange(41) / 10.0
+    >>> detect_goal_directed_runs(position_bins, times, env, goal_region="goal")
+    array([[0., 4.]])
 
-    References
-    ----------
-    .. [1] Pfeiffer, B. E., & Foster, D. J. (2013). Hippocampal place-cell
-           sequences depict future paths to remembered goals. *Nature*,
-           497(7447), 74-79.
+    Walking the same path away from the goal is not goal-directed:
+
+    >>> detect_goal_directed_runs(
+    ...     position_bins[::-1], times, env, goal_region="goal"
+    ... ).shape
+    (0, 2)
+
     """
     # Input validation
     _require_region_mask(
