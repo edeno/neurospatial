@@ -121,6 +121,18 @@ class TestOpenEnvironments:
                 np.linalg.norm(end - start), rel=1e-12
             )
 
+    @pytest.mark.parametrize(
+        ("start", "end"), [((100.0, 5.0), (100.0, 95.0)), ((5.0, 100.0), (95.0, 100.0))]
+    )
+    def test_a_line_along_the_closed_outline_is_straight(self, start, end):
+        """The outline of a grid belongs to its bins, so a line along the
+        outer face of the last cells is inside the whole way."""
+        edges = np.arange(0.0, 101.0, 10.0)
+        env = Environment.from_grid_mask(
+            np.ones((10, 10), dtype=bool), grid_edges=(edges, edges)
+        )
+        assert shortest_path_length(env, np.array(start), np.array(end)) == 90.0
+
 
 def _w_track(bin_size, track_width):
     """A W-track: a 40 cm center stem and two 40 cm outer arms joined by
@@ -712,6 +724,103 @@ def test_deep_mesh_interiors_locate_points_as_the_locator_does():
     visible, _ = paths._trace(starts, ends, a, b)
     np.testing.assert_array_equal(visible, probed._trace(starts, ends, a, b)[0])
     assert 300 < visible.sum() < visible.size - 300
+
+
+def _mesh(outline):
+    from neurospatial.layout import create_layout
+
+    return Environment.from_layout(
+        create_layout("triangular_mesh", boundary_polygon=outline, point_spacing=4.0)
+    )
+
+
+class TestMeshLinesOfSightPastVertices:
+    """On a triangle mesh, a straight line passing at or near a vertex,
+    between triangles that share only that vertex, is visible exactly when
+    the triangles around the vertex it passes through are bins connected in
+    turn."""
+
+    def test_any_two_bins_of_a_convex_mesh_are_a_straight_line_apart(self):
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        env = _mesh(box(0, 0, 40, 40))
+        rng = np.random.default_rng(0)
+        a, b = rng.integers(0, env.n_bins, (2, 2000))
+        distances = environment_paths(env, call="test").between_bins(a, b)
+        straight = np.linalg.norm(env.bin_centers[a] - env.bin_centers[b], axis=1)
+        np.testing.assert_allclose(distances, straight, rtol=1e-12, atol=0)
+
+    def test_segments_are_visible_exactly_when_they_stay_inside(self):
+        """Around a slot: segments inside the room and clear of its outline
+        are visible, those crossing the slot are blocked; those touching the
+        outline (through a corner of the slot) may go either way."""
+        import shapely
+
+        from neurospatial.behavior._environment_paths import _OpenPaths
+
+        outline = Polygon(
+            [(0, 0), (60, 0), (60, 60), (35, 60), (35, 15), (25, 15), (25, 60), (0, 60)]
+        )
+        env = _mesh(outline)
+        rng = np.random.default_rng(1)
+        a, b = rng.integers(0, env.n_bins, (2, 4000))
+        starts, ends = env.bin_centers[a], env.bin_centers[b]
+        # Passes 0.003 probe spacings from the vertex at (50, 2).
+        reported = np.array([[51.94196977, 1.69302912], [12.18736784, 8.01824753]])
+        starts, ends = (
+            np.vstack([starts, reported[:1]]),
+            np.vstack([ends, reported[1:]]),
+        )
+        a, b = np.r_[a, env.bin_at(reported[:1])], np.r_[b, env.bin_at(reported[1:])]
+        visible, _ = _OpenPaths(env)._trace(starts, ends, a, b)
+        lines = shapely.linestrings(np.stack([starts, ends], axis=1))
+        inside = shapely.covers(outline, lines) & (
+            shapely.distance(outline.boundary, lines) > 1e-9
+        )
+        outside = shapely.length(shapely.difference(lines, outline)) > 1e-9
+        assert inside[-1] and visible[-1]
+        assert inside.sum() > 1000 and outside.sum() > 1000
+        assert visible[inside].all()
+        assert not visible[outside].any()
+
+    @pytest.mark.parametrize("pinched", [True, False])
+    def test_lines_past_a_pinch_vertex_stay_blocked(self, pinched):
+        """Two square holes touching at the vertex (22, 22) pinch the room
+        there: the triangles either side of it, that share only that vertex,
+        are joined only around the holes. Without the holes (the control)
+        the straight line between them is inside."""
+        from neurospatial.behavior._environment_paths import _OpenPaths
+
+        holes = [
+            [(10, 22), (22, 22), (22, 34), (10, 34)],
+            [(22, 10), (34, 10), (34, 22), (22, 22)],
+        ]
+        env = _mesh(
+            Polygon(box(0, 0, 40, 40).exterior.coords, holes if pinched else [])
+        )
+        # Centroids of the triangles (18, 22), (22, 18), (22, 22) and
+        # (26, 22), (22, 26), (22, 22): their line runs through the vertex.
+        p, q = np.array([62.0, 62.0]) / 3, np.array([70.0, 70.0]) / 3
+        # Through the vertex, and within a hair or 0.002 cm either side.
+        offsets = np.array([0.0, 1e-9, -1e-9, 2e-3, -2e-3])[:, None] * [1, -1]
+        starts, ends = p + offsets, q + offsets
+        a, b = env.bin_at(starts), env.bin_at(ends)
+        assert np.all(a == a[0]) and np.all(b == b[0])
+        visible, _ = _OpenPaths(env)._trace(starts, ends, a, b)
+        lengths = [
+            shortest_path_length(env, s, e) for s, e in zip(starts, ends, strict=True)
+        ]
+        if pinched:
+            assert not visible.any()
+            # At least around the corners (22, 10), (34, 10) and (34, 22) of
+            # one hole (or, mirrored, of the other).
+            around = np.linalg.norm(p - [22, 10]) + 24 + np.linalg.norm(q - [34, 22])
+            assert np.all(np.array(lengths) >= around - 1e-9)
+        else:
+            assert visible.all()
+            np.testing.assert_allclose(
+                lengths, np.linalg.norm(ends - starts, axis=1), rtol=1e-12
+            )
 
 
 @pytest.mark.parametrize("probe_chunk", [None, 600])

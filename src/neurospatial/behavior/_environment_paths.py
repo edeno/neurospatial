@@ -24,7 +24,8 @@ space instead:
    (never exactly on a lattice edge), every probe lies in a bin's cell, and
    every cell it crosses between two probes is a bin joined to the last by an
    open connection (on a rectilinear grid found exactly from the order of its
-   axis crossings). A wall closes the connection between the bins on its two
+   axis crossings, and on a triangle mesh near a vertex from the triangles
+   around it). A wall closes the connection between the bins on its two
    sides, so a segment across a wall is not visible, and the test is the same
    for a segment and its mirror image.
 2. From the center of the target's bin, the any-angle shortest path to every
@@ -497,6 +498,8 @@ class _OpenPaths(EnvironmentPaths):
         # Deep interiors of a mesh's triangles, where a point's bin is known
         # without the locator.
         self._cores = _MeshCores.of(self._locator, n_bins, env._cache)
+        # The triangles around each mesh vertex, for stretches passing near it.
+        self._fans = _VertexFans.of(self._locator, n_bins)
         # The lattice whose clean boxes skip probing (:meth:`_trace_boxes`).
         self._boxes: _BoxCells | None = (
             self._grid
@@ -733,10 +736,11 @@ class _OpenPaths(EnvironmentPaths):
         """
         grid = self._grid
         assert grid is not None
-        located = grid.bin_of(grid.half_open(points))
+        cells = grid.half_open(points)
+        located = grid.bin_of(cells)
         rest = np.flatnonzero(located < 0)
         if rest.size:
-            located[rest] = self._cells(points[rest])
+            located[rest] = grid.outline(points[rest], cells[rest], self)
         return located
 
     def _probe_cells(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
@@ -1406,7 +1410,9 @@ class _OpenPaths(EnvironmentPaths):
         crosses must all be bins joined in turn: on a rectilinear grid they
         are found exactly from the order of its axis crossings; otherwise
         the stretch is split until its pieces join nearest neighbors, so a
-        corner it cuts through a missing or closed bin is caught.
+        corner it cuts through a missing or closed bin is caught. On a mesh,
+        a piece left between triangles that share only a vertex is walked
+        through the triangles around that vertex (:class:`_VertexFans`).
         """
         bad = (left < 0) | (right < 0)
         origin = np.flatnonzero(~bad & (left != right))
@@ -1440,9 +1446,22 @@ class _OpenPaths(EnvironmentPaths):
             unknown = split & (flank < 0)
             flank[unknown] = self._flanked(a[unknown], b[unknown])
             split &= flank == 0
-            joined = ~split
+            joined = np.flatnonzero(~split)
+            apart = joined[~self._connected(a[joined], b[joined])]
+            if self._fans is not None and apart.size:
+                # On a mesh, a piece between triangles that share only a
+                # vertex may pass through the triangles around it.
+                span = ends[seg[apart]] - starts[seg[apart]]
+                through = self._fans.passes(
+                    a[apart],
+                    b[apart],
+                    starts[seg[apart]] + f0[apart, None] * span,
+                    starts[seg[apart]] + f1[apart, None] * span,
+                    self._connected,
+                )
+                apart = apart[~through]
             # Several pieces can share an origin: mark, never unmark.
-            bad[origin[joined][~self._connected(a[joined], b[joined])]] = True
+            bad[origin[apart]] = True
             keep = split & ~bad[origin]
             origin, a, b, seg, f0, f1, length, gap, flank = (
                 x[keep] for x in (origin, a, b, seg, f0, f1, length, gap, flank)
@@ -2061,9 +2080,33 @@ class _GridCells(_BoxCells):
     def missing(
         self, points: NDArray[np.float64], paths: _OpenPaths
     ) -> NDArray[np.intp]:
-        outside = np.flatnonzero(self.bin_of(self.half_open(points)) < 0)
-        missing: NDArray[np.intp] = outside[paths._cells(points[outside]) < 0]
+        cells = self.half_open(points)
+        outside = np.flatnonzero(self.bin_of(cells) < 0)
+        missing: NDArray[np.intp] = outside[
+            self.outline(points[outside], cells[outside], paths) < 0
+        ]
         return missing
+
+    def outline(
+        self, points: NDArray[np.float64], cells: NDArray[np.intp], paths: _OpenPaths
+    ) -> NDArray[np.intp]:
+        """:meth:`_OpenPaths._cells` of points in no bin's half-open cell.
+
+        Such a point is in a bin only on the outline of the bins, where it
+        lies on the lower face of its half-open cell (``cells``) on some
+        axis, the upper face of a bin; only those points go to the locator,
+        and the rest are in no bin.
+        """
+        on_edge = np.zeros(points.shape[0], dtype=bool)
+        for axis, edge in enumerate(self.edges):
+            on_edge |= (
+                points[:, axis] == edge[np.clip(cells[:, axis], 0, edge.size - 1)]
+            )
+        located = np.full(points.shape[0], -1, dtype=np.intp)
+        rows = np.flatnonzero(on_edge)
+        if rows.size:
+            located[rows] = paths._cells(points[rows])
+        return located
 
     def half_open(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Half-open grid cell of each point per axis, as the locator finds it.
@@ -2499,6 +2542,239 @@ class _MeshCores:
         bin_of_row[self.entry[self.entry >= 0]] = np.flatnonzero(self.entry >= 0)
         table[cell[deep, 0], cell[deep, 1]] = bin_of_row[rows[owner[deep]]]
         self._table, self._low, self._width = table, low, width
+
+
+class _VertexFans:
+    """Stretches between mesh triangles that share only a vertex.
+
+    Bins of a mesh are connected across shared edges, never at a shared
+    vertex alone. A stretch from triangle ``a`` to triangle ``b`` that share
+    exactly one vertex ``v`` and passes near ``v`` crosses the triangles
+    around ``v``, but splitting it (:meth:`_OpenPaths._crossing_blocked`)
+    stops at a resolution, leaving a piece from ``a`` to ``b`` themselves.
+    That piece stays inside when it crosses, in order, a chain of triangles
+    around ``v`` from ``a`` to ``b``, each a bin connected to the last, and
+    stays inside the boundary polygon. The test is made only where the piece
+    would otherwise be blocked, so it can make a blocked segment visible,
+    never the other way.
+
+    A line that misses ``v`` turns around it in one direction only (the
+    sign of ``cross(p0 - v, p1 - p0)``), so it leaves each triangle around
+    ``v`` through the edge from ``v`` ahead of it in that direction. The
+    walk from ``a`` takes that edge, requires the line to cross it between
+    its two ends and within the piece, and steps to the triangle across it,
+    which must be a bin connected to the last; it ends on reaching ``b``.
+    The piece then runs from ``p0`` in ``a`` to its first crossing, between
+    consecutive crossings and from its last crossing to ``p1`` in ``b``,
+    each inside one (convex) triangle, entering each across a connected
+    edge. A line that leaves the triangles around ``v``, or that meets a
+    triangle that is missing, not connected or off the triangulation, stops
+    the walk and the piece stays blocked; so at a pinch, where ``a`` and
+    ``b`` touch only at ``v`` with no connected triangles between them on
+    the side the line passes, it stays blocked.
+
+    A line through ``v`` itself (within ``margin``) meets every edge from
+    ``v`` at ``v``, so which way it turns is undefined. Such a piece is
+    inside only when ``v`` lies on it and the walk reaches ``b`` from ``a``
+    both ways round, every triangle around ``v`` a connected bin: then
+    ``v`` is inside the environment and the piece runs from ``p0`` in ``a``
+    to ``v`` and on to ``p1`` in ``b``, and so does every line that passes
+    near ``v`` on either side. A pinch, or a vertex on the edge of the
+    environment, blocks it.
+
+    ``margin`` (a billionth of the mesh's coordinate scale, as in
+    :class:`_MeshCores`) absorbs rounding where a probe or split point lands
+    on ``v`` or on an edge: the stretches before and after it, and the
+    straight line through ``v`` of a symmetric mesh, are otherwise decided
+    by the sign of a rounding error.
+
+    Parameters
+    ----------
+    points : ndarray, shape (n_points, 2)
+        Mesh vertices.
+    simplices : ndarray of int, shape (n_simplices, 3)
+        Stored triangles, including those that are not bins.
+    neighbors : ndarray of int, shape (n_simplices, 3)
+        Triangle across the edge opposite each corner, -1 on the hull or on
+        an edge of more than two triangles.
+    active : ndarray of int, shape (n_simplices,)
+        Bin of each triangle, -1 where it is not a bin.
+    triangle : ndarray of int, shape (n_bins,)
+        Triangle of each bin.
+    boundary : shapely.Polygon or None
+        The locator's boundary polygon.
+    margin : float
+        Distance within which a line passes through a vertex.
+    """
+
+    def __init__(
+        self,
+        points: NDArray[np.float64],
+        simplices: NDArray[np.intp],
+        neighbors: NDArray[np.intp],
+        active: NDArray[np.intp],
+        triangle: NDArray[np.intp],
+        boundary: object,
+        margin: float,
+    ) -> None:
+        self.points = points
+        self.simplices = simplices
+        self.neighbors = neighbors
+        self.active = active
+        self.triangle = triangle
+        self.boundary = boundary
+        self.margin = margin
+        # A walk around a vertex takes fewer steps than its triangles.
+        self.max_steps = int(np.bincount(simplices.ravel()).max())
+
+    @classmethod
+    def of(cls, locator: object, n_bins: int) -> _VertexFans | None:
+        """The vertex fans of a mesh locator's triangles, or None for others."""
+        from neurospatial.geometry._locators import MeshLocator
+
+        if not isinstance(locator, MeshLocator) or not n_bins:
+            return None
+        points = locator.points
+        simplices = np.asarray(locator.simplices, dtype=np.intp)
+        # Edge j of each triangle joins its corners other than j.
+        first, second = simplices[:, [1, 2, 0]], simplices[:, [2, 0, 1]]
+        key = (
+            np.minimum(first, second) * points.shape[0] + np.maximum(first, second)
+        ).ravel()
+        order = np.argsort(key, kind="stable")
+        ordered = key[order]
+        start = np.r_[True, ordered[1:] != ordered[:-1]]
+        group = np.cumsum(start) - 1
+        pair = np.flatnonzero(start & (np.bincount(group)[group] == 2))
+        neighbors = np.full(key.size, -1, dtype=np.intp)
+        one, other = order[pair], order[pair + 1]
+        neighbors[one], neighbors[other] = other // 3, one // 3
+        active = np.asarray(locator.simplex_to_active, dtype=np.intp)
+        bins = np.flatnonzero(active >= 0)
+        triangle = np.empty(n_bins, dtype=np.intp)
+        triangle[active[bins]] = bins
+        span = float(np.ptp(points[simplices], axis=1).sum(axis=1).max())
+        margin = 1e-9 * (float(np.abs(points).max()) + span)
+        return cls(
+            points,
+            simplices,
+            neighbors.reshape(-1, 3),
+            active,
+            triangle,
+            locator.boundary,
+            margin,
+        )
+
+    def passes(
+        self,
+        a: NDArray[np.intp],
+        b: NDArray[np.intp],
+        p0: NDArray[np.float64],
+        p1: NDArray[np.float64],
+        connected: Callable[[NDArray[np.intp], NDArray[np.intp]], NDArray[np.bool_]],
+    ) -> NDArray[np.bool_]:
+        """Whether each piece passes inside around the one vertex its bins share.
+
+        Parameters
+        ----------
+        a, b : ndarray of int, shape (n,)
+            Bins of the piece's ends, not connected to each other.
+        p0, p1 : ndarray, shape (n, 2)
+            The piece's ends, in ``a`` and ``b``.
+        connected : callable
+            Whether each bin pair is joined by an open connection.
+
+        Returns
+        -------
+        ndarray of bool, shape (n,)
+        """
+        import shapely
+
+        def cross(
+            u: NDArray[np.float64], w: NDArray[np.float64]
+        ) -> NDArray[np.float64]:
+            result: NDArray[np.float64] = u[:, 0] * w[:, 1] - u[:, 1] * w[:, 0]
+            return result
+
+        simplices, points = self.simplices, self.points
+        passes = np.zeros(a.size, dtype=bool)
+        start, stop = self.triangle[a], self.triangle[b]
+        shared = (simplices[start][:, :, None] == simplices[stop][:, None, :]).any(
+            axis=2
+        )
+        rows = np.flatnonzero(shared.sum(axis=1) == 1)
+        vertex = simplices[start[rows], np.argmax(shared[rows], axis=1)]
+        v, q0 = points[vertex], p0[rows]
+        d = p1[rows] - q0
+        length = np.linalg.norm(d, axis=1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            # Margin as a fraction of the piece.
+            slack = self.margin / length
+
+        def walk(
+            k: NDArray[np.intp], way: NDArray[np.float64], exact: bool
+        ) -> NDArray[np.bool_]:
+            """Whether rows ``k``, walked around ``v`` the way ``way`` turns
+            (counterclockwise where positive), reach ``b``; the crossings of
+            ``exact`` lines, all at ``v``, are not checked.
+            """
+            current, reached = start[rows[k]], np.zeros(k.size, dtype=bool)
+            target = stop[rows[k]]
+            walking = np.arange(k.size)
+            for _ in range(self.max_steps):
+                if not walking.size:
+                    break
+                r, j = k[walking], walking
+                corners = simplices[current[j]]
+                at = np.argmax(corners == vertex[r, None], axis=1)
+                x_at, y_at = (at + 1) % 3, (at + 2) % 3
+                index = np.arange(j.size)
+                x = points[corners[index, x_at]] - v[r]
+                y = points[corners[index, y_at]] - v[r]
+                # The edge from v ahead in the turning direction, and the
+                # triangle across it (the edge opposite the other corner).
+                ahead = cross(x, y) * way[j] > 0
+                edge = np.where(ahead[:, None], y, x)
+                across = self.neighbors[current[j], np.where(ahead, x_at, y_at)]
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    denominator = cross(d[r], edge)
+                    along_piece = cross(v[r] - q0[r], edge) / denominator
+                    along_edge = cross(v[r] - q0[r], d[r]) / denominator
+                crosses = (
+                    (along_piece >= -slack[r])
+                    & (along_piece <= 1 + slack[r])
+                    & (along_edge >= 0)
+                    & (along_edge <= 1)
+                )
+                ok = (exact | crosses) & (across >= 0)
+                ok[ok] = self.active[across[ok]] >= 0
+                ok[ok] = connected(self.active[current[j[ok]]], self.active[across[ok]])
+                current[j[ok]] = across[ok]
+                arrived = ok & (across == target[j])
+                reached[j[arrived]] = True
+                walking = j[ok & ~arrived]
+            return reached
+
+        turn = cross(q0 - v, d)
+        through = np.abs(turn) <= self.margin * length
+        inside = np.zeros(rows.size, dtype=bool)
+        side = np.flatnonzero(~through)
+        inside[side] = walk(side, turn[side], exact=False)
+        # A line through v is inside only where v lies on the piece, and
+        # only when both ways round v reach b.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            along = np.sum((v - q0) * d, axis=1) / length**2
+        on = np.flatnonzero(through & (along >= -slack) & (along <= 1 + slack))
+        way = np.ones(on.size)
+        inside[on] = walk(on, way, exact=True) & walk(on, -way, exact=True)
+        if self.boundary is not None and inside.any():
+            found = np.flatnonzero(inside)
+            inside[found] = shapely.covers(
+                self.boundary,
+                shapely.linestrings(np.stack([q0[found], p1[rows[found]]], axis=1)),
+            )
+        passes[rows] = inside
+        return passes
 
 
 class PairDistances(ABC):
