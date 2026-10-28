@@ -11,15 +11,10 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._intervals import (
-    DEFAULT_MAX_GAP,
-    as_intervals,
-    observed_interval_mask,
-    recording_index,
-    run_time_bounds,
-)
-from neurospatial._observation import validate_break_before
-from neurospatial.events._core import _validate_events_dataframe
+from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
+from neurospatial._observation import validated_observations
+from neurospatial.events._continuous import _sample_feature
+from neurospatial.events._core import _event_times
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -86,42 +81,33 @@ def add_positions(
     TypeError
         If events is not a pandas DataFrame.
     ValueError
-        If timestamp_column is not in events or is not numeric.
+        If timestamp_column is not in events, is not numeric, or holds a NaN
+        or infinite time.
         If times is not 1-D, or positions has more than 2 dimensions or more
         than 3 columns.
-        If times and positions have different lengths.
-        If the trajectory has fewer than 2 samples.
-        If trajectory ``times`` repeat a value or contain non-finite values.
+        If times and positions have different lengths, or the trajectory is
+        empty.
+        If trajectory ``times`` are not strictly increasing or contain
+        non-finite values.
         If ``break_before`` is not a Boolean array with one entry per sample.
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no position is interpolated across a pause.
-
-    Missing positions (NaN rows) are skipped as if their rows were deleted,
+    Positions are sampled exactly as ``align_continuous_to_events`` samples a
+    signal. An event exactly at a sample time gets that sample's position
+    when every coordinate is finite there (and, with ``epochs``, the time
+    lies in one half-open epoch). Any other event is linearly interpolated
+    inside a usable interval: one whose gap is no longer than ``max_gap``,
+    lies inside one epoch and crosses no ``break_before``. Missing positions
+    (rows with a NaN coordinate) are skipped as if their rows were deleted,
     so an event in a bridged gap is interpolated between the valid samples
-    on either side. Positions are available only within each run's closed
-    sample span ``[times[first], times[last]]``. Events exactly at either
-    endpoint get that observed sample's position. Events strictly inside a
-    pause, at isolated samples or outside all observed spans have NaN
-    coordinates.
-    Positions are never extrapolated outside the tracked span.
+    on either side. Events inside a longer pause or outside the tracked span
+    get NaN coordinates; positions are never extrapolated.
 
     This function only adds coordinate columns (x, y, z). It does not add
     derived columns like ``bin_index`` or ``region``; map the added coordinates
     to bins yourself with ``env.bin_at(events[["x", "y"]].to_numpy())`` for
     spatial analysis.
-
-    Interpolation uses linear interpolation between trajectory samples.
-    Events before or after the trajectory have NaN coordinates.
-
-    Events with NaN timestamps will have NaN positions.
-
-    If trajectory times are unsorted, they will be sorted internally. A
-    ``break_before`` refers to the input order: after sorting, samples that
-    came from different recordings are never interpolated between.
 
     Examples
     --------
@@ -139,143 +125,36 @@ def add_positions(
     array([[3., 3.],
            [7., 7.]])
     """
-    _validate_events_dataframe(
-        events, timestamp_column=timestamp_column, context="add_positions"
+    call = "add_positions"
+    event_times = _event_times(events, timestamp_column, name="events", call=call)
+    normalized_epochs = as_intervals(epochs, name="epochs")
+    t, xyz, support = validated_observations(
+        times,
+        positions,
+        call=call,
+        max_gap=max_gap,
+        epochs=normalized_epochs,
+        break_before=break_before,
+        result="events between samples get NaN positions",
     )
-
-    # Convert to numpy arrays
-    positions = np.asarray(positions, dtype=np.float64)
-    times = np.asarray(times, dtype=np.float64)
-
-    # times and positions are keyword-only (see the signature): a bare 1-D
-    # trajectory makes both arrays 1-D, so a positional swap would be shape-
-    # indistinguishable and silently mis-interpolate. Keyword-only removes that
-    # ambiguity. This remaining guard catches a mislabeled 2-D array handed to
-    # `times=` (still a swap, just via keywords) before the length check, which a
-    # swap passes since both arrays share n_samples.
-    if times.ndim != 1:
+    if not 1 <= xyz.shape[1] <= 3:
         raise ValueError(
-            f"times must be a 1-D array of timestamps, got shape {times.shape}. "
-            "Did you swap the `times=` and `positions=` arguments?"
-        )
-    if positions.ndim > 2:
-        raise ValueError(
-            f"positions must be 1-D (n_samples,) or 2-D (n_samples, n_dims), got "
-            f"shape {positions.shape}."
-        )
-
-    # Validate matching lengths
-    if len(times) != len(positions):
-        raise ValueError(
-            f"times and positions must have same length, got {len(times)} and {len(positions)}.\n"
-            "  WHY: Each position sample must have a corresponding timestamp.\n"
-            "  Fix: Ensure positions.shape[0] == times.shape[0]."
-        )
-    breaks = validate_break_before(break_before, len(times), call="add_positions")
-
-    # Ensure positions is 2D
-    if positions.ndim == 1:
-        positions = positions.reshape(-1, 1)
-
-    n_dims = positions.shape[1]
-    if not 1 <= n_dims <= 3:
-        raise ValueError(
-            f"positions has {n_dims} columns; add_positions writes x, y and z, "
-            "so it takes 1 to 3 position dimensions.\n"
+            f"positions has {xyz.shape[1]} columns; add_positions writes x, y and "
+            "z, so it takes 1 to 3 position dimensions.\n"
             "  Fix: pass positions of shape (n_samples, 1), (n_samples, 2) or "
             "(n_samples, 3); interpolate other per-sample signals with "
             "align_continuous_to_events."
         )
 
-    # Handle empty events FIRST: with no events to position there is nothing to
-    # interpolate, so we return early without validating the trajectory. This
-    # lets callers pass a 1-sample (or empty) trajectory alongside an empty
-    # event table without tripping the >= 2 sample / finite / non-zero-span
-    # guards below, which only matter when interpolation actually happens.
-    if len(events) == 0:
-        as_intervals(epochs, name="epochs")
-        result = events.copy()
-        result["x"] = np.array([], dtype=np.float64)
-        if n_dims >= 2:
-            result["y"] = np.array([], dtype=np.float64)
-        if n_dims >= 3:
-            result["z"] = np.array([], dtype=np.float64)
-        return result
-
-    from neurospatial._validation import validate_finite
-
-    # Trajectory timestamps must be finite to define the interpolant; a NaN/Inf
-    # time silently maps every event to NaN/Inf. (A NaN event timestamp lies
-    # in no tracked run below, so its position is NaN.)
-    times = validate_finite(times, name="times")
-
-    # A linear interpolant needs at least two samples spanning a non-zero time
-    # range. A single sample, or all-identical times, leaves interp1d undefined
-    # and would return all-NaN/Inf positions silently.
-    if len(times) < 2:
-        raise ValueError(
-            f"add_positions needs at least 2 trajectory samples to "
-            f"interpolate, got {len(times)}.\n"
-            "  WHY: linear interpolation is undefined for a single sample and "
-            "would return NaN for every event position.\n"
-            "  Fix: pass a trajectory with >= 2 samples spanning the event times."
-        )
-    # Sort trajectory by time if needed
-    sort_idx = np.argsort(times, kind="stable")
-    sorted_times = times[sort_idx]
-    repeated = np.flatnonzero(np.diff(sorted_times) == 0)
-    if repeated.size:
-        raise ValueError(
-            f"add_positions trajectory has {repeated.size} repeated sample "
-            f"time(s), first at t={sorted_times[repeated[0]]:g} s.\n"
-            "  WHY: two positions at one instant leave the interpolated position "
-            "undefined; which one wins would depend on sort order.\n"
-            "  Fix: drop or average duplicate samples first, e.g. keep the first "
-            "with np.unique(times, return_index=True)."
-        )
-
-    event_times = events[timestamp_column].to_numpy(dtype=np.float64)
-    sorted_positions = positions[sort_idx]
-    sorted_breaks = None
-    if breaks is not None:
-        # A break separates recordings in the input order. After sorting, a
-        # break falls wherever neighbouring samples come from different ones.
-        recording = recording_index(breaks)[sort_idx]
-        sorted_breaks = np.r_[False, recording[1:] != recording[:-1]]
-
-    # Interpolate positions at event times between valid samples, skipping
-    # missing (NaN) rows as if deleted; the run bounds below keep it inside
-    # the tracked span.
-    valid = np.asarray(np.isfinite(sorted_positions).all(axis=1), dtype=bool)
-    interpolated = np.full((len(event_times), n_dims), np.nan, dtype=np.float64)
-    if valid.any():
-        for dim in range(n_dims):
-            interpolated[:, dim] = np.interp(
-                event_times, sorted_times[valid], sorted_positions[valid, dim]
-            )
-
-    runs = run_time_bounds(
-        sorted_times,
-        observed_interval_mask(
-            sorted_times,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=sorted_breaks,
-            sample_valid=valid,
-        ),
-    )
-    observed = np.zeros(len(event_times), dtype=bool)
-    if len(runs):
-        run_index = np.searchsorted(runs[:, 0], event_times, side="right") - 1
-        observed = (run_index >= 0) & (event_times <= runs[np.maximum(run_index, 0), 1])
-    interpolated[~observed, :] = np.nan
-
-    # Create result DataFrame (copy to preserve original)
     result = events.copy()
-
-    # Add coordinate columns
-    column_names = ["x", "y", "z"][:n_dims]
-    for i, col_name in enumerate(column_names):
-        result[col_name] = interpolated[:, i]
-
+    for name, coordinate in zip("xyz", xyz.T, strict=False):
+        result[name], _ = _sample_feature(
+            t,
+            coordinate,
+            support,
+            event_times,
+            interpolation="linear",
+            kind="linear",
+            epochs=normalized_epochs,
+        )
     return result

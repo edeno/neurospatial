@@ -36,9 +36,19 @@ Breaking:
   flattened into extra events.
 - `ContinuousEventResult` derives `relative_times` from `window` and `dt`
   instead of taking it. Drop that argument when building a result by hand.
+- `add_positions` refuses unsorted trajectory `times`, which it sorted, and
+  NaN or infinite event timestamps, which it turned into NaN positions,
+  like every other events function. Sort the trajectory and drop events
+  without a time first.
 
 Results that change:
 
+- `add_positions` samples positions exactly as `align_continuous_to_events`
+  samples a signal. An event exactly at a tracked sample gets that position
+  even when the sample is isolated by gaps longer than `max_gap` (it was
+  NaN), and a one-sample trajectory is valid input. A sample exactly at an
+  epoch's stop is outside the half-open epoch, so an event there is NaN
+  (it got the sample's position).
 - `align_continuous_to_events` wraps sampled circular values to (−π, π],
   the convention of `wrap_angle` and of its own circular `means`; they were
   in [−π, π), so due West read −π in `values` and +π in `means`. An exact

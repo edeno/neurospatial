@@ -17,7 +17,7 @@ def joined():
     """Two 4 Hz recordings on one clock; the animal is moved at the join."""
     times = np.arange(16) / 4
     positions = np.c_[np.r_[np.arange(8.0), 50 + np.arange(8.0)], np.zeros(16)]
-    events = np.array([0.5, 1.75, 1.875, 2.0, 2.125, 3.75, np.nan])  # s, dyadic
+    events = np.array([0.5, 1.75, 1.875, 2.0, 2.125, 3.75])  # s, dyadic
     return times, positions, events, np.arange(16) == BREAK
 
 
@@ -51,27 +51,6 @@ def test_no_breaks_matches_omitting_break_before(joined):
         np.testing.assert_array_equal(
             _x(times, positions, events, break_before=flags), expected
         )
-
-
-def test_unsorted_input_keeps_breaks_between_recordings(joined):
-    """A break refers to the input order, whatever the order of the samples."""
-    times, positions, events, break_before = joined
-    expected = _x(times, positions, events, break_before=break_before)
-    # The second recording first, then the first: the break now sits at the
-    # first sample of the earlier recording, which follows the later one.
-    order = np.r_[np.arange(BREAK, times.size), np.arange(BREAK)]
-    reordered = np.arange(times.size) == times.size - BREAK
-    np.testing.assert_array_equal(
-        _x(times[order], positions[order], events, break_before=reordered), expected
-    )
-    # Shuffling samples within each recording changes nothing either.
-    rng = np.random.default_rng(0)
-    first, second = rng.permutation(BREAK), BREAK + rng.permutation(BREAK)
-    shuffled = np.r_[first, second]
-    np.testing.assert_array_equal(
-        _x(times[shuffled], positions[shuffled], events, break_before=break_before),
-        expected,
-    )
 
 
 @pytest.mark.parametrize(
