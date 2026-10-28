@@ -78,7 +78,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import networkx as nx
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from scipy.spatial.distance import directed_hausdorff, euclidean
+from scipy.spatial.distance import cdist, directed_hausdorff
 from scipy.stats import pearsonr
 
 from neurospatial._exceptions import _format_error
@@ -86,6 +86,7 @@ from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
     observed_runs,
+    run_sample_bounds,
     times_in_intervals,
 )
 from neurospatial._observation import validate_break_before
@@ -96,57 +97,15 @@ from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
+    from neurospatial.behavior._environment_paths import EnvironmentPaths
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
-
-
-def _safe_gather(
-    values: NDArray,
-    position_bins: NDArray[np.int64],
-    *,
-    fill: object,
-) -> NDArray:
-    """Gather ``values[position_bins]`` with out-of-bounds bins mapped to ``fill``.
-
-    ``position_bins`` may contain ``-1`` (sample off the environment / unmapped)
-    or indices ``>= len(values)``. Plain fancy indexing would wrap ``-1`` to the
-    last element and silently mis-attribute an out-of-environment sample to a
-    real bin. This helper instead returns ``fill`` for every out-of-bounds
-    position, so callers can treat those samples as "outside" rather than
-    accidentally "inside the last region".
-
-    Parameters
-    ----------
-    values : NDArray, shape (n_bins,) or (n_bins, ...)
-        Per-bin array to gather from (e.g. a boolean region mask or an integer
-        Voronoi-label array).
-    position_bins : NDArray[np.int64], shape (n_samples,)
-        Bin index per trajectory sample. May contain ``-1`` or out-of-range
-        indices.
-    fill : object
-        Value substituted wherever ``position_bins`` is out of bounds. Use
-        ``False`` for boolean region masks and ``-1`` for integer label arrays
-        (matching the ``-1`` "unreachable" sentinel those arrays already use).
-
-    Returns
-    -------
-    NDArray
-        Array of length ``len(position_bins)`` (leading axis) with out-of-bounds
-        rows set to ``fill``.
-    """
-    position_bins = np.asarray(position_bins, dtype=np.int64)
-    n_bins = values.shape[0]
-    in_bounds = (position_bins >= 0) & (position_bins < n_bins)
-    safe_idx = np.where(in_bounds, position_bins, 0)
-    gathered: NDArray = values[safe_idx]
-    gathered[~in_bounds] = fill
-    return gathered
 
 
 def _validated_samples(
     position_bins: ArrayLike, times: ArrayLike, env: Environment, *, call: str
 ) -> tuple[NDArray[np.int64], NDArray[np.float64]]:
-    """Check a bin trajectory and its timestamps; return int64 and float64 copies.
+    """Check a bin trajectory and its timestamps; return them as int64 and float64.
 
     ``position_bins`` must be integer bin indices of ``env`` or ``-1`` (outside
     the environment, as :meth:`Environment.bin_at` returns); a float array
@@ -154,27 +113,10 @@ def _validated_samples(
     strictly increasing, in seconds.
     """
     from neurospatial._observation import _validated_signal_times
-    from neurospatial.environment import _validate_target_bins
+    from neurospatial.behavior._position_bins import validated_position_bins
 
-    n_bins, n_times = np.shape(position_bins), np.shape(times)
-    if len(n_bins) != 1 or len(n_times) != 1 or n_bins != n_times:
-        raise ValueError(
-            _format_error(
-                f"position_bins and times must be 1-D with the same length; got "
-                f"shapes {n_bins} and {n_times}.",
-                why="each trajectory sample needs its corresponding timestamp.",
-                fix="pass one timestamp per position bin on the same clock.",
-            )
-        )
-    bins = _validate_target_bins(
-        position_bins,
-        n_bins=env.n_bins,
-        coordinates=env.coordinate_system,
-        operation=f"{call}()",
-        argument="position_bins",
-        allow_missing=True,
-    ).astype(np.int64)
-    if n_times[0] == 0:
+    bins = validated_position_bins(position_bins, env, call=call, times=times)
+    if bins.size == 0:
         return bins, np.asarray(times, dtype=np.float64)
     return bins, _validated_signal_times(times, call=call)
 
@@ -195,10 +137,17 @@ def _validate_durations(min_duration: float, max_duration: float, *, call: str) 
         )
 
 
-def _region_names(regions: str | Sequence[str], *, argument: str) -> list[str]:
+def _region_names(
+    regions: str | Sequence[str],
+    *,
+    argument: str,
+    why: str = "each attempt must finish at a named region.",
+) -> list[str]:
     """One region name or a sequence of them, as a list.
 
     A plain string is one name; iterating it would give its characters.
+    ``why`` explains, in the error for an empty sequence, what the regions
+    are for.
     """
     names = [regions] if isinstance(regions, str) else list(regions)
     if not names:
@@ -206,7 +155,7 @@ def _region_names(regions: str | Sequence[str], *, argument: str) -> list[str]:
             _format_error(
                 f"{argument} cannot be empty",
                 fix=f"pass {argument}=['goal']",
-                why="each attempt must finish at a named region.",
+                why=why,
             )
         )
     return names
@@ -220,14 +169,15 @@ length closer to the goal; expressed in ``env.units`` when they are metric.
 """
 
 
-def _located(position_bins: NDArray[np.int64], env: Environment) -> NDArray[np.bool_]:
-    """True for samples in a bin of ``env``; any other sample is missing.
+def _located(position_bins: NDArray[np.int64]) -> NDArray[np.bool_]:
+    """True for samples in a bin; a sample at bin -1 is missing.
 
-    Missing samples are skipped as if their rows were deleted, and the gap
-    around them is bridged when it is no longer than ``max_gap``.
+    ``position_bins`` come from :func:`_validated_samples`, so every entry is
+    -1 or a bin of the environment. Missing samples are skipped as if their
+    rows were deleted, and the gap around them is bridged when it is no
+    longer than ``max_gap``.
     """
-    bins = np.asarray(position_bins)
-    located: NDArray[np.bool_] = (bins >= 0) & (bins < env.n_bins)
+    located: NDArray[np.bool_] = position_bins >= 0
     return located
 
 
@@ -262,46 +212,6 @@ def _event_runs(
     return [run for run in trimmed if run.size]
 
 
-def _positive_dt(
-    times: NDArray[np.float64], *, name: str = "times"
-) -> NDArray[np.float64]:
-    """Return strictly-positive consecutive time deltas, or raise.
-
-    Computes ``np.diff(times)`` and rejects any delta that is not strictly
-    positive (duplicate or out-of-order timestamps) with an actionable message.
-    Use this before dividing distances/displacements by a per-sample ``dt``.
-
-    Parameters
-    ----------
-    times : NDArray[np.float64], shape (n_samples,)
-        Monotonically increasing timestamps in seconds.
-    name : str, optional
-        Argument name, used in the error message. Default ``"times"``.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_samples - 1,)
-        Consecutive time deltas, all ``> 0``.
-
-    Raises
-    ------
-    ValueError
-        If any ``np.diff(times) <= 0`` (duplicate or non-increasing timestamps).
-    """
-    dt = np.diff(np.asarray(times, dtype=np.float64))
-    bad = dt <= 0
-    if bad.any():
-        n = int(bad.sum())
-        first = int(np.argmax(bad))
-        raise ValueError(
-            f"{name} must be strictly increasing for a per-sample time step, "
-            f"but {n} consecutive delta(s) are <= 0 "
-            f"(first between index {first} and {first + 1}: "
-            f"dt={dt[first]!r}). Sort and de-duplicate timestamps before calling."
-        )
-    return dt
-
-
 def _interval_labels(
     times: NDArray[np.float64],
     intervals: Iterable[tuple[float, float, object]],
@@ -333,10 +243,14 @@ def _interval_labels(
     """
     times = np.asarray(times, dtype=np.float64)
     labels: NDArray[np.object_] = np.full(len(times), None, dtype=object)
-
+    # Each interval's samples are one slice of the sorted times (NaN sorts
+    # last and lies in no interval), so each costs only its own samples.
+    order = np.argsort(times, kind="stable")
+    sorted_times = times[order]
     for start_time, end_time, label in intervals:
-        mask = (times >= start_time) & (times < end_time)
-        labels[mask] = label
+        lo, hi = np.searchsorted(sorted_times, [start_time, end_time], side="left")
+        # In sample order, as a Boolean mask would assign them.
+        labels[np.sort(order[lo:hi])] = label
 
     return labels
 
@@ -713,8 +627,7 @@ def detect_region_crossings(
     >>> len(crossings) > 0  # Should detect entries and exits
     True
     """
-    # Validate inputs
-    _require_region_mask(
+    region_mask = _require_region_mask(
         env, region_name, operation="detect_region_crossings()", argument="region_name"
     )
     _check_choice(
@@ -733,13 +646,13 @@ def detect_region_crossings(
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins, env),
+        sample_valid=_located(position_bins),
     ):
         results.extend(
             _detect_region_crossings_contiguous(
                 position_bins[run],
                 times[run],
-                env,
+                region_mask,
                 region_name=region_name,
                 direction=direction,
             )
@@ -750,58 +663,30 @@ def detect_region_crossings(
 def _detect_region_crossings_contiguous(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
-    env: Environment,
+    region_mask: NDArray[np.bool_],
     *,
     region_name: str,
     direction: Literal["both", "entry", "exit"] = "both",
 ) -> list[Crossing]:
-    """Detect crossings within one recording, after public input validation."""
-    # Get bins in region using existing regions_to_mask functionality
-    from neurospatial.ops.mapping import regions_to_mask
+    """Detect crossings within one recording, after public input validation.
 
-    region_mask = regions_to_mask(env, [region_name])
-
-    # Check which trajectory samples are in region
-    position_bins = np.asarray(position_bins, dtype=np.int64)
-    in_region = _safe_gather(region_mask, position_bins, fill=False)
-
-    # Detect transitions using vectorized diff operation
-    # Convert bool to int: in_region[i] - in_region[i-1]
-    # +1 = entry (False -> True), -1 = exit (True -> False)
-    transitions = np.diff(in_region.astype(np.int8))
-
-    # Find entry and exit indices
-    crossings = []
-
-    if direction in ["both", "entry"]:
-        entry_indices = np.where(transitions == 1)[0] + 1  # +1 because diff shifts by 1
-        for idx in entry_indices:
-            crossings.append(
-                Crossing(
-                    time=times[idx],
-                    direction="entry",
-                    bin_index=position_bins[idx],
-                    region=region_name,
-                )
-            )
-
-    if direction in ["both", "exit"]:
-        exit_indices = np.where(transitions == -1)[0] + 1
-        for idx in exit_indices:
-            crossings.append(
-                Crossing(
-                    time=times[idx],
-                    direction="exit",
-                    bin_index=position_bins[idx],
-                    region=region_name,
-                )
-            )
-
-    # Sort by time if we collected both entry and exit
-    if direction == "both" and len(crossings) > 1:
-        crossings.sort(key=lambda c: c.time)
-
-    return crossings
+    ``region_mask`` (shape ``(n_bins,)``) marks the region's bins.
+    """
+    in_region = region_mask[position_bins]
+    # Samples whose region membership differs from the sample before, in time
+    # order: an entry where the sample is inside, an exit where it is outside.
+    changes = np.flatnonzero(in_region[1:] != in_region[:-1]) + 1
+    kinds = np.where(in_region[changes], "entry", "exit")
+    keep = kinds == direction if direction != "both" else slice(None)
+    return [
+        Crossing(
+            time=times[idx],
+            direction=kind,
+            bin_index=position_bins[idx],
+            region=region_name,
+        )
+        for idx, kind in zip(changes[keep].tolist(), kinds[keep].tolist(), strict=True)
+    ]
 
 
 def detect_runs_between_regions(
@@ -977,20 +862,13 @@ def detect_runs_between_regions(
     True
     """
     if min_speed is not None:
-        require_cartesian(
-            env.coordinate_system,
-            "detect_runs_between_regions(min_speed=...)",
-            why=(
-                "Run speed comes from the Cartesian distance between successive bin "
-                "centers."
-            ),
-            fix="pass min_speed=None to detect runs from region entries alone",
-        )
-    # Validate inputs
-    for name, argument in ((source, "source"), (target, "target")):
-        _require_region_mask(
+        _require_run_speed_frame(env, call="detect_runs_between_regions")
+    masks = {
+        name: _require_region_mask(
             env, name, operation="detect_runs_between_regions()", argument=argument
         )
+        for name, argument in ((source, "source"), (target, "target"))
+    }
     _validate_durations(min_duration, max_duration, call="detect_runs_between_regions")
     validate_finite_scalar(
         min_speed, name="min_speed", positive=False, none_allowed=True
@@ -1008,7 +886,7 @@ def detect_runs_between_regions(
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins, env),
+        sample_valid=_located(position_bins),
     ):
         results.extend(
             _detect_runs_between_regions_contiguous(
@@ -1017,12 +895,109 @@ def detect_runs_between_regions(
                 env,
                 source=source,
                 target=target,
+                source_mask=masks[source],
+                target_mask=masks[target],
                 min_duration=min_duration,
                 max_duration=max_duration,
                 min_speed=min_speed,
             )
         )
     return results
+
+
+def _require_run_speed_frame(env: Environment, *, call: str) -> None:
+    """Refuse ``min_speed`` on a polar environment: run speed is Cartesian."""
+    require_cartesian(
+        env.coordinate_system,
+        f"{call}(min_speed=...)",
+        why=(
+            "Run speed comes from the Cartesian distance between successive bin "
+            "centers."
+        ),
+        fix="pass min_speed=None to detect runs from region entries alone",
+    )
+
+
+def _attempts(
+    times: NDArray[np.float64],
+    in_start: NDArray[np.bool_],
+    in_ends: NDArray[np.bool_],
+    *,
+    clock_starts_inside: bool,
+    min_duration: float,
+    max_duration: float,
+) -> list[tuple[int, int, Outcome, int | None]]:
+    """Attempts to get from a start region to an end region in one recording.
+
+    Each departure from the start region begins one attempt. Its clock starts
+    at the last sample inside the start region (``clock_starts_inside``, as
+    for trials) or at the first sample outside it (as for runs). The attempt
+    ends at the first of these samples:
+
+    - a sample later than ``max_duration``: ``"timeout"`` at the sample
+      before it;
+    - a sample in an end region: ``"reached"`` (also when it is exactly at
+      ``max_duration``, and also when it is in the start region too);
+    - a sample back in the start region: ``"returned"``;
+    - a sample exactly at ``max_duration``: ``"timeout"`` there;
+    - the recording's last sample: ``"censored"``.
+
+    Attempts never overlap: a new one can begin only after a return.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64], shape (n_samples,)
+        Strictly increasing sample times (seconds).
+    in_start : NDArray[np.bool_], shape (n_samples,)
+        Samples in the start region.
+    in_ends : NDArray[np.bool_], shape (n_end_regions, n_samples)
+        Samples in each end region; a sample in several reaches the first.
+    clock_starts_inside : bool
+        Whether an attempt starts at the last sample inside the start region
+        rather than at the first sample outside it.
+    min_duration, max_duration : float
+        Attempts shorter than ``min_duration`` seconds are dropped; none
+        lasts longer than ``max_duration``.
+
+    Returns
+    -------
+    list of (int, int, str, int or None)
+        ``(first, last, outcome, end_region)`` per attempt in time order:
+        the indices of its first and last sample, how it ended, and the
+        index into ``in_ends`` of the end region reached (None unless
+        ``"reached"``).
+    """
+    n_samples = times.size
+    reached_any = np.any(in_ends, axis=0)
+    # Samples where an attempt under way ends by arriving or returning.
+    stops = np.flatnonzero(reached_any | in_start)
+    attempts: list[tuple[int, int, Outcome, int | None]] = []
+    for exit_idx in (np.flatnonzero(in_start[:-1] & ~in_start[1:]) + 1).tolist():
+        first = exit_idx - 1 if clock_starts_inside else exit_idx
+        k = int(np.searchsorted(stops, exit_idx))
+        stop = int(stops[k]) if k < stops.size else n_samples
+        # Elapsed time at each sample up to the arrival or return.
+        elapsed = times[exit_idx : stop + 1] - times[first]
+        late = np.flatnonzero(elapsed >= max_duration)
+        # First sample at or past the deadline; it is at most ``stop``.
+        deadline = exit_idx + int(late[0]) if late.size else n_samples
+        outcome: Outcome
+        end_region: int | None = None
+        if late.size and elapsed[late[0]] > max_duration:
+            last, outcome = deadline - 1, "timeout"
+        elif deadline < stop:
+            last, outcome = deadline, "timeout"
+        elif stop < n_samples:
+            last = stop
+            if in_ends[:, stop].any():
+                outcome, end_region = "reached", int(np.argmax(in_ends[:, stop]))
+            else:
+                outcome = "returned"
+        else:
+            last, outcome = n_samples - 1, "censored"
+        if times[last] - times[first] >= min_duration:
+            attempts.append((first, last, outcome, end_region))
+    return attempts
 
 
 def _detect_runs_between_regions_contiguous(
@@ -1032,117 +1007,47 @@ def _detect_runs_between_regions_contiguous(
     *,
     source: str,
     target: str,
+    source_mask: NDArray[np.bool_],
+    target_mask: NDArray[np.bool_],
     min_duration: float = 0.5,
     max_duration: float = 10.0,
     min_speed: float | None = None,
 ) -> list[Run]:
-    """Analyze one recording after the public input validation."""
-    # Get region masks
-    from neurospatial.ops.mapping import regions_to_mask
+    """Analyze one recording after the public input validation.
 
-    source_mask = regions_to_mask(env, [source])
-    target_mask = regions_to_mask(env, [target])
-
-    # Check which samples are in each region
-    in_source = _safe_gather(source_mask, position_bins, fill=False)
-    in_target = _safe_gather(target_mask, position_bins, fill=False)
-
-    # Detect source exits
-    source_exits = []
-    for i in range(1, len(in_source)):
-        if in_source[i - 1] and not in_source[i]:  # Exit source
-            source_exits.append(i)
-
-    # For each exit, track trajectory until target entry or timeout
-    runs = []
-
-    for exit_idx in source_exits:
-        start_time = times[exit_idx]
-
-        # Track trajectory: advance end_idx through samples until the target is
-        # reached or the run times out. end_idx always points at the last
-        # sample belonging to the run, so the run path is the single contiguous
-        # slice position_bins[exit_idx : end_idx + 1]. Both the stored path and
-        # the optional velocity filter are derived from this one slice so they
-        # can never diverge (e.g. by an off-by-one at the timeout boundary).
-        # Only the last exit before the target counts: re-entering the source
-        # ends the attempt ("returned"), so runs never overlap. A run that
-        # reaches the end of the recording is censored: its result is unknown.
-        outcome: Outcome = "censored"
-        end_idx = exit_idx
-
-        for j in range(exit_idx, len(position_bins)):
-            elapsed = times[j] - start_time
-
-            # Check timeout (do not include the timing-out sample in the run)
-            if elapsed > max_duration:
-                outcome = "timeout"
-                break
-
-            end_idx = j
-
-            if in_target[j]:
-                outcome = "reached"
-                break
-            if in_source[j]:
-                outcome = "returned"
-                break
-            if elapsed >= max_duration:
-                # The deadline passed at this sample without an arrival.
-                outcome = "timeout"
-                break
-
-        run_slice = slice(exit_idx, end_idx + 1)
-        run_bin_idx = position_bins[run_slice]
-        run_times = times[run_slice]
-
-        end_time = times[end_idx]
-        duration = end_time - start_time
-
-        # Filter by duration
-        if duration < min_duration:
-            continue
+    ``source_mask`` and ``target_mask`` (shape ``(n_bins,)``) mark the bins
+    of ``source`` and ``target``.
+    """
+    runs: list[Run] = []
+    for first, last, outcome, _ in _attempts(
+        times,
+        source_mask[position_bins],
+        target_mask[position_bins][np.newaxis],
+        clock_starts_inside=False,
+        min_duration=min_duration,
+        max_duration=max_duration,
+    ):
+        # The stored path and the speed filter use this one slice.
+        run_bin_idx = position_bins[first : last + 1]
+        run_times = times[first : last + 1]
 
         # Optional velocity filter (bin-quantized), using the same slice as the
-        # stored path. Off-environment samples (``-1``) or out-of-range bins must
-        # not be treated as real positions: plain ``bin_centers[run_bin_idx]``
-        # would wrap ``-1`` to the last bin (inflating speed) or raise on indices
-        # ``>= n_bins``. Compute speed only over consecutive sample pairs where
-        # both endpoints map to a valid bin.
+        # stored path. Every sample is in a bin (the caller removed missing
+        # ones). A one-sample run has no speed, so it cannot pass the gate.
         if min_speed is not None:
-            # A displacement is usable only when both consecutive samples are
-            # valid (and the underlying dt is positive). Off-environment samples
-            # (``-1``) or out-of-range bins are not real positions.
-            if len(run_times) > 1:
-                valid = (run_bin_idx >= 0) & (run_bin_idx < env.n_bins)
-                pair_valid = valid[:-1] & valid[1:]
-            else:
-                pair_valid = np.zeros(0, dtype=bool)
-
-            if not pair_valid.any():
-                # No consecutive pair has both endpoints on the environment, so
-                # the run's speed cannot be validated. A run must not silently
-                # pass a speed gate it never satisfied: drop it (treat as
-                # failing the filter) rather than keeping a spurious
-                # (e.g. -1-inflated) velocity.
+            if run_bin_idx.size < 2:
+                continue
+            distances = np.linalg.norm(
+                np.diff(env.bin_centers[run_bin_idx], axis=0), axis=1
+            )
+            # > 0: times are strictly increasing
+            if float(np.mean(distances / np.diff(run_times))) < min_speed:
                 continue
 
-            safe_idx = np.where(valid, run_bin_idx, 0)
-            run_positions = env.bin_centers[safe_idx]
-            displacements = np.diff(run_positions, axis=0)
-            distances = np.linalg.norm(displacements, axis=1)
-            dt = np.diff(run_times)  # > 0: times are strictly increasing
-            velocities = (distances / dt)[pair_valid]
-            mean_velocity = float(np.mean(velocities))
-
-            if mean_velocity < min_speed:
-                continue
-
-        # Create run
         runs.append(
             Run(
-                start_time=start_time,
-                end_time=end_time,
+                start_time=times[first],
+                end_time=times[last],
                 source_region=source,
                 target_region=target,
                 outcome=outcome,
@@ -1221,7 +1126,7 @@ def segment_by_velocity(
     Raises
     ------
     ValueError
-        If positions and times have different lengths.
+        If positions and times have different lengths, or are empty.
     ValueError
         If ``min_speed`` is not finite and positive, ``min_duration`` or
         ``smooth_window`` is negative or not finite, or ``hysteresis`` is not
@@ -1285,11 +1190,16 @@ def segment_by_velocity(
     >>> bool(np.all(segments[:, 1] - segments[:, 0] >= 0.5))  # min_duration
     True
     """
-    # Validate inputs
-    from neurospatial._validation import validate_times_positions
+    from neurospatial._observation import validated_observations
 
-    times, positions = validate_times_positions(
-        times, positions, call="segment_by_velocity"
+    times, positions, support = validated_observations(
+        times,
+        positions,
+        call="segment_by_velocity",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="no movement epoch was found",
     )
     validate_finite_scalar(min_speed, name="min_speed", positive=True)
     validate_finite_scalar(min_duration, name="min_duration", positive=False)
@@ -1297,128 +1207,67 @@ def segment_by_velocity(
     validate_finite_scalar(hysteresis, name="hysteresis", positive=True)
     if hysteresis <= 1.0:
         raise ValueError(f"hysteresis must be > 1.0 for stability. Got {hysteresis}")
-    breaks = validate_break_before(break_before, len(times), call="segment_by_velocity")
 
-    results: list[tuple[float, float]] = []
-    for run in observed_runs(
-        times,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=breaks,
-        sample_valid=np.asarray(np.isfinite(positions).all(axis=1), dtype=bool),
-    ):
-        results.extend(
-            _segment_by_velocity_contiguous(
-                positions[run],
-                times[run],
-                min_speed,
-                min_duration=min_duration,
-                hysteresis=hysteresis,
-                smooth_window=smooth_window,
-            )
+    segments = [
+        _segment_by_velocity_contiguous(
+            positions[run],
+            times[run],
+            min_speed=min_speed,
+            min_duration=min_duration,
+            hysteresis=hysteresis,
+            smooth_window=smooth_window,
         )
-    return np.array(results, dtype=np.float64).reshape(-1, 2)
+        for run in support.run_samples()
+    ]
+    return np.concatenate([np.empty((0, 2)), *segments])
 
 
 def _segment_by_velocity_contiguous(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
-    min_speed: float,
     *,
-    min_duration: float = 0.5,
-    hysteresis: float = 2.0,
-    smooth_window: float = 0.2,
-) -> list[tuple[float, float]]:
-    """Analyze one recording after the public input validation."""
+    min_speed: float,
+    min_duration: float,
+    hysteresis: float,
+    smooth_window: float,
+) -> NDArray[np.float64]:
+    """Movement epochs of one recording, shape (n_epochs, 2).
+
+    ``times`` and ``positions`` are the valid samples of one observed run,
+    already validated by :func:`segment_by_velocity`.
+    """
     from neurospatial._velocity import smoothed_speed
 
-    _positive_dt(times, name="times")
-    # Speed of each transition i -> i+1, read at its end sample (see the
-    # segment loop below); one run, so every interval is observed.
+    # Speed of each transition i -> i+1, read at its end sample: a state
+    # change at transition i starts or stops an epoch at times[i + 1]. One
+    # run, so every interval is observed.
     speed = smoothed_speed(
         times,
         positions,
         np.ones(len(times) - 1, dtype=bool),
         smooth_window=smooth_window,
-    )
-    velocities = speed[1:]
+    )[1:]
 
-    # Hysteresis thresholding
-    lower_threshold = min_speed / hysteresis
-    is_moving = np.zeros(len(velocities), dtype=bool)
-    currently_moving = False
+    # Hysteresis: movement switches on when speed exceeds min_speed and off
+    # when it drops below min_speed / hysteresis; in between (or NaN) the
+    # state holds. Since min_speed / hysteresis < min_speed the two events are
+    # exclusive, so the state at i is the last event at or before i.
+    switch_on = speed > min_speed
+    is_event = switch_on | (speed < min_speed / hysteresis)
+    last_event = np.maximum.accumulate(np.where(is_event, np.arange(speed.size), -1))
+    is_moving = (last_event >= 0) & switch_on[last_event]
 
-    for i in range(len(velocities)):
-        if currently_moving:
-            # Continue moving until velocity drops below lower threshold
-            if velocities[i] < lower_threshold:
-                currently_moving = False
-            else:
-                is_moving[i] = True
-        else:
-            # Start moving when velocity exceeds min_speed
-            if velocities[i] > min_speed:
-                currently_moving = True
-                is_moving[i] = True
-
-    # Detect segments (note: velocities correspond to transitions, so index times[1:])
-    epochs: list[tuple[float, float]] = []
-    in_segment = False
-    segment_start: float | None = None
-
-    def _emit(start: float, end: float) -> None:
-        if (end - start) >= min_duration:
-            epochs.append((float(start), float(end)))
-
-    for i in range(len(is_moving)):
-        time_idx = i + 1  # Velocity at i corresponds to transition from i to i+1
-
-        if is_moving[i] and not in_segment:
-            in_segment = True
-            segment_start = times[time_idx]
-
-        elif not is_moving[i] and in_segment:
-            assert segment_start is not None  # Type narrowing for mypy
-            _emit(segment_start, times[time_idx])
-            in_segment = False
-
-    # Handle case where trajectory ends while moving
-    if in_segment:
-        assert segment_start is not None  # Type narrowing for mypy
-        _emit(segment_start, times[-1])
-
-    return epochs
+    edges = np.diff(np.concatenate([[False], is_moving, [False]]).astype(np.int8))
+    starts = times[np.flatnonzero(edges == 1) + 1]
+    # An epoch still in progress at the end of the run is truncated there.
+    stops = times[np.minimum(np.flatnonzero(edges == -1) + 1, times.size - 1)]
+    keep = (stops - starts) >= min_duration
+    return np.column_stack([starts[keep], stops[keep]])
 
 
 # =============================================================================
 # Laps
 # =============================================================================
-
-
-def _widened_overlap(
-    template: NDArray[np.bool_],
-    bins: NDArray[np.int64],
-    adjacency: Any,
-) -> float:
-    """Jaccard index of two paths, each widened by one ring of neighbor bins.
-
-    Parameters
-    ----------
-    template : NDArray[np.bool_], shape (n_bins,)
-        The template's widened bins, from :func:`_widen`.
-    bins : NDArray[np.int64], shape (n_samples,)
-        Bin sequence of a candidate lap.
-    adjacency : scipy.sparse array, shape (n_bins, n_bins)
-        Bin connectivity.
-
-    Returns
-    -------
-    float
-        |A & B| / |A | B| of the widened bin sets, in [0, 1].
-    """
-    lap = _widen(bins, adjacency)
-    union = np.count_nonzero(template | lap)
-    return float(np.count_nonzero(template & lap) / union) if union else 0.0
 
 
 def _widen(bins: NDArray[np.int64], adjacency: Any) -> NDArray[np.bool_]:
@@ -1797,7 +1646,7 @@ def detect_laps(
                     why="Why: a region-based lap starts and ends at a named region.",
                 )
             )
-        _require_region_mask(
+        start_mask = _require_region_mask(
             env, start_region, operation="detect_laps()", argument="start_region"
         )
 
@@ -1810,16 +1659,11 @@ def detect_laps(
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins, env),
+        sample_valid=_located(position_bins),
     )
     laps: list[Lap] = []
     if method == "region":
-        assert start_region is not None
-        from neurospatial.ops.mapping import regions_to_mask
-
-        sides = _region_sides(
-            env, np.asarray(regions_to_mask(env, [start_region]), dtype=bool)
-        )
+        sides = _region_sides(env, start_mask)
         if sides is None:
             raise ValueError(
                 _format_error(
@@ -1948,10 +1792,8 @@ def _trips(
     inside = sides.in_region[position_bins]
     steps = sides.steps[position_bins]
     side = sides.side[position_bins]
-    edges = np.diff(np.r_[1, inside.astype(np.int8), 1])
-    exits, returns = np.flatnonzero(edges == -1), np.flatnonzero(edges == 1)
     trips: list[tuple[int, int, Literal["round", "back", "near"]]] = []
-    for leave, back in zip(exits.tolist(), returns.tolist(), strict=True):
+    for leave, back in run_sample_bounds(~inside).tolist():
         if back == len(inside):  # still outside when the recording stops
             break
         if steps[leave:back].max() <= sides.cut:
@@ -1965,10 +1807,8 @@ def _trips(
 
 def _goes_round(steps: NDArray[np.float64], side: NDArray[np.intp], cut: int) -> bool:
     """Whether a trip changes side while staying ``cut`` or more steps out."""
-    away = np.r_[False, steps >= cut, False]
-    starts = np.flatnonzero(~away[:-1] & away[1:])
-    stops = np.flatnonzero(away[:-1] & ~away[1:]) - 1
-    first, last = side[starts], side[stops]
+    stretches = run_sample_bounds(steps >= cut)
+    first, last = side[stretches[:, 0]], side[stretches[:, 1] - 1]
     return bool(np.any((first != last) & (first >= 0) & (last >= 0)))
 
 
@@ -2089,16 +1929,12 @@ def _pass_samples(
     A pass is a maximal stretch of consecutive samples inside ``zone``. Ties
     go to the earliest sample.
     """
-    inside = zone[position_bins].astype(np.int8)
-    edges = np.diff(np.r_[0, inside, 0])
-    starts, stops = np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
+    passes = run_sample_bounds(zone[position_bins])
     # (n_samples,) distance from each sample's bin center to the anchor's
     offsets = np.linalg.norm(
         env.bin_centers[position_bins] - env.bin_centers[anchor], axis=1
     )
-    return [
-        int(a + np.argmin(offsets[a:b])) for a, b in zip(starts, stops, strict=True)
-    ]
+    return [int(a + np.argmin(offsets[a:b])) for a, b in passes.tolist()]
 
 
 def _first_circuit(
@@ -2392,7 +2228,7 @@ def running_direction_labels(
     min_duration: float = 0.5,
     max_duration: float = 10.0,
     min_speed: float | None = None,
-    successful_only: bool = True,
+    success_only: bool = True,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -2437,7 +2273,7 @@ def running_direction_labels(
     min_speed : float or None, optional
         Optional minimum (bin-quantized) speed, forwarded to
         :func:`detect_runs_between_regions`. Default None.
-    successful_only : bool, optional
+    success_only : bool, optional
         If True (default), only runs that reached their target contribute
         labels. If False, timed-out, returned and censored runs are labeled
         by their attempted direction too, unless they overlap a run that
@@ -2470,15 +2306,17 @@ def running_direction_labels(
     Raises
     ------
     ValueError
-        If ``start_region`` or any end region is not in ``env.regions``
-        (raised by :func:`detect_runs_between_regions`), or if
-        ``position_bins`` and ``times`` are not 1-D with the same length,
-        times are not finite and strictly increasing, or a bin index is
-        neither -1 nor a bin of ``env``.
+        If ``start_region`` or any end region is not in ``env.regions``,
+        or if ``position_bins`` and ``times`` are not 1-D with the same
+        length, times are not finite and strictly increasing, or a bin index
+        is neither -1 nor a bin of ``env``.
     TypeError
         If position_bins does not hold integer bin indices.
     ValueError
         If ``break_before`` is not a Boolean array with one entry per sample.
+    CartesianOnlyError
+        If ``min_speed`` is given and ``env`` is polar: run speed comes from
+        Cartesian distances between bin centers.
 
     See Also
     --------
@@ -2535,14 +2373,16 @@ def running_direction_labels(
 
     end_region_names = _region_names(end_regions, argument="end_regions")
     _validate_durations(min_duration, max_duration, call="running_direction_labels")
-    _require_region_mask(
-        env,
-        start_region,
-        operation="running_direction_labels()",
-        argument="start_region",
-    )
+    masks = {
+        start_region: _require_region_mask(
+            env,
+            start_region,
+            operation="running_direction_labels()",
+            argument="start_region",
+        )
+    }
     for end_region in end_region_names:
-        _require_region_mask(
+        masks[end_region] = _require_region_mask(
             env,
             end_region,
             operation="running_direction_labels()",
@@ -2552,43 +2392,47 @@ def running_direction_labels(
     breaks = validate_break_before(
         break_before, len(times), call="running_direction_labels"
     )
+    if min_speed is not None:
+        _require_run_speed_frame(env, call="running_direction_labels")
+    validate_finite_scalar(
+        min_speed, name="min_speed", positive=False, none_allowed=True
+    )
+    recordings = _event_runs(
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
+        sample_valid=_located(position_bins),
+    )
 
     runs: list[tuple[Run, str]] = []
     for end_region in end_region_names:
-        outbound_runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source=start_region,
-            target=end_region,
-            min_duration=min_duration,
-            max_duration=max_duration,
-            min_speed=min_speed,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=breaks,
-        )
-        inbound_runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source=end_region,
-            target=start_region,
-            min_duration=min_duration,
-            max_duration=max_duration,
-            min_speed=min_speed,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=breaks,
-        )
-        runs.extend((run, "outbound") for run in outbound_runs)
-        runs.extend((run, "inbound") for run in inbound_runs)
+        for source, target, label in (
+            (start_region, end_region, "outbound"),
+            (end_region, start_region, "inbound"),
+        ):
+            for recording in recordings:
+                runs.extend(
+                    (run, label)
+                    for run in _detect_runs_between_regions_contiguous(
+                        position_bins[recording],
+                        times[recording],
+                        env,
+                        source=source,
+                        target=target,
+                        source_mask=masks[source],
+                        target_mask=masks[target],
+                        min_duration=min_duration,
+                        max_duration=max_duration,
+                        min_speed=min_speed,
+                    )
+                )
 
     reached = [run for run, _ in runs if run.success]
     intervals: list[tuple[float, float, object]] = []
     for run, label in runs:
         if not run.success and (
-            successful_only
+            success_only
             # An attempt toward one end region that overlaps a run that
             # reached another (or came home) was not a failed attempt.
             or any(
@@ -2829,20 +2673,21 @@ def segment_trials(
            types of memory episodes occurring in the same location. Neuron,
            27(3), 623-633.
     """
-    # Validate inputs
-    _require_region_mask(
+    start_mask = _require_region_mask(
         env, start_region, operation="segment_trials()", argument="start_region"
     )
 
     end_regions = _region_names(end_regions, argument="end_regions")
-    for region in end_regions:
-        _require_region_mask(
+    end_masks = {
+        region: _require_region_mask(
             env,
             region,
             operation="segment_trials()",
             argument="end_regions",
             in_list=True,
         )
+        for region in end_regions
+    }
 
     # Prevent start_region from being in end_regions (typical neuroscience practice)
     if start_region in end_regions:
@@ -2864,15 +2709,15 @@ def segment_trials(
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins, env),
+        sample_valid=_located(position_bins),
     ):
         results.extend(
             _segment_trials_contiguous(
                 position_bins[run],
                 times[run],
-                env,
                 start_region=start_region,
-                end_regions=end_regions,
+                start_mask=start_mask,
+                end_masks=end_masks,
                 min_duration=min_duration,
                 max_duration=max_duration,
             )
@@ -2883,82 +2728,39 @@ def segment_trials(
 def _segment_trials_contiguous(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
-    env: Environment,
     *,
     start_region: str,
-    end_regions: list[str],
+    start_mask: NDArray[np.bool_],
+    end_masks: dict[str, NDArray[np.bool_]],
     min_duration: float = 1.0,
     max_duration: float = 15.0,
 ) -> list[Trial]:
-    """Analyze one recording after the public input validation."""
-    # Get region masks using existing functionality
-    from neurospatial.ops.mapping import regions_to_mask
+    """Analyze one recording after the public input validation.
 
-    start_mask = regions_to_mask(env, [start_region])
-    end_masks = {region: regions_to_mask(env, [region]) for region in end_regions}
-
-    # Check which trajectory samples are in which regions. Unlocated samples
-    # were removed by the caller and the gaps around them bridged.
-    position_bins = np.asarray(position_bins, dtype=np.int64)
-    in_start = _safe_gather(start_mask, position_bins, fill=False)
-    in_end_regions = {
-        region: _safe_gather(mask, position_bins, fill=False)
-        for region, mask in end_masks.items()
-    }
-
-    # Segment into trials. A trial starts when the animal leaves the start
-    # region, at the last sample inside it, so time spent waiting at the start
-    # does not count toward the trial. It ends at whichever comes first: an
-    # end-region entry, a return to the start region, the max_duration
-    # deadline, or the end of this recording.
-    trials: list[Trial] = []
-    trial_start_time: float | None = None
-
-    def _emit(end_time: float, outcome: Outcome, end_region: str | None) -> None:
-        assert trial_start_time is not None
-        if end_time - trial_start_time >= min_duration:
-            trials.append(
-                Trial(
-                    start_time=trial_start_time,
-                    end_time=end_time,
-                    start_region=start_region,
-                    end_region=end_region,
-                    outcome=outcome,
-                )
-            )
-
-    for i in range(len(position_bins)):
-        if trial_start_time is None:
-            if i > 0 and in_start[i - 1] and not in_start[i]:
-                trial_start_time = float(times[i - 1])
-            else:
-                continue
-
-        elapsed = times[i] - trial_start_time
-        if elapsed > max_duration:
-            # The deadline fell between samples: the trial timed out at the
-            # last sample within it, whatever this sample shows.
-            _emit(float(times[i - 1]), "timeout", None)
-            trial_start_time = None
-            continue
-        reached = next(
-            (region for region, inside in in_end_regions.items() if inside[i]), None
+    ``start_mask`` and each of ``end_masks`` (shape ``(n_bins,)``) mark a
+    region's bins; ``end_masks`` is in ``end_regions`` order.
+    """
+    # A trial starts when the animal leaves the start region, at the last
+    # sample inside it, so time spent waiting at the start does not count
+    # toward the trial.
+    names = list(end_masks)
+    return [
+        Trial(
+            start_time=float(times[first]),
+            end_time=float(times[last]),
+            start_region=start_region,
+            end_region=None if end_region is None else names[end_region],
+            outcome=outcome,
         )
-        if reached is not None:
-            _emit(float(times[i]), "reached", reached)
-        elif in_start[i]:
-            _emit(float(times[i]), "returned", None)
-        elif elapsed >= max_duration:
-            _emit(float(times[i]), "timeout", None)
-        else:
-            continue
-        trial_start_time = None
-
-    # A trial still under way when the recording ends was not seen to finish.
-    if trial_start_time is not None:
-        _emit(float(times[-1]), "censored", None)
-
-    return trials
+        for first, last, outcome, end_region in _attempts(
+            times,
+            start_mask[position_bins],
+            np.stack([mask[position_bins] for mask in end_masks.values()]),
+            clock_starts_inside=True,
+            min_duration=min_duration,
+            max_duration=max_duration,
+        )
+    ]
 
 
 # =============================================================================
@@ -3257,35 +3059,39 @@ def trajectory_similarity(
 def _dtw_distance(seq1: NDArray[np.float64], seq2: NDArray[np.float64]) -> float:
     """Compute Dynamic Time Warping distance between two sequences.
 
+    The cumulative cost ``D[i, j] = cost(i, j) + min(D[i-1, j], D[i, j-1],
+    D[i-1, j-1])`` is filled one anti-diagonal ``i + j = k`` at a time: every
+    cell on diagonal ``k`` depends only on diagonals ``k - 1`` and ``k - 2``,
+    so each diagonal is one vectorized step and only three diagonals are kept.
+
     Parameters
     ----------
     seq1 : NDArray[np.float64], shape (n1, n_dims)
-        First sequence of positions.
+        First sequence of positions; non-empty.
     seq2 : NDArray[np.float64], shape (n2, n_dims)
-        Second sequence of positions.
+        Second sequence of positions; non-empty.
 
     Returns
     -------
     float
-        DTW distance.
+        DTW distance: the smallest summed Euclidean distance over monotone
+        alignments of the two sequences.
     """
-    n1, n2 = len(seq1), len(seq2)
-
-    # Initialize cost matrix
-    dtw_matrix = np.full((n1 + 1, n2 + 1), np.inf)
-    dtw_matrix[0, 0] = 0.0
-
-    # Fill cost matrix
-    for i in range(1, n1 + 1):
-        for j in range(1, n2 + 1):
-            cost = euclidean(seq1[i - 1], seq2[j - 1])
-            dtw_matrix[i, j] = cost + min(
-                dtw_matrix[i - 1, j],  # insertion
-                dtw_matrix[i, j - 1],  # deletion
-                dtw_matrix[i - 1, j - 1],  # match
-            )
-
-    return float(dtw_matrix[n1, n2])
+    cost = cdist(seq1, seq2)
+    n1, n2 = cost.shape
+    # Diagonals indexed by row i of D (shape (n1 + 1, n2 + 1)); D[0, 0] = 0 and
+    # the rest of row 0 and column 0 is inf.
+    before_previous = np.full(n1 + 1, np.inf)
+    before_previous[0] = 0.0
+    previous = np.full(n1 + 1, np.inf)
+    for k in range(2, n1 + n2 + 1):
+        rows = np.arange(max(1, k - n2), min(n1, k - 1) + 1)
+        current = np.full(n1 + 1, np.inf)
+        current[rows] = cost[rows - 1, k - rows - 1] + np.minimum(
+            np.minimum(previous[rows - 1], previous[rows]), before_previous[rows - 1]
+        )
+        before_previous, previous = previous, current
+    return float(previous[n1])
 
 
 def detect_goal_directed_runs(
@@ -3473,22 +3279,14 @@ def detect_goal_directed_runs(
         )
 
     if min_progress is None:
-        from neurospatial._units import units_per_centimeter
+        from neurospatial._units import default_length
 
-        per_cm = units_per_centimeter(env.units)
-        if per_cm is None:
-            raise ValueError(
-                _format_error(
-                    f"detect_goal_directed_runs needs min_progress: the "
-                    f"environment's units ({env.units!r}) are not a known length, "
-                    f"so the {DEFAULT_MIN_PROGRESS_CM:g} cm default cannot be "
-                    "expressed in them.",
-                    why="min_progress is a distance in the environment's units.",
-                    fix="pass min_progress=<distance in position units>, or "
-                    "declare the units with env.with_metadata(units='cm')",
-                )
-            )
-        min_progress = DEFAULT_MIN_PROGRESS_CM * per_cm
+        min_progress = default_length(
+            env,
+            DEFAULT_MIN_PROGRESS_CM,
+            name="min_progress",
+            call="detect_goal_directed_runs()",
+        )
     validate_finite_scalar(min_progress, name="min_progress", positive=False)
 
     position_bins, times = _validated_samples(
@@ -3498,11 +3296,16 @@ def detect_goal_directed_runs(
         break_before, len(times), call="detect_goal_directed_runs"
     )
 
+    from neurospatial.behavior._environment_paths import environment_paths
     from neurospatial.ops.distance import _bin_adjacency
     from neurospatial.ops.mapping import regions_to_mask
 
-    goal_bins = np.flatnonzero(regions_to_mask(env, [goal_region]))
-    distance_to_goal = _distance_to_bins(env, goal_bins)
+    # Path distances between bin centers on the connectivity graph; inf for
+    # bins that cannot reach the goal.
+    paths = environment_paths(env, call="detect_goal_directed_runs")
+    distance_to_goal = paths.from_bins(
+        np.flatnonzero(regions_to_mask(env, [goal_region]))
+    )
     edges = _bin_adjacency(
         env.connectivity, weight="distance", operation="detect_goal_directed_runs()"
     )
@@ -3512,13 +3315,13 @@ def detect_goal_directed_runs(
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins, env),
+        sample_valid=_located(position_bins),
     ):
         results.extend(
             _detect_goal_directed_runs_contiguous(
                 position_bins[run],
                 times[run],
-                env=env,
+                paths=paths,
                 edges=edges,
                 distance_to_goal=distance_to_goal,
                 directedness_threshold=directedness_threshold,
@@ -3526,35 +3329,6 @@ def detect_goal_directed_runs(
             )
         )
     return np.array(results, dtype=np.float64).reshape(-1, 2)
-
-
-def _distance_to_bins(
-    env: Environment, targets: NDArray[np.intp]
-) -> NDArray[np.float64]:
-    """Geodesic distance from every bin to the nearest of ``targets``.
-
-    The one place the goal-directed runs measure distance to the goal; inf
-    for bins that cannot reach it.
-    """
-    from neurospatial.behavior._environment_paths import environment_paths
-
-    return environment_paths(env, call="detect_goal_directed_runs").from_bins(
-        np.unique(np.asarray(targets, dtype=np.intp))
-    )
-
-
-def _step_lengths(env: Environment, bins: NDArray[np.int64]) -> NDArray[np.float64]:
-    """Geodesic distance between consecutive bins, shape ``(len(bins) - 1,)``.
-
-    The one place the goal-directed runs measure path length. Both bins of
-    every step the caller sums lie in the goal's connected component, so
-    every step is finite.
-    """
-    from neurospatial.behavior._environment_paths import environment_paths
-
-    return environment_paths(env, call="detect_goal_directed_runs").between_bins(
-        bins[:-1], bins[1:]
-    )
 
 
 def _approach_bouts(
@@ -3590,7 +3364,7 @@ def _detect_goal_directed_runs_contiguous(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     *,
-    env: Environment,
+    paths: EnvironmentPaths,
     edges: Any,
     distance_to_goal: NDArray[np.float64],
     directedness_threshold: float,
@@ -3603,7 +3377,11 @@ def _detect_goal_directed_runs_contiguous(
     # be jitter across a bin edge; anything larger is movement. The factor
     # allows for rounding in the summed edge lengths.
     tolerance = float(edges.max()) * (1 + 1e-9) if edges.nnz else 0.0
-    path = np.r_[0.0, np.cumsum(_step_lengths(env, position_bins))]
+    # Both bins of every step summed below lie in the goal's connected
+    # component, so every summed step is finite.
+    path = np.r_[
+        0.0, np.cumsum(paths.between_bins(position_bins[:-1], position_bins[1:]))
+    ]
     rows: list[tuple[float, float]] = []
     # Samples that cannot reach the goal split the recording.
     finite = np.r_[False, np.isfinite(distances), False]

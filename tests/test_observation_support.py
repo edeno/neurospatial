@@ -87,6 +87,23 @@ def test_nan_row_gap_longer_than_max_gap_breaks_the_path():
 
 
 @pytest.mark.filterwarnings("ignore:.*max_gap:UserWarning")
+def test_bridged_gaps_longer_than_max_gap_warn_once():
+    # Each 0.1 s sampling interval passes max_gap; each 0.2 s gap across a
+    # missing row does not, so nothing is usable.
+    x = np.arange(10.0)
+    x[1::2] = np.nan
+    with pytest.warns(UserWarning, match="excluded ALL") as record:
+        support = _support(np.arange(10) * 0.1, x, max_gap=0.15)
+    assert len(record) == 1
+    assert "gaps across missing samples" in str(record[0].message)
+    assert not support.interval_mask.any()
+
+
+def test_no_observed_sample_warns_that_nothing_is_usable():
+    with pytest.warns(UserWarning, match="excluded ALL.*samples are finite"):
+        _support(np.arange(5) * 0.1, np.full(5, np.nan))
+
+
 def test_isolated_finite_sample():
     s = _support([0, 0.1, 5, 10, 10.1])
     assert s.run_ids[2] == -1
@@ -103,6 +120,13 @@ def test_stationary_interval_is_usable():
 def test_epochs_are_half_open():
     s = _support([0, 0.5, 1.0, 1.5], epochs=(0, 1.0))
     np.testing.assert_array_equal(s.interval_mask, [True, True, False])
+
+
+def test_sample_in_epochs_excludes_the_stop_instant():
+    """The interval ending at an epoch's stop is inside; that sample is not."""
+    s = _support([0, 0.5, 1.0, 1.5, 2.0], epochs=[(0, 1.0), (1.5, 3.0)])
+    np.testing.assert_array_equal(s.sample_in_epochs, [True, True, False, True, True])
+    np.testing.assert_array_equal(_support([0, 1.0]).sample_in_epochs, [True, True])
 
 
 def test_max_gap_none_keeps_long_interval():
@@ -292,6 +316,29 @@ def test_signals_shared_gate_warns_once_for_many_features():
     with pytest.warns(UserWarning) as record:
         _signals(times, np.ones((5, 3)), max_gap=0.05)
     assert len(record) == 1
+
+
+def test_signals_warn_once_when_bridged_gaps_exclude_every_feature():
+    # Every sampling interval passes max_gap; every gap across a missing row
+    # does not, in every feature.
+    times = np.arange(20) * 0.1
+    sig = np.ones((20, 2))
+    sig[1::2] = np.nan
+    with pytest.warns(UserWarning, match="excluded ALL") as record:
+        _, _, supports = _signals(times, sig, max_gap=0.15)
+    assert len(record) == 1
+    assert "gaps across missing samples" in str(record[0].message)
+    assert not any(support.interval_mask.any() for support in supports)
+
+
+def test_signals_one_usable_feature_keeps_the_table_silent(recwarn):
+    times = np.arange(20) * 0.1
+    sig = np.ones((20, 2))
+    sig[1::2, 1] = np.nan
+    _, _, supports = _signals(times, sig, max_gap=0.15)
+    assert supports[0].interval_mask.all()
+    assert not supports[1].interval_mask.any()
+    assert len(recwarn) == 0
 
 
 @pytest.mark.parametrize(

@@ -2,6 +2,111 @@
 
 ## [Unreleased]
 
+### Behavior cleanup and faster analyses
+
+Behavior functions share one metric resolver, one `position_bins`
+validator, one movement-heading rule and one attempt state machine for runs
+and trials. Results for valid input are unchanged except where listed below
+or at float rounding where noted.
+
+Breaking:
+
+- `running_direction_labels(successful_only=)` is renamed `success_only=`,
+  matching `runs_to_direction_labels` and `Run.success`.
+- `compute_turn_angles` and `compute_trajectory_curvature` are removed. Use
+  `compute_planar_turn_angles(times, positions)` for the turn at each frame;
+  its new `smooth_window=` (seconds, default 0) gives the smoothed turn the
+  old curvature function returned, for example `smooth_window=0.2` for 30–60
+  Hz video. Use `compute_planar_curvature` to compare path shape (1/cm)
+  across frame rates and speeds, and `compute_movement_angular_velocity` for
+  rad/s. The smoothing now weights neighbours by elapsed time, so a bridged
+  gap no longer counts as one frame; pauses are NaN instead of taking the
+  turn between the positions on either side. Unsigned 3-D turns are no
+  longer offered; pass `positions[:, :2]` for horizontal-plane turns.
+- `heading_direction_labels(times, positions, *, min_speed, ...)` takes a
+  trajectory only. To label headings you already have, for example from
+  `heading_from_body_orientation`, use the new
+  `headings_to_direction_labels(headings, speeds, *, min_speed,
+  n_directions=8)` instead of `speed=`/`heading=`. It refuses infinite
+  headings and negative or infinite speeds, which were read as "not
+  observed" or "stationary".
+- `mean_square_displacement(max_tau=None)` measures lags up to a quarter of
+  the recording, not half: past that, few independent displacements back
+  each value, as its own error messages already advised. Values at the lags
+  still reported are unchanged (FFT path: within 2e-13 relative). Pass
+  `max_tau` to keep longer lags.
+
+Input that now raises (each was silently accepted):
+
+- `distance_to_reward` refuses an unknown `metric`; `"Euclidean"` or a typo
+  ran the geodesic metric. It also refuses empty input, repeated timestamps
+  and decreasing times when `reward_positions` is given, and checks `mode`
+  first.
+- `position_bins` outside `[-1, n_bins)` raise `BinIndexOutOfRangeError`, and
+  float or boolean bins raise `TypeError`, in `detect_boundary_crossings`
+  (float bins were truncated, 0.9 read as bin 0), `decision_region_entry_time`
+  (out-of-range bins read as "never enters"), `detect_region_visits`
+  (skipped as missing) and `distance_to_decision_boundary` (returned NaN).
+- A NaN, infinite or negative `min_speed` raises in `heading_from_velocity`,
+  `instantaneous_goal_alignment`, `goal_bias` and
+  `compute_goal_directed_metrics`; `goal_bias(min_speed=nan)` returned NaN.
+- `segment_by_velocity` refuses empty input (it returned a `(0, 2)` array)
+  and checks all timestamps, so a repeated timestamp next to a NaN row
+  raises.
+- `time_to_goal` and `trials_to_region_arrays` refuse empty, unsorted,
+  repeated or non-finite `times`.
+
+Results that change:
+
+- `distance_to_reward` with all-NaN positions and inferred rewards returns
+  NaN with the unknown-reward warning; it raised numpy's "array of sample
+  points is empty".
+- `running_direction_labels` gives its excluded-interval warning once, not
+  twice per end region.
+- Behavior and event analyses warn "Interval filtering excluded ALL
+  trajectory intervals" when every gap across missing samples is longer than
+  `max_gap`, even though each sampling interval is shorter (10 Hz tracking
+  with every other row NaN and `max_gap=0.15`). The check ran before missing
+  samples were bridged, so these calls returned empty or NaN results
+  silently. The warning names the longest gap and says to raise `max_gap`.
+  All-NaN input warns too.
+- The geodesic path engine returns NaN for a target outside the
+  environment; it measured to the last bin's field. Public functions already
+  refused such targets, so their results do not change.
+- Error messages for a geodesic metric without `env`, an unknown metric,
+  mismatched `position_bins`/`times`, and positions without x and y columns
+  read the same in every behavior function.
+
+Faster (same results):
+
+- `mean_square_displacement` with the euclidean metric and uniform sampling
+  uses FFT correlations per recording segment: 54k samples took 36 s and
+  take 0.01 s. Values agree with the pair loop to about 1e-12 relative
+  (below 1e-10 at 500k samples). Irregular sampling and `metric="geodesic"`
+  keep the pair loop.
+- `trajectory_similarity(method="dtw")` is about 100× faster.
+- `segment_trials`, `detect_region_crossings`, `detect_runs_between_regions`
+  and `running_direction_labels` compute region masks once per call instead
+  of once per recording segment (`running_direction_labels` with 500 epochs:
+  0.44 s → 0.02 s); direction labels, `time_to_goal` and
+  `trials_to_region_arrays` slice sorted times per interval instead of
+  building one full-length mask per trial (1.8M samples, 450 trials:
+  ~1 s → 0.05 s).
+- The 0.1 s position smoothing used by `angular_efficiency`,
+  `compute_path_efficiency` and `subgoal_efficiency` is 3× faster at high
+  sampling rates (rounding-level differences, below 1e-13).
+- Geodesic `distance_to_reward` prepares all reward fields in one batch.
+- Geodesic path lengths (`compute_step_lengths`, `traveled_path_length`,
+  `compute_path_efficiency`) and other `metric="geodesic"` measures are
+  7–10× faster on grid environments (a 54k-sample walk in a 10k-bin arena
+  with a wall: 60 s → 6 s), with identical results: each distance field
+  grows only as far as the farthest bin it is asked about, and line-of-sight
+  checks skip stretches that lie in fully open, connected blocks of cells.
+  Hexagonal and mesh layouts gain less. The cached distance fields stay
+  within their memory budget, and
+  geodesic `mean_square_displacement` pair tables use about half the
+  memory.
+
 ### Behavior analyses measure what they say
 
 Results that change (each was plausible and wrong):

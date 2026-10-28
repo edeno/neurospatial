@@ -26,6 +26,7 @@ All navigation functions are importable from ``behavior.navigation``::
         graph_turn_sequence,
         goal_pair_direction_labels,
         heading_direction_labels,
+        headings_to_direction_labels,
         # Path efficiency
         PathEfficiencyResult,
         SubgoalEfficiencyResult,
@@ -124,6 +125,8 @@ from neurospatial._intervals import (
     times_in_intervals,
 )
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.behavior._metric import metric_paths, require_metric
+from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.geometry import require_cartesian
 
@@ -145,6 +148,7 @@ __all__ = [  # noqa: RUF022
     "goal_pair_direction_labels",
     "graph_turn_sequence",
     "heading_direction_labels",
+    "headings_to_direction_labels",
     "path_progress",
     "time_to_goal",
     "trials_to_region_arrays",
@@ -176,17 +180,6 @@ __all__ = [  # noqa: RUF022
 def _result_error(result: str, what: str, *, why: str, fix: str) -> ValueError:
     """A ValueError for an invalid result field, naming the result class."""
     return ValueError(_format_error(f"{result}: {what}", why=why, fix=fix))
-
-
-def _require_result_metric(result: str, metric: object) -> None:
-    """Raise unless ``metric`` is ``"euclidean"`` or ``"geodesic"``."""
-    if metric not in ("euclidean", "geodesic"):
-        raise _result_error(
-            result,
-            f"metric={metric!r} is not 'euclidean' or 'geodesic'.",
-            why="the result records which distance its lengths were measured with.",
-            fix="pass metric='euclidean' or metric='geodesic'.",
-        )
 
 
 def _require_length(result: str, name: str, value: float) -> float:
@@ -259,7 +252,7 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     def __post_init__(self) -> None:
         """Validate the fields, derive the efficiency and own the positions."""
         name = "PathEfficiencyResult"
-        _require_result_metric(name, self.metric)
+        require_metric(self.metric, where=name)
         traveled = _require_length(name, "traveled_length", self.traveled_length)
         shortest = _require_length(name, "shortest_length", self.shortest_length)
         start = np.asarray(self.start_position, dtype=float)
@@ -480,7 +473,7 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     def __post_init__(self) -> None:
         """Validate the fields and own a read-only copy of the goal position."""
         name = "GoalDirectedMetrics"
-        _require_result_metric(name, self.metric)
+        require_metric(self.metric, where=name)
         for length in (
             "min_distance_to_goal",
             "goal_distance_at_start",
@@ -628,7 +621,7 @@ def trials_to_region_arrays(
     trials : list[Trial]
         Trial segmentation from segment_trials().
     times : NDArray[np.float64], shape (n_samples,)
-        Timestamps for entire session.
+        Timestamps for entire session, strictly increasing (seconds).
     env : Environment
         Spatial environment (for region lookups).
 
@@ -638,6 +631,12 @@ def trials_to_region_arrays(
         Start bin index at each timepoint (-1 outside trials).
     goal_bins : NDArray[np.int_], shape (n_samples,)
         Goal bin index at each timepoint (-1 outside trials).
+
+    Raises
+    ------
+    ValueError
+        If ``times`` is empty, not 1-D, holds a non-finite value or is not
+        strictly increasing.
 
     Warns
     -----
@@ -681,76 +680,66 @@ def trials_to_region_arrays(
     path_progress : Compute normalized path progress
     distance_to_region : Distance to target region
     """
-    times = np.asarray(times, dtype=np.float64)
+    from neurospatial._observation import _validated_signal_times
+
+    times = _validated_signal_times(times, call="trials_to_region_arrays")
     _warn_if_no_trial_overlaps(
         times, trials, call="trials_to_region_arrays()", result="-1"
     )
-    # Initialize arrays with -1 (invalid bin)
     start_bins = np.full(len(times), -1, dtype=np.int_)
     goal_bins = np.full(len(times), -1, dtype=np.int_)
 
-    # Loop over trials (small - typically 10-100)
-    for trial in trials:
-        # Create mask for timepoints within this trial
-        mask = (times >= trial.start_time) & (times <= trial.end_time)
+    # Represent each region by its centroid bin (the region bin nearest the
+    # centroid of the region's bins), not an arbitrary first bin. A region
+    # covering no bin, and the goal of a failed trial (end_region None), write
+    # nothing, so those samples stay -1.
+    representative: dict[str, int | None] = {}
 
-        # Represent each region by its centroid bin (the region bin nearest the
-        # centroid of the region's bins), not an arbitrary first bin.
-        start_bin = region_representative_bin(env, trial.start_region)
+    def region_bin(name: str | None) -> int | None:
+        if name is None:
+            return None
+        if name not in representative:
+            representative[name] = region_representative_bin(env, name)
+        return representative[name]
+
+    # Samples with start_time <= t <= end_time, a slice of the sorted times;
+    # a later trial overwrites an overlapping earlier one.
+    for trial, first, stop in zip(
+        trials, *_trial_sample_bounds(times, trials), strict=True
+    ):
+        start_bin = region_bin(trial.start_region)
         if start_bin is not None:
-            start_bins[mask] = start_bin
-
-        # Get bins for end region (handle None for failed trials)
-        if trial.end_region is not None:
-            goal_bin = region_representative_bin(env, trial.end_region)
-            if goal_bin is not None:
-                goal_bins[mask] = goal_bin
-        # For failed trials (end_region=None), goal_bins remains -1
+            start_bins[first:stop] = start_bin
+        goal_bin = region_bin(trial.end_region)
+        if goal_bin is not None:
+            goal_bins[first:stop] = goal_bin
 
     return start_bins, goal_bins
 
 
-def _validated_position_bins(
-    position_bins: ArrayLike, env: Environment, *, operation: str
-) -> NDArray[np.intp]:
-    """Check per-sample bin indices: integers in ``[0, n_bins)`` or ``-1``.
-
-    ``-1`` is ``env.bin_at``'s marker for a position outside the environment
-    and becomes NaN downstream. Any other negative index would silently
-    count from the end of the bin arrays, and a float bin would be truncated
-    to an unrelated bin, so both are refused.
+def _trial_sample_bounds(
+    times: NDArray[np.float64], trials: list[Trial]
+) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+    """First and one-past-last sample of each trial in strictly increasing times.
 
     Parameters
     ----------
-    position_bins : array-like of int, shape (n_samples,)
-        Bin index at each sample.
-    env : Environment
-        Environment the bins belong to.
-    operation : str
-        The call named in errors, e.g. ``"path_progress()"``.
+    times : ndarray, shape (n_samples,)
+        Strictly increasing sample times in seconds.
+    trials : list of Trial
+        Trials with finite ``start_time <= end_time`` in seconds.
 
     Returns
     -------
-    ndarray of intp, shape (n_samples,)
+    first, stop : ndarray of intp, shape (n_trials,)
+        ``times[first:stop]`` are the samples with
+        ``start_time <= t <= end_time``.
     """
-    from neurospatial.environment._targets import _validate_target_bins
-
-    if np.ndim(position_bins) != 1:
-        raise ValueError(
-            _format_error(
-                f"{operation} got position_bins with shape {np.shape(position_bins)}.",
-                why="position_bins holds one bin index per sample.",
-                fix="pass a 1-D integer array, for example env.bin_at(positions)",
-            )
-        )
-    return _validate_target_bins(
-        position_bins,
-        n_bins=env.n_bins,
-        coordinates=env.coordinate_system,
-        operation=operation,
-        argument="position_bins",
-        allow_missing=True,
-    )
+    starts = np.array([trial.start_time for trial in trials], dtype=np.float64)
+    ends = np.array([trial.end_time for trial in trials], dtype=np.float64)
+    first: NDArray[np.intp] = np.searchsorted(times, starts, side="left")
+    stop: NDArray[np.intp] = np.searchsorted(times, ends, side="right")
+    return first, stop
 
 
 def _bin_distances(
@@ -758,17 +747,18 @@ def _bin_distances(
     bins: NDArray[np.intp],
     targets: NDArray[np.intp],
     *,
-    metric: str,
+    paths: EnvironmentPaths | None,
     call: str,
 ) -> NDArray[np.float64]:
-    """Distance from each bin center to its target bin center under ``metric``.
+    """Distance from each bin center to its target bin center.
 
     Parameters
     ----------
     env : Environment
     bins, targets : ndarray of int, shape (n,)
         Bin indices; a pair with a ``-1`` gives NaN.
-    metric : {"euclidean", "geodesic"}
+    paths : EnvironmentPaths or None
+        Geodesic engine (``metric_paths``), or None for straight lines.
     call : str
         Public function name, used in messages.
 
@@ -782,10 +772,8 @@ def _bin_distances(
     CartesianOnlyError
         If ``env`` is an egocentric polar environment.
     """
-    if metric == "geodesic":
-        from neurospatial.behavior._environment_paths import environment_paths
-
-        return environment_paths(env, call=call).between_bins(bins, targets)
+    if paths is not None:
+        return paths.between_bins(bins, targets)
     require_cartesian(
         env.coordinate_system,
         f"{call}(metric='euclidean')",
@@ -908,12 +896,9 @@ def path_progress(
     trials_to_region_arrays : Helper to construct start/goal arrays from trials
     distance_to_region : Distance to target region over time
     """
-    _require_path_metric(metric, call="path_progress")
     from neurospatial.environment import _validate_sample_targets
 
-    position_bins = _validated_position_bins(
-        position_bins, env, operation="path_progress()"
-    )
+    position_bins = validated_position_bins(position_bins, env, call="path_progress")
     n_samples = len(position_bins)
     # A single start or goal applies to every sample.
     start_bins, goal_bins = (
@@ -930,14 +915,15 @@ def path_progress(
         )
         for bins, argument in ((start_bins, "start_bins"), (goal_bins, "goal_bins"))
     )
+    paths = metric_paths(metric, env, call="path_progress")
 
     # Distance from the start, grown from each start bin, and to the goal,
     # grown from each goal bin.
     distances_from_start = _bin_distances(
-        env, position_bins, start_bins, metric=metric, call="path_progress"
+        env, position_bins, start_bins, paths=paths, call="path_progress"
     )
     distances_to_goal = _bin_distances(
-        env, position_bins, goal_bins, metric=metric, call="path_progress"
+        env, position_bins, goal_bins, paths=paths, call="path_progress"
     )
 
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -950,11 +936,10 @@ def path_progress(
         position_bins[same_start_goal] == goal_bins[same_start_goal], 1.0, np.nan
     )
 
+    # NaN where either distance is undefined (a -1 position, start or goal
+    # bin) or infinite (disconnected).
     disconnected = ~np.isfinite(distances_to_goal) | ~np.isfinite(distances_from_start)
     progress[disconnected] = np.nan
-
-    invalid_bins = (start_bins == -1) | (goal_bins == -1) | (position_bins == -1)
-    progress[invalid_bins] = np.nan
 
     return progress
 
@@ -1037,11 +1022,10 @@ def distance_to_region(
     distance_to_reward : Distance to the reward location at each sample
     neurospatial.ops.nearest_boundary : Exact distance and direction to walls
     """
-    _require_path_metric(metric, call="distance_to_region")
     from neurospatial.environment import _validate_sample_targets
 
-    position_bins = _validated_position_bins(
-        position_bins, env, operation="distance_to_region()"
+    position_bins = validated_position_bins(
+        position_bins, env, call="distance_to_region"
     )
     targets, per_sample = _validate_sample_targets(
         target_bins,
@@ -1051,12 +1035,12 @@ def distance_to_region(
         operation="distance_to_region()",
         argument="target_bins",
     )
-
+    paths = metric_paths(metric, env, call="distance_to_region")
     return _bin_distances(
         env,
         position_bins,
         np.broadcast_to(targets if per_sample else targets[0], position_bins.shape),
-        metric=metric,
+        paths=paths,
         call="distance_to_region",
     )
 
@@ -1156,10 +1140,12 @@ def distance_to_reward(
         If positions dimensionality doesn't match environment.
         If ``times`` or ``reward_times`` contain non-finite values, or
         ``positions`` or ``reward_positions`` contains an infinite value.
-        If ``times`` is not ascending when reward positions are inferred
-        (no ``reward_positions`` given) or ``break_before`` is given.
+        If ``times`` and ``positions`` are empty, or ``times`` is not
+        strictly increasing.
         If ``max_gap`` is not positive, or ``epochs`` or ``break_before`` is
         malformed.
+        If ``metric`` is not ``'geodesic'`` or ``'euclidean'``, or ``mode``
+        is not ``'nearest'``, ``'last'`` or ``'next'``.
 
     Warns
     -----
@@ -1255,9 +1241,14 @@ def distance_to_reward(
     neurospatial.ops.nearest_boundary : Exact distance and direction to walls
     """
     from neurospatial._intervals import as_intervals, validate_max_gap
-    from neurospatial._observation import validate_break_before
-    from neurospatial._validation import validate_finite
+    from neurospatial._observation import empty_samples_error, validate_break_before
+    from neurospatial._validation import (
+        validate_finite,
+        validate_strictly_increasing,
+        validate_times_positions,
+    )
 
+    call = "distance_to_reward"
     require_cartesian(
         env.coordinate_system,
         "distance_to_reward()",
@@ -1265,58 +1256,33 @@ def distance_to_reward(
         "in the environment's bins.",
         fix="use the allocentric environment the positions were recorded in",
     )
+    paths = metric_paths(metric, env, call=call)
+    if mode not in ("nearest", "last", "next"):
+        raise ValueError(f"mode must be 'nearest', 'last', or 'next', got '{mode}'.")
 
-    # A non-finite time silently corrupts interpolation and searchsorted
-    # ordering; a NaN position is a missing sample and gives NaN distance.
-    times = validate_finite(times, name="times")
+    # Reward locations are interpolated between neighbouring samples and
+    # rewards are assigned to recordings in time order, so times must be
+    # strictly increasing. A NaN position is a missing sample and gives NaN
+    # distance; an infinite one is a corrupt value.
+    times, positions = validate_times_positions(times, positions, call=call)
+    if times.size == 0:
+        raise empty_samples_error(call, ("times", "positions"))
+    validate_strictly_increasing(times, call=call)
+    positions = validate_finite(
+        positions.reshape(times.size, -1), name="positions", allow_nan=True
+    )
     reward_times = validate_finite(reward_times, name="reward_times")
     if reward_times.ndim != 1:
         raise ValueError(
             f"reward_times must be 1-D (n_events,), got shape {reward_times.shape}."
         )
-    positions = validate_finite(
-        np.asarray(positions, dtype=np.float64), name="positions", allow_nan=True
-    )
-    if positions.ndim == 1:
-        positions = positions.reshape(-1, 1)
-
-    n_samples = len(times)
-
-    if len(positions) != n_samples:
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got positions: {len(positions)}, times: {n_samples}."
-        )
+    n_samples = times.size
     validate_max_gap(max_gap)
-    breaks = validate_break_before(break_before, n_samples, call="distance_to_reward")
+    breaks = validate_break_before(break_before, n_samples, call=call)
     resolved_epochs = as_intervals(epochs, name="epochs")
-
-    # Handle empty inputs
-    if n_samples == 0:
-        return np.array([], dtype=np.float64)
 
     if len(reward_times) == 0:
         return np.full(n_samples, np.nan, dtype=np.float64)
-
-    if (reward_positions is None or breaks is not None) and np.any(np.diff(times) < 0):
-        raise ValueError(
-            "times must be sorted in ascending order to interpolate "
-            "reward positions or to assign rewards to recordings.\n"
-            "  WHY: reward locations are interpolated between neighbouring "
-            "samples and break_before splits the samples in time order; "
-            "unsorted times yield wrong reward positions and a corrupted "
-            "distance regressor.\n"
-            "  Fix: sort (times, positions) by time before calling, or "
-            "pass explicit reward_positions (without break_before) to skip "
-            "interpolation."
-        )
-
-    # Samples outside epochs have no distance, as they have no speed in
-    # compute_speed. Each sample is tested as the instant [t, t + ulp).
-    if resolved_epochs is None:
-        sample_in_epochs = np.ones(n_samples, dtype=bool)
-    else:
-        sample_in_epochs = times_in_intervals(resolved_epochs, times)
 
     # Get or interpolate reward positions
     if reward_positions is not None:
@@ -1343,10 +1309,8 @@ def distance_to_reward(
             break_before=breaks,
         )
 
-    # Map positions to bins (NaN rows are -1)
+    # Map positions and reward locations to bins (NaN rows are -1)
     position_bins = env.bin_at(positions)
-
-    # Map reward positions to bins (unknown, NaN locations are -1)
     reward_bins = env.bin_at(reward_positions)
     _warn_rewards_outside_environment(reward_positions, reward_bins)
 
@@ -1368,95 +1332,68 @@ def distance_to_reward(
             ),
         )
 
-    # Find relevant reward for each sample based on mode
+    # Find the relevant reward of each sample (an index into the time-sorted
+    # rewards, possibly out of range when there is none).
     if mode == "nearest":
-        # Find nearest reward in time (before or after)
-        # Use searchsorted to find insertion points
         idx_right = np.searchsorted(sorted_reward_times, times, side="left")
         idx_left = idx_right - 1
-
         has_left = idx_left >= 0
         has_right = idx_right < n_rewards
         if recordings is not None:
             has_left &= _same_recording(idx_left, *recordings)
             has_right &= _same_recording(idx_right, *recordings)
 
-        # Compute time distances to left and right rewards
+        # Time to the left and right rewards; the nearer one wins, the left
+        # one on a tie.
         dist_left = np.full(n_samples, np.inf)
         dist_right = np.full(n_samples, np.inf)
         dist_left[has_left] = times[has_left] - sorted_reward_times[idx_left[has_left]]
         dist_right[has_right] = (
             sorted_reward_times[idx_right[has_right]] - times[has_right]
         )
-
-        # Select nearest
-        use_left = dist_left <= dist_right
-        relevant_reward_idx = np.where(use_left, idx_left, idx_right)
-
-        # No eligible reward on either side
+        relevant_reward_idx = np.where(dist_left <= dist_right, idx_left, idx_right)
         no_reward = ~has_left & ~has_right
-        relevant_reward_idx = np.clip(relevant_reward_idx, 0, n_rewards - 1)
-
-    elif mode == "last":
-        # Find most recent reward before each sample
-        # searchsorted gives index of first reward > time, so idx-1 is last reward <= time
-        idx = np.searchsorted(sorted_reward_times, times, side="right") - 1
-        relevant_reward_idx = idx
-        no_reward = idx < 0
-        if recordings is not None:
-            no_reward |= ~_same_recording(idx, *recordings)
-
-    elif mode == "next":
-        # Find next upcoming reward after each sample
-        # searchsorted gives index of first reward >= time
-        idx = np.searchsorted(sorted_reward_times, times, side="left")
-        relevant_reward_idx = idx
-        no_reward = idx >= n_rewards
-        if recordings is not None:
-            no_reward |= ~_same_recording(idx, *recordings)
-
     else:
-        raise ValueError(f"mode must be 'nearest', 'last', or 'next', got '{mode}'.")
+        # "last": searchsorted gives the first reward > time, so idx - 1 is the
+        # last reward <= time. "next": the first reward >= time.
+        if mode == "last":
+            relevant_reward_idx = (
+                np.searchsorted(sorted_reward_times, times, side="right") - 1
+            )
+        else:
+            relevant_reward_idx = np.searchsorted(
+                sorted_reward_times, times, side="left"
+            )
+        no_reward = (relevant_reward_idx < 0) | (relevant_reward_idx >= n_rewards)
+        if recordings is not None:
+            no_reward |= ~_same_recording(relevant_reward_idx, *recordings)
 
-    # Clip indices to valid range for array access
-    relevant_reward_idx = np.clip(relevant_reward_idx, 0, len(sorted_reward_bins) - 1)
-
-    # Get reward bins for each sample
+    relevant_reward_idx = np.clip(relevant_reward_idx, 0, n_rewards - 1)
     target_bins = sorted_reward_bins[relevant_reward_idx]
 
+    # NaN without a relevant reward, at a missing or outside position, for an
+    # unknown or outside reward location, and outside epochs (as samples
+    # outside epochs have no speed in compute_speed; each sample is tested as
+    # the instant [t, t + ulp)).
+    usable = ~no_reward & (target_bins >= 0) & (position_bins >= 0)
+    if resolved_epochs is not None:
+        usable &= times_in_intervals(resolved_epochs, times)
+    starts = positions[usable]
+    ends = sorted_reward_positions[relevant_reward_idx[usable]]
+
     distances = np.full(n_samples, np.nan, dtype=np.float64)
-    if metric == "euclidean":
+    if paths is None:
         # The exact straight-line distance between the position and the
         # reward location, not between their bin centers.
-        distances = np.linalg.norm(
-            positions - sorted_reward_positions[relevant_reward_idx], axis=1
-        )
+        distances[usable] = np.linalg.norm(starts - ends, axis=1)
     else:
-        # The shortest path inside the environment from each position to
-        # its reward's location, one call per reward.
-        from neurospatial.behavior._environment_paths import environment_paths
-
-        paths = environment_paths(env, call="distance_to_reward")
-        usable = ~no_reward & (target_bins >= 0) & (position_bins >= 0)
-        for reward in np.unique(relevant_reward_idx[usable]):
-            mask = usable & (relevant_reward_idx == reward)
-            distances[mask] = paths.to_point(
-                positions[mask], sorted_reward_positions[reward]
-            )
-
-    # Set NaN for samples with no relevant reward
-    distances[no_reward] = np.nan
-
-    # Set NaN for invalid trajectory bins
-    distances[position_bins < 0] = np.nan
-
-    # Set NaN for invalid or unknown reward bins
-    invalid_reward_mask = target_bins < 0
-    distances[invalid_reward_mask & ~no_reward] = np.nan
-
-    # Set NaN for samples outside epochs
-    distances[~sample_in_epochs] = np.nan
-
+        # The shortest path inside the environment from each position to its
+        # reward's location, with every reward bin's field grown at once.
+        end_bins = target_bins[usable]
+        paths.prepare(end_bins)
+        distances[usable] = paths.between(
+            starts, ends, start_bins=position_bins[usable], end_bins=end_bins
+        )
     return distances
 
 
@@ -1558,13 +1495,13 @@ def _infer_reward_positions(
     it is interpolated between the observed samples on either side, only when
     the gap between them passes ``max_gap`` and ``break_before`` (missing
     samples in between are skipped as if deleted); ``epochs`` restrict the
-    analyzed samples, not where a reward was. Any other reward has an unknown (NaN) location, and one
-    ``UserWarning`` says how many and why.
+    analyzed samples, not where a reward was. Any other reward has an
+    unknown (NaN) location, and one ``UserWarning`` says how many and why.
 
     Parameters
     ----------
     times : ndarray, shape (n_samples,)
-        Finite, non-decreasing sample times in seconds.
+        Finite, strictly increasing sample times in seconds.
     positions : ndarray, shape (n_samples, n_dims)
         Positions; NaN rows are missing samples.
     reward_times : ndarray, shape (n_rewards,)
@@ -1579,59 +1516,63 @@ def _infer_reward_positions(
     """
     import warnings
 
-    from neurospatial._intervals import gap_endpoints, interval_valid_mask
+    from neurospatial._intervals import gap_endpoints
+    from neurospatial._observation import resolve_observation_support, sample_feature
     from neurospatial._stacklevel import _external_stacklevel
 
-    n_samples, n_dims = positions.shape
-    observed: NDArray[np.bool_] = np.asarray(np.isfinite(positions).all(axis=1))
-    in_span = (reward_times >= times[0]) & (reward_times <= times[-1])
-    # Last sample at or before each reward; the interval it starts holds the
-    # reward when the reward is not on an observed sample.
-    k = np.clip(np.searchsorted(times, reward_times, side="right") - 1, 0, None)
-    on_sample = in_span & (times[k] == reward_times) & observed[k]
-    between = in_span & ~on_sample
-    known = on_sample.copy()
-    reasons = {"outside the recorded span": ~in_span}
-    if n_samples > 1:
-        usable = interval_valid_mask(
-            times, max_gap=max_gap, break_before=break_before, sample_valid=observed
-        )
-        start, end, linked = gap_endpoints(observed)
-        j = np.clip(k, 0, n_samples - 2)
-        known |= between & usable[j]
-        n_breaks = np.cumsum(
-            np.r_[False, np.zeros(n_samples - 1, dtype=bool)]
-            if break_before is None
-            else np.r_[False, break_before[1:]]
-        )
-        crossed = n_breaks[end[j]] != n_breaks[start[j]]
-        long_gap = (
-            np.zeros(len(j), dtype=bool)
-            if max_gap is None
-            else times[end[j]] - times[start[j]] > max_gap
-        )
-        blocked = between & ~usable[j]
-        reasons["across a declared break"] = blocked & linked[j] & crossed
-        reasons[f"in a gap longer than max_gap={max_gap} s"] = (
-            blocked & linked[j] & ~crossed & long_gap
-        )
-        reasons["before the first or after the last observed position"] = (
-            blocked & ~linked[j]
-        )
-    else:
-        reasons["at a missing (NaN) position"] = between
-
-    located = np.full((len(reward_times), n_dims), np.nan)
-    located[known] = np.column_stack(
-        [
-            np.interp(reward_times[known], times[observed], positions[observed, dim])
-            for dim in range(n_dims)
-        ]
+    support = resolve_observation_support(
+        times,
+        positions,
+        max_gap=max_gap,
+        epochs=None,
+        break_before=break_before,
+        result=None,  # the unknown rewards are reported below, with reasons
     )
-    located[on_sample] = positions[k[on_sample]]
+    columns = []
+    for coordinate in positions.T:
+        column, known = sample_feature(
+            times,
+            coordinate,
+            support,
+            reward_times,
+            interpolation="linear",
+            kind="linear",
+            epochs=None,
+        )
+        columns.append(column)
+    located = np.column_stack(columns)
 
     n_unknown = int(np.count_nonzero(~known))
     if n_unknown:
+        # Why each unknown reward inside the span has no location: the gap
+        # holding it (between the observed samples on either side) is too
+        # long, crosses a declared break, or has no observed sample on one side.
+        in_span = (reward_times >= times[0]) & (reward_times <= times[-1])
+        blocked = in_span & ~known
+        reasons = {"outside the recorded span": ~in_span}
+        n_samples = times.size
+        if n_samples > 1:
+            k = np.searchsorted(times, reward_times, side="right") - 1
+            j = np.clip(k, 0, n_samples - 2)
+            start, end, linked = gap_endpoints(support.sample_valid)
+            crossed = np.zeros(j.size, dtype=bool)
+            if break_before is not None:
+                recording = recording_index(break_before)
+                crossed = recording[end[j]] != recording[start[j]]
+            long_gap = (
+                np.zeros(j.size, dtype=bool)
+                if max_gap is None
+                else times[end[j]] - times[start[j]] > max_gap
+            )
+            reasons["across a declared break"] = blocked & linked[j] & crossed
+            reasons[f"in a gap longer than max_gap={max_gap} s"] = (
+                blocked & linked[j] & ~crossed & long_gap
+            )
+            reasons["before the first or after the last observed position"] = (
+                blocked & ~linked[j]
+            )
+        else:
+            reasons["at a missing (NaN) position"] = blocked
         counts = ", ".join(
             f"{int(mask.sum())} {reason}"
             for reason, mask in reasons.items()
@@ -1771,7 +1712,7 @@ def distance_to_boundary(
     )
 
     # Input validation
-    _require_path_metric(metric, call="distance_to_boundary")
+    paths = metric_paths(metric, env, call="distance_to_boundary")
     positions = np.asarray(positions, dtype=np.float64)
     n_samples = len(positions)
 
@@ -1815,12 +1756,8 @@ def distance_to_boundary(
         )
 
     boundary_bins = np.unique(np.asarray(boundary_bins, dtype=np.intp))
-    if metric == "geodesic":
-        from neurospatial.behavior._environment_paths import environment_paths
-
-        return environment_paths(env, call="distance_to_boundary").from_bins_at(
-            boundary_bins, positions
-        )
+    if paths is not None:
+        return paths.from_bins_at(boundary_bins, positions)
 
     from scipy.spatial import cKDTree
 
@@ -1965,9 +1902,7 @@ def cost_to_goal(
     """
     from neurospatial.environment import _validate_sample_targets
 
-    position_bins = _validated_position_bins(
-        position_bins, env, operation="cost_to_goal()"
-    )
+    position_bins = validated_position_bins(position_bins, env, call="cost_to_goal")
     goals, per_sample = _validate_sample_targets(
         goal_bins,
         n_samples=len(position_bins),
@@ -2090,7 +2025,7 @@ def time_to_goal(
     Parameters
     ----------
     times : NDArray[np.float64], shape (n_samples,)
-        Timestamps for entire session.
+        Timestamps for entire session, strictly increasing (seconds).
     trials : list[Trial]
         Trial segmentation from segment_trials(). Only trials that reached
         their goal (``trial.success``) are included; timed-out and censored
@@ -2102,6 +2037,12 @@ def time_to_goal(
         Time in seconds until goal arrival, for samples with
         ``start_time <= t <= end_time`` of a successful trial. NaN outside
         successful trials.
+
+    Raises
+    ------
+    ValueError
+        If ``times`` is empty, not 1-D, holds a non-finite value or is not
+        strictly increasing.
 
     Warns
     -----
@@ -2120,22 +2061,20 @@ def time_to_goal(
     segment_trials : Segment trajectory into trials
     path_progress : Normalized progress along path
     """
-    times = np.asarray(times, dtype=np.float64)
+    from neurospatial._observation import _validated_signal_times
+
+    times = _validated_signal_times(times, call="time_to_goal")
     _warn_if_no_trial_overlaps(times, trials, call="time_to_goal()", result="NaN")
     ttg = np.full(len(times), np.nan, dtype=np.float64)
 
-    for trial in trials:
+    for trial, first, stop in zip(
+        trials, *_trial_sample_bounds(times, trials), strict=True
+    ):
         # Only an observed arrival has a time to goal: timed-out and censored
         # trials (cut off by a gap, an epoch edge, a break or the end of the
         # recording) never reached it.
-        if not trial.success:
-            continue
-
-        mask = (times >= trial.start_time) & (times <= trial.end_time)
-        trial_times = times[mask]
-
-        ttg[mask] = trial.end_time - trial_times
-        ttg[mask] = np.maximum(ttg[mask], 0.0)
+        if trial.success:
+            ttg[first:stop] = np.maximum(trial.end_time - times[first:stop], 0.0)
 
     return ttg
 
@@ -2234,7 +2173,9 @@ def graph_turn_sequence(
 
     See Also
     --------
-    compute_trajectory_curvature : Continuous curvature for any trajectory
+    compute_planar_turn_angles : Signed turn at each tracking sample, from
+        continuous positions.
+    compute_planar_curvature : Signed geometric curvature of the path.
     """
     require_cartesian(
         env.coordinate_system,
@@ -2248,9 +2189,7 @@ def graph_turn_sequence(
             "positions, for example Environment.from_samples(positions, bin_size=...)"
         ),
     )
-    bins = _validated_position_bins(
-        position_bins, env, operation="graph_turn_sequence()"
-    )
+    bins = validated_position_bins(position_bins, env, call="graph_turn_sequence")
     if tolerance is None:
         tolerance = float(np.sqrt(2.0) * env.bin_spacing)
     elif not (np.isfinite(tolerance) and tolerance >= 0):
@@ -2273,10 +2212,10 @@ def graph_turn_sequence(
     if len(corners) < 3:
         return ""
 
+    from neurospatial._angles import signed_turns
+
     legs = np.diff(corners, axis=0)
-    cross = legs[:-1, 0] * legs[1:, 1] - legs[:-1, 1] * legs[1:, 0]
-    dot = np.sum(legs[:-1] * legs[1:], axis=1)
-    angle = np.arctan2(cross, dot)
+    angle = signed_turns(legs[:-1], legs[1:])
     # Counterclockwise (angle > 0) in a y-up frame is the animal's left.
     turns = angle[(angle != 0) & (np.abs(angle) <= _MAX_TURN_ANGLE)]
     return "-".join("left" if turn > 0 else "right" for turn in turns)
@@ -2371,7 +2310,8 @@ def goal_pair_direction_labels(
     See Also
     --------
     segment_trials : Segment trajectory into behavioral trials
-    heading_direction_labels : Direction labels based on heading angle
+    heading_direction_labels : Direction labels from the direction of movement
+    headings_to_direction_labels : Direction labels from headings you computed
     laps_to_direction_labels : Direction labels from detected laps
     runs_to_direction_labels : Direction labels from detected runs
     """
@@ -2394,18 +2334,16 @@ def goal_pair_direction_labels(
 
 
 def heading_direction_labels(
-    times: NDArray[np.float64] | None = None,
-    positions: NDArray[np.float64] | None = None,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
-    speed: NDArray[np.float64] | None = None,
-    heading: NDArray[np.float64] | None = None,
-    n_directions: int = 8,
     min_speed: float,
+    n_directions: int = 8,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.object_]:
-    """Generate per-timepoint direction labels from heading angle.
+    """Label each sample by the direction the animal moves in.
 
     Bins the direction of movement into sectors centred on evenly spaced
     allocentric directions (with the default 8: ``"0°"`` East, ``"45°"``,
@@ -2413,27 +2351,25 @@ def heading_direction_labels(
     ``"-45°"``), labels an observed animal that is not moving "stationary",
     and leaves samples with no observed movement unlabeled (``None``).
 
+    To label headings you already have, such as head direction from
+    :func:`heading_from_body_orientation`, use
+    :func:`headings_to_direction_labels`.
+
     Parameters
     ----------
-    times : NDArray[np.float64], shape (n_samples,), optional
-        Timestamps (seconds). Required if positions provided.
-    positions : NDArray[np.float64], shape (n_samples, 2), optional
-        2D position coordinates over time. Required if speed/heading not
-        provided. A row with a non-finite coordinate is a missing position.
-    speed : NDArray[np.float64], shape (n_samples,), optional
-        Precomputed speed at each timepoint; NaN marks a sample that was not
-        observed.
-    heading : NDArray[np.float64], shape (n_samples,), optional
-        Precomputed heading angle in radians; NaN where the direction of
-        movement is unknown.
-    n_directions : int, default=8
-        Number of direction sectors, a positive integer. Default 8 creates
-        45° sectors centred on East, North-East, North, and so on.
+    times : NDArray[np.float64], shape (n_samples,)
+        Timestamps (seconds), finite and strictly increasing.
+    positions : NDArray[np.float64], shape (n_samples, 2)
+        2D position coordinates over time. A row with a non-finite coordinate
+        is a missing position.
     min_speed : float
         Required, finite and ``>= 0``, in position units per second (e.g.
         ``5.0`` for 5 cm/s with positions in cm): this function sees no
         environment, so it cannot know the positions' unit. Observed samples
         slower than this, or not moving at all, are labeled "stationary".
+    n_directions : int, default=8
+        Number of direction sectors, a positive integer. Default 8 creates
+        45° sectors centred on East, North-East, North, and so on.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -2441,16 +2377,15 @@ def heading_direction_labels(
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
-        Trajectory mode only.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
-        means unrestricted. Trajectory mode only.
+        means unrestricted.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
-        time. Entry 0 is ignored. Trajectory mode only.
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -2458,24 +2393,22 @@ def heading_direction_labels(
         One label per timepoint, of three kinds: a direction sector named by
         its centre direction, such as ``"90°"``, where the animal moves (speed
         above zero and at least ``min_speed``); ``"stationary"`` where it was
-        observed but not moving; ``None`` where it was not observed, or
-        (precomputed input) moving in an unknown direction.
+        observed but not moving; ``None`` where it was not observed.
 
     Raises
     ------
     ValueError
-        If ``min_speed`` is not finite and non-negative, or ``n_directions``
-        is not a positive integer. In trajectory mode, if ``times`` and
-        ``positions`` are empty, have different lengths, ``times`` is not
-        finite and strictly increasing, ``positions`` has no x and y columns,
-        or ``break_before`` is not a Boolean array with one entry per sample.
-        With precomputed input, if ``speed`` and ``heading`` differ in length,
-        or ``epochs``, ``break_before`` or a non-default ``max_gap`` is given.
+        If ``min_speed`` is not finite and non-negative, ``n_directions`` is
+        not a positive integer, ``times`` and ``positions`` are empty or have
+        different lengths, ``times`` is not finite and strictly increasing,
+        ``positions`` has no x and y columns, or ``break_before`` is not a
+        Boolean array with one entry per sample.
 
-    Warns
-    -----
-    UserWarning
-        If a precomputed ``heading`` looks like degrees instead of radians.
+    See Also
+    --------
+    headings_to_direction_labels : The same sectors for headings you computed.
+    goal_pair_direction_labels : Direction labels for trialized tasks.
+    labels_to_epochs : Turn the labels into ``[start, stop)`` windows.
 
     Notes
     -----
@@ -2487,20 +2420,18 @@ def heading_direction_labels(
     an eastward run between two labels. Labels are the centre angles in
     ``(-180, 180]``, rounded to 0.1°.
 
-    In trajectory mode the speed and heading are computed along each run of
-    observed samples. A NaN row is bridged like a deleted row when valid
-    neighbours are within ``max_gap``; only a longer gap, an ``epochs`` edge
-    or a declared ``break_before`` splits a run, and no velocity or heading
-    spans such a split.
+    The speed and heading are computed along each run of observed samples. A
+    NaN row is bridged like a deleted row when valid neighbours are within
+    ``max_gap``; only a longer gap, an ``epochs`` edge or a declared
+    ``break_before`` splits a run, and no velocity or heading spans such a
+    split.
 
-    In trajectory mode, speed and heading come from the Gaussian-smoothed
-    velocity of :func:`compute_speed`, so tracking jitter at rest is
-    "stationary". The direction of movement exists only where the animal
-    moves, the rule of :func:`heading_from_velocity`. A sample in no observed
-    run (a missing position, an isolated sample, an excluded interval) is
-    ``None``, "not observed", which :func:`labels_to_epochs` leaves out.
-    Precomputed speed/heading inputs have no time gate and refuse
-    ``break_before``; a NaN speed is not observed.
+    Speed and heading come from the Gaussian-smoothed velocity of
+    :func:`compute_speed`, so tracking jitter at rest is "stationary". The
+    direction of movement exists only where the animal moves, the rule of
+    :func:`heading_from_velocity`. A sample in no observed run (a missing
+    position, an isolated sample, an excluded interval) is ``None``, "not
+    observed", which :func:`labels_to_epochs` leaves out.
 
     Passing these labels straight to
     :func:`~neurospatial.encoding.compute_directional_place_fields` gives a
@@ -2522,16 +2453,6 @@ def heading_direction_labels(
     >>> labels = heading_direction_labels(times, positions, min_speed=5.0)
     >>> labels[0], labels[5], labels[-1]
     ('45°', None, 'stationary')
-
-    Precomputed speed and heading (radians, 0 = East) are binned directly; a
-    NaN speed was not observed:
-
-    >>> heading_direction_labels(
-    ...     speed=np.array([10.0, 1.0, np.nan]),
-    ...     heading=np.array([0.3, 0.3, 0.3]),
-    ...     min_speed=5.0,
-    ... ).tolist()
-    ['0°', 'stationary', None]
 
     ``"stationary"`` is an ordinary label for the place-field helper, which
     drops it only when told to:
@@ -2562,21 +2483,213 @@ def heading_direction_labels(
     ... )
     >>> sorted(fields.labels)
     ['45°']
+    """
+    from neurospatial._observation import validated_observations
+    from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
+    from neurospatial.behavior._kinematics import (
+        _movement_heading_and_speed,
+        validated_min_speed,
+    )
+
+    call = "heading_direction_labels"
+    min_speed = validated_min_speed(min_speed, call=call)
+    _validate_n_directions(n_directions, call=call)
+    times_arr, positions_arr, support = validated_observations(
+        times,
+        positions,
+        call=call,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="every label is None",
+        columns="xy",
+    )
+    headings, speeds = _movement_heading_and_speed(
+        times_arr,
+        positions_arr,
+        support.interval_mask,
+        smooth_window=DEFAULT_SPEED_SMOOTHING,
+        min_speed=min_speed,
+    )
+    return _direction_sector_labels(
+        headings,
+        speeds,
+        support.run_ids >= 0,
+        min_speed=min_speed,
+        n_directions=n_directions,
+    )
+
+
+def headings_to_direction_labels(
+    headings: ArrayLike,
+    speeds: ArrayLike,
+    *,
+    min_speed: float,
+    n_directions: int = 8,
+) -> NDArray[np.object_]:
+    """Label each sample by a heading you already computed.
+
+    Bins each heading into the sectors of :func:`heading_direction_labels`
+    (with the default 8: ``"0°"`` East, ``"45°"``, ``"90°"`` North, ...,
+    ``"180°"`` West, ``"-135°"``, ``"-90°"`` South, ``"-45°"``) wherever the
+    animal moves at ``min_speed`` or faster, labels an observed animal that is
+    slower "stationary", and leaves samples whose speed was not observed
+    unlabeled (``None``). Use it to label head direction from
+    :func:`heading_from_body_orientation` or a head-direction sensor by running
+    speed, or a heading and speed you computed with your own smoothing.
+
+    Parameters
+    ----------
+    headings : ArrayLike, shape (n_samples,)
+        Allocentric heading of each sample in radians (0 = East, +π/2 =
+        North); any real value, wrapped or unwrapped. NaN where the heading is
+        unknown.
+    speeds : ArrayLike, shape (n_samples,)
+        Speed of each sample, finite and ``>= 0``, in the units of
+        ``min_speed``. NaN marks a sample that was not observed.
+    min_speed : float
+        Required, finite and ``>= 0``, in the units of ``speeds`` (e.g.
+        ``5.0`` for 5 cm/s). Observed samples slower than this, or not moving
+        at all, are labeled "stationary".
+    n_directions : int, default=8
+        Number of direction sectors, a positive integer. Default 8 creates
+        45° sectors centred on East, North-East, North, and so on.
+
+    Returns
+    -------
+    NDArray[np.object_], shape (n_samples,)
+        One label per sample, of three kinds: a direction sector named by its
+        centre direction, such as ``"90°"``, where the animal moves (speed
+        above zero and at least ``min_speed``) with a known heading;
+        ``"stationary"`` where it was observed but not moving; ``None`` where
+        the speed is NaN (not observed), or the animal moves with a NaN
+        heading.
+
+    Raises
+    ------
+    ValueError
+        If ``min_speed`` is not finite and non-negative, ``n_directions`` is
+        not a positive integer, ``headings`` or ``speeds`` is not 1-D, they
+        differ in length, a heading is infinite, or a speed is negative or
+        infinite.
+
+    Warns
+    -----
+    UserWarning
+        If ``headings`` look like degrees instead of radians.
 
     See Also
     --------
-    goal_pair_direction_labels : Direction labels for trialized tasks
+    heading_direction_labels : Labels from the direction of movement, computed
+        from times and positions with time support.
+    heading_from_body_orientation : Head direction from two tracked body parts.
+    heading_from_velocity : Direction of movement from positions.
+    compute_speed : Smoothed speed from positions.
+
+    Notes
+    -----
+    The sectors are those of :func:`heading_direction_labels`: sector ``k`` is
+    centred on ``k * 360 / n_directions`` degrees and half-open, with its
+    clockwise edge belonging to it.
+
+    The headings and speeds are labeled as given, sample by sample: there is
+    no time support (``max_gap``, ``epochs``, ``break_before``) and no
+    smoothing. Compute them with the time support you need, for example
+    ``heading_from_body_orientation(times, nose, tail, max_gap=...)`` and
+    ``compute_speed(times, positions, max_gap=...)``.
+
+    Examples
+    --------
+    A NaN speed was not observed; a slow sample is "stationary" whatever its
+    heading:
+
+    >>> import numpy as np
+    >>> from neurospatial.behavior import headings_to_direction_labels
+    >>> headings = np.array([0.3, 0.3, np.pi / 2, 0.3, np.nan])  # radians
+    >>> speeds = np.array([10.0, 1.0, 12.0, np.nan, 10.0])  # cm/s
+    >>> headings_to_direction_labels(headings, speeds, min_speed=5.0).tolist()
+    ['0°', 'stationary', '90°', None, None]
+
+    Label where the head points while the animal runs. It runs East at
+    10 cm/s facing North:
+
+    >>> from neurospatial.behavior import (
+    ...     compute_speed,
+    ...     heading_from_body_orientation,
+    ... )
+    >>> times = np.arange(20) / 10
+    >>> tail = np.column_stack([np.arange(20.0), np.zeros(20)])
+    >>> nose = tail + [0.0, 3.0]
+    >>> labels = headings_to_direction_labels(
+    ...     heading_from_body_orientation(times, nose, tail),
+    ...     compute_speed(times, tail),
+    ...     min_speed=5.0,
+    ... )
+    >>> sorted(set(labels.tolist()))
+    ['90°']
     """
-    if not (np.isfinite(min_speed) and min_speed >= 0):
+    from neurospatial.behavior._kinematics import validated_min_speed
+    from neurospatial.encoding._validation import warn_if_angles_look_like_degrees
+
+    call = "headings_to_direction_labels"
+    min_speed = validated_min_speed(min_speed, call=call)
+    _validate_n_directions(n_directions, call=call)
+    headings_arr = np.asarray(headings, dtype=np.float64)
+    speeds_arr = np.asarray(speeds, dtype=np.float64)
+    for name, values in (("headings", headings_arr), ("speeds", speeds_arr)):
+        if values.ndim != 1:
+            raise ValueError(
+                _format_error(
+                    f"{call}() needs 1-D {name}, one value per sample; got "
+                    f"shape {values.shape}.",
+                    fix=f"pass {name} with shape (n_samples,), e.g. "
+                    f"np.ravel({name}) for a column vector",
+                )
+            )
+    if len(headings_arr) != len(speeds_arr):
         raise ValueError(
             _format_error(
-                f"heading_direction_labels() got min_speed={min_speed!r}.",
-                why="min_speed is a speed in position units per second; NaN "
-                "would label every sample 'stationary'.",
-                fix="pass a finite min_speed >= 0, e.g. 5.0 for 5 cm/s with "
-                "positions in cm",
+                f"{call}() got {len(headings_arr)} headings and "
+                f"{len(speeds_arr)} speeds.",
+                why="Each sample needs a heading and a speed.",
+                fix="pass headings and speeds for the same samples",
             )
         )
+    if np.isinf(headings_arr).any():
+        raise ValueError(
+            _format_error(
+                f"{call}() got an infinite heading at sample "
+                f"{int(np.flatnonzero(np.isinf(headings_arr))[0])}.",
+                why="A heading is an angle in radians.",
+                fix="mark an unknown heading with NaN",
+            )
+        )
+    with np.errstate(invalid="ignore"):
+        bad_speed = np.isinf(speeds_arr) | (speeds_arr < 0)
+    if bad_speed.any():
+        first = int(np.flatnonzero(bad_speed)[0])
+        raise ValueError(
+            _format_error(
+                f"{call}() got speeds[{first}] = {float(speeds_arr[first])}.",
+                why="A speed is a finite, non-negative magnitude; NaN marks a "
+                "sample that was not observed.",
+                fix="pass speeds such as compute_speed(times, positions), with "
+                "NaN where the animal was not observed; the order is "
+                f"{call}(headings, speeds, min_speed=...)",
+            )
+        )
+    warn_if_angles_look_like_degrees(headings_arr, name="headings", context=call)
+    return _direction_sector_labels(
+        headings_arr,
+        speeds_arr,
+        np.isfinite(speeds_arr),
+        min_speed=min_speed,
+        n_directions=n_directions,
+    )
+
+
+def _validate_n_directions(n_directions: int, *, call: str) -> None:
+    """Raise unless ``n_directions`` is a positive integer."""
     if (
         isinstance(n_directions, bool)
         or not isinstance(n_directions, (int, np.integer))
@@ -2584,101 +2697,40 @@ def heading_direction_labels(
     ):
         raise ValueError(
             _format_error(
-                f"heading_direction_labels() got n_directions={n_directions!r}.",
+                f"{call}() got n_directions={n_directions!r}.",
                 why="n_directions is the number of direction sectors.",
                 fix="pass a positive integer, e.g. 8 for 45° sectors",
             )
         )
-    has_precomputed = speed is not None or heading is not None
-    has_trajectory = times is not None or positions is not None
 
-    if has_precomputed:
-        if speed is None or heading is None:
-            raise ValueError(
-                "If providing precomputed kinematics, both speed and heading "
-                "must be provided."
-            )
-        speed_arr = np.asarray(speed, dtype=np.float64)
-        heading_arr = np.asarray(heading, dtype=np.float64)
 
-        if len(speed_arr) != len(heading_arr):
-            raise ValueError(
-                f"Speed and heading arrays must have the same length. "
-                f"Got speed: {len(speed_arr)}, heading: {len(heading_arr)}."
-            )
-        given = [
-            name
-            for name, used in (
-                ("epochs", epochs is not None),
-                ("max_gap", max_gap != DEFAULT_MAX_GAP),
-                ("break_before", break_before is not None),
-            )
-            if used
-        ]
-        if given:
-            names = ", ".join(given)
-            raise ValueError(
-                _format_error(
-                    f"heading_direction_labels() got {names} with "
-                    "precomputed speed and heading.",
-                    why="Time support (epochs, max_gap, break_before) applies "
-                    "to the velocity computed from times and positions; "
-                    "precomputed speed and heading are labeled as given, so "
-                    "it would be silently ignored.",
-                    fix=f"pass times and positions with {names} instead of "
-                    "speed and heading, or compute them with it "
-                    f"(e.g. compute_speed(times, positions, {given[0]}=...)).",
-                )
-            )
-        from neurospatial.encoding._validation import (
-            warn_if_angles_look_like_degrees,
-        )
+def _direction_sector_labels(
+    headings: NDArray[np.float64],
+    speeds: NDArray[np.float64],
+    observed: NDArray[np.bool_],
+    *,
+    min_speed: float,
+    n_directions: int,
+) -> NDArray[np.object_]:
+    """Sector, "stationary" or None label for each sample.
 
-        warn_if_angles_look_like_degrees(
-            heading_arr, name="heading", context="heading_direction_labels"
-        )
+    Parameters
+    ----------
+    headings : ndarray, shape (n_samples,)
+        Radians; NaN where the direction is unknown.
+    speeds : ndarray, shape (n_samples,)
+        Speed of each sample; read only where ``observed``.
+    observed : ndarray of bool, shape (n_samples,)
+        Samples whose movement was observed; the others are None.
+    min_speed : float
+        Validated movement gate.
+    n_directions : int
+        Validated number of sectors.
 
-        observed = np.isfinite(speed_arr)
-
-    elif has_trajectory:
-        if times is None or positions is None:
-            raise ValueError(
-                "If providing trajectory data, both times and positions "
-                "must be provided."
-            )
-
-        from neurospatial._observation import validated_observations
-        from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
-        from neurospatial.behavior._kinematics import (
-            _movement_heading_and_speed,
-            _validate_velocity_positions,
-        )
-
-        raw = positions
-        times_arr, positions_arr, support = validated_observations(
-            times,
-            raw,
-            call="heading_direction_labels",
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=break_before,
-            result="every label is None",
-        )
-        _validate_velocity_positions(raw, call="heading_direction_labels")
-        heading_arr, speed_arr = _movement_heading_and_speed(
-            times_arr,
-            positions_arr,
-            support.interval_mask,
-            smooth_window=DEFAULT_SPEED_SMOOTHING,
-        )
-        observed = support.run_ids >= 0
-
-    else:
-        raise ValueError(
-            "Must provide either (times, positions) or (speed, heading). "
-            "Neither was provided."
-        )
-
+    Returns
+    -------
+    ndarray of object, shape (n_samples,)
+    """
     # Sector k is centred on k * width and spans [centre - width/2,
     # centre + width/2), so a run along a cardinal direction stays in one
     # sector despite jitter.
@@ -2689,18 +2741,17 @@ def heading_direction_labels(
         [f"{round(float(c), 1):g}°" for c in centres_deg], dtype=object
     )
     with np.errstate(invalid="ignore"):
-        sector = np.floor(heading_arr / width + 0.5)
+        sector = np.floor(headings / width + 0.5)
     bin_indices = np.mod(np.nan_to_num(sector), n_directions).astype(np.intp)
 
     # The direction of movement exists only where the animal moves. An observed
     # animal that does not move is "stationary"; an unobserved sample, or a
     # moving one whose direction is unknown, stays None.
-    moving = observed & (speed_arr > 0) & (speed_arr >= min_speed)
-    direction_known = moving & np.isfinite(heading_arr)
-    labels = np.full(len(speed_arr), None, dtype=object)
+    moving = observed & (speeds > 0) & (speeds >= min_speed)
+    direction_known = moving & np.isfinite(headings)
+    labels = np.full(len(speeds), None, dtype=object)
     labels[observed & ~moving] = "stationary"
     labels[direction_known] = bin_labels_arr[bin_indices[direction_known]]
-
     return labels
 
 
@@ -2709,40 +2760,12 @@ def heading_direction_labels(
 # =============================================================================
 
 
-def _require_path_metric(metric: str, *, call: str) -> None:
-    """Raise unless ``metric`` is a path-length metric.
-
-    Parameters
-    ----------
-    metric : str
-    call : str
-        Name of the public function, for the error message.
-    """
-    if metric not in ("euclidean", "geodesic"):
-        raise ValueError(
-            _format_error(
-                f"{call}() got metric={metric!r}; it must be "
-                "'euclidean' or 'geodesic'.",
-                why=(
-                    "distances are measured either along straight lines or along "
-                    "the shortest path inside the environment."
-                ),
-                fix=(
-                    "use metric='euclidean' for straight-line distances, or "
-                    "metric='geodesic' with env= to respect barriers."
-                ),
-            )
-        )
-
-
 def _observed_path_length(
     positions: NDArray[np.float64],
     sample_valid: NDArray[np.bool_],
     interval_mask: NDArray[np.bool_],
     *,
-    metric: DistanceMetric,
-    env: Environment | None,
-    call: str,
+    paths: EnvironmentPaths | None,
 ) -> tuple[float, bool]:
     """Path length over usable intervals, and whether every interval counted.
 
@@ -2753,11 +2776,8 @@ def _observed_path_length(
         ``ObservationSupport.sample_valid`` of the same samples.
     interval_mask : ndarray of bool, shape (n_samples - 1,)
         ``ObservationSupport.interval_mask`` of the same samples.
-    metric : {"euclidean", "geodesic"}
-    env : Environment or None
-        Required for ``metric="geodesic"``.
-    call : str
-        Public function name, used in messages.
+    paths : EnvironmentPaths or None
+        Geodesic engine (``metric_paths``), or None for straight steps.
 
     Returns
     -------
@@ -2774,18 +2794,11 @@ def _observed_path_length(
     # One step per usable gap, from the valid sample before it to the one
     # ending it; only usable steps are measured.
     starts, ends = _observed_steps(positions, sample_valid, interval_mask)
-    if metric == "euclidean":
-        steps = np.linalg.norm(ends - starts, axis=1)
-    else:
-        if env is None:
-            raise ValueError(
-                "env parameter is required when metric='geodesic'. "
-                "Provide the Environment instance, or use metric='euclidean' "
-                "for straight-line distances."
-            )
-        from neurospatial.behavior._environment_paths import environment_paths
-
-        steps = environment_paths(env, call=call).between(starts, ends)
+    steps = (
+        np.linalg.norm(ends - starts, axis=1)
+        if paths is None
+        else paths.between(starts, ends)
+    )
     counted = ~np.isnan(steps)
     observed = np.flatnonzero(sample_valid)
     span = (
@@ -2900,13 +2913,7 @@ def traveled_path_length(
     """
     from neurospatial._observation import validated_observations
 
-    _require_path_metric(metric, call="traveled_path_length")
-    if metric == "geodesic" and env is None:
-        raise ValueError(
-            "env parameter is required when metric='geodesic'. "
-            "Provide the Environment instance, or use metric='euclidean' "
-            "for straight-line distances."
-        )
+    paths = metric_paths(metric, env, call="traveled_path_length")
 
     _, positions_arr, support = validated_observations(
         times,
@@ -2921,9 +2928,7 @@ def traveled_path_length(
         positions_arr,
         support.sample_valid,
         support.interval_mask,
-        metric=metric,
-        env=env,
-        call="traveled_path_length",
+        paths=paths,
     )
     return length
 
@@ -2996,7 +3001,7 @@ def shortest_path_length(
     >>> shortest_path_length(arena, np.array([10.0, 10.0]), np.array([40.0, 50.0]))
     50.0
     """
-    _require_path_metric(metric, call="shortest_path_length")
+    paths = metric_paths(metric, env, call="shortest_path_length")
     start = np.asarray(start, dtype=float)
     if start.ndim != 1:
         raise ValueError(
@@ -3009,12 +3014,9 @@ def shortest_path_length(
         )
     goal = _validated_goal(goal, start.size, call="shortest_path_length")
 
-    if metric == "euclidean":
+    if paths is None:
         return float(np.linalg.norm(goal - start))
 
-    from neurospatial.behavior._environment_paths import environment_paths
-
-    paths = environment_paths(env, call="shortest_path_length")
     _require_inside(paths, {"start": start, "goal": goal}, call="shortest_path_length")
     return float(paths.to_point(start[None, :], goal)[0])
 
@@ -3225,6 +3227,7 @@ def angular_efficiency(
     """
     from neurospatial._observation import validated_observations
 
+    paths = metric_paths(metric, env, call="angular_efficiency")
     times_arr, positions_arr, support = validated_observations(
         times,
         positions,
@@ -3238,7 +3241,7 @@ def angular_efficiency(
         times_arr, positions_arr, support.sample_valid, support.interval_mask
     )
     return _angular_efficiency(
-        starts, steps, goal, metric=metric, env=env, call="angular_efficiency"
+        starts, steps, goal, paths=paths, call="angular_efficiency"
     )
 
 
@@ -3270,14 +3273,10 @@ def _smoothed_steps(
     -------
     starts, steps : ndarray, shape (n_steps, n_dims)
     """
-    from neurospatial._intervals import gap_endpoints
-
     if smoothed is None:
         smoothed = _time_smoothed_positions(times, positions, interval_mask)
-    first, last, _ = gap_endpoints(sample_valid)
-    counted = interval_mask & sample_valid[1:]
-    first, last = first[counted], last[counted]
-    return smoothed[first], smoothed[last] - smoothed[first]
+    starts, ends = _observed_steps(smoothed, sample_valid, interval_mask)
+    return starts, ends - starts
 
 
 def _time_smoothed_positions(
@@ -3326,24 +3325,31 @@ def _time_smoothed_positions(
         widest = int(max(np.max(index - lo), np.max(hi - 1 - index)))
         # Weighted sums for the local fit p_j - p_i ~ a + b * (t_j - t_i),
         # in differences from each sample so a still animal stays exactly still.
-        s0 = np.zeros(run.size)
+        # Each sample weighs itself by 1; each pair (i, i + k) within reach
+        # adds to both samples, with lag and deviation negated for the later.
+        s0 = np.ones(run.size)
         s1 = np.zeros(run.size)
         s2 = np.zeros(run.size)
         m0 = np.zeros_like(p)
         m1 = np.zeros_like(p)
-        for offset in range(-widest, widest + 1):
-            other = np.clip(index + offset, 0, run.size - 1)
-            lag = t[other] - t
-            inside = (index + offset >= 0) & (index + offset < run.size)
-            weight = np.where(
-                inside & (np.abs(lag) <= reach), np.exp(-0.5 * (lag / sigma) ** 2), 0.0
-            )
-            s0 += weight
-            s1 += weight * lag
-            s2 += weight * lag**2
-            deviation = p[other] - p
-            m0 += weight[:, None] * deviation
-            m1 += (weight * lag)[:, None] * deviation
+        for k in range(1, widest + 1):
+            lag = t[k:] - t[:-k]
+            weight = np.where(lag <= reach, np.exp(-0.5 * (lag / sigma) ** 2), 0.0)
+            weighted_lag = weight * lag
+            weighted_square = weighted_lag * lag
+            deviation = p[k:] - p[:-k]
+            weighted_deviation = weight[:, None] * deviation
+            lagged_deviation = weighted_lag[:, None] * deviation
+            s0[:-k] += weight
+            s0[k:] += weight
+            s1[:-k] += weighted_lag
+            s1[k:] -= weighted_lag
+            s2[:-k] += weighted_square
+            s2[k:] += weighted_square
+            m0[:-k] += weighted_deviation
+            m0[k:] -= weighted_deviation
+            m1[:-k] += lagged_deviation
+            m1[k:] += lagged_deviation
         det = s0 * s2 - s1**2
         # A sample alone in its window (det ~ 0) keeps its own position.
         fitted = det > 1e-12 * s0 * np.maximum(s2, np.finfo(float).tiny)
@@ -3377,10 +3383,9 @@ def _observed_steps(
     -------
     starts, ends : ndarray, shape (n_steps, n_dims)
     """
-    from neurospatial._intervals import gap_endpoints
+    from neurospatial.behavior._kinematics import observed_steps
 
-    first, last, _ = gap_endpoints(sample_valid)
-    counted = interval_mask & sample_valid[1:]
+    first, last, counted = observed_steps(sample_valid, interval_mask)
     return positions[first[counted]], positions[last[counted]]
 
 
@@ -3389,8 +3394,7 @@ def _angular_efficiency(
     step: NDArray[np.float64],
     goal: ArrayLike,
     *,
-    metric: DistanceMetric,
-    env: Environment | None,
+    paths: EnvironmentPaths | None,
     call: str,
 ) -> float:
     """``1 - sum(length * angle) / (pi * sum(length))`` over steps with an angle.
@@ -3400,19 +3404,17 @@ def _angular_efficiency(
     starts, step : ndarray, shape (n_steps, n_dims)
         Step start positions and (smoothed) displacements.
     goal : array-like, shape (n_dims,)
-    metric : {"euclidean", "geodesic"}
-        Shortest path whose first direction is the goal direction.
-    env : Environment or None
-        Required when ``metric="geodesic"``.
+    paths : EnvironmentPaths or None
+        Geodesic engine (``metric_paths``), whose shortest path's first
+        direction is the goal direction, or None for the straight line.
     call : str
         Public function name, used in messages.
     """
-    _require_path_metric(metric, call=call)
     goal_arr = _validated_goal(goal, starts.shape[1], call=call)
-    if metric == "euclidean":
+    if paths is None:
         to_goal = goal_arr[None, :] - starts
     else:
-        paths = _geodesic_paths(env, goal_arr, call=call)
+        _require_inside(paths, {"goal": goal_arr}, call=call)
         to_goal = paths.directions(starts, goal_arr)
     step_norm = np.linalg.norm(step, axis=1)
     goal_norm = np.linalg.norm(to_goal, axis=1)
@@ -3420,10 +3422,11 @@ def _angular_efficiency(
         defined = (step_norm > 0) & (goal_norm > 0)
     if not defined.any():
         return np.nan
-    u = step[defined] / step_norm[defined, None]
-    v = to_goal[defined] / goal_norm[defined, None]
-    angle = 2.0 * np.arctan2(
-        np.linalg.norm(u - v, axis=1), np.linalg.norm(u + v, axis=1)
+    from neurospatial._angles import unit_vector_angles
+
+    angle = unit_vector_angles(
+        step[defined] / step_norm[defined, None],
+        to_goal[defined] / goal_norm[defined, None],
     )
     # Mean angle per unit of distance traveled.
     weight = step_norm[defined]
@@ -3540,7 +3543,7 @@ def subgoal_efficiency(
     from neurospatial._stacklevel import _external_stacklevel
 
     call = "subgoal_efficiency"
-    _require_path_metric(metric, call=call)
+    paths = metric_paths(metric, env, call=call)
     times_arr, positions_arr, support = validated_observations(
         times,
         positions,
@@ -3567,15 +3570,11 @@ def subgoal_efficiency(
     for subgoal in subgoal_arr:
         _validated_goal(subgoal, n_dims, call=call)
 
-    measured = support.sample_valid.copy()
-    if support.epochs is not None:
-        measured &= times_in_intervals(support.epochs, times_arr)
+    measured = support.sample_valid & support.sample_in_epochs
     segment_results = []
     start: int | None = None
     for index, subgoal in enumerate(subgoal_arr):
-        distances = _goal_distances(
-            positions_arr, subgoal, metric=metric, env=env, call=call
-        )
+        distances = _goal_distances(positions_arr, subgoal, paths=paths, call=call)
         rows = np.flatnonzero(measured & ~np.isnan(distances))
         if start is None:
             if not rows.size:
@@ -3615,9 +3614,7 @@ def subgoal_efficiency(
             positions_arr[segment],
             support.sample_valid[segment],
             support.interval_mask[start:arrival],
-            metric=metric,
-            env=env,
-            call=call,
+            paths=paths,
         )
         segment_results.append(
             PathEfficiencyResult(
@@ -3633,8 +3630,7 @@ def subgoal_efficiency(
                         smoothed=smoothed[segment],
                     ),
                     subgoal,
-                    metric=metric,
-                    env=env,
+                    paths=paths,
                     call=call,
                 ),
                 start_position=positions_arr[start],
@@ -3785,7 +3781,7 @@ def compute_path_efficiency(
     """
     from neurospatial._observation import validated_observations
 
-    _require_path_metric(metric, call="compute_path_efficiency")
+    paths = metric_paths(metric, env, call="compute_path_efficiency")
     times_arr, positions_arr, support = validated_observations(
         times,
         positions,
@@ -3803,17 +3799,14 @@ def compute_path_efficiency(
         positions_arr,
         support.sample_valid,
         support.interval_mask,
-        metric=metric,
-        env=env,
-        call="compute_path_efficiency",
+        paths=paths,
     )
     ang_eff = _angular_efficiency(
         *_smoothed_steps(
             times_arr, positions_arr, support.sample_valid, support.interval_mask
         ),
         goal,
-        metric=metric,
-        env=env,
+        paths=paths,
         call="compute_path_efficiency",
     )
     # Missing rows before the first or after the last observed sample are
@@ -4054,8 +4047,9 @@ def instantaneous_goal_alignment(
     ValueError
         If the inputs are empty, have different lengths, ``times`` is not
         finite and strictly increasing, ``positions`` has no x and y columns,
-        ``break_before`` is not a Boolean array with one entry per sample, or
-        ``goal`` has a different number of dimensions than ``positions``.
+        ``break_before`` is not a Boolean array with one entry per sample,
+        ``min_speed`` is not finite and non-negative, or ``goal`` has a
+        different number of dimensions than ``positions``.
 
     Notes
     -----
@@ -4084,19 +4078,19 @@ def instantaneous_goal_alignment(
     (True, True)
     """
     from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
+    from neurospatial.behavior._kinematics import validated_min_speed
 
-    raw = positions
     times, positions, support = validated_observations(
         times,
-        raw,
+        positions,
         call="instantaneous_goal_alignment",
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
         result="every alignment is NaN",
+        columns="xy",
     )
-    _validate_velocity_positions(raw, call="instantaneous_goal_alignment")
+    min_speed = validated_min_speed(min_speed, call="instantaneous_goal_alignment")
     return _goal_alignment(
         times,
         positions,
@@ -4147,15 +4141,19 @@ def _goal_alignment(
     # Checks the goal's dimensions before the velocity is computed.
     vec = _goal_vector(positions, goal, call=call)
     goal_heading = np.arctan2(vec[:, 1], vec[:, 0])
-    heading, speed = _movement_heading_and_speed(
-        times, positions, support.interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
+    # NaN where the animal is not moving: no direction of movement.
+    heading, _ = _movement_heading_and_speed(
+        times,
+        positions,
+        support.interval_mask,
+        smooth_window=DEFAULT_SPEED_SMOOTHING,
+        min_speed=min_speed,
     )
-    moving = (speed > 0) & (speed >= min_speed)
     # At the goal itself there is no direction to the goal (arctan2(0, 0)
     # would read as East and score an arrival from the East as -1).
     away_from_goal = np.any(vec != 0, axis=1)
     alignment: NDArray[np.float64] = np.where(
-        moving & away_from_goal, np.cos(heading - goal_heading), np.nan
+        away_from_goal, np.cos(heading - goal_heading), np.nan
     )
     return alignment
 
@@ -4214,8 +4212,9 @@ def goal_bias(
     ValueError
         If the inputs are empty, have different lengths, ``times`` is not
         finite and strictly increasing, ``positions`` has no x and y columns,
-        ``break_before`` is not a Boolean array with one entry per sample, or
-        ``goal`` has a different number of dimensions than ``positions``.
+        ``break_before`` is not a Boolean array with one entry per sample,
+        ``min_speed`` is not finite and non-negative, or ``goal`` has a
+        different number of dimensions than ``positions``.
 
     Notes
     -----
@@ -4244,19 +4243,19 @@ def goal_bias(
     nan
     """
     from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
+    from neurospatial.behavior._kinematics import validated_min_speed
 
-    raw = positions
     times, positions, support = validated_observations(
         times,
-        raw,
+        positions,
         call="goal_bias",
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
         result="the goal bias is NaN",
+        columns="xy",
     )
-    _validate_velocity_positions(raw, call="goal_bias")
+    min_speed = validated_min_speed(min_speed, call="goal_bias")
     alignment = _goal_alignment(
         times, positions, goal, support, min_speed=min_speed, call="goal_bias"
     )
@@ -4376,6 +4375,7 @@ def approach_rate(
     """
     from neurospatial._observation import validated_observations
 
+    paths = metric_paths(metric, env, call="approach_rate")
     times, positions, support = validated_observations(
         times,
         positions,
@@ -4385,55 +4385,7 @@ def approach_rate(
         break_before=break_before,
         result="every approach rate is NaN",
     )
-    return _approach_rate(
-        times,
-        positions,
-        goal,
-        support,
-        metric=metric,
-        env=env,
-        call="approach_rate",
-    )
-
-
-def _approach_rate(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    goal: NDArray[np.float64],
-    support: ObservationSupport,
-    *,
-    metric: DistanceMetric,
-    env: Environment | None,
-    call: str,
-) -> NDArray[np.float64]:
-    """Rate of distance change toward the goal over each usable interval.
-
-    No observation validation or warning: ``support`` is already resolved.
-
-    Parameters
-    ----------
-    times : ndarray, shape (n_samples,)
-        Validated, strictly increasing timestamps in seconds.
-    positions : ndarray, shape (n_samples, n_dims)
-        Validated positions; NaN rows are missing.
-    goal : ndarray, shape (n_dims,)
-        Goal position.
-    support : ObservationSupport
-        Usable intervals of ``(times, positions)``.
-    metric : {"euclidean", "geodesic"}
-        Distance metric; geodesic needs ``env``.
-    env : Environment or None
-        Required when ``metric="geodesic"``.
-    call : str
-        Public function name, used in messages.
-
-    Returns
-    -------
-    ndarray, shape (n_samples,)
-        Distance change per second over the interval ending at each sample;
-        NaN at the first sample and where that interval is not usable.
-    """
-    distances = _goal_distances(positions, goal, metric=metric, env=env, call=call)
+    distances = _goal_distances(positions, goal, paths=paths, call="approach_rate")
     return _distance_rates(times, distances, support)
 
 
@@ -4464,23 +4416,20 @@ def _goal_distances(
     positions: NDArray[np.float64],
     goal: ArrayLike,
     *,
-    metric: str,
-    env: Environment | None,
+    paths: EnvironmentPaths | None,
     call: str,
 ) -> NDArray[np.float64]:
-    """Distance from each position to the goal under ``metric``.
+    """Distance from each position to the goal.
 
     Parameters
     ----------
     positions : ndarray, shape (n_samples, n_dims)
         NaN rows are missing.
     goal : array-like, shape (n_dims,)
-    metric : {"euclidean", "geodesic"}
-        ``"geodesic"`` is the length of the shortest path inside the
-        environment from the position itself (not its bin center), as in
-        :func:`shortest_path_length`.
-    env : Environment or None
-        Required when ``metric="geodesic"``.
+    paths : EnvironmentPaths or None
+        Geodesic engine (``metric_paths``), measuring the shortest path inside
+        the environment from the position itself (not its bin center), as in
+        :func:`shortest_path_length`; None for the straight line.
     call : str
         Public function name, used in messages.
 
@@ -4494,48 +4443,15 @@ def _goal_distances(
     Raises
     ------
     ValueError
-        If ``metric`` is not recognized, ``goal`` has the wrong shape or a
-        non-finite coordinate, or (geodesic) ``env`` is None or the goal is
-        outside the environment.
-    CartesianOnlyError
-        For ``metric="geodesic"`` on an egocentric polar environment.
+        If ``goal`` has the wrong shape or a non-finite coordinate, or
+        (geodesic) the goal is outside the environment.
     """
-    _require_path_metric(metric, call=call)
     goal_arr = _validated_goal(goal, positions.shape[1], call=call)
-    if metric == "euclidean":
+    if paths is None:
         distances: NDArray[np.float64] = np.linalg.norm(goal_arr - positions, axis=1)
         return distances
-    return _geodesic_paths(env, goal_arr, call=call).to_point(positions, goal_arr)
-
-
-def _geodesic_paths(
-    env: Environment | None, goal: NDArray[np.float64], *, call: str
-) -> EnvironmentPaths:
-    """The environment's shortest-path engine, with ``goal`` checked inside.
-
-    Raises
-    ------
-    ValueError
-        If ``env`` is None or ``goal`` is outside the environment.
-    CartesianOnlyError
-        If ``env`` is an egocentric polar environment.
-    """
-    if env is None:
-        raise ValueError(
-            _format_error(
-                f"{call}(metric='geodesic') needs env=.",
-                why="the geodesic distance is a path inside the environment.",
-                fix=(
-                    "pass the Environment the positions were recorded in, or use "
-                    "metric='euclidean' for straight-line distances."
-                ),
-            )
-        )
-    from neurospatial.behavior._environment_paths import environment_paths
-
-    paths = environment_paths(env, call=call)
-    _require_inside(paths, {"goal": goal}, call=call)
-    return paths
+    _require_inside(paths, {"goal": goal_arr}, call=call)
+    return paths.to_point(positions, goal_arr)
 
 
 def compute_goal_directed_metrics(
@@ -4624,7 +4540,8 @@ def compute_goal_directed_metrics(
         ``metric`` is not recognized, ``goal_radius`` is negative or not
         finite, or (geodesic) the goal is outside the environment.
     ValueError
-        If ``min_speed`` is None and ``env.units`` is not a metric length.
+        If ``min_speed`` is not finite and non-negative, or is None and
+        ``env.units`` is not a metric length.
 
     Notes
     -----
@@ -4660,27 +4577,22 @@ def compute_goal_directed_metrics(
     0.0
     """
     from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import (
-        _validate_velocity_positions,
-        resolve_min_speed,
-    )
+    from neurospatial.behavior._kinematics import resolve_min_speed
 
-    raw = positions
     times, positions, support = validated_observations(
         times,
-        raw,
+        positions,
         call="compute_goal_directed_metrics",
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
         result="the goal-directed metrics are NaN",
+        columns="xy",
     )
     call = "compute_goal_directed_metrics"
+    paths = metric_paths(metric, env, call=call)
     goal = _validated_goal(goal, positions.shape[1], call=call)
-    min_speed = resolve_min_speed(
-        env, min_speed, call="compute_goal_directed_metrics()"
-    )
-    _validate_velocity_positions(raw, call=call)
+    min_speed = resolve_min_speed(env, min_speed, call=call)
     if goal_radius is not None and not (np.isfinite(goal_radius) and goal_radius >= 0):
         raise ValueError(
             _format_error(
@@ -4700,15 +4612,13 @@ def compute_goal_directed_metrics(
         _goal_alignment(times, positions, goal, support, min_speed=min_speed, call=call)
     )
 
-    distances = _goal_distances(positions, goal, metric=metric, env=env, call=call)
+    distances = _goal_distances(positions, goal, paths=paths, call=call)
     rates = _distance_rates(times, distances, support)
     mean_rate = float(np.nanmean(rates)) if np.any(~np.isnan(rates)) else np.nan
 
     # Samples measured for the distance summaries: observed (and, with the
     # geodesic metric, inside the environment) and inside ``epochs``.
-    measured = support.sample_valid & ~np.isnan(distances)
-    if support.epochs is not None:
-        measured &= times_in_intervals(support.epochs, times)
+    measured = support.sample_valid & support.sample_in_epochs & ~np.isnan(distances)
     rows = np.flatnonzero(measured)
     if rows.size:
         min_dist = float(np.min(distances[rows]))

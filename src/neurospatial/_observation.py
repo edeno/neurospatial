@@ -2,7 +2,8 @@
 
 Shared validation of times, positions and signals, and resolution of observed
 samples, intervals and runs, used by the behavior, event, animation and
-encoding analyses. A sample is valid when
+encoding analyses, and sampling of one feature at arbitrary times within that
+support. A sample is valid when
 every coordinate is finite. A missing sample is treated exactly like a deleted
 row: interval ``k`` (samples ``k`` and ``k + 1``) belongs to the gap between
 the last valid sample at or before ``k`` and the first valid sample after it,
@@ -17,20 +18,22 @@ from __future__ import annotations
 import warnings
 from collections.abc import Hashable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     as_intervals,
     gap_endpoints,
     interval_valid_mask,
-    observed_interval_mask,
     ragged_arange,
     run_sample_bounds,
+    times_in_intervals,
     validate_max_gap,
+    warn_excluded_intervals,
 )
 from neurospatial._results import ReadOnlyArraysMixin, plain_value, read_only_copy
 from neurospatial._stacklevel import _external_stacklevel
@@ -67,6 +70,11 @@ class ObservationSupport(ReadOnlyArraysMixin):
         are valid samples, and missing samples between them are bridged.
     run_time_bounds : ndarray of float64, shape (n_runs, 2)
         ``times`` at those indices, in seconds.
+    sample_in_epochs : ndarray of bool, shape (n_samples,)
+        True where the sample's instant lies inside one of ``epochs``, each
+        tested as ``[t, t + ulp)`` so a sample at an epoch's stop is outside;
+        all True without epochs. A run can end at a sample outside, since
+        the interval ending at an epoch's stop lies inside the epoch.
     max_gap : float or None
         The gap gate the support was resolved with.
     epochs : ndarray of float64, shape (n_epochs, 2), or None
@@ -81,6 +89,7 @@ class ObservationSupport(ReadOnlyArraysMixin):
     run_ids: NDArray[np.intp]
     run_sample_bounds: NDArray[np.intp]
     run_time_bounds: NDArray[np.float64]
+    sample_in_epochs: NDArray[np.bool_]
     max_gap: float | None
     epochs: NDArray[np.float64] | None
     break_before: NDArray[np.bool_] | None
@@ -226,6 +235,11 @@ def _support_from_gates(
         run_ids=run_ids,
         run_sample_bounds=bounds,
         run_time_bounds=times[bounds],
+        sample_in_epochs=(
+            np.ones(n_samples, dtype=bool)
+            if epochs is None
+            else times_in_intervals(epochs, times)
+        ),
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
@@ -239,7 +253,7 @@ def resolve_observation_support(
     max_gap: float | None,
     epochs: Any,
     break_before: NDArray[np.bool_] | None,
-    result: str,
+    result: str | None,
 ) -> ObservationSupport:
     """Resolve usable intervals and runs from validated inputs.
 
@@ -253,8 +267,9 @@ def resolve_observation_support(
         The shared interval gates (``observed_interval_mask``).
     break_before : ndarray of bool, shape (n_samples,) or None
         Declared recording breaks; entry 0 is ignored.
-    result : str
-        What an all-excluded selection leaves, for the shared warning.
+    result : str or None
+        What an all-excluded selection leaves, for the shared warning;
+        None when the caller reports excluded data itself.
     """
     sample_valid: NDArray[np.bool_] = np.asarray(np.isfinite(positions).all(axis=1))
     return resolve_sample_support(
@@ -274,7 +289,7 @@ def resolve_sample_support(
     max_gap: float | None,
     epochs: Any,
     break_before: NDArray[np.bool_] | None,
-    result: str,
+    result: str | None,
 ) -> ObservationSupport:
     """Resolve usable intervals and runs from a per-sample validity vector.
 
@@ -288,8 +303,9 @@ def resolve_sample_support(
         The shared interval gates (``observed_interval_mask``).
     break_before : ndarray of bool, shape (n_samples,) or None
         Declared recording breaks; entry 0 is ignored.
-    result : str
-        What an all-excluded selection leaves, for the shared warning.
+    result : str or None
+        What an all-excluded selection leaves, for the shared warning;
+        None when the caller reports excluded data itself.
 
     Examples
     --------
@@ -311,17 +327,126 @@ def resolve_sample_support(
     [ True  True  True  True]
     [ True False False  True]
     """
-    raw_gates = observed_interval_mask(
-        times, max_gap=max_gap, epochs=epochs, break_before=break_before, result=result
+    resolved_epochs = as_intervals(epochs, name="epochs")
+    raw_gates = interval_valid_mask(
+        times, max_gap=max_gap, epochs=resolved_epochs, break_before=break_before
     )
-    return _support_from_gates(
+    support = _support_from_gates(
         times,
         sample_valid,
         raw_gates,
         max_gap=max_gap,
-        epochs=as_intervals(epochs, name="epochs"),
+        epochs=resolved_epochs,
         break_before=break_before,
     )
+    if result is not None:
+        # Warn on the usable intervals, after missing samples are bridged: a
+        # gap across missing samples can exceed max_gap although every
+        # sampling interval passes it.
+        warn_excluded_intervals(
+            times,
+            support.interval_mask,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            break_before=break_before,
+            sample_valid=sample_valid,
+            result=result,
+        )
+    return support
+
+
+def sample_feature(
+    times: NDArray[np.float64],
+    values: NDArray[np.float64],
+    support: ObservationSupport,
+    queries: NDArray[np.float64],
+    *,
+    interpolation: str,
+    kind: str,
+    epochs: NDArray[np.float64] | None,
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Sample one feature at arbitrary times, only where it was observed.
+
+    A query exactly at a sample time is a point observation: it is supported
+    when that sample is valid and, if ``epochs`` is given, the instant lies in
+    one half-open epoch row. Any other query is supported only inside a usable
+    interval of ``support`` and is interpolated between the valid samples
+    that bound its gap, so missing samples are skipped as if deleted, while a
+    value is never interpolated across a gap longer than ``max_gap``, a
+    declared break or an epoch edge, and never extrapolated before the first
+    or after the last sample.
+
+    Parameters
+    ----------
+    times : ndarray of float64, shape (n_samples,)
+        Sample times in seconds, strictly increasing.
+    values : ndarray of float64, shape (n_samples,)
+        One feature's values on ``times``.
+    support : ObservationSupport
+        This feature's resolved support on ``times``.
+    queries : ndarray of float64, any shape
+        Absolute query times in seconds.
+    interpolation : {"linear", "circular", "previous"}
+        ``"linear"``: straight line between the bracketing samples.
+        ``"circular"``: shorter arc in radians; an exact half-turn goes the
+        positive way. ``"previous"``: the value of the preceding sample.
+    kind : {"linear", "circular", "categorical"}
+        The feature's value kind. Every sampled value of a circular feature is
+        wrapped to ``(-pi, pi]``, whatever the interpolation.
+    epochs : ndarray of float64, shape (n_epochs, 2), or None
+        Sorted, merged ``[start, stop)`` rows (from ``as_intervals``), the same
+        epochs used to resolve ``support``. They gate exact-time queries,
+        which use no interval.
+
+    Returns
+    -------
+    sampled : ndarray of float64, same shape as ``queries``
+        Sampled values; NaN where unsupported.
+    supported : ndarray of bool, same shape as ``queries``
+        True where the value is an observation or lies inside a usable
+        interval.
+    """
+    q = np.asarray(queries, dtype=np.float64)
+    n_samples = times.size
+    k = np.searchsorted(times, q, side="right") - 1
+    k_safe = np.clip(k, 0, n_samples - 1)
+    # A query at a missing sample's time is not an observation of it; like a
+    # query at a deleted row, it is sampled from the gap's bounding samples.
+    exact = (k >= 0) & (times[k_safe] == q) & support.sample_valid[k_safe]
+
+    at_sample = exact.copy()
+    if epochs is not None:
+        row = np.searchsorted(epochs[:, 0], q, side="right") - 1
+        at_sample &= (row >= 0) & (q < epochs[np.maximum(row, 0), 1])
+
+    between = ~exact & (k >= 0) & (k < n_samples - 1)
+    if n_samples > 1:
+        between &= support.interval_mask[np.clip(k, 0, n_samples - 2)]
+
+    sampled = np.full(q.shape, np.nan)
+    sampled[at_sample] = values[k[at_sample]]
+
+    # Interpolate between the valid samples that bound the (bridged) gap, as
+    # if missing samples had been deleted.
+    start, end, _ = gap_endpoints(support.sample_valid)
+    left, right = start[k[between]], end[k[between]]
+    x0 = values[left]
+    if interpolation == "previous":
+        sampled[between] = x0
+    else:
+        weight = (q[between] - times[left]) / (times[right] - times[left])
+        step = values[right] - x0
+        if interpolation == "circular":
+            sampled[between] = x0 + weight * wrap_angle(step)
+        elif interpolation == "linear":
+            sampled[between] = x0 + weight * step
+        else:
+            raise ValueError(f"unknown interpolation {interpolation!r}")
+
+    supported: NDArray[np.bool_] = at_sample | between
+    if kind == "circular":
+        sampled[supported] = wrap_angle(sampled[supported])
+    return sampled, supported
 
 
 def label_codes(
@@ -436,6 +561,7 @@ def validated_observations(
     epochs: Any,
     break_before: Any,
     result: str,
+    columns: Literal["xy", "xy_only"] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], ObservationSupport]:
     """Validate a ``(times, positions)`` pair and resolve its observation support.
 
@@ -451,6 +577,11 @@ def validated_observations(
         The shared interval gates (``observed_interval_mask``).
     result : str
         What an all-excluded selection leaves, for the shared warning.
+    columns : {"xy", "xy_only"} or None, default=None
+        Columns a planar analysis needs, checked on the shape as passed
+        (before 1-D input is reshaped): ``"xy"`` needs at least x and y
+        columns (a movement direction in the x-y plane), ``"xy_only"``
+        exactly those two (a signed turn). None accepts any number.
 
     Returns
     -------
@@ -463,14 +594,16 @@ def validated_observations(
     ------
     ValueError
         If the inputs are malformed or empty (zero samples), if ``times``
-        are not strictly increasing, or if ``max_gap`` or ``break_before``
-        is invalid. One sample is valid input: it has a position but no
-        observed interval.
+        are not strictly increasing, if ``max_gap`` or ``break_before`` is
+        invalid, or if ``positions`` lacks the ``columns``. One sample is
+        valid input: it has a position but no observed interval.
     """
     t, p = validate_times_positions(times, positions, call=call)
     if t.size == 0:
         raise empty_samples_error(call, ("times", "positions"))
     validate_strictly_increasing(t, call=call)
+    if columns is not None:
+        _require_xy_columns(p.shape, exact=columns == "xy_only", call=call)
     if p.ndim == 1:
         p = p[:, None]
     validate_max_gap(max_gap)
@@ -479,6 +612,41 @@ def validated_observations(
         t, p, max_gap=max_gap, epochs=epochs, break_before=breaks, result=result
     )
     return t, p, support
+
+
+def _require_xy_columns(shape: tuple[int, ...], *, exact: bool, call: str) -> None:
+    """Refuse positions without x and y columns (or with more, when ``exact``).
+
+    Parameters
+    ----------
+    shape : tuple of int
+        Shape of the positions as the scientist passed them.
+    exact : bool
+        Require exactly the two columns x and y.
+    call : str
+        Public function name, used in the message.
+    """
+    if len(shape) == 2 and (shape[1] == 2 if exact else shape[1] >= 2):
+        return
+    needs = "exactly two columns (x, y)" if exact else "x and y columns"
+    why = (
+        "a movement heading is the direction of travel in the x-y plane, so it "
+        "needs both x and y; 1-D positions (such as a linearized track) have "
+        "only one coordinate"
+    )
+    if exact:
+        why += ", and in 3-D a turn has no sign without a reference axis"
+    raise ValueError(
+        _format_error(
+            f"{call}() needs positions with {needs}; got shape {shape}.",
+            why=f"{why}.",
+            fix=(
+                "pass positions with shape (n_samples, 2), for example "
+                "np.column_stack([x, y]) or positions[:, :2] for the horizontal "
+                "plane, with one timestamp per row."
+            ),
+        )
+    )
 
 
 def empty_samples_error(call: str, names: tuple[str, ...]) -> ValueError:
@@ -677,10 +845,10 @@ def validated_signals(
     sample_valid = np.isfinite(sig)
     if flags is not None:
         sample_valid = sample_valid & flags
-    raw_gates = observed_interval_mask(
-        t, max_gap=max_gap, epochs=epochs, break_before=breaks, result=result
-    )
     resolved_epochs = as_intervals(epochs, name="epochs")
+    raw_gates = interval_valid_mask(
+        t, max_gap=max_gap, epochs=resolved_epochs, break_before=breaks
+    )
     supports = tuple(
         _support_from_gates(
             t,
@@ -691,5 +859,16 @@ def validated_signals(
             break_before=breaks,
         )
         for f in range(sig.shape[1])
+    )
+    # One warning for the table, when no feature keeps a usable interval.
+    usable = np.any([support.interval_mask for support in supports], axis=0)
+    warn_excluded_intervals(
+        t,
+        usable,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        break_before=breaks,
+        sample_valid=np.asarray(sample_valid.any(axis=1)),
+        result=result,
     )
     return t, sig, supports

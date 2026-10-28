@@ -177,8 +177,8 @@ import numpy as np
 
 from neurospatial.behavior import (
     compute_planar_curvature,
+    compute_planar_turn_angles,
     compute_speed,
-    compute_trajectory_curvature,
     resample_by_distance,
 )
 
@@ -247,21 +247,21 @@ for name, (times, positions, recording_id) in sessions.items():
     curvature = compute_planar_curvature(
         path.times, path.positions, max_gap=None, break_before=path.break_before
     )
-    turn_per_frame = compute_trajectory_curvature(
-        times, positions, break_before=new_recording
+    turn_per_frame = compute_planar_turn_angles(
+        times, positions, smooth_window=0.2, break_before=new_recording
     )
     print(f"{name}:")
     print(f"  median speed at the samples: {np.median(speed_at_samples):.1f} cm/s")
     for label, statistic in [("median", np.nanmedian), ("mean", np.nanmean)]:
         value = statistic(curvature)
         print(f"  {label} curvature: {value:.4f} /cm (radius {1 / value:.2f} cm)")
-    legacy_turn = np.nanmedian(turn_per_frame)
-    print(f"  legacy median turn per frame: {legacy_turn:.4f} rad")
+    median_turn = np.nanmedian(turn_per_frame)
+    print(f"  median turn per frame: {median_turn:.4f} rad")
     stats[name] = (
         np.median(speed_at_samples),
         np.nanmean(curvature),
         np.nanmedian(curvature),
-        legacy_turn,
+        median_turn,
     )
 
 # The numbers the text below quotes (atol = 0.6 * 10**-decimals)
@@ -306,14 +306,17 @@ pieces are longer, so this scatter is larger and the median lands on a
 slightly larger radius. The mean averages the scatter out and recovers the
 track.
 
-The legacy `compute_trajectory_curvature` instead returns the turn per frame
-in radians (despite its name, it is not a curvature). It takes the same
-`break_before`, and the tracking loss splits the path, so no turn is
-computed or smoothed across the join or the lost frames. The turn per frame still depends
-on the frame rate and the running speed: 0.0183 rad at 30 Hz and 0.0098 rad at
-120 Hz, the speed divided by the radius and by the frame rate. It differs
-between the sessions although the route is the same, so do not compare it
-across frame rates or speeds.
+`compute_planar_turn_angles` instead returns the turn per frame, in radians:
+how much the movement direction changes from one frame to the next. Here it
+runs on the original frames, with `smooth_window=0.2` averaging the turns over
+0.2 s (on this noise-free track smoothing changes nothing). It takes the same
+`break_before`, and the tracking loss splits the path, so no turn is computed
+or smoothed across the join or the lost frames. The turn per frame depends on
+the frame rate and the running speed: 0.0183 rad at 30 Hz and 0.0098 rad at
+120 Hz, the speed divided by the radius and by the frame rate
+(22 / 40 / 30 and 47 / 40 / 120). It differs between the sessions although the
+route is the same, so do not compare it across frame rates or speeds; compare
+curvature instead.
 
 The resampled path is passed on with `max_gap=None` and
 `break_before=path.break_before`. Resampled samples are not evenly spaced in
@@ -348,44 +351,92 @@ limit would break the path where the animal was merely slow; the run starts in
 
 ### Turn Angles
 
-Turn angles quantify changes in movement direction at each position along the trajectory.
+A turn angle is the change in movement direction at one frame: the angle from
+the step that arrived at the frame to the step that leaves it. It is 0 when
+the animal runs straight, positive for a left (counterclockwise) turn and
+negative for a right turn, seen from above. The example simulates a rat running
+East at 20 cm/s, making a 90° left turn over 1 s, then running North, tracked
+at 30 Hz with 0.1 cm of camera jitter and one dropped frame.
 
+<!-- docs-test: run -->
 ```python
-from neurospatial.behavior.trajectory import compute_turn_angles
 import numpy as np
 
-# Compute turn angles from continuous positions
-# positions: (n_samples, 2) array of x,y coordinates
-turn_angles = compute_turn_angles(positions)
+from neurospatial.behavior import compute_planar_turn_angles
 
-# Analyze turning behavior
-mean_turn = np.abs(np.mean(turn_angles))  # Average turning magnitude
-turn_variance = np.var(turn_angles)  # Variability in turning
+rng = np.random.default_rng(0)
+frame_rate = 30.0  # Hz
+times = np.arange(0, 6, 1 / frame_rate)  # seconds
+# Heading (radians): East for 2 s, a 90 degree left turn over 1 s, then North
+heading = np.interp(times, [0.0, 2.0, 3.0, 6.0], [0.0, 0.0, np.pi / 2, np.pi / 2])
+running_speed = 20.0  # cm/s
+steps = running_speed / frame_rate * np.column_stack([np.cos(heading), np.sin(heading)])
+positions = np.cumsum(steps, axis=0)  # cm
+positions += rng.normal(0.0, 0.1, positions.shape)  # 0.1 cm tracking jitter
+positions[100] = np.nan  # one dropped frame, at 3.33 s
 
-print(f"Mean turn angle: {np.degrees(mean_turn):.1f}°")
-print(f"Turn variance: {turn_variance:.3f}")
+raw = compute_planar_turn_angles(times, positions)
+smoothed = compute_planar_turn_angles(times, positions, smooth_window=0.2)
+
+straight = times < 1.5
+turning = (times >= 2.2) & (times < 2.8)
+summary = {}
+for name, turns in [("raw", raw), ("smoothed", smoothed)]:
+    spread = np.degrees(np.nanstd(turns[straight]))
+    mean_turn = np.degrees(np.nanmean(turns[turning]))
+    print(f"{name}: straight run SD {spread:.1f} deg/frame, turn {mean_turn:.2f} deg/frame")
+    summary[name] = (spread, mean_turn)
+no_turn = np.flatnonzero(np.isnan(smoothed))
+print(f"Frames without a turn: {no_turn.tolist()}")
+
+# The numbers the text below quotes
+assert np.allclose(summary["raw"], [20.3, 2.53], atol=[0.06, 0.006])
+assert np.allclose(summary["smoothed"], [0.1, 2.80], atol=[0.06, 0.006])
+assert no_turn.tolist() == [0, 100, 179]
 ```
 
-**Key Points**:
-- **Uses continuous positions** for sub-bin precision (ecology standard)
-- Returns angles in radians `[-π, π]`
-- Positive = left turns, Negative = right turns, 0 = straight
-- Meaningful for 2-D (x, y) positions only. With more columns the cross
-  product uses x and y but the dot product uses every column, so the angle is
-  neither the horizontal-plane nor the 3-D angle; pass `positions[:, :2]`
-- Stationary periods (consecutive duplicate positions) are filtered out, so the
-  output is shorter than `positions` and not aligned with your frames. It does
-  not use times, so it bridges time gaps and recording breaks. For one angle per
-  frame that is `NaN` at a missing frame and next to a long tracking loss or a break, use
-  `compute_planar_turn_angles(times, positions)`
-- Uses vectorized NumPy operations for efficiency
+**Reading the numbers.** The true turn is 90° over 30 frames, 3.0° per frame,
+in the middle of the turn and 0 on the straight run. Each step is only
+0.67 cm (20 cm/s at 30 Hz), so 0.1 cm of jitter tilts its direction by about
+12°: on the straight run the raw turns scatter with a standard deviation of
+20.3° per frame, and in the middle of the turn they average 2.53° per frame.
+With `smooth_window=0.2` each turn becomes a Gaussian-weighted mean of the
+nearby turns, with a standard deviation of 0.2 s (6 frames at 30 Hz). Jitter
+pushes a frame's turn one way and the next frame's the other way, so the
+average cancels it: the straight run now scatters by 0.1° per frame, and the
+middle of the turn reads 2.80° per frame. That is slightly below 3.0° because smoothing spreads the
+start and end of the turn over about 0.2 s, so the turn looks a little wider
+and lower. Choose the window shorter than the turns you want to resolve:
+0.2 s suits 30-60 Hz video; use 0.05-0.1 s at 120 Hz or more, or for fast
+animals. `smooth_window=0` (the default) returns the raw turns.
+
+**Missing frames and ends.** The first and last frames have no turn (no step
+before or after them), and the dropped frame 100 has none either: they are
+`NaN`. The turns at frames 99 and 101 use the steps to and from the frames
+around the gap, as if frame 100 had been deleted. A turn is `NaN` where the
+animal did not move (a zero step has no direction), and smoothing never gives
+a `NaN` frame a value or counts it as a zero turn. No turn is computed or
+smoothed across a tracking loss longer than `max_gap` (1.0 s), an `epochs`
+edge or a `break_before` break.
+
+**Things to know.**
+
+- The turn per frame depends on the frame rate and the running speed: the same
+  path tracked four times faster gives turns four times smaller. For path shape
+  that does not depend on them, use `compute_planar_curvature` (in 1/cm); for
+  turning speed in rad/s use `compute_movement_angular_velocity`.
+- Turns are measured in the horizontal (x, y) plane; pass `positions[:, :2]`
+  for 3-D tracking.
+- The output has one value per frame, aligned with `times`, so you can index it
+  with the same masks as speed or spikes.
+- Averaging turns as numbers suits small per-frame turns. Near a reversal
+  (a turn of about ±180°) smoothed values are small, because +180° and -180°
+  average to 0.
 
 **Applications**:
-- **Path straightness**: Low turn variance indicates directed movement
-- **Circling behavior**: Consistent positive or negative angles
-- **Random search**: High turn variance, zero mean
-
-**Reference**: Traja package (behavioral trajectory analysis)
+- **Path straightness**: turns that stay near 0 indicate directed movement
+- **Circling behavior**: turns that stay positive (or negative)
+- **Random search**: turns that scatter widely around 0
 
 ---
 
@@ -1316,12 +1367,15 @@ for lap in laps:
     mask = (times >= lap.start_time) & (times <= lap.end_time)
     lap_positions = positions[mask]  # Use continuous positions
 
-    turn_angles = compute_turn_angles(lap_positions)
+    # Radians per frame, NaN at the lap's first and last frames
+    turn_angles = compute_planar_turn_angles(
+        times[mask], lap_positions, smooth_window=0.2
+    )
     step_lengths = compute_step_lengths(lap_positions, metric="euclidean")
 
     lap_metrics.append({
         "duration": lap.end_time - lap.start_time,
-        "mean_turn": np.abs(np.mean(turn_angles)),
+        "mean_turn": np.abs(np.nanmean(turn_angles)),
         "mean_step": np.mean(step_lengths),
         "path_length": np.sum(step_lengths),
         "overlap": lap.overlap_score,

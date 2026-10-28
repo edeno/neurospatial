@@ -95,9 +95,8 @@ def test_reentries_preserved_and_last_source_entry_is_paired(region_env):
     assert (transition.start_index, transition.end_index) == (3, 5)
 
 
-@pytest.mark.parametrize("invalid_bin", [-1, -10, 6, 999])
-def test_invalid_bins_are_bridged_like_deleted_rows(region_env, invalid_bin):
-    bins = np.array([1, 0, invalid_bin, 0, 1, 3])
+def test_invalid_bins_are_bridged_like_deleted_rows(region_env):
+    bins = np.array([1, 0, -1, 0, 1, 3])
     times = np.arange(6) / 10
     visits = detect_region_visits(bins, times, region_env, region_names=["A", "B"])
     kept = [0, 1, 3, 4, 5]
@@ -112,12 +111,11 @@ def test_invalid_bins_are_bridged_like_deleted_rows(region_env, invalid_bin):
     assert visits[0].entry_observed and visits[0].exit_observed
 
 
-@pytest.mark.parametrize("invalid_bin", [-1, -10, 6, 999])
 def test_invalid_bins_beyond_max_gap_censor_instead_of_fabricating_crossings(
-    region_env, invalid_bin
+    region_env,
 ):
     visits = detect_region_visits(
-        np.array([1, 0, invalid_bin, 0, 1, 3]),
+        np.array([1, 0, -1, 0, 1, 3]),
         np.arange(6) / 10,
         region_env,
         region_names=["A", "B"],
@@ -128,6 +126,30 @@ def test_invalid_bins_beyond_max_gap_censor_instead_of_fabricating_crossings(
     assert not visits[1].entry_observed and visits[1].start_index == 3
     assert visits[2].entry_observed
     assert region_transitions(visits) == []
+
+
+@pytest.mark.parametrize("bad_bin", [-10, 6, 999])
+def test_bins_outside_the_environment_range_raise(region_env, bad_bin):
+    """Only -1 marks a missing sample; other indices name no bin."""
+    from neurospatial._exceptions import BinIndexOutOfRangeError
+
+    with pytest.raises(BinIndexOutOfRangeError, match=f"Bin index {bad_bin} "):
+        detect_region_visits(
+            np.array([1, 0, bad_bin, 0, 1, 3]),
+            np.arange(6) / 10,
+            region_env,
+            region_names=["A", "B"],
+        )
+
+
+def test_float_bins_raise(region_env):
+    with pytest.raises(TypeError, match="position_bins= takes integer bin indices"):
+        detect_region_visits(
+            np.array([1.0, 0.9, 0.0]),
+            np.arange(3) / 10,
+            region_env,
+            region_names=["A", "B"],
+        )
 
 
 def test_time_gap_breaks_pairing_and_max_gap_equality_passes(region_env):
@@ -260,7 +282,7 @@ def test_invalid_clock_rejected(region_env, times):
     ],
 )
 def test_bins_and_times_must_be_aligned_1d(region_env, bins, times):
-    with pytest.raises(ValueError, match="1-D arrays of equal length"):
+    with pytest.raises(ValueError, match="1-D arrays of the same length"):
         detect_region_visits(bins, times, region_env, region_names=["A"])
 
 

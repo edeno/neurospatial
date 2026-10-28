@@ -69,3 +69,37 @@ def test_unknown_units_require_an_explicit_threshold():
         env, times, positions, goal, min_speed=5.0
     )
     assert np.isfinite(result.goal_bias)
+
+
+_MIN_SPEED_CALLS = {
+    "heading_from_velocity": lambda env, t, x, goal, m: behavior.heading_from_velocity(
+        t, x, min_speed=m
+    ),
+    "heading_direction_labels": lambda env, t, x, goal, m: (
+        behavior.heading_direction_labels(t, x, min_speed=m)
+    ),
+    "instantaneous_goal_alignment": lambda env, t, x, goal, m: (
+        behavior.instantaneous_goal_alignment(t, x, goal, min_speed=m)
+    ),
+    "goal_bias": lambda env, t, x, goal, m: behavior.goal_bias(t, x, goal, min_speed=m),
+    "compute_goal_directed_metrics": lambda env, t, x, goal, m: (
+        behavior.compute_goal_directed_metrics(env, t, x, goal, min_speed=m)
+    ),
+    "pre_decision_heading_stats": lambda env, t, x, goal, m: (
+        behavior.pre_decision_heading_stats(t, x, min_speed=m)
+    ),
+    "head_sweep_from_positions": lambda env, t, x, goal, m: (
+        behavior.head_sweep_from_positions(t, x, min_speed=m)
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_MIN_SPEED_CALLS))
+@pytest.mark.parametrize("min_speed", [np.nan, -1.0, np.inf])
+def test_every_min_speed_must_be_finite_and_non_negative(name, min_speed):
+    """A NaN gate used to drop every heading silently (goal_bias -> NaN)."""
+    env, times, positions, goal = _run_to_goal(1.0, "cm")
+    with pytest.raises(
+        ValueError, match=rf"{name}\(\) needs a finite, non-negative min_speed"
+    ):
+        _MIN_SPEED_CALLS[name](env, times, positions, goal, min_speed)

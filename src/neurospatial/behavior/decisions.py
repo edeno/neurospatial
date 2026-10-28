@@ -72,24 +72,26 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._intervals import (
-    DEFAULT_MAX_GAP,
-    as_intervals,
-    interval_valid_mask,
-    run_sample_bounds,
-    times_in_intervals,
-)
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._observation import (
     ObservationSupport,
     _validated_signal_times,
-    validate_break_before,
     validated_observations,
     validated_signals,
 )
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_speed
+from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
+from neurospatial.behavior._decision_windows import (
+    first_entry,
+    pre_decision_window,
+    speed_stats,
+    validated_entry_time,
+    validated_window_duration,
+)
+from neurospatial.behavior._kinematics import validated_min_speed
+from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.behavior._region_bins import region_representative_bin
-from neurospatial.behavior.segmentation import _safe_gather
+from neurospatial.behavior.segmentation import _region_names
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -472,6 +474,8 @@ def decision_region_entry_time(
         strictly increasing, or if the trajectory never enters the region.
     TypeError
         If ``position_bins`` is not an integer array.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, env.n_bins)`` and is not ``-1``.
 
     Examples
     --------
@@ -490,56 +494,16 @@ def decision_region_entry_time(
     _require_region_mask(
         env, region, operation="decision_region_entry_time()", argument="region"
     )
-    position_bins = _validated_position_bins(
-        position_bins, times, call="decision_region_entry_time"
+    position_bins = validated_position_bins(
+        position_bins, env, call="decision_region_entry_time", times=times
     )
     times = _validated_signal_times(times, call="decision_region_entry_time")
-    entry = _first_entry(
+    entry = first_entry(
         position_bins, env.bins_in_region(region), np.ones(times.shape, dtype=bool)
     )
     if entry is None:
         raise ValueError(_never_enters_message(region, epochs=None))
     return float(times[entry])
-
-
-def _validated_position_bins(
-    position_bins: ArrayLike, times: ArrayLike, *, call: str
-) -> NDArray[np.int64]:
-    """1-D integer bins with one entry per timestamp."""
-    bins = np.asarray(position_bins)
-    n_times = np.shape(times)[0] if np.ndim(times) else 0
-    if bins.ndim != 1 or bins.shape[0] != n_times:
-        raise ValueError(
-            f"{call}() needs one position bin per timestamp; got position_bins "
-            f"of shape {bins.shape} and {n_times} timestamps.\n"
-            "Why: each sample's bin is matched to its time.\n"
-            "Fix: pass env.bin_at(positions) for the same samples as times."
-        )
-    if bins.size and bins.dtype.kind not in "iu":
-        raise TypeError(
-            f"{call}() needs integer position_bins from env.bin_at(); got dtype "
-            f"{bins.dtype}."
-        )
-    return bins.astype(np.int64, copy=False)
-
-
-def _first_entry(
-    position_bins: NDArray[np.int64],
-    region_bins: NDArray[np.int_],
-    observed: NDArray[np.bool_],
-) -> int | None:
-    """Index of the first observed sample inside the region; None if none."""
-    hits = np.flatnonzero(observed & np.isin(position_bins, region_bins))
-    return int(hits[0]) if hits.size else None
-
-
-def _in_epochs(
-    times: NDArray[np.float64], epochs: NDArray[np.float64] | None
-) -> NDArray[np.bool_]:
-    """Samples inside the half-open ``epochs`` windows (all without epochs)."""
-    if epochs is None:
-        return np.ones(times.shape, dtype=bool)
-    return times_in_intervals(epochs, times)
 
 
 def _never_enters_message(region: str, *, epochs: Any) -> str:
@@ -662,88 +626,16 @@ def extract_pre_decision_window(
         break_before=break_before,
         result="no pre-decision window was observed",
     )
-    window_duration = _validated_window_duration(
+    window_duration = validated_window_duration(
         window_duration, name="window_duration", call="extract_pre_decision_window"
     )
-    entry_time = _validated_entry_time(
+    entry_time = validated_entry_time(
         times, entry_time, call="extract_pre_decision_window"
     )
-    window = _pre_decision_window(
+    window = pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
     return times[window], positions[window]
-
-
-def _validated_min_speed(min_speed: float, *, call: str) -> float:
-    """A finite, non-negative heading speed gate in position units per second."""
-    value = float(min_speed)
-    if not (np.isfinite(value) and value >= 0):
-        raise ValueError(
-            f"{call}() needs a finite, non-negative min_speed; got "
-            f"{min_speed!r}.\n"
-            "Why: min_speed is the speed below which the direction of movement "
-            "is not observed; a NaN or negative gate would silently drop or "
-            "keep every heading.\n"
-            "Fix: pass min_speed in position units per second, e.g. 5.0 for "
-            "5 cm/s with positions in cm."
-        )
-    return value
-
-
-def _validated_window_duration(
-    window_duration: float, *, name: str, call: str
-) -> float:
-    """A finite, positive pre-decision window length in seconds."""
-    duration = float(window_duration)
-    if not (np.isfinite(duration) and duration > 0):
-        raise ValueError(
-            f"{call}() needs a finite, positive {name} in seconds; got "
-            f"{window_duration!r}.\n"
-            "Why: the pre-decision window is the stretch of time before the "
-            "decision-region entry; an empty or reversed window measures "
-            "nothing.\n"
-            f"Fix: pass {name} as the window length in seconds, e.g. {name}=1.0."
-        )
-    return duration
-
-
-def _validated_entry_time(
-    times: NDArray[np.float64], entry_time: float, *, call: str
-) -> float:
-    """A finite entry time inside the recording, ``[times[0], times[-1]]``."""
-    entry = float(entry_time)
-    if not (np.isfinite(entry) and times[0] <= entry <= times[-1]):
-        raise ValueError(
-            f"{call}() got entry_time={entry_time!r}, outside the recording "
-            f"[{times[0]:g}, {times[-1]:g}] s.\n"
-            "Why: the pre-decision window ends at the entry time, so an entry "
-            "the recording does not cover has no window.\n"
-            "Fix: pass the decision-region entry in seconds on the same clock "
-            "as times (a millisecond entry_time with times in seconds lands "
-            "past the recording), e.g. from decision_region_entry_time()."
-        )
-    return entry
-
-
-def _pre_decision_window(
-    times: NDArray[np.float64],
-    interval_gates: NDArray[np.bool_],
-    entry_time: float,
-    window_duration: float,
-) -> slice:
-    """Sample slice of the pre-decision window; empty if entry is in no segment.
-
-    Segments are runs of ``interval_gates`` (``max_gap``, ``epochs`` and
-    declared breaks), whatever the validity of their samples.
-    """
-    for first, last in run_sample_bounds(interval_gates):
-        if times[first] <= entry_time <= times[last]:
-            window_start = max(entry_time - window_duration, times[first])
-            segment = times[first : last + 1]
-            start = int(first + np.searchsorted(segment, window_start, side="left"))
-            stop = int(first + np.searchsorted(segment, entry_time, side="left"))
-            return slice(start, stop)
-    return slice(0, 0)
 
 
 def pre_decision_heading_stats(
@@ -847,9 +739,6 @@ def pre_decision_heading_stats(
     >>> pre_decision_heading_stats(times, np.ones((10, 2)), min_speed=1.0)
     (nan, nan, nan)
     """
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
-
-    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -858,9 +747,9 @@ def pre_decision_heading_stats(
         epochs=epochs,
         break_before=break_before,
         result="the heading statistics are NaN",
+        columns="xy",
     )
-    _validate_velocity_positions(raw_positions, call="pre_decision_heading_stats")
-    min_speed = _validated_min_speed(min_speed, call="pre_decision_heading_stats")
+    min_speed = validated_min_speed(min_speed, call="pre_decision_heading_stats")
     return _heading_stats(times, positions, support.interval_mask, min_speed=min_speed)
 
 
@@ -879,27 +768,23 @@ def _heading_stats(
 
     if len(positions) < 2:
         return np.nan, np.nan, np.nan
-    headings, speed = _movement_heading_and_speed(
-        times, positions, interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
+    headings, _ = _movement_heading_and_speed(
+        times,
+        positions,
+        interval_mask,
+        smooth_window=DEFAULT_SPEED_SMOOTHING,
+        min_speed=min_speed,
     )
-    valid_headings = headings[
-        (speed >= min_speed) & (speed > 0) & np.isfinite(headings)
-    ]
+    valid_headings = headings[np.isfinite(headings)]
 
     if len(valid_headings) == 0:
         return np.nan, np.nan, np.nan
 
-    # Compute circular statistics directly
-    cos_headings = np.cos(valid_headings)
-    sin_headings = np.sin(valid_headings)
-    mean_cos = float(np.mean(cos_headings))
-    mean_sin = float(np.mean(sin_headings))
+    from neurospatial.stats.circular import circular_mean, mean_resultant_length
 
-    mean_resultant_length = float(np.sqrt(mean_cos**2 + mean_sin**2))
-    circular_variance = 1.0 - mean_resultant_length
-    mean_direction = float(np.arctan2(mean_sin, mean_cos))
-
-    return mean_direction, circular_variance, mean_resultant_length
+    # Circular variance is 1 - R, as stats.circular.circular_variance.
+    mrl = mean_resultant_length(valid_headings)
+    return circular_mean(valid_headings), 1.0 - mrl, mrl
 
 
 def pre_decision_speed_stats(
@@ -994,21 +879,7 @@ def pre_decision_speed_stats(
         break_before=break_before,
         result="the speed statistics are NaN",
     )
-    return _speed_stats(times, positions, support.interval_mask)
-
-
-def _speed_stats(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    interval_mask: NDArray[np.bool_],
-) -> tuple[float, float]:
-    """Mean and minimum smoothed speed over usable intervals; NaN without any."""
-    if not interval_mask.any():
-        return np.nan, np.nan
-    speeds = smoothed_speed(
-        times, positions, interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
-    )
-    return float(np.nanmean(speeds)), float(np.nanmin(speeds))
+    return speed_stats(times, positions, support.interval_mask)
 
 
 def compute_pre_decision_metrics(
@@ -1103,9 +974,6 @@ def compute_pre_decision_metrics(
     >>> round(metrics.heading_circular_variance, 6)
     0.0
     """
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
-
-    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -1114,13 +982,13 @@ def compute_pre_decision_metrics(
         epochs=epochs,
         break_before=break_before,
         result="the pre-decision metrics are NaN",
+        columns="xy",
     )
-    _validate_velocity_positions(raw_positions, call="compute_pre_decision_metrics")
-    min_speed = _validated_min_speed(min_speed, call="compute_pre_decision_metrics")
-    window_duration = _validated_window_duration(
+    min_speed = validated_min_speed(min_speed, call="compute_pre_decision_metrics")
+    window_duration = validated_window_duration(
         window_duration, name="window_duration", call="compute_pre_decision_metrics"
     )
-    entry_time = _validated_entry_time(
+    entry_time = validated_entry_time(
         times, entry_time, call="compute_pre_decision_metrics"
     )
     return _pre_decision_metrics(
@@ -1143,7 +1011,7 @@ def _pre_decision_metrics(
     min_speed: float,
 ) -> PreDecisionMetrics:
     """Speed and heading metrics of the pre-decision window under ``support``."""
-    window = _pre_decision_window(
+    window = pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
     window_times = times[window]
@@ -1165,7 +1033,7 @@ def _pre_decision_metrics(
     mean_dir, circ_var, mrl = _heading_stats(
         window_times, window_positions, window_mask, min_speed=min_speed
     )
-    mean_speed, min_observed_speed = _speed_stats(
+    mean_speed, min_observed_speed = speed_stats(
         window_times, window_positions, window_mask
     )
     return PreDecisionMetrics(
@@ -1310,8 +1178,8 @@ def distance_to_decision_boundary(
     env : Environment
         Spatial environment.
     position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices along the trajectory; -1 (or any index outside
-        ``[0, env.n_bins)``) marks a sample outside every bin.
+        Bin indices along the trajectory, as from ``env.bin_at``; -1 marks a
+        sample outside every bin.
     goal_bins : list[int] or NDArray[np.int_]
         Bin indices of goal locations.
 
@@ -1324,6 +1192,16 @@ def distance_to_decision_boundary(
         the boundary; small values = uncommitted. NaN for a sample outside
         every bin; inf where the second-nearest goal is unreachable or with
         fewer than two goals (there is no boundary).
+
+    Raises
+    ------
+    TypeError
+        If ``position_bins`` or ``goal_bins`` is not integer bin indices.
+    ValueError
+        If ``position_bins`` is not 1-D.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, env.n_bins)`` (and, in
+        ``position_bins``, is not ``-1``).
 
     Notes
     -----
@@ -1357,6 +1235,9 @@ def distance_to_decision_boundary(
     """
     from neurospatial.environment import _validate_target_bins
 
+    position_bins = validated_position_bins(
+        position_bins, env, call="distance_to_decision_boundary"
+    )
     goal_bins_arr = _validate_target_bins(
         goal_bins,
         n_bins=env.n_bins,
@@ -1376,12 +1257,11 @@ def distance_to_decision_boundary(
 
     # For each trajectory bin, the boundary lies halfway between the two
     # nearest goals: (d2 - d1) / 2 after sorting the per-bin goal distances.
-    position_bins = np.asarray(position_bins).ravel()
     boundary_distances = np.full(len(position_bins), np.nan)
 
-    # Out-of-bounds (including negative) trajectory bins map to NaN; only valid
-    # bins are indexed into the goal-distance table to avoid fancy-index wrap.
-    valid = (position_bins >= 0) & (position_bins < env.n_bins)
+    # Samples outside the environment (-1) are NaN; only located bins are
+    # indexed into the goal-distance table to avoid fancy-index wrap.
+    valid = position_bins >= 0
     if not np.any(valid):
         return boundary_distances
 
@@ -1459,6 +1339,11 @@ def detect_boundary_crossings(
         If ``position_bins`` and ``times`` differ in length, if there are no
         samples, if ``times`` is not finite and strictly increasing, or if
         ``break_before`` is not a Boolean array with one entry per sample.
+    TypeError
+        If ``position_bins`` is not integer bin indices.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, len(voronoi_labels))`` and is not
+        ``-1``.
 
     Notes
     -----
@@ -1506,64 +1391,42 @@ def detect_boundary_crossings(
     >>> crossing_times.size, directions.shape
     (0, (0, 2))
     """
-    position_bins = np.asarray(position_bins, dtype=np.int64)
-    n_times = len(np.asarray(times))
-    if len(position_bins) != n_times:
-        raise ValueError(
-            f"position_bins and times must have same length; got "
-            f"{len(position_bins)} and {n_times}.\n"
-            "Why: each trajectory sample needs its corresponding timestamp.\n"
-            "Fix: pass one timestamp per position bin on the same clock."
-        )
-    times, _, _ = validated_signals(
+    position_bins = validated_position_bins(
+        position_bins,
+        call="detect_boundary_crossings",
+        times=times,
+        n_bins=np.shape(voronoi_labels)[0],
+    )
+    # A sample at bin -1 is missing.
+    times, _, supports = validated_signals(
         times,
         position_bins,
-        valid=None,
+        valid=position_bins >= 0,
         call="detect_boundary_crossings",
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
         result="no boundary crossing was observed",
     )
-    return _boundary_crossings(
-        position_bins,
-        voronoi_labels,
-        times,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=validate_break_before(
-            break_before, len(times), call="detect_boundary_crossings"
-        ),
-    )
+    return _boundary_crossings(position_bins, voronoi_labels, times, supports[0])
 
 
 def _boundary_crossings(
     position_bins: NDArray[np.int64],
     voronoi_labels: NDArray[np.int_],
     times: NDArray[np.float64],
-    *,
-    max_gap: float | None,
-    epochs: Any,
-    break_before: NDArray[np.bool_] | None,
+    support: ObservationSupport,
 ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
-    """Boundary crossings within each run of located samples.
+    """Boundary crossings within each run of ``support``.
 
-    A sample outside every bin is missing and skipped as if its row were
-    deleted, so a crossing across it is timed between the located samples
-    on either side when the gap between them is bridged.
+    ``support`` treats every sample at bin -1 as missing, so it is skipped
+    as if its row were deleted, and a crossing across it is timed between
+    the located samples on either side when the gap between them is
+    bridged.
     """
-    located = (position_bins >= 0) & (position_bins < voronoi_labels.shape[0])
-    mask = interval_valid_mask(
-        times,
-        max_gap=max_gap,
-        epochs=as_intervals(epochs, name="epochs"),
-        break_before=break_before,
-        sample_valid=located,
-    )
     crossing_times = [np.empty(0)]
     crossing_directions = [np.empty((0, 2), dtype=np.intp)]
-    for first, last in run_sample_bounds(mask):
-        run = first + np.flatnonzero(located[first : last + 1])
+    for run in support.run_samples():
         run_times, run_directions = _detect_boundary_crossings_contiguous(
             position_bins[run], voronoi_labels, times[run]
         )
@@ -1579,12 +1442,13 @@ def _detect_boundary_crossings_contiguous(
 ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Nearest-goal changes within one recording with labels indexed by bin.
 
-    Samples labeled -1 (undecided or unreachable) are skipped, so passing
+    Every sample is in a bin: the caller removed the missing ones. Samples
+    labeled -1 (undecided or unreachable) are skipped, so passing
     through the equidistant bins from one goal's side to the other's is one
     crossing, timed between the last sample on one side and the first on
     the other.
     """
-    trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
+    trajectory_labels = voronoi_labels[position_bins]
     decided = np.flatnonzero(trajectory_labels >= 0)
     labels = trajectory_labels[decided].astype(np.intp)
     changes = np.flatnonzero(labels[:-1] != labels[1:])
@@ -1736,9 +1600,6 @@ def compute_decision_analysis(
         "speeds and regions in the same Cartesian coordinates.",
         fix="use the allocentric environment the positions were recorded in",
     )
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
-
-    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -1747,9 +1608,9 @@ def compute_decision_analysis(
         epochs=epochs,
         break_before=break_before,
         result="the pre-decision metrics are NaN and no boundary crossing was observed",
+        columns="xy",
     )
-    _validate_velocity_positions(raw_positions, call="compute_decision_analysis")
-    pre_window = _validated_window_duration(
+    pre_window = validated_window_duration(
         pre_window, name="pre_window", call="compute_decision_analysis"
     )
 
@@ -1760,16 +1621,12 @@ def compute_decision_analysis(
         operation="compute_decision_analysis()",
         argument="decision_region",
     )
-    if isinstance(goal_regions, str):
-        goal_regions = [goal_regions]
-    if len(goal_regions) == 0:
-        raise ValueError(
-            "compute_decision_analysis() got an empty goal_regions list.\n"
-            "Why: the chosen goal and the decision boundary are defined by the "
-            "goals the animal can choose between.\n"
-            "Fix: pass the names of the goal regions, e.g. "
-            "goal_regions=['left', 'right']."
-        )
+    goal_regions = _region_names(
+        goal_regions,
+        argument="goal_regions",
+        why="the chosen goal and the decision boundary are defined by the goals "
+        "the animal can choose between.",
+    )
     for goal_region in goal_regions:
         _require_region_mask(
             env,
@@ -1783,18 +1640,15 @@ def compute_decision_analysis(
     position_bins = env.bin_at(positions)
 
     # The entry is the first decision-region sample inside the epochs.
-    in_epochs = _in_epochs(times, support.epochs)
-    entry = _first_entry(position_bins, env.bins_in_region(decision_region), in_epochs)
+    in_epochs = support.sample_in_epochs
+    entry = first_entry(position_bins, env.bins_in_region(decision_region), in_epochs)
     if entry is None:
         raise ValueError(_never_enters_message(decision_region, epochs=epochs))
     entry_time = float(times[entry])
 
     from neurospatial.behavior._kinematics import resolve_min_speed
 
-    min_speed = _validated_min_speed(
-        resolve_min_speed(env, min_speed, call="compute_decision_analysis()"),
-        call="compute_decision_analysis",
-    )
+    min_speed = resolve_min_speed(env, min_speed, call="compute_decision_analysis")
     # Compute pre-decision metrics
     pre_decision = _pre_decision_metrics(
         times, positions, support, entry_time, pre_window, min_speed=min_speed
@@ -1802,16 +1656,11 @@ def compute_decision_analysis(
 
     # Compute boundary metrics. Each goal region is represented by its
     # centroid bin, as in trials_to_region_arrays.
-    goal_bins = []
+    goal_bins: list[int] = []
     for r in goal_regions:
         goal_bin = region_representative_bin(env, r)
-        if goal_bin is not None:
-            goal_bins.append(goal_bin)
-        else:
-            raise ValueError(
-                f"Goal region '{r}' contains no bins. "
-                f"Check that the region is within the environment bounds."
-            )
+        assert goal_bin is not None  # _require_region_mask refused empty regions
+        goal_bins.append(goal_bin)
     position_bins = np.asarray(position_bins, dtype=np.int64)
     boundary = None
     if len(goal_bins) >= 2:
@@ -1820,14 +1669,11 @@ def compute_decision_analysis(
             position_bins,
             voronoi_labels,
             times,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=validate_break_before(
-                break_before, len(times), call="compute_decision_analysis"
-            ),
+            # A position outside every bin is missing too.
+            support.restricted(times, position_bins >= 0),
         )
         boundary = DecisionBoundaryMetrics(
-            goal_labels=_safe_gather(voronoi_labels, position_bins, fill=-1),
+            goal_labels=np.where(position_bins >= 0, voronoi_labels[position_bins], -1),
             distance_to_decision_boundary=distance_to_decision_boundary(
                 env, position_bins, goal_bins
             ),

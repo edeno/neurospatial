@@ -12,8 +12,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
-from neurospatial._observation import validated_observations
-from neurospatial.events._continuous import _sample_feature
+from neurospatial._observation import sample_feature, validated_observations
 from neurospatial.events._core import _event_times
 
 if TYPE_CHECKING:
@@ -148,7 +147,7 @@ def add_positions(
 
     result = events.copy()
     for name, coordinate in zip("xyz", xyz.T, strict=False):
-        result[name], _ = _sample_feature(
+        result[name], _ = sample_feature(
             t,
             coordinate,
             support,

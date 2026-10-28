@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.simulation.models.base import default_length
+from neurospatial._units import default_length
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment

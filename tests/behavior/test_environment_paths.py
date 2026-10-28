@@ -455,3 +455,81 @@ class TestGeodesicGoalDirection:
             times, positions, positions[-1], metric="geodesic", env=env
         )
         assert efficiency == pytest.approx(1.0, abs=1e-12)
+
+
+class TestTargetOutsideTheEnvironment:
+    """A target outside the environment has no path to it: NaN, not a value."""
+
+    @pytest.fixture(scope="class", params=["arena", "track"])
+    def env_and_outside(self, request, divider_arena):
+        if request.param == "arena":
+            return divider_arena, np.array([150.0, 50.0])
+        return _w_track(2.0, 10.0), np.array([0.0, -50.0])
+
+    def test_to_point_and_directions_are_nan(self, env_and_outside):
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        env, outside = env_and_outside
+        paths = environment_paths(env, call="test")
+        assert paths.bins(outside[None, :])[0] == -1
+        points = env.bin_centers[:: max(1, env.n_bins // 10)]
+        assert np.isnan(paths.to_point(points, outside)).all()
+        assert np.isnan(paths.directions(points, outside)).all()
+
+
+def test_fields_grown_only_to_the_start_bins_equal_whole_fields():
+    """between() grows each target's field only as far as its start bins;
+    the lengths equal those read from whole, kept fields."""
+    from neurospatial.behavior._environment_paths import environment_paths
+
+    edges = np.arange(0.0, 101.0, BIN)
+
+    def arena():
+        return Environment.from_grid_mask(
+            np.ones((20, 20), dtype=bool),
+            grid_edges=(edges, edges),
+            arena=OpenArena(
+                box(0, 0, 100, 100),
+                walls={"divider": LineString([(50, 0), (50, 70)])},
+            ),
+        )
+
+    rng = np.random.default_rng(0)
+    # A random walk of about two-bin steps: short and long reaches, some
+    # around the wall end.
+    walk = np.abs(
+        np.mod(np.cumsum(rng.normal(0, 8.0, (600, 2)), axis=0) + 50, 198) - 99
+    )
+    starts, ends = walk[:-1] + 0.5, walk[1:] + 0.5
+    grown = environment_paths(arena(), call="test").between(starts, ends)
+    whole = environment_paths(arena(), call="test")
+    whole.prepare(whole.bins(ends))
+    kept = whole.between(starts, ends)
+    assert np.isfinite(grown).sum() > 500
+    np.testing.assert_array_equal(grown, kept)
+
+
+def test_field_cache_stays_within_its_budget(divider_arena, monkeypatch):
+    """With room for five fields, the cache never holds more, and pairwise
+    and per-target lengths equal those of an engine with room for all."""
+    import neurospatial.behavior._environment_paths as module
+
+    rng = np.random.default_rng(1)
+    points = rng.uniform(1.0, 99.0, (80, 2))
+    first, second = rng.integers(0, 80, (2, 500))
+    roomy = module.environment_paths(divider_arena, call="test")
+    expected_pairs = roomy.pairwise(points).between(first, second)
+    expected_to = [roomy.to_point(points, target) for target in points[:12]]
+
+    monkeypatch.setattr(module, "_FIELD_CACHE_BYTES", 5 * 16 * divider_arena.n_bins)
+    tight = module._OpenPaths(divider_arena)
+    fields = tight._fields
+    assert fields.limit == 5
+    pairs = tight.pairwise(points)
+    assert fields.length.shape[0] <= 5
+    np.testing.assert_array_equal(pairs.between(first, second), expected_pairs)
+    for target, expected in zip(points[:12], expected_to, strict=True):
+        np.testing.assert_array_equal(tight.to_point(points, target), expected)
+        assert fields.n_kept <= fields.length.shape[0] <= 5
+    tight.prepare(tight.bins(points))
+    assert fields.n_kept == 5

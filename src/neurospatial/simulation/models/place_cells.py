@@ -6,11 +6,12 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._units import default_length
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops._types import DistanceMetric
 from neurospatial.ops.distance import distance_field
-from neurospatial.simulation.models.base import default_length, geodesic_lookup_bins
+from neurospatial.simulation.models.base import geodesic_lookup_bins
 
 #: Default place field width (Gaussian standard deviation) in centimeters,
 #: derived from the median rat CA1 open-field field size of Mizuseki et al.

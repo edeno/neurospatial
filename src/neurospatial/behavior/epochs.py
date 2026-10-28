@@ -54,6 +54,7 @@ from neurospatial._intervals import (
     as_intervals,
     hold_last_valid,
     intervals_contain,
+    times_in_intervals,
     validate_max_gap,
 )
 from neurospatial._observation import (
@@ -128,6 +129,9 @@ def _mask_in_intervals(
 
     if intervals is None:
         return np.ones(t_arr.shape, dtype=np.bool_)
+    if closed == "left":
+        # The half-open windows of every analysis ``epochs=``.
+        return times_in_intervals(intervals, t_arr)
     if intervals.shape[0] == 0:
         return np.zeros(t_arr.shape, dtype=np.bool_)
 

@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 
 from neurospatial._intervals import as_intervals
-from neurospatial._observation import validated_signals
-from neurospatial.events._continuous import _relative_times, _sample_feature
+from neurospatial._observation import sample_feature, validated_signals
+from neurospatial.events._continuous import _relative_times
 
 # Two runs of dyadic samples separated by a 1 s gap: [0, 1] and [2, 3].
 TWO_RUNS = np.r_[np.arange(0, 1.0001, 0.125), np.arange(2, 3.0001, 0.125)]
@@ -45,7 +45,7 @@ def _sample(
             break_before=break_before,
             result="nothing is sampled",
         )
-    return _sample_feature(
+    return sample_feature(
         t,
         sig[:, 0],
         support,

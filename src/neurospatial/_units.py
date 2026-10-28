@@ -7,7 +7,12 @@ threshold) are expressed in an environment's own units through
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from neurospatial._exceptions import _format_error
+
+if TYPE_CHECKING:
+    from neurospatial.environment import Environment
 
 # Every accepted spelling of a length unit, mapped to its canonical name.
 _UNIT_SPELLINGS = {
@@ -140,3 +145,45 @@ def default_speed(
             )
         )
     return cm_per_s * per_cm
+
+
+def default_length(
+    env: Environment, centimeters: float, *, name: str, call: str
+) -> float:
+    """A default length of ``centimeters`` expressed in the environment's units.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment whose ``units`` give the positions' length unit.
+    centimeters : float
+        The default length in centimeters.
+    name : str
+        The argument left as None, such as ``"width"``.
+    call : str
+        The public call, named in the error.
+
+    Returns
+    -------
+    float
+        The default length in environment units.
+
+    Raises
+    ------
+    ValueError
+        If ``env.units`` is not a metric length unit, so a length in
+        centimeters has no value in the environment's coordinates.
+    """
+    per_cm = units_per_centimeter(env.units)
+    if per_cm is None:
+        raise ValueError(
+            _format_error(
+                f"{call} needs {name}: the environment's units ({env.units!r}) "
+                f"are not a known length, so the {centimeters:g} cm default "
+                "cannot be expressed in them.",
+                why=f"Why: {name} is a length in the environment's units.",
+                fix=f"pass {name}=<length in position units>, or declare the "
+                "units with env.with_metadata(units='cm')",
+            )
+        )
+    return centimeters * per_cm

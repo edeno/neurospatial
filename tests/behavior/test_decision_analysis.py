@@ -232,12 +232,15 @@ class TestDecisionRegionEntryTime:
             decision_region_entry_time(position_bins, times, env, region="center")
 
     def test_validates_bins_and_times(self, t_maze_environment):
+        from neurospatial._exceptions import BinIndexOutOfRangeError
         from neurospatial.behavior.decisions import decision_region_entry_time
 
         env = t_maze_environment
         bins = env.bin_at(np.column_stack([np.full(5, 50.0), np.linspace(40, 56, 5)]))
         times = np.arange(5) / 10
-        with pytest.raises(ValueError, match="one position bin per timestamp"):
+        with pytest.raises(
+            ValueError, match="position_bins and times as 1-D arrays of the same length"
+        ):
             decision_region_entry_time(bins, times[:4], env, region="center")
         with pytest.raises(ValueError, match="non-decreasing"):
             decision_region_entry_time(bins, times[::-1], env, region="center")
@@ -249,8 +252,12 @@ class TestDecisionRegionEntryTime:
             decision_region_entry_time(
                 bins, np.r_[times[:4], np.nan], env, region="center"
             )
-        with pytest.raises(TypeError, match="integer position_bins"):
+        with pytest.raises(TypeError, match="position_bins= takes integer bin indices"):
             decision_region_entry_time(bins.astype(float), times, env, region="center")
+        with pytest.raises(BinIndexOutOfRangeError, match="Bin index 999 "):
+            decision_region_entry_time(
+                np.r_[bins[:4], 999], times, env, region="center"
+            )
 
 
 # =============================================================================
@@ -596,6 +603,28 @@ class TestDetectBoundaryCrossings:
         assert len(crossing_times) == 0
         assert len(crossing_directions) == 0
 
+    def test_float_bins_raise_instead_of_truncating(self):
+        """A float bin 0.9 used to be truncated to bin 0."""
+        from neurospatial.behavior.decisions import detect_boundary_crossings
+
+        with pytest.raises(TypeError, match="position_bins= takes integer bin"):
+            detect_boundary_crossings(
+                np.array([0.0, 0.9, 1.0]), np.array([0, 1]), np.arange(3) / 8
+            )
+
+    @pytest.mark.parametrize("bad_bin", [2, -7])
+    def test_bins_outside_the_label_array_raise(self, bad_bin):
+        """Only -1 marks a missing sample; the labels define the bins."""
+        from neurospatial._exceptions import BinIndexOutOfRangeError
+        from neurospatial.behavior.decisions import detect_boundary_crossings
+
+        with pytest.raises(
+            BinIndexOutOfRangeError, match=r"valid indices are \[0, 2\)"
+        ):
+            detect_boundary_crossings(
+                np.array([0, bad_bin, 1]), np.array([0, 1]), np.arange(3) / 8
+            )
+
 
 # =============================================================================
 # Test compute_pre_decision_metrics
@@ -777,7 +806,7 @@ class TestComputeDecisionAnalysis:
     def test_empty_goal_list_raises(self, t_maze_environment):
         from neurospatial.behavior.decisions import compute_decision_analysis
 
-        with pytest.raises(ValueError, match="empty goal_regions"):
+        with pytest.raises(ValueError, match="goal_regions cannot be empty"):
             compute_decision_analysis(
                 t_maze_environment,
                 np.arange(30) / 10,
@@ -805,8 +834,8 @@ class TestComputeDecisionAnalysis:
 class TestDistanceToDecisionBoundaryEdgeCases:
     """Test edge cases for distance_to_decision_boundary."""
 
-    def test_out_of_bounds_bins_return_nan(self, t_maze_environment):
-        """Test that out-of-bounds trajectory bins return NaN distance."""
+    def test_outside_bins_return_nan(self, t_maze_environment):
+        """A sample outside the environment (-1) has NaN distance."""
         from neurospatial.behavior.decisions import distance_to_decision_boundary
 
         env = t_maze_environment
@@ -814,15 +843,34 @@ class TestDistanceToDecisionBoundaryEdgeCases:
         right_bin = int(env.bin_at(np.array([[90.0, 55.0]]))[0])
         goal_bins = [left_bin, right_bin]
 
-        # Create trajectory with invalid bins
         valid_bin = int(env.bin_at(np.array([[50.0, 55.0]]))[0])
-        position_bins = np.array([valid_bin, -1, env.n_bins + 100], dtype=np.int64)
+        position_bins = np.array([valid_bin, -1], dtype=np.int64)
 
         distances = distance_to_decision_boundary(env, position_bins, goal_bins)
 
         assert not np.isnan(distances[0])  # valid bin
         assert np.isnan(distances[1])  # -1 index
-        assert np.isnan(distances[2])  # out of bounds
+
+    @pytest.mark.parametrize("offset", [100, -(10**6)])
+    def test_out_of_range_bins_raise(self, t_maze_environment, offset):
+        """An index that names no bin is refused, not read as missing."""
+        from neurospatial._exceptions import BinIndexOutOfRangeError
+        from neurospatial.behavior.decisions import distance_to_decision_boundary
+
+        env = t_maze_environment
+        goal_bins = env.bin_at(np.array([[10.0, 55.0], [90.0, 55.0]]))
+        with pytest.raises(BinIndexOutOfRangeError):
+            distance_to_decision_boundary(
+                env, np.array([0, env.n_bins + offset]), goal_bins
+            )
+
+    def test_float_bins_raise(self, t_maze_environment):
+        from neurospatial.behavior.decisions import distance_to_decision_boundary
+
+        env = t_maze_environment
+        goal_bins = env.bin_at(np.array([[10.0, 55.0], [90.0, 55.0]]))
+        with pytest.raises(TypeError, match="position_bins= takes integer bin"):
+            distance_to_decision_boundary(env, np.array([0.0, 1.5]), goal_bins)
 
 
 def _linear_track():

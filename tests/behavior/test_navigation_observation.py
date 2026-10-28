@@ -17,6 +17,7 @@ from neurospatial.behavior.navigation import (
     compute_goal_directed_metrics,
     goal_bias,
     heading_direction_labels,
+    headings_to_direction_labels,
     instantaneous_goal_alignment,
 )
 
@@ -76,9 +77,9 @@ class TestHeadingDirectionLabels:
             )
 
     def test_precomputed_kinds(self):
-        labels = heading_direction_labels(
-            speed=np.array([10.0, 1.0, np.nan, 10.0, 0.0]),
-            heading=np.array([0.3, 0.3, 0.3, np.nan, np.nan]),
+        labels = headings_to_direction_labels(
+            np.array([0.3, 0.3, 0.3, np.nan, np.nan]),
+            np.array([10.0, 1.0, np.nan, 10.0, 0.0]),
             min_speed=5.0,
         )
         assert labels.tolist() == [EAST, "stationary", None, None, "stationary"]

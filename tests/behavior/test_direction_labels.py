@@ -1,8 +1,8 @@
 """Tests for direction label helper functions.
 
-These tests verify the behavior of goal_pair_direction_labels and
-heading_direction_labels functions for generating direction labels
-from behavioral data.
+These tests verify the behavior of goal_pair_direction_labels,
+heading_direction_labels and headings_to_direction_labels for generating
+direction labels from behavioral data.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from neurospatial.behavior import heading_from_velocity
 from neurospatial.behavior.navigation import (
     goal_pair_direction_labels,
     heading_direction_labels,
+    headings_to_direction_labels,
 )
 from neurospatial.behavior.segmentation import Trial
 from neurospatial.behavior.trajectory import compute_speed
@@ -282,12 +283,12 @@ class TestGoalPairDirectionLabels:
 
 
 # -----------------------------------------------------------------------------
-# Tests for heading_direction_labels
+# Tests for heading_direction_labels and headings_to_direction_labels
 # -----------------------------------------------------------------------------
 
 
 class TestHeadingDirectionLabels:
-    """Tests for heading_direction_labels function."""
+    """Tests for heading_direction_labels and headings_to_direction_labels."""
 
     def test_straight_path_positive_x(self) -> None:
         """Movement in +x direction gives consistent heading label."""
@@ -409,60 +410,18 @@ class TestHeadingDirectionLabels:
         )
 
         # Labels from precomputed speed/heading
-        labels_from_precomputed = heading_direction_labels(
-            speed=speed, heading=heading, min_speed=5.0
+        labels_from_precomputed = headings_to_direction_labels(
+            heading, speed, min_speed=5.0
         )
 
         np.testing.assert_array_equal(labels_from_positions, labels_from_precomputed)
 
-    def test_precomputed_takes_precedence(self) -> None:
-        """When both provided, precomputed speed/heading takes precedence."""
-        n_samples = 100
-        times = np.linspace(0.0, 10.0, n_samples)
-
-        # Positions suggest +x direction
-        positions = np.column_stack(
-            [np.linspace(0.0, 100.0, n_samples), np.zeros(n_samples)]
-        )
-
-        # But precomputed heading is 90° (+y direction)
-        speed = np.full(n_samples, 10.0)
-        heading = np.full(n_samples, np.pi / 2)  # 90 degrees
-
-        labels = heading_direction_labels(
-            positions=positions,
-            times=times,
-            speed=speed,
-            heading=heading,
-            min_speed=5.0,
-        )
-
-        # Should use precomputed, so labels should be 90° not 0°
-        assert set(labels) == {"90°"}
-
-    def test_error_no_inputs(self) -> None:
-        """Raises ValueError if neither (positions, times) nor (speed, heading) provided."""
-        with pytest.raises(ValueError, match="Must provide either"):
-            heading_direction_labels(min_speed=5.0)
-
-    def test_error_incomplete_positions(self, rng) -> None:
-        """Raises ValueError if positions provided without times."""
-        positions = rng.random((100, 2))
-        with pytest.raises(ValueError, match="times and positions"):
-            heading_direction_labels(positions=positions, min_speed=5.0)
-
-    def test_error_incomplete_precomputed(self, rng) -> None:
-        """Raises ValueError if speed provided without heading."""
-        speed = rng.random(100)
-        with pytest.raises(ValueError, match="speed and heading"):
-            heading_direction_labels(speed=speed, min_speed=5.0)
-
     def test_error_mismatched_lengths(self, rng) -> None:
-        """Raises ValueError if speed and heading have different lengths."""
-        speed = rng.random(100)
-        heading = rng.random(50)  # Different length
-        with pytest.raises(ValueError, match="same length"):
-            heading_direction_labels(speed=speed, heading=heading, min_speed=5.0)
+        """Raises ValueError if headings and speeds have different lengths."""
+        speeds = rng.random(100)
+        headings = rng.random(50)  # Different length
+        with pytest.raises(ValueError, match="50 headings and 100 speeds"):
+            headings_to_direction_labels(headings, speeds, min_speed=5.0)
 
     def test_n_directions_default_8(self) -> None:
         """Default n_directions=8 produces 8 bins (45° each)."""
@@ -524,9 +483,9 @@ class TestHeadingDirectionLabels:
         # clockwise edge of the 45° sector.
         speed = np.full(n_samples, 10.0)
         for heading, expected in [(np.pi / 4, "45°"), (np.pi / 8, "45°")]:
-            labels = heading_direction_labels(
-                speed=speed,
-                heading=np.full(n_samples, heading),
+            labels = headings_to_direction_labels(
+                np.full(n_samples, heading),
+                speed,
                 n_directions=8,
                 min_speed=5.0,
             )
@@ -538,9 +497,9 @@ class TestHeadingDirectionLabels:
         speed = np.full(n_samples, 10.0)
         heading_neg = np.full(n_samples, -np.pi / 2)  # -90° = 270°
 
-        labels = heading_direction_labels(
-            speed=speed,
-            heading=heading_neg,
+        labels = headings_to_direction_labels(
+            heading_neg,
+            speed,
             n_directions=8,
             min_speed=5.0,
         )

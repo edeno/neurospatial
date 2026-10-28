@@ -68,7 +68,7 @@ References
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import numpy as np
@@ -669,10 +669,8 @@ def head_sweep_from_positions(
     >>> head_sweep_from_positions(times, still, min_speed=1.0)
     nan
     """
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
-    from neurospatial.behavior.decisions import _validated_min_speed
+    from neurospatial.behavior._kinematics import validated_min_speed
 
-    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -681,9 +679,9 @@ def head_sweep_from_positions(
         epochs=epochs,
         break_before=break_before,
         result="no head sweep was observed",
+        columns="xy",
     )
-    _validate_velocity_positions(raw_positions, call="head_sweep_from_positions")
-    min_speed = _validated_min_speed(min_speed, call="head_sweep_from_positions")
+    min_speed = validated_min_speed(min_speed, call="head_sweep_from_positions")
     return _head_sweep(times, positions, support.interval_mask, min_speed=min_speed)
 
 
@@ -699,11 +697,14 @@ def _head_sweep(
 
     if not interval_mask.any():
         return np.nan
-    heading, speed = _movement_heading_and_speed(
-        times, positions, interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
+    # NaN where the animal is not moving: no direction of movement.
+    heading, _ = _movement_heading_and_speed(
+        times,
+        positions,
+        interval_mask,
+        smooth_window=DEFAULT_SPEED_SMOOTHING,
+        min_speed=min_speed,
     )
-    # The velocity direction is observed only where the animal moves.
-    heading[~((speed > 0) & (speed >= min_speed))] = np.nan
     sweeps = [
         head_sweep_magnitude(heading[first : last + 1])
         for first, last in run_sample_bounds(interval_mask)
@@ -1060,15 +1061,13 @@ def compute_vte_trial(
     >>> result.mean_speed, result.head_sweep_magnitude
     (nan, nan)
     """
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
-    from neurospatial.behavior.decisions import (
-        _pre_decision_window,
-        _validated_entry_time,
-        _validated_min_speed,
-        _validated_window_duration,
+    from neurospatial.behavior._decision_windows import (
+        pre_decision_window,
+        validated_entry_time,
+        validated_window_duration,
     )
+    from neurospatial.behavior._kinematics import validated_min_speed
 
-    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -1077,30 +1076,27 @@ def compute_vte_trial(
         epochs=epochs,
         break_before=break_before,
         result="no VTE metric was observed",
+        columns="xy",
     )
-    _validate_velocity_positions(raw_positions, call="compute_vte_trial")
-    window_duration = _validated_window_duration(
+    window_duration = validated_window_duration(
         window_duration, name="window_duration", call="compute_vte_trial"
     )
-    entry_time = _validated_entry_time(times, entry_time, call="compute_vte_trial")
-    min_speed = _validated_min_speed(min_speed, call="compute_vte_trial")
-    window = _pre_decision_window(
+    entry_time = validated_entry_time(times, entry_time, call="compute_vte_trial")
+    min_speed = validated_min_speed(min_speed, call="compute_vte_trial")
+    window = pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
     head_sweep, mean_spd, min_spd = _window_metrics(
         times, positions, support, window, min_speed=min_speed
     )
-    return VTETrialResult(
-        head_sweep_magnitude=head_sweep,
-        z_head_sweep=None,  # Not computed for single trial
+    # A single trial has no session baseline, so it is not z-scored.
+    return _unscored_trial(
+        status="ok",
+        head_sweep=head_sweep,
         mean_speed=mean_spd,
         min_observed_speed=min_spd,
-        z_speed_inverse=None,
-        vte_index=None,
-        is_vte=None,
         window_start=entry_time - window_duration,
         window_end=entry_time,
-        status="ok",
     )
 
 
@@ -1117,7 +1113,7 @@ def _window_metrics(
     The window lies inside one gate segment, so its usable intervals are the
     support's usable intervals between its first and last sample.
     """
-    from neurospatial.behavior.decisions import _speed_stats
+    from neurospatial.behavior._decision_windows import speed_stats
 
     window_times = times[window]
     window_positions = positions[window]
@@ -1125,7 +1121,7 @@ def _window_metrics(
     head_sweep = _head_sweep(
         window_times, window_positions, window_mask, min_speed=min_speed
     )
-    mean_speed, min_speed_value = _speed_stats(
+    mean_speed, min_speed_value = speed_stats(
         window_times, window_positions, window_mask
     )
     return head_sweep, mean_speed, min_speed_value
@@ -1309,7 +1305,6 @@ def compute_vte_session(
         "head sweeps and speeds in the same Cartesian coordinates.",
         fix="use the allocentric environment the positions were recorded in",
     )
-    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -1318,6 +1313,7 @@ def compute_vte_session(
         epochs=epochs,
         break_before=break_before,
         result="no VTE trial was observed",
+        columns="xy",
     )
     _require_region_mask(
         env,
@@ -1325,18 +1321,10 @@ def compute_vte_session(
         operation="compute_vte_session()",
         argument="decision_region",
     )
-    from neurospatial.behavior._kinematics import (
-        _validate_velocity_positions,
-        resolve_min_speed,
-    )
-    from neurospatial.behavior.decisions import (
-        _in_epochs,
-        _validated_min_speed,
-        _validated_window_duration,
-    )
+    from neurospatial.behavior._decision_windows import validated_window_duration
+    from neurospatial.behavior._kinematics import resolve_min_speed
 
-    _validate_velocity_positions(raw_positions, call="compute_vte_session")
-    window_duration = _validated_window_duration(
+    window_duration = validated_window_duration(
         window_duration, name="window_duration", call="compute_vte_session"
     )
     alpha = _validated_alpha(alpha, call="compute_vte_session")
@@ -1349,13 +1337,10 @@ def compute_vte_session(
             "Fix: pass a finite threshold on the VTE index, e.g. "
             "vte_threshold=0.5."
         )
-    min_speed = _validated_min_speed(
-        resolve_min_speed(env, min_speed, call="compute_vte_session()"),
-        call="compute_vte_session",
-    )
+    min_speed = resolve_min_speed(env, min_speed, call="compute_vte_session")
     region_bins = env.bins_in_region(decision_region)
-    in_epochs = _in_epochs(times, support.epochs)
-    measured: list[_TrialMeasurement] = []
+    in_epochs = support.sample_in_epochs
+    measured: list[VTETrialResult] = []
     for index, trial in enumerate(trials):
         measured.append(
             _measure_trial(
@@ -1375,8 +1360,8 @@ def compute_vte_session(
 
     # Z-scores over the session: unmeasured trials carry NaN metrics, so they
     # get NaN z-scores and stay out of the baseline.
-    head_sweeps = np.array([m.head_sweep for m in measured], dtype=np.float64)
-    speeds = np.array([m.mean_speed for m in measured], dtype=np.float64)
+    head_sweeps = np.array([m.head_sweep_magnitude for m in measured])
+    speeds = np.array([m.mean_speed for m in measured])
     z_head_sweeps, z_speed_inv = normalize_vte_scores(head_sweeps, speeds)
 
     trial_results = []
@@ -1385,32 +1370,38 @@ def compute_vte_session(
     ):
         vte_idx = compute_vte_index(float(z_head_sweep), float(z_speed), alpha=alpha)
         trial_results.append(
-            VTETrialResult(
-                head_sweep_magnitude=m.head_sweep,
-                z_head_sweep=float(z_head_sweep),
-                mean_speed=m.mean_speed,
-                min_observed_speed=m.min_observed_speed,
-                z_speed_inverse=float(z_speed),
-                vte_index=float(vte_idx),
+            replace(
+                m,
+                z_head_sweep=z_head_sweep,
+                z_speed_inverse=z_speed,
+                vte_index=vte_idx,
                 is_vte=classify_vte(vte_idx, threshold=vte_threshold),
-                window_start=m.window_start,
-                window_end=m.window_end,
-                status=m.status,
             )
         )
     return VTESessionResult(trial_results=tuple(trial_results))
 
 
-@dataclass(frozen=True)
-class _TrialMeasurement:
-    """Raw pre-decision metrics of one session trial, before z-scoring."""
-
-    status: VTETrialStatus
-    head_sweep: float = np.nan
-    mean_speed: float = np.nan
-    min_observed_speed: float = np.nan
-    window_start: float = np.nan
-    window_end: float = np.nan
+def _unscored_trial(
+    status: VTETrialStatus,
+    head_sweep: float = np.nan,
+    mean_speed: float = np.nan,
+    min_observed_speed: float = np.nan,
+    window_start: float = np.nan,
+    window_end: float = np.nan,
+) -> VTETrialResult:
+    """Raw pre-decision metrics of one trial, before session z-scoring."""
+    return VTETrialResult(
+        head_sweep_magnitude=head_sweep,
+        z_head_sweep=None,
+        mean_speed=mean_speed,
+        min_observed_speed=min_observed_speed,
+        z_speed_inverse=None,
+        vte_index=None,
+        is_vte=None,
+        window_start=window_start,
+        window_end=window_end,
+        status=status,
+    )
 
 
 def _measure_trial(
@@ -1426,9 +1417,9 @@ def _measure_trial(
     decision_region: str,
     window_duration: float,
     min_speed: float,
-) -> _TrialMeasurement:
-    """Raw metrics of one trial, or the status saying why it has none."""
-    from neurospatial.behavior.decisions import _first_entry, _pre_decision_window
+) -> VTETrialResult:
+    """Unscored metrics of one trial, or the status saying why it has none."""
+    from neurospatial.behavior._decision_windows import first_entry, pre_decision_window
 
     span = f"Trial {index} spanning [{trial.start_time:.3f}, {trial.end_time:.3f}] s"
     # The trial's samples, start_time <= t <= end_time, are contiguous.
@@ -1443,10 +1434,10 @@ def _measure_trial(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-        return _TrialMeasurement(status="no_samples")
+        return _unscored_trial(status="no_samples")
     trial_times = times[first:stop]
     # The entry is the trial's first decision-region sample inside epochs.
-    entry = _first_entry(
+    entry = first_entry(
         env.bin_at(positions[first:stop]), region_bins, in_epochs[first:stop]
     )
     if entry is None:
@@ -1456,14 +1447,14 @@ def _measure_trial(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-        return _TrialMeasurement(status="no_entry")
+        return _unscored_trial(status="no_entry")
     entry_time = float(trial_times[entry])
     window_start = max(entry_time - window_duration, float(trial.start_time))
 
     # The pre-decision window comes from this trial's samples only, so it
     # stops at the trial start; the trial's interval gates are the session's
     # gates between its first and last sample.
-    in_trial = _pre_decision_window(
+    in_trial = pre_decision_window(
         trial_times,
         support.interval_gates[first : stop - 1],
         entry_time,
@@ -1479,13 +1470,13 @@ def _measure_trial(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-        return _TrialMeasurement(
+        return _unscored_trial(
             status="too_few_samples", window_start=window_start, window_end=entry_time
         )
     head_sweep, mean_speed, min_observed_speed = _window_metrics(
         times, positions, support, window, min_speed=min_speed
     )
-    return _TrialMeasurement(
+    return _unscored_trial(
         status="ok",
         head_sweep=head_sweep,
         mean_speed=mean_speed,

@@ -35,12 +35,10 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
         compute_path_efficiency,
         goal_bias,
         heading_direction_labels,
+        headings_to_direction_labels,
         instantaneous_goal_alignment,
     )
-    from neurospatial.behavior.trajectory import (
-        compute_home_range,
-        compute_trajectory_curvature,
-    )
+    from neurospatial.behavior.trajectory import compute_home_range
     from neurospatial.behavior.vte import (
         compute_vte_session,
         compute_vte_trial,
@@ -82,9 +80,9 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
         "heading_direction_labels": heading_direction_labels(
             r.times, r.positions, min_speed=5.0
         ),
-        "heading_direction_precomputed": heading_direction_labels(
-            speed=np.ones(len(r.times)) * 10,
-            heading=r.headings,
+        "heading_direction_precomputed": headings_to_direction_labels(
+            r.headings,
+            np.ones(len(r.times)) * 10,
             min_speed=5.0,
         ),
         "compute_path_efficiency": compute_path_efficiency(
@@ -106,12 +104,6 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
         ),
         "compute_goal_directed_metrics": compute_goal_directed_metrics(
             r.env, r.times, r.positions, goal, goal_radius=5
-        ),
-        "compute_trajectory_curvature": compute_trajectory_curvature(
-            r.times, r.positions
-        ),
-        "compute_trajectory_curvature_no_times": compute_trajectory_curvature(
-            r.times, r.positions, smooth_window=0.0
         ),
         "compute_home_range": compute_home_range(home_bins, times=home_times),
         "compute_home_range_no_times": compute_home_range(home_bins),

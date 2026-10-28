@@ -651,10 +651,16 @@ These are spatial maps conditioned on travel direction, rather than angular
 head-direction tuning curves. Compare rates only where both conditions have
 adequate occupancy. Different paths, speeds or trial outcomes can explain a
 map difference; the helper does not perform a condition-comparison test.
-Labels from `heading_direction_labels` also include `"stationary"` for an
-animal that was observed but not moving; passing them straight to
-`compute_directional_place_fields` gives a "stationary" map as well, and
-`missing_label="stationary"` drops it (a `None` label is always dropped).
+To condition on compass direction in an open arena instead,
+`heading_direction_labels(times, positions, min_speed=5.0)` labels each frame
+by its direction of movement in 45° sectors, and
+`headings_to_direction_labels(headings, speeds, min_speed=5.0)` puts headings
+you already have, such as head direction from `heading_from_body_orientation`,
+in the same sectors wherever the animal runs. Both also label `"stationary"`
+an animal that was observed but not moving; passing the labels
+straight to `compute_directional_place_fields` gives a "stationary" map as
+well, and `missing_label="stationary"` drops it (a `None` label is always
+dropped).
 For gapped tracking, derive velocity within each observed run rather than
 across a dropout.
 
