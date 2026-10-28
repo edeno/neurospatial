@@ -96,9 +96,6 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     # Reward locations; read from the tracked positions at the reward times
     # when absent.
     ("distance_to_reward", "reward_positions"),
-    # The trajectory, which the caller can replace by speed= and heading=.
-    ("heading_direction_labels", "times"),
-    ("heading_direction_labels", "positions"),
     # Retired argument kept by position so the former call
     # mutual_information(rates, occupancy) raises with migration guidance.
     ("mutual_information", "occupancy"),

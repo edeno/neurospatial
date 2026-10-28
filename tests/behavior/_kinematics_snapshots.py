@@ -35,6 +35,7 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
         compute_path_efficiency,
         goal_bias,
         heading_direction_labels,
+        headings_to_direction_labels,
         instantaneous_goal_alignment,
     )
     from neurospatial.behavior.trajectory import (
@@ -82,9 +83,9 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
         "heading_direction_labels": heading_direction_labels(
             r.times, r.positions, min_speed=5.0
         ),
-        "heading_direction_precomputed": heading_direction_labels(
-            speed=np.ones(len(r.times)) * 10,
-            heading=r.headings,
+        "heading_direction_precomputed": headings_to_direction_labels(
+            r.headings,
+            np.ones(len(r.times)) * 10,
             min_speed=5.0,
         ),
         "compute_path_efficiency": compute_path_efficiency(

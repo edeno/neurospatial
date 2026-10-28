@@ -17,6 +17,7 @@ from neurospatial.behavior import (
     goal_pair_direction_labels,
     graph_turn_sequence,
     heading_direction_labels,
+    headings_to_direction_labels,
     path_progress,
     time_to_goal,
     trials_to_region_arrays,
@@ -397,48 +398,69 @@ class TestHeadingDirectionLabels:
     def test_sector_labels_are_the_centre_direction(
         self, heading, n_directions, expected
     ):
-        labels = heading_direction_labels(
-            speed=np.array([10.0]),
-            heading=np.array([heading]),
+        labels = headings_to_direction_labels(
+            np.array([heading]),
+            np.array([10.0]),
             n_directions=n_directions,
             min_speed=5.0,
         )
         assert labels.tolist() == [expected]
 
-    @pytest.mark.parametrize(
-        "kwargs",
-        [{"epochs": (0.0, 1.0)}, {"max_gap": 0.2}, {"max_gap": None}],
-    )
-    def test_time_support_with_precomputed_input_is_refused(self, kwargs):
-        """Precomputed speed and heading have no times to gate."""
-        with pytest.raises(ValueError, match=r"precomputed"):
-            heading_direction_labels(
-                speed=np.ones(3), heading=np.zeros(3), min_speed=0.5, **kwargs
-            )
+    @pytest.fixture(params=["heading_direction_labels", "headings_to_direction_labels"])
+    def label(self, request):
+        """Each labeler on three samples, with the options given."""
+        if request.param == "heading_direction_labels":
+            times = np.arange(3) / 10
+            positions = np.c_[np.arange(3.0), np.zeros(3)]
+            return lambda **kw: heading_direction_labels(times, positions, **kw)
+        return lambda **kw: headings_to_direction_labels(np.zeros(3), np.ones(3), **kw)
 
     @pytest.mark.parametrize("min_speed", [np.nan, -1.0, np.inf])
-    def test_min_speed_must_be_finite_and_non_negative(self, min_speed):
+    def test_min_speed_must_be_finite_and_non_negative(self, label, min_speed):
         with pytest.raises(ValueError, match=r"min_speed"):
-            heading_direction_labels(
-                speed=np.ones(3), heading=np.zeros(3), min_speed=min_speed
-            )
+            label(min_speed=min_speed)
 
-    @pytest.mark.parametrize("n_directions", [0, -4, 2.5])
-    def test_n_directions_must_be_a_positive_integer(self, n_directions):
+    @pytest.mark.parametrize("n_directions", [0, -4, 2.5, True])
+    def test_n_directions_must_be_a_positive_integer(self, label, n_directions):
         with pytest.raises(ValueError, match=r"n_directions"):
-            heading_direction_labels(
-                speed=np.ones(3),
-                heading=np.zeros(3),
-                n_directions=n_directions,
-                min_speed=0.5,
-            )
+            label(n_directions=n_directions, min_speed=0.5)
 
-    def test_heading_in_degrees_warns(self):
-        heading = np.array([10.0, 200.0, 350.0, 90.0])
+    def test_headings_in_degrees_warn(self):
+        headings = np.array([10.0, 200.0, 350.0, 90.0])
         with pytest.warns(UserWarning, match=r"degrees"):
-            heading_direction_labels(
-                speed=np.full(4, 10.0), heading=heading, min_speed=5.0
-            )
+            headings_to_direction_labels(headings, np.full(4, 10.0), min_speed=5.0)
+
+    @pytest.mark.parametrize(
+        ("headings", "speeds", "match"),
+        [
+            (np.zeros((3, 1)), np.ones(3), r"1-D headings.*\(3, 1\)"),
+            (np.zeros(3), np.ones((1, 3)), r"1-D speeds.*\(1, 3\)"),
+            (np.zeros(()), np.ones(()), r"1-D headings"),
+            (np.array([0.0, np.inf, 0.0]), np.ones(3), r"infinite heading at sample 1"),
+            (np.zeros(3), np.array([1.0, -0.5, 1.0]), r"speeds\[1\] = -0.5"),
+            (np.zeros(3), np.array([1.0, 1.0, np.inf]), r"speeds\[2\] = inf"),
+        ],
+    )
+    def test_precomputed_inputs_are_validated(self, headings, speeds, match):
+        with pytest.raises(ValueError, match=match) as caught:
+            headings_to_direction_labels(headings, speeds, min_speed=1.0)
+        message = str(caught.value)
+        assert message.startswith("headings_to_direction_labels()")
+        assert "Fix:" in message
+
+    def test_swapped_headings_and_speeds_name_the_order(self):
+        """Wrapped headings passed as speeds are negative, so the swap raises."""
+        headings = np.array([0.5, -2.0, 1.0])
+        speeds = np.array([10.0, 12.0, 8.0])
+        with pytest.raises(
+            ValueError, match=r"headings_to_direction_labels\(headings, speeds"
+        ):
+            headings_to_direction_labels(speeds, headings, min_speed=5.0)
+
+    def test_empty_precomputed_input_has_no_labels(self):
+        labels = headings_to_direction_labels(np.array([]), np.array([]), min_speed=1.0)
+        assert labels.dtype == object
+        assert labels.shape == (0,)
 
 
 class TestTrialHelpersOnAnotherClock:

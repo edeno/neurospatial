@@ -5006,7 +5006,8 @@ def compute_directional_place_fields(
         ``1`` and ``"1"`` are different directions. ``None``, ``NaN`` and
         ``missing_label`` mark samples without a direction and are excluded. The direction-label
         functions give ``None`` to samples outside every lap, run or trial.
-        Labels from ``heading_direction_labels`` include ``"stationary"``, an
+        Labels from ``heading_direction_labels`` and
+        ``headings_to_direction_labels`` include ``"stationary"``, an
         ordinary label here that gets its own map; pass
         ``missing_label="stationary"`` to drop it.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"

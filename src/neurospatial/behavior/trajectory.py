@@ -731,6 +731,7 @@ def heading_from_body_orientation(
     See Also
     --------
     heading_from_velocity : Direction of movement, from positions alone.
+    headings_to_direction_labels : Label these headings by direction sector.
 
     Notes
     -----

@@ -292,16 +292,6 @@ def test_lap_spanning_break_is_dropped(laps):
     assert bounds(split) == bounds(joined)
 
 
-def test_heading_labels_refuse_breaks_with_precomputed_kinematics():
-    with pytest.raises(ValueError, match="precomputed speed and heading"):
-        heading_direction_labels(
-            speed=np.ones(3),
-            heading=np.zeros(3),
-            min_speed=0.5,
-            break_before=np.array([False, True, False]),
-        )
-
-
 def test_home_range_refuses_breaks_without_times():
     with pytest.raises(ValueError, match="break_before without times"):
         compute_home_range(np.array([0, 0, 1]), break_before=np.zeros(3, dtype=bool))
