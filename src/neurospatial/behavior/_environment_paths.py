@@ -64,6 +64,7 @@ References
 
 from __future__ import annotations
 
+import itertools
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -93,6 +94,8 @@ _PROBE_PHASE = 2.0 - 2.0**0.5
 # is shorter than _SPLIT_RESOLUTION probe spacings.
 _SPLIT_AT = 2.0**0.5 - 1.0
 _SPLIT_RESOLUTION = 1e-2
+# Runs of at most this many probe stretches that are not clean are probed.
+_TRACE_RUN = 8
 # Probe points located per call to ``Environment.bin_at``.
 _PROBE_CHUNK = 1_000_000
 # Soft memory budget of the per-target fields an environment keeps.
@@ -662,6 +665,20 @@ class _OpenPaths(EnvironmentPaths):
         """
         return np.asarray(self._locator.locate(points, self._env._cache), dtype=np.intp)
 
+    def _grid_cells(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """:meth:`_cells` on a grid: a point's half-open cell when it is a bin.
+
+        Only points outside every bin's half-open cell go to the locator,
+        which may give them a bin on the outline.
+        """
+        grid = self._grid
+        assert grid is not None
+        located = grid.bin_of(grid.half_open(points))
+        rest = np.flatnonzero(located < 0)
+        if rest.size:
+            located[rest] = self._cells(points[rest])
+        return located
+
     def _connected(self, a: NDArray[np.intp], b: NDArray[np.intp]) -> NDArray[np.bool_]:
         """Whether each bin pair is joined by an open connection."""
         found: NDArray[np.bool_] = np.any(self._neighbors[a] == b[:, None], axis=1)
@@ -759,7 +776,9 @@ class _OpenPaths(EnvironmentPaths):
 
         Probes are located in rounds of doubling length from the start, and
         a segment stops being probed at its first obstruction, so a blocked
-        segment costs about as much as its distance to the obstruction.
+        segment costs about as much as its distance to the obstruction. On a
+        grid, visibility alone skips the probes of clean stretches
+        (:meth:`_trace_boxes`).
 
         Parameters
         ----------
@@ -785,6 +804,9 @@ class _OpenPaths(EnvironmentPaths):
         if n_segments == 0:
             return visible, cost
         n_steps = np.maximum(np.ceil(lengths / self._spacing).astype(np.intp), 1)
+        if rate is None and self._grid is not None and self._grid.boxes(self):
+            visible = self._trace_boxes(starts, ends, start_bins, end_bins, n_steps)
+            return visible, cost
         if rate is not None:
             cost[:] = 0.0
         previous = start_bins.astype(np.intp, copy=True)
@@ -851,6 +873,152 @@ class _OpenPaths(EnvironmentPaths):
             return visible, cost
         cost[~visible] = np.inf
         return visible, cost
+
+    def _trace_boxes(
+        self,
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        start_bins: NDArray[np.intp],
+        end_bins: NDArray[np.intp],
+        n_steps: NDArray[np.intp],
+    ) -> NDArray[np.bool_]:
+        """:meth:`_trace` visibility on a grid, skipping clean stretches.
+
+        A run of probes whose grid cells span a box of active cells, all
+        joined to one another, has no blocked stretch: every probe and every
+        cell a stretch walks through lies in the box (coordinates and cells
+        are monotone along a segment). Runs are halved until they are clean
+        or short, and only short runs that are not clean are probed, with
+        the same probes and stretch tests as :meth:`_trace`, so the result
+        is the same.
+        """
+        grid = self._grid
+        assert grid is not None
+        visible = np.ones(starts.shape[0], dtype=bool)
+        geometry = (starts, ends, start_bins, end_bins, n_steps)
+        # Runs of points lo .. hi of a segment (0 = start, n_steps + 1 = end),
+        # with the cell range each end of the run may touch.
+        seg = np.arange(starts.shape[0])
+        lo = np.zeros(seg.size, dtype=np.intp)
+        hi = n_steps + 1
+        # The start is point 0 itself; the end, as probed, is
+        # starts + 1.0 * (ends - starts).
+        lo_low, lo_high = self._end_cells(starts, start_bins)
+        hi_low, hi_high = self._end_cells(starts + (ends - starts), end_bins)
+        while seg.size:
+            dirty = ~grid.clean(
+                np.minimum(lo_low, hi_low), np.maximum(lo_high, hi_high)
+            )
+            short = dirty & (hi - lo <= _TRACE_RUN)
+            if short.any():
+                bad = self._run_blocked(seg[short], lo[short], hi[short], *geometry)
+                visible[seg[short][bad]] = False
+            keep = dirty & ~short
+            keep[keep] = visible[seg[keep]]
+            seg, lo, hi = seg[keep], lo[keep], hi[keep]
+            lo_low, lo_high, hi_low, hi_high = (
+                x[keep] for x in (lo_low, lo_high, hi_low, hi_high)
+            )
+            mid = (lo + hi) // 2
+            # The middle is a probe: in no bin, its segment is blocked.
+            mid_points = self._point_coordinates(seg, mid, starts, ends, n_steps)
+            mid_low = grid.half_open(mid_points)
+            mid_high = mid_low
+            outside = np.flatnonzero(grid.bin_of(mid_low) < 0)
+            if outside.size:
+                missing = outside[self._cells(mid_points[outside]) < 0]
+                visible[seg[missing]] = False
+                keep = visible[seg]
+                seg, lo, hi, mid = seg[keep], lo[keep], hi[keep], mid[keep]
+                lo_low, lo_high, hi_low, hi_high, mid_low = (
+                    x[keep] for x in (lo_low, lo_high, hi_low, hi_high, mid_low)
+                )
+                mid_high = mid_low
+            seg, lo, hi = np.r_[seg, seg], np.r_[lo, mid], np.r_[mid, hi]
+            lo_low, hi_low = np.r_[lo_low, mid_low], np.r_[mid_low, hi_low]
+            lo_high, hi_high = np.r_[lo_high, mid_high], np.r_[mid_high, hi_high]
+        return visible
+
+    def _end_cells(
+        self, points: NDArray[np.float64], bins: NDArray[np.intp]
+    ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+        """Cell range a run may touch at a segment's end, in ``bins``.
+
+        The cell of the bin, joined with the half-open cell of the point
+        where it is not the bin's center (a center lies in its own cell).
+        """
+        grid = self._grid
+        assert grid is not None
+        low = grid.cell[bins]
+        high = low.copy()
+        off = np.flatnonzero(np.any(points != self._centers[bins], axis=1))
+        if off.size:
+            cells = grid.half_open(points[off])
+            low[off] = np.minimum(low[off], cells)
+            high[off] = np.maximum(high[off], cells)
+        return low, high
+
+    def _point_coordinates(
+        self,
+        seg: NDArray[np.intp],
+        step: NDArray[np.intp],
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        n_steps: NDArray[np.intp],
+    ) -> NDArray[np.float64]:
+        """Coordinates of point ``step`` of each segment, as :meth:`_trace` probes."""
+        fraction = self._probe_fraction(step, n_steps[seg])
+        coordinates: NDArray[np.float64] = starts[seg] + fraction[:, None] * (
+            ends[seg] - starts[seg]
+        )
+        return coordinates
+
+    def _run_blocked(
+        self,
+        seg: NDArray[np.intp],
+        lo: NDArray[np.intp],
+        hi: NDArray[np.intp],
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        start_bins: NDArray[np.intp],
+        end_bins: NDArray[np.intp],
+        n_steps: NDArray[np.intp],
+    ) -> NDArray[np.bool_]:
+        """Whether any stretch of each run of points ``lo .. hi`` is blocked."""
+        count = hi - lo + 1
+        owner = np.repeat(np.arange(seg.size), count)
+        step = np.repeat(lo, count) + ragged_arange(count)
+        segment = seg[owner]
+        located = np.empty(step.size, dtype=np.intp)
+        at_start = step == 0
+        at_end = step == n_steps[segment] + 1
+        located[at_start] = start_bins[segment[at_start]]
+        located[at_end] = end_bins[segment[at_end]]
+        probe = ~(at_start | at_end)
+        if probe.any():
+            located[probe] = self._grid_cells(
+                self._point_coordinates(
+                    segment[probe], step[probe], starts, ends, n_steps
+                )
+            )
+        # Stretches end at every point but each run's first.
+        right = np.ones(step.size, dtype=bool)
+        right[np.cumsum(count) - count] = False
+        right_at = np.flatnonzero(right)
+        fraction = self._probe_fraction(step, n_steps[segment])
+        bad = self._crossing_blocked(
+            located[right_at - 1],
+            located[right_at],
+            segment[right_at],
+            fraction[right_at - 1],
+            fraction[right_at],
+            starts,
+            ends,
+        )
+        blocked: NDArray[np.bool_] = (
+            np.bincount(owner[right_at][bad], minlength=seg.size) > 0
+        )
+        return blocked
 
     @staticmethod
     def _probe_fraction(
@@ -1226,6 +1394,162 @@ class _GridCells:
         self.flat_to_active = flat_to_active
         self.shape = shape
         self.cell = cell
+        # Box-sum tables for :meth:`clean`, built on first use.
+        self._defects: NDArray[np.int32] | None = None
+        self._defect_extents = np.zeros((0, len(shape)), dtype=np.intp)
+        self._usable: bool | None = None
+
+    def boxes(self, paths: _OpenPaths) -> bool:
+        """Whether :meth:`clean` can stand in for probing ``paths``'s stretches.
+
+        It can when a stretch between two probes (at most one probe spacing
+        long) cannot step over a cell, so the cell walk resolves every
+        stretch between bins.
+        """
+        if self._usable is None:
+            narrowest = min(float(np.diff(edge).min()) for edge in self.edges)
+            self._usable = paths._spacing * (1 + 1e-6) < narrowest
+            if self._usable:
+                self._build_defects(paths._connected)
+        return self._usable
+
+    def _build_defects(
+        self,
+        connected: Callable[[NDArray[np.intp], NDArray[np.intp]], NDArray[np.bool_]],
+    ) -> None:
+        """Box-sum tables of inactive cells and of closed neighbor pairs.
+
+        A closed pair is two active bins that differ by at most one on every
+        axis and are not joined by an open connection. It lies in a box when
+        its lowest corner cell ``m`` does and ``m + extent`` too, where the
+        extent is 0 or 1 per axis, so one table per extent counts closed
+        pairs at ``m`` (extent 0: inactive cells). Each table is padded
+        with a leading zero on every axis and summed cumulatively along
+        every axis.
+        """
+        shape = self.shape
+        n_dims = len(shape)
+        bins = self.flat_to_active.reshape(shape)
+        by_extent = {(0,) * n_dims: bins < 0}
+        for offset in itertools.product((-1, 0, 1), repeat=n_dims):
+            if offset <= (0,) * n_dims:
+                continue
+            here = tuple(
+                slice(max(0, -o), n - max(0, o))
+                for o, n in zip(offset, shape, strict=True)
+            )
+            there = tuple(
+                slice(max(0, o), n - max(0, -o))
+                for o, n in zip(offset, shape, strict=True)
+            )
+            u, v = bins[here], bins[there]
+            both = (u >= 0) & (v >= 0)
+            closed = np.zeros(u.shape, dtype=bool)
+            closed[both] = ~connected(u[both], v[both])
+            if not closed.any():
+                continue
+            extent = tuple(abs(o) for o in offset)
+            table = by_extent.setdefault(extent, np.zeros(shape, dtype=bool))
+            table[
+                tuple(slice(0, n - e) for e, n in zip(extent, shape, strict=True))
+            ] |= closed
+        self._defects = self._summed(np.stack(list(by_extent.values())))
+        self._defect_extents = np.array(list(by_extent), dtype=np.intp)
+
+    @staticmethod
+    def _summed(tables: NDArray[np.bool_]) -> NDArray[np.int32]:
+        """Padded cumulative sums of stacked tables, flattened per table."""
+        summed = np.zeros(
+            (tables.shape[0], *(n + 1 for n in tables.shape[1:])), dtype=np.int32
+        )
+        summed[(slice(None), *(slice(1, None) for _ in tables.shape[1:]))] = tables
+        for axis in range(1, summed.ndim):
+            np.cumsum(summed, axis=axis, out=summed)
+        return summed.reshape(tables.shape[0], -1)
+
+    def half_open(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Half-open grid cell of each point per axis, as the locator finds it.
+
+        Returns
+        -------
+        ndarray of int, shape (n_points, n_dims)
+            ``-1`` below an axis's first edge, ``shape[d]`` at or above its
+            last.
+        """
+        return np.column_stack(
+            [
+                np.digitize(points[:, axis], edge) - 1
+                for axis, edge in enumerate(self.edges)
+            ]
+        ).astype(np.intp, copy=False)
+
+    def bin_of(self, cells: NDArray[np.intp]) -> NDArray[np.intp]:
+        """Active bin of each grid cell, -1 for an inactive cell or off the grid."""
+        inside = np.all((cells >= 0) & (cells < np.asarray(self.shape)), axis=1)
+        bins = np.full(cells.shape[0], -1, dtype=np.intp)
+        bins[inside] = self.flat_to_active[
+            np.ravel_multi_index(tuple(cells[inside].T), self.shape)
+        ]
+        return bins
+
+    def clean(self, low: NDArray[np.intp], high: NDArray[np.intp]) -> NDArray[np.bool_]:
+        """Whether each box of cells is all active bins, all joined pairwise.
+
+        Parameters
+        ----------
+        low, high : ndarray of int, shape (n, n_dims)
+            First and last cell of each box on every axis.
+
+        Returns
+        -------
+        ndarray of bool, shape (n,)
+            True when the box lies in the grid, every cell in it is an
+            active bin, and every two of them that differ by at most one on
+            every axis are joined by an open connection.
+        """
+        assert self._defects is not None
+        clean = np.zeros(low.shape[0], dtype=bool)
+        inside = np.flatnonzero(
+            np.all((low >= 0) & (high < np.asarray(self.shape)), axis=1)
+        )
+        if inside.size:
+            totals = self._box_sums(
+                self._defects, self._defect_extents, low[inside], high[inside]
+            )
+            clean[inside] = ~np.any(totals, axis=1)
+        return clean
+
+    def _box_sums(
+        self,
+        summed: NDArray[np.int32],
+        extents: NDArray[np.intp],
+        low: NDArray[np.intp],
+        high: NDArray[np.intp],
+    ) -> NDArray[np.int64]:
+        """Per box and table, the count in cells ``low .. high - extent``.
+
+        Returns
+        -------
+        ndarray of int, shape (n_boxes, n_tables)
+        """
+        shape = np.asarray(self.shape)
+        strides = np.cumprod(np.r_[shape[1:] + 1, 1][::-1])[::-1]
+        n_dims = shape.size
+        first = [low[:, axis, None] * strides[axis] for axis in range(n_dims)]
+        last = [
+            (high[:, axis, None] + 1 - extents[:, axis]) * strides[axis]
+            for axis in range(n_dims)
+        ]
+        tables = np.arange(summed.shape[0])
+        total = np.zeros((low.shape[0], summed.shape[0]), dtype=np.int64)
+        for corner in itertools.product((False, True), repeat=n_dims):
+            index = sum(
+                last[axis] if upper else first[axis]
+                for axis, upper in enumerate(corner)
+            )
+            sign = (-1) ** (n_dims - sum(corner))
+            total += sign * summed[tables, index]
+        return total
 
     @classmethod
     def of(cls, locator: object, centers: NDArray[np.float64]) -> _GridCells | None:
