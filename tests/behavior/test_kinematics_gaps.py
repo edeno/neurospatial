@@ -122,8 +122,13 @@ def test_home_range_dwell_excludes_pause(two_epoch_recording):
     visited = np.unique(bins)
     ordered = visited[np.argsort(totals[visited])[::-1]]
     count = np.searchsorted(np.cumsum(totals[ordered]) / weights.sum() * 100, 95) + 1
+    # The home range is the occupancy level set at the 95 % cutoff: every bin
+    # with as much dwell as the cutoff bin (equal sample counts at 50 Hz give
+    # dwell equal up to roundoff).
+    level = totals[ordered[count - 1]]
+    expected = visited[totals[visited] >= level * (1 - 1e-9)]
     np.testing.assert_array_equal(
-        compute_home_range(bins, times=r.times), ordered[:count]
+        np.sort(compute_home_range(bins, times=r.times)), expected
     )
 
 

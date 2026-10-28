@@ -1725,12 +1725,12 @@ def compute_home_range(
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.int_]:
     """
-    Compute home range as bins containing a percentile of time spent.
+    Compute home range as the most-occupied bins holding a percent of time.
 
-    The home range is defined as the set of bins that collectively contain
-    a specified percentile of the total time spent in the environment. This
-    is analogous to the minimum convex polygon (MCP) method in ecology, but
-    adapted for discretized spatial environments.
+    The home range is the set of most-occupied bins that together hold at
+    least ``percentile`` percent of the observed time (or samples): the
+    isopleth of the binned utilization distribution. It is not a minimum
+    convex polygon; it follows the shape of the occupied area, holes included.
 
     Parameters
     ----------
@@ -1788,28 +1788,36 @@ def compute_home_range(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause.
-
     When ``times`` is given, dwell comes only from valid intervals. A sample
-    outside the environment (bin ``-1``) is missing, like a deleted row: a
-    bridged gap's time goes to the located sample before it. Each
-    run's last sample receives that run's median interval duration; samples
-    in no run receive zero dwell. Bins with zero observed dwell are omitted.
-    No observed dwell gives an empty home
-    range. With ``times=None``, counts are used, and ``max_gap``, ``epochs``
+    outside the environment (bin ``-1``) is missing and is bridged like a
+    deleted row when the located samples around it are within ``max_gap``:
+    the gap's time goes to the located sample before it. Only a longer gap,
+    an ``epochs`` edge or a declared break splits a run. Each run's last
+    sample receives that run's median interval duration; samples in no run
+    receive zero dwell. Bins with zero observed dwell are omitted. No
+    observed dwell gives an empty home range. With ``times=None``, counts are used, and ``max_gap``, ``epochs``
     or ``break_before`` raise because they are judged on the clock.
 
     The home range is computed by:
-    1. Computing occupancy per bin (visit counts, or time-weighted dwell time
-       when ``times`` is provided)
-    2. Sorting bins by occupancy (descending)
-    3. Selecting bins until cumulative occupancy reaches the percentile threshold
 
-    This is related to the utilization distribution (UD) in movement ecology,
-    where the UD is estimated from occupancy and the home range is defined
-    as the isopleth containing a specified probability mass.
+    1. Computing occupancy per bin (visit counts, or time-weighted dwell time
+       when ``times`` is provided).
+    2. Sorting bins by occupancy, most occupied first.
+    3. Finding the cutoff bin, where the cumulative occupancy first reaches
+       ``percentile`` percent of the total.
+    4. Keeping every bin with at least the cutoff bin's occupancy.
+
+    Bins tied with the cutoff bin (equal occupancy share to 12 decimals, so
+    roundoff in summed dwell times does not break a tie) are all kept, so the
+    result is a level set of occupancy and never depends on the order of
+    tied bins; it can then hold more than ``percentile`` percent. Under
+    uniform use, for example, every visited bin is tied and the 50 % home
+    range is all of them. Tied bins are listed in ascending bin order.
+
+    In movement ecology the utilization distribution (UD) is the probability
+    of finding the animal at each location, and the home range is the UD
+    isopleth holding a given probability mass (Worton 1989). Here the UD is
+    the binned occupancy, without kernel smoothing.
 
     See Also
     --------
@@ -1936,26 +1944,25 @@ def compute_home_range(
         observed = occupancy != 0
         unique_bins, occupancy = unique_bins[observed], occupancy[observed]
 
-    # Sort bins by occupancy (descending)
-    sort_idx = np.argsort(occupancy)[::-1]
-    sorted_bins = unique_bins[sort_idx]
-    sorted_counts = occupancy[sort_idx]
-
-    # Compute cumulative percentage
-    total_counts = np.sum(sorted_counts)
-    if total_counts == 0:
+    total = float(np.sum(occupancy))
+    if total == 0:
         return np.array([], dtype=np.intp)
-    cumulative_pct = np.cumsum(sorted_counts) / total_counts * 100.0
-
-    # Find bins to include (cumulative percentage >= threshold)
-    # searchsorted with side='left' gives first index where cumulative_pct >= percentile
-    # We want bins 0 through that index (inclusive), so add 1 for Python slicing
-    n_bins_include = np.searchsorted(cumulative_pct, percentile, side="left") + 1
-    n_bins_include = min(n_bins_include, len(sorted_bins))
-
-    # Return home range bins (sorted by occupancy)
-    home_range = sorted_bins[:n_bins_include]
-
+    # Occupancy shares equal to 12 decimals are ties: summed dwell times
+    # differ by roundoff even when the time spent is the same.
+    share = np.round(occupancy / total, 12)
+    # Most occupied first; ties in ascending bin order (np.unique sorted them).
+    order = np.lexsort((unique_bins, -share))
+    sorted_bins, sorted_share = unique_bins[order], share[order]
+    cumulative_pct = np.cumsum(occupancy[order]) / total * 100.0
+    # First bin at which the cumulative share reaches the percentile, with
+    # the same roundoff allowance.
+    cutoff = min(
+        int(np.searchsorted(cumulative_pct, percentile * (1 - 1e-9), side="left")),
+        len(sorted_bins) - 1,
+    )
+    # The home range is a level set of occupancy: every bin tied with the
+    # cutoff bin is in it, so the result never depends on tie order.
+    home_range = sorted_bins[sorted_share >= sorted_share[cutoff]]
     return home_range.astype(np.intp)
 
 

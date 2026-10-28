@@ -222,13 +222,47 @@ class TestComputeHomeRange:
 
     def test_home_range_50_percentile(self):
         """Test 50% home range (core area)."""
-        # Uniform distribution: 10 visits per bin across 10 bins
-        position_bins = np.repeat(np.arange(10), 10)
+        # Bin 0: 40 visits, bin 1: 30, bins 2-4: 10 each.
+        position_bins = np.repeat(np.arange(5), [40, 30, 10, 10, 10])
 
         home_range = compute_home_range(position_bins, percentile=50.0)
 
-        # 50% of visits = any 5 bins
-        assert len(home_range) == 5
+        # 40 visits are not yet half of 100; adding bin 1 reaches 70.
+        np.testing.assert_array_equal(home_range, [0, 1])
+
+    def test_bins_tied_at_the_cutoff_are_all_included(self):
+        """Uniform use has no 50% core: every bin is at the cutoff level."""
+        position_bins = np.repeat(np.arange(10), 10)
+        home_range = compute_home_range(position_bins, percentile=50.0)
+        np.testing.assert_array_equal(home_range, np.arange(10))
+
+    def test_ties_are_independent_of_sample_order(self):
+        # 40% in bin 0, then three bins with 20% each; the 70% cutoff falls
+        # inside the tie, so the three tied bins are all included.
+        position_bins = np.r_[np.repeat(0, 40), np.repeat([1, 2, 3], 20)]
+        expected = [0, 1, 2, 3]
+        np.testing.assert_array_equal(
+            compute_home_range(position_bins, percentile=70.0), expected
+        )
+        np.testing.assert_array_equal(
+            compute_home_range(position_bins[::-1].copy(), percentile=70.0), expected
+        )
+
+    def test_equal_occupancy_is_ordered_by_bin_index(self):
+        position_bins = np.r_[np.repeat(5, 30), np.repeat([3, 1, 4], 10)]
+        np.testing.assert_array_equal(
+            compute_home_range(position_bins, percentile=100.0), [5, 1, 3, 4]
+        )
+
+    def test_time_weighted_ties_within_roundoff_are_ties(self):
+        # Three bins with 0.3 s each, summed from 0.1 s dwells in different orders.
+        position_bins = np.array([0, 0, 0, 1, 1, 1, 2, 2, 2, 2])
+        times = np.r_[np.arange(9) * 0.1, 0.9]
+        times = np.round(times, 10)
+        home_range = compute_home_range(
+            position_bins, times=times, percentile=50.0, max_gap=None
+        )
+        np.testing.assert_array_equal(home_range, [2, 0, 1])
 
     def test_home_range_returns_indices(self):
         """Test that home_range returns bin indices (integers)."""
