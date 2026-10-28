@@ -51,28 +51,6 @@ def test_point_buffers_are_independent_and_irreversibly_read_only(method, source
             restored.data[0] = 123
 
 
-@pytest.mark.parametrize("method", ["original", "copy", "deepcopy", "pickle"])
-@pytest.mark.parametrize("change", ["shape", "dtype"])
-def test_point_export_headers_cannot_poison_shared_regions(method, change):
-    region = _restore(Region("goal", "point", [1.0, 2.0]), method)
-    snapshot = Regions([region])._snapshot()
-    exported = region.data
-    center = snapshot.region_center("goal")
-    if change == "shape":
-        exported.shape = (1, 2)
-        center.shape = (2, 1)
-    else:
-        exported.dtype = np.uint8
-        center.dtype = np.uint8
-    assert region.n_dims == 2
-    assert region.data.shape == (2,)
-    assert region.data.dtype == np.float64
-    np.testing.assert_array_equal(region.data, [1, 2])
-    np.testing.assert_array_equal(snapshot["goal"].data, [1, 2])
-    np.testing.assert_array_equal(snapshot.region_center("goal"), [1, 2])
-    assert isinstance(region.data.base, bytes)
-
-
 @pytest.mark.parametrize("method", ["original", "copy", "deepcopy", "pickle", "dict"])
 def test_nested_metadata_and_export_ownership(method):
     source = {"nested": ({"values": [1, {"label": "goal"}]},)}

@@ -151,11 +151,8 @@ class Region:
 
     name: str
     kind: Kind
-    data: NDArray[np.float64] | Polygon | Point
+    data: NDArray[np.float64] | Polygon
     metadata: Mapping[str, Any] = field(default_factory=dict, repr=False)
-
-    # filled in post-init
-    n_dims: int = field(init=False, repr=False)
 
     # -----------------------------------------------------------------
     # Validation
@@ -175,24 +172,18 @@ class Region:
         object.__setattr__(self, "metadata", _freeze_metadata(copy.deepcopy(thawed)))
 
         if self.kind == "point":
-            if isinstance(self.data, Point):
-                object.__setattr__(
-                    self,
-                    "data",
-                    np.array(self.data.coords[0], dtype=float),
-                )
-            arr = np.asarray(self.data, dtype=float)
-            if arr.ndim != 1:
+            raw = self.data
+            if isinstance(raw, Point):
+                raw = raw.coords[0]
+            point = np.array(raw, dtype=np.float64, copy=True)
+            if point.ndim != 1:
                 raise ValueError("Point data must be a 1-D array-like.")
-            # Immutable bytes prevent callers from re-enabling NumPy writes.
-            # The buffer is independent even when arr is a caller-held view.
-            object.__setattr__(self, "data", np.frombuffer(arr.tobytes(), dtype=float))
-            object.__setattr__(self, "n_dims", arr.shape[0])
+            point.setflags(write=False)
+            object.__setattr__(self, "data", point)
 
         elif self.kind == "polygon":
             if not isinstance(self.data, Polygon):
                 raise TypeError("data must be a Shapely Polygon for kind='polygon'.")
-            object.__setattr__(self, "n_dims", 2)
 
         else:  # pragma: no cover
             raise ValueError(f"Unknown kind {self.kind!r}")
@@ -200,13 +191,12 @@ class Region:
     # -----------------------------------------------------------------
     # Convenience
     # -----------------------------------------------------------------
-    def __getattribute__(self, name: str) -> Any:
-        value = object.__getattribute__(self, name)
-        if name == "data" and isinstance(value, np.ndarray) and hasattr(self, "n_dims"):
-            # A read-only array still has a mutable shape/dtype header. Export
-            # a new header over the immutable bytes, with no shared ndarray base.
-            return np.frombuffer(cast("bytes", value.base), dtype=np.float64)
-        return value
+    @property
+    def n_dims(self) -> int:
+        """Number of coordinates: the point's length, or 2 for a polygon."""
+        if isinstance(self.data, np.ndarray):
+            return int(self.data.size)
+        return 2
 
     def __str__(self) -> str:
         return self.name
@@ -232,27 +222,9 @@ class Region:
     # Copy / pickle support
     # -----------------------------------------------------------------
     # The stored ``metadata`` is a (recursively) read-only ``MappingProxyType``,
-    # which the stdlib copy/pickle machinery cannot handle directly. These hooks
-    # round-trip through the thawed, mutable form; the constructor re-freezes it,
-    # so the copy is an independent Region with the same immutability guarantees.
-    def __copy__(self) -> Region:
-        return Region(
-            name=self.name,
-            kind=self.kind,
-            data=self.data,
-            metadata=_thaw_metadata(self.metadata),
-        )
-
-    def __deepcopy__(self, memo: dict[int, Any]) -> Region:
-        new = Region(
-            name=copy.deepcopy(self.name, memo),
-            kind=self.kind,
-            data=copy.deepcopy(self.data, memo),
-            metadata=_thaw_metadata(self.metadata),
-        )
-        memo[id(self)] = new
-        return new
-
+    # which the stdlib copy/pickle machinery cannot handle directly. Copy,
+    # deepcopy and pickle rebuild the Region from its thawed metadata through
+    # the constructor, which re-freezes it and owns a read-only point copy.
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         # Reconstruct via the public constructor with thawed metadata.
         return (
@@ -272,14 +244,9 @@ class Region:
             Dictionary representation of the Region.
 
         """
-        if self.kind == "point":
-            geom = (
-                self.data.tolist()
-                if isinstance(self.data, np.ndarray)
-                else list(self.data.coords[0])
-            )
-        else:
-            geom = mapping(self.data)
+        geom = (
+            self.data.tolist() if isinstance(self.data, np.ndarray) else mapping(self.data)
+        )
 
         return {
             "name": self.name,
