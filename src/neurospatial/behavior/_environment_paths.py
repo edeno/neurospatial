@@ -561,16 +561,19 @@ class _OpenPaths(EnvironmentPaths):
         if grow.size:
             roots, field_rows = np.unique(b[grow], return_inverse=True)
             field_rows = field_rows.ravel()
-            parts = []
-            for lo in range(0, roots.size, _FIELD_BATCH):
-                batch = np.arange(lo, min(lo + _FIELD_BATCH, roots.size))
-                parts.append(
-                    self._grow(
-                        [roots[i : i + 1] for i in batch],
-                        single_roots=True,
-                        stop_bins=[np.unique(a[grow][field_rows == i]) for i in batch],
-                    )
+            # Start bins of each target, grouped by its field.
+            stop_bins = np.split(
+                a[grow][np.argsort(field_rows, kind="stable")],
+                np.cumsum(np.bincount(field_rows))[:-1],
+            )
+            parts = [
+                self._grow(
+                    list(roots[lo : lo + _FIELD_BATCH, None]),
+                    single_roots=True,
+                    stop_bins=stop_bins[lo : lo + _FIELD_BATCH],
                 )
+                for lo in range(0, roots.size, _FIELD_BATCH)
+            ]
             grown = tuple(np.vstack([part[k] for part in parts]) for k in range(3))
             out[rest[grow]] = self._join(
                 starts[rest[grow]],
