@@ -241,9 +241,11 @@ class DecisionBoundaryMetrics(ReadOnlyArraysMixin, ResultMixin):
 
     Attributes
     ----------
-    goal_labels : NDArray[np.int_]
-        Per-timepoint label of nearest goal (Voronoi region), shape (n_samples,).
-        Values are indices into the goal_bins list.
+    goal_labels : NDArray[np.int_], shape (n_samples,)
+        Index of each sample's nearest goal (its geodesic Voronoi region),
+        into the goal list. -1 where no goal is nearest: the sample is
+        outside every bin, its bin is equidistant from the two nearest
+        goals (on the boundary, undecided), or no goal is reachable.
     distance_to_decision_boundary : NDArray[np.float64], shape (n_samples,)
         Geodesic distance from each sample's bin to the decision boundary, in
         environment units (see :func:`distance_to_decision_boundary`). Small
@@ -963,6 +965,9 @@ def _pre_decision_metrics(
 # Decision Boundary Functions
 # =============================================================================
 
+# Relative tolerance below which two geodesic distances to goals are a tie.
+_TIE_RTOL = 1e-9
+
 
 def geodesic_voronoi_labels(
     env: Environment,
@@ -983,22 +988,35 @@ def geodesic_voronoi_labels(
     Returns
     -------
     NDArray[np.int_], shape (n_bins,)
-        Index of nearest goal for each bin (indices into goal_bins).
-        Bins unreachable from all goals have label -1.
+        Index of the nearest goal for each bin (indices into ``goal_bins``),
+        or -1 where no goal is nearest: the bin is equidistant from its two
+        nearest goals (it lies on the decision boundary, so the animal there
+        is undecided), or no goal is reachable from it.
 
     Notes
     -----
+    Two geodesic distances count as equal when they agree to a relative
+    tolerance of 1e-9, far below bin quantization, so floating-point
+    rounding along different paths cannot break a geometric tie. Labeling a
+    tie -1 instead of the first goal keeps the labels independent of goal
+    order and mirror-symmetric on a symmetric maze.
+
     Performance: O(n_goals * n_bins * log(n_bins)) using Dijkstra's algorithm.
     For large environments (n_bins > 5000) with many goals (> 10), this may
     take several seconds. Consider caching results if calling repeatedly.
 
     Examples
     --------
-    >>> left_bin = int(env.bin_at([[10, 55]])[0])  # doctest: +SKIP
-    >>> right_bin = int(env.bin_at([[90, 55]])[0])  # doctest: +SKIP
-    >>> labels = geodesic_voronoi_labels(env, [left_bin, right_bin])  # doctest: +SKIP
-    >>> # labels[i] == 0 means bin i is closer to left goal
-    >>> # labels[i] == 1 means bin i is closer to right goal
+    A 100 cm linear track with a goal at each end. The bin at 50 cm is
+    equidistant from both goals, so it is undecided:
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import geodesic_voronoi_labels
+    >>> env = Environment.from_samples(np.arange(101.0)[:, None], bin_size=10.0)
+    >>> goal_bins = env.bin_at(np.array([[0.0], [100.0]]))
+    >>> geodesic_voronoi_labels(env, goal_bins).tolist()
+    [0, 0, 0, 0, 0, -1, 1, 1, 1, 1, 1]
     """
     from neurospatial.environment import _validate_target_bins
     from neurospatial.ops.distance import distance_field
@@ -1018,14 +1036,18 @@ def geodesic_voronoi_labels(
     for i, goal_bin in enumerate(goal_bins_arr):
         distances[i] = distance_field(env.connectivity, [goal_bin], metric="geodesic")
 
-    # Label by nearest goal
-    labels = np.argmin(distances, axis=0)
-
-    # Mark unreachable bins
-    min_distances = np.min(distances, axis=0)
-    labels_int: NDArray[np.int_] = labels.astype(np.int_)
-    labels_int[np.isinf(min_distances)] = -1
-
+    labels_int: NDArray[np.int_] = np.argmin(distances, axis=0).astype(np.int_)
+    sorted_distances = np.sort(distances, axis=0)
+    nearest = sorted_distances[0]
+    undecided = np.isinf(nearest)
+    if n_goals > 1:
+        second = sorted_distances[1]
+        both_reachable = np.isfinite(second)
+        undecided[both_reachable] |= (
+            second[both_reachable] - nearest[both_reachable]
+            <= _TIE_RTOL * second[both_reachable]
+        )
+    labels_int[undecided] = -1
     return labels_int
 
 
@@ -1159,7 +1181,9 @@ def detect_boundary_crossings(
         Bin indices along the trajectory; -1 marks a missing or out-of-bounds
         position.
     voronoi_labels : NDArray[np.int_], shape (n_bins,)
-        Voronoi label for each bin (from geodesic_voronoi_labels).
+        Nearest-goal label for each bin (from
+        :func:`geodesic_voronoi_labels`); -1 for a bin with no nearest goal
+        (equidistant from two goals, or unreachable).
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds; finite and strictly increasing (a repeated
         timestamp raises).
@@ -1184,7 +1208,7 @@ def detect_boundary_crossings(
     -------
     crossing_times : list[float]
         Times when trajectory crossed a decision boundary: the midpoint of
-        the two located samples on either side.
+        the last sample with one nearest goal and the first with the other.
     crossing_directions : list[tuple[int, int]]
         (from_goal_idx, to_goal_idx) for each crossing.
 
@@ -1201,9 +1225,13 @@ def detect_boundary_crossings(
     not crossing a ``break_before``) is analyzed as a separate recording; no
     crossing spans a pause. A sample at bin -1 is missing and skipped as if
     its row were deleted, so a crossing across a bridged gap is timed at the
-    midpoint of the located samples on either side. A crossing needs two
-    consecutive located samples with reachable labels, so a sample with an
-    unreachable label never forms one.
+    midpoint of the located samples on either side.
+
+    A crossing is a change of nearest goal. A sample in a bin labeled -1
+    has no nearest goal and is skipped too: walking through the bins on the
+    boundary from goal 0's side to goal 1's side is one crossing, and
+    leaving the boundary toward a goal (up the stem of a symmetric T-maze
+    and into either arm) is none.
 
     Examples
     --------
@@ -1215,8 +1243,16 @@ def detect_boundary_crossings(
     >>> detect_boundary_crossings(position_bins, voronoi_labels, times)
     ([0.1875], [(0, 1)])
 
-    The same samples from two recordings joined on one clock, where the
-    second recording starts in bin 1, have no crossing:
+    Passing through an equidistant bin (label -1) is one crossing, timed
+    between the samples on either side of it:
+
+    >>> detect_boundary_crossings(
+    ...     np.array([0, 2, 2, 1]), np.array([0, 1, -1]), np.arange(4) / 8
+    ... )
+    ([0.1875], [(0, 1)])
+
+    The first example's samples from two recordings joined on one clock,
+    where the second recording starts in bin 1, have no crossing:
 
     >>> new_recording = np.array([False, False, True, False])
     >>> detect_boundary_crossings(
@@ -1295,30 +1331,20 @@ def _detect_boundary_crossings_contiguous(
     voronoi_labels: NDArray[np.int_],
     times: NDArray[np.float64],
 ) -> tuple[list[float], list[tuple[int, int]]]:
-    """Detect label changes within one recording with labels indexed by bin."""
-    # Get label for each trajectory point
+    """Nearest-goal changes within one recording with labels indexed by bin.
+
+    Samples labeled -1 (undecided or unreachable) are skipped, so passing
+    through the equidistant bins from one goal's side to the other's is one
+    crossing, timed between the last sample on one side and the first on
+    the other.
+    """
     trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
-
-    # Vectorized crossing detection
-    # Find where labels change between consecutive frames
-    prev_labels = trajectory_labels[:-1]
-    curr_labels = trajectory_labels[1:]
-
-    # Valid crossings: both labels are reachable (!= -1) and different
-    valid_mask = (
-        (prev_labels != -1) & (curr_labels != -1) & (prev_labels != curr_labels)
-    )
-    crossing_indices = np.where(valid_mask)[0]
-
-    # Compute crossing times (midpoint between frames)
-    crossing_times_arr = (times[crossing_indices] + times[crossing_indices + 1]) / 2
-    crossing_times = crossing_times_arr.tolist()
-
-    # Get crossing directions
-    crossing_directions = [
-        (int(prev_labels[idx]), int(curr_labels[idx])) for idx in crossing_indices
-    ]
-
+    decided = np.flatnonzero(trajectory_labels >= 0)
+    labels = trajectory_labels[decided]
+    changes = np.flatnonzero(labels[:-1] != labels[1:])
+    before, after = decided[changes], decided[changes + 1]
+    crossing_times = ((times[before] + times[after]) / 2).tolist()
+    crossing_directions = [(int(labels[c]), int(labels[c + 1])) for c in changes]
     return crossing_times, crossing_directions
 
 

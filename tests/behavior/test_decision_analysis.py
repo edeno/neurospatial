@@ -363,6 +363,38 @@ class TestGeodesicVoronoiLabels:
         right_side_bin = env.bin_at(np.array([[80.0, 55.0]]))[0]
         assert labels[right_side_bin] == 1
 
+    def test_equidistant_bins_are_undecided(self):
+        """Goals at 0 and 100 cm: the bin at 50 cm belongs to neither goal."""
+        from neurospatial.behavior.decisions import geodesic_voronoi_labels
+
+        env = _linear_track()
+        labels = geodesic_voronoi_labels(env, _bins_at(env, [0, 100]))
+        assert labels.tolist() == [0, 0, 0, 0, 0, -1, 1, 1, 1, 1, 1]
+        swapped = geodesic_voronoi_labels(env, _bins_at(env, [100, 0]))
+        assert swapped.tolist() == [1, 1, 1, 1, 1, -1, 0, 0, 0, 0, 0]
+
+    def test_t_maze_stem_is_undecided(self, t_maze_environment):
+        """The stem's middle column is equidistant from the two arm goals."""
+        from neurospatial.behavior.decisions import geodesic_voronoi_labels
+
+        env = t_maze_environment
+        goals = env.bin_at(np.array([[10.0, 55.0], [90.0, 55.0]]))
+        labels = geodesic_voronoi_labels(env, goals)
+        centers = env.bin_centers
+        middle = np.isclose(centers[:, 0], 50.0)
+        assert np.all(labels[middle] == -1)
+        assert np.all(labels[~middle & (centers[:, 0] < 50)] == 0)
+        assert np.all(labels[~middle & (centers[:, 0] > 50)] == 1)
+
+    def test_unreachable_second_goal_is_not_a_tie(self):
+        """A bin whose second goal is unreachable is labeled by the reachable one."""
+        from neurospatial.behavior.decisions import geodesic_voronoi_labels
+
+        samples = np.r_[np.arange(0, 31.0), np.arange(70, 101.0)][:, None]
+        env = Environment.from_samples(samples, bin_size=10.0)
+        labels = geodesic_voronoi_labels(env, _bins_at(env, [0, 100]))
+        assert labels.tolist() == [0, 0, 0, 0, 1, 1, 1, 1]
+
     def test_unreachable_bins_labeled_minus_one(self, simple_2d_environment):
         """Test that disconnected bins are labeled -1."""
         from neurospatial.behavior.decisions import geodesic_voronoi_labels
@@ -963,13 +995,9 @@ def test_decision_analysis_forwards_declared_break(t_maze_environment):
     from neurospatial.behavior import compute_decision_analysis
 
     env = t_maze_environment
+    # Along the crossbar from the left arm, through the center, to the right.
     times = np.arange(100) / 10
-    positions = np.column_stack(
-        [
-            np.r_[np.full(30, 50.0), np.linspace(50, 90, 70)],
-            np.r_[np.linspace(5, 55, 30), np.full(70, 55.0)],
-        ]
-    )
+    positions = np.column_stack([np.linspace(20, 90, 100), np.full(100, 55.0)])
     kwargs = {
         "decision_region": "center",
         "goal_regions": ["left", "right"],
@@ -978,20 +1006,60 @@ def test_decision_analysis_forwards_declared_break(t_maze_environment):
     }
     result = compute_decision_analysis(env, times, positions, **kwargs)
     entry = int(np.flatnonzero(times == result.entry_time)[0])
-    # The first sample on the far side of the left/right goal boundary.
-    crossing = int(np.flatnonzero(np.diff(result.boundary.goal_labels))[0]) + 1
+    labels = result.boundary.goal_labels
+    # The last sample nearer the left goal and the first nearer the right
+    # goal, with the equidistant center bins (label -1) between them.
+    last_left = int(np.flatnonzero(labels == 0)[-1])
+    first_right = int(np.flatnonzero(labels == 1)[0])
+    assert first_right > last_left + 1
+    assert np.all(labels[last_left + 1 : first_right] == -1)
     break_before = np.zeros(100, dtype=bool)
-    break_before[[entry - 3, crossing]] = True
+    break_before[[entry - 3, first_right]] = True
     broken = compute_decision_analysis(
         env, times, positions, break_before=break_before, **kwargs
     )
     assert result.pre_decision.n_samples == 10
     assert broken.pre_decision.n_samples == 3
     assert result.boundary.crossing_times == [
-        (times[crossing - 1] + times[crossing]) / 2
+        (times[last_left] + times[first_right]) / 2
     ]
+    assert result.boundary.crossing_directions == [(0, 1)]
     assert broken.boundary.crossing_times == []
     assert broken.boundary.crossing_directions == []
+
+
+def test_left_and_right_turns_cross_the_boundary_equally(t_maze_environment):
+    """On a mirror-symmetric T-maze the stem is equidistant from both goals.
+
+    Walking up the stem and turning into either arm leaves the boundary
+    toward one goal without crossing from the other goal's side, so both
+    turns have no crossing.
+    """
+    from neurospatial.behavior import compute_decision_analysis
+
+    env = t_maze_environment
+    times = np.arange(100) / 10
+    results = {}
+    for arm_end in (10.0, 90.0):
+        positions = np.column_stack(
+            [
+                np.r_[np.full(30, 50.0), np.linspace(50, arm_end, 70)],
+                np.r_[np.linspace(5, 55, 30), np.full(70, 55.0)],
+            ]
+        )
+        results[arm_end] = compute_decision_analysis(
+            env,
+            times,
+            positions,
+            decision_region="center",
+            goal_regions=["left", "right"],
+            min_speed=5.0,
+        )
+    left, right = results[10.0], results[90.0]
+    assert left.boundary.n_crossings == right.boundary.n_crossings == 0
+    assert np.all(left.boundary.goal_labels[:30] == -1)
+    assert np.all(right.boundary.goal_labels[:30] == -1)
+    assert (left.chosen_goal, right.chosen_goal) == (0, 1)
 
 
 def _repeated_clock_calls():
