@@ -178,34 +178,25 @@ class TestComputeStepLengths:
         assert step_lengths[3] == 0.0  # [20,0] -> [20,0]
         assert step_lengths[4] == 0.0  # [20,0] -> [20,0]
 
-    def test_step_lengths_uses_graph_distance(self):
-        """Test that step lengths with metric='geodesic' use graph distances."""
-        # Create 2D grid environment
+    def test_geodesic_steps_in_an_open_field_are_straight_steps(self):
+        """Inside an open field every straight step stays inside: Euclidean."""
         x = np.linspace(0, 40, 100)
-        y = np.linspace(0, 40, 100)
-        xx, yy = np.meshgrid(x, y)
-        sample_positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(sample_positions, bin_size=5.0)
+        xx, yy = np.meshgrid(x, x)
+        env = Environment.from_samples(
+            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
+        )
+        # Oblique steps across several bins, plus one inside a bin.
+        positions = np.array(
+            [[2.0, 3.0], [14.0, 8.0], [14.5, 8.2], [31.0, 37.0], [3.0, 2.0]]
+        )
 
-        # Create trajectory on bin centers (for geodesic distance to work)
-        position_bins = np.arange(5)
-        positions = env.bin_centers[position_bins]
-
-        # Use geodesic distance
         step_lengths = compute_step_lengths(positions, metric="geodesic", env=env)
 
-        # Verify each step length matches nx.shortest_path_length
-        import networkx as nx
-
-        for i in range(len(step_lengths)):
-            bin_i = position_bins[i]
-            bin_j = position_bins[i + 1]
-            expected = float(
-                nx.shortest_path_length(
-                    env.connectivity, source=bin_i, target=bin_j, weight="distance"
-                )
-            )
-            assert_allclose(step_lengths[i], expected, rtol=1e-5)
+        assert_allclose(
+            step_lengths,
+            np.linalg.norm(np.diff(positions, axis=0), axis=1),
+            rtol=1e-12,
+        )
 
     def test_parameter_order(self):
         """Test new continuous API signature."""
@@ -836,61 +827,31 @@ class TestTrajectoryMetricsIntegration:
         assert np.all(msd_values >= 0)
 
 
-class TestGeodesicDistanceOptimization:
-    """Tests for geodesic distance matrix optimization.
+class TestGeodesicStepLengths:
+    """Geodesic step lengths are shortest paths inside the environment."""
 
-    These tests verify that the precomputed distance matrix approach
-    produces identical results to per-step Dijkstra (the original implementation).
-    """
+    def test_geodesic_step_across_a_wall_goes_around_it(self):
+        """A step whose straight line crosses a wall is measured around it.
 
-    def test_step_lengths_geodesic_matches_networkx(self):
-        """Test that optimized geodesic step lengths match NetworkX shortest_path_length.
-
-        This verifies the optimization in trajectory.py (using geodesic_distance_matrix
-        instead of per-step nx.shortest_path_length) produces identical results.
+        A U of 1 cm corridors: the left arm x in [0, 1], the right arm
+        x in [4, 5] (y in [0, 10]), joined by the top row y in [9, 10]. The
+        step from (0.5, 0.5) to (4.5, 0.5) crosses the wall x in [1, 4],
+        y in [0, 9]. The shortest path inside the U touches the wall's
+        corners (1, 9) and (4, 9): 2 * hypot(0.5, 8.5) + 3 = 20.03 cm.
+        The taut path through bin centers rounds each of the two corners at
+        most one bin (1 cm) wide.
         """
-        import networkx as nx
+        cells = np.array([(x + 0.5, y + 0.5) for x in range(5) for y in range(10)])
+        u_shape = cells[(cells[:, 0] < 1) | (cells[:, 0] > 4) | (cells[:, 1] > 9)]
+        env = Environment.from_samples(u_shape, bin_size=1.0)
+        positions = np.array([[0.5, 0.5], [4.5, 0.5]])
 
-        # Create 2D grid environment
-        x = np.linspace(0, 40, 100)
-        y = np.linspace(0, 40, 100)
-        xx, yy = np.meshgrid(x, y)
-        sample_positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(sample_positions, bin_size=5.0)
+        (step,) = compute_step_lengths(positions, metric="geodesic", env=env)
 
-        # Create trajectory visiting multiple bins
-        position_bins = np.array([0, 1, 2, 5, 10, 15, 10, 5, 2, 1, 0])
-        positions = env.bin_centers[position_bins]
-
-        # Get step lengths using our optimized implementation
-        step_lengths = compute_step_lengths(positions, metric="geodesic", env=env)
-
-        # Compare to NetworkX ground truth (per-step Dijkstra)
-        for i in range(len(step_lengths)):
-            bin_i = position_bins[i]
-            bin_j = position_bins[i + 1]
-
-            if bin_i == bin_j:
-                expected = 0.0
-            else:
-                try:
-                    expected = float(
-                        nx.shortest_path_length(
-                            env.connectivity,
-                            source=int(bin_i),
-                            target=int(bin_j),
-                            weight="distance",
-                        )
-                    )
-                except (nx.NetworkXNoPath, nx.NodeNotFound):
-                    expected = np.inf
-
-            assert_allclose(
-                step_lengths[i],
-                expected,
-                rtol=1e-10,
-                err_msg=f"Step {i}: optimized={step_lengths[i]}, NetworkX={expected}",
-            )
+        exact = 2 * np.hypot(0.5, 8.5) + 3.0
+        assert exact <= step <= exact + 2 * 1.0
+        # The bin-graph route (grid steps) is no shorter.
+        assert step <= env.distance_between(points=positions) + 1e-12
 
     def test_geodesic_handles_disconnected_bins(self):
         """Test that geodesic distance returns inf for disconnected bins."""

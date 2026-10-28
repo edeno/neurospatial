@@ -1497,8 +1497,8 @@ def compute_step_lengths(
     Compute step lengths (distances) between consecutive positions.
 
     Step lengths quantify the spatial displacement at each step of the trajectory.
-    This function supports both Euclidean (straight-line) and geodesic (graph
-    shortest-path) distance metrics for different use cases.
+    This function supports both Euclidean (straight-line) and geodesic
+    (shortest path inside the environment) distance metrics.
 
     Parameters
     ----------
@@ -1508,9 +1508,10 @@ def compute_step_lengths(
         Distance metric to use:
         - "euclidean": Straight-line distance in physical space (ecology standard).
           Fast and appropriate for open environments without obstacles.
-        - "geodesic": Graph shortest-path distance respecting environment topology.
-          Requires `env` parameter. Appropriate for constrained navigation
-          (walls, obstacles, tracks).
+        - "geodesic": Length of the shortest path that stays inside the
+          environment: the straight step when it stays inside, otherwise the
+          route around the walls. Requires `env`. Appropriate for constrained
+          navigation (walls, obstacles, tracks).
     env : Environment, optional
         Environment instance for computing geodesic distances. Required if
         metric="geodesic", ignored otherwise.
@@ -1520,7 +1521,7 @@ def compute_step_lengths(
     NDArray[np.float64], shape (n_samples - 1,)
         Step lengths in the same units as the position coordinates.
         Geodesic steps touching a missing or out-of-environment position are
-        NaN. Steps between disconnected valid bins are infinite.
+        NaN. Steps between disconnected parts of the environment are infinite.
 
     Raises
     ------
@@ -1540,11 +1541,23 @@ def compute_step_lengths(
     This is the straight-line distance in physical space, matching ecology
     literature standards (Kays et al. 2015, Traja).
 
-    **Geodesic distance** (graph-based):
+    **Geodesic distance** (shortest path inside the environment):
 
-    Uses SciPy shortest paths (``geodesic_distance_matrix``) on the
-    ``env.connectivity`` graph with ``"distance"`` edge weights. This respects environmental constraints (walls, obstacles) and is
-    appropriate for neuroscience applications with constrained environments.
+    The animal moves continuously inside the environment, so a step's length
+    is the shortest path between its two positions that stays inside. When
+    the straight segment stays inside (probed at a quarter of the shortest
+    bin-graph edge), that is the Euclidean step length, so on an open field
+    and between nearby samples the geodesic and Euclidean steps agree.
+    Otherwise (the straight line crosses a wall or leaves a track, as across
+    a bridged tracking gap) the bin-graph shortest path between the two
+    positions' bins is pulled taut into straight segments that stay inside
+    the environment. Its waypoints are bin centers, so it rounds each corner
+    about half a bin inside the wall.
+
+    The length is not measured bin center to bin center along the graph:
+    that staircase of grid steps made a straight oblique run read up to a
+    third longer than it is, by an amount that changed with the bin size and
+    the sampling rate.
 
     **When to use each**:
 
@@ -1571,16 +1584,13 @@ def compute_step_lengths(
     >>> np.allclose(step_lengths, step_lengths[0], rtol=0.01)  # Uniform steps
     True
     >>>
-    >>> # Geodesic distance on graph (requires env)
+    >>> # In an open arena the geodesic steps are the straight steps
     >>> from neurospatial import Environment
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> # Map positions to bins for geodesic
-    >>> bins = env.bin_at(positions)
-    >>> # Use bin centers as proxy positions for geodesic
-    >>> bin_positions = env.bin_centers[bins]
-    >>> step_lengths_geo = compute_step_lengths(
-    ...     bin_positions, metric="geodesic", env=env
-    ... )  # doctest: +SKIP
+    >>> x, y = np.meshgrid(np.arange(0.0, 101.0), np.arange(-10.0, 11.0))
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=5.0)
+    >>> geodesic = compute_step_lengths(positions, metric="geodesic", env=env)
+    >>> bool(np.allclose(geodesic, step_lengths))
+    True
 
     References
     ----------
@@ -1635,22 +1645,9 @@ def compute_step_lengths(
             fix="use the allocentric environment the positions were recorded in, or "
             "metric='euclidean'",
         )
-        position_bins = env.bin_at(positions)
+        from neurospatial.behavior._environment_paths import EnvironmentPaths
 
-        # Optimization: Precompute geodesic distance matrix
-        # This is O(V*E*log(V)) once vs O(n_steps * V*log(V)) per-step Dijkstra
-        from neurospatial.ops.distance import geodesic_distance_matrix
-
-        # Get full distance matrix (uses scipy.sparse.csgraph.shortest_path)
-        dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
-
-        # Outside/missing positions map to -1, which is not a graph node.
-        # Never let NumPy interpret it as the last bin.
-        valid = (position_bins[:-1] >= 0) & (position_bins[1:] >= 0)
-        step_lengths = np.full(n_steps, np.nan, dtype=np.float64)
-        step_lengths[valid] = dist_matrix[
-            position_bins[:-1][valid], position_bins[1:][valid]
-        ]
+        step_lengths = EnvironmentPaths(env).between(positions[:-1], positions[1:])
 
     return step_lengths
 

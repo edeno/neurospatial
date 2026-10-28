@@ -910,3 +910,68 @@ class TestPathEfficiencyResultContract:
                 segment_results=(_segment(1.0, 1.0),),
                 subgoal_positions=np.zeros((2, 2)),
             )
+
+
+class TestGeodesicPathLengthEstimands:
+    """Geodesic traveled and shortest lengths are lengths inside the environment.
+
+    The bin-graph estimate made a straight oblique run read 0.79-0.83
+    efficient, depending on the bin size and the sampling rate.
+    """
+
+    @staticmethod
+    def _open_field(bin_size):
+        x = np.arange(0.0, 100.0, 0.25)
+        xx, yy = np.meshgrid(x, x)
+        return Environment.from_samples(
+            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=bin_size
+        )
+
+    @pytest.mark.parametrize("bin_size", [1.0, 2.0, 5.0])
+    @pytest.mark.parametrize("n_samples", [151, 600, 3000])
+    def test_oblique_straight_run_is_perfectly_efficient(self, bin_size, n_samples):
+        from neurospatial.behavior.navigation import compute_path_efficiency
+
+        env = self._open_field(bin_size)
+        s = np.linspace(0.0, 1.0, n_samples)
+        positions = np.column_stack([10 + 70 * s, 10 + 40 * s])
+        times = 10 * s
+
+        result = compute_path_efficiency(
+            env, times, positions, positions[-1], metric="geodesic"
+        )
+
+        assert result.traveled_length == pytest.approx(np.hypot(70, 40), rel=1e-9)
+        assert result.shortest_length == pytest.approx(np.hypot(70, 40), rel=1e-12)
+        assert result.efficiency == pytest.approx(1.0, rel=1e-9)
+
+    def test_u_maze_run_around_the_wall(self):
+        """Up the left arm, across, down the right arm of a U-maze.
+
+        The run is 50 + 40 + 50 = 140 cm. The environment's free space is
+        the union of its 2 cm bins, whose inner wall spans x in [10, 40] up
+        to y = 50; the shortest path from (5, 5) to (45, 5) touches the
+        wall's corners: 2 * hypot(5, 45) + 30 = 120.55 cm. The taut path
+        through bin centers may round each corner by up to one bin.
+        """
+        from neurospatial.behavior.navigation import compute_path_efficiency
+
+        cells = np.array(
+            [(x + 1.0, y + 1.0) for x in range(0, 50, 2) for y in range(0, 60, 2)]
+        )
+        u_maze = cells[(cells[:, 0] < 10) | (cells[:, 0] > 40) | (cells[:, 1] > 50)]
+        env = Environment.from_samples(u_maze, bin_size=2.0)
+        up = np.column_stack([np.full(100, 5.0), np.linspace(5, 55, 100)])
+        across = np.column_stack([np.linspace(5, 45, 80), np.full(80, 55.0)])
+        down = np.column_stack([np.full(100, 45.0), np.linspace(55, 5, 100)])
+        positions = np.vstack([up, across[1:], down[1:]])
+        times = np.arange(len(positions)) / 30
+
+        result = compute_path_efficiency(
+            env, times, positions, positions[-1], metric="geodesic"
+        )
+
+        exact = 2 * np.hypot(5.0, 45.0) + 30.0
+        assert result.traveled_length == pytest.approx(140.0, rel=1e-12)
+        assert exact <= result.shortest_length <= exact + 2 * 2.0
+        assert exact / 140 <= result.efficiency <= (exact + 4.0) / 140

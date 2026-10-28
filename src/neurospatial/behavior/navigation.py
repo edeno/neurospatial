@@ -2901,11 +2901,15 @@ def traveled_path_length(
         coordinate (for example a linearized track). Rows with a non-finite
         coordinate are missing.
     metric : {"euclidean", "geodesic"}, default="euclidean"
-        Distance metric. Use "geodesic" for environments with barriers.
+        ``"euclidean"`` sums the straight steps between samples.
+        ``"geodesic"`` sums the shortest path inside the environment between
+        consecutive samples: the same straight step whenever it stays inside
+        the environment, and the route around the walls when it does not (a
+        bridged gap whose straight line crosses a wall). See Notes.
     env : Environment, optional
         Required when metric="geodesic". An interval with an endpoint outside
         the environment has no geodesic length and is left out; an interval
-        between disconnected bins contributes ``inf``.
+        between disconnected parts of the environment contributes ``inf``.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -2933,6 +2937,21 @@ def traveled_path_length(
     ValueError
         If ``metric`` is not recognized, if metric="geodesic" but env is None,
         or if the inputs are empty or malformed.
+
+    Notes
+    -----
+    The traveled length is the arc length of the observed path: the animal
+    moves continuously, so between two samples it covers at least the
+    shortest path between them inside the environment. With the geodesic
+    metric that is the straight step when the step stays inside the
+    environment (between nearby samples it almost always does), so the
+    geodesic and Euclidean lengths agree on an open field and do not depend
+    on the bin size. It is not measured bin center to bin center along the
+    bin graph: that staircase overestimated an oblique straight run by up to
+    a third, by an amount that changed with the bin size and sampling rate.
+
+    Like any arc length of sampled positions, tracking jitter adds length;
+    smooth noisy positions first.
 
     Examples
     --------
@@ -2988,13 +3007,16 @@ def shortest_path_length(
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position in allocentric frame.
     metric : {"geodesic", "euclidean"}, default="geodesic"
-        Distance metric.
+        ``"euclidean"`` is the straight-line distance. ``"geodesic"`` is the
+        length of the shortest path that stays inside the environment: the
+        straight line when it stays inside, otherwise the route around the
+        walls (see Notes).
 
     Returns
     -------
     float
-        Shortest path distance in environment units.
-        Returns inf if no path exists (disconnected graph).
+        Shortest path length in environment units; ``inf`` if no path exists
+        (start and goal lie in disconnected parts of the environment).
 
     Raises
     ------
@@ -3007,10 +3029,31 @@ def shortest_path_length(
         For ``metric="geodesic"`` on an egocentric polar environment, whose
         bins are (distance, angle), not allocentric positions.
 
+    Notes
+    -----
+    The geodesic length is measured in continuous space, not bin center to
+    bin center. When the straight segment from start to goal stays inside the
+    environment (probed at a quarter of the shortest bin-graph edge), it is
+    the Euclidean distance, so on an open field ``metric="geodesic"`` and
+    ``metric="euclidean"`` agree. Otherwise the bin-graph shortest path is
+    pulled taut into straight segments that stay inside the environment; its
+    waypoints are bin centers, so it rounds each corner about half a bin
+    inside the wall and can exceed the true shortest path by up to about one
+    bin size per corner. The bin-graph distance itself
+    (``env.distance_between``) runs along grid steps and overestimates an
+    oblique straight line by up to ~8% on an 8-connected grid.
+
     Examples
     --------
-    >>> dist = shortest_path_length(env, start_pos, goal_pos)  # doctest: +SKIP
-    >>> print(f"Shortest path: {dist:.1f} cm")  # doctest: +SKIP
+    An open field: the straight line from start to goal stays inside it.
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import shortest_path_length
+    >>> x, y = np.meshgrid(np.arange(0.5, 100.0), np.arange(0.5, 100.0))
+    >>> arena = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+    >>> shortest_path_length(arena, np.array([10.0, 10.0]), np.array([40.0, 50.0]))
+    50.0
     """
     _require_path_metric(metric, call="shortest_path_length")
     start = np.asarray(start, dtype=float)
@@ -3040,7 +3083,42 @@ def shortest_path_length(
             "straight-line distance from start to goal"
         ),
     )
-    return env.distance_between(points=np.vstack([start, goal]))
+    from neurospatial.behavior._environment_paths import EnvironmentPaths
+
+    paths = EnvironmentPaths(env)
+    _require_inside(paths, {"start": start, "goal": goal}, call="shortest_path_length")
+    return float(paths.to_point(start[None, :], goal)[0])
+
+
+def _require_inside(
+    paths: Any, points: dict[str, NDArray[np.float64]], *, call: str
+) -> None:
+    """Raise unless every named point lies inside the environment.
+
+    Parameters
+    ----------
+    paths : EnvironmentPaths
+    points : dict of str to ndarray, shape (n_dims,)
+        Named positions, such as ``{"goal": goal}``.
+    call : str
+        Public function name, used in the message.
+    """
+    for name, point in points.items():
+        if paths.bins(np.asarray(point, dtype=float)[None, :])[0] < 0:
+            raise ValueError(
+                _format_error(
+                    f"{call}() got a {name} outside the environment (or with a "
+                    f"NaN coordinate): {point}.",
+                    why=(
+                        "a geodesic distance is a path inside the environment, "
+                        "so both of its ends must lie in a bin."
+                    ),
+                    fix=(
+                        f"pass a {name} inside the environment (check "
+                        "env.contains), or use metric='euclidean'."
+                    ),
+                )
+            )
 
 
 def time_efficiency(
@@ -3379,10 +3457,15 @@ def compute_path_efficiency(
     goal : ArrayLike, shape (n_dims,)
         Goal position.
     metric : {"geodesic", "euclidean"}, default="geodesic"
-        Distance metric. With "geodesic", an interval with an endpoint outside
-        the environment has no geodesic length and is left out, and an interval
-        between disconnected bins contributes ``inf`` (so a complete path with
-        such a step has ``traveled_length=inf`` and ``efficiency=0.0``).
+        Distance metric for both lengths. ``"geodesic"`` measures shortest
+        paths inside the environment: ``traveled_length`` as in
+        :func:`traveled_path_length` and ``shortest_length`` as in
+        :func:`shortest_path_length`, so a straight run on an open field is
+        perfectly efficient at any bin size. An interval with an endpoint
+        outside the environment has no geodesic length and is left out, and
+        an interval between disconnected parts contributes ``inf`` (so a
+        complete path with such a step has ``traveled_length=inf`` and
+        ``efficiency=0.0``).
     reference_speed : float, optional
         Reference speed for time efficiency, in position units per second;
         finite and greater than zero. None leaves ``time_efficiency`` None.
@@ -3422,8 +3505,8 @@ def compute_path_efficiency(
         ``goal`` does not have shape ``(n_dims,)`` or has a non-finite
         coordinate, or ``reference_speed`` is not a finite speed greater than
         zero. With ``metric="geodesic"``, also if the first observed position or
-        ``goal`` is outside the environment, or no position is observed
-        (raised by ``distance_between``). With ``metric="euclidean"`` a
+        ``goal`` is outside the environment, or no position is observed.
+        With ``metric="euclidean"`` a
         recording with no observed position gives ``shortest_length=nan``.
 
     Notes
