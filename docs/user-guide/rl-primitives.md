@@ -31,7 +31,7 @@ from neurospatial import Regions
 
 import numpy as np
 from neurospatial import Environment
-from neurospatial import region_reward_field
+from neurospatial.behavior import region_reward_field
 
 # Create environment
 positions = np.random.randn(1000, 2) * 50
@@ -94,8 +94,10 @@ reward = region_reward_field(env, region_name="goal", reward_value=1.0, decay="l
 Provides linear decay from the region boundary:
 
 - Full `reward_value` inside the region
-- Linear decay outside: `reward = reward_value * (1 - distance/max_distance)`
-- Uses graph-based distance (respects walls and obstacles)
+- Linear decay outside: `reward = reward_value * max(0, 1 - distance / max_distance)`
+- `distance` is the graph (geodesic) distance from the bin to the nearest
+  region bin, so it respects walls and obstacles
+- Bins that cannot reach the region (a separate connected component) get 0
 
 **Pros:**
 
@@ -106,9 +108,19 @@ Provides linear decay from the region boundary:
 **Cons:**
 
 - May inadvertently guide toward suboptimal paths (test against sparse baseline!)
-- Normalizes by global maximum distance (far regions get near-zero rewards)
+- By default the decay length depends on the arena size
 
-**Note:** The linear decay uses the **maximum distance** in the environment for normalization. This means bins very far from the region will have near-zero rewards. Consider using `decay="gaussian"` if you need more control over the decay rate.
+**Note:** By default `max_distance` is the distance of the farthest bin that
+can reach the region, so every reachable bin gets a gradient. The same
+distance from the region then gets a different reward in a larger arena. Pass
+`max_distance` (in the environment's distance units) to fix the decay length,
+for example to compare reward fields across arenas:
+
+```python
+reward = region_reward_field(
+    env, region_name="goal", decay="linear", max_distance=40.0
+)
+```
 
 #### 3. Gaussian Falloff
 
@@ -124,7 +136,9 @@ Provides smooth Gaussian falloff using spatial smoothing:
 
 - Indicator field (1 inside, 0 outside) is smoothed with Gaussian kernel
 - **Critical:** Rescaled so maximum **within the region** equals `reward_value`
-- Bandwidth controls decay rate (larger = slower decay)
+- `bandwidth` (in distance units) sets the decay length (larger = slower
+  decay). It is only accepted with `decay="gaussian"`; passing it with
+  another decay raises, as does `max_distance` with any decay but `"linear"`.
 
 **Pros:**
 
@@ -157,7 +171,7 @@ from neurospatial import Regions
 import numpy as np
 import matplotlib.pyplot as plt
 from neurospatial import Environment
-from neurospatial import region_reward_field
+from neurospatial.behavior import region_reward_field
 
 # Create simple 2D environment
 positions = np.random.randn(2000, 2) * 50
@@ -198,7 +212,7 @@ plt.show()
 Generate reward fields from goal bin locations:
 
 ```python
-from neurospatial import goal_reward_field
+from neurospatial.behavior import goal_reward_field
 
 # Select goal bin at origin
 goal_bin = env.bin_at(np.array([[0.0, 0.0]]))[0]
@@ -235,26 +249,29 @@ Formula: `reward = scale * exp(-distance / scale)`
 
 - **Most common in RL literature** - well-studied properties
 - Smooth gradients everywhere
-- `scale` parameter controls both peak reward and decay rate
-- Never exactly zero (global gradient information)
+- `scale` sets both the peak reward and the decay length
+- Never exactly zero within reach of the goal (global gradient information)
 
 **Cons:**
 
 - May guide agents through walls if not careful (uses graph distance in neurospatial, so this is handled)
 - Requires tuning `scale` parameter
 
-**Scale parameter:**
+**Scale parameter:** `scale` is a decay length in the environment's distance
+units, not a rate.
 
 - Larger scale = slower decay, longer-range guidance
 - Smaller scale = faster decay, more local reward
-- At distance = scale, reward = scale *exp(-1) ≈ 0.37* scale
+- At distance = scale, reward = `scale * exp(-1) ≈ 0.37 * scale`
+- The peak is tied to the decay length. For a unit peak with decay length
+  `L`, divide the field computed with `scale=L` by `L`.
 
 **Validation:**
 
 ```python
 # Must have scale > 0
 goal_reward_field(env, goal_bins, decay="exponential", scale=0.0)
-# Raises ValueError: "scale must be positive for exponential decay"
+# Raises ValueError: "scale must be finite and positive; got 0.0."
 ```
 
 #### 2. Linear Decay
@@ -284,9 +301,9 @@ Formula: `reward = scale * max(0, 1 - distance / max_distance)`
 **Required parameter:**
 
 ```python
-# max_distance is required
+# max_distance is required, finite and positive
 goal_reward_field(env, goal_bins, decay="linear", scale=10.0)
-# Raises ValueError: "max_distance required for linear decay"
+# Raises ValueError: "max_distance parameter is required for decay='linear'. ..."
 ```
 
 #### 3. Inverse Distance
@@ -302,11 +319,13 @@ Formula: `reward = scale / (1 + distance)`
 **Pros:**
 
 - Simple formula
-- Never reaches zero (global gradients)
-- No hyperparameter tuning needed
+- Never reaches zero within reach of the goal (global gradients)
 
 **Cons:**
 
+- The `1` in `1 + distance` is one distance unit, so the shape depends on
+  the environment's units: the reward halves 1 cm from the goal in a
+  centimetre environment but 1 m from it in a metre environment
 - **Most likely to bias policies** - use with extreme caution!
 - Very slow decay (can dominate learning signal far from goal)
 - Not commonly used in modern RL
@@ -334,7 +353,8 @@ This creates a **Voronoi-like partition** where each spatial bin is influenced b
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
-from neurospatial import Environment, goal_reward_field
+from neurospatial import Environment
+from neurospatial.behavior import goal_reward_field
 
 # Create environment
 positions = np.random.randn(2000, 2) * 50
@@ -391,13 +411,16 @@ This naming choice:
 
 ### 1. Potential-Based Reward Shaping
 
-The reward functions in neurospatial implement **potential-based reward shaping** (Ng et al., 1999), where:
+A reward field from neurospatial can serve as the potential `Φ(s)` for
+**potential-based reward shaping** (Ng et al., 1999):
 
 ```
 shaped_reward(s, a, s') = reward(s, a, s') + γ * Φ(s') - Φ(s)
 ```
 
-Where `Φ(s)` is a potential function (your reward field). This formulation **preserves optimal policies** under certain conditions.
+Ng et al. (1999) prove that shaping of this form leaves the optimal policy
+unchanged. Adding the reward field itself to the task reward is not
+potential-based and can change the optimal policy.
 
 **Usage in neurospatial:**
 
@@ -448,9 +471,9 @@ This can help agents learn faster initially while converging to optimal policies
 
 ### When Shaping Can Hurt
 
-From Ng et al. (1999):
-
-> "Poorly designed reward shaping can cause agents to learn suboptimal policies that are difficult to correct."
+Ng et al. (1999) show that a shaping reward that is not potential-based can
+change the optimal policy, so the agent learns to collect shaping reward
+instead of solving the task.
 
 **Example:** In a maze with a shortcut, linear decay might guide the agent around obstacles instead of through a hidden passage.
 
@@ -472,7 +495,7 @@ ax.set_title('Reward Field')
 plt.show()
 
 # 2. Check reward gradients point toward goal
-# (Use gradient operators from neurospatial.ops.calculus when available)
+# (neurospatial.ops.gradient gives the per-edge gradient of a field)
 
 # 3. Train with and without shaping
 policy_sparse = train_agent(env, reward_sparse)
@@ -494,7 +517,7 @@ For complete parameter descriptions and examples, see:
 
 - [Spike Field Primitives](spike-field-primitives.md) - Converting spike trains to spatial fields
 - [Spatial Analysis](spatial-analysis.md) - Broader spatial analysis workflows
-- [Differential Operators](differential-operators.md) - Computing reward gradients (coming in v0.3.0)
+- [Differential Operators](differential-operators.md) - Computing reward gradients
 
 ## References
 

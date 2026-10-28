@@ -1,8 +1,9 @@
 """Reward field generation for reinforcement learning applications.
 
 This module provides functions for creating reward fields from spatial regions
-and goal locations. These are essential primitives for reinforcement learning
-(RL) and reward shaping in spatial navigation tasks.
+and goal locations, for reinforcement learning (RL) models of spatial
+navigation. A reward field can serve as the potential of potential-based
+reward shaping (Ng et al., 1999).
 
 Imports
 -------
@@ -105,10 +106,13 @@ def region_reward_field(
       reward_value. This preserves the intended reward magnitude while
       providing smooth gradients for policy learning.
 
-    **Reward Shaping**: These primitives implement potential-based reward
-    shaping (Ng et al., 1999). Gaussian decay provides the smoothest
-    gradients but may inadvertently guide agents away from optimal paths.
-    Use with caution and validate against sparse reward baseline.
+    **Reward Shaping**: A reward field can serve as the potential
+    ``Phi(s)`` of potential-based reward shaping [1]_, which adds
+    ``gamma * Phi(s') - Phi(s)`` to the task reward and leaves the optimal
+    policy unchanged. Adding the field itself to the task reward is not
+    potential-based and can change the optimal policy. Gaussian decay
+    provides the smoothest gradients; validate any shaped agent against a
+    sparse-reward baseline.
 
     Examples
     --------
@@ -141,8 +145,8 @@ def region_reward_field(
     See Also
     --------
     goal_reward_field : Distance-based rewards from goal bins
-    neurospatial.distance_field : Compute distance maps
-    neurospatial.spatial.regions_to_mask : Convert regions to binary masks
+    neurospatial.ops.distance_field : Compute distance maps
+    neurospatial.ops.regions_to_mask : Convert regions to binary masks
 
     References
     ----------
@@ -330,7 +334,7 @@ def goal_reward_field(
     See Also
     --------
     region_reward_field : Reward fields from spatial regions
-    neurospatial.distance_field : Compute distance maps
+    neurospatial.ops.distance_field : Compute distance maps
     """
     from neurospatial.environment import _validate_target_bins
 
