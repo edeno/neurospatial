@@ -769,9 +769,12 @@ def compute_turn_angles(
         Turn angles in radians, in the range [-π, π]. Consecutive duplicate
         positions (stationary periods) are dropped first, so the length is
         ``n_unique - 2``, where ``n_unique`` is the number of positions left,
-        not ``n_samples - 2``. The output is not aligned with the input samples
-        and carries no times; use ``compute_planar_turn_angles`` for a
-        sample-aligned result.
+        not ``n_samples - 2``. A turn whose incoming or outgoing step touches a
+        row with a non-finite coordinate is NaN in any number of dimensions:
+        missing samples are not bridged here. The output is not aligned with
+        the input samples and carries no times; use
+        ``compute_planar_turn_angles`` for a sample-aligned result that
+        bridges missing samples.
 
     Notes
     -----
@@ -903,9 +906,11 @@ def compute_turn_angles(
         dot = np.sum(v1 * v2, axis=1)
         angles = np.arctan2(cross, dot)
     else:
-        # 1D: angle is 0 if same direction, π if opposite
-        same_direction = v1[:, 0] * v2[:, 0] > 0
-        angles = np.asarray(np.where(same_direction, 0.0, np.pi))
+        # 1D: 0 if same direction, π if opposite, NaN next to a missing
+        # sample (as in 2D, where NaN propagates through atan2).
+        product = v1[:, 0] * v2[:, 0]
+        angles = np.where(product > 0, 0.0, np.pi)
+        angles[np.isnan(product)] = np.nan
 
     # Set zero-length vector pairs to 0
     angles[zero_mask] = 0.0

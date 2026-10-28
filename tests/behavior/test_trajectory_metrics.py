@@ -97,6 +97,18 @@ class TestComputeTurnAngles:
         angles = compute_turn_angles(positions)
         assert isinstance(angles, np.ndarray)
 
+    def test_one_dimensional_reversal_is_pi_and_continuation_zero(self):
+        positions = np.array([[0.0], [1.0], [3.0], [2.0]])
+        assert_allclose(compute_turn_angles(positions), [0.0, np.pi], rtol=0, atol=0)
+
+    def test_one_dimensional_missing_sample_is_nan_not_a_reversal(self):
+        """A dropout is not a reversal; it is NaN, as in two dimensions."""
+        positions = np.array([[0.0], [1.0], [np.nan], [3.0], [4.0]])
+        one_d = compute_turn_angles(positions)
+        two_d = compute_turn_angles(np.c_[positions, np.zeros(5)])
+        assert np.isnan(one_d).all()
+        np.testing.assert_array_equal(np.isnan(one_d), np.isnan(two_d))
+
 
 class TestComputeStepLengths:
     """Test compute_step_lengths function."""
