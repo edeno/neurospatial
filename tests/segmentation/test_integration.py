@@ -25,8 +25,8 @@ from neurospatial.behavior.segmentation import (
 )
 from neurospatial.behavior.trajectory import (
     compute_home_range,
+    compute_planar_turn_angles,
     compute_step_lengths,
-    compute_turn_angles,
     mean_square_displacement,
 )
 
@@ -85,13 +85,13 @@ class TestFullTrajectoryAnalysisWorkflow:
             lap_positions = traj_positions[lap_mask]  # Use continuous positions!
 
             # Compute metrics (both functions expect continuous positions, not bins)
-            turn_angles = compute_turn_angles(lap_positions)
+            turn_angles = compute_planar_turn_angles(times[lap_mask], lap_positions)
             step_lengths = compute_step_lengths(lap_positions)
 
             lap_metrics.append(
                 {
                     "duration": lap.end_time - lap.start_time,
-                    "mean_turn_angle": np.abs(np.mean(turn_angles)),
+                    "mean_turn_angle": np.abs(np.nanmean(turn_angles)),
                     "mean_step_length": np.mean(step_lengths),
                     "bins": lap_bins,
                 }

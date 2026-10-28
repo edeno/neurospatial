@@ -64,8 +64,6 @@ def kinematic_goldens():
         "approach_rate",
         "approach_rate_geodesic",
         "compute_goal_directed_metrics",
-        "compute_trajectory_curvature",
-        "compute_trajectory_curvature_no_times",
         "compute_home_range",
         "compute_home_range_no_times",
         "add_positions",

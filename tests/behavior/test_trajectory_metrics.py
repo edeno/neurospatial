@@ -7,123 +7,10 @@ from numpy.testing import assert_allclose
 from neurospatial import Environment
 from neurospatial.behavior.trajectory import (
     compute_home_range,
+    compute_planar_turn_angles,
     compute_step_lengths,
-    compute_trajectory_curvature,
-    compute_turn_angles,
     mean_square_displacement,
 )
-
-
-class TestComputeTurnAngles:
-    """Test compute_turn_angles function."""
-
-    def test_straight_line_trajectory(self):
-        """Test that straight line movement has near-zero turn angles."""
-        # Create straight line trajectory (continuous positions)
-        positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
-
-        # Compute turn angles (continuous API)
-        angles = compute_turn_angles(positions)
-
-        # Should have n-2 angles (first and last transitions)
-        assert angles.shape == (18,)
-
-        # All angles should be near zero (straight line)
-        assert_allclose(angles, 0.0, atol=0.1)
-
-    def test_circular_trajectory_constant_turning(self):
-        """Test that circular motion produces turn angles."""
-        # Create circular trajectory (100 points around a circle)
-        n_points = 100
-        theta = np.linspace(0, 2 * np.pi, n_points)
-        x = 50 + 40 * np.cos(theta)
-        y = 50 + 40 * np.sin(theta)
-        positions = np.column_stack([x, y])
-
-        # Compute turn angles (continuous API - no env needed!)
-        angles = compute_turn_angles(positions)
-
-        # Equal chords of a counterclockwise circle turn by the angle they
-        # subtend, 2 pi / 99, at every vertex (the last point repeats the first
-        # in direction only, not position).
-        assert angles.shape == (n_points - 2,)
-        assert_allclose(angles, 2 * np.pi / (n_points - 1), rtol=1e-9)
-
-    def test_turn_angles_range(self):
-        """Test that turn angles are in [-π, π] range."""
-        # Create meandering trajectory (deterministic - no randomness needed)
-        t = np.linspace(0, 4 * np.pi, 200)
-        x = t * 5 + 20 * np.sin(t)
-        y = 20 * np.cos(t)
-        positions = np.column_stack([x, y])
-
-        # Continuous API
-        angles = compute_turn_angles(positions)
-
-        # All angles should be in [-π, π]
-        assert np.all(angles >= -np.pi)
-        assert np.all(angles <= np.pi)
-
-    def test_stationary_trajectory(self):
-        """Test that stationary periods are skipped."""
-        # Create trajectory with repeated positions (stationary periods)
-        positions = np.array(
-            [
-                [0.0, 0.0],
-                [0.0, 0.0],  # Duplicate
-                [0.0, 0.0],  # Duplicate
-                [10.0, 0.0],
-                [20.0, 0.0],
-                [20.0, 0.0],  # Duplicate
-                [30.0, 0.0],
-                [40.0, 0.0],
-                [40.0, 0.0],  # Duplicate
-                [40.0, 0.0],  # Duplicate
-                [50.0, 0.0],
-            ]
-        )
-
-        angles = compute_turn_angles(positions)
-
-        # Duplicates are dropped: 0, 10, 20, 30, 40, 50 leave four straight turns.
-        assert_allclose(angles, np.zeros(4), atol=0)
-
-    def test_parameter_order(self):
-        """Test that parameter is just positions (continuous API)."""
-        positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
-
-        # This should work without error
-        angles = compute_turn_angles(positions)
-        assert isinstance(angles, np.ndarray)
-
-    def test_one_dimensional_reversal_is_pi_and_continuation_zero(self):
-        positions = np.array([[0.0], [1.0], [3.0], [2.0]])
-        assert_allclose(compute_turn_angles(positions), [0.0, np.pi], rtol=0, atol=0)
-
-    @pytest.mark.parametrize(
-        "positions",
-        [
-            [[2.0, 0.0], [1.0, 0.0], [2.0, 0.0]],  # cross product -0.0
-            [[0.0, 0.0], [1.0, 0.0], [0.0, 0.0]],  # cross product +0.0
-            [[0.0, 2.0], [0.0, 1.0], [0.0, 2.0]],
-        ],
-    )
-    def test_planar_reversal_is_plus_pi_as_in_planar_turn_angles(self, positions):
-        """A reversal is +π, never -π, whichever way the path runs."""
-        from neurospatial.behavior.trajectory import compute_planar_turn_angles
-
-        positions = np.array(positions)
-        planar = compute_planar_turn_angles(np.arange(3) * 0.1, positions)
-        assert compute_turn_angles(positions).tolist() == [np.pi]
-        assert planar[1] == np.pi
-
-    def test_one_dimensional_missing_sample_is_nan_not_a_reversal(self):
-        """A dropout is not a reversal; it is NaN, as in two dimensions."""
-        positions = np.array([[0.0], [1.0], [np.nan], [3.0], [4.0]])
-        one_d = compute_turn_angles(positions)
-        two_d = compute_turn_angles(np.c_[positions, np.zeros(5)])
-        assert np.isnan(one_d).all()
-        np.testing.assert_array_equal(np.isnan(one_d), np.isnan(two_d))
 
 
 class TestComputeStepLengths:
@@ -194,6 +81,16 @@ class TestComputeStepLengths:
         assert step_lengths[0] == 0.0  # [0,0] -> [0,0]
         assert step_lengths[3] == 0.0  # [20,0] -> [20,0]
         assert step_lengths[4] == 0.0  # [20,0] -> [20,0]
+
+    def test_step_lengths_propagate_nan_to_both_adjacent_steps(self):
+        positions = np.array([[0.0, 0.0], [np.nan, np.nan], [3.0, 4.0]])
+        assert_allclose(
+            compute_step_lengths(positions),
+            [np.nan, np.nan],
+            rtol=0,
+            atol=1e-15,
+            equal_nan=True,
+        )
 
     def test_geodesic_steps_in_an_open_field_are_straight_steps(self):
         """Inside an open field every straight step stays inside: Euclidean."""
@@ -630,179 +527,6 @@ class TestMeanSquareDisplacement:
         assert np.isnan(result.msd).all()
 
 
-class TestCurvatureSampleAlignment:
-    """Stationary observations preserve the time and index of each turn."""
-
-    def test_stationary_start_preserves_turn_index(self):
-        positions = np.array([[0.0, 0.0]] * 6 + [[1.0, 0.0], [1.0, 1.0]])
-        times = np.arange(8) * 0.1
-
-        curvature = compute_trajectory_curvature(times, positions, smooth_window=0.0)
-
-        # Only the retained middle position (sample 6) has a turn; the
-        # stationary repeats and the run's ends are NaN.
-        expected = np.full(8, np.nan)
-        expected[6] = np.pi / 2
-        assert_allclose(curvature, expected, equal_nan=True)
-
-    def test_stationary_vertex_preserves_retained_turn_indices(self):
-        positions = np.array(
-            [
-                [0.0, 0.0],
-                [1.0, 0.0],
-                [1.0, 0.0],
-                [1.0, 0.0],
-                [1.0, 1.0],
-                [2.0, 1.0],
-                [2.0, 1.0],
-            ]
-        )
-        times = np.arange(len(positions)) * 0.1
-
-        curvature = compute_trajectory_curvature(times, positions, smooth_window=0.0)
-
-        expected = np.full(len(positions), np.nan)
-        expected[[1, 4]] = [np.pi / 2, -np.pi / 2]
-        assert_allclose(curvature, expected, equal_nan=True)
-
-    def test_smoothing_stays_at_turn_time_and_within_observed_run(self):
-        first = np.column_stack([np.arange(8.0), np.zeros(8)])
-        second = np.array(
-            [[0.0, 0.0]] * 6 + [[1.0, 0.0]] + [[1.0, float(y)] for y in range(1, 9)]
-        )
-        times = np.r_[np.arange(8) * 0.1, 10.0 + np.arange(len(second)) * 0.1]
-
-        curvature = compute_trajectory_curvature(
-            times, np.vstack([first, second]), smooth_window=0.1
-        )
-
-        assert np.isnan(curvature[[0, 7]]).all()
-        assert_allclose(curvature[1:7], 0.0)
-        assert np.nanargmax(curvature) == 8 + 6
-        expected_second = compute_trajectory_curvature(
-            times[8:], second, smooth_window=0.1
-        )
-        assert_allclose(curvature[8:], expected_second)
-
-
-class TestCurvatureSmoothing:
-    """Smoothing averages defined turns only; 0 disables it."""
-
-    TIMES = np.arange(0, 5, 1 / 30)
-    CIRCLE = 7.0 * np.c_[np.cos(0.8 * TIMES), np.sin(0.8 * TIMES)]
-
-    def test_zero_window_is_unsmoothed_not_nan(self):
-        turns = compute_trajectory_curvature(self.TIMES, self.CIRCLE, smooth_window=0)
-        assert_allclose(turns[1:-1], 0.8 / 30, rtol=1e-9)
-
-    def test_constant_turn_survives_smoothing_up_to_the_run_ends(self):
-        # The undefined first and last turns used to count as zero, so the
-        # smoothed turn at the run start read 0.87 of the true 0.8 / 30 rad.
-        turns = compute_trajectory_curvature(self.TIMES, self.CIRCLE, smooth_window=0.2)
-        assert np.isnan(turns[[0, -1]]).all()
-        assert_allclose(turns[1:-1], 0.8 / 30, rtol=1e-9)
-
-    def test_pause_is_not_averaged_in_as_zero_turn(self):
-        # Turning left 0.1 rad per step, with a 10-sample pause in the middle.
-        heading = 0.1 * np.arange(20)
-        steps = np.c_[np.cos(heading), np.sin(heading)]
-        path = np.vstack([[0.0, 0.0], np.cumsum(steps, axis=0)])
-        path = np.insert(path, 10, np.repeat(path[10:11], 10, axis=0), axis=0)
-        times = np.arange(len(path)) * 0.1
-        turns = compute_trajectory_curvature(times, path, smooth_window=0.3)
-        defined = np.isfinite(turns)
-        assert defined.sum() == 19
-        assert_allclose(turns[defined], 0.1, rtol=1e-9)
-
-    @pytest.mark.parametrize("window", [-0.1, np.nan, np.inf, None])
-    def test_invalid_window_raises(self, window):
-        with pytest.raises(ValueError, match="smooth_window"):
-            compute_trajectory_curvature(self.TIMES, self.CIRCLE, smooth_window=window)
-
-
-class TestCurvatureObservationSupport:
-    """Turns are computed only within observed runs on a strictly increasing clock."""
-
-    def test_missing_row_splits_the_run(self):
-        times = np.arange(7) * 0.1
-        positions = np.array(
-            [
-                [0.0, 0.0],
-                [1.0, 0.0],
-                [2.0, 0.0],
-                [2.0, 1.0],
-                [np.nan, np.nan],
-                [3.0, 1.0],
-                [3.0, 2.0],
-            ]
-        )
-
-        curvature = compute_trajectory_curvature(
-            times, positions, smooth_window=0.0, max_gap=0.15
-        )
-
-        # Run ends have no turn, and the two-sample second run has none at all.
-        assert_allclose(
-            curvature,
-            [np.nan, 0, np.pi / 2, np.nan, np.nan, np.nan, np.nan],
-            rtol=0,
-            atol=1e-15,
-            equal_nan=True,
-        )
-
-    def test_missing_row_is_bridged_like_a_deleted_row(self):
-        times = np.arange(20) * 0.1
-        positions = np.column_stack([np.arange(20.0), np.sin(np.arange(20.0))])
-        positions[10] = np.nan
-        kept = np.delete(np.arange(20), 10)
-
-        curvature = compute_trajectory_curvature(times, positions)
-
-        assert np.isnan(curvature[10])
-        assert_allclose(
-            curvature[kept],
-            compute_trajectory_curvature(times[kept], positions[kept]),
-            rtol=1e-12,
-            atol=0,
-        )
-
-    def test_missing_row_does_not_spread_through_smoothing(self):
-        times = np.arange(20) * 0.1
-        positions = np.column_stack([np.arange(20.0), np.sin(np.arange(20.0))])
-        positions[10] = np.nan
-
-        curvature = compute_trajectory_curvature(times, positions, max_gap=0.15)
-
-        # Each run's ends (samples 0, 9, 11, 19) have no turn.
-        np.testing.assert_array_equal(
-            np.flatnonzero(np.isnan(curvature)), [0, 9, 10, 11, 19]
-        )
-        assert_allclose(
-            np.delete(curvature, 10),
-            np.r_[
-                compute_trajectory_curvature(times[:10], positions[:10]),
-                compute_trajectory_curvature(times[11:], positions[11:]),
-            ],
-            rtol=1e-12,
-            atol=0,
-        )
-
-    def test_repeated_timestamp_raises(self):
-        times = np.array([0.0, 0.1, 0.1, 0.2])
-        with pytest.raises(ValueError, match="strictly increasing"):
-            compute_trajectory_curvature(times, np.arange(8.0).reshape(4, 2))
-
-    def test_empty_input_raises(self):
-        with pytest.raises(ValueError, match="got no samples"):
-            compute_trajectory_curvature(np.zeros(0), np.zeros((0, 2)))
-
-    def test_one_sample_has_no_turn(self):
-        curvature = compute_trajectory_curvature(
-            np.array([0.0]), np.array([[1.0, 2.0]])
-        )
-        np.testing.assert_array_equal(curvature, [np.nan])
-
-
 class TestTrajectoryMetricsIntegration:
     """Test integration of all trajectory metrics."""
 
@@ -816,7 +540,7 @@ class TestTrajectoryMetricsIntegration:
         times = np.linspace(0, 20, len(positions))
 
         # Continuous API: all metrics work directly on positions!
-        turn_angles = compute_turn_angles(positions)
+        turn_angles = compute_planar_turn_angles(times, positions)
         step_lengths = compute_step_lengths(positions, metric="euclidean")
 
         # Home range still uses bins (makes sense for occupancy-based metrics)
@@ -831,14 +555,15 @@ class TestTrajectoryMetricsIntegration:
         tau_values, msd_values = _msd.lags, _msd.msd
 
         # All metrics should be computed successfully
-        assert len(turn_angles) > 0
+        assert turn_angles.shape == (len(positions),)
         assert len(step_lengths) > 0
         assert len(home_range) > 0
         assert len(tau_values) > 0
         assert len(msd_values) > 0
 
         # Sanity checks
-        assert np.all(np.abs(turn_angles) <= np.pi)
+        assert np.isnan(turn_angles[[0, -1]]).all()
+        assert np.all(np.abs(turn_angles[1:-1]) <= np.pi)
         assert np.all(step_lengths >= 0)
         assert np.all(tau_values >= 0)
         assert np.all(msd_values >= 0)
@@ -904,38 +629,6 @@ class TestArrayLikeNormalization:
     either succeeds cleanly or raises a domain ValueError/TypeError — NEVER an
     AttributeError from accessing .ndim on a list.
     """
-
-    # --- compute_turn_angles ---
-
-    def test_compute_turn_angles_accepts_list_of_lists(self):
-        """compute_turn_angles must accept a valid Python list-of-lists."""
-        positions_list = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
-        # Should succeed — not raise AttributeError or anything else
-        result = compute_turn_angles(positions_list)
-        assert isinstance(result, np.ndarray)
-
-    def test_compute_turn_angles_list_no_attribute_error(self):
-        """compute_turn_angles must not raise AttributeError for a list input."""
-        positions_list = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
-        try:
-            compute_turn_angles(positions_list)
-        except AttributeError:
-            pytest.fail(
-                "compute_turn_angles raised AttributeError on list input — "
-                "must coerce with np.asarray before accessing .ndim"
-            )
-        except (ValueError, TypeError):
-            pass  # Domain error is fine
-
-    def test_compute_turn_angles_1d_list_raises_domain_error(self):
-        """compute_turn_angles must raise ValueError/TypeError (not AttributeError) for 1-D input."""
-        with pytest.raises((ValueError, TypeError)):
-            compute_turn_angles([0.0, 1.0, 2.0])  # 1D, not 2D
-
-    def test_compute_turn_angles_non_numeric_raises_domain_error(self):
-        """compute_turn_angles must raise TypeError (not AttributeError) for non-numeric input."""
-        with pytest.raises((TypeError, ValueError)):
-            compute_turn_angles([["a", "b"], ["c", "d"], ["e", "f"]])
 
     # --- compute_step_lengths ---
 

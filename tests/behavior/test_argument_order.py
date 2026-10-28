@@ -48,7 +48,6 @@ def recording():
         "time_efficiency",
         "traveled_path_length",
         "heading_from_velocity",
-        "compute_trajectory_curvature",
         "heading_direction_labels",
     ],
 )

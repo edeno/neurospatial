@@ -2173,7 +2173,9 @@ def graph_turn_sequence(
 
     See Also
     --------
-    compute_trajectory_curvature : Continuous curvature for any trajectory
+    compute_planar_turn_angles : Signed turn at each tracking sample, from
+        continuous positions.
+    compute_planar_curvature : Signed geometric curvature of the path.
     """
     require_cartesian(
         env.coordinate_system,

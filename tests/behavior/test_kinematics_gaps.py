@@ -5,7 +5,7 @@ import pytest
 
 from neurospatial import Regions
 from neurospatial._intervals import observed_interval_mask
-from neurospatial.behavior import Trial
+from neurospatial.behavior import Trial, compute_planar_turn_angles
 from neurospatial.behavior.decisions import (
     compute_pre_decision_metrics,
     decision_region_entry_time,
@@ -19,10 +19,7 @@ from neurospatial.behavior.navigation import (
     heading_direction_labels,
     instantaneous_goal_alignment,
 )
-from neurospatial.behavior.trajectory import (
-    compute_home_range,
-    compute_trajectory_curvature,
-)
+from neurospatial.behavior.trajectory import compute_home_range
 from neurospatial.behavior.vte import (
     compute_vte_session,
     compute_vte_trial,
@@ -184,42 +181,47 @@ def test_approach_rate_masks_backward_gap(two_epoch_recording):
     assert np.isfinite(actual[[4999, 5001]]).all()
 
 
-def test_curvature_and_smoothing_are_per_run(two_epoch_recording):
+def test_smoothed_turns_are_per_run(two_epoch_recording):
     r = two_epoch_recording
     expected = np.r_[
-        compute_trajectory_curvature(r.times[:5000], r.positions[:5000]),
-        compute_trajectory_curvature(r.times[5000:], r.positions[5000:]),
+        compute_planar_turn_angles(
+            r.times[:5000], r.positions[:5000], smooth_window=0.2
+        ),
+        compute_planar_turn_angles(
+            r.times[5000:], r.positions[5000:], smooth_window=0.2
+        ),
     ]
-    actual = compute_trajectory_curvature(r.times, r.positions)
+    actual = compute_planar_turn_angles(r.times, r.positions, smooth_window=0.2)
     np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=0)
 
 
-def test_curvature_declared_break_equals_separate_calls(two_epoch_recording):
+def test_smoothed_turns_declared_break_equals_separate_calls(two_epoch_recording):
     """A declared break keeps two recordings on one clock from smoothing together."""
     r = two_epoch_recording
     n = 5000
     # Join the second recording directly after the first: no time gap remains.
     times = np.r_[r.times[:n], r.times[n - 1] + 0.02 + (r.times[n:] - r.times[n])]
     new_recording = np.arange(times.size) == n
-    joined = compute_trajectory_curvature(
-        times, r.positions, break_before=new_recording
+    joined = compute_planar_turn_angles(
+        times, r.positions, break_before=new_recording, smooth_window=0.2
     )
     # Slice the same arrays so the time differences are exactly the same.
     np.testing.assert_array_equal(
         joined,
         np.r_[
-            compute_trajectory_curvature(times[:n], r.positions[:n]),
-            compute_trajectory_curvature(times[n:], r.positions[n:]),
+            compute_planar_turn_angles(times[:n], r.positions[:n], smooth_window=0.2),
+            compute_planar_turn_angles(times[n:], r.positions[n:], smooth_window=0.2),
         ],
     )
-    undeclared = compute_trajectory_curvature(times, r.positions)
-    sigma = 0.2 / 0.02  # default smooth_window over the 50 Hz frame interval
-    near_join = slice(n - int(3 * sigma), n + int(3 * sigma))
-    assert not np.allclose(undeclared[near_join], joined[near_join], rtol=0, atol=1e-6)
+    undeclared = compute_planar_turn_angles(times, r.positions, smooth_window=0.2)
+    near_join = (times > times[n] - 0.6) & (times < times[n] + 0.6)
+    assert not np.allclose(
+        undeclared[near_join], joined[near_join], rtol=0, atol=1e-6, equal_nan=True
+    )
 
 
 @pytest.mark.parametrize(
-    "function", [pre_decision_speed_stats, compute_trajectory_curvature]
+    "function", [pre_decision_speed_stats, compute_planar_turn_angles]
 )
 def test_kinematics_excluded_epochs_have_nan(two_epoch_recording, function):
     r = two_epoch_recording
@@ -245,16 +247,20 @@ def test_full_home_range_excludes_zero_dwell_bins():
     np.testing.assert_array_equal(np.sort(untimed), bins)
 
 
-def test_curvature_isolated_sample_nan(two_epoch_recording):
+def test_smoothed_turns_isolated_sample_nan(two_epoch_recording):
     r = two_epoch_recording
     selected = [0, 1, 2, 4999, 5000, 5001, 5002]  # 4999 sits alone
-    curvature = compute_trajectory_curvature(r.times[selected], r.positions[selected])
-    assert np.isnan(curvature[3])
-    # Each observed run gets the curvature it has on its own.
+    turns = compute_planar_turn_angles(
+        r.times[selected], r.positions[selected], smooth_window=0.2
+    )
+    assert np.isnan(turns[3])
+    # Each observed run gets the turns it has on its own.
     for run in ([0, 1, 2], [5000, 5001, 5002]):
-        alone = compute_trajectory_curvature(r.times[run], r.positions[run])
+        alone = compute_planar_turn_angles(
+            r.times[run], r.positions[run], smooth_window=0.2
+        )
         rows = [selected.index(i) for i in run]
-        np.testing.assert_allclose(curvature[rows], alone, rtol=1e-12)
+        np.testing.assert_allclose(turns[rows], alone, rtol=1e-12)
         # A three-sample run has one turn, at its middle sample.
         np.testing.assert_array_equal(np.isfinite(alone), [False, True, False])
 

@@ -44,7 +44,7 @@ def test_one_dimensional_positions_raise(function):
         function([0.0, 0.1, 0.2], np.array([0.0, 1.0, 2.0]))
 
 
-def test_horizontal_projection_of_legacy_example_is_a_left_turn():
+def test_horizontal_projection_of_a_3d_path_is_a_left_turn():
     positions = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 1.0], [1.0, 1.0, 2.0]])
     angles = compute_planar_turn_angles([0.0, 0.1, 0.2], positions[:, :2])
     np.testing.assert_allclose(angles, [np.nan, np.pi / 2, np.nan])
@@ -179,7 +179,12 @@ def test_stationary_sample_is_nan(function):
 
 @pytest.mark.parametrize(
     "positions",
-    [[[0.0, 0.0], [1.0, 0.0], [0.0, 0.0]], [[1.0, 0.0], [0.0, 0.0], [1.0, 0.0]]],
+    [
+        [[0.0, 0.0], [1.0, 0.0], [0.0, 0.0]],  # cross product +0.0
+        [[1.0, 0.0], [0.0, 0.0], [1.0, 0.0]],
+        [[2.0, 0.0], [1.0, 0.0], [2.0, 0.0]],  # cross product -0.0
+        [[0.0, 2.0], [0.0, 1.0], [0.0, 2.0]],
+    ],
 )
 def test_exact_reversal_turns_pi_and_has_no_curvature(positions):
     times = [0.0, 0.1, 0.2]
@@ -210,6 +215,18 @@ def test_unequal_forward_straight_segment_has_zero_curvature(positions):
     times = [0.0, 0.1, 0.2]
     assert compute_planar_turn_angles(times, positions)[1] == 0.0
     assert compute_planar_curvature(times, positions)[1] == 0.0
+
+
+def test_turns_recover_the_heading_changes_of_a_random_walk():
+    rng = np.random.default_rng(42)
+    heading_changes = rng.normal(0, 0.3, 200)
+    step_lengths = rng.uniform(0.5, 2.0, 200)
+    heading = np.cumsum(heading_changes)
+    steps = step_lengths[:, None] * np.c_[np.cos(heading), np.sin(heading)]
+    positions = np.vstack([[0.0, 0.0], np.cumsum(steps, axis=0)])
+    turns = compute_planar_turn_angles(np.arange(201) / 30, positions)
+    # The turn at sample i is the heading change between steps i - 1 and i.
+    np.testing.assert_allclose(turns[1:-1], heading_changes[1:], atol=1e-9)
 
 
 def test_right_turn_is_negative():
@@ -388,6 +405,21 @@ def test_undefined_turns_stay_nan_and_do_not_count_as_zero():
     np.testing.assert_allclose(smoothed[np.isfinite(smoothed)], 0.1, rtol=1e-9)
 
 
+def test_smoothed_missing_sample_equals_deleted_row():
+    rng = np.random.default_rng(2)
+    times = np.arange(60) / 30
+    positions = np.cumsum(rng.normal(0, 1, (60, 2)), axis=0)
+    positions[[10, 11, 40]] = np.nan
+    kept = np.setdiff1d(np.arange(60), [10, 11, 40])
+    values = compute_planar_turn_angles(times, positions, smooth_window=0.2)
+    assert np.isnan(values[[10, 11, 40]]).all()
+    np.testing.assert_allclose(
+        values[kept],
+        compute_planar_turn_angles(times[kept], positions[kept], smooth_window=0.2),
+        rtol=1e-12,
+    )
+
+
 def test_smoothed_break_equals_separate_calls(uniform_circle):
     times = uniform_circle[0][:60]
     positions = np.r_[uniform_circle[1][:30], uniform_circle[1][:30][::-1]]
@@ -457,3 +489,21 @@ def test_invalid_smooth_window_raises_with_a_fix(window, uniform_circle):
         compute_planar_turn_angles(times, positions, smooth_window=window)
     assert "compute_planar_turn_angles()" in str(caught.value)
     assert "smooth_window=0.0" in str(caught.value)
+
+
+def test_smoothing_averages_out_tracking_jitter():
+    times = np.arange(0, 10, 1 / 30)
+    path = np.c_[20.0 * times, np.zeros(times.size)]  # straight at 20 cm/s
+    jittered = path + np.random.default_rng(0).normal(0, 0.1, path.shape)
+    raw = compute_planar_turn_angles(times, jittered)
+    smoothed = compute_planar_turn_angles(times, jittered, smooth_window=0.2)
+    assert np.nanstd(smoothed) < 0.05 * np.nanstd(raw)
+    assert abs(np.nanmean(smoothed)) < 0.01
+
+
+def test_smoothed_stationary_path_has_no_turn():
+    times = np.array([0.0, 1.0, 2.0])
+    turns = compute_planar_turn_angles(
+        times, np.zeros((3, 2)), smooth_window=0.2, max_gap=None
+    )
+    assert turns.shape == (3,) and np.isnan(turns).all()
