@@ -489,6 +489,23 @@ class TestTrialHelpersOnAnotherClock:
         assert np.all(start_bins == -1)
         assert np.all(goal_bins == -1)
 
+    @pytest.mark.parametrize(
+        ("times", "match"),
+        [
+            (np.array([0.0, 2.0, 1.0, 3.0]), "non-decreasing"),
+            (np.array([0.0, 1.0, 1.0, 3.0]), "strictly increasing"),
+            (np.array([0.0, np.nan, 2.0, 3.0]), "non-finite"),
+        ],
+    )
+    def test_trial_arrays_need_strictly_increasing_times(
+        self, env_with_regions, times, match
+    ):
+        """A trial's samples are a slice of the session clock, so it must be sorted."""
+        with pytest.raises(ValueError, match=match):
+            time_to_goal(times, self._trials())
+        with pytest.raises(ValueError, match=match):
+            trials_to_region_arrays(self._trials(), times, env_with_regions)
+
     def test_overlapping_trials_do_not_warn(self, env_with_regions):
         import warnings
 

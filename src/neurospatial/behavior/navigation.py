@@ -619,7 +619,7 @@ def trials_to_region_arrays(
     trials : list[Trial]
         Trial segmentation from segment_trials().
     times : NDArray[np.float64], shape (n_samples,)
-        Timestamps for entire session.
+        Timestamps for entire session, strictly increasing (seconds).
     env : Environment
         Spatial environment (for region lookups).
 
@@ -629,6 +629,12 @@ def trials_to_region_arrays(
         Start bin index at each timepoint (-1 outside trials).
     goal_bins : NDArray[np.int_], shape (n_samples,)
         Goal bin index at each timepoint (-1 outside trials).
+
+    Raises
+    ------
+    ValueError
+        If ``times`` is empty, not 1-D, holds a non-finite value or is not
+        strictly increasing.
 
     Warns
     -----
@@ -672,33 +678,66 @@ def trials_to_region_arrays(
     path_progress : Compute normalized path progress
     distance_to_region : Distance to target region
     """
-    times = np.asarray(times, dtype=np.float64)
+    from neurospatial._observation import _validated_signal_times
+
+    times = _validated_signal_times(times, call="trials_to_region_arrays")
     _warn_if_no_trial_overlaps(
         times, trials, call="trials_to_region_arrays()", result="-1"
     )
-    # Initialize arrays with -1 (invalid bin)
     start_bins = np.full(len(times), -1, dtype=np.int_)
     goal_bins = np.full(len(times), -1, dtype=np.int_)
 
-    # Loop over trials (small - typically 10-100)
-    for trial in trials:
-        # Create mask for timepoints within this trial
-        mask = (times >= trial.start_time) & (times <= trial.end_time)
+    # Represent each region by its centroid bin (the region bin nearest the
+    # centroid of the region's bins), not an arbitrary first bin. A region
+    # covering no bin, and the goal of a failed trial (end_region None), write
+    # nothing, so those samples stay -1.
+    representative: dict[str, int | None] = {}
 
-        # Represent each region by its centroid bin (the region bin nearest the
-        # centroid of the region's bins), not an arbitrary first bin.
-        start_bin = region_representative_bin(env, trial.start_region)
+    def region_bin(name: str | None) -> int | None:
+        if name is None:
+            return None
+        if name not in representative:
+            representative[name] = region_representative_bin(env, name)
+        return representative[name]
+
+    # Samples with start_time <= t <= end_time, a slice of the sorted times;
+    # a later trial overwrites an overlapping earlier one.
+    for trial, first, stop in zip(
+        trials, *_trial_sample_bounds(times, trials), strict=True
+    ):
+        start_bin = region_bin(trial.start_region)
         if start_bin is not None:
-            start_bins[mask] = start_bin
-
-        # Get bins for end region (handle None for failed trials)
-        if trial.end_region is not None:
-            goal_bin = region_representative_bin(env, trial.end_region)
-            if goal_bin is not None:
-                goal_bins[mask] = goal_bin
-        # For failed trials (end_region=None), goal_bins remains -1
+            start_bins[first:stop] = start_bin
+        goal_bin = region_bin(trial.end_region)
+        if goal_bin is not None:
+            goal_bins[first:stop] = goal_bin
 
     return start_bins, goal_bins
+
+
+def _trial_sample_bounds(
+    times: NDArray[np.float64], trials: list[Trial]
+) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+    """First and one-past-last sample of each trial in strictly increasing times.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Strictly increasing sample times in seconds.
+    trials : list of Trial
+        Trials with finite ``start_time <= end_time`` in seconds.
+
+    Returns
+    -------
+    first, stop : ndarray of intp, shape (n_trials,)
+        ``times[first:stop]`` are the samples with
+        ``start_time <= t <= end_time``.
+    """
+    starts = np.array([trial.start_time for trial in trials], dtype=np.float64)
+    ends = np.array([trial.end_time for trial in trials], dtype=np.float64)
+    first: NDArray[np.intp] = np.searchsorted(times, starts, side="left")
+    stop: NDArray[np.intp] = np.searchsorted(times, ends, side="right")
+    return first, stop
 
 
 def _bin_distances(
@@ -1985,7 +2024,7 @@ def time_to_goal(
     Parameters
     ----------
     times : NDArray[np.float64], shape (n_samples,)
-        Timestamps for entire session.
+        Timestamps for entire session, strictly increasing (seconds).
     trials : list[Trial]
         Trial segmentation from segment_trials(). Only trials that reached
         their goal (``trial.success``) are included; timed-out and censored
@@ -1997,6 +2036,12 @@ def time_to_goal(
         Time in seconds until goal arrival, for samples with
         ``start_time <= t <= end_time`` of a successful trial. NaN outside
         successful trials.
+
+    Raises
+    ------
+    ValueError
+        If ``times`` is empty, not 1-D, holds a non-finite value or is not
+        strictly increasing.
 
     Warns
     -----
@@ -2015,22 +2060,20 @@ def time_to_goal(
     segment_trials : Segment trajectory into trials
     path_progress : Normalized progress along path
     """
-    times = np.asarray(times, dtype=np.float64)
+    from neurospatial._observation import _validated_signal_times
+
+    times = _validated_signal_times(times, call="time_to_goal")
     _warn_if_no_trial_overlaps(times, trials, call="time_to_goal()", result="NaN")
     ttg = np.full(len(times), np.nan, dtype=np.float64)
 
-    for trial in trials:
+    for trial, first, stop in zip(
+        trials, *_trial_sample_bounds(times, trials), strict=True
+    ):
         # Only an observed arrival has a time to goal: timed-out and censored
         # trials (cut off by a gap, an epoch edge, a break or the end of the
         # recording) never reached it.
-        if not trial.success:
-            continue
-
-        mask = (times >= trial.start_time) & (times <= trial.end_time)
-        trial_times = times[mask]
-
-        ttg[mask] = trial.end_time - trial_times
-        ttg[mask] = np.maximum(ttg[mask], 0.0)
+        if trial.success:
+            ttg[first:stop] = np.maximum(trial.end_time - times[first:stop], 0.0)
 
     return ttg
 
