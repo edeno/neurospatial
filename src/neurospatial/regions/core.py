@@ -986,40 +986,103 @@ class Regions(MutableMapping[str, Region]):
         Parameters
         ----------
         source : str or NDArray[np.float64]
-            Region name or point coordinates to buffer around.
+            Region name or point coordinates, shape ``(2,)``, to buffer around.
         distance : float
-            Buffer distance in spatial units.
+            Buffer distance in the regions' coordinate units. Positive grows
+            the shape; negative shrinks a polygon (a point needs a positive
+            distance).
         new_name : str
             Name for the new buffered region.
         **meta : Any
-            Additional metadata for the new region.
+            Metadata of the new region. It replaces, and does not inherit,
+            the source region's metadata.
 
         Returns
         -------
         Region
-            The newly created buffered region.
+            The newly created buffered polygon region. Shapely approximates
+            a circle by a polygon, so a buffered point's area is slightly
+            less than pi * distance**2.
 
+        Raises
+        ------
+        ValueError
+            If ``distance`` is not finite, the source is not a 2-D point or
+            polygon, or the buffer leaves nothing or splits the shape into
+            several parts.
+        KeyError
+            If ``new_name`` already exists, or the named source does not.
+
+        Examples
+        --------
+        >>> regions = Regions()
+        >>> _ = regions.add("well", point=[10.0, 10.0])
+        >>> zone = regions.buffer("well", 5.0, "well_zone", role="reward")
+        >>> round(zone.area / (np.pi * 5.0**2), 2)
+        1.0
+        >>> dict(zone.metadata)
+        {'role': 'reward'}
         """
         self._mutable_store()
+        if not np.isfinite(distance):
+            raise ValueError(
+                _format_error(
+                    f"buffer() distance must be finite, got {distance!r}.",
+                    fix="pass a distance in the regions' coordinate units, such as 5.0",
+                )
+            )
         if isinstance(source, str):
             src = self[source]
+            described = repr(source)
             if src.kind == "polygon":
                 assert isinstance(src.data, Polygon)
-                geom = src.data
+                geom: Point | Polygon = src.data
             elif src.kind == "point" and src.n_dims == 2:
                 assert isinstance(src.data, np.ndarray)
                 geom = Point(src.data)
             else:
-                raise ValueError("Can only buffer 2-D point or polygon regions.")
+                raise ValueError(
+                    _format_error(
+                        f"Cannot buffer {src.n_dims}-D point region {source!r}.",
+                        fix="buffer a 2-D point or polygon region",
+                    )
+                )
         else:  # raw coords
             arr = np.asarray(source, dtype=float)
             if arr.shape != (2,):
-                raise ValueError("Raw source must be shape (2,) for buffering.")
+                raise ValueError(
+                    _format_error(
+                        f"buffer() source coordinates must have shape (2,), got "
+                        f"{arr.shape}.",
+                        fix="pass one (x, y) point, or a region name",
+                    )
+                )
             geom = Point(arr)
+            described = f"point {arr.tolist()}"
 
         poly = geom.buffer(distance)
+        if poly.is_empty:
+            raise ValueError(
+                _format_error(
+                    f"Buffering {described} by {distance!r} leaves nothing.",
+                    why="Why: a negative distance shrinks a polygon by that much "
+                    "from every edge, and a point needs a positive distance.",
+                    fix="use a positive distance for a point, or a negative "
+                    "distance smaller than half the polygon's narrowest width",
+                )
+            )
         if not isinstance(poly, Polygon):
-            raise ValueError("Buffer produced non-polygon geometry.")
+            n_parts = len(getattr(poly, "geoms", ()))
+            raise ValueError(
+                _format_error(
+                    f"Buffering {described} by {distance!r} splits it into "
+                    f"{n_parts} parts.",
+                    why="Why: a region is one polygon, so the parts cannot be "
+                    "stored together.",
+                    fix="use a smaller distance, or make one region per part "
+                    "from shapely's buffer result",
+                )
+            )
 
         return self.add(new_name, polygon=poly, metadata=meta)
 

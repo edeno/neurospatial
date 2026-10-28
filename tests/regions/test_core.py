@@ -264,18 +264,64 @@ def test_regions_set_rejects_name_mismatch():
         regs.set("foo", Region(name="bar", kind="point", data=[1, 2]))
 
 
-def test_regions_buffer_point_and_polygon(tmp_path):
+@pytest.mark.parametrize("source", ["named", "raw"])
+def test_buffered_point_is_a_disk_centered_on_the_point(source):
     regs = Regions()
-    pt = [0.0, 0.0]
-    regs.add("pt", point=pt)
-    regs.buffer("pt", distance=1.0, new_name="buf")
-    assert "buf" in regs
-    assert regs["buf"].kind == "polygon"
-    # Buffering a polygon
-    poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-    regs.add("poly", polygon=poly)
-    regs.buffer("poly", distance=0.5, new_name="buf2")
-    assert "buf2" in regs
+    regs.add("well", point=[10.0, 20.0], metadata={"role": "reward"})
+    zone = regs.buffer(
+        "well" if source == "named" else np.array([10.0, 20.0]), 5.0, "zone"
+    )
+    # Shapely approximates the circle by a polygon inscribed in it.
+    assert zone.area == pytest.approx(np.pi * 25.0, rel=0.01)
+    assert zone.area < np.pi * 25.0
+    np.testing.assert_allclose(zone.center, [10.0, 20.0], atol=1e-9)
+    assert dict(zone.metadata) == {}  # **meta replaces; nothing is inherited
+
+
+def test_buffered_polygon_covers_the_original_and_shrinking_stays_inside():
+    regs = Regions()
+    square = regs.add("arena", polygon=shp.box(0, 0, 10, 10), metadata={"a": 1})
+    grown = regs.buffer("arena", 2.0, "grown", role="margin")
+    shrunk = regs.buffer("arena", -2.0, "core")
+    assert grown.data.covers(square.data)
+    assert square.data.covers(shrunk.data)
+    assert shrunk.area == pytest.approx(36.0)
+    assert dict(grown.metadata) == {"role": "margin"}
+
+
+@pytest.mark.parametrize("distance", [np.nan, np.inf, -np.inf])
+def test_buffer_distance_must_be_finite(distance):
+    regs = Regions()
+    regs.add("well", point=[0.0, 0.0])
+    with pytest.raises(ValueError, match="distance must be finite"):
+        regs.buffer("well", distance, "zone")
+    assert "zone" not in regs
+
+
+@pytest.mark.parametrize(
+    ("source", "distance"),
+    [("well", 0.0), ("well", -1.0), ("arena", -6.0)],
+    ids=["point-zero", "point-negative", "polygon-eroded"],
+)
+def test_buffer_that_leaves_nothing_is_refused(source, distance):
+    regs = Regions()
+    regs.add("well", point=[0.0, 0.0])
+    regs.add("arena", polygon=shp.box(0, 0, 10, 10))
+    with pytest.raises(ValueError, match="leaves nothing"):
+        regs.buffer(source, distance, "zone")
+    assert "zone" not in regs
+
+
+def test_buffer_that_splits_a_region_is_refused():
+    # Two 10 x 10 rooms joined by a 2-wide corridor.
+    dumbbell = shapely.union_all(
+        [shp.box(0, 0, 10, 10), shp.box(10, 4, 20, 6), shp.box(20, 0, 30, 10)]
+    )
+    regs = Regions()
+    regs.add("rooms", polygon=dumbbell)
+    with pytest.raises(ValueError, match="splits it into 2 parts"):
+        regs.buffer("rooms", -2.0, "cores")
+    assert "cores" not in regs
 
 
 def test_regions_buffer_raw_point():
