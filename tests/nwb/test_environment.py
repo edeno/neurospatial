@@ -1074,12 +1074,7 @@ class TestEnvironmentRoundTrip:
         assert loaded_env.frame == "session_001"
 
     def test_roundtrip_region_metadata_preserved(self, tmp_path):
-        """Region metadata survives the NWB write/read cycle.
-
-        The NWB region (de)serialization delegates to Region.to_dict /
-        Region.from_dict, so per-region metadata (which the old bespoke schema
-        dropped) is preserved through the round-trip.
-        """
+        """Region metadata survives the NWB write/read cycle."""
         from pynwb import NWBHDF5IO
 
         from neurospatial import Environment

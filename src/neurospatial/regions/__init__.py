@@ -14,8 +14,6 @@ This sub-package offers:
 
 from __future__ import annotations
 
-from neurospatial.regions.io import _SCHEMA_TAG as _SCHEMA_TAG
-
 # --- core value objects ---------------------------------
 from .core import Region, Regions
 from .core import _freeze_metadata as _freeze_metadata
