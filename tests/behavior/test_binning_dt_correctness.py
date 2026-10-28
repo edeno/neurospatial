@@ -381,8 +381,8 @@ class TestSafeGatherVoronoiLabels:
             position_bins, labels, times
         )
 
-        assert crossing_times == []
-        assert crossing_dirs == []
+        assert crossing_times.size == 0
+        assert crossing_dirs.shape == (0, 2)
 
     def test_compute_decision_analysis_goal_labels_minus_one_for_out_of_env(
         self,

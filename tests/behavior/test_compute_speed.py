@@ -99,7 +99,7 @@ def test_rate_maps_and_compute_speed_share_one_definition():
 
 def test_velocity_segments_ignore_jitter_at_rest():
     times, positions = _still(30.0)
-    assert segment_by_velocity(times, positions, min_speed=4.0) == []
+    assert segment_by_velocity(times, positions, min_speed=4.0).shape == (0, 2)
 
 
 def test_speed_matches_rate_map_gate_with_missing_rows_and_gaps():

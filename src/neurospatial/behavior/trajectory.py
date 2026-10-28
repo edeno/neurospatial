@@ -1,17 +1,16 @@
 """Trajectory characterization metrics.
 
-This module provides functions for analyzing spatial trajectories, including
-turn angles, step lengths, home range estimation, and mean square displacement
-analysis. These metrics are commonly used in behavioral ecology and neuroscience
-to characterize movement patterns and spatial exploration.
+This module provides functions for analyzing spatial trajectories: running
+speed, movement and body heading, turn angles, planar curvature and the
+angular velocity of the movement direction, step lengths, cumulative
+distance travelled, home range estimation, and mean square displacement.
+These metrics are commonly used in behavioral ecology and neuroscience to
+characterize movement patterns and spatial exploration.
 
 References
 ----------
 .. [1] Traja: https://traja.readthedocs.io/ - Trajectory analysis toolkit
-.. [2] Fiaschi, L., Nair, R., Koethe, U., & Hamprecht, F. A. (2012).
-       "Learning to count with regression forest and structured labels."
-       ICPR 2012.
-.. [3] Kays, R., Crofoot, M. C., Jetz, W., & Wikelski, M. (2015).
+.. [2] Kays, R., Crofoot, M. C., Jetz, W., & Wikelski, M. (2015).
        "Terrestrial animal tracking as an eye on life and planet."
        Science, 348(6240), aaa2478.
 """
@@ -46,7 +45,6 @@ from neurospatial._validation import (
 )
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.behavior.epochs import _mask_in_intervals
-from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -60,19 +58,54 @@ class MSDResult(ReadOnlyArraysMixin, ResultMixin):
     Attributes
     ----------
     lags : NDArray[np.float64], shape (n_lags,)
-        Lag times τ (in the same units as the input ``times`` array) at
-        which MSD was computed. Always strictly increasing and starts at
-        the median sample interval.
+        Lag times τ in seconds, strictly increasing. Lag ``k`` is the mean
+        time separation of the sample pairs averaged there: ``k`` times the
+        median sample interval for uniform sampling.
     msd : NDArray[np.float64], shape (n_lags,)
-        Mean square displacement values, one per lag. NaN when no valid
-        displacement pair supports that lag.
+        Mean square displacement values, one per lag, in squared position
+        units. NaN when no valid displacement pair supports that lag.
+    metric : {"euclidean", "geodesic"}
+        Distance the displacements were measured with.
+    epochs : NDArray[np.float64] or None, shape (n_epochs, 2)
+        Normalized half-open ``[start, stop)`` windows that were applied.
     """
 
     lags: NDArray[np.float64]
     msd: NDArray[np.float64]
+    metric: DistanceMetric
+    epochs: NDArray[np.float64] | None
 
     def __post_init__(self) -> None:
-        """Own read-only copies of lags and displacement values."""
+        """Check the curve and own read-only copies of its arrays."""
+        lags = np.asarray(self.lags, dtype=np.float64)
+        msd = np.asarray(self.msd, dtype=np.float64)
+        if lags.ndim != 1 or msd.shape != lags.shape:
+            raise ValueError(
+                _format_error(
+                    f"MSDResult needs 1-D lags and msd of the same length; got "
+                    f"shapes {lags.shape} and {msd.shape}.",
+                    why="each MSD value is the mean square displacement at one lag.",
+                    fix="pass one msd value per lag.",
+                )
+            )
+        if np.any(np.diff(lags) <= 0):
+            raise ValueError(
+                _format_error(
+                    "MSDResult needs strictly increasing lags.",
+                    why="each lag is a distinct time separation.",
+                    fix="sort the lags and their msd values together.",
+                )
+            )
+        if self.metric not in ("euclidean", "geodesic"):
+            raise ValueError(
+                _format_error(
+                    f"MSDResult got metric={self.metric!r}.",
+                    why="displacements are Euclidean or geodesic distances.",
+                    fix="pass metric='euclidean' or metric='geodesic'.",
+                )
+            )
+        object.__setattr__(self, "lags", lags)
+        object.__setattr__(self, "msd", msd)
         self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
@@ -84,25 +117,108 @@ class MSDResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+def _invalid_result(owner: str, problem: str) -> ValueError:
+    """The error for a result built from fields that disagree."""
+    return ValueError(
+        _format_error(
+            f"{owner} got inconsistent fields: {problem}.",
+            why=f"{owner} describes runs of one path, so its arrays must agree "
+            "in length and its run bounds must be ordered and in range.",
+            fix="build it with the function that returns it rather than by hand.",
+        )
+    )
+
+
+class _RunPathMixin:
+    """Run structure shared by the distance results along an observed path.
+
+    Subclasses are frozen dataclasses with ``run_distance``, ``run_ids``,
+    ``run_sample_bounds``, ``run_time_bounds`` and ``run_path_lengths``.
+    """
+
+    run_distance: NDArray[np.float64]
+    run_ids: NDArray[np.intp]
+    run_sample_bounds: NDArray[np.intp]
+    run_time_bounds: NDArray[np.float64]
+    run_path_lengths: NDArray[np.float64]
+
+    @property
+    def cumulative_distance(self) -> NDArray[np.float64]:
+        """Path length of all earlier runs plus ``run_distance``, read-only.
+
+        NaN where ``run_ids == -1``.
+        """
+        offsets = np.r_[0.0, np.cumsum(self.run_path_lengths)[:-1]]
+        in_run = self.run_ids >= 0
+        value = np.full(self.run_ids.shape, np.nan)
+        value[in_run] = offsets[self.run_ids[in_run]] + self.run_distance[in_run]
+        value.setflags(write=False)
+        return value
+
+    def _check_runs(self, owner: str, *, n_samples: int, n_source: int) -> None:
+        """Check the run arrays against each other and the source samples.
+
+        ``n_samples`` is the length of ``run_ids``; ``n_source`` the number
+        of original samples the run bounds index.
+        """
+        bounds = np.asarray(self.run_sample_bounds)
+        time_bounds = np.asarray(self.run_time_bounds)
+        run_ids = np.asarray(self.run_ids)
+        n_runs = len(self.run_path_lengths)
+        if bounds.shape != (n_runs, 2) or time_bounds.shape != (n_runs, 2):
+            raise _invalid_result(
+                owner,
+                f"run_sample_bounds {bounds.shape} and run_time_bounds "
+                f"{time_bounds.shape} must both be ({n_runs}, 2), one row per "
+                "run_path_lengths entry",
+            )
+        if np.shape(self.run_distance) != (n_samples,):
+            raise _invalid_result(
+                owner,
+                f"run_distance has shape {np.shape(self.run_distance)}, but "
+                f"run_ids has {n_samples} entries",
+            )
+        if n_runs and (
+            np.any(bounds[:, 0] > bounds[:, 1])
+            or bounds.min() < 0
+            or bounds.max() >= n_source
+            or np.any(time_bounds[:, 0] > time_bounds[:, 1])
+        ):
+            raise _invalid_result(
+                owner,
+                "each run needs first <= last sample, inside the "
+                f"{n_source} source samples, and start <= stop time",
+            )
+        if n_samples and (run_ids.min() < -1 or run_ids.max() >= n_runs):
+            raise _invalid_result(
+                owner, f"run_ids must be -1 or a run index below {n_runs}"
+            )
+
+
 @dataclass(frozen=True, repr=False, eq=False)
-class CumulativeDistanceResult(ReadOnlyArraysMixin, ResultMixin):
+class CumulativeDistanceResult(_RunPathMixin, ReadOnlyArraysMixin, ResultMixin):
     """Observed distance travelled, returned by ``compute_cumulative_distance``.
 
     Distances are Euclidean arclength along the observed polyline, in the
-    units of the positions. Intervals that are not usable (a missing sample, a
-    gap longer than ``max_gap``, outside ``epochs``, or a declared break)
-    add nothing, so distance never crosses a break.
+    units of the positions. A missing sample is bridged like a deleted row
+    when the valid samples around it are within ``max_gap``: the straight
+    displacement between them is counted once. Only a longer gap, an
+    ``epochs`` edge or a declared break splits a run, and those add nothing,
+    so distance never crosses a break.
 
     Attributes
     ----------
     step_lengths : NDArray[np.float64], shape (n_samples - 1,)
-        Length of each interval; NaN on unusable intervals.
+        Length of each interval; NaN on unusable intervals. A bridged gap's
+        displacement is stored on its last interval (the one ending at the
+        next valid sample) and its other intervals are NaN.
     run_distance : NDArray[np.float64], shape (n_samples,)
         Distance since the start of the sample's run (0 at each run start);
         NaN where ``run_ids == -1``.
     cumulative_distance : NDArray[np.float64], shape (n_samples,)
-        Observed distance since the first sample, summed over all runs so far;
-        NaN where ``run_ids == -1``.
+        Observed distance since the first sample, summed over all runs so far:
+        the path length of earlier runs plus ``run_distance``. NaN where
+        ``run_ids == -1``. Derived from those fields, read-only.
     run_ids : NDArray[np.intp], shape (n_samples,)
         Run index in time order; -1 for samples that touch no usable interval.
     sample_valid : NDArray[np.bool_], shape (n_samples,)
@@ -121,7 +237,6 @@ class CumulativeDistanceResult(ReadOnlyArraysMixin, ResultMixin):
 
     step_lengths: NDArray[np.float64]
     run_distance: NDArray[np.float64]
-    cumulative_distance: NDArray[np.float64]
     run_ids: NDArray[np.intp]
     sample_valid: NDArray[np.bool_]
     run_sample_bounds: NDArray[np.intp]
@@ -131,7 +246,18 @@ class CumulativeDistanceResult(ReadOnlyArraysMixin, ResultMixin):
     epochs: NDArray[np.float64] | None
 
     def __post_init__(self) -> None:
-        """Own read-only copies of the arrays."""
+        """Check that the fields describe one path, then own the arrays."""
+        owner = "CumulativeDistanceResult"
+        n_samples = len(self.run_ids)
+        if np.shape(self.sample_valid) != (n_samples,) or np.shape(
+            self.step_lengths
+        ) != (max(n_samples - 1, 0),):
+            raise _invalid_result(
+                owner,
+                f"sample_valid {np.shape(self.sample_valid)} and step_lengths "
+                f"{np.shape(self.step_lengths)} must match {n_samples} samples",
+            )
+        self._check_runs(owner, n_samples=n_samples, n_source=n_samples)
         self._own_arrays()
 
     @property
@@ -174,14 +300,21 @@ def compute_speed(
     taken. Differencing raw positions instead turns camera jitter into
     speed: an animal sitting still with 0.5 cm of jitter reads about
     20 cm/s at 30 Hz and 200 cm/s at 500 Hz, so a ``min_speed`` filter would
-    keep nearly all of its rest. Every ``min_speed`` gate in the package
-    (rate maps, decoding, ``segment_by_velocity``, decision and goal
-    metrics) uses this speed, so passing ``speed=compute_speed(...)``
+    keep nearly all of its rest. The per-sample ``min_speed`` gates of rate
+    maps, decoding, ``segment_by_velocity`` and the decision and goal
+    metrics use this speed, so passing ``speed=compute_speed(...)``
     explicitly gives the same result as leaving it out, provided the gate
-    gets the same ``break_before``.
+    gets the same ``break_before``. ``detect_runs_between_regions`` is
+    different: its ``min_speed`` drops whole runs by their mean speed
+    between bin centres.
 
-    Speed is never smoothed across a declared break, a missing sample, a gap
-    longer than ``max_gap`` or the edge of an ``epochs`` window.
+    A missing sample is bridged like a deleted row when the valid samples
+    around it are within ``max_gap``. Speed is never smoothed across a longer
+    gap, the edge of an ``epochs`` window or a declared break.
+
+    All coordinate columns enter the speed: for 3-D tracking it is the 3-D
+    speed. ``heading_from_velocity`` uses x and y only; pass
+    ``positions[:, :2]`` for the horizontal speed.
 
     Parameters
     ----------
@@ -215,8 +348,8 @@ def compute_speed(
     -------
     speed : NDArray[np.float64], shape (n_samples,)
         Speed in position units per second (e.g. cm/s). NaN at missing
-        samples and at samples in no run (isolated by a gap, a declared break,
-        a missing neighbour or ``epochs``).
+        samples and at samples in no run (isolated by a gap longer than
+        ``max_gap``, a declared break or ``epochs``).
 
     Raises
     ------
@@ -287,10 +420,13 @@ def heading_from_velocity(
     ----------
     times : array-like, shape (n_time,)
         Finite, strictly increasing timestamps in seconds, one per position.
-    positions : NDArray, shape (n_time, 2)
-        Animal positions over time, in environment units (e.g. cm). A row with
-        a non-finite coordinate (NaN, for a lost frame) is a missing sample:
-        it has no heading, and no velocity is computed across it.
+    positions : NDArray, shape (n_time, n_dims)
+        Animal positions over time, in environment units (e.g. cm), with
+        ``n_dims >= 2``; only x and y are used, so the heading and the
+        ``min_speed`` gate are horizontal. A row with a non-finite coordinate
+        (NaN, for a lost frame) is a missing sample: it has no heading, and
+        it is bridged like a deleted row when the valid samples around it are
+        within ``max_gap``.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -360,7 +496,8 @@ def heading_from_velocity(
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``
     and not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause or a declared break.
+    no velocity or heading spans a longer gap, an ``epochs`` edge or a
+    declared break.
 
     Velocity is the centered secant of position over each sample's actual
     elapsed time (one-sided at a run's ends), smoothed separately within each
@@ -412,8 +549,8 @@ def heading_from_velocity(
     ... ).tolist()
     [0.0, 0.0, 0.0, 0.0, 1.57, 1.57, 1.57, 1.57]
 
-    A lost frame is a NaN row. It has no heading, and no velocity is
-    computed across it:
+    A lost frame is a NaN row. It has no heading, and its neighbours are
+    bridged as if the row were deleted:
 
     >>> times = np.arange(8) * 0.1  # s
     >>> positions = np.column_stack([np.arange(8.0), np.zeros(8)])  # cm
@@ -731,12 +868,16 @@ def compute_turn_angles(
     Returns
     -------
     NDArray[np.float64], shape (n_angles,)
-        Turn angles in radians, in the range [-π, π]. Consecutive duplicate
+        Turn angles in radians, in the range [-π, π] (unsigned, in [0, π],
+        for three or more columns; see Notes). Consecutive duplicate
         positions (stationary periods) are dropped first, so the length is
         ``n_unique - 2``, where ``n_unique`` is the number of positions left,
-        not ``n_samples - 2``. The output is not aligned with the input samples
-        and carries no times; use ``compute_planar_turn_angles`` for a
-        sample-aligned result.
+        not ``n_samples - 2``. A turn whose incoming or outgoing step touches a
+        row with a non-finite coordinate is NaN in any number of dimensions:
+        missing samples are not bridged here. The output is not aligned with
+        the input samples and carries no times; use
+        ``compute_planar_turn_angles`` for a sample-aligned result that
+        bridges missing samples.
 
     Notes
     -----
@@ -749,14 +890,14 @@ def compute_turn_angles(
     where :math:`v_i` is the movement vector from position i-1 to position i.
 
     With ``v1`` and ``v2`` the incoming and outgoing movement vectors, the
-    angle is ``atan2(v1_x * v2_y - v1_y * v2_x, sum(v1 * v2))``. The cross
-    product uses the first two columns (x, y); the dot product sums over all
-    columns. For positions with more than two columns this mixes a projected
-    cross product with a full-dimensional dot product, so the result is neither
-    the angle in the x-y plane nor the angle in 3-D space. The positions
-    ``[[0, 0, 0], [1, 0, 1], [1, 1, 2]]`` give ``π/4`` here, whereas the x-y
-    projection ``positions[:, :2]`` gives ``π/2``. For a horizontal-plane
-    analysis pass ``positions[:, :2]`` explicitly.
+    planar angle is ``atan2(v1_x * v2_y - v1_y * v2_x, v1 . v2)``. One column
+    gives 0 (same direction) or π (reversal). With three or more columns
+    a turn has no sign without a reference axis, so the result is the
+    unsigned angle between ``v1`` and ``v2`` in the full space, in
+    ``[0, π]``: the positions ``[[0, 0, 0], [1, 0, 1], [1, 1, 2]]`` give
+    ``π/3``, whereas the x-y projection ``positions[:, :2]`` gives the signed
+    ``π/2``. For a horizontal-plane analysis pass ``positions[:, :2]``
+    explicitly.
 
     Stationary periods (consecutive duplicate positions) are removed before
     computing turn angles to avoid undefined angles from zero-length vectors.
@@ -794,11 +935,10 @@ def compute_turn_angles(
     >>> float(angles[0])  # π/2: a 90° left turn
     1.5707963267948966
     >>>
-    >>> # With more than two columns the cross product uses x, y only but the
-    >>> # dot product uses every column
+    >>> # With three columns the turn is the unsigned 3-D angle
     >>> positions_3d = np.array([[0.0, 0, 0], [1, 0, 1], [1, 1, 2]])
-    >>> float(compute_turn_angles(positions_3d)[0])  # π/4
-    0.7853981633974483
+    >>> round(float(compute_turn_angles(positions_3d)[0]), 12)  # π/3
+    1.047197551197
     >>> float(compute_turn_angles(positions_3d[:, :2])[0])  # x-y projection, π/2
     1.5707963267948966
 
@@ -844,36 +984,34 @@ def compute_turn_angles(
     # Compute movement vectors (differences between consecutive positions)
     vectors = np.diff(unique_positions, axis=0)  # shape (n_unique-1, n_dims)
 
-    # Need at least 2 vectors to compute turn angles
-    if len(vectors) < 2:
-        return np.array([], dtype=np.float64)
-
-    # Vectorized turn angle computation
+    # Vectorized turn angle computation. Consecutive retained positions
+    # differ, so no step has zero length (NaN rows give NaN steps).
     v1 = vectors[:-1]  # shape (n_angles, n_dims)
     v2 = vectors[1:]  # shape (n_angles, n_dims)
 
-    # Compute vector norms
-    norms1 = np.linalg.norm(v1, axis=1)
-    norms2 = np.linalg.norm(v2, axis=1)
-
-    # Handle zero-length vectors
-    zero_mask = (norms1 == 0) | (norms2 == 0)
-
     n_dims = vectors.shape[1]
     angles: NDArray[np.float64]
-    if n_dims >= 2:
+    if n_dims == 2:
         # 2D cross product (scalar): v1[0]*v2[1] - v1[1]*v2[0]
         cross = v1[:, 0] * v2[:, 1] - v1[:, 1] * v2[:, 0]
         # Dot product
         dot = np.sum(v1 * v2, axis=1)
         angles = np.arctan2(cross, dot)
+    elif n_dims > 2:
+        # Unsigned angle between the full vectors (no turn sign exists in 3D
+        # without a reference axis), by Kahan's formula, accurate near 0 and
+        # pi: 2 atan2(|u - w|, |u + w|) for unit vectors u, w.
+        u = v1 / np.linalg.norm(v1, axis=1, keepdims=True)
+        w = v2 / np.linalg.norm(v2, axis=1, keepdims=True)
+        angles = 2.0 * np.arctan2(
+            np.linalg.norm(u - w, axis=1), np.linalg.norm(u + w, axis=1)
+        )
     else:
-        # 1D: angle is 0 if same direction, π if opposite
-        same_direction = v1[:, 0] * v2[:, 0] > 0
-        angles = np.asarray(np.where(same_direction, 0.0, np.pi))
-
-    # Set zero-length vector pairs to 0
-    angles[zero_mask] = 0.0
+        # 1D: 0 if same direction, π if opposite, NaN next to a missing
+        # sample (as in 2D, where NaN propagates through atan2).
+        product = v1[:, 0] * v2[:, 0]
+        angles = np.where(product > 0, 0.0, np.pi)
+        angles[np.isnan(product)] = np.nan
 
     return angles
 
@@ -930,9 +1068,8 @@ def _planar_turns(
                 f"got shape {shape}.",
                 why=(
                     "a signed turn, planar curvature and the angular velocity of "
-                    "the movement direction are defined for two coordinates, and "
-                    "the legacy N-D turn formulas are neither a projection nor "
-                    "3-D curvature."
+                    "the movement direction are defined in a plane; in 3-D a turn "
+                    "has no sign without a reference axis."
                 ),
                 fix="pass positions[:, :2] to analyze movement in the horizontal plane",
             )
@@ -991,8 +1128,10 @@ def compute_planar_turn_angles(
     ``a = positions[i] - positions[i - 1]`` to the outgoing displacement
     ``b = positions[i + 1] - positions[i]``, in the horizontal (x, y) plane.
     Positive turns are counterclockwise (to the animal's left, seen from above).
-    Only observed movement is used: a turn is never computed across a missing
-    sample, a time gap or a declared recording break.
+    A missing sample is skipped as if deleted when the valid samples around
+    it are within ``max_gap``: ``i - 1`` and ``i + 1`` are then the previous
+    and next valid samples. A turn is never computed across a longer gap, an
+    ``epochs`` edge or a declared break.
 
     Parameters
     ----------
@@ -1020,8 +1159,9 @@ def compute_planar_turn_angles(
     -------
     NDArray[np.float64], shape (n_samples,)
         Turn in radians, in ``(-pi, pi]``, aligned with ``times``. An exact
-        reversal is ``pi``. NaN at the first and last sample, at samples next to
-        a missing sample, time gap or break, and where the incoming or outgoing
+        reversal is ``pi``. NaN at missing samples, at the first and last
+        sample of each run (next to a gap longer than ``max_gap``, an
+        ``epochs`` edge or a break), and where the incoming or outgoing
         displacement is zero (the animal did not move, so there is no
         direction).
 
@@ -1105,9 +1245,10 @@ def compute_planar_curvature(
     positions ``i - 1``, ``i`` and ``i + 1`` in the horizontal (x, y) plane:
     0 on a straight segment, ``1 / r`` on a circle of radius ``r``. It is
     positive when the path bends counterclockwise (to the animal's left, seen
-    from above) and negative when it bends clockwise. Only observed movement is
-    used: curvature is never computed across a missing sample, a time gap or a
-    declared recording break.
+    from above) and negative when it bends clockwise. A missing sample is
+    skipped as if deleted when the valid samples around it are within
+    ``max_gap``; curvature is never computed across a longer gap, an
+    ``epochs`` edge or a declared break.
 
     Parameters
     ----------
@@ -1135,10 +1276,11 @@ def compute_planar_curvature(
     -------
     NDArray[np.float64], shape (n_samples,)
         Signed curvature in inverse position units (for example 1/cm), aligned
-        with ``times``. NaN at the first and last sample, at samples next to a
-        missing sample, time gap or break, where the incoming or outgoing
-        displacement is zero, and at a reversal of direction (no circle passes
-        through the three points).
+        with ``times``. NaN at missing samples, at the first and last sample
+        of each run (next to a gap longer than ``max_gap``, an ``epochs`` edge
+        or a break), where the incoming or outgoing displacement is zero, and
+        at a reversal of direction (no circle passes through the three
+        points).
 
     Raises
     ------
@@ -1236,11 +1378,13 @@ def compute_movement_angular_velocity(
 
     The movement direction is the direction of each observed displacement
     (allocentric: 0 = East, +pi/2 = North). At sample ``i`` the turn between the
-    incoming and outgoing displacement is divided by the time it took, the mean
-    of the two neighbouring intervals ``(times[i + 1] - times[i - 1]) / 2``.
-    Positive values are counterclockwise (to the animal's left, seen from
-    above). Only observed movement is used: nothing is computed across a missing
-    sample, a time gap or a declared recording break.
+    incoming and outgoing displacement is divided by the time it took, half
+    the time between the previous and next valid samples,
+    ``(times[next] - times[previous]) / 2``. Positive values are
+    counterclockwise (to the animal's left, seen from above). A missing sample
+    is skipped as if deleted when the valid samples around it are within
+    ``max_gap``; nothing is computed across a longer gap, an ``epochs`` edge
+    or a declared break.
 
     This is not head angular velocity. For head direction, unwrap the measured
     headings and difference them over time yourself.
@@ -1271,10 +1415,10 @@ def compute_movement_angular_velocity(
     -------
     NDArray[np.float64], shape (n_samples,)
         Angular velocity of the movement direction in rad/s, aligned with
-        ``times``. NaN wherever ``compute_planar_turn_angles`` is NaN: at the
-        first and last sample, next to a missing sample, time gap or break, and
-        where the animal did not move (a stationary sample has no direction and
-        none is interpolated).
+        ``times``. NaN wherever ``compute_planar_turn_angles`` is NaN: at
+        missing samples, at the first and last sample of each run, and where
+        the animal did not move (a stationary sample has no direction and none
+        is interpolated).
 
     Raises
     ------
@@ -1352,8 +1496,8 @@ def compute_step_lengths(
     Compute step lengths (distances) between consecutive positions.
 
     Step lengths quantify the spatial displacement at each step of the trajectory.
-    This function supports both Euclidean (straight-line) and geodesic (graph
-    shortest-path) distance metrics for different use cases.
+    This function supports both Euclidean (straight-line) and geodesic
+    (shortest path inside the environment) distance metrics.
 
     Parameters
     ----------
@@ -1363,9 +1507,10 @@ def compute_step_lengths(
         Distance metric to use:
         - "euclidean": Straight-line distance in physical space (ecology standard).
           Fast and appropriate for open environments without obstacles.
-        - "geodesic": Graph shortest-path distance respecting environment topology.
-          Requires `env` parameter. Appropriate for constrained navigation
-          (walls, obstacles, tracks).
+        - "geodesic": the length of the shortest path between two
+          positions that stays inside the environment: it goes around walls
+          and never leaves the environment, and on a track it runs along the
+          track's centerline. Requires ``env``.
     env : Environment, optional
         Environment instance for computing geodesic distances. Required if
         metric="geodesic", ignored otherwise.
@@ -1375,13 +1520,13 @@ def compute_step_lengths(
     NDArray[np.float64], shape (n_samples - 1,)
         Step lengths in the same units as the position coordinates.
         Geodesic steps touching a missing or out-of-environment position are
-        NaN. Steps between disconnected valid bins are infinite.
+        NaN. Steps between disconnected parts of the environment are infinite.
 
     Raises
     ------
     ValueError
         If metric="geodesic" but env is None.
-        If positions is not a 2D array.
+        If positions is not a 2D array or has no rows.
         If metric is not "euclidean" or "geodesic".
 
     Notes
@@ -1395,11 +1540,22 @@ def compute_step_lengths(
     This is the straight-line distance in physical space, matching ecology
     literature standards (Kays et al. 2015, Traja).
 
-    **Geodesic distance** (graph-based):
+    **Geodesic distance** (shortest path inside the environment):
 
-    Uses NetworkX shortest_path_length on env.connectivity graph with edge
-    weights. This respects environmental constraints (walls, obstacles) and is
-    appropriate for neuroscience applications with constrained environments.
+    The animal moves continuously inside the environment, so a step's length
+    is the shortest path between its two positions that stays inside. Two
+    positions in the same or neighboring bins, or whose bin centers see each
+    other, are the straight step apart, so on an open field and between
+    nearby samples the geodesic and Euclidean steps agree. Otherwise (the
+    straight line crosses a wall, as across a bridged tracking gap) the step
+    is the route around the walls; its waypoints are bin centers, so it
+    keeps about half a bin from each corner. On a track the step runs along
+    the centerline between the two positions' projections.
+
+    The length is not measured bin center to bin center along the graph:
+    that staircase of grid steps made a straight oblique run read up to a
+    third longer than it is, by an amount that changed with the bin size and
+    the sampling rate.
 
     **When to use each**:
 
@@ -1426,16 +1582,13 @@ def compute_step_lengths(
     >>> np.allclose(step_lengths, step_lengths[0], rtol=0.01)  # Uniform steps
     True
     >>>
-    >>> # Geodesic distance on graph (requires env)
+    >>> # In an open arena the geodesic steps are the straight steps
     >>> from neurospatial import Environment
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> # Map positions to bins for geodesic
-    >>> bins = env.bin_at(positions)
-    >>> # Use bin centers as proxy positions for geodesic
-    >>> bin_positions = env.bin_centers[bins]
-    >>> step_lengths_geo = compute_step_lengths(
-    ...     bin_positions, metric="geodesic", env=env
-    ... )  # doctest: +SKIP
+    >>> x, y = np.meshgrid(np.arange(0.0, 101.0), np.arange(-10.0, 11.0))
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=5.0)
+    >>> geodesic = compute_step_lengths(positions, metric="geodesic", env=env)
+    >>> bool(np.allclose(geodesic, step_lengths))
+    True
 
     References
     ----------
@@ -1459,6 +1612,9 @@ def compute_step_lengths(
             f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"
         )
 
+    if len(positions) == 0:
+        raise empty_samples_error("compute_step_lengths", ("positions",))
+
     if metric not in ("euclidean", "geodesic"):
         raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
 
@@ -1479,30 +1635,11 @@ def compute_step_lengths(
     else:  # metric == "geodesic"
         # Map positions to bins
         assert env is not None  # Already checked above, but satisfy type checker
-        require_cartesian(
-            env.coordinate_system,
-            "compute_step_lengths(metric='geodesic')",
-            why="It reads positions as the animal's allocentric positions, located "
-            "in the environment's bins.",
-            fix="use the allocentric environment the positions were recorded in, or "
-            "metric='euclidean'",
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        step_lengths = environment_paths(env, call="compute_step_lengths").between(
+            positions[:-1], positions[1:]
         )
-        position_bins = env.bin_at(positions)
-
-        # Optimization: Precompute geodesic distance matrix
-        # This is O(V*E*log(V)) once vs O(n_steps * V*log(V)) per-step Dijkstra
-        from neurospatial.ops.distance import geodesic_distance_matrix
-
-        # Get full distance matrix (uses scipy.sparse.csgraph.shortest_path)
-        dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
-
-        # Outside/missing positions map to -1, which is not a graph node.
-        # Never let NumPy interpret it as the last bin.
-        valid = (position_bins[:-1] >= 0) & (position_bins[1:] >= 0)
-        step_lengths = np.full(n_steps, np.nan, dtype=np.float64)
-        step_lengths[valid] = dist_matrix[
-            position_bins[:-1][valid], position_bins[1:][valid]
-        ]
 
     return step_lengths
 
@@ -1599,7 +1736,8 @@ def compute_cumulative_distance(
     -----
     Distance is Euclidean arclength over all coordinate columns, in the
     positions' units. It is not geodesic distance; use
-    ``compute_step_lengths(metric="geodesic")`` for graph distance.
+    ``compute_step_lengths(metric="geodesic")`` for steps along the shortest
+    paths inside an environment.
 
     See Also
     --------
@@ -1644,7 +1782,6 @@ def compute_cumulative_distance(
     return CumulativeDistanceResult(
         step_lengths=steps,
         run_distance=run_distance,
-        cumulative_distance=np.where(in_run, cumulative, np.nan),
         run_ids=support.run_ids,
         sample_valid=support.sample_valid,
         run_sample_bounds=bounds,
@@ -1690,12 +1827,12 @@ def compute_home_range(
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.int_]:
     """
-    Compute home range as bins containing a percentile of time spent.
+    Compute home range as the most-occupied bins holding a percent of time.
 
-    The home range is defined as the set of bins that collectively contain
-    a specified percentile of the total time spent in the environment. This
-    is analogous to the minimum convex polygon (MCP) method in ecology, but
-    adapted for discretized spatial environments.
+    The home range is the set of most-occupied bins that together hold at
+    least ``percentile`` percent of the observed time (or samples): the
+    isopleth of the binned utilization distribution. It is not a minimum
+    convex polygon; it follows the shape of the occupied area, holes included.
 
     Parameters
     ----------
@@ -1704,14 +1841,16 @@ def compute_home_range(
         sample outside the environment or missing; it is in no bin, so it
         adds nothing to the home range or to the total time.
     times : NDArray[np.float64], shape (n_samples,), optional
-        Timestamps (seconds) for each sample. When provided, occupancy is
-        time-weighted: each sample contributes its observed interval dwell rather than a unit count. This is more accurate for
-        non-uniformly sampled trajectories. Each run's final sample is assigned
+        Finite, strictly increasing timestamps (seconds), one per sample.
+        When provided, occupancy is time-weighted: each sample contributes its
+        observed interval dwell rather than a unit count. This is more
+        accurate for non-uniformly sampled trajectories. Each run's final sample is assigned
         that run's median interval (it has no successor within the run). When ``None``
         (default), occupancy is the visit count per bin, which is correct only
         when sampling is uniform.
     percentile : float, default=95.0
-        Percentile of time to include in home range (0 to 100). Common values:
+        Percent of observed time the home range holds, in ``(1, 100]``
+        (percent, not a fraction). Common values:
         - 50%: core area (most frequently used)
         - 95%: standard home range
         - 100%: all visited bins
@@ -1722,11 +1861,12 @@ def compute_home_range(
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
+        A value other than the default requires ``times``.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
-        means unrestricted.
+        means unrestricted. Requires ``times``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -1737,30 +1877,49 @@ def compute_home_range(
     NDArray[np.int_], shape (n_bins_in_range,)
         Bin indices in the home range, sorted by occupancy (most visited first).
 
+    Raises
+    ------
+    TypeError
+        If ``position_bins`` is not an integer array.
+    ValueError
+        If ``position_bins`` holds a value below -1; if ``percentile`` is not
+        in ``(1, 100]``; if ``times`` is not finite, strictly increasing and
+        one per sample; if ``break_before`` is not a Boolean array with one
+        entry per sample; or if ``max_gap``, ``epochs`` or ``break_before`` is
+        given without ``times``.
+
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause.
-
     When ``times`` is given, dwell comes only from valid intervals. A sample
-    outside the environment (bin ``-1``) is missing, like a deleted row: a
-    bridged gap's time goes to the located sample before it. Each
-    run's last sample receives that run's median interval duration; samples
-    in no run receive zero dwell. Bins with zero observed dwell are omitted.
-    No observed dwell gives an empty home
-    range. With ``times=None``, counts are used, time gates are unused and
-    ``break_before`` raises.
+    outside the environment (bin ``-1``) is missing and is bridged like a
+    deleted row when the located samples around it are within ``max_gap``:
+    the gap's time goes to the located sample before it. Only a longer gap,
+    an ``epochs`` edge or a declared break splits a run. Each run's last
+    sample receives that run's median interval duration; samples in no run
+    receive zero dwell. Bins with zero observed dwell are omitted. No
+    observed dwell gives an empty home range. With ``times=None``, counts are used, and ``max_gap``, ``epochs``
+    or ``break_before`` raise because they are judged on the clock.
 
     The home range is computed by:
-    1. Computing occupancy per bin (visit counts, or time-weighted dwell time
-       when ``times`` is provided)
-    2. Sorting bins by occupancy (descending)
-    3. Selecting bins until cumulative occupancy reaches the percentile threshold
 
-    This is related to the utilization distribution (UD) in movement ecology,
-    where the UD is estimated from occupancy and the home range is defined
-    as the isopleth containing a specified probability mass.
+    1. Computing occupancy per bin (visit counts, or time-weighted dwell time
+       when ``times`` is provided).
+    2. Sorting bins by occupancy, most occupied first.
+    3. Finding the cutoff bin, where the cumulative occupancy first reaches
+       ``percentile`` percent of the total.
+    4. Keeping every bin with at least the cutoff bin's occupancy.
+
+    Bins tied with the cutoff bin (equal occupancy share to 12 decimals, so
+    roundoff in summed dwell times does not break a tie) are all kept, so the
+    result is a level set of occupancy and never depends on the order of
+    tied bins; it can then hold more than ``percentile`` percent. Under
+    uniform use, for example, every visited bin is tied and the 50 % home
+    range is all of them. Tied bins are listed in ascending bin order.
+
+    In movement ecology the utilization distribution (UD) is the probability
+    of finding the animal at each location, and the home range is the UD
+    isopleth holding a given probability mass (Worton 1989). Here the UD is
+    the binned occupancy, without kernel smoothing.
 
     See Also
     --------
@@ -1791,7 +1950,34 @@ def compute_home_range(
            and variance of home range size estimates." Journal of Animal
            Ecology, 75(6), 1393-1405.
     """
+    call = "compute_home_range"
     position_bins = np.asarray(position_bins)
+    if position_bins.size and position_bins.dtype.kind not in "iu":
+        raise TypeError(
+            _format_error(
+                f"{call}() needs integer bin indices; got position_bins of dtype "
+                f"{position_bins.dtype}.",
+                why="a fractional bin index is not a bin, and truncating it "
+                "would silently move samples to another bin.",
+                fix="pass bins from env.bin_at(positions).",
+            )
+        )
+    if not (np.isfinite(percentile) and 1.0 < percentile <= 100.0):
+        hint = (
+            f" Did you mean percentile={percentile * 100:g}? percentile is in "
+            "percent, not a fraction."
+            if 0.0 < percentile <= 1.0
+            else ""
+        )
+        raise ValueError(
+            _format_error(
+                f"{call}() needs percentile in (1, 100]; got {percentile!r}.{hint}",
+                why="percentile is the percent of observed time the home range "
+                "holds: 50 for a core area, 95 for the usual home range, 100 "
+                "for every visited bin.",
+                fix="pass percentile=95.0 or another percent above 1.",
+            )
+        )
     if (position_bins < -1).any():
         raise ValueError(
             _format_error(
@@ -1805,14 +1991,24 @@ def compute_home_range(
     in_environment = position_bins >= 0
 
     if times is None:
-        if break_before is not None:
+        time_gates = [
+            name
+            for name, given in (
+                ("max_gap", max_gap != DEFAULT_MAX_GAP),
+                ("epochs", epochs is not None),
+                ("break_before", break_before is not None),
+            )
+            if given
+        ]
+        if time_gates:
             raise ValueError(
                 _format_error(
-                    "compute_home_range() got break_before without times.",
-                    why="Without times the home range counts samples per bin, "
-                    "and a recording break does not change a count.",
-                    fix="pass times= to weight each bin by the dwell time "
-                    "observed within each recording, or drop break_before.",
+                    f"{call}() got {', '.join(time_gates)} without times.",
+                    why="Without times the home range counts samples per bin; "
+                    "gaps, epochs and recording breaks are judged on the "
+                    "clock, so they would be silently ignored.",
+                    fix=f"pass times= to weight each bin by the dwell time "
+                    f"observed inside them, or drop {', '.join(time_gates)}.",
                 )
             )
         # Count-based occupancy (assumes uniform sampling).
@@ -1822,18 +2018,15 @@ def compute_home_range(
         occupancy = occupancy.astype(np.float64)
     else:
         # Time-weighted occupancy: each sample contributes its dwell time.
-        times = np.asarray(times, dtype=np.float64)
+        from neurospatial._observation import _validated_signal_times
+
+        times = _validated_signal_times(times, call=call)
         if len(times) != len(position_bins):
             raise ValueError(
                 f"times and position_bins must have same length. "
                 f"Got {len(times)} and {len(position_bins)}."
             )
-        from neurospatial._intervals import observed_interval_mask
-        from neurospatial._observation import validate_break_before
-
-        breaks = validate_break_before(
-            break_before, len(times), call="compute_home_range"
-        )
+        breaks = validate_break_before(break_before, len(times), call=call)
         interval_mask = observed_interval_mask(
             times,
             max_gap=max_gap,
@@ -1841,8 +2034,6 @@ def compute_home_range(
             break_before=breaks,
             sample_valid=in_environment,
         )
-        if len(position_bins) == 0:
-            return np.array([], dtype=np.intp)
         sample_weights = _sample_dwell_times(times, interval_mask, in_environment)[
             in_environment
         ]
@@ -1855,27 +2046,28 @@ def compute_home_range(
         observed = occupancy != 0
         unique_bins, occupancy = unique_bins[observed], occupancy[observed]
 
-    # Sort bins by occupancy (descending)
-    sort_idx = np.argsort(occupancy)[::-1]
-    sorted_bins = unique_bins[sort_idx]
-    sorted_counts = occupancy[sort_idx]
-
-    # Compute cumulative percentage
-    total_counts = np.sum(sorted_counts)
-    if total_counts == 0:
+    total = float(np.sum(occupancy))
+    if total == 0:
         return np.array([], dtype=np.intp)
-    cumulative_pct = np.cumsum(sorted_counts) / total_counts * 100.0
-
-    # Find bins to include (cumulative percentage >= threshold)
-    # searchsorted with side='left' gives first index where cumulative_pct >= percentile
-    # We want bins 0 through that index (inclusive), so add 1 for Python slicing
-    n_bins_include = np.searchsorted(cumulative_pct, percentile, side="left") + 1
-    n_bins_include = min(n_bins_include, len(sorted_bins))
-
-    # Return home range bins (sorted by occupancy)
-    home_range = sorted_bins[:n_bins_include]
-
-    return home_range.astype(np.intp)
+    # Occupancy shares equal to 12 decimals are ties: summed dwell times
+    # differ by roundoff even when the time spent is the same.
+    share = np.round(occupancy / total, 12)
+    # Most occupied first; ties in ascending bin order (np.unique sorted them).
+    order = np.lexsort((unique_bins, -share))
+    sorted_bins, sorted_share = unique_bins[order], share[order]
+    cumulative_pct = np.cumsum(occupancy[order]) / total * 100.0
+    # First bin at which the cumulative share reaches the percentile, with
+    # the same roundoff allowance.
+    cutoff = min(
+        int(np.searchsorted(cumulative_pct, percentile * (1 - 1e-9), side="left")),
+        len(sorted_bins) - 1,
+    )
+    # The home range is a level set of occupancy: every bin tied with the
+    # cutoff bin is in it, so the result never depends on tie order.
+    home_range: NDArray[np.intp] = sorted_bins[
+        sorted_share >= sorted_share[cutoff]
+    ].astype(np.intp)
+    return home_range
 
 
 def mean_square_displacement(
@@ -1905,18 +2097,22 @@ def mean_square_displacement(
         coordinate. Rows with a non-finite coordinate are missing.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing displacements:
-        - "euclidean": Straight-line distance (ecology standard, most accurate).
-          Use for diffusion analysis, comparing to ecology literature, and
+        - "euclidean": Straight-line distance. Use for diffusion analysis,
+          comparison with the single-particle-tracking literature, and
           classification of movement types (ballistic vs. diffusive).
-        - "geodesic": Graph shortest-path distance (neuroscience-specific).
-          Requires `env` parameter. Use for constrained navigation analysis.
+        - "geodesic": the length of the shortest path between two
+          positions that stays inside the environment: it goes around walls
+          and never leaves the environment, and on a track it runs along the
+          track's centerline. Requires ``env``. Use for constrained
+          navigation analysis.
     env : Environment, optional
         Environment instance for computing geodesic distances. Required if
         metric="geodesic", ignored otherwise.
     max_tau : float, optional
-        Maximum lag time to compute. If None, uses half the total duration.
-        Recommended: use max_tau ≤ T/4 where T is total duration, to ensure
-        sufficient samples for reliable averaging.
+        Longest lag, in seconds. Lags are the whole multiples of the median
+        sample interval up to ``max_tau``, at most ``n_samples // 2`` of them.
+        ``None`` uses half the recording's duration. Use at most a quarter of
+        the duration to average enough pairs at every lag.
     epochs : array-like, shape (n_epochs, 2), optional
         ``(start, stop)`` windows in seconds. A displacement pair is used only
         when both samples lie in the same window; touching windows merge.
@@ -1937,6 +2133,8 @@ def mean_square_displacement(
     ------
     ValueError
         If metric="geodesic" but env is None.
+        If ``max_tau`` is not positive and finite, is longer than the
+        recording or is shorter than one sample interval.
         If there are no samples, or positions and times have different lengths.
         If times are not finite and strictly increasing (a repeated timestamp
         raises).
@@ -1958,10 +2156,19 @@ def mean_square_displacement(
     where :math:`r(t)` is the position at time t, and the angle brackets denote
     averaging over all time points t.
 
-    Each target time is matched to the nearest recorded sample within half
-    the median sample interval. Targets beyond the recording are excluded.
+    The ``k``-th lag is ``k`` times the median sample interval ``dt``. Each
+    target time ``t + k * dt`` is matched to the nearest recorded sample
+    within ``dt / 2``, and the reported lag is the mean time separation of
+    the pairs averaged there, so it is exactly ``k * dt`` for uniform sampling
+    and stays the lag actually measured for irregular sampling. A lag with no
+    pair reports ``k * dt`` and NaN MSD. Targets beyond the recording are
+    excluded.
     Pairs with missing positions are excluded; geodesic pairs additionally
-    require both positions to be inside the environment and connected. A pair
+    require both positions to be inside the environment and connected. The
+    geodesic metric measures each displacement from the positions
+    themselves (not their bin centers) and grows one shortest-path field per
+    visited bin, so its memory grows with the square of the number of
+    visited bins. A pair
     is also excluded when a declared ``break_before`` or an ``epochs`` edge
     lies between its two samples. A single sample returns an empty result.
 
@@ -1975,27 +2182,27 @@ def mean_square_displacement(
 
     MSD scales with time lag τ as :math:`MSD \\sim \\tau^\\alpha`:
 
-    - **α ≈ 2**: Ballistic motion (directed, constant velocity)
+    - **α ≈ 0**: Confined motion (MSD plateaus at the size of the enclosure)
+    - **0 < α < 1**: Subdiffusive motion (obstructed or partly confined)
     - **α ≈ 1**: Diffusive motion (random walk, Brownian motion)
-    - **α < 1**: Subdiffusive motion (obstructed, confined)
-    - **α > 2**: Superdiffusive motion (Lévy flight)
-    - **α ≈ 0**: Confined motion (bounded, plateau)
+    - **1 < α < 2**: Superdiffusive motion (persistent, partly directed)
+    - **α ≈ 2**: Ballistic motion (straight, constant velocity), the upper
+      bound for an animal moving at finite speed
 
     The exponent α can be estimated from log-log regression: log(MSD) ~ α·log(τ).
+    In an arena, every path is confined at lags long enough to cross it, so
+    estimate α over lags shorter than that.
 
     **Why continuous positions?**
 
-    Using continuous positions (not bins) is critical for MSD accuracy because:
+    Bin discretization rounds each position to its bin center, so a
+    displacement smaller than a bin reads as zero or as a whole bin. Short-lag
+    MSD is then wrong in either direction, and the fitted exponent α is
+    biased. The single-particle-tracking methods cited below (Saxton 1997;
+    Kepten et al. 2013) likewise compute MSD from continuous positions.
 
-    1. **Precision**: Bin discretization introduces a "floor" on displacements
-       equal to the bin size, artificially inflating MSD for small displacements.
-    2. **Scaling exponent**: Discretization can bias the diffusion exponent α,
-       making diffusive motion appear more subdiffusive.
-    3. **Ecology standard**: All movement ecology literature uses continuous MSD
-       (Saxton 1997, Ferrari 2001, Kepten 2015).
-
-    Example: Movement [0,0]→[0.1,0.1]→[0.2,0.2] maps to the same bin, giving
-    MSD=0 (incorrect), whereas continuous gives MSD ∝ t (correct diffusive).
+    Example: steady movement [0,0]→[0.1,0.1]→[0.2,0.2] stays in one bin and
+    gives MSD = 0, whereas continuous positions give MSD ∝ τ² (ballistic).
 
     See Also
     --------
@@ -2044,12 +2251,10 @@ def mean_square_displacement(
     ----------
     .. [1] Saxton, M. J. (1997). "Single-particle tracking: the distribution
            of diffusion coefficients." Biophysical Journal, 72(4), 1744-1753.
-    .. [2] Ferrari, R., et al. (2001). "Tracking single particles in biological
-           systems." Physical Review E, 63(4), 041904.
-    .. [3] Kepten, E., et al. (2015). "Improved estimation of anomalous
-           diffusion exponents in single-particle tracking experiments."
-           Physical Review E, 87(5), 052713.
-    .. [4] Traja documentation: https://traja.readthedocs.io/
+    .. [2] Kepten, E., Bronshtein, I., & Garini, Y. (2013). "Improved
+           estimation of anomalous diffusion exponents in single-particle
+           tracking experiments." Physical Review E, 87(5), 052713.
+    .. [3] Traja documentation: https://traja.readthedocs.io/
     """
     times, positions, support = validated_observations(
         times,
@@ -2071,44 +2276,70 @@ def mean_square_displacement(
 
     if metric == "geodesic":
         assert env is not None  # Already checked above
-        require_cartesian(
-            env.coordinate_system,
-            "mean_square_displacement(metric='geodesic')",
-            why="It reads positions as the animal's allocentric positions, located "
-            "in the environment's bins.",
-            fix="use the allocentric environment the positions were recorded in, or "
-            "metric='euclidean'",
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        paths = environment_paths(env, call="mean_square_displacement")
+
+    if max_tau is not None and not (np.isfinite(max_tau) and max_tau > 0):
+        raise ValueError(
+            _format_error(
+                f"mean_square_displacement() needs max_tau to be a positive, "
+                f"finite number of seconds; got {max_tau!r}.",
+                why="max_tau is the longest time lag at which displacement is "
+                "measured.",
+                fix="pass max_tau in seconds, for example a quarter of the "
+                "recording, or None for half of it.",
+            )
         )
 
     n_samples = len(positions)
     if n_samples < 2:
-        return MSDResult(lags=np.empty(0), msd=np.empty(0))
+        return MSDResult(
+            lags=np.empty(0), msd=np.empty(0), metric=metric, epochs=support.epochs
+        )
 
-    # Determine lag times to compute
+    duration = float(times[-1] - times[0])
     if max_tau is None:
-        max_tau = (times[-1] - times[0]) / 2.0
+        max_tau = duration / 2.0
+    elif max_tau > duration:
+        raise ValueError(
+            _format_error(
+                f"mean_square_displacement() got max_tau={max_tau!r} s, which is "
+                f"longer than the recording ({duration:.6g} s).",
+                why="no two samples are farther apart in time than the "
+                "recording lasts, so no displacement is observed at that lag.",
+                fix="pass a shorter max_tau (at most a quarter of the recording "
+                "averages enough pairs per lag), and check that times are in "
+                "seconds.",
+            )
+        )
 
-    # Find all unique time differences up to max_tau
-    time_diffs = np.diff(times)
-    # The resolver guarantees strictly increasing times, so dt > 0.
-    dt = float(np.median(time_diffs))  # Typical time step
-    n_lags = int(max_tau / dt)
-    n_lags = max(1, min(n_lags, n_samples // 2))  # At least 1, at most n_samples/2
+    # The resolver guarantees strictly increasing times, so dt > 0. Lags are
+    # whole multiples of the typical interval, so each target time matches a
+    # recorded sample; the tolerance absorbs roundoff in max_tau / dt.
+    dt = float(np.median(np.diff(times)))
+    n_lags = min(int(np.floor(max_tau / dt + 1e-9)), n_samples // 2)
+    if n_lags < 1:
+        raise ValueError(
+            _format_error(
+                f"mean_square_displacement() got max_tau={max_tau!r} s, which is "
+                f"shorter than one sample interval (median {dt:.6g} s).",
+                why="the shortest lag that can be measured is the time between "
+                "two consecutive samples.",
+                fix=f"pass max_tau of at least {dt:.6g} s.",
+            )
+        )
 
-    tau_values = np.linspace(dt, max_tau, n_lags)
+    tau_values = dt * np.arange(1, n_lags + 1)
     msd_values = np.full(n_lags, np.nan, dtype=np.float64)
+    # Reported lag: the mean time separation of the pairs averaged at each
+    # lag (k * dt exactly for uniform sampling); nominal where none exist.
+    lag_values = tau_values.copy()
 
     if metric == "geodesic":
-        # Map positions to bins for geodesic distance
-        assert env is not None  # Already checked above
-        position_bins = env.bin_at(positions)
-        valid_bins = (position_bins >= 0) & (position_bins < env.n_bins)
-
-        # Optimization: Precompute geodesic distance matrix ONCE
-        # This is O(V*E*log(V)) once vs O(n_lags * n_samples * V*log(V)) per lookup
-        from neurospatial.ops.distance import geodesic_distance_matrix
-
-        dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
+        # Locate the positions and grow the field of every bin they visit
+        # once; each lag is then a lookup.
+        pairs = paths.pairwise(positions)
 
     sample_indices = np.arange(n_samples)
     finite_positions = support.sample_valid
@@ -2141,26 +2372,29 @@ def mean_square_displacement(
             displacements = positions[future_idx[valid_pairs]] - positions[valid_pairs]
             sq_dists = np.sum(displacements**2, axis=1)
         else:
-            # bin_at returns -1 for missing/outside positions; never index the
-            # distance matrix with it, where NumPy would select the last bin.
-            valid_pairs &= valid_bins & valid_bins[future_idx]
-            distances = dist_matrix[
-                position_bins[valid_pairs], position_bins[future_idx[valid_pairs]]
-            ]
+            # NaN for a position outside the environment, inf between
+            # disconnected parts: neither is a displacement.
+            distances = pairs.between(
+                sample_indices[valid_pairs], future_idx[valid_pairs]
+            )
             sq_dists = distances**2
 
         finite_distances = np.isfinite(sq_dists)
         if np.any(finite_distances):
             msd_values[i] = np.mean(sq_dists[finite_distances])
+            separations = times[future_idx[valid_pairs]] - times[valid_pairs]
+            lag_values[i] = np.mean(separations[finite_distances])
 
-    return MSDResult(lags=tau_values, msd=msd_values)
+    return MSDResult(
+        lags=lag_values, msd=msd_values, metric=metric, epochs=support.epochs
+    )
 
 
 def compute_trajectory_curvature(
     times: ArrayLike,
     positions: ArrayLike,
     *,
-    smooth_window: float | None = 0.2,
+    smooth_window: float = 0.2,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -2170,10 +2404,11 @@ def compute_trajectory_curvature(
     Despite its name, this returns turning angles in radians (the signed change
     of movement direction at each sample), not geometric curvature. For
     curvature in inverse length units use ``compute_planar_curvature``.
-    Works for any number of columns (1D, 2D, 3D, N-D), but see Notes for how
-    extra columns enter. Only observed movement is used: no turn is computed
-    or smoothed across a missing sample, a time gap or a declared recording
-    break.
+    Works for any number of columns (1D, 2D, 3D, N-D); with three or more
+    columns the turn is unsigned (see Notes). A missing sample is skipped as
+    if deleted when the valid samples around it are within ``max_gap``; no
+    turn is computed or smoothed across a longer gap, an ``epochs`` edge or a
+    declared break.
 
     Parameters
     ----------
@@ -2182,13 +2417,13 @@ def compute_trajectory_curvature(
     positions : ArrayLike, shape (n_samples,) or (n_samples, n_dims)
         Position coordinates over time in any dimensional space. Rows with a
         non-finite coordinate are missing.
-    smooth_window : float or None, default=0.2
+    smooth_window : float, default=0.2
         Standard deviation, in seconds, of the Gaussian that smooths the turn
-        angles within each run (0.2 s suits 30-60 Hz tracking). ``None``
-        disables smoothing.
+        angles within each run (0.2 s suits 30-60 Hz tracking). 0 disables
+        smoothing.
 
         **Important**: For high-speed tracking (120+ Hz) or fast-moving animals,
-        use shorter windows (0.05-0.1s) or disable smoothing (smooth_window=None)
+        use shorter windows (0.05-0.1s) or disable smoothing (smooth_window=0)
         to preserve rapid turns.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
@@ -2214,41 +2449,44 @@ def compute_trajectory_curvature(
         - Positive values: counterclockwise turn (left in 2D top-down view)
         - Negative values: clockwise turn (right in 2D top-down view)
         - Zero: straight movement
-        - NaN: missing samples and samples in no run (isolated by a gap, a
-          declared break, a missing neighbour or ``epochs``)
+        - NaN: where no turn is defined: missing samples, the first and last
+          sample of each run, repeated (stationary) positions after the
+          first, and samples in no run (isolated by a long gap, a declared
+          break or ``epochs``)
 
     Raises
     ------
     ValueError
         If ``times`` and ``positions`` are empty, swapped or misaligned,
         ``times`` is not strictly increasing, ``max_gap`` is not positive and
-        finite or ``None``, or ``break_before`` is not a Boolean array with
-        one entry per sample.
+        finite or ``None``, ``smooth_window`` is not a finite number >= 0, or
+        ``break_before`` is not a Boolean array with one entry per sample.
 
     Notes
     -----
-    A run is a stretch of observed samples with no missing row, no gap longer
-    than ``max_gap``, no ``epochs`` edge and no declared break. Each run is
-    analyzed as a separate recording: turn angles are computed and smoothed
-    within it, so a missing row or a break never spreads into its neighbours.
+    A missing row is bridged like a deleted row when the valid samples around
+    it are within ``max_gap``; only a longer gap, an ``epochs`` edge or a
+    declared break splits a run. Each run is analyzed as a separate
+    recording: turn angles are computed and smoothed within it, so a break
+    never spreads into its neighbours.
 
     Within a run this function wraps `compute_turn_angles()` and adds:
     - Mapping to the original sample positions
     - Optional temporal smoothing
 
-    `compute_turn_angles()` uses atan2(cross, dot) for proper signed angles in [-π, π],
-    filters stationary periods automatically, and returns at most (n_samples - 2)
+    `compute_turn_angles()` uses atan2(cross, dot) for signed angles in
+    [-π, π], drops stationary repeats, and returns at most (n_samples - 2)
     angles. Each angle is assigned to the original index of its middle position
     after consecutive duplicates are removed (keeping their first sample).
-    Stationary duplicates and the first and last retained positions of a run
-    have zero turn before smoothing, preserving the timestamps of actual turns.
+    Stationary repeats and the first and last retained positions of a run
+    have no turn, so they are NaN rather than zero. Smoothing averages only
+    the defined turns (a normalized Gaussian convolution), so an undefined
+    turn neither pulls real turns toward zero nor receives a value.
 
-    For positions with more than two columns the angle is
-    ``atan2(v1_x * v2_y - v1_y * v2_x, sum(v1 * v2))``: the cross product uses
-    the first two columns (x, y) and the dot product sums over all columns
-    (as in `compute_turn_angles()`). This is neither the horizontal-plane angle
-    nor the 3-D angle; pass ``positions[:, :2]`` for a horizontal-plane
-    analysis.
+    For positions with three or more columns the turn is the unsigned angle
+    between consecutive steps in the full space, in ``[0, π]`` (as in
+    `compute_turn_angles()`): a 3-D turn has no sign without a reference
+    axis. Pass ``positions[:, :2]`` for a signed horizontal-plane analysis.
 
     The turn is per sample, so it depends on the frame rate and the running
     speed. To compare path shape across sessions, use
@@ -2263,16 +2501,18 @@ def compute_trajectory_curvature(
 
     >>> times = np.arange(20) / 30  # 30 Hz, seconds
     >>> positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
-    >>> bool(np.allclose(compute_trajectory_curvature(times, positions), 0.0))
+    >>> turns = compute_trajectory_curvature(times, positions)
+    >>> bool(np.isnan(turns[[0, -1]]).all() and np.allclose(turns[1:-1], 0.0))
     True
 
-    A right-angle left turn, without smoothing:
+    A right-angle left turn, without smoothing. The first and last samples
+    have no turn:
 
     >>> times = np.arange(4) * 0.1
     >>> positions = np.array([[0.0, 0], [1, 0], [2, 0], [2, 1]])
-    >>> turns = compute_trajectory_curvature(times, positions, smooth_window=None)
+    >>> turns = compute_trajectory_curvature(times, positions, smooth_window=0.0)
     >>> np.round(turns, 4).tolist()
-    [0.0, 0.0, 1.5708, 0.0]
+    [nan, 0.0, 1.5708, nan]
 
     A missing row (lost tracking) is NaN and is skipped as if deleted, so
     the turns around it span the bridged gap:
@@ -2281,28 +2521,36 @@ def compute_trajectory_curvature(
     >>> positions = np.array(
     ...     [[0.0, 0], [1, 0], [2, 0], [2, 1], [np.nan, np.nan], [3, 1], [3, 2]]
     ... )
-    >>> turns = compute_trajectory_curvature(times, positions, smooth_window=None)
+    >>> turns = compute_trajectory_curvature(times, positions, smooth_window=0.0)
     >>> np.round(turns, 4).tolist()
-    [0.0, 0.0, 1.5708, -1.5708, nan, 1.5708, 0.0]
+    [nan, 0.0, 1.5708, -1.5708, nan, 1.5708, nan]
 
     A gap longer than ``max_gap`` splits the path into two runs, and no turn
-    is computed across it:
+    is computed across it; the two-sample second run has no turn at all:
 
     >>> turns = compute_trajectory_curvature(
-    ...     times, positions, smooth_window=None, max_gap=0.15
+    ...     times, positions, smooth_window=0.0, max_gap=0.15
     ... )
     >>> np.round(turns, 4).tolist()
-    [0.0, 0.0, 1.5708, 0.0, nan, 0.0, 0.0]
+    [nan, 0.0, 1.5708, nan, nan, nan, nan]
 
-    With three columns the cross product uses x, y and the dot product uses
-    all three: the turn at the middle sample is π/4, not the π/2 of the x-y
-    projection:
+    Smoothing averages only defined turns, so running a circle reads the
+    true turn per sample (0.8 rad/s at 30 Hz) from the first defined sample:
+
+    >>> times = np.arange(0, 5, 1 / 30)
+    >>> circle = 7.0 * np.c_[np.cos(0.8 * times), np.sin(0.8 * times)]
+    >>> turns = compute_trajectory_curvature(times, circle)
+    >>> bool(np.allclose(turns[1:-1], 0.8 / 30))
+    True
+
+    With three columns the turn is the unsigned 3-D angle between the two
+    steps, π/3 here, not the signed π/2 of the x-y projection:
 
     >>> times = np.array([0.0, 0.1, 0.2])
     >>> x = np.array([[0.0, 0, 0], [1, 0, 1], [1, 1, 2]])
-    >>> float(compute_trajectory_curvature(times, x, smooth_window=None)[1])
-    0.7853981633974483
-    >>> float(compute_trajectory_curvature(times, x[:, :2], smooth_window=None)[1])
+    >>> round(float(compute_trajectory_curvature(times, x, smooth_window=0)[1]), 12)
+    1.047197551197
+    >>> float(compute_trajectory_curvature(times, x[:, :2], smooth_window=0)[1])
     1.5707963267948966
 
     See Also
@@ -2321,6 +2569,21 @@ def compute_trajectory_curvature(
         break_before=break_before,
         result="every curvature value is NaN",
     )
+    if not (
+        isinstance(smooth_window, (int, float, np.number))
+        and np.isfinite(smooth_window)
+        and smooth_window >= 0
+    ):
+        raise ValueError(
+            _format_error(
+                f"compute_trajectory_curvature() needs smooth_window to be a "
+                f"finite number of seconds >= 0; got {smooth_window!r}.",
+                why="smooth_window is the standard deviation of the Gaussian "
+                "that smooths the turns over time.",
+                fix="pass smooth_window=0.0 for no smoothing, or a positive "
+                "number of seconds such as 0.2.",
+            )
+        )
     curvature: NDArray[np.float64] = np.full(t.size, np.nan)
     for run in support.run_samples():
         curvature[run] = _compute_trajectory_curvature_contiguous(
@@ -2333,26 +2596,29 @@ def _compute_trajectory_curvature_contiguous(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
     *,
-    smooth_window: float | None,
+    smooth_window: float,
 ) -> NDArray[np.float64]:
-    """Map angles to their original samples and smooth within one recording."""
+    """Map angles to their original samples and smooth within one recording.
+
+    Samples without a turn (the run's ends and stationary repeats) are NaN.
+    Smoothing is a normalized convolution over the defined turns only, so an
+    undefined turn neither counts as zero nor gets a value.
+    """
     angles = compute_turn_angles(positions)
-    n_samples = len(positions)
-    curvature = np.zeros(n_samples, dtype=np.float64)
+    curvature = np.full(len(positions), np.nan, dtype=np.float64)
     if len(angles):
         changed = np.any(positions[1:] != positions[:-1], axis=1)
         retained_indices = np.flatnonzero(np.r_[True, changed])
         curvature[retained_indices[1:-1]] = angles
 
-    # Optional temporal smoothing
-    if smooth_window is not None:
+    defined = np.isfinite(curvature)
+    if smooth_window > 0 and defined.any():
         from scipy.ndimage import gaussian_filter1d
 
-        # Compute sigma from time resolution
-        dt_median = np.median(np.diff(times))
-        sigma = smooth_window / dt_median
-
-        # Apply Gaussian smoothing
-        curvature = gaussian_filter1d(curvature, sigma=sigma)
-
+        sigma = smooth_window / float(np.median(np.diff(times)))
+        weight = gaussian_filter1d(defined.astype(np.float64), sigma, mode="constant")
+        total = gaussian_filter1d(
+            np.where(defined, curvature, 0.0), sigma, mode="constant"
+        )
+        curvature[defined] = total[defined] / weight[defined]
     return curvature

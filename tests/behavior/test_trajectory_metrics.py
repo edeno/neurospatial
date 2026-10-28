@@ -43,11 +43,11 @@ class TestComputeTurnAngles:
         # Compute turn angles (continuous API - no env needed!)
         angles = compute_turn_angles(positions)
 
-        # Should have some non-zero angles (circular motion produces turns)
-        assert len(angles) > 0
-        non_zero_angles = angles[np.abs(angles) > 0.01]
-        # At least some turning should occur
-        assert len(non_zero_angles) > 0
+        # Equal chords of a counterclockwise circle turn by the angle they
+        # subtend, 2 pi / 99, at every vertex (the last point repeats the first
+        # in direction only, not position).
+        assert angles.shape == (n_points - 2,)
+        assert_allclose(angles, 2 * np.pi / (n_points - 1), rtol=1e-9)
 
     def test_turn_angles_range(self):
         """Test that turn angles are in [-π, π] range."""
@@ -85,9 +85,8 @@ class TestComputeTurnAngles:
 
         angles = compute_turn_angles(positions)
 
-        # Should only compute angles for actual movements
-        # Consecutive duplicates should be filtered out
-        assert len(angles) >= 0  # At least some angles computed
+        # Duplicates are dropped: 0, 10, 20, 30, 40, 50 leave four straight turns.
+        assert_allclose(angles, np.zeros(4), atol=0)
 
     def test_parameter_order(self):
         """Test that parameter is just positions (continuous API)."""
@@ -97,9 +96,46 @@ class TestComputeTurnAngles:
         angles = compute_turn_angles(positions)
         assert isinstance(angles, np.ndarray)
 
+    def test_one_dimensional_reversal_is_pi_and_continuation_zero(self):
+        positions = np.array([[0.0], [1.0], [3.0], [2.0]])
+        assert_allclose(compute_turn_angles(positions), [0.0, np.pi], rtol=0, atol=0)
+
+    def test_one_dimensional_missing_sample_is_nan_not_a_reversal(self):
+        """A dropout is not a reversal; it is NaN, as in two dimensions."""
+        positions = np.array([[0.0], [1.0], [np.nan], [3.0], [4.0]])
+        one_d = compute_turn_angles(positions)
+        two_d = compute_turn_angles(np.c_[positions, np.zeros(5)])
+        assert np.isnan(one_d).all()
+        np.testing.assert_array_equal(np.isnan(one_d), np.isnan(two_d))
+
 
 class TestComputeStepLengths:
     """Test compute_step_lengths function."""
+
+    def test_empty_positions_raise_a_clear_error(self):
+        with pytest.raises(
+            ValueError, match=r"compute_step_lengths\(\) got no samples"
+        ):
+            compute_step_lengths(np.empty((0, 2)))
+
+    def test_one_position_has_no_step(self):
+        assert compute_step_lengths(np.zeros((1, 2))).shape == (0,)
+
+    @pytest.mark.parametrize(
+        "function",
+        [
+            lambda **kw: compute_step_lengths(np.zeros((3, 2)), **kw),
+            lambda **kw: mean_square_displacement(
+                np.arange(3.0), np.zeros((3, 2)), **kw
+            ),
+        ],
+        ids=["step_lengths", "msd"],
+    )
+    def test_unknown_metric_and_geodesic_without_env_raise(self, function):
+        with pytest.raises(ValueError, match="must be 'euclidean' or 'geodesic'"):
+            function(metric="manhattan")
+        with pytest.raises(ValueError, match="requires env"):
+            function(metric="geodesic")
 
     def test_step_lengths_straight_line(self):
         """Test step lengths on a straight 1D trajectory with Euclidean distance."""
@@ -142,34 +178,25 @@ class TestComputeStepLengths:
         assert step_lengths[3] == 0.0  # [20,0] -> [20,0]
         assert step_lengths[4] == 0.0  # [20,0] -> [20,0]
 
-    def test_step_lengths_uses_graph_distance(self):
-        """Test that step lengths with metric='geodesic' use graph distances."""
-        # Create 2D grid environment
+    def test_geodesic_steps_in_an_open_field_are_straight_steps(self):
+        """Inside an open field every straight step stays inside: Euclidean."""
         x = np.linspace(0, 40, 100)
-        y = np.linspace(0, 40, 100)
-        xx, yy = np.meshgrid(x, y)
-        sample_positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(sample_positions, bin_size=5.0)
+        xx, yy = np.meshgrid(x, x)
+        env = Environment.from_samples(
+            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
+        )
+        # Oblique steps across several bins, plus one inside a bin.
+        positions = np.array(
+            [[2.0, 3.0], [14.0, 8.0], [14.5, 8.2], [31.0, 37.0], [3.0, 2.0]]
+        )
 
-        # Create trajectory on bin centers (for geodesic distance to work)
-        position_bins = np.arange(5)
-        positions = env.bin_centers[position_bins]
-
-        # Use geodesic distance
         step_lengths = compute_step_lengths(positions, metric="geodesic", env=env)
 
-        # Verify each step length matches nx.shortest_path_length
-        import networkx as nx
-
-        for i in range(len(step_lengths)):
-            bin_i = position_bins[i]
-            bin_j = position_bins[i + 1]
-            expected = float(
-                nx.shortest_path_length(
-                    env.connectivity, source=bin_i, target=bin_j, weight="distance"
-                )
-            )
-            assert_allclose(step_lengths[i], expected, rtol=1e-5)
+        assert_allclose(
+            step_lengths,
+            np.linalg.norm(np.diff(positions, axis=0), axis=1),
+            rtol=1e-12,
+        )
 
     def test_parameter_order(self):
         """Test new continuous API signature."""
@@ -222,13 +249,47 @@ class TestComputeHomeRange:
 
     def test_home_range_50_percentile(self):
         """Test 50% home range (core area)."""
-        # Uniform distribution: 10 visits per bin across 10 bins
-        position_bins = np.repeat(np.arange(10), 10)
+        # Bin 0: 40 visits, bin 1: 30, bins 2-4: 10 each.
+        position_bins = np.repeat(np.arange(5), [40, 30, 10, 10, 10])
 
         home_range = compute_home_range(position_bins, percentile=50.0)
 
-        # 50% of visits = any 5 bins
-        assert len(home_range) == 5
+        # 40 visits are not yet half of 100; adding bin 1 reaches 70.
+        np.testing.assert_array_equal(home_range, [0, 1])
+
+    def test_bins_tied_at_the_cutoff_are_all_included(self):
+        """Uniform use has no 50% core: every bin is at the cutoff level."""
+        position_bins = np.repeat(np.arange(10), 10)
+        home_range = compute_home_range(position_bins, percentile=50.0)
+        np.testing.assert_array_equal(home_range, np.arange(10))
+
+    def test_ties_are_independent_of_sample_order(self):
+        # 40% in bin 0, then three bins with 20% each; the 70% cutoff falls
+        # inside the tie, so the three tied bins are all included.
+        position_bins = np.r_[np.repeat(0, 40), np.repeat([1, 2, 3], 20)]
+        expected = [0, 1, 2, 3]
+        np.testing.assert_array_equal(
+            compute_home_range(position_bins, percentile=70.0), expected
+        )
+        np.testing.assert_array_equal(
+            compute_home_range(position_bins[::-1].copy(), percentile=70.0), expected
+        )
+
+    def test_equal_occupancy_is_ordered_by_bin_index(self):
+        position_bins = np.r_[np.repeat(5, 30), np.repeat([3, 1, 4], 10)]
+        np.testing.assert_array_equal(
+            compute_home_range(position_bins, percentile=100.0), [5, 1, 3, 4]
+        )
+
+    def test_time_weighted_ties_within_roundoff_are_ties(self):
+        # Three bins with 0.3 s each, summed from 0.1 s dwells in different orders.
+        position_bins = np.array([0, 0, 0, 1, 1, 1, 2, 2, 2, 2])
+        times = np.r_[np.arange(9) * 0.1, 0.9]
+        times = np.round(times, 10)
+        home_range = compute_home_range(
+            position_bins, times=times, percentile=50.0, max_gap=None
+        )
+        np.testing.assert_array_equal(home_range, [2, 0, 1])
 
     def test_home_range_returns_indices(self):
         """Test that home_range returns bin indices (integers)."""
@@ -294,6 +355,41 @@ class TestComputeHomeRange:
 
         with pytest.raises(ValueError, match="same length"):
             compute_home_range(position_bins, times=times)
+
+    @pytest.mark.parametrize(
+        "times",
+        [
+            np.array([0.3, 0.2, 0.1, 0.0]),
+            np.array([0.0, np.nan, 0.2, 0.3]),
+            np.array([0.0, 0.1, 0.1, 0.2]),
+        ],
+        ids=["reversed", "nan", "repeated"],
+    )
+    def test_invalid_times_raise(self, times):
+        with pytest.raises(ValueError, match="times"):
+            compute_home_range(np.array([0, 1, 1, 2]), times=times)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{"epochs": (0.0, 1.0)}, {"max_gap": 0.5}, {"max_gap": None}],
+        ids=["epochs", "max_gap", "max_gap_none"],
+    )
+    def test_time_gates_without_times_raise(self, kwargs):
+        with pytest.raises(ValueError, match="without times"):
+            compute_home_range(np.array([0, 0, 1]), **kwargs)
+
+    @pytest.mark.parametrize("percentile", [0.0, -10.0, 100.5, np.nan])
+    def test_percentile_outside_0_100_raises(self, percentile):
+        with pytest.raises(ValueError, match="percentile"):
+            compute_home_range(np.array([0, 0, 1]), percentile=percentile)
+
+    def test_fractional_percentile_gets_a_hint(self):
+        with pytest.raises(ValueError, match=r"percentile=95"):
+            compute_home_range(np.array([0, 0, 1]), percentile=0.95)
+
+    def test_float_bins_raise(self):
+        with pytest.raises(TypeError, match="integer"):
+            compute_home_range(np.array([0.0, 1.7, 2.0]))
 
 
 class TestMeanSquareDisplacement:
@@ -411,10 +507,10 @@ class TestMeanSquareDisplacement:
             times, positions, metric=metric, env=env, max_tau=2.2
         )
 
-        # Targets 2.2..9.2 match samples 2..9; later targets are beyond
-        # recording support. Five moving pairs contribute 4,4,4,4,1.
-        assert result.lags[-1] == pytest.approx(2.2)
-        assert result.msd[-1] == pytest.approx(17 / 8)
+        # max_tau=2.2 gives lags 1 and 2 s. The nine pairs two samples
+        # apart contribute 4, 4, 4, 4, 1 while moving and 0 after stopping.
+        assert result.lags[-1] == pytest.approx(2.0)
+        assert result.msd[-1] == pytest.approx(17 / 9)
 
     def test_msd_uses_both_neighbors_for_irregular_samples(self):
         """Both sides of a target can be its nearest recorded observation."""
@@ -466,8 +562,11 @@ class TestMeanSquareDisplacement:
 
         result = mean_square_displacement(times, times[:, None], max_tau=10.0)
 
-        assert result.msd[0] == pytest.approx(1.0)
-        assert np.isnan(result.msd[1:]).all()
+        # At most n // 2 = 3 lags. Lags 1 and 2 s are observed within each
+        # stretch; no pair is 3 s apart.
+        np.testing.assert_allclose(result.lags, [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(result.msd[:2], [1.0, 4.0])
+        assert np.isnan(result.msd[2])
 
     @pytest.mark.parametrize("missing", [100.0, np.nan, np.inf])
     def test_geodesic_msd_excludes_missing_or_outside_bins(self, missing):
@@ -521,11 +620,13 @@ class TestCurvatureSampleAlignment:
         positions = np.array([[0.0, 0.0]] * 6 + [[1.0, 0.0], [1.0, 1.0]])
         times = np.arange(8) * 0.1
 
-        curvature = compute_trajectory_curvature(times, positions, smooth_window=None)
+        curvature = compute_trajectory_curvature(times, positions, smooth_window=0.0)
 
-        expected = np.zeros(8)
+        # Only the retained middle position (sample 6) has a turn; the
+        # stationary repeats and the run's ends are NaN.
+        expected = np.full(8, np.nan)
         expected[6] = np.pi / 2
-        assert_allclose(curvature, expected)
+        assert_allclose(curvature, expected, equal_nan=True)
 
     def test_stationary_vertex_preserves_retained_turn_indices(self):
         positions = np.array(
@@ -541,11 +642,11 @@ class TestCurvatureSampleAlignment:
         )
         times = np.arange(len(positions)) * 0.1
 
-        curvature = compute_trajectory_curvature(times, positions, smooth_window=None)
+        curvature = compute_trajectory_curvature(times, positions, smooth_window=0.0)
 
-        expected = np.zeros(len(positions))
+        expected = np.full(len(positions), np.nan)
         expected[[1, 4]] = [np.pi / 2, -np.pi / 2]
-        assert_allclose(curvature, expected)
+        assert_allclose(curvature, expected, equal_nan=True)
 
     def test_smoothing_stays_at_turn_time_and_within_observed_run(self):
         first = np.column_stack([np.arange(8.0), np.zeros(8)])
@@ -558,12 +659,48 @@ class TestCurvatureSampleAlignment:
             times, np.vstack([first, second]), smooth_window=0.1
         )
 
-        assert_allclose(curvature[:8], 0.0)
-        assert np.argmax(curvature) == 8 + 6
+        assert np.isnan(curvature[[0, 7]]).all()
+        assert_allclose(curvature[1:7], 0.0)
+        assert np.nanargmax(curvature) == 8 + 6
         expected_second = compute_trajectory_curvature(
             times[8:], second, smooth_window=0.1
         )
         assert_allclose(curvature[8:], expected_second)
+
+
+class TestCurvatureSmoothing:
+    """Smoothing averages defined turns only; 0 disables it."""
+
+    TIMES = np.arange(0, 5, 1 / 30)
+    CIRCLE = 7.0 * np.c_[np.cos(0.8 * TIMES), np.sin(0.8 * TIMES)]
+
+    def test_zero_window_is_unsmoothed_not_nan(self):
+        turns = compute_trajectory_curvature(self.TIMES, self.CIRCLE, smooth_window=0)
+        assert_allclose(turns[1:-1], 0.8 / 30, rtol=1e-9)
+
+    def test_constant_turn_survives_smoothing_up_to_the_run_ends(self):
+        # The undefined first and last turns used to count as zero, so the
+        # smoothed turn at the run start read 0.87 of the true 0.8 / 30 rad.
+        turns = compute_trajectory_curvature(self.TIMES, self.CIRCLE, smooth_window=0.2)
+        assert np.isnan(turns[[0, -1]]).all()
+        assert_allclose(turns[1:-1], 0.8 / 30, rtol=1e-9)
+
+    def test_pause_is_not_averaged_in_as_zero_turn(self):
+        # Turning left 0.1 rad per step, with a 10-sample pause in the middle.
+        heading = 0.1 * np.arange(20)
+        steps = np.c_[np.cos(heading), np.sin(heading)]
+        path = np.vstack([[0.0, 0.0], np.cumsum(steps, axis=0)])
+        path = np.insert(path, 10, np.repeat(path[10:11], 10, axis=0), axis=0)
+        times = np.arange(len(path)) * 0.1
+        turns = compute_trajectory_curvature(times, path, smooth_window=0.3)
+        defined = np.isfinite(turns)
+        assert defined.sum() == 19
+        assert_allclose(turns[defined], 0.1, rtol=1e-9)
+
+    @pytest.mark.parametrize("window", [-0.1, np.nan, np.inf, None])
+    def test_invalid_window_raises(self, window):
+        with pytest.raises(ValueError, match="smooth_window"):
+            compute_trajectory_curvature(self.TIMES, self.CIRCLE, smooth_window=window)
 
 
 class TestCurvatureObservationSupport:
@@ -584,11 +721,16 @@ class TestCurvatureObservationSupport:
         )
 
         curvature = compute_trajectory_curvature(
-            times, positions, smooth_window=None, max_gap=0.15
+            times, positions, smooth_window=0.0, max_gap=0.15
         )
 
+        # Run ends have no turn, and the two-sample second run has none at all.
         assert_allclose(
-            curvature, [0, 0, np.pi / 2, 0, np.nan, 0, 0], rtol=0, atol=1e-15
+            curvature,
+            [np.nan, 0, np.pi / 2, np.nan, np.nan, np.nan, np.nan],
+            rtol=0,
+            atol=1e-15,
+            equal_nan=True,
         )
 
     def test_missing_row_is_bridged_like_a_deleted_row(self):
@@ -614,8 +756,10 @@ class TestCurvatureObservationSupport:
 
         curvature = compute_trajectory_curvature(times, positions, max_gap=0.15)
 
-        assert np.isnan(curvature[10])
-        assert np.isfinite(np.delete(curvature, 10)).all()
+        # Each run's ends (samples 0, 9, 11, 19) have no turn.
+        np.testing.assert_array_equal(
+            np.flatnonzero(np.isnan(curvature)), [0, 9, 10, 11, 19]
+        )
         assert_allclose(
             np.delete(curvature, 10),
             np.r_[
@@ -683,61 +827,31 @@ class TestTrajectoryMetricsIntegration:
         assert np.all(msd_values >= 0)
 
 
-class TestGeodesicDistanceOptimization:
-    """Tests for geodesic distance matrix optimization.
+class TestGeodesicStepLengths:
+    """Geodesic step lengths are shortest paths inside the environment."""
 
-    These tests verify that the precomputed distance matrix approach
-    produces identical results to per-step Dijkstra (the original implementation).
-    """
+    def test_geodesic_step_across_a_wall_goes_around_it(self):
+        """A step whose straight line crosses a wall is measured around it.
 
-    def test_step_lengths_geodesic_matches_networkx(self):
-        """Test that optimized geodesic step lengths match NetworkX shortest_path_length.
-
-        This verifies the optimization in trajectory.py (using geodesic_distance_matrix
-        instead of per-step nx.shortest_path_length) produces identical results.
+        A U of 1 cm corridors: the left arm x in [0, 1], the right arm
+        x in [4, 5] (y in [0, 10]), joined by the top row y in [9, 10]. The
+        step from (0.5, 0.5) to (4.5, 0.5) crosses the wall x in [1, 4],
+        y in [0, 9]. The shortest path inside the U touches the wall's
+        corners (1, 9) and (4, 9): 2 * hypot(0.5, 8.5) + 3 = 20.03 cm.
+        The taut path through bin centers rounds each of the two corners at
+        most one bin (1 cm) wide.
         """
-        import networkx as nx
+        cells = np.array([(x + 0.5, y + 0.5) for x in range(5) for y in range(10)])
+        u_shape = cells[(cells[:, 0] < 1) | (cells[:, 0] > 4) | (cells[:, 1] > 9)]
+        env = Environment.from_samples(u_shape, bin_size=1.0)
+        positions = np.array([[0.5, 0.5], [4.5, 0.5]])
 
-        # Create 2D grid environment
-        x = np.linspace(0, 40, 100)
-        y = np.linspace(0, 40, 100)
-        xx, yy = np.meshgrid(x, y)
-        sample_positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(sample_positions, bin_size=5.0)
+        (step,) = compute_step_lengths(positions, metric="geodesic", env=env)
 
-        # Create trajectory visiting multiple bins
-        position_bins = np.array([0, 1, 2, 5, 10, 15, 10, 5, 2, 1, 0])
-        positions = env.bin_centers[position_bins]
-
-        # Get step lengths using our optimized implementation
-        step_lengths = compute_step_lengths(positions, metric="geodesic", env=env)
-
-        # Compare to NetworkX ground truth (per-step Dijkstra)
-        for i in range(len(step_lengths)):
-            bin_i = position_bins[i]
-            bin_j = position_bins[i + 1]
-
-            if bin_i == bin_j:
-                expected = 0.0
-            else:
-                try:
-                    expected = float(
-                        nx.shortest_path_length(
-                            env.connectivity,
-                            source=int(bin_i),
-                            target=int(bin_j),
-                            weight="distance",
-                        )
-                    )
-                except (nx.NetworkXNoPath, nx.NodeNotFound):
-                    expected = np.inf
-
-            assert_allclose(
-                step_lengths[i],
-                expected,
-                rtol=1e-10,
-                err_msg=f"Step {i}: optimized={step_lengths[i]}, NetworkX={expected}",
-            )
+        exact = 2 * np.hypot(0.5, 8.5) + 3.0
+        assert exact <= step <= exact + 2 * 1.0
+        # The bin-graph route (grid steps) is no shorter.
+        assert step <= env.distance_between(points=positions) + 1e-12
 
     def test_geodesic_handles_disconnected_bins(self):
         """Test that geodesic distance returns inf for disconnected bins."""
@@ -967,3 +1081,90 @@ class TestMeanSquareDisplacementBreaks:
         # displacement is at most 3 bin-widths.
         assert np.all(joined.msd > 100.0)
         np.testing.assert_allclose(split.msd, [1.0, 4.0, 9.0], atol=1.5)
+
+
+class TestMeanSquareDisplacementLags:
+    """Each reported lag is the time separation of the pairs it averages."""
+
+    V = 3.0  # cm/s
+
+    def _ballistic(self, n=100, dt=0.1):
+        times = np.arange(n) * dt
+        return times, np.c_[self.V * times, np.zeros(n)]
+
+    @pytest.mark.parametrize("max_tau", [None, 0.55, 2.0, 2.04])
+    def test_ballistic_msd_is_speed_times_lag_squared(self, max_tau):
+        times, positions = self._ballistic()
+        result = mean_square_displacement(times, positions, max_tau=max_tau)
+        assert_allclose(result.msd, (self.V * result.lags) ** 2, rtol=1e-12)
+        # Lags are whole multiples of the 0.1 s sample interval.
+        k = np.arange(1, result.lags.size + 1)
+        assert_allclose(result.lags, 0.1 * k, rtol=1e-12)
+        alpha = np.polyfit(np.log(result.lags), np.log(result.msd), 1)[0]
+        assert alpha == pytest.approx(2.0, abs=1e-9)
+
+    def test_lags_stop_at_max_tau(self):
+        times, positions = self._ballistic()
+        assert mean_square_displacement(times, positions, max_tau=0.55).lags.size == 5
+        assert mean_square_displacement(times, positions, max_tau=0.3).lags.size == 3
+
+    def test_default_max_tau_is_half_the_recording(self):
+        times, positions = self._ballistic()
+        result = mean_square_displacement(times, positions)
+        # 9.9 s recording: half is 4.95 s, so lags 0.1 .. 4.9 s.
+        assert result.lags.size == 49
+        assert result.lags[-1] == pytest.approx(4.9)
+
+    def test_irregular_lag_is_mean_separation_of_its_pairs(self):
+        # Median interval 1 s; the 2 s lag averages pairs 2.3, 2.2 and 1.7 s apart.
+        times = np.array([0.0, 1.0, 2.3, 3.2, 4.0, 5.0])
+        result = mean_square_displacement(times, times[:, None], max_tau=2.1)
+        assert result.lags[-1] == pytest.approx((2.3 + 2.2 + 1.7) / 3)
+
+    @pytest.mark.parametrize("max_tau", [0.0, -1.0, np.nan, np.inf])
+    def test_max_tau_must_be_positive_and_finite(self, max_tau):
+        times, positions = self._ballistic()
+        with pytest.raises(ValueError, match="max_tau"):
+            mean_square_displacement(times, positions, max_tau=max_tau)
+
+    def test_max_tau_longer_than_recording_raises(self):
+        times, positions = self._ballistic()
+        with pytest.raises(ValueError, match="longer than the recording"):
+            mean_square_displacement(times, positions, max_tau=100.0)
+
+    def test_result_records_metric_and_epochs(self):
+        times, positions = self._ballistic()
+        result = mean_square_displacement(
+            times, positions, max_tau=1.0, epochs=(0.0, 5.0)
+        )
+        assert result.metric == "euclidean"
+        np.testing.assert_array_equal(result.epochs, [[0.0, 5.0]])
+        assert mean_square_displacement(times, positions, max_tau=1.0).epochs is None
+
+    def test_result_is_exported_from_behavior(self):
+        import neurospatial.behavior as behavior
+        from neurospatial.behavior.trajectory import MSDResult
+
+        assert behavior.MSDResult is MSDResult
+        assert "MSDResult" in behavior.__all__
+
+    @pytest.mark.parametrize(
+        ("lags", "msd", "metric", "match"),
+        [
+            ([1.0, 2.0], [1.0], "euclidean", "same length"),
+            ([2.0, 1.0], [1.0, 4.0], "euclidean", "strictly increasing"),
+            ([1.0, 2.0], [1.0, 4.0], "manhattan", "metric"),
+        ],
+    )
+    def test_result_rejects_inconsistent_fields(self, lags, msd, metric, match):
+        from neurospatial.behavior.trajectory import MSDResult
+
+        with pytest.raises(ValueError, match=match):
+            MSDResult(
+                lags=np.array(lags), msd=np.array(msd), metric=metric, epochs=None
+            )
+
+    def test_max_tau_shorter_than_one_sample_interval_raises(self):
+        times, positions = self._ballistic()
+        with pytest.raises(ValueError, match="shorter than one sample interval"):
+            mean_square_displacement(times, positions, max_tau=0.04)

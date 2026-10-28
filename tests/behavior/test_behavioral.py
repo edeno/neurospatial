@@ -81,7 +81,7 @@ def test_trials_to_region_arrays_single_trial(simple_environment_with_regions):
         end_time=10.0,
         start_region="start",
         end_region="goal1",
-        success=True,
+        outcome="reached",
     )
     trials = [trial]
 
@@ -116,9 +116,9 @@ def test_trials_to_region_arrays_multiple_trials(simple_environment_with_regions
 
     # Create 3 trials with different goals
     trials = [
-        Trial(0.0, 5.0, "start", "goal1", True),  # t=0 to t=5
-        Trial(5.5, 10.0, "start", "goal2", True),  # t=5.5 to t=10
-        Trial(11.0, 15.0, "start", "goal1", True),  # t=11 to t=15
+        Trial(0.0, 5.0, "start", "goal1", "reached"),  # t=0 to t=5
+        Trial(5.5, 10.0, "start", "goal2", "reached"),  # t=5.5 to t=10
+        Trial(11.0, 15.0, "start", "goal1", "reached"),  # t=11 to t=15
     ]
 
     # Create times array covering all trials plus gaps
@@ -169,7 +169,7 @@ def test_trials_to_region_arrays_failed_trial(simple_environment_with_regions):
         end_time=10.0,
         start_region="start",
         end_region=None,  # Failed trial - no end region
-        success=False,
+        outcome="timeout",
     )
     trials = [trial]
 
@@ -205,7 +205,7 @@ def test_trials_to_region_arrays_polygon_regions(environment_with_polygon_region
         end_time=10.0,
         start_region="start_zone",
         end_region="goal_zone",
-        success=True,
+        outcome="reached",
     )
     trials = [trial]
 
@@ -271,7 +271,7 @@ def test_trials_to_region_arrays_centroid_differs_from_first_bin():
         "where they differ."
     )
 
-    trial = Trial(0.0, 5.0, "zone", "zone", True)
+    trial = Trial(0.0, 5.0, "zone", "zone", "reached")
     times = np.linspace(0.0, 5.0, 6)
     start_bins, goal_bins = trials_to_region_arrays([trial], times, env)
 
@@ -770,14 +770,14 @@ def test_time_to_goal_successful_trials():
             end_time=4.0,
             start_region="start",
             end_region="goal",
-            success=True,
+            outcome="reached",
         ),
         Trial(
             start_time=6.0,
             end_time=9.0,
             start_region="start",
             end_region="goal",
-            success=True,
+            outcome="reached",
         ),
     ]
 
@@ -820,7 +820,7 @@ def test_time_to_goal_failed_trials():
             end_time=4.0,
             start_region="start",
             end_region=None,  # Failed trial
-            success=False,
+            outcome="timeout",
         ),
     ]
 
@@ -847,7 +847,7 @@ def test_time_to_goal_outside_trials():
             end_time=4.0,
             start_region="start",
             end_region="goal",
-            success=True,
+            outcome="reached",
         ),
     ]
 
@@ -879,7 +879,7 @@ def test_time_to_goal_countdown():
             end_time=7.0,
             start_region="start",
             end_region="goal",
-            success=True,
+            outcome="reached",
         ),
     ]
 
@@ -912,7 +912,7 @@ def test_time_to_goal_after_goal_reached():
             end_time=3.0,
             start_region="start",
             end_region="goal",
-            success=True,
+            outcome="reached",
         ),
     ]
 
@@ -940,14 +940,14 @@ def test_compute_trajectory_curvature_2d_straight():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
     assert curvature.shape == (20,), "Output length should match input (n_samples)"
-    assert np.allclose(curvature, 0.0, atol=0.01), (
-        "Straight line should have near-zero curvature"
-    )
+    # The first and last samples have no turn; every interior turn is zero.
+    assert np.isnan(curvature[[0, -1]]).all()
+    np.testing.assert_allclose(curvature[1:-1], 0.0, atol=1e-12)
 
 
 def test_compute_trajectory_curvature_2d_left_turn():
@@ -966,7 +966,7 @@ def test_compute_trajectory_curvature_2d_left_turn():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
@@ -994,7 +994,7 @@ def test_compute_trajectory_curvature_2d_right_turn():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
@@ -1007,7 +1007,7 @@ def test_compute_trajectory_curvature_2d_right_turn():
 
 
 def test_compute_trajectory_curvature_3d():
-    """Test curvature for 3D trajectory (uses first 2 dims)."""
+    """A 3-D turn inside a horizontal plane is the right angle it makes."""
     from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Create 3D trajectory with left turn in XY plane, constant Z
@@ -1021,14 +1021,13 @@ def test_compute_trajectory_curvature_3d():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions_3d)) * 0.1, positions_3d, smooth_window=None
+        np.arange(len(positions_3d)) * 0.1, positions_3d, smooth_window=0.0
     )
 
     # Assertions
     assert curvature.shape == (3,), "Output length should match input"
-    # Should detect left turn from first 2 dimensions (ignoring Z)
-    assert curvature[1] > 0, "Left turn in XY plane should have positive curvature"
-    assert np.isclose(curvature[1], np.pi / 2, atol=0.1), "Should match 2D left turn"
+    # With three columns the turn is the unsigned 3-D angle: pi/2 here.
+    np.testing.assert_allclose(curvature[1], np.pi / 2, rtol=1e-15)
 
 
 def test_compute_trajectory_curvature_smoothing():
@@ -1044,13 +1043,13 @@ def test_compute_trajectory_curvature_smoothing():
     times = np.linspace(0, 10, 100)  # 10 seconds total
 
     # Compute curvature with and without smoothing
-    curvature_raw = compute_trajectory_curvature(times, positions, smooth_window=None)
+    curvature_raw = compute_trajectory_curvature(times, positions, smooth_window=0.0)
     curvature_smooth = compute_trajectory_curvature(times, positions, smooth_window=0.5)
 
     # Assertions
     assert curvature_raw.shape == curvature_smooth.shape == (100,)
     # Smoothed version should have lower variance
-    assert np.std(curvature_smooth) < np.std(curvature_raw), (
+    assert np.nanstd(curvature_smooth) < np.nanstd(curvature_raw), (
         "Smoothing should reduce variance"
     )
 
@@ -1066,7 +1065,7 @@ def test_compute_trajectory_curvature_output_length():
 
         # Compute curvature
         curvature = compute_trajectory_curvature(
-            np.arange(len(positions)) * 0.1, positions, smooth_window=None
+            np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
         )
 
         # Assertion: output length should match input
@@ -1093,7 +1092,7 @@ def test_compute_trajectory_curvature_multiple_turns():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
@@ -1123,7 +1122,7 @@ def test_compute_trajectory_curvature_circular_arc():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
@@ -1163,7 +1162,7 @@ def test_compute_trajectory_curvature_s_curve():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
@@ -1203,7 +1202,7 @@ def test_compute_trajectory_curvature_zigzag():
 
     # Compute curvature
     curvature = compute_trajectory_curvature(
-        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        np.arange(len(positions)) * 0.1, positions, smooth_window=0.0
     )
 
     # Assertions
@@ -1470,7 +1469,6 @@ def test_graph_turn_sequence_ymaze_north_arm_into_west_arm_is_right(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        min_samples_per_edge=10,
     )
 
     assert turn_seq == "right"
@@ -1513,7 +1511,6 @@ def test_graph_turn_sequence_ymaze_north_arm_into_east_arm_is_left(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        min_samples_per_edge=10,
     )
 
     assert turn_seq == "left"
@@ -1534,11 +1531,13 @@ def test_graph_turn_sequence_grid_multiple(small_2d_env):
 
     # Define a path that makes clear turns
     # Start at one corner and trace a rectangular path
+    # Legs of four 2 cm bins: a one-bin leg is below the default tolerance
+    # (one bin diagonal) and cannot be told apart from a lattice staircase.
     path_positions = [
         bin_centers[0],  # Start
-        bin_centers[0] + [2, 0],  # Move right
-        bin_centers[0] + [2, 2],  # Move up (North): a left turn
-        bin_centers[0] + [0, 2],  # Move West: a left turn again
+        bin_centers[0] + [8, 0],  # Move right
+        bin_centers[0] + [8, 8],  # Move up (North): a left turn
+        bin_centers[0] + [0, 8],  # Move West: a left turn again
     ]
 
     # Find bins closest to each position
@@ -1559,7 +1558,6 @@ def test_graph_turn_sequence_grid_multiple(small_2d_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        min_samples_per_edge=20,
     )
 
     # East, then North, then West: two counterclockwise turns.
@@ -1572,9 +1570,7 @@ def _turns_along(env, corners, samples_per_bin=60):
 
     bins = env.bin_at(np.asarray(corners, dtype=float))
     assert np.all(bins >= 0)
-    return graph_turn_sequence(
-        env, np.repeat(bins, samples_per_bin), min_samples_per_edge=20
-    )
+    return graph_turn_sequence(env, np.repeat(bins, samples_per_bin))
 
 
 @pytest.fixture(scope="module")
@@ -1634,51 +1630,27 @@ def test_graph_turn_sequence_straight(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        min_samples_per_edge=10,
     )
 
     # Center → straight ahead is one direction, so no turn.
     assert turn_seq == ""
 
 
-def test_graph_turn_sequence_min_samples_filter(ymaze_env):
-    """Test turn sequence filters brief crossings (min_samples_per_edge)."""
+def test_graph_turn_sequence_one_step_is_not_a_turn(ymaze_env):
+    """Two visited bins make one leg, which has no corner to turn at."""
     from neurospatial.behavior.navigation import graph_turn_sequence
 
     env = ymaze_env
-
-    # Get bin centers to map nodes to bins
     bin_centers = env.bin_centers
-    node_positions = {
-        0: (0.0, 0.0),  # Center
-        2: (-7.0, 7.0),  # Left
-    }
 
     def find_closest_bin(pos):
-        distances = np.linalg.norm(bin_centers - pos, axis=1)
-        return np.argmin(distances)
+        return np.argmin(np.linalg.norm(bin_centers - pos, axis=1))
 
-    center_bin = find_closest_bin(node_positions[0])
-    left_bin = find_closest_bin(node_positions[2])
+    center_bin = find_closest_bin((0.0, 0.0))
+    left_bin = find_closest_bin((-7.0, 7.0))
+    position_bins = np.r_[np.full(10, center_bin), np.full(5, left_bin)]
 
-    # Create trajectory with brief crossing (< min_samples_per_edge)
-    # Only 5 samples on the transition, but min_samples_per_edge=50
-    position_bins = np.concatenate(
-        [
-            np.full(10, center_bin, dtype=np.int_),
-            np.full(5, left_bin, dtype=np.int_),  # Brief crossing
-        ]
-    )
-
-    # Call function with default min_samples_per_edge=50
-    turn_seq = graph_turn_sequence(
-        env,
-        position_bins,
-        min_samples_per_edge=50,
-    )
-
-    # The 5-sample crossing is below min_samples_per_edge, so nothing is left.
-    assert turn_seq == ""
+    assert graph_turn_sequence(env, position_bins) == ""
 
 
 def test_graph_turn_sequence_3d(simple_3d_env):
@@ -1703,7 +1675,6 @@ def test_graph_turn_sequence_3d(simple_3d_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        min_samples_per_edge=5,  # Lower threshold for 3D
     )
 
     # Turns are read in the x-y plane. The walk climbs in z and steps along y
@@ -1742,7 +1713,7 @@ def test_path_progress_array_length_mismatch():
 
 
 def test_compute_trajectory_curvature_edge_case_few_positions():
-    """Test curvature with < 3 unique positions returns zeros."""
+    """A stationary animal has no turn: every sample is NaN, not zero."""
     from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Only 2 unique positions (straight line)
@@ -1751,9 +1722,8 @@ def test_compute_trajectory_curvature_edge_case_few_positions():
 
     curvature = compute_trajectory_curvature(times, positions, max_gap=None)
 
-    # Should return zeros (no curvature possible)
     assert curvature.shape == (3,)
-    assert np.allclose(curvature, 0.0)
+    assert np.isnan(curvature).all()
 
 
 def test_cost_to_goal_dynamic_goal_with_cost_map(simple_environment_with_regions):

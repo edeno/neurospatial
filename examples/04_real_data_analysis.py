@@ -318,12 +318,13 @@ print(counts.sort_values(ascending=False).rename("count").to_string())
 #
 # ## 5. How does position change between arm-end entries?
 #
-# Plot the first three intervals on a common scale. At each sample, divide the
-# shortest track distance from the starting bin by the track distance between
-# the two entry bins, then limit the result to 0-1. This is `path_progress`.
-# Zero marks the start and one marks the reference distance to the destination.
-# On a branched maze, a detour can also reach that distance, so this quantity
-# alone does not establish arrival or an efficient route.
+# Plot the first three intervals on a common scale. At each sample,
+# `path_progress` divides the shortest track distance already covered from the
+# starting bin by that distance plus the shortest track distance still left to
+# the destination bin. Zero marks the start and one marks arrival. A detour into
+# another arm keeps the distance left to the destination large, so progress
+# falls while the rat is off the route; it does not by itself show that the
+# route was efficient.
 
 # %%
 fig, ax = plt.subplots(figsize=(10, 5))

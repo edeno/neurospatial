@@ -32,14 +32,14 @@ class TestWriteTrialsFromTrialObjects:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             ),
             Trial(
                 start_time=10.0,
                 end_time=15.0,
                 start_region="home",
                 end_region=None,
-                success=False,
+                outcome="timeout",
             ),
         ]
 
@@ -61,7 +61,7 @@ class TestWriteTrialsFromTrialObjects:
                 end_time=6.2,
                 start_region="start_zone",
                 end_region="reward_left",
-                success=True,
+                outcome="reached",
             ),
         ]
 
@@ -74,11 +74,11 @@ class TestWriteTrialsFromTrialObjects:
         # Check custom columns
         assert "start_region" in nwbfile.trials.colnames
         assert "end_region" in nwbfile.trials.colnames
-        assert "success" in nwbfile.trials.colnames
+        assert "outcome" in nwbfile.trials.colnames
 
         assert nwbfile.trials["start_region"][0] == "start_zone"
         assert nwbfile.trials["end_region"][0] == "reward_left"
-        assert nwbfile.trials["success"][0] is True
+        assert nwbfile.trials["outcome"][0] == "reached"
 
     def test_trial_with_none_end_region(self, empty_nwb):
         """Test that None end_region is handled correctly."""
@@ -92,7 +92,7 @@ class TestWriteTrialsFromTrialObjects:
                 end_time=15.0,
                 start_region="home",
                 end_region=None,  # Timeout trial
-                success=False,
+                outcome="timeout",
             ),
         ]
 
@@ -148,7 +148,7 @@ class TestWriteTrialsFromArrays:
         stop_times = np.array([5.0, 15.0])
         start_regions = ["home", "home"]
         end_regions = ["goal_left", "goal_right"]
-        successes = [True, True]
+        outcomes = ["reached", "censored"]
 
         write_trials(
             nwbfile,
@@ -156,13 +156,25 @@ class TestWriteTrialsFromArrays:
             stop_times=stop_times,
             start_regions=start_regions,
             end_regions=end_regions,
-            successes=successes,
+            outcomes=outcomes,
         )
 
         assert len(nwbfile.trials) == 2
         assert "start_region" in nwbfile.trials.colnames
         assert "end_region" in nwbfile.trials.colnames
-        assert "success" in nwbfile.trials.colnames
+        assert list(nwbfile.trials["outcome"][:]) == outcomes
+
+    def test_arrays_reject_an_unknown_outcome(self, empty_nwb):
+        """A boolean-era value is not a trial outcome."""
+        from neurospatial.io.nwb import write_trials
+
+        with pytest.raises(ValueError, match="not a trial outcome"):
+            write_trials(
+                empty_nwb,
+                start_times=np.array([0.0]),
+                stop_times=np.array([5.0]),
+                outcomes=["success"],
+            )
 
     def test_arrays_with_partial_optional_columns(self, empty_nwb):
         """Test writing trials with only some optional columns."""
@@ -173,7 +185,7 @@ class TestWriteTrialsFromArrays:
         stop_times = np.array([5.0, 15.0])
         start_regions = ["home", "home"]
 
-        # Only start_regions provided, no end_regions or successes
+        # Only start_regions provided, no end_regions or outcomes
         write_trials(
             nwbfile,
             start_times=start_times,
@@ -185,7 +197,7 @@ class TestWriteTrialsFromArrays:
         assert "start_region" in nwbfile.trials.colnames
         # These columns should NOT be present since not provided
         assert "end_region" not in nwbfile.trials.colnames
-        assert "success" not in nwbfile.trials.colnames
+        assert "outcome" not in nwbfile.trials.colnames
 
 
 class TestWriteTrialsValidation:
@@ -203,7 +215,7 @@ class TestWriteTrialsValidation:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             )
         ]
         start_times = np.array([0.0])
@@ -314,7 +326,7 @@ class TestWriteTrialsOverwrite:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             )
         ]
 
@@ -342,7 +354,7 @@ class TestWriteTrialsOverwrite:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             )
         ]
         new_trials = [
@@ -351,7 +363,7 @@ class TestWriteTrialsOverwrite:
                 end_time=15.0,
                 start_region="start",
                 end_region="reward",
-                success=True,
+                outcome="reached",
             ),
         ]
 
@@ -383,14 +395,14 @@ class TestReadTrials:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             ),
             Trial(
                 start_time=10.0,
                 end_time=15.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             ),
         ]
 
@@ -423,14 +435,14 @@ class TestReadTrials:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal_left",
-                success=True,
+                outcome="reached",
             ),
             Trial(
                 start_time=10.0,
                 end_time=20.0,
                 start_region="home",
                 end_region=None,
-                success=False,
+                outcome="timeout",
             ),
         ]
 
@@ -440,12 +452,12 @@ class TestReadTrials:
         # Check custom columns present
         assert "start_region" in result.columns
         assert "end_region" in result.columns
-        assert "success" in result.columns
+        assert "outcome" in result.columns
 
         # Check values
         assert result["start_region"].iloc[0] == "home"
         assert result["end_region"].iloc[0] == "goal_left"
-        assert result["success"].iloc[0] == True  # noqa: E712
+        assert result["outcome"].iloc[0] == "reached"
 
     def test_roundtrip_data_integrity(self, empty_nwb):
         """Test data integrity through write/read round-trip."""
@@ -459,21 +471,21 @@ class TestReadTrials:
                 end_time=6.2,
                 start_region="start_zone",
                 end_region="reward_right",
-                success=True,
+                outcome="reached",
             ),
             Trial(
                 start_time=10.0,
                 end_time=18.5,
                 start_region="start_zone",
                 end_region="reward_left",
-                success=True,
+                outcome="reached",
             ),
             Trial(
                 start_time=25.0,
                 end_time=40.0,
                 start_region="start_zone",
                 end_region=None,
-                success=False,
+                outcome="censored",
             ),
         ]
 
@@ -498,10 +510,8 @@ class TestReadTrials:
         assert result["end_region"].iloc[0] == "reward_right"
         assert result["end_region"].iloc[1] == "reward_left"
 
-        # Check success (use == for numpy bool comparison)
-        assert result["success"].iloc[0] == True  # noqa: E712
-        assert result["success"].iloc[1] == True  # noqa: E712
-        assert result["success"].iloc[2] == False  # noqa: E712
+        # A censored trial survives the round trip as censored, not as failed.
+        assert list(result["outcome"]) == ["reached", "reached", "censored"]
 
 
 class TestWriteTrialsDescription:
@@ -530,7 +540,7 @@ class TestWriteTrialsDescription:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             )
         ]
         write_trials(nwbfile, trials, description="T-maze behavioral trials")
@@ -551,7 +561,7 @@ class TestWriteTrialsDescription:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             )
         ]
 
@@ -580,10 +590,9 @@ class TestWriteTrialsDiskRoundTrip:
         start_times = np.array([0.0, 10.0, 20.0, 30.0, 40.0])
         stop_times = np.array([5.0, 15.0, 25.0, 35.0, 45.0])
         start_regions = ["home", "home", "home", "home", "home"]
-        # "outcome"/"condition" labels are carried in end_region + success,
-        # which are the columns write_trials actually persists.
-        end_regions = ["goal_l", "goal_r", "goal_l", "goal_r", "goal_l"]
-        successes = [True, False, True, True, False]
+        # Every outcome, including censored, must survive the round trip.
+        end_regions = ["goal_l", "", "goal_l", "", ""]
+        outcomes = ["reached", "timeout", "reached", "censored", "returned"]
 
         nwbfile = create_roundtrip_nwb()
         write_trials(
@@ -592,7 +601,7 @@ class TestWriteTrialsDiskRoundTrip:
             stop_times=stop_times,
             start_regions=start_regions,
             end_regions=end_regions,
-            successes=successes,
+            outcomes=outcomes,
         )
 
         nwb_path = tmp_path / "trials.nwb"
@@ -609,7 +618,7 @@ class TestWriteTrialsDiskRoundTrip:
                 "stop_time": stop_times,
                 "start_region": start_regions,
                 "end_region": end_regions,
-                "success": successes,
+                "outcome": outcomes,
             }
         )
         pd.testing.assert_frame_equal(
@@ -621,7 +630,7 @@ class TestWriteTrialsDiskRoundTrip:
     def test_trials_with_optional_columns_survives(self, tmp_path):
         """Trials written with only some optional columns reload as expected.
 
-        Only start_region is supplied; end_region and success are never added
+        Only start_region is supplied; end_region and outcome are never added
         as columns, so the recovered table must contain neither.
         """
         from pynwb import NWBHDF5IO
@@ -663,4 +672,4 @@ class TestWriteTrialsDiskRoundTrip:
         )
         # Unsupplied optional columns are absent, not silently fabricated.
         assert "end_region" not in recovered.columns
-        assert "success" not in recovered.columns
+        assert "outcome" not in recovered.columns

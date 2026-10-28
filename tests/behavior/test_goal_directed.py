@@ -105,10 +105,26 @@ class TestInstantaneousGoalAlignment:
 
         result = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
 
-        # Should be ~1.0 everywhere (ignoring edge effects)
-        valid_alignment = result[~np.isnan(result)]
-        assert len(valid_alignment) > 0
-        assert np.mean(valid_alignment) > 0.9
+        # Exactly 1 at every sample but the last, which is at the goal.
+        np.testing.assert_allclose(result[:-1], 1.0, rtol=1e-12)
+        assert np.isnan(result[-1])
+
+    def test_westward_arrival_is_aligned(self):
+        """Running West onto the goal scores 1 up to it and NaN on it.
+
+        At the goal the direction to the goal was arctan2(0, 0) = East, so a
+        westward arrival scored -1 there.
+        """
+        from neurospatial.behavior.navigation import instantaneous_goal_alignment
+
+        positions = np.column_stack([np.linspace(100, 0, 21), np.zeros(21)])
+        times = np.linspace(0, 10, 21)
+        goal = np.array([0.0, 0.0])
+
+        result = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
+
+        np.testing.assert_allclose(result[:-1], 1.0, rtol=1e-12)
+        assert np.isnan(result[-1])
 
     def test_moving_away_from_goal(self):
         """Test alignment is negative when moving away from goal."""
@@ -127,10 +143,7 @@ class TestInstantaneousGoalAlignment:
 
         result = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
 
-        # Should be ~-1.0 (moving away)
-        valid_alignment = result[~np.isnan(result)]
-        assert len(valid_alignment) > 0
-        assert np.mean(valid_alignment) < -0.8
+        np.testing.assert_allclose(result, -1.0, rtol=1e-12)
 
     def test_orthogonal_movement(self):
         """Test alignment is ~0 when moving in circle around goal.
@@ -183,7 +196,7 @@ class TestGoalBias:
     """Test goal_bias function."""
 
     def test_strong_goal_directed(self):
-        """Test goal_bias > 0.8 for direct approach."""
+        """A direct approach has goal bias 1."""
         from neurospatial.behavior.navigation import goal_bias
 
         # Moving directly toward goal
@@ -196,10 +209,21 @@ class TestGoalBias:
 
         result = goal_bias(times, positions, goal, min_speed=0.0)
 
-        assert result > 0.8
+        assert result == pytest.approx(1.0, rel=1e-12)
+
+    def test_westward_approach_has_bias_one(self):
+        """The arrival sample used to score -1, pulling the bias to 0.9."""
+        from neurospatial.behavior.navigation import goal_bias
+
+        positions = np.column_stack([np.linspace(100, 0, 21), np.zeros(21)])
+        times = np.linspace(0, 10, 21)
+
+        result = goal_bias(times, positions, np.array([0.0, 0.0]), min_speed=0.0)
+
+        assert result == pytest.approx(1.0, rel=1e-12)
 
     def test_negative_goal_bias_moving_away(self):
-        """Test goal_bias < -0.5 when moving away from goal."""
+        """Moving straight away from the goal has goal bias -1."""
         from neurospatial.behavior.navigation import goal_bias
 
         # Moving away from goal
@@ -215,7 +239,7 @@ class TestGoalBias:
 
         result = goal_bias(times, positions, goal, min_speed=0.0)
 
-        assert result < -0.5
+        assert result == pytest.approx(-1.0, rel=1e-12)
 
     def test_circular_path_around_goal(self):
         """Test goal_bias ~0 for circular path around goal."""
@@ -333,8 +357,67 @@ class TestApproachRate:
 
         positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
         times = np.linspace(0, 5, 11)
-        with pytest.raises(ValueError, match="env parameter is required"):
+        with pytest.raises(
+            ValueError, match=r"approach_rate\(metric='geodesic'\) needs env="
+        ):
             approach_rate(times, positions, np.array([100.0, 0.0]), metric="geodesic")
+
+    def test_geodesic_rate_around_a_wall_is_smooth(self):
+        """Walking up a U-maze arm, away from a goal hidden behind the wall.
+
+        The path to the goal (45, 5) leaves the left arm over the wall's
+        corner, so walking North at 7 cm/s shortens it at
+        7 * cos(angle to the corner): between 0 and -7 cm/s, changing
+        smoothly, never the bin-quantized zeros and spikes.
+        """
+        from neurospatial.behavior.navigation import approach_rate
+
+        cells = np.array(
+            [(x + 1.0, y + 1.0) for x in range(0, 50, 2) for y in range(0, 60, 2)]
+        )
+        u_maze = cells[(cells[:, 0] < 10) | (cells[:, 0] > 40) | (cells[:, 1] > 50)]
+        env = Environment.from_samples(u_maze, bin_size=2.0)
+        times = np.arange(0.0, 5.0, 1 / 30)
+        positions = np.column_stack([np.full(times.size, 5.0), 5.0 + 7.0 * times])
+
+        rates = approach_rate(
+            times, positions, np.array([45.0, 5.0]), metric="geodesic", env=env
+        )
+
+        assert np.all((rates[1:] >= -7.0 - 1e-9) & (rates[1:] < 0.0))
+        assert np.max(np.abs(np.diff(rates[1:]))) < 0.5
+
+    def test_misspelled_metric_raises(self):
+        """A misspelled metric used to run the geodesic branch silently."""
+        from neurospatial.behavior.navigation import approach_rate
+
+        positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
+        times = np.linspace(0, 5, 11)
+        with pytest.raises(ValueError, match="got metric='euclidian'"):
+            approach_rate(times, positions, np.array([100.0, 0.0]), metric="euclidian")
+
+    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+    @pytest.mark.parametrize("heading", [0.0, 0.5])
+    def test_constant_speed_approach_has_constant_rate(self, metric, heading):
+        """20 cm/s straight toward the goal reads -20 cm/s at every sample.
+
+        The geodesic rate used to be quantized by the 2 cm bins: 86% exact
+        zeros and spikes of -150 cm/s.
+        """
+        from neurospatial.behavior.navigation import approach_rate
+
+        x, y = np.meshgrid(np.arange(0.25, 100.0, 0.5), np.arange(0.25, 100.0, 0.5))
+        env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        times = np.arange(0.0, 3.0, 1 / 30)  # 30 Hz, 3 s
+        direction = np.array([np.cos(heading), np.sin(heading)])
+        start = np.array([10.0, 10.0])
+        goal = start + 80.0 * direction
+        positions = start + 20.0 * times[:, None] * direction  # 20 cm/s
+
+        rates = approach_rate(times, positions, goal, metric=metric, env=env)
+
+        assert np.isnan(rates[0])
+        np.testing.assert_allclose(rates[1:], -20.0, rtol=1e-9)
 
     @pytest.fixture
     def jump(self):
@@ -400,7 +483,7 @@ class TestGoalDirectedMetrics:
         result = GoalDirectedMetrics(
             goal_bias=0.6,
             mean_approach_rate=-10.0,
-            time_to_goal=5.0,
+            time_to_reach_goal=5.0,
             min_distance_to_goal=2.0,
             goal_distance_at_start=50.0,
             goal_distance_at_end=2.0,
@@ -473,3 +556,128 @@ class TestErrorHandling:
         result = goal_bias(times, positions, goal, min_speed=0.0)
 
         assert np.isnan(result)
+
+
+def _goal_metrics(**overrides):
+    from neurospatial.behavior.navigation import GoalDirectedMetrics
+
+    values = {
+        "goal_bias": 0.3,
+        "mean_approach_rate": -10.0,
+        "time_to_reach_goal": 5.0,
+        "min_distance_to_goal": 2.0,
+        "goal_distance_at_start": 50.0,
+        "goal_distance_at_end": 2.0,
+        "goal_position": np.array([100.0, 0.0]),
+        "metric": "euclidean",
+    }
+    values.update(overrides)
+    return GoalDirectedMetrics(**values)
+
+
+def test_is_goal_directed_is_inclusive_at_threshold():
+    assert _goal_metrics(goal_bias=0.3).is_goal_directed(threshold=0.3)
+    assert not _goal_metrics(goal_bias=np.nan).is_goal_directed(threshold=-1.0)
+
+
+def test_goal_directed_metrics_invariants():
+    with pytest.raises(ValueError, match="metric='taxicab'"):
+        _goal_metrics(metric="taxicab")
+    with pytest.raises(ValueError, match=r"goal_distance_at_start=-1\.0 is negative"):
+        _goal_metrics(goal_distance_at_start=-1.0)
+    with pytest.raises(ValueError, match="goal_position has shape"):
+        _goal_metrics(goal_position=np.zeros((1, 2)))
+    assert type(_goal_metrics(goal_bias=np.float64(0.5)).goal_bias) is float
+
+
+class TestGoalDirectedDistances:
+    """Distance summaries and arrival use the metric and the epochs."""
+
+    @staticmethod
+    def _run():
+        """10 cm/s East from x = 0 to x = 100 cm, goal at x = 100."""
+        x, y = np.meshgrid(np.arange(0.0, 101.0), np.arange(-5.0, 6.0))
+        env = Environment.from_samples(
+            np.c_[x.ravel(), y.ravel()], bin_size=2.0, units="cm"
+        )
+        times = np.arange(101) / 10
+        positions = np.column_stack([10.0 * times, np.zeros(101)])
+        return env, times, positions, np.array([100.0, 0.0])
+
+    def test_arrival_without_and_with_epochs(self):
+        from neurospatial.behavior import compute_goal_directed_metrics
+
+        env, times, positions, goal = self._run()
+        whole = compute_goal_directed_metrics(
+            env, times, positions, goal, goal_radius=50.0
+        )
+        # Inside [2, 8) s the first sample is x = 20 and the last x = 79.
+        window = compute_goal_directed_metrics(
+            env, times, positions, goal, goal_radius=50.0, epochs=(2.0, 8.0)
+        )
+        assert whole.time_to_reach_goal == pytest.approx(5.0)
+        assert (whole.goal_distance_at_start, whole.goal_distance_at_end) == (
+            100.0,
+            0.0,
+        )
+        assert window.time_to_reach_goal == pytest.approx(3.0)
+        assert window.goal_distance_at_start == pytest.approx(80.0)
+        assert window.goal_distance_at_end == pytest.approx(21.0)
+        assert window.min_distance_to_goal == pytest.approx(21.0)
+
+    def test_not_reached_is_nan_and_not_tested_is_none(self):
+        from neurospatial.behavior import compute_goal_directed_metrics
+
+        env, times, positions, goal = self._run()
+        not_reached = compute_goal_directed_metrics(
+            env, times, positions, goal, goal_radius=1.0, epochs=(2.0, 8.0)
+        )
+        not_tested = compute_goal_directed_metrics(env, times, positions, goal)
+        assert np.isnan(not_reached.time_to_reach_goal)
+        assert not_tested.time_to_reach_goal is None
+        assert "not reached" in str(not_reached)
+        assert "not tested" in str(not_tested)
+
+    @pytest.mark.parametrize("goal_radius", [-1.0, np.nan])
+    def test_goal_radius_must_be_finite_and_non_negative(self, goal_radius):
+        from neurospatial.behavior import compute_goal_directed_metrics
+
+        env, times, positions, goal = self._run()
+        with pytest.raises(ValueError, match="finite distance >= 0"):
+            compute_goal_directed_metrics(
+                env, times, positions, goal, goal_radius=goal_radius
+            )
+
+    def test_geodesic_distances_go_around_the_wall(self):
+        """With metric='geodesic' the summaries are geodesic, not straight-line.
+
+        In a U-maze the goal (45, 5) is 40 cm away in a straight line but
+        2 * hypot(5, 45) + 30 = 120.55 cm around the wall (plus at most one
+        2 cm bin per corner); it used to report 40.
+        """
+        from neurospatial.behavior import (
+            compute_goal_directed_metrics,
+            shortest_path_length,
+        )
+
+        cells = np.array(
+            [(x + 1.0, y + 1.0) for x in range(0, 50, 2) for y in range(0, 60, 2)]
+        )
+        u_maze = cells[(cells[:, 0] < 10) | (cells[:, 0] > 40) | (cells[:, 1] > 50)]
+        env = Environment.from_samples(u_maze, bin_size=2.0, units="cm")
+        times = np.arange(50) / 30
+        positions = np.column_stack([np.full(50, 5.0), np.linspace(5, 30, 50)])
+        goal = np.array([45.0, 5.0])
+
+        geodesic = compute_goal_directed_metrics(
+            env, times, positions, goal, metric="geodesic"
+        )
+        euclidean = compute_goal_directed_metrics(env, times, positions, goal)
+
+        exact = 2 * np.hypot(5.0, 45.0) + 30.0
+        assert euclidean.goal_distance_at_start == 40.0
+        assert exact <= geodesic.goal_distance_at_start <= exact + 4.0
+        assert geodesic.goal_distance_at_start == shortest_path_length(
+            env, positions[0], goal
+        )
+        assert geodesic.min_distance_to_goal < geodesic.goal_distance_at_start

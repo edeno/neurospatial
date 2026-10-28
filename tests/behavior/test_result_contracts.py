@@ -33,12 +33,13 @@ def _vte_trial() -> VTETrialResult:
         head_sweep_magnitude=1.5,
         z_head_sweep=2.0,
         mean_speed=8.0,
-        min_speed=1.0,
+        min_observed_speed=1.0,
         z_speed_inverse=1.2,
         vte_index=1.6,
         is_vte=True,
         window_start=10.0,
         window_end=11.0,
+        status="ok",
     )
 
 
@@ -46,19 +47,19 @@ def _path_efficiency() -> PathEfficiencyResult:
     return PathEfficiencyResult(
         traveled_length=12.0,
         shortest_length=10.0,
-        efficiency=10.0 / 12.0,
         time_efficiency=None,
         angular_efficiency=0.9,
         start_position=np.array([0.0, 0.0]),
         goal_position=np.array([10.0, 0.0]),
         metric="geodesic",
+        fully_observed=True,
     )
 
 
 def _boundary() -> DecisionBoundaryMetrics:
     return DecisionBoundaryMetrics(
         goal_labels=np.array([0, 0, 1]),
-        distance_to_boundary=np.array([2.0, 1.0, 3.0]),
+        distance_to_decision_boundary=np.array([2.0, 1.0, 3.0]),
         crossing_times=[5.0],
         crossing_directions=[(0, 1)],
     )
@@ -67,7 +68,7 @@ def _boundary() -> DecisionBoundaryMetrics:
 def _pre_decision() -> PreDecisionMetrics:
     return PreDecisionMetrics(
         mean_speed=8.0,
-        min_speed=1.0,
+        min_observed_speed=1.0,
         heading_mean_direction=0.1,
         heading_circular_variance=0.4,
         heading_mean_resultant_length=0.6,
@@ -85,22 +86,14 @@ _CASES = [
         "VTE",
     ),
     (
-        VTESessionResult(
-            trial_results=[_vte_trial()],
-            mean_head_sweep=1.0,
-            std_head_sweep=0.5,
-            mean_speed=8.0,
-            std_speed=2.0,
-            n_vte_trials=1,
-            vte_fraction=1.0,
-        ),
+        VTESessionResult(trial_results=(_vte_trial(),)),
         {"n_trials", "n_vte_trials", "vte_fraction", "mean_head_sweep"},
         ("n_trials", 1),
         "VTE session",
     ),
     (
         _boundary(),
-        {"n_crossings", "mean_distance_to_boundary"},
+        {"n_crossings", "mean_distance_to_decision_boundary"},
         ("n_crossings", 1),
         "Decision boundary",
     ),
@@ -110,6 +103,7 @@ _CASES = [
             pre_decision=_pre_decision(),
             boundary=_boundary(),
             chosen_goal=1,
+            goal_regions=("left", "right"),
         ),
         {
             "entry_time",
@@ -128,9 +122,7 @@ _CASES = [
     ),
     (
         SubgoalEfficiencyResult(
-            segment_results=[_path_efficiency()],
-            mean_efficiency=0.83,
-            weighted_efficiency=0.85,
+            segment_results=(_path_efficiency(),),
             subgoal_positions=np.array([[5.0, 0.0]]),
         ),
         {"n_segments", "mean_efficiency", "weighted_efficiency"},
@@ -141,14 +133,19 @@ _CASES = [
         GoalDirectedMetrics(
             goal_bias=0.65,
             mean_approach_rate=-8.5,
-            time_to_goal=3.2,
+            time_to_reach_goal=3.2,
             min_distance_to_goal=1.0,
             goal_distance_at_start=20.0,
             goal_distance_at_end=2.0,
             goal_position=np.array([10.0, 0.0]),
             metric="geodesic",
         ),
-        {"goal_bias", "mean_approach_rate", "min_distance_to_goal", "time_to_goal"},
+        {
+            "goal_bias",
+            "mean_approach_rate",
+            "min_distance_to_goal",
+            "time_to_reach_goal",
+        },
         ("goal_bias", 0.65),
         "Goal-directed metrics",
     ),
@@ -193,6 +190,7 @@ def test_decision_analysis_str_composes_boundary():
         pre_decision=_pre_decision(),
         boundary=boundary,
         chosen_goal=1,
+        goal_regions=("left", "right"),
     )
     assert str(boundary) in str(result)
 
@@ -201,5 +199,6 @@ def test_decision_analysis_str_composes_boundary():
         pre_decision=_pre_decision(),
         boundary=None,
         chosen_goal=None,
+        goal_regions=("left",),
     )
     assert "Decision analysis" in str(no_boundary)

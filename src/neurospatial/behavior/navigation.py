@@ -15,7 +15,7 @@ Imports
 All navigation functions are importable from ``behavior.navigation``::
 
     from neurospatial.behavior.navigation import (
-        # Path progress and distance (from behavioral.py)
+        # Path progress and distance
         path_progress,
         distance_to_region,
         distance_to_boundary,
@@ -26,7 +26,7 @@ All navigation functions are importable from ``behavior.navigation``::
         graph_turn_sequence,
         goal_pair_direction_labels,
         heading_direction_labels,
-        # Path efficiency (from metrics/path_efficiency.py)
+        # Path efficiency
         PathEfficiencyResult,
         SubgoalEfficiencyResult,
         traveled_path_length,
@@ -35,7 +35,7 @@ All navigation functions are importable from ``behavior.navigation``::
         angular_efficiency,
         subgoal_efficiency,
         compute_path_efficiency,
-        # Goal-directed (from metrics/goal_directed.py)
+        # Goal-directed
         GoalDirectedMetrics,
         goal_vector,
         goal_direction,
@@ -110,8 +110,7 @@ References
 
 from __future__ import annotations
 
-from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -130,6 +129,7 @@ from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial._observation import ObservationSupport
+    from neurospatial.behavior._environment_paths import EnvironmentPaths
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
@@ -137,7 +137,7 @@ if TYPE_CHECKING:
 
 
 __all__ = [  # noqa: RUF022
-    # Path progress and distance (from behavioral.py)
+    # Path progress and distance
     "cost_to_goal",
     "distance_to_boundary",
     "distance_to_region",
@@ -148,7 +148,7 @@ __all__ = [  # noqa: RUF022
     "path_progress",
     "time_to_goal",
     "trials_to_region_arrays",
-    # Path efficiency (from metrics/path_efficiency.py)
+    # Path efficiency
     "PathEfficiencyResult",
     "SubgoalEfficiencyResult",
     "angular_efficiency",
@@ -157,7 +157,7 @@ __all__ = [  # noqa: RUF022
     "subgoal_efficiency",
     "time_efficiency",
     "traveled_path_length",
-    # Goal-directed (from metrics/goal_directed.py)
+    # Goal-directed
     "GoalDirectedMetrics",
     "approach_rate",
     "compute_goal_directed_metrics",
@@ -173,6 +173,35 @@ __all__ = [  # noqa: RUF022
 # =============================================================================
 
 
+def _result_error(result: str, what: str, *, why: str, fix: str) -> ValueError:
+    """A ValueError for an invalid result field, naming the result class."""
+    return ValueError(_format_error(f"{result}: {what}", why=why, fix=fix))
+
+
+def _require_result_metric(result: str, metric: object) -> None:
+    """Raise unless ``metric`` is ``"euclidean"`` or ``"geodesic"``."""
+    if metric not in ("euclidean", "geodesic"):
+        raise _result_error(
+            result,
+            f"metric={metric!r} is not 'euclidean' or 'geodesic'.",
+            why="the result records which distance its lengths were measured with.",
+            fix="pass metric='euclidean' or metric='geodesic'.",
+        )
+
+
+def _require_length(result: str, name: str, value: float) -> float:
+    """Return ``value`` as a float; raise if it is negative (NaN and inf pass)."""
+    value = float(value)
+    if value < 0:
+        raise _result_error(
+            result,
+            f"{name}={value!r} is negative.",
+            why="a path length, distance or duration is never negative.",
+            fix=f"pass {name} >= 0, or NaN when it was not measured.",
+        )
+    return value
+
+
 @dataclass(frozen=True, repr=False, eq=False)
 class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     """Path efficiency metrics for a trajectory segment.
@@ -180,56 +209,85 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     Attributes
     ----------
     traveled_length : float
-        Distance traveled (sum of step lengths), in environment units. From
-        compute_path_efficiency(): the distance over observed intervals, NaN
-        when no interval was observed. From subgoal_efficiency(): the length of
-        the segment as one continuous polyline, 0.0 for a segment of fewer than
-        two samples.
+        Distance traveled over the observed steps, in environment units. NaN
+        when no step was observed.
     shortest_length : float
-        Geodesic or Euclidean distance from start to goal, in environment units.
-        Is ``inf`` when the goal is unreachable under the geodesic metric (the
-        goal lies on a disconnected component); it is not clamped to ``0.0``.
-        From subgoal_efficiency(): 0.0 for a segment of fewer than two samples
-        (no start-to-goal distance is measured).
+        Length of the shortest path from the start to the goal, in
+        environment units. Is ``inf`` when the goal is unreachable under the
+        geodesic metric (the goal lies on a disconnected component); it is
+        not clamped to ``0.0``.
     efficiency : float
-        Ratio shortest_length / traveled_length. Is ``(0, 1]`` when the path
-        ends at the goal, and can exceed 1 when it does not. Is 0.0 when a
-        geodesic step is infinite. Value of 1.0 indicates optimal path taken.
-        NaN if traveled_length is 0 or shortest_length is ``inf`` (unreachable
-        goal); from compute_path_efficiency() also NaN if the path is not
-        completely observed, and from subgoal_efficiency() for a segment of
-        fewer than two samples.
+        Derived: ``shortest_length / traveled_length`` when the path is
+        ``fully_observed``. Is ``(0, 1]`` when the path ends at the goal, and
+        can exceed 1 when it does not. Is 0.0 when a geodesic step is
+        infinite (it crosses between disconnected parts of the environment).
+        NaN when the path is not fully observed, ``traveled_length`` is 0 or
+        NaN, or ``shortest_length`` is not finite.
     time_efficiency : float or None
         Ratio T_optimal / T_actual if reference_speed provided, else None.
     angular_efficiency : float
-        1 - mean(|delta_theta|) / pi. Range [0, 1].
-        Value of 1.0 indicates heading directly toward goal at all times.
-        From compute_path_efficiency(): NaN unless the path is completely
-        observed; 1.0 for a complete path of two samples (no turns possible).
-        From subgoal_efficiency(): 1.0 for a segment of fewer than three samples.
+        ``1 - mean(angle) / pi``, where ``angle`` is the angle between each
+        observed step and the direction from the step's start to the goal
+        (see :func:`angular_efficiency`). Range [0, 1]: 1.0 for a run
+        straight toward the goal, 0.5 for steps perpendicular to it, 0.0 for
+        a run straight away. NaN when no step has a defined direction (no
+        movement, or fewer than two observed samples).
     start_position : NDArray[np.float64]
         Start position coordinates, shape (n_dims,).
     goal_position : NDArray[np.float64]
         Goal position coordinates, shape (n_dims,).
-    metric : str
-        Distance metric used ("geodesic" or "euclidean").
+    metric : {"euclidean", "geodesic"}
+        Distance metric used.
+    fully_observed : bool
+        True when every step from the first to the last observed sample is
+        usable: missing samples are bridged within ``max_gap`` and there is
+        no longer gap, epoch edge or declared break. Only then does
+        ``traveled_length`` cover the whole route, so only then is
+        ``efficiency`` defined.
     """
 
     traveled_length: float
     shortest_length: float
-    efficiency: float
+    efficiency: float = field(init=False)
     time_efficiency: float | None
     angular_efficiency: float
     start_position: NDArray[np.float64]
     goal_position: NDArray[np.float64]
-    metric: str
+    metric: Literal["euclidean", "geodesic"]
+    fully_observed: bool
 
     def __post_init__(self) -> None:
-        """Own read-only copies of the start and goal positions."""
+        """Validate the fields, derive the efficiency and own the positions."""
+        name = "PathEfficiencyResult"
+        _require_result_metric(name, self.metric)
+        traveled = _require_length(name, "traveled_length", self.traveled_length)
+        shortest = _require_length(name, "shortest_length", self.shortest_length)
+        start = np.asarray(self.start_position, dtype=float)
+        goal = np.asarray(self.goal_position, dtype=float)
+        if start.ndim != 1 or start.shape != goal.shape:
+            raise _result_error(
+                name,
+                f"start_position has shape {start.shape} and goal_position "
+                f"{goal.shape}.",
+                why="both are one position in the same coordinates.",
+                fix="pass two arrays of shape (n_dims,).",
+            )
+        object.__setattr__(self, "traveled_length", traveled)
+        object.__setattr__(self, "shortest_length", shortest)
+        object.__setattr__(self, "angular_efficiency", float(self.angular_efficiency))
+        if self.time_efficiency is not None:
+            object.__setattr__(self, "time_efficiency", float(self.time_efficiency))
+        object.__setattr__(self, "fully_observed", bool(self.fully_observed))
+        object.__setattr__(self, "start_position", start)
+        object.__setattr__(self, "goal_position", goal)
+        defined = self.fully_observed and traveled > 0 and np.isfinite(shortest)
+        object.__setattr__(
+            self, "efficiency", shortest / traveled if defined else float("nan")
+        )
         self._own_arrays()
 
     def is_efficient(self, threshold: float = 0.8) -> bool:
-        """Return True if path efficiency exceeds threshold.
+        """Return True if the path efficiency is at least ``threshold``.
 
         Parameters
         ----------
@@ -239,11 +297,10 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         bool
-            True if efficiency > threshold and efficiency is not NaN.
+            True if ``efficiency >= threshold``; False when the efficiency
+            is NaN (not measured).
         """
-        if np.isnan(self.efficiency):
-            return False
-        return self.efficiency > threshold
+        return bool(self.efficiency >= threshold)
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar path-efficiency metrics.
@@ -285,24 +342,50 @@ class SubgoalEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
 
     Attributes
     ----------
-    segment_results : list[PathEfficiencyResult]
-        Efficiency result for each segment between subgoals.
-    mean_efficiency : float
-        Unweighted mean efficiency across segments.
-    weighted_efficiency : float
-        Efficiency weighted by segment shortest_length.
-        Gives more weight to longer segments.
+    segment_results : tuple of PathEfficiencyResult
+        Efficiency result for each segment, one per subgoal.
     subgoal_positions : NDArray[np.float64]
         Positions of subgoals, shape (n_subgoals, n_dims).
+    mean_efficiency : float
+        Derived: unweighted mean of the segment efficiencies, over the
+        segments whose efficiency is defined. NaN when none is.
+    weighted_efficiency : float
+        Derived: mean of the defined segment efficiencies weighted by each
+        segment's ``shortest_length``, so longer segments count more. NaN
+        when no efficiency is defined or their shortest lengths sum to 0.
     """
 
-    segment_results: list[PathEfficiencyResult]
-    mean_efficiency: float
-    weighted_efficiency: float
+    segment_results: tuple[PathEfficiencyResult, ...]
     subgoal_positions: NDArray[np.float64]
+    mean_efficiency: float = field(init=False)
+    weighted_efficiency: float = field(init=False)
 
     def __post_init__(self) -> None:
-        """Own a read-only copy of the subgoal positions."""
+        """Validate the segments, derive the means and own the subgoals."""
+        segments = tuple(self.segment_results)
+        subgoals = np.asarray(self.subgoal_positions, dtype=float)
+        if subgoals.ndim != 2 or len(segments) != len(subgoals):
+            raise _result_error(
+                "SubgoalEfficiencyResult",
+                f"{len(segments)} segment results for subgoal_positions of "
+                f"shape {subgoals.shape}.",
+                why="each subgoal ends one segment.",
+                fix="pass one segment result per row of subgoal_positions.",
+            )
+        object.__setattr__(self, "segment_results", segments)
+        object.__setattr__(self, "subgoal_positions", subgoals)
+        efficiency = np.array([seg.efficiency for seg in segments], dtype=float)
+        weights = np.array([seg.shortest_length for seg in segments], dtype=float)
+        defined = np.isfinite(efficiency)
+        mean = float(np.mean(efficiency[defined])) if defined.any() else np.nan
+        total = float(np.sum(weights[defined]))
+        weighted = (
+            float(np.sum(efficiency[defined] * weights[defined]) / total)
+            if total > 0
+            else np.nan
+        )
+        object.__setattr__(self, "mean_efficiency", mean)
+        object.__setattr__(self, "weighted_efficiency", weighted)
         self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
@@ -346,22 +429,24 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
         Mean rate of distance change in environment units per second.
         Negative values indicate approaching the goal.
         Interpretation: -10 cm/s means closing 10 cm per second on average.
-    time_to_goal : float or None
-        Time until goal region entered (seconds). None if goal not reached.
+    time_to_reach_goal : float or None
+        Seconds from the first measured sample to the first sample within
+        ``goal_radius`` of the goal. None when no ``goal_radius`` was given
+        (arrival not tested); NaN when the goal was never reached. Not to be
+        confused with :func:`time_to_goal`, which returns a per-sample array.
     min_distance_to_goal : float
-        Closest straight-line distance to the goal over observed samples
-        (finite coordinates), in environment units. NaN when no sample is
-        observed.
+        Closest distance to the goal (under ``metric``) over the measured
+        samples, in environment units. NaN when no sample is measured.
     goal_distance_at_start : float
-        Distance to the goal at the first observed sample, in environment
-        units. NaN when no sample is observed.
+        Distance to the goal at the first measured sample, in environment
+        units. NaN when no sample is measured.
     goal_distance_at_end : float
-        Distance to the goal at the last observed sample, in environment
-        units. NaN when no sample is observed.
+        Distance to the goal at the last measured sample, in environment
+        units. NaN when no sample is measured.
     goal_position : NDArray[np.float64]
         Goal position used for computation, shape (n_dims,).
-    metric : str
-        Distance metric used ("geodesic" or "euclidean").
+    metric : {"euclidean", "geodesic"}
+        Distance metric used.
 
     Examples
     --------
@@ -385,19 +470,45 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
 
     goal_bias: float
     mean_approach_rate: float
-    time_to_goal: float | None
+    time_to_reach_goal: float | None
     min_distance_to_goal: float
     goal_distance_at_start: float
     goal_distance_at_end: float
     goal_position: NDArray[np.float64]
-    metric: str
+    metric: Literal["euclidean", "geodesic"]
 
     def __post_init__(self) -> None:
-        """Own a read-only copy of the goal position."""
+        """Validate the fields and own a read-only copy of the goal position."""
+        name = "GoalDirectedMetrics"
+        _require_result_metric(name, self.metric)
+        for length in (
+            "min_distance_to_goal",
+            "goal_distance_at_start",
+            "goal_distance_at_end",
+        ):
+            value = _require_length(name, length, getattr(self, length))
+            object.__setattr__(self, length, value)
+        if self.time_to_reach_goal is not None:
+            object.__setattr__(
+                self,
+                "time_to_reach_goal",
+                _require_length(name, "time_to_reach_goal", self.time_to_reach_goal),
+            )
+        object.__setattr__(self, "goal_bias", float(self.goal_bias))
+        object.__setattr__(self, "mean_approach_rate", float(self.mean_approach_rate))
+        goal = np.asarray(self.goal_position, dtype=float)
+        if goal.ndim != 1:
+            raise _result_error(
+                name,
+                f"goal_position has shape {goal.shape}.",
+                why="the goal is one position.",
+                fix="pass an array of shape (n_dims,).",
+            )
+        object.__setattr__(self, "goal_position", goal)
         self._own_arrays()
 
     def is_goal_directed(self, threshold: float = 0.3) -> bool:
-        """Return True if goal bias exceeds threshold.
+        """Return True if the goal bias is at least ``threshold``.
 
         Parameters
         ----------
@@ -407,9 +518,10 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         bool
-            True if goal_bias > threshold.
+            True if ``goal_bias >= threshold``; False when the goal bias is
+            NaN (the animal never moved).
         """
-        return self.goal_bias > threshold
+        return bool(self.goal_bias >= threshold)
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar goal-directed metrics.
@@ -422,7 +534,7 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
             "goal_distance_at_start": self.goal_distance_at_start,
             "goal_distance_at_end": self.goal_distance_at_end,
             "min_distance_to_goal": self.min_distance_to_goal,
-            "time_to_goal": self.time_to_goal,
+            "time_to_reach_goal": self.time_to_reach_goal,
         }
 
     def __str__(self) -> str:
@@ -434,16 +546,71 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
             f"{self.goal_distance_at_end:.1f} units",
             f"  Closest approach: {self.min_distance_to_goal:.1f} units",
         ]
-        if self.time_to_goal is not None:
-            lines.append(f"  Time to goal: {self.time_to_goal:.2f} s")
+        if self.time_to_reach_goal is None:
+            lines.append("  Time to reach goal: not tested (no goal_radius)")
+        elif np.isnan(self.time_to_reach_goal):
+            lines.append("  Time to reach goal: not reached")
         else:
-            lines.append("  Time to goal: not reached")
+            lines.append(f"  Time to reach goal: {self.time_to_reach_goal:.2f} s")
         return "\n".join(lines)
 
 
 # =============================================================================
-# Trial-Based Navigation Functions (from behavioral.py)
+# Trial-Based Navigation Functions
 # =============================================================================
+
+
+def _warn_if_no_trial_overlaps(
+    times: NDArray[np.float64],
+    trials: list[Trial],
+    *,
+    call: str,
+    result: str,
+) -> None:
+    """Warn when trials exist but none of them contains a sample of ``times``.
+
+    That almost always means the trials and ``times`` are on different
+    clocks (for example milliseconds against seconds), which would otherwise
+    give a silent all-missing result.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Sample times in seconds.
+    trials : list of Trial
+        Trials with ``start_time`` and ``end_time`` in seconds.
+    call : str
+        Public function name for the message.
+    result : str
+        What the caller returns everywhere in that case, e.g. ``"NaN"``.
+    """
+    import warnings
+
+    from neurospatial._stacklevel import _external_stacklevel
+
+    if len(trials) == 0 or len(times) == 0:
+        return
+    starts = np.array([trial.start_time for trial in trials], dtype=np.float64)
+    ends = np.array([trial.end_time for trial in trials], dtype=np.float64)
+    # Each trial's first sample at or after its start; it is inside the trial
+    # when it is not after the trial's end.
+    ordered = np.sort(times)
+    first = np.searchsorted(ordered, starts, side="left")
+    inside = (first < len(ordered)) & (
+        ordered[np.minimum(first, len(ordered) - 1)] <= ends
+    )
+    if inside.any():
+        return
+    warnings.warn(
+        f"{call}: none of the {len(trials)} trials (spanning "
+        f"[{starts.min():g}, {ends.max():g}] s) contains a sample of times "
+        f"(spanning [{ordered[0]:g}, {ordered[-1]:g}] s), so every output is "
+        f"{result}. Fix: check that the trials and times are on the same "
+        "clock, in seconds (for example trials from segment_trials() on the "
+        "same recording).",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
 
 
 def trials_to_region_arrays(
@@ -472,6 +639,12 @@ def trials_to_region_arrays(
     goal_bins : NDArray[np.int_], shape (n_samples,)
         Goal bin index at each timepoint (-1 outside trials).
 
+    Warns
+    -----
+    UserWarning
+        If there are trials but none contains a sample of ``times`` (usually
+        trials on a different clock).
+
     Notes
     -----
     This function has a small loop over trials (typically 10-100), but
@@ -497,7 +670,7 @@ def trials_to_region_arrays(
     ...     trials, times, env
     ... )  # doctest: +SKIP
     >>> progress = path_progress(
-    ...     env, position_bins, start_bins, goal_bins
+    ...     position_bins, env, start_bins=start_bins, goal_bins=goal_bins
     ... )  # doctest: +SKIP
     >>> dist = distance_to_region(
     ...     position_bins, env, target_bins=goal_bins
@@ -508,6 +681,10 @@ def trials_to_region_arrays(
     path_progress : Compute normalized path progress
     distance_to_region : Distance to target region
     """
+    times = np.asarray(times, dtype=np.float64)
+    _warn_if_no_trial_overlaps(
+        times, trials, call="trials_to_region_arrays()", result="-1"
+    )
     # Initialize arrays with -1 (invalid bin)
     start_bins = np.full(len(times), -1, dtype=np.int_)
     goal_bins = np.full(len(times), -1, dtype=np.int_)
@@ -533,9 +710,102 @@ def trials_to_region_arrays(
     return start_bins, goal_bins
 
 
+def _validated_position_bins(
+    position_bins: ArrayLike, env: Environment, *, operation: str
+) -> NDArray[np.intp]:
+    """Check per-sample bin indices: integers in ``[0, n_bins)`` or ``-1``.
+
+    ``-1`` is ``env.bin_at``'s marker for a position outside the environment
+    and becomes NaN downstream. Any other negative index would silently
+    count from the end of the bin arrays, and a float bin would be truncated
+    to an unrelated bin, so both are refused.
+
+    Parameters
+    ----------
+    position_bins : array-like of int, shape (n_samples,)
+        Bin index at each sample.
+    env : Environment
+        Environment the bins belong to.
+    operation : str
+        The call named in errors, e.g. ``"path_progress()"``.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_samples,)
+    """
+    from neurospatial.environment._targets import _validate_target_bins
+
+    if np.ndim(position_bins) != 1:
+        raise ValueError(
+            _format_error(
+                f"{operation} got position_bins with shape {np.shape(position_bins)}.",
+                why="position_bins holds one bin index per sample.",
+                fix="pass a 1-D integer array, for example env.bin_at(positions)",
+            )
+        )
+    return _validate_target_bins(
+        position_bins,
+        n_bins=env.n_bins,
+        coordinates=env.coordinate_system,
+        operation=operation,
+        argument="position_bins",
+        allow_missing=True,
+    )
+
+
+def _bin_distances(
+    env: Environment,
+    bins: NDArray[np.intp],
+    targets: NDArray[np.intp],
+    *,
+    metric: str,
+    call: str,
+) -> NDArray[np.float64]:
+    """Distance from each bin center to its target bin center under ``metric``.
+
+    Parameters
+    ----------
+    env : Environment
+    bins, targets : ndarray of int, shape (n,)
+        Bin indices; a pair with a ``-1`` gives NaN.
+    metric : {"euclidean", "geodesic"}
+    call : str
+        Public function name, used in messages.
+
+    Returns
+    -------
+    ndarray, shape (n,)
+        ``inf`` (geodesic) where the target cannot be reached.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
+    """
+    if metric == "geodesic":
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        return environment_paths(env, call=call).between_bins(bins, targets)
+    require_cartesian(
+        env.coordinate_system,
+        f"{call}(metric='euclidean')",
+        why=(
+            "The straight-line distance between bin centers treats them as "
+            "Cartesian positions."
+        ),
+        fix="use the allocentric environment the positions were recorded in",
+    )
+    centers = env.bin_centers
+    distances: NDArray[np.float64] = np.linalg.norm(
+        centers[np.maximum(targets, 0)] - centers[np.maximum(bins, 0)], axis=1
+    )
+    distances[(bins < 0) | (targets < 0)] = np.nan
+    return distances
+
+
 def path_progress(
     position_bins: NDArray[np.int_],
-    env: Environment,
+    env: Environment[CartesianSystem],
     *,
     start_bins: NDArray[np.int_],
     goal_bins: NDArray[np.int_],
@@ -543,14 +813,17 @@ def path_progress(
 ) -> NDArray[np.float64]:
     """Compute normalized path progress from start to goal (0 -> 1).
 
-    Fully vectorized computation over entire session. For each timepoint t:
-        progress[t] = distance(start_bins[t], position_bins[t]) /
-                      distance(start_bins[t], goal_bins[t])
+    Fully vectorized computation over entire session. For each timepoint t,
+    with ``d_start = distance(start_bins[t], position_bins[t])`` and
+    ``d_goal = distance(position_bins[t], goal_bins[t])``::
+
+        progress[t] = d_start / (d_start + d_goal)
 
     Parameters
     ----------
     position_bins : NDArray[np.int_], shape (n_samples,)
-        Current bin index at each timepoint.
+        Current bin index at each timepoint, as from ``env.bin_at``; ``-1``
+        marks a sample outside the environment (NaN).
     env : Environment
         Spatial environment.
     start_bins : int or NDArray[np.int_], shape (n_samples,)
@@ -561,39 +834,55 @@ def path_progress(
         Goal bin for each timepoint, or one goal bin for every timepoint,
         with the same ``-1`` rule.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
-        Distance metric.
+        ``'euclidean'`` is the straight-line distance. ``'geodesic'`` is the
+        length of the shortest path between two positions that stays inside the
+        environment: it goes around walls and never leaves the environment, and
+        on a track it runs along the track's centerline. Each bin is measured
+        from its center.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Path progress from 0 to 1 at each timepoint. NaN for invalid bins (-1)
-        or when no path exists between bins.
+        Path progress at each timepoint: 0 at the start, 1 only at the goal.
+        NaN for invalid bins (-1), when no path exists between bins, or when
+        start and goal are the same bin and the sample is elsewhere.
 
     Raises
     ------
+    TypeError
+        If ``position_bins`` (or a start or goal) is not integer bin indices.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
+    ValueError
+        If ``start_bins`` or ``goal_bins`` has neither one nor ``n_samples``
+        entries, or ``metric`` is not recognized.
     CartesianOnlyError
-        If ``metric="euclidean"`` and ``env`` is polar. Use
-        ``metric="geodesic"``.
+        If ``env`` is an egocentric polar environment, whose bins are
+        (distance, angle), not positions.
 
     Notes
     -----
-    This function is fully vectorized - no loops over timepoints. The only
-    loop required is constructing start_bins/goal_bins arrays from trial
-    information (see examples).
+    The geodesic distance from a start or goal is grown once per distinct
+    start or goal bin and kept on the environment, so per-trial start and
+    goal arrays cost one field per distinct bin.
 
-    **Performance strategy (automatic)**:
-
-    - **Small environments** (n_bins < 5000): Precomputes O(n_bins^2) distance matrix
-      (~200 MB for 5000 bins). Fast vectorized lookups.
-    - **Large environments** (>=5000 bins): Computes per-pair distance fields.
-      Memory-efficient but slower for many unique pairs.
+    **What progress measures**: the distance already covered from the start
+    as a fraction of the shortest route from the start through the current
+    position to the goal. On the shortest start-to-goal path this is the
+    fraction of that path covered. Off it (a wrong arm of a branched maze, or
+    a detour) the distance still left to the goal keeps progress below 1, so
+    1.0 means the animal is at the goal. The ratio lies in ``[0, 1]`` by
+    construction and needs no clipping.
 
     **Edge cases**:
 
-    - start_bin == goal_bin: Returns 1.0 (already at goal)
+    - start_bin == goal_bin: 1.0 on the goal bin; NaN elsewhere, since the
+      ratio is 0/0 and there is no path to make progress along
     - No path exists (graph disconnected): Returns NaN (distance = inf)
     - Invalid bins (-1): Returns NaN
-    - Detours (progress > 1): Clipped to 1.0
+    - Wrong arm or detour: below 1.0 by the share of the route still left
+      to the goal; use :func:`distance_to_region` to the goal for the
+      distance itself
 
     Examples
     --------
@@ -619,22 +908,12 @@ def path_progress(
     trials_to_region_arrays : Helper to construct start/goal arrays from trials
     distance_to_region : Distance to target region over time
     """
-    if metric == "euclidean":
-        require_cartesian(
-            env.coordinate_system,
-            "path_progress(metric='euclidean')",
-            why=(
-                "The straight-line distance between bin centers treats them as "
-                "Cartesian positions."
-            ),
-            fix=(
-                "use metric='geodesic', which follows the connectivity graph and its "
-                "physical edge lengths"
-            ),
-        )
-
+    _require_path_metric(metric, call="path_progress")
     from neurospatial.environment import _validate_sample_targets
 
+    position_bins = _validated_position_bins(
+        position_bins, env, operation="path_progress()"
+    )
     n_samples = len(position_bins)
     # A single start or goal applies to every sample.
     start_bins, goal_bins = (
@@ -652,75 +931,37 @@ def path_progress(
         for bins, argument in ((start_bins, "start_bins"), (goal_bins, "goal_bins"))
     )
 
-    # Import distance functions
-    from neurospatial.ops.distance import (
-        euclidean_distance_matrix,
-        geodesic_distance_matrix,
+    # Distance from the start, grown from each start bin, and to the goal,
+    # grown from each goal bin.
+    distances_from_start = _bin_distances(
+        env, position_bins, start_bins, metric=metric, call="path_progress"
+    )
+    distances_to_goal = _bin_distances(
+        env, position_bins, goal_bins, metric=metric, call="path_progress"
     )
 
-    # Choose strategy based on environment size
-    if env.n_bins < 5000:
-        # Small environment - precompute full distance matrix
-        if metric == "geodesic":
-            dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
-        else:  # euclidean
-            dist_matrix = euclidean_distance_matrix(env.bin_centers)
-
-        # Vectorized lookup: distance from start to current position
-        distances_from_start = dist_matrix[start_bins, position_bins]
-
-        # Vectorized lookup: total distance from start to goal
-        total_distances = dist_matrix[start_bins, goal_bins]
-
-    else:
-        # Large environment - compute per-unique-pair distance fields
-        from neurospatial.ops.distance import distance_field
-
-        # Initialize arrays
-        distances_from_start = np.full(n_samples, np.nan)
-        total_distances = np.full(n_samples, np.nan)
-
-        # Find unique (start, goal) pairs
-        valid_mask = (start_bins >= 0) & (goal_bins >= 0)
-        valid_pairs = np.column_stack([start_bins[valid_mask], goal_bins[valid_mask]])
-        unique_pairs = np.unique(valid_pairs, axis=0)
-
-        # Compute distance field for each unique pair
-        for start_bin, goal_bin in unique_pairs:
-            pair_mask = (start_bins == start_bin) & (goal_bins == goal_bin)
-
-            start_dist_field = distance_field(
-                env.connectivity,
-                [start_bin],
-                metric=metric,
-                bin_centers=env.bin_centers if metric == "euclidean" else None,
-            )
-
-            distances_from_start[pair_mask] = start_dist_field[position_bins[pair_mask]]
-            total_distances[pair_mask] = start_dist_field[goal_bin]
-
-    # Compute progress
     with np.errstate(divide="ignore", invalid="ignore"):
-        progress = distances_from_start / total_distances
+        progress = distances_from_start / (distances_from_start + distances_to_goal)
 
-    # Handle edge cases
+    # With start == goal the ratio is 0/0. A sample on the goal has arrived
+    # (1.0); any other sample has no defined progress (NaN), not "arrived".
     same_start_goal = start_bins == goal_bins
-    progress[same_start_goal] = 1.0
+    progress[same_start_goal] = np.where(
+        position_bins[same_start_goal] == goal_bins[same_start_goal], 1.0, np.nan
+    )
 
-    disconnected = ~np.isfinite(total_distances) | ~np.isfinite(distances_from_start)
+    disconnected = ~np.isfinite(distances_to_goal) | ~np.isfinite(distances_from_start)
     progress[disconnected] = np.nan
 
     invalid_bins = (start_bins == -1) | (goal_bins == -1) | (position_bins == -1)
     progress[invalid_bins] = np.nan
-
-    progress = np.clip(progress, 0.0, 1.0)
 
     return progress
 
 
 def distance_to_region(
     position_bins: NDArray[np.int_],
-    env: Environment,
+    env: Environment[CartesianSystem],
     *,
     target_bins: NDArray[np.int_] | int,
     metric: DistanceMetric = "geodesic",
@@ -734,7 +975,8 @@ def distance_to_region(
     Parameters
     ----------
     position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices over time.
+        Bin indices over time, as from ``env.bin_at``; ``-1`` marks a sample
+        outside the environment (NaN).
     env : Environment
         Spatial environment.
     target_bins : NDArray[np.int_] or int
@@ -746,27 +988,38 @@ def distance_to_region(
           ``-1`` marks a sample with no target, which gives NaN.
           This allows dynamic goals.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
-        Distance metric.
+        ``'euclidean'`` is the straight-line distance. ``'geodesic'`` is the
+        length of the shortest path between two positions that stays inside the
+        environment: it goes around walls and never leaves the environment, and
+        on a track it runs along the track's centerline. Each bin is measured
+        from its center.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
         Distance from current position to target at each timepoint.
-        Units match environment coordinates (e.g., cm).
+        Units match environment coordinates (e.g., cm). NaN where the
+        position or the target is ``-1``; ``inf`` (geodesic) where the
+        target cannot be reached.
 
     Raises
     ------
+    TypeError
+        If ``position_bins`` or ``target_bins`` is not integer bin indices.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
+    ValueError
+        If ``metric`` is not recognized.
     CartesianOnlyError
-        If ``metric="euclidean"`` and ``env`` is polar. Use
-        ``metric="geodesic"``.
+        If ``env`` is an egocentric polar environment, whose bins are
+        (distance, angle), not positions.
 
     Notes
     -----
-    **Performance strategy (automatic)**:
-
-    - **Scalar targets**: Delegates to ``env.distance_to()`` for efficiency.
-    - **Array targets (small env)**: Precomputes distance matrix.
-    - **Array targets (large env)**: Computes per-unique-target distance fields.
+    The geodesic distance is grown once per distinct target bin and kept on
+    the environment. ``env.distance_to`` and ``env.distance_between``
+    measure along the bin graph instead (bin center to bin center through
+    neighboring bins), which reads an oblique straight run as a staircase.
 
     Examples
     --------
@@ -779,27 +1032,17 @@ def distance_to_region(
     --------
     path_progress : Normalized progress along path
     cost_to_goal : Distance with terrain/learned cost
-    distance_to_boundary : Distance to the environment's edge, obstacles or a
-        region's boundary
+    distance_to_boundary : Distance to the environment's edge or a region's
+        boundary
     distance_to_reward : Distance to the reward location at each sample
     neurospatial.ops.nearest_boundary : Exact distance and direction to walls
     """
-    if metric == "euclidean":
-        require_cartesian(
-            env.coordinate_system,
-            "distance_to_region(metric='euclidean')",
-            why=(
-                "The straight-line distance between bin centers treats them as "
-                "Cartesian positions."
-            ),
-            fix=(
-                "use metric='geodesic', which follows the connectivity graph and its "
-                "physical edge lengths"
-            ),
-        )
-
+    _require_path_metric(metric, call="distance_to_region")
     from neurospatial.environment import _validate_sample_targets
 
+    position_bins = _validated_position_bins(
+        position_bins, env, operation="distance_to_region()"
+    )
     targets, per_sample = _validate_sample_targets(
         target_bins,
         n_samples=len(position_bins),
@@ -809,48 +1052,13 @@ def distance_to_region(
         argument="target_bins",
     )
 
-    if not per_sample:
-        (target,) = targets
-        dist_field = env.distance_to(bins=target, metric=metric)
-        distances = dist_field[position_bins].astype(np.float64)
-
-        invalid_mask = position_bins == -1
-        distances[invalid_mask] = np.nan
-        return distances
-
-    else:
-        n_samples = len(position_bins)
-
-        if env.n_bins < 5000:
-            from neurospatial.ops.distance import (
-                euclidean_distance_matrix,
-                geodesic_distance_matrix,
-            )
-
-            if metric == "geodesic":
-                dist_matrix = geodesic_distance_matrix(
-                    env.connectivity, weight="distance"
-                )
-            else:
-                dist_matrix = euclidean_distance_matrix(env.bin_centers)
-
-            distances = dist_matrix[position_bins, targets]
-        else:
-            unique_targets = np.unique(targets)
-            unique_targets = unique_targets[unique_targets != -1]
-
-            distances = np.full(n_samples, np.nan, dtype=np.float64)
-
-            for target in unique_targets:
-                mask = targets == target
-                if np.any(mask):
-                    dist_field = env.distance_to(bins=target, metric=metric)
-                    distances[mask] = dist_field[position_bins[mask]]
-
-        invalid_mask = (position_bins == -1) | (targets == -1)
-        distances[invalid_mask] = np.nan
-
-        return distances
+    return _bin_distances(
+        env,
+        position_bins,
+        np.broadcast_to(targets if per_sample else targets[0], position_bins.shape),
+        metric=metric,
+        call="distance_to_region",
+    )
 
 
 def distance_to_reward(
@@ -893,13 +1101,14 @@ def distance_to_reward(
         Reward locations in environment coordinates. If None, each reward
         location is read from the tracked positions at its reward time (see
         Notes); a reward whose location cannot be read that way has an
-        unknown location.
+        unknown location. A NaN row is an unknown location.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
-        Distance metric:
-
-        - 'geodesic': Shortest-path distance respecting environment geometry
-          (walls, obstacles). Uses graph-based distances.
-        - 'euclidean': Straight-line L2 distance. Ignores obstacles.
+        ``'euclidean'`` is the straight-line distance between the position and
+        the reward location. ``'geodesic'`` is the length of the shortest path
+        between two positions that stays inside the environment: it goes around
+        walls and never leaves the environment, and on a track it runs along
+        the track's centerline. Both are measured from the position itself, not
+        its bin center.
     mode : {'nearest', 'last', 'next'}, default='nearest'
         Which reward to use for distance computation:
 
@@ -946,7 +1155,7 @@ def distance_to_reward(
         If reward_positions provided but doesn't match reward_times length.
         If positions dimensionality doesn't match environment.
         If ``times`` or ``reward_times`` contain non-finite values, or
-        ``positions`` contains an infinite value.
+        ``positions`` or ``reward_positions`` contains an infinite value.
         If ``times`` is not ascending when reward positions are inferred
         (no ``reward_positions`` given) or ``break_before`` is given.
         If ``max_gap`` is not positive, or ``epochs`` or ``break_before`` is
@@ -958,6 +1167,9 @@ def distance_to_reward(
         When some reward locations cannot be inferred from ``positions``,
         naming how many and why (outside the recorded span, in a gap longer
         than ``max_gap``, across a declared break or at missing positions).
+        When explicit ``reward_times`` fall outside the recorded span of
+        ``times`` (often a different clock, such as milliseconds), or a
+        known reward location lies outside the environment.
 
     Notes
     -----
@@ -965,12 +1177,13 @@ def distance_to_reward(
 
     When ``reward_positions`` is not provided, a reward exactly at an
     observed sample time uses that sample's position. Otherwise the position
-    is linearly interpolated between the two samples around the reward
-    time, but only when that interval is usable: no longer than ``max_gap``,
-    not crossed by a declared break, and observed at both ends. ``epochs``
-    play no part here. A reward in a tracking gap, across a recording join, next to a
-    missing sample or outside the recorded span has an unknown location, and
-    the samples that select it get NaN. They never fall back to another
+    is linearly interpolated between the nearest observed samples before and
+    after the reward time. A missing sample (a NaN row) between them is
+    bridged like a deleted row when those observed samples are no more than
+    ``max_gap`` apart; only a longer gap, a declared break between them, or a
+    reward before the first or after the last observed position leaves the
+    location unknown. ``epochs`` play no part here. The samples that select a
+    reward of unknown location get NaN; they never fall back to another
     reward or to the nearest recorded position. Provide explicit
     ``reward_positions`` (for example the reward port's coordinates) when the
     tracked position at the reward time is not reliable.
@@ -986,10 +1199,9 @@ def distance_to_reward(
 
     **Performance**:
 
-    This function computes distance fields for each unique reward location,
-    which is O(V log V + E) per location using Dijkstra's algorithm. For
-    many unique reward locations, consider caching or using Euclidean
-    distances.
+    The geodesic distance is grown once per bin holding a reward location
+    and kept on the environment, so rewards delivered at the same ports
+    cost one field per port.
 
     Examples
     --------
@@ -998,7 +1210,7 @@ def distance_to_reward(
     >>> from neurospatial.behavior import distance_to_reward
     >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
     >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=1.0)
-    >>> times = np.arange(6) * 0.1  # seconds
+    >>> times = np.arange(6) / 10  # seconds
     >>> positions = np.c_[np.arange(6.0), np.full(6, 5.0)]  # running along y = 5
     >>> reward_times = np.array([0.3])  # the reward is at sample 3, x = 3
     >>> distance_to_reward(env, times, positions, reward_times, metric="euclidean")
@@ -1045,7 +1257,6 @@ def distance_to_reward(
     from neurospatial._intervals import as_intervals, validate_max_gap
     from neurospatial._observation import validate_break_before
     from neurospatial._validation import validate_finite
-    from neurospatial.ops.distance import distance_field
 
     require_cartesian(
         env.coordinate_system,
@@ -1109,13 +1320,20 @@ def distance_to_reward(
 
     # Get or interpolate reward positions
     if reward_positions is not None:
-        reward_positions = np.asarray(reward_positions, dtype=np.float64)
+        reward_positions = validate_finite(
+            np.asarray(reward_positions, dtype=np.float64),
+            name="reward_positions",
+            allow_nan=True,
+        )
+        if reward_positions.ndim == 1 and positions.shape[1] == 1:
+            reward_positions = reward_positions.reshape(-1, 1)
         if len(reward_positions) != len(reward_times):
             raise ValueError(
                 f"reward_positions and reward_times must have same length. "
                 f"Got reward_positions: {len(reward_positions)}, "
                 f"reward_times: {len(reward_times)}."
             )
+        _warn_rewards_outside_recording(times, reward_times)
     else:
         reward_positions = _infer_reward_positions(
             times,
@@ -1130,11 +1348,13 @@ def distance_to_reward(
 
     # Map reward positions to bins (unknown, NaN locations are -1)
     reward_bins = env.bin_at(reward_positions)
+    _warn_rewards_outside_environment(reward_positions, reward_bins)
 
     # Sort rewards by time for efficient lookup
     sorted_idx = np.argsort(reward_times)
     sorted_reward_times = reward_times[sorted_idx]
     sorted_reward_bins = reward_bins[sorted_idx]
+    sorted_reward_positions = reward_positions[sorted_idx]
     n_rewards = len(sorted_reward_times)
 
     # Recording of each sample (by declared breaks) and of each reward (by
@@ -1204,38 +1424,25 @@ def distance_to_reward(
     # Get reward bins for each sample
     target_bins = sorted_reward_bins[relevant_reward_idx]
 
-    # Compute distances
-    # Find unique target bins to minimize distance field computations
-    unique_targets = np.unique(target_bins[~no_reward])
-    unique_targets = unique_targets[unique_targets >= 0]  # Filter invalid bins
-
-    # Initialize distances
     distances = np.full(n_samples, np.nan, dtype=np.float64)
-
-    # Compute distance field for each unique target
-    for target_bin in unique_targets:
-        # Find samples with this target
-        mask = (target_bins == target_bin) & ~no_reward
-
-        if not np.any(mask):
-            continue
-
-        # Compute distance field from this reward location
-        dist_field = distance_field(
-            env.connectivity,
-            [int(target_bin)],
-            metric=metric,
-            bin_centers=env.bin_centers if metric == "euclidean" else None,
+    if metric == "euclidean":
+        # The exact straight-line distance between the position and the
+        # reward location, not between their bin centers.
+        distances = np.linalg.norm(
+            positions - sorted_reward_positions[relevant_reward_idx], axis=1
         )
+    else:
+        # The shortest path inside the environment from each position to
+        # its reward's location, one call per reward.
+        from neurospatial.behavior._environment_paths import environment_paths
 
-        # Look up distances for trajectory bins
-        sample_bins = position_bins[mask]
-        valid_bins = sample_bins >= 0
-        distances[mask] = np.where(
-            valid_bins,
-            dist_field[np.clip(sample_bins, 0, len(dist_field) - 1)],
-            np.nan,
-        )
+        paths = environment_paths(env, call="distance_to_reward")
+        usable = ~no_reward & (target_bins >= 0) & (position_bins >= 0)
+        for reward in np.unique(relevant_reward_idx[usable]):
+            mask = usable & (relevant_reward_idx == reward)
+            distances[mask] = paths.to_point(
+                positions[mask], sorted_reward_positions[reward]
+            )
 
     # Set NaN for samples with no relevant reward
     distances[no_reward] = np.nan
@@ -1251,6 +1458,67 @@ def distance_to_reward(
     distances[~sample_in_epochs] = np.nan
 
     return distances
+
+
+def _warn_rewards_outside_recording(
+    times: NDArray[np.float64], reward_times: NDArray[np.float64]
+) -> None:
+    """Warn when explicit reward times fall outside the recorded span.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Finite sample times in seconds.
+    reward_times : ndarray, shape (n_rewards,)
+        Finite reward times in seconds.
+    """
+    import warnings
+
+    from neurospatial._stacklevel import _external_stacklevel
+
+    first, last = float(times.min()), float(times.max())
+    outside = (reward_times < first) | (reward_times > last)
+    if outside.any():
+        warnings.warn(
+            f"{int(outside.sum())} of {len(reward_times)} reward_times fall "
+            f"outside the recorded span [{first:g}, {last:g}] s. Samples still "
+            "select the temporally nearest, last or next reward, so a reward "
+            "time on another clock (for example milliseconds against seconds) "
+            "gives plausible but wrong distances. Fix: check that reward_times "
+            "are on the same clock as times; ignore this warning if rewards "
+            "were truly delivered before or after tracking.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+
+def _warn_rewards_outside_environment(
+    reward_positions: NDArray[np.float64], reward_bins: NDArray[np.intp]
+) -> None:
+    """Warn when known reward locations lie in no bin of the environment.
+
+    Parameters
+    ----------
+    reward_positions : ndarray, shape (n_rewards, n_dims)
+        Reward locations; NaN rows are unknown (already reported).
+    reward_bins : ndarray of intp, shape (n_rewards,)
+        Bin of each location, -1 when it is outside or unknown.
+    """
+    import warnings
+
+    from neurospatial._stacklevel import _external_stacklevel
+
+    unlocated = (reward_bins < 0) & np.isfinite(reward_positions).all(axis=1)
+    if unlocated.any():
+        warnings.warn(
+            f"{int(unlocated.sum())} of {len(reward_bins)} reward locations lie "
+            "outside the environment, so samples whose selected reward is one "
+            "of them get NaN distance. Fix: check that reward_positions are in "
+            "the environment's coordinates and units, or build the environment "
+            "so it covers the reward sites.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
 
 
 def _same_recording(
@@ -1390,15 +1658,15 @@ def distance_to_boundary(
     env: Environment,
     positions: NDArray[np.float64],
     *,
-    boundary_type: Literal["edge", "obstacle", "region"] = "edge",
+    boundary_type: Literal["edge", "region"] = "edge",
     region_name: str | None = None,
     metric: DistanceMetric = "geodesic",
 ) -> NDArray[np.float64]:
     """
     Compute distance to environment boundary at each position.
 
-    Measures the instantaneous distance from trajectory positions to various
-    types of boundaries: environment edges, obstacles, or named regions.
+    Measures the instantaneous distance from trajectory positions to the
+    edge of the environment or to the boundary of a named region.
 
     Parameters
     ----------
@@ -1407,33 +1675,34 @@ def distance_to_boundary(
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Position coordinates at each sample. Must match environment
         dimensionality.
-    boundary_type : {'edge', 'obstacle', 'region'}, default='edge'
+    boundary_type : {'edge', 'region'}, default='edge'
         Type of boundary to compute distance to:
 
-        - 'edge': Distance to the edge of the environment's bins: bins
-          next to unoccupied space, including unvisited areas and holes.
-          This is not the distance to the arena's walls; for that use
+        - 'edge': Distance to the environment's boundary bins,
+          :attr:`Environment.boundary_bins`: on a grid, bins next to
+          unoccupied space (the outer rim and the rim of every hole); on a
+          track, the dead ends of its arms. It is measured to the boundary
+          bins' centers, about half a bin inside the walls, and is not the
+          exact distance to the arena's walls; for that use
           :func:`neurospatial.ops.nearest_boundary`.
-        - 'obstacle': Distance to obstacle regions. Requires environment
-          to have regions with ``obstacle=True`` attribute.
         - 'region': Distance to boundary of a specific named region.
           Requires ``region_name`` parameter.
     region_name : str, optional
         Name of region for boundary_type='region'. Required when
         boundary_type='region', ignored otherwise.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
-        Distance metric:
-
-        - 'geodesic': Shortest-path distance respecting environment geometry.
-        - 'euclidean': Straight-line L2 distance.
+        ``'euclidean'`` is the straight-line distance. ``'geodesic'`` is the
+        length of the shortest path between two positions that stays inside the
+        environment: it goes around walls and never leaves the environment, and
+        on a track it runs along the track's centerline.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Distance from each position to the center of the nearest boundary
-        bin, so it is quantized to bin centers.
-        Units match environment coordinates (e.g., cm).
-        Returns NaN for positions outside the environment.
+        Distance from each position (not its bin center) to the center of
+        the nearest boundary bin, in environment units (e.g., cm). NaN for
+        positions outside the environment or missing (NaN rows); ``inf``
+        (geodesic) where no boundary bin can be reached.
 
     Raises
     ------
@@ -1446,32 +1715,25 @@ def distance_to_boundary(
     -----
     **Boundary detection**:
 
-    - **edge**: Finds bins adjacent to unoccupied space. A bin is an edge
-      bin if any of its graph neighbors are not in the environment.
-    - **obstacle**: Finds bins adjacent to obstacle regions. Obstacles
-      are regions marked with ``obstacle=True`` during annotation.
+    - **edge**: :attr:`Environment.boundary_bins`, the layout's own rule
+      (an inactive or missing lattice neighbor on grids and hexagons, the
+      outline of the union on meshes and polygon cells, dead ends on
+      tracks).
     - **region**: Finds bins at the boundary of the named region. Boundary
       bins are region bins adjacent to non-region bins.
 
     **Performance**:
 
-    The distance field is computed once and cached for the duration of the
-    call. For repeated queries with different positions but the same
-    boundary, consider caching the distance field manually using
-    ``distance_field(env.connectivity, boundary_bins)``.
+    The geodesic field from the boundary bins is grown once and kept on the
+    environment, so repeated calls with the same boundary are lookups.
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial.behavior import distance_to_boundary
-    >>> # Distance to environment walls
-    >>> dist_wall = distance_to_boundary(
+    >>> # Distance to the environment's boundary bins (quantized to bins)
+    >>> dist_edge = distance_to_boundary(
     ...     env, positions, boundary_type="edge"
-    ... )  # doctest: +SKIP
-    >>>
-    >>> # Distance to obstacle
-    >>> dist_obstacle = distance_to_boundary(
-    ...     env, positions, boundary_type="obstacle"
     ... )  # doctest: +SKIP
     >>>
     >>> # Distance to goal region boundary
@@ -1498,7 +1760,6 @@ def distance_to_boundary(
     neurospatial.ops.compute_boundary_distances : Distance to walls along
         each direction
     """
-    from neurospatial.ops.distance import distance_field
     from neurospatial.ops.mapping import _require_region_mask
 
     require_cartesian(
@@ -1510,6 +1771,7 @@ def distance_to_boundary(
     )
 
     # Input validation
+    _require_path_metric(metric, call="distance_to_boundary")
     positions = np.asarray(positions, dtype=np.float64)
     n_samples = len(positions)
 
@@ -1524,14 +1786,7 @@ def distance_to_boundary(
 
     # Find boundary bins based on boundary_type
     if boundary_type == "edge":
-        # Edge bins: bins adjacent to unoccupied space
-        # A bin is an edge bin if it has fewer neighbors than expected
-        # for a fully-surrounded bin
-        boundary_bins = _find_edge_bins(env)
-
-    elif boundary_type == "obstacle":
-        # Obstacle bins: bins adjacent to obstacle regions
-        boundary_bins = _find_obstacle_boundary_bins(env)
+        boundary_bins = env.boundary_bins
 
     elif boundary_type == "region":
         # Region boundary bins: boundary of the named region
@@ -1543,12 +1798,13 @@ def distance_to_boundary(
             operation="distance_to_boundary()",
             argument="region_name",
         )
-        boundary_bins = _find_region_boundary_bins(env, region_name)
+        boundary_bins = np.asarray(
+            _find_region_boundary_bins(env, region_name), dtype=np.intp
+        )
 
     else:
         raise ValueError(
-            f"boundary_type must be 'edge', 'obstacle', or 'region', "
-            f"got '{boundary_type}'."
+            f"boundary_type must be 'edge' or 'region', got '{boundary_type}'."
         )
 
     if len(boundary_bins) == 0:
@@ -1558,110 +1814,22 @@ def distance_to_boundary(
             + ". Check that the environment has valid boundaries."
         )
 
-    # Compute distance field from boundary bins
-    dist_field = distance_field(
-        env.connectivity,
-        list(boundary_bins),
-        metric=metric,
-        bin_centers=env.bin_centers if metric == "euclidean" else None,
-    )
+    boundary_bins = np.unique(np.asarray(boundary_bins, dtype=np.intp))
+    if metric == "geodesic":
+        from neurospatial.behavior._environment_paths import environment_paths
 
-    # Map positions to bins
-    position_bins = env.bin_at(positions)
+        return environment_paths(env, call="distance_to_boundary").from_bins_at(
+            boundary_bins, positions
+        )
 
-    # Look up distances
+    from scipy.spatial import cKDTree
+
     distances = np.full(n_samples, np.nan, dtype=np.float64)
-    valid_bins = position_bins >= 0
-    distances[valid_bins] = dist_field[position_bins[valid_bins]]
-
+    inside = env.bin_at(positions) >= 0
+    distances[inside] = cKDTree(env.bin_centers[boundary_bins]).query(
+        positions[inside]
+    )[0]
     return distances
-
-
-def _find_edge_bins(env: Environment) -> list[int]:
-    """Find bins at the edge of the environment.
-
-    A bin is an edge bin if it has fewer than the maximum number of
-    neighbors, i.e. it is adjacent to unoccupied space (the outer rim, the
-    rim of an interior hole, etc.).
-
-    The notion of "edge" is layout-dependent and falls out naturally from
-    the connectivity graph:
-
-    - **1D linearized track** (a path graph): interior bins have degree 2
-      and the two end bins have degree 1, so the edge bins are exactly the
-      two ends of the track. This is the meaningful boundary of a 1D track.
-    - **Masked / holed 2D grids**: bins flanking a masked-out region have
-      fewer neighbors than a fully surrounded interior bin and are flagged,
-      so both the outer rim and any inner-hole rim are returned.
-
-    Parameters
-    ----------
-    env : Environment
-        Environment.
-
-    Returns
-    -------
-    list[int]
-        Bin (node) indices at the environment boundary. Empty if the graph
-        has no nodes.
-
-    Notes
-    -----
-    The degree scan is vectorized over nodes: degrees are pulled from the
-    NetworkX ``DegreeView`` into arrays and the comparison is done with
-    NumPy rather than a per-node Python loop.
-    """
-    graph = env.connectivity
-    n_nodes = graph.number_of_nodes()
-    if n_nodes == 0:
-        return []
-
-    # Pull (node, degree) pairs once and compare vectorized. Node ids are
-    # arbitrary hashables in general, but Environment connectivity uses
-    # integer bin indices, so an int64 array is safe here.
-    degree_view = graph.degree()
-    nodes = np.fromiter((n for n, _ in degree_view), dtype=np.int64, count=n_nodes)
-    degrees = np.fromiter((d for _, d in graph.degree()), dtype=np.int64, count=n_nodes)
-
-    max_degree = int(degrees.max())
-
-    # A bin is an edge bin if it has fewer neighbors than a fully-surrounded
-    # bin in this layout (i.e., it borders unoccupied space).
-    edge_nodes = nodes[degrees < max_degree]
-    edge_bins: list[int] = edge_nodes.tolist()
-    return edge_bins
-
-
-def _find_obstacle_boundary_bins(env: Environment) -> list[int]:
-    """Find bins adjacent to obstacle regions.
-
-    Parameters
-    ----------
-    env : Environment
-        Environment with obstacle regions.
-
-    Returns
-    -------
-    list[int]
-        Bin indices at obstacle boundaries.
-    """
-    # Find all obstacle regions
-    obstacle_regions = [
-        name
-        for name, region in env.regions.items()
-        if hasattr(region, "obstacle") and region.obstacle
-    ]
-
-    if not obstacle_regions:
-        # No obstacle regions defined - return empty
-        return []
-
-    # For environments with obstacle regions, bins adjacent to obstacles
-    # are typically edge bins (they have fewer neighbors because the
-    # obstacle removes connectivity). This is currently a simplification.
-    # A more complete implementation would require the environment to
-    # explicitly track which bins were removed due to obstacles.
-    return _find_edge_bins(env)
 
 
 def _find_region_boundary_bins(env: Environment, region_name: str) -> list[int]:
@@ -1700,7 +1868,7 @@ def _find_region_boundary_bins(env: Environment, region_name: str) -> list[int]:
 
 def cost_to_goal(
     position_bins: NDArray[np.int_],
-    env: Environment,
+    env: Environment[CartesianSystem],
     *,
     goal_bins: NDArray[np.int_] | int,
     cost_map: NDArray[np.float64] | None = None,
@@ -1709,6 +1877,7 @@ def cost_to_goal(
     """Compute cost-to-goal incorporating terrain difficulty and learned costs.
 
     Unlike simple geometric distance, cost-to-goal accounts for:
+
     - Movement difficulty (e.g., barriers, narrow passages)
     - Learned avoidance (e.g., punishment zones, risky areas)
 
@@ -1717,7 +1886,8 @@ def cost_to_goal(
     Parameters
     ----------
     position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices over time.
+        Bin indices over time, as from ``env.bin_at``; ``-1`` marks a sample
+        outside the environment (NaN).
     env : Environment
         Spatial environment.
     goal_bins : NDArray[np.int_] or int
@@ -1725,23 +1895,66 @@ def cost_to_goal(
         array, in ``[0, n_bins)``), or an array of shape ``(n_samples,)``
         (dynamic goal, where ``-1`` marks a sample with no goal).
     cost_map : NDArray[np.float64], shape (n_bins,), optional
-        Per-bin traversal cost. Default: uniform cost (geodesic distance).
+        Extra cost per unit length of travel through each bin, dimensionless
+        and ``>= 0``: ``0`` is plain travel and ``9`` makes moving through
+        the bin cost ten times its length. Default: no extra cost.
     terrain_difficulty : NDArray[np.float64], shape (n_bins,), optional
-        Movement difficulty multiplier per bin. Default: 1.0 (uniform).
+        Movement difficulty multiplier per bin, dimensionless and ``> 0``.
+        Default: 1.0 (uniform).
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Cost-to-goal from current position. Lower cost = preferred path.
+        Cost of the cheapest path inside the environment from the current
+        bin's center to the goal bin's center, in the environment's length
+        units (e.g. cm) weighted by the cost rate. With neither ``cost_map``
+        nor ``terrain_difficulty`` it is the geodesic distance of
+        :func:`distance_to_region`: the length of the shortest path between
+        the two bin centers that stays inside the environment. Lower cost =
+        preferred path. NaN where the position or the goal is ``-1``;
+        ``inf`` where no path exists.
+
+    Raises
+    ------
+    ValueError
+        If ``cost_map`` or ``terrain_difficulty`` does not have shape
+        ``(n_bins,)`` or holds a non-finite value, a ``cost_map`` entry is
+        negative, or a ``terrain_difficulty`` entry is not positive.
+    TypeError
+        If ``position_bins`` or ``goal_bins`` is not integer bin indices.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment, whose bins are
+        (distance, angle), not positions.
+
+    Notes
+    -----
+    Each bin has a cost rate per unit length,
+    ``rate = terrain_difficulty * (1 + cost_map)``. Travel cost is the
+    integral of the rate along a path inside the environment, each stretch
+    taking the rate of the bin it runs through (averaged across a bin
+    boundary), and the result is the cheapest such path. Paths are the same
+    any-angle paths as the geodesic distance: straight segments that stay
+    inside the environment, bending only at bin centers. With a rate of 1
+    everywhere the cost is the geodesic distance itself.
+
+    Because cost is per unit length, the result does not depend on the bin
+    size: on a 100 cm corridor with ``cost_map = np.ones(n_bins)``, a bin
+    80 cm from the goal costs 160 at every bin size, and a 20 cm stretch
+    with ``cost_map = 9`` adds about ``9 * 20 = 180`` (exactly when the
+    stretch ends on bin edges, within a bin's length otherwise). A uniform
+    ``cost_map`` only rescales every cost, so it never changes which path is
+    cheapest.
 
     Examples
     --------
     >>> # Simple: uniform cost (equivalent to geodesic distance)
     >>> cost = cost_to_goal(position_bins, env, goal_bins=goal_bin)  # doctest: +SKIP
 
-    >>> # Learned avoidance: avoid punishment zone
-    >>> cost_map = np.ones(env.n_bins)  # doctest: +SKIP
-    >>> cost_map[punishment_bins] = 10.0  # doctest: +SKIP
+    >>> # Learned avoidance: crossing a punished bin costs ten times its length
+    >>> cost_map = np.zeros(env.n_bins)  # doctest: +SKIP
+    >>> cost_map[punishment_bins] = 9.0  # doctest: +SKIP
     >>> cost = cost_to_goal(
     ...     position_bins, env, goal_bins=goal_bin, cost_map=cost_map
     ... )  # doctest: +SKIP
@@ -1751,8 +1964,10 @@ def cost_to_goal(
     distance_to_region : Simple geometric distance
     """
     from neurospatial.environment import _validate_sample_targets
-    from neurospatial.ops.distance import distance_field
 
+    position_bins = _validated_position_bins(
+        position_bins, env, operation="cost_to_goal()"
+    )
     goals, per_sample = _validate_sample_targets(
         goal_bins,
         n_samples=len(position_bins),
@@ -1771,45 +1986,99 @@ def cost_to_goal(
             metric="geodesic",
         )
 
-    # Case 2: Cost modifications - build weighted graph
-    g_weighted = env.connectivity.copy()
+    # Case 2: per-bin cost rate per unit length, integrated along the
+    # cheapest path inside the environment.
+    extra = _validated_bin_values(
+        cost_map, env, name="cost_map", default=0.0, positive=False
+    )
+    difficulty = _validated_bin_values(
+        terrain_difficulty, env, name="terrain_difficulty", default=1.0, positive=True
+    )
+    rate = difficulty * (1.0 + extra)
+    from neurospatial.behavior._environment_paths import environment_paths
 
-    for u, v, data in g_weighted.edges(data=True):
-        base_dist = data["distance"]
-
-        if terrain_difficulty is not None:
-            difficulty = (terrain_difficulty[u] + terrain_difficulty[v]) / 2.0
-            base_dist *= difficulty
-
-        if cost_map is not None:
-            cost = (cost_map[u] + cost_map[v]) / 2.0
-            base_dist += cost
-
-        g_weighted[u][v]["weight"] = base_dist
-
+    paths = environment_paths(env, call="cost_to_goal")
     if not per_sample:
-        dist_field = distance_field(g_weighted, goals, weight="weight")
-        costs = dist_field[position_bins]
-
-        costs[position_bins == -1] = np.nan
-
+        goal_costs = paths.costs_from_bins(goals, rate)
+        costs = np.full(len(position_bins), np.nan)
+        located = position_bins >= 0
+        costs[located] = goal_costs[position_bins[located]]
         return costs
-    else:
-        unique_goals = np.unique(goals)
-        unique_goals = unique_goals[unique_goals != -1]
 
-        costs = np.full(len(position_bins), np.nan, dtype=np.float64)
+    costs = np.full(len(position_bins), np.nan, dtype=np.float64)
+    for goal in np.unique(goals[goals >= 0]):
+        mask = (goals == goal) & (position_bins >= 0)
+        costs[mask] = paths.costs_from_bins(np.array([goal]), rate)[position_bins[mask]]
+    return costs
 
-        for goal in unique_goals:
-            mask = goals == goal
-            if np.any(mask):
-                dist_field = distance_field(g_weighted, [goal], weight="weight")
-                costs[mask] = dist_field[position_bins[mask]]
 
-        invalid_mask = (position_bins == -1) | (goals == -1)
-        costs[invalid_mask] = np.nan
+def _validated_bin_values(
+    values: ArrayLike | None,
+    env: Environment,
+    *,
+    name: str,
+    default: float,
+    positive: bool,
+) -> NDArray[np.float64]:
+    """Check a per-bin cost array: shape ``(n_bins,)``, finite, and in range.
 
-        return costs
+    Parameters
+    ----------
+    values : array-like, shape (n_bins,), or None
+        Per-bin values; None means ``default`` everywhere.
+    env : Environment
+        Environment whose bins the values describe.
+    name : str
+        Argument name shown in errors.
+    default : float
+        Value of every bin when ``values`` is None.
+    positive : bool
+        Require ``> 0`` (a multiplier) instead of ``>= 0`` (an extra cost).
+
+    Returns
+    -------
+    ndarray, shape (n_bins,)
+    """
+    if values is None:
+        return np.full(env.n_bins, default)
+    array = np.asarray(values, dtype=np.float64)
+    if array.shape != (env.n_bins,):
+        raise ValueError(
+            _format_error(
+                f"cost_to_goal() got {name} with shape {array.shape}, but the "
+                f"environment has {env.n_bins} bins.",
+                why=f"{name} holds one value per bin.",
+                fix=f"pass an array of shape ({env.n_bins},), for example "
+                f"np.full(env.n_bins, {default})",
+            )
+        )
+    if not np.all(np.isfinite(array)):
+        raise ValueError(
+            _format_error(
+                f"cost_to_goal() got {np.count_nonzero(~np.isfinite(array))} "
+                f"non-finite value(s) in {name}; every value must be finite.",
+                why="a NaN or infinite edge weight makes every cost infinite "
+                "or undefined.",
+                fix=f"fill unknown bins with {default} (no change) or remove "
+                "impassable bins from the environment",
+            )
+        )
+    bad = array <= 0 if positive else array < 0
+    if np.any(bad):
+        rule = "are not positive" if positive else "are negative"
+        raise ValueError(
+            _format_error(
+                f"cost_to_goal() got {np.count_nonzero(bad)} value(s) in {name} "
+                f"that {rule}; the smallest is {array.min():g}.",
+                why="shortest paths need positive edge weights: a zero "
+                "difficulty makes travel free and a negative cost makes a "
+                "loop endlessly cheaper.",
+                fix=f"use {name} > 0 as a multiplier"
+                if positive
+                else f"use {name} >= 0, with 0 for plain travel",
+            )
+        )
+    return array
 
 
 def time_to_goal(
@@ -1823,13 +2092,22 @@ def time_to_goal(
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for entire session.
     trials : list[Trial]
-        Trial segmentation from segment_trials(). Only successful trials
-        (trial.success=True) are included.
+        Trial segmentation from segment_trials(). Only trials that reached
+        their goal (``trial.success``) are included; timed-out and censored
+        trials, whose arrival was never observed, are not.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Time in seconds until goal arrival. NaN outside successful trials.
+        Time in seconds until goal arrival, for samples with
+        ``start_time <= t <= end_time`` of a successful trial. NaN outside
+        successful trials.
+
+    Warns
+    -----
+    UserWarning
+        If there are trials but none contains a sample of ``times`` (usually
+        trials on a different clock).
 
     Examples
     --------
@@ -1842,9 +2120,14 @@ def time_to_goal(
     segment_trials : Segment trajectory into trials
     path_progress : Normalized progress along path
     """
+    times = np.asarray(times, dtype=np.float64)
+    _warn_if_no_trial_overlaps(times, trials, call="time_to_goal()", result="NaN")
     ttg = np.full(len(times), np.nan, dtype=np.float64)
 
     for trial in trials:
+        # Only an observed arrival has a time to goal: timed-out and censored
+        # trials (cut off by a gap, an epoch edge, a break or the end of the
+        # recording) never reached it.
         if not trial.success:
             continue
 
@@ -1857,16 +2140,23 @@ def time_to_goal(
     return ttg
 
 
+# A heading change wider than this is a reversal (within 30 degrees of
+# straight back), which is neither a left nor a right turn.
+_MAX_TURN_ANGLE = 5 * np.pi / 6
+
+
 def graph_turn_sequence(
     env: Environment[CartesianSystem],
     position_bins: NDArray[np.int_],
     *,
-    min_samples_per_edge: int = 50,
+    tolerance: float | None = None,
 ) -> str:
     """Extract discrete turn sequence from trajectory.
 
-    Analyzes which bins were traversed and classifies turns based on
-    changes in movement direction. Works for any Cartesian layout type.
+    Reduces the sequence of visited bins to the straight legs of the route
+    and labels the turn at each corner between legs. Works for any Cartesian
+    layout type: a track graph (T-maze, multiple-T maze, plus maze) or an
+    open field.
 
     Left and right are the animal's own (egocentric) sides: a turn is "left"
     when the new direction is counterclockwise from the old one, so heading
@@ -1882,22 +2172,58 @@ def graph_turn_sequence(
         Cartesian spatial environment (any layout type).
     position_bins : NDArray[np.int_], shape (n_samples,)
         Bin indices along trajectory (single trial or segment), in time
-        order. The order of the samples sets the direction of travel.
-    min_samples_per_edge : int, default=50
-        Minimum trajectory samples required on a transition to count.
+        order, as from ``env.bin_at``. The order of the samples sets the
+        direction of travel. ``-1`` (outside the environment) is skipped as
+        if its sample were deleted.
+    tolerance : float, optional
+        How far, in the environment's units, the route may stray from a
+        straight leg before the departure counts as a corner. Default: one
+        bin diagonal, ``sqrt(2) * env.bin_spacing``, the largest straying
+        that bin quantization alone can produce (see Notes). Raise it to
+        ignore wider wobbles; a corner whose legs are shorter than about
+        ``tolerance`` cannot be told apart from quantization and is not
+        reported.
 
     Returns
     -------
     str
         Turn sequence like "left-right-left", or empty string "" if no
         turns detected. Each turn is separated by "-". Only the first two
-        coordinates set the turn direction.
+        coordinates set the turn direction. A heading change of more than
+        150 degrees is a reversal, neither left nor right, and is left out.
 
     Raises
     ------
     CartesianOnlyError
         If ``env`` is polar: left and right come from cross products of
         Cartesian bin-center displacements.
+    TypeError
+        If ``position_bins`` is not integer bin indices.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
+    ValueError
+        If ``tolerance`` is not finite and non-negative.
+
+    Notes
+    -----
+    The route is the visited bin centers in the x-y plane with repeats
+    removed, so the answer depends on where the animal went, not on the
+    frame rate or how long it dwelt in a bin. It is simplified with the
+    Ramer-Douglas-Peucker algorithm [1]_: a leg is split at the bin farthest
+    from it whenever that bin strays more than ``tolerance``. Each bin center
+    lies within half a bin diagonal of the true position, so a straight path,
+    and the chord between its quantized ends, both stay within half a
+    diagonal of the true line; its bin centers therefore stray at most one
+    diagonal from the chord, and the default never splits a straight run
+    (such as the staircase of bins along an oblique line) or flicker between
+    neighboring bins. The sign of the cross product of consecutive legs gives
+    the turn direction.
+
+    References
+    ----------
+    .. [1] Douglas, D. H., & Peucker, T. K. (1973). Algorithms for the
+       reduction of the number of points required to represent a digitized
+       line or its caricature. Cartographica 10(2), 112-122.
 
     Examples
     --------
@@ -1922,89 +2248,83 @@ def graph_turn_sequence(
             "positions, for example Environment.from_samples(positions, bin_size=...)"
         ),
     )
-    consecutive_bins = np.column_stack([position_bins[:-1], position_bins[1:]])
-    transition_counts = Counter(map(tuple, consecutive_bins))
-
-    valid_transitions = [
-        trans
-        for trans, count in transition_counts.items()
-        if count >= min_samples_per_edge
-    ]
-
-    if len(valid_transitions) == 0:
-        return ""
-
-    # Get unique bins preserving order (first occurrence)
-    _, unique_indices = np.unique(position_bins, return_index=True)
-    unique_bins_ordered = position_bins[np.sort(unique_indices)]
-
-    # Build set of valid bins from transitions
-    valid_bins = set()
-    for u, v in valid_transitions:
-        valid_bins.add(u)
-        valid_bins.add(v)
-
-    # Filter to valid bins
-    path_bins = np.array([b for b in unique_bins_ordered if b in valid_bins])
-
-    if len(path_bins) < 3:
-        return ""
-
-    bin_centers = env.bin_centers
-    n_dims = bin_centers.shape[1]
-
-    # Vectorized turn angle computation
-    # Get positions for all path bins
-    positions = bin_centers[path_bins]  # Shape: (n_path, n_dims)
-
-    # Compute consecutive vectors: vec1[i] = pos[i+1] - pos[i]
-    vec1 = np.diff(positions, axis=0)  # Shape: (n_path-1, n_dims)
-    vec2 = vec1[1:]  # vec2[i] = pos[i+2] - pos[i+1], Shape: (n_path-2, n_dims)
-    vec1 = vec1[:-1]  # Align: vec1[i] = pos[i+1] - pos[i], Shape: (n_path-2, n_dims)
-
-    # Compute norms
-    vec1_norms = np.linalg.norm(vec1, axis=1)
-    vec2_norms = np.linalg.norm(vec2, axis=1)
-
-    # Mask for valid vectors (non-zero length)
-    valid_mask = (vec1_norms >= 1e-10) & (vec2_norms >= 1e-10)
-
-    if not np.any(valid_mask):
-        return ""
-
-    # Normalize vectors
-    vec1_norm_safe = np.where(
-        vec1_norms[:, np.newaxis] > 0, vec1_norms[:, np.newaxis], 1.0
+    bins = _validated_position_bins(
+        position_bins, env, operation="graph_turn_sequence()"
     )
-    vec2_norm_safe = np.where(
-        vec2_norms[:, np.newaxis] > 0, vec2_norms[:, np.newaxis], 1.0
-    )
-    vec1_normalized = vec1 / vec1_norm_safe
-    vec2_normalized = vec2 / vec2_norm_safe
-
-    # Compute 2D cross product (z-component of 3D cross)
-    # cross = vec1_x * vec2_y - vec1_y * vec2_x
-    if n_dims >= 2:
-        cross = (
-            vec1_normalized[:, 0] * vec2_normalized[:, 1]
-            - vec1_normalized[:, 1] * vec2_normalized[:, 0]
+    if tolerance is None:
+        tolerance = float(np.sqrt(2.0) * env.bin_spacing)
+    elif not (np.isfinite(tolerance) and tolerance >= 0):
+        raise ValueError(
+            _format_error(
+                f"graph_turn_sequence() got tolerance={tolerance!r}.",
+                why="tolerance is a distance in the environment's units.",
+                fix="pass a finite tolerance >= 0, or None for one bin diagonal",
+            )
         )
-    else:
+    if env.bin_centers.shape[1] < 2:
         return ""
 
-    # Filter to significant turns (|cross| > 0.1) and valid vectors
-    significant_mask = valid_mask & (np.abs(cross) > 0.1)
+    points = env.bin_centers[bins[bins >= 0], :2]
+    if len(points) == 0:
+        return ""
+    # One point per visit, whatever the frame rate or dwell time.
+    route = points[np.r_[True, np.any(np.diff(points, axis=0) != 0, axis=1)]]
+    corners = route[_simplified_polyline(route, tolerance)]
+    if len(corners) < 3:
+        return ""
 
-    # Build turns list
-    turns = []
-    for i in np.where(significant_mask)[0]:
-        # Counterclockwise (cross > 0) in a y-up frame is the animal's left.
-        if cross[i] > 0:
-            turns.append("left")
-        else:
-            turns.append("right")
+    legs = np.diff(corners, axis=0)
+    cross = legs[:-1, 0] * legs[1:, 1] - legs[:-1, 1] * legs[1:, 0]
+    dot = np.sum(legs[:-1] * legs[1:], axis=1)
+    angle = np.arctan2(cross, dot)
+    # Counterclockwise (angle > 0) in a y-up frame is the animal's left.
+    turns = angle[(angle != 0) & (np.abs(angle) <= _MAX_TURN_ANGLE)]
+    return "-".join("left" if turn > 0 else "right" for turn in turns)
 
-    return "-".join(turns)
+
+def _simplified_polyline(
+    points: NDArray[np.float64], tolerance: float
+) -> NDArray[np.intp]:
+    """Indices of the Ramer-Douglas-Peucker simplification of a polyline.
+
+    Parameters
+    ----------
+    points : ndarray, shape (n_points, 2)
+        Polyline vertices in order.
+    tolerance : float
+        A segment is split at its farthest intermediate vertex when that
+        vertex is more than ``tolerance`` from the segment.
+
+    Returns
+    -------
+    ndarray of intp
+        Sorted indices of the kept vertices, always including both ends.
+    """
+    n = len(points)
+    keep = np.zeros(n, dtype=bool)
+    keep[[0, -1]] = True
+    stack = [(0, n - 1)]
+    while stack:
+        i, j = stack.pop()
+        if j <= i + 1:
+            continue
+        start, chord = points[i], points[j] - points[i]
+        offsets = points[i + 1 : j] - start
+        length_sq = float(chord @ chord)
+        # Distance to the segment (not the infinite line), so a reversal
+        # past the segment's end is a corner too.
+        along = (
+            np.zeros(len(offsets))
+            if length_sq == 0
+            else np.clip(offsets @ chord / length_sq, 0.0, 1.0)
+        )
+        distance = np.linalg.norm(offsets - along[:, None] * chord, axis=1)
+        k = int(np.argmax(distance))
+        if distance[k] > tolerance:
+            split = i + 1 + k
+            keep[split] = True
+            stack.extend([(i, split), (split, j)])
+    return np.flatnonzero(keep)
 
 
 def goal_pair_direction_labels(
@@ -2033,12 +2353,18 @@ def goal_pair_direction_labels(
         Direction label for each timepoint using arrow notation, dtype
         ``object``; ``None`` outside every completed trial.
 
+    Warns
+    -----
+    UserWarning
+        If there are trials but none contains a sample of ``times`` (usually
+        trials on a different clock).
+
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial.behavior import Trial, goal_pair_direction_labels
     >>> times = np.arange(6.0)
-    >>> trials = [Trial(1.0, 3.0, "home", "goal_left", True)]
+    >>> trials = [Trial(1.0, 3.0, "home", "goal_left", "reached")]
     >>> goal_pair_direction_labels(times, trials).tolist()
     [None, 'home→goal_left', 'home→goal_left', None, None, None]
 
@@ -2051,6 +2377,10 @@ def goal_pair_direction_labels(
     """
     from neurospatial.behavior.segmentation import _interval_labels
 
+    times = np.asarray(times, dtype=np.float64)
+    _warn_if_no_trial_overlaps(
+        times, trials, call="goal_pair_direction_labels()", result="None"
+    )
     intervals = [
         (
             trial.start_time,
@@ -2077,10 +2407,11 @@ def heading_direction_labels(
 ) -> NDArray[np.object_]:
     """Generate per-timepoint direction labels from heading angle.
 
-    Bins the direction of movement into sectors (e.g., "0-45 deg",
-    "45-90 deg", ...), labels an observed animal that is not moving
-    "stationary", and leaves samples with no observed movement unlabeled
-    (``None``).
+    Bins the direction of movement into sectors centred on evenly spaced
+    allocentric directions (with the default 8: ``"0°"`` East, ``"45°"``,
+    ``"90°"`` North, ..., ``"180°"`` West, ``"-135°"``, ``"-90°"`` South,
+    ``"-45°"``), labels an observed animal that is not moving "stationary",
+    and leaves samples with no observed movement unlabeled (``None``).
 
     Parameters
     ----------
@@ -2096,12 +2427,13 @@ def heading_direction_labels(
         Precomputed heading angle in radians; NaN where the direction of
         movement is unknown.
     n_directions : int, default=8
-        Number of direction bins. Default 8 creates 45 deg bins.
+        Number of direction sectors, a positive integer. Default 8 creates
+        45° sectors centred on East, North-East, North, and so on.
     min_speed : float
-        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
-        with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit. Observed samples slower than this,
-        or not moving at all, are labeled "stationary".
+        Required, finite and ``>= 0``, in position units per second (e.g.
+        ``5.0`` for 5 cm/s with positions in cm): this function sees no
+        environment, so it cannot know the positions' unit. Observed samples
+        slower than this, or not moving at all, are labeled "stationary".
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -2109,41 +2441,57 @@ def heading_direction_labels(
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
+        Trajectory mode only.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
-        means unrestricted.
+        means unrestricted. Trajectory mode only.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
-        time. Entry 0 is ignored.
+        time. Entry 0 is ignored. Trajectory mode only.
 
     Returns
     -------
     NDArray[np.object_], shape (n_samples,)
-        One label per timepoint, of three kinds: a direction sector such as
-        ``"0–45°"`` where the animal moves (speed above zero and at least
-        ``min_speed``); ``"stationary"`` where it was observed but not moving;
-        ``None`` where it was not observed, or (precomputed input) moving in an
-        unknown direction.
+        One label per timepoint, of three kinds: a direction sector named by
+        its centre direction, such as ``"90°"``, where the animal moves (speed
+        above zero and at least ``min_speed``); ``"stationary"`` where it was
+        observed but not moving; ``None`` where it was not observed, or
+        (precomputed input) moving in an unknown direction.
 
     Raises
     ------
     ValueError
-        In trajectory mode, if ``times`` and ``positions`` are empty, have
-        different lengths, ``times`` is not finite and strictly increasing,
-        ``positions`` has no x and y columns, or ``break_before`` is not a
-        Boolean array with one entry per sample. With precomputed input, if
-        ``speed`` and ``heading`` differ in length or ``break_before`` is
-        given.
+        If ``min_speed`` is not finite and non-negative, or ``n_directions``
+        is not a positive integer. In trajectory mode, if ``times`` and
+        ``positions`` are empty, have different lengths, ``times`` is not
+        finite and strictly increasing, ``positions`` has no x and y columns,
+        or ``break_before`` is not a Boolean array with one entry per sample.
+        With precomputed input, if ``speed`` and ``heading`` differ in length,
+        or ``epochs``, ``break_before`` or a non-default ``max_gap`` is given.
+
+    Warns
+    -----
+    UserWarning
+        If a precomputed ``heading`` looks like degrees instead of radians.
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause. A missing position (a NaN row) is
-    skipped as if its row were deleted.
+    Sector ``k`` is centred on ``k * 360 / n_directions`` degrees
+    (allocentric: 0° = East, 90° = North) and spans half a sector width on
+    either side, half-open: its clockwise edge belongs to it. Centring the
+    sectors on the cardinal directions keeps a run along a cardinal
+    direction in one label despite tracking jitter; edges on 0° would split
+    an eastward run between two labels. Labels are the centre angles in
+    ``(-180, 180]``, rounded to 0.1°.
+
+    In trajectory mode the speed and heading are computed along each run of
+    observed samples. A NaN row is bridged like a deleted row when valid
+    neighbours are within ``max_gap``; only a longer gap, an ``epochs`` edge
+    or a declared ``break_before`` splits a run, and no velocity or heading
+    spans such a split.
 
     In trajectory mode, speed and heading come from the Gaussian-smoothed
     velocity of :func:`compute_speed`, so tracking jitter at rest is
@@ -2173,7 +2521,7 @@ def heading_direction_labels(
     >>> positions[5] = np.nan  # a lost frame
     >>> labels = heading_direction_labels(times, positions, min_speed=5.0)
     >>> labels[0], labels[5], labels[-1]
-    ('45–90°', None, 'stationary')
+    ('45°', None, 'stationary')
 
     Precomputed speed and heading (radians, 0 = East) are binned directly; a
     NaN speed was not observed:
@@ -2183,7 +2531,7 @@ def heading_direction_labels(
     ...     heading=np.array([0.3, 0.3, 0.3]),
     ...     min_speed=5.0,
     ... ).tolist()
-    ['0–45°', 'stationary', None]
+    ['0°', 'stationary', None]
 
     ``"stationary"`` is an ordinary label for the place-field helper, which
     drops it only when told to:
@@ -2201,7 +2549,7 @@ def heading_direction_labels(
     ...     max_gap=None,
     ... )
     >>> sorted(fields.labels)
-    ['45–90°', 'stationary']
+    ['45°', 'stationary']
     >>> fields = compute_directional_place_fields(
     ...     env,
     ...     np.array([0.5, 1.5]),
@@ -2213,12 +2561,34 @@ def heading_direction_labels(
     ...     missing_label="stationary",
     ... )
     >>> sorted(fields.labels)
-    ['45–90°']
+    ['45°']
 
     See Also
     --------
     goal_pair_direction_labels : Direction labels for trialized tasks
     """
+    if not (np.isfinite(min_speed) and min_speed >= 0):
+        raise ValueError(
+            _format_error(
+                f"heading_direction_labels() got min_speed={min_speed!r}.",
+                why="min_speed is a speed in position units per second; NaN "
+                "would label every sample 'stationary'.",
+                fix="pass a finite min_speed >= 0, e.g. 5.0 for 5 cm/s with "
+                "positions in cm",
+            )
+        )
+    if (
+        isinstance(n_directions, bool)
+        or not isinstance(n_directions, (int, np.integer))
+        or n_directions <= 0
+    ):
+        raise ValueError(
+            _format_error(
+                f"heading_direction_labels() got n_directions={n_directions!r}.",
+                why="n_directions is the number of direction sectors.",
+                fix="pass a positive integer, e.g. 8 for 45° sectors",
+            )
+        )
     has_precomputed = speed is not None or heading is not None
     has_trajectory = times is not None or positions is not None
 
@@ -2236,19 +2606,37 @@ def heading_direction_labels(
                 f"Speed and heading arrays must have the same length. "
                 f"Got speed: {len(speed_arr)}, heading: {len(heading_arr)}."
             )
-        if break_before is not None:
+        given = [
+            name
+            for name, used in (
+                ("epochs", epochs is not None),
+                ("max_gap", max_gap != DEFAULT_MAX_GAP),
+                ("break_before", break_before is not None),
+            )
+            if used
+        ]
+        if given:
+            names = ", ".join(given)
             raise ValueError(
                 _format_error(
-                    "heading_direction_labels() got break_before with "
+                    f"heading_direction_labels() got {names} with "
                     "precomputed speed and heading.",
-                    why="Recording breaks apply to the velocity computed from "
-                    "times and positions; precomputed speed and heading are "
-                    "labeled as given.",
-                    fix="pass times and positions with break_before instead of "
-                    "speed and heading, or compute them with break_before "
-                    "(e.g. compute_speed(times, positions, break_before=...)).",
+                    why="Time support (epochs, max_gap, break_before) applies "
+                    "to the velocity computed from times and positions; "
+                    "precomputed speed and heading are labeled as given, so "
+                    "it would be silently ignored.",
+                    fix=f"pass times and positions with {names} instead of "
+                    "speed and heading, or compute them with it "
+                    f"(e.g. compute_speed(times, positions, {given[0]}=...)).",
                 )
             )
+        from neurospatial.encoding._validation import (
+            warn_if_angles_look_like_degrees,
+        )
+
+        warn_if_angles_look_like_degrees(
+            heading_arr, name="heading", context="heading_direction_labels"
+        )
 
         observed = np.isfinite(speed_arr)
 
@@ -2291,23 +2679,18 @@ def heading_direction_labels(
             "Neither was provided."
         )
 
-    bin_edges_rad = np.linspace(-np.pi, np.pi, n_directions + 1)
-    bin_edges_deg = np.linspace(-180.0, 180.0, n_directions + 1)
-
-    # Build bin labels
-    bin_labels = [
-        f"{round(bin_edges_deg[i]):.0f}\u2013{round(bin_edges_deg[i + 1]):.0f}\u00b0"
-        for i in range(n_directions)
-    ]
-    bin_labels_arr = np.array(bin_labels, dtype=object)
-
-    # Vectorized label assignment
-    # Normalize headings to [-π, π]
-    heading_normalized = np.arctan2(np.sin(heading_arr), np.cos(heading_arr))
-
-    # Digitize all headings at once
-    bin_indices = np.digitize(heading_normalized, bin_edges_rad[1:], right=False)
-    bin_indices = np.clip(bin_indices, 0, n_directions - 1)
+    # Sector k is centred on k * width and spans [centre - width/2,
+    # centre + width/2), so a run along a cardinal direction stays in one
+    # sector despite jitter.
+    width = 2 * np.pi / n_directions
+    centres_deg = np.degrees(np.arange(n_directions) * width)
+    centres_deg = np.where(centres_deg > 180.0, centres_deg - 360.0, centres_deg)
+    bin_labels_arr = np.array(
+        [f"{round(float(c), 1):g}°" for c in centres_deg], dtype=object
+    )
+    with np.errstate(invalid="ignore"):
+        sector = np.floor(heading_arr / width + 0.5)
+    bin_indices = np.mod(np.nan_to_num(sector), n_directions).astype(np.intp)
 
     # The direction of movement exists only where the animal moves. An observed
     # animal that does not move is "stationary"; an unobserved sample, or a
@@ -2322,34 +2705,8 @@ def heading_direction_labels(
 
 
 # =============================================================================
-# Path Efficiency Functions (from metrics/path_efficiency.py)
+# Path Efficiency Functions
 # =============================================================================
-
-
-def _polyline_length(
-    positions: Any,
-    *,
-    metric: DistanceMetric,
-    env: Environment | None,
-) -> float:
-    """Length of one continuous polyline, with no time support.
-
-    Parameters
-    ----------
-    positions : array-like, shape (n_samples, n_dims)
-        Positions of a path already known to be continuously observed.
-    metric : {"euclidean", "geodesic"}
-    env : Environment, optional
-        Required when ``metric="geodesic"``.
-    """
-    from neurospatial.behavior.trajectory import compute_step_lengths
-
-    positions = np.asarray(positions, dtype=float)
-    if positions.ndim != 2:
-        raise ValueError(
-            f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"
-        )
-    return float(np.sum(compute_step_lengths(positions, metric=metric, env=env)))
 
 
 def _require_path_metric(metric: str, *, call: str) -> None:
@@ -2367,8 +2724,8 @@ def _require_path_metric(metric: str, *, call: str) -> None:
                 f"{call}() got metric={metric!r}; it must be "
                 "'euclidean' or 'geodesic'.",
                 why=(
-                    "path length is summed either along straight lines or along "
-                    "the environment's connectivity graph."
+                    "distances are measured either along straight lines or along "
+                    "the shortest path inside the environment."
                 ),
                 fix=(
                     "use metric='euclidean' for straight-line distances, or "
@@ -2380,21 +2737,27 @@ def _require_path_metric(metric: str, *, call: str) -> None:
 
 def _observed_path_length(
     positions: NDArray[np.float64],
-    support: ObservationSupport,
+    sample_valid: NDArray[np.bool_],
+    interval_mask: NDArray[np.bool_],
     *,
     metric: DistanceMetric,
     env: Environment | None,
+    call: str,
 ) -> tuple[float, bool]:
     """Path length over usable intervals, and whether every interval counted.
 
     Parameters
     ----------
     positions : ndarray, shape (n_samples, n_dims)
-    support : ObservationSupport
-        Resolved from the same samples.
+    sample_valid : ndarray of bool, shape (n_samples,)
+        ``ObservationSupport.sample_valid`` of the same samples.
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        ``ObservationSupport.interval_mask`` of the same samples.
     metric : {"euclidean", "geodesic"}
     env : Environment or None
         Required for ``metric="geodesic"``.
+    call : str
+        Public function name, used in messages.
 
     Returns
     -------
@@ -2408,31 +2771,29 @@ def _observed_path_length(
         Missing samples before the first or after the last valid sample are
         left out, as if their rows were deleted.
     """
-    from neurospatial.behavior.trajectory import (
-        _observed_cumulative,
-        compute_step_lengths,
-    )
-
+    # One step per usable gap, from the valid sample before it to the one
+    # ending it; only usable steps are measured.
+    starts, ends = _observed_steps(positions, sample_valid, interval_mask)
     if metric == "euclidean":
-        steps, _ = _observed_cumulative(positions, support)
+        steps = np.linalg.norm(ends - starts, axis=1)
     else:
-        valid = np.flatnonzero(support.sample_valid)
-        steps = np.full(support.interval_mask.size, np.nan)
-        if valid.size > 1:
-            with np.errstate(invalid="ignore"):
-                steps[valid[1:] - 1] = compute_step_lengths(
-                    positions[valid], metric="geodesic", env=env
-                )
-    # The step of a gap sits on the interval ending at its next valid sample.
-    gap_ends = support.interval_mask & support.sample_valid[1:]
-    counted = gap_ends & ~np.isnan(steps)
-    observed = np.flatnonzero(support.sample_valid)
+        if env is None:
+            raise ValueError(
+                "env parameter is required when metric='geodesic'. "
+                "Provide the Environment instance, or use metric='euclidean' "
+                "for straight-line distances."
+            )
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        steps = environment_paths(env, call=call).between(starts, ends)
+    counted = ~np.isnan(steps)
+    observed = np.flatnonzero(sample_valid)
     span = (
-        support.interval_mask[observed[0] : observed[-1]]
+        interval_mask[observed[0] : observed[-1]]
         if observed.size
-        else support.interval_mask[:0]
+        else interval_mask[:0]
     )
-    complete = bool(span.size and span.all() and np.array_equal(counted, gap_ends))
+    complete = bool(span.size and span.all() and counted.all())
     if not counted.any():
         return float("nan"), complete
     return float(steps[counted].sum()), complete
@@ -2468,11 +2829,17 @@ def traveled_path_length(
         coordinate (for example a linearized track). Rows with a non-finite
         coordinate are missing.
     metric : {"euclidean", "geodesic"}, default="euclidean"
-        Distance metric. Use "geodesic" for environments with barriers.
+        ``"euclidean"`` sums the straight steps between samples. ``"geodesic"``
+        sums, between consecutive samples, the length of the shortest path
+        between two positions that stays inside the environment: it goes around
+        walls and never leaves the environment, and on a track it runs along
+        the track's centerline. It is the straight step whenever the step stays
+        inside, and the route around the walls when it does not (a bridged gap
+        whose straight line crosses a wall). See Notes.
     env : Environment, optional
         Required when metric="geodesic". An interval with an endpoint outside
         the environment has no geodesic length and is left out; an interval
-        between disconnected bins contributes ``inf``.
+        between disconnected parts of the environment contributes ``inf``.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -2500,6 +2867,23 @@ def traveled_path_length(
     ValueError
         If ``metric`` is not recognized, if metric="geodesic" but env is None,
         or if the inputs are empty or malformed.
+
+    Notes
+    -----
+    The traveled length is the arc length of the observed path: the animal
+    moves continuously, so between two samples it covers at least the
+    shortest path between them inside the environment. With the geodesic
+    metric that is the straight step when the step stays inside the
+    environment (between nearby samples it almost always does), so the
+    geodesic and Euclidean lengths agree on an open field and do not depend
+    on the bin size. It is not measured bin center to bin center along the
+    bin graph: that staircase overestimated an oblique straight run by up to
+    a third, by an amount that changed with the bin size and sampling rate.
+    On a track the geodesic step runs along the centerline between the two
+    positions' projections onto it.
+
+    Like any arc length of sampled positions, tracking jitter adds length;
+    smooth noisy positions first.
 
     Examples
     --------
@@ -2533,7 +2917,14 @@ def traveled_path_length(
         break_before=break_before,
         result="no distance was observed",
     )
-    length, _ = _observed_path_length(positions_arr, support, metric=metric, env=env)
+    length, _ = _observed_path_length(
+        positions_arr,
+        support.sample_valid,
+        support.interval_mask,
+        metric=metric,
+        env=env,
+        call="traveled_path_length",
+    )
     return length
 
 
@@ -2549,54 +2940,114 @@ def shortest_path_length(
     Parameters
     ----------
     env : Environment
-        Spatial environment with connectivity graph.
+        Spatial environment.
     start : NDArray[np.float64], shape (n_dims,)
         Start position in allocentric frame.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position in allocentric frame.
     metric : {"geodesic", "euclidean"}, default="geodesic"
-        Distance metric.
+        ``"euclidean"`` is the straight-line distance. ``"geodesic"`` is the
+        length of the shortest path between two positions that stays inside the
+        environment: it goes around walls and never leaves the environment, and
+        on a track it runs along the track's centerline (see Notes).
 
     Returns
     -------
     float
-        Shortest path distance in environment units.
-        Returns inf if no path exists (disconnected graph).
+        Shortest path length in environment units; ``inf`` if no path exists
+        (start and goal lie in disconnected parts of the environment).
 
     Raises
     ------
     ValueError
-        For ``metric="geodesic"``, if ``start`` or ``goal`` is outside the
-        environment or has NaN coordinates; the geodesic path starts and ends
-        at the bins that contain them, as in ``env.distance_between``.
+        If ``metric`` is not recognized, ``start`` is not one position, or
+        ``goal`` does not have the same shape as ``start`` or has a non-finite
+        coordinate. For ``metric="geodesic"``, also if ``start`` or ``goal``
+        is outside the environment or ``start`` has NaN coordinates.
     CartesianOnlyError
         For ``metric="geodesic"`` on an egocentric polar environment, whose
         bins are (distance, angle), not allocentric positions.
 
+    Notes
+    -----
+    The geodesic length is measured in continuous space, not bin center to
+    bin center. When the centers of the start's and the goal's bins see each
+    other (a straight line between them stays inside the environment), it is
+    the straight line from start to goal, so on an open field
+    ``metric="geodesic"`` and ``metric="euclidean"`` agree. Otherwise the
+    path goes around the walls through waypoints at bin centers, so it keeps
+    about half a bin from each corner and can exceed the true shortest path
+    by up to about one bin size per corner (the end of a thin wall is two
+    corners). On a track it is the distance along the centerline between the
+    two positions' projections, whatever the track's width or bin size. The
+    bin-graph distance (``env.distance_between``) instead runs along grid
+    steps and overestimates an oblique straight line by up to ~8% on an
+    8-connected grid.
+
     Examples
     --------
-    >>> dist = shortest_path_length(env, start_pos, goal_pos)  # doctest: +SKIP
-    >>> print(f"Shortest path: {dist:.1f} cm")  # doctest: +SKIP
+    An open field: the straight line from start to goal stays inside it.
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import shortest_path_length
+    >>> x, y = np.meshgrid(np.arange(0.5, 100.0), np.arange(0.5, 100.0))
+    >>> arena = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+    >>> shortest_path_length(arena, np.array([10.0, 10.0]), np.array([40.0, 50.0]))
+    50.0
     """
-    start = np.asarray(start)
-    goal = np.asarray(goal)
+    _require_path_metric(metric, call="shortest_path_length")
+    start = np.asarray(start, dtype=float)
+    if start.ndim != 1:
+        raise ValueError(
+            _format_error(
+                f"shortest_path_length() needs start with shape (n_dims,); got "
+                f"shape {start.shape}.",
+                why="start is one position.",
+                fix="pass a single position, e.g. positions[0].",
+            )
+        )
+    goal = _validated_goal(goal, start.size, call="shortest_path_length")
 
     if metric == "euclidean":
         return float(np.linalg.norm(goal - start))
 
-    require_cartesian(
-        env.coordinate_system,
-        "shortest_path_length(metric='geodesic')",
-        why=(
-            "start and goal are allocentric Cartesian positions, located in the "
-            "environment's bins."
-        ),
-        fix=(
-            "use an allocentric environment, or metric='euclidean' for the "
-            "straight-line distance from start to goal"
-        ),
-    )
-    return env.distance_between(points=np.vstack([start, goal]))
+    from neurospatial.behavior._environment_paths import environment_paths
+
+    paths = environment_paths(env, call="shortest_path_length")
+    _require_inside(paths, {"start": start, "goal": goal}, call="shortest_path_length")
+    return float(paths.to_point(start[None, :], goal)[0])
+
+
+def _require_inside(
+    paths: Any, points: dict[str, NDArray[np.float64]], *, call: str
+) -> None:
+    """Raise unless every named point lies inside the environment.
+
+    Parameters
+    ----------
+    paths : EnvironmentPaths
+    points : dict of str to ndarray, shape (n_dims,)
+        Named positions, such as ``{"goal": goal}``.
+    call : str
+        Public function name, used in the message.
+    """
+    for name, point in points.items():
+        if paths.bins(np.asarray(point, dtype=float)[None, :])[0] < 0:
+            raise ValueError(
+                _format_error(
+                    f"{call}() got a {name} outside the environment (or with a "
+                    f"NaN coordinate): {point}.",
+                    why=(
+                        "a geodesic distance is a path inside the environment, "
+                        "so both of its ends must lie in a bin."
+                    ),
+                    fix=(
+                        f"pass a {name} inside the environment (check "
+                        "env.contains), or use metric='euclidean'."
+                    ),
+                )
+            )
 
 
 def time_efficiency(
@@ -2615,7 +3066,8 @@ def time_efficiency(
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Trajectory positions.
     reference_speed : float
-        Reference speed in environment units per second.
+        Reference speed in position units per second; finite and greater
+        than zero.
     optimal_distance : float
         Shortest-path distance from start to goal under the caller's chosen
         metric (Euclidean or geodesic). The optimal time is
@@ -2629,6 +3081,12 @@ def time_efficiency(
         trajectory has < 2 samples, ``actual_time <= 0``, or
         ``optimal_distance`` is non-finite.
 
+    Raises
+    ------
+    ValueError
+        If ``reference_speed`` is not a finite speed greater than zero, or
+        the inputs are malformed.
+
     Examples
     --------
     >>> eff = time_efficiency(
@@ -2638,6 +3096,7 @@ def time_efficiency(
     """
     from neurospatial._validation import validate_times_positions
 
+    _validate_reference_speed(reference_speed, call="time_efficiency")
     times, positions = validate_times_positions(
         times, positions, call="time_efficiency"
     )
@@ -2657,173 +3116,537 @@ def time_efficiency(
 
 
 def angular_efficiency(
-    positions: NDArray[np.float64],
-    goal: NDArray[np.float64],
+    times: ArrayLike,
+    positions: ArrayLike,
+    goal: ArrayLike,
+    *,
+    metric: DistanceMetric = "euclidean",
+    env: Environment | None = None,
+    max_gap: float | None = DEFAULT_MAX_GAP,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> float:
-    """Compute angular path efficiency toward goal.
+    """Compute how directly the path heads toward the goal.
 
-    Measures how directly the animal heads toward the goal throughout
-    the trajectory.
+    For every observed step, the angle between the step's direction and the
+    direction in which the shortest path from the step's start to the goal
+    leaves it is measured; the result is
+    ``1 - sum(length * angle) / (pi * sum(length))``, the mean angle per unit
+    of distance traveled. A run straight toward the goal scores 1, a run
+    straight away scores 0, and a run perpendicular to the goal direction
+    scores 0.5.
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates in allocentric frame.
-    goal : NDArray[np.float64], shape (n_dims,)
-        Goal position in allocentric frame.
+    times : ArrayLike, shape (n_samples,)
+        Sample times in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples, n_dims) or (n_samples,)
+        Position coordinates in allocentric frame. Rows with a non-finite
+        coordinate are missing.
+    goal : ArrayLike, shape (n_dims,)
+        Goal position, in the coordinates and units of ``positions``.
+    metric : {"euclidean", "geodesic"}, default="euclidean"
+        Which shortest path sets the goal direction. ``"euclidean"``: the
+        straight line, so the direction is the bearing to the goal.
+        ``"geodesic"``: the length of the shortest path between two positions
+        that stays inside the environment (it goes around walls and never
+        leaves the environment, and on a track it runs along the track's
+        centerline), so the direction is toward its first waypoint, the first
+        corner it turns around, and on a track along the track toward the goal.
+        Requires ``env``.
+    env : Environment, optional
+        Required when ``metric="geodesic"``. A step starting outside the
+        environment has no geodesic direction and is left out.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
+    epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
+        Half-open ``[start, stop)`` windows in seconds, on the clock of
+        ``times``. A step must lie inside one window.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
     float
-        Angular efficiency in range [0, 1].
-        Returns 1.0 for paths with < 3 positions.
-        Returns NaN if all positions are identical.
+        Angular efficiency in ``[0, 1]``. NaN when no step has a defined
+        direction toward the goal: fewer than two observed samples, the
+        animal never moves, or every step starts at the goal.
+
+    Raises
+    ------
+    ValueError
+        If the inputs are empty or malformed, ``goal`` does not have one
+        coordinate per position dimension, ``metric`` is not recognized, or
+        (geodesic) ``env`` is None or the goal is outside the environment.
+    CartesianOnlyError
+        For ``metric="geodesic"`` on an egocentric polar environment.
 
     Notes
     -----
-    Computed as: 1 - mean(|delta_theta|) / pi
+    A step joins two consecutive valid samples. A NaN row is bridged like a
+    deleted row when its valid neighbours are no more than ``max_gap`` apart;
+    only a longer gap, an ``epochs`` edge or a declared break leaves the step
+    out. A step of zero length has no direction and is left out, as is a
+    step that starts at the goal (no goal direction).
+
+    Steps are measured on positions smoothed by a Gaussian in time (0.1 s
+    standard deviation, the smoothing of :func:`compute_speed`, weighted by
+    time difference so it never reaches across a bridged gap much longer
+    than that), and each step's angle counts in proportion to its smoothed
+    length. The result does not depend on the sampling rate along a smooth
+    path, and tracking jitter while the animal pauses, which smoothing
+    averages to almost no movement, weighs almost nothing: with raw steps,
+    4 s of 0.3 cm jitter after a 60 cm run toward the goal added as much
+    path as the run and pulled the result from 1 to 0.75. Smoothing rounds
+    sharp corners over about 0.1 s of travel.
+
+    The angle between step ``s`` and goal direction ``g`` is computed as
+    ``2 * arctan2(|u - v|, |u + v|)`` with unit vectors ``u = s / |s|`` and
+    ``v = g / |g|``. In 2-D it equals ``|wrap(step_heading - goal_bearing)|``,
+    and it is defined the same way for 1-D and 3-D positions.
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial.behavior import angular_efficiency
+    >>> times = np.array([0.0, 0.1, 0.2])
     >>> positions = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
-    >>> angular_efficiency(positions, goal=np.array([2.0, 0.0]))
+    >>> angular_efficiency(times, positions, np.array([10.0, 0.0]))  # toward
     1.0
+    >>> angular_efficiency(times, positions, np.array([-10.0, 0.0]))  # away
+    0.0
     """
-    from neurospatial.behavior.trajectory import compute_turn_angles
+    from neurospatial._observation import validated_observations
 
-    if len(positions) < 3:
-        return 1.0
+    times_arr, positions_arr, support = validated_observations(
+        times,
+        positions,
+        call="angular_efficiency",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="the angular efficiency is NaN",
+    )
+    starts, steps = _smoothed_steps(
+        times_arr, positions_arr, support.sample_valid, support.interval_mask
+    )
+    return _angular_efficiency(
+        starts, steps, goal, metric=metric, env=env, call="angular_efficiency"
+    )
 
-    if np.ptp(positions, axis=0).max() < 1e-10:
+
+def _smoothed_steps(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    sample_valid: NDArray[np.bool_],
+    interval_mask: NDArray[np.bool_],
+    smoothed: NDArray[np.float64] | None = None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Start and displacement of each usable step of the smoothed path.
+
+    A step joins consecutive valid samples (a bridged stretch of missing
+    samples is one step), measured on positions smoothed over time by
+    :func:`_time_smoothed_positions`.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+    positions : ndarray, shape (n_samples, n_dims)
+    sample_valid, interval_mask : ndarray of bool
+        ``ObservationSupport.sample_valid`` (n_samples,) and
+        ``ObservationSupport.interval_mask`` (n_samples - 1,).
+    smoothed : ndarray, shape (n_samples, n_dims), optional
+        Smoothed positions, when the caller already has them for a longer
+        recording that these samples are a slice of.
+
+    Returns
+    -------
+    starts, steps : ndarray, shape (n_steps, n_dims)
+    """
+    from neurospatial._intervals import gap_endpoints
+
+    if smoothed is None:
+        smoothed = _time_smoothed_positions(times, positions, interval_mask)
+    first, last, _ = gap_endpoints(sample_valid)
+    counted = interval_mask & sample_valid[1:]
+    first, last = first[counted], last[counted]
+    return smoothed[first], smoothed[last] - smoothed[first]
+
+
+def _time_smoothed_positions(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    interval_mask: NDArray[np.bool_],
+) -> NDArray[np.float64]:
+    """Positions smoothed by Gaussian-weighted local linear fits in time.
+
+    Each valid sample is replaced by the value at its own time of a straight
+    line fitted, within its observed run, to the samples weighted by a
+    Gaussian of their time difference (standard deviation
+    ``DEFAULT_SPEED_SMOOTHING`` seconds, cut at four standard deviations).
+    A local linear fit leaves motion at constant velocity unchanged, also at
+    the ends of a run, and averages tracking jitter away. Weighting by time
+    rather than sample distance means a bridged gap much longer than the
+    kernel is not smoothed across. Missing rows stay NaN.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+    positions : ndarray, shape (n_samples, n_dims)
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        ``ObservationSupport.interval_mask``.
+
+    Returns
+    -------
+    ndarray, shape (n_samples, n_dims)
+    """
+    from neurospatial._intervals import run_sample_bounds
+    from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
+
+    sigma = DEFAULT_SPEED_SMOOTHING
+    reach = 4.0 * sigma
+    finite = np.all(np.isfinite(positions), axis=1)
+    smoothed = positions.astype(np.float64, copy=True)
+    mask = np.asarray(interval_mask, dtype=bool) & (np.diff(times) > 0)
+    for first, last in run_sample_bounds(mask):
+        run = first + np.flatnonzero(finite[first : last + 1])
+        if run.size < 2:
+            continue
+        t, p = times[run], positions[run]
+        index = np.arange(run.size)
+        lo = np.searchsorted(t, t - reach, side="left")
+        hi = np.searchsorted(t, t + reach, side="right")
+        widest = int(max(np.max(index - lo), np.max(hi - 1 - index)))
+        # Weighted sums for the local fit p_j - p_i ~ a + b * (t_j - t_i),
+        # in differences from each sample so a still animal stays exactly still.
+        s0 = np.zeros(run.size)
+        s1 = np.zeros(run.size)
+        s2 = np.zeros(run.size)
+        m0 = np.zeros_like(p)
+        m1 = np.zeros_like(p)
+        for offset in range(-widest, widest + 1):
+            other = np.clip(index + offset, 0, run.size - 1)
+            lag = t[other] - t
+            inside = (index + offset >= 0) & (index + offset < run.size)
+            weight = np.where(
+                inside & (np.abs(lag) <= reach), np.exp(-0.5 * (lag / sigma) ** 2), 0.0
+            )
+            s0 += weight
+            s1 += weight * lag
+            s2 += weight * lag**2
+            deviation = p[other] - p
+            m0 += weight[:, None] * deviation
+            m1 += (weight * lag)[:, None] * deviation
+        det = s0 * s2 - s1**2
+        # A sample alone in its window (det ~ 0) keeps its own position.
+        fitted = det > 1e-12 * s0 * np.maximum(s2, np.finfo(float).tiny)
+        shift = np.where(
+            fitted[:, None],
+            (s2[:, None] * m0 - s1[:, None] * m1) / np.where(fitted, det, 1.0)[:, None],
+            0.0,
+        )
+        smoothed[run] = p + shift
+    return smoothed
+
+
+def _observed_steps(
+    positions: NDArray[np.float64],
+    sample_valid: NDArray[np.bool_],
+    interval_mask: NDArray[np.bool_],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Start and end positions of each usable step between valid samples.
+
+    A bridged stretch of missing samples is one step, from the valid sample
+    before it to the valid sample after it.
+
+    Parameters
+    ----------
+    positions : ndarray, shape (n_samples, n_dims)
+    sample_valid, interval_mask : ndarray of bool
+        ``ObservationSupport.sample_valid`` (n_samples,) and
+        ``ObservationSupport.interval_mask`` (n_samples - 1,).
+
+    Returns
+    -------
+    starts, ends : ndarray, shape (n_steps, n_dims)
+    """
+    from neurospatial._intervals import gap_endpoints
+
+    first, last, _ = gap_endpoints(sample_valid)
+    counted = interval_mask & sample_valid[1:]
+    return positions[first[counted]], positions[last[counted]]
+
+
+def _angular_efficiency(
+    starts: NDArray[np.float64],
+    step: NDArray[np.float64],
+    goal: ArrayLike,
+    *,
+    metric: DistanceMetric,
+    env: Environment | None,
+    call: str,
+) -> float:
+    """``1 - sum(length * angle) / (pi * sum(length))`` over steps with an angle.
+
+    Parameters
+    ----------
+    starts, step : ndarray, shape (n_steps, n_dims)
+        Step start positions and (smoothed) displacements.
+    goal : array-like, shape (n_dims,)
+    metric : {"euclidean", "geodesic"}
+        Shortest path whose first direction is the goal direction.
+    env : Environment or None
+        Required when ``metric="geodesic"``.
+    call : str
+        Public function name, used in messages.
+    """
+    _require_path_metric(metric, call=call)
+    goal_arr = _validated_goal(goal, starts.shape[1], call=call)
+    if metric == "euclidean":
+        to_goal = goal_arr[None, :] - starts
+    else:
+        paths = _geodesic_paths(env, goal_arr, call=call)
+        to_goal = paths.directions(starts, goal_arr)
+    step_norm = np.linalg.norm(step, axis=1)
+    goal_norm = np.linalg.norm(to_goal, axis=1)
+    with np.errstate(invalid="ignore"):
+        defined = (step_norm > 0) & (goal_norm > 0)
+    if not defined.any():
         return np.nan
-
-    angles = compute_turn_angles(positions)
-
-    if len(angles) == 0:
-        return 1.0
-
-    mean_abs_angle = np.mean(np.abs(angles))
-    return float(1.0 - mean_abs_angle / np.pi)
+    u = step[defined] / step_norm[defined, None]
+    v = to_goal[defined] / goal_norm[defined, None]
+    angle = 2.0 * np.arctan2(
+        np.linalg.norm(u - v, axis=1), np.linalg.norm(u + v, axis=1)
+    )
+    # Mean angle per unit of distance traveled.
+    weight = step_norm[defined]
+    return float(1.0 - np.sum(weight * angle) / (np.pi * np.sum(weight)))
 
 
 def subgoal_efficiency(
     env: Environment,
-    positions: NDArray[np.float64],
-    subgoals: NDArray[np.float64],
+    times: ArrayLike,
+    positions: ArrayLike,
+    subgoals: ArrayLike,
     *,
     metric: DistanceMetric = "geodesic",
+    max_gap: float | None = DEFAULT_MAX_GAP,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> SubgoalEfficiencyResult:
     """Compute path efficiency decomposed by subgoals.
+
+    The path is cut at the closest approach to each subgoal in turn, and each
+    piece is scored like :func:`compute_path_efficiency`: segment 1 runs from
+    the first measured sample to the closest approach to subgoal 1, segment
+    2 from there to the closest approach to subgoal 2 after it, and so on.
 
     Parameters
     ----------
     env : Environment
         Spatial environment.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Trajectory positions.
-    subgoals : NDArray[np.float64], shape (n_subgoals, n_dims)
-        Ordered sequence of subgoals.
+    times : ArrayLike, shape (n_samples,)
+        Sample times in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples, n_dims) or (n_samples,)
+        Position coordinates in allocentric frame. Rows with a non-finite
+        coordinate are missing.
+    subgoals : ArrayLike, shape (n_subgoals, n_dims) or (n_dims,)
+        Ordered sequence of subgoals, in the coordinates and units of
+        ``positions``. A single row is one subgoal.
     metric : {"geodesic", "euclidean"}, default="geodesic"
-        Distance metric.
+        Distance metric for path lengths, the closest approach and the goal
+        direction, as in :func:`compute_path_efficiency`. ``"euclidean"`` is
+        the straight-line distance. ``"geodesic"`` is the length of the
+        shortest path between two positions that stays inside the environment:
+        it goes around walls and never leaves the environment, and on a track
+        it runs along the track's centerline.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
+    epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
+        Half-open ``[start, stop)`` windows in seconds, on the clock of
+        ``times``. Only samples inside a window are searched for the closest
+        approach, and a step must lie inside one window.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
     SubgoalEfficiencyResult
-        Per-segment efficiency and aggregated metrics.
+        One :class:`PathEfficiencyResult` per subgoal and the derived mean
+        and weighted efficiencies. A segment's efficiency is NaN unless it is
+        fully observed; a segment of a single sample (the subgoal was never
+        approached) has NaN traveled length, efficiency and angular
+        efficiency, and its ``shortest_length`` is still the distance from
+        its start to the subgoal.
+
+    Raises
+    ------
+    ValueError
+        If the inputs are empty or malformed, ``metric`` is not recognized,
+        ``subgoals`` does not have one finite coordinate per position
+        dimension, or (geodesic) a subgoal or the first measured position is
+        outside the environment.
+
+    Warns
+    -----
+    UserWarning
+        When a subgoal is never approached: the closest measured sample after
+        the previous subgoal is the segment's own start (and is not at the
+        subgoal), so the animal never got closer to it.
+
+    Notes
+    -----
+    A NaN row is bridged like a deleted row when its valid neighbours are no
+    more than ``max_gap`` apart; only a longer gap, an ``epochs`` edge or a
+    declared break splits the path, and a segment containing such a split is
+    not fully observed. The closest approach is searched among measured
+    samples only: finite coordinates, inside ``epochs`` and (geodesic) inside
+    the environment.
 
     Examples
     --------
+    A straight run East through a subgoal at x = 5 cm to the goal at 10 cm:
+
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> from neurospatial.behavior import subgoal_efficiency
     >>> positions = np.c_[np.arange(11.0), np.zeros(11)]
+    >>> times = np.arange(11) / 10
     >>> env = Environment.from_samples(positions, bin_size=1.0)
     >>> subgoals = np.array([[5.0, 0.0], [10.0, 0.0]])
-    >>> result = subgoal_efficiency(env, positions, subgoals, metric="euclidean")
+    >>> result = subgoal_efficiency(env, times, positions, subgoals, metric="euclidean")
+    >>> [seg.traveled_length for seg in result.segment_results]
+    [5.0, 5.0]
+    >>> result.mean_efficiency
+    1.0
     """
-    subgoals = np.asarray(subgoals)
-    if subgoals.ndim == 1:
-        subgoals = subgoals.reshape(1, -1)
+    import warnings
 
-    n_subgoals = len(subgoals)
-    segment_results = []
+    from neurospatial._observation import validated_observations
+    from neurospatial._stacklevel import _external_stacklevel
 
-    current_start_idx = 0
-
-    for i in range(n_subgoals):
-        subgoal = subgoals[i]
-
-        distances_to_subgoal = np.linalg.norm(positions - subgoal, axis=1)
-        arrival_idx = (
-            np.argmin(distances_to_subgoal[current_start_idx:]) + current_start_idx
+    call = "subgoal_efficiency"
+    _require_path_metric(metric, call=call)
+    times_arr, positions_arr, support = validated_observations(
+        times,
+        positions,
+        call=call,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="no path was observed",
+    )
+    smoothed = _time_smoothed_positions(times_arr, positions_arr, support.interval_mask)
+    n_dims = positions_arr.shape[1]
+    subgoal_arr = np.asarray(subgoals, dtype=float)
+    if subgoal_arr.ndim == 1:
+        subgoal_arr = subgoal_arr.reshape(1, -1)
+    if subgoal_arr.ndim != 2 or subgoal_arr.shape[0] == 0:
+        raise ValueError(
+            _format_error(
+                f"{call}() needs subgoals of shape (n_subgoals, {n_dims}); got "
+                f"shape {np.shape(subgoals)}.",
+                why="each row is one subgoal position, visited in order.",
+                fix=f"pass an array with one row of {n_dims} coordinates per subgoal.",
+            )
         )
+    for subgoal in subgoal_arr:
+        _validated_goal(subgoal, n_dims, call=call)
 
-        segment_positions = positions[current_start_idx : arrival_idx + 1]
-
-        if len(segment_positions) >= 2:
-            start_pos = segment_positions[0]
-
-            traveled = _polyline_length(segment_positions, metric=metric, env=env)
-            shortest = shortest_path_length(env, start_pos, subgoal, metric=metric)
-
-            if traveled > 0 and np.isfinite(shortest):
-                eff = shortest / traveled
-            else:
-                eff = np.nan
-
-            ang_eff = angular_efficiency(segment_positions, subgoal)
-
-            segment_results.append(
-                PathEfficiencyResult(
-                    traveled_length=traveled,
-                    shortest_length=shortest,
-                    efficiency=eff,
-                    time_efficiency=None,
-                    angular_efficiency=ang_eff,
-                    start_position=start_pos,
-                    goal_position=subgoal,
-                    metric=metric,
+    measured = support.sample_valid.copy()
+    if support.epochs is not None:
+        measured &= times_in_intervals(support.epochs, times_arr)
+    segment_results = []
+    start: int | None = None
+    for index, subgoal in enumerate(subgoal_arr):
+        distances = _goal_distances(
+            positions_arr, subgoal, metric=metric, env=env, call=call
+        )
+        rows = np.flatnonzero(measured & ~np.isnan(distances))
+        if start is None:
+            if not rows.size:
+                raise ValueError(
+                    _format_error(
+                        f"{call}() found no measured position to start from.",
+                        why=(
+                            "every sample is missing, outside epochs or (geodesic) "
+                            "outside the environment."
+                        ),
+                        fix="check positions, epochs and the environment.",
+                    )
                 )
+            start = int(rows[0])
+        rows = rows[rows >= start]
+        arrival = int(rows[np.argmin(distances[rows])]) if rows.size else start
+        if arrival == start and distances[start] > 0:
+            warnings.warn(
+                _format_error(
+                    f"{call}(): subgoal {index} at {subgoal.tolist()} is never "
+                    "approached; the closest measured sample after the previous "
+                    "subgoal is the segment's start.",
+                    why=(
+                        "the animal never got closer to this subgoal, so its "
+                        "segment has no path and its efficiency is NaN."
+                    ),
+                    fix=(
+                        "check the subgoal order and coordinates, or the trial "
+                        "window passed as times and positions."
+                    ),
+                ),
+                UserWarning,
+                stacklevel=_external_stacklevel(),
             )
-        else:
-            segment_results.append(
-                PathEfficiencyResult(
-                    traveled_length=0.0,
-                    shortest_length=0.0,
-                    efficiency=np.nan,
-                    time_efficiency=None,
-                    angular_efficiency=1.0,
-                    start_position=positions[current_start_idx],
-                    goal_position=subgoal,
+        segment = slice(start, arrival + 1)
+        traveled, complete = _observed_path_length(
+            positions_arr[segment],
+            support.sample_valid[segment],
+            support.interval_mask[start:arrival],
+            metric=metric,
+            env=env,
+            call=call,
+        )
+        segment_results.append(
+            PathEfficiencyResult(
+                traveled_length=traveled,
+                shortest_length=float(distances[start]),
+                time_efficiency=None,
+                angular_efficiency=_angular_efficiency(
+                    *_smoothed_steps(
+                        times_arr[segment],
+                        positions_arr[segment],
+                        support.sample_valid[segment],
+                        support.interval_mask[start:arrival],
+                        smoothed=smoothed[segment],
+                    ),
+                    subgoal,
                     metric=metric,
-                )
+                    env=env,
+                    call=call,
+                ),
+                start_position=positions_arr[start],
+                goal_position=subgoal,
+                metric=metric,
+                fully_observed=complete,
             )
-
-        current_start_idx = arrival_idx
-
-    efficiencies = [r.efficiency for r in segment_results if not np.isnan(r.efficiency)]
-    shortest_lengths = [
-        r.shortest_length for r in segment_results if not np.isnan(r.efficiency)
-    ]
-
-    if efficiencies:
-        mean_eff = float(np.mean(efficiencies))
-        weights = np.array(shortest_lengths)
-        if weights.sum() > 0:
-            weighted_eff = float(np.average(efficiencies, weights=weights))
-        else:
-            weighted_eff = mean_eff
-    else:
-        mean_eff = np.nan
-        weighted_eff = np.nan
+        )
+        start = arrival
 
     return SubgoalEfficiencyResult(
-        segment_results=segment_results,
-        mean_efficiency=mean_eff,
-        weighted_efficiency=weighted_eff,
-        subgoal_positions=subgoals,
+        segment_results=tuple(segment_results), subgoal_positions=subgoal_arr
     )
 
 
@@ -2854,12 +3677,22 @@ def compute_path_efficiency(
     goal : ArrayLike, shape (n_dims,)
         Goal position.
     metric : {"geodesic", "euclidean"}, default="geodesic"
-        Distance metric. With "geodesic", an interval with an endpoint outside
-        the environment has no geodesic length and is left out, and an interval
-        between disconnected bins contributes ``inf`` (so a complete path with
-        such a step has ``traveled_length=inf`` and ``efficiency=0.0``).
+        Distance metric for both lengths and the goal direction.
+        ``"euclidean"`` is the straight-line distance. ``"geodesic"`` is the
+        length of the shortest path between two positions that stays inside the
+        environment: it goes around walls and never leaves the environment, and
+        on a track it runs along the track's centerline: ``traveled_length`` as
+        in :func:`traveled_path_length`, ``shortest_length`` as in
+        :func:`shortest_path_length` and the goal direction as in
+        :func:`angular_efficiency`, so a straight run on an open field is
+        perfectly efficient at any bin size. An interval with an endpoint
+        outside the environment has no geodesic length and is left out, and an
+        interval between disconnected parts contributes ``inf`` (so a complete
+        path with such a step has ``traveled_length=inf`` and
+        ``efficiency=0.0``).
     reference_speed : float, optional
-        Reference speed for time efficiency.
+        Reference speed for time efficiency, in position units per second;
+        finite and greater than zero. None leaves ``time_efficiency`` None.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -2892,10 +3725,12 @@ def compute_path_efficiency(
     ValueError
         If ``metric`` is not recognized, or if the inputs are empty or
         malformed (for example ``times`` not strictly increasing, or
-        ``break_before`` not a Boolean array with one entry per sample).
-        With ``metric="geodesic"``, also if the first observed position or
-        ``goal`` is outside the environment, or no position is observed
-        (raised by ``distance_between``). With ``metric="euclidean"`` a
+        ``break_before`` not a Boolean array with one entry per sample),
+        ``goal`` does not have shape ``(n_dims,)`` or has a non-finite
+        coordinate, or ``reference_speed`` is not a finite speed greater than
+        zero. With ``metric="geodesic"``, also if the first observed position or
+        ``goal`` is outside the environment, or no position is observed.
+        With ``metric="euclidean"`` a
         recording with no observed position gives ``shortest_length=nan``.
 
     Notes
@@ -2905,15 +3740,20 @@ def compute_path_efficiency(
     by the straight step between its neighbours when they are no more than
     ``max_gap`` apart, while a longer gap, a declared break or an interval
     outside ``epochs`` is left out, and it is ``nan`` when nothing was
-    observed (including a single sample). ``efficiency`` and
-    ``angular_efficiency`` compare the whole route with the shortest one, so
-    they are ``nan`` unless every interval from the first to the last observed
-    sample is usable; with an unbridged stretch the observed length underestimates
-    the route and the ratio would be biased upward. ``shortest_length`` and
-    the wall-clock ``time_efficiency`` keep their meanings. When a long
-    tracking loss makes a trial's efficiency ``nan``, report its
-    ``traveled_length`` instead, or restrict the analysis to completely
-    observed trials.
+    observed (including a single sample). ``efficiency`` compares the whole
+    route with the shortest one, so it is ``nan`` unless every interval from
+    the first to the last observed sample is usable; with an unbridged
+    stretch the observed length underestimates the route and the ratio would
+    be biased upward. ``shortest_length`` and the wall-clock
+    ``time_efficiency`` keep their meanings. When a long tracking loss makes
+    a trial's efficiency ``nan``, report its ``traveled_length`` instead, or
+    restrict the analysis to completely observed trials.
+
+    ``angular_efficiency`` is a mean over the observed steps, as returned by
+    :func:`angular_efficiency` with the same arguments (including
+    ``metric``: under the geodesic metric each step is compared with the
+    direction of the shortest path inside the environment), so a tracking
+    loss removes steps from the mean but does not bias it.
 
     Examples
     --------
@@ -2955,10 +3795,26 @@ def compute_path_efficiency(
         break_before=break_before,
         result="no path was observed",
     )
-    goal = np.asarray(goal)
+    goal = _validated_goal(goal, positions_arr.shape[1], call="compute_path_efficiency")
+    if reference_speed is not None:
+        _validate_reference_speed(reference_speed, call="compute_path_efficiency")
 
     traveled, complete = _observed_path_length(
-        positions_arr, support, metric=metric, env=env
+        positions_arr,
+        support.sample_valid,
+        support.interval_mask,
+        metric=metric,
+        env=env,
+        call="compute_path_efficiency",
+    )
+    ang_eff = _angular_efficiency(
+        *_smoothed_steps(
+            times_arr, positions_arr, support.sample_valid, support.interval_mask
+        ),
+        goal,
+        metric=metric,
+        env=env,
+        call="compute_path_efficiency",
     )
     # Missing rows before the first or after the last observed sample are
     # deleted rows: the path starts and ends where the animal was observed.
@@ -2967,12 +3823,6 @@ def compute_path_efficiency(
         times_arr = times_arr[observed[0] : observed[-1] + 1]
         positions_arr = positions_arr[observed[0] : observed[-1] + 1]
     shortest = shortest_path_length(env, positions_arr[0], goal, metric=metric)
-
-    eff = (
-        shortest / traveled
-        if complete and traveled > 0 and np.isfinite(shortest)
-        else np.nan
-    )
 
     time_eff = None
     if reference_speed is not None and len(positions_arr) >= 2:
@@ -2983,26 +3833,20 @@ def compute_path_efficiency(
             optimal_distance=shortest,
         )
 
-    ang_eff = (
-        angular_efficiency(positions_arr[np.isfinite(positions_arr).all(axis=1)], goal)
-        if complete
-        else np.nan
-    )
-
     return PathEfficiencyResult(
         traveled_length=traveled,
         shortest_length=shortest,  # may be inf if the goal is unreachable
-        efficiency=eff,  # already nan when shortest is non-finite
         time_efficiency=time_eff,
         angular_efficiency=ang_eff,
         start_position=positions_arr[0],
         goal_position=goal,
         metric=metric,
+        fully_observed=complete,
     )
 
 
 # =============================================================================
-# Goal-Directed Navigation Functions (from metrics/goal_directed.py)
+# Goal-Directed Navigation Functions
 # =============================================================================
 
 
@@ -3041,21 +3885,50 @@ def goal_vector(
 
 
 def _goal_vector(
-    positions: NDArray[np.float64], goal: NDArray[np.float64], *, call: str
+    positions: NDArray[np.float64], goal: ArrayLike, *, call: str
 ) -> NDArray[np.float64]:
     """``goal - positions``, naming ``call`` when the dimensions differ."""
-    goal = np.asarray(goal)
     positions = np.asarray(positions)
-    if goal.shape[0] != positions.shape[1]:
-        n_dims = positions.shape[1]
+    goal_arr = _validated_goal(goal, positions.shape[1], call=call)
+    vector: NDArray[np.float64] = goal_arr[np.newaxis, :] - positions
+    return vector
+
+
+def _validated_goal(goal: ArrayLike, n_dims: int, *, call: str) -> NDArray[np.float64]:
+    """Return ``goal`` as a finite float array of shape ``(n_dims,)``.
+
+    Parameters
+    ----------
+    goal : array-like
+        Goal position.
+    n_dims : int
+        Number of position dimensions.
+    call : str
+        Public function name, used in messages.
+
+    Raises
+    ------
+    ValueError
+        If ``goal`` does not have shape ``(n_dims,)`` or has a non-finite
+        coordinate. Without this check NumPy would broadcast a one-coordinate
+        goal against every position dimension.
+    """
+    goal_arr = np.asarray(goal, dtype=float)
+    if goal_arr.shape != (n_dims,):
+        n_goal = goal_arr.shape[0] if goal_arr.ndim == 1 else None
+        got = (
+            f"goal has {n_goal} coordinates but positions have {n_dims}"
+            if n_goal is not None
+            else f"goal has shape {goal_arr.shape}"
+        )
         raise ValueError(
             _format_error(
                 f"{call}() needs a goal with one coordinate per position "
-                f"dimension; goal has {goal.shape[0]} coordinates but positions "
-                f"have {n_dims}.",
+                f"dimension; {got}.",
                 why=(
-                    "Why: the vector to the goal is measured in the positions' "
-                    "coordinate frame."
+                    "the goal is a point in the positions' coordinate frame; a "
+                    "goal of another shape would be broadcast against every "
+                    "position dimension."
                 ),
                 fix=(
                     f"pass goal with shape ({n_dims},), in the same coordinates "
@@ -3063,8 +3936,36 @@ def _goal_vector(
                 ),
             )
         )
-    vector: NDArray[np.float64] = goal[np.newaxis, :] - positions
-    return vector
+    if not np.isfinite(goal_arr).all():
+        raise ValueError(
+            _format_error(
+                f"{call}() got a goal with a non-finite coordinate: {goal_arr}.",
+                why="no distance or direction to a missing goal can be measured.",
+                fix="pass the goal's finite coordinates.",
+            )
+        )
+    return goal_arr
+
+
+def _validate_reference_speed(reference_speed: float, *, call: str) -> None:
+    """Raise unless ``reference_speed`` is a finite positive speed."""
+    if not (np.isfinite(reference_speed) and reference_speed > 0):
+        raise ValueError(
+            _format_error(
+                f"{call}() got reference_speed={reference_speed!r}; it must be a "
+                "finite speed greater than zero.",
+                why=(
+                    "the optimal travel time is the shortest distance divided by "
+                    "reference_speed; a zero, negative or non-finite speed gives "
+                    "no travel time."
+                ),
+                fix=(
+                    "pass the animal's typical running speed in position units per "
+                    "second, e.g. reference_speed=20.0 for 20 cm/s with positions "
+                    "in cm."
+                ),
+            )
+        )
 
 
 def goal_direction(
@@ -3120,8 +4021,8 @@ def instantaneous_goal_alignment(
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit.
-        Minimum speed threshold in environment units per second.
+        cannot know the positions' unit. Samples slower than this have no
+        direction of movement and no alignment.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -3144,8 +4045,9 @@ def instantaneous_goal_alignment(
     NDArray[np.float64], shape (n_samples,)
         Cosine of angle between velocity and goal direction, range [-1, 1].
         NaN where the animal is not moving (speed zero or below
-        ``min_speed``) or not observed (a missing position or a sample in no
-        observed run).
+        ``min_speed``), not observed (a missing position or a sample in no
+        observed run), or exactly at the goal, where there is no direction
+        to the goal.
 
     Raises
     ------
@@ -3157,10 +4059,10 @@ def instantaneous_goal_alignment(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause. A missing position (a NaN row) is
-    skipped as if its row were deleted.
+    A NaN row is bridged like a deleted row when its valid neighbours are no
+    more than ``max_gap`` apart; only a longer gap, an ``epochs`` edge or a
+    declared ``break_before`` splits the recording into runs, and no velocity
+    or heading spans a split.
 
     The direction of movement exists only where the animal moves, the rule of
     :func:`heading_from_velocity`.
@@ -3236,7 +4138,8 @@ def _goal_alignment(
     Returns
     -------
     ndarray, shape (n_samples,)
-        ``cos(heading - goal_direction)`` where the animal moves, else NaN.
+        ``cos(heading - goal_direction)`` where the animal moves, else NaN;
+        also NaN at a sample exactly at the goal (no goal direction).
     """
     from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
     from neurospatial.behavior._kinematics import _movement_heading_and_speed
@@ -3248,8 +4151,11 @@ def _goal_alignment(
         times, positions, support.interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
     )
     moving = (speed > 0) & (speed >= min_speed)
+    # At the goal itself there is no direction to the goal (arctan2(0, 0)
+    # would read as East and score an arrival from the East as -1).
+    away_from_goal = np.any(vec != 0, axis=1)
     alignment: NDArray[np.float64] = np.where(
-        moving, np.cos(heading - goal_heading), np.nan
+        moving & away_from_goal, np.cos(heading - goal_heading), np.nan
     )
     return alignment
 
@@ -3277,9 +4183,8 @@ def goal_bias(
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit.
-        Speed threshold in position units per second. Samples slower than this
-        are excluded from the mean.
+        cannot know the positions' unit. Samples slower than this are
+        excluded from the mean.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -3300,9 +4205,9 @@ def goal_bias(
     Returns
     -------
     float
-        Mean goal alignment over the samples where the animal moves, range
-        [-1, 1]. NaN if the animal is never moving (speed zero or below
-        ``min_speed``) at an observed sample.
+        Mean goal alignment over the samples where the animal moves and is
+        not exactly at the goal, range [-1, 1]. NaN if the animal is never
+        moving (speed zero or below ``min_speed``) at an observed sample.
 
     Raises
     ------
@@ -3314,10 +4219,10 @@ def goal_bias(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause. A missing position (a NaN row) is
-    skipped as if its row were deleted.
+    A NaN row is bridged like a deleted row when its valid neighbours are no
+    more than ``max_gap`` apart; only a longer gap, an ``epochs`` edge or a
+    declared ``break_before`` splits the recording into runs, and no velocity
+    or heading spans a split.
 
     Interpretation:
     - > 0.5: Strong goal-directed navigation
@@ -3329,8 +4234,8 @@ def goal_bias(
     >>> positions = np.column_stack([np.linspace(0, 100, 101), np.zeros(101)])
     >>> times = np.linspace(0, 10, 101)
     >>> goal = np.array([100.0, 0.0])
-    >>> goal_bias(times, positions, goal, min_speed=0.0) > 0.8
-    True
+    >>> float(goal_bias(times, positions, goal, min_speed=0.0))
+    1.0
 
     An animal that never moves has no direction of movement, so no bias:
 
@@ -3395,9 +4300,17 @@ def approach_rate(
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     metric : {"euclidean", "geodesic"}, default="euclidean"
-        Distance metric. Geodesic requires env parameter.
+        ``"euclidean"`` is the straight-line distance to the goal.
+        ``"geodesic"`` is the length of the shortest path between two positions
+        that stays inside the environment: it goes around walls and never
+        leaves the environment, and on a track it runs along the track's
+        centerline, measured from each position (not its bin center) as in
+        :func:`shortest_path_length`, so a constant-speed approach gives a
+        constant rate instead of a rate quantized by the bins. Requires
+        ``env``.
     env : Environment, optional
-        Required when metric="geodesic".
+        Required when metric="geodesic". A position outside the environment
+        has no geodesic distance and is treated as missing.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -3426,11 +4339,15 @@ def approach_rate(
     Raises
     ------
     ValueError
-        If metric="geodesic" but env is None, or the goal is outside the
-        environment or has NaN coordinates.
+        If ``metric`` is not 'euclidean' or 'geodesic', ``goal`` does not have
+        shape ``(n_dims,)`` or has a non-finite coordinate, or
+        metric="geodesic" but env is None or the goal is outside the
+        environment.
     ValueError
         If the inputs are empty, have different lengths, or ``times`` is not
         finite and strictly increasing.
+    CartesianOnlyError
+        For ``metric="geodesic"`` on an egocentric polar environment.
 
     Examples
     --------
@@ -3508,7 +4425,7 @@ def _approach_rate(
     env : Environment or None
         Required when ``metric="geodesic"``.
     call : str
-        Public function name, used in the goal-dimension error.
+        Public function name, used in messages.
 
     Returns
     -------
@@ -3516,50 +4433,109 @@ def _approach_rate(
         Distance change per second over the interval ending at each sample;
         NaN at the first sample and where that interval is not usable.
     """
-    goal = np.asarray(goal)
+    distances = _goal_distances(positions, goal, metric=metric, env=env, call=call)
+    return _distance_rates(times, distances, support)
 
-    if metric == "geodesic" and env is None:
-        raise ValueError(
-            "env parameter is required when metric='geodesic'. "
-            "Provide the Environment instance, or use metric='euclidean' "
-            "for straight-line distances."
-        )
 
-    if metric == "euclidean":
-        goal_vec = _goal_vector(positions, goal, call=call)
-        distances = np.linalg.norm(goal_vec, axis=1)
-    else:
-        assert env is not None
-        require_cartesian(
-            env.coordinate_system,
-            "approach_rate(metric='geodesic')",
-            why=(
-                "positions and goal are allocentric Cartesian positions, located in "
-                "the environment's bins."
-            ),
-            fix=(
-                "use an allocentric environment, or metric='euclidean' for the "
-                "straight-line distance to the goal"
-            ),
-        )
-        position_bins = env.bin_at(positions)
-        # The goal is an explicit point: one outside the environment raises.
-        to_goal = env.distance_to(points=goal.reshape(1, -1), metric="geodesic")
-        distances = to_goal[position_bins]
-        distances[position_bins == -1] = np.nan
-        # A position outside the environment has no geodesic distance: it is
-        # missing for the rate, so its gap is gated like a deleted row's.
-        support = support.restricted(times, np.isfinite(distances))
+def _distance_rates(
+    times: NDArray[np.float64],
+    distances: NDArray[np.float64],
+    support: ObservationSupport,
+) -> NDArray[np.float64]:
+    """Change of ``distances`` per second over each usable interval.
 
+    A sample whose distance is not finite (a position outside the
+    environment, or disconnected from the goal) is missing for the rate, so
+    its gap is gated again like a deleted row's.
+    """
     from neurospatial.behavior._kinematics import interval_velocity
 
+    support = support.restricted(times, np.isfinite(distances))
     velocity = interval_velocity(times, distances[:, None], support.interval_mask)
-    rates = np.full(len(positions), np.nan)
+    rates = np.full(len(distances), np.nan)
     rates[1:] = velocity[:, 0]
     # A bridged gap's rate belongs to the valid sample that ends it.
     rates[~np.isfinite(distances)] = np.nan
 
     return rates
+
+
+def _goal_distances(
+    positions: NDArray[np.float64],
+    goal: ArrayLike,
+    *,
+    metric: str,
+    env: Environment | None,
+    call: str,
+) -> NDArray[np.float64]:
+    """Distance from each position to the goal under ``metric``.
+
+    Parameters
+    ----------
+    positions : ndarray, shape (n_samples, n_dims)
+        NaN rows are missing.
+    goal : array-like, shape (n_dims,)
+    metric : {"euclidean", "geodesic"}
+        ``"geodesic"`` is the length of the shortest path inside the
+        environment from the position itself (not its bin center), as in
+        :func:`shortest_path_length`.
+    env : Environment or None
+        Required when ``metric="geodesic"``.
+    call : str
+        Public function name, used in messages.
+
+    Returns
+    -------
+    ndarray, shape (n_samples,)
+        NaN for missing positions and, under the geodesic metric, positions
+        outside the environment; ``inf`` for positions disconnected from the
+        goal.
+
+    Raises
+    ------
+    ValueError
+        If ``metric`` is not recognized, ``goal`` has the wrong shape or a
+        non-finite coordinate, or (geodesic) ``env`` is None or the goal is
+        outside the environment.
+    CartesianOnlyError
+        For ``metric="geodesic"`` on an egocentric polar environment.
+    """
+    _require_path_metric(metric, call=call)
+    goal_arr = _validated_goal(goal, positions.shape[1], call=call)
+    if metric == "euclidean":
+        distances: NDArray[np.float64] = np.linalg.norm(goal_arr - positions, axis=1)
+        return distances
+    return _geodesic_paths(env, goal_arr, call=call).to_point(positions, goal_arr)
+
+
+def _geodesic_paths(
+    env: Environment | None, goal: NDArray[np.float64], *, call: str
+) -> EnvironmentPaths:
+    """The environment's shortest-path engine, with ``goal`` checked inside.
+
+    Raises
+    ------
+    ValueError
+        If ``env`` is None or ``goal`` is outside the environment.
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
+    """
+    if env is None:
+        raise ValueError(
+            _format_error(
+                f"{call}(metric='geodesic') needs env=.",
+                why="the geodesic distance is a path inside the environment.",
+                fix=(
+                    "pass the Environment the positions were recorded in, or use "
+                    "metric='euclidean' for straight-line distances."
+                ),
+            )
+        )
+    from neurospatial.behavior._environment_paths import environment_paths
+
+    paths = environment_paths(env, call=call)
+    _require_inside(paths, {"goal": goal}, call=call)
+    return paths
 
 
 def compute_goal_directed_metrics(
@@ -3588,14 +4564,24 @@ def compute_goal_directed_metrics(
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     metric : {"geodesic", "euclidean"}, default="euclidean"
-        Distance metric for approach rate and distance computations.
+        Distance metric for the approach rate, the goal distances and goal
+        arrival. ``"euclidean"`` is the straight-line distance. ``"geodesic"``
+        is the length of the shortest path between two positions that stays
+        inside the environment: it goes around walls and never leaves the
+        environment, and on a track it runs along the track's centerline, from
+        each position to the goal as in :func:`approach_rate`; a position
+        outside the environment then has no distance and is left out of the
+        distance summaries.
     min_speed : float or None, default=None
-        In position units per second. None is 5 cm/s expressed in
-        ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
-        units that are not a metric length, pass it explicitly.
-        Minimum speed for valid heading (units/s).
+        Minimum speed for a defined heading, in position units per second.
+        None is 5 cm/s expressed in ``env.units`` (``0.05`` for meters,
+        ``50.0`` for millimeters); with units that are not a metric length,
+        pass it explicitly.
     goal_radius : float, optional
-        Radius for goal arrival detection.
+        Arrival radius, in the units of ``positions``: the goal is reached at
+        the first measured sample whose distance to the goal (under
+        ``metric``) is at most ``goal_radius``. Finite and >= 0. None skips
+        arrival detection.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -3617,33 +4603,41 @@ def compute_goal_directed_metrics(
     -------
     GoalDirectedMetrics
         Dataclass containing all goal-directed metrics. ``goal_bias`` is NaN
-        if the animal never moves at an observed sample.
-        ``min_distance_to_goal`` is the minimum straight-line distance over
-        observed samples (finite coordinates); ``goal_distance_at_start`` and
-        ``goal_distance_at_end`` are the distances at the first and last
-        observed samples. All three are NaN when no sample is observed.
+        if the animal never moves at an observed sample. The distance
+        summaries use the measured samples: finite coordinates, inside
+        ``epochs`` when given, and (geodesic) inside the environment.
+        ``min_distance_to_goal`` is the minimum distance under ``metric``
+        over them; ``goal_distance_at_start`` and ``goal_distance_at_end``
+        are the distances at the first and last of them. All three are NaN
+        when no sample is measured. ``time_to_reach_goal`` is None without
+        ``goal_radius``, the seconds from the first measured sample to the
+        first measured sample within ``goal_radius``, or NaN when the goal
+        is never reached.
 
     Raises
     ------
     ValueError
         If the inputs are empty, have different lengths, ``times`` is not
         finite and strictly increasing, ``positions`` has no x and y columns,
-        ``break_before`` is not a Boolean array with one entry per sample, or
-        ``goal`` has a different number of dimensions than ``positions``.
+        ``break_before`` is not a Boolean array with one entry per sample,
+        ``goal`` does not have one finite coordinate per position dimension,
+        ``metric`` is not recognized, ``goal_radius`` is negative or not
+        finite, or (geodesic) the goal is outside the environment.
     ValueError
         If ``min_speed`` is None and ``env.units`` is not a metric length.
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause. A missing position (a NaN row) is
-    skipped as if its row were deleted.
+    A NaN row is bridged like a deleted row when its valid neighbours are no
+    more than ``max_gap`` apart; only a longer gap, an ``epochs`` edge or a
+    declared ``break_before`` splits the recording into runs, and no
+    velocity or heading spans a split.
 
     Heading alignment and approach-rate averages use observed intervals; the
     direction of movement exists only where the animal moves, the rule of
-    :func:`heading_from_velocity`. Time-to-goal remains wall-clock time from
-    ``times[0]``, which is known across a pause.
+    :func:`heading_from_velocity`. Arrival is searched only among measured
+    samples (inside ``epochs``), and ``time_to_reach_goal`` is wall-clock
+    time from the first of them, which is known across a pause.
 
     Examples
     --------
@@ -3681,46 +4675,62 @@ def compute_goal_directed_metrics(
         break_before=break_before,
         result="the goal-directed metrics are NaN",
     )
-    goal = np.asarray(goal)
+    call = "compute_goal_directed_metrics"
+    goal = _validated_goal(goal, positions.shape[1], call=call)
     min_speed = resolve_min_speed(
         env, min_speed, call="compute_goal_directed_metrics()"
     )
-    _validate_velocity_positions(raw, call="compute_goal_directed_metrics")
-    call = "compute_goal_directed_metrics"
+    _validate_velocity_positions(raw, call=call)
+    if goal_radius is not None and not (np.isfinite(goal_radius) and goal_radius >= 0):
+        raise ValueError(
+            _format_error(
+                f"{call}() got goal_radius={goal_radius!r}; it must be a finite "
+                "distance >= 0.",
+                why=(
+                    "the goal is reached at the first sample whose distance to "
+                    "the goal is at most goal_radius."
+                ),
+                fix=(
+                    "pass the reward zone's radius in the units of positions, "
+                    "e.g. goal_radius=5.0 for 5 cm, or None to skip arrival."
+                ),
+            )
+        )
     bias = _mean_alignment(
         _goal_alignment(times, positions, goal, support, min_speed=min_speed, call=call)
     )
 
-    rates = _approach_rate(
-        times, positions, goal, support, metric=metric, env=env, call=call
-    )
+    distances = _goal_distances(positions, goal, metric=metric, env=env, call=call)
+    rates = _distance_rates(times, distances, support)
     mean_rate = float(np.nanmean(rates)) if np.any(~np.isnan(rates)) else np.nan
 
-    goal_vec = _goal_vector(positions, goal, call=call)
-    distances = np.linalg.norm(goal_vec, axis=1)
-
-    observed = distances[support.sample_valid]
-    if observed.size:
-        min_dist = float(np.min(observed))
-        start_dist = float(observed[0])
-        end_dist = float(observed[-1])
+    # Samples measured for the distance summaries: observed (and, with the
+    # geodesic metric, inside the environment) and inside ``epochs``.
+    measured = support.sample_valid & ~np.isnan(distances)
+    if support.epochs is not None:
+        measured &= times_in_intervals(support.epochs, times)
+    rows = np.flatnonzero(measured)
+    if rows.size:
+        min_dist = float(np.min(distances[rows]))
+        start_dist = float(distances[rows[0]])
+        end_dist = float(distances[rows[-1]])
     else:
         min_dist = start_dist = end_dist = np.nan
 
-    time_to_goal_val: float | None = None
+    time_to_reach: float | None = None
     if goal_radius is not None:
-        arrival_mask = distances <= goal_radius
-        if np.any(arrival_mask):
-            arrival_idx = np.argmax(arrival_mask)
-            time_to_goal_val = float(times[arrival_idx] - times[0])
+        arrived = rows[distances[rows] <= goal_radius]
+        time_to_reach = (
+            float(times[arrived[0]] - times[rows[0]]) if arrived.size else np.nan
+        )
 
     return GoalDirectedMetrics(
         goal_bias=bias,
         mean_approach_rate=mean_rate,
-        time_to_goal=time_to_goal_val,
+        time_to_reach_goal=time_to_reach,
         min_distance_to_goal=min_dist,
         goal_distance_at_start=start_dist,
         goal_distance_at_end=end_dist,
-        goal_position=goal.copy(),
+        goal_position=goal,
         metric=metric,
     )

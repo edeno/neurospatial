@@ -36,18 +36,19 @@ class TestFullTrajectoryAnalysisWorkflow:
 
     def test_circular_track_complete_workflow(self) -> None:
         """Test full circular track analysis: laps → metrics → similarity."""
-        # Create environment (20x20 cm, 2cm bins)
-        x = np.linspace(0, 20, 100)
-        y = np.linspace(0, 20, 100)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=2.0)
-
-        # Generate circular trajectory (3 clockwise laps)
-        n_samples = 300
-        t = np.linspace(0, 3 * 2 * np.pi, n_samples)
+        # A circular track of radius 6 cm centered at (10, 10), 2 cm bins.
+        # Region laps need a loop: the start region must cut the track.
         center = np.array([10.0, 10.0])
         radius = 6.0
+        track = np.linspace(0, 2 * np.pi, 400)
+        env = Environment.from_samples(
+            center + radius * np.column_stack([np.cos(track), np.sin(track)]),
+            bin_size=2.0,
+        )
+
+        # Generate circular trajectory (3 counter-clockwise laps)
+        n_samples = 300
+        t = np.linspace(0, 3 * 2 * np.pi, n_samples)
         traj_positions = center + radius * np.column_stack([np.cos(t), np.sin(t)])
         times = np.linspace(0, 30, n_samples)  # 30 seconds, 10s per lap
 
@@ -218,7 +219,8 @@ class TestFullTrajectoryAnalysisWorkflow:
 
                 # Should detect at least one goal-directed run
                 # (Note: may be 0 if trajectory is too discretized)
-                assert isinstance(goal_runs, list)
+                assert isinstance(goal_runs, np.ndarray)
+                assert goal_runs.shape[1:] == (2,)
 
         # Step 4: Compare trial trajectories
         if len(trials) >= 2:
@@ -246,10 +248,10 @@ class TestFullTrajectoryAnalysisWorkflow:
     def test_goal_directed_run_in_a_recording_after_exploration(self) -> None:
         """An approach recorded after a pause is found; exploration is not.
 
-        Exploration and the straight approach to the goal are two recordings,
-        separated by a pause longer than max_gap. detect_goal_directed_runs
-        scores each recording as one candidate, so this covers that case only,
-        not finding an approach inside one continuous recording.
+        Exploration (slow circles of radius 3 cm in the far corner) and the
+        straight approach to the goal are two recordings, separated by a
+        pause longer than max_gap. No approach while circling gains the
+        10 cm min_progress.
         """
         # Create environment
         x = np.linspace(0, 50, 250)
@@ -263,9 +265,11 @@ class TestFullTrajectoryAnalysisWorkflow:
         region_builder.add("goal", polygon=Point(40.0, 40.0).buffer(5.0))
         env = env.with_regions(region_builder)
 
-        # Phase 1: Random exploration (first 100 samples)
-        rng = np.random.default_rng(42)
-        explore_positions = rng.uniform(10, 50, (100, 2))
+        # Phase 1: Exploration, two slow circles in the far corner
+        angle = np.linspace(0, 4 * np.pi, 100)
+        explore_positions = np.column_stack(
+            [12 + 3 * np.cos(angle), 12 + 3 * np.sin(angle)]
+        )
         explore_times = np.arange(100) / 30.0  # 30 Hz tracking, in seconds
 
         # Phase 2: Goal-directed behavior (next 50 samples)
@@ -290,15 +294,19 @@ class TestFullTrajectoryAnalysisWorkflow:
             all_times,
             env,
             goal_region="goal",
-            directedness_threshold=0.3,
-            min_progress=3.0,
+            directedness_threshold=0.7,
+            min_progress=10.0,
         )
 
-        # The straight approach in phase 2 is a goal-directed run; the random
-        # exploration in phase 1 is not.
-        assert len(goal_runs) == 1
-        assert goal_runs[0].start_time == goal_times[0]
-        assert goal_runs[0].success
+        # The straight approach in phase 2 is a goal-directed run, from the
+        # last sample in its first bin (the departure) to the first sample in
+        # the goal (the arrival); the exploration in phase 1 is not.
+        approach_bins = position_bins[100:]
+        departure = np.flatnonzero(approach_bins != approach_bins[0])[0] - 1
+        arrival = np.flatnonzero(np.isin(approach_bins, env.bins_in_region("goal")))[0]
+        np.testing.assert_array_equal(
+            goal_runs, [[goal_times[departure], goal_times[arrival]]]
+        )
 
         # Step 2: Compare exploration vs goal-directed similarity
         explore_bins = position_bins[:100]

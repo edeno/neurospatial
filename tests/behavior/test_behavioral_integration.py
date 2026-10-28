@@ -90,7 +90,7 @@ class TestVTEDecisionAnalysisIntegration:
                 end_time=4.0,
                 start_region="start",
                 end_region="end",
-                success=True,
+                outcome="reached",
             )
         ]
 
@@ -185,7 +185,7 @@ class TestVTERoundTrip:
                 end_time=i * 3.0 + 2.5,
                 start_region="start",
                 end_region="end",
-                success=True,
+                outcome="reached",
             )
             for i in range(n_trials)
         ]

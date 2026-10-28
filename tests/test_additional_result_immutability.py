@@ -42,13 +42,23 @@ def env():
     )
 
 
+_SEGMENT = PathEfficiencyResult(
+    traveled_length=2.0,
+    shortest_length=1.0,
+    time_efficiency=None,
+    angular_efficiency=1.0,
+    start_position=np.zeros(2),
+    goal_position=np.ones(2),
+    metric="euclidean",
+    fully_observed=True,
+)
+
 CASES = [
     (
         CumulativeDistanceResult,
         {
             "step_lengths": np.ones(1),
             "run_distance": np.array([0.0, 1.0]),
-            "cumulative_distance": np.array([0.0, 1.0]),
             "run_ids": np.zeros(2, dtype=np.intp),
             "sample_valid": np.ones(2, dtype=bool),
             "run_sample_bounds": np.array([[0, 1]], dtype=np.intp),
@@ -74,9 +84,9 @@ CASES = [
         DecisionBoundaryMetrics,
         {
             "goal_labels": np.array([0, 1]),
-            "distance_to_boundary": np.ones(2),
-            "crossing_times": [],
-            "crossing_directions": [],
+            "distance_to_decision_boundary": np.ones(2),
+            "crossing_times": np.array([0.5]),
+            "crossing_directions": np.array([[0, 1]], dtype=np.intp),
         },
     ),
     (
@@ -84,20 +94,18 @@ CASES = [
         {
             "traveled_length": 1.0,
             "shortest_length": 1.0,
-            "efficiency": 1.0,
             "time_efficiency": None,
             "angular_efficiency": 1.0,
             "start_position": np.ones(2),
             "goal_position": np.ones(2),
             "metric": "euclidean",
+            "fully_observed": True,
         },
     ),
     (
         SubgoalEfficiencyResult,
         {
-            "segment_results": [],
-            "mean_efficiency": 1.0,
-            "weighted_efficiency": 1.0,
+            "segment_results": (_SEGMENT, _SEGMENT),
             "subgoal_positions": np.ones((2, 2)),
         },
     ),
@@ -106,7 +114,7 @@ CASES = [
         {
             "goal_bias": 1.0,
             "mean_approach_rate": -1.0,
-            "time_to_goal": None,
+            "time_to_reach_goal": None,
             "min_distance_to_goal": 1.0,
             "goal_distance_at_start": 2.0,
             "goal_distance_at_end": 1.0,
@@ -114,10 +122,25 @@ CASES = [
             "metric": "euclidean",
         },
     ),
-    (MSDResult, {"lags": np.ones(2), "msd": np.ones(2)}),
+    (
+        MSDResult,
+        {
+            "lags": np.array([1.0, 2.0]),
+            "msd": np.ones(2),
+            "metric": "euclidean",
+            "epochs": np.array([[0.0, 1.0]]),
+        },
+    ),
     (
         Run,
-        {"start_time": 0.0, "end_time": 1.0, "bins": np.array([0, 1]), "success": True},
+        {
+            "start_time": 0.0,
+            "end_time": 1.0,
+            "source_region": "home",
+            "target_region": "goal",
+            "outcome": "reached",
+            "bins": np.array([0, 1]),
+        },
     ),
     (
         AssemblyPattern,
@@ -164,7 +187,6 @@ CASES = [
             "times": np.array([0.0, 0.5]),
             "positions": np.array([[0.0, 0.0], [1.0, 0.0]]),
             "run_distance": np.array([0.0, 1.0]),
-            "cumulative_distance": np.array([0.0, 1.0]),
             "run_ids": np.zeros(2, dtype=np.intp),
             "source_left": np.array([0, 0], dtype=np.intp),
             "source_right": np.array([0, 1], dtype=np.intp),
@@ -185,12 +207,10 @@ CASES = [
         {
             "labels": ("A", "B"),
             "epoch_bounds": np.array([[0.0, 2.0], [2.0, 3.0]]),
-            "epoch_labels": np.array([0, 1], dtype=np.intp),
             "epoch_intervals": np.array([[0, 1], [2, 2]], dtype=np.intp),
             "interval_labels": np.array([0, 0, 1], dtype=np.intp),
             "interval_supported": np.ones(3, dtype=bool),
             "unsupported_labels": (),
-            "n_samples": 4,
             "max_gap": 0.5,
             "input_epochs": np.array([[0.0, 10.0]]),
             "missing_label": None,
@@ -323,8 +343,9 @@ def test_arrays_are_owned_and_read_only(result_and_inputs):
     result, inputs = result_and_inputs
     for name, array in _arrays(result).items():
         expected = array.copy()
-        assert not np.shares_memory(array, inputs[name]), name
-        inputs[name][...] = 0
+        if name in inputs:  # derived (init=False) arrays have no input
+            assert not np.shares_memory(array, inputs[name]), name
+            inputs[name][...] = 0
         np.testing.assert_array_equal(array, expected)
         with pytest.raises(ValueError, match="read-only"):
             array.flat[0] = 0

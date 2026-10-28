@@ -7,63 +7,6 @@ from numpy.testing import assert_allclose
 from neurospatial import Environment, Regions
 
 # =============================================================================
-# Test Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def simple_2d_environment():
-    """Create a simple 2D environment for testing."""
-    x = np.linspace(0, 100, 50)
-    y = np.linspace(0, 100, 50)
-    xx, yy = np.meshgrid(x, y)
-    sample_positions = np.column_stack([xx.ravel(), yy.ravel()])
-    return Environment.from_samples(sample_positions, bin_size=5.0)
-
-
-@pytest.fixture
-def t_maze_environment():
-    """Create a T-maze environment with regions for testing.
-
-    Layout:
-        left (goal)  ---  center  ---  right (goal)
-                            |
-                            |
-                          start
-    """
-    # Create T-maze shape
-    # Vertical stem (y: 0 to 50)
-    stem_x = np.linspace(45, 55, 5)
-    stem_y = np.linspace(0, 50, 20)
-    stem_xx, stem_yy = np.meshgrid(stem_x, stem_y)
-
-    # Horizontal bar (y: 50 to 60)
-    bar_x = np.linspace(0, 100, 40)
-    bar_y = np.linspace(50, 60, 5)
-    bar_xx, bar_yy = np.meshgrid(bar_x, bar_y)
-
-    # Combine
-    positions = np.vstack(
-        [
-            np.column_stack([stem_xx.ravel(), stem_yy.ravel()]),
-            np.column_stack([bar_xx.ravel(), bar_yy.ravel()]),
-        ]
-    )
-
-    env = Environment.from_samples(positions, bin_size=5.0)
-
-    # Add regions (point regions - the bin containing each point)
-    region_builder = Regions(env.regions.values())
-    region_builder.add("start", point=(50.0, 5.0))
-    region_builder.add("center", point=(50.0, 55.0))
-    region_builder.add("left", point=(10.0, 55.0))
-    region_builder.add("right", point=(90.0, 55.0))
-    env = env.with_regions(region_builder)
-
-    return env
-
-
-# =============================================================================
 # Test PreDecisionMetrics Dataclass
 # =============================================================================
 
@@ -77,7 +20,7 @@ class TestPreDecisionMetrics:
 
         result = PreDecisionMetrics(
             mean_speed=5.0,  # Low speed
-            min_speed=0.5,
+            min_observed_speed=0.5,
             heading_mean_direction=0.0,
             heading_circular_variance=0.7,  # High variance
             heading_mean_resultant_length=0.3,
@@ -85,7 +28,7 @@ class TestPreDecisionMetrics:
             n_samples=30,
         )
 
-        assert result.suggests_deliberation(variance_threshold=0.5, min_speed=10.0)
+        assert result.suggests_deliberation(variance_threshold=0.5, max_mean_speed=10.0)
 
     def test_suggests_deliberation_low_variance_high_speed(self):
         """Test suggests_deliberation returns False for low variance + high speed."""
@@ -93,7 +36,7 @@ class TestPreDecisionMetrics:
 
         result = PreDecisionMetrics(
             mean_speed=20.0,  # High speed
-            min_speed=15.0,
+            min_observed_speed=15.0,
             heading_mean_direction=0.0,
             heading_circular_variance=0.2,  # Low variance
             heading_mean_resultant_length=0.8,
@@ -101,7 +44,45 @@ class TestPreDecisionMetrics:
             n_samples=30,
         )
 
-        assert not result.suggests_deliberation(variance_threshold=0.5, min_speed=10.0)
+        assert not result.suggests_deliberation(
+            variance_threshold=0.5, max_mean_speed=10.0
+        )
+
+    def test_suggests_deliberation_is_inclusive_at_thresholds(self):
+        """A screen at exactly the variance floor and speed ceiling passes."""
+        from neurospatial.behavior.decisions import PreDecisionMetrics
+
+        result = PreDecisionMetrics(
+            mean_speed=10.0,
+            min_observed_speed=2.0,
+            heading_mean_direction=0.0,
+            heading_circular_variance=0.5,
+            heading_mean_resultant_length=0.5,
+            window_duration=1.0,
+            n_samples=30,
+        )
+        assert result.suggests_deliberation(variance_threshold=0.5, max_mean_speed=10.0)
+        assert not result.suggests_deliberation(
+            variance_threshold=0.5, max_mean_speed=9.9
+        )
+
+    def test_summary_and_repr(self):
+        from neurospatial.behavior.decisions import PreDecisionMetrics
+
+        result = PreDecisionMetrics(
+            mean_speed=10.0,
+            min_observed_speed=2.0,
+            heading_mean_direction=0.0,
+            heading_circular_variance=0.25,
+            heading_mean_resultant_length=0.75,
+            window_duration=1.0,
+            n_samples=30,
+        )
+        summary = result.summary()
+        assert summary["min_observed_speed"] == 2.0
+        assert summary["is_valid"] is True
+        assert repr(result).startswith("PreDecisionMetrics(")
+        assert "30 samples" in str(result)
 
 
 # =============================================================================
@@ -118,16 +99,87 @@ class TestDecisionBoundaryMetrics:
 
         result = DecisionBoundaryMetrics(
             goal_labels=np.array([0, 1, 0, 1]),
-            distance_to_boundary=np.array([5.0, 5.0, 5.0, 5.0]),
+            distance_to_decision_boundary=np.array([5.0, 5.0, 5.0, 5.0]),
             crossing_times=[1.0, 2.0, 3.0],
             crossing_directions=[(0, 1), (1, 0), (0, 1)],
         )
 
         assert result.n_crossings == 3
 
+    def test_crossings_are_read_only_arrays(self):
+        """Appending to or editing the crossings cannot change n_crossings."""
+        from neurospatial.behavior.decisions import DecisionBoundaryMetrics
+
+        times = [1.0, 2.0]
+        result = DecisionBoundaryMetrics(
+            goal_labels=np.array([0, 1, 0]),
+            distance_to_decision_boundary=np.array([5.0, 5.0, 5.0]),
+            crossing_times=times,
+            crossing_directions=[(0, 1), (1, 0)],
+        )
+        times.append(3.0)
+        assert result.n_crossings == 2
+        assert result.crossing_times.dtype == np.float64
+        assert result.crossing_directions.shape == (2, 2)
+        with pytest.raises(ValueError, match="read-only"):
+            result.crossing_times[0] = 0.0
+        with pytest.raises(ValueError, match="read-only"):
+            result.crossing_directions[0, 0] = 1
+
+    def test_mismatched_crossing_rows_raise(self):
+        from neurospatial.behavior.decisions import DecisionBoundaryMetrics
+
+        with pytest.raises(ValueError, match="one \\(from, to\\) row"):
+            DecisionBoundaryMetrics(
+                goal_labels=np.array([0, 1]),
+                distance_to_decision_boundary=np.array([5.0, 5.0]),
+                crossing_times=[1.0, 2.0],
+                crossing_directions=[(0, 1)],
+            )
+
 
 class TestDecisionAnalysisResult:
     """Test DecisionAnalysisResult dataclass."""
+
+    @staticmethod
+    def _metrics():
+        from neurospatial.behavior.decisions import PreDecisionMetrics
+
+        return PreDecisionMetrics(
+            mean_speed=10.0,
+            min_observed_speed=5.0,
+            heading_mean_direction=0.0,
+            heading_circular_variance=0.1,
+            heading_mean_resultant_length=0.9,
+            window_duration=1.0,
+            n_samples=10,
+        )
+
+    def test_chosen_goal_region_names_the_goal(self):
+        from neurospatial.behavior.decisions import DecisionAnalysisResult
+
+        result = DecisionAnalysisResult(
+            entry_time=1.0,
+            pre_decision=self._metrics(),
+            boundary=None,
+            chosen_goal=1,
+            goal_regions=["left", "right"],
+        )
+        assert result.goal_regions == ("left", "right")
+        assert result.chosen_goal_region == "right"
+        assert result.summary()["chosen_goal_region"] == "right"
+
+    def test_chosen_goal_out_of_range_raises(self):
+        from neurospatial.behavior.decisions import DecisionAnalysisResult
+
+        with pytest.raises(ValueError, match="does not index"):
+            DecisionAnalysisResult(
+                entry_time=1.0,
+                pre_decision=self._metrics(),
+                boundary=None,
+                chosen_goal=2,
+                goal_regions=("left", "right"),
+            )
 
 
 class TestDecisionRegionEntryTime:
@@ -155,9 +207,9 @@ class TestDecisionRegionEntryTime:
             position_bins, times, env, region="center"
         )
 
-        # Center region is at y=55, trajectory goes from y=0 to y=60 over 10s
-        # Entry should be around t = 10 * (55/60) ≈ 9.2s (accounting for bin discretization)
-        assert 7.0 < entry_time <= 10.0
+        # The center bin spans y in [52.5, 57.5); y = 60 k / 99 first reaches
+        # it at sample k = 87.
+        assert entry_time == times[87]
 
     def test_raises_if_never_enters(self, t_maze_environment):
         """Test ValueError if trajectory never enters region."""
@@ -178,6 +230,27 @@ class TestDecisionRegionEntryTime:
 
         with pytest.raises(ValueError, match="never enters"):
             decision_region_entry_time(position_bins, times, env, region="center")
+
+    def test_validates_bins_and_times(self, t_maze_environment):
+        from neurospatial.behavior.decisions import decision_region_entry_time
+
+        env = t_maze_environment
+        bins = env.bin_at(np.column_stack([np.full(5, 50.0), np.linspace(40, 56, 5)]))
+        times = np.arange(5) / 10
+        with pytest.raises(ValueError, match="one position bin per timestamp"):
+            decision_region_entry_time(bins, times[:4], env, region="center")
+        with pytest.raises(ValueError, match="non-decreasing"):
+            decision_region_entry_time(bins, times[::-1], env, region="center")
+        with pytest.raises(ValueError, match="strictly increasing"):
+            decision_region_entry_time(
+                bins, np.r_[0.0, times[:4]], env, region="center"
+            )
+        with pytest.raises(ValueError, match="finite"):
+            decision_region_entry_time(
+                bins, np.r_[times[:4], np.nan], env, region="center"
+            )
+        with pytest.raises(TypeError, match="integer position_bins"):
+            decision_region_entry_time(bins.astype(float), times, env, region="center")
 
 
 # =============================================================================
@@ -363,6 +436,38 @@ class TestGeodesicVoronoiLabels:
         right_side_bin = env.bin_at(np.array([[80.0, 55.0]]))[0]
         assert labels[right_side_bin] == 1
 
+    def test_equidistant_bins_are_undecided(self):
+        """Goals at 0 and 100 cm: the bin at 50 cm belongs to neither goal."""
+        from neurospatial.behavior.decisions import geodesic_voronoi_labels
+
+        env = _linear_track()
+        labels = geodesic_voronoi_labels(env, _bins_at(env, [0, 100]))
+        assert labels.tolist() == [0, 0, 0, 0, 0, -1, 1, 1, 1, 1, 1]
+        swapped = geodesic_voronoi_labels(env, _bins_at(env, [100, 0]))
+        assert swapped.tolist() == [1, 1, 1, 1, 1, -1, 0, 0, 0, 0, 0]
+
+    def test_t_maze_stem_is_undecided(self, t_maze_environment):
+        """The stem's middle column is equidistant from the two arm goals."""
+        from neurospatial.behavior.decisions import geodesic_voronoi_labels
+
+        env = t_maze_environment
+        goals = env.bin_at(np.array([[10.0, 55.0], [90.0, 55.0]]))
+        labels = geodesic_voronoi_labels(env, goals)
+        centers = env.bin_centers
+        middle = np.isclose(centers[:, 0], 50.0)
+        assert np.all(labels[middle] == -1)
+        assert np.all(labels[~middle & (centers[:, 0] < 50)] == 0)
+        assert np.all(labels[~middle & (centers[:, 0] > 50)] == 1)
+
+    def test_unreachable_second_goal_is_not_a_tie(self):
+        """A bin whose second goal is unreachable is labeled by the reachable one."""
+        from neurospatial.behavior.decisions import geodesic_voronoi_labels
+
+        samples = np.r_[np.arange(0, 31.0), np.arange(70, 101.0)][:, None]
+        env = Environment.from_samples(samples, bin_size=10.0)
+        labels = geodesic_voronoi_labels(env, _bins_at(env, [0, 100]))
+        assert labels.tolist() == [0, 0, 0, 0, 1, 1, 1, 1]
+
     def test_unreachable_bins_labeled_minus_one(self, simple_2d_environment):
         """Test that disconnected bins are labeled -1."""
         from neurospatial.behavior.decisions import geodesic_voronoi_labels
@@ -405,8 +510,8 @@ class TestDistanceToDecisionBoundary:
 
         distances = distance_to_decision_boundary(env, position_bins, goal_bins)
 
-        # At center, distance to boundary should be small
-        assert distances[0] < 10.0
+        # The center bin is equidistant from both goals: on the boundary.
+        assert distances.tolist() == [0.0]
 
     def test_far_from_boundary(self, t_maze_environment):
         """Test that distance is large far from boundary."""
@@ -426,8 +531,9 @@ class TestDistanceToDecisionBoundary:
 
         distances = distance_to_decision_boundary(env, position_bins, goal_bins)
 
-        # At goal, distance to boundary should be larger
-        assert distances[0] > 20.0
+        # The goals are 80 cm apart along the crossbar: the boundary is
+        # halfway, 40 cm from the left goal.
+        assert_allclose(distances, [40.0], rtol=1e-12)
 
 
 # =============================================================================
@@ -453,7 +559,7 @@ class TestDetectBoundaryCrossings:
 
         assert len(crossing_times) == 1
         assert 4.0 < crossing_times[0] < 6.0
-        assert crossing_directions[0] == (0, 1)
+        assert crossing_directions.tolist() == [[0, 1]]
 
     def test_multiple_crossings(self):
         """Test detection of multiple boundary crossings."""
@@ -469,7 +575,7 @@ class TestDetectBoundaryCrossings:
         )
 
         assert len(crossing_times) == 3
-        assert crossing_directions == [(0, 1), (1, 0), (0, 1)]
+        assert crossing_directions.tolist() == [[0, 1], [1, 0], [0, 1]]
 
     def test_no_crossings(self):
         """Test when there are no crossings."""
@@ -524,6 +630,20 @@ class TestComputePreDecisionMetrics:
 # =============================================================================
 
 
+def _stem_right_then_back_left():
+    """Up the T-maze stem, east to the right goal, then west past the center.
+
+    10 Hz. The stem (0-2.9 s) enters the center bin at 2.8 s; the east leg
+    (3.0-5.9 s) reaches the right goal; the return leg (6.0-10.0 s) walks
+    west 2 cm per sample from x = 90 cm and re-enters the center bin
+    (x < 52.5 cm) at x = 52 cm, 7.9 s.
+    """
+    times = np.arange(101) / 10
+    x = np.r_[np.full(30, 50.0), np.linspace(50, 90, 30), 90 - 2.0 * np.arange(41)]
+    y = np.r_[np.linspace(5, 55, 30), np.full(71, 55.0)]
+    return times, np.column_stack([x, y])
+
+
 class TestComputeDecisionAnalysis:
     """Test compute_decision_analysis function."""
 
@@ -566,6 +686,116 @@ class TestComputeDecisionAnalysis:
         # Should choose right (index 1)
         assert result.chosen_goal == 1
 
+    @staticmethod
+    def _chosen_goal_region(env, x, y, goal_regions):
+        from neurospatial.behavior.decisions import compute_decision_analysis
+
+        result = compute_decision_analysis(
+            env,
+            np.arange(len(x)) / 10,
+            np.column_stack([x, y]),
+            decision_region="center",
+            goal_regions=goal_regions,
+            min_speed=5.0,
+        )
+        return result.chosen_goal_region
+
+    def test_goal_the_trial_started_from_is_not_chosen(self, t_maze_environment):
+        """Starting at the left goal and running to the right chooses right."""
+        x = np.r_[np.linspace(10, 50, 40), np.linspace(50, 90, 40)]
+        y = np.full(80, 55.0)
+        for goals in (["left", "right"], ["right", "left"]):
+            assert self._chosen_goal_region(t_maze_environment, x, y, goals) == (
+                "right"
+            )
+
+    def test_first_goal_entered_after_entry_is_chosen(self, t_maze_environment):
+        """Up the stem, right goal, then back to the left goal: right was chosen."""
+        x = np.r_[np.full(30, 50.0), np.linspace(50, 90, 30), np.linspace(90, 10, 60)]
+        y = np.r_[np.linspace(5, 55, 30), np.full(90, 55.0)]
+        for goals in (["left", "right"], ["right", "left"]):
+            assert self._chosen_goal_region(t_maze_environment, x, y, goals) == (
+                "right"
+            )
+
+    def test_entry_is_searched_inside_epochs(self, t_maze_environment):
+        """Epochs (4, 10) s skip the 2.8 s entry and use the return at 7.9 s."""
+        from neurospatial.behavior.decisions import compute_decision_analysis
+
+        times, positions = _stem_right_then_back_left()
+        kwargs = {
+            "decision_region": "center",
+            "goal_regions": ["left", "right"],
+            "min_speed": 5.0,
+        }
+        whole = compute_decision_analysis(
+            t_maze_environment, times, positions, **kwargs
+        )
+        assert_allclose(whole.entry_time, 2.8, rtol=1e-12)
+        assert whole.chosen_goal == 1
+        late = compute_decision_analysis(
+            t_maze_environment, times, positions, epochs=(4.0, 10.0), **kwargs
+        )
+        assert_allclose(late.entry_time, 7.9, rtol=1e-12)
+        assert late.chosen_goal == 0
+        assert late.pre_decision.n_samples == 10
+
+    def test_no_entry_inside_epochs_raises(self, t_maze_environment):
+        from neurospatial.behavior.decisions import compute_decision_analysis
+
+        times, positions = _stem_right_then_back_left()
+        with pytest.raises(ValueError, match="never enters region 'center' inside"):
+            compute_decision_analysis(
+                t_maze_environment,
+                times,
+                positions,
+                decision_region="center",
+                goal_regions=["left", "right"],
+                min_speed=5.0,
+                epochs=(3.5, 6.0),
+            )
+
+    def test_single_goal_has_no_boundary(self, t_maze_environment):
+        """One goal defines no decision boundary: boundary is None."""
+        from neurospatial.behavior.decisions import compute_decision_analysis
+
+        x = np.r_[np.full(30, 50.0), np.linspace(50, 90, 30)]
+        y = np.r_[np.linspace(5, 55, 30), np.full(30, 55.0)]
+        for goals in (["right"], "right"):
+            result = compute_decision_analysis(
+                t_maze_environment,
+                np.arange(60) / 10,
+                np.column_stack([x, y]),
+                decision_region="center",
+                goal_regions=goals,
+                min_speed=5.0,
+            )
+            assert result.boundary is None
+            assert result.chosen_goal == 0
+            assert result.summary()["n_boundary_crossings"] is None
+
+    def test_empty_goal_list_raises(self, t_maze_environment):
+        from neurospatial.behavior.decisions import compute_decision_analysis
+
+        with pytest.raises(ValueError, match="empty goal_regions"):
+            compute_decision_analysis(
+                t_maze_environment,
+                np.arange(30) / 10,
+                np.column_stack([np.full(30, 50.0), np.linspace(5, 55, 30)]),
+                decision_region="center",
+                goal_regions=[],
+                min_speed=5.0,
+            )
+
+    def test_no_goal_entered_after_entry_is_none(self, t_maze_environment):
+        """Start at the left goal, stop at the center: no goal was chosen."""
+        x = np.linspace(10, 50, 40)
+        y = np.full(40, 55.0)
+        assert (
+            self._chosen_goal_region(t_maze_environment, x, y, ["left", "right"])
+            is None
+        )
+
 
 # =============================================================================
 # Test Error Handling
@@ -595,109 +825,57 @@ class TestDistanceToDecisionBoundaryEdgeCases:
         assert np.isnan(distances[2])  # out of bounds
 
 
-class TestDistanceToDecisionBoundaryEquivalence:
-    """Pin the vectorized boundary-distance against the per-sample loop."""
+def _linear_track():
+    """A 100 cm track with bin centers every 10 cm from 0 to 100."""
+    return Environment.from_samples(np.arange(101.0)[:, None], bin_size=10.0)
 
-    @staticmethod
-    def _reference(env, position_bins, goal_bins):
-        """Original per-sample np.sort loop implementation."""
-        from neurospatial.ops.distance import distance_field
 
-        goal_bins_arr = np.asarray(goal_bins)
-        n_goals = len(goal_bins_arr)
-        if n_goals < 2:
-            return np.full(len(position_bins), np.inf)
+def _bins_at(env, xs):
+    return env.bin_at(np.asarray(xs, dtype=float)[:, None])
 
-        all_distances = np.zeros((n_goals, env.n_bins))
-        for i, goal_bin in enumerate(goal_bins_arr):
-            all_distances[i] = distance_field(
-                env.connectivity, [int(goal_bin)], metric="geodesic"
-            )
 
-        boundary_distances = np.zeros(len(position_bins))
-        for i, bin_idx in enumerate(position_bins):
-            if bin_idx < 0 or bin_idx >= env.n_bins:
-                boundary_distances[i] = np.nan
-                continue
-            sorted_dists = np.sort(all_distances[:, bin_idx])
-            if np.isinf(sorted_dists[0]):
-                boundary_distances[i] = np.inf
-            else:
-                boundary_distances[i] = float(sorted_dists[1]) - float(sorted_dists[0])
-        return boundary_distances
+class TestDistanceToDecisionBoundaryKnownAnswers:
+    """Distances to the equidistant point between goals, from track geometry."""
 
-    def test_matches_reference_two_goals(self, t_maze_environment):
-        """Vectorized output equals the loop reference for two goals."""
+    def test_two_goals_on_a_linear_track(self):
+        """Goals at 0 and 100 cm: the boundary is at 50 cm."""
         from neurospatial.behavior.decisions import distance_to_decision_boundary
 
-        env = t_maze_environment
-        left_bin = int(env.bin_at(np.array([[10.0, 55.0]]))[0])
-        right_bin = int(env.bin_at(np.array([[90.0, 55.0]]))[0])
-        goal_bins = [left_bin, right_bin]
-
-        # Sweep a representative set of bins plus invalid indices.
-        position_bins = np.array(
-            [0, 5, left_bin, right_bin, env.n_bins // 2, -1, env.n_bins + 7],
-            dtype=np.int64,
+        env = _linear_track()
+        result = distance_to_decision_boundary(
+            env, _bins_at(env, [0, 30, 50, 70, 90]), _bins_at(env, [0, 100])
         )
+        assert_allclose(result, [50.0, 20.0, 0.0, 20.0, 40.0], rtol=1e-12)
 
-        reference = self._reference(env, position_bins, goal_bins)
-        result = distance_to_decision_boundary(env, position_bins, goal_bins)
-
-        np.testing.assert_array_equal(np.isnan(reference), np.isnan(result))
-        finite = ~np.isnan(reference)
-        np.testing.assert_allclose(
-            result[finite], reference[finite], rtol=1e-9, atol=1e-9
-        )
-
-    def test_matches_reference_three_goals(self, simple_2d_environment):
-        """Vectorized output equals the loop reference for three goals."""
+    def test_three_goals_use_the_two_nearest(self):
+        """Goals at 0, 50 and 100 cm: boundaries at 25 and 75 cm."""
         from neurospatial.behavior.decisions import distance_to_decision_boundary
 
-        env = simple_2d_environment
-        g0 = int(env.bin_at(np.array([[10.0, 10.0]]))[0])
-        g1 = int(env.bin_at(np.array([[90.0, 10.0]]))[0])
-        g2 = int(env.bin_at(np.array([[50.0, 90.0]]))[0])
-        goal_bins = [g0, g1, g2]
-
-        rng = np.random.default_rng(0)
-        position_bins = rng.integers(0, env.n_bins, size=25).astype(np.int64)
-
-        reference = self._reference(env, position_bins, goal_bins)
-        result = distance_to_decision_boundary(env, position_bins, goal_bins)
-
-        np.testing.assert_array_equal(np.isnan(reference), np.isnan(result))
-        finite = ~np.isnan(reference)
-        np.testing.assert_allclose(
-            result[finite], reference[finite], rtol=1e-9, atol=1e-9
+        env = _linear_track()
+        result = distance_to_decision_boundary(
+            env, _bins_at(env, [10, 30, 50, 70]), _bins_at(env, [0, 50, 100])
         )
+        assert_allclose(result, [15.0, 5.0, 25.0, 5.0], rtol=1e-12)
 
-    def test_matches_reference_with_unreachable_goal(self):
-        """Inf handling matches when a goal is on a disconnected component."""
+    def test_unreachable_second_goal_is_infinite(self):
+        """A goal on a disconnected piece of track has no boundary with ours."""
         from neurospatial.behavior.decisions import distance_to_decision_boundary
 
-        # Two disconnected blobs so one goal is unreachable from the other side.
-        left = np.column_stack([np.linspace(0, 20, 40), np.linspace(0, 20, 40)])
-        right = np.column_stack([np.linspace(80, 100, 40), np.linspace(80, 100, 40)])
-        positions = np.vstack([left, right])
-        env = Environment.from_samples(positions, bin_size=3.0)
-
-        g_left = int(env.bin_at(np.array([[2.0, 2.0]]))[0])
-        g_right = int(env.bin_at(np.array([[98.0, 98.0]]))[0])
-        goal_bins = [g_left, g_right]
-
-        position_bins = np.arange(env.n_bins, dtype=np.int64)
-
-        reference = self._reference(env, position_bins, goal_bins)
-        result = distance_to_decision_boundary(env, position_bins, goal_bins)
-
-        # Compare inf, nan, and finite parts explicitly.
-        np.testing.assert_array_equal(np.isinf(reference), np.isinf(result))
-        np.testing.assert_array_equal(np.isnan(reference), np.isnan(result))
-        finite = np.isfinite(reference)
-        np.testing.assert_allclose(
-            result[finite], reference[finite], rtol=1e-9, atol=1e-9
+        samples = np.r_[np.arange(0, 31.0), np.arange(70, 101.0)][:, None]
+        env = Environment.from_samples(samples, bin_size=10.0)
+        result = distance_to_decision_boundary(
+            env, _bins_at(env, [10, 90]), _bins_at(env, [0, 100])
         )
+        assert result.tolist() == [np.inf, np.inf]
+
+    def test_single_goal_has_no_boundary(self):
+        from neurospatial.behavior.decisions import distance_to_decision_boundary
+
+        env = _linear_track()
+        result = distance_to_decision_boundary(
+            env, _bins_at(env, [10, 90]), _bins_at(env, [0])
+        )
+        assert result.tolist() == [np.inf, np.inf]
 
 
 class TestErrorHandling:
@@ -799,13 +977,13 @@ def test_goal_regions_are_represented_by_their_centroid_bin():
         min_speed=5.0,
     )
 
-    trial = Trial(times[0], times[-1], "west", "east", True)
+    trial = Trial(times[0], times[-1], "west", "east", "reached")
     start_bins, goal_bins = trials_to_region_arrays([trial], times, env)
     goals = [int(start_bins[0]), int(goal_bins[0])]
     for name, goal in zip(["west", "east"], goals, strict=True):
         assert goal != env.bins_in_region(name)[0]  # not the lowest-index bin
     np.testing.assert_array_equal(
-        result.boundary.distance_to_boundary,
+        result.boundary.distance_to_decision_boundary,
         distance_to_decision_boundary(env, env.bin_at(positions), goals),
     )
 
@@ -952,8 +1130,8 @@ def test_boundary_crossing_at_interval_midpoint():
     crossing_times, directions = detect_boundary_crossings(
         np.array([0, 0, 1, 1]), labels, np.arange(4) / 8
     )
-    assert crossing_times == [0.1875]
-    assert directions == [(0, 1)]
+    assert crossing_times.tolist() == [0.1875]
+    assert directions.tolist() == [[0, 1]]
 
 
 def test_boundary_crossing_not_across_declared_break():
@@ -965,21 +1143,17 @@ def test_boundary_crossing_not_across_declared_break():
         np.arange(4) / 8,
         break_before=np.array([False, False, True, False]),
     )
-    assert crossing_times == []
-    assert directions == []
+    assert crossing_times.shape == (0,)
+    assert directions.shape == (0, 2)
 
 
 def test_decision_analysis_forwards_declared_break(t_maze_environment):
     from neurospatial.behavior import compute_decision_analysis
 
     env = t_maze_environment
+    # Along the crossbar from the left arm, through the center, to the right.
     times = np.arange(100) / 10
-    positions = np.column_stack(
-        [
-            np.r_[np.full(30, 50.0), np.linspace(50, 90, 70)],
-            np.r_[np.linspace(5, 55, 30), np.full(70, 55.0)],
-        ]
-    )
+    positions = np.column_stack([np.linspace(20, 90, 100), np.full(100, 55.0)])
     kwargs = {
         "decision_region": "center",
         "goal_regions": ["left", "right"],
@@ -988,20 +1162,60 @@ def test_decision_analysis_forwards_declared_break(t_maze_environment):
     }
     result = compute_decision_analysis(env, times, positions, **kwargs)
     entry = int(np.flatnonzero(times == result.entry_time)[0])
-    # The first sample on the far side of the left/right goal boundary.
-    crossing = int(np.flatnonzero(np.diff(result.boundary.goal_labels))[0]) + 1
+    labels = result.boundary.goal_labels
+    # The last sample nearer the left goal and the first nearer the right
+    # goal, with the equidistant center bins (label -1) between them.
+    last_left = int(np.flatnonzero(labels == 0)[-1])
+    first_right = int(np.flatnonzero(labels == 1)[0])
+    assert first_right > last_left + 1
+    assert np.all(labels[last_left + 1 : first_right] == -1)
     break_before = np.zeros(100, dtype=bool)
-    break_before[[entry - 3, crossing]] = True
+    break_before[[entry - 3, first_right]] = True
     broken = compute_decision_analysis(
         env, times, positions, break_before=break_before, **kwargs
     )
     assert result.pre_decision.n_samples == 10
     assert broken.pre_decision.n_samples == 3
-    assert result.boundary.crossing_times == [
-        (times[crossing - 1] + times[crossing]) / 2
+    assert result.boundary.crossing_times.tolist() == [
+        (times[last_left] + times[first_right]) / 2
     ]
-    assert broken.boundary.crossing_times == []
-    assert broken.boundary.crossing_directions == []
+    assert result.boundary.crossing_directions.tolist() == [[0, 1]]
+    assert broken.boundary.n_crossings == 0
+    assert broken.boundary.crossing_directions.shape == (0, 2)
+
+
+def test_left_and_right_turns_cross_the_boundary_equally(t_maze_environment):
+    """On a mirror-symmetric T-maze the stem is equidistant from both goals.
+
+    Walking up the stem and turning into either arm leaves the boundary
+    toward one goal without crossing from the other goal's side, so both
+    turns have no crossing.
+    """
+    from neurospatial.behavior import compute_decision_analysis
+
+    env = t_maze_environment
+    times = np.arange(100) / 10
+    results = {}
+    for arm_end in (10.0, 90.0):
+        positions = np.column_stack(
+            [
+                np.r_[np.full(30, 50.0), np.linspace(50, arm_end, 70)],
+                np.r_[np.linspace(5, 55, 30), np.full(70, 55.0)],
+            ]
+        )
+        results[arm_end] = compute_decision_analysis(
+            env,
+            times,
+            positions,
+            decision_region="center",
+            goal_regions=["left", "right"],
+            min_speed=5.0,
+        )
+    left, right = results[10.0], results[90.0]
+    assert left.boundary.n_crossings == right.boundary.n_crossings == 0
+    assert np.all(left.boundary.goal_labels[:30] == -1)
+    assert np.all(right.boundary.goal_labels[:30] == -1)
+    assert (left.chosen_goal, right.chosen_goal) == (0, 1)
 
 
 def _repeated_clock_calls():
@@ -1116,3 +1330,134 @@ def test_decision_functions_one_dimensional_positions_raise(
     match = rf"got shape \({n_samples},\)(.|\n)*heading .*needs both x and y"
     with pytest.raises(ValueError, match=match):
         calls[name](10 * times)
+
+
+def _window_calls():
+    from neurospatial.behavior import (
+        compute_pre_decision_metrics,
+        compute_vte_trial,
+        extract_pre_decision_window,
+    )
+
+    return {
+        "extract_pre_decision_window": lambda t, p, entry, duration: (
+            extract_pre_decision_window(t, p, entry, window_duration=duration)
+        ),
+        "compute_pre_decision_metrics": lambda t, p, entry, duration: (
+            compute_pre_decision_metrics(
+                t, p, entry, window_duration=duration, min_speed=1.0
+            )
+        ),
+        "compute_vte_trial": lambda t, p, entry, duration: compute_vte_trial(
+            t, p, entry, window_duration=duration, min_speed=1.0
+        ),
+    }
+
+
+_WINDOW_CALL_NAMES = [
+    "extract_pre_decision_window",
+    "compute_pre_decision_metrics",
+    "compute_vte_trial",
+]
+
+
+@pytest.mark.parametrize("name", _WINDOW_CALL_NAMES)
+@pytest.mark.parametrize("duration", [0.0, -1.0, np.nan, np.inf])
+def test_window_duration_must_be_finite_and_positive(eastward_path, name, duration):
+    times, positions = eastward_path
+    with pytest.raises(ValueError, match="finite, positive window_duration"):
+        _window_calls()[name](times, positions, 2.0, duration)
+
+
+@pytest.mark.parametrize("name", _WINDOW_CALL_NAMES)
+@pytest.mark.parametrize("entry_time", [np.nan, -1.0, 2000.0])
+def test_entry_time_must_lie_in_the_recording(eastward_path, name, entry_time):
+    """A NaN entry, one before the recording, or a millisecond entry raise."""
+    times, positions = eastward_path
+    with pytest.raises(ValueError, match="outside the recording"):
+        _window_calls()[name](times, positions, entry_time, 1.0)
+
+
+def test_entry_inside_a_tracking_gap_keeps_the_empty_window():
+    """An entry inside a gap longer than max_gap lies in no segment: no window."""
+    from neurospatial.behavior import extract_pre_decision_window
+
+    times = np.r_[np.arange(10) / 10, 5.0 + np.arange(10) / 10]
+    positions = np.column_stack([10 * times, np.zeros(20)])
+    window_times, window_positions = extract_pre_decision_window(
+        times, positions, 3.0, window_duration=1.0
+    )
+    assert window_times.size == 0
+    assert window_positions.shape == (0, 2)
+
+
+def test_decision_analysis_pre_window_must_be_positive(t_maze_environment):
+    from neurospatial.behavior import compute_decision_analysis
+
+    times, positions = _stem_right_then_back_left()
+    with pytest.raises(ValueError, match="finite, positive pre_window"):
+        compute_decision_analysis(
+            t_maze_environment,
+            times,
+            positions,
+            decision_region="center",
+            goal_regions=["left", "right"],
+            pre_window=0.0,
+            min_speed=5.0,
+        )
+
+
+def _min_speed_calls(env):
+    from neurospatial.behavior import (
+        compute_decision_analysis,
+        compute_pre_decision_metrics,
+        compute_vte_session,
+        compute_vte_trial,
+        head_sweep_from_positions,
+        pre_decision_heading_stats,
+    )
+
+    times, positions = _stem_right_then_back_left()
+    return {
+        "pre_decision_heading_stats": lambda v: pre_decision_heading_stats(
+            times, positions, min_speed=v
+        ),
+        "head_sweep_from_positions": lambda v: head_sweep_from_positions(
+            times, positions, min_speed=v
+        ),
+        "compute_pre_decision_metrics": lambda v: compute_pre_decision_metrics(
+            times, positions, 2.8, window_duration=1.0, min_speed=v
+        ),
+        "compute_vte_trial": lambda v: compute_vte_trial(
+            times, positions, 2.8, window_duration=1.0, min_speed=v
+        ),
+        "compute_decision_analysis": lambda v: compute_decision_analysis(
+            env,
+            times,
+            positions,
+            decision_region="center",
+            goal_regions=["left", "right"],
+            min_speed=v,
+        ),
+        "compute_vte_session": lambda v: compute_vte_session(
+            env, times, positions, decision_region="center", trials=[], min_speed=v
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "pre_decision_heading_stats",
+        "head_sweep_from_positions",
+        "compute_pre_decision_metrics",
+        "compute_vte_trial",
+        "compute_decision_analysis",
+        "compute_vte_session",
+    ],
+)
+@pytest.mark.parametrize("min_speed", [np.nan, -1.0, np.inf])
+def test_min_speed_must_be_finite_and_non_negative(t_maze_environment, name, min_speed):
+    """A NaN gate used to drop every heading silently, giving NaN statistics."""
+    with pytest.raises(ValueError, match="finite, non-negative min_speed"):
+        _min_speed_calls(t_maze_environment)[name](min_speed)

@@ -39,14 +39,14 @@ def basic_trials() -> list[Trial]:
             end_time=20.0,
             start_region="home",
             end_region="goal_left",
-            success=True,
+            outcome="reached",
         ),
         Trial(
             start_time=30.0,
             end_time=45.0,
             start_region="home",
             end_region="goal_right",
-            success=True,
+            outcome="reached",
         ),
     ]
 
@@ -65,7 +65,7 @@ def failed_trial() -> Trial:
         end_time=65.0,
         start_region="home",
         end_region=None,  # Failed trial - did not reach end
-        success=False,
+        outcome="timeout",
     )
 
 
@@ -78,14 +78,14 @@ def overlapping_trials() -> list[Trial]:
             end_time=30.0,
             start_region="home",
             end_region="goal_left",
-            success=True,
+            outcome="reached",
         ),
         Trial(
             start_time=20.0,  # Overlaps with first trial
             end_time=40.0,
             start_region="center",
             end_region="goal_right",
-            success=True,
+            outcome="reached",
         ),
     ]
 
@@ -195,7 +195,7 @@ class TestGoalPairDirectionLabels:
                 end_time=20.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             )
         ]
 
@@ -215,7 +215,7 @@ class TestGoalPairDirectionLabels:
                 end_time=20.0,
                 start_region="A",
                 end_region="B",
-                success=True,
+                outcome="reached",
             ),
         ]
 
@@ -238,7 +238,7 @@ class TestGoalPairDirectionLabels:
                 end_time=20.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             ),
         ]
 
@@ -261,14 +261,14 @@ class TestGoalPairDirectionLabels:
                 end_time=20.0,
                 start_region="center",
                 end_region="arm1",
-                success=True,
+                outcome="reached",
             ),
             Trial(
                 start_time=30.0,
                 end_time=40.0,
                 start_region="center",
                 end_region="arm2",
-                success=True,
+                outcome="reached",
             ),
         ]
 
@@ -309,12 +309,8 @@ class TestHeadingDirectionLabels:
         # Filter out any "stationary" labels that might exist
         direction_labels = [lbl for lbl in moving_labels if lbl != "stationary"]
 
-        # All direction labels should be the same (0° heading bin)
-        assert len(set(direction_labels)) == 1, (
-            f"Expected single direction label for straight +x path, got {set(direction_labels)}"
-        )
-        # The label should contain "0" since heading is 0° (positive x)
-        assert "0" in direction_labels[0]
+        # East (+x) is the sector centred on 0°.
+        assert set(direction_labels) == {"0°"}
 
     def test_first_sample_undefined_heading_not_labeled_east(self) -> None:
         """The first sample is labeled by its own motion, never a padded East.
@@ -338,7 +334,7 @@ class TestHeadingDirectionLabels:
 
         # The undefined first sample must not be assigned a spurious East label.
         # Every sample, the first included, reflects the +y (90 deg) heading.
-        assert all("90" in lbl for lbl in labels), labels
+        assert set(labels) == {"90°"}, labels
 
     def test_straight_path_positive_y(self) -> None:
         """Movement in +y direction gives 90° heading label."""
@@ -353,9 +349,8 @@ class TestHeadingDirectionLabels:
         )
 
         moving_labels = [lbl for lbl in labels[1:] if lbl != "stationary"]
-        assert len(set(moving_labels)) == 1
-        # The label should contain "90" since heading is 90° (positive y)
-        assert "90" in moving_labels[0]
+        # North (+y) is the sector centred on 90°.
+        assert set(moving_labels) == {"90°"}
 
     def test_stationary_labeled_correctly(self, rng) -> None:
         """Low speed periods are labeled 'stationary'."""
@@ -443,9 +438,7 @@ class TestHeadingDirectionLabels:
         )
 
         # Should use precomputed, so labels should be 90° not 0°
-        direction_labels = [lbl for lbl in labels if lbl != "stationary"]
-        assert len(set(direction_labels)) == 1
-        assert "90" in direction_labels[0]
+        assert set(labels) == {"90°"}
 
     def test_error_no_inputs(self) -> None:
         """Raises ValueError if neither (positions, times) nor (speed, heading) provided."""
@@ -526,24 +519,18 @@ class TestHeadingDirectionLabels:
         """Verify bin boundaries are correct at exact angles."""
         n_samples = 100
 
-        # Test exact 45° heading - should fall in 45-90° bin (with 8 bins)
+        # Sectors are centred on multiples of 45° and half-open
+        # [centre - 22.5°, centre + 22.5°): 45° is a centre, 22.5° is the
+        # clockwise edge of the 45° sector.
         speed = np.full(n_samples, 10.0)
-        heading_45 = np.full(n_samples, np.pi / 4)  # 45°
-
-        labels = heading_direction_labels(
-            speed=speed,
-            heading=heading_45,
-            n_directions=8,
-            min_speed=5.0,
-        )
-
-        # 45° should be exactly at boundary between 0-45° and 45-90°
-        # Depending on implementation (left-inclusive), it should be in one or the other
-        direction_labels = {lbl for lbl in labels if lbl != "stationary"}
-        assert len(direction_labels) == 1
-        # Should be either "0–45°" or "45–90°" (boundary case)
-        label = next(iter(direction_labels))
-        assert "45" in label
+        for heading, expected in [(np.pi / 4, "45°"), (np.pi / 8, "45°")]:
+            labels = heading_direction_labels(
+                speed=speed,
+                heading=np.full(n_samples, heading),
+                n_directions=8,
+                min_speed=5.0,
+            )
+            assert set(labels) == {expected}
 
     def test_negative_angles_handled(self) -> None:
         """Negative angles (−π to π) are correctly mapped to labels."""
@@ -558,12 +545,8 @@ class TestHeadingDirectionLabels:
             min_speed=5.0,
         )
 
-        direction_labels = {lbl for lbl in labels if lbl != "stationary"}
-        assert len(direction_labels) == 1
-        # -90° should map to bin around -90° or 270°
-        label = next(iter(direction_labels))
-        # The bin should indicate negative angle or wrapped positive
-        assert "-90" in label or "270" in label
+        # South is the sector centred on -90°.
+        assert set(labels) == {"-90°"}
 
     def test_output_shape_matches_input(self, rng) -> None:
         """Output array length matches input array length."""

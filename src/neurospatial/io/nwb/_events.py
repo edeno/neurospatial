@@ -565,6 +565,12 @@ def write_region_crossings(
     )
 
 
+_OUTCOME_DESCRIPTION = (
+    "How the trial ended: reached (end region entered), timeout, returned "
+    "(back to the start region) or censored (cut off by the recording)"
+)
+
+
 def write_trials(
     nwbfile: NWBFile,
     trials: list | None = None,
@@ -573,7 +579,7 @@ def write_trials(
     stop_times: NDArray[np.float64] | None = None,
     start_regions: Sequence[str] | None = None,
     end_regions: Sequence[str] | None = None,
-    successes: Sequence[bool] | None = None,
+    outcomes: Sequence[str] | None = None,
     description: str = "Behavioral trials",
     overwrite: bool = False,
 ) -> None:
@@ -581,7 +587,7 @@ def write_trials(
     Write trial data to NWB file.
 
     Writes trial intervals to the built-in NWB trials table, including
-    optional columns for start/end regions and success status.
+    optional columns for start/end regions and how each trial ended.
 
     Parameters
     ----------
@@ -600,9 +606,10 @@ def write_trials(
     end_regions : Sequence[str], optional
         End region names for each trial (None values stored as "").
         If provided, must have same length as start_times.
-    successes : Sequence[bool], optional
-        Success status for each trial. If provided, must have same length
-        as start_times.
+    outcomes : Sequence[str], optional
+        How each trial ended: ``"reached"``, ``"timeout"``, ``"returned"`` or
+        ``"censored"`` (see :class:`~neurospatial.behavior.segmentation.Trial`).
+        If provided, must have same length as start_times.
     description : str, default "Behavioral trials"
         Accepted for API symmetry with the custom-table writers, but inert for
         the predefined trials table: pynwb fixes that table's description to its
@@ -623,7 +630,7 @@ def write_trials(
     ValueError
         If both trials and raw arrays are provided.
         If neither trials nor required arrays (start_times, stop_times) provided.
-        If array lengths don't match.
+        If array lengths don't match, or an outcome is not one of the four.
         If stop_times < start_times for any trial.
         If timestamps contain non-finite or negative values.
         If a trials table already exists and ``overwrite=False``.
@@ -638,8 +645,11 @@ def write_trials(
 
     Custom columns are added for:
     - ``start_region``: Region where trial started
-    - ``end_region``: Region reached (or "" for timeout)
-    - ``success``: Whether trial was successful
+    - ``end_region``: Region reached (or "" when the trial did not reach one)
+    - ``outcome``: How the trial ended (``"reached"``, ``"timeout"``,
+      ``"returned"`` or ``"censored"``). A successful trial is
+      ``outcome == "reached"``; a censored trial was cut off by the recording,
+      not failed.
 
     Examples
     --------
@@ -681,7 +691,7 @@ def write_trials(
     # Initialize variables used in both branches
     start_regions_list: list[str] | None = None
     end_regions_list: list[str] | None = None
-    successes_list: list[bool] | None = None
+    outcomes_list: list[str] | None = None
 
     # Extract data from Trial objects or validate raw arrays
     if has_trials:
@@ -696,13 +706,13 @@ def write_trials(
             end_regions_list = [
                 t.end_region if t.end_region is not None else "" for t in trials
             ]
-            successes_list = [t.success for t in trials]
+            outcomes_list = [t.outcome for t in trials]
         else:
             start_times_arr = np.array([], dtype=np.float64)
             stop_times_arr = np.array([], dtype=np.float64)
             start_regions_list = []
             end_regions_list = []
-            successes_list = []
+            outcomes_list = []
     else:
         # Validate required arrays
         if start_times is None:
@@ -730,7 +740,7 @@ def write_trials(
         # Convert optional arrays if provided
         start_regions_list = list(start_regions) if start_regions is not None else None
         end_regions_list = list(end_regions) if end_regions is not None else None
-        successes_list = list(successes) if successes is not None else None
+        outcomes_list = list(outcomes) if outcomes is not None else None
 
         # Validate optional array lengths
         if start_regions_list is not None and len(start_regions_list) != n_trials:
@@ -743,11 +753,24 @@ def write_trials(
                 f"end_regions length ({len(end_regions_list)}) must match "
                 f"start_times length ({n_trials})."
             )
-        if successes_list is not None and len(successes_list) != n_trials:
+        if outcomes_list is not None and len(outcomes_list) != n_trials:
             raise ValueError(
-                f"successes length ({len(successes_list)}) must match "
+                f"outcomes length ({len(outcomes_list)}) must match "
                 f"start_times length ({n_trials})."
             )
+        if outcomes_list is not None:
+            from typing import get_args
+
+            from neurospatial.behavior.segmentation import Outcome
+
+            allowed = get_args(Outcome)
+            bad = [o for o in outcomes_list if o not in allowed]
+            if bad:
+                raise ValueError(
+                    f"outcomes contains {bad[0]!r}, which is not a trial outcome.\n"
+                    f"Why: the outcome column records how each trial ended.\n"
+                    f"Fix: use one of {allowed}."
+                )
 
     # Validate timestamps
     if n_trials > 0:
@@ -813,12 +836,10 @@ def write_trials(
         if "end_region" not in existing_columns:
             nwbfile.add_trial_column(
                 name="end_region",
-                description="Region reached (empty string if timeout)",
+                description="Region reached (empty string if none was reached)",
             )
-        if "success" not in existing_columns:
-            nwbfile.add_trial_column(
-                name="success", description="Whether trial was successful"
-            )
+        if "outcome" not in existing_columns:
+            nwbfile.add_trial_column(name="outcome", description=_OUTCOME_DESCRIPTION)
     elif not has_trials:
         # For raw arrays, only add columns if data provided
         if start_regions_list is not None and "start_region" not in existing_columns:
@@ -828,12 +849,10 @@ def write_trials(
         if end_regions_list is not None and "end_region" not in existing_columns:
             nwbfile.add_trial_column(
                 name="end_region",
-                description="Region reached (empty string if timeout)",
+                description="Region reached (empty string if none was reached)",
             )
-        if successes_list is not None and "success" not in existing_columns:
-            nwbfile.add_trial_column(
-                name="success", description="Whether trial was successful"
-            )
+        if outcomes_list is not None and "outcome" not in existing_columns:
+            nwbfile.add_trial_column(name="outcome", description=_OUTCOME_DESCRIPTION)
 
     # Add trials
     for i in range(n_trials):
@@ -846,17 +865,17 @@ def write_trials(
             # start_regions_list and end_regions_list are guaranteed non-None here
             assert start_regions_list is not None
             assert end_regions_list is not None
-            assert successes_list is not None
+            assert outcomes_list is not None
             kwargs["start_region"] = start_regions_list[i]
             kwargs["end_region"] = end_regions_list[i]
-            kwargs["success"] = successes_list[i]
+            kwargs["outcome"] = outcomes_list[i]
         else:
             if start_regions_list is not None:
                 kwargs["start_region"] = start_regions_list[i]
             if end_regions_list is not None:
                 kwargs["end_region"] = end_regions_list[i]
-            if successes_list is not None:
-                kwargs["success"] = successes_list[i]
+            if outcomes_list is not None:
+                kwargs["outcome"] = outcomes_list[i]
 
         nwbfile.add_trial(**kwargs)
 
@@ -883,7 +902,7 @@ def read_trials(nwbfile: NWBFile) -> pd.DataFrame:
     -------
     pd.DataFrame
         Trials data with columns: start_time, stop_time, and any custom
-        columns (start_region, end_region, success, etc.).
+        columns (start_region, end_region, outcome, etc.).
 
     Raises
     ------

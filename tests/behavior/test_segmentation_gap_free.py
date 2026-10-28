@@ -11,7 +11,23 @@ trials began at departure from the start region instead of entry, and the
 ``compute_vte_trial`` entries when speed became the Gaussian-smoothed velocity
 of ``compute_speed``. ``running_direction_labels`` marks samples outside
 every run with ``None`` instead of ``"other"``; its golden is compared with
-that one substitution and is otherwise unchanged.
+that one substitution and is otherwise unchanged. The decision and VTE
+entries (``detect_boundary_crossings``, ``compute_pre_decision_metrics``,
+``compute_decision_analysis``, ``compute_vte_trial``, ``compute_vte_session``)
+were captured again when boundary crossings became arrays, the boundary
+distance became ``(d2 - d1) / 2``, the chosen goal became the first goal
+entered after the decision entry, result fields were renamed
+(``min_observed_speed``, ``distance_to_decision_boundary``) and VTE results
+gained a per-trial ``status`` with derived session statistics. The lap entries
+(``detect_laps_region``, ``detect_laps_auto``, ``detect_laps_reference``) were
+captured again when a lap had to go round the loop and a turn back started the
+next lap afresh: the joined lap fixture jumps back to the lap start at 100 s,
+which now ends the region lap begun at 88.6 s on the other side of the start
+region and starts the template laps at the jump. ``detect_goal_directed_runs``
+was captured again when each approach to the goal became its own row.
+``compute_decision_analysis`` was captured again when decision boundaries
+began to use the geodesic distance of the path module (the shortest path
+inside the environment between bin centers) instead of the bin graph.
 """
 
 import json

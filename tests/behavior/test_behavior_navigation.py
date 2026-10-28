@@ -70,8 +70,8 @@ class TestNavigationFunctionality:
         )
         goal = np.array([100.0, 0.0])
 
-        eff = angular_efficiency(positions, goal)
-        assert eff >= 0.95  # Should be close to 1.0
+        eff = angular_efficiency(np.arange(5) / 10, positions, goal)
+        assert eff == 1.0
 
     def test_path_efficiency_result_summary(self):
         """Test PathEfficiencyResult has working summary method."""
@@ -80,12 +80,12 @@ class TestNavigationFunctionality:
         result = PathEfficiencyResult(
             traveled_length=45.2,
             shortest_length=32.1,
-            efficiency=0.71,
             time_efficiency=None,
             angular_efficiency=0.85,
             start_position=np.array([0.0, 0.0]),
             goal_position=np.array([30.0, 10.0]),
             metric="geodesic",
+            fully_observed=True,
         )
 
         assert isinstance(result.summary(), dict)  # scalar-metric contract
@@ -101,7 +101,7 @@ class TestNavigationFunctionality:
         result = GoalDirectedMetrics(
             goal_bias=0.65,
             mean_approach_rate=-8.5,
-            time_to_goal=5.2,
+            time_to_reach_goal=5.2,
             min_distance_to_goal=2.1,
             goal_distance_at_start=50.0,
             goal_distance_at_end=2.1,

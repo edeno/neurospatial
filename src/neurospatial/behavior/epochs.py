@@ -26,7 +26,9 @@ restrict_spike_trains
 labels_to_epochs
     Turn one label per sample (task phase, running direction, trial type) into
     half-open ``[start, stop)`` epochs per label, ready to pass as ``epochs=``
-    to an analysis. Missing samples, gaps and breaks end an epoch.
+    to an analysis. A missing sample is bridged like a deleted row when the
+    gap around it is no longer than ``max_gap``; a longer gap, a declared
+    break or an ``epochs`` edge ends an epoch.
 
 Aligned vs ragged
 -----------------
@@ -40,7 +42,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Hashable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -258,7 +260,9 @@ def restrict(
         ``closed`` controls point membership in the normalized windows.
     closed : {"both", "left", "right", "neither"}, optional
         Endpoint inclusivity, forwarded to :func:`in_epochs`. Default
-        ``"both"``; analysis windows are half-open, see :func:`in_epochs`.
+        ``"left"``: ``start <= t < stop``, the half-open windows of every
+        analysis ``epochs=`` argument. ``"both"`` matches pynapple's
+        inclusive ``restrict``.
 
     Returns
     -------
@@ -360,7 +364,9 @@ def restrict_spike_trains(
         ``closed`` controls point membership in the normalized windows.
     closed : {"both", "left", "right", "neither"}, optional
         Endpoint inclusivity, forwarded to :func:`in_epochs`. Default
-        ``"both"``; analysis windows are half-open, see :func:`in_epochs`.
+        ``"left"``: ``start <= t < stop``, the half-open windows of every
+        analysis ``epochs=`` argument. ``"both"`` matches pynapple's
+        inclusive ``restrict``.
 
     Returns
     -------
@@ -407,7 +413,8 @@ class LabelEpochsResult(
     epoch_bounds : NDArray[np.float64], shape (n_epochs, 2)
         ``[start, stop)`` of every epoch in seconds, in time order.
     epoch_labels : NDArray[np.intp], shape (n_epochs,)
-        Index into ``labels`` of each epoch.
+        Index into ``labels`` of each epoch; derived as the label of its
+        first interval, ``interval_labels[epoch_intervals[:, 0]]``.
     epoch_intervals : NDArray[np.intp], shape (n_epochs, 2)
         Inclusive first and last interval ``k`` of each epoch; interval ``k``
         is ``[times[k], times[k + 1])``.
@@ -416,13 +423,14 @@ class LabelEpochsResult(
         not retained (unsupported or missing label).
     interval_supported : NDArray[np.bool_], shape (max(n_samples - 1, 0),)
         True where the gap between the valid samples around the interval
-        passes ``max_gap``, the
-        interval lies inside one ``epochs`` row, and no break is declared.
+        passes ``max_gap``, the interval lies inside one ``epochs`` row, and
+        no break is declared. Intervals before the first or after the last
+        valid sample are False.
     unsupported_labels : tuple of hashable
         Labels that start an interval but have no supported interval, in
         first-seen order. They are not keys.
     n_samples : int
-        Number of input samples.
+        Number of input samples, derived as ``len(interval_labels) + 1``.
     max_gap : float or None
         The gap limit that was applied, in seconds.
     input_epochs : NDArray[np.float64] or None, shape (n_windows, 2)
@@ -450,19 +458,73 @@ class LabelEpochsResult(
 
     labels: tuple[Hashable, ...]
     epoch_bounds: NDArray[np.float64]
-    epoch_labels: NDArray[np.intp]
+    epoch_labels: NDArray[np.intp] = field(init=False)
     epoch_intervals: NDArray[np.intp]
     interval_labels: NDArray[np.intp]
     interval_supported: NDArray[np.bool_]
     unsupported_labels: tuple[Hashable, ...]
-    n_samples: int
+    n_samples: int = field(init=False)
     max_gap: float | None
     input_epochs: NDArray[np.float64] | None
     missing_label: Hashable | None
     n_declared_breaks: int
 
     def __post_init__(self) -> None:
-        """Own read-only copies of the arrays."""
+        """Check the epoch and interval invariants, derive fields, own arrays."""
+        bounds = np.asarray(self.epoch_bounds, dtype=np.float64)
+        spans = np.asarray(self.epoch_intervals)
+        interval_labels = np.asarray(self.interval_labels)
+        supported = np.asarray(self.interval_supported)
+        n_intervals = interval_labels.size
+        problems = []
+        if bounds.ndim != 2 or bounds.shape[1:] != (2,):
+            problems.append(f"epoch_bounds has shape {bounds.shape}, not (n_epochs, 2)")
+        elif not np.all(bounds[:, 0] < bounds[:, 1]):
+            problems.append("an epoch_bounds row has stop <= start")
+        if spans.shape != bounds.shape or spans.dtype.kind not in "iu":
+            problems.append(
+                f"epoch_intervals must be integers of shape {bounds.shape}, "
+                f"got {spans.dtype} {spans.shape}"
+            )
+        elif spans.size and not (
+            np.all(spans[:, 0] <= spans[:, 1])
+            and spans.min() >= 0
+            and spans.max() < n_intervals
+        ):
+            problems.append(
+                f"epoch_intervals rows must satisfy 0 <= first <= last < {n_intervals}"
+            )
+        if interval_labels.ndim != 1 or interval_labels.dtype.kind not in "iu":
+            problems.append("interval_labels must be a 1-D integer array")
+        elif n_intervals and not (
+            interval_labels.min() >= -1 and interval_labels.max() < len(self.labels)
+        ):
+            problems.append(
+                f"interval_labels must lie in [-1, {len(self.labels)}) "
+                "(-1 marks an interval that was not retained)"
+            )
+        if supported.dtype != np.bool_ or supported.shape != interval_labels.shape:
+            problems.append(
+                "interval_supported must be Boolean with the shape of interval_labels"
+            )
+        if not problems:
+            epoch_labels = interval_labels[spans[:, 0]].astype(np.intp)
+            if np.any(epoch_labels < 0):
+                problems.append("an epoch starts at an interval that was not retained")
+        if problems:
+            raise ValueError(
+                _format_error(
+                    "LabelEpochsResult received inconsistent epochs: "
+                    + "; ".join(problems)
+                    + ".",
+                    why="each epoch is a run of retained intervals, and interval k "
+                    "is [times[k], times[k + 1]).",
+                    fix="build the result with labels_to_epochs() instead of "
+                    "constructing it directly.",
+                )
+            )
+        object.__setattr__(self, "epoch_labels", epoch_labels)
+        object.__setattr__(self, "n_samples", n_intervals + 1)
         self._own_arrays()
 
     def __getitem__(self, label: Hashable) -> NDArray[np.float64]:
@@ -480,8 +542,10 @@ class LabelEpochsResult(
             if label in self.unsupported_labels:
                 why = (
                     f"label {label!r} occurs but none of its intervals is "
-                    "supported: each has an invalid end sample, a gap longer "
-                    "than max_gap, a declared break, or lies outside epochs."
+                    "supported: each lies in a gap between observed samples "
+                    "longer than max_gap, crosses a declared break, lies "
+                    "outside epochs, or comes before the first or after the "
+                    "last observed sample."
                 )
             else:
                 why = f"label {label!r} starts no interval."
@@ -655,8 +719,9 @@ def _validated_sample_flags(valid: Any, n_samples: int) -> NDArray[np.bool_]:
             _format_error(
                 "labels_to_epochs() needs valid to be a Boolean array of shape "
                 f"({n_samples},); got dtype {flags.dtype} and shape {flags.shape}.",
-                why="valid marks the samples that were observed; an interval is "
-                "used only when both of its end samples are valid.",
+                why="valid marks the samples that were observed. An unobserved "
+                "sample is skipped as if its row were deleted: the gap around it "
+                "is bridged when it is no longer than max_gap.",
                 fix="pass a Boolean array with one entry per sample, e.g. "
                 "valid = np.isfinite(positions).all(axis=1)",
             )
@@ -842,12 +907,10 @@ def labels_to_epochs(
     return LabelEpochsResult(
         labels=tuple(values[c] for c in ordered.tolist()),
         epoch_bounds=np.column_stack([t[first], t[last + 1]]),
-        epoch_labels=remap[epoch_codes],
         epoch_intervals=np.column_stack([first, last]).astype(np.intp),
         interval_labels=interval_labels,
         interval_supported=support.interval_mask,
         unsupported_labels=tuple(values[c] for c in unsupported.tolist()),
-        n_samples=n_samples,
         max_gap=max_gap,
         input_epochs=windows,
         missing_label=missing_label,

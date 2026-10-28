@@ -250,6 +250,20 @@ def test_invalid_clock_rejected(region_env, times):
         )
 
 
+@pytest.mark.parametrize(
+    ("bins", "times"),
+    [
+        (np.array([0, 0, 1]), np.array([0.0, 0.1])),
+        (np.array([0, 0]), np.array([0.0, 0.1, 0.2])),
+        (np.array([[0, 0], [1, 1]]), np.array([0.0, 0.1])),
+        (np.array([0, 1]), np.array([[0.0, 0.1]])),
+    ],
+)
+def test_bins_and_times_must_be_aligned_1d(region_env, bins, times):
+    with pytest.raises(ValueError, match="1-D arrays of equal length"):
+        detect_region_visits(bins, times, region_env, region_names=["A"])
+
+
 @pytest.mark.parametrize("gap", [0, -1, np.nan, np.inf])
 def test_invalid_gap_rejected(region_env, gap):
     with pytest.raises(ValueError, match="max_gap"):
@@ -322,3 +336,97 @@ def test_millisecond_times_warn_instead_of_splitting_every_visit(region_env):
     bins = np.array([1, 0, 0, 1, 3, 3, 4, 5])
     with pytest.warns(UserWarning, match="probably not in seconds"):
         detect_region_visits(bins, times, region_env, region_names=["A", "B", "C"])
+
+
+_VISIT = {
+    "visit_id": 0,
+    "run_id": 0,
+    "region_name": "A",
+    "start_index": 1,
+    "stop_index": 3,
+    "start_time": 0.1,
+    "end_time": 0.3,
+    "entry_observed": True,
+    "exit_observed": True,
+}
+_TRANSITION = {
+    "source_visit_id": 0,
+    "target_visit_id": 1,
+    "run_id": 0,
+    "source_region": "A",
+    "target_region": "B",
+    "start_index": 1,
+    "end_index": 4,
+    "start_time": 0.1,
+    "end_time": 0.4,
+}
+
+
+def test_records_store_plain_python_scalars():
+    visit = RegionVisit(
+        visit_id=np.int64(0),
+        run_id=np.intp(2),
+        region_name=np.str_("A"),
+        start_index=np.int32(1),
+        stop_index=np.int64(3),
+        start_time=np.float64(0.25),
+        end_time=np.float64(0.5),
+        entry_observed=np.bool_(True),
+        exit_observed=np.bool_(False),
+    )
+    expected = {
+        "visit_id": int,
+        "run_id": int,
+        "region_name": str,
+        "start_index": int,
+        "stop_index": int,
+        "start_time": float,
+        "end_time": float,
+        "entry_observed": bool,
+        "exit_observed": bool,
+        "duration": float,
+    }
+    assert {name: type(getattr(visit, name)) for name in expected} == expected
+    assert visit.duration == 0.25
+    transition = RegionTransition(
+        **{**_TRANSITION, "end_index": np.int64(4), "end_time": np.float64(0.4)}
+    )
+    assert type(transition.end_index) is int
+    assert type(transition.end_time) is float
+    assert transition.duration == pytest.approx(0.3)
+
+
+@pytest.mark.parametrize(
+    ("changes", "error", "match"),
+    [
+        ({"stop_index": 1}, ValueError, "start_index < stop_index"),
+        ({"stop_index": 0}, ValueError, "start_index < stop_index"),
+        ({"end_time": 0.05}, ValueError, "start_time <= end_time"),
+        ({"end_time": np.nan}, ValueError, "start_time <= end_time"),
+        ({"start_index": 1.5}, TypeError, "start_index"),
+        ({"entry_observed": 1}, TypeError, "entry_observed"),
+        ({"region_name": 3}, TypeError, "region_name"),
+    ],
+)
+def test_visit_rejects_inconsistent_fields(changes, error, match):
+    with pytest.raises(error, match=match):
+        RegionVisit(**{**_VISIT, **changes})
+
+
+def test_singleton_visit_is_valid():
+    visit = RegionVisit(**{**_VISIT, "stop_index": 2, "end_time": 0.1})
+    assert visit.duration == 0.0
+
+
+@pytest.mark.parametrize(
+    ("changes", "match"),
+    [
+        ({"end_index": 1}, "start_index < end_index"),
+        ({"end_time": 0.1}, "start_time < end_time"),
+        ({"target_visit_id": 0}, "source_visit_id < target_visit_id"),
+        ({"target_region": "A"}, "different regions"),
+    ],
+)
+def test_transition_rejects_inconsistent_fields(changes, match):
+    with pytest.raises(ValueError, match=match):
+        RegionTransition(**{**_TRANSITION, **changes})

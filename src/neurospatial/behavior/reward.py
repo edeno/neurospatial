@@ -1,8 +1,9 @@
 """Reward field generation for reinforcement learning applications.
 
 This module provides functions for creating reward fields from spatial regions
-and goal locations. These are essential primitives for reinforcement learning
-(RL) and reward shaping in spatial navigation tasks.
+and goal locations, for reinforcement learning (RL) models of spatial
+navigation. A reward field can serve as the potential of potential-based
+reward shaping (Ng et al., 1999).
 
 Imports
 -------
@@ -22,8 +23,10 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.geometry import CartesianSystem
 
-from neurospatial.ops.distance import distance_field
+from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_finite_scalar
 from neurospatial.ops.mapping import _require_region_mask
 
 __all__ = [
@@ -39,6 +42,7 @@ def region_reward_field(
     reward_value: float = 1.0,
     decay: Literal["constant", "linear", "gaussian"] = "constant",
     bandwidth: float | None = None,
+    max_distance: float | None = None,
 ) -> NDArray[np.float64]:
     """Generate reward field from a named region.
 
@@ -59,8 +63,16 @@ def region_reward_field(
         - 'linear': Linear decay from region boundary
         - 'gaussian': Smooth Gaussian falloff from region
     bandwidth : float, optional
-        Gaussian smoothing bandwidth (required for decay='gaussian').
-        Should be in same units as environment coordinates.
+        Gaussian smoothing bandwidth, in the environment's distance units.
+        Required for, and only accepted with, ``decay='gaussian'``.
+    max_distance : float, optional
+        Geodesic distance from the region, in the environment's distance
+        units, at which the linear reward reaches 0. Only accepted with
+        ``decay='linear'``. Default: the distance of the farthest bin that
+        can reach the region, so every reachable bin outside the region gets
+        a nonzero gradient. That default depends on the arena size: the same
+        distance gets a different reward in a larger arena. Pass
+        ``max_distance`` to compare reward fields across arenas.
 
     Returns
     -------
@@ -69,10 +81,13 @@ def region_reward_field(
 
     Raises
     ------
-    KeyError
-        If region_name is not found in env.regions.
+    RegionNotFoundError
+        If region_name is not found in env.regions (a ``KeyError``).
     ValueError
-        If bandwidth is not provided for decay='gaussian'.
+        If ``decay`` is unknown; if ``bandwidth`` is missing for
+        ``decay='gaussian'``; if ``bandwidth`` or ``max_distance`` is given
+        for a decay that does not use it; or if either is not finite and
+        positive.
 
     Notes
     -----
@@ -81,19 +96,25 @@ def region_reward_field(
     - **Constant**: Binary reward useful for sparse reward RL tasks.
       Creates clear goal regions with no reward shaping.
 
-    - **Linear**: Linear decay from region boundary. Provides gradient
-      information while maintaining clear boundaries. Distance computed
-      using graph connectivity (respects environment structure).
+    - **Linear**: ``reward_value * max(0, 1 - d / max_distance)``, where
+      ``d`` is the geodesic distance from the bin centre to the nearest region
+      bin centre: the length of the shortest path between two positions that
+      stays inside the environment (it goes around walls and never leaves the
+      environment, and on a track it runs along the track's centerline). Bins
+      that cannot reach the region (another connected component) get 0.
 
     - **Gaussian**: Smooth falloff using Gaussian kernel smoothing.
       After smoothing, rescales so maximum *within the region* equals
       reward_value. This preserves the intended reward magnitude while
       providing smooth gradients for policy learning.
 
-    **Reward Shaping**: These primitives implement potential-based reward
-    shaping (Ng et al., 1999). Gaussian decay provides the smoothest
-    gradients but may inadvertently guide agents away from optimal paths.
-    Use with caution and validate against sparse reward baseline.
+    **Reward Shaping**: A reward field can serve as the potential
+    ``Phi(s)`` of potential-based reward shaping [1]_, which adds
+    ``gamma * Phi(s') - Phi(s)`` to the task reward and leaves the optimal
+    policy unchanged. Adding the field itself to the task reward is not
+    potential-based and can change the optimal policy. Gaussian decay
+    provides the smoothest gradients; validate any shaped agent against a
+    sparse-reward baseline.
 
     Examples
     --------
@@ -116,12 +137,18 @@ def region_reward_field(
     >>> reward_smooth = region_reward_field(
     ...     env, region_name="goal", decay="gaussian", bandwidth=10.0
     ... )
+    >>> # Linear decay that reaches 0 at 30 units from the region
+    >>> reward_linear = region_reward_field(
+    ...     env, region_name="goal", decay="linear", max_distance=30.0
+    ... )
+    >>> float(reward_linear.max()), float(reward_linear.min())
+    (1.0, 0.0)
 
     See Also
     --------
     goal_reward_field : Distance-based rewards from goal bins
-    neurospatial.distance_field : Compute distance maps
-    neurospatial.spatial.regions_to_mask : Convert regions to binary masks
+    neurospatial.ops.distance_field : Bin-graph distance maps
+    neurospatial.ops.regions_to_mask : Convert regions to binary masks
 
     References
     ----------
@@ -129,7 +156,19 @@ def region_reward_field(
            under reward transformations: Theory and application to reward
            shaping. ICML.
     """
-    # Validate region exists
+    if decay not in ("constant", "linear", "gaussian"):
+        raise ValueError(
+            f"Invalid decay type: {decay!r}. "
+            "Must be one of: 'constant', 'linear', 'gaussian'."
+        )
+    _reject_unused_parameter("bandwidth", bandwidth, decay, uses="gaussian")
+    _reject_unused_parameter("max_distance", max_distance, decay, uses="linear")
+    validate_finite_scalar(
+        bandwidth, name="bandwidth", positive=True, none_allowed=True
+    )
+    validate_finite_scalar(
+        max_distance, name="max_distance", positive=True, none_allowed=True
+    )
     region_mask = _require_region_mask(
         env, region_name, operation="region_reward_field()", argument="region_name"
     )
@@ -139,46 +178,22 @@ def region_reward_field(
         reward = np.where(region_mask, reward_value, 0.0)
 
     elif decay == "linear":
-        # Linear decay from boundary using distance field
-        # Bins inside region get full reward
-        # Bins outside decay linearly based on distance to boundary
-        reward = np.ones(env.n_bins, dtype=np.float64) * reward_value
-
-        # For bins outside region, compute distance to boundary
-        # Find boundary bins (bins in region with at least one neighbor outside)
-        boundary_bins = []
-        region_bin_ids = np.where(region_mask)[0]
-
-        for bin_id in region_bin_ids:
-            neighbors = list(env.connectivity.neighbors(bin_id))
-            # Check if any neighbor is outside region
-            if any(not region_mask[n] for n in neighbors):
-                boundary_bins.append(bin_id)
-
-        if len(boundary_bins) == 0:
-            # Region has no boundary (entire environment or isolated bins)
-            # Just use binary mask
-            reward = np.where(region_mask, reward_value, 0.0)
-        else:
-            # Compute distance from all bins to boundary
-            distances = distance_field(env.connectivity, sources=boundary_bins)
-
-            # Inside region: full reward
-            reward[region_mask] = reward_value
-
-            # Outside region: linear decay
-            # Find max distance to normalize
-            outside_mask = ~region_mask
-            if outside_mask.any():
-                max_dist = distances[outside_mask].max()
-                if max_dist > 0:
-                    # Linear decay: reward = reward_value * (1 - d/max_d)
-                    # Clamp to [0, reward_value]
-                    reward[outside_mask] = reward_value * np.maximum(
-                        0, 1 - distances[outside_mask] / max_dist
-                    )
-                else:
-                    reward[outside_mask] = 0.0
+        # Geodesic distance to the nearest region bin: 0 inside the region,
+        # inf for bins that cannot reach it. A shortest path into the region
+        # enters through a boundary bin, so this is the distance from the
+        # region boundary.
+        distances = _geodesic_from_bins(
+            env, np.flatnonzero(region_mask), call="region_reward_field"
+        )
+        reachable = np.isfinite(distances) & ~region_mask
+        reward = np.where(region_mask, reward_value, 0.0)
+        if reachable.any():
+            decay_length = (
+                distances[reachable].max() if max_distance is None else max_distance
+            )
+            reward[reachable] = reward_value * np.maximum(
+                0.0, 1.0 - distances[reachable] / decay_length
+            )
 
     elif decay == "gaussian":
         # Gaussian falloff using smoothing
@@ -200,27 +215,31 @@ def region_reward_field(
             0.0,
         )
 
-        # CRITICAL FIX: Scale by max IN REGION (not global max)
-        # This ensures the peak reward within the actual region equals reward_value
-        max_in_region = smoothed[region_mask].max()
-
-        if max_in_region > 0:
-            reward = (smoothed / max_in_region) * reward_value
-        else:
-            # Edge case: region has no bins or smoothing failed
-            reward = np.zeros(env.n_bins, dtype=np.float64)
-
-    else:
-        raise ValueError(
-            f"Invalid decay type: {decay}. "
-            f"Must be one of: 'constant', 'linear', 'gaussian'"
-        )
+        # Scale by the maximum inside the region (not the global maximum) so
+        # the peak reward in the region equals reward_value. The region has at
+        # least one bin and each bin keeps positive weight on itself, so this
+        # maximum is positive.
+        reward = (smoothed / smoothed[region_mask].max()) * reward_value
 
     return reward
 
 
+def _reject_unused_parameter(
+    name: str, value: float | None, decay: str, *, uses: str
+) -> None:
+    """Raise when a decay-specific parameter is passed with another decay."""
+    if value is not None and decay != uses:
+        raise ValueError(
+            _format_error(
+                f"{name}={value!r} has no effect with decay={decay!r}.",
+                why=f"{name} only sets the shape of decay={uses!r}.",
+                fix=f"remove {name}, or pass decay={uses!r}.",
+            )
+        )
+
+
 def goal_reward_field(
-    env: Environment,
+    env: Environment[CartesianSystem],
     goal_bins: int | list[int] | NDArray[np.int_],
     *,
     decay: Literal["linear", "exponential", "inverse"] = "exponential",
@@ -239,45 +258,58 @@ def goal_reward_field(
     goal_bins : int or list[int] or NDArray[np.int_]
         Goal bin index or indices. Can be scalar or array.
     decay : {'linear', 'exponential', 'inverse'}, default='exponential'
-        Distance-based decay function:
+        Distance-based decay function of the geodesic distance ``d`` (in the
+        environment's distance units) from the bin centre to the nearest goal
+        bin centre, the length of the shortest path between two positions that
+        stays inside the environment (it goes around walls and never leaves the
+        environment, and on a track it runs along the track's centerline):
+
         - 'linear': reward = scale * max(0, 1 - d/max_distance)
         - 'exponential': reward = scale * exp(-d/scale)
         - 'inverse': reward = scale / (1 + d)
     scale : float, default=1.0
-        Reward scale parameter. Interpretation depends on decay type:
-        - 'linear': maximum reward at goal
-        - 'exponential': reward at goal (also decay rate)
-        - 'inverse': reward scale factor
+        Reward at the goal for every decay. For 'exponential' it is also the
+        decay length, in distance units (not a rate): the reward falls to
+        ``scale / e`` at ``d = scale``, so a larger scale decays more slowly.
+        Must be finite and positive for 'exponential'.
     max_distance : float, optional
-        Maximum distance for linear decay. Required for decay='linear'.
-        Reward is zero beyond this distance.
+        Distance, in the environment's distance units, at which the linear
+        reward reaches 0. Required for, and only accepted with,
+        ``decay='linear'``; must be finite and positive.
 
     Returns
     -------
     reward : NDArray[np.float64], shape (n_bins,)
-        Distance-based reward field.
+        Distance-based reward field. Bins that cannot reach any goal (another
+        connected component) get 0 for every decay.
 
     Raises
     ------
     ValueError
-        If scale <= 0 for decay='exponential'.
-        If max_distance not provided for decay='linear'.
-        If goal_bins contains invalid indices.
+        If ``decay`` is unknown; if ``scale`` is not finite and positive for
+        ``decay='exponential'``; if ``max_distance`` is missing, not finite
+        and positive for ``decay='linear'``, or given for another decay; or
+        if ``goal_bins`` contains invalid indices.
 
     Notes
     -----
     **Decay Functions**:
 
     - **Exponential**: Most common in RL literature. Provides smooth gradients
-      that decay exponentially with distance. Scale parameter controls both
-      peak reward and decay rate. Larger scale = slower decay.
+      that decay exponentially with distance. ``scale`` sets both the peak
+      reward and the decay length, so they cannot be chosen separately; for
+      a unit peak with decay length ``L``, divide the field from
+      ``scale=L`` by ``L``.
 
     - **Linear**: Reaches exactly zero at max_distance. Useful when reward
       should be strictly local. Provides constant gradient within range.
 
     - **Inverse**: Inverse distance function (1/(1+d)). Never reaches zero,
       providing global gradients. Can lead to suboptimal policies if not
-      carefully tuned.
+      carefully tuned. The ``1`` in ``1 + d`` is one distance unit, so the
+      shape depends on the units of the environment: the reward halves 1 cm
+      from the goal in a centimetre environment but 1 m from it in a metre
+      environment.
 
     **Multiple Goals**: When goal_bins contains multiple indices, distance
     is computed to the *nearest* goal. This creates a Voronoi-like partition
@@ -306,10 +338,19 @@ def goal_reward_field(
     See Also
     --------
     region_reward_field : Reward fields from spatial regions
-    neurospatial.distance_field : Compute distance maps
+    neurospatial.ops.distance_field : Bin-graph distance maps
     """
     from neurospatial.environment import _validate_target_bins
 
+    if decay not in ("linear", "exponential", "inverse"):
+        raise ValueError(
+            f"Invalid decay type: {decay!r}. "
+            "Must be one of: 'linear', 'exponential', 'inverse'."
+        )
+    _reject_unused_parameter("max_distance", max_distance, decay, uses="linear")
+    validate_finite_scalar(
+        max_distance, name="max_distance", positive=True, none_allowed=True
+    )
     goal_bins_list = _validate_target_bins(
         goal_bins,
         n_bins=env.n_bins,
@@ -318,34 +359,39 @@ def goal_reward_field(
         argument="goal_bins",
     ).tolist()
 
-    # Compute distance field from goals
-    distances = distance_field(env.connectivity, sources=goal_bins_list)
+    distances = _geodesic_from_bins(
+        env, np.unique(goal_bins_list), call="goal_reward_field"
+    )
 
+    # Unreachable bins have d = inf, which every decay below maps to 0.
     if decay == "exponential":
-        # Exponential decay: reward = scale * exp(-d / scale)
-        if scale <= 0:
-            raise ValueError(
-                f"scale must be positive for exponential decay (got {scale})"
-            )
+        validate_finite_scalar(scale, name="scale", positive=True)
         reward = scale * np.exp(-distances / scale)
-
     elif decay == "linear":
-        # Linear decay: reward = scale * max(0, 1 - d/max_distance)
         if max_distance is None:
             raise ValueError(
                 "max_distance parameter is required for decay='linear'. "
                 "Specify the distance at which reward reaches zero."
             )
         reward = scale * np.maximum(0, 1 - distances / max_distance)
-
-    elif decay == "inverse":
-        # Inverse distance: reward = scale / (1 + d)
+    else:
         reward = scale / (1 + distances)
 
-    else:
-        raise ValueError(
-            f"Invalid decay type: {decay}. "
-            f"Must be one of: 'linear', 'exponential', 'inverse'"
-        )
-
     return reward
+
+
+def _geodesic_from_bins(
+    env: Environment, source_bins: NDArray[np.intp], *, call: str
+) -> NDArray[np.float64]:
+    """Geodesic distance from every bin center to the nearest source bin center.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
+    """
+    from neurospatial.behavior._environment_paths import environment_paths
+
+    return environment_paths(env, call=call).from_bins(
+        np.asarray(source_bins, dtype=np.intp)
+    )

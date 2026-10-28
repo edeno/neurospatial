@@ -119,6 +119,93 @@ def test_label_with_no_supported_interval_is_not_a_key():
     assert r.summary()["n_unsupported_labels"] == 1
 
 
+def test_unsupported_label_error_names_the_real_causes():
+    """The KeyError names gap/break/epochs/recording-edge causes, not the end sample.
+
+    Sample 3 is unobserved: at max_gap=0.15 the 0.2 s gap around it is a
+    tracking loss, so both intervals of label "b" are unsupported. With the
+    default max_gap the same unobserved end sample is bridged and "b" keeps
+    the epoch [0.2, 0.4).
+    """
+    times = np.arange(6) * 0.1
+    labels = ["a", "a", "b", "b", "c", "c"]
+    valid = np.array([True, True, True, False, True, True])
+    bridged = labels_to_epochs(times, labels, valid=valid)
+    np.testing.assert_allclose(bridged["b"], [[0.2, 0.4]])
+
+    r = labels_to_epochs(times, labels, valid=valid, max_gap=0.15)
+    assert r.unsupported_labels == ("b",)
+    with pytest.raises(KeyError) as info:
+        r["b"]
+    message = str(info.value)
+    assert "invalid end sample" not in message
+    for cause in ("longer than max_gap", "declared break", "outside epochs", "last"):
+        assert cause in message
+
+
+def test_trailing_unobserved_samples_leave_their_intervals_out():
+    """Intervals after the last observed sample are unsupported."""
+    times = np.arange(6) * 0.1
+    valid = np.array([True, True, True, True, False, False])
+    r = labels_to_epochs(times, ["a", "a", "b", "b", "c", "c"], valid=valid)
+    np.testing.assert_array_equal(r.interval_supported, [1, 1, 1, 0, 0])
+    np.testing.assert_allclose(r["b"], [[0.2, 0.3]])
+    assert r.unsupported_labels == ("c",)
+
+
+def test_valid_flags_error_describes_bridging():
+    """The malformed-valid error says unobserved samples are bridged."""
+    with pytest.raises(ValueError, match="valid") as info:
+        labels_to_epochs(np.arange(4.0), list("aabb"), valid=np.ones(4, dtype=int))
+    message = str(info.value)
+    assert "both of its end samples" not in message
+    assert "as if its row were deleted" in message
+    assert "max_gap" in message
+
+
+def test_epoch_labels_and_n_samples_are_derived():
+    """B B A A B B: epochs B[0, .5), A[.5, 1), B[1, 1.25) -> labels (B, A)."""
+    r = labels_to_epochs(np.arange(6) * 0.25, list("BBAABB"))
+    assert r.labels == ("B", "A")
+    np.testing.assert_array_equal(r.epoch_labels, [0, 1, 0])
+    np.testing.assert_allclose(r.epoch_bounds, [[0.0, 0.5], [0.5, 1.0], [1.0, 1.25]])
+    assert r.n_samples == 6
+    assert type(r.n_samples) is int
+    assert labels_to_epochs(np.array([0.0]), ["a"]).n_samples == 1
+
+
+_VALID_FIELDS = {
+    "labels": ("A", "B"),
+    "epoch_bounds": np.array([[0.0, 2.0], [2.0, 3.0]]),
+    "epoch_intervals": np.array([[0, 1], [2, 2]], dtype=np.intp),
+    "interval_labels": np.array([0, 0, 1], dtype=np.intp),
+    "interval_supported": np.ones(3, dtype=bool),
+    "unsupported_labels": (),
+    "max_gap": 0.5,
+    "input_epochs": None,
+    "missing_label": None,
+    "n_declared_breaks": 0,
+}
+
+
+@pytest.mark.parametrize(
+    ("changes", "match"),
+    [
+        ({"epoch_bounds": np.array([[0.0, 2.0], [3.0, 2.0]])}, "stop <= start"),
+        ({"epoch_bounds": np.array([0.0, 2.0])}, "not \\(n_epochs, 2\\)"),
+        ({"epoch_intervals": np.array([[0, 1], [2, 3]])}, "first <= last < 3"),
+        ({"epoch_intervals": np.array([[1, 0], [2, 2]])}, "first <= last"),
+        ({"epoch_intervals": np.array([[0.0, 1.0], [2.0, 2.0]])}, "integers"),
+        ({"interval_labels": np.array([0, 0, 2])}, "\\[-1, 2\\)"),
+        ({"interval_labels": np.array([-1, 0, 1])}, "not retained"),
+        ({"interval_supported": np.ones(2, dtype=bool)}, "interval_supported"),
+    ],
+)
+def test_inconsistent_result_fields_raise(changes, match):
+    with pytest.raises(ValueError, match=match):
+        LabelEpochsResult(**{**_VALID_FIELDS, **changes})
+
+
 def test_invalid_sample_in_bridged_gap_keeps_the_label():
     valid = np.ones(10, dtype=bool)
     valid[6] = False

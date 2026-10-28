@@ -35,7 +35,7 @@ def test_three_columns_raise_with_horizontal_plane_fix(function):
     with pytest.raises(ValueError, match="got shape \\(3, 3\\)") as caught:
         function([0.0, 0.1, 0.2], positions)
     assert "positions[:, :2]" in str(caught.value)
-    assert "neither a projection nor 3-D curvature" in str(caught.value)
+    assert "no sign without a reference axis" in str(caught.value)
 
 
 @pytest.mark.parametrize("function", PLANAR)

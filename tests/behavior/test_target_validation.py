@@ -87,7 +87,10 @@ def test_boolean_target_is_refused(env, position_bins, name):
 
 def test_integer_targets_give_the_query_answer(env, position_bins):
     goal = 40
-    expected = env.distance_to(bins=goal)[position_bins]
+    # The square arena is convex, so the shortest path inside it between two
+    # bin centers is the straight line between them.
+    centers = env.bin_centers
+    expected = np.linalg.norm(centers[position_bins] - centers[goal], axis=1)
     np.testing.assert_array_equal(
         distance_to_region(position_bins, env, target_bins=np.int64(goal)), expected
     )
@@ -177,10 +180,11 @@ def test_polar_hint_names_a_polar_lookup():
     assert "(distance, angle) rows, use env.bin_at(points)" in str(caught.value)
 
 
-def test_shortest_path_length_is_the_geodesic_distance_between_points(env):
+def test_shortest_path_length_in_an_open_field_is_the_straight_line(env):
+    """The straight line stays inside the arena, so it is the shortest path."""
     start, goal = np.array([1.0, 1.0]), np.array([28.0, 27.0])
-    assert shortest_path_length(env, start, goal) == env.distance_between(
-        points=[start, goal]
+    assert shortest_path_length(env, start, goal) == pytest.approx(
+        np.hypot(27.0, 26.0), rel=1e-12
     )
 
 

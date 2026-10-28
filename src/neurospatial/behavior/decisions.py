@@ -77,9 +77,11 @@ from neurospatial._intervals import (
     as_intervals,
     interval_valid_mask,
     run_sample_bounds,
+    times_in_intervals,
 )
 from neurospatial._observation import (
     ObservationSupport,
+    _validated_signal_times,
     validate_break_before,
     validated_observations,
     validated_signals,
@@ -93,6 +95,7 @@ from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.geometry import CartesianSystem
 
 __all__ = [
     # Decision analysis dataclasses
@@ -117,8 +120,8 @@ __all__ = [
 # =============================================================================
 
 
-@dataclass(frozen=True)
-class PreDecisionMetrics:
+@dataclass(frozen=True, repr=False)
+class PreDecisionMetrics(ResultMixin):
     """Metrics from the pre-decision window.
 
     The pre-decision window is the time period immediately before the animal
@@ -129,9 +132,10 @@ class PreDecisionMetrics:
     mean_speed : float
         Mean speed in pre-decision window (environment units/s).
         Low values may indicate pausing/deliberation.
-    min_speed : float
-        Minimum speed in window (units/s).
-        Near-zero indicates a pause, common during VTE.
+    min_observed_speed : float
+        Minimum observed speed in the window (units/s).
+        Near-zero indicates a pause, common during VTE. Not to be confused
+        with the ``min_speed`` heading gate passed to the analysis.
     heading_mean_direction : float
         Circular mean of heading direction (radians, -pi to pi).
     heading_circular_variance : float
@@ -139,8 +143,9 @@ class PreDecisionMetrics:
         High values (> 0.5) indicate variable heading - possible scanning.
         Low values indicate stable, consistent heading.
     heading_mean_resultant_length : float
-        Concentration of heading distribution, range [0, 1].
-        Inverse of variance: high = concentrated, low = dispersed.
+        Concentration of heading distribution, range [0, 1]:
+        ``1 - heading_circular_variance``. High = concentrated, low =
+        dispersed.
     window_duration : float
         Time from the first to the last observed sample in the window
         (seconds); 0.0 with fewer than two. Shorter than requested when the
@@ -175,7 +180,7 @@ class PreDecisionMetrics:
     """
 
     mean_speed: float
-    min_speed: float
+    min_observed_speed: float
     heading_mean_direction: float
     heading_circular_variance: float
     heading_mean_resultant_length: float
@@ -195,28 +200,55 @@ class PreDecisionMetrics:
     def suggests_deliberation(
         self,
         variance_threshold: float = 0.5,
-        min_speed: float = 10.0,
+        max_mean_speed: float = 10.0,
     ) -> bool:
         """Check if metrics suggest deliberative behavior.
+
+        A threshold screen, not a statistical test.
 
         Parameters
         ----------
         variance_threshold : float, default=0.5
-            Circular variance above this suggests head scanning.
-        min_speed : float, default=10.0
-            Mean speed below this (units/s) suggests slowing.
+            Circular variance at or above this suggests head scanning.
+        max_mean_speed : float, default=10.0
+            Mean speed at or below this (units/s) suggests slowing. A ceiling
+            on ``mean_speed``, unrelated to the ``min_speed`` heading gate.
 
         Returns
         -------
         bool
-            True if valid observations show high heading variance AND low
-            speed. False for missing evidence; inspect ``is_valid`` to
-            distinguish missing evidence from an observed negative result.
+            True if valid observations show ``heading_circular_variance >=
+            variance_threshold`` AND ``mean_speed <= max_mean_speed``. False
+            for missing evidence; inspect ``is_valid`` to distinguish missing
+            evidence from an observed negative result.
         """
         return (
             self.is_valid
-            and self.heading_circular_variance > variance_threshold
-            and self.mean_speed < min_speed
+            and self.heading_circular_variance >= variance_threshold
+            and self.mean_speed <= max_mean_speed
+        )
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar pre-decision metrics.
+
+        For a human-readable string use ``str(result)``.
+        """
+        return {
+            "mean_speed": self.mean_speed,
+            "min_observed_speed": self.min_observed_speed,
+            "heading_mean_direction": self.heading_mean_direction,
+            "heading_circular_variance": self.heading_circular_variance,
+            "heading_mean_resultant_length": self.heading_mean_resultant_length,
+            "window_duration": self.window_duration,
+            "n_samples": self.n_samples,
+            "is_valid": self.is_valid,
+        }
+
+    def __str__(self) -> str:
+        return (
+            f"Pre-decision window: {self.n_samples} samples over "
+            f"{self.window_duration:.2f} s, mean speed={self.mean_speed:.1f}, "
+            f"heading variance={self.heading_circular_variance:.2f}"
         )
 
 
@@ -241,26 +273,54 @@ class DecisionBoundaryMetrics(ReadOnlyArraysMixin, ResultMixin):
 
     Attributes
     ----------
-    goal_labels : NDArray[np.int_]
-        Per-timepoint label of nearest goal (Voronoi region), shape (n_samples,).
-        Values are indices into the goal_bins list.
-    distance_to_boundary : NDArray[np.float64]
-        Distance to nearest decision boundary at each timepoint, shape (n_samples,).
-        Units match environment. Small values = near boundary = uncommitted.
-    crossing_times : list[float]
-        Times when trajectory crossed a decision boundary.
-    crossing_directions : list[tuple[int, int]]
-        (from_goal_idx, to_goal_idx) for each crossing.
-        Indicates which goal regions the animal moved between.
+    goal_labels : NDArray[np.int_], shape (n_samples,)
+        Index of each sample's nearest goal (its geodesic Voronoi region),
+        into the goal list. -1 where no goal is nearest: the sample is
+        outside every bin, its bin is equidistant from the two nearest
+        goals (on the boundary, undecided), or no goal is reachable.
+    distance_to_decision_boundary : NDArray[np.float64], shape (n_samples,)
+        Geodesic distance from each sample's bin to the decision boundary, in
+        environment units (see :func:`distance_to_decision_boundary`). Small
+        values = near the boundary = uncommitted; NaN for a sample outside
+        every bin.
+    crossing_times : NDArray[np.float64], shape (n_crossings,)
+        Times when the nearest goal changed, in seconds (see
+        :func:`detect_boundary_crossings`).
+    crossing_directions : NDArray[np.intp], shape (n_crossings, 2)
+        ``(from_goal_idx, to_goal_idx)`` for each crossing: the goals whose
+        regions the animal moved between.
+
+    All arrays are read-only copies owned by the result.
     """
 
     goal_labels: NDArray[np.int_]
-    distance_to_boundary: NDArray[np.float64]
-    crossing_times: list[float]
-    crossing_directions: list[tuple[int, int]]
+    distance_to_decision_boundary: NDArray[np.float64]
+    crossing_times: NDArray[np.float64]
+    crossing_directions: NDArray[np.intp]
 
     def __post_init__(self) -> None:
-        """Own read-only copies of goal labels and boundary distances."""
+        """Check shapes, then own read-only copies of every array."""
+        goal_labels = np.asarray(self.goal_labels)
+        distances = np.asarray(self.distance_to_decision_boundary, dtype=np.float64)
+        crossing_times = np.asarray(self.crossing_times, dtype=np.float64)
+        directions = np.asarray(self.crossing_directions, dtype=np.intp).reshape(-1, 2)
+        if goal_labels.ndim != 1 or distances.shape != goal_labels.shape:
+            raise ValueError(
+                "DecisionBoundaryMetrics needs goal_labels and "
+                "distance_to_decision_boundary of the same shape (n_samples,); "
+                f"got {goal_labels.shape} and {distances.shape}."
+            )
+        if crossing_times.ndim != 1 or len(directions) != len(crossing_times):
+            raise ValueError(
+                "DecisionBoundaryMetrics needs one (from, to) row of "
+                "crossing_directions per crossing time; got crossing_times of "
+                f"shape {crossing_times.shape} and crossing_directions of shape "
+                f"{directions.shape}."
+            )
+        object.__setattr__(self, "goal_labels", goal_labels)
+        object.__setattr__(self, "distance_to_decision_boundary", distances)
+        object.__setattr__(self, "crossing_times", crossing_times)
+        object.__setattr__(self, "crossing_directions", directions)
         self._own_arrays()
 
     @property
@@ -275,14 +335,17 @@ class DecisionBoundaryMetrics(ReadOnlyArraysMixin, ResultMixin):
         """
         return {
             "n_crossings": self.n_crossings,
-            "mean_distance_to_boundary": float(np.nanmean(self.distance_to_boundary)),
+            "mean_distance_to_decision_boundary": float(
+                np.nanmean(self.distance_to_decision_boundary)
+            ),
         }
 
     def __str__(self) -> str:
         return (
             f"Decision boundary: {self.n_crossings} crossing"
             f"{'s' if self.n_crossings != 1 else ''}, "
-            f"mean distance to boundary: {np.nanmean(self.distance_to_boundary):.1f}"
+            "mean distance to boundary: "
+            f"{np.nanmean(self.distance_to_decision_boundary):.1f}"
         )
 
 
@@ -297,15 +360,41 @@ class DecisionAnalysisResult(ResultMixin):
     pre_decision : PreDecisionMetrics
         Metrics from pre-decision window.
     boundary : DecisionBoundaryMetrics or None
-        Boundary metrics. None if only one goal (no boundary defined).
+        Boundary metrics. None with a single goal region: no decision
+        boundary is defined.
     chosen_goal : int or None
-        Index of goal reached. None if trial timed out or goal not reached.
+        Index into ``goal_regions`` of the first goal region the animal
+        entered after ``entry_time``. Goals visited before the decision-region
+        entry (such as the goal the trial started from) do not count. None if
+        no goal region was entered after ``entry_time``.
+    goal_regions : tuple of str
+        Names of the goal regions, in the order that ``chosen_goal``,
+        ``boundary.goal_labels`` and ``boundary.crossing_directions`` index.
     """
 
     entry_time: float
     pre_decision: PreDecisionMetrics
     boundary: DecisionBoundaryMetrics | None
     chosen_goal: int | None
+    goal_regions: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """Store goal names as a tuple and check ``chosen_goal`` indexes them."""
+        object.__setattr__(self, "goal_regions", tuple(self.goal_regions))
+        if self.chosen_goal is not None and not (
+            0 <= self.chosen_goal < len(self.goal_regions)
+        ):
+            raise ValueError(
+                f"chosen_goal={self.chosen_goal} does not index the "
+                f"{len(self.goal_regions)} goal_regions {self.goal_regions}."
+            )
+
+    @property
+    def chosen_goal_region(self) -> str | None:
+        """Name of the chosen goal region; None if no goal was entered."""
+        if self.chosen_goal is None:
+            return None
+        return self.goal_regions[self.chosen_goal]
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar decision-analysis metrics.
@@ -315,6 +404,7 @@ class DecisionAnalysisResult(ResultMixin):
         return {
             "entry_time": self.entry_time,
             "pre_decision_mean_speed": self.pre_decision.mean_speed,
+            "pre_decision_min_observed_speed": self.pre_decision.min_observed_speed,
             "pre_decision_heading_variance": (
                 self.pre_decision.heading_circular_variance
             ),
@@ -322,6 +412,7 @@ class DecisionAnalysisResult(ResultMixin):
                 self.boundary.n_crossings if self.boundary is not None else None
             ),
             "chosen_goal": self.chosen_goal,
+            "chosen_goal_region": self.chosen_goal_region,
         }
 
     def __str__(self) -> str:
@@ -334,9 +425,11 @@ class DecisionAnalysisResult(ResultMixin):
         if self.boundary is not None:
             lines.append(f"  {self.boundary}")
         if self.chosen_goal is not None:
-            lines.append(f"  Chosen goal: {self.chosen_goal}")
+            lines.append(
+                f"  Chosen goal: {self.chosen_goal} ({self.chosen_goal_region!r})"
+            )
         else:
-            lines.append("  Chosen goal: none (timeout)")
+            lines.append("  Chosen goal: none entered")
         return "\n".join(lines)
 
 
@@ -357,9 +450,10 @@ def decision_region_entry_time(
     Parameters
     ----------
     position_bins : NDArray[np.int64], shape (n_samples,)
-        Sequence of bin indices representing the trajectory.
+        Bin index of each sample, from ``env.bin_at``; -1 marks a sample
+        outside every bin.
     times : NDArray[np.float64], shape (n_samples,)
-        Timestamps corresponding to position bins (seconds).
+        Timestamps in seconds; finite and strictly increasing.
     env : Environment
         Environment with region definitions.
     region : str
@@ -368,39 +462,96 @@ def decision_region_entry_time(
     Returns
     -------
     float
-        Time of first entry to the decision region (seconds).
+        Time of the first sample inside the decision region (seconds).
 
     Raises
     ------
     ValueError
-        If region not found in env.regions.
-    ValueError
-        If trajectory never enters the region.
+        If region not found in env.regions, if ``position_bins`` and
+        ``times`` differ in length, if ``times`` is empty, not finite or not
+        strictly increasing, or if the trajectory never enters the region.
+    TypeError
+        If ``position_bins`` is not an integer array.
 
     Examples
     --------
-    >>> entry_time = decision_region_entry_time(
-    ...     position_bins, times, env, "center"
-    ... )  # doctest: +SKIP
-    >>> print(f"Entered decision region at t={entry_time:.2f}s")  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment, Regions
+    >>> from neurospatial.behavior import decision_region_entry_time
+    >>> env = Environment.from_samples(np.arange(101.0)[:, None], bin_size=10.0)
+    >>> regions = Regions()
+    >>> _ = regions.add("center", point=(50.0,))
+    >>> env = env.with_regions(regions)
+    >>> times = np.arange(11) / 10  # s
+    >>> position_bins = env.bin_at(10.0 * np.arange(11)[:, None])  # 100 cm/s
+    >>> decision_region_entry_time(position_bins, times, env, region="center")
+    0.5
     """
     _require_region_mask(
         env, region, operation="decision_region_entry_time()", argument="region"
     )
+    position_bins = _validated_position_bins(
+        position_bins, times, call="decision_region_entry_time"
+    )
+    times = _validated_signal_times(times, call="decision_region_entry_time")
+    entry = _first_entry(
+        position_bins, env.bins_in_region(region), np.ones(times.shape, dtype=bool)
+    )
+    if entry is None:
+        raise ValueError(_never_enters_message(region, epochs=None))
+    return float(times[entry])
 
-    # Get bins in the region
-    region_bins = env.bins_in_region(region)
-    region_bin_set = set(region_bins)
 
-    # Find first entry
-    for i, bin_idx in enumerate(position_bins):
-        if bin_idx in region_bin_set:
-            return float(times[i])
+def _validated_position_bins(
+    position_bins: ArrayLike, times: ArrayLike, *, call: str
+) -> NDArray[np.int64]:
+    """1-D integer bins with one entry per timestamp."""
+    bins = np.asarray(position_bins)
+    n_times = np.shape(times)[0] if np.ndim(times) else 0
+    if bins.ndim != 1 or bins.shape[0] != n_times:
+        raise ValueError(
+            f"{call}() needs one position bin per timestamp; got position_bins "
+            f"of shape {bins.shape} and {n_times} timestamps.\n"
+            "Why: each sample's bin is matched to its time.\n"
+            "Fix: pass env.bin_at(positions) for the same samples as times."
+        )
+    if bins.size and bins.dtype.kind not in "iu":
+        raise TypeError(
+            f"{call}() needs integer position_bins from env.bin_at(); got dtype "
+            f"{bins.dtype}."
+        )
+    return bins.astype(np.int64, copy=False)
 
-    raise ValueError(
-        f"Trajectory never enters region '{region}'. "
-        f"Check that the trajectory passes through the decision region, "
-        f"or verify region bounds with env.regions['{region}']."
+
+def _first_entry(
+    position_bins: NDArray[np.int64],
+    region_bins: NDArray[np.int_],
+    observed: NDArray[np.bool_],
+) -> int | None:
+    """Index of the first observed sample inside the region; None if none."""
+    hits = np.flatnonzero(observed & np.isin(position_bins, region_bins))
+    return int(hits[0]) if hits.size else None
+
+
+def _in_epochs(
+    times: NDArray[np.float64], epochs: NDArray[np.float64] | None
+) -> NDArray[np.bool_]:
+    """Samples inside the half-open ``epochs`` windows (all without epochs)."""
+    if epochs is None:
+        return np.ones(times.shape, dtype=bool)
+    return times_in_intervals(epochs, times)
+
+
+def _never_enters_message(region: str, *, epochs: Any) -> str:
+    where = " inside epochs" if epochs is not None else ""
+    return (
+        f"Trajectory never enters region '{region}'{where}.\n"
+        "Why: the decision-region entry time is the first sample inside the "
+        "region.\n"
+        "Fix: check that the trajectory passes through the decision region "
+        f"(verify its bounds with env.regions['{region}'])"
+        + (" during the epochs" if epochs is not None else "")
+        + "."
     )
 
 
@@ -425,9 +576,11 @@ def extract_pre_decision_window(
         Full trajectory positions. A row with a non-finite coordinate (NaN, for
         a lost frame) is a missing sample.
     entry_time : float
-        Time of decision region entry (seconds).
+        Time of decision region entry, in seconds on the clock of ``times``;
+        within ``[times[0], times[-1]]``.
     window_duration : float
-        Duration of pre-decision window to extract (seconds).
+        Duration of pre-decision window to extract (seconds); finite and
+        positive.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -458,8 +611,9 @@ def extract_pre_decision_window(
     ------
     ValueError
         If there are no samples, if ``times`` is not finite and strictly
-        increasing, or if ``break_before`` is not a Boolean array with one
-        entry per sample.
+        increasing, if ``break_before`` is not a Boolean array with one
+        entry per sample, if ``window_duration`` is not finite and positive,
+        or if ``entry_time`` is outside the recording.
 
     Notes
     -----
@@ -508,10 +662,67 @@ def extract_pre_decision_window(
         break_before=break_before,
         result="no pre-decision window was observed",
     )
+    window_duration = _validated_window_duration(
+        window_duration, name="window_duration", call="extract_pre_decision_window"
+    )
+    entry_time = _validated_entry_time(
+        times, entry_time, call="extract_pre_decision_window"
+    )
     window = _pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
     return times[window], positions[window]
+
+
+def _validated_min_speed(min_speed: float, *, call: str) -> float:
+    """A finite, non-negative heading speed gate in position units per second."""
+    value = float(min_speed)
+    if not (np.isfinite(value) and value >= 0):
+        raise ValueError(
+            f"{call}() needs a finite, non-negative min_speed; got "
+            f"{min_speed!r}.\n"
+            "Why: min_speed is the speed below which the direction of movement "
+            "is not observed; a NaN or negative gate would silently drop or "
+            "keep every heading.\n"
+            "Fix: pass min_speed in position units per second, e.g. 5.0 for "
+            "5 cm/s with positions in cm."
+        )
+    return value
+
+
+def _validated_window_duration(
+    window_duration: float, *, name: str, call: str
+) -> float:
+    """A finite, positive pre-decision window length in seconds."""
+    duration = float(window_duration)
+    if not (np.isfinite(duration) and duration > 0):
+        raise ValueError(
+            f"{call}() needs a finite, positive {name} in seconds; got "
+            f"{window_duration!r}.\n"
+            "Why: the pre-decision window is the stretch of time before the "
+            "decision-region entry; an empty or reversed window measures "
+            "nothing.\n"
+            f"Fix: pass {name} as the window length in seconds, e.g. {name}=1.0."
+        )
+    return duration
+
+
+def _validated_entry_time(
+    times: NDArray[np.float64], entry_time: float, *, call: str
+) -> float:
+    """A finite entry time inside the recording, ``[times[0], times[-1]]``."""
+    entry = float(entry_time)
+    if not (np.isfinite(entry) and times[0] <= entry <= times[-1]):
+        raise ValueError(
+            f"{call}() got entry_time={entry_time!r}, outside the recording "
+            f"[{times[0]:g}, {times[-1]:g}] s.\n"
+            "Why: the pre-decision window ends at the entry time, so an entry "
+            "the recording does not cover has no window.\n"
+            "Fix: pass the decision-region entry in seconds on the same clock "
+            "as times (a millisecond entry_time with times in seconds lands "
+            "past the recording), e.g. from decision_region_entry_time()."
+        )
+    return entry
 
 
 def _pre_decision_window(
@@ -554,12 +765,13 @@ def pre_decision_heading_stats(
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Position coordinates, ``n_dims >= 2``; heading uses x and y. A row
         with a non-finite coordinate (NaN, for a lost frame) is a missing
-        sample: it has no heading, and no velocity is computed across it.
+        sample: it has no heading of its own and is bridged like a deleted
+        row when the observed samples on either side are within ``max_gap``.
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit.
-        Minimum speed for valid heading (units/s).
+        Minimum speed for valid heading (units/s); finite and non-negative.
         Stationary periods are excluded from statistics.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
@@ -598,9 +810,11 @@ def pre_decision_heading_stats(
 
     Notes
     -----
-    Each run of observed samples with gaps no longer than ``max_gap`` (inside
-    ``epochs``, not crossing a missing row or a ``break_before``) is analyzed
-    as a separate recording; no velocity or heading spans a pause.
+    A missing row is skipped as if it were deleted: when the observed
+    samples on either side are no more than ``max_gap`` apart, velocity and
+    heading are computed across it. Only a longer gap, an ``epochs`` edge or
+    a ``break_before`` splits the recording into separately analyzed runs,
+    and no velocity or heading spans such a split.
 
     Circular statistics are computed directly:
 
@@ -646,6 +860,7 @@ def pre_decision_heading_stats(
         result="the heading statistics are NaN",
     )
     _validate_velocity_positions(raw_positions, call="pre_decision_heading_stats")
+    min_speed = _validated_min_speed(min_speed, call="pre_decision_heading_stats")
     return _heading_stats(times, positions, support.interval_mask, min_speed=min_speed)
 
 
@@ -704,8 +919,9 @@ def pre_decision_speed_stats(
         timestamp raises).
     positions : NDArray[np.float64], shape (n_samples, n_dims) or (n_samples,)
         Position coordinates. A row with a non-finite coordinate (NaN, for a
-        lost frame) is a missing sample: it has no speed, and no velocity is
-        computed across it.
+        lost frame) is a missing sample: it has no speed of its own and is
+        bridged like a deleted row when the observed samples on either side
+        are within ``max_gap``.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -727,7 +943,7 @@ def pre_decision_speed_stats(
     -------
     mean_speed : float
         Mean instantaneous speed (units/s).
-    min_speed : float
+    min_observed_speed : float
         Minimum instantaneous speed (units/s).
 
     Raises
@@ -739,9 +955,11 @@ def pre_decision_speed_stats(
 
     Notes
     -----
-    Each run of observed samples with gaps no longer than ``max_gap`` (inside
-    ``epochs``, not crossing a missing row or a ``break_before``) is analyzed
-    as a separate recording; no velocity spans a pause.
+    A missing row is skipped as if it were deleted: when the observed
+    samples on either side are no more than ``max_gap`` apart, velocity is
+    computed across it. Only a longer gap, an ``epochs`` edge or a
+    ``break_before`` splits the recording into separately analyzed runs, and
+    no velocity spans such a split.
 
     Only observed speeds enter the reductions. Both results are NaN when no
     interval is usable, including a single sample.
@@ -759,10 +977,10 @@ def pre_decision_speed_stats(
     >>> x = np.r_[10 * times[:10], 10 * times[10:] + 50.0]  # cm
     >>> positions = np.column_stack([x, np.zeros(20)])
     >>> new_recording = times == 1.0
-    >>> mean_speed, min_speed = pre_decision_speed_stats(
+    >>> mean_speed, min_observed_speed = pre_decision_speed_stats(
     ...     times, positions, break_before=new_recording
     ... )
-    >>> round(mean_speed, 6), round(min_speed, 6)
+    >>> round(mean_speed, 6), round(min_observed_speed, 6)
     (10.0, 10.0)
     >>> round(pre_decision_speed_stats(times, positions)[0], 1)
     35.0
@@ -815,14 +1033,16 @@ def compute_pre_decision_metrics(
         Full trajectory positions, ``n_dims >= 2``. A row with a non-finite
         coordinate (NaN, for a lost frame) is a missing sample.
     entry_time : float
-        Time of decision region entry (seconds).
+        Time of decision region entry, in seconds on the clock of ``times``;
+        within ``[times[0], times[-1]]``.
     window_duration : float
-        Duration of pre-decision window to analyze (seconds).
+        Duration of pre-decision window to analyze (seconds); finite and
+        positive.
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit.
-        Minimum speed for valid heading (units/s).
+        Minimum speed for valid heading (units/s); finite and non-negative.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -850,8 +1070,9 @@ def compute_pre_decision_metrics(
     ------
     ValueError
         If there are no samples, if ``times`` is not finite and strictly
-        increasing, or if ``break_before`` is not a Boolean array with one
-        entry per sample.
+        increasing, if ``break_before`` is not a Boolean array with one
+        entry per sample, if ``window_duration`` is not finite and positive,
+        or if ``entry_time`` is outside the recording.
 
     Notes
     -----
@@ -895,6 +1116,13 @@ def compute_pre_decision_metrics(
         result="the pre-decision metrics are NaN",
     )
     _validate_velocity_positions(raw_positions, call="compute_pre_decision_metrics")
+    min_speed = _validated_min_speed(min_speed, call="compute_pre_decision_metrics")
+    window_duration = _validated_window_duration(
+        window_duration, name="window_duration", call="compute_pre_decision_metrics"
+    )
+    entry_time = _validated_entry_time(
+        times, entry_time, call="compute_pre_decision_metrics"
+    )
     return _pre_decision_metrics(
         times,
         positions,
@@ -923,7 +1151,7 @@ def _pre_decision_metrics(
     if observed_times.size < 2:
         return PreDecisionMetrics(
             mean_speed=np.nan,
-            min_speed=np.nan,
+            min_observed_speed=np.nan,
             heading_mean_direction=np.nan,
             heading_circular_variance=np.nan,
             heading_mean_resultant_length=np.nan,
@@ -937,12 +1165,12 @@ def _pre_decision_metrics(
     mean_dir, circ_var, mrl = _heading_stats(
         window_times, window_positions, window_mask, min_speed=min_speed
     )
-    mean_speed, min_speed_val = _speed_stats(
+    mean_speed, min_observed_speed = _speed_stats(
         window_times, window_positions, window_mask
     )
     return PreDecisionMetrics(
         mean_speed=mean_speed,
-        min_speed=min_speed_val,
+        min_observed_speed=min_observed_speed,
         heading_mean_direction=mean_dir,
         heading_circular_variance=circ_var,
         heading_mean_resultant_length=mrl,
@@ -955,15 +1183,22 @@ def _pre_decision_metrics(
 # Decision Boundary Functions
 # =============================================================================
 
+# Relative tolerance below which two geodesic distances to goals are a tie.
+_TIE_RTOL = 1e-9
+
 
 def geodesic_voronoi_labels(
-    env: Environment,
+    env: Environment[CartesianSystem],
     goal_bins: list[int] | NDArray[np.int_],
 ) -> NDArray[np.int_]:
     """Label each bin by its nearest goal using geodesic distance.
 
-    Creates a Voronoi-like partition of the environment where each bin
-    is assigned to the goal with the shortest geodesic path.
+    Creates a Voronoi-like partition of the environment where each bin is
+    assigned to the goal with the shortest geodesic path. The geodesic distance
+    is the length of the shortest path between two positions that stays inside
+    the environment: it goes around walls and never leaves the environment, and
+    on a track it runs along the track's centerline. Bins and goals are
+    measured from their centers.
 
     Parameters
     ----------
@@ -975,25 +1210,42 @@ def geodesic_voronoi_labels(
     Returns
     -------
     NDArray[np.int_], shape (n_bins,)
-        Index of nearest goal for each bin (indices into goal_bins).
-        Bins unreachable from all goals have label -1.
+        Index of the nearest goal for each bin (indices into ``goal_bins``),
+        or -1 where no goal is nearest: the bin is equidistant from its two
+        nearest goals (it lies on the decision boundary, so the animal there
+        is undecided), or no goal is reachable from it.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment, whose bins are
+        (distance, angle), not positions.
 
     Notes
     -----
-    Performance: O(n_goals * n_bins * log(n_bins)) using Dijkstra's algorithm.
-    For large environments (n_bins > 5000) with many goals (> 10), this may
-    take several seconds. Consider caching results if calling repeatedly.
+    Two geodesic distances count as equal when they agree to a relative
+    tolerance of 1e-9, far below a bin, so floating-point rounding along
+    different paths cannot break a geometric tie. Labeling a tie -1 instead
+    of the first goal keeps the labels independent of goal order and
+    mirror-symmetric on a symmetric maze.
+
+    The shortest-path field of each goal bin is grown once and kept on the
+    environment, so later calls with the same goals are lookups.
 
     Examples
     --------
-    >>> left_bin = int(env.bin_at([[10, 55]])[0])  # doctest: +SKIP
-    >>> right_bin = int(env.bin_at([[90, 55]])[0])  # doctest: +SKIP
-    >>> labels = geodesic_voronoi_labels(env, [left_bin, right_bin])  # doctest: +SKIP
-    >>> # labels[i] == 0 means bin i is closer to left goal
-    >>> # labels[i] == 1 means bin i is closer to right goal
+    A 100 cm linear track with a goal at each end. The bin at 50 cm is
+    equidistant from both goals, so it is undecided:
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import geodesic_voronoi_labels
+    >>> env = Environment.from_samples(np.arange(101.0)[:, None], bin_size=10.0)
+    >>> goal_bins = env.bin_at(np.array([[0.0], [100.0]]))
+    >>> geodesic_voronoi_labels(env, goal_bins).tolist()
+    [0, 0, 0, 0, 0, -1, 1, 1, 1, 1, 1]
     """
     from neurospatial.environment import _validate_target_bins
-    from neurospatial.ops.distance import distance_field
 
     goal_bins_arr = _validate_target_bins(
         goal_bins,
@@ -1003,63 +1255,107 @@ def geodesic_voronoi_labels(
         argument="goal_bins",
     )
     n_goals = len(goal_bins_arr)
-    n_bins = env.n_bins
+    distances = _goal_fields(env, goal_bins_arr, call="geodesic_voronoi_labels")
 
-    # Compute distance field from each goal
-    distances = np.full((n_goals, n_bins), np.inf)
-    for i, goal_bin in enumerate(goal_bins_arr):
-        distances[i] = distance_field(env.connectivity, [goal_bin], metric="geodesic")
-
-    # Label by nearest goal
-    labels = np.argmin(distances, axis=0)
-
-    # Mark unreachable bins
-    min_distances = np.min(distances, axis=0)
-    labels_int: NDArray[np.int_] = labels.astype(np.int_)
-    labels_int[np.isinf(min_distances)] = -1
-
+    labels_int: NDArray[np.int_] = np.argmin(distances, axis=0).astype(np.int_)
+    sorted_distances = np.sort(distances, axis=0)
+    nearest = sorted_distances[0]
+    undecided = np.isinf(nearest)
+    if n_goals > 1:
+        second = sorted_distances[1]
+        both_reachable = np.isfinite(second)
+        undecided[both_reachable] |= (
+            second[both_reachable] - nearest[both_reachable]
+            <= _TIE_RTOL * second[both_reachable]
+        )
+    labels_int[undecided] = -1
     return labels_int
 
 
+def _goal_fields(
+    env: Environment, goal_bins: NDArray[np.intp], *, call: str
+) -> NDArray[np.float64]:
+    """Geodesic distance from every bin center to each goal bin's center.
+
+    Returns
+    -------
+    ndarray, shape (n_goals, n_bins)
+        ``inf`` where a goal cannot be reached.
+    """
+    from neurospatial.behavior._environment_paths import environment_paths
+
+    paths = environment_paths(env, call=call)
+    goal_bins = np.asarray(goal_bins, dtype=np.intp)
+    paths.prepare(goal_bins)
+    if not goal_bins.size:
+        return np.full((0, env.n_bins), np.inf)
+    return np.vstack(
+        [paths.from_bins(goal_bins[i : i + 1]) for i in range(goal_bins.size)]
+    )
+
+
 def distance_to_decision_boundary(
-    env: Environment,
+    env: Environment[CartesianSystem],
     position_bins: NDArray[np.int_],
     goal_bins: list[int] | NDArray[np.int_],
 ) -> NDArray[np.float64]:
-    """Compute distance to nearest decision boundary for each trajectory point.
+    """Geodesic distance from each trajectory bin to the decision boundary.
 
-    The decision boundary is the Voronoi edge between goal regions - the set
-    of points equidistant (geodesically) from multiple goals.
+    The decision boundary is the set of points equidistant (geodesically)
+    from the two nearest goals: the edge between their geodesic Voronoi
+    regions.
 
     Parameters
     ----------
     env : Environment
         Spatial environment.
     position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices along the trajectory.
+        Bin indices along the trajectory; -1 (or any index outside
+        ``[0, env.n_bins)``) marks a sample outside every bin.
     goal_bins : list[int] or NDArray[np.int_]
         Bin indices of goal locations.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Distance to nearest decision boundary at each trajectory point.
-        Units match environment. Small values = near boundary = uncommitted.
+        Distance to the decision boundary in environment units:
+        ``(d2 - d1) / 2``, where ``d1`` and ``d2`` are the geodesic distances
+        from the sample's bin to its nearest and second-nearest goal. 0 on
+        the boundary; small values = uncommitted. NaN for a sample outside
+        every bin; inf where the second-nearest goal is unreachable or with
+        fewer than two goals (there is no boundary).
 
     Notes
     -----
-    Distance to boundary is computed as the absolute difference between
-    distances to the two nearest goals. At the boundary, this difference is 0.
+    Walking from the bin toward the second-nearest goal along the path
+    between the two goals shortens ``d2`` and lengthens ``d1`` by the
+    distance walked, so the two meet after ``(d2 - d1) / 2``. This is the
+    exact geodesic distance to the boundary for a bin on the path between
+    the goals (a linear track, the arms of a T-maze). Off that path, for
+    example in a dead-end side arm, it is a lower bound: each geodesic
+    distance changes by at most the distance walked.
+
+    The geodesic distance is the length of the shortest path between two
+    positions that stays inside the environment: it goes around walls and never
+    leaves the environment, and on a track it runs along the track's
+    centerline. Bins and goals are measured from their centers.
 
     Examples
     --------
-    >>> distances = distance_to_decision_boundary(
-    ...     env, position_bins, goal_bins
-    ... )  # doctest: +SKIP
-    >>> commitment_mask = distances > 20.0  # Committed to a goal  # doctest: +SKIP
+    A 100 cm linear track with a goal at each end. The bin at 30 cm is 30 cm
+    from one goal and 70 cm from the other, so the boundary at 50 cm is
+    20 cm away:
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import distance_to_decision_boundary
+    >>> env = Environment.from_samples(np.arange(101.0)[:, None], bin_size=10.0)
+    >>> goal_bins = env.bin_at(np.array([[0.0], [100.0]]))
+    >>> position_bins = env.bin_at(np.array([[30.0], [50.0], [90.0]]))
+    >>> distance_to_decision_boundary(env, position_bins, goal_bins).tolist()
+    [20.0, 0.0, 40.0]
     """
     from neurospatial.environment import _validate_target_bins
-    from neurospatial.ops.distance import distance_field
 
     goal_bins_arr = _validate_target_bins(
         goal_bins,
@@ -1071,19 +1367,15 @@ def distance_to_decision_boundary(
     n_goals = len(goal_bins_arr)
 
     if n_goals < 2:
-        # With single goal, there's no boundary - return infinity
+        # With a single goal there is no boundary.
         return np.full(len(position_bins), np.inf)
 
-    # Compute distance from each goal to all bins
-    all_distances = np.zeros((n_goals, env.n_bins))
-    for i, goal_bin in enumerate(goal_bins_arr):
-        all_distances[i] = distance_field(
-            env.connectivity, [goal_bin], metric="geodesic"
-        )
+    all_distances = _goal_fields(
+        env, goal_bins_arr, call="distance_to_decision_boundary"
+    )
 
-    # For each trajectory bin, the boundary distance is the gap between the two
-    # nearest goals: d2 - d1 after sorting the per-bin goal distances. This is
-    # computed in one vectorized pass over the trajectory.
+    # For each trajectory bin, the boundary lies halfway between the two
+    # nearest goals: (d2 - d1) / 2 after sorting the per-bin goal distances.
     position_bins = np.asarray(position_bins).ravel()
     boundary_distances = np.full(len(position_bins), np.nan)
 
@@ -1101,11 +1393,13 @@ def distance_to_decision_boundary(
     second = sorted_dists[1]
 
     # When the nearest goal is unreachable (inf), the boundary distance is inf;
-    # otherwise it is the gap to the second-nearest goal. Compute the gap only
-    # where the nearest goal is finite to avoid inf - inf = nan.
+    # otherwise it is half the gap to the second-nearest goal. Compute the gap
+    # only where the nearest goal is finite to avoid inf - inf = nan.
     finite_nearest = np.isfinite(nearest)
     valid_boundary = np.full(valid_bins.shape, np.inf)
-    valid_boundary[finite_nearest] = second[finite_nearest] - nearest[finite_nearest]
+    valid_boundary[finite_nearest] = (
+        second[finite_nearest] - nearest[finite_nearest]
+    ) / 2
     boundary_distances[valid] = valid_boundary
 
     return boundary_distances
@@ -1119,7 +1413,7 @@ def detect_boundary_crossings(
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> tuple[list[float], list[tuple[int, int]]]:
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Detect when trajectory crosses decision boundaries.
 
     Parameters
@@ -1128,7 +1422,9 @@ def detect_boundary_crossings(
         Bin indices along the trajectory; -1 marks a missing or out-of-bounds
         position.
     voronoi_labels : NDArray[np.int_], shape (n_bins,)
-        Voronoi label for each bin (from geodesic_voronoi_labels).
+        Nearest-goal label for each bin (from
+        :func:`geodesic_voronoi_labels`); -1 for a bin with no nearest goal
+        (equidistant from two goals, or unreachable).
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds; finite and strictly increasing (a repeated
         timestamp raises).
@@ -1151,11 +1447,11 @@ def detect_boundary_crossings(
 
     Returns
     -------
-    crossing_times : list[float]
+    crossing_times : NDArray[np.float64], shape (n_crossings,)
         Times when trajectory crossed a decision boundary: the midpoint of
-        the two located samples on either side.
-    crossing_directions : list[tuple[int, int]]
-        (from_goal_idx, to_goal_idx) for each crossing.
+        the last sample with one nearest goal and the first with the other.
+    crossing_directions : NDArray[np.intp], shape (n_crossings, 2)
+        ``(from_goal_idx, to_goal_idx)`` for each crossing.
 
     Raises
     ------
@@ -1170,9 +1466,13 @@ def detect_boundary_crossings(
     not crossing a ``break_before``) is analyzed as a separate recording; no
     crossing spans a pause. A sample at bin -1 is missing and skipped as if
     its row were deleted, so a crossing across a bridged gap is timed at the
-    midpoint of the located samples on either side. A crossing needs two
-    consecutive located samples with reachable labels, so a sample with an
-    unreachable label never forms one.
+    midpoint of the located samples on either side.
+
+    A crossing is a change of nearest goal. A sample in a bin labeled -1
+    has no nearest goal and is skipped too: walking through the bins on the
+    boundary from goal 0's side to goal 1's side is one crossing, and
+    leaving the boundary toward a goal (up the stem of a symmetric T-maze
+    and into either arm) is none.
 
     Examples
     --------
@@ -1181,17 +1481,30 @@ def detect_boundary_crossings(
     >>> voronoi_labels = np.array([0, 1])  # bin 0 is nearer goal 0, bin 1 goal 1
     >>> position_bins = np.array([0, 0, 1, 1])
     >>> times = np.arange(4) / 8  # s
-    >>> detect_boundary_crossings(position_bins, voronoi_labels, times)
-    ([0.1875], [(0, 1)])
+    >>> crossing_times, directions = detect_boundary_crossings(
+    ...     position_bins, voronoi_labels, times
+    ... )
+    >>> crossing_times.tolist(), directions.tolist()
+    ([0.1875], [[0, 1]])
 
-    The same samples from two recordings joined on one clock, where the
-    second recording starts in bin 1, have no crossing:
+    Passing through an equidistant bin (label -1) is one crossing, timed
+    between the samples on either side of it:
+
+    >>> crossing_times, directions = detect_boundary_crossings(
+    ...     np.array([0, 2, 2, 1]), np.array([0, 1, -1]), np.arange(4) / 8
+    ... )
+    >>> crossing_times.tolist(), directions.tolist()
+    ([0.1875], [[0, 1]])
+
+    The first example's samples from two recordings joined on one clock,
+    where the second recording starts in bin 1, have no crossing:
 
     >>> new_recording = np.array([False, False, True, False])
-    >>> detect_boundary_crossings(
+    >>> crossing_times, directions = detect_boundary_crossings(
     ...     position_bins, voronoi_labels, times, break_before=new_recording
     ... )
-    ([], [])
+    >>> crossing_times.size, directions.shape
+    (0, (0, 2))
     """
     position_bins = np.asarray(position_bins, dtype=np.int64)
     n_times = len(np.asarray(times))
@@ -1232,7 +1545,7 @@ def _boundary_crossings(
     max_gap: float | None,
     epochs: Any,
     break_before: NDArray[np.bool_] | None,
-) -> tuple[list[float], list[tuple[int, int]]]:
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Boundary crossings within each run of located samples.
 
     A sample outside every bin is missing and skipped as if its row were
@@ -1247,48 +1560,38 @@ def _boundary_crossings(
         break_before=break_before,
         sample_valid=located,
     )
-    crossing_times: list[float] = []
-    crossing_directions: list[tuple[int, int]] = []
+    crossing_times = [np.empty(0)]
+    crossing_directions = [np.empty((0, 2), dtype=np.intp)]
     for first, last in run_sample_bounds(mask):
         run = first + np.flatnonzero(located[first : last + 1])
         run_times, run_directions = _detect_boundary_crossings_contiguous(
             position_bins[run], voronoi_labels, times[run]
         )
-        crossing_times.extend(run_times)
-        crossing_directions.extend(run_directions)
-    return crossing_times, crossing_directions
+        crossing_times.append(run_times)
+        crossing_directions.append(run_directions)
+    return np.concatenate(crossing_times), np.concatenate(crossing_directions)
 
 
 def _detect_boundary_crossings_contiguous(
     position_bins: NDArray[np.int_],
     voronoi_labels: NDArray[np.int_],
     times: NDArray[np.float64],
-) -> tuple[list[float], list[tuple[int, int]]]:
-    """Detect label changes within one recording with labels indexed by bin."""
-    # Get label for each trajectory point
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+    """Nearest-goal changes within one recording with labels indexed by bin.
+
+    Samples labeled -1 (undecided or unreachable) are skipped, so passing
+    through the equidistant bins from one goal's side to the other's is one
+    crossing, timed between the last sample on one side and the first on
+    the other.
+    """
     trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
-
-    # Vectorized crossing detection
-    # Find where labels change between consecutive frames
-    prev_labels = trajectory_labels[:-1]
-    curr_labels = trajectory_labels[1:]
-
-    # Valid crossings: both labels are reachable (!= -1) and different
-    valid_mask = (
-        (prev_labels != -1) & (curr_labels != -1) & (prev_labels != curr_labels)
-    )
-    crossing_indices = np.where(valid_mask)[0]
-
-    # Compute crossing times (midpoint between frames)
-    crossing_times_arr = (times[crossing_indices] + times[crossing_indices + 1]) / 2
-    crossing_times = crossing_times_arr.tolist()
-
-    # Get crossing directions
-    crossing_directions = [
-        (int(prev_labels[idx]), int(curr_labels[idx])) for idx in crossing_indices
-    ]
-
-    return crossing_times, crossing_directions
+    decided = np.flatnonzero(trajectory_labels >= 0)
+    labels = trajectory_labels[decided].astype(np.intp)
+    changes = np.flatnonzero(labels[:-1] != labels[1:])
+    before, after = decided[changes], decided[changes + 1]
+    crossing_times = (times[before] + times[after]) / 2
+    crossing_directions = np.column_stack([labels[changes], labels[changes + 1]])
+    return crossing_times, crossing_directions.reshape(-1, 2)
 
 
 # =============================================================================
@@ -1302,7 +1605,7 @@ def compute_decision_analysis(
     positions: NDArray[np.float64],
     *,
     decision_region: str,
-    goal_regions: list[str],
+    goal_regions: str | list[str],
     pre_window: float = 1.0,
     min_speed: float | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
@@ -1324,14 +1627,17 @@ def compute_decision_analysis(
     decision_region : str
         Name of decision region in env.regions (e.g., "center" for T-maze).
     goal_regions : list[str]
-        Names of goal regions (e.g., ["left", "right"]).
+        Names of goal regions (e.g., ["left", "right"]); a single name is a
+        one-goal list. With one goal there is no decision boundary and
+        ``result.boundary`` is None.
     pre_window : float, default=1.0
-        Duration of pre-decision window to analyze (seconds).
+        Duration of pre-decision window to analyze (seconds); finite and
+        positive.
     min_speed : float or None, default=None
         In position units per second. None is 5 cm/s expressed in
         ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
         units that are not a metric length, pass it explicitly.
-        Minimum speed for valid heading (units/s).
+        Minimum speed for valid heading (units/s); finite and non-negative.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1359,11 +1665,13 @@ def compute_decision_analysis(
     Raises
     ------
     ValueError
-        If decision_region or any goal_region not found in env.regions.
+        If decision_region or any goal_region not found in env.regions, or
+        if goal_regions is empty.
     ValueError
         If positions and times have different lengths, if there are no
-        samples, if ``times`` is not finite and strictly increasing, or if
-        ``break_before`` is not a Boolean array with one entry per sample.
+        samples, if ``times`` is not finite and strictly increasing, if
+        ``break_before`` is not a Boolean array with one entry per sample, or
+        if ``pre_window`` is not finite and positive.
 
     Notes
     -----
@@ -1374,6 +1682,11 @@ def compute_decision_analysis(
     :func:`detect_boundary_crossings`). Missing positions fall in no bin, so
     their goal label is -1 and their boundary distance NaN. Per-sample goal
     labels and boundary distances keep the input length.
+
+    The decision-region entry is the first sample inside both the region
+    and ``epochs``, and the chosen goal is the first goal region occupied by
+    a sample inside ``epochs`` from then on; samples outside ``epochs`` are
+    never used.
 
     Examples
     --------
@@ -1407,8 +1720,14 @@ def compute_decision_analysis(
     ...     goal_regions=["left", "right"],
     ...     min_speed=5.0,
     ... )
-    >>> result.chosen_goal, result.pre_decision.n_samples
-    (1, 10)
+    >>> result.chosen_goal_region, result.pre_decision.n_samples
+    ('right', 10)
+
+    The stem is equidistant from both goals (label -1), so walking up it and
+    turning right never crosses from the left goal's side:
+
+    >>> result.boundary.n_crossings
+    0
     """
     require_cartesian(
         env.coordinate_system,
@@ -1430,6 +1749,9 @@ def compute_decision_analysis(
         result="the pre-decision metrics are NaN and no boundary crossing was observed",
     )
     _validate_velocity_positions(raw_positions, call="compute_decision_analysis")
+    pre_window = _validated_window_duration(
+        pre_window, name="pre_window", call="compute_decision_analysis"
+    )
 
     # Validate regions exist
     _require_region_mask(
@@ -1438,6 +1760,16 @@ def compute_decision_analysis(
         operation="compute_decision_analysis()",
         argument="decision_region",
     )
+    if isinstance(goal_regions, str):
+        goal_regions = [goal_regions]
+    if len(goal_regions) == 0:
+        raise ValueError(
+            "compute_decision_analysis() got an empty goal_regions list.\n"
+            "Why: the chosen goal and the decision boundary are defined by the "
+            "goals the animal can choose between.\n"
+            "Fix: pass the names of the goal regions, e.g. "
+            "goal_regions=['left', 'right']."
+        )
     for goal_region in goal_regions:
         _require_region_mask(
             env,
@@ -1450,14 +1782,19 @@ def compute_decision_analysis(
     # Get position bins
     position_bins = env.bin_at(positions)
 
-    # Find entry time to decision region
-    entry_time = decision_region_entry_time(
-        position_bins, times, env, region=decision_region
-    )
+    # The entry is the first decision-region sample inside the epochs.
+    in_epochs = _in_epochs(times, support.epochs)
+    entry = _first_entry(position_bins, env.bins_in_region(decision_region), in_epochs)
+    if entry is None:
+        raise ValueError(_never_enters_message(decision_region, epochs=epochs))
+    entry_time = float(times[entry])
 
     from neurospatial.behavior._kinematics import resolve_min_speed
 
-    min_speed = resolve_min_speed(env, min_speed, call="compute_decision_analysis()")
+    min_speed = _validated_min_speed(
+        resolve_min_speed(env, min_speed, call="compute_decision_analysis()"),
+        call="compute_decision_analysis",
+    )
     # Compute pre-decision metrics
     pre_decision = _pre_decision_metrics(
         times, positions, support, entry_time, pre_window, min_speed=min_speed
@@ -1475,44 +1812,57 @@ def compute_decision_analysis(
                 f"Goal region '{r}' contains no bins. "
                 f"Check that the region is within the environment bounds."
             )
-    voronoi_labels = geodesic_voronoi_labels(env, goal_bins)
-
     position_bins = np.asarray(position_bins, dtype=np.int64)
-    trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
-    boundary_distances = distance_to_decision_boundary(env, position_bins, goal_bins)
-    crossing_times, crossing_directions = _boundary_crossings(
-        position_bins,
-        voronoi_labels,
-        times,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=validate_break_before(
-            break_before, len(times), call="compute_decision_analysis"
-        ),
-    )
-
-    boundary = DecisionBoundaryMetrics(
-        goal_labels=trajectory_labels,
-        distance_to_boundary=boundary_distances,
-        crossing_times=crossing_times,
-        crossing_directions=crossing_directions,
-    )
-
-    # Determine chosen goal (which goal region was reached)
-    chosen_goal: int | None = None
-    for i, goal_region in enumerate(goal_regions):
-        goal_region_bins = set(env.bins_in_region(goal_region))
-        # Check if trajectory ends in this goal region
-        for bin_idx in reversed(position_bins):
-            if bin_idx in goal_region_bins:
-                chosen_goal = i
-                break
-        if chosen_goal is not None:
-            break
+    boundary = None
+    if len(goal_bins) >= 2:
+        voronoi_labels = geodesic_voronoi_labels(env, goal_bins)
+        crossing_times, crossing_directions = _boundary_crossings(
+            position_bins,
+            voronoi_labels,
+            times,
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=validate_break_before(
+                break_before, len(times), call="compute_decision_analysis"
+            ),
+        )
+        boundary = DecisionBoundaryMetrics(
+            goal_labels=_safe_gather(voronoi_labels, position_bins, fill=-1),
+            distance_to_decision_boundary=distance_to_decision_boundary(
+                env, position_bins, goal_bins
+            ),
+            crossing_times=crossing_times,
+            crossing_directions=crossing_directions,
+        )
 
     return DecisionAnalysisResult(
         entry_time=entry_time,
         pre_decision=pre_decision,
         boundary=boundary,
-        chosen_goal=chosen_goal,
+        chosen_goal=_first_goal_entered(
+            env, position_bins[entry:], goal_regions, in_epochs[entry:]
+        ),
+        goal_regions=tuple(goal_regions),
     )
+
+
+def _first_goal_entered(
+    env: Environment,
+    position_bins: NDArray[np.int64],
+    goal_regions: list[str],
+    observed: NDArray[np.bool_],
+) -> int | None:
+    """Index of the first goal region occupied by an observed sample; None if none.
+
+    The caller passes the samples from the decision-region entry on, so goal
+    occupancy before it (for example the goal the trial started from) does
+    not count. A sample inside several goal regions picks the first of them
+    in ``goal_regions`` order.
+    """
+    in_goal = np.stack(
+        [np.isin(position_bins, env.bins_in_region(name)) for name in goal_regions]
+    )
+    reached = np.flatnonzero(observed & in_goal.any(axis=0))
+    if reached.size == 0:
+        return None
+    return int(np.argmax(in_goal[:, reached[0]]))

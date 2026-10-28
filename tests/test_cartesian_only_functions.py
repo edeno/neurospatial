@@ -198,6 +198,23 @@ def _polar_regions_env(env: Environment) -> Environment:
             ),
             "distance_to_region(metric='euclidean')",
         ),
+        # The behavior geodesic is a path through allocentric space, so it
+        # refuses (distance, angle) bins too.
+        (
+            lambda env: path_progress(
+                np.array([0, 1]),
+                env,
+                start_bins=np.array([0, 0]),
+                goal_bins=np.array([3, 3]),
+            ),
+            "path_progress(metric='geodesic')",
+        ),
+        (
+            lambda env: distance_to_region(
+                np.array([0, 1]), env, target_bins=np.array([3, 3])
+            ),
+            "distance_to_region(metric='geodesic')",
+        ),
         (
             lambda env: trajectory_similarity(
                 np.array([0, 1, 2]), np.array([2, 3, 4]), env, method="hausdorff"
@@ -306,7 +323,7 @@ def _polar_regions_env(env: Environment) -> Environment:
                 _TIMES,
                 _POLAR_POSITIONS,
                 decision_region="near",
-                trials=[Trial(0.0, 2.5, "near", "far", True)],
+                trials=[Trial(0.0, 2.5, "near", "far", "reached")],
             ),
             "compute_vte_session()",
         ),
@@ -442,15 +459,6 @@ def test_cartesian_coordinate_functions_refuse_polar(polar, call, operation):
         ),
         lambda env: geodesic_rbf_basis(
             env, n_centers=3, center_method="farthest_point", rng=0
-        ),
-        lambda env: path_progress(
-            np.array([0, 1]),
-            env,
-            start_bins=np.array([0, 0]),
-            goal_bins=np.array([3, 3]),
-        ),
-        lambda env: distance_to_region(
-            np.array([0, 1]), env, target_bins=np.array([3, 3])
         ),
         lambda env: trajectory_similarity(
             np.array([0, 1, 2]), np.array([2, 3, 4]), env, method="jaccard"

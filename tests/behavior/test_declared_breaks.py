@@ -198,9 +198,11 @@ def test_declared_break_equals_long_gap(joined, case, name):
     if isinstance(declared, list):
         declared = _shift_reported_times(declared, after=r.times[BREAK])
     # Wall-clock time to the goal includes the pause in the reference.
-    time_to_goal = getattr(declared, "time_to_goal", None)
-    if time_to_goal is not None and time_to_goal >= r.times[BREAK] - r.times[0]:
-        declared = dataclasses.replace(declared, time_to_goal=time_to_goal + OFFSET)
+    time_to_reach = getattr(declared, "time_to_reach_goal", None)
+    if time_to_reach is not None and time_to_reach >= r.times[BREAK] - r.times[0]:
+        declared = dataclasses.replace(
+            declared, time_to_reach_goal=time_to_reach + OFFSET
+        )
     np.testing.assert_equal(_plain(declared), _plain(reference))
     if name != "compute_home_range":  # see test_home_range_break_isolates_sample
         # The join is not a recording break unless declared.
@@ -275,11 +277,19 @@ def test_lap_spanning_break_is_dropped(laps):
     )
     spans = [lap for lap in joined if lap.start_time < r.times[BREAK] <= lap.end_time]
     assert len(spans) == 1
-    assert len(split) == len(joined) - 1
     assert all(
         lap.end_time < r.times[BREAK] or lap.start_time >= r.times[BREAK]
         for lap in split
     )
+    # Laps before the break are unaffected by declaring it.
+    before = r.times[BREAK]
+
+    def bounds(found):
+        return [
+            (lap.start_time, lap.end_time) for lap in found if lap.end_time < before
+        ]
+
+    assert bounds(split) == bounds(joined)
 
 
 def test_heading_labels_refuse_breaks_with_precomputed_kinematics():

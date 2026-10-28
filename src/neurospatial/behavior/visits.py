@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
+from operator import index
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -35,6 +36,44 @@ __all__ = [
     "detect_region_visits",
     "region_transitions",
 ]
+
+
+def _store_plain_scalars(
+    record: Any,
+    *,
+    ints: Sequence[str] = (),
+    floats: Sequence[str] = (),
+    bools: Sequence[str] = (),
+    strings: Sequence[str] = (),
+) -> None:
+    """Replace NumPy scalars on a frozen record with plain Python scalars.
+
+    Integers are converted with ``operator.index`` so a fractional index
+    raises instead of being truncated.
+    """
+    record_name = type(record).__name__
+    for name in ints:
+        value = getattr(record, name)
+        if isinstance(value, bool | np.bool_):
+            raise TypeError(f"{record_name}.{name} must be an integer, got {value!r}.")
+        try:
+            object.__setattr__(record, name, index(value))
+        except TypeError:
+            raise TypeError(
+                f"{record_name}.{name} must be an integer, got {value!r}."
+            ) from None
+    for name in floats:
+        object.__setattr__(record, name, float(getattr(record, name)))
+    for name in bools:
+        value = getattr(record, name)
+        if not isinstance(value, bool | np.bool_):
+            raise TypeError(f"{record_name}.{name} must be a bool, got {value!r}.")
+        object.__setattr__(record, name, bool(value))
+    for name in strings:
+        value = getattr(record, name)
+        if not isinstance(value, str):
+            raise TypeError(f"{record_name}.{name} must be a str, got {value!r}.")
+        object.__setattr__(record, name, str(value))
 
 
 @dataclass(frozen=True)
@@ -68,8 +107,10 @@ class RegionVisit:
 
     Notes
     -----
-    Records contain only scalars and are immutable. ``pandas.DataFrame(visits)``
-    converts a nonempty list into an event table, including censoring flags.
+    Records contain only plain Python scalars and are immutable; construction
+    checks ``start_index < stop_index`` and ``start_time <= end_time``.
+    ``pandas.DataFrame(visits)`` converts a nonempty list into an event
+    table, including censoring flags.
     """
 
     visit_id: int
@@ -84,6 +125,24 @@ class RegionVisit:
     duration: float = field(init=False)
 
     def __post_init__(self) -> None:
+        _store_plain_scalars(
+            self,
+            ints=("visit_id", "run_id", "start_index", "stop_index"),
+            floats=("start_time", "end_time"),
+            bools=("entry_observed", "exit_observed"),
+            strings=("region_name",),
+        )
+        if not self.start_index < self.stop_index:
+            raise ValueError(
+                "RegionVisit needs start_index < stop_index (stop is exclusive and "
+                f"a visit has at least one sample); got {self.start_index} and "
+                f"{self.stop_index}."
+            )
+        if not self.start_time <= self.end_time:
+            raise ValueError(
+                "RegionVisit needs start_time <= end_time; got "
+                f"{self.start_time} and {self.end_time}."
+            )
         object.__setattr__(self, "duration", self.end_time - self.start_time)
 
 
@@ -124,6 +183,36 @@ class RegionTransition:
     duration: float = field(init=False)
 
     def __post_init__(self) -> None:
+        _store_plain_scalars(
+            self,
+            ints=(
+                "source_visit_id",
+                "target_visit_id",
+                "run_id",
+                "start_index",
+                "end_index",
+            ),
+            floats=("start_time", "end_time"),
+            strings=("source_region", "target_region"),
+        )
+        problems = []
+        if not self.source_visit_id < self.target_visit_id:
+            problems.append("source_visit_id < target_visit_id")
+        if not self.start_index < self.end_index:
+            problems.append("start_index < end_index")
+        if not self.start_time < self.end_time:
+            problems.append("start_time < end_time")
+        if self.source_region == self.target_region:
+            problems.append("different regions")
+        if problems:
+            raise ValueError(
+                "RegionTransition pairs an earlier entry with a later entry into "
+                f"another region; it needs {', '.join(problems)}. Got visits "
+                f"{self.source_visit_id} -> {self.target_visit_id}, regions "
+                f"{self.source_region!r} -> {self.target_region!r}, indices "
+                f"{self.start_index} -> {self.end_index}, times "
+                f"{self.start_time} -> {self.end_time}."
+            )
         object.__setattr__(self, "duration", self.end_time - self.start_time)
 
 

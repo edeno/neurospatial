@@ -55,7 +55,6 @@ Neurospatial provides a comprehensive suite of tools for analyzing animal trajec
    - [Dynamic Time Warping](#dynamic-time-warping)
 6. [Goal-Directed Behavior](#goal-directed-behavior)
    - [Directedness Score](#directedness-score)
-   - [Replay Analysis](#replay-analysis)
 7. [Complete Workflows](#complete-workflows)
    - [Circular Track Lap-by-Lap Analysis](#circular-track-lap-by-lap-analysis)
    - [T-maze Trial Analysis](#t-maze-trial-analysis)
@@ -392,7 +391,18 @@ print(f"Turn variance: {turn_variance:.3f}")
 
 ### Step Lengths
 
-Step lengths are the distances between consecutive positions. Supports both Euclidean (straight-line) and geodesic (graph-based) distances.
+Step lengths are the distances between consecutive positions. Supports both Euclidean (straight-line) and geodesic distances.
+
+Every behavior function with `metric="geodesic"` uses one definition: the
+length of the shortest path between two positions that stays inside the
+environment: it goes around walls and never leaves the environment, and on a
+track it runs along the track's centerline. A function that takes bins
+measures from each bin's center. In an open arena the geodesic and Euclidean
+distances agree; around a wall the geodesic path keeps about half a bin from
+each corner it turns, and on a track it does not depend on the track's width
+or bin size. `Environment.distance_between` and `ops.distance_field` measure
+along the bin graph instead (bin center to bin center through neighboring
+bins), which reads an oblique straight run as a staircase.
 
 ```python
 from neurospatial.behavior.trajectory import compute_step_lengths
@@ -413,9 +423,9 @@ print(f"Step length CV: {step_cv:.3f}")
 
 **Key Points**:
 - **Euclidean (default)**: Straight-line distance in physical space, uses continuous positions
-- **Geodesic**: Graph shortest-path distance, respects walls/obstacles, requires `env`
+- **Geodesic**: the shortest path inside the environment between the two positions (the straight step unless it crosses a wall), requires `env`
 - Stationary periods (duplicate positions) return 0.0
-- For geodesic: disconnected bins return `np.inf`
+- For geodesic: positions in disconnected parts of the environment return `np.inf`
 
 **Applications**:
 - **Movement speed** (step_length / dt): Velocity estimation
@@ -622,10 +632,11 @@ before filtering visits, since omitted visit identifiers are not bridged.
 Entry-to-entry `duration` includes source dwell time. Use
 `detect_runs_between_regions` below for source-exit to target-entry intervals.
 
-Invalid bins (`-1` or outside the environment's bin range), recording gaps,
-declared breaks (`break_before`, see [Joined Recordings](#joined-recordings))
-and excluded epochs break observation continuity; they do not fabricate exits or
-entries. Valid bins outside all selected regions are observed travel. Singleton
+A sample outside the environment (bin `-1`) is missing: it is skipped as if
+its row were deleted, and the gap around it is bridged when the valid samples on
+either side are no more than `max_gap` apart. Only a longer gap, a declared break
+(`break_before`, see [Joined Recordings](#joined-recordings)) or an epoch edge
+breaks observation continuity; none of them fabricates an exit or an entry. Valid bins outside all selected regions are observed travel. Singleton
 observations are retained as zero-duration, doubly censored visits. Empty event
 lists remain empty; check for an empty list before grouping a DataFrame made
 from it.
@@ -646,31 +657,36 @@ Detect runs from a source region to a target region, tracking success and failur
 ```python
 from neurospatial.behavior.segmentation import detect_runs_between_regions
 
-# Detect runs from start to goal
+# Detect runs from start to goal (bin indices, from env.bin_at(positions))
 runs = detect_runs_between_regions(
-    positions,
+    env.bin_at(positions),
     times,
     env,
     source="start",
     target="goal",
     min_duration=1.0,
     max_duration=10.0,
-    min_speed=5.0,  # Optional speed filter
+    min_speed=5.0,  # optional: drop runs whose mean speed is below 5 cm/s
 )
 
-# Analyze successful vs failed runs
-successful = [r for r in runs if r.success]
-failed = [r for r in runs if not r.success]
+# Success rate among runs whose result was observed: a censored run was
+# cut off by a tracking gap, epoch edge or the end of the recording.
+observed = [r for r in runs if r.outcome != "censored"]
+successful = [r for r in observed if r.success]  # outcome == "reached"
 
-print(f"Success rate: {len(successful) / len(runs):.1%}")
+print(f"Success rate: {len(successful) / len(observed):.1%}")
 print(f"Mean duration (successful): {np.mean([r.end_time - r.start_time for r in successful]):.2f}s")
 ```
 
 **Returns**: List of `Run` objects
-- `start_time`: Time of source region exit
-- `end_time`: Time of target entry or timeout
+- `start_time`: First sample outside the source region
+- `end_time`: When the run ended (see `outcome`)
+- `source_region`, `target_region`: Region names
+- `outcome`: `"reached"` (entered the target within `max_duration`),
+  `"timeout"`, `"returned"` (went back to the source first) or `"censored"`
+  (observation stopped first, so the result is unknown)
+- `success`: Shorthand for `outcome == "reached"`
 - `bins`: Bin sequence for the run
-- `success`: True if reached target, False if timeout
 
 **Applications**:
 - **T-maze alternation**: Runs from start to left/right arms
@@ -682,7 +698,8 @@ print(f"Mean duration (successful): {np.mean([r.end_time - r.start_time for r in
 
 ### Velocity-Based Segmentation
 
-Segment trajectory into movement vs rest periods based on velocity.
+Find movement epochs, stretches where the smoothed speed stays above a
+threshold, as an `(n_epochs, 2)` array of `[start, stop)` times.
 
 ```python
 from neurospatial.behavior.segmentation import segment_by_velocity
@@ -697,13 +714,9 @@ movement_epochs = segment_by_velocity(
     smooth_window=0.1,  # seconds (Gaussian SD of the velocity smoothing)
 )
 
-# Analyze movement statistics. segment_by_velocity returns list[Run]
-# (matching detect_runs_between_regions, detect_laps, ...). For
-# velocity epochs, ``bins`` is empty and ``success`` is True; only
-# start_time / end_time vary.
-total_movement_time = sum(
-    run.end_time - run.start_time for run in movement_epochs
-)
+# movement_epochs is an (n_epochs, 2) array of [start, stop) times in
+# seconds; pass it as epochs= to restrict another analysis to movement.
+total_movement_time = np.sum(movement_epochs[:, 1] - movement_epochs[:, 0])
 print(f"Movement time: {total_movement_time:.1f}s ({total_movement_time/times[-1]:.1%})")
 ```
 
@@ -793,21 +806,22 @@ joined = segment_trials(position_bins, times, env, **trial_options)
 split = segment_trials(
     position_bins, times, env, break_before=new_recording, **trial_options
 )
-print(f"without break_before: success={joined[0].success}, ends at {joined[0].end_time:.2f} s")
-print(f"with break_before:    success={split[0].success}, ends at {split[0].end_time:.2f} s")
+print(f"without break_before: {joined[0].outcome}, ends at {joined[0].end_time:.2f} s")
+print(f"with break_before:    {split[0].outcome}, ends at {split[0].end_time:.2f} s")
 
 (visit,) = detect_region_visits(
     position_bins, times, env, region_names=["reward"], break_before=new_recording
 )
 print(f"reward visit entry observed: {visit.entry_observed}")
-assert joined[0].success and not split[0].success
+assert joined[0].outcome == "reached" and split[0].outcome == "censored"
 assert split[0].end_time == times[89]
 assert not visit.entry_observed
 ```
 
-Without `break_before` the trial "succeeds" at 3.00 s, the moment the animal
-was placed at the reward well. With it, the trial ends unfinished at 2.97 s,
-the last sample of the first recording, and the reward visit that opens the
+Without `break_before` the trial is `"reached"` at 3.00 s, the moment the
+animal was placed at the reward well. With it, the trial is `"censored"` at
+2.97 s, the last sample of the first recording: its result is unknown, not a
+failure. The reward visit that opens the
 second recording has no observed entry: the animal was already there when the
 recording started. A declared break has the same effect as a gap in the clock
 longer than `max_gap`; it does not need the clock to pause.
@@ -830,12 +844,12 @@ Lap detection identifies repeating circular paths (e.g., circular track running)
 
 ### Auto Template Detection
 
-Automatically extracts template lap from trajectory.
+Uses the first complete circuit of the recording as the template lap.
 
 ```python
 from neurospatial.behavior.segmentation import detect_laps
 
-# Auto-detect laps using first 10% as template
+# Auto-detect laps; the first circuit is the template and the first lap
 laps = detect_laps(
     position_bins,
     times,
@@ -852,10 +866,20 @@ for i, lap in enumerate(laps):
 ```
 
 **Algorithm**:
-1. Extract template from first 10% of trajectory
-2. Sliding window search (70%-130% of template length)
-3. Compute Jaccard overlap for each window
-4. Detect laps exceeding `min_overlap` threshold
+1. Template: on a loop track, the first trip from the first sample's bin
+   that goes round the loop (a turn back at the start of the recording is
+   skipped); on a back-and-forth track or in an open arena, from the first
+   sample to the first return to its bin after a trip to the far side of the
+   track (a bin at least half the greatest path distance away)
+2. Candidate lap boundaries: each pass through the template's first bin (or
+   a neighbor), at the sample nearest that bin
+3. A lap ends at the first boundary where the bins visited since an earlier
+   boundary overlap the template's bins (both widened by one ring of
+   neighbors) with Jaccard index >= `min_overlap`, and starts at the latest
+   such boundary; laps run at any speed are found whole
+4. An aborted run that turns back through the start line belongs to no lap:
+   the next lap starts where it returned. Without turn backs, laps tile the
+   recording as `[boundary, next boundary)`
 
 ---
 
@@ -886,18 +910,28 @@ laps = detect_laps(
 
 ### Region Method
 
-Define laps as segments between start region crossings.
+A lap is a trip out of a start region, round the loop and back into it. Draw
+the start region across the track: it cuts the loop into a stretch on each side.
+A trip counts as a lap when it leaves on one side and comes back on the other,
+which means it passed the far side of the loop. A trip that comes back the way
+it went (an aborted run, however far it got) is not a lap, and its time belongs
+to no lap; tracking jitter across the region's edge does not split a lap. Each
+lap runs from the entry before its trip to the entry that ends it; if the
+recording starts inside the start region, the first lap starts at the first
+sample. Region laps have `overlap_score = NaN` (no template). The region method
+needs a loop of connected bins: in an open arena use `method="auto"` or
+`"reference"`, and on a back-and-forth track use `segment_trials`.
 
 ```python
 from neurospatial import Regions
 
-# Add start region (crossing point on track)
+# Add start region (drawn across the track)
 from shapely.geometry import Point
 region_builder = Regions(env.regions.values())
 region_builder.add("start", polygon=Point(50, 50).buffer(5.0))
 env = env.with_regions(region_builder)
 
-# Detect laps as inter-crossing intervals
+# Detect laps as trips round the loop between start-region entries
 laps = detect_laps(
     position_bins,
     times,
@@ -919,7 +953,9 @@ laps = detect_laps(
 
 Automatically classifies laps as clockwise or counter-clockwise.
 
-**Algorithm**: Uses shoelace formula for signed area
+**Algorithm**: Shoelace formula for the signed area of the lap path closed
+back to its start, so the answer does not depend on the coordinate origin or
+on where the lap starts
 - Positive area → counter-clockwise
 - Negative area → clockwise
 - Non-2D or degenerate → "unknown"
@@ -945,9 +981,6 @@ cw_laps = detect_laps(
 - **Lap-by-lap learning**: Performance improvement over laps
 - **Strategy consistency**: Stereotypy of paths
 - **Trajectory variability**: Spatial consistency analysis
-- **Hippocampal replay**: Lap templates for sequence detection
-
-**References**: Barnes et al. (1997), Dupret et al. (2010)
 
 ---
 
@@ -980,20 +1013,25 @@ trials = segment_trials(
     max_duration=15.0,
 )
 
-# Analyze outcomes
-left_trials = [t for t in trials if t.outcome == "left"]
-right_trials = [t for t in trials if t.outcome == "right"]
+# Analyze choices and outcomes
+left_trials = [t for t in trials if t.end_region == "left"]
+right_trials = [t for t in trials if t.end_region == "right"]
 
 print(f"Left choices: {len(left_trials)}")
 print(f"Right choices: {len(right_trials)}")
-print(f"Timeouts: {sum(1 for t in trials if not t.success)}")
+print(f"Timeouts: {sum(t.outcome == 'timeout' for t in trials)}")
+print(f"Censored (result unknown): {sum(t.outcome == 'censored' for t in trials)}")
 ```
 
 **Returns**: List of `Trial` objects
 - `start_time`: Departure from the start region (the last sample inside it)
-- `end_time`: End region entry, timeout, or return to the start region
-- `end_region`: Name of end region reached (or None if not reached)
-- `success`: True if end region reached, False if timed out or aborted
+- `end_time`: When the trial ended (see `outcome`)
+- `end_region`: Name of the end region reached (None unless `outcome == "reached"`)
+- `outcome`: `"reached"`, `"timeout"`, `"returned"` (went back to the start
+  region first) or `"censored"` (observation stopped first: a tracking gap
+  longer than `max_gap`, an epochs edge, a declared break or the end of the
+  recording). Leave censored trials out of fraction-correct measures.
+- `success`: Shorthand for `outcome == "reached"`
 
 ---
 
@@ -1024,9 +1062,9 @@ trials = segment_trials(
 )
 
 # Compute spontaneous alternation score
-outcomes = [t.outcome for t in trials if t.success]
-alternations = sum(1 for i in range(len(outcomes)-1) if outcomes[i] != outcomes[i+1])
-alternation_rate = alternations / (len(outcomes) - 1)
+arms = [t.end_region for t in trials if t.success]
+alternations = sum(1 for i in range(len(arms)-1) if arms[i] != arms[i+1])
+alternation_rate = alternations / (len(arms) - 1)
 
 print(f"Spontaneous alternation: {alternation_rate:.1%}")
 ```
@@ -1119,7 +1157,6 @@ where $A$ and $B$ are the visited bins and $|\cdot|$ is their area
 **Range**: [0, 1] where 1.0 = identical, 0.0 = disjoint
 
 **Applications**:
-- **Replay analysis**: Compare awake trajectory to sleep reactivation
 - **Learning**: Increasing similarity to optimal path
 - **Spatial overlap**: Shared territory between animals
 
@@ -1207,15 +1244,19 @@ similarity = trajectory_similarity(
 
 **Complexity**: O(n₁ × n₂) time and space
 
-**Reference**: Davidson et al. (2009)
-
 ---
 
 ## Goal-Directed Behavior
 
 ### Directedness Score
 
-Quantifies how efficiently an animal moves toward a goal.
+Finds each approach to a goal and keeps the efficient ones. An approach runs
+from the departure (the last sample before the distance to the goal starts to
+fall, so rest beforehand is excluded) to the arrival (the first sample at the
+closest point, so rest at the goal is excluded). A step back of one bin or a
+pause on the way does not end an approach; a larger retreat does. On a track
+the animal runs back and forth, every run toward the goal is its own approach,
+and runs away from it are not goal-directed.
 
 ```python
 from neurospatial.behavior.segmentation import detect_goal_directed_runs
@@ -1230,65 +1271,25 @@ goal_runs = detect_goal_directed_runs(
     min_progress=20.0,  # cm
 )
 
-# Analyze directedness
-for run in goal_runs:
-    duration = run.end_time - run.start_time
-    path_length = len(run.bins)
-    print(f"Run: duration={duration:.1f}s, path_length={path_length} bins")
+# goal_runs is an (n_runs, 2) array of [departure, arrival) times in seconds
+for start, stop in goal_runs:
+    print(f"Goal-directed run: {start:.1f}-{stop:.1f} s ({stop - start:.1f} s)")
 ```
 
-**Directedness Formula** (Pfeiffer & Foster, 2013):
+**Directedness Formula**:
 
 $$
 \text{directedness} = \frac{d_{\text{start}} - d_{\text{end}}}{\text{path length}}
 $$
 
 **Where**:
-- $d_{\text{start}}$: Distance from start position to goal
-- $d_{\text{end}}$: Distance from end position to goal
-- path_length: Actual path traveled
+- $d_{\text{start}}$: Distance from the departure position to the goal
+- $d_{\text{end}}$: Distance from the arrival position to the goal
+- path length: Path traveled between departure and arrival
 
 **Interpretation**:
-- directedness = 1.0: Perfectly efficient (straight line)
-- directedness = 0.0: No net progress toward goal
-- directedness < 0.0: Moving away from goal
-
----
-
-### Replay Analysis
-
-Detect hippocampal replay sequences that match awake trajectories.
-
-```python
-# Awake exploration
-awake_trajectory = position_bins[:1000]
-
-# Sleep/rest epochs (detected separately)
-sleep_epochs = [(1000, 1200), (1500, 1800), (2000, 2300)]
-
-# Detect replays matching awake trajectory
-replays = []
-for start, end in sleep_epochs:
-    sleep_segment = position_bins[start:end]
-    similarity = trajectory_similarity(
-        awake_trajectory,
-        sleep_segment,
-        env,
-        method="jaccard"
-    )
-    if similarity > 0.5:  # Threshold for significant replay
-        replays.append((start, end, similarity))
-
-print(f"Detected {len(replays)} replay events")
-```
-
-**Use Cases**:
-- **Memory consolidation**: Sleep replay of learned routes
-- **Planning**: Forward replay toward goals
-- **Reverse replay**: Backward sequences from goal
-- **Preplay**: Replay before first experience (rodents)
-
-**References**: Pfeiffer & Foster (2013), Davidson et al. (2009), Wilson & McNaughton (1993)
+- directedness = 1.0: Perfectly efficient (straight toward the goal)
+- lower values: a detour on the way
 
 ---
 
@@ -1372,8 +1373,8 @@ trials = segment_trials(
 )
 
 # Step 2: Separate by outcome
-left_trials = [t for t in trials if t.outcome == "left" and t.success]
-right_trials = [t for t in trials if t.outcome == "right" and t.success]
+left_trials = [t for t in trials if t.end_region == "left"]
+right_trials = [t for t in trials if t.end_region == "right"]
 
 # Step 3: Analyze path similarity within choice type
 left_similarities = []
@@ -1421,9 +1422,11 @@ for trial in trials[:5]:  # First 5 trials
 Detect behavioral shift from exploration to exploitation.
 
 ```python
-# Compute MSD in sliding windows using continuous positions
-window_size = 100  # samples
-hop_size = 20
+# Compute MSD in sliding 20 s windows using continuous positions. Each window
+# must be longer than max_tau, the longest lag the MSD is measured at.
+dt = np.median(np.diff(times))
+window_size = int(round(20.0 / dt))  # samples in 20 s
+hop_size = max(1, window_size // 5)
 alphas = []
 
 for i in range(0, len(positions) - window_size, hop_size):
@@ -1449,7 +1452,7 @@ for i in range(0, len(positions) - window_size, hop_size):
 threshold = 1.2  # Superdiffusive
 transition_idx = next((i for i, a in enumerate(alphas) if a > threshold), None)
 
-if transition_idx:
+if transition_idx is not None:
     transition_time = times[transition_idx * hop_size]
     print(f"Exploration → goal-directed transition at t={transition_time:.1f}s")
 
@@ -1478,7 +1481,7 @@ if transition_idx:
 
 ### Choosing Similarity Metrics
 
-- **Jaccard**: Spatial overlap, order-independent → Replay analysis, territory overlap
+- **Jaccard**: Spatial overlap, order-independent → Territory overlap, route coverage
 - **Correlation**: Sequential patterns → Route learning, temporal matching
 - **Hausdorff**: Maximum deviation → Path consistency, outlier detection
 - **DTW**: Timing-invariant alignment → Same path at different speeds
@@ -1515,18 +1518,9 @@ if transition_idx:
 - Traja: [https://github.com/traja-team/traja](https://github.com/traja-team/traja)
 - Sims, D. W., et al. (2014). "Hierarchical random walks in trace fossils and the origin of optimal search behavior." *PNAS*, 111(30), 11073-11078.
 
-**Lap Detection**:
-- Barnes, C. A., et al. (1997). "Comparison of spatial and temporal characteristics of neuronal activity in sequential stages of hippocampal processing." *Progress in Brain Research*, 83, 287-300.
-- Dupret, D., et al. (2010). "The reorganization and reactivation of hippocampal maps predict spatial memory performance." *Nature Neuroscience*, 13(8), 995-1002.
-
 **Trial Segmentation**:
 - Olton, D. S., & Samuelson, R. J. (1976). "Remembrance of places passed: Spatial memory in rats." *Journal of Experimental Psychology: Animal Behavior Processes*, 2(2), 97-116.
 - Wood, E. R., et al. (2000). "Hippocampal neurons encode information about different types of memory episodes occurring in the same location." *Neuron*, 27(3), 623-633.
-
-**Trajectory Similarity & Replay**:
-- Pfeiffer, B. E., & Foster, D. J. (2013). "Hippocampal place-cell sequences depict future paths to remembered goals." *Nature*, 497(7447), 74-79.
-- Davidson, T. J., Kloosterman, F., & Wilson, M. A. (2009). "Hippocampal replay of extended experience." *Neuron*, 63(4), 497-507.
-- Wilson, M. A., & McNaughton, B. L. (1993). "Dynamics of the hippocampal ensemble code for space." *Science*, 261(5124), 1055-1058.
 
 ---
 

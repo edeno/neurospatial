@@ -79,7 +79,10 @@ def test_head_sweep_sums_runs(two_epoch_recording):
 
 
 def test_path_efficiency_counts_observed_travel_across_pause(two_epoch_recording):
-    from neurospatial.behavior.navigation import traveled_path_length
+    from neurospatial.behavior.navigation import (
+        angular_efficiency,
+        traveled_path_length,
+    )
 
     r = two_epoch_recording
     result = compute_path_efficiency(
@@ -101,7 +104,11 @@ def test_path_efficiency_counts_observed_travel_across_pause(two_epoch_recording
         first.traveled_length + second.traveled_length, rel=1e-12
     )
     assert np.isnan(result.efficiency)
-    assert np.isnan(result.angular_efficiency)
+    # A mean over the observed steps of both epochs; the pause is no step.
+    assert result.angular_efficiency == angular_efficiency(
+        r.times, r.positions, r.positions[-1]
+    )
+    assert np.isfinite(result.angular_efficiency)
     assert np.isfinite(result.shortest_length)
     assert np.isfinite(result.time_efficiency)
     assert np.isfinite(first.traveled_length)
@@ -122,8 +129,13 @@ def test_home_range_dwell_excludes_pause(two_epoch_recording):
     visited = np.unique(bins)
     ordered = visited[np.argsort(totals[visited])[::-1]]
     count = np.searchsorted(np.cumsum(totals[ordered]) / weights.sum() * 100, 95) + 1
+    # The home range is the occupancy level set at the 95 % cutoff: every bin
+    # with as much dwell as the cutoff bin (equal sample counts at 50 Hz give
+    # dwell equal up to roundoff).
+    level = totals[ordered[count - 1]]
+    expected = visited[totals[visited] >= level * (1 - 1e-9)]
     np.testing.assert_array_equal(
-        compute_home_range(bins, times=r.times), ordered[:count]
+        np.sort(compute_home_range(bins, times=r.times)), expected
     )
 
 
@@ -243,22 +255,43 @@ def test_curvature_isolated_sample_nan(two_epoch_recording):
         alone = compute_trajectory_curvature(r.times[run], r.positions[run])
         rows = [selected.index(i) for i in run]
         np.testing.assert_allclose(curvature[rows], alone, rtol=1e-12)
-        assert np.isfinite(alone).all()
+        # A three-sample run has one turn, at its middle sample.
+        np.testing.assert_array_equal(np.isfinite(alone), [False, True, False])
 
 
 def test_goal_metrics_keep_known_wall_clock_time(two_epoch_recording):
+    """Time to reach the goal is wall-clock time, known across the pause."""
     r = two_epoch_recording
-    result = compute_goal_directed_metrics(
-        r.env,
-        r.times,
-        r.positions,
-        r.positions[5000],
-        goal_radius=0,
-        epochs=(500, 600),
+    goal = r.positions[5000]  # first sample of the second recording, t = 1100 s
+    across_pause = compute_goal_directed_metrics(
+        r.env, r.times, r.positions, goal, goal_radius=0
     )
+    second_recording = compute_goal_directed_metrics(
+        r.env, r.times, r.positions, goal, goal_radius=0, epochs=(1100, 1200)
+    )
+    assert across_pause.time_to_reach_goal == 1100
+    assert second_recording.time_to_reach_goal == 0.0
+
+
+def test_goal_metrics_with_no_sample_in_epochs_are_nan(two_epoch_recording):
+    """Epochs in the pause hold no sample: nothing is measured or reached.
+
+    Arrival used to be searched outside the epochs, giving 1100 s.
+    """
+    r = two_epoch_recording
+    with pytest.warns(UserWarning):
+        result = compute_goal_directed_metrics(
+            r.env,
+            r.times,
+            r.positions,
+            r.positions[5000],
+            goal_radius=0,
+            epochs=(500, 600),
+        )
     assert np.isnan(result.goal_bias)
     assert np.isnan(result.mean_approach_rate)
-    assert result.time_to_goal == 1100
+    assert np.isnan(result.goal_distance_at_start)
+    assert np.isnan(result.time_to_reach_goal)
 
 
 def test_composites_forward_coarse_sampling_optout(continuous_recording):
@@ -284,7 +317,7 @@ def test_composites_forward_coarse_sampling_optout(continuous_recording):
         min_speed=5.0,
     )
     assert metrics.mean_speed == expected_mean
-    assert metrics.min_speed == expected_min
+    assert metrics.min_observed_speed == expected_min
     assert metrics.heading_mean_resultant_length == expected_heading[2]
     trial = compute_vte_trial(
         times, positions, entry, window_duration=duration, max_gap=None, min_speed=5.0
@@ -328,7 +361,7 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
             times,
             positions,
             decision_region="decision",
-            trials=[Trial(times[0], times[-1], "source", "target", True)],
+            trials=[Trial(times[0], times[-1], "source", "target", "reached")],
             window_duration=duration,
             max_gap=None,
         )
