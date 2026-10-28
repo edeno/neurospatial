@@ -97,7 +97,7 @@ from neurospatial.behavior._decision_windows import (
 from neurospatial.behavior._kinematics import validated_min_speed
 from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.behavior._region_bins import region_representative_bin
-from neurospatial.behavior.segmentation import _region_names, _safe_gather
+from neurospatial.behavior.segmentation import _region_names
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -1473,12 +1473,13 @@ def _detect_boundary_crossings_contiguous(
 ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Nearest-goal changes within one recording with labels indexed by bin.
 
-    Samples labeled -1 (undecided or unreachable) are skipped, so passing
+    Every sample is in a bin: the caller removed the missing ones. Samples
+    labeled -1 (undecided or unreachable) are skipped, so passing
     through the equidistant bins from one goal's side to the other's is one
     crossing, timed between the last sample on one side and the first on
     the other.
     """
-    trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
+    trajectory_labels = voronoi_labels[position_bins]
     decided = np.flatnonzero(trajectory_labels >= 0)
     labels = trajectory_labels[decided].astype(np.intp)
     changes = np.flatnonzero(labels[:-1] != labels[1:])
@@ -1706,7 +1707,7 @@ def compute_decision_analysis(
             ),
         )
         boundary = DecisionBoundaryMetrics(
-            goal_labels=_safe_gather(voronoi_labels, position_bins, fill=-1),
+            goal_labels=np.where(position_bins >= 0, voronoi_labels[position_bins], -1),
             distance_to_decision_boundary=distance_to_decision_boundary(
                 env, position_bins, goal_bins
             ),

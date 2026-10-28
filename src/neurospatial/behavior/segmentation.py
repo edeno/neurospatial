@@ -101,49 +101,6 @@ if TYPE_CHECKING:
     from neurospatial.geometry import CartesianSystem
 
 
-def _safe_gather(
-    values: NDArray,
-    position_bins: NDArray[np.int64],
-    *,
-    fill: object,
-) -> NDArray:
-    """Gather ``values[position_bins]`` with out-of-bounds bins mapped to ``fill``.
-
-    ``position_bins`` may contain ``-1`` (sample off the environment / unmapped)
-    or indices ``>= len(values)``. Plain fancy indexing would wrap ``-1`` to the
-    last element and silently mis-attribute an out-of-environment sample to a
-    real bin. This helper instead returns ``fill`` for every out-of-bounds
-    position, so callers can treat those samples as "outside" rather than
-    accidentally "inside the last region".
-
-    Parameters
-    ----------
-    values : NDArray, shape (n_bins,) or (n_bins, ...)
-        Per-bin array to gather from (e.g. a boolean region mask or an integer
-        Voronoi-label array).
-    position_bins : NDArray[np.int64], shape (n_samples,)
-        Bin index per trajectory sample. May contain ``-1`` or out-of-range
-        indices.
-    fill : object
-        Value substituted wherever ``position_bins`` is out of bounds. Use
-        ``False`` for boolean region masks and ``-1`` for integer label arrays
-        (matching the ``-1`` "unreachable" sentinel those arrays already use).
-
-    Returns
-    -------
-    NDArray
-        Array of length ``len(position_bins)`` (leading axis) with out-of-bounds
-        rows set to ``fill``.
-    """
-    position_bins = np.asarray(position_bins, dtype=np.int64)
-    n_bins = values.shape[0]
-    in_bounds = (position_bins >= 0) & (position_bins < n_bins)
-    safe_idx = np.where(in_bounds, position_bins, 0)
-    gathered: NDArray = values[safe_idx]
-    gathered[~in_bounds] = fill
-    return gathered
-
-
 def _validated_samples(
     position_bins: ArrayLike, times: ArrayLike, env: Environment, *, call: str
 ) -> tuple[NDArray[np.int64], NDArray[np.float64]]:
@@ -211,14 +168,15 @@ length closer to the goal; expressed in ``env.units`` when they are metric.
 """
 
 
-def _located(position_bins: NDArray[np.int64], env: Environment) -> NDArray[np.bool_]:
-    """True for samples in a bin of ``env``; any other sample is missing.
+def _located(position_bins: NDArray[np.int64]) -> NDArray[np.bool_]:
+    """True for samples in a bin; a sample at bin -1 is missing.
 
-    Missing samples are skipped as if their rows were deleted, and the gap
-    around them is bridged when it is no longer than ``max_gap``.
+    ``position_bins`` come from :func:`_validated_samples`, so every entry is
+    -1 or a bin of the environment. Missing samples are skipped as if their
+    rows were deleted, and the gap around them is bridged when it is no
+    longer than ``max_gap``.
     """
-    bins = np.asarray(position_bins)
-    located: NDArray[np.bool_] = (bins >= 0) & (bins < env.n_bins)
+    located: NDArray[np.bool_] = position_bins >= 0
     return located
 
 
@@ -683,7 +641,7 @@ def detect_region_crossings(
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins, env),
+        sample_valid=_located(position_bins),
     ):
         results.extend(
             _detect_region_crossings_contiguous(
@@ -709,9 +667,7 @@ def _detect_region_crossings_contiguous(
 
     ``region_mask`` (shape ``(n_bins,)``) marks the region's bins.
     """
-    # Check which trajectory samples are in region
-    position_bins = np.asarray(position_bins, dtype=np.int64)
-    in_region = _safe_gather(region_mask, position_bins, fill=False)
+    in_region = region_mask[position_bins]
 
     # Detect transitions using vectorized diff operation
     # Convert bool to int: in_region[i] - in_region[i-1]
@@ -949,7 +905,7 @@ def detect_runs_between_regions(
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins, env),
+        sample_valid=_located(position_bins),
     ):
         results.extend(
             _detect_runs_between_regions_contiguous(
@@ -999,9 +955,8 @@ def _detect_runs_between_regions_contiguous(
     ``source_mask`` and ``target_mask`` (shape ``(n_bins,)``) mark the bins
     of ``source`` and ``target``.
     """
-    # Check which samples are in each region
-    in_source = _safe_gather(source_mask, position_bins, fill=False)
-    in_target = _safe_gather(target_mask, position_bins, fill=False)
+    in_source = source_mask[position_bins]
+    in_target = target_mask[position_bins]
 
     # Detect source exits
     source_exits = []
@@ -1060,38 +1015,16 @@ def _detect_runs_between_regions_contiguous(
             continue
 
         # Optional velocity filter (bin-quantized), using the same slice as the
-        # stored path. Off-environment samples (``-1``) or out-of-range bins must
-        # not be treated as real positions: plain ``bin_centers[run_bin_idx]``
-        # would wrap ``-1`` to the last bin (inflating speed) or raise on indices
-        # ``>= n_bins``. Compute speed only over consecutive sample pairs where
-        # both endpoints map to a valid bin.
+        # stored path. Every sample is in a bin (the caller removed missing
+        # ones). A one-sample run has no speed, so it cannot pass the gate.
         if min_speed is not None:
-            # A displacement is usable only when both consecutive samples are
-            # valid (and the underlying dt is positive). Off-environment samples
-            # (``-1``) or out-of-range bins are not real positions.
-            if len(run_times) > 1:
-                valid = (run_bin_idx >= 0) & (run_bin_idx < env.n_bins)
-                pair_valid = valid[:-1] & valid[1:]
-            else:
-                pair_valid = np.zeros(0, dtype=bool)
-
-            if not pair_valid.any():
-                # No consecutive pair has both endpoints on the environment, so
-                # the run's speed cannot be validated. A run must not silently
-                # pass a speed gate it never satisfied: drop it (treat as
-                # failing the filter) rather than keeping a spurious
-                # (e.g. -1-inflated) velocity.
+            if run_bin_idx.size < 2:
                 continue
-
-            safe_idx = np.where(valid, run_bin_idx, 0)
-            run_positions = env.bin_centers[safe_idx]
-            displacements = np.diff(run_positions, axis=0)
-            distances = np.linalg.norm(displacements, axis=1)
-            dt = np.diff(run_times)  # > 0: times are strictly increasing
-            velocities = (distances / dt)[pair_valid]
-            mean_velocity = float(np.mean(velocities))
-
-            if mean_velocity < min_speed:
+            distances = np.linalg.norm(
+                np.diff(env.bin_centers[run_bin_idx], axis=0), axis=1
+            )
+            # > 0: times are strictly increasing
+            if float(np.mean(distances / np.diff(run_times))) < min_speed:
                 continue
 
         # Create run
@@ -1710,7 +1643,7 @@ def detect_laps(
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins, env),
+        sample_valid=_located(position_bins),
     )
     laps: list[Lap] = []
     if method == "region":
@@ -2461,7 +2394,7 @@ def running_direction_labels(
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins, env),
+        sample_valid=_located(position_bins),
     )
 
     runs: list[tuple[Run, str]] = []
@@ -2768,7 +2701,7 @@ def segment_trials(
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins, env),
+        sample_valid=_located(position_bins),
     ):
         results.extend(
             _segment_trials_contiguous(
@@ -2801,12 +2734,8 @@ def _segment_trials_contiguous(
     """
     # Check which trajectory samples are in which regions. Unlocated samples
     # were removed by the caller and the gaps around them bridged.
-    position_bins = np.asarray(position_bins, dtype=np.int64)
-    in_start = _safe_gather(start_mask, position_bins, fill=False)
-    in_end_regions = {
-        region: _safe_gather(mask, position_bins, fill=False)
-        for region, mask in end_masks.items()
-    }
+    in_start = start_mask[position_bins]
+    in_end_regions = {region: mask[position_bins] for region, mask in end_masks.items()}
 
     # Segment into trials. A trial starts when the animal leaves the start
     # region, at the last sample inside it, so time spent waiting at the start
@@ -3415,7 +3344,7 @@ def detect_goal_directed_runs(
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins, env),
+        sample_valid=_located(position_bins),
     ):
         results.extend(
             _detect_goal_directed_runs_contiguous(
