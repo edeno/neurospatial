@@ -87,7 +87,7 @@ if TYPE_CHECKING:
     from scipy.sparse import csr_array
 
     from neurospatial.environment import Environment
-    from neurospatial.geometry._locators import HexLocator
+    from neurospatial.geometry._locators import HexLocator, LookupIndexes
 
 # Probe a segment every half of the shortest graph edge. Consecutive probes
 # must land in the same or connected bins, so a probe step shorter than a bin
@@ -491,6 +491,9 @@ class _OpenPaths(EnvironmentPaths):
             _PROBE_FRACTION * float(lengths.min()) if lengths.size else np.inf
         )
         self._grid = _GridCells.of(self._locator, self._centers)
+        # Deep interiors of a mesh's triangles, where a point's bin is known
+        # without the locator.
+        self._cores = _MeshCores.of(self._locator, n_bins, env._cache)
         # The lattice whose clean boxes skip probing (:meth:`_trace_boxes`).
         self._boxes: _BoxCells | None = (
             self._grid
@@ -687,14 +690,37 @@ class _OpenPaths(EnvironmentPaths):
     # Internals
     # ------------------------------------------------------------------
 
-    def _cells(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+    def _cells(
+        self,
+        points: NDArray[np.float64],
+        near: tuple[NDArray[np.intp], ...] = (),
+    ) -> NDArray[np.intp]:
         """Bin whose cell holds each point, -1 in no bin's cell.
 
         Probes use the bins' own cells: a straight segment between bin
         centers stays inside the environment when it stays inside the union
-        of the bins' cells.
+        of the bins' cells. On a mesh, a point deep inside a triangle
+        (:class:`_MeshCores`), one of the ``near`` bins of each point or
+        found from a table of cells, is that triangle's without the locator,
+        exactly as the locator would find it.
         """
-        return np.asarray(self._locator.locate(points, self._env._cache), dtype=np.intp)
+        cores = self._cores
+        if cores is None or not points.shape[0]:
+            return np.asarray(
+                self._locator.locate(points, self._env._cache), dtype=np.intp
+            )
+        located = np.full(points.shape[0], -1, dtype=np.intp)
+        for bins in near:
+            rest = np.flatnonzero(located < 0)
+            found = cores.deep(points[rest], bins[rest])
+            located[rest[found]] = bins[rest[found]]
+        rest = np.flatnonzero(located < 0)
+        if rest.size:
+            located[rest] = cores.lookup(points[rest])
+        rest = np.flatnonzero(located < 0)
+        if rest.size:
+            located[rest] = self._locator.locate(points[rest], self._env._cache)
+        return located
 
     def _grid_cells(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """:meth:`_cells` on a grid: a point's half-open cell when it is a bin.
@@ -1309,7 +1335,9 @@ class _OpenPaths(EnvironmentPaths):
             # Split at an irrational fraction, so the split point does not
             # land on a bin edge either.
             fm = f0 + _SPLIT_AT * (f1 - f0)
-            m = self._cells(starts[seg] + fm[:, None] * (ends[seg] - starts[seg]))
+            m = self._cells(
+                starts[seg] + fm[:, None] * (ends[seg] - starts[seg]), near=(a, b)
+            )
             outside = m < 0
             bad[origin[outside]] = True
             inside = ~outside
@@ -2130,6 +2158,216 @@ class _HexCells(_BoxCells):
         table[q_all - q_min, row] = flat_to_active
         cell = np.column_stack([q_bin - q_min, r_bin]).astype(np.intp)
         return cls(locator, table.ravel(), shape, cell, q_min)
+
+
+class _MeshCores:
+    """Deep interiors of a mesh's triangles, where the locator's answer is known.
+
+    :class:`~neurospatial.geometry._locators.MeshLocator` gives a point the
+    lowest-numbered stored triangle whose barycentric test (within a
+    tolerance of 100 machine epsilons) accepts it, or -1 off its boundary
+    polygon. A point at least ``4 * margin`` inside every edge of a triangle
+    (``margin`` a billionth of the mesh's coordinate scale, far above that
+    tolerance and the rounding of the coordinates) is the triangle's when:
+
+    - every other stored triangle whose lookup box meets the triangle's is
+      separated from it with room to spare: an edge line of the triangle
+      has all of the other's vertices within ``margin`` of its outside, or
+      an edge line of the other has all of the triangle's ``2 * margin``
+      core outside it by ``2 * margin``, so no point of the deep interior
+      passes the other's test;
+    - the boundary polygon covers the ``2 * margin`` core;
+    - the triangle is not much thinner than the mesh's rounding (its
+      altitudes differ by less than ``_ASPECT``).
+
+    Triangles that fail any check have no deep interior here. A table of
+    square cells, each inside one deep interior with room for rounding,
+    gives most points their bin with one lookup.
+
+    Parameters
+    ----------
+    entry : ndarray of int, shape (n_bins,)
+        Row of each bin's triangle in the transforms, -1 for no deep interior.
+    inverse : ndarray, shape (n_rows, 2, 2)
+    origin : ndarray, shape (n_rows, 2)
+        The locator's barycentric transforms.
+    threshold : ndarray, shape (n_rows, 3)
+        Least barycentric coordinate of the deep interior.
+    """
+
+    _ASPECT = 1e5
+    # Cells of the lookup table per smallest inradius, and at most this many.
+    _CELLS_PER_INRADIUS = 8
+    _MAX_CELLS = 4_000_000
+
+    def __init__(
+        self,
+        entry: NDArray[np.intp],
+        inverse: NDArray[np.float64],
+        origin: NDArray[np.float64],
+        threshold: NDArray[np.float64],
+    ) -> None:
+        self.entry = entry
+        self.inverse = inverse
+        self.origin = origin
+        self.threshold = threshold
+        self._table = np.full((0, 0), -1, dtype=np.intp)
+        self._low = np.zeros(2)
+        self._width = 1.0
+
+    def coordinates(
+        self, points: NDArray[np.float64], rows: NDArray[np.intp]
+    ) -> NDArray[np.float64]:
+        """Barycentric coordinates of each point in triangle ``rows``, shape (n, 3)."""
+        coords = np.einsum("kij,kj->ki", self.inverse[rows], points - self.origin[rows])
+        return np.column_stack((coords, 1.0 - coords[:, 0] - coords[:, 1]))
+
+    def deep(
+        self, points: NDArray[np.float64], bins: NDArray[np.intp]
+    ) -> NDArray[np.bool_]:
+        """Whether each point lies in the deep interior of its bin's triangle."""
+        rows = np.where(bins >= 0, self.entry[np.maximum(bins, 0)], -1)
+        found = np.zeros(points.shape[0], dtype=bool)
+        known = np.flatnonzero(rows >= 0)
+        if known.size:
+            coords = self.coordinates(points[known], rows[known])
+            found[known] = np.all(coords >= self.threshold[rows[known]], axis=1)
+        return found
+
+    def lookup(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Bin of each point from the table of cells, -1 where it is not known."""
+        cell = np.floor((points - self._low) / self._width)
+        shape = np.asarray(self._table.shape)
+        inside = np.all((cell >= 0) & (cell < shape), axis=1)
+        located = np.full(points.shape[0], -1, dtype=np.intp)
+        index = cell[inside].astype(np.intp)
+        located[inside] = self._table[index[:, 0], index[:, 1]]
+        return located
+
+    @classmethod
+    def of(
+        cls, locator: object, n_bins: int, indexes: LookupIndexes | None
+    ) -> _MeshCores | None:
+        """The deep interiors of a mesh locator's bins, or None for other locators."""
+        import shapely
+
+        from neurospatial.geometry._locators import (
+            MeshLocator,
+            _lookup_index,
+            _triangle_index,
+        )
+
+        if not isinstance(locator, MeshLocator) or not n_bins:
+            return None
+        index = _lookup_index(
+            locator, indexes, lambda: _triangle_index(locator.points, locator.simplices)
+        )
+        vertices = locator.points[locator.simplices[index.triangles]]
+        # Edge j is opposite vertex j; the locator's coordinates are those
+        # of vertices 0, 1 and 2.
+        edge = np.linalg.norm(vertices[:, [2, 0, 1]] - vertices[:, [1, 2, 0]], axis=2)
+        first = vertices[:, 0] - vertices[:, 2]
+        second = vertices[:, 1] - vertices[:, 2]
+        area = 0.5 * np.abs(first[:, 0] * second[:, 1] - first[:, 1] * second[:, 0])
+        altitude = 2.0 * area[:, None] / edge
+        span = np.ptp(vertices, axis=1).sum(axis=1)
+        margin = 1e-9 * (float(np.abs(locator.points).max()) + float(span.max()))
+        threshold = 4.0 * margin / altitude
+        core = 2.0 * margin / altitude
+        safe = (altitude.max(axis=1) < cls._ASPECT * altitude.min(axis=1)) & (
+            threshold.sum(axis=1) < 0.5
+        )
+        # Vertex j of the 2 * margin core: coordinate j takes what the other
+        # two leave.
+        weights = np.repeat(core[:, None, :], 3, axis=1)
+        diagonal = np.arange(3)
+        weights[:, diagonal, diagonal] = 0.0
+        weights[:, diagonal, diagonal] = 1.0 - weights.sum(axis=2)
+        core_vertices = np.einsum("nkj,njd->nkd", weights, vertices)
+        boxes = index.tree.geometries
+        left, right = index.tree.query(boxes)
+        other = left != right
+        left, right = left[other], right[other]
+
+        def inside(rows, points, row_scale):
+            # Signed distance inside each edge of triangle ``rows``,
+            # shape (n, n_points, 3).
+            flat = points.reshape(-1, 2)
+            rep = np.repeat(rows, points.shape[1])
+            coords = np.einsum(
+                "kij,kj->ki", index.inverse[rep], flat - index.origin[rep]
+            )
+            coords = np.column_stack((coords, 1.0 - coords.sum(axis=1)))
+            return (
+                coords.reshape(points.shape[0], points.shape[1], 3)
+                * row_scale[:, None, :]
+            )
+
+        beyond_own = inside(left, vertices[right], altitude[left]).max(axis=1)
+        beyond_other = inside(right, core_vertices[left], altitude[right]).max(axis=1)
+        separated = np.any(beyond_own <= margin, axis=1) | np.any(
+            beyond_other <= -2.0 * margin, axis=1
+        )
+        safe[left[~separated]] = False
+        if locator.boundary is not None:
+            rows = np.flatnonzero(safe)
+            safe[rows] = shapely.covers(
+                locator.boundary, shapely.polygons(core_vertices[rows])
+            )
+        active = locator.simplex_to_active[index.triangles]
+        entry = np.full(n_bins, -1, dtype=np.intp)
+        keep = np.flatnonzero(safe & (active >= 0))
+        entry[active[keep]] = keep
+        cores = cls(entry, index.inverse, index.origin, threshold)
+        cores._build_table(vertices, keep, area, edge)
+        return cores
+
+    def _build_table(
+        self,
+        vertices: NDArray[np.float64],
+        rows: NDArray[np.intp],
+        area: NDArray[np.float64],
+        edge: NDArray[np.float64],
+    ) -> None:
+        """Cells whose four corners are twice as deep as a deep interior."""
+        if not rows.size:
+            return
+        low = vertices[rows].min(axis=(0, 1))
+        high = vertices[rows].max(axis=(0, 1))
+        inradius = 2.0 * area[rows] / edge[rows].sum(axis=1)
+        width = float(inradius.min()) / self._CELLS_PER_INRADIUS
+        extent = high - low
+        width = max(width, float(np.sqrt(np.prod(extent) / self._MAX_CELLS)))
+        shape = np.maximum(np.ceil(extent / width).astype(np.intp), 1)
+        table = np.full(tuple(shape), -1, dtype=np.intp)
+        first = np.floor((vertices[rows].min(axis=1) - low) / width).astype(np.intp)
+        last = np.minimum(
+            np.floor((vertices[rows].max(axis=1) - low) / width).astype(np.intp),
+            shape - 1,
+        )
+        count = last - first + 1
+        n_cells = count[:, 0] * count[:, 1]
+        owner = np.repeat(np.arange(rows.size), n_cells)
+        k = ragged_arange(n_cells)
+        cell = first[owner] + np.column_stack(
+            (k // count[owner, 1], k % count[owner, 1])
+        )
+        corners = np.stack(
+            [
+                low + (cell + np.array(offset)) * width
+                for offset in itertools.product((0, 1), repeat=2)
+            ],
+            axis=1,
+        )
+        tri = np.repeat(rows[owner], 4)
+        coords = self.coordinates(corners.reshape(-1, 2), tri).reshape(-1, 4, 3)
+        deep = np.all(
+            coords >= 2.0 * self.threshold[rows[owner]][:, None, :], axis=(1, 2)
+        )
+        bin_of_row = np.full(self.inverse.shape[0], -1, dtype=np.intp)
+        bin_of_row[self.entry[self.entry >= 0]] = np.flatnonzero(self.entry >= 0)
+        table[cell[deep, 0], cell[deep, 1]] = bin_of_row[rows[owner[deep]]]
+        self._table, self._low, self._width = table, low, width
 
 
 class PairDistances(ABC):

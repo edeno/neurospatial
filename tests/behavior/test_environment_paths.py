@@ -666,3 +666,49 @@ class TestStraightLinesFromPositionsStayInside:
         assert np.all(np.array(lengths) >= bound - 1e-12)
         direction = paths.directions(p[None, :], q)[0]
         assert direction[0] < 0  # away from the wall, not through it
+
+
+def test_deep_mesh_interiors_locate_points_as_the_locator_does():
+    """On a triangle mesh, points located from the deep interiors of their
+    triangles (a table of cells, or a guess of nearby bins) get exactly the
+    locator's bins, at random, on shared edges, at vertices and a hair off
+    them; and segments are visible exactly when probing with the locator
+    finds them so."""
+    from neurospatial.behavior._environment_paths import _OpenPaths
+    from neurospatial.layout import create_layout
+
+    outline = Polygon(
+        [(0, 0), (60, 0), (60, 60), (35, 60), (35, 15), (25, 15), (25, 60), (0, 60)]
+    )
+    env = Environment.from_layout(
+        create_layout("triangular_mesh", boundary_polygon=outline, point_spacing=4.0)
+    )
+    locator = env.binning.locator
+    paths = _OpenPaths(env)
+    assert paths._cores is not None
+    rng = np.random.default_rng(3)
+    triangles = locator.points[locator.simplices]
+    edges = 0.5 * (triangles + np.roll(triangles, 1, axis=1)).reshape(-1, 2)
+    points = np.vstack(
+        [
+            rng.uniform(-1.0, 61.0, (20_000, 2)),
+            edges,
+            locator.points,
+            edges + rng.normal(0.0, 1e-9, edges.shape),
+        ]
+    )
+    expected = np.asarray(locator.locate(points, env._cache), dtype=np.intp)
+    # Guess every bin of each point's neighborhood, highest first.
+    guesses = tuple(
+        env.bin_at(points + offset) for offset in ([0.3, 0.0], [0.0, -0.3], [0, 0])
+    )
+    np.testing.assert_array_equal(paths._cells(points), expected)
+    np.testing.assert_array_equal(paths._cells(points, near=guesses), expected)
+
+    a, b = rng.integers(0, env.n_bins, (2, 3000))
+    starts, ends = env.bin_centers[a], env.bin_centers[b]
+    probed = _OpenPaths(env)
+    probed._cores = None
+    visible, _ = paths._trace(starts, ends, a, b)
+    np.testing.assert_array_equal(visible, probed._trace(starts, ends, a, b)[0])
+    assert 300 < visible.sum() < visible.size - 300
