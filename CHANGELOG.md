@@ -121,6 +121,16 @@ Results that change (each was plausible and wrong):
   environment (two points always correlate ±1), or a trajectory that stays
   in one bin. With no usable pair it returned 1.0, a perfect match. NaN is
   not 0; skip such pairs with `np.nanmean` or `np.isfinite`.
+- `metric="geodesic"` on triangular meshes no longer detours around mesh
+  vertices. A straight line passing within about 0.01 probe spacings of a
+  vertex where two triangles meet only at that point was treated as
+  blocked, so distances on meshes were too long (on a convex 40×40 mesh,
+  7% of bin-to-bin distances were longer than the straight line, by up to
+  85%). Lines past or through an interior vertex are now checked around the
+  fan of triangles at that vertex; a pinch, where the environment narrows to
+  a single point, still blocks. Mesh distances mostly get shorter; a few
+  change by about 1% either way where the path now bends at different bin
+  centres. Grids and hexagonal layouts are unchanged.
 - `mean_square_displacement` gives the same value at a lag whatever
   `max_tau` is; on the uniform-sampling fast path the values shifted by
   about 1e-13 with `max_tau`.
@@ -133,7 +143,9 @@ Faster (same results):
 
 - `metric="geodesic"` on hexagonal layouts is about 4× faster and on
   triangular meshes about 2.5× faster. Rate-weighted geodesic costs on grids
-  are up to 2× faster.
+  are up to 2× faster. On grid mazes, line-of-sight probes that land in a
+  wall are recognized without the bin locator (Hampton Court 1.2×, the rat
+  hexmaze 1.1×).
 
 ### Behavior cleanup and faster analyses
 
