@@ -304,7 +304,8 @@ class DecisionAnalysisResult(ResultMixin):
     pre_decision : PreDecisionMetrics
         Metrics from pre-decision window.
     boundary : DecisionBoundaryMetrics or None
-        Boundary metrics. None if only one goal (no boundary defined).
+        Boundary metrics. None with a single goal region: no decision
+        boundary is defined.
     chosen_goal : int or None
         Index into ``goal_regions`` of the first goal region the animal
         entered after ``entry_time``. Goals visited before the decision-region
@@ -1381,7 +1382,9 @@ def compute_decision_analysis(
     decision_region : str
         Name of decision region in env.regions (e.g., "center" for T-maze).
     goal_regions : list[str]
-        Names of goal regions (e.g., ["left", "right"]).
+        Names of goal regions (e.g., ["left", "right"]); a single name is a
+        one-goal list. With one goal there is no decision boundary and
+        ``result.boundary`` is None.
     pre_window : float, default=1.0
         Duration of pre-decision window to analyze (seconds).
     min_speed : float or None, default=None
@@ -1416,7 +1419,8 @@ def compute_decision_analysis(
     Raises
     ------
     ValueError
-        If decision_region or any goal_region not found in env.regions.
+        If decision_region or any goal_region not found in env.regions, or
+        if goal_regions is empty.
     ValueError
         If positions and times have different lengths, if there are no
         samples, if ``times`` is not finite and strictly increasing, or if
@@ -1495,6 +1499,16 @@ def compute_decision_analysis(
         operation="compute_decision_analysis()",
         argument="decision_region",
     )
+    if isinstance(goal_regions, str):
+        goal_regions = [goal_regions]
+    if len(goal_regions) == 0:
+        raise ValueError(
+            "compute_decision_analysis() got an empty goal_regions list.\n"
+            "Why: the chosen goal and the decision boundary are defined by the "
+            "goals the animal can choose between.\n"
+            "Fix: pass the names of the goal regions, e.g. "
+            "goal_regions=['left', 'right']."
+        )
     for goal_region in goal_regions:
         _require_region_mask(
             env,
@@ -1532,28 +1546,28 @@ def compute_decision_analysis(
                 f"Goal region '{r}' contains no bins. "
                 f"Check that the region is within the environment bounds."
             )
-    voronoi_labels = geodesic_voronoi_labels(env, goal_bins)
-
     position_bins = np.asarray(position_bins, dtype=np.int64)
-    trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
-    boundary_distances = distance_to_decision_boundary(env, position_bins, goal_bins)
-    crossing_times, crossing_directions = _boundary_crossings(
-        position_bins,
-        voronoi_labels,
-        times,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=validate_break_before(
-            break_before, len(times), call="compute_decision_analysis"
-        ),
-    )
-
-    boundary = DecisionBoundaryMetrics(
-        goal_labels=trajectory_labels,
-        distance_to_decision_boundary=boundary_distances,
-        crossing_times=crossing_times,
-        crossing_directions=crossing_directions,
-    )
+    boundary = None
+    if len(goal_bins) >= 2:
+        voronoi_labels = geodesic_voronoi_labels(env, goal_bins)
+        crossing_times, crossing_directions = _boundary_crossings(
+            position_bins,
+            voronoi_labels,
+            times,
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=validate_break_before(
+                break_before, len(times), call="compute_decision_analysis"
+            ),
+        )
+        boundary = DecisionBoundaryMetrics(
+            goal_labels=_safe_gather(voronoi_labels, position_bins, fill=-1),
+            distance_to_decision_boundary=distance_to_decision_boundary(
+                env, position_bins, goal_bins
+            ),
+            crossing_times=crossing_times,
+            crossing_directions=crossing_directions,
+        )
 
     return DecisionAnalysisResult(
         entry_time=entry_time,

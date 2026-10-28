@@ -631,6 +631,38 @@ class TestComputeDecisionAnalysis:
                 "right"
             )
 
+    def test_single_goal_has_no_boundary(self, t_maze_environment):
+        """One goal defines no decision boundary: boundary is None."""
+        from neurospatial.behavior.decisions import compute_decision_analysis
+
+        x = np.r_[np.full(30, 50.0), np.linspace(50, 90, 30)]
+        y = np.r_[np.linspace(5, 55, 30), np.full(30, 55.0)]
+        for goals in (["right"], "right"):
+            result = compute_decision_analysis(
+                t_maze_environment,
+                np.arange(60) / 10,
+                np.column_stack([x, y]),
+                decision_region="center",
+                goal_regions=goals,
+                min_speed=5.0,
+            )
+            assert result.boundary is None
+            assert result.chosen_goal == 0
+            assert result.summary()["n_boundary_crossings"] is None
+
+    def test_empty_goal_list_raises(self, t_maze_environment):
+        from neurospatial.behavior.decisions import compute_decision_analysis
+
+        with pytest.raises(ValueError, match="empty goal_regions"):
+            compute_decision_analysis(
+                t_maze_environment,
+                np.arange(30) / 10,
+                np.column_stack([np.full(30, 50.0), np.linspace(5, 55, 30)]),
+                decision_region="center",
+                goal_regions=[],
+                min_speed=5.0,
+            )
+
     def test_no_goal_entered_after_entry_is_none(self, t_maze_environment):
         """Start at the left goal, stop at the center: no goal was chosen."""
         x = np.linspace(10, 50, 40)
