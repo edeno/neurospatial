@@ -296,3 +296,26 @@ class TestPositionInputsUseThePositionItself:
         # arena. Its bin's center (5.5, 5.5) is 4.0 cm from the rim.
         distances = distance_to_boundary(env, np.array([[5.2, 5.0]]), metric=metric)
         np.testing.assert_allclose(distances, [np.hypot(4.3, 0.5)], rtol=1e-12)
+
+
+class TestMeanSquareDisplacement:
+    def test_displacement_across_a_wall_goes_around_it(self, divider_arena):
+        from neurospatial.behavior.trajectory import mean_square_displacement
+
+        positions = np.array([[42.5, 12.5], [57.5, 12.5], [42.5, 12.5]])
+        result = mean_square_displacement(
+            np.arange(3.0), positions, metric="geodesic", env=divider_arena, max_tau=1.0
+        )
+        np.testing.assert_allclose(
+            result.msd, [(2 * np.hypot(5.0, 60.0) + 5.0) ** 2], rtol=1e-12
+        )
+
+    def test_displacement_on_a_track_runs_along_the_centerline(self):
+        from neurospatial.behavior.trajectory import mean_square_displacement
+
+        env = _w_track(2.0, 10.0)
+        positions = np.array([[-30.0, 1.0], [30.0, 1.0], [-30.0, 1.0]])
+        result = mean_square_displacement(
+            np.arange(3.0), positions, metric="geodesic", env=env, max_tau=1.0
+        )
+        np.testing.assert_allclose(result.msd, [138.0**2], rtol=1e-12)

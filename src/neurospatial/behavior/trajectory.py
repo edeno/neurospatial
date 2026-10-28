@@ -45,7 +45,6 @@ from neurospatial._validation import (
 )
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.behavior.epochs import _mask_in_intervals
-from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -1508,10 +1507,10 @@ def compute_step_lengths(
         Distance metric to use:
         - "euclidean": Straight-line distance in physical space (ecology standard).
           Fast and appropriate for open environments without obstacles.
-        - "geodesic": Length of the shortest path that stays inside the
-          environment: the straight step when it stays inside, otherwise the
-          route around the walls. Requires `env`. Appropriate for constrained
-          navigation (walls, obstacles, tracks).
+        - "geodesic": the length of the shortest path between two
+          positions that stays inside the environment: it goes around walls
+          and never leaves the environment, and on a track it runs along the
+          track's centerline. Requires ``env``.
     env : Environment, optional
         Environment instance for computing geodesic distances. Required if
         metric="geodesic", ignored otherwise.
@@ -1544,15 +1543,14 @@ def compute_step_lengths(
     **Geodesic distance** (shortest path inside the environment):
 
     The animal moves continuously inside the environment, so a step's length
-    is the shortest path between its two positions that stays inside. When
-    the straight segment stays inside (probed at a quarter of the shortest
-    bin-graph edge), that is the Euclidean step length, so on an open field
-    and between nearby samples the geodesic and Euclidean steps agree.
-    Otherwise (the straight line crosses a wall or leaves a track, as across
-    a bridged tracking gap) the bin-graph shortest path between the two
-    positions' bins is pulled taut into straight segments that stay inside
-    the environment. Its waypoints are bin centers, so it rounds each corner
-    about half a bin inside the wall.
+    is the shortest path between its two positions that stays inside. Two
+    positions in the same or neighboring bins, or whose bin centers see each
+    other, are the straight step apart, so on an open field and between
+    nearby samples the geodesic and Euclidean steps agree. Otherwise (the
+    straight line crosses a wall, as across a bridged tracking gap) the step
+    is the route around the walls; its waypoints are bin centers, so it
+    keeps about half a bin from each corner. On a track the step runs along
+    the centerline between the two positions' projections.
 
     The length is not measured bin center to bin center along the graph:
     that staircase of grid steps made a straight oblique run read up to a
@@ -1738,7 +1736,8 @@ def compute_cumulative_distance(
     -----
     Distance is Euclidean arclength over all coordinate columns, in the
     positions' units. It is not geodesic distance; use
-    ``compute_step_lengths(metric="geodesic")`` for graph distance.
+    ``compute_step_lengths(metric="geodesic")`` for steps along the shortest
+    paths inside an environment.
 
     See Also
     --------
@@ -2101,8 +2100,11 @@ def mean_square_displacement(
         - "euclidean": Straight-line distance. Use for diffusion analysis,
           comparison with the single-particle-tracking literature, and
           classification of movement types (ballistic vs. diffusive).
-        - "geodesic": Graph shortest-path distance (neuroscience-specific).
-          Requires `env` parameter. Use for constrained navigation analysis.
+        - "geodesic": the length of the shortest path between two
+          positions that stays inside the environment: it goes around walls
+          and never leaves the environment, and on a track it runs along the
+          track's centerline. Requires ``env``. Use for constrained
+          navigation analysis.
     env : Environment, optional
         Environment instance for computing geodesic distances. Required if
         metric="geodesic", ignored otherwise.
@@ -2162,7 +2164,11 @@ def mean_square_displacement(
     pair reports ``k * dt`` and NaN MSD. Targets beyond the recording are
     excluded.
     Pairs with missing positions are excluded; geodesic pairs additionally
-    require both positions to be inside the environment and connected. A pair
+    require both positions to be inside the environment and connected. The
+    geodesic metric measures each displacement from the positions
+    themselves (not their bin centers) and grows one shortest-path field per
+    visited bin, so its memory grows with the square of the number of
+    visited bins. A pair
     is also excluded when a declared ``break_before`` or an ``epochs`` edge
     lies between its two samples. A single sample returns an empty result.
 
@@ -2270,14 +2276,9 @@ def mean_square_displacement(
 
     if metric == "geodesic":
         assert env is not None  # Already checked above
-        require_cartesian(
-            env.coordinate_system,
-            "mean_square_displacement(metric='geodesic')",
-            why="It reads positions as the animal's allocentric positions, located "
-            "in the environment's bins.",
-            fix="use the allocentric environment the positions were recorded in, or "
-            "metric='euclidean'",
-        )
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        paths = environment_paths(env, call="mean_square_displacement")
 
     if max_tau is not None and not (np.isfinite(max_tau) and max_tau > 0):
         raise ValueError(
@@ -2336,16 +2337,9 @@ def mean_square_displacement(
     lag_values = tau_values.copy()
 
     if metric == "geodesic":
-        # Map positions to bins for geodesic distance
-        assert env is not None  # Already checked above
-        position_bins = env.bin_at(positions)
-        valid_bins = (position_bins >= 0) & (position_bins < env.n_bins)
-
-        # Optimization: Precompute geodesic distance matrix ONCE
-        # This is O(V*E*log(V)) once vs O(n_lags * n_samples * V*log(V)) per lookup
-        from neurospatial.ops.distance import geodesic_distance_matrix
-
-        dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
+        # Locate the positions and grow the field of every bin they visit
+        # once; each lag is then a lookup.
+        pairs = paths.pairwise(positions)
 
     sample_indices = np.arange(n_samples)
     finite_positions = support.sample_valid
@@ -2378,12 +2372,11 @@ def mean_square_displacement(
             displacements = positions[future_idx[valid_pairs]] - positions[valid_pairs]
             sq_dists = np.sum(displacements**2, axis=1)
         else:
-            # bin_at returns -1 for missing/outside positions; never index the
-            # distance matrix with it, where NumPy would select the last bin.
-            valid_pairs &= valid_bins & valid_bins[future_idx]
-            distances = dist_matrix[
-                position_bins[valid_pairs], position_bins[future_idx[valid_pairs]]
-            ]
+            # NaN for a position outside the environment, inf between
+            # disconnected parts: neither is a displacement.
+            distances = pairs.between(
+                sample_indices[valid_pairs], future_idx[valid_pairs]
+            )
             sq_dists = distances**2
 
         finite_distances = np.isfinite(sq_dists)

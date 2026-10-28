@@ -965,7 +965,9 @@ class EnvironmentPaths:
 class PairDistances:
     """Shortest path lengths between pairs of one set of positions.
 
-    Made by :meth:`EnvironmentPaths.pairwise`.
+    Made by :meth:`EnvironmentPaths.pairwise`. The fields of every bin the
+    positions visit are reduced to per-bin-pair tables once, so each pair
+    is a few lookups; results equal :meth:`EnvironmentPaths.between`.
     """
 
     def __init__(self, paths: EnvironmentPaths, points: NDArray[np.float64]) -> None:
@@ -979,8 +981,39 @@ class PairDistances:
             self._segment[located], self._offset[located] = paths._track.project(
                 points[located]
             )
-        else:
-            paths.prepare(self._bins)
+            return
+        roots = np.unique(self._bins[self._bins >= 0])
+        paths._fields.ensure(paths, roots)
+        fields = paths._fields
+        rows = fields.row_of_root[roots]
+        n_bins = paths._n_bins
+        # Table row of each target bin.
+        self._row_of = np.full(n_bins, -1, dtype=np.intp)
+        self._row_of[roots] = np.arange(roots.size)
+        anchor = fields.anchor[rows].astype(np.intp)
+        length = fields.length[rows]
+        table_rows = np.arange(roots.size)[:, None]
+        # Straight: same bin, connected bins, or the bin center sees the
+        # target bin center.
+        straight = anchor == roots[:, None]
+        straight[np.arange(roots.size), roots] = True
+        neighbors = paths._neighbors[roots]
+        has = neighbors >= 0
+        straight[np.nonzero(has)[0], neighbors[has]] = True
+        corner = np.maximum(anchor, 0)
+        lead = fields.lead[rows[:, None], corner].astype(np.intp)
+        lead = np.maximum(lead, 0)
+        centers = paths._centers
+        # Path length from the corner on, without its last leg to the target
+        # bin center: d = |p - corner| + rest + |lead - target|.
+        rest = length[table_rows, corner] - np.linalg.norm(
+            centers[lead] - centers[roots][:, None, :], axis=2
+        )
+        rest[anchor < 0] = np.inf
+        self._straight = straight
+        self._corner = corner
+        self._lead = lead
+        self._rest = rest
 
     def between(
         self, first: NDArray[np.intp], second: NDArray[np.intp]
@@ -999,21 +1032,28 @@ class PairDistances:
             environment; ``inf`` between disconnected parts.
         """
         paths = self._paths
-        if paths._track is None:
-            return paths.between(
-                self._points[first],
-                self._points[second],
-                start_bins=self._bins[first],
-                end_bins=self._bins[second],
-            )
         out = np.full(first.size, np.nan)
-        ok = np.flatnonzero((self._bins[first] >= 0) & (self._bins[second] >= 0))
-        out[ok] = paths._track._pair(
-            self._segment[first[ok]],
-            self._offset[first[ok]],
-            self._segment[second[ok]],
-            self._offset[second[ok]],
+        start_bins, end_bins = self._bins[first], self._bins[second]
+        ok = np.flatnonzero((start_bins >= 0) & (end_bins >= 0))
+        if paths._track is not None:
+            out[ok] = paths._track._pair(
+                self._segment[first[ok]],
+                self._offset[first[ok]],
+                self._segment[second[ok]],
+                self._offset[second[ok]],
+            )
+            return out
+        a, row = start_bins[ok], self._row_of[end_bins[ok]]
+        starts, ends = self._points[first[ok]], self._points[second[ok]]
+        straight = self._straight[row, a]
+        centers = paths._centers
+        corner, lead = self._corner[row, a], self._lead[row, a]
+        around = (
+            np.linalg.norm(starts - centers[corner], axis=1)
+            + self._rest[row, a]
+            + np.linalg.norm(centers[lead] - ends, axis=1)
         )
+        out[ok] = np.where(straight, np.linalg.norm(ends - starts, axis=1), around)
         return out
 
 
