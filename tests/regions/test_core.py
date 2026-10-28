@@ -575,3 +575,68 @@ def test_regions_update_region_both_point_and_polygon():
         ValueError, match="Specify \\*\\*one\\*\\* of 'point' or 'polygon'"
     ):
         regs.update_region("pt", point=[3.0, 4.0], polygon=poly)
+
+
+@pytest.mark.parametrize(
+    "insert",
+    [
+        lambda regs, value: Regions([value]),
+        lambda regs, value: regs.__setitem__("cue", value),
+        lambda regs, value: regs.set("cue", value),
+        lambda regs, value: regs.update({"cue": value}),
+        lambda regs, value: regs.setdefault("cue", value),
+    ],
+    ids=["init", "setitem", "set", "update", "setdefault"],
+)
+def test_regions_hold_only_region_values(insert):
+    """A line Landmark in Regions would be published as env.regions['cue']."""
+    from neurospatial.landmarks import Landmark
+
+    regs = Regions()
+    cue = Landmark("cue", "line", [(0.0, 100.0), (40.0, 100.0)])
+    with pytest.raises(TypeError, match="Regions holds Region values, got Landmark"):
+        insert(regs, cue)
+    assert "cue" not in regs
+
+
+def test_regions_from_a_mapping_says_to_pass_its_values():
+    mapping = {"goal": Region("goal", "point", [1.0, 2.0])}
+    with pytest.raises(TypeError, match=r"Regions\(mapping.values\(\)\)"):
+        Regions(mapping)
+    assert list(Regions(mapping.values())) == ["goal"]
+
+
+def test_setdefault_without_a_region_is_refused_with_the_fix():
+    regs = Regions()
+    with pytest.raises(TypeError, match=r"setdefault\('goal'\) has no region"):
+        regs.setdefault("goal")
+    assert "goal" not in regs
+    existing = regs.add("home", point=[0.0, 0.0])
+    assert regs.setdefault("home") is existing
+
+
+@pytest.mark.parametrize(
+    "insert",
+    [
+        lambda regs: Regions([*regs.values(), Region("high", "point", [1, 2, 3])]),
+        lambda regs: regs.add("high", point=[1.0, 2.0, 3.0]),
+        lambda regs: regs.set("high", Region("high", "point", [1, 2, 3])),
+        lambda regs: regs.update_region("goal", point=[1.0, 2.0, 3.0]),
+    ],
+    ids=["init", "add", "set", "update_region"],
+)
+def test_regions_refuse_mixed_dimensions(insert):
+    regs = Regions()
+    regs.add("goal", point=[1.0, 2.0])
+    regs.add("zone", polygon=shp.box(0, 0, 1, 1))
+    with pytest.raises(ValueError, match=r"'high'|'goal'") as raised:
+        insert(regs)
+    assert "has 3 coordinates, but the other regions here have 2" in str(raised.value)
+    assert list(regs) == ["goal", "zone"]
+
+
+def test_the_only_region_can_change_dimension():
+    regs = Regions()
+    regs.add("goal", point=[1.0, 2.0])
+    regs.set("goal", Region("goal", "point", [1.0, 2.0, 3.0]))
+    assert regs["goal"].n_dims == 3

@@ -513,6 +513,20 @@ class Region:
 # ---------------------------------------------------------------------
 
 
+def _require_region(value: object, *, key: str | None) -> Region:
+    """Return ``value`` if it is a Region; otherwise say what to pass instead."""
+    if isinstance(value, Region):
+        return value
+    where = "" if key is None else f" for {key!r}"
+    raise TypeError(
+        _format_error(
+            f"Regions holds Region values, got {type(value).__name__}{where}.",
+            fix="make a region with Region(name, 'point' or 'polygon', data); "
+            "attach landmarks with env.with_landmarks(Landmarks([...])) instead",
+        )
+    )
+
+
 class Regions(MutableMapping[str, Region]):
     """A small `dict`-like container mapping *name → Region*.
 
@@ -525,6 +539,16 @@ class Regions(MutableMapping[str, Region]):
     ----------
     items : iterable of Region or None, optional
         Initial regions, keyed by each region's name. Omit for an empty container.
+
+    Raises
+    ------
+    TypeError
+        If ``items`` is a mapping (pass its ``.values()``) or holds anything
+        other than :class:`Region` values.
+    ValueError
+        If the regions' dimensions differ.
+    KeyError
+        If two regions share a name.
 
     Examples
     --------
@@ -540,9 +564,40 @@ class Regions(MutableMapping[str, Region]):
     # -------------- Mapping interface --------------------------------
     def __init__(self, items: Iterable[Region] | None = None) -> None:
         self._store: Mapping[str, Region] = {}
+        if isinstance(items, Mapping):
+            raise TypeError(
+                _format_error(
+                    f"Regions(...) takes an iterable of Region values, got a "
+                    f"{type(items).__name__} mapping.",
+                    fix="pass its values: Regions(mapping.values())",
+                )
+            )
         if items is not None:
-            for reg in items:
-                self[reg.name] = reg
+            for region in items:
+                _require_region(region, key=None)
+                self[region.name] = region
+
+    def _check_insert(self, key: str, value: object) -> Region:
+        """Refuse a non-Region, a name mismatch, or a dimension mismatch."""
+        region = _require_region(value, key=key)
+        if key != region.name:
+            raise ValueError(
+                f"Key {key!r} must match Region.name {region.name!r}. "
+                f"Cannot assign region with name {region.name!r} to key {key!r}."
+            )
+        other = next((r for name, r in self._store.items() if name != key), None)
+        if other is not None and other.n_dims != region.n_dims:
+            raise ValueError(
+                _format_error(
+                    f"Region {region.name!r} has {region.n_dims} coordinates, "
+                    f"but the other regions here have {other.n_dims}.",
+                    why="Why: a collection holds the regions of one "
+                    "environment, which has one number of dimensions.",
+                    fix="keep one Regions collection per environment, with "
+                    "coordinates in that environment's dimensions",
+                )
+            )
+        return region
 
     def _mutable_store(self) -> dict[str, Region]:
         """Return the builder's store, refusing edits to a published snapshot."""
@@ -616,8 +671,11 @@ class Regions(MutableMapping[str, Region]):
 
         Raises
         ------
+        TypeError
+            If ``value`` is not a :class:`Region`.
         ValueError
-            If ``key`` does not match ``value.name``.
+            If ``key`` does not match ``value.name``, or the region's
+            dimension differs from the other regions'.
         KeyError
             If ``key`` is already present in the collection.
 
@@ -645,11 +703,7 @@ class Regions(MutableMapping[str, Region]):
 
         """
         store = self._mutable_store()
-        if key != value.name:
-            raise ValueError(
-                f"Key {key!r} must match Region.name {value.name!r}. "
-                f"Cannot assign region with name {value.name!r} to key {key!r}."
-            )
+        self._check_insert(key, value)
         if key in self._store:
             raise KeyError(
                 f"Region {key!r} already exists. "
@@ -682,6 +736,14 @@ class Regions(MutableMapping[str, Region]):
     def setdefault(self, key: str, default: Region | None = None) -> Region:
         """Return a region, inserting a supplied default into a mutable builder."""
         self._mutable_store()
+        if key not in self._store and default is None:
+            raise TypeError(
+                _format_error(
+                    f"Regions.setdefault({key!r}) has no region to insert.",
+                    fix=f"pass one: regions.setdefault({key!r}, Region({key!r}, "
+                    '"point", [x, y]))',
+                )
+            )
         return super().setdefault(key, cast("Region", default))
 
     def update(self, *args: Any, **kwargs: Region) -> None:
@@ -823,6 +885,7 @@ class Regions(MutableMapping[str, Region]):
             region = Region(name, "polygon", polygon, effective_metadata)
 
         # Validate before removing the old value, then preserve replacement order.
+        self._check_insert(name, region)
         del store[name]
         store[name] = region
         return region
@@ -850,8 +913,11 @@ class Regions(MutableMapping[str, Region]):
 
         Raises
         ------
+        TypeError
+            If ``region`` is not a :class:`Region`.
         ValueError
-            If ``name`` does not match ``region.name``.
+            If ``name`` does not match ``region.name``, or the region's
+            dimension differs from the other regions'.
 
         See Also
         --------
@@ -860,8 +926,7 @@ class Regions(MutableMapping[str, Region]):
             in place; raises if ``name`` does not exist.
         """
         store = self._mutable_store()
-        if name != region.name:
-            raise ValueError(f"Key {name!r} must match Region.name {region.name!r}.")
+        self._check_insert(name, region)
         # Bypass __setitem__'s duplicate check; this is the idempotent path.
         store[name] = region
         return region
