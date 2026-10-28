@@ -690,28 +690,131 @@ class TestTimeEfficiency:
 
 
 class TestSubgoalEfficiency:
-    """Test subgoal_efficiency function."""
+    """subgoal_efficiency cuts the path at each subgoal's closest approach."""
 
-    def test_two_segment_path(self):
-        """Test efficiency with two segments via a subgoal."""
+    @staticmethod
+    def _corridor():
+        x, y = np.meshgrid(np.arange(0.0, 101.0), np.arange(-10.0, 11.0))
+        return Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+
+    def test_two_segment_straight_path(self):
+        """A straight run through both subgoals: two perfectly efficient halves."""
         from neurospatial.behavior.navigation import subgoal_efficiency
 
-        # Create grid environment
-        x = np.linspace(0, 100, 100)
-        y = np.linspace(0, 100, 100)
-        xx, yy = np.meshgrid(x, y)
-        sample_positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(sample_positions, bin_size=5.0)
-
-        # Straight line trajectory: start -> subgoal -> goal
+        env = self._corridor()
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
+        times = np.arange(21) / 10
         subgoals = np.array([[50.0, 0.0], [100.0, 0.0]])
 
-        result = subgoal_efficiency(env, positions, subgoals, metric="euclidean")
+        result = subgoal_efficiency(env, times, positions, subgoals, metric="euclidean")
 
-        # Both segments should be efficient
-        assert len(result.segment_results) == 2
-        assert result.mean_efficiency > 0.8
+        assert [seg.traveled_length for seg in result.segment_results] == [50.0, 50.0]
+        assert [seg.shortest_length for seg in result.segment_results] == [50.0, 50.0]
+        assert (result.mean_efficiency, result.weighted_efficiency) == (1.0, 1.0)
+        assert [seg.angular_efficiency for seg in result.segment_results] == [1.0, 1.0]
+
+    def test_detour_segment_known_efficiency(self):
+        """A 10 cm detour North and back before the subgoal: 50 / 70."""
+        from neurospatial.behavior.navigation import subgoal_efficiency
+
+        env = self._corridor()
+        positions = np.array(
+            [[0.0, 0.0], [25.0, 0.0], [25.0, 10.0], [25.0, 0.0], [50.0, 0.0]]
+        )
+        positions = np.vstack([positions, [[75.0, 0.0], [100.0, 0.0]]])
+        times = np.arange(7) / 10
+        subgoals = np.array([[50.0, 0.0], [100.0, 0.0]])
+
+        result = subgoal_efficiency(env, times, positions, subgoals, metric="euclidean")
+
+        first, second = result.segment_results
+        assert first.traveled_length == 70.0
+        assert first.efficiency == pytest.approx(50.0 / 70.0)
+        assert second.efficiency == 1.0
+        assert result.weighted_efficiency == pytest.approx((50 / 70 * 50 + 50) / 100)
+
+    def test_missing_row_does_not_hide_the_arrival(self):
+        """argmin over a NaN row used to return it: every segment was NaN."""
+        from neurospatial.behavior.navigation import subgoal_efficiency
+
+        env = self._corridor()
+        positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
+        positions[3] = np.nan
+        times = np.arange(21) / 10
+        subgoals = np.array([[50.0, 0.0], [100.0, 0.0]])
+
+        result = subgoal_efficiency(env, times, positions, subgoals, metric="euclidean")
+
+        assert [seg.traveled_length for seg in result.segment_results] == [50.0, 50.0]
+        assert result.mean_efficiency == 1.0
+
+    def test_long_tracking_loss_leaves_the_segment_incomplete(self):
+        from neurospatial.behavior.navigation import subgoal_efficiency
+
+        env = self._corridor()
+        positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
+        times = np.arange(21) / 10
+        times[5:] += 10.0  # a 10 s loss inside the first segment
+        subgoals = np.array([[50.0, 0.0], [100.0, 0.0]])
+
+        result = subgoal_efficiency(env, times, positions, subgoals, metric="euclidean")
+
+        first, second = result.segment_results
+        assert not first.fully_observed
+        assert np.isnan(first.efficiency)
+        assert first.traveled_length == 45.0
+        assert second.efficiency == 1.0
+        assert result.mean_efficiency == 1.0  # only the observed second segment
+
+    def test_never_approached_subgoal_warns_and_is_nan(self):
+        """A subgoal behind the start: no path, NaN (not 0.0 and 1.0 placeholders)."""
+        from neurospatial.behavior.navigation import subgoal_efficiency
+
+        env = self._corridor()
+        positions = np.column_stack([np.linspace(50, 100, 11), np.zeros(11)])
+        times = np.arange(11) / 10
+        subgoals = np.array([[0.0, 0.0], [100.0, 0.0]])
+
+        with pytest.warns(UserWarning, match="subgoal 0 .* is never approached"):
+            result = subgoal_efficiency(
+                env, times, positions, subgoals, metric="euclidean"
+            )
+
+        behind, ahead = result.segment_results
+        assert np.isnan(behind.traveled_length)
+        assert np.isnan(behind.efficiency)
+        assert np.isnan(behind.angular_efficiency)
+        assert behind.shortest_length == 50.0  # measured from the start
+        assert ahead.efficiency == 1.0
+        assert result.mean_efficiency == 1.0
+
+    def test_geodesic_matches_compute_path_efficiency_for_one_subgoal(self):
+        from neurospatial.behavior.navigation import (
+            compute_path_efficiency,
+            subgoal_efficiency,
+        )
+
+        env = self._corridor()
+        s = np.linspace(0, 1, 50)
+        positions = np.column_stack([5 + 90 * s, -8 + 16 * s])
+        times = s * 5
+        goal = positions[-1]
+
+        sub = subgoal_efficiency(env, times, positions, goal)
+        direct = compute_path_efficiency(env, times, positions, goal)
+
+        (segment,) = sub.segment_results
+        assert segment.traveled_length == pytest.approx(direct.traveled_length)
+        assert segment.shortest_length == pytest.approx(direct.shortest_length)
+        assert segment.efficiency == pytest.approx(1.0)
+
+    def test_subgoals_of_wrong_shape_raise(self):
+        from neurospatial.behavior.navigation import subgoal_efficiency
+
+        env = self._corridor()
+        positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
+        with pytest.raises(ValueError, match="one coordinate per position dimension"):
+            subgoal_efficiency(env, np.arange(21) / 10, positions, np.array([[50.0]]))
 
 
 class TestErrorHandling:

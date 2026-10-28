@@ -2763,32 +2763,6 @@ def heading_direction_labels(
 # =============================================================================
 
 
-def _polyline_length(
-    positions: Any,
-    *,
-    metric: DistanceMetric,
-    env: Environment | None,
-) -> float:
-    """Length of one continuous polyline, with no time support.
-
-    Parameters
-    ----------
-    positions : array-like, shape (n_samples, n_dims)
-        Positions of a path already known to be continuously observed.
-    metric : {"euclidean", "geodesic"}
-    env : Environment, optional
-        Required when ``metric="geodesic"``.
-    """
-    from neurospatial.behavior.trajectory import compute_step_lengths
-
-    positions = np.asarray(positions, dtype=float)
-    if positions.ndim != 2:
-        raise ValueError(
-            f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"
-        )
-    return float(np.sum(compute_step_lengths(positions, metric=metric, env=env)))
-
-
 def _require_path_metric(metric: str, *, call: str) -> None:
     """Raise unless ``metric`` is a path-length metric.
 
@@ -2817,21 +2791,27 @@ def _require_path_metric(metric: str, *, call: str) -> None:
 
 def _observed_path_length(
     positions: NDArray[np.float64],
-    support: ObservationSupport,
+    sample_valid: NDArray[np.bool_],
+    interval_mask: NDArray[np.bool_],
     *,
     metric: DistanceMetric,
     env: Environment | None,
+    call: str,
 ) -> tuple[float, bool]:
     """Path length over usable intervals, and whether every interval counted.
 
     Parameters
     ----------
     positions : ndarray, shape (n_samples, n_dims)
-    support : ObservationSupport
-        Resolved from the same samples.
+    sample_valid : ndarray of bool, shape (n_samples,)
+        ``ObservationSupport.sample_valid`` of the same samples.
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        ``ObservationSupport.interval_mask`` of the same samples.
     metric : {"euclidean", "geodesic"}
     env : Environment or None
         Required for ``metric="geodesic"``.
+    call : str
+        Public function name, used in messages.
 
     Returns
     -------
@@ -2845,31 +2825,38 @@ def _observed_path_length(
         Missing samples before the first or after the last valid sample are
         left out, as if their rows were deleted.
     """
-    from neurospatial.behavior.trajectory import (
-        _observed_cumulative,
-        compute_step_lengths,
-    )
-
+    # One step per usable gap, from the valid sample before it to the one
+    # ending it; only usable steps are measured.
+    starts, ends = _observed_steps(positions, sample_valid, interval_mask)
     if metric == "euclidean":
-        steps, _ = _observed_cumulative(positions, support)
+        steps = np.linalg.norm(ends - starts, axis=1)
     else:
-        valid = np.flatnonzero(support.sample_valid)
-        steps = np.full(support.interval_mask.size, np.nan)
-        if valid.size > 1:
-            with np.errstate(invalid="ignore"):
-                steps[valid[1:] - 1] = compute_step_lengths(
-                    positions[valid], metric="geodesic", env=env
-                )
-    # The step of a gap sits on the interval ending at its next valid sample.
-    gap_ends = support.interval_mask & support.sample_valid[1:]
-    counted = gap_ends & ~np.isnan(steps)
-    observed = np.flatnonzero(support.sample_valid)
+        if env is None:
+            raise ValueError(
+                "env parameter is required when metric='geodesic'. "
+                "Provide the Environment instance, or use metric='euclidean' "
+                "for straight-line distances."
+            )
+        from neurospatial.behavior._environment_paths import EnvironmentPaths
+
+        require_cartesian(
+            env.coordinate_system,
+            f"{call}(metric='geodesic')",
+            why=(
+                "positions are allocentric Cartesian positions, located in the "
+                "environment's bins."
+            ),
+            fix="use an allocentric environment, or metric='euclidean'",
+        )
+        steps = EnvironmentPaths(env).between(starts, ends)
+    counted = ~np.isnan(steps)
+    observed = np.flatnonzero(sample_valid)
     span = (
-        support.interval_mask[observed[0] : observed[-1]]
+        interval_mask[observed[0] : observed[-1]]
         if observed.size
-        else support.interval_mask[:0]
+        else interval_mask[:0]
     )
-    complete = bool(span.size and span.all() and np.array_equal(counted, gap_ends))
+    complete = bool(span.size and span.all() and counted.all())
     if not counted.any():
         return float("nan"), complete
     return float(steps[counted].sum()), complete
@@ -2989,7 +2976,14 @@ def traveled_path_length(
         break_before=break_before,
         result="no distance was observed",
     )
-    length, _ = _observed_path_length(positions_arr, support, metric=metric, env=env)
+    length, _ = _observed_path_length(
+        positions_arr,
+        support.sample_valid,
+        support.interval_mask,
+        metric=metric,
+        env=env,
+        call="traveled_path_length",
+    )
     return length
 
 
@@ -3279,17 +3273,28 @@ def angular_efficiency(
         break_before=break_before,
         result="the angular efficiency is NaN",
     )
-    starts, ends = _observed_steps(positions_arr, support)
+    starts, ends = _observed_steps(
+        positions_arr, support.sample_valid, support.interval_mask
+    )
     return _angular_efficiency(starts, ends, goal, call="angular_efficiency")
 
 
 def _observed_steps(
-    positions: NDArray[np.float64], support: ObservationSupport
+    positions: NDArray[np.float64],
+    sample_valid: NDArray[np.bool_],
+    interval_mask: NDArray[np.bool_],
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Start and end positions of each usable step between valid samples.
 
     A bridged stretch of missing samples is one step, from the valid sample
     before it to the valid sample after it.
+
+    Parameters
+    ----------
+    positions : ndarray, shape (n_samples, n_dims)
+    sample_valid, interval_mask : ndarray of bool
+        ``ObservationSupport.sample_valid`` (n_samples,) and
+        ``ObservationSupport.interval_mask`` (n_samples - 1,).
 
     Returns
     -------
@@ -3297,8 +3302,8 @@ def _observed_steps(
     """
     from neurospatial._intervals import gap_endpoints
 
-    first, last, _ = gap_endpoints(support.sample_valid)
-    counted = support.interval_mask & support.sample_valid[1:]
+    first, last, _ = gap_endpoints(sample_valid)
+    counted = interval_mask & sample_valid[1:]
     return positions[first[counted]], positions[last[counted]]
 
 
@@ -3336,101 +3341,212 @@ def _angular_efficiency(
 
 def subgoal_efficiency(
     env: Environment,
-    positions: NDArray[np.float64],
-    subgoals: NDArray[np.float64],
+    times: ArrayLike,
+    positions: ArrayLike,
+    subgoals: ArrayLike,
     *,
     metric: DistanceMetric = "geodesic",
+    max_gap: float | None = DEFAULT_MAX_GAP,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> SubgoalEfficiencyResult:
     """Compute path efficiency decomposed by subgoals.
+
+    The path is cut at the closest approach to each subgoal in turn, and each
+    piece is scored like :func:`compute_path_efficiency`: segment 1 runs from
+    the first measured sample to the closest approach to subgoal 1, segment
+    2 from there to the closest approach to subgoal 2 after it, and so on.
 
     Parameters
     ----------
     env : Environment
         Spatial environment.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Trajectory positions.
-    subgoals : NDArray[np.float64], shape (n_subgoals, n_dims)
-        Ordered sequence of subgoals.
+    times : ArrayLike, shape (n_samples,)
+        Sample times in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples, n_dims) or (n_samples,)
+        Position coordinates in allocentric frame. Rows with a non-finite
+        coordinate are missing.
+    subgoals : ArrayLike, shape (n_subgoals, n_dims) or (n_dims,)
+        Ordered sequence of subgoals, in the coordinates and units of
+        ``positions``. A single row is one subgoal.
     metric : {"geodesic", "euclidean"}, default="geodesic"
-        Distance metric.
+        Distance metric for path lengths and for finding the closest
+        approach, as in :func:`compute_path_efficiency`.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
+    epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
+        Half-open ``[start, stop)`` windows in seconds, on the clock of
+        ``times``. Only samples inside a window are searched for the closest
+        approach, and a step must lie inside one window.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
     SubgoalEfficiencyResult
-        Per-segment efficiency and aggregated metrics.
+        One :class:`PathEfficiencyResult` per subgoal and the derived mean
+        and weighted efficiencies. A segment's efficiency is NaN unless it is
+        fully observed; a segment of a single sample (the subgoal was never
+        approached) has NaN traveled length, efficiency and angular
+        efficiency, and its ``shortest_length`` is still the distance from
+        its start to the subgoal.
+
+    Raises
+    ------
+    ValueError
+        If the inputs are empty or malformed, ``metric`` is not recognized,
+        ``subgoals`` does not have one finite coordinate per position
+        dimension, or (geodesic) a subgoal or the first measured position is
+        outside the environment.
+
+    Warns
+    -----
+    UserWarning
+        When a subgoal is never approached: the closest measured sample after
+        the previous subgoal is the segment's own start (and is not at the
+        subgoal), so the animal never got closer to it.
+
+    Notes
+    -----
+    A NaN row is bridged like a deleted row when its valid neighbours are no
+    more than ``max_gap`` apart; only a longer gap, an ``epochs`` edge or a
+    declared break splits the path, and a segment containing such a split is
+    not fully observed. The closest approach is searched among measured
+    samples only: finite coordinates, inside ``epochs`` and (geodesic) inside
+    the environment.
 
     Examples
     --------
+    A straight run East through a subgoal at x = 5 cm to the goal at 10 cm:
+
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> from neurospatial.behavior import subgoal_efficiency
     >>> positions = np.c_[np.arange(11.0), np.zeros(11)]
+    >>> times = np.arange(11) / 10
     >>> env = Environment.from_samples(positions, bin_size=1.0)
     >>> subgoals = np.array([[5.0, 0.0], [10.0, 0.0]])
-    >>> result = subgoal_efficiency(env, positions, subgoals, metric="euclidean")
+    >>> result = subgoal_efficiency(env, times, positions, subgoals, metric="euclidean")
+    >>> [seg.traveled_length for seg in result.segment_results]
+    [5.0, 5.0]
+    >>> result.mean_efficiency
+    1.0
     """
-    subgoals = np.asarray(subgoals)
-    if subgoals.ndim == 1:
-        subgoals = subgoals.reshape(1, -1)
+    import warnings
 
-    n_subgoals = len(subgoals)
-    segment_results = []
+    from neurospatial._observation import validated_observations
+    from neurospatial._stacklevel import _external_stacklevel
 
-    current_start_idx = 0
-
-    for i in range(n_subgoals):
-        subgoal = subgoals[i]
-
-        distances_to_subgoal = np.linalg.norm(positions - subgoal, axis=1)
-        arrival_idx = (
-            np.argmin(distances_to_subgoal[current_start_idx:]) + current_start_idx
+    call = "subgoal_efficiency"
+    _require_path_metric(metric, call=call)
+    times_arr, positions_arr, support = validated_observations(
+        times,
+        positions,
+        call=call,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="no path was observed",
+    )
+    n_dims = positions_arr.shape[1]
+    subgoal_arr = np.asarray(subgoals, dtype=float)
+    if subgoal_arr.ndim == 1:
+        subgoal_arr = subgoal_arr.reshape(1, -1)
+    if subgoal_arr.ndim != 2 or subgoal_arr.shape[0] == 0:
+        raise ValueError(
+            _format_error(
+                f"{call}() needs subgoals of shape (n_subgoals, {n_dims}); got "
+                f"shape {np.shape(subgoals)}.",
+                why="each row is one subgoal position, visited in order.",
+                fix=f"pass an array with one row of {n_dims} coordinates per subgoal.",
+            )
         )
+    for subgoal in subgoal_arr:
+        _validated_goal(subgoal, n_dims, call=call)
 
-        segment_positions = positions[current_start_idx : arrival_idx + 1]
-
-        if len(segment_positions) >= 2:
-            start_pos = segment_positions[0]
-
-            traveled = _polyline_length(segment_positions, metric=metric, env=env)
-            shortest = shortest_path_length(env, start_pos, subgoal, metric=metric)
-
-            ang_eff = _angular_efficiency(
-                segment_positions[:-1],
-                segment_positions[1:],
-                subgoal,
-                call="subgoal_efficiency",
-            )
-
-            segment_results.append(
-                PathEfficiencyResult(
-                    traveled_length=traveled,
-                    shortest_length=shortest,
-                    time_efficiency=None,
-                    angular_efficiency=ang_eff,
-                    start_position=start_pos,
-                    goal_position=subgoal,
-                    metric=metric,
-                    fully_observed=True,
+    measured = support.sample_valid.copy()
+    if support.epochs is not None:
+        measured &= times_in_intervals(support.epochs, times_arr)
+    segment_results = []
+    start: int | None = None
+    for index, subgoal in enumerate(subgoal_arr):
+        distances = _goal_distances(
+            positions_arr, subgoal, metric=metric, env=env, call=call
+        )
+        rows = np.flatnonzero(measured & ~np.isnan(distances))
+        if start is None:
+            if not rows.size:
+                raise ValueError(
+                    _format_error(
+                        f"{call}() found no measured position to start from.",
+                        why=(
+                            "every sample is missing, outside epochs or (geodesic) "
+                            "outside the environment."
+                        ),
+                        fix="check positions, epochs and the environment.",
+                    )
                 )
+            start = int(rows[0])
+        rows = rows[rows >= start]
+        arrival = int(rows[np.argmin(distances[rows])]) if rows.size else start
+        if arrival == start and distances[start] > 0:
+            warnings.warn(
+                _format_error(
+                    f"{call}(): subgoal {index} at {subgoal.tolist()} is never "
+                    "approached; the closest measured sample after the previous "
+                    "subgoal is the segment's start.",
+                    why=(
+                        "the animal never got closer to this subgoal, so its "
+                        "segment has no path and its efficiency is NaN."
+                    ),
+                    fix=(
+                        "check the subgoal order and coordinates, or the trial "
+                        "window passed as times and positions."
+                    ),
+                ),
+                UserWarning,
+                stacklevel=_external_stacklevel(),
             )
-        else:
-            segment_results.append(
-                PathEfficiencyResult(
-                    traveled_length=0.0,
-                    shortest_length=0.0,
-                    time_efficiency=None,
-                    angular_efficiency=1.0,
-                    start_position=positions[current_start_idx],
-                    goal_position=subgoal,
-                    metric=metric,
-                    fully_observed=True,
-                )
+        segment = slice(start, arrival + 1)
+        traveled, complete = _observed_path_length(
+            positions_arr[segment],
+            support.sample_valid[segment],
+            support.interval_mask[start:arrival],
+            metric=metric,
+            env=env,
+            call=call,
+        )
+        segment_results.append(
+            PathEfficiencyResult(
+                traveled_length=traveled,
+                shortest_length=float(distances[start]),
+                time_efficiency=None,
+                angular_efficiency=_angular_efficiency(
+                    *_observed_steps(
+                        positions_arr[segment],
+                        support.sample_valid[segment],
+                        support.interval_mask[start:arrival],
+                    ),
+                    subgoal,
+                    call=call,
+                ),
+                start_position=positions_arr[start],
+                goal_position=subgoal,
+                metric=metric,
+                fully_observed=complete,
             )
-
-        current_start_idx = arrival_idx
+        )
+        start = arrival
 
     return SubgoalEfficiencyResult(
-        segment_results=tuple(segment_results), subgoal_positions=subgoals
+        segment_results=tuple(segment_results), subgoal_positions=subgoal_arr
     )
 
 
@@ -3578,10 +3694,17 @@ def compute_path_efficiency(
         _validate_reference_speed(reference_speed, call="compute_path_efficiency")
 
     traveled, complete = _observed_path_length(
-        positions_arr, support, metric=metric, env=env
+        positions_arr,
+        support.sample_valid,
+        support.interval_mask,
+        metric=metric,
+        env=env,
+        call="compute_path_efficiency",
     )
     ang_eff = _angular_efficiency(
-        *_observed_steps(positions_arr, support), goal, call="compute_path_efficiency"
+        *_observed_steps(positions_arr, support.sample_valid, support.interval_mask),
+        goal,
+        call="compute_path_efficiency",
     )
     # Missing rows before the first or after the last observed sample are
     # deleted rows: the path starts and ends where the animal was observed.
