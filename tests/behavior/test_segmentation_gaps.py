@@ -137,22 +137,23 @@ def test_reference_laps_do_not_span_pause(lap_track):
 
 
 def test_auto_laps_keep_one_global_template(lap_track):
+    """The first circuit is the template for every recording."""
     r = lap_track
-    template_size = r.times.size // 10
     actual = detect_laps(r.position_bins, r.times, r.env, method="auto")
-    expected = []
-    for recording in (slice(0, 1000), slice(1000, 2000)):
-        start = max(recording.start, template_size)
-        expected.extend(
-            detect_laps(
-                r.position_bins[start : recording.stop],
-                r.times[start : recording.stop],
-                r.env,
-                method="reference",
-                reference_lap=r.position_bins[:template_size],
-            )
-        )
+    first = actual[0]
+    in_first = (r.times >= first.start_time) & (r.times < first.end_time)
+    expected = detect_laps(
+        r.position_bins,
+        r.times,
+        r.env,
+        method="reference",
+        reference_lap=r.position_bins[in_first],
+    )
     assert actual == expected
+    assert first.start_time == r.times[0]
+    # One 40 s lap; the boundary is the first sample in the start bin, which
+    # the animal takes 1 s to cross.
+    assert first.end_time - first.start_time == pytest.approx(40.0, abs=1.0)
     assert any(lap.start_time >= 1100 for lap in actual)
 
 

@@ -1,5 +1,7 @@
 """Tests for lap detection functions."""
 
+import itertools
+
 import numpy as np
 import pytest
 from shapely.geometry import Point
@@ -68,9 +70,9 @@ class TestDetectLaps:
 
         from neurospatial.behavior.segmentation import detect_laps
 
-        # theta increases, so the trajectory is counter-clockwise. With the auto
-        # template consuming the first lap, one CCW lap is detected; requesting
-        # the opposite direction must find none.
+        # theta increases, so the trajectory is counter-clockwise. The auto
+        # template is the first circuit, itself the first lap, so both laps
+        # are found; requesting the opposite direction must find none.
         laps_cw = detect_laps(
             position_bins,
             times,
@@ -91,7 +93,7 @@ class TestDetectLaps:
         # Direction filter must discriminate: CCW motion yields a CCW lap and no
         # CW laps (a sign error in the direction test would flip these).
         assert len(laps_cw) == 0
-        assert len(laps_ccw) == 1
+        assert len(laps_ccw) == 2
         assert all(lap.direction == "counter-clockwise" for lap in laps_ccw)
 
     def test_detect_laps_reference_method(self):
@@ -339,12 +341,18 @@ class TestLapRoundTrip:
             position_bins, times, env, method="auto", min_overlap=0.7, direction="both"
         )
 
-        # The auto template consumes the first lap, so the recovered count is
-        # n_laps or n_laps - 1 (one boundary lap dropped); both extremes catch a
-        # break in either half of the simulate->detect stack.
-        assert len(laps) in {n_laps - 1, n_laps}, (
-            f"Simulated {n_laps} laps but detected {len(laps)}"
+        # The simulator's laps are one-way traversals of the corridor; a lap
+        # found by detect_laps is a complete circuit, out to the far end and
+        # back to the start, so 5 traversals hold 2 complete circuits.
+        assert len(laps) == n_laps // 2, (
+            f"Simulated {n_laps} traversals but detected {len(laps)} circuits"
         )
+        # Each circuit starts and ends at the start of the corridor.
+        start_x = positions[0, 0]
+        for lap in laps:
+            for time in (lap.start_time, lap.end_time):
+                x = positions[np.searchsorted(times, time), 0]
+                assert abs(x - start_x) <= 2 * 4.0  # within the start zone
 
 
 class TestLapDirection:
@@ -422,3 +430,96 @@ class TestRegionLaps:
         ]
         assert [lap.direction for lap in laps] == ["counter-clockwise"] * 2
         assert all(np.isnan(lap.overlap_score) for lap in laps)
+
+
+class TestTemplateLaps:
+    """Template laps are found whole at any speed, with exact boundaries."""
+
+    RADIUS = 30.0
+    BIN = 2.0
+    FS = 20.0  # Hz
+    DURATIONS = np.array([10.0, 20.0, 5.0, 15.0, 8.0])  # s per lap
+
+    def _ring(self):
+        """Counter-clockwise laps from angle 0, each at its own constant speed."""
+        bounds = np.r_[0.0, np.cumsum(self.DURATIONS)]
+        times = np.arange(0.0, bounds[-1] + 0.5 / self.FS, 1.0 / self.FS)
+        lap = np.clip(np.searchsorted(bounds, times, side="right") - 1, 0, 4)
+        theta = 2 * np.pi * (lap + (times - bounds[lap]) / self.DURATIONS[lap])
+        positions = np.c_[
+            50 + self.RADIUS * np.cos(theta), 50 + self.RADIUS * np.sin(theta)
+        ]
+        env = Environment.from_samples(positions, bin_size=self.BIN)
+        return env, env.bin_at(positions), times, bounds
+
+    def _check(self, laps, bounds):
+        assert len(laps) == len(self.DURATIONS)
+        speeds = 2 * np.pi * self.RADIUS / self.DURATIONS  # cm/s
+        # Each boundary is the sample nearest the start line, so it is off by
+        # at most the time to cross one bin, plus one sample.
+        for k, lap in enumerate(laps):
+            tolerance = self.BIN / speeds[k] + 1.0 / self.FS
+            assert lap.start_time == pytest.approx(bounds[k], abs=tolerance)
+            end_tolerance = self.BIN / speeds[min(k + 1, 4)] + 1.0 / self.FS
+            if k + 1 < len(self.DURATIONS):
+                assert lap.end_time == pytest.approx(bounds[k + 1], abs=end_tolerance)
+            assert lap.direction == "counter-clockwise"
+        assert laps[0].start_time == 0.0
+        # Laps tile the recording: each ends where the next begins.
+        assert all(a.end_time == b.start_time for a, b in itertools.pairwise(laps))
+
+    def test_auto_laps_at_varying_speed(self):
+        from neurospatial.behavior.segmentation import detect_laps
+
+        env, bins, times, bounds = self._ring()
+        laps = detect_laps(bins, times, env, method="auto")
+        self._check(laps, bounds)
+        assert laps[0].overlap_score == 1.0  # the first circuit is the template
+
+    def test_reference_lap_from_a_fast_lap_finds_slow_laps(self):
+        from neurospatial.behavior.segmentation import detect_laps
+
+        env, bins, times, bounds = self._ring()
+        fast = bins[(times >= bounds[2]) & (times < bounds[3])]  # the 5 s lap
+        # The reference starts a quarter lap later; laps then start there.
+        quarter = (times >= bounds[2] + 1.25) & (times < bounds[3])
+        rotated = np.r_[bins[quarter], fast[: len(fast) - quarter.sum()]]
+        laps = detect_laps(bins, times, env, method="reference", reference_lap=fast)
+        self._check(laps, bounds)
+        rotated_laps = detect_laps(
+            bins, times, env, method="reference", reference_lap=rotated
+        )
+        # Start line a quarter turn on: four complete laps between passes.
+        assert len(rotated_laps) == 4
+        assert rotated_laps[0].start_time == pytest.approx(10.0 / 4, abs=0.2)
+
+    def test_turn_back_is_not_a_lap(self):
+        """Half a lap out and back through the start line is not a lap."""
+        from neurospatial.behavior.segmentation import detect_laps
+
+        env, bins, times, _ = self._ring()
+        theta = np.r_[np.linspace(0, np.pi, 60), np.linspace(np.pi, -0.5, 60)]
+        half = np.c_[50 + self.RADIUS * np.cos(theta), 50 + self.RADIUS * np.sin(theta)]
+        laps = detect_laps(
+            env.bin_at(half),
+            np.arange(theta.size) / self.FS,
+            env,
+            method="reference",
+            reference_lap=bins[times < 10.0],
+        )
+        assert laps == []
+
+    @pytest.mark.parametrize("min_overlap", [0.0, -0.5, 1.5, np.nan])
+    def test_min_overlap_outside_unit_interval_raises(self, min_overlap):
+        from neurospatial.behavior.segmentation import detect_laps
+
+        env, bins, times, _ = self._ring()
+        with pytest.raises(ValueError, match=r"min_overlap must be in \(0, 1\]"):
+            detect_laps(bins, times, env, min_overlap=min_overlap)
+
+    def test_unknown_direction_raises(self):
+        from neurospatial.behavior.segmentation import detect_laps
+
+        env, bins, times, _ = self._ring()
+        with pytest.raises(ValueError, match="direction must be one of"):
+            detect_laps(bins, times, env, direction="cw")  # type: ignore[arg-type]

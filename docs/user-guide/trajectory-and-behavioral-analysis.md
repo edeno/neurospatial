@@ -832,12 +832,12 @@ Lap detection identifies repeating circular paths (e.g., circular track running)
 
 ### Auto Template Detection
 
-Automatically extracts template lap from trajectory.
+Uses the first complete circuit of the recording as the template lap.
 
 ```python
 from neurospatial.behavior.segmentation import detect_laps
 
-# Auto-detect laps using first 10% as template
+# Auto-detect laps; the first circuit is the template and the first lap
 laps = detect_laps(
     position_bins,
     times,
@@ -854,10 +854,16 @@ for i, lap in enumerate(laps):
 ```
 
 **Algorithm**:
-1. Extract template from first 10% of trajectory
-2. Sliding window search (70%-130% of template length)
-3. Compute Jaccard overlap for each window
-4. Detect laps exceeding `min_overlap` threshold
+1. Template: from the first sample to the first return to its bin after a
+   trip to the far side of the track (a bin at least half the greatest path
+   distance away)
+2. Candidate lap boundaries: each pass through the template's first bin (or
+   a neighbor), at the sample nearest that bin
+3. A lap ends at the first boundary where the bins visited since it began
+   overlap the template's bins (both widened by one ring of neighbors) with
+   Jaccard index >= `min_overlap`; a turn back stays inside the lap
+4. Laps tile the recording as `[boundary, next boundary)`, so laps run at
+   any speed are found whole
 
 ---
 
@@ -888,7 +894,10 @@ laps = detect_laps(
 
 ### Region Method
 
-Define laps as segments between start region crossings.
+Define laps as segments between start region entries. A lap must reach the
+far side of the track (a bin at least half the greatest path distance from the
+start region), so tracking jitter across the region edge does not split a lap.
+Region laps have `overlap_score = NaN` (no template).
 
 ```python
 from neurospatial import Regions
@@ -921,7 +930,9 @@ laps = detect_laps(
 
 Automatically classifies laps as clockwise or counter-clockwise.
 
-**Algorithm**: Uses shoelace formula for signed area
+**Algorithm**: Shoelace formula for the signed area of the lap path closed
+back to its start, so the answer does not depend on the coordinate origin or
+on where the lap starts
 - Positive area → counter-clockwise
 - Negative area → clockwise
 - Non-2D or degenerate → "unknown"

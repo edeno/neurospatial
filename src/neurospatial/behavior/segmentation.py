@@ -410,7 +410,8 @@ class Lap:
     direction : str
         Direction of lap: 'clockwise', 'counter-clockwise', or 'unknown'.
     overlap_score : float
-        Jaccard overlap with the template lap, in [0, 1], for the
+        Jaccard overlap of the lap's bins with the template lap's bins, both
+        widened by one ring of neighbor bins, in [0, 1], for the
         ``'auto'`` and ``'reference'`` methods; NaN for the ``'region'``
         method, which uses no template.
     """
@@ -1266,36 +1267,44 @@ def _segment_by_velocity_contiguous(
 # =============================================================================
 
 
-def _compute_overlap_jaccard(
-    bins1: NDArray[np.int64], bins2: NDArray[np.int64]
+def _widened_overlap(
+    template: NDArray[np.bool_],
+    bins: NDArray[np.int64],
+    adjacency: Any,
 ) -> float:
-    """Compute Jaccard overlap between two bin sequences.
+    """Jaccard index of two paths, each widened by one ring of neighbor bins.
 
     Parameters
     ----------
-    bins1 : NDArray[np.int64]
-        First sequence of bin indices.
-    bins2 : NDArray[np.int64]
-        Second sequence of bin indices.
+    template : NDArray[np.bool_], shape (n_bins,)
+        The template's widened bins, from :func:`_widen`.
+    bins : NDArray[np.int64], shape (n_samples,)
+        Bin sequence of a candidate lap.
+    adjacency : scipy.sparse array, shape (n_bins, n_bins)
+        Bin connectivity.
 
     Returns
     -------
     float
-        Jaccard coefficient: |intersection| / |union|, range [0, 1].
+        |A & B| / |A | B| of the widened bin sets, in [0, 1].
     """
-    if len(bins1) == 0 or len(bins2) == 0:
-        return 0.0
+    lap = _widen(bins, adjacency)
+    union = np.count_nonzero(template | lap)
+    return float(np.count_nonzero(template & lap) / union) if union else 0.0
 
-    set1 = set(bins1)
-    set2 = set(bins2)
 
-    intersection = len(set1 & set2)
-    union = len(set1 | set2)
+def _widen(bins: NDArray[np.int64], adjacency: Any) -> NDArray[np.bool_]:
+    """Bins visited by a path plus their neighbors, as a mask over bins.
 
-    if union == 0:
-        return 0.0
-
-    return intersection / union
+    Two traversals of the same route pass through slightly different bins:
+    a sample every few centimeters steps over some bins, and a path near a
+    bin edge visits one row or the other. Widening both paths by one ring
+    of neighbors makes the overlap measure the route, not the sampling.
+    """
+    visited = np.zeros(adjacency.shape[0], dtype=bool)
+    visited[bins] = True
+    widened: NDArray[np.bool_] = visited | (adjacency @ visited > 0)
+    return widened
 
 
 def _detect_lap_direction(
@@ -1369,20 +1378,21 @@ def detect_laps(
         Environment containing spatial structure.
     method : {'auto', 'reference', 'region'}, optional
         Method for detecting laps:
-        - 'auto': Extract template from first 10% of trajectory (default)
+        - 'auto': the first complete circuit is the template (default)
         - 'reference': Use user-provided reference_lap
-        - 'region': Detect laps as segments between start_region crossings
+        - 'region': Detect laps as segments between start_region entries
     min_overlap : float, optional
-        Minimum Jaccard overlap with template to count as lap [0, 1].
-        Default is 0.8. Not used for 'region' method.
+        Minimum Jaccard overlap, in (0, 1], between the bins a lap visits and
+        the template's bins (each widened by one ring of neighbors). Default
+        is 0.8. Not used for 'region' method.
     direction : {'both', 'clockwise', 'counter-clockwise'}, optional
         Which lap directions to include:
         - 'both': all laps (default)
         - 'clockwise': only clockwise laps
         - 'counter-clockwise': only counter-clockwise laps
     reference_lap : NDArray[np.int64] | None, optional
-        Reference lap bin sequence for 'reference' method.
-        Required when method='reference'.
+        Bin sequence of one complete lap, for the 'reference' method; its
+        first bin marks where laps start. Required when method='reference'.
     start_region : str | None, optional
         Name of start region for 'region' method.
         Required when method='region'.
@@ -1413,9 +1423,12 @@ def detect_laps(
     Raises
     ------
     ValueError
-        If method is not one of 'auto', 'reference', 'region'.
+        If method is not one of 'auto', 'reference', 'region', direction is
+        not one of 'both', 'clockwise', 'counter-clockwise', or min_overlap
+        is not in (0, 1].
     ValueError
-        If method='reference' but reference_lap not provided.
+        If method='reference' but reference_lap is not provided, is empty,
+        or holds bins outside the environment.
     ValueError
         If method='region' but start_region not provided.
     ValueError
@@ -1439,18 +1452,29 @@ def detect_laps(
     not crossing a ``break_before``) is analyzed as a separate recording;
     no segment spans a pause.
 
-    Region entries are paired within each recording. Reference and auto
-    searches stay within it. The auto template still uses the first 10%
-    of the whole input, before any recording splits; samples outside the
-    environment are left out of it as if their rows were deleted.
+    Laps never span recordings. Samples outside the environment are left
+    out as if their rows were deleted.
 
     **Lap Detection Methods:**
 
-    - **Auto**: Automatically extracts template from first 10% of trajectory,
-      then searches for repeating patterns using sliding window with Jaccard
-      overlap.
-    - **Reference**: Uses user-provided reference lap as template, useful when
-      first lap is atypical or for comparing to a canonical lap pattern.
+    - **Reference**: The first bin of ``reference_lap`` is the start line.
+      Each pass through it (the anchor bin and its neighbors, so a fast
+      animal cannot step over it) marks a candidate boundary, placed at the
+      pass's sample nearest the anchor bin. A lap runs from one boundary to
+      the next boundary at which the bins visited since the lap began
+      overlap the template's bins with Jaccard index >= ``min_overlap``.
+      Both bin sets are widened by one ring of neighbors first, so the
+      overlap compares routes rather than which bins a sparse sampling
+      happened to hit (``overlap_score`` reports this widened index).
+      Boundaries come from places, not sample counts, so laps run at any
+      speed are found whole; a pass without enough overlap (a turn back)
+      stays inside the lap. Each lap covers ``[boundary, next boundary)``.
+    - **Auto**: As 'reference', with the first complete circuit as the
+      template: from the first observed sample to the first return to its
+      bin after a trip to the far side of the track (a bin at least half the
+      greatest path distance away). This first circuit is itself the first
+      lap. Useful when no canonical lap is at hand; use 'reference' when the
+      first circuit is atypical.
     - **Region**: Defines laps as segments between entries to a start
       region, useful for well-controlled tasks with clear start zones. A lap
       must reach the far side of the track, a bin at least half the greatest
@@ -1477,8 +1501,8 @@ def detect_laps(
 
     Examples
     --------
-    Detect laps on a circular track. The first 10% of this recording contains
-    a complete lap, so it can serve as the automatic template:
+    Detect laps on a circular track. The first complete circuit is the
+    automatic template, and each of the ten circuits is one lap:
 
     >>> import numpy as np
     >>> from neurospatial import Environment
@@ -1491,8 +1515,8 @@ def detect_laps(
     >>> position_bins = env.bin_at(positions)
     >>> times = np.linspace(0, 60, 1801)
     >>> laps = detect_laps(position_bins, times, env, method="auto")
-    >>> len(laps) >= 1
-    True
+    >>> len(laps)
+    10
 
     Detect laps with user-provided reference:
 
@@ -1580,6 +1604,26 @@ def detect_laps(
         raise ValueError(
             f"method must be one of 'auto', 'reference', 'region', got '{method}'"
         )
+    if direction not in ("both", "clockwise", "counter-clockwise"):
+        raise ValueError(
+            _format_error(
+                f"direction must be one of 'both', 'clockwise', "
+                f"'counter-clockwise'; got {direction!r}.",
+                why="an unknown direction would silently match no lap.",
+                fix="pass direction='both', 'clockwise' or 'counter-clockwise'.",
+            )
+        )
+    if method != "region" and not (
+        np.isfinite(min_overlap) and 0.0 < min_overlap <= 1.0
+    ):
+        raise ValueError(
+            _format_error(
+                f"min_overlap must be in (0, 1]; got {min_overlap!r}.",
+                why="it is the smallest Jaccard index between a lap's bins and "
+                "the template's bins; 0 would accept any stretch as a lap.",
+                fix="pass min_overlap=0.8 (the default) or another value in (0, 1].",
+            )
+        )
 
     # Validate method-specific requirements
     if method == "reference" and reference_lap is None:
@@ -1624,14 +1668,9 @@ def detect_laps(
     laps: list[Lap] = []
     if method == "region":
         assert start_region is not None
-        from neurospatial.ops.distance import distance_field
-
-        # Path distance from the start region to every bin, once per call.
-        from_start = distance_field(
-            env.connectivity, env.bins_in_region(start_region), weight="distance"
+        from_start, far_distance = _distances_from(
+            env, env.bins_in_region(start_region)
         )
-        finite = from_start[np.isfinite(from_start)]
-        far_distance = 0.5 * float(finite.max()) if finite.size else 0.0
         for run in runs:
             laps.extend(
                 _detect_laps_region_contiguous(
@@ -1645,28 +1684,42 @@ def detect_laps(
                 )
             )
         return laps
-    if method == "auto":
-        # The first 10% of the located samples, as if missing rows were
-        # deleted; the search starts after the template's last sample.
-        located = np.flatnonzero(_located(position_bins, env))
-        template_samples = located[: max(1, located.size // 10)]
-        template = position_bins[template_samples]
-        template_stop = int(template_samples[-1]) + 1 if template_samples.size else 0
-    else:
+    if method == "reference":
         assert reference_lap is not None
-        template = reference_lap
-        template_stop = 0
+        from neurospatial.environment import _validate_target_bins
+
+        template = _validate_target_bins(
+            reference_lap,
+            n_bins=env.n_bins,
+            coordinates=env.coordinate_system,
+            operation="detect_laps(method='reference')",
+            argument="reference_lap",
+        )
+        if template.size == 0:
+            raise ValueError(
+                "reference_lap is empty; pass the bin sequence of one complete "
+                "lap, for example position_bins[lap_start:lap_stop]."
+            )
+    else:
+        found = _first_circuit(position_bins, runs, env)
+        if found is None:
+            return []
+        template = found
+    anchor = int(template[0])
+    zone = _start_zone(env, anchor)
+    adjacency = nx.to_scipy_sparse_array(
+        env.connectivity, nodelist=range(env.n_bins), weight=None, format="csr"
+    )
     for run in runs:
-        # Runs hold sample indices with missing samples removed, so the
-        # template's end is located by index, not by subtraction.
-        search_start = int(np.searchsorted(run, template_stop))
         laps.extend(
             _detect_laps_search_contiguous(
                 position_bins[run],
                 times[run],
                 env,
-                template,
-                search_start,
+                template=_widen(template, adjacency),
+                adjacency=adjacency,
+                anchor=anchor,
+                zone=zone,
                 min_overlap=min_overlap,
                 direction=direction,
             )
@@ -1723,63 +1776,111 @@ def _detect_laps_region_contiguous(
     return laps
 
 
+def _distances_from(
+    env: Environment, sources: NDArray[np.int_]
+) -> tuple[NDArray[np.float64], float]:
+    """Path distance from ``sources`` to every bin, and half its finite maximum.
+
+    The second value is the "far side" threshold of the lap detectors: on a
+    closed loop of length L the farthest point from any place is L/2 away,
+    and every full circuit passes it.
+    """
+    from neurospatial.ops.distance import distance_field
+
+    distances = distance_field(env.connectivity, list(sources), weight="distance")
+    finite = distances[np.isfinite(distances)]
+    return distances, 0.5 * float(finite.max()) if finite.size else 0.0
+
+
+def _start_zone(env: Environment, anchor: int) -> NDArray[np.bool_]:
+    """The anchor bin and its graph neighbors, as a mask over bins."""
+    zone = np.zeros(env.n_bins, dtype=bool)
+    zone[anchor] = True
+    zone[list(env.connectivity.neighbors(anchor))] = True
+    return zone
+
+
+def _pass_samples(
+    position_bins: NDArray[np.int64],
+    env: Environment,
+    anchor: int,
+    zone: NDArray[np.bool_],
+) -> list[int]:
+    """One sample per pass through the start zone: the one nearest the anchor.
+
+    A pass is a maximal stretch of consecutive samples inside ``zone``. Ties
+    go to the earliest sample.
+    """
+    inside = zone[position_bins].astype(np.int8)
+    edges = np.diff(np.r_[0, inside, 0])
+    starts, stops = np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
+    # (n_samples,) distance from each sample's bin center to the anchor's
+    offsets = np.linalg.norm(
+        env.bin_centers[position_bins] - env.bin_centers[anchor], axis=1
+    )
+    return [
+        int(a + np.argmin(offsets[a:b])) for a, b in zip(starts, stops, strict=True)
+    ]
+
+
+def _first_circuit(
+    position_bins: NDArray[np.int64],
+    runs: list[NDArray[np.intp]],
+    env: Environment,
+) -> NDArray[np.int64] | None:
+    """Bins of the first complete circuit in the first recording that has one.
+
+    The circuit starts at the recording's first sample and ends at the first
+    return to that sample's bin (a pass through its start zone) after a trip
+    to the far side of the track. None when no recording completes one.
+    """
+    for run in runs:
+        bins = position_bins[run]
+        anchor = int(bins[0])
+        from_anchor, far_distance = _distances_from(env, np.array([anchor]))
+        zone = _start_zone(env, anchor)
+        reached_far = np.maximum.accumulate(from_anchor[bins] >= far_distance)
+        for stop in _pass_samples(bins, env, anchor, zone)[1:]:
+            if reached_far[stop - 1]:
+                found: NDArray[np.int64] = bins[:stop]
+                return found
+    return None
+
+
 def _detect_laps_search_contiguous(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     env: Environment,
-    template: NDArray[np.int64],
-    search_start: int,
     *,
+    template: NDArray[np.bool_],
+    adjacency: Any,
+    anchor: int,
+    zone: NDArray[np.bool_],
     min_overlap: float,
     direction: str,
 ) -> list[Lap]:
-    """Search one recording using the caller-selected global template."""
+    """Split one recording into laps at passes through the template's start."""
     laps: list[Lap] = []
-    template_length = len(template)
-
-    # Sliding window to find laps
-    i = int(search_start)
-
-    while i < len(position_bins):
-        # Try different window sizes around template length
-        best_overlap = 0.0
-        best_end = i
-
-        for window_size in range(
-            max(1, int(template_length * 0.7)),
-            min(len(position_bins) - i, int(template_length * 1.3)) + 1,
-        ):
-            end_idx = int(min(i + window_size, len(position_bins)))
-            window = position_bins[i:end_idx]
-
-            overlap = _compute_overlap_jaccard(template, window)
-
-            if overlap > best_overlap:
-                best_overlap = overlap
-                best_end = int(end_idx)
-
-        # If overlap exceeds threshold, we found a lap
-        if best_overlap >= min_overlap:
-            lap_bins = position_bins[i:best_end]
-            lap_direction = _detect_lap_direction(env.bin_centers, lap_bins)
-
-            # Filter by direction
-            if direction == "both" or lap_direction == direction:
-                laps.append(
-                    Lap(
-                        start_time=times[i],
-                        end_time=times[best_end - 1] if best_end > i else times[i],
-                        direction=lap_direction,
-                        overlap_score=best_overlap,
-                    )
+    boundaries = _pass_samples(position_bins, env, anchor, zone)
+    if not boundaries:
+        return laps
+    lap_start = boundaries[0]
+    for candidate in boundaries[1:]:
+        lap_bins = position_bins[lap_start:candidate]
+        overlap = _widened_overlap(template, lap_bins, adjacency)
+        if overlap < min_overlap:
+            continue  # a turn back or a partial circuit: keep extending
+        lap_direction = _detect_lap_direction(env.bin_centers, lap_bins)
+        if direction == "both" or lap_direction == direction:
+            laps.append(
+                Lap(
+                    start_time=float(times[lap_start]),
+                    end_time=float(times[candidate]),
+                    direction=lap_direction,
+                    overlap_score=float(overlap),
                 )
-
-            # Skip past this lap
-            i = best_end
-        else:
-            # No lap found, move forward
-            i += 1
-
+            )
+        lap_start = candidate
     return laps
 
 
