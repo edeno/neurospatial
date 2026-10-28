@@ -483,6 +483,12 @@ def run_sample_bounds(interval_mask: NDArray[np.bool_]) -> NDArray[np.intp]:
         Row ``r`` is ``(first_sample, last_sample)``, inclusive, so the run's
         samples are ``slice(first_sample, last_sample + 1)``. A sample whose
         two neighbouring intervals are both invalid belongs to no run.
+
+    Notes
+    -----
+    Read as indices into ``interval_mask`` itself, row ``r`` is the half-open
+    ``[start, stop)`` of its ``r``-th maximal stretch of True, so this also
+    finds the stretches of any Boolean array, such as samples inside a region.
     """
     padded = np.concatenate([[False], np.asarray(interval_mask, dtype=bool), [False]])
     edges = np.flatnonzero(padded[1:] != padded[:-1])

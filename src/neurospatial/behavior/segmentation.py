@@ -86,6 +86,7 @@ from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
     observed_runs,
+    run_sample_bounds,
     times_in_intervals,
 )
 from neurospatial._observation import validate_break_before
@@ -1787,10 +1788,8 @@ def _trips(
     inside = sides.in_region[position_bins]
     steps = sides.steps[position_bins]
     side = sides.side[position_bins]
-    edges = np.diff(np.r_[1, inside.astype(np.int8), 1])
-    exits, returns = np.flatnonzero(edges == -1), np.flatnonzero(edges == 1)
     trips: list[tuple[int, int, Literal["round", "back", "near"]]] = []
-    for leave, back in zip(exits.tolist(), returns.tolist(), strict=True):
+    for leave, back in run_sample_bounds(~inside).tolist():
         if back == len(inside):  # still outside when the recording stops
             break
         if steps[leave:back].max() <= sides.cut:
@@ -1804,10 +1803,8 @@ def _trips(
 
 def _goes_round(steps: NDArray[np.float64], side: NDArray[np.intp], cut: int) -> bool:
     """Whether a trip changes side while staying ``cut`` or more steps out."""
-    away = np.r_[False, steps >= cut, False]
-    starts = np.flatnonzero(~away[:-1] & away[1:])
-    stops = np.flatnonzero(away[:-1] & ~away[1:]) - 1
-    first, last = side[starts], side[stops]
+    stretches = run_sample_bounds(steps >= cut)
+    first, last = side[stretches[:, 0]], side[stretches[:, 1] - 1]
     return bool(np.any((first != last) & (first >= 0) & (last >= 0)))
 
 
@@ -1928,16 +1925,12 @@ def _pass_samples(
     A pass is a maximal stretch of consecutive samples inside ``zone``. Ties
     go to the earliest sample.
     """
-    inside = zone[position_bins].astype(np.int8)
-    edges = np.diff(np.r_[0, inside, 0])
-    starts, stops = np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
+    passes = run_sample_bounds(zone[position_bins])
     # (n_samples,) distance from each sample's bin center to the anchor's
     offsets = np.linalg.norm(
         env.bin_centers[position_bins] - env.bin_centers[anchor], axis=1
     )
-    return [
-        int(a + np.argmin(offsets[a:b])) for a, b in zip(starts, stops, strict=True)
-    ]
+    return [int(a + np.argmin(offsets[a:b])) for a, b in passes.tolist()]
 
 
 def _first_circuit(
