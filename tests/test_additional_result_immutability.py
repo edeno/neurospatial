@@ -74,8 +74,8 @@ CASES = [
         {
             "goal_labels": np.array([0, 1]),
             "distance_to_decision_boundary": np.ones(2),
-            "crossing_times": [],
-            "crossing_directions": [],
+            "crossing_times": np.array([0.5]),
+            "crossing_directions": np.array([[0, 1]], dtype=np.intp),
         },
     ),
     (

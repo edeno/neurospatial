@@ -110,6 +110,7 @@ _CASES = [
             pre_decision=_pre_decision(),
             boundary=_boundary(),
             chosen_goal=1,
+            goal_regions=("left", "right"),
         ),
         {
             "entry_time",
@@ -193,6 +194,7 @@ def test_decision_analysis_str_composes_boundary():
         pre_decision=_pre_decision(),
         boundary=boundary,
         chosen_goal=1,
+        goal_regions=("left", "right"),
     )
     assert str(boundary) in str(result)
 
@@ -201,5 +203,6 @@ def test_decision_analysis_str_composes_boundary():
         pre_decision=_pre_decision(),
         boundary=None,
         chosen_goal=None,
+        goal_regions=("left",),
     )
     assert "Decision analysis" in str(no_boundary)

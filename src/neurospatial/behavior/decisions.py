@@ -253,20 +253,44 @@ class DecisionBoundaryMetrics(ReadOnlyArraysMixin, ResultMixin):
         environment units (see :func:`distance_to_decision_boundary`). Small
         values = near the boundary = uncommitted; NaN for a sample outside
         every bin.
-    crossing_times : list[float]
-        Times when trajectory crossed a decision boundary.
-    crossing_directions : list[tuple[int, int]]
-        (from_goal_idx, to_goal_idx) for each crossing.
-        Indicates which goal regions the animal moved between.
+    crossing_times : NDArray[np.float64], shape (n_crossings,)
+        Times when the nearest goal changed, in seconds (see
+        :func:`detect_boundary_crossings`).
+    crossing_directions : NDArray[np.intp], shape (n_crossings, 2)
+        ``(from_goal_idx, to_goal_idx)`` for each crossing: the goals whose
+        regions the animal moved between.
+
+    All arrays are read-only copies owned by the result.
     """
 
     goal_labels: NDArray[np.int_]
     distance_to_decision_boundary: NDArray[np.float64]
-    crossing_times: list[float]
-    crossing_directions: list[tuple[int, int]]
+    crossing_times: NDArray[np.float64]
+    crossing_directions: NDArray[np.intp]
 
     def __post_init__(self) -> None:
-        """Own read-only copies of goal labels and boundary distances."""
+        """Check shapes, then own read-only copies of every array."""
+        goal_labels = np.asarray(self.goal_labels)
+        distances = np.asarray(self.distance_to_decision_boundary, dtype=np.float64)
+        crossing_times = np.asarray(self.crossing_times, dtype=np.float64)
+        directions = np.asarray(self.crossing_directions, dtype=np.intp).reshape(-1, 2)
+        if goal_labels.ndim != 1 or distances.shape != goal_labels.shape:
+            raise ValueError(
+                "DecisionBoundaryMetrics needs goal_labels and "
+                "distance_to_decision_boundary of the same shape (n_samples,); "
+                f"got {goal_labels.shape} and {distances.shape}."
+            )
+        if crossing_times.ndim != 1 or len(directions) != len(crossing_times):
+            raise ValueError(
+                "DecisionBoundaryMetrics needs one (from, to) row of "
+                "crossing_directions per crossing time; got crossing_times of "
+                f"shape {crossing_times.shape} and crossing_directions of shape "
+                f"{directions.shape}."
+            )
+        object.__setattr__(self, "goal_labels", goal_labels)
+        object.__setattr__(self, "distance_to_decision_boundary", distances)
+        object.__setattr__(self, "crossing_times", crossing_times)
+        object.__setattr__(self, "crossing_directions", directions)
         self._own_arrays()
 
     @property
@@ -313,12 +337,34 @@ class DecisionAnalysisResult(ResultMixin):
         entered after ``entry_time``. Goals visited before the decision-region
         entry (such as the goal the trial started from) do not count. None if
         no goal region was entered after ``entry_time``.
+    goal_regions : tuple of str
+        Names of the goal regions, in the order that ``chosen_goal``,
+        ``boundary.goal_labels`` and ``boundary.crossing_directions`` index.
     """
 
     entry_time: float
     pre_decision: PreDecisionMetrics
     boundary: DecisionBoundaryMetrics | None
     chosen_goal: int | None
+    goal_regions: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """Store goal names as a tuple and check ``chosen_goal`` indexes them."""
+        object.__setattr__(self, "goal_regions", tuple(self.goal_regions))
+        if self.chosen_goal is not None and not (
+            0 <= self.chosen_goal < len(self.goal_regions)
+        ):
+            raise ValueError(
+                f"chosen_goal={self.chosen_goal} does not index the "
+                f"{len(self.goal_regions)} goal_regions {self.goal_regions}."
+            )
+
+    @property
+    def chosen_goal_region(self) -> str | None:
+        """Name of the chosen goal region; None if no goal was entered."""
+        if self.chosen_goal is None:
+            return None
+        return self.goal_regions[self.chosen_goal]
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar decision-analysis metrics.
@@ -335,6 +381,7 @@ class DecisionAnalysisResult(ResultMixin):
                 self.boundary.n_crossings if self.boundary is not None else None
             ),
             "chosen_goal": self.chosen_goal,
+            "chosen_goal_region": self.chosen_goal_region,
         }
 
     def __str__(self) -> str:
@@ -347,7 +394,9 @@ class DecisionAnalysisResult(ResultMixin):
         if self.boundary is not None:
             lines.append(f"  {self.boundary}")
         if self.chosen_goal is not None:
-            lines.append(f"  Chosen goal: {self.chosen_goal}")
+            lines.append(
+                f"  Chosen goal: {self.chosen_goal} ({self.chosen_goal_region!r})"
+            )
         else:
             lines.append("  Chosen goal: none entered")
         return "\n".join(lines)
@@ -1286,7 +1335,7 @@ def detect_boundary_crossings(
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> tuple[list[float], list[tuple[int, int]]]:
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Detect when trajectory crosses decision boundaries.
 
     Parameters
@@ -1320,11 +1369,11 @@ def detect_boundary_crossings(
 
     Returns
     -------
-    crossing_times : list[float]
+    crossing_times : NDArray[np.float64], shape (n_crossings,)
         Times when trajectory crossed a decision boundary: the midpoint of
         the last sample with one nearest goal and the first with the other.
-    crossing_directions : list[tuple[int, int]]
-        (from_goal_idx, to_goal_idx) for each crossing.
+    crossing_directions : NDArray[np.intp], shape (n_crossings, 2)
+        ``(from_goal_idx, to_goal_idx)`` for each crossing.
 
     Raises
     ------
@@ -1354,25 +1403,30 @@ def detect_boundary_crossings(
     >>> voronoi_labels = np.array([0, 1])  # bin 0 is nearer goal 0, bin 1 goal 1
     >>> position_bins = np.array([0, 0, 1, 1])
     >>> times = np.arange(4) / 8  # s
-    >>> detect_boundary_crossings(position_bins, voronoi_labels, times)
-    ([0.1875], [(0, 1)])
+    >>> crossing_times, directions = detect_boundary_crossings(
+    ...     position_bins, voronoi_labels, times
+    ... )
+    >>> crossing_times.tolist(), directions.tolist()
+    ([0.1875], [[0, 1]])
 
     Passing through an equidistant bin (label -1) is one crossing, timed
     between the samples on either side of it:
 
-    >>> detect_boundary_crossings(
+    >>> crossing_times, directions = detect_boundary_crossings(
     ...     np.array([0, 2, 2, 1]), np.array([0, 1, -1]), np.arange(4) / 8
     ... )
-    ([0.1875], [(0, 1)])
+    >>> crossing_times.tolist(), directions.tolist()
+    ([0.1875], [[0, 1]])
 
     The first example's samples from two recordings joined on one clock,
     where the second recording starts in bin 1, have no crossing:
 
     >>> new_recording = np.array([False, False, True, False])
-    >>> detect_boundary_crossings(
+    >>> crossing_times, directions = detect_boundary_crossings(
     ...     position_bins, voronoi_labels, times, break_before=new_recording
     ... )
-    ([], [])
+    >>> crossing_times.size, directions.shape
+    (0, (0, 2))
     """
     position_bins = np.asarray(position_bins, dtype=np.int64)
     n_times = len(np.asarray(times))
@@ -1413,7 +1467,7 @@ def _boundary_crossings(
     max_gap: float | None,
     epochs: Any,
     break_before: NDArray[np.bool_] | None,
-) -> tuple[list[float], list[tuple[int, int]]]:
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Boundary crossings within each run of located samples.
 
     A sample outside every bin is missing and skipped as if its row were
@@ -1428,23 +1482,23 @@ def _boundary_crossings(
         break_before=break_before,
         sample_valid=located,
     )
-    crossing_times: list[float] = []
-    crossing_directions: list[tuple[int, int]] = []
+    crossing_times = [np.empty(0)]
+    crossing_directions = [np.empty((0, 2), dtype=np.intp)]
     for first, last in run_sample_bounds(mask):
         run = first + np.flatnonzero(located[first : last + 1])
         run_times, run_directions = _detect_boundary_crossings_contiguous(
             position_bins[run], voronoi_labels, times[run]
         )
-        crossing_times.extend(run_times)
-        crossing_directions.extend(run_directions)
-    return crossing_times, crossing_directions
+        crossing_times.append(run_times)
+        crossing_directions.append(run_directions)
+    return np.concatenate(crossing_times), np.concatenate(crossing_directions)
 
 
 def _detect_boundary_crossings_contiguous(
     position_bins: NDArray[np.int_],
     voronoi_labels: NDArray[np.int_],
     times: NDArray[np.float64],
-) -> tuple[list[float], list[tuple[int, int]]]:
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Nearest-goal changes within one recording with labels indexed by bin.
 
     Samples labeled -1 (undecided or unreachable) are skipped, so passing
@@ -1454,12 +1508,12 @@ def _detect_boundary_crossings_contiguous(
     """
     trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
     decided = np.flatnonzero(trajectory_labels >= 0)
-    labels = trajectory_labels[decided]
+    labels = trajectory_labels[decided].astype(np.intp)
     changes = np.flatnonzero(labels[:-1] != labels[1:])
     before, after = decided[changes], decided[changes + 1]
-    crossing_times = ((times[before] + times[after]) / 2).tolist()
-    crossing_directions = [(int(labels[c]), int(labels[c + 1])) for c in changes]
-    return crossing_times, crossing_directions
+    crossing_times = (times[before] + times[after]) / 2
+    crossing_directions = np.column_stack([labels[changes], labels[changes + 1]])
+    return crossing_times, crossing_directions.reshape(-1, 2)
 
 
 # =============================================================================
@@ -1473,7 +1527,7 @@ def compute_decision_analysis(
     positions: NDArray[np.float64],
     *,
     decision_region: str,
-    goal_regions: list[str],
+    goal_regions: str | list[str],
     pre_window: float = 1.0,
     min_speed: float | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
@@ -1588,8 +1642,14 @@ def compute_decision_analysis(
     ...     goal_regions=["left", "right"],
     ...     min_speed=5.0,
     ... )
-    >>> result.chosen_goal, result.pre_decision.n_samples
-    (1, 10)
+    >>> result.chosen_goal_region, result.pre_decision.n_samples
+    ('right', 10)
+
+    The stem is equidistant from both goals (label -1), so walking up it and
+    turning right never crosses from the left goal's side:
+
+    >>> result.boundary.n_crossings
+    0
     """
     require_cartesian(
         env.coordinate_system,
@@ -1701,6 +1761,7 @@ def compute_decision_analysis(
         chosen_goal=_first_goal_entered(
             env, position_bins[entry:], goal_regions, in_epochs[entry:]
         ),
+        goal_regions=tuple(goal_regions),
     )
 
 

@@ -156,8 +156,8 @@ def test_boundary_crossing_not_in_pause(pause_track):
     r = pause_track
     labels = np.where(r.env.bin_centers[:, 0] < 50, 0, 1)
     times, directions = detect_boundary_crossings(r.position_bins, labels, r.times)
-    assert len(times) == len(directions)
-    assert times == []
+    assert times.shape == (0,)
+    assert directions.shape == (0, 2)
 
 
 def test_goal_directed_runs_are_candidates_per_recording(pause_track):

@@ -125,9 +125,80 @@ class TestDecisionBoundaryMetrics:
 
         assert result.n_crossings == 3
 
+    def test_crossings_are_read_only_arrays(self):
+        """Appending to or editing the crossings cannot change n_crossings."""
+        from neurospatial.behavior.decisions import DecisionBoundaryMetrics
+
+        times = [1.0, 2.0]
+        result = DecisionBoundaryMetrics(
+            goal_labels=np.array([0, 1, 0]),
+            distance_to_decision_boundary=np.array([5.0, 5.0, 5.0]),
+            crossing_times=times,
+            crossing_directions=[(0, 1), (1, 0)],
+        )
+        times.append(3.0)
+        assert result.n_crossings == 2
+        assert result.crossing_times.dtype == np.float64
+        assert result.crossing_directions.shape == (2, 2)
+        with pytest.raises(ValueError, match="read-only"):
+            result.crossing_times[0] = 0.0
+        with pytest.raises(ValueError, match="read-only"):
+            result.crossing_directions[0, 0] = 1
+
+    def test_mismatched_crossing_rows_raise(self):
+        from neurospatial.behavior.decisions import DecisionBoundaryMetrics
+
+        with pytest.raises(ValueError, match="one \\(from, to\\) row"):
+            DecisionBoundaryMetrics(
+                goal_labels=np.array([0, 1]),
+                distance_to_decision_boundary=np.array([5.0, 5.0]),
+                crossing_times=[1.0, 2.0],
+                crossing_directions=[(0, 1)],
+            )
+
 
 class TestDecisionAnalysisResult:
     """Test DecisionAnalysisResult dataclass."""
+
+    @staticmethod
+    def _metrics():
+        from neurospatial.behavior.decisions import PreDecisionMetrics
+
+        return PreDecisionMetrics(
+            mean_speed=10.0,
+            min_speed=5.0,
+            heading_mean_direction=0.0,
+            heading_circular_variance=0.1,
+            heading_mean_resultant_length=0.9,
+            window_duration=1.0,
+            n_samples=10,
+        )
+
+    def test_chosen_goal_region_names_the_goal(self):
+        from neurospatial.behavior.decisions import DecisionAnalysisResult
+
+        result = DecisionAnalysisResult(
+            entry_time=1.0,
+            pre_decision=self._metrics(),
+            boundary=None,
+            chosen_goal=1,
+            goal_regions=["left", "right"],
+        )
+        assert result.goal_regions == ("left", "right")
+        assert result.chosen_goal_region == "right"
+        assert result.summary()["chosen_goal_region"] == "right"
+
+    def test_chosen_goal_out_of_range_raises(self):
+        from neurospatial.behavior.decisions import DecisionAnalysisResult
+
+        with pytest.raises(ValueError, match="does not index"):
+            DecisionAnalysisResult(
+                entry_time=1.0,
+                pre_decision=self._metrics(),
+                boundary=None,
+                chosen_goal=2,
+                goal_regions=("left", "right"),
+            )
 
 
 class TestDecisionRegionEntryTime:
@@ -507,7 +578,7 @@ class TestDetectBoundaryCrossings:
 
         assert len(crossing_times) == 1
         assert 4.0 < crossing_times[0] < 6.0
-        assert crossing_directions[0] == (0, 1)
+        assert crossing_directions.tolist() == [[0, 1]]
 
     def test_multiple_crossings(self):
         """Test detection of multiple boundary crossings."""
@@ -523,7 +594,7 @@ class TestDetectBoundaryCrossings:
         )
 
         assert len(crossing_times) == 3
-        assert crossing_directions == [(0, 1), (1, 0), (0, 1)]
+        assert crossing_directions.tolist() == [[0, 1], [1, 0], [0, 1]]
 
     def test_no_crossings(self):
         """Test when there are no crossings."""
@@ -646,7 +717,7 @@ class TestComputeDecisionAnalysis:
             goal_regions=goal_regions,
             min_speed=5.0,
         )
-        return None if result.chosen_goal is None else goal_regions[result.chosen_goal]
+        return result.chosen_goal_region
 
     def test_goal_the_trial_started_from_is_not_chosen(self, t_maze_environment):
         """Starting at the left goal and running to the right chooses right."""
@@ -1078,8 +1149,8 @@ def test_boundary_crossing_at_interval_midpoint():
     crossing_times, directions = detect_boundary_crossings(
         np.array([0, 0, 1, 1]), labels, np.arange(4) / 8
     )
-    assert crossing_times == [0.1875]
-    assert directions == [(0, 1)]
+    assert crossing_times.tolist() == [0.1875]
+    assert directions.tolist() == [[0, 1]]
 
 
 def test_boundary_crossing_not_across_declared_break():
@@ -1091,8 +1162,8 @@ def test_boundary_crossing_not_across_declared_break():
         np.arange(4) / 8,
         break_before=np.array([False, False, True, False]),
     )
-    assert crossing_times == []
-    assert directions == []
+    assert crossing_times.shape == (0,)
+    assert directions.shape == (0, 2)
 
 
 def test_decision_analysis_forwards_declared_break(t_maze_environment):
@@ -1124,12 +1195,12 @@ def test_decision_analysis_forwards_declared_break(t_maze_environment):
     )
     assert result.pre_decision.n_samples == 10
     assert broken.pre_decision.n_samples == 3
-    assert result.boundary.crossing_times == [
+    assert result.boundary.crossing_times.tolist() == [
         (times[last_left] + times[first_right]) / 2
     ]
-    assert result.boundary.crossing_directions == [(0, 1)]
-    assert broken.boundary.crossing_times == []
-    assert broken.boundary.crossing_directions == []
+    assert result.boundary.crossing_directions.tolist() == [[0, 1]]
+    assert broken.boundary.n_crossings == 0
+    assert broken.boundary.crossing_directions.shape == (0, 2)
 
 
 def test_left_and_right_turns_cross_the_boundary_equally(t_maze_environment):
