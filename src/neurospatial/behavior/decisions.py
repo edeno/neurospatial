@@ -1192,12 +1192,12 @@ def geodesic_voronoi_labels(
 ) -> NDArray[np.int_]:
     """Label each bin by its nearest goal using geodesic distance.
 
-    Creates a Voronoi-like partition of the environment where each bin
-    is assigned to the goal with the shortest geodesic path. The geodesic
-    distance is the length of the shortest path between two positions that
-    stays inside the environment: it goes around walls and never leaves the
-    environment, and on a track it runs along the track's centerline. Bins
-    and goals are measured from their centers.
+    Creates a Voronoi-like partition of the environment where each bin is
+    assigned to the goal with the shortest geodesic path. The geodesic distance
+    is the length of the shortest path between two positions that stays inside
+    the environment: it goes around walls and never leaves the environment, and
+    on a track it runs along the track's centerline. Bins and goals are
+    measured from their centers.
 
     Parameters
     ----------
@@ -1335,8 +1335,8 @@ def distance_to_decision_boundary(
     distance changes by at most the distance walked.
 
     The geodesic distance is the length of the shortest path between two
-    positions that stays inside the environment: it goes around walls and
-    never leaves the environment, and on a track it runs along the track's
+    positions that stays inside the environment: it goes around walls and never
+    leaves the environment, and on a track it runs along the track's
     centerline. Bins and goals are measured from their centers.
 
     Examples

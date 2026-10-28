@@ -95,8 +95,9 @@ Provides linear decay from the region boundary:
 
 - Full `reward_value` inside the region
 - Linear decay outside: `reward = reward_value * max(0, 1 - distance / max_distance)`
-- `distance` is the graph (geodesic) distance from the bin to the nearest
-  region bin, so it respects walls and obstacles
+- `distance` is the geodesic distance from the bin's center to the nearest
+  region bin's center: the length of the shortest path between two positions
+  that stays inside the environment, so it goes around walls and obstacles
 - Bins that cannot reach the region (a separate connected component) get 0
 
 **Pros:**
@@ -254,7 +255,7 @@ Formula: `reward = scale * exp(-distance / scale)`
 
 **Cons:**
 
-- May guide agents through walls if not careful (uses graph distance in neurospatial, so this is handled)
+- May guide agents through walls if not careful (neurospatial measures the geodesic distance, the shortest path inside the environment, so this is handled)
 - Requires tuning `scale` parameter
 
 **Scale parameter:** `scale` is a decay length in the environment's distance

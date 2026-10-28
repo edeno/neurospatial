@@ -391,7 +391,18 @@ print(f"Turn variance: {turn_variance:.3f}")
 
 ### Step Lengths
 
-Step lengths are the distances between consecutive positions. Supports both Euclidean (straight-line) and geodesic (shortest path inside the environment) distances.
+Step lengths are the distances between consecutive positions. Supports both Euclidean (straight-line) and geodesic distances.
+
+Every behavior function with `metric="geodesic"` uses one definition: the
+length of the shortest path between two positions that stays inside the
+environment: it goes around walls and never leaves the environment, and on a
+track it runs along the track's centerline. A function that takes bins
+measures from each bin's center. In an open arena the geodesic and Euclidean
+distances agree; around a wall the geodesic path keeps about half a bin from
+each corner it turns, and on a track it does not depend on the track's width
+or bin size. `Environment.distance_between` and `ops.distance_field` measure
+along the bin graph instead (bin center to bin center through neighboring
+bins), which reads an oblique straight run as a staircase.
 
 ```python
 from neurospatial.behavior.trajectory import compute_step_lengths
@@ -412,9 +423,9 @@ print(f"Step length CV: {step_cv:.3f}")
 
 **Key Points**:
 - **Euclidean (default)**: Straight-line distance in physical space, uses continuous positions
-- **Geodesic**: Graph shortest-path distance, respects walls/obstacles, requires `env`
+- **Geodesic**: the shortest path inside the environment between the two positions (the straight step unless it crosses a wall), requires `env`
 - Stationary periods (duplicate positions) return 0.0
-- For geodesic: disconnected bins return `np.inf`
+- For geodesic: positions in disconnected parts of the environment return `np.inf`
 
 **Applications**:
 - **Movement speed** (step_length / dt): Velocity estimation

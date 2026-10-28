@@ -96,12 +96,11 @@ def region_reward_field(
       Creates clear goal regions with no reward shaping.
 
     - **Linear**: ``reward_value * max(0, 1 - d / max_distance)``, where
-      ``d`` is the geodesic distance from the bin centre to the nearest
-      region bin centre: the length of the shortest path between two
-      positions that stays inside the environment (it goes around walls and
-      never leaves the environment, and on a track it runs along the
-      track's centerline). Bins that cannot reach the region (another
-      connected component) get 0.
+      ``d`` is the geodesic distance from the bin centre to the nearest region
+      bin centre: the length of the shortest path between two positions that
+      stays inside the environment (it goes around walls and never leaves the
+      environment, and on a track it runs along the track's centerline). Bins
+      that cannot reach the region (another connected component) get 0.
 
     - **Gaussian**: Smooth falloff using Gaussian kernel smoothing.
       After smoothing, rescales so maximum *within the region* equals
@@ -259,11 +258,10 @@ def goal_reward_field(
         Goal bin index or indices. Can be scalar or array.
     decay : {'linear', 'exponential', 'inverse'}, default='exponential'
         Distance-based decay function of the geodesic distance ``d`` (in the
-        environment's distance units) from the bin centre to the nearest
-        goal bin centre, the length of the shortest path between two
-        positions that stays inside the environment (it goes around walls
-        and never leaves the environment, and on a track it runs along the
-        track's centerline):
+        environment's distance units) from the bin centre to the nearest goal
+        bin centre, the length of the shortest path between two positions that
+        stays inside the environment (it goes around walls and never leaves the
+        environment, and on a track it runs along the track's centerline):
 
         - 'linear': reward = scale * max(0, 1 - d/max_distance)
         - 'exponential': reward = scale * exp(-d/scale)

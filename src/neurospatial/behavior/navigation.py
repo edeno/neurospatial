@@ -835,10 +835,10 @@ def path_progress(
         with the same ``-1`` rule.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
         ``'euclidean'`` is the straight-line distance. ``'geodesic'`` is the
-        length of the shortest path between two positions that stays inside
-        the environment: it goes around walls and never leaves the
-        environment, and on a track it runs along the track's centerline.
-        Each bin is measured from its center.
+        length of the shortest path between two positions that stays inside the
+        environment: it goes around walls and never leaves the environment, and
+        on a track it runs along the track's centerline. Each bin is measured
+        from its center.
 
     Returns
     -------
@@ -989,10 +989,10 @@ def distance_to_region(
           This allows dynamic goals.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
         ``'euclidean'`` is the straight-line distance. ``'geodesic'`` is the
-        length of the shortest path between two positions that stays inside
-        the environment: it goes around walls and never leaves the
-        environment, and on a track it runs along the track's centerline.
-        Each bin is measured from its center.
+        length of the shortest path between two positions that stays inside the
+        environment: it goes around walls and never leaves the environment, and
+        on a track it runs along the track's centerline. Each bin is measured
+        from its center.
 
     Returns
     -------
@@ -1103,12 +1103,12 @@ def distance_to_reward(
         Notes); a reward whose location cannot be read that way has an
         unknown location. A NaN row is an unknown location.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
-        ``'euclidean'`` is the straight-line distance between the position
-        and the reward location. ``'geodesic'`` is the length of the shortest
-        path between two positions that stays inside the environment: it
-        goes around walls and never leaves the environment, and on a track
-        it runs along the track's centerline. Both are measured from the
-        position itself, not its bin center.
+        ``'euclidean'`` is the straight-line distance between the position and
+        the reward location. ``'geodesic'`` is the length of the shortest path
+        between two positions that stays inside the environment: it goes around
+        walls and never leaves the environment, and on a track it runs along
+        the track's centerline. Both are measured from the position itself, not
+        its bin center.
     mode : {'nearest', 'last', 'next'}, default='nearest'
         Which reward to use for distance computation:
 
@@ -1692,9 +1692,9 @@ def distance_to_boundary(
         boundary_type='region', ignored otherwise.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
         ``'euclidean'`` is the straight-line distance. ``'geodesic'`` is the
-        length of the shortest path between two positions that stays inside
-        the environment: it goes around walls and never leaves the
-        environment, and on a track it runs along the track's centerline.
+        length of the shortest path between two positions that stays inside the
+        environment: it goes around walls and never leaves the environment, and
+        on a track it runs along the track's centerline.
 
     Returns
     -------
@@ -2829,11 +2829,13 @@ def traveled_path_length(
         coordinate (for example a linearized track). Rows with a non-finite
         coordinate are missing.
     metric : {"euclidean", "geodesic"}, default="euclidean"
-        ``"euclidean"`` sums the straight steps between samples.
-        ``"geodesic"`` sums the shortest path inside the environment between
-        consecutive samples: the same straight step whenever it stays inside
-        the environment, and the route around the walls when it does not (a
-        bridged gap whose straight line crosses a wall). See Notes.
+        ``"euclidean"`` sums the straight steps between samples. ``"geodesic"``
+        sums, between consecutive samples, the length of the shortest path
+        between two positions that stays inside the environment: it goes around
+        walls and never leaves the environment, and on a track it runs along
+        the track's centerline. It is the straight step whenever the step stays
+        inside, and the route around the walls when it does not (a bridged gap
+        whose straight line crosses a wall). See Notes.
     env : Environment, optional
         Required when metric="geodesic". An interval with an endpoint outside
         the environment has no geodesic length and is left out; an interval
@@ -2877,6 +2879,8 @@ def traveled_path_length(
     on the bin size. It is not measured bin center to bin center along the
     bin graph: that staircase overestimated an oblique straight run by up to
     a third, by an amount that changed with the bin size and sampling rate.
+    On a track the geodesic step runs along the centerline between the two
+    positions' projections onto it.
 
     Like any arc length of sampled positions, tracking jitter adds length;
     smooth noisy positions first.
@@ -2936,16 +2940,16 @@ def shortest_path_length(
     Parameters
     ----------
     env : Environment
-        Spatial environment with connectivity graph.
+        Spatial environment.
     start : NDArray[np.float64], shape (n_dims,)
         Start position in allocentric frame.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position in allocentric frame.
     metric : {"geodesic", "euclidean"}, default="geodesic"
         ``"euclidean"`` is the straight-line distance. ``"geodesic"`` is the
-        length of the shortest path that stays inside the environment: the
-        straight line when it stays inside, otherwise the route around the
-        walls (see Notes).
+        length of the shortest path between two positions that stays inside the
+        environment: it goes around walls and never leaves the environment, and
+        on a track it runs along the track's centerline (see Notes).
 
     Returns
     -------
@@ -2967,16 +2971,18 @@ def shortest_path_length(
     Notes
     -----
     The geodesic length is measured in continuous space, not bin center to
-    bin center. When the straight segment from start to goal stays inside the
-    environment (probed at a quarter of the shortest bin-graph edge), it is
-    the Euclidean distance, so on an open field ``metric="geodesic"`` and
-    ``metric="euclidean"`` agree. Otherwise the bin-graph shortest path is
-    pulled taut into straight segments that stay inside the environment; its
-    waypoints are bin centers, so it rounds each corner about half a bin
-    inside the wall and can exceed the true shortest path by up to about one
-    bin size per corner. The bin-graph distance itself
-    (``env.distance_between``) runs along grid steps and overestimates an
-    oblique straight line by up to ~8% on an 8-connected grid.
+    bin center. When the centers of the start's and the goal's bins see each
+    other (a straight line between them stays inside the environment), it is
+    the straight line from start to goal, so on an open field
+    ``metric="geodesic"`` and ``metric="euclidean"`` agree. Otherwise the
+    path goes around the walls through waypoints at bin centers, so it keeps
+    about half a bin from each corner and can exceed the true shortest path
+    by up to about one bin size per corner (the end of a thin wall is two
+    corners). On a track it is the distance along the centerline between the
+    two positions' projections, whatever the track's width or bin size. The
+    bin-graph distance (``env.distance_between``) instead runs along grid
+    steps and overestimates an oblique straight line by up to ~8% on an
+    8-connected grid.
 
     Examples
     --------
@@ -3142,12 +3148,12 @@ def angular_efficiency(
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Which shortest path sets the goal direction. ``"euclidean"``: the
         straight line, so the direction is the bearing to the goal.
-        ``"geodesic"``: the length of the shortest path between two
-        positions that stays inside the environment (it goes around walls
-        and never leaves the environment, and on a track it runs along the
-        track's centerline), so the direction is toward its first waypoint,
-        the first corner it turns around, and on a track along the track
-        toward the goal. Requires ``env``.
+        ``"geodesic"``: the length of the shortest path between two positions
+        that stays inside the environment (it goes around walls and never
+        leaves the environment, and on a track it runs along the track's
+        centerline), so the direction is toward its first waypoint, the first
+        corner it turns around, and on a track along the track toward the goal.
+        Requires ``env``.
     env : Environment, optional
         Required when ``metric="geodesic"``. A step starting outside the
         environment has no geodesic direction and is left out.
@@ -3338,8 +3344,12 @@ def subgoal_efficiency(
         Ordered sequence of subgoals, in the coordinates and units of
         ``positions``. A single row is one subgoal.
     metric : {"geodesic", "euclidean"}, default="geodesic"
-        Distance metric for path lengths and for finding the closest
-        approach, as in :func:`compute_path_efficiency`.
+        Distance metric for path lengths, the closest approach and the goal
+        direction, as in :func:`compute_path_efficiency`. ``"euclidean"`` is
+        the straight-line distance. ``"geodesic"`` is the length of the
+        shortest path between two positions that stays inside the environment:
+        it goes around walls and never leaves the environment, and on a track
+        it runs along the track's centerline.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -3547,14 +3557,18 @@ def compute_path_efficiency(
     goal : ArrayLike, shape (n_dims,)
         Goal position.
     metric : {"geodesic", "euclidean"}, default="geodesic"
-        Distance metric for both lengths. ``"geodesic"`` measures shortest
-        paths inside the environment: ``traveled_length`` as in
-        :func:`traveled_path_length` and ``shortest_length`` as in
-        :func:`shortest_path_length`, so a straight run on an open field is
+        Distance metric for both lengths and the goal direction.
+        ``"euclidean"`` is the straight-line distance. ``"geodesic"`` is the
+        length of the shortest path between two positions that stays inside the
+        environment: it goes around walls and never leaves the environment, and
+        on a track it runs along the track's centerline: ``traveled_length`` as
+        in :func:`traveled_path_length`, ``shortest_length`` as in
+        :func:`shortest_path_length` and the goal direction as in
+        :func:`angular_efficiency`, so a straight run on an open field is
         perfectly efficient at any bin size. An interval with an endpoint
-        outside the environment has no geodesic length and is left out, and
-        an interval between disconnected parts contributes ``inf`` (so a
-        complete path with such a step has ``traveled_length=inf`` and
+        outside the environment has no geodesic length and is left out, and an
+        interval between disconnected parts contributes ``inf`` (so a complete
+        path with such a step has ``traveled_length=inf`` and
         ``efficiency=0.0``).
     reference_speed : float, optional
         Reference speed for time efficiency, in position units per second;
@@ -4164,10 +4178,12 @@ def approach_rate(
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     metric : {"euclidean", "geodesic"}, default="euclidean"
-        ``"euclidean"`` uses the straight-line distance to the goal.
-        ``"geodesic"`` uses the length of the shortest path inside the
-        environment from each position (not its bin center) to the goal, as
-        in :func:`shortest_path_length`, so a constant-speed approach gives a
+        ``"euclidean"`` is the straight-line distance to the goal.
+        ``"geodesic"`` is the length of the shortest path between two positions
+        that stays inside the environment: it goes around walls and never
+        leaves the environment, and on a track it runs along the track's
+        centerline, measured from each position (not its bin center) as in
+        :func:`shortest_path_length`, so a constant-speed approach gives a
         constant rate instead of a rate quantized by the bins. Requires
         ``env``.
     env : Environment, optional
@@ -4340,8 +4356,7 @@ def _goal_distances(
     metric : {"euclidean", "geodesic"}
         ``"geodesic"`` is the length of the shortest path inside the
         environment from the position itself (not its bin center), as in
-        :func:`shortest_path_length`, so it changes continuously as the
-        animal moves.
+        :func:`shortest_path_length`.
     env : Environment or None
         Required when ``metric="geodesic"``.
     call : str
@@ -4428,10 +4443,13 @@ def compute_goal_directed_metrics(
         Goal position.
     metric : {"geodesic", "euclidean"}, default="euclidean"
         Distance metric for the approach rate, the goal distances and goal
-        arrival. ``"geodesic"`` is the shortest path inside the environment
-        from each position to the goal, as in :func:`approach_rate`; a
-        position outside the environment then has no distance and is left
-        out of the distance summaries.
+        arrival. ``"euclidean"`` is the straight-line distance. ``"geodesic"``
+        is the length of the shortest path between two positions that stays
+        inside the environment: it goes around walls and never leaves the
+        environment, and on a track it runs along the track's centerline, from
+        each position to the goal as in :func:`approach_rate`; a position
+        outside the environment then has no distance and is left out of the
+        distance summaries.
     min_speed : float or None, default=None
         Minimum speed for a defined heading, in position units per second.
         None is 5 cm/s expressed in ``env.units`` (``0.05`` for meters,
