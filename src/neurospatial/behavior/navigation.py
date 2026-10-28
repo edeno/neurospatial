@@ -15,7 +15,7 @@ Imports
 All navigation functions are importable from ``behavior.navigation``::
 
     from neurospatial.behavior.navigation import (
-        # Path progress and distance (from behavioral.py)
+        # Path progress and distance
         path_progress,
         distance_to_region,
         distance_to_boundary,
@@ -26,7 +26,7 @@ All navigation functions are importable from ``behavior.navigation``::
         graph_turn_sequence,
         goal_pair_direction_labels,
         heading_direction_labels,
-        # Path efficiency (from metrics/path_efficiency.py)
+        # Path efficiency
         PathEfficiencyResult,
         SubgoalEfficiencyResult,
         traveled_path_length,
@@ -35,7 +35,7 @@ All navigation functions are importable from ``behavior.navigation``::
         angular_efficiency,
         subgoal_efficiency,
         compute_path_efficiency,
-        # Goal-directed (from metrics/goal_directed.py)
+        # Goal-directed
         GoalDirectedMetrics,
         goal_vector,
         goal_direction,
@@ -136,7 +136,7 @@ if TYPE_CHECKING:
 
 
 __all__ = [  # noqa: RUF022
-    # Path progress and distance (from behavioral.py)
+    # Path progress and distance
     "cost_to_goal",
     "distance_to_boundary",
     "distance_to_region",
@@ -441,7 +441,7 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
 
 
 # =============================================================================
-# Trial-Based Navigation Functions (from behavioral.py)
+# Trial-Based Navigation Functions
 # =============================================================================
 
 
