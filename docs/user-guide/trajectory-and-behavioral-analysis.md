@@ -855,9 +855,11 @@ for i, lap in enumerate(laps):
 ```
 
 **Algorithm**:
-1. Template: from the first sample to the first return to its bin after a
-   trip to the far side of the track (a bin at least half the greatest path
-   distance away)
+1. Template: on a loop track, the first trip from the first sample's bin
+   that goes round the loop (a turn back at the start of the recording is
+   skipped); on a back-and-forth track or in an open arena, from the first
+   sample to the first return to its bin after a trip to the far side of the
+   track (a bin at least half the greatest path distance away)
 2. Candidate lap boundaries: each pass through the template's first bin (or
    a neighbor), at the sample nearest that bin
 3. A lap ends at the first boundary where the bins visited since an earlier

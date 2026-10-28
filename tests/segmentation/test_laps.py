@@ -771,3 +771,21 @@ class TestTemplateLapsSkipTurnBacks:
         self._assert_laps(
             laps, [(0.0, 10.0, 10.0), (18.0, 23.0, 5.0), (23.0, 43.0, 20.0)]
         )
+
+    @pytest.mark.parametrize("fraction", [0.3, 0.45])
+    def test_recording_opening_with_a_turn_back(self, fraction):
+        """A first excursion past a quarter circuit is not the auto template.
+
+        Excursion out and back (8 s), then laps 8-18 s and 18-28 s.
+        """
+        from neurospatial.behavior.segmentation import detect_laps
+
+        env = self._env()
+        turn = fraction * 2 * np.pi
+        lap = _ring_arc(0, 2 * np.pi, 301)
+        positions = np.r_[
+            _ring_arc(0, turn, 121), _ring_arc(turn, 0, 121)[1:], lap[1:], lap[1:]
+        ]
+        bins = env.bin_at(positions)
+        laps = detect_laps(bins, np.arange(len(positions)) / self.FS, env)
+        self._assert_laps(laps, [(8.0, 18.0, 10.0), (18.0, 28.0, 10.0)])
