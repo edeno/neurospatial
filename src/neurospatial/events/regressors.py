@@ -21,7 +21,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import as_intervals, intervals_contain
 from neurospatial._time_bins import _time_bin_rounding
-from neurospatial.events._core import _finite_times, _validate_window
+from neurospatial.events._core import _finite_times, _is_real_number, _validate_window
 
 
 def _share_coincident_edges(
@@ -153,11 +153,14 @@ def time_to_nearest_event(
     times = _finite_times(times, "times")
     event_times = _finite_times(event_times, "event_times")
 
-    if max_time is not None and not max_time >= 0:
+    if max_time is not None and not (
+        _is_real_number(max_time) and np.isfinite(max_time) and max_time >= 0
+    ):
         raise ValueError(
-            f"max_time must be a non-negative number of seconds, got {max_time}.\n"
+            f"max_time must be a finite non-negative number of seconds, got "
+            f"{max_time!r}.\n"
             "  WHY: max_time is the largest time-to-event magnitude returned.\n"
-            "  Fix: Use max_time >= 0 or None for no clipping."
+            "  Fix: Use max_time >= 0, or None for no clipping."
         )
 
     recorded = as_intervals(epochs, name="epochs")

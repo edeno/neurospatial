@@ -79,6 +79,9 @@ Fixed:
   index.
 - `peri_event_histogram` and `population_peri_event_histogram` warn once,
   not once per unit plus once more, for a window longer than 60 s.
+- `time_to_nearest_event` refuses `max_time=True`, which clipped every
+  value to 1 s, and an infinite or non-numeric `max_time`; pass `None` for
+  no clipping.
 - `align_events` refuses a NaN or infinite event or reference time, which it
   dropped without a word, and a non-DataFrame input with a `TypeError`.
 - `filter_by_intervals` refuses NaN event times (with `include=False` they

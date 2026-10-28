@@ -235,6 +235,14 @@ class TestTimeToNearestEvent:
         with pytest.raises(ValueError, match=r"max_time.*non-negative"):
             time_to_nearest_event(np.arange(3.0), np.array([1.0]), max_time=np.nan)
 
+    @pytest.mark.parametrize("max_time", [True, np.inf, "1.0"])
+    def test_non_finite_or_non_numeric_max_time_raises(self, max_time):
+        """True silently clipped to 1 s; inf clipped nothing, which None says."""
+        from neurospatial.events.regressors import time_to_nearest_event
+
+        with pytest.raises(ValueError, match=r"max_time.*finite non-negative"):
+            time_to_nearest_event(np.arange(3.0), np.array([1.0]), max_time=max_time)
+
     def test_zero_max_time_clips_to_zero(self):
         """Test max_time=0.0 clips all values to zero."""
         from neurospatial.events.regressors import time_to_nearest_event
