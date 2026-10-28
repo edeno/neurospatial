@@ -590,10 +590,9 @@ class TestWriteTrialsDiskRoundTrip:
         start_times = np.array([0.0, 10.0, 20.0, 30.0, 40.0])
         stop_times = np.array([5.0, 15.0, 25.0, 35.0, 45.0])
         start_regions = ["home", "home", "home", "home", "home"]
-        # "outcome"/"condition" labels are carried in end_region + success,
-        # which are the columns write_trials actually persists.
-        end_regions = ["goal_l", "goal_r", "goal_l", "goal_r", "goal_l"]
-        successes = [True, False, True, True, False]
+        # Every outcome, including censored, must survive the round trip.
+        end_regions = ["goal_l", "", "goal_l", "", ""]
+        outcomes = ["reached", "timeout", "reached", "censored", "returned"]
 
         nwbfile = create_roundtrip_nwb()
         write_trials(
@@ -602,7 +601,7 @@ class TestWriteTrialsDiskRoundTrip:
             stop_times=stop_times,
             start_regions=start_regions,
             end_regions=end_regions,
-            successes=successes,
+            outcomes=outcomes,
         )
 
         nwb_path = tmp_path / "trials.nwb"
@@ -619,7 +618,7 @@ class TestWriteTrialsDiskRoundTrip:
                 "stop_time": stop_times,
                 "start_region": start_regions,
                 "end_region": end_regions,
-                "success": successes,
+                "outcome": outcomes,
             }
         )
         pd.testing.assert_frame_equal(
@@ -631,7 +630,7 @@ class TestWriteTrialsDiskRoundTrip:
     def test_trials_with_optional_columns_survives(self, tmp_path):
         """Trials written with only some optional columns reload as expected.
 
-        Only start_region is supplied; end_region and success are never added
+        Only start_region is supplied; end_region and outcome are never added
         as columns, so the recovered table must contain neither.
         """
         from pynwb import NWBHDF5IO
@@ -673,4 +672,4 @@ class TestWriteTrialsDiskRoundTrip:
         )
         # Unsupplied optional columns are absent, not silently fabricated.
         assert "end_region" not in recovered.columns
-        assert "success" not in recovered.columns
+        assert "outcome" not in recovered.columns
