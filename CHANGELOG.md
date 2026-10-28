@@ -97,9 +97,13 @@ Faster (same results):
   sampling rates (rounding-level differences, below 1e-13).
 - Geodesic `distance_to_reward` prepares all reward fields in one batch.
 - Geodesic path lengths (`compute_step_lengths`, `traveled_path_length`,
-  `compute_path_efficiency`) are about a third faster on long trajectories:
-  each distance field grows only as far as the farthest bin it is asked
-  about. The cached distance fields stay within their memory budget, and
+  `compute_path_efficiency`) and other `metric="geodesic"` measures are
+  7–10× faster on grid environments (a 54k-sample walk in a 10k-bin arena
+  with a wall: 60 s → 6 s), with identical results: each distance field
+  grows only as far as the farthest bin it is asked about, and line-of-sight
+  checks skip stretches that lie in fully open, connected blocks of cells.
+  Hexagonal and mesh layouts gain less. The cached distance fields stay
+  within their memory budget, and
   geodesic `mean_square_displacement` pair tables use about half the
   memory.
 
