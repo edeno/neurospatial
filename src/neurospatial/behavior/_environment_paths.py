@@ -240,7 +240,12 @@ class EnvironmentPaths:
         return out
 
     def between(
-        self, starts: NDArray[np.float64], ends: NDArray[np.float64]
+        self,
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        *,
+        start_bins: NDArray[np.intp] | None = None,
+        end_bins: NDArray[np.intp] | None = None,
     ) -> NDArray[np.float64]:
         """Shortest path length inside the environment for each pair of points.
 
@@ -249,13 +254,19 @@ class EnvironmentPaths:
         starts, ends : ndarray, shape (n_pairs, n_dims)
             Positions; a pair with a NaN row or a point outside the
             environment gives NaN.
+        start_bins, end_bins : ndarray of int, shape (n_pairs,), optional
+            The positions' bins (``-1`` outside), when the caller already
+            has them; located with :meth:`bins` otherwise.
 
         Returns
         -------
         ndarray, shape (n_pairs,)
             Path lengths; ``inf`` between disconnected parts.
         """
-        start_bins, end_bins = self.bins(starts), self.bins(ends)
+        if start_bins is None:
+            start_bins = self.bins(starts)
+        if end_bins is None:
+            end_bins = self.bins(ends)
         if self._track is not None:
             out = self._track.between(starts, ends, start_bins)
             out[end_bins < 0] = np.nan
@@ -309,6 +320,49 @@ class EnvironmentPaths:
                 field_rows,
             )
         return out
+
+    def between_bins(
+        self, start_bins: NDArray[np.intp], end_bins: NDArray[np.intp]
+    ) -> NDArray[np.float64]:
+        """Shortest path length between bin centers, pair by pair.
+
+        Parameters
+        ----------
+        start_bins, end_bins : ndarray of int, shape (n_pairs,)
+            Bin indices; a pair with a ``-1`` gives NaN.
+
+        Returns
+        -------
+        ndarray, shape (n_pairs,)
+            Path lengths; ``inf`` between disconnected parts.
+        """
+        start_bins = np.asarray(start_bins, dtype=np.intp)
+        end_bins = np.asarray(end_bins, dtype=np.intp)
+        return self.between(
+            self._centers[start_bins],
+            self._centers[end_bins],
+            start_bins=start_bins,
+            end_bins=end_bins,
+        )
+
+    def pairwise(self, points: NDArray[np.float64]) -> PairDistances:
+        """Distances between many pairs of the same positions, ``(i, j)``.
+
+        Locates the positions once and grows the field of every bin they
+        lie in together, so each later call is a lookup. For analyses that
+        compare every sample with many others, such as mean square
+        displacement.
+
+        Parameters
+        ----------
+        points : ndarray, shape (n_points, n_dims)
+            Positions; NaN rows and rows outside the environment give NaN.
+
+        Returns
+        -------
+        PairDistances
+        """
+        return PairDistances(self, points)
 
     def prepare(self, bins: NDArray[np.intp]) -> None:
         """Grow and keep the fields of every target bin in ``bins`` at once.
@@ -374,10 +428,17 @@ class EnvironmentPaths:
         ndarray, shape (n_bins,)
             ``inf`` for bins that cannot reach any source.
         """
+        source_bins = np.asarray(source_bins, dtype=np.intp)
         if self._track is not None:
             return self._track.from_points(
                 self._centers[source_bins], self._centers, np.arange(self._n_bins)
             )
+        if source_bins.size == 1:
+            # One source: the same field as a target position in that bin.
+            self._fields.ensure(self, source_bins)
+            row = self._fields.row_of_root[source_bins[0]]
+            single: NDArray[np.float64] = self._fields.length[row].copy()
+            return single
         distances: NDArray[np.float64] = self._source_field(source_bins)[0].copy()
         return distances
 
@@ -397,11 +458,14 @@ class EnvironmentPaths:
         -------
         ndarray, shape (n_points,)
         """
+        source_bins = np.asarray(source_bins, dtype=np.intp)
         point_bins = self.bins(points)
         if self._track is not None:
             return self._track.from_points(
                 self._centers[source_bins], points, point_bins
             )
+        if source_bins.size == 1:
+            return self.to_point(points, self._centers[source_bins[0]])
         length, anchor = self._source_field(source_bins)
         out = np.full(points.shape[0], np.nan)
         rows = np.flatnonzero(point_bins >= 0)
@@ -439,7 +503,10 @@ class EnvironmentPaths:
         """
         if self._track is not None:
             return self._track.costs_from_bins(source_bins, rate, self._adjacency)
-        length, _, _ = self._grow([np.asarray(source_bins)], rate=rate)
+        source_bins = np.asarray(source_bins, dtype=np.intp)
+        length, _, _ = self._grow(
+            [source_bins], rate=rate, single_roots=source_bins.size == 1
+        )
         costs: NDArray[np.float64] = length[0]
         return costs
 
@@ -867,6 +934,61 @@ class EnvironmentPaths:
         )
         settled[chosen_node] = True
         return waiting
+
+
+class PairDistances:
+    """Shortest path lengths between pairs of one set of positions.
+
+    Made by :meth:`EnvironmentPaths.pairwise`.
+    """
+
+    def __init__(self, paths: EnvironmentPaths, points: NDArray[np.float64]) -> None:
+        self._paths = paths
+        self._points = points
+        self._bins = paths.bins(points)
+        if paths._track is not None:
+            located = np.flatnonzero(self._bins >= 0)
+            self._segment = np.zeros(points.shape[0], dtype=np.intp)
+            self._offset = np.full(points.shape[0], np.nan)
+            self._segment[located], self._offset[located] = paths._track.project(
+                points[located]
+            )
+        else:
+            paths.prepare(self._bins)
+
+    def between(
+        self, first: NDArray[np.intp], second: NDArray[np.intp]
+    ) -> NDArray[np.float64]:
+        """Path length from ``points[first[k]]`` to ``points[second[k]]``.
+
+        Parameters
+        ----------
+        first, second : ndarray of int, shape (n_pairs,)
+            Row indices into the positions.
+
+        Returns
+        -------
+        ndarray, shape (n_pairs,)
+            NaN where either position is missing or outside the
+            environment; ``inf`` between disconnected parts.
+        """
+        paths = self._paths
+        if paths._track is None:
+            return paths.between(
+                self._points[first],
+                self._points[second],
+                start_bins=self._bins[first],
+                end_bins=self._bins[second],
+            )
+        out = np.full(first.size, np.nan)
+        ok = np.flatnonzero((self._bins[first] >= 0) & (self._bins[second] >= 0))
+        out[ok] = paths._track._pair(
+            self._segment[first[ok]],
+            self._offset[first[ok]],
+            self._segment[second[ok]],
+            self._offset[second[ok]],
+        )
+        return out
 
 
 class _RootFields:

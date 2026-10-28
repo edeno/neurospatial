@@ -187,3 +187,76 @@ def test_geodesic_approach_rate_of_a_ten_minute_session_is_fast(maze, budget):
     start = time.perf_counter()
     approach_rate(times, positions, goal, metric="geodesic", env=env, max_gap=None)
     assert time.perf_counter() - start <= budget
+
+
+class TestBinInputsUseBinCenters:
+    """Functions that take bins measure from each bin's center."""
+
+    LEFT, RIGHT, ABOVE = (42.5, 12.5), (57.5, 12.5), (47.5, 72.5)
+    # Between the left and right centers the path climbs to the centers just
+    # above the wall end: hypot(5, 60) up, 5 across, hypot(5, 60) down.
+    CLIMB = float(np.hypot(5.0, 60.0))
+
+    def _bins(self, env, *points):
+        return env.bin_at(np.array(points, dtype=float))
+
+    def test_distance_to_region_goes_around_the_wall(self, divider_arena):
+        from neurospatial.behavior import distance_to_region
+
+        left, right = self._bins(divider_arena, self.LEFT, self.RIGHT)
+        distances = distance_to_region(
+            np.array([left, right]), divider_arena, target_bins=int(right)
+        )
+        np.testing.assert_allclose(distances, [2 * self.CLIMB + 5.0, 0.0], atol=1e-9)
+
+    def test_path_progress_above_the_wall_end(self, divider_arena):
+        from neurospatial.behavior import path_progress
+
+        left, right, above = self._bins(
+            divider_arena, self.LEFT, self.RIGHT, self.ABOVE
+        )
+        progress = path_progress(
+            np.array([above]), divider_arena, start_bins=left, goal_bins=right
+        )
+        # Covered: straight up the left side; left: across and down.
+        expected = self.CLIMB / (self.CLIMB + 5.0 + self.CLIMB)
+        np.testing.assert_allclose(progress, [expected], atol=1e-12)
+
+    def test_uniform_cost_is_a_multiple_of_the_geodesic_distance(self, divider_arena):
+        from neurospatial.behavior import cost_to_goal
+
+        left, right = self._bins(divider_arena, self.LEFT, self.RIGHT)
+        cost = cost_to_goal(
+            np.array([left]),
+            divider_arena,
+            goal_bins=int(right),
+            cost_map=np.ones(divider_arena.n_bins),
+        )
+        np.testing.assert_allclose(cost, [2 * (2 * self.CLIMB + 5.0)], rtol=1e-12)
+
+    def test_oblique_cost_in_an_open_field_is_not_a_staircase(self):
+        from neurospatial.behavior import cost_to_goal
+
+        edges = np.arange(0.0, 51.0, 1.0)
+        env = Environment.from_grid_mask(
+            np.ones((50, 50), dtype=bool), grid_edges=(edges, edges)
+        )
+        start, goal = env.bin_at(np.array([[0.5, 0.5], [30.5, 40.5]]))
+        cost = cost_to_goal(
+            np.array([start]), env, goal_bins=int(goal), cost_map=np.ones(env.n_bins)
+        )
+        # Twice the 50 cm straight line; the bin graph would read 2 * 52.4.
+        np.testing.assert_allclose(cost, [100.0], rtol=1e-12)
+
+    def test_polar_environments_are_refused(self):
+        from neurospatial._exceptions import CartesianOnlyError
+        from neurospatial.behavior import path_progress
+
+        polar = Environment.from_polar_egocentric(
+            distance_range=(0.0, 30.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=5.0,
+            angle_bin_size=np.pi / 6,
+        )
+        with pytest.raises(CartesianOnlyError, match="path_progress"):
+            path_progress(np.array([0, 1]), polar, start_bins=0, goal_bins=5)

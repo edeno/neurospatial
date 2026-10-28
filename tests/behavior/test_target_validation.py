@@ -87,7 +87,10 @@ def test_boolean_target_is_refused(env, position_bins, name):
 
 def test_integer_targets_give_the_query_answer(env, position_bins):
     goal = 40
-    expected = env.distance_to(bins=goal)[position_bins]
+    # The square arena is convex, so the shortest path inside it between two
+    # bin centers is the straight line between them.
+    centers = env.bin_centers
+    expected = np.linalg.norm(centers[position_bins] - centers[goal], axis=1)
     np.testing.assert_array_equal(
         distance_to_region(position_bins, env, target_bins=np.int64(goal)), expected
     )

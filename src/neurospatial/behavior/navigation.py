@@ -752,6 +752,56 @@ def _validated_position_bins(
     )
 
 
+def _bin_distances(
+    env: Environment,
+    bins: NDArray[np.intp],
+    targets: NDArray[np.intp],
+    *,
+    metric: str,
+    call: str,
+) -> NDArray[np.float64]:
+    """Distance from each bin center to its target bin center under ``metric``.
+
+    Parameters
+    ----------
+    env : Environment
+    bins, targets : ndarray of int, shape (n,)
+        Bin indices; a pair with a ``-1`` gives NaN.
+    metric : {"euclidean", "geodesic"}
+    call : str
+        Public function name, used in messages.
+
+    Returns
+    -------
+    ndarray, shape (n,)
+        ``inf`` (geodesic) where the target cannot be reached.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
+    """
+    if metric == "geodesic":
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        return environment_paths(env, call=call).between_bins(bins, targets)
+    require_cartesian(
+        env.coordinate_system,
+        f"{call}(metric='euclidean')",
+        why=(
+            "The straight-line distance between bin centers treats them as "
+            "Cartesian positions."
+        ),
+        fix="use the allocentric environment the positions were recorded in",
+    )
+    centers = env.bin_centers
+    distances: NDArray[np.float64] = np.linalg.norm(
+        centers[np.maximum(targets, 0)] - centers[np.maximum(bins, 0)], axis=1
+    )
+    distances[(bins < 0) | (targets < 0)] = np.nan
+    return distances
+
+
 def path_progress(
     position_bins: NDArray[np.int_],
     env: Environment,
@@ -783,7 +833,11 @@ def path_progress(
         Goal bin for each timepoint, or one goal bin for every timepoint,
         with the same ``-1`` rule.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
-        Distance metric.
+        ``'euclidean'`` is the straight-line distance. ``'geodesic'`` is the
+        length of the shortest path between two positions that stays inside
+        the environment: it goes around walls and never leaves the
+        environment, and on a track it runs along the track's centerline.
+        Each bin is measured from its center.
 
     Returns
     -------
@@ -800,23 +854,16 @@ def path_progress(
         If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
     ValueError
         If ``start_bins`` or ``goal_bins`` has neither one nor ``n_samples``
-        entries.
+        entries, or ``metric`` is not recognized.
     CartesianOnlyError
-        If ``metric="euclidean"`` and ``env`` is polar. Use
-        ``metric="geodesic"``.
+        If ``env`` is an egocentric polar environment, whose bins are
+        (distance, angle), not positions.
 
     Notes
     -----
-    This function is fully vectorized - no loops over timepoints. The only
-    loop required is constructing start_bins/goal_bins arrays from trial
-    information (see examples).
-
-    **Performance strategy (automatic)**:
-
-    - **Small environments** (n_bins < 5000): Precomputes O(n_bins^2) distance matrix
-      (~200 MB for 5000 bins). Fast vectorized lookups.
-    - **Large environments** (>=5000 bins): Computes per-pair distance fields.
-      Memory-efficient but slower for many unique pairs.
+    The geodesic distance from a start or goal is grown once per distinct
+    start or goal bin and kept on the environment, so per-trial start and
+    goal arrays cost one field per distinct bin.
 
     **What progress measures**: the distance already covered from the start
     as a fraction of the shortest route from the start through the current
@@ -860,20 +907,7 @@ def path_progress(
     trials_to_region_arrays : Helper to construct start/goal arrays from trials
     distance_to_region : Distance to target region over time
     """
-    if metric == "euclidean":
-        require_cartesian(
-            env.coordinate_system,
-            "path_progress(metric='euclidean')",
-            why=(
-                "The straight-line distance between bin centers treats them as "
-                "Cartesian positions."
-            ),
-            fix=(
-                "use metric='geodesic', which follows the connectivity graph and its "
-                "physical edge lengths"
-            ),
-        )
-
+    _require_path_metric(metric, call="path_progress")
     from neurospatial.environment import _validate_sample_targets
 
     position_bins = _validated_position_bins(
@@ -896,52 +930,14 @@ def path_progress(
         for bins, argument in ((start_bins, "start_bins"), (goal_bins, "goal_bins"))
     )
 
-    # Import distance functions
-    from neurospatial.ops.distance import (
-        euclidean_distance_matrix,
-        geodesic_distance_matrix,
+    # Distance from the start, grown from each start bin, and to the goal,
+    # grown from each goal bin.
+    distances_from_start = _bin_distances(
+        env, position_bins, start_bins, metric=metric, call="path_progress"
     )
-
-    # Choose strategy based on environment size
-    if env.n_bins < 5000:
-        # Small environment - precompute full distance matrix
-        if metric == "geodesic":
-            dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
-        else:  # euclidean
-            dist_matrix = euclidean_distance_matrix(env.bin_centers)
-
-        distances_from_start = dist_matrix[start_bins, position_bins]
-        distances_to_goal = dist_matrix[position_bins, goal_bins]
-
-    else:
-        # Large environment - compute per-unique-pair distance fields
-        from neurospatial.ops.distance import distance_field
-
-        # Initialize arrays
-        distances_from_start = np.full(n_samples, np.nan)
-        distances_to_goal = np.full(n_samples, np.nan)
-
-        # Find unique (start, goal) pairs
-        valid_mask = (start_bins >= 0) & (goal_bins >= 0)
-        valid_pairs = np.column_stack([start_bins[valid_mask], goal_bins[valid_mask]])
-        unique_pairs = np.unique(valid_pairs, axis=0)
-
-        # Compute distance field for each unique pair
-        for start_bin, goal_bin in unique_pairs:
-            pair_mask = (start_bins == start_bin) & (goal_bins == goal_bin)
-
-            start_dist_field, goal_dist_field = (
-                distance_field(
-                    env.connectivity,
-                    [source],
-                    metric=metric,
-                    bin_centers=env.bin_centers if metric == "euclidean" else None,
-                )
-                for source in (start_bin, goal_bin)
-            )
-
-            distances_from_start[pair_mask] = start_dist_field[position_bins[pair_mask]]
-            distances_to_goal[pair_mask] = goal_dist_field[position_bins[pair_mask]]
+    distances_to_goal = _bin_distances(
+        env, position_bins, goal_bins, metric=metric, call="path_progress"
+    )
 
     with np.errstate(divide="ignore", invalid="ignore"):
         progress = distances_from_start / (distances_from_start + distances_to_goal)
@@ -991,14 +987,19 @@ def distance_to_region(
           ``-1`` marks a sample with no target, which gives NaN.
           This allows dynamic goals.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
-        Distance metric.
+        ``'euclidean'`` is the straight-line distance. ``'geodesic'`` is the
+        length of the shortest path between two positions that stays inside
+        the environment: it goes around walls and never leaves the
+        environment, and on a track it runs along the track's centerline.
+        Each bin is measured from its center.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
         Distance from current position to target at each timepoint.
         Units match environment coordinates (e.g., cm). NaN where the
-        position or the target is ``-1``.
+        position or the target is ``-1``; ``inf`` (geodesic) where the
+        target cannot be reached.
 
     Raises
     ------
@@ -1006,17 +1007,18 @@ def distance_to_region(
         If ``position_bins`` or ``target_bins`` is not integer bin indices.
     BinIndexOutOfRangeError
         If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
+    ValueError
+        If ``metric`` is not recognized.
     CartesianOnlyError
-        If ``metric="euclidean"`` and ``env`` is polar. Use
-        ``metric="geodesic"``.
+        If ``env`` is an egocentric polar environment, whose bins are
+        (distance, angle), not positions.
 
     Notes
     -----
-    **Performance strategy (automatic)**:
-
-    - **Scalar targets**: Delegates to ``env.distance_to()`` for efficiency.
-    - **Array targets (small env)**: Precomputes distance matrix.
-    - **Array targets (large env)**: Computes per-unique-target distance fields.
+    The geodesic distance is grown once per distinct target bin and kept on
+    the environment. ``env.distance_to`` and ``env.distance_between``
+    measure along the bin graph instead (bin center to bin center through
+    neighboring bins), which reads an oblique straight run as a staircase.
 
     Examples
     --------
@@ -1034,20 +1036,7 @@ def distance_to_region(
     distance_to_reward : Distance to the reward location at each sample
     neurospatial.ops.nearest_boundary : Exact distance and direction to walls
     """
-    if metric == "euclidean":
-        require_cartesian(
-            env.coordinate_system,
-            "distance_to_region(metric='euclidean')",
-            why=(
-                "The straight-line distance between bin centers treats them as "
-                "Cartesian positions."
-            ),
-            fix=(
-                "use metric='geodesic', which follows the connectivity graph and its "
-                "physical edge lengths"
-            ),
-        )
-
+    _require_path_metric(metric, call="distance_to_region")
     from neurospatial.environment import _validate_sample_targets
 
     position_bins = _validated_position_bins(
@@ -1062,48 +1051,13 @@ def distance_to_region(
         argument="target_bins",
     )
 
-    if not per_sample:
-        (target,) = targets
-        dist_field = env.distance_to(bins=target, metric=metric)
-        distances = dist_field[position_bins].astype(np.float64)
-
-        invalid_mask = position_bins == -1
-        distances[invalid_mask] = np.nan
-        return distances
-
-    else:
-        n_samples = len(position_bins)
-
-        if env.n_bins < 5000:
-            from neurospatial.ops.distance import (
-                euclidean_distance_matrix,
-                geodesic_distance_matrix,
-            )
-
-            if metric == "geodesic":
-                dist_matrix = geodesic_distance_matrix(
-                    env.connectivity, weight="distance"
-                )
-            else:
-                dist_matrix = euclidean_distance_matrix(env.bin_centers)
-
-            distances = dist_matrix[position_bins, targets]
-        else:
-            unique_targets = np.unique(targets)
-            unique_targets = unique_targets[unique_targets != -1]
-
-            distances = np.full(n_samples, np.nan, dtype=np.float64)
-
-            for target in unique_targets:
-                mask = targets == target
-                if np.any(mask):
-                    dist_field = env.distance_to(bins=target, metric=metric)
-                    distances[mask] = dist_field[position_bins[mask]]
-
-        invalid_mask = (position_bins == -1) | (targets == -1)
-        distances[invalid_mask] = np.nan
-
-        return distances
+    return _bin_distances(
+        env,
+        position_bins,
+        np.broadcast_to(targets if per_sample else targets[0], position_bins.shape),
+        metric=metric,
+        call="distance_to_region",
+    )
 
 
 def distance_to_reward(
@@ -1958,11 +1912,14 @@ def cost_to_goal(
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Cost of the cheapest path from the current bin to the goal bin, in
-        the environment's length units (e.g. cm) weighted by the cost rate.
-        With neither ``cost_map`` nor ``terrain_difficulty`` it is the
-        geodesic distance. Lower cost = preferred path. NaN where the
-        position or the goal is ``-1``; ``inf`` where no path exists.
+        Cost of the cheapest path inside the environment from the current
+        bin's center to the goal bin's center, in the environment's length
+        units (e.g. cm) weighted by the cost rate. With neither ``cost_map``
+        nor ``terrain_difficulty`` it is the geodesic distance of
+        :func:`distance_to_region`: the length of the shortest path between
+        the two bin centers that stays inside the environment. Lower cost =
+        preferred path. NaN where the position or the goal is ``-1``;
+        ``inf`` where no path exists.
 
     Raises
     ------
@@ -1974,19 +1931,28 @@ def cost_to_goal(
         If ``position_bins`` or ``goal_bins`` is not integer bin indices.
     BinIndexOutOfRangeError
         If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment, whose bins are
+        (distance, angle), not positions.
 
     Notes
     -----
     Each bin has a cost rate per unit length,
     ``rate = terrain_difficulty * (1 + cost_map)``. Travel cost is the
-    integral of the rate along the path, with the rate varying linearly
-    between bin centers, so a graph edge of length ``d`` between bins ``u``
-    and ``v`` costs ``d * (rate[u] + rate[v]) / 2``. Because cost is per unit
-    length, the result does not depend on the bin size: on a 100 cm corridor
-    with ``cost_map = np.ones(n_bins)``, a bin 80 cm from the goal costs 160
-    at every bin size, and a 20 cm stretch with ``cost_map = 9`` adds
-    ``9 * 20 = 180``. A uniform ``cost_map`` only rescales every cost, so it
-    never changes which path is cheapest.
+    integral of the rate along a path inside the environment, each stretch
+    taking the rate of the bin it runs through (averaged across a bin
+    boundary), and the result is the cheapest such path. Paths are the same
+    any-angle paths as the geodesic distance: straight segments that stay
+    inside the environment, bending only at bin centers. With a rate of 1
+    everywhere the cost is the geodesic distance itself.
+
+    Because cost is per unit length, the result does not depend on the bin
+    size: on a 100 cm corridor with ``cost_map = np.ones(n_bins)``, a bin
+    80 cm from the goal costs 160 at every bin size, and a 20 cm stretch
+    with ``cost_map = 9`` adds about ``9 * 20 = 180`` (exactly when the
+    stretch ends on bin edges, within a bin's length otherwise). A uniform
+    ``cost_map`` only rescales every cost, so it never changes which path is
+    cheapest.
 
     Examples
     --------
@@ -2005,7 +1971,6 @@ def cost_to_goal(
     distance_to_region : Simple geometric distance
     """
     from neurospatial.environment import _validate_sample_targets
-    from neurospatial.ops.distance import distance_field
 
     position_bins = _validated_position_bins(
         position_bins, env, operation="cost_to_goal()"
@@ -2028,8 +1993,8 @@ def cost_to_goal(
             metric="geodesic",
         )
 
-    # Case 2: per-bin cost rate per unit length, integrated along each edge
-    # with the trapezoidal rule.
+    # Case 2: per-bin cost rate per unit length, integrated along the
+    # cheapest path inside the environment.
     extra = _validated_bin_values(
         cost_map, env, name="cost_map", default=0.0, positive=False
     )
@@ -2037,33 +2002,21 @@ def cost_to_goal(
         terrain_difficulty, env, name="terrain_difficulty", default=1.0, positive=True
     )
     rate = difficulty * (1.0 + extra)
-    g_weighted = env.connectivity.copy()
-    for u, v, data in g_weighted.edges(data=True):
-        data["weight"] = data["distance"] * (rate[u] + rate[v]) / 2.0
+    from neurospatial.behavior._environment_paths import environment_paths
 
+    paths = environment_paths(env, call="cost_to_goal")
     if not per_sample:
-        dist_field = distance_field(g_weighted, goals, weight="weight")
-        costs = dist_field[position_bins]
-
-        costs[position_bins == -1] = np.nan
-
+        goal_costs = paths.costs_from_bins(goals, rate)
+        costs = np.full(len(position_bins), np.nan)
+        located = position_bins >= 0
+        costs[located] = goal_costs[position_bins[located]]
         return costs
-    else:
-        unique_goals = np.unique(goals)
-        unique_goals = unique_goals[unique_goals != -1]
 
-        costs = np.full(len(position_bins), np.nan, dtype=np.float64)
-
-        for goal in unique_goals:
-            mask = goals == goal
-            if np.any(mask):
-                dist_field = distance_field(g_weighted, [goal], weight="weight")
-                costs[mask] = dist_field[position_bins[mask]]
-
-        invalid_mask = (position_bins == -1) | (goals == -1)
-        costs[invalid_mask] = np.nan
-
-        return costs
+    costs = np.full(len(position_bins), np.nan, dtype=np.float64)
+    for goal in np.unique(goals[goals >= 0]):
+        mask = (goals == goal) & (position_bins >= 0)
+        costs[mask] = paths.costs_from_bins(np.array([goal]), rate)[position_bins[mask]]
+    return costs
 
 
 def _validated_bin_values(
