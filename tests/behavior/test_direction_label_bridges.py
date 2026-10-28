@@ -82,10 +82,10 @@ def test_laps_unknown_direction_are_none():
 def test_runs_to_direction_labels_scalar_and_sequence():
     """Scalar label fills all runs; sequence labels per run; None elsewhere."""
     times = np.linspace(0.0, 10.0, 11)
-    empty = np.array([], dtype=np.int64)
+    bins = np.array([0, 1], dtype=np.int64)
     runs = [
-        Run(start_time=0.0, end_time=3.0, bins=empty, success=True),
-        Run(start_time=7.0, end_time=10.0, bins=empty, success=False),
+        Run(0.0, 3.0, "home", "reward", "reached", bins),
+        Run(7.0, 10.0, "reward", "home", "timeout", bins),
     ]
 
     scalar = runs_to_direction_labels(runs, times)
@@ -108,10 +108,10 @@ def test_runs_to_direction_labels_scalar_and_sequence():
 def test_runs_to_direction_labels_ndarray_labels():
     """ndarray labels are treated per-run (not silently broadcast as a scalar)."""
     times = np.linspace(0.0, 10.0, 11)
-    empty = np.array([], dtype=np.int64)
+    bins = np.array([0, 1], dtype=np.int64)
     runs = [
-        Run(start_time=0.0, end_time=3.0, bins=empty, success=True),
-        Run(start_time=7.0, end_time=10.0, bins=empty, success=True),
+        Run(0.0, 3.0, "home", "reward", "reached", bins),
+        Run(7.0, 10.0, "reward", "home", "reached", bins),
     ]
 
     # Correct-length ndarray must match the list-input result element-by-element.

@@ -361,7 +361,7 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
             times,
             positions,
             decision_region="decision",
-            trials=[Trial(times[0], times[-1], "source", "target", True)],
+            trials=[Trial(times[0], times[-1], "source", "target", "reached")],
             window_duration=duration,
             max_gap=None,
         )

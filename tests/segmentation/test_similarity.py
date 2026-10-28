@@ -198,107 +198,84 @@ class TestTrajectorySimilarity:
 class TestDetectGoalDirectedRuns:
     """Test goal-directed run detection."""
 
-    def test_detect_goal_directed_runs_straight_path(self):
-        """Test goal-directed run detection with efficient path."""
-        # Create 2D environment with regular grid for predictable connectivity
-        x = np.linspace(0, 100, 20)
-        y = np.linspace(0, 100, 20)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=6.0)
+    @staticmethod
+    def _corridor():
+        """A 100 cm corridor of 2 cm bins with a goal box at the right end."""
+        from shapely.geometry import box
 
-        # Add goal region at one corner
-        from shapely.geometry import Point
+        xs = np.linspace(0.0, 100.0, 401)
+        env = Environment.from_samples(np.c_[xs, np.zeros_like(xs)], bin_size=2.0)
+        regions = Regions(env.regions.values())
+        regions.add("goal", polygon=box(95.0, -5.0, 105.0, 5.0))
+        return env.with_regions(regions)
 
-        # Find a bin far from origin
-        distances_from_origin = np.linalg.norm(env.bin_centers, axis=1)
-        goal_bin_idx = int(np.argmax(distances_from_origin))
-        goal_location = env.bin_centers[goal_bin_idx]
-        goal_polygon = Point(goal_location).buffer(15.0)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("goal", polygon=goal_polygon)
-        env = env.with_regions(region_builder)
-
-        # Create trajectory moving toward goal
-        # Start from opposite corner
-        start_bin_idx = int(np.argmin(distances_from_origin))
-
-        # Create a somewhat direct path (not perfectly straight, but progressing)
-        # Use a simple heuristic: move toward goal in steps
-        position_bins_list = [start_bin_idx]
-        current_bin = start_bin_idx
-
-        for _ in range(15):  # Take 15 steps
-            # Find neighbors and pick the one closest to goal
-            neighbors = list(env.connectivity.neighbors(current_bin))
-            if not neighbors:
-                break
-
-            neighbor_distances = []
-            for neighbor in neighbors:
-                neighbor_pos = env.bin_centers[neighbor]
-                dist_to_goal = np.linalg.norm(neighbor_pos - goal_location)
-                neighbor_distances.append(dist_to_goal)
-
-            # Move to neighbor closest to goal
-            best_neighbor_idx = int(np.argmin(neighbor_distances))
-            current_bin = neighbors[best_neighbor_idx]
-            position_bins_list.append(current_bin)
-
-        position_bins = np.array(position_bins_list, dtype=np.int64)
-        times = np.linspace(0, 10, len(position_bins))
+    def test_straight_approach_is_one_goal_directed_run(self):
+        """A straight run toward the goal has directedness 1 and is detected."""
+        env = self._corridor()
+        x = np.linspace(10.0, 90.0, 41)
+        times = np.arange(x.size) / 10.0
+        bins = env.bin_at(np.c_[x, np.zeros_like(x)])
 
         runs = detect_goal_directed_runs(
-            position_bins,
+            bins,
             times,
             env,
             goal_region="goal",
-            directedness_threshold=0.5,  # Lower threshold for imperfect path
-            min_progress=10.0,
-            max_gap=None,
+            directedness_threshold=1.0,
+            min_progress=70.0,
         )
 
-        # Should detect at least one goal-directed run
-        # (actual number depends on path efficiency and environment connectivity)
-        assert isinstance(runs, list)
-        # The function should execute without errors
-        # Whether it finds runs depends on the specific path taken
+        np.testing.assert_array_equal(runs, [[times[0], times[-1]]])
 
-    def test_detect_goal_directed_runs_wandering_path(self):
-        """Wandering path should have low directedness and be filtered out."""
-        # Create 2D environment with deterministic grid
-        x = np.linspace(0, 100, 34)
-        xx, yy = np.meshgrid(x, x)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=3.0)
-
-        # Add goal region
-        from shapely.geometry import Point
-
-        goal_location = env.bin_centers[env.n_bins // 2]
-        goal_polygon = Point(goal_location).buffer(10.0)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("goal", polygon=goal_polygon)
-        env = env.with_regions(region_builder)
-
-        # Random walk (inefficient path) with local RNG
-        rng = np.random.default_rng(123)
-        position_bins = rng.integers(0, env.n_bins, 100, dtype=np.int64)
-        times = np.linspace(0, 100, len(position_bins))
+    def test_straight_retreat_is_not_goal_directed(self):
+        """Moving straight away from the goal has negative progress: no run."""
+        env = self._corridor()
+        x = np.linspace(90.0, 10.0, 41)
+        times = np.arange(x.size) / 10.0
+        bins = env.bin_at(np.c_[x, np.zeros_like(x)])
 
         runs = detect_goal_directed_runs(
-            position_bins,
+            bins,
             times,
             env,
             goal_region="goal",
-            directedness_threshold=0.8,  # high threshold
-            min_progress=20.0,
-            max_gap=None,
+            directedness_threshold=0.0,
+            min_progress=0.0,
         )
 
-        # Random walk should not produce high-directedness runs
-        # (may produce 0 runs or only a few)
-        assert isinstance(runs, list)
+        assert runs.shape == (0, 2)
+
+    def test_detour_directedness_is_progress_over_path_length(self):
+        """10 -> 60 -> 30 -> 90 cm: directedness = 80 / 140 cm = 0.571."""
+        env = self._corridor()
+        x = np.r_[
+            np.linspace(10.0, 60.0, 26),
+            np.linspace(60.0, 30.0, 16)[1:],
+            np.linspace(30.0, 90.0, 31)[1:],
+        ]
+        times = np.arange(x.size) / 10.0
+        bins = env.bin_at(np.c_[x, np.zeros_like(x)])
+        centers = env.bin_centers[
+            env.bin_at(np.array([[10.0, 0], [60, 0], [30, 0], [90, 0]])), 0
+        ]
+        progress = centers[3] - centers[0]
+        path = (
+            (centers[1] - centers[0])
+            + (centers[1] - centers[2])
+            + (centers[3] - centers[2])
+        )
+        directedness = progress / path
+        assert directedness == pytest.approx(80.0 / 140.0, abs=0.02)
+
+        common = {"goal_region": "goal", "min_progress": 0.0}
+        below = detect_goal_directed_runs(
+            bins, times, env, directedness_threshold=directedness - 1e-9, **common
+        )
+        above = detect_goal_directed_runs(
+            bins, times, env, directedness_threshold=directedness + 1e-9, **common
+        )
+        np.testing.assert_array_equal(below, [[times[0], times[-1]]])
+        assert above.shape == (0, 2)
 
     def test_detect_goal_directed_runs_min_progress_filter(self):
         """Test that min_progress filters out short runs."""
@@ -409,7 +386,7 @@ class TestDetectGoalDirectedRuns:
             empty_bins, empty_times, env, goal_region="goal"
         )
 
-        assert runs == []
+        assert runs.shape == (0, 2)
 
 
 class TestGoalDirectedRunsEquivalence:
@@ -578,9 +555,9 @@ class TestSimilarityIntegration:
             traj2_bins, traj2_times, env, goal_region="goal"
         )
 
-        # Both should produce runs (list type)
-        assert isinstance(runs1, list)
-        assert isinstance(runs2, list)
+        # Both are straight walks toward the goal corner.
+        assert runs1.shape[1:] == (2,)
+        assert runs2.shape[1:] == (2,)
 
         # Compare similarity of the two trajectories
         similarity = trajectory_similarity(

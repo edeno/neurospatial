@@ -1275,7 +1275,7 @@ def compute_vte_session(
     ...         xy = np.column_stack([x, np.linspace(30.0, 56.0, 60)])
     ...     times.append(t)
     ...     positions.append(xy)
-    ...     trials.append(Trial(t[0], t[-1], "start", "center", success=True))
+    ...     trials.append(Trial(t[0], t[-1], "start", "center", "reached"))
     >>> result = compute_vte_session(
     ...     env,
     ...     np.concatenate(times),

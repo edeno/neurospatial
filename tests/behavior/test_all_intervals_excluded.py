@@ -61,8 +61,8 @@ def _vte_session(env, times, positions, **kwargs):
     With every interval excluded, both trials are unmeasured, with a warning.
     """
     trials = [
-        Trial(0.0, 39.0, "start", "mid_area", True),
-        Trial(35.0, 79.0, "start", "mid_area", True),
+        Trial(0.0, 39.0, "start", "mid_area", "reached"),
+        Trial(35.0, 79.0, "start", "mid_area", "reached"),
     ]
     options = {
         "decision_region": "mid_area",

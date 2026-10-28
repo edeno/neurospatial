@@ -127,10 +127,8 @@ def test_goal_directed_run_skips_an_outside_sample_like_a_deleted_row(strip):
         position_bins[kept], times[kept], strip, goal_region="goal", min_progress=10.0
     )
 
-    assert [(run.start_time, run.end_time) for run in runs] == [
-        (run.start_time, run.end_time) for run in deleted
-    ]
-    assert all((run.bins >= 0).all() for run in runs)
+    assert runs.shape == (1, 2)
+    np.testing.assert_array_equal(runs, deleted)
 
 
 def test_goal_directed_run_ends_at_an_outside_sample_beyond_max_gap(strip):
@@ -146,11 +144,7 @@ def test_goal_directed_run_ends_at_an_outside_sample_beyond_max_gap(strip):
         max_gap=1.5 * (times[1] - times[0]),
     )
 
-    assert [(run.start_time, run.end_time) for run in runs] == [
-        (times[0], times[19]),
-        (times[21], times[-1]),
-    ]
-    assert all((run.bins >= 0).all() for run in runs)
+    np.testing.assert_array_equal(runs, [[times[0], times[19]], [times[21], times[-1]]])
 
 
 def test_goal_directed_runs_without_a_place_are_empty(strip):
@@ -160,4 +154,4 @@ def test_goal_directed_runs_without_a_place_are_empty(strip):
         np.full(len(times), -1), times, strip, goal_region="goal"
     )
 
-    assert runs == []
+    assert runs.shape == (0, 2)

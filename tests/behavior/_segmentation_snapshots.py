@@ -30,7 +30,7 @@ def capture_segmentation_outputs(pause, laps):
     lap_recording = laps
     labels = np.where(p.env.bin_centers[:, 0] < 50, 0, 1)
     reference = lap_recording.position_bins[100:501]
-    trials = [Trial(0.0, p.times[-1], "source", "target", True)]
+    trials = [Trial(0.0, p.times[-1], "source", "target", "reached")]
     return {
         "detect_region_crossings": detect_region_crossings(
             p.position_bins, p.times, p.env, region_name="target"

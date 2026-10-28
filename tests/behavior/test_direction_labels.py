@@ -39,14 +39,14 @@ def basic_trials() -> list[Trial]:
             end_time=20.0,
             start_region="home",
             end_region="goal_left",
-            success=True,
+            outcome="reached",
         ),
         Trial(
             start_time=30.0,
             end_time=45.0,
             start_region="home",
             end_region="goal_right",
-            success=True,
+            outcome="reached",
         ),
     ]
 
@@ -65,7 +65,7 @@ def failed_trial() -> Trial:
         end_time=65.0,
         start_region="home",
         end_region=None,  # Failed trial - did not reach end
-        success=False,
+        outcome="timeout",
     )
 
 
@@ -78,14 +78,14 @@ def overlapping_trials() -> list[Trial]:
             end_time=30.0,
             start_region="home",
             end_region="goal_left",
-            success=True,
+            outcome="reached",
         ),
         Trial(
             start_time=20.0,  # Overlaps with first trial
             end_time=40.0,
             start_region="center",
             end_region="goal_right",
-            success=True,
+            outcome="reached",
         ),
     ]
 
@@ -195,7 +195,7 @@ class TestGoalPairDirectionLabels:
                 end_time=20.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             )
         ]
 
@@ -215,7 +215,7 @@ class TestGoalPairDirectionLabels:
                 end_time=20.0,
                 start_region="A",
                 end_region="B",
-                success=True,
+                outcome="reached",
             ),
         ]
 
@@ -238,7 +238,7 @@ class TestGoalPairDirectionLabels:
                 end_time=20.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             ),
         ]
 
@@ -261,14 +261,14 @@ class TestGoalPairDirectionLabels:
                 end_time=20.0,
                 start_region="center",
                 end_region="arm1",
-                success=True,
+                outcome="reached",
             ),
             Trial(
                 start_time=30.0,
                 end_time=40.0,
                 start_region="center",
                 end_region="arm2",
-                success=True,
+                outcome="reached",
             ),
         ]
 

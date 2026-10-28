@@ -2418,7 +2418,7 @@ def goal_pair_direction_labels(
     >>> import numpy as np
     >>> from neurospatial.behavior import Trial, goal_pair_direction_labels
     >>> times = np.arange(6.0)
-    >>> trials = [Trial(1.0, 3.0, "home", "goal_left", True)]
+    >>> trials = [Trial(1.0, 3.0, "home", "goal_left", "reached")]
     >>> goal_pair_direction_labels(times, trials).tolist()
     [None, 'home→goal_left', 'home→goal_left', None, None, None]
 

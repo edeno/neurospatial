@@ -219,12 +219,7 @@ print(
     f"Left-to-right traversals: {len(complete_runs)} complete; {len(runs) - len(complete_runs)} incomplete"
 )
 for number, run in enumerate(runs, start=1):
-    status = (
-        "arrival observed"
-        if run.success
-        else "recording break or time limit before arrival"
-    )
-    print(f"  {number}: {run.start_time:.2f}-{run.end_time:.2f} s; {status}")
+    print(f"  {number}: {run.start_time:.2f}-{run.end_time:.2f} s; {run.outcome}")
 
 fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True, layout="constrained")
 # Draw each continuous recording period separately, leaving the tracking gap empty.
@@ -243,8 +238,8 @@ axes[0].set(
     title="Left-to-right traversals: complete (blue), incomplete (orange)",
 )
 axes[1].plot(times[:-1], speed, lw=0.7, color="gray", label="Speed from tracking")
-for epoch in movement:
-    axes[1].axvspan(epoch.start_time, epoch.end_time, color="#009E73", alpha=0.2)
+for start, stop in movement:
+    axes[1].axvspan(start, stop, color="#009E73", alpha=0.2)
 axes[1].axhline(8.0, color="black", ls="--", label="Running threshold (8 cm/s)")
 axes[1].set(
     xlabel="Time (s)", ylabel="Speed (cm/s)", title="Detected running bouts (green)"
@@ -263,9 +258,13 @@ plt.show()
 # detection uses 100 ms smoothing, so the green boundaries need not match
 # crossings of the threshold in the displayed trace exactly.
 #
-# In the returned records, `success=True` means that arrival was observed within
-# the time limit. This flag does not describe reward or task accuracy. Keep the
-# incomplete segment when reporting how much behavior could be measured.
+# Each run records its `outcome`: `"reached"` means that arrival was observed
+# within the time limit, and `run.success` is shorthand for that. `"censored"`
+# means observation stopped first (here, at the tracking gap), so the result
+# is unknown; `"timeout"` and `"returned"` mark a run that ran out of time or
+# went back to the left zone. The outcome does not describe reward or task
+# accuracy. Keep the censored segment when reporting how much behavior could
+# be measured, and leave it out of success rates.
 
 # %% [markdown]
 # ## 4. Compare position over the course of complete traversals

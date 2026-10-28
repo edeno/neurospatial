@@ -306,7 +306,7 @@ def _polar_regions_env(env: Environment) -> Environment:
                 _TIMES,
                 _POLAR_POSITIONS,
                 decision_region="near",
-                trials=[Trial(0.0, 2.5, "near", "far", True)],
+                trials=[Trial(0.0, 2.5, "near", "far", "reached")],
             ),
             "compute_vte_session()",
         ),

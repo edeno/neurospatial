@@ -40,7 +40,7 @@ detect_region_crossings
 detect_runs_between_regions
     Detect runs from source region to target region
 segment_by_velocity
-    Segment trajectory into movement and rest periods
+    Movement epochs from a speed threshold, as an (n, 2) array
 detect_laps
     Detect laps on circular tracks
 segment_trials
@@ -48,7 +48,7 @@ segment_trials
 trajectory_similarity
     Compare similarity between two trajectories
 detect_goal_directed_runs
-    Detect goal-directed navigation segments
+    Goal-directed stretches of recording, as an (n, 2) array
 
 Classes
 -------
@@ -57,8 +57,8 @@ Trial
     - start_time: Trial onset time
     - end_time: Trial offset time
     - start_region: Region where trial started
-    - end_region: Region reached (None if timeout)
-    - success: True if trial reached end_region
+    - end_region: Region reached (None unless outcome is 'reached')
+    - outcome: 'reached', 'timeout', 'returned' or 'censored'
 Crossing
     Dataclass for region entry/exit events
 Lap
@@ -228,8 +228,50 @@ def _interval_labels(
 
 
 # =============================================================================
-# Dataclasses from regions.py
+# Event records
 # =============================================================================
+
+Outcome = Literal["reached", "timeout", "returned", "censored"]
+"""How a trial or a run between regions ended.
+
+``"reached"``: the end (target) region was entered within ``max_duration``.
+``"timeout"``: ``max_duration`` elapsed first. ``"returned"``: the animal
+re-entered the start (source) region first. ``"censored"``: observation stopped
+first, at a tracking gap longer than ``max_gap``, an ``epochs`` edge, a declared
+``break_before`` or the end of the recording, so the attempt's result is
+unknown.
+"""
+
+_OUTCOMES: tuple[str, ...] = ("reached", "timeout", "returned", "censored")
+
+
+def _checked_interval(record: str, start: object, end: object) -> tuple[float, float]:
+    """Return ``(start, end)`` as finite Python floats with ``start <= end``."""
+    start_f, end_f = float(start), float(end)  # type: ignore[arg-type]
+    if not (np.isfinite(start_f) and np.isfinite(end_f)) or start_f > end_f:
+        raise ValueError(
+            _format_error(
+                f"{record} needs finite start_time <= end_time; got "
+                f"start_time={start_f!r}, end_time={end_f!r}.",
+                why="an event interval runs forward in time on one clock.",
+                fix="pass the interval's start and end times in seconds, start first.",
+            )
+        )
+    return start_f, end_f
+
+
+def _check_choice(
+    record: str, name: str, value: object, choices: Sequence[str]
+) -> None:
+    """Raise a ValueError naming ``choices`` when ``value`` is not one of them."""
+    if value not in choices:
+        raise ValueError(
+            _format_error(
+                f"{record}.{name} must be one of {list(choices)}; got {value!r}.",
+                why=f"each {name} has one documented meaning.",
+                fix=f"pass one of {list(choices)}.",
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -253,33 +295,63 @@ class Crossing:
 
 @dataclass(frozen=True, eq=False)
 class Run(ReadOnlyArraysMixin):
-    """Run between regions.
+    """One attempt to travel from a source region to a target region.
 
     Attributes
     ----------
     start_time : float
-        Start time of run (seconds).
+        Time of the first sample outside the source region (seconds).
     end_time : float
-        End time of run (seconds).
-    bins : NDArray[np.int64]
-        Sequence of bin indices during run.
+        Time at which the run ended (seconds); see ``outcome``.
+    source_region : str
+        Name of the region the run left.
+    target_region : str
+        Name of the region the run was heading for.
+    outcome : {'reached', 'timeout', 'returned', 'censored'}
+        How the run ended:
+
+        - ``'reached'``: entered ``target_region`` within ``max_duration``;
+          ``end_time`` is the first sample inside it.
+        - ``'timeout'``: ``max_duration`` elapsed first; ``end_time`` is the
+          last sample within it.
+        - ``'returned'``: re-entered ``source_region`` first.
+        - ``'censored'``: observation stopped first (a tracking gap longer
+          than ``max_gap``, an ``epochs`` edge, a ``break_before`` or the end
+          of the recording); ``end_time`` is the last observed sample, and
+          whether the run would have reached the target is unknown.
+    bins : NDArray[np.int64], shape (n_run_samples,)
+        Bin index of each observed sample from ``start_time`` to ``end_time``,
+        inclusive. Read-only.
     success : bool
-        True if run reached target region, False if timeout.
+        Read-only property, ``outcome == 'reached'``.
     """
 
     start_time: float
     end_time: float
+    source_region: str
+    target_region: str
+    outcome: Outcome
     bins: NDArray[np.int64]
-    success: bool
 
     def __post_init__(self) -> None:
-        """Own a read-only copy of the run's bin sequence."""
+        """Check the record and own a read-only copy of the bin sequence."""
+        start, end = _checked_interval("Run", self.start_time, self.end_time)
+        object.__setattr__(self, "start_time", start)
+        object.__setattr__(self, "end_time", end)
+        _check_choice("Run", "outcome", self.outcome, _OUTCOMES)
+        bins = np.asarray(self.bins)
+        if bins.ndim != 1 or (bins.size and bins.dtype.kind not in "iu"):
+            raise ValueError(
+                "Run.bins must be a 1-D integer array of bin indices; got "
+                f"dtype {bins.dtype} with shape {bins.shape}."
+            )
+        object.__setattr__(self, "bins", bins.astype(np.int64))
         self._own_arrays()
 
-
-# =============================================================================
-# Dataclass from laps.py
-# =============================================================================
+    @property
+    def success(self) -> bool:
+        """Whether the run reached its target region (``outcome == 'reached'``)."""
+        return self.outcome == "reached"
 
 
 @dataclass(frozen=True)
@@ -304,14 +376,9 @@ class Lap:
     overlap_score: float
 
 
-# =============================================================================
-# Dataclass from trials.py
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class Trial:
-    """Behavioral trial event.
+    """One behavioral trial: a departure from the start region and its result.
 
     Attributes
     ----------
@@ -319,25 +386,56 @@ class Trial:
         Time when trial started: the last sample in the start region before
         the animal left it (seconds).
     end_time : float
-        Time when trial ended (end region entry or timeout, seconds).
+        Time when the trial ended (seconds); see ``outcome``.
     start_region : str
         Name of the region where trial started.
     end_region : str or None
-        Name of end region reached, or None if trial timed out.
+        Name of the end region reached; None unless ``outcome == 'reached'``.
+    outcome : {'reached', 'timeout', 'returned', 'censored'}
+        How the trial ended:
+
+        - ``'reached'``: entered an end region within ``max_duration``;
+          ``end_time`` is the first sample inside it.
+        - ``'timeout'``: ``max_duration`` elapsed first.
+        - ``'returned'``: re-entered the start region first (an aborted
+          trial).
+        - ``'censored'``: observation stopped first (a tracking gap longer
+          than ``max_gap``, an ``epochs`` edge, a ``break_before`` or the end
+          of the recording); ``end_time`` is the last observed sample, and
+          the trial's result is unknown. Leave censored trials out of
+          success rates rather than counting them as errors.
     success : bool
-        True if end region reached within max_duration, False if timeout.
+        Read-only property, ``outcome == 'reached'``.
     """
 
     start_time: float
     end_time: float
     start_region: str
     end_region: str | None
-    success: bool
+    outcome: Outcome
 
+    def __post_init__(self) -> None:
+        """Check the record and store plain Python floats."""
+        start, end = _checked_interval("Trial", self.start_time, self.end_time)
+        object.__setattr__(self, "start_time", start)
+        object.__setattr__(self, "end_time", end)
+        _check_choice("Trial", "outcome", self.outcome, _OUTCOMES)
+        if (self.outcome == "reached") != (self.end_region is not None):
+            raise ValueError(
+                _format_error(
+                    f"Trial.end_region={self.end_region!r} does not match "
+                    f"outcome={self.outcome!r}.",
+                    why="end_region names the end region reached, so it is set "
+                    "exactly when outcome == 'reached'.",
+                    fix="pass end_region='<name>' with outcome='reached', and "
+                    "end_region=None with any other outcome.",
+                )
+            )
 
-# =============================================================================
-# Functions from regions.py
-# =============================================================================
+    @property
+    def success(self) -> bool:
+        """Whether the trial reached an end region (``outcome == 'reached'``)."""
+        return self.outcome == "reached"
 
 
 def detect_region_crossings(
@@ -608,11 +706,11 @@ def detect_runs_between_regions(
     Returns
     -------
     list[Run]
-        List of detected runs. Each run has:
-        - start_time: time of source region exit
-        - end_time: time of target entry or timeout
-        - bins: sequence of bin indices during run
-        - success: True if reached target, False if timeout
+        Detected runs in time order. Each run records ``start_time`` (first
+        sample outside the source), ``end_time``, ``source_region``,
+        ``target_region``, ``outcome`` (``'reached'``, ``'timeout'``,
+        ``'returned'`` or ``'censored'``, see :class:`Run`), the observed
+        ``bins`` and the derived ``success`` (``outcome == 'reached'``).
 
     Raises
     ------
@@ -646,12 +744,14 @@ def detect_runs_between_regions(
     no segment spans a pause.
 
     A run in progress when a recording ends is emitted there with
-    success=False, as at the end of a complete recording.
+    ``outcome='censored'``: it neither reached the target nor timed out
+    while observed.
 
     A run is defined as:
     1. Exit from source region
     2. Trajectory through environment
-    3. Either entry to target (success=True) or timeout (success=False)
+    3. Either entry to target (``'reached'``), timeout (``'timeout'``) or the
+       end of observation (``'censored'``)
 
     Runs are filtered by:
     - Duration must be >= min_duration and <= max_duration
@@ -786,7 +886,9 @@ def _detect_runs_between_regions_contiguous(
         # slice position_bins[exit_idx : end_idx + 1]. Both the stored path and
         # the optional velocity filter are derived from this one slice so they
         # can never diverge (e.g. by an off-by-one at the timeout boundary).
-        reached_target = False
+        # A run that reaches the end of the recording is censored: its result
+        # is unknown.
+        outcome: Outcome = "censored"
         end_idx = exit_idx
 
         for j in range(exit_idx + 1, len(position_bins)):
@@ -794,13 +896,14 @@ def _detect_runs_between_regions_contiguous(
 
             # Check timeout (do not include the timing-out sample in the run)
             if elapsed > max_duration:
+                outcome = "timeout"
                 break
 
             end_idx = j
 
             # Check if reached target
             if in_target[j]:
-                reached_target = True
+                outcome = "reached"
                 break
 
         run_slice = slice(exit_idx, end_idx + 1)
@@ -854,8 +957,10 @@ def _detect_runs_between_regions_contiguous(
             Run(
                 start_time=start_time,
                 end_time=end_time,
-                bins=np.array(run_bin_idx, dtype=np.int64),
-                success=reached_target,
+                source_region=source,
+                target_region=target,
+                outcome=outcome,
+                bins=run_bin_idx,
             )
         )
 
@@ -873,7 +978,7 @@ def segment_by_velocity(
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> list[Run]:
+) -> NDArray[np.float64]:
     """Segment trajectory into movement and rest periods based on velocity.
 
     Uses hysteresis thresholding to classify trajectory epochs as movement
@@ -923,14 +1028,9 @@ def segment_by_velocity(
 
     Returns
     -------
-    list[Run]
-        List of movement epochs as :class:`Run` instances. Matches the
-        sibling segmentation functions (``detect_runs_between_regions``,
-        ``detect_laps``, etc.) so callers can treat all behavioral
-        epochs uniformly. Each entry has ``start_time`` and ``end_time``
-        populated; ``bins`` is empty (movement epochs are not
-        region-bounded) and ``success`` is always ``True`` (every
-        emitted epoch satisfied ``min_speed`` / ``min_duration``).
+    NDArray[np.float64], shape (n_epochs, 2)
+        Movement epochs as ``[start, stop)`` rows in seconds, in time order.
+        Pass them as ``epochs=`` to any analysis to restrict it to movement.
 
     Raises
     ------
@@ -989,13 +1089,10 @@ def segment_by_velocity(
     >>> segments = segment_by_velocity(
     ...     times, trajectory, min_speed=2.0, min_duration=0.5
     ... )
-    >>> len(segments) > 0  # Should detect movement period
+    >>> segments.shape  # one movement epoch, as a [start, stop) row
+    (1, 2)
+    >>> bool(np.all(segments[:, 1] - segments[:, 0] >= 0.5))  # min_duration
     True
-    >>> # Each segment is a Run instance with start_time/end_time fields.
-    >>> # See the Run docstring for the full schema.
-    >>> for run in segments:
-    ...     duration = run.end_time - run.start_time
-    ...     assert duration >= 0.5  # min_duration enforced
     """
     # Validate inputs
     from neurospatial._validation import validate_times_positions
@@ -1010,7 +1107,7 @@ def segment_by_velocity(
         raise ValueError(f"hysteresis must be > 1.0 for stability. Got {hysteresis}")
     breaks = validate_break_before(break_before, len(times), call="segment_by_velocity")
 
-    results: list[Run] = []
+    results: list[tuple[float, float]] = []
     for run in observed_runs(
         times,
         max_gap=max_gap,
@@ -1028,7 +1125,7 @@ def segment_by_velocity(
                 smooth_window=smooth_window,
             )
         )
-    return results
+    return np.array(results, dtype=np.float64).reshape(-1, 2)
 
 
 def _segment_by_velocity_contiguous(
@@ -1039,7 +1136,7 @@ def _segment_by_velocity_contiguous(
     min_duration: float = 0.5,
     hysteresis: float = 2.0,
     smooth_window: float = 0.2,
-) -> list[Run]:
+) -> list[tuple[float, float]]:
     """Analyze one recording after the public input validation."""
     from neurospatial._velocity import smoothed_speed
 
@@ -1073,16 +1170,13 @@ def _segment_by_velocity_contiguous(
                 is_moving[i] = True
 
     # Detect segments (note: velocities correspond to transitions, so index times[1:])
-    epochs: list[Run] = []
+    epochs: list[tuple[float, float]] = []
     in_segment = False
     segment_start: float | None = None
-    empty_bins = np.array([], dtype=np.int64)
 
     def _emit(start: float, end: float) -> None:
         if (end - start) >= min_duration:
-            epochs.append(
-                Run(start_time=start, end_time=end, bins=empty_bins, success=True)
-            )
+            epochs.append((float(start), float(end)))
 
     for i in range(len(is_moving)):
         time_idx = i + 1  # Velocity at i corresponds to transition from i to i+1
@@ -1681,19 +1775,18 @@ def runs_to_direction_labels(
 ) -> NDArray[np.object_]:
     """Convert detected runs into per-timepoint direction labels.
 
-    Bridges run detectors (:func:`detect_runs_between_regions`,
-    :func:`detect_goal_directed_runs`, :func:`segment_by_velocity`) to
+    Bridges :func:`detect_runs_between_regions` to
     :func:`compute_directional_place_fields` and :func:`labels_to_epochs`.
-    :class:`Run` carries no intrinsic direction, so the caller supplies the
-    label(s): either a single label for every run, or one label per run.
+    The caller supplies the label(s): either a single label for every run, or
+    one label per run.
     Samples inside no run are ``None``, which both functions leave out. The
     returned array is drop-in for their labels argument.
 
     Parameters
     ----------
     runs : list[Run]
-        Runs from a run detector. Each contributes its ``[start_time,
-        end_time)`` interval (half-open).
+        Runs from :func:`detect_runs_between_regions`. Each contributes its
+        ``[start_time, end_time)`` interval (half-open).
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the whole session (seconds). The output has this length.
     labels : object or sequence of object, optional
@@ -1702,8 +1795,9 @@ def runs_to_direction_labels(
         position) and is applied before any ``success_only`` filtering, so its
         length must equal ``len(runs)``.
     success_only : bool, optional
-        If True, only runs with ``success=True`` contribute labels (failed /
-        timed-out runs are left as ``None``). Default False.
+        If True, only runs that reached their target (``outcome ==
+        'reached'``) contribute labels; timed-out, returned and censored runs
+        are left as ``None``. Default False.
 
     Returns
     -------
@@ -1738,10 +1832,10 @@ def runs_to_direction_labels(
     ...     runs_to_direction_labels,
     ... )
     >>> times = np.linspace(0.0, 10.0, 11)
-    >>> empty = np.array([], dtype=np.int64)
+    >>> bins = np.array([0, 1, 2], dtype=np.int64)
     >>> runs = [
-    ...     Run(0.0, 4.0, empty, True),
-    ...     Run(6.0, 10.0, empty, True),
+    ...     Run(0.0, 4.0, "home", "reward", "reached", bins),
+    ...     Run(6.0, 10.0, "reward", "home", "reached", bins[::-1]),
     ... ]
     >>> labels = runs_to_direction_labels(runs, times, labels=["outbound", "inbound"])
     >>> labels[0], labels[5], labels[9], labels[-1]
@@ -2000,11 +2094,15 @@ def segment_trials(
     1. Departure from the start region (trial start, at the last sample
        inside it, so waiting at the start is not part of the trial)
     2. Trajectory through environment
-    3. Either:
-       - Entry to one of the end regions (successful trial)
-       - Timeout after max_duration without reaching end region (failed trial)
-       - Return to the start region before reaching an end region (aborted,
-         emitted as a failed trial when it lasted at least min_duration)
+    3. Whichever happens first:
+       - Entry to one of the end regions (``outcome='reached'``)
+       - ``max_duration`` elapses without reaching an end region
+         (``outcome='timeout'``)
+       - Return to the start region before reaching an end region (an
+         aborted trial, ``outcome='returned'``)
+       - Observation stops: a tracking gap longer than ``max_gap``, an
+         ``epochs`` edge, a ``break_before`` or the end of the recording
+         (``outcome='censored'``; the result is unknown)
 
     Samples outside every bin (``-1``, such as lost tracking while the animal
     waits at a well) are missing: a dropout no longer than ``max_gap`` is
@@ -2050,12 +2148,12 @@ def segment_trials(
     Returns
     -------
     list[Trial]
-        List of detected trials. Each trial has:
-        - start_time: time of departure from the start region
-        - end_time: time of end region entry, timeout, or return to the start
-        - start_region: name of start region
-        - end_region: name of end region reached (or None if not reached)
-        - success: True if end region reached, False if timed out or aborted
+        Detected trials in time order. Each records ``start_time`` (the last
+        sample in the start region before departure), ``end_time``,
+        ``start_region``, ``end_region`` (the end region reached, or None),
+        ``outcome`` (``'reached'``, ``'timeout'``, ``'returned'`` or
+        ``'censored'``, see :class:`Trial`) and the derived ``success``
+        (``outcome == 'reached'``).
 
     Raises
     ------
@@ -2084,7 +2182,9 @@ def segment_trials(
     no segment spans a pause.
 
     A trial in progress when a recording ends is emitted there with
-    success=False, as at the end of a complete recording.
+    ``outcome='censored'``, as at the end of a complete recording. Leave
+    censored trials out of fraction-correct measures: the animal was not seen
+    to fail.
 
     Trial segmentation is fundamental for analyzing spatial navigation tasks:
 
@@ -2108,13 +2208,10 @@ def segment_trials(
     - Stuck or disengaged periods (max_duration timeout)
 
     If an animal re-enters the start region before reaching an end region,
-    the previous (aborted) trial is emitted as a failed trial
-    (``success=False``, ``end_region=None``) provided it lasted at least
-    ``min_duration``; the next trial begins when the animal leaves the start
-    region again. A trial still in progress when
-    the recording ends is likewise emitted as failed if it meets
-    ``min_duration``. This matches the timeout semantics so that aborted and
-    in-progress trials are not silently dropped.
+    the previous (aborted) trial is emitted with ``outcome='returned'`` and
+    ``end_region=None`` provided it lasted at least ``min_duration``; the next
+    trial begins when the animal leaves the start region again. Aborted,
+    timed-out and censored trials are reported rather than silently dropped.
 
     Examples
     --------
@@ -2167,8 +2264,8 @@ def segment_trials(
     ... )
     >>> len(trials) >= 1  # Should detect at least one trial
     True
-    >>> all(t.success for t in trials)  # Both should be successful
-    True
+    >>> [t.outcome for t in trials]  # Both reached an end region
+    ['reached', 'reached']
     >>> end_regions = [t.end_region for t in trials]
     >>> "left" in end_regions and "right" in end_regions  # Both choices present
     True
@@ -2303,7 +2400,7 @@ def _segment_trials_contiguous(
                             end_time=times[i - 1],
                             start_region=start_region,
                             end_region=None,
-                            success=False,
+                            outcome="returned",
                         )
                     )
                 trial_start_idx = None
@@ -2331,7 +2428,7 @@ def _segment_trials_contiguous(
                                 end_time=times[i],
                                 start_region=start_region,
                                 end_region=region,
-                                success=True,
+                                outcome="reached",
                             )
                         )
 
@@ -2352,7 +2449,7 @@ def _segment_trials_contiguous(
                                 end_time=times[i],
                                 start_region=start_region,
                                 end_region=None,
-                                success=False,
+                                outcome="timeout",
                             )
                         )
                     # Reset trial tracking
@@ -2372,7 +2469,7 @@ def _segment_trials_contiguous(
                     end_time=times[-1],
                     start_region=start_region,
                     end_region=None,
-                    success=False,
+                    outcome="censored",
                 )
             )
 
@@ -2713,7 +2810,7 @@ def detect_goal_directed_runs(
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> list[Run]:
+) -> NDArray[np.float64]:
     """Detect goal-directed runs in a trajectory.
 
     Identifies segments where the animal moves efficiently toward a goal region.
@@ -2756,13 +2853,11 @@ def detect_goal_directed_runs(
 
     Returns
     -------
-    list[Run]
-        List of goal-directed run segments. Each Run contains:
-        - start_time: Run start time (seconds)
-        - end_time: Run end time (seconds)
-        - bins: Sequence of bin indices during run
-        - success: True when the directedness and net-progress criteria are met;
-          this does not require reaching the goal region
+    NDArray[np.float64], shape (n_runs, 2)
+        Goal-directed stretches as ``[start, stop)`` rows in seconds, in time
+        order. A row means the directedness and net-progress criteria were
+        met; it does not require reaching the goal region. Pass the rows as
+        ``epochs=`` to restrict another analysis to them.
 
     Raises
     ------
@@ -2789,7 +2884,7 @@ def detect_goal_directed_runs(
 
     Each recording supplies one candidate spanning its complete observed
     sample run; this function does not split repeated approaches into separate
-    bouts. ``success=True`` means the directedness and net-progress thresholds
+    bouts. A returned row means the directedness and net-progress thresholds
     were met, even when the last sample is still outside the goal. To segment
     completed source-to-goal traversals, use ``detect_runs_between_regions``.
 
@@ -2900,7 +2995,7 @@ def detect_goal_directed_runs(
     )
     # A recording continues across bridged gaps between samples inside the
     # environment.
-    results: list[Run] = []
+    results: list[tuple[float, float]] = []
     for run in observed_runs(
         times,
         max_gap=max_gap,
@@ -2918,7 +3013,7 @@ def detect_goal_directed_runs(
                 min_progress=min_progress,
             )
         )
-    return results
+    return np.array(results, dtype=np.float64).reshape(-1, 2)
 
 
 def _detect_goal_directed_runs_contiguous(
@@ -2929,7 +3024,7 @@ def _detect_goal_directed_runs_contiguous(
     distances_to_goal: NDArray[np.float64],
     directedness_threshold: float = 0.7,
     min_progress: float = 20.0,
-) -> list[Run]:
+) -> list[tuple[float, float]]:
     """Analyze one recording after the public input validation."""
     # Get start and end positions
     start_bin = position_bins[0]
@@ -2973,17 +3068,9 @@ def _detect_goal_directed_runs_contiguous(
     progress = d_start - d_end
 
     # Check if run meets criteria
-    runs = []
     if directedness >= directedness_threshold and progress >= min_progress:
-        run = Run(
-            start_time=float(times[0]),
-            end_time=float(times[-1]),
-            bins=position_bins.copy(),
-            success=True,  # Reached goal or progressed significantly
-        )
-        runs.append(run)
-
-    return runs
+        return [(float(times[0]), float(times[-1]))]
+    return []
 
 
 # =============================================================================

@@ -658,19 +658,24 @@ runs = detect_runs_between_regions(
     min_speed=5.0,  # Optional speed filter
 )
 
-# Analyze successful vs failed runs
-successful = [r for r in runs if r.success]
-failed = [r for r in runs if not r.success]
+# Success rate among runs whose result was observed: a censored run was
+# cut off by a tracking gap, epoch edge or the end of the recording.
+observed = [r for r in runs if r.outcome != "censored"]
+successful = [r for r in observed if r.success]  # outcome == "reached"
 
-print(f"Success rate: {len(successful) / len(runs):.1%}")
+print(f"Success rate: {len(successful) / len(observed):.1%}")
 print(f"Mean duration (successful): {np.mean([r.end_time - r.start_time for r in successful]):.2f}s")
 ```
 
 **Returns**: List of `Run` objects
-- `start_time`: Time of source region exit
-- `end_time`: Time of target entry or timeout
+- `start_time`: First sample outside the source region
+- `end_time`: When the run ended (see `outcome`)
+- `source_region`, `target_region`: Region names
+- `outcome`: `"reached"` (entered the target within `max_duration`),
+  `"timeout"`, `"returned"` (went back to the source first) or `"censored"`
+  (observation stopped first, so the result is unknown)
+- `success`: Shorthand for `outcome == "reached"`
 - `bins`: Bin sequence for the run
-- `success`: True if reached target, False if timeout
 
 **Applications**:
 - **T-maze alternation**: Runs from start to left/right arms
@@ -697,13 +702,9 @@ movement_epochs = segment_by_velocity(
     smooth_window=0.1,  # seconds (Gaussian SD of the velocity smoothing)
 )
 
-# Analyze movement statistics. segment_by_velocity returns list[Run]
-# (matching detect_runs_between_regions, detect_laps, ...). For
-# velocity epochs, ``bins`` is empty and ``success`` is True; only
-# start_time / end_time vary.
-total_movement_time = sum(
-    run.end_time - run.start_time for run in movement_epochs
-)
+# movement_epochs is an (n_epochs, 2) array of [start, stop) times in
+# seconds; pass it as epochs= to restrict another analysis to movement.
+total_movement_time = np.sum(movement_epochs[:, 1] - movement_epochs[:, 0])
 print(f"Movement time: {total_movement_time:.1f}s ({total_movement_time/times[-1]:.1%})")
 ```
 
@@ -793,21 +794,22 @@ joined = segment_trials(position_bins, times, env, **trial_options)
 split = segment_trials(
     position_bins, times, env, break_before=new_recording, **trial_options
 )
-print(f"without break_before: success={joined[0].success}, ends at {joined[0].end_time:.2f} s")
-print(f"with break_before:    success={split[0].success}, ends at {split[0].end_time:.2f} s")
+print(f"without break_before: {joined[0].outcome}, ends at {joined[0].end_time:.2f} s")
+print(f"with break_before:    {split[0].outcome}, ends at {split[0].end_time:.2f} s")
 
 (visit,) = detect_region_visits(
     position_bins, times, env, region_names=["reward"], break_before=new_recording
 )
 print(f"reward visit entry observed: {visit.entry_observed}")
-assert joined[0].success and not split[0].success
+assert joined[0].outcome == "reached" and split[0].outcome == "censored"
 assert split[0].end_time == times[89]
 assert not visit.entry_observed
 ```
 
-Without `break_before` the trial "succeeds" at 3.00 s, the moment the animal
-was placed at the reward well. With it, the trial ends unfinished at 2.97 s,
-the last sample of the first recording, and the reward visit that opens the
+Without `break_before` the trial is `"reached"` at 3.00 s, the moment the
+animal was placed at the reward well. With it, the trial is `"censored"` at
+2.97 s, the last sample of the first recording: its result is unknown, not a
+failure. The reward visit that opens the
 second recording has no observed entry: the animal was already there when the
 recording started. A declared break has the same effect as a gap in the clock
 longer than `max_gap`; it does not need the clock to pause.
@@ -980,20 +982,25 @@ trials = segment_trials(
     max_duration=15.0,
 )
 
-# Analyze outcomes
-left_trials = [t for t in trials if t.outcome == "left"]
-right_trials = [t for t in trials if t.outcome == "right"]
+# Analyze choices and outcomes
+left_trials = [t for t in trials if t.end_region == "left"]
+right_trials = [t for t in trials if t.end_region == "right"]
 
 print(f"Left choices: {len(left_trials)}")
 print(f"Right choices: {len(right_trials)}")
-print(f"Timeouts: {sum(1 for t in trials if not t.success)}")
+print(f"Timeouts: {sum(t.outcome == 'timeout' for t in trials)}")
+print(f"Censored (result unknown): {sum(t.outcome == 'censored' for t in trials)}")
 ```
 
 **Returns**: List of `Trial` objects
 - `start_time`: Departure from the start region (the last sample inside it)
-- `end_time`: End region entry, timeout, or return to the start region
-- `end_region`: Name of end region reached (or None if not reached)
-- `success`: True if end region reached, False if timed out or aborted
+- `end_time`: When the trial ended (see `outcome`)
+- `end_region`: Name of the end region reached (None unless `outcome == "reached"`)
+- `outcome`: `"reached"`, `"timeout"`, `"returned"` (went back to the start
+  region first) or `"censored"` (observation stopped first: a tracking gap
+  longer than `max_gap`, an epochs edge, a declared break or the end of the
+  recording). Leave censored trials out of fraction-correct measures.
+- `success`: Shorthand for `outcome == "reached"`
 
 ---
 
@@ -1024,9 +1031,9 @@ trials = segment_trials(
 )
 
 # Compute spontaneous alternation score
-outcomes = [t.outcome for t in trials if t.success]
-alternations = sum(1 for i in range(len(outcomes)-1) if outcomes[i] != outcomes[i+1])
-alternation_rate = alternations / (len(outcomes) - 1)
+arms = [t.end_region for t in trials if t.success]
+alternations = sum(1 for i in range(len(arms)-1) if arms[i] != arms[i+1])
+alternation_rate = alternations / (len(arms) - 1)
 
 print(f"Spontaneous alternation: {alternation_rate:.1%}")
 ```
@@ -1230,11 +1237,9 @@ goal_runs = detect_goal_directed_runs(
     min_progress=20.0,  # cm
 )
 
-# Analyze directedness
-for run in goal_runs:
-    duration = run.end_time - run.start_time
-    path_length = len(run.bins)
-    print(f"Run: duration={duration:.1f}s, path_length={path_length} bins")
+# goal_runs is an (n_runs, 2) array of [start, stop) times in seconds
+for start, stop in goal_runs:
+    print(f"Goal-directed run: {start:.1f}-{stop:.1f} s ({stop - start:.1f} s)")
 ```
 
 **Directedness Formula** (Pfeiffer & Foster, 2013):
@@ -1372,8 +1377,8 @@ trials = segment_trials(
 )
 
 # Step 2: Separate by outcome
-left_trials = [t for t in trials if t.outcome == "left" and t.success]
-right_trials = [t for t in trials if t.outcome == "right" and t.success]
+left_trials = [t for t in trials if t.end_region == "left"]
+right_trials = [t for t in trials if t.end_region == "right"]
 
 # Step 3: Analyze path similarity within choice type
 left_similarities = []

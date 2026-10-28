@@ -81,7 +81,7 @@ def test_trials_to_region_arrays_single_trial(simple_environment_with_regions):
         end_time=10.0,
         start_region="start",
         end_region="goal1",
-        success=True,
+        outcome="reached",
     )
     trials = [trial]
 
@@ -116,9 +116,9 @@ def test_trials_to_region_arrays_multiple_trials(simple_environment_with_regions
 
     # Create 3 trials with different goals
     trials = [
-        Trial(0.0, 5.0, "start", "goal1", True),  # t=0 to t=5
-        Trial(5.5, 10.0, "start", "goal2", True),  # t=5.5 to t=10
-        Trial(11.0, 15.0, "start", "goal1", True),  # t=11 to t=15
+        Trial(0.0, 5.0, "start", "goal1", "reached"),  # t=0 to t=5
+        Trial(5.5, 10.0, "start", "goal2", "reached"),  # t=5.5 to t=10
+        Trial(11.0, 15.0, "start", "goal1", "reached"),  # t=11 to t=15
     ]
 
     # Create times array covering all trials plus gaps
@@ -169,7 +169,7 @@ def test_trials_to_region_arrays_failed_trial(simple_environment_with_regions):
         end_time=10.0,
         start_region="start",
         end_region=None,  # Failed trial - no end region
-        success=False,
+        outcome="timeout",
     )
     trials = [trial]
 
@@ -205,7 +205,7 @@ def test_trials_to_region_arrays_polygon_regions(environment_with_polygon_region
         end_time=10.0,
         start_region="start_zone",
         end_region="goal_zone",
-        success=True,
+        outcome="reached",
     )
     trials = [trial]
 
@@ -271,7 +271,7 @@ def test_trials_to_region_arrays_centroid_differs_from_first_bin():
         "where they differ."
     )
 
-    trial = Trial(0.0, 5.0, "zone", "zone", True)
+    trial = Trial(0.0, 5.0, "zone", "zone", "reached")
     times = np.linspace(0.0, 5.0, 6)
     start_bins, goal_bins = trials_to_region_arrays([trial], times, env)
 
@@ -770,14 +770,14 @@ def test_time_to_goal_successful_trials():
             end_time=4.0,
             start_region="start",
             end_region="goal",
-            success=True,
+            outcome="reached",
         ),
         Trial(
             start_time=6.0,
             end_time=9.0,
             start_region="start",
             end_region="goal",
-            success=True,
+            outcome="reached",
         ),
     ]
 
@@ -820,7 +820,7 @@ def test_time_to_goal_failed_trials():
             end_time=4.0,
             start_region="start",
             end_region=None,  # Failed trial
-            success=False,
+            outcome="timeout",
         ),
     ]
 
@@ -847,7 +847,7 @@ def test_time_to_goal_outside_trials():
             end_time=4.0,
             start_region="start",
             end_region="goal",
-            success=True,
+            outcome="reached",
         ),
     ]
 
@@ -879,7 +879,7 @@ def test_time_to_goal_countdown():
             end_time=7.0,
             start_region="start",
             end_region="goal",
-            success=True,
+            outcome="reached",
         ),
     ]
 
@@ -912,7 +912,7 @@ def test_time_to_goal_after_goal_reached():
             end_time=3.0,
             start_region="start",
             end_region="goal",
-            success=True,
+            outcome="reached",
         ),
     ]
 

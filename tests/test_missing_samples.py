@@ -113,9 +113,7 @@ def test_speed_and_running_bouts_with_nan_rows_equal_deleted_rows(tracking):
     assert np.isnan(speed[lost]).all()
     bouts = segment_by_velocity(times, with_nan, min_speed=10.0)
     expected = segment_by_velocity(times[kept], positions[kept], min_speed=10.0)
-    assert [(b.start_time, b.end_time) for b in bouts] == [
-        (b.start_time, b.end_time) for b in expected
-    ]
+    np.testing.assert_array_equal(bouts, expected)
     assert len(bouts) > 4
 
 

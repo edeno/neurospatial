@@ -1,6 +1,7 @@
 """Tests for region-based trajectory segmentation."""
 
 import numpy as np
+import pytest
 from shapely.geometry import Point
 
 from neurospatial import Environment, Regions
@@ -455,42 +456,41 @@ class TestSegmentByVelocity:
         assert len(segments) == 1, (
             f"Constant-speed run should be one epoch, got {len(segments)}"
         )
-        run = segments[0]
+        start_time, end_time = segments[0]
         # With correct edge handling the smoothed velocity stays at the true
         # constant speed across the whole recording, so the epoch begins at the
         # very first velocity sample (times[1]) and runs to the last sample.
         # Zero-padded "same" smoothing would instead delay the start by several
         # samples. Allow only a single sample of slack at each end.
         dt_med = float(np.median(np.diff(times)))
-        assert run.start_time <= times[1] + 1.5 * dt_med, (
+        assert start_time <= times[1] + 1.5 * dt_med, (
             "Movement epoch start was delayed by boundary smoothing; "
-            f"start_time={run.start_time:.3f}, expected near {times[1]:.3f}."
+            f"start_time={start_time:.3f}, expected near {times[1]:.3f}."
         )
-        assert run.end_time >= times[-1] - 1.5 * dt_med, (
+        assert end_time >= times[-1] - 1.5 * dt_med, (
             "Movement epoch end was truncated by boundary smoothing; "
-            f"end_time={run.end_time:.3f}, expected near {times[-1]:.3f}."
+            f"end_time={end_time:.3f}, expected near {times[-1]:.3f}."
         )
 
-    def test_returns_list_of_runs(self):
-        """Test that function returns list[Run] (matching siblings)."""
-        trajectory = np.linspace(0, 100, 100)[:, None]
-        times = np.linspace(0, 10, 100)
+    def test_returns_epoch_array(self):
+        """Movement epochs come back as a float (n_epochs, 2) [start, stop) array."""
+        # Rest 0-5 s, move at 20 cm/s 5-10 s, rest 10-15 s, sampled at 100 Hz.
+        times = np.arange(1501) / 100.0
+        x = np.clip(20.0 * (times - 5.0), 0.0, 100.0)
 
-        from neurospatial.behavior.segmentation import Run, segment_by_velocity
+        from neurospatial.behavior.segmentation import segment_by_velocity
 
-        segments = segment_by_velocity(times, trajectory, min_speed=2.0)
+        segments = segment_by_velocity(
+            times, x[:, None], min_speed=5.0, smooth_window=0.0
+        )
 
-        assert isinstance(segments, list)
-        for run in segments:
-            assert isinstance(run, Run)
-            assert isinstance(run.start_time, (int, float, np.number))
-            assert isinstance(run.end_time, (int, float, np.number))
-            assert run.start_time < run.end_time
-            # segment_by_velocity-emitted Runs use the documented sentinels:
-            # bins is empty (movement is not region-bounded) and success
-            # is True (every emitted run satisfied min_speed/min_duration).
-            assert run.bins.shape == (0,)
-            assert run.success is True
+        assert isinstance(segments, np.ndarray)
+        assert segments.dtype == np.float64
+        assert segments.shape == (1, 2)
+        # The centered-secant speed is 10 cm/s at 5.00 s (x goes 0 -> 0.2 cm
+        # over 4.99-5.01 s) and stays 10-20 cm/s through 10.00 s; at 10.01 s
+        # it is 0. The epoch is [first moving sample, first resting sample).
+        np.testing.assert_allclose(segments[0], [5.00, 10.01], atol=1e-9)
 
 
 class TestRegionSegmentationIntegration:
@@ -561,10 +561,65 @@ class TestRegionSegmentationIntegration:
         assert isinstance(source_crossings, list)
         assert isinstance(target_crossings, list)
         assert isinstance(runs, list)
-        assert isinstance(movement_segments, list)
+        assert movement_segments.shape[1:] == (2,)
 
         # Should detect source exit and target entry
         assert len(source_crossings) > 0 or len(target_crossings) > 0
 
         # Should detect at least one movement segment
         assert len(movement_segments) > 0
+
+
+class TestRunRecord:
+    """Run records source, target and outcome; success is derived."""
+
+    def test_fields_and_derived_success(self):
+        from neurospatial.behavior.segmentation import Run
+
+        run = Run(1.0, 2.5, "home", "reward", "reached", np.array([3, 4, 5]))
+        assert run.source_region == "home"
+        assert run.target_region == "reward"
+        assert run.success is True
+        assert run.bins.dtype == np.int64
+        assert not run.bins.flags.writeable
+        for outcome in ("timeout", "returned", "censored"):
+            assert Run(1.0, 2.5, "home", "reward", outcome, run.bins).success is False
+
+    @pytest.mark.parametrize(
+        ("args", "match"),
+        [
+            ((3.0, 2.0, "home", "reward", "reached", [1]), "start_time <= end_time"),
+            ((0.0, 2.0, "home", "reward", "done", [1]), "outcome must be one of"),
+            ((0.0, 2.0, "home", "reward", "reached", [1.5]), "integer"),
+        ],
+    )
+    def test_invalid_records_raise(self, args, match):
+        from neurospatial.behavior.segmentation import Run
+
+        with pytest.raises(ValueError, match=match):
+            Run(*args)
+
+    def test_run_cut_off_by_recording_end_is_censored(self):
+        """A run still under way when the recording ends has an unknown result."""
+        from shapely.geometry import box
+
+        from neurospatial.behavior.segmentation import detect_runs_between_regions
+
+        xs = np.linspace(0.0, 100.0, 401)
+        env = Environment.from_samples(np.c_[xs, np.zeros_like(xs)], bin_size=2.0)
+        regions = Regions(env.regions.values())
+        regions.add("home", polygon=box(-5.0, -5.0, 5.0, 5.0))
+        regions.add("reward", polygon=box(95.0, -5.0, 105.0, 5.0))
+        env = env.with_regions(regions)
+        # Leave home at 10 cm/s; the recording stops at 60 cm, 5.9 s later.
+        x = np.r_[np.zeros(5), np.linspace(1.0, 60.0, 60)]
+        times = np.arange(x.size) / 10.0
+        bins = env.bin_at(np.c_[x, np.zeros_like(x)])
+
+        (run,) = detect_runs_between_regions(
+            bins, times, env, source="home", target="reward", max_gap=None
+        )
+
+        assert run.outcome == "censored"
+        assert run.end_time == times[-1]
+        assert (run.source_region, run.target_region) == ("home", "reward")

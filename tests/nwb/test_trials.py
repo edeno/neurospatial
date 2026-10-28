@@ -32,14 +32,14 @@ class TestWriteTrialsFromTrialObjects:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             ),
             Trial(
                 start_time=10.0,
                 end_time=15.0,
                 start_region="home",
                 end_region=None,
-                success=False,
+                outcome="timeout",
             ),
         ]
 
@@ -61,7 +61,7 @@ class TestWriteTrialsFromTrialObjects:
                 end_time=6.2,
                 start_region="start_zone",
                 end_region="reward_left",
-                success=True,
+                outcome="reached",
             ),
         ]
 
@@ -92,7 +92,7 @@ class TestWriteTrialsFromTrialObjects:
                 end_time=15.0,
                 start_region="home",
                 end_region=None,  # Timeout trial
-                success=False,
+                outcome="timeout",
             ),
         ]
 
@@ -203,7 +203,7 @@ class TestWriteTrialsValidation:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             )
         ]
         start_times = np.array([0.0])
@@ -314,7 +314,7 @@ class TestWriteTrialsOverwrite:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             )
         ]
 
@@ -342,7 +342,7 @@ class TestWriteTrialsOverwrite:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             )
         ]
         new_trials = [
@@ -351,7 +351,7 @@ class TestWriteTrialsOverwrite:
                 end_time=15.0,
                 start_region="start",
                 end_region="reward",
-                success=True,
+                outcome="reached",
             ),
         ]
 
@@ -383,14 +383,14 @@ class TestReadTrials:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             ),
             Trial(
                 start_time=10.0,
                 end_time=15.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             ),
         ]
 
@@ -423,14 +423,14 @@ class TestReadTrials:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal_left",
-                success=True,
+                outcome="reached",
             ),
             Trial(
                 start_time=10.0,
                 end_time=20.0,
                 start_region="home",
                 end_region=None,
-                success=False,
+                outcome="timeout",
             ),
         ]
 
@@ -459,21 +459,21 @@ class TestReadTrials:
                 end_time=6.2,
                 start_region="start_zone",
                 end_region="reward_right",
-                success=True,
+                outcome="reached",
             ),
             Trial(
                 start_time=10.0,
                 end_time=18.5,
                 start_region="start_zone",
                 end_region="reward_left",
-                success=True,
+                outcome="reached",
             ),
             Trial(
                 start_time=25.0,
                 end_time=40.0,
                 start_region="start_zone",
                 end_region=None,
-                success=False,
+                outcome="timeout",
             ),
         ]
 
@@ -530,7 +530,7 @@ class TestWriteTrialsDescription:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             )
         ]
         write_trials(nwbfile, trials, description="T-maze behavioral trials")
@@ -551,7 +551,7 @@ class TestWriteTrialsDescription:
                 end_time=5.0,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             )
         ]
 

@@ -59,8 +59,8 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
     region_builder.add("decision", point=tuple(env.bin_centers[bins[4000]]))
     env = env.with_regions(region_builder)
     trials = [
-        Trial(0.0, 99.98, "source", "target", True),
-        Trial(100.0, r.times[-1], "source", "target", True),
+        Trial(0.0, 99.98, "source", "target", "reached"),
+        Trial(100.0, r.times[-1], "source", "target", "reached"),
     ]
     session = compute_vte_session(
         env, r.times, r.positions, decision_region="decision", trials=trials

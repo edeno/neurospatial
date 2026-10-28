@@ -455,12 +455,14 @@ class TestSegmentTrials:
         # Aborted trial 1 must be present as a failed trial, plus successful trial 2.
         assert len(trials) == 2, f"Expected aborted + successful trial, got {trials}"
         aborted = trials[0]
+        assert aborted.outcome == "returned"
         assert aborted.success is False
         assert aborted.end_region is None
         assert aborted.start_region == "start"
         # Aborted trial ended at the sample before re-entry, well under max_duration.
         assert (aborted.end_time - aborted.start_time) < 50.0
         # Trial 2 is the successful one.
+        assert trials[1].outcome == "reached"
         assert trials[1].success is True
         assert trials[1].end_region == "goal"
 
@@ -638,10 +640,12 @@ class TestSegmentTrials:
         )
 
         assert len(trials) == 1
+        # The recording ended first: the result is unknown, not a failure.
+        assert trials[0].outcome == "censored"
         assert trials[0].success is False
         assert trials[0].end_region is None
         assert trials[0].start_region == "start"
-        assert (trials[0].end_time - trials[0].start_time) < 50.0
+        assert trials[0].end_time == times[-1]
 
     def test_segment_trials_in_progress_at_end_respects_min_duration(self):
         """In-progress trial shorter than min_duration at end is dropped."""
@@ -743,3 +747,46 @@ class TestSegmentTrials:
         if len(trials) > 0:
             # Last trial should be successful
             assert any(t.success for t in trials), "Should have successful trial"
+
+
+class TestTrialRecord:
+    """Trial stores how it ended; success is derived from the outcome."""
+
+    def test_success_is_derived_from_outcome(self):
+        from neurospatial.behavior.segmentation import Trial
+
+        assert Trial(0.0, 1.0, "start", "left", "reached").success is True
+        for outcome in ("timeout", "returned", "censored"):
+            assert Trial(0.0, 1.0, "start", None, outcome).success is False
+        with pytest.raises(TypeError):
+            Trial(0.0, 1.0, "start", "left", success=True)  # type: ignore[call-arg]
+
+    def test_scalars_are_plain_floats(self):
+        from neurospatial.behavior.segmentation import Trial
+
+        trial = Trial(np.float32(0.5), np.int64(2), "start", None, "timeout")
+        assert type(trial.start_time) is float
+        assert type(trial.end_time) is float
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"start_time": 2.0, "end_time": 1.0}, "start_time <= end_time"),
+            ({"end_time": np.nan}, "start_time <= end_time"),
+            ({"outcome": "success"}, "outcome must be one of"),
+            ({"outcome": "timeout"}, "does not match"),
+            ({"end_region": None}, "does not match"),
+        ],
+    )
+    def test_invalid_records_raise(self, kwargs, match):
+        from neurospatial.behavior.segmentation import Trial
+
+        fields = {
+            "start_time": 0.0,
+            "end_time": 1.0,
+            "start_region": "start",
+            "end_region": "left",
+            "outcome": "reached",
+        }
+        with pytest.raises(ValueError, match=match):
+            Trial(**{**fields, **kwargs})

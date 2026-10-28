@@ -102,8 +102,9 @@ def test_trials_do_not_span_pause(pause_track):
 def test_velocity_epochs_do_not_span_pause(pause_track):
     r = pause_track
     epochs = segment_by_velocity(r.times, r.positions, min_speed=5, min_duration=0.1)
-    assert epochs
-    assert all(run.end_time <= 99.9 or run.start_time >= 1100 for run in epochs)
+    assert len(epochs)
+    starts, stops = epochs.T
+    assert np.all((stops <= 99.9) | (starts >= 1100))
 
 
 def test_region_laps_do_not_pair_entries_across_pause(lap_track):
@@ -165,9 +166,9 @@ def test_goal_directed_runs_are_candidates_per_recording(pause_track):
     runs = detect_goal_directed_runs(
         r.position_bins, r.times, r.env, goal_region="target"
     )
-    assert len(runs) == 1
-    assert runs[0].start_time == 0
-    assert runs[0].end_time <= 99.9
+    assert runs.shape == (1, 2)
+    assert runs[0, 0] == 0
+    assert runs[0, 1] <= 99.9
 
 
 def test_running_labels_inherit_observed_runs(pause_track):
@@ -207,13 +208,11 @@ def test_segment_epochs_equal_slicing(continuous_pause_track, kind):
     actual = function(*pair, *arguments, epochs=(0, 100), **options)
     expected = function(*sliced_pair, *arguments, **options)
     assert len(actual) == len(expected)
+    if kind == "velocity":
+        np.testing.assert_array_equal(actual, expected)
+        return
     for a, b in zip(actual, expected, strict=True):
-        assert a.start_time == b.start_time
-        assert a.end_time == b.end_time
-        if hasattr(a, "success"):
-            assert a.success == b.success
-        if hasattr(a, "bins"):
-            np.testing.assert_array_equal(a.bins, b.bins)
+        assert a == b
 
 
 def test_pre_decision_window_stays_in_run(pause_track):
@@ -301,7 +300,7 @@ def test_vte_session_keeps_trial_clamp_and_observed_window(pause_track):
     # Decision-region entry is 1100.5; the five preceding samples are stationary.
     positions = r.positions.copy()
     positions[1000:1005, 0] = 80
-    trial = Trial(99.5, 1109.9, "source", "target", True)
+    trial = Trial(99.5, 1109.9, "source", "target", "reached")
     with pytest.warns(UserWarning, match="No variation"):
         result = compute_vte_session(
             r.env,

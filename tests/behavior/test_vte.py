@@ -873,14 +873,14 @@ class TestComputeVTESession:
                 end_time=t1_times[-1],
                 start_region="start",
                 end_region="center",
-                success=True,
+                outcome="reached",
             ),
             Trial(
                 start_time=t2_times[0],
                 end_time=t2_times[-1],
                 start_region="start",
                 end_region="center",
-                success=True,
+                outcome="reached",
             ),
         ]
 
@@ -929,7 +929,7 @@ class TestComputeVTESession:
                 end_time=2.0,
                 start_region="start",
                 end_region=None,
-                success=False,
+                outcome="timeout",
             ),
         ]
 
@@ -979,7 +979,7 @@ class TestComputeVTESession:
                 end_time=2.0,
                 start_region="start",
                 end_region=None,
-                success=False,
+                outcome="timeout",
             ),
         ]
 
@@ -1039,7 +1039,7 @@ class TestComputeVTESession:
                     end_time=trial_times[-1],
                     start_region="start",
                     end_region="center",
-                    success=True,
+                    outcome="reached",
                 )
             )
 
@@ -1107,7 +1107,7 @@ def test_compute_vte_session_env_first(t_maze_environment):
             end_time=times[-1],
             start_region="start",
             end_region="center",
-            success=True,
+            outcome="reached",
         )
     ]
 
@@ -1167,7 +1167,7 @@ def test_session_window_clamped_to_trial_start(zig_zag_then_run):
             times,
             positions,
             decision_region="decision",
-            trials=[Trial(5.0, 9.9, "start", "decision", True)],
+            trials=[Trial(5.0, 9.9, "start", "decision", "reached")],
             window_duration=1.0,
             min_speed=5.0,
         )
@@ -1193,7 +1193,7 @@ def test_session_warns_when_trial_window_too_short(zig_zag_then_run):
             times,
             positions,
             decision_region="decision",
-            trials=[Trial(5.2, 9.9, "start", "decision", True)],
+            trials=[Trial(5.2, 9.9, "start", "decision", "reached")],
             window_duration=1.0,
             min_speed=5.0,
         )
@@ -1229,7 +1229,7 @@ def _t_maze_session(amplitudes, *, creep=None):
         times.append(t)
         xs.append(x)
         ys.append(y)
-        trials.append(Trial(t[0], t[-1], "start", "center", True))
+        trials.append(Trial(t[0], t[-1], "start", "center", "reached"))
     positions = np.column_stack([np.concatenate(xs), np.concatenate(ys)])
     return np.concatenate(times), positions, trials
 
@@ -1330,7 +1330,7 @@ def test_session_break_before_ends_the_window(t_maze_environment):
     keep = (times < trials[1].start_time) | (times >= times[first])
     shortened = [
         trials[0],
-        Trial(times[first], trials[1].end_time, "start", "center", True),
+        Trial(times[first], trials[1].end_time, "start", "center", "reached"),
         trials[2],
     ]
     alone = compute_vte_session(

@@ -977,7 +977,7 @@ def test_goal_regions_are_represented_by_their_centroid_bin():
         min_speed=5.0,
     )
 
-    trial = Trial(times[0], times[-1], "west", "east", True)
+    trial = Trial(times[0], times[-1], "west", "east", "reached")
     start_bins, goal_bins = trials_to_region_arrays([trial], times, env)
     goals = [int(start_bins[0]), int(goal_bins[0])]
     for name, goal in zip(["west", "east"], goals, strict=True):

@@ -218,7 +218,8 @@ class TestFullTrajectoryAnalysisWorkflow:
 
                 # Should detect at least one goal-directed run
                 # (Note: may be 0 if trajectory is too discretized)
-                assert isinstance(goal_runs, list)
+                assert isinstance(goal_runs, np.ndarray)
+                assert goal_runs.shape[1:] == (2,)
 
         # Step 4: Compare trial trajectories
         if len(trials) >= 2:
@@ -296,9 +297,8 @@ class TestFullTrajectoryAnalysisWorkflow:
 
         # The straight approach in phase 2 is a goal-directed run; the random
         # exploration in phase 1 is not.
-        assert len(goal_runs) == 1
-        assert goal_runs[0].start_time == goal_times[0]
-        assert goal_runs[0].success
+        assert goal_runs.shape == (1, 2)
+        np.testing.assert_array_equal(goal_runs[0], [goal_times[0], goal_times[-1]])
 
         # Step 2: Compare exploration vs goal-directed similarity
         explore_bins = position_bins[:100]
