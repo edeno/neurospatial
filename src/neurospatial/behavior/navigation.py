@@ -4059,9 +4059,15 @@ def approach_rate(
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     metric : {"euclidean", "geodesic"}, default="euclidean"
-        Distance metric. Geodesic requires env parameter.
+        ``"euclidean"`` uses the straight-line distance to the goal.
+        ``"geodesic"`` uses the length of the shortest path inside the
+        environment from each position (not its bin center) to the goal, as
+        in :func:`shortest_path_length`, so a constant-speed approach gives a
+        constant rate instead of a rate quantized by the bins. Requires
+        ``env``.
     env : Environment, optional
-        Required when metric="geodesic".
+        Required when metric="geodesic". A position outside the environment
+        has no geodesic distance and is treated as missing.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -4090,11 +4096,15 @@ def approach_rate(
     Raises
     ------
     ValueError
-        If metric="geodesic" but env is None, or the goal is outside the
-        environment or has NaN coordinates.
+        If ``metric`` is not 'euclidean' or 'geodesic', ``goal`` does not have
+        shape ``(n_dims,)`` or has a non-finite coordinate, or
+        metric="geodesic" but env is None or the goal is outside the
+        environment.
     ValueError
         If the inputs are empty, have different lengths, or ``times`` is not
         finite and strictly increasing.
+    CartesianOnlyError
+        For ``metric="geodesic"`` on an egocentric polar environment.
 
     Examples
     --------
@@ -4172,7 +4182,7 @@ def _approach_rate(
     env : Environment or None
         Required when ``metric="geodesic"``.
     call : str
-        Public function name, used in the goal-dimension error.
+        Public function name, used in messages.
 
     Returns
     -------
@@ -4180,42 +4190,13 @@ def _approach_rate(
         Distance change per second over the interval ending at each sample;
         NaN at the first sample and where that interval is not usable.
     """
-    goal = np.asarray(goal)
+    from neurospatial.behavior._kinematics import interval_velocity
 
-    if metric == "geodesic" and env is None:
-        raise ValueError(
-            "env parameter is required when metric='geodesic'. "
-            "Provide the Environment instance, or use metric='euclidean' "
-            "for straight-line distances."
-        )
-
-    if metric == "euclidean":
-        goal_vec = _goal_vector(positions, goal, call=call)
-        distances = np.linalg.norm(goal_vec, axis=1)
-    else:
-        assert env is not None
-        require_cartesian(
-            env.coordinate_system,
-            "approach_rate(metric='geodesic')",
-            why=(
-                "positions and goal are allocentric Cartesian positions, located in "
-                "the environment's bins."
-            ),
-            fix=(
-                "use an allocentric environment, or metric='euclidean' for the "
-                "straight-line distance to the goal"
-            ),
-        )
-        position_bins = env.bin_at(positions)
-        # The goal is an explicit point: one outside the environment raises.
-        to_goal = env.distance_to(points=goal.reshape(1, -1), metric="geodesic")
-        distances = to_goal[position_bins]
-        distances[position_bins == -1] = np.nan
+    distances = _goal_distances(positions, goal, metric=metric, env=env, call=call)
+    if metric == "geodesic":
         # A position outside the environment has no geodesic distance: it is
         # missing for the rate, so its gap is gated like a deleted row's.
         support = support.restricted(times, np.isfinite(distances))
-
-    from neurospatial.behavior._kinematics import interval_velocity
 
     velocity = interval_velocity(times, distances[:, None], support.interval_mask)
     rates = np.full(len(positions), np.nan)
@@ -4224,6 +4205,82 @@ def _approach_rate(
     rates[~np.isfinite(distances)] = np.nan
 
     return rates
+
+
+def _goal_distances(
+    positions: NDArray[np.float64],
+    goal: ArrayLike,
+    *,
+    metric: str,
+    env: Environment | None,
+    call: str,
+) -> NDArray[np.float64]:
+    """Distance from each position to the goal under ``metric``.
+
+    Parameters
+    ----------
+    positions : ndarray, shape (n_samples, n_dims)
+        NaN rows are missing.
+    goal : array-like, shape (n_dims,)
+    metric : {"euclidean", "geodesic"}
+        ``"geodesic"`` is the length of the shortest path inside the
+        environment from the position itself (not its bin center), as in
+        :func:`shortest_path_length`, so it changes continuously as the
+        animal moves.
+    env : Environment or None
+        Required when ``metric="geodesic"``.
+    call : str
+        Public function name, used in messages.
+
+    Returns
+    -------
+    ndarray, shape (n_samples,)
+        NaN for missing positions and, under the geodesic metric, positions
+        outside the environment; ``inf`` for positions disconnected from the
+        goal.
+
+    Raises
+    ------
+    ValueError
+        If ``metric`` is not recognized, ``goal`` has the wrong shape or a
+        non-finite coordinate, or (geodesic) ``env`` is None or the goal is
+        outside the environment.
+    CartesianOnlyError
+        For ``metric="geodesic"`` on an egocentric polar environment.
+    """
+    _require_path_metric(metric, call=call)
+    goal_arr = _validated_goal(goal, positions.shape[1], call=call)
+    if metric == "euclidean":
+        distances: NDArray[np.float64] = np.linalg.norm(goal_arr - positions, axis=1)
+        return distances
+    if env is None:
+        raise ValueError(
+            _format_error(
+                f"{call}(metric='geodesic') needs env=.",
+                why="the geodesic distance is a path inside the environment.",
+                fix=(
+                    "pass the Environment the positions were recorded in, or use "
+                    "metric='euclidean' for straight-line distances."
+                ),
+            )
+        )
+    require_cartesian(
+        env.coordinate_system,
+        f"{call}(metric='geodesic')",
+        why=(
+            "positions and goal are allocentric Cartesian positions, located in "
+            "the environment's bins."
+        ),
+        fix=(
+            "use an allocentric environment, or metric='euclidean' for the "
+            "straight-line distance to the goal"
+        ),
+    )
+    from neurospatial.behavior._environment_paths import EnvironmentPaths
+
+    paths = EnvironmentPaths(env)
+    _require_inside(paths, {"goal": goal_arr}, call=call)
+    return paths.to_point(positions, goal_arr)
 
 
 def compute_goal_directed_metrics(

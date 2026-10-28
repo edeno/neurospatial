@@ -333,8 +333,67 @@ class TestApproachRate:
 
         positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
         times = np.linspace(0, 5, 11)
-        with pytest.raises(ValueError, match="env parameter is required"):
+        with pytest.raises(
+            ValueError, match=r"approach_rate\(metric='geodesic'\) needs env="
+        ):
             approach_rate(times, positions, np.array([100.0, 0.0]), metric="geodesic")
+
+    def test_geodesic_rate_around_a_wall_is_smooth(self):
+        """Walking up a U-maze arm, away from a goal hidden behind the wall.
+
+        The path to the goal (45, 5) leaves the left arm over the wall's
+        corner, so walking North at 7 cm/s shortens it at
+        7 * cos(angle to the corner): between 0 and -7 cm/s, changing
+        smoothly, never the bin-quantized zeros and spikes.
+        """
+        from neurospatial.behavior.navigation import approach_rate
+
+        cells = np.array(
+            [(x + 1.0, y + 1.0) for x in range(0, 50, 2) for y in range(0, 60, 2)]
+        )
+        u_maze = cells[(cells[:, 0] < 10) | (cells[:, 0] > 40) | (cells[:, 1] > 50)]
+        env = Environment.from_samples(u_maze, bin_size=2.0)
+        times = np.arange(0.0, 5.0, 1 / 30)
+        positions = np.column_stack([np.full(times.size, 5.0), 5.0 + 7.0 * times])
+
+        rates = approach_rate(
+            times, positions, np.array([45.0, 5.0]), metric="geodesic", env=env
+        )
+
+        assert np.all((rates[1:] >= -7.0 - 1e-9) & (rates[1:] < 0.0))
+        assert np.max(np.abs(np.diff(rates[1:]))) < 0.5
+
+    def test_misspelled_metric_raises(self):
+        """A misspelled metric used to run the geodesic branch silently."""
+        from neurospatial.behavior.navigation import approach_rate
+
+        positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
+        times = np.linspace(0, 5, 11)
+        with pytest.raises(ValueError, match="got metric='euclidian'"):
+            approach_rate(times, positions, np.array([100.0, 0.0]), metric="euclidian")
+
+    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+    @pytest.mark.parametrize("heading", [0.0, 0.5])
+    def test_constant_speed_approach_has_constant_rate(self, metric, heading):
+        """20 cm/s straight toward the goal reads -20 cm/s at every sample.
+
+        The geodesic rate used to be quantized by the 2 cm bins: 86% exact
+        zeros and spikes of -150 cm/s.
+        """
+        from neurospatial.behavior.navigation import approach_rate
+
+        x, y = np.meshgrid(np.arange(0.25, 100.0, 0.5), np.arange(0.25, 100.0, 0.5))
+        env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        times = np.arange(0.0, 3.0, 1 / 30)  # 30 Hz, 3 s
+        direction = np.array([np.cos(heading), np.sin(heading)])
+        start = np.array([10.0, 10.0])
+        goal = start + 80.0 * direction
+        positions = start + 20.0 * times[:, None] * direction  # 20 cm/s
+
+        rates = approach_rate(times, positions, goal, metric=metric, env=env)
+
+        assert np.isnan(rates[0])
+        np.testing.assert_allclose(rates[1:], -20.0, rtol=1e-9)
 
     @pytest.fixture
     def jump(self):
