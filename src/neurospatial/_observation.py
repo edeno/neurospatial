@@ -2,7 +2,8 @@
 
 Shared validation of times, positions and signals, and resolution of observed
 samples, intervals and runs, used by the behavior, event, animation and
-encoding analyses. A sample is valid when
+encoding analyses, and sampling of one feature at arbitrary times within that
+support. A sample is valid when
 every coordinate is finite. A missing sample is treated exactly like a deleted
 row: interval ``k`` (samples ``k`` and ``k + 1``) belongs to the gap between
 the last valid sample at or before ``k`` and the first valid sample after it,
@@ -22,6 +23,7 @@ from typing import Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     as_intervals,
@@ -251,7 +253,7 @@ def resolve_observation_support(
     max_gap: float | None,
     epochs: Any,
     break_before: NDArray[np.bool_] | None,
-    result: str,
+    result: str | None,
 ) -> ObservationSupport:
     """Resolve usable intervals and runs from validated inputs.
 
@@ -265,8 +267,9 @@ def resolve_observation_support(
         The shared interval gates (``observed_interval_mask``).
     break_before : ndarray of bool, shape (n_samples,) or None
         Declared recording breaks; entry 0 is ignored.
-    result : str
-        What an all-excluded selection leaves, for the shared warning.
+    result : str or None
+        What an all-excluded selection leaves, for the shared warning;
+        None when the caller reports excluded data itself.
     """
     sample_valid: NDArray[np.bool_] = np.asarray(np.isfinite(positions).all(axis=1))
     return resolve_sample_support(
@@ -286,7 +289,7 @@ def resolve_sample_support(
     max_gap: float | None,
     epochs: Any,
     break_before: NDArray[np.bool_] | None,
-    result: str,
+    result: str | None,
 ) -> ObservationSupport:
     """Resolve usable intervals and runs from a per-sample validity vector.
 
@@ -300,8 +303,9 @@ def resolve_sample_support(
         The shared interval gates (``observed_interval_mask``).
     break_before : ndarray of bool, shape (n_samples,) or None
         Declared recording breaks; entry 0 is ignored.
-    result : str
-        What an all-excluded selection leaves, for the shared warning.
+    result : str or None
+        What an all-excluded selection leaves, for the shared warning;
+        None when the caller reports excluded data itself.
 
     Examples
     --------
@@ -323,17 +327,121 @@ def resolve_sample_support(
     [ True  True  True  True]
     [ True False False  True]
     """
-    raw_gates = observed_interval_mask(
-        times, max_gap=max_gap, epochs=epochs, break_before=break_before, result=result
-    )
+    resolved_epochs = as_intervals(epochs, name="epochs")
+    if result is None:
+        raw_gates = interval_valid_mask(
+            times, max_gap=max_gap, epochs=resolved_epochs, break_before=break_before
+        )
+    else:
+        raw_gates = observed_interval_mask(
+            times,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            break_before=break_before,
+            result=result,
+        )
     return _support_from_gates(
         times,
         sample_valid,
         raw_gates,
         max_gap=max_gap,
-        epochs=as_intervals(epochs, name="epochs"),
+        epochs=resolved_epochs,
         break_before=break_before,
     )
+
+
+def sample_feature(
+    times: NDArray[np.float64],
+    values: NDArray[np.float64],
+    support: ObservationSupport,
+    queries: NDArray[np.float64],
+    *,
+    interpolation: str,
+    kind: str,
+    epochs: NDArray[np.float64] | None,
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Sample one feature at arbitrary times, only where it was observed.
+
+    A query exactly at a sample time is a point observation: it is supported
+    when that sample is valid and, if ``epochs`` is given, the instant lies in
+    one half-open epoch row. Any other query is supported only inside a usable
+    interval of ``support`` and is interpolated between the valid samples
+    that bound its gap, so missing samples are skipped as if deleted, while a
+    value is never interpolated across a gap longer than ``max_gap``, a
+    declared break or an epoch edge, and never extrapolated before the first
+    or after the last sample.
+
+    Parameters
+    ----------
+    times : ndarray of float64, shape (n_samples,)
+        Sample times in seconds, strictly increasing.
+    values : ndarray of float64, shape (n_samples,)
+        One feature's values on ``times``.
+    support : ObservationSupport
+        This feature's resolved support on ``times``.
+    queries : ndarray of float64, any shape
+        Absolute query times in seconds.
+    interpolation : {"linear", "circular", "previous"}
+        ``"linear"``: straight line between the bracketing samples.
+        ``"circular"``: shorter arc in radians; an exact half-turn goes the
+        positive way. ``"previous"``: the value of the preceding sample.
+    kind : {"linear", "circular", "categorical"}
+        The feature's value kind. Every sampled value of a circular feature is
+        wrapped to ``(-pi, pi]``, whatever the interpolation.
+    epochs : ndarray of float64, shape (n_epochs, 2), or None
+        Sorted, merged ``[start, stop)`` rows (from ``as_intervals``), the same
+        epochs used to resolve ``support``. They gate exact-time queries,
+        which use no interval.
+
+    Returns
+    -------
+    sampled : ndarray of float64, same shape as ``queries``
+        Sampled values; NaN where unsupported.
+    supported : ndarray of bool, same shape as ``queries``
+        True where the value is an observation or lies inside a usable
+        interval.
+    """
+    q = np.asarray(queries, dtype=np.float64)
+    n_samples = times.size
+    k = np.searchsorted(times, q, side="right") - 1
+    k_safe = np.clip(k, 0, n_samples - 1)
+    # A query at a missing sample's time is not an observation of it; like a
+    # query at a deleted row, it is sampled from the gap's bounding samples.
+    exact = (k >= 0) & (times[k_safe] == q) & support.sample_valid[k_safe]
+
+    at_sample = exact.copy()
+    if epochs is not None:
+        row = np.searchsorted(epochs[:, 0], q, side="right") - 1
+        at_sample &= (row >= 0) & (q < epochs[np.maximum(row, 0), 1])
+
+    between = ~exact & (k >= 0) & (k < n_samples - 1)
+    if n_samples > 1:
+        between &= support.interval_mask[np.clip(k, 0, n_samples - 2)]
+
+    sampled = np.full(q.shape, np.nan)
+    sampled[at_sample] = values[k[at_sample]]
+
+    # Interpolate between the valid samples that bound the (bridged) gap, as
+    # if missing samples had been deleted.
+    start, end, _ = gap_endpoints(support.sample_valid)
+    left, right = start[k[between]], end[k[between]]
+    x0 = values[left]
+    if interpolation == "previous":
+        sampled[between] = x0
+    else:
+        weight = (q[between] - times[left]) / (times[right] - times[left])
+        step = values[right] - x0
+        if interpolation == "circular":
+            sampled[between] = x0 + weight * wrap_angle(step)
+        elif interpolation == "linear":
+            sampled[between] = x0 + weight * step
+        else:
+            raise ValueError(f"unknown interpolation {interpolation!r}")
+
+    supported: NDArray[np.bool_] = at_sample | between
+    if kind == "circular":
+        sampled[supported] = wrap_angle(sampled[supported])
+    return sampled, supported
 
 
 def label_codes(

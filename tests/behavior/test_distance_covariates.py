@@ -548,6 +548,20 @@ class TestDistanceToRewardSupport:
         # Samples 2..5 select the second reward, whose location is unknown.
         assert np.isnan(result[2:6]).all()
 
+    def test_no_observed_position_leaves_every_inferred_reward_unknown(
+        self, simple_grid_env, run
+    ):
+        """With every position missing, rewards have no location: NaN, and a warning."""
+        times, _ = run
+        positions = np.full((10, 2), np.nan)
+        reward_times = np.array([0.3, 0.45])  # one on a sample, one between
+
+        with pytest.warns(UserWarning, match=r"2 of 2 reward locations"):
+            result = self._distance(simple_grid_env, times, positions, reward_times)
+
+        assert result.shape == (10,)
+        assert np.isnan(result).all()
+
     def test_reward_in_a_bridged_gap_is_interpolated_across_missing_samples(
         self, simple_grid_env, run
     ):

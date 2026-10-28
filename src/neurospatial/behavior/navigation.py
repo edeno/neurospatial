@@ -1455,13 +1455,13 @@ def _infer_reward_positions(
     it is interpolated between the observed samples on either side, only when
     the gap between them passes ``max_gap`` and ``break_before`` (missing
     samples in between are skipped as if deleted); ``epochs`` restrict the
-    analyzed samples, not where a reward was. Any other reward has an unknown (NaN) location, and one
-    ``UserWarning`` says how many and why.
+    analyzed samples, not where a reward was. Any other reward has an
+    unknown (NaN) location, and one ``UserWarning`` says how many and why.
 
     Parameters
     ----------
     times : ndarray, shape (n_samples,)
-        Finite, non-decreasing sample times in seconds.
+        Finite, strictly increasing sample times in seconds.
     positions : ndarray, shape (n_samples, n_dims)
         Positions; NaN rows are missing samples.
     reward_times : ndarray, shape (n_rewards,)
@@ -1476,59 +1476,63 @@ def _infer_reward_positions(
     """
     import warnings
 
-    from neurospatial._intervals import gap_endpoints, interval_valid_mask
+    from neurospatial._intervals import gap_endpoints
+    from neurospatial._observation import resolve_observation_support, sample_feature
     from neurospatial._stacklevel import _external_stacklevel
 
-    n_samples, n_dims = positions.shape
-    observed: NDArray[np.bool_] = np.asarray(np.isfinite(positions).all(axis=1))
-    in_span = (reward_times >= times[0]) & (reward_times <= times[-1])
-    # Last sample at or before each reward; the interval it starts holds the
-    # reward when the reward is not on an observed sample.
-    k = np.clip(np.searchsorted(times, reward_times, side="right") - 1, 0, None)
-    on_sample = in_span & (times[k] == reward_times) & observed[k]
-    between = in_span & ~on_sample
-    known = on_sample.copy()
-    reasons = {"outside the recorded span": ~in_span}
-    if n_samples > 1:
-        usable = interval_valid_mask(
-            times, max_gap=max_gap, break_before=break_before, sample_valid=observed
-        )
-        start, end, linked = gap_endpoints(observed)
-        j = np.clip(k, 0, n_samples - 2)
-        known |= between & usable[j]
-        n_breaks = np.cumsum(
-            np.r_[False, np.zeros(n_samples - 1, dtype=bool)]
-            if break_before is None
-            else np.r_[False, break_before[1:]]
-        )
-        crossed = n_breaks[end[j]] != n_breaks[start[j]]
-        long_gap = (
-            np.zeros(len(j), dtype=bool)
-            if max_gap is None
-            else times[end[j]] - times[start[j]] > max_gap
-        )
-        blocked = between & ~usable[j]
-        reasons["across a declared break"] = blocked & linked[j] & crossed
-        reasons[f"in a gap longer than max_gap={max_gap} s"] = (
-            blocked & linked[j] & ~crossed & long_gap
-        )
-        reasons["before the first or after the last observed position"] = (
-            blocked & ~linked[j]
-        )
-    else:
-        reasons["at a missing (NaN) position"] = between
-
-    located = np.full((len(reward_times), n_dims), np.nan)
-    located[known] = np.column_stack(
-        [
-            np.interp(reward_times[known], times[observed], positions[observed, dim])
-            for dim in range(n_dims)
-        ]
+    support = resolve_observation_support(
+        times,
+        positions,
+        max_gap=max_gap,
+        epochs=None,
+        break_before=break_before,
+        result=None,  # the unknown rewards are reported below, with reasons
     )
-    located[on_sample] = positions[k[on_sample]]
+    columns = []
+    for coordinate in positions.T:
+        column, known = sample_feature(
+            times,
+            coordinate,
+            support,
+            reward_times,
+            interpolation="linear",
+            kind="linear",
+            epochs=None,
+        )
+        columns.append(column)
+    located = np.column_stack(columns)
 
     n_unknown = int(np.count_nonzero(~known))
     if n_unknown:
+        # Why each unknown reward inside the span has no location: the gap
+        # holding it (between the observed samples on either side) is too
+        # long, crosses a declared break, or has no observed sample on one side.
+        in_span = (reward_times >= times[0]) & (reward_times <= times[-1])
+        blocked = in_span & ~known
+        reasons = {"outside the recorded span": ~in_span}
+        n_samples = times.size
+        if n_samples > 1:
+            k = np.searchsorted(times, reward_times, side="right") - 1
+            j = np.clip(k, 0, n_samples - 2)
+            start, end, linked = gap_endpoints(support.sample_valid)
+            crossed = np.zeros(j.size, dtype=bool)
+            if break_before is not None:
+                recording = recording_index(break_before)
+                crossed = recording[end[j]] != recording[start[j]]
+            long_gap = (
+                np.zeros(j.size, dtype=bool)
+                if max_gap is None
+                else times[end[j]] - times[start[j]] > max_gap
+            )
+            reasons["across a declared break"] = blocked & linked[j] & crossed
+            reasons[f"in a gap longer than max_gap={max_gap} s"] = (
+                blocked & linked[j] & ~crossed & long_gap
+            )
+            reasons["before the first or after the last observed position"] = (
+                blocked & ~linked[j]
+            )
+        else:
+            reasons["at a missing (NaN) position"] = blocked
         counts = ", ".join(
             f"{int(mask.sum())} {reason}"
             for reason, mask in reasons.items()
