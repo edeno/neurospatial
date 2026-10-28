@@ -780,17 +780,11 @@ def _heading_stats(
     if len(valid_headings) == 0:
         return np.nan, np.nan, np.nan
 
-    # Compute circular statistics directly
-    cos_headings = np.cos(valid_headings)
-    sin_headings = np.sin(valid_headings)
-    mean_cos = float(np.mean(cos_headings))
-    mean_sin = float(np.mean(sin_headings))
+    from neurospatial.stats.circular import circular_mean, mean_resultant_length
 
-    mean_resultant_length = float(np.sqrt(mean_cos**2 + mean_sin**2))
-    circular_variance = 1.0 - mean_resultant_length
-    mean_direction = float(np.arctan2(mean_sin, mean_cos))
-
-    return mean_direction, circular_variance, mean_resultant_length
+    # Circular variance is 1 - R, as stats.circular.circular_variance.
+    mrl = mean_resultant_length(valid_headings)
+    return circular_mean(valid_headings), 1.0 - mrl, mrl
 
 
 def pre_decision_speed_stats(
