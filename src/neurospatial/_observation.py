@@ -768,27 +768,60 @@ def _validated_signal_array(
     return sig[:, None] if sig.ndim == 1 else sig
 
 
-def _validated_signal_flags(
-    valid: ArrayLike | None, n_samples: int, n_features: int, *, call: str
-) -> NDArray[np.bool_] | None:
+def _validated_sample_flags(
+    valid: ArrayLike | None,
+    n_samples: int,
+    n_features: int | None = None,
+    *,
+    call: str,
+) -> NDArray[np.bool_]:
+    """Return ``valid`` as Boolean sample flags; None flags every sample valid.
+
+    Parameters
+    ----------
+    valid : array-like of bool or None
+        Shape ``(n_samples,)``, or ``(n_samples, n_features)`` when
+        ``n_features`` is given.
+    n_samples : int
+        Number of samples.
+    n_features : int or None
+        Features per sample. None accepts one flag per sample only.
+    call : str
+        Public function name, used in messages.
+
+    Returns
+    -------
+    NDArray[np.bool_], shape (n_samples,) or (n_samples, n_features)
+        ``(n_samples,)`` when ``n_features`` is None; otherwise
+        ``(n_samples, n_features)``, a 1-D ``valid`` applying to every
+        feature.
+    """
+    accepted: list[tuple[int, ...]] = [(n_samples,)]
+    if n_features is not None:
+        accepted.append((n_samples, n_features))
+    shape = accepted[-1]
     if valid is None:
-        return None
+        return np.ones(shape, dtype=bool)
     flags = np.asarray(valid)
-    if flags.dtype != np.bool_ or flags.shape not in (
-        (n_samples,),
-        (n_samples, n_features),
-    ):
+    if flags.dtype != np.bool_ or flags.shape not in accepted:
+        per_feature = (
+            ""
+            if n_features is None
+            else " A 1-D array applies to every feature, a 2-D array to each."
+        )
         raise ValueError(
             _format_error(
                 f"{call}() needs valid to be a Boolean array of shape "
-                f"({n_samples},) or ({n_samples}, {n_features}); got dtype "
-                f"{flags.dtype} and shape {flags.shape}.",
-                why="valid marks which samples may be used, for all features "
-                "(1-D) or per feature (2-D).",
-                fix="pass a Boolean array, e.g. valid = speed > 5.0",
+                + " or ".join(str(s) for s in accepted)
+                + f"; got dtype {flags.dtype} and shape {flags.shape}.",
+                why="valid marks the samples that were observed. An unobserved "
+                "sample is skipped as if its row were deleted: the gap around it "
+                "is bridged when it is no longer than max_gap." + per_feature,
+                fix="pass a Boolean array with one entry per sample, e.g. "
+                "valid = np.isfinite(positions).all(axis=1)",
             )
         )
-    return flags if flags.ndim == 2 else flags[:, None]
+    return flags[:, None] if flags.ndim < len(shape) else flags
 
 
 def validated_signals(
@@ -839,12 +872,10 @@ def validated_signals(
     """
     t = _validated_signal_times(times, call=call)
     sig = _validated_signal_array(signals, t.size, call=call)
-    flags = _validated_signal_flags(valid, t.size, sig.shape[1], call=call)
+    flags = _validated_sample_flags(valid, t.size, sig.shape[1], call=call)
     validate_max_gap(max_gap)
     breaks = validate_break_before(break_before, t.size, call=call)
-    sample_valid = np.isfinite(sig)
-    if flags is not None:
-        sample_valid = sample_valid & flags
+    sample_valid = np.isfinite(sig) & flags
     resolved_epochs = as_intervals(epochs, name="epochs")
     raw_gates = interval_valid_mask(
         t, max_gap=max_gap, epochs=resolved_epochs, break_before=breaks

@@ -314,6 +314,43 @@ def validate_finite_scalar(
         )
 
 
+def validate_choice(
+    value: object, choices: Sequence[str], *, name: str, owner: str
+) -> None:
+    """Require ``value`` to be one of the documented ``choices``.
+
+    Parameters
+    ----------
+    value : object
+        The value to check.
+    choices : sequence of str
+        Allowed values.
+    name : str
+        Argument or field name, used in the error message.
+    owner : str
+        What received the value, as the message names it: a function with
+        parentheses (``"compare_spatial_rates()"``) or a record (``"Run"``).
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is not one of ``choices``.
+
+    Examples
+    --------
+    >>> validate_choice("exit", ("entry", "exit"), name="direction", owner="f()")
+    """
+    if value not in choices:
+        options = ", ".join(repr(choice) for choice in choices)
+        raise ValueError(
+            _format_error(
+                f"{owner} got {name}={value!r}; {name} must be one of {options}.",
+                why=f"each {name} option has one documented meaning.",
+                fix=f"pass {name}= one of {options}",
+            )
+        )
+
+
 def check_writable(
     paths: Sequence[Path],
     *,

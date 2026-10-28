@@ -91,7 +91,7 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._results import ReadOnlyArraysMixin
-from neurospatial._validation import validate_finite_scalar
+from neurospatial._validation import validate_choice, validate_finite_scalar
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
@@ -288,20 +288,6 @@ def _checked_interval(record: str, start: object, end: object) -> tuple[float, f
     return start_f, end_f
 
 
-def _check_choice(
-    record: str, name: str, value: object, choices: Sequence[str]
-) -> None:
-    """Raise a ValueError naming ``choices`` when ``value`` is not one of them."""
-    if value not in choices:
-        raise ValueError(
-            _format_error(
-                f"{record}.{name} must be one of {list(choices)}; got {value!r}.",
-                why=f"each {name} has one documented meaning.",
-                fix=f"pass one of {list(choices)}.",
-            )
-        )
-
-
 @dataclass(frozen=True)
 class Crossing:
     """Region crossing event.
@@ -326,7 +312,9 @@ class Crossing:
 
     def __post_init__(self) -> None:
         """Check the direction and store plain Python scalars."""
-        _check_choice("Crossing", "direction", self.direction, ("entry", "exit"))
+        validate_choice(
+            self.direction, ("entry", "exit"), name="direction", owner="Crossing"
+        )
         time = float(self.time)
         if not np.isfinite(time):
             raise ValueError(f"Crossing.time must be finite; got {time!r}.")
@@ -386,7 +374,7 @@ class Run(ReadOnlyArraysMixin):
         start, end = _checked_interval("Run", self.start_time, self.end_time)
         object.__setattr__(self, "start_time", start)
         object.__setattr__(self, "end_time", end)
-        _check_choice("Run", "outcome", self.outcome, _OUTCOMES)
+        validate_choice(self.outcome, _OUTCOMES, name="outcome", owner="Run")
         bins = np.asarray(self.bins)
         if bins.ndim != 1 or (bins.size and bins.dtype.kind not in "iu"):
             raise ValueError(
@@ -431,11 +419,11 @@ class Lap:
         start, end = _checked_interval("Lap", self.start_time, self.end_time)
         object.__setattr__(self, "start_time", start)
         object.__setattr__(self, "end_time", end)
-        _check_choice(
-            "Lap",
-            "direction",
+        validate_choice(
             self.direction,
             ("clockwise", "counter-clockwise", "unknown"),
+            name="direction",
+            owner="Lap",
         )
         score = float(self.overlap_score)
         if not (np.isnan(score) or 0.0 <= score <= 1.0):
@@ -489,7 +477,7 @@ class Trial:
         start, end = _checked_interval("Trial", self.start_time, self.end_time)
         object.__setattr__(self, "start_time", start)
         object.__setattr__(self, "end_time", end)
-        _check_choice("Trial", "outcome", self.outcome, _OUTCOMES)
+        validate_choice(self.outcome, _OUTCOMES, name="outcome", owner="Trial")
         if (self.outcome == "reached") != (self.end_region is not None):
             raise ValueError(
                 _format_error(
@@ -630,8 +618,11 @@ def detect_region_crossings(
     region_mask = _require_region_mask(
         env, region_name, operation="detect_region_crossings()", argument="region_name"
     )
-    _check_choice(
-        "detect_region_crossings()", "direction", direction, ("both", "entry", "exit")
+    validate_choice(
+        direction,
+        ("both", "entry", "exit"),
+        name="direction",
+        owner="detect_region_crossings()",
     )
 
     position_bins, times = _validated_samples(

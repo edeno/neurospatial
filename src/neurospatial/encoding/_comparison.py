@@ -23,13 +23,13 @@ from neurospatial._results import (
     _copy_analysis_settings,
     resolve_unit_ids,
 )
+from neurospatial._validation import validate_choice
 from neurospatial.encoding._base import _to_numpy
 from neurospatial.encoding._comparison_inputs import (
     _COMPARE,
     _OPERATION,
     _bin_pairs,
     _Caller,
-    _check_choice,
     _check_min_common_bins,
     _check_pair,
     _match_units,
@@ -1024,9 +1024,11 @@ def compare_spatial_rates(
     ['scored', 'scored', 'scored']
     """
     population = _check_pair(rates_a, rates_b)
-    _check_choice("method", method, _METHODS, _COMPARE)
-    _check_choice("unit_selection", unit_selection, _UNIT_SELECTIONS, _COMPARE)
-    _check_choice("topology", topology, _TOPOLOGIES, _COMPARE)
+    validate_choice(method, _METHODS, name="method", owner=_OPERATION)
+    validate_choice(
+        unit_selection, _UNIT_SELECTIONS, name="unit_selection", owner=_OPERATION
+    )
+    validate_choice(topology, _TOPOLOGIES, name="topology", owner=_OPERATION)
     _check_min_common_bins(min_common_bins)
 
     if population:

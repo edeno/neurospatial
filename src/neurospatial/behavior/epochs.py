@@ -58,6 +58,7 @@ from neurospatial._intervals import (
     validate_max_gap,
 )
 from neurospatial._observation import (
+    _validated_sample_flags,
     _validated_signal_times,
     label_codes,
     label_runs,
@@ -713,26 +714,6 @@ class LabelEpochsResult(
         }
 
 
-def _validated_sample_flags(valid: Any, n_samples: int) -> NDArray[np.bool_]:
-    """Return ``valid`` as a Boolean ``(n_samples,)`` array; None means all valid."""
-    if valid is None:
-        return np.ones(n_samples, dtype=bool)
-    flags = np.asarray(valid)
-    if flags.dtype != np.bool_ or flags.shape != (n_samples,):
-        raise ValueError(
-            _format_error(
-                "labels_to_epochs() needs valid to be a Boolean array of shape "
-                f"({n_samples},); got dtype {flags.dtype} and shape {flags.shape}.",
-                why="valid marks the samples that were observed. An unobserved "
-                "sample is skipped as if its row were deleted: the gap around it "
-                "is bridged when it is no longer than max_gap.",
-                fix="pass a Boolean array with one entry per sample, e.g. "
-                "valid = np.isfinite(positions).all(axis=1)",
-            )
-        )
-    return flags
-
-
 def _label_array(labels: Any) -> NDArray[Any]:
     """Return labels as a 1-D array; tuples stay single labels."""
     if isinstance(labels, str | bytes) or not np.iterable(labels):
@@ -877,7 +858,7 @@ def labels_to_epochs(
                 "None or NaN for samples without a label.",
             )
         )
-    sample_valid = _validated_sample_flags(valid, n_samples)
+    sample_valid = _validated_sample_flags(valid, n_samples, call=call)
     validate_max_gap(max_gap)
     breaks = validate_break_before(break_before, n_samples, call=call)
     windows = as_intervals(epochs, name="epochs")

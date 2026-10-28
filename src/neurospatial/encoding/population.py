@@ -27,6 +27,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import validate_choice
 from neurospatial.encoding._comparison import (
     _TOPOLOGIES,
     _UNIT_SELECTIONS,
@@ -37,7 +38,6 @@ from neurospatial.encoding._comparison import (
 from neurospatial.encoding._comparison_inputs import (
     _bin_pairs,
     _Caller,
-    _check_choice,
     _match_units,
 )
 from neurospatial.encoding._field_metrics import _is_constant, _relative_measures
@@ -1234,8 +1234,10 @@ def population_vector_correlation(
     >>> np.round(pv, 2)
     array([nan, nan,  1.])
     """
-    _check_choice("unit_selection", unit_selection, _UNIT_SELECTIONS, _PV)
-    _check_choice("topology", topology, _TOPOLOGIES, _PV)
+    validate_choice(
+        unit_selection, _UNIT_SELECTIONS, name="unit_selection", owner=_PV.operation
+    )
+    validate_choice(topology, _TOPOLOGIES, name="topology", owner=_PV.operation)
     is_result_1 = _is_population_result(firing_rates_1, _PV.first)
     is_result_2 = _is_population_result(firing_rates_2, _PV.second)
     if is_result_1 != is_result_2:
