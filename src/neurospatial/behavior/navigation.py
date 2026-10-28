@@ -147,7 +147,7 @@ __all__ = [  # noqa: RUF022
     "path_progress",
     "time_to_goal",
     "trials_to_region_arrays",
-    # Path efficiency (from metrics/path_efficiency.py)
+    # Path efficiency
     "PathEfficiencyResult",
     "SubgoalEfficiencyResult",
     "angular_efficiency",
@@ -156,7 +156,7 @@ __all__ = [  # noqa: RUF022
     "subgoal_efficiency",
     "time_efficiency",
     "traveled_path_length",
-    # Goal-directed (from metrics/goal_directed.py)
+    # Goal-directed
     "GoalDirectedMetrics",
     "approach_rate",
     "compute_goal_directed_metrics",
@@ -2759,7 +2759,7 @@ def heading_direction_labels(
 
 
 # =============================================================================
-# Path Efficiency Functions (from metrics/path_efficiency.py)
+# Path Efficiency Functions
 # =============================================================================
 
 
@@ -3736,7 +3736,7 @@ def compute_path_efficiency(
 
 
 # =============================================================================
-# Goal-Directed Navigation Functions (from metrics/goal_directed.py)
+# Goal-Directed Navigation Functions
 # =============================================================================
 
 
@@ -3911,8 +3911,8 @@ def instantaneous_goal_alignment(
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit.
-        Minimum speed threshold in environment units per second.
+        cannot know the positions' unit. Samples slower than this have no
+        direction of movement and no alignment.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -3949,10 +3949,10 @@ def instantaneous_goal_alignment(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause. A missing position (a NaN row) is
-    skipped as if its row were deleted.
+    A NaN row is bridged like a deleted row when its valid neighbours are no
+    more than ``max_gap`` apart; only a longer gap, an ``epochs`` edge or a
+    declared ``break_before`` splits the recording into runs, and no velocity
+    or heading spans a split.
 
     The direction of movement exists only where the animal moves, the rule of
     :func:`heading_from_velocity`.
@@ -4073,9 +4073,8 @@ def goal_bias(
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit.
-        Speed threshold in position units per second. Samples slower than this
-        are excluded from the mean.
+        cannot know the positions' unit. Samples slower than this are
+        excluded from the mean.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -4110,10 +4109,10 @@ def goal_bias(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause. A missing position (a NaN row) is
-    skipped as if its row were deleted.
+    A NaN row is bridged like a deleted row when its valid neighbours are no
+    more than ``max_gap`` apart; only a longer gap, an ``epochs`` edge or a
+    declared ``break_before`` splits the recording into runs, and no velocity
+    or heading spans a split.
 
     Interpretation:
     - > 0.5: Strong goal-directed navigation
@@ -4457,10 +4456,10 @@ def compute_goal_directed_metrics(
         position outside the environment then has no distance and is left
         out of the distance summaries.
     min_speed : float or None, default=None
-        In position units per second. None is 5 cm/s expressed in
-        ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
-        units that are not a metric length, pass it explicitly.
-        Minimum speed for valid heading (units/s).
+        Minimum speed for a defined heading, in position units per second.
+        None is 5 cm/s expressed in ``env.units`` (``0.05`` for meters,
+        ``50.0`` for millimeters); with units that are not a metric length,
+        pass it explicitly.
     goal_radius : float, optional
         Arrival radius, in the units of ``positions``: the goal is reached at
         the first measured sample whose distance to the goal (under
