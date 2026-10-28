@@ -30,6 +30,7 @@ from neurospatial._intervals import (
     observed_interval_mask,
     ragged_arange,
     run_sample_bounds,
+    times_in_intervals,
     validate_max_gap,
 )
 from neurospatial._results import ReadOnlyArraysMixin, plain_value, read_only_copy
@@ -67,6 +68,11 @@ class ObservationSupport(ReadOnlyArraysMixin):
         are valid samples, and missing samples between them are bridged.
     run_time_bounds : ndarray of float64, shape (n_runs, 2)
         ``times`` at those indices, in seconds.
+    sample_in_epochs : ndarray of bool, shape (n_samples,)
+        True where the sample's instant lies inside one of ``epochs``, each
+        tested as ``[t, t + ulp)`` so a sample at an epoch's stop is outside;
+        all True without epochs. A run can end at a sample outside, since
+        the interval ending at an epoch's stop lies inside the epoch.
     max_gap : float or None
         The gap gate the support was resolved with.
     epochs : ndarray of float64, shape (n_epochs, 2), or None
@@ -81,6 +87,7 @@ class ObservationSupport(ReadOnlyArraysMixin):
     run_ids: NDArray[np.intp]
     run_sample_bounds: NDArray[np.intp]
     run_time_bounds: NDArray[np.float64]
+    sample_in_epochs: NDArray[np.bool_]
     max_gap: float | None
     epochs: NDArray[np.float64] | None
     break_before: NDArray[np.bool_] | None
@@ -226,6 +233,11 @@ def _support_from_gates(
         run_ids=run_ids,
         run_sample_bounds=bounds,
         run_time_bounds=times[bounds],
+        sample_in_epochs=(
+            np.ones(n_samples, dtype=bool)
+            if epochs is None
+            else times_in_intervals(epochs, times)
+        ),
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,

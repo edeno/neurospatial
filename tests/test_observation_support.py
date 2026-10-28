@@ -105,6 +105,13 @@ def test_epochs_are_half_open():
     np.testing.assert_array_equal(s.interval_mask, [True, True, False])
 
 
+def test_sample_in_epochs_excludes_the_stop_instant():
+    """The interval ending at an epoch's stop is inside; that sample is not."""
+    s = _support([0, 0.5, 1.0, 1.5, 2.0], epochs=[(0, 1.0), (1.5, 3.0)])
+    np.testing.assert_array_equal(s.sample_in_epochs, [True, True, False, True, True])
+    np.testing.assert_array_equal(_support([0, 1.0]).sample_in_epochs, [True, True])
+
+
 def test_max_gap_none_keeps_long_interval():
     s = _support([0, 10], max_gap=None)
     np.testing.assert_array_equal(s.interval_mask, [True])

@@ -1325,10 +1325,7 @@ def compute_vte_session(
         argument="decision_region",
     )
     from neurospatial.behavior._kinematics import resolve_min_speed
-    from neurospatial.behavior.decisions import (
-        _in_epochs,
-        _validated_window_duration,
-    )
+    from neurospatial.behavior.decisions import _validated_window_duration
 
     window_duration = _validated_window_duration(
         window_duration, name="window_duration", call="compute_vte_session"
@@ -1345,7 +1342,7 @@ def compute_vte_session(
         )
     min_speed = resolve_min_speed(env, min_speed, call="compute_vte_session")
     region_bins = env.bins_in_region(decision_region)
-    in_epochs = _in_epochs(times, support.epochs)
+    in_epochs = support.sample_in_epochs
     measured: list[_TrialMeasurement] = []
     for index, trial in enumerate(trials):
         measured.append(

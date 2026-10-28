@@ -3439,9 +3439,7 @@ def subgoal_efficiency(
     for subgoal in subgoal_arr:
         _validated_goal(subgoal, n_dims, call=call)
 
-    measured = support.sample_valid.copy()
-    if support.epochs is not None:
-        measured &= times_in_intervals(support.epochs, times_arr)
+    measured = support.sample_valid & support.sample_in_epochs
     segment_results = []
     start: int | None = None
     for index, subgoal in enumerate(subgoal_arr):
@@ -4489,9 +4487,7 @@ def compute_goal_directed_metrics(
 
     # Samples measured for the distance summaries: observed (and, with the
     # geodesic metric, inside the environment) and inside ``epochs``.
-    measured = support.sample_valid & ~np.isnan(distances)
-    if support.epochs is not None:
-        measured &= times_in_intervals(support.epochs, times)
+    measured = support.sample_valid & support.sample_in_epochs & ~np.isnan(distances)
     rows = np.flatnonzero(measured)
     if rows.size:
         min_dist = float(np.min(distances[rows]))

@@ -77,7 +77,6 @@ from neurospatial._intervals import (
     as_intervals,
     interval_valid_mask,
     run_sample_bounds,
-    times_in_intervals,
 )
 from neurospatial._observation import (
     ObservationSupport,
@@ -514,15 +513,6 @@ def _first_entry(
     """Index of the first observed sample inside the region; None if none."""
     hits = np.flatnonzero(observed & np.isin(position_bins, region_bins))
     return int(hits[0]) if hits.size else None
-
-
-def _in_epochs(
-    times: NDArray[np.float64], epochs: NDArray[np.float64] | None
-) -> NDArray[np.bool_]:
-    """Samples inside the half-open ``epochs`` windows (all without epochs)."""
-    if epochs is None:
-        return np.ones(times.shape, dtype=bool)
-    return times_in_intervals(epochs, times)
 
 
 def _never_enters_message(region: str, *, epochs: Any) -> str:
@@ -1757,7 +1747,7 @@ def compute_decision_analysis(
     position_bins = env.bin_at(positions)
 
     # The entry is the first decision-region sample inside the epochs.
-    in_epochs = _in_epochs(times, support.epochs)
+    in_epochs = support.sample_in_epochs
     entry = _first_entry(position_bins, env.bins_in_region(decision_region), in_epochs)
     if entry is None:
         raise ValueError(_never_enters_message(decision_region, epochs=epochs))
