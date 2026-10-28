@@ -11,15 +11,19 @@ from __future__ import annotations
 import json
 import warnings
 import xml.etree.ElementTree as ET
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
+import shapely
 import shapely.geometry as shp
 from numpy.typing import NDArray
 from shapely.errors import ShapelyError
-from shapely.geometry import Polygon
+from shapely.geometry import MultiPolygon, Polygon
+
+from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_finite_scalar
 
 from .core import Region, Regions
 
@@ -919,66 +923,231 @@ def load_cvat_xml(
 
 
 # --------------------------------------------------------------------------
-# 3.  Binary mask  → single Region   (requires OpenCV)
+# 3.  Binary mask  → single Region
 # --------------------------------------------------------------------------
+def _pixels_to_world(
+    points_px: NDArray[np.float64],
+    pixel_to_world: SpatialTransform | None,
+    *,
+    where: str,
+) -> NDArray[np.float64]:
+    """Apply ``pixel_to_world`` to ``(n, 2)`` pixel points and check its output.
+
+    Returns ``points_px`` unchanged when ``pixel_to_world`` is None. ``where``
+    names the shape being converted for error messages.
+    """
+    if pixel_to_world is None:
+        return points_px
+    world = np.asarray(pixel_to_world(points_px), dtype=np.float64)
+    if world.shape != points_px.shape:
+        raise ValueError(
+            _format_error(
+                f"pixel_to_world returned shape {world.shape} for {where}; "
+                f"expected {points_px.shape}, one (x, y) row per pixel point.",
+                why="regions are 2-D, so each pixel (x, y) must map to one "
+                "world (x, y)",
+                fix="pass a 2-D transform such as "
+                "VideoCalibration.transform_px_to_cm or a 2-D AffineND",
+            )
+        )
+    if not np.isfinite(world).all():
+        n_bad = int((~np.isfinite(world).all(axis=1)).sum())
+        raise ValueError(
+            _format_error(
+                f"pixel_to_world returned non-finite coordinates for {n_bad} "
+                f"of {len(world)} points of {where}.",
+                why="a region needs finite world coordinates",
+                fix="check that the transform is defined over the whole image, "
+                "for example that a homography does not send these pixels to "
+                "infinity",
+            )
+        )
+    return world
+
+
+def _polygon_to_world(
+    polygon: Polygon, pixel_to_world: SpatialTransform | None, *, where: str
+) -> Polygon:
+    """Map every ring of a pixel polygon, exterior and holes, to world units."""
+    if pixel_to_world is None:
+        return polygon
+    return Polygon(
+        _pixels_to_world(
+            np.asarray(polygon.exterior.coords), pixel_to_world, where=where
+        ),
+        [
+            _pixels_to_world(np.asarray(ring.coords), pixel_to_world, where=where)
+            for ring in polygon.interiors
+        ],
+    )
+
+
+def _simplify_together(
+    polygons: Sequence[Polygon], tolerance: float
+) -> tuple[Polygon, ...]:
+    """Simplify components as one MultiPolygon, keeping every component and hole.
+
+    Simplifying together keeps components from overlapping one another. No
+    dilation or hole filling occurs.
+    """
+    geometry = MultiPolygon(polygons).simplify(tolerance, preserve_topology=True)
+    if not isinstance(geometry, Polygon | MultiPolygon) or not geometry.is_valid:
+        raise ValueError("Simplification did not preserve valid outline geometry.")
+    # GEOS may unwrap a one-component MultiPolygon into a Polygon.
+    simplified = (geometry,) if isinstance(geometry, Polygon) else tuple(geometry.geoms)
+    if len(simplified) != len(polygons) or sorted(
+        len(polygon.interiors) for polygon in simplified
+    ) != sorted(len(polygon.interiors) for polygon in polygons):
+        raise ValueError("Simplification did not preserve every component and hole.")
+    return simplified
+
+
+def _mask_to_pixel_polygons(
+    mask: NDArray[np.bool_], *, simplify_tolerance: float = 0.0
+) -> list[Polygon]:
+    """Trace the foreground pixel cells of a 2-D boolean mask exactly.
+
+    Pixel ``(x, y)`` = ``mask[y, x]`` covers ``[x-.5, x+.5] × [y-.5, y+.5]``,
+    so the polygons have the mask's exact area. Pixels that meet only at a
+    corner are separate components (four-neighbor connectivity); every
+    component and hole is kept. Positive ``simplify_tolerance`` (pixels)
+    simplifies all components together with topology preservation.
+
+    Returns the polygons sorted by bounds and area, or an empty list for an
+    empty foreground. ``mask`` must already be a 2-D boolean array.
+    """
+    validate_finite_scalar(
+        simplify_tolerance, name="simplify_tolerance (pixels)", positive=False
+    )
+    # One rectangle per horizontal run of foreground pixels, built at once.
+    edges = np.diff(np.pad(mask, ((0, 0), (1, 1))).astype(np.int8), axis=1)
+    rows, starts = np.nonzero(edges == 1)
+    _, stops = np.nonzero(edges == -1)
+    if not rows.size:
+        return []
+    merged = shapely.union_all(
+        shapely.box(starts - 0.5, rows - 0.5, stops - 0.5, rows + 0.5)
+    )
+    polygons = [merged] if isinstance(merged, Polygon) else list(merged.geoms)
+    if simplify_tolerance:
+        polygons = list(_simplify_together(polygons, simplify_tolerance))
+    return sorted(
+        polygons, key=lambda polygon: (*polygon.bounds, polygon.area, polygon.wkb)
+    )
+
+
 def mask_to_region(
-    mask_img: NDArray[np.bool_],
+    mask: NDArray[np.bool_],
     *,
     region_name: str,
     pixel_to_world: SpatialTransform | None = None,
-    approx_tol_px: float = 1.0,
+    simplify_tolerance: float = 0.0,
 ) -> Region:
-    """Trace the largest contour of a boolean mask into a polygon Region.
+    """Trace one connected area of a 2-D image mask into a polygon Region.
 
-    * Requires **opencv-python**.
-    * Assumes **2-D** image; Y axis is *not* flipped - handle upstream if needed.
+    The outline follows the pixel cells exactly, so the polygon has the
+    mask's area and keeps its holes.
 
     Parameters
     ----------
-    mask_img : NDArray[np.bool_], shape (H, W)
-        Binary mask image, where `True` indicates the region of interest.
+    mask : ndarray of bool or 0/1 values, shape (height, width)
+        Image mask indexed ``mask[row, column]``, where True (or 1) marks the
+        area. The foreground must be one connected component; pixels that
+        meet only at a corner are not connected.
     region_name : str
-        Name for the resulting region.
+        Name of the resulting region.
     pixel_to_world : SpatialTransform, optional
-        Callable mapping *(N,2)* **pixel** coords → centimeter coords.
-        If `None`, the coordinates are assumed to be in pixels.
-    approx_tol_px : float, optional
-        Approximation tolerance for contour simplification in pixels.
-        Default is 1.0 pixel.
+        Callable mapping ``(n, 2)`` pixel ``(x, y)`` coordinates to
+        ``(n, 2)`` world coordinates, such as
+        ``VideoCalibration.transform_px_to_cm``. It is applied to the
+        exterior and to every hole. If None, the polygon stays in image
+        pixels: ``x`` is the column, ``y`` the row (pointing down), and pixel
+        ``(x, y)`` covers ``[x-.5, x+.5] × [y-.5, y+.5]``.
+    simplify_tolerance : float, default=0.0
+        Finite nonnegative simplification distance in pixels. Zero keeps the
+        exact pixel outline and area; positive values simplify the outline
+        with topology preservation, keeping every hole.
 
     Returns
     -------
     Region
-        A single :class:`Region` object representing the largest contour in the mask.
+        A ``kind="polygon"`` region. ``metadata["source"]`` is ``"mask"``, and
+        ``metadata["coord_system"]`` is ``"pixels"`` when ``pixel_to_world``
+        is None.
 
+    Raises
+    ------
+    ValueError
+        If the mask is not a nonempty 2-D boolean or 0/1 array, has no
+        foreground, or has more than one connected component.
+
+    See Also
+    --------
+    neurospatial.annotation.mask_to_polygons : Every component of a mask, in
+        pixels.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.regions import mask_to_region
+    >>> mask = np.zeros((5, 6), dtype=bool)
+    >>> mask[1:4, 1:5] = True
+    >>> mask[2, 2] = False  # a one-pixel hole
+    >>> region = mask_to_region(mask, region_name="arena")
+    >>> region.data.area, len(region.data.interiors)
+    (11.0, 1)
+    >>> region.data.bounds
+    (0.5, 0.5, 4.5, 3.5)
     """
-    try:
-        import cv2
-    except ImportError as exc:
-        raise RuntimeError("mask_to_region() needs opencv-python and shapely") from exc
-
-    if mask_img.dtype != np.uint8:
-        mask_img = mask_img.astype("uint8")
-
-    cnts, _ = cv2.findContours(
-        mask_img.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
+    array = np.asarray(mask)
+    if array.ndim != 2 or array.size == 0:
+        raise ValueError(
+            _format_error(
+                f"mask must be a nonempty 2-D image (height, width), got shape "
+                f"{array.shape}.",
+                fix="pass one image-sized boolean array, indexed mask[row, column]",
+            )
+        )
+    if array.dtype != np.bool_:
+        if not (np.issubdtype(array.dtype, np.number) and np.isin(array, (0, 1)).all()):
+            raise ValueError(
+                _format_error(
+                    f"mask must hold booleans or only 0 and 1, got dtype "
+                    f"{array.dtype} with other values.",
+                    why="a value such as 255, a probability or NaN does not say "
+                    "which pixels belong to the region",
+                    fix="threshold it first, for example mask_to_region(image > 0, ...)",
+                )
+            )
+        array = array.astype(np.bool_)
+    polygons = _mask_to_pixel_polygons(array, simplify_tolerance=simplify_tolerance)
+    if not polygons:
+        raise ValueError(
+            _format_error(
+                f"mask for region {region_name!r} has no foreground pixels.",
+                fix="mark the region's pixels True",
+            )
+        )
+    if len(polygons) > 1:
+        sizes = sorted((round(p.area) for p in polygons), reverse=True)[:5]
+        raise ValueError(
+            _format_error(
+                f"mask for region {region_name!r} has {len(polygons)} separate "
+                f"areas (largest pixel counts {sizes}).",
+                why="a Region holds one polygon, and pixels that touch only at "
+                "a corner are not connected",
+                fix="select one component (for example with "
+                "scipy.ndimage.label), or make one region per area from "
+                "neurospatial.annotation.mask_to_polygons",
+            )
+        )
+    polygon = _polygon_to_world(
+        polygons[0], pixel_to_world, where=f"region {region_name!r}"
     )
-    if not cnts:
-        raise ValueError("No contours found in mask")
-
-    # Take the largest contour by area
-    cnt = max(cnts, key=cv2.contourArea)[:, 0, :]  # (N,2) pixels
-    cnt = cv2.approxPolyDP(cnt, approx_tol_px, True)[:, 0, :]
-
-    pts_cm = pixel_to_world(cnt.astype(np.float64)) if pixel_to_world else cnt
-    poly = shp.Polygon(pts_cm)
-
-    return Region(
-        name=region_name,
-        kind="polygon",
-        data=poly,
-        metadata={"source": "mask"},
-    )
+    metadata: dict[str, Any] = {"source": "mask"}
+    if pixel_to_world is None:
+        metadata["coord_system"] = "pixels"
+    return Region(name=region_name, kind="polygon", data=polygon, metadata=metadata)
 
 
 # --------------------------------------------------------------------------

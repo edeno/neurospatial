@@ -12,9 +12,9 @@ from neurospatial._results import read_only_copy
 from neurospatial._validation import validate_finite_scalar
 from neurospatial.annotation.segmentation import (
     SegmentationProposal,
-    _simplify_together,
     mask_to_polygons,
 )
+from neurospatial.regions.io import _simplify_together
 
 
 def _tolerance(value: float) -> float:

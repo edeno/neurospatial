@@ -11,21 +11,20 @@ import json
 import platform
 import sys
 import threading
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import KW_ONLY, dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
 import numpy as np
-import shapely
 from numpy.typing import NDArray
 from scipy import ndimage
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import Polygon
 
 from neurospatial._results import ReadOnlyArraysMixin, read_only_copy
-from neurospatial._validation import validate_finite_scalar
 from neurospatial.regions.core import _require_json_metadata
+from neurospatial.regions.io import _mask_to_pixel_polygons
 
 __all__ = [
     "RegionGrowProvider",
@@ -620,26 +619,6 @@ class SegmentAnythingProvider:
         )
 
 
-def _simplify_together(
-    polygons: Sequence[Polygon], tolerance: float
-) -> tuple[Polygon, ...]:
-    """Simplify components as one MultiPolygon, keeping every component and hole.
-
-    Simplifying together keeps components from overlapping one another. No
-    dilation or hole filling occurs.
-    """
-    geometry = MultiPolygon(polygons).simplify(tolerance, preserve_topology=True)
-    if not isinstance(geometry, Polygon | MultiPolygon) or not geometry.is_valid:
-        raise ValueError("Simplification did not preserve valid outline geometry.")
-    # GEOS may unwrap a one-component MultiPolygon into a Polygon.
-    simplified = (geometry,) if isinstance(geometry, Polygon) else tuple(geometry.geoms)
-    if len(simplified) != len(polygons) or sorted(
-        len(polygon.interiors) for polygon in simplified
-    ) != sorted(len(polygon.interiors) for polygon in polygons):
-        raise ValueError("Simplification did not preserve every component and hole.")
-    return simplified
-
-
 def mask_to_polygons(
     mask: NDArray[np.bool_], *, simplify_tolerance: float = 0.0
 ) -> list[Polygon]:
@@ -668,27 +647,16 @@ def mask_to_polygons(
         If simplification cannot keep every component and hole valid; use a
         smaller ``simplify_tolerance``.
 
+    See Also
+    --------
+    neurospatial.regions.mask_to_region : One connected area as a Region,
+        optionally in world units.
+
     Examples
     --------
     >>> mask_to_polygons(np.array([[True, True]]))[0].area
     2.0
     """
-    mask = _validate_mask(mask)
-    validate_finite_scalar(
-        simplify_tolerance, name="simplify_tolerance (pixels)", positive=False
-    )
-    # One rectangle per horizontal run of foreground pixels, built at once.
-    edges = np.diff(np.pad(mask, ((0, 0), (1, 1))).astype(np.int8), axis=1)
-    rows, starts = np.nonzero(edges == 1)
-    _, stops = np.nonzero(edges == -1)
-    if not rows.size:
-        return []
-    merged = shapely.union_all(
-        shapely.box(starts - 0.5, rows - 0.5, stops - 0.5, rows + 0.5)
-    )
-    polygons = [merged] if isinstance(merged, Polygon) else list(merged.geoms)
-    if simplify_tolerance:
-        polygons = list(_simplify_together(polygons, simplify_tolerance))
-    return sorted(
-        polygons, key=lambda polygon: (*polygon.bounds, polygon.area, polygon.wkb)
+    return _mask_to_pixel_polygons(
+        _validate_mask(mask), simplify_tolerance=simplify_tolerance
     )

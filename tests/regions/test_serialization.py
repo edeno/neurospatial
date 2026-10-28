@@ -5,7 +5,7 @@ import json
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
-from shapely.geometry import Polygon
+from shapely.geometry import Point, Polygon
 
 from neurospatial.regions import Region, Regions
 from neurospatial.regions.io import (
@@ -742,80 +742,135 @@ class TestLoadCvatXml:
         assert regions["arena"].metadata.get("color") == "#ff0000"
 
 
-# Check if cv2 is available
-try:
-    import cv2  # noqa: F401
-
-    CV2_AVAILABLE = True
-except ImportError:
-    CV2_AVAILABLE = False
+def _scale(factor: float):
+    """A pixel_to_world transform that scales both axes by ``factor``."""
+    return lambda points: np.asarray(points, dtype=float) * factor
 
 
-@pytest.mark.skipif(not CV2_AVAILABLE, reason="opencv-python not installed")
 class TestMaskToRegion:
-    """Tests for mask_to_region function."""
+    """mask_to_region traces exact pixel cells into one polygon."""
 
-    def test_simple_square_mask(self):
-        """Test converting simple square mask to region."""
-        mask = np.zeros((10, 10), dtype=bool)
-        mask[2:5, 2:5] = True
+    def test_outline_follows_pixel_cells_and_keeps_holes(self):
+        mask = np.zeros((7, 9), dtype=bool)
+        mask[1:6, 2:8] = True
+        mask[3, 4] = False  # one-pixel hole
 
-        region = mask_to_region(mask, region_name="test_region")
+        region = mask_to_region(mask, region_name="arena")
 
-        assert region.name == "test_region"
+        polygon = region.data
         assert region.kind == "polygon"
-        assert isinstance(region.data, Polygon)
+        assert polygon.bounds == (1.5, 0.5, 7.5, 5.5)
+        assert polygon.area == mask.sum()
+        assert len(polygon.interiors) == 1
+        assert Polygon(polygon.interiors[0]).bounds == (3.5, 2.5, 4.5, 3.5)
+        for y, x in np.ndindex(mask.shape):
+            assert polygon.contains(Point(x, y)) == mask[y, x]
+
+    @pytest.mark.parametrize(
+        ("mask", "bounds"),
+        [
+            (np.array([[False, True, False]]), (0.5, -0.5, 1.5, 0.5)),
+            (np.ones((1, 4), dtype=bool), (-0.5, -0.5, 3.5, 0.5)),
+            (np.ones((3, 1), dtype=bool), (-0.5, -0.5, 0.5, 2.5)),
+        ],
+    )
+    def test_single_pixel_row_and_column(self, mask, bounds):
+        region = mask_to_region(mask, region_name="thin")
+
+        assert region.data.bounds == bounds
+        assert region.data.area == mask.sum()
+
+    def test_zero_one_integer_mask(self):
+        mask = np.zeros((4, 4), dtype=np.uint8)
+        mask[1:3, 1:3] = 1
+
+        region = mask_to_region(mask, region_name="zone")
+
+        assert region.data.bounds == (0.5, 0.5, 2.5, 2.5)
+
+    def test_pixel_to_world_maps_exterior_and_holes(self):
+        mask = np.ones((5, 5), dtype=bool)
+        mask[2, 2] = False
+
+        region = mask_to_region(mask, region_name="ring", pixel_to_world=_scale(2.0))
+
+        assert region.data.bounds == (-1.0, -1.0, 9.0, 9.0)
+        assert Polygon(region.data.interiors[0]).bounds == (3.0, 3.0, 5.0, 5.0)
+        assert region.data.area == pytest.approx(4 * mask.sum())
+        assert "coord_system" not in region.metadata
+
+    def test_pixel_metadata(self):
+        region = mask_to_region(np.ones((2, 2), dtype=bool), region_name="r")
+
+        assert region.metadata["source"] == "mask"
+        assert region.metadata["coord_system"] == "pixels"
+
+    def test_simplify_keeps_hole_and_rejects_negative_tolerance(self):
+        mask = np.zeros((30, 30), dtype=bool)
+        mask[2:28, 2:28] = True
+        mask[10:20, 10:20] = False
+
+        region = mask_to_region(mask, region_name="r", simplify_tolerance=1.0)
+
+        assert len(region.data.interiors) == 1
+        with pytest.raises(ValueError, match="finite and nonnegative"):
+            mask_to_region(mask, region_name="r", simplify_tolerance=-1.0)
 
     def test_empty_mask_raises(self):
-        """Test that empty mask raises error."""
-        mask = np.zeros((10, 10), dtype=bool)
+        with pytest.raises(ValueError, match="no foreground"):
+            mask_to_region(np.zeros((4, 4), dtype=bool), region_name="empty")
 
-        with pytest.raises(ValueError, match="No contours found"):
-            mask_to_region(mask, region_name="empty")
+    @pytest.mark.parametrize(
+        "mask",
+        [
+            np.eye(3, dtype=bool),  # corner-touching pixels are separate
+            np.array([[1, 0, 1]], dtype=bool),
+        ],
+    )
+    def test_several_components_raise_with_count(self, mask):
+        n_areas = int(mask.sum())
+        with pytest.raises(ValueError, match=f"{n_areas} separate areas"):
+            mask_to_region(mask, region_name="split")
 
-    def test_full_mask(self):
-        """Test mask that is entirely True."""
-        mask = np.ones((5, 5), dtype=bool)
-
-        region = mask_to_region(mask, region_name="full")
-
-        assert region.kind == "polygon"
-        assert region.name == "full"
-
-    def test_uint8_conversion(self):
-        """Test automatic conversion to uint8."""
-        mask = np.zeros((5, 5), dtype=float)
-        mask[1:4, 1:4] = 1.0
-
-        region = mask_to_region(mask, region_name="converted")
-
-        assert region.kind == "polygon"
-
-    def test_metadata(self):
-        """Test that metadata is set correctly."""
-        mask = np.zeros((5, 5), dtype=bool)
-        mask[1:4, 1:4] = True
-
-        region = mask_to_region(mask, region_name="test")
-
-        assert region.metadata.get("source") == "mask"
+    @pytest.mark.parametrize(
+        ("mask", "match"),
+        [
+            (np.ones(4, dtype=bool), "2-D image"),
+            (np.ones((2, 2, 3), dtype=bool), "2-D image"),
+            (np.zeros((0, 3), dtype=bool), "2-D image"),
+            (np.full((2, 2), 255, dtype=np.uint8), "only 0 and 1"),
+            (np.array([[1.0, np.nan]]), "only 0 and 1"),
+            (np.array([["a", "b"]]), "only 0 and 1"),
+        ],
+    )
+    def test_rejects_non_mask_input(self, mask, match):
+        with pytest.raises(ValueError, match=match):
+            mask_to_region(mask, region_name="bad")
 
 
-class TestMaskToRegionErrors:
-    """Tests for mask_to_region error handling."""
+class TestPixelToWorldValidation:
+    """Every loader checks pixel_to_world output through one helper."""
 
-    def test_opencv_not_installed(self, monkeypatch):
-        """Test error when OpenCV is not installed."""
-        import sys
+    def test_wrong_shape_raises(self):
+        with pytest.raises(
+            ValueError, match=r"returned shape \(\d+,\) .*expected \(\d+, 2\)"
+        ):
+            mask_to_region(
+                np.ones((2, 2), dtype=bool),
+                region_name="r",
+                pixel_to_world=lambda points: points[:, 0],
+            )
 
-        # Mock cv2 import to fail
-        monkeypatch.setitem(sys.modules, "cv2", None)
+    def test_non_finite_raises(self):
+        def to_nan(points):
+            out = np.asarray(points, dtype=float).copy()
+            out[0] = np.nan
+            return out
 
-        mask = np.zeros((5, 5), dtype=bool)
-        mask[1:4, 1:4] = True
-
-        with pytest.raises(RuntimeError, match="opencv-python"):
-            mask_to_region(mask, region_name="test")
+        with pytest.raises(ValueError, match="non-finite coordinates for 1 of"):
+            mask_to_region(
+                np.ones((2, 2), dtype=bool), region_name="r", pixel_to_world=to_nan
+            )
 
 
 class TestRegionsToDataframe:

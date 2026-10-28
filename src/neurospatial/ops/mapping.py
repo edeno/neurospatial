@@ -187,11 +187,6 @@ def regions_to_mask(
         intersection = mask_a & mask_b
         difference = mask_a & ~mask_b
 
-    This function is the approximate inverse of
-    :func:`neurospatial.regions.mask_to_region`; a round trip
-    mask → polygon → mask keeps the spatial structure but may differ at the
-    edges because the contour is approximated.
-
     Examples
     --------
     >>> import numpy as np
@@ -214,7 +209,7 @@ def regions_to_mask(
 
     See Also
     --------
-    neurospatial.regions.mask_to_region : Convert a bin mask to a polygon.
+    neurospatial.regions.mask_to_region : Trace a 2-D image mask into a polygon.
     Environment.region_membership : Bins-by-regions membership table.
     resample_field : Resample fields between different discretizations.
     """
