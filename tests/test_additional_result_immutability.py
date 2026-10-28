@@ -185,12 +185,10 @@ CASES = [
         {
             "labels": ("A", "B"),
             "epoch_bounds": np.array([[0.0, 2.0], [2.0, 3.0]]),
-            "epoch_labels": np.array([0, 1], dtype=np.intp),
             "epoch_intervals": np.array([[0, 1], [2, 2]], dtype=np.intp),
             "interval_labels": np.array([0, 0, 1], dtype=np.intp),
             "interval_supported": np.ones(3, dtype=bool),
             "unsupported_labels": (),
-            "n_samples": 4,
             "max_gap": 0.5,
             "input_epochs": np.array([[0.0, 10.0]]),
             "missing_label": None,
@@ -323,8 +321,9 @@ def test_arrays_are_owned_and_read_only(result_and_inputs):
     result, inputs = result_and_inputs
     for name, array in _arrays(result).items():
         expected = array.copy()
-        assert not np.shares_memory(array, inputs[name]), name
-        inputs[name][...] = 0
+        if name in inputs:  # derived (init=False) arrays have no input
+            assert not np.shares_memory(array, inputs[name]), name
+            inputs[name][...] = 0
         np.testing.assert_array_equal(array, expected)
         with pytest.raises(ValueError, match="read-only"):
             array.flat[0] = 0
