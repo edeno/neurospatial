@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import shapely
+from shapely.geometry import Polygon
 
 from neurospatial import Environment
 from neurospatial.animation.overlays import (
@@ -24,12 +26,15 @@ pytestmark = [pytest.mark.napari, pytest.mark.xdist_group(name="napari_gui")]
 TIMES = np.array([0.0, 0.5, 1.0])
 # Nose and tail sit this (x, y) offset ahead of and behind the animal.
 OFFSET = np.array([1.0, 2.0])
+# A region with a hole, taller than wide so a swapped axis shows up.
+RING = Polygon(
+    [(20, 10), (40, 10), (40, 50), (20, 50)],
+    holes=[[(25, 20), (35, 20), (35, 40), (25, 40)]],
+)
 
 
 @pytest.fixture
 def env():
-    from shapely.geometry import Polygon
-
     env = Environment.from_grid_mask(
         np.ones((4, 6), dtype=bool),
         (np.linspace(0.0, 40.0, 5), np.linspace(0.0, 60.0, 7)),
@@ -38,6 +43,7 @@ def env():
     regions = Regions()
     regions.add("reward", point=(35.0, 55.0))
     regions.add("start", polygon=Polygon([(0, 0), (10, 0), (10, 10), (0, 10)]))
+    regions.add("ring", polygon=RING)
     return env.with_regions(regions)
 
 
@@ -136,10 +142,29 @@ def test_regions_are_drawn_only_when_requested(open_view):
     np.testing.assert_allclose(shown["Region: reward"].data, [[55.0, 35.0]])
     assert shown["Region: reward"].opacity == pytest.approx(0.4)
     shown = regions(open_view(show_regions=True))
-    assert set(shown) == {"Region: reward", "Region: start"}
+    assert set(shown) == {"Region: reward", "Region: start", "Region: ring"}
     (square,) = shown["Region: start"].data
     np.testing.assert_allclose(square.min(axis=0), [0.0, 0.0])
     np.testing.assert_allclose(square.max(axis=0), [10.0, 10.0])
+
+
+def test_region_holes_are_left_unfilled(open_view):
+    layer = open_view(show_regions=["ring"]).native.layers["Region: ring"]
+    kinds = np.asarray(layer.shape_type)
+    # napari stores (y, x); the faces tile the ring exactly, hole excluded.
+    faces = [
+        Polygon(d[:, ::-1])
+        for d, k in zip(layer.data, kinds, strict=True)
+        if k == "polygon"
+    ]
+    assert shapely.union_all(faces).symmetric_difference(RING).area < 1e-9
+    assert sum(face.area for face in faces) == pytest.approx(RING.area)
+    # Faces have no edges; the exterior and the hole are outlined.
+    np.testing.assert_array_equal(np.asarray(layer.edge_width)[kinds == "polygon"], 0)
+    outlines = [
+        d[:, ::-1] for d, k in zip(layer.data, kinds, strict=True) if k == "path"
+    ]
+    assert [Polygon(ring).area for ring in outlines] == [800.0, 200.0]
 
 
 @pytest.mark.parametrize("z_order", ["above", "below"])

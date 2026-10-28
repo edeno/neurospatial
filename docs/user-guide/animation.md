@@ -711,8 +711,6 @@ names the alternative, instead of producing an incomplete animation.
   refused; the 3-D axes show physical coordinates and units. Regular 3-D cells
   keep their physical geometry in exported files.
 - **Fastplotlib** does not draw scale bars.
-- **Napari** does not draw polygon regions with holes; use the notebook
-  widget or a file for those.
 
 See [Animation Overlays](../animation_overlays.md) for each overlay's options,
 including video calibration.

@@ -14,6 +14,8 @@ LabelMe circle vertices, which can differ by float rounding (1e-15 px).
 - `Animation(..., show_regions=...)` frames, rendered or exported with
   Matplotlib, leave a polygon region's holes unfilled; they were drawn
   filled, so a ring-shaped region looked like a solid square.
+- The napari animation backend draws polygon regions with holes, like the
+  notebook widget, fastplotlib and exported files; it refused them.
 - `plot_regions` refuses a `world_to_pixel` that changes the shape of its
   input or returns NaN, naming the region, instead of failing inside
   Matplotlib.

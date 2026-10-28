@@ -8,7 +8,6 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from shapely.geometry import Polygon
 
 from neurospatial import Environment
 from neurospatial.animation import Animation, AnimationField
@@ -254,30 +253,6 @@ def test_napari_layout_accepts_overlays_and_regions(env, option, monkeypatch):
     ) as scene:
         scene.show(backend="napari", **option)
         build.assert_called_once_with(scene, **option)
-
-
-def test_napari_holes_rejected_before_viewer_allocation(env, monkeypatch):
-    from neurospatial.animation.backends import _napari_scene
-
-    regions = Regions()
-    regions.add(
-        "arena",
-        polygon=Polygon(
-            [(0, 0), (2, 0), (2, 2), (0, 2)],
-            holes=[[(0.5, 0.5), (1.5, 0.5), (1.5, 1.5), (0.5, 1.5)]],
-        ),
-    )
-    env = env.with_regions(regions)
-    build = Mock()
-    monkeypatch.setattr(_napari_scene, "NapariScene", build)
-    with (
-        Animation(
-            env, np.ones((2, env.n_bins)), frame_times=[0, 0.1], show_regions=True
-        ) as scene,
-        pytest.raises(ValueError, match="polygons with holes"),
-    ):
-        scene.show(backend="napari")
-    build.assert_not_called()
 
 
 @pytest.mark.parametrize("backend", ["widget", "napari", "fastplotlib"])

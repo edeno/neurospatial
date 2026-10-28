@@ -444,7 +444,6 @@ any frame is written, with a message naming the alternative:
 - **3-D environments:** headings must be 3-D unit vectors; only point regions
   are drawn; no `VideoOverlay` or scale bar.
 - **Fastplotlib:** no scale bar.
-- **Napari:** no polygon regions with holes.
 
 See [What each environment can show](user-guide/animation.md#what-each-environment-can-show)
 in the animation guide.

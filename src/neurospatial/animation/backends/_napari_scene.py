@@ -28,6 +28,7 @@ from neurospatial.animation.backends._napari_compat import (
     screen_point_options,
     set_spatial_units,
 )
+from neurospatial.environment._fastplotlib import _triangles
 
 
 def _disconnect(owner: Any, name: str, slot: Any) -> None:
@@ -779,12 +780,30 @@ class NapariScene:
                     face_color="white",
                     opacity=scene.region_alpha,
                 )
-            else:
-                # The view request admitted only point and hole-free polygons.
+            elif not region.data.interiors:
                 self._add_overlay(
                     "shapes",
                     [np.asarray(region.data.exterior.coords)[:, ::-1]],
                     shape_type="polygon",
+                    name=f"Region: {name}",
+                    face_color="white",
+                    opacity=scene.region_alpha,
+                )
+            else:
+                # A napari polygon is one ring, so a polygon with holes is
+                # filled by its triangles, without edges, and outlined by its
+                # exterior and hole rings.
+                corners, _ = _triangles([region.data])
+                faces = list(corners.reshape(-1, 3, 2)[..., ::-1])
+                rings = [
+                    np.asarray(ring.coords)[:, ::-1]
+                    for ring in (region.data.exterior, *region.data.interiors)
+                ]
+                self._add_overlay(
+                    "shapes",
+                    faces + rings,
+                    shape_type=["polygon"] * len(faces) + ["path"] * len(rings),
+                    edge_width=[0] * len(faces) + [1] * len(rings),
                     name=f"Region: {name}",
                     face_color="white",
                     opacity=scene.region_alpha,

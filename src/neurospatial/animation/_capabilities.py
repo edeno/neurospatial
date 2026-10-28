@@ -211,16 +211,3 @@ def require_scene_view(scene: Animation, backend: str, options: dict[str, Any]) 
             "The fastplotlib scene backend cannot draw scale_bar. "
             "Use backend='widget' or backend='napari', or omit scale_bar."
         )
-    if backend == "napari":
-        for name in scene._region_names:
-            region = scene.env.regions[name]
-            if region.kind not in {"point", "polygon"}:
-                raise ValueError(
-                    f"Napari cannot draw region {name!r} of kind {region.kind!r}. "
-                    "Omit show_regions or use backend='widget'."
-                )
-            if region.kind == "polygon" and region.data.interiors:
-                raise ValueError(
-                    "Napari region polygons with holes require a raster mask; "
-                    "omit show_regions or use backend='widget'."
-                )
