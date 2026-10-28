@@ -1905,8 +1905,8 @@ def mean_square_displacement(
         coordinate. Rows with a non-finite coordinate are missing.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing displacements:
-        - "euclidean": Straight-line distance (ecology standard, most accurate).
-          Use for diffusion analysis, comparing to ecology literature, and
+        - "euclidean": Straight-line distance. Use for diffusion analysis,
+          comparison with the single-particle-tracking literature, and
           classification of movement types (ballistic vs. diffusive).
         - "geodesic": Graph shortest-path distance (neuroscience-specific).
           Requires `env` parameter. Use for constrained navigation analysis.
@@ -1983,27 +1983,27 @@ def mean_square_displacement(
 
     MSD scales with time lag τ as :math:`MSD \\sim \\tau^\\alpha`:
 
-    - **α ≈ 2**: Ballistic motion (directed, constant velocity)
+    - **α ≈ 0**: Confined motion (MSD plateaus at the size of the enclosure)
+    - **0 < α < 1**: Subdiffusive motion (obstructed or partly confined)
     - **α ≈ 1**: Diffusive motion (random walk, Brownian motion)
-    - **α < 1**: Subdiffusive motion (obstructed, confined)
-    - **α > 2**: Superdiffusive motion (Lévy flight)
-    - **α ≈ 0**: Confined motion (bounded, plateau)
+    - **1 < α < 2**: Superdiffusive motion (persistent, partly directed)
+    - **α ≈ 2**: Ballistic motion (straight, constant velocity), the upper
+      bound for an animal moving at finite speed
 
     The exponent α can be estimated from log-log regression: log(MSD) ~ α·log(τ).
+    In an arena, every path is confined at lags long enough to cross it, so
+    estimate α over lags shorter than that.
 
     **Why continuous positions?**
 
-    Using continuous positions (not bins) is critical for MSD accuracy because:
+    Bin discretization rounds each position to its bin center, so a
+    displacement smaller than a bin reads as zero or as a whole bin. Short-lag
+    MSD is then wrong in either direction, and the fitted exponent α is
+    biased. The single-particle-tracking methods cited below (Saxton 1997;
+    Kepten et al. 2013) likewise compute MSD from continuous positions.
 
-    1. **Precision**: Bin discretization introduces a "floor" on displacements
-       equal to the bin size, artificially inflating MSD for small displacements.
-    2. **Scaling exponent**: Discretization can bias the diffusion exponent α,
-       making diffusive motion appear more subdiffusive.
-    3. **Ecology standard**: All movement ecology literature uses continuous MSD
-       (Saxton 1997, Ferrari 2001, Kepten 2015).
-
-    Example: Movement [0,0]→[0.1,0.1]→[0.2,0.2] maps to the same bin, giving
-    MSD=0 (incorrect), whereas continuous gives MSD ∝ t (correct diffusive).
+    Example: steady movement [0,0]→[0.1,0.1]→[0.2,0.2] stays in one bin and
+    gives MSD = 0, whereas continuous positions give MSD ∝ τ² (ballistic).
 
     See Also
     --------
@@ -2052,12 +2052,10 @@ def mean_square_displacement(
     ----------
     .. [1] Saxton, M. J. (1997). "Single-particle tracking: the distribution
            of diffusion coefficients." Biophysical Journal, 72(4), 1744-1753.
-    .. [2] Ferrari, R., et al. (2001). "Tracking single particles in biological
-           systems." Physical Review E, 63(4), 041904.
-    .. [3] Kepten, E., et al. (2015). "Improved estimation of anomalous
-           diffusion exponents in single-particle tracking experiments."
-           Physical Review E, 87(5), 052713.
-    .. [4] Traja documentation: https://traja.readthedocs.io/
+    .. [2] Kepten, E., Bronshtein, I., & Garini, Y. (2013). "Improved
+           estimation of anomalous diffusion exponents in single-particle
+           tracking experiments." Physical Review E, 87(5), 052713.
+    .. [3] Traja documentation: https://traja.readthedocs.io/
     """
     times, positions, support = validated_observations(
         times,
