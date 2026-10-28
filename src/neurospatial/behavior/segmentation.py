@@ -2788,7 +2788,8 @@ def trajectory_similarity(
           both trajectories share, over the area either visits. Range [0, 1].
         - 'correlation': Pearson correlation of the positions along the
           track, with negative correlations reported as 0. Needs a 1-D
-          environment or a linearized track. Range [0, 1].
+          environment or a linearized track. Range [0, 1], or NaN when
+          undefined (see Returns).
         - 'hausdorff': 1 - Hausdorff distance / environment extent. Range [0, 1].
         - 'dtw': 1 - dynamic time warping distance / its largest possible
           value in this environment. Range [0, 1].
@@ -2798,7 +2799,12 @@ def trajectory_similarity(
     -------
     float
         Similarity score in [0, 1] where 1.0 indicates identical trajectories
-        and 0.0 indicates completely different trajectories.
+        and 0.0 indicates completely different trajectories. For
+        ``method='correlation'``, NaN when the correlation is undefined:
+        fewer than 3 aligned pairs have both samples inside the environment
+        (two points always correlate exactly +-1), or either trajectory stays
+        in one bin over those pairs. NaN is not 0 ("unrelated"); skip such
+        pairs with ``np.nanmean`` or ``np.isfinite`` when averaging.
 
     Raises
     ------
@@ -2976,24 +2982,18 @@ def trajectory_similarity(
             shorter, longer = position_bins2, position_bins1
 
         # Sample longer trajectory at same rate as shorter
-        if len(shorter) < 2:
-            # Can't compute correlation with < 2 points
-            return 1.0 if np.array_equal(position_bins1, position_bins2) else 0.0
-
         indices = np.linspace(0, len(longer) - 1, len(shorter), dtype=int)
         longer_sampled = longer[indices]
         # Compare only aligned pairs in which both samples have a place.
         observed = (shorter >= 0) & (longer_sampled >= 0)
-        shorter, longer_sampled = shorter[observed], longer_sampled[observed]
-        if len(shorter) < 2:
-            return 1.0 if np.array_equal(shorter, longer_sampled) else 0.0
-
         # Correlate positions along the track, not bin numbers.
-        first = track_position[shorter]
-        second = track_position[longer_sampled]
-        if np.ptp(first) == 0 or np.ptp(second) == 0:
-            # Constant sequence - return 1 if identical, 0 otherwise
-            return 1.0 if np.array_equal(first, second) else 0.0
+        first = track_position[shorter[observed]]
+        second = track_position[longer_sampled[observed]]
+        # Fewer than 3 aligned pairs (two points always correlate +-1, fewer
+        # not at all) or a sequence that stays in one bin has no defined
+        # correlation, which is not "no similarity".
+        if first.size < 3 or np.ptp(first) == 0 or np.ptp(second) == 0:
+            return np.nan
 
         corr, _ = pearsonr(first, second)
         # Map [-1, 1] to [0, 1], clamp negative correlations to 0

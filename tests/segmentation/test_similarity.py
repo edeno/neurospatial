@@ -75,6 +75,36 @@ class TestTrajectorySimilarity:
 
         assert similarity == pytest.approx(1.0)
 
+    @pytest.mark.parametrize(
+        ("first", "second"),
+        [
+            ([0, -1], [-1, 5]),  # no aligned pair inside the track
+            ([3, 8, -1], [3, -1, 7]),  # one pair
+            ([0, 9], [0, 9]),  # two identical pairs: r = 1 whatever the path
+            ([0, 9], [9, 0]),  # two reversed pairs: r = -1 whatever the path
+            ([2, 2, 2, 2], [2, 2, 2, 2]),  # identical, but stays in one bin
+            ([2, 2, 2, 2], [0, 1, 2, 3]),  # one run stays in one bin
+            ([4], [4]),  # a single sample each
+        ],
+        ids=["zero", "one", "two", "two-reversed", "flat", "one-flat", "single"],
+    )
+    def test_correlation_is_nan_when_undefined(self, first, second):
+        """Fewer than 3 aligned pairs or a flat run give NaN, never 0 or 1."""
+        env = Environment.from_samples(np.linspace(0, 100, 50)[:, None], bin_size=5.0)
+        similarity = trajectory_similarity(
+            np.array(first), np.array(second), env, method="correlation"
+        )
+        assert np.isnan(similarity)
+
+    def test_correlation_with_three_pairs_is_their_pearson_r(self):
+        env = Environment.from_samples(np.linspace(0, 100, 50)[:, None], bin_size=5.0)
+        first, second = np.array([0, 1, 2, -1]), np.array([0, 2, 1, 3])
+        similarity = trajectory_similarity(first, second, env, method="correlation")
+        centers = env.bin_centers[:, 0]
+        expected = np.corrcoef(centers[[0, 1, 2]], centers[[0, 2, 1]])[0, 1]
+        assert similarity == pytest.approx(expected)
+        assert 0 < similarity < 1
+
     def test_correlation_refuses_an_open_arena(self):
         """A 2-D path has no single coordinate to correlate."""
         x = np.linspace(0, 100, 15)

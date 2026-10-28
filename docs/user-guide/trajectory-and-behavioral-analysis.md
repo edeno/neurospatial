@@ -1228,7 +1228,9 @@ similarity = trajectory_similarity(
 
 **Computes**: Pearson correlation between the positions along the track of
 the visited bins. It needs a 1-D environment or a linearized track; for a 2-D
-path, use DTW or Hausdorff below.
+path, use DTW or Hausdorff below. The score is NaN, not 0, when fewer than 3
+time-aligned sample pairs are both on the track (two points always correlate
+perfectly) or when either run stays in one bin.
 
 **Sensitive To**:
 - Sequential order (unlike Jaccard)
