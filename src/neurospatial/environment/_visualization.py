@@ -157,8 +157,8 @@ def _plot(
         r_kwargs = regions_plot_kwargs if regions_plot_kwargs is not None else {}
         plot_regions(regions, ax=ax, **r_kwargs)
     if landmarks:
-        # Last: drawing regions rescales the axes, which would drop the room
-        # made for landmarks outside the arena.
+        # Last: landmarks widen the final limits to show cues outside the
+        # arena, so they run after regions may have grown autoscaled limits.
         _draw_landmarks(ax, landmarks)
 
     plot_title = labels.name

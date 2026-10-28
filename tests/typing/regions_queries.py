@@ -1,13 +1,14 @@
-"""Static contract: region queries return precise types.
+"""Static contract: region queries and plots return precise types.
 
 ``regions_containing_points`` returns a DataFrame by default and a list of
-names with ``return_dataframe=False``. Run
+names with ``return_dataframe=False``; ``plot_regions`` returns its Axes. Run
 with ``uv run mypy tests/typing/regions_queries.py``.
 """
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import matplotlib.axes
     import numpy as np
     import pandas as pd
     from numpy.typing import NDArray
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
 
     from neurospatial import Regions
     from neurospatial.regions import (
+        plot_regions,
         points_in_any_region,
         regions_containing_points,
     )
@@ -34,3 +36,4 @@ if TYPE_CHECKING:
             regions_containing_points(positions, regions, return_dataframe=flag),
             pd.DataFrame | list[list[str]],
         )
+        assert_type(plot_regions(regions), matplotlib.axes.Axes)

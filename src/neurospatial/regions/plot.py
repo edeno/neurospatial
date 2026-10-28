@@ -1,35 +1,48 @@
-"""regions/plot.py
-===============
+"""Draw the regions of a :class:`~neurospatial.Regions` collection on Matplotlib axes.
 
-Lightweight helpers for visualising continuous ROIs that live in a
-:class:`regions.core.Regions` collection.
-
-You only pay the import cost of *matplotlib* and *shapely* the moment
-you call :func:`plot_regions`.
+Matplotlib is imported only when :func:`plot_regions` is called.
 """
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from numpy.typing import NDArray
+import shapely
+from shapely.geometry.polygon import orient
 
-from neurospatial._exceptions import RegionNotFoundError
+from neurospatial._exceptions import RegionNotFoundError, _format_error
 
-from .core import Region, Regions
+from .core import Regions
 
 if TYPE_CHECKING:
     import matplotlib.axes
+    from matplotlib.path import Path as MplPath
+    from shapely.geometry import Polygon
 
     from ..ops.transforms import SpatialTransform
 
 
-# ---------------------------------------------------------------------
-# public helper
-# ---------------------------------------------------------------------
+def _polygon_path(polygon: Polygon) -> MplPath:
+    """Return a compound path that leaves the polygon's holes unfilled.
+
+    Matplotlib fills by the nonzero winding rule, so a hole drawn in the same
+    direction as the exterior is filled. ``orient`` makes the exterior
+    counter-clockwise and every hole clockwise first.
+    """
+    from matplotlib.path import Path as MplPath
+
+    oriented = orient(polygon, sign=1.0)
+    paths = []
+    for ring in (oriented.exterior, *oriented.interiors):
+        vertices = np.asarray(ring.coords)[:, :2]
+        codes = np.full(len(vertices), MplPath.LINETO, dtype=np.uint8)
+        codes[0], codes[-1] = MplPath.MOVETO, MplPath.CLOSEPOLY
+        paths.append(MplPath(vertices, codes))
+    return MplPath.make_compound_path(*paths)
+
+
 def plot_regions(
     regions: Regions,
     *,
@@ -39,47 +52,79 @@ def plot_regions(
     world_to_pixel: SpatialTransform | None = None,
     add_legend: bool = True,
     **per_region_kwargs: Mapping[str, Any],
-) -> None:
-    """Draw a subset (or all) regions onto *ax*.
+) -> matplotlib.axes.Axes:
+    """Draw regions on Matplotlib axes: points as markers, polygons as patches.
 
     Parameters
     ----------
     regions : Regions
-        Collection to draw.
+        Collection to draw. Point regions must be 2-D.
     ax : matplotlib.axes.Axes, optional
         Destination Axes. If None, uses the current Axes (``plt.gca()``).
-    region_names : optional list or tuple
-        If given, plot only these names; otherwise plot *all*. A name not in
-        ``regions`` raises :class:`~neurospatial.RegionNotFoundError` with the
-        closest name.
+    region_names : str or sequence of str, optional
+        Regions to draw. A single string is one name. If None, every region is
+        drawn. A name not in ``regions`` raises
+        :class:`~neurospatial.RegionNotFoundError` with the closest name.
     default_kwargs : dict, optional
-        Plot kwargs applied to every region (unless overridden).
+        Matplotlib keyword arguments applied to every region.
     world_to_pixel : SpatialTransform, optional
-        If supplied, coordinates are mapped **through** this transform
-        *before* plotting - handy for overlaying cm-space polygons on
-        pixel-space video frames.
+        Maps ``(n, 2)`` region coordinates to plot coordinates before drawing,
+        for example cm to pixels to overlay regions on a video frame.
     add_legend : bool, default True
-        If True, add a legend labeling each plotted region.
+        Add a legend labeling each drawn region, placed outside the Axes, to
+        the right (``loc="center left", bbox_to_anchor=(1, 0.5)``).
     **per_region_kwargs
-        Per-region overrides::
+        Per-region Matplotlib keyword arguments, keyed by region name::
 
-            plot_regions(regs, Stem={"alpha": 0.1}, Reward={"edgecolor": "red"})
+            plot_regions(regions, Stem={"alpha": 0.1}, Reward={"edgecolor": "red"})
+
+        A name not in ``regions`` raises
+        :class:`~neurospatial.RegionNotFoundError`.
 
     Returns
     -------
-    None
-        Modifies the provided axes in place.
+    matplotlib.axes.Axes
+        The Axes drawn on.
+
+    Raises
+    ------
+    RegionNotFoundError
+        If a name in ``region_names`` or ``per_region_kwargs`` is not in
+        ``regions``.
+    ValueError
+        If a point region to draw is not 2-D.
 
     Notes
     -----
-    * Points → `ax.scatter`
-    * Polygons → `matplotlib.patches.PathPatch`
-    * Legend labels default to the region name.
+    Options are merged per region in increasing precedence:
+    ``default_kwargs``, then ``region.metadata["plot_kwargs"]``, then
+    ``per_region_kwargs[name]``. Region metadata therefore overrides
+    ``default_kwargs``; :func:`~neurospatial.regions.load_cvat_xml`, for
+    example, stores each label's color there. Unless overridden, ``alpha`` is
+    0.5, the legend label is the region name, and point regions use
+    ``marker="x"`` and ``s=100``. ``color`` sets a polygon's face color when
+    ``facecolor`` is not given.
 
+    Axis limits that are still autoscaling grow to include the regions; limits
+    you set beforehand (for example the frame of a video image) are kept.
+
+    Examples
+    --------
+    >>> import matplotlib.pyplot as plt
+    >>> from shapely.geometry import box
+    >>> from neurospatial import Regions
+    >>> from neurospatial.regions import plot_regions
+    >>> regions = Regions()
+    >>> _ = regions.add("start_box", polygon=box(0.0, 0.0, 20.0, 20.0))
+    >>> _ = regions.add("reward_well", point=(80.0, 80.0))
+    >>> fig, ax = plt.subplots()
+    >>> ax = plot_regions(regions, ax=ax, start_box={"facecolor": "tab:green"})
+    >>> [text.get_text() for text in ax.get_legend().get_texts()]
+    ['start_box', 'reward_well']
+    >>> plt.close(fig)
     """
     import matplotlib.pyplot as plt
     from matplotlib.patches import PathPatch
-    from matplotlib.path import Path as MplPath
 
     if region_names is None:
         region_names = tuple(regions.keys())
@@ -91,78 +136,64 @@ def plot_regions(
             raise RegionNotFoundError(
                 name, available=list(regions), argument="region_names", in_list=True
             )
-
-    if not region_names:
-        return  # nothing to draw
+    for name in per_region_kwargs:
+        if name not in regions:
+            raise RegionNotFoundError(name, available=list(regions), argument=None)
+    for name in region_names:
+        region = regions[name]
+        if region.n_dims != 2:
+            raise ValueError(
+                _format_error(
+                    f"Region {name!r} is a {region.n_dims}-D point; "
+                    "plot_regions draws 2-D regions only.",
+                    fix="leave it out with region_names=, or draw it on an "
+                    "environment of matching dimension with env.plot()",
+                )
+            )
 
     if ax is None:
         ax = plt.gca()
 
     for name in region_names:
-        reg: Region = regions[name]
-
-        # base → per-region kw → metadata → kwargs passed in call
+        region = regions[name]
         opts: dict[str, Any] = dict(default_kwargs or {})
-        opts.update(reg.metadata.get("plot_kwargs", {}))
+        opts.update(region.metadata.get("plot_kwargs", {}))
         opts.update(per_region_kwargs.get(name, {}))
 
-        label = opts.pop("label", name)  # legend label
+        label = opts.pop("label", name)
         alpha = opts.pop("alpha", 0.5)
 
-        # optional coordinate transform
-        def _map(pts: NDArray[np.float64]) -> NDArray[np.float64]:
-            return world_to_pixel(pts) if world_to_pixel else pts
-
-        # ---- draw according to kind ---------------------------------
-        if reg.kind == "point":
-            xy = _map(np.asarray(reg.data, dtype=float))
+        if region.kind == "point":
+            xy = np.asarray(region.data, dtype=np.float64)[None]
+            if world_to_pixel is not None:
+                xy = world_to_pixel(xy)
             ax.scatter(
-                xy[0],
-                xy[1],
+                xy[:, 0],
+                xy[:, 1],
                 marker=opts.pop("marker", "x"),
                 s=opts.pop("s", 100),
                 alpha=alpha,
                 label=label,
                 **opts,
             )
-
-        elif reg.kind == "polygon":
-            # Narrow type to Polygon
-            from shapely.geometry import Polygon
-
-            poly = reg.data  # already shapely.Polygon
-            if not isinstance(poly, Polygon):
-                warnings.warn(
-                    f"Region '{name}' data is not a Polygon; skipping.",
-                    category=UserWarning,
-                    stacklevel=2,
-                )
-                continue
-
-            # exterior + (optional) holes  → Path
-            def _ring_to_path(r) -> MplPath:
-                pts = _map(np.asarray(r.coords)[:, :2])
-                return MplPath(pts)
-
-            path = MplPath.make_compound_path(
-                _ring_to_path(poly.exterior),
-                *[_ring_to_path(i) for i in poly.interiors],
-            )
-
-            patch = PathPatch(
-                path,
-                label=label,
-                facecolor=opts.pop("facecolor", opts.pop("color", None)),
-                alpha=alpha,
-                **opts,
-            )
-            ax.add_patch(patch)
         else:
-            # This shouldn't happen with Literal['point', 'polygon'] type
-            raise ValueError(f"Unknown region kind '{reg.kind}' for '{name}'.")
+            polygon = region.data
+            if world_to_pixel is not None:
+                polygon = shapely.transform(polygon, world_to_pixel)
+            ax.add_patch(
+                PathPatch(
+                    _polygon_path(polygon),
+                    label=label,
+                    facecolor=opts.pop("facecolor", opts.pop("color", None)),
+                    alpha=alpha,
+                    **opts,
+                )
+            )
 
-    # add a legend if *any* labels were produced
     handles, labels = ax.get_legend_handles_labels()
     if handles and add_legend:
         ax.legend(handles, labels, loc="center left", bbox_to_anchor=(1, 0.5))
-    ax.autoscale(enable=True, axis="both", tight=True)
+    # add_patch does not rescale; autoscale_view grows only the axes still
+    # autoscaling, so limits the caller set (a video frame, env.plot) stay.
+    ax.autoscale_view()
+    return ax
