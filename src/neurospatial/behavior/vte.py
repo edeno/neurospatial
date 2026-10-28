@@ -57,9 +57,10 @@ References
 ----------
 .. [1] Johnson, A., & Redish, A. D. (2007). Neural ensembles in CA3 transiently
        encode paths forward of the animal at a decision point. J Neurosci.
-.. [2] Papale, A. E., et al. (2012). Interplay between hippocampal sharp-wave
-       ripple events and vicarious trial and error behaviors. Neuron.
-       DOI: 10.1016/j.neuron.2012.10.018
+.. [2] Papale, A. E., Stott, J. J., Powell, N. J., Regier, P. S., & Redish,
+       A. D. (2012). Interactions between deliberation and delay-discounting
+       in rats. Cogn Affect Behav Neurosci 12(3), 513-526. IdPhi and zIdPhi.
+       DOI: 10.3758/s13415-012-0097-7
 .. [3] Redish, A. D. (2016). Vicarious trial and error. Nat Rev Neurosci.
        DOI: 10.1038/nrn.2015.30
 """
@@ -525,13 +526,15 @@ def head_sweep_magnitude(headings: NDArray[np.float64]) -> float:
 
     Notes
     -----
-    This is the core VTE metric from Papale et al. (2012) and Redish (2016).
-    Also known as "IdPhi" (integrated absolute dphi/dt * dt).
+    This is the IdPhi measure of head sweeping at a choice point (integrated
+    absolute dphi/dt * dt), as used by Papale et al. (2012) and reviewed by
+    Redish (2016).
 
     NaN entries are skipped, so the change from the last heading before
-    them to the first heading after them counts once. Pass one observed run
-    at a time: across a lost frame or a recording break, the heading change
-    was not observed. :func:`head_sweep_from_positions` does this for you.
+    them to the first heading after them counts once. Pass one continuous
+    run at a time: across a tracking loss or a recording break the heading
+    change was not observed. :func:`head_sweep_from_positions` splits runs
+    for you.
 
     Examples
     --------
@@ -579,8 +582,8 @@ def head_sweep_from_positions(
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Position coordinates, ``n_dims >= 2``; heading uses x and y. A row
         with a non-finite coordinate (NaN, for a lost frame) is a missing
-        sample: it has no heading, and no heading change is counted across
-        it.
+        sample: it has no heading of its own and is bridged like a deleted
+        row when the observed samples on either side are within ``max_gap``.
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
@@ -621,16 +624,20 @@ def head_sweep_from_positions(
 
     Notes
     -----
-    Each run of observed samples with gaps no longer than ``max_gap`` (inside
-    ``epochs``, not crossing a missing row or a ``break_before``) is analyzed
-    as a separate recording; no velocity or heading spans a pause.
+    A missing row is skipped as if it were deleted: when the observed
+    samples on either side are no more than ``max_gap`` apart, velocity and
+    heading are computed across it. Only a longer gap, an ``epochs`` edge or
+    a ``break_before`` splits the recording into separately analyzed runs,
+    and no velocity or heading spans such a split.
 
     Heading is the direction of the smoothed velocity (as in
     :func:`neurospatial.behavior.heading_from_velocity`) and is NaN
-    where the animal is slower than ``min_speed`` or still. The result sums
-    :func:`head_sweep_magnitude` over runs, without connecting the last
-    heading of one run to the first of the next; runs without a head sweep
-    add nothing.
+    where the animal is slower than ``min_speed`` or still. Within a run, a
+    slow stretch is skipped like a missing heading: the heading change from
+    the last heading before it to the first after it is counted once. The
+    result sums :func:`head_sweep_magnitude` over runs, without connecting
+    the last heading of one run to the first of the next; runs without a
+    head sweep add nothing.
 
     Examples
     --------
@@ -717,7 +724,7 @@ def normalize_vte_scores(
     z_head_sweeps : NDArray[np.float64], shape (n_trials,)
         Z-scored head sweeps.
     z_speed_inverse : NDArray[np.float64], shape (n_trials,)
-        Z-scored inverse speed (higher = slower = more VTE-like).
+        Negated z-scored speed (higher = slower = more VTE-like).
 
     Raises
     ------
@@ -768,7 +775,7 @@ def normalize_vte_scores(
         "All trials have identical head sweep behavior. ",
         invert=False,
     )
-    # Invert speed so slower = higher score.
+    # Negate the speed z-score so slower = higher score.
     z_speed_inverse = _observed_z_scores(
         speeds,
         no_variation="No variation in speed across trials (std=0). "
@@ -993,9 +1000,11 @@ def compute_vte_trial(
 
     Notes
     -----
-    Each run of observed samples with gaps no longer than ``max_gap`` (inside
-    ``epochs``, not crossing a missing row or a ``break_before``) is analyzed
-    as a separate recording; no velocity or heading spans a pause.
+    A missing row is skipped as if it were deleted: when the observed
+    samples on either side are no more than ``max_gap`` apart, velocity and
+    heading are computed across it. Only a longer gap, an ``epochs`` edge or
+    a ``break_before`` splits the recording into separately analyzed runs,
+    and no velocity or heading spans such a split.
 
     The pre-decision window is the one :func:`extract_pre_decision_window`
     returns: it lies in the time segment containing ``entry_time``. Result
@@ -1209,9 +1218,11 @@ def compute_vte_session(
 
     Notes
     -----
-    Each run of observed samples with gaps no longer than ``max_gap`` (inside
-    ``epochs``, not crossing a missing row or a ``break_before``) is analyzed
-    as a separate recording; no velocity or heading spans a pause.
+    A missing row is skipped as if it were deleted: when the observed
+    samples on either side are no more than ``max_gap`` apart, velocity and
+    heading are computed across it. Only a longer gap, an ``epochs`` edge or
+    a ``break_before`` splits the recording into separately analyzed runs,
+    and no velocity or heading spans such a split.
 
     A trial's decision-region entry is its first sample inside both the
     region and ``epochs``. Each pre-decision window uses only its trial

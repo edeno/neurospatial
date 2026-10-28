@@ -764,7 +764,8 @@ def pre_decision_heading_stats(
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Position coordinates, ``n_dims >= 2``; heading uses x and y. A row
         with a non-finite coordinate (NaN, for a lost frame) is a missing
-        sample: it has no heading, and no velocity is computed across it.
+        sample: it has no heading of its own and is bridged like a deleted
+        row when the observed samples on either side are within ``max_gap``.
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
@@ -808,9 +809,11 @@ def pre_decision_heading_stats(
 
     Notes
     -----
-    Each run of observed samples with gaps no longer than ``max_gap`` (inside
-    ``epochs``, not crossing a missing row or a ``break_before``) is analyzed
-    as a separate recording; no velocity or heading spans a pause.
+    A missing row is skipped as if it were deleted: when the observed
+    samples on either side are no more than ``max_gap`` apart, velocity and
+    heading are computed across it. Only a longer gap, an ``epochs`` edge or
+    a ``break_before`` splits the recording into separately analyzed runs,
+    and no velocity or heading spans such a split.
 
     Circular statistics are computed directly:
 
@@ -915,8 +918,9 @@ def pre_decision_speed_stats(
         timestamp raises).
     positions : NDArray[np.float64], shape (n_samples, n_dims) or (n_samples,)
         Position coordinates. A row with a non-finite coordinate (NaN, for a
-        lost frame) is a missing sample: it has no speed, and no velocity is
-        computed across it.
+        lost frame) is a missing sample: it has no speed of its own and is
+        bridged like a deleted row when the observed samples on either side
+        are within ``max_gap``.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -950,9 +954,11 @@ def pre_decision_speed_stats(
 
     Notes
     -----
-    Each run of observed samples with gaps no longer than ``max_gap`` (inside
-    ``epochs``, not crossing a missing row or a ``break_before``) is analyzed
-    as a separate recording; no velocity spans a pause.
+    A missing row is skipped as if it were deleted: when the observed
+    samples on either side are no more than ``max_gap`` apart, velocity is
+    computed across it. Only a longer gap, an ``epochs`` edge or a
+    ``break_before`` splits the recording into separately analyzed runs, and
+    no velocity spans such a split.
 
     Only observed speeds enter the reductions. Both results are NaN when no
     interval is usable, including a single sample.
