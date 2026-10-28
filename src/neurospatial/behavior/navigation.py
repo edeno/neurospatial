@@ -110,7 +110,7 @@ References
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -172,6 +172,35 @@ __all__ = [  # noqa: RUF022
 # =============================================================================
 
 
+def _result_error(result: str, what: str, *, why: str, fix: str) -> ValueError:
+    """A ValueError for an invalid result field, naming the result class."""
+    return ValueError(_format_error(f"{result}: {what}", why=why, fix=fix))
+
+
+def _require_result_metric(result: str, metric: object) -> None:
+    """Raise unless ``metric`` is ``"euclidean"`` or ``"geodesic"``."""
+    if metric not in ("euclidean", "geodesic"):
+        raise _result_error(
+            result,
+            f"metric={metric!r} is not 'euclidean' or 'geodesic'.",
+            why="the result records which distance its lengths were measured with.",
+            fix="pass metric='euclidean' or metric='geodesic'.",
+        )
+
+
+def _require_length(result: str, name: str, value: float) -> float:
+    """Return ``value`` as a float; raise if it is negative (NaN and inf pass)."""
+    value = float(value)
+    if value < 0:
+        raise _result_error(
+            result,
+            f"{name}={value!r} is negative.",
+            why="a path length, distance or duration is never negative.",
+            fix=f"pass {name} >= 0, or NaN when it was not measured.",
+        )
+    return value
+
+
 @dataclass(frozen=True, repr=False, eq=False)
 class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     """Path efficiency metrics for a trajectory segment.
@@ -179,25 +208,20 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     Attributes
     ----------
     traveled_length : float
-        Distance traveled (sum of step lengths), in environment units. From
-        compute_path_efficiency(): the distance over observed intervals, NaN
-        when no interval was observed. From subgoal_efficiency(): the length of
-        the segment as one continuous polyline, 0.0 for a segment of fewer than
-        two samples.
+        Distance traveled over the observed steps, in environment units. NaN
+        when no step was observed.
     shortest_length : float
-        Geodesic or Euclidean distance from start to goal, in environment units.
-        Is ``inf`` when the goal is unreachable under the geodesic metric (the
-        goal lies on a disconnected component); it is not clamped to ``0.0``.
-        From subgoal_efficiency(): 0.0 for a segment of fewer than two samples
-        (no start-to-goal distance is measured).
+        Length of the shortest path from the start to the goal, in
+        environment units. Is ``inf`` when the goal is unreachable under the
+        geodesic metric (the goal lies on a disconnected component); it is
+        not clamped to ``0.0``.
     efficiency : float
-        Ratio shortest_length / traveled_length. Is ``(0, 1]`` when the path
-        ends at the goal, and can exceed 1 when it does not. Is 0.0 when a
-        geodesic step is infinite. Value of 1.0 indicates optimal path taken.
-        NaN if traveled_length is 0 or shortest_length is ``inf`` (unreachable
-        goal); from compute_path_efficiency() also NaN if the path is not
-        completely observed, and from subgoal_efficiency() for a segment of
-        fewer than two samples.
+        Derived: ``shortest_length / traveled_length`` when the path is
+        ``fully_observed``. Is ``(0, 1]`` when the path ends at the goal, and
+        can exceed 1 when it does not. Is 0.0 when a geodesic step is
+        infinite (it crosses between disconnected parts of the environment).
+        NaN when the path is not fully observed, ``traveled_length`` is 0 or
+        NaN, or ``shortest_length`` is not finite.
     time_efficiency : float or None
         Ratio T_optimal / T_actual if reference_speed provided, else None.
     angular_efficiency : float
@@ -211,25 +235,58 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         Start position coordinates, shape (n_dims,).
     goal_position : NDArray[np.float64]
         Goal position coordinates, shape (n_dims,).
-    metric : str
-        Distance metric used ("geodesic" or "euclidean").
+    metric : {"euclidean", "geodesic"}
+        Distance metric used.
+    fully_observed : bool
+        True when every step from the first to the last observed sample is
+        usable: missing samples are bridged within ``max_gap`` and there is
+        no longer gap, epoch edge or declared break. Only then does
+        ``traveled_length`` cover the whole route, so only then is
+        ``efficiency`` defined.
     """
 
     traveled_length: float
     shortest_length: float
-    efficiency: float
+    efficiency: float = field(init=False)
     time_efficiency: float | None
     angular_efficiency: float
     start_position: NDArray[np.float64]
     goal_position: NDArray[np.float64]
-    metric: str
+    metric: Literal["euclidean", "geodesic"]
+    fully_observed: bool
 
     def __post_init__(self) -> None:
-        """Own read-only copies of the start and goal positions."""
+        """Validate the fields, derive the efficiency and own the positions."""
+        name = "PathEfficiencyResult"
+        _require_result_metric(name, self.metric)
+        traveled = _require_length(name, "traveled_length", self.traveled_length)
+        shortest = _require_length(name, "shortest_length", self.shortest_length)
+        start = np.asarray(self.start_position, dtype=float)
+        goal = np.asarray(self.goal_position, dtype=float)
+        if start.ndim != 1 or start.shape != goal.shape:
+            raise _result_error(
+                name,
+                f"start_position has shape {start.shape} and goal_position "
+                f"{goal.shape}.",
+                why="both are one position in the same coordinates.",
+                fix="pass two arrays of shape (n_dims,).",
+            )
+        object.__setattr__(self, "traveled_length", traveled)
+        object.__setattr__(self, "shortest_length", shortest)
+        object.__setattr__(self, "angular_efficiency", float(self.angular_efficiency))
+        if self.time_efficiency is not None:
+            object.__setattr__(self, "time_efficiency", float(self.time_efficiency))
+        object.__setattr__(self, "fully_observed", bool(self.fully_observed))
+        object.__setattr__(self, "start_position", start)
+        object.__setattr__(self, "goal_position", goal)
+        defined = self.fully_observed and traveled > 0 and np.isfinite(shortest)
+        object.__setattr__(
+            self, "efficiency", shortest / traveled if defined else float("nan")
+        )
         self._own_arrays()
 
     def is_efficient(self, threshold: float = 0.8) -> bool:
-        """Return True if path efficiency exceeds threshold.
+        """Return True if the path efficiency is at least ``threshold``.
 
         Parameters
         ----------
@@ -239,11 +296,10 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         bool
-            True if efficiency > threshold and efficiency is not NaN.
+            True if ``efficiency >= threshold``; False when the efficiency
+            is NaN (not measured).
         """
-        if np.isnan(self.efficiency):
-            return False
-        return self.efficiency > threshold
+        return bool(self.efficiency >= threshold)
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar path-efficiency metrics.
@@ -285,24 +341,50 @@ class SubgoalEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
 
     Attributes
     ----------
-    segment_results : list[PathEfficiencyResult]
-        Efficiency result for each segment between subgoals.
-    mean_efficiency : float
-        Unweighted mean efficiency across segments.
-    weighted_efficiency : float
-        Efficiency weighted by segment shortest_length.
-        Gives more weight to longer segments.
+    segment_results : tuple of PathEfficiencyResult
+        Efficiency result for each segment, one per subgoal.
     subgoal_positions : NDArray[np.float64]
         Positions of subgoals, shape (n_subgoals, n_dims).
+    mean_efficiency : float
+        Derived: unweighted mean of the segment efficiencies, over the
+        segments whose efficiency is defined. NaN when none is.
+    weighted_efficiency : float
+        Derived: mean of the defined segment efficiencies weighted by each
+        segment's ``shortest_length``, so longer segments count more. NaN
+        when no efficiency is defined or their shortest lengths sum to 0.
     """
 
-    segment_results: list[PathEfficiencyResult]
-    mean_efficiency: float
-    weighted_efficiency: float
+    segment_results: tuple[PathEfficiencyResult, ...]
     subgoal_positions: NDArray[np.float64]
+    mean_efficiency: float = field(init=False)
+    weighted_efficiency: float = field(init=False)
 
     def __post_init__(self) -> None:
-        """Own a read-only copy of the subgoal positions."""
+        """Validate the segments, derive the means and own the subgoals."""
+        segments = tuple(self.segment_results)
+        subgoals = np.asarray(self.subgoal_positions, dtype=float)
+        if subgoals.ndim != 2 or len(segments) != len(subgoals):
+            raise _result_error(
+                "SubgoalEfficiencyResult",
+                f"{len(segments)} segment results for subgoal_positions of "
+                f"shape {subgoals.shape}.",
+                why="each subgoal ends one segment.",
+                fix="pass one segment result per row of subgoal_positions.",
+            )
+        object.__setattr__(self, "segment_results", segments)
+        object.__setattr__(self, "subgoal_positions", subgoals)
+        efficiency = np.array([seg.efficiency for seg in segments], dtype=float)
+        weights = np.array([seg.shortest_length for seg in segments], dtype=float)
+        defined = np.isfinite(efficiency)
+        mean = float(np.mean(efficiency[defined])) if defined.any() else np.nan
+        total = float(np.sum(weights[defined]))
+        weighted = (
+            float(np.sum(efficiency[defined] * weights[defined]) / total)
+            if total > 0
+            else np.nan
+        )
+        object.__setattr__(self, "mean_efficiency", mean)
+        object.__setattr__(self, "weighted_efficiency", weighted)
         self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
@@ -360,8 +442,8 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
         units. NaN when no sample is observed.
     goal_position : NDArray[np.float64]
         Goal position used for computation, shape (n_dims,).
-    metric : str
-        Distance metric used ("geodesic" or "euclidean").
+    metric : {"euclidean", "geodesic"}
+        Distance metric used.
 
     Examples
     --------
@@ -390,14 +472,40 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     goal_distance_at_start: float
     goal_distance_at_end: float
     goal_position: NDArray[np.float64]
-    metric: str
+    metric: Literal["euclidean", "geodesic"]
 
     def __post_init__(self) -> None:
-        """Own a read-only copy of the goal position."""
+        """Validate the fields and own a read-only copy of the goal position."""
+        name = "GoalDirectedMetrics"
+        _require_result_metric(name, self.metric)
+        for length in (
+            "min_distance_to_goal",
+            "goal_distance_at_start",
+            "goal_distance_at_end",
+        ):
+            value = _require_length(name, length, getattr(self, length))
+            object.__setattr__(self, length, value)
+        if self.time_to_goal is not None:
+            object.__setattr__(
+                self,
+                "time_to_goal",
+                _require_length(name, "time_to_goal", self.time_to_goal),
+            )
+        object.__setattr__(self, "goal_bias", float(self.goal_bias))
+        object.__setattr__(self, "mean_approach_rate", float(self.mean_approach_rate))
+        goal = np.asarray(self.goal_position, dtype=float)
+        if goal.ndim != 1:
+            raise _result_error(
+                name,
+                f"goal_position has shape {goal.shape}.",
+                why="the goal is one position.",
+                fix="pass an array of shape (n_dims,).",
+            )
+        object.__setattr__(self, "goal_position", goal)
         self._own_arrays()
 
     def is_goal_directed(self, threshold: float = 0.3) -> bool:
-        """Return True if goal bias exceeds threshold.
+        """Return True if the goal bias is at least ``threshold``.
 
         Parameters
         ----------
@@ -407,9 +515,10 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         bool
-            True if goal_bias > threshold.
+            True if ``goal_bias >= threshold``; False when the goal bias is
+            NaN (the animal never moved).
         """
-        return self.goal_bias > threshold
+        return bool(self.goal_bias >= threshold)
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar goal-directed metrics.
@@ -3203,11 +3312,6 @@ def subgoal_efficiency(
             traveled = _polyline_length(segment_positions, metric=metric, env=env)
             shortest = shortest_path_length(env, start_pos, subgoal, metric=metric)
 
-            if traveled > 0 and np.isfinite(shortest):
-                eff = shortest / traveled
-            else:
-                eff = np.nan
-
             ang_eff = _angular_efficiency(
                 segment_positions[:-1],
                 segment_positions[1:],
@@ -3219,12 +3323,12 @@ def subgoal_efficiency(
                 PathEfficiencyResult(
                     traveled_length=traveled,
                     shortest_length=shortest,
-                    efficiency=eff,
                     time_efficiency=None,
                     angular_efficiency=ang_eff,
                     start_position=start_pos,
                     goal_position=subgoal,
                     metric=metric,
+                    fully_observed=True,
                 )
             )
         else:
@@ -3232,38 +3336,19 @@ def subgoal_efficiency(
                 PathEfficiencyResult(
                     traveled_length=0.0,
                     shortest_length=0.0,
-                    efficiency=np.nan,
                     time_efficiency=None,
                     angular_efficiency=1.0,
                     start_position=positions[current_start_idx],
                     goal_position=subgoal,
                     metric=metric,
+                    fully_observed=True,
                 )
             )
 
         current_start_idx = arrival_idx
 
-    efficiencies = [r.efficiency for r in segment_results if not np.isnan(r.efficiency)]
-    shortest_lengths = [
-        r.shortest_length for r in segment_results if not np.isnan(r.efficiency)
-    ]
-
-    if efficiencies:
-        mean_eff = float(np.mean(efficiencies))
-        weights = np.array(shortest_lengths)
-        if weights.sum() > 0:
-            weighted_eff = float(np.average(efficiencies, weights=weights))
-        else:
-            weighted_eff = mean_eff
-    else:
-        mean_eff = np.nan
-        weighted_eff = np.nan
-
     return SubgoalEfficiencyResult(
-        segment_results=segment_results,
-        mean_efficiency=mean_eff,
-        weighted_efficiency=weighted_eff,
-        subgoal_positions=subgoals,
+        segment_results=tuple(segment_results), subgoal_positions=subgoals
     )
 
 
@@ -3419,12 +3504,6 @@ def compute_path_efficiency(
         positions_arr = positions_arr[observed[0] : observed[-1] + 1]
     shortest = shortest_path_length(env, positions_arr[0], goal, metric=metric)
 
-    eff = (
-        shortest / traveled
-        if complete and traveled > 0 and np.isfinite(shortest)
-        else np.nan
-    )
-
     time_eff = None
     if reference_speed is not None and len(positions_arr) >= 2:
         time_eff = time_efficiency(
@@ -3437,12 +3516,12 @@ def compute_path_efficiency(
     return PathEfficiencyResult(
         traveled_length=traveled,
         shortest_length=shortest,  # may be inf if the goal is unreachable
-        efficiency=eff,  # already nan when shortest is non-finite
         time_efficiency=time_eff,
         angular_efficiency=ang_eff,
         start_position=positions_arr[0],
         goal_position=goal,
         metric=metric,
+        fully_observed=complete,
     )
 
 

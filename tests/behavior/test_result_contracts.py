@@ -47,12 +47,12 @@ def _path_efficiency() -> PathEfficiencyResult:
     return PathEfficiencyResult(
         traveled_length=12.0,
         shortest_length=10.0,
-        efficiency=10.0 / 12.0,
         time_efficiency=None,
         angular_efficiency=0.9,
         start_position=np.array([0.0, 0.0]),
         goal_position=np.array([10.0, 0.0]),
         metric="geodesic",
+        fully_observed=True,
     )
 
 
@@ -122,9 +122,7 @@ _CASES = [
     ),
     (
         SubgoalEfficiencyResult(
-            segment_results=[_path_efficiency()],
-            mean_efficiency=0.83,
-            weighted_efficiency=0.85,
+            segment_results=(_path_efficiency(),),
             subgoal_positions=np.array([[5.0, 0.0]]),
         ),
         {"n_segments", "mean_efficiency", "weighted_efficiency"},

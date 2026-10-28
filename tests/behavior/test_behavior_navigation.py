@@ -80,12 +80,12 @@ class TestNavigationFunctionality:
         result = PathEfficiencyResult(
             traveled_length=45.2,
             shortest_length=32.1,
-            efficiency=0.71,
             time_efficiency=None,
             angular_efficiency=0.85,
             start_position=np.array([0.0, 0.0]),
             goal_position=np.array([30.0, 10.0]),
             metric="geodesic",
+            fully_observed=True,
         )
 
         assert isinstance(result.summary(), dict)  # scalar-metric contract

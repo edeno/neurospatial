@@ -814,3 +814,99 @@ class TestErrorHandling:
                 reference_speed=reference_speed,
                 optimal_distance=10.0,
             )
+
+
+def _segment(traveled, shortest, *, fully_observed=True, metric="euclidean"):
+    from neurospatial.behavior.navigation import PathEfficiencyResult
+
+    return PathEfficiencyResult(
+        traveled_length=traveled,
+        shortest_length=shortest,
+        time_efficiency=None,
+        angular_efficiency=1.0,
+        start_position=np.zeros(2),
+        goal_position=np.ones(2),
+        metric=metric,
+        fully_observed=fully_observed,
+    )
+
+
+class TestPathEfficiencyResultContract:
+    """Derived fields and invariants of the path-efficiency results."""
+
+    def test_efficiency_is_derived_from_the_lengths(self):
+        assert _segment(12.5, 10.0).efficiency == 0.8
+        assert np.isnan(_segment(12.5, 10.0, fully_observed=False).efficiency)
+        assert np.isnan(_segment(0.0, 10.0).efficiency)
+        assert np.isnan(_segment(12.5, np.inf).efficiency)
+        assert _segment(np.inf, 10.0).efficiency == 0.0
+
+    def test_efficiency_cannot_be_passed(self):
+        from neurospatial.behavior.navigation import PathEfficiencyResult
+
+        with pytest.raises(TypeError, match="efficiency"):
+            PathEfficiencyResult(
+                traveled_length=1.0,
+                shortest_length=1.0,
+                efficiency=0.5,
+                time_efficiency=None,
+                angular_efficiency=1.0,
+                start_position=np.zeros(2),
+                goal_position=np.ones(2),
+                metric="euclidean",
+                fully_observed=True,
+            )
+
+    def test_is_efficient_is_inclusive_at_threshold(self):
+        result = _segment(12.5, 10.0)
+        assert result.is_efficient(threshold=0.8)
+        assert not result.is_efficient(threshold=0.81)
+        assert not _segment(12.5, 10.0, fully_observed=False).is_efficient(0.0)
+
+    def test_invalid_metric_and_negative_length_raise(self):
+        with pytest.raises(ValueError, match="metric='taxicab'"):
+            _segment(1.0, 1.0, metric="taxicab")
+        with pytest.raises(ValueError, match=r"traveled_length=-1\.0 is negative"):
+            _segment(-1.0, 1.0)
+
+    def test_record_fields_are_plain_python_scalars(self):
+        result = _segment(np.float64(12.5), np.float32(10.0))
+        assert type(result.traveled_length) is float
+        assert type(result.shortest_length) is float
+        assert type(result.efficiency) is float
+
+    def test_subgoal_means_are_derived(self):
+        """Weighted by shortest length: (0.5 * 10 + 1.0 * 30) / 40 = 0.875."""
+        from neurospatial.behavior.navigation import SubgoalEfficiencyResult
+
+        result = SubgoalEfficiencyResult(
+            segment_results=[
+                _segment(20.0, 10.0),
+                _segment(30.0, 30.0),
+                _segment(np.nan, 5.0),
+            ],
+            subgoal_positions=np.zeros((3, 2)),
+        )
+        assert isinstance(result.segment_results, tuple)
+        assert result.mean_efficiency == 0.75
+        assert result.weighted_efficiency == 0.875
+
+    def test_subgoal_weighted_efficiency_is_nan_when_weights_sum_to_zero(self):
+        """It used to fall back silently to the unweighted mean."""
+        from neurospatial.behavior.navigation import SubgoalEfficiencyResult
+
+        result = SubgoalEfficiencyResult(
+            segment_results=(_segment(5.0, 0.0),),
+            subgoal_positions=np.zeros((1, 2)),
+        )
+        assert result.mean_efficiency == 0.0
+        assert np.isnan(result.weighted_efficiency)
+
+    def test_subgoal_count_must_match_segments(self):
+        from neurospatial.behavior.navigation import SubgoalEfficiencyResult
+
+        with pytest.raises(ValueError, match="one segment result per row"):
+            SubgoalEfficiencyResult(
+                segment_results=(_segment(1.0, 1.0),),
+                subgoal_positions=np.zeros((2, 2)),
+            )

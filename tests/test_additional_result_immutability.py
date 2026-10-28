@@ -42,6 +42,17 @@ def env():
     )
 
 
+_SEGMENT = PathEfficiencyResult(
+    traveled_length=2.0,
+    shortest_length=1.0,
+    time_efficiency=None,
+    angular_efficiency=1.0,
+    start_position=np.zeros(2),
+    goal_position=np.ones(2),
+    metric="euclidean",
+    fully_observed=True,
+)
+
 CASES = [
     (
         CumulativeDistanceResult,
@@ -83,20 +94,18 @@ CASES = [
         {
             "traveled_length": 1.0,
             "shortest_length": 1.0,
-            "efficiency": 1.0,
             "time_efficiency": None,
             "angular_efficiency": 1.0,
             "start_position": np.ones(2),
             "goal_position": np.ones(2),
             "metric": "euclidean",
+            "fully_observed": True,
         },
     ),
     (
         SubgoalEfficiencyResult,
         {
-            "segment_results": [],
-            "mean_efficiency": 1.0,
-            "weighted_efficiency": 1.0,
+            "segment_results": (_SEGMENT, _SEGMENT),
             "subgoal_positions": np.ones((2, 2)),
         },
     ),

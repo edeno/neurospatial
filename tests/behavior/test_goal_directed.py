@@ -473,3 +473,35 @@ class TestErrorHandling:
         result = goal_bias(times, positions, goal, min_speed=0.0)
 
         assert np.isnan(result)
+
+
+def _goal_metrics(**overrides):
+    from neurospatial.behavior.navigation import GoalDirectedMetrics
+
+    values = {
+        "goal_bias": 0.3,
+        "mean_approach_rate": -10.0,
+        "time_to_goal": 5.0,
+        "min_distance_to_goal": 2.0,
+        "goal_distance_at_start": 50.0,
+        "goal_distance_at_end": 2.0,
+        "goal_position": np.array([100.0, 0.0]),
+        "metric": "euclidean",
+    }
+    values.update(overrides)
+    return GoalDirectedMetrics(**values)
+
+
+def test_is_goal_directed_is_inclusive_at_threshold():
+    assert _goal_metrics(goal_bias=0.3).is_goal_directed(threshold=0.3)
+    assert not _goal_metrics(goal_bias=np.nan).is_goal_directed(threshold=-1.0)
+
+
+def test_goal_directed_metrics_invariants():
+    with pytest.raises(ValueError, match="metric='taxicab'"):
+        _goal_metrics(metric="taxicab")
+    with pytest.raises(ValueError, match=r"goal_distance_at_start=-1\.0 is negative"):
+        _goal_metrics(goal_distance_at_start=-1.0)
+    with pytest.raises(ValueError, match="goal_position has shape"):
+        _goal_metrics(goal_position=np.zeros((1, 2)))
+    assert type(_goal_metrics(goal_bias=np.float64(0.5)).goal_bias) is float
