@@ -391,7 +391,7 @@ class TestPathEfficiencyObservedSupport:
         )
         assert result.efficiency == result.shortest_length / result.traveled_length
         assert result.angular_efficiency == angular_efficiency(
-            r.times, r.positions, goal
+            r.times, r.positions, goal, metric=metric, env=r.env
         )
 
     POSITIONS = np.column_stack([np.arange(11.0), np.zeros(11)])  # cm

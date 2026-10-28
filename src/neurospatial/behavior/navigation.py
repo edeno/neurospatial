@@ -129,6 +129,7 @@ from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial._observation import ObservationSupport
+    from neurospatial.behavior._environment_paths import EnvironmentPaths
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
@@ -3113,6 +3114,8 @@ def angular_efficiency(
     positions: ArrayLike,
     goal: ArrayLike,
     *,
+    metric: DistanceMetric = "euclidean",
+    env: Environment | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -3120,7 +3123,8 @@ def angular_efficiency(
     """Compute how directly the path heads toward the goal.
 
     For every observed step, the angle between the step's direction and the
-    direction from the step's start to the goal is measured; the result is
+    direction in which the shortest path from the step's start to the goal
+    leaves it is measured; the result is
     ``1 - sum(length * angle) / (pi * sum(length))``, the mean angle per unit
     of distance traveled. A run straight toward the goal scores 1, a run
     straight away scores 0, and a run perpendicular to the goal direction
@@ -3135,6 +3139,18 @@ def angular_efficiency(
         coordinate are missing.
     goal : ArrayLike, shape (n_dims,)
         Goal position, in the coordinates and units of ``positions``.
+    metric : {"euclidean", "geodesic"}, default="euclidean"
+        Which shortest path sets the goal direction. ``"euclidean"``: the
+        straight line, so the direction is the bearing to the goal.
+        ``"geodesic"``: the length of the shortest path between two
+        positions that stays inside the environment (it goes around walls
+        and never leaves the environment, and on a track it runs along the
+        track's centerline), so the direction is toward its first waypoint,
+        the first corner it turns around, and on a track along the track
+        toward the goal. Requires ``env``.
+    env : Environment, optional
+        Required when ``metric="geodesic"``. A step starting outside the
+        environment has no geodesic direction and is left out.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -3160,8 +3176,11 @@ def angular_efficiency(
     Raises
     ------
     ValueError
-        If the inputs are empty or malformed, or ``goal`` does not have one
-        coordinate per position dimension.
+        If the inputs are empty or malformed, ``goal`` does not have one
+        coordinate per position dimension, ``metric`` is not recognized, or
+        (geodesic) ``env`` is None or the goal is outside the environment.
+    CartesianOnlyError
+        For ``metric="geodesic"`` on an egocentric polar environment.
 
     Notes
     -----
@@ -3208,7 +3227,9 @@ def angular_efficiency(
     starts, ends = _observed_steps(
         positions_arr, support.sample_valid, support.interval_mask
     )
-    return _angular_efficiency(starts, ends, goal, call="angular_efficiency")
+    return _angular_efficiency(
+        starts, ends, goal, metric=metric, env=env, call="angular_efficiency"
+    )
 
 
 def _observed_steps(
@@ -3244,6 +3265,8 @@ def _angular_efficiency(
     ends: NDArray[np.float64],
     goal: ArrayLike,
     *,
+    metric: DistanceMetric,
+    env: Environment | None,
     call: str,
 ) -> float:
     """``1 - sum(length * angle) / (pi * sum(length))`` over steps with an angle.
@@ -3253,14 +3276,25 @@ def _angular_efficiency(
     starts, ends : ndarray, shape (n_steps, n_dims)
         Step endpoints.
     goal : array-like, shape (n_dims,)
+    metric : {"euclidean", "geodesic"}
+        Shortest path whose first direction is the goal direction.
+    env : Environment or None
+        Required when ``metric="geodesic"``.
     call : str
-        Public function name, used in the goal-dimension error.
+        Public function name, used in messages.
     """
-    to_goal = _goal_vector(starts, np.asarray(goal, dtype=float), call=call)
+    _require_path_metric(metric, call=call)
+    goal_arr = _validated_goal(goal, starts.shape[1], call=call)
+    if metric == "euclidean":
+        to_goal = goal_arr[None, :] - starts
+    else:
+        paths = _geodesic_paths(env, goal_arr, call=call)
+        to_goal = paths.directions(starts, goal_arr)
     step = ends - starts
     step_norm = np.linalg.norm(step, axis=1)
     goal_norm = np.linalg.norm(to_goal, axis=1)
-    defined = (step_norm > 0) & (goal_norm > 0)
+    with np.errstate(invalid="ignore"):
+        defined = (step_norm > 0) & (goal_norm > 0)
     if not defined.any():
         return np.nan
     u = step[defined] / step_norm[defined, None]
@@ -3469,6 +3503,8 @@ def subgoal_efficiency(
                         support.interval_mask[start:arrival],
                     ),
                     subgoal,
+                    metric=metric,
+                    env=env,
                     call=call,
                 ),
                 start_position=positions_arr[start],
@@ -3580,8 +3616,10 @@ def compute_path_efficiency(
     restrict the analysis to completely observed trials.
 
     ``angular_efficiency`` is a mean over the observed steps, as returned by
-    :func:`angular_efficiency` with the same arguments, so a tracking loss
-    removes steps from the mean but does not bias it.
+    :func:`angular_efficiency` with the same arguments (including
+    ``metric``: under the geodesic metric each step is compared with the
+    direction of the shortest path inside the environment), so a tracking
+    loss removes steps from the mean but does not bias it.
 
     Examples
     --------
@@ -3638,6 +3676,8 @@ def compute_path_efficiency(
     ang_eff = _angular_efficiency(
         *_observed_steps(positions_arr, support.sample_valid, support.interval_mask),
         goal,
+        metric=metric,
+        env=env,
         call="compute_path_efficiency",
     )
     # Missing rows before the first or after the last observed sample are
@@ -4328,6 +4368,21 @@ def _goal_distances(
     if metric == "euclidean":
         distances: NDArray[np.float64] = np.linalg.norm(goal_arr - positions, axis=1)
         return distances
+    return _geodesic_paths(env, goal_arr, call=call).to_point(positions, goal_arr)
+
+
+def _geodesic_paths(
+    env: Environment | None, goal: NDArray[np.float64], *, call: str
+) -> EnvironmentPaths:
+    """The environment's shortest-path engine, with ``goal`` checked inside.
+
+    Raises
+    ------
+    ValueError
+        If ``env`` is None or ``goal`` is outside the environment.
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
+    """
     if env is None:
         raise ValueError(
             _format_error(
@@ -4342,8 +4397,8 @@ def _goal_distances(
     from neurospatial.behavior._environment_paths import environment_paths
 
     paths = environment_paths(env, call=call)
-    _require_inside(paths, {"goal": goal_arr}, call=call)
-    return paths.to_point(positions, goal_arr)
+    _require_inside(paths, {"goal": goal}, call=call)
+    return paths
 
 
 def compute_goal_directed_metrics(

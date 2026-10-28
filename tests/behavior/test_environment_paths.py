@@ -382,3 +382,69 @@ def test_goal_reward_decays_with_the_path_around_a_wall(divider_arena):
     )
     around = 2 * np.hypot(5.0, 60.0) + 5.0  # not the 15 cm straight line
     assert reward[left] == pytest.approx(1.0 - around / 200.0, abs=1e-12)
+
+
+class TestGeodesicGoalDirection:
+    @pytest.fixture(scope="class")
+    def narrow_u(self):
+        """A U of one-bin (5 cm) corridors: up x = 2.5, across y = 47.5,
+        down x = 22.5."""
+        mask = np.zeros((5, 10), dtype=bool)  # (x, y)
+        mask[0, :] = mask[4, :] = mask[:, 9] = True
+        return Environment.from_grid_mask(
+            mask, grid_edges=(np.arange(0.0, 26.0, 5.0), np.arange(0.0, 51.0, 5.0))
+        )
+
+    @staticmethod
+    def _shortest_route():
+        """Bin centers along the shortest path from (2.5, 2.5) to (22.5, 2.5).
+
+        Up the left corridor to (2.5, 42.5), diagonally through the inner
+        corner vertex (5, 45) to (7.5, 47.5), across to (17.5, 47.5),
+        diagonally through (20, 45) to (22.5, 42.5), and down. Each step
+        heads straight for the next corner the path turns at (then the
+        goal), so every angle is 0.
+        """
+        up = np.c_[np.full(9, 2.5), np.arange(2.5, 45.0, 5.0)]
+        across = np.c_[np.arange(7.5, 20.0, 5.0), np.full(3, 47.5)]
+        down = np.c_[np.full(9, 22.5), np.arange(42.5, 0.0, -5.0)]
+        return np.vstack([up, across, down])
+
+    def test_following_the_corridors_heads_along_the_path(self, narrow_u):
+        from neurospatial.behavior import angular_efficiency
+
+        positions = self._shortest_route()
+        times = np.arange(len(positions)) / 10
+        goal = positions[-1]
+        geodesic = angular_efficiency(
+            times, positions, goal, metric="geodesic", env=narrow_u
+        )
+        assert geodesic == pytest.approx(1.0, abs=1e-12)
+        # The straight-line bearing points across the U's gap instead.
+        assert angular_efficiency(times, positions, goal) < 0.7
+
+    def test_path_efficiency_passes_its_metric(self, narrow_u):
+        from neurospatial.behavior import compute_path_efficiency
+
+        positions = self._shortest_route()
+        result = compute_path_efficiency(
+            narrow_u, np.arange(len(positions)) / 10, positions, positions[-1]
+        )
+        assert result.angular_efficiency == pytest.approx(1.0, abs=1e-12)
+
+    def test_on_a_track_steps_along_the_track_head_toward_the_goal(self):
+        from neurospatial.behavior import angular_efficiency
+
+        env = _w_track(2.0, 10.0)
+        # Up the left arm, across both crossbars, down the right arm, 1 cm
+        # steps through the corners. A step from a node where the route
+        # turns has no single track direction and is left out.
+        up = np.c_[np.full(40, -30.0), np.arange(1.0, 41.0)]
+        across = np.c_[np.arange(-29.0, 31.0), np.full(60, 40.0)]
+        down = np.c_[np.full(39, 30.0), np.arange(39.0, 0.0, -1.0)]
+        positions = np.vstack([up, across, down])
+        times = np.arange(len(positions)) / 30
+        efficiency = angular_efficiency(
+            times, positions, positions[-1], metric="geodesic", env=env
+        )
+        assert efficiency == pytest.approx(1.0, abs=1e-12)
