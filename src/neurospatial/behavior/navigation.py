@@ -779,8 +779,8 @@ def distance_to_region(
     --------
     path_progress : Normalized progress along path
     cost_to_goal : Distance with terrain/learned cost
-    distance_to_boundary : Distance to the environment's edge, obstacles or a
-        region's boundary
+    distance_to_boundary : Distance to the environment's edge or a region's
+        boundary
     distance_to_reward : Distance to the reward location at each sample
     neurospatial.ops.nearest_boundary : Exact distance and direction to walls
     """
@@ -1390,15 +1390,15 @@ def distance_to_boundary(
     env: Environment,
     positions: NDArray[np.float64],
     *,
-    boundary_type: Literal["edge", "obstacle", "region"] = "edge",
+    boundary_type: Literal["edge", "region"] = "edge",
     region_name: str | None = None,
     metric: DistanceMetric = "geodesic",
 ) -> NDArray[np.float64]:
     """
     Compute distance to environment boundary at each position.
 
-    Measures the instantaneous distance from trajectory positions to various
-    types of boundaries: environment edges, obstacles, or named regions.
+    Measures the instantaneous distance from trajectory positions to the
+    edge of the environment or to the boundary of a named region.
 
     Parameters
     ----------
@@ -1407,15 +1407,15 @@ def distance_to_boundary(
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Position coordinates at each sample. Must match environment
         dimensionality.
-    boundary_type : {'edge', 'obstacle', 'region'}, default='edge'
+    boundary_type : {'edge', 'region'}, default='edge'
         Type of boundary to compute distance to:
 
-        - 'edge': Distance to the edge of the environment's bins: bins
-          next to unoccupied space, including unvisited areas and holes.
-          This is not the distance to the arena's walls; for that use
+        - 'edge': Distance to the environment's boundary bins,
+          :attr:`Environment.boundary_bins`: on a grid, bins next to
+          unoccupied space (the outer rim and the rim of every hole); on a
+          track, the dead ends of its arms. This is quantized to bin centers
+          and is not the exact distance to the arena's walls; for that use
           :func:`neurospatial.ops.nearest_boundary`.
-        - 'obstacle': Distance to obstacle regions. Requires environment
-          to have regions with ``obstacle=True`` attribute.
         - 'region': Distance to boundary of a specific named region.
           Requires ``region_name`` parameter.
     region_name : str, optional
@@ -1446,10 +1446,10 @@ def distance_to_boundary(
     -----
     **Boundary detection**:
 
-    - **edge**: Finds bins adjacent to unoccupied space. A bin is an edge
-      bin if any of its graph neighbors are not in the environment.
-    - **obstacle**: Finds bins adjacent to obstacle regions. Obstacles
-      are regions marked with ``obstacle=True`` during annotation.
+    - **edge**: :attr:`Environment.boundary_bins`, the layout's own rule
+      (an inactive or missing lattice neighbor on grids and hexagons, the
+      outline of the union on meshes and polygon cells, dead ends on
+      tracks).
     - **region**: Finds bins at the boundary of the named region. Boundary
       bins are region bins adjacent to non-region bins.
 
@@ -1464,14 +1464,9 @@ def distance_to_boundary(
     --------
     >>> import numpy as np
     >>> from neurospatial.behavior import distance_to_boundary
-    >>> # Distance to environment walls
-    >>> dist_wall = distance_to_boundary(
+    >>> # Distance to the environment's boundary bins (quantized to bins)
+    >>> dist_edge = distance_to_boundary(
     ...     env, positions, boundary_type="edge"
-    ... )  # doctest: +SKIP
-    >>>
-    >>> # Distance to obstacle
-    >>> dist_obstacle = distance_to_boundary(
-    ...     env, positions, boundary_type="obstacle"
     ... )  # doctest: +SKIP
     >>>
     >>> # Distance to goal region boundary
@@ -1524,14 +1519,7 @@ def distance_to_boundary(
 
     # Find boundary bins based on boundary_type
     if boundary_type == "edge":
-        # Edge bins: bins adjacent to unoccupied space
-        # A bin is an edge bin if it has fewer neighbors than expected
-        # for a fully-surrounded bin
-        boundary_bins = _find_edge_bins(env)
-
-    elif boundary_type == "obstacle":
-        # Obstacle bins: bins adjacent to obstacle regions
-        boundary_bins = _find_obstacle_boundary_bins(env)
+        boundary_bins = env.boundary_bins
 
     elif boundary_type == "region":
         # Region boundary bins: boundary of the named region
@@ -1543,12 +1531,13 @@ def distance_to_boundary(
             operation="distance_to_boundary()",
             argument="region_name",
         )
-        boundary_bins = _find_region_boundary_bins(env, region_name)
+        boundary_bins = np.asarray(
+            _find_region_boundary_bins(env, region_name), dtype=np.intp
+        )
 
     else:
         raise ValueError(
-            f"boundary_type must be 'edge', 'obstacle', or 'region', "
-            f"got '{boundary_type}'."
+            f"boundary_type must be 'edge' or 'region', got '{boundary_type}'."
         )
 
     if len(boundary_bins) == 0:
@@ -1575,93 +1564,6 @@ def distance_to_boundary(
     distances[valid_bins] = dist_field[position_bins[valid_bins]]
 
     return distances
-
-
-def _find_edge_bins(env: Environment) -> list[int]:
-    """Find bins at the edge of the environment.
-
-    A bin is an edge bin if it has fewer than the maximum number of
-    neighbors, i.e. it is adjacent to unoccupied space (the outer rim, the
-    rim of an interior hole, etc.).
-
-    The notion of "edge" is layout-dependent and falls out naturally from
-    the connectivity graph:
-
-    - **1D linearized track** (a path graph): interior bins have degree 2
-      and the two end bins have degree 1, so the edge bins are exactly the
-      two ends of the track. This is the meaningful boundary of a 1D track.
-    - **Masked / holed 2D grids**: bins flanking a masked-out region have
-      fewer neighbors than a fully surrounded interior bin and are flagged,
-      so both the outer rim and any inner-hole rim are returned.
-
-    Parameters
-    ----------
-    env : Environment
-        Environment.
-
-    Returns
-    -------
-    list[int]
-        Bin (node) indices at the environment boundary. Empty if the graph
-        has no nodes.
-
-    Notes
-    -----
-    The degree scan is vectorized over nodes: degrees are pulled from the
-    NetworkX ``DegreeView`` into arrays and the comparison is done with
-    NumPy rather than a per-node Python loop.
-    """
-    graph = env.connectivity
-    n_nodes = graph.number_of_nodes()
-    if n_nodes == 0:
-        return []
-
-    # Pull (node, degree) pairs once and compare vectorized. Node ids are
-    # arbitrary hashables in general, but Environment connectivity uses
-    # integer bin indices, so an int64 array is safe here.
-    degree_view = graph.degree()
-    nodes = np.fromiter((n for n, _ in degree_view), dtype=np.int64, count=n_nodes)
-    degrees = np.fromiter((d for _, d in graph.degree()), dtype=np.int64, count=n_nodes)
-
-    max_degree = int(degrees.max())
-
-    # A bin is an edge bin if it has fewer neighbors than a fully-surrounded
-    # bin in this layout (i.e., it borders unoccupied space).
-    edge_nodes = nodes[degrees < max_degree]
-    edge_bins: list[int] = edge_nodes.tolist()
-    return edge_bins
-
-
-def _find_obstacle_boundary_bins(env: Environment) -> list[int]:
-    """Find bins adjacent to obstacle regions.
-
-    Parameters
-    ----------
-    env : Environment
-        Environment with obstacle regions.
-
-    Returns
-    -------
-    list[int]
-        Bin indices at obstacle boundaries.
-    """
-    # Find all obstacle regions
-    obstacle_regions = [
-        name
-        for name, region in env.regions.items()
-        if hasattr(region, "obstacle") and region.obstacle
-    ]
-
-    if not obstacle_regions:
-        # No obstacle regions defined - return empty
-        return []
-
-    # For environments with obstacle regions, bins adjacent to obstacles
-    # are typically edge bins (they have fewer neighbors because the
-    # obstacle removes connectivity). This is currently a simplification.
-    # A more complete implementation would require the environment to
-    # explicitly track which bins were removed due to obstacles.
-    return _find_edge_bins(env)
 
 
 def _find_region_boundary_bins(env: Environment, region_name: str) -> list[int]:

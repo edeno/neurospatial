@@ -819,11 +819,12 @@ class TestDistanceToBoundary:
 
         result = distance_to_boundary(env, positions, boundary_type="edge")
 
-        assert result.shape == (2,)
-        # Center is farther from edge than corner
-        assert result[0] > result[1]
-        # Corner is at edge, distance should be 0 or very small
-        assert result[1] < 1.0
+        # (5, 5) is four 1 cm bins from the rim at x = 9 or y = 9; the corner
+        # bin is on the rim.
+        np.testing.assert_allclose(result, [4.0, 0.0])
+        np.testing.assert_allclose(
+            distance_to_boundary(env, positions, metric="euclidean"), [4.0, 0.0]
+        )
 
     def test_region_boundary_distance(self, simple_grid_env):
         """Test distance to region boundary."""
@@ -916,6 +917,9 @@ class TestDistanceToBoundary:
 
         with pytest.raises(ValueError, match=r"boundary_type"):
             distance_to_boundary(env, positions, boundary_type="invalid")
+        # Regions carry no obstacle marker, so there is no obstacle boundary.
+        with pytest.raises(ValueError, match=r"'edge' or 'region'"):
+            distance_to_boundary(env, positions, boundary_type="obstacle")
 
     def test_position_outside_env_returns_nan(self, simple_grid_env):
         """Test positions outside environment return NaN."""
@@ -931,6 +935,38 @@ class TestDistanceToBoundary:
         # Position outside env → invalid bin → NaN
         assert np.isnan(result[0])
 
+    def test_t_maze_edge_is_the_three_dead_ends(self):
+        """On a T-maze track the edge is the three arm ends, not the arms.
+
+        Each arm is 50 cm of 5 cm bins. A point 20 cm along the stem from its
+        dead end is 20 cm from the edge; a point at the junction is 50 cm from
+        every dead end.
+        """
+        import networkx as nx
+
+        from neurospatial import Environment
+        from neurospatial.behavior.navigation import distance_to_boundary
+
+        graph = nx.Graph()
+        graph.add_node(0, pos=(0.0, -50.0))
+        graph.add_node(1, pos=(0.0, 0.0))
+        graph.add_node(2, pos=(-50.0, 0.0))
+        graph.add_node(3, pos=(50.0, 0.0))
+        for u, v in [(0, 1), (1, 2), (1, 3)]:
+            graph.add_edge(u, v, distance=50.0)
+        env = Environment.from_graph(
+            graph,
+            edge_order=[(0, 1), (1, 2), (1, 3)],
+            edge_spacing=0.0,
+            bin_size=5.0,
+            track_width=5.0,
+        )
+
+        positions = np.array([[0.0, -27.5], [0.0, -47.5], [-27.5, 0.0]])
+        dist = distance_to_boundary(env, positions, boundary_type="edge")
+
+        np.testing.assert_allclose(dist, [20.0, 0.0, 20.0])
+
     def test_edge_bins_1d_track_are_the_two_ends(self):
         """On a 1D linear track the boundary is the two end bins.
 
@@ -941,7 +977,6 @@ class TestDistanceToBoundary:
         import networkx as nx
 
         from neurospatial import Environment
-        from neurospatial.behavior.navigation import _find_edge_bins
 
         graph = nx.path_graph(8)
         for i, node in enumerate(graph.nodes):
@@ -956,7 +991,7 @@ class TestDistanceToBoundary:
             track_width=5.0,
         )
 
-        edge_bins = _find_edge_bins(env)
+        edge_bins = env.boundary_bins.tolist()
 
         # Exactly the two ends of the linearized track.
         assert len(edge_bins) == 2
@@ -973,34 +1008,22 @@ class TestDistanceToBoundary:
         dist = distance_to_boundary(env, positions, boundary_type="edge")
         assert dist[0] > dist[1]
 
-    def test_edge_bins_masked_2d_includes_inner_hole_boundary(self):
-        """On a masked 2D env edge bins include the boundary of an inner hole.
+    def test_edge_distance_counts_an_inner_hole(self):
+        """Distance to the edge is zero beside an inner hole, not only at the rim.
 
-        Bins flanking a masked-out hole have fewer neighbors than a fully
-        surrounded interior bin and so must be flagged as edge bins, not
-        only the outer rim.
+        In a 7 x 7 grid of 1 cm bins with the centre bin missing, the four bins
+        orthogonally next to the hole are on the boundary (distance 0), and
+        the bin at (1, 1) is one bin from the outer rim (distance 1).
         """
         from neurospatial import Environment
-        from neurospatial.behavior.navigation import _find_edge_bins
+        from neurospatial.behavior.navigation import distance_to_boundary
 
-        # 7x7 occupied grid with a single hole punched in the center.
-        x = np.arange(7, dtype=float)
-        y = np.arange(7, dtype=float)
-        xx, yy = np.meshgrid(x, y)
+        xx, yy = np.meshgrid(np.arange(7.0), np.arange(7.0))
         positions = np.column_stack([xx.ravel(), yy.ravel()])
-        # Drop the exact center (3, 3) so it becomes an unoccupied hole.
         keep = ~((positions[:, 0] == 3.0) & (positions[:, 1] == 3.0))
-        positions = positions[keep]
+        env = Environment.from_samples(positions[keep], bin_size=1.0)
 
-        env = Environment.from_samples(positions, bin_size=1.0)
+        queries = np.array([[3.0, 2.0], [3.0, 4.0], [2.0, 3.0], [4.0, 3.0], [1.0, 1.0]])
+        dist = distance_to_boundary(env, queries, boundary_type="edge")
 
-        edge_bins = set(_find_edge_bins(env))
-
-        # The four bins orthogonally adjacent to the hole at (3, 3) must be
-        # edge bins because they border unoccupied space.
-        for hole_neighbor in [(3.0, 2.0), (3.0, 4.0), (2.0, 3.0), (4.0, 3.0)]:
-            bin_idx = int(env.bin_at(np.asarray([hole_neighbor]))[0])
-            assert bin_idx in edge_bins, (
-                f"bin at {hole_neighbor} (index {bin_idx}) borders the hole "
-                "and should be an edge bin"
-            )
+        np.testing.assert_allclose(dist, [0.0, 0.0, 0.0, 0.0, 1.0])
