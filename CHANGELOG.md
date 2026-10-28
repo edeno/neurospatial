@@ -6,17 +6,28 @@
 
 Results that change (each was plausible and wrong):
 
+- `metric="geodesic"` has one meaning across `neurospatial.behavior`: the
+  length of the shortest path between two positions that stays inside the
+  environment. It goes around declared walls, outline slits and missing
+  cells, never leaves the environment, and on a track runs along the
+  centreline whatever the track width or bin size; bin inputs are measured
+  from bin centres. Path lengths summed bin-to-bin graph steps (a straight
+  oblique run read 0.79–0.83 efficient, depending on bin size and sampling
+  rate; it now reads 1.0), and `path_progress`, `distance_to_region`,
+  `cost_to_goal`, `distance_to_reward`, `distance_to_boundary`,
+  `mean_square_displacement`, the decision boundaries and Voronoi labels,
+  the reward fields, `detect_goal_directed_runs` and the lap far-side test
+  used bin-graph distances. `Environment.distance_between` and
+  `ops.distance_field` still measure along the bin graph. Behavior geodesic
+  functions refuse egocentric polar environments.
 - `angular_efficiency` (and `compute_path_efficiency`, `subgoal_efficiency`)
-  measures heading toward the goal: 1 − mean angle between each step and the
-  goal bearing / π. It ignored `goal` and only measured straightness, so a
-  straight run away from the goal scored 1.0. It now takes
-  `(times, positions, goal)` plus `max_gap`/`epochs`/`break_before`.
-- Geodesic path lengths (`compute_step_lengths`, `traveled_path_length`,
-  `shortest_path_length`, `compute_path_efficiency`) are shortest paths
-  inside the environment: the Euclidean step when the straight segment stays
-  inside, otherwise the bin-graph path pulled taut. Summing bin-to-bin graph
-  steps made a straight oblique run read 0.79–0.83 efficient, depending on
-  bin size and sampling rate; it now reads 1.0.
+  measures heading toward the goal. It ignored `goal` and only measured
+  straightness, so a straight run away from the goal scored 1.0. Each step's
+  angle to the goal direction counts in proportion to its length, measured
+  on positions smoothed over 0.1 s, so tracking jitter during pauses weighs
+  almost nothing; under `metric="geodesic"` the goal direction is where the
+  in-environment shortest path leads. It now takes `(times, positions,
+  goal)` plus `metric`, `env`, `max_gap`, `epochs` and `break_before`.
 - `compute_decision_analysis().chosen_goal` is the first goal entered after
   the decision-region entry. It was the first goal in list order visited at
   any time, so swapping `goal_regions` changed the answer.
@@ -27,10 +38,14 @@ Results that change (each was plausible and wrong):
   `geodesic_voronoi_labels`; ties went to goal 0, so a symmetric T-maze
   recorded crossings for right turns only.
 - `detect_laps` lap direction uses the closed, centred lap path; it depended
-  on where the coordinate origin was. Region laps must reach the far side of
-  the loop (boundary jitter made extra laps) and report `overlap_score=NaN`.
-  Template laps close at passes through the start line, so laps run at
-  different speeds are found with correct boundaries.
+  on where the coordinate origin was. A region lap is a trip that leaves the
+  start region on one side and returns on the other, so out-and-backs and
+  boundary jitter are not laps, a recording that starts inside the region
+  keeps its first lap, and a start region that does not cut a loop raises;
+  region laps report `overlap_score=NaN`. Template laps close at passes
+  through the start line and start after the last turn back, so laps run at
+  different speeds are found with correct boundaries and aborted
+  excursions are not merged into the next lap.
 - `detect_runs_between_regions` ends a run when the animal re-enters the
   source (outcome `"returned"`); runs overlapped and were double-counted, and
   `running_direction_labels` marked walks back home as outbound.
@@ -45,9 +60,11 @@ Results that change (each was plausible and wrong):
   into real turns. Turns with 3+ position columns are the 3-D angle (a 3-D
   turn of π/3 read π/4). A missing 1-D sample is NaN, not a reversal (π).
 - `distance_to_boundary("edge")` uses `Environment.boundary_bins`; on a maze
-  with a junction almost every bin counted as an edge.
-- `cost_to_goal(cost_map=)` is a cost per unit length, so the result no
-  longer depends on bin size.
+  with a junction almost every bin counted as an edge. It and geodesic
+  `distance_to_reward` measure from the position, not its bin centre.
+- `cost_to_goal(cost_map=)` is a cost per unit length integrated along the
+  cheapest in-environment path, so the result no longer depends on bin size;
+  with no costs it equals the geodesic distance.
 - `graph_turn_sequence` labels the corners of the simplified route; it gave
   different turns at 30 and 500 Hz and read bin −1 as the last bin.
 - Geodesic `approach_rate` is continuous (it was mostly zeros with spikes at
@@ -77,8 +94,10 @@ Breaking:
   `successes=`).
 - `segment_by_velocity` and `detect_goal_directed_runs` return `(n, 2)`
   `[start, stop)` epochs instead of `Run` objects.
-  `detect_goal_directed_runs(min_progress=None)` defaults to 20 cm in the
-  environment's units.
+  `detect_goal_directed_runs` scores each approach to the goal (departure to
+  arrival) instead of each whole recording stretch, so repeated trips give
+  one row each and rest is left out; `min_progress=None` defaults to 20 cm
+  in the environment's units.
 - `compute_vte_session` keeps one `VTETrialResult` per input trial, with a
   `status` field and NaN metrics for unmeasured trials; trials were dropped,
   so results did not line up with `trials`. `VTESessionResult` derives its
