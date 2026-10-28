@@ -1069,9 +1069,8 @@ def _planar_turns(
                 f"got shape {shape}.",
                 why=(
                     "a signed turn, planar curvature and the angular velocity of "
-                    "the movement direction are defined for two coordinates, and "
-                    "the legacy N-D turn formulas are neither a projection nor "
-                    "3-D curvature."
+                    "the movement direction are defined in a plane; in 3-D a turn "
+                    "has no sign without a reference axis."
                 ),
                 fix="pass positions[:, :2] to analyze movement in the horizontal plane",
             )
