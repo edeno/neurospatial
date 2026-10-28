@@ -2055,15 +2055,17 @@ def _region_sides(
 def _distances_from(
     env: Environment, sources: NDArray[np.int_]
 ) -> tuple[NDArray[np.float64], float]:
-    """Path distance from ``sources`` to every bin, and half its finite maximum.
+    """Geodesic distance from ``sources`` to every bin, and half its finite maximum.
 
     The second value is the "far side" threshold of the first circuit: on a
     closed loop of length L the farthest point from any place is L/2 away,
     and every full circuit passes it.
     """
-    from neurospatial.ops.distance import distance_field
+    from neurospatial.behavior._environment_paths import environment_paths
 
-    distances = distance_field(env.connectivity, list(sources), weight="distance")
+    distances = environment_paths(env, call="detect_laps").from_bins(
+        np.unique(np.asarray(sources, dtype=np.intp))
+    )
     finite = distances[np.isfinite(distances)]
     return distances, 0.5 * float(finite.max()) if finite.size else 0.0
 
@@ -3516,6 +3518,7 @@ def detect_goal_directed_runs(
             _detect_goal_directed_runs_contiguous(
                 position_bins[run],
                 times[run],
+                env=env,
                 edges=edges,
                 distance_to_goal=distance_to_goal,
                 directedness_threshold=directedness_threshold,
@@ -3528,38 +3531,30 @@ def detect_goal_directed_runs(
 def _distance_to_bins(
     env: Environment, targets: NDArray[np.intp]
 ) -> NDArray[np.float64]:
-    """Distance from every bin to the nearest of ``targets``; inf if unreachable.
+    """Geodesic distance from every bin to the nearest of ``targets``.
 
-    The one place the goal-directed runs measure distance to the goal.
+    The one place the goal-directed runs measure distance to the goal; inf
+    for bins that cannot reach it.
     """
-    from neurospatial.ops.distance import distance_field
+    from neurospatial.behavior._environment_paths import environment_paths
 
-    distances: NDArray[np.float64] = distance_field(
-        env.connectivity, list(targets), weight="distance"
+    return environment_paths(env, call="detect_goal_directed_runs").from_bins(
+        np.unique(np.asarray(targets, dtype=np.intp))
     )
-    return distances
 
 
-def _step_lengths(edges: Any, bins: NDArray[np.int64]) -> NDArray[np.float64]:
-    """Distance between consecutive bins, shape ``(len(bins) - 1,)``.
+def _step_lengths(env: Environment, bins: NDArray[np.int64]) -> NDArray[np.float64]:
+    """Geodesic distance between consecutive bins, shape ``(len(bins) - 1,)``.
 
-    The one place the goal-directed runs measure path length. ``edges`` is
-    the sparse ``(n_bins, n_bins)`` matrix of edge lengths. Adjacent bins
-    use their edge length; any other pair (a sample that skipped bins) the
-    shortest path between them. Both bins of every step the caller sums lie
-    in the goal's connected component, so every step is finite.
+    The one place the goal-directed runs measure path length. Both bins of
+    every step the caller sums lie in the goal's connected component, so
+    every step is finite.
     """
-    from scipy.sparse.csgraph import dijkstra
+    from neurospatial.behavior._environment_paths import environment_paths
 
-    src, dst = bins[:-1], bins[1:]
-    lengths = np.asarray(edges[src, dst], dtype=np.float64).ravel()
-    skipped = np.flatnonzero((lengths == 0) & (src != dst))
-    if skipped.size:
-        sources, rows = np.unique(src[skipped], return_inverse=True)
-        lengths[skipped] = dijkstra(edges, directed=False, indices=sources)[
-            rows, dst[skipped]
-        ]
-    return lengths
+    return environment_paths(env, call="detect_goal_directed_runs").between_bins(
+        bins[:-1], bins[1:]
+    )
 
 
 def _approach_bouts(
@@ -3595,6 +3590,7 @@ def _detect_goal_directed_runs_contiguous(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     *,
+    env: Environment,
     edges: Any,
     distance_to_goal: NDArray[np.float64],
     directedness_threshold: float,
@@ -3607,7 +3603,7 @@ def _detect_goal_directed_runs_contiguous(
     # be jitter across a bin edge; anything larger is movement. The factor
     # allows for rounding in the summed edge lengths.
     tolerance = float(edges.max()) * (1 + 1e-9) if edges.nnz else 0.0
-    path = np.r_[0.0, np.cumsum(_step_lengths(edges, position_bins))]
+    path = np.r_[0.0, np.cumsum(_step_lengths(env, position_bins))]
     rows: list[tuple[float, float]] = []
     # Samples that cannot reach the goal split the recording.
     finite = np.r_[False, np.isfinite(distances), False]
