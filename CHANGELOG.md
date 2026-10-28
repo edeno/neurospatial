@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Regions cleanup and faster membership
+
+Region membership and region bin masks test raw coordinates against a
+prepared polygon instead of building one shapely point per position:
+`regions_containing_points` on 1e6 positions and 22 regions takes 0.6 s
+(was 3.6 s), with identical results. The LabelMe and CVAT readers share one
+pixel-frame shift and one region builder; their output is unchanged except
+LabelMe circle vertices, which can differ by float rounding (1e-15 px).
+
+- `plot_regions` refuses a `world_to_pixel` that changes the shape of its
+  input or returns NaN, naming the region, instead of failing inside
+  Matplotlib.
+- `Regions.buffer` refuses NaN or infinite source coordinates as such; it
+  said the buffer "leaves nothing".
+- A transform passed to `points_in_any_region`, `regions_containing_points`
+  or the annotation readers reports a bad output in one message: the
+  transform's argument name, how many points failed and the first of them.
+
 ### Regions are validated, and annotation readers read what tools write
 
 A `Region` is checked when it is built, so every analysis that uses regions
