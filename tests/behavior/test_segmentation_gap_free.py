@@ -11,7 +11,14 @@ trials began at departure from the start region instead of entry, and the
 ``compute_vte_trial`` entries when speed became the Gaussian-smoothed velocity
 of ``compute_speed``. ``running_direction_labels`` marks samples outside
 every run with ``None`` instead of ``"other"``; its golden is compared with
-that one substitution and is otherwise unchanged.
+that one substitution and is otherwise unchanged. The decision and VTE
+entries (``detect_boundary_crossings``, ``compute_pre_decision_metrics``,
+``compute_decision_analysis``, ``compute_vte_trial``, ``compute_vte_session``)
+were captured again when boundary crossings became arrays, the boundary
+distance became ``(d2 - d1) / 2``, the chosen goal became the first goal
+entered after the decision entry, result fields were renamed
+(``min_observed_speed``, ``distance_to_decision_boundary``) and VTE results
+gained a per-trial ``status`` with derived session statistics.
 """
 
 import json
