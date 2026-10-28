@@ -21,7 +21,12 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import as_intervals, intervals_contain
 from neurospatial._time_bins import _time_bin_rounding
-from neurospatial.events._core import _finite_times, _is_real_number, _validate_window
+from neurospatial.events._core import (
+    _finite_times,
+    _inner_bounds,
+    _is_real_number,
+    _validate_window,
+)
 
 
 def _share_coincident_edges(
@@ -223,7 +228,8 @@ def time_to_nearest_event(
         # The value is known when no unseen event could be nearer: the open
         # interval (t - d, t + d) is recorded, which holds trivially at d = 0.
         reach = np.abs(result)
-        known = (reach == 0) | intervals_contain(recorded, times - reach, times + reach)
+        starts, stops = _inner_bounds(times - reach, times + reach)
+        known = (reach == 0) | intervals_contain(recorded, starts, stops)
         result[~known] = np.nan
     return result
 
@@ -361,7 +367,7 @@ def event_count_in_window(
     if recorded is None:
         return counts.astype(np.int64)
     observed = counts.astype(np.float64)
-    observed[~intervals_contain(recorded, starts, stops)] = np.nan
+    observed[~intervals_contain(recorded, *_inner_bounds(starts, stops))] = np.nan
     return observed
 
 

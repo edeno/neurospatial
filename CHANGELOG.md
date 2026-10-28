@@ -93,6 +93,12 @@ Fixed:
   index.
 - `peri_event_histogram` and `population_peri_event_histogram` warn once,
   not once per unit plus once more, for a window longer than 60 s.
+- With `epochs` or `spike_window`, an event window that ends exactly at an
+  epoch's stop is kept. Its stop, computed as `event + window[1]`, can round
+  one ulp past the epoch (`0.1 + 0.2` against `0.3`), which dropped the
+  event from `peri_event_histogram`, marked it `outside_epochs` in
+  `align_continuous_to_events` and gave NaN in `event_count_in_window`, so
+  identical trials were kept or dropped by where they fell on the clock.
 - `time_to_nearest_event` refuses `max_time=True`, which clipped every
   value to 1 s, and an infinite or non-numeric `max_time`; pass `None` for
   no clipping.

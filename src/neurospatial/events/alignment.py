@@ -30,6 +30,7 @@ from neurospatial.events._core import (
     PopulationPeriEventResult,
     _event_times,
     _finite_times,
+    _inner_bounds,
     _psth_bins,
     _validate_window,
 )
@@ -131,11 +132,10 @@ def _keep_observed_events(
 ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Keep events with observed windows and return their original input indices."""
     keep = np.ones(event_times.shape, dtype=bool)
+    starts, stops = _inner_bounds(event_times + window[0], event_times + window[1])
     for windows in (epochs, spike_window):
         if windows is not None:
-            keep &= intervals_contain(
-                windows, event_times + window[0], event_times + window[1]
-            )
+            keep &= intervals_contain(windows, starts, stops)
     if not keep.any():
         raise ValueError(
             f"All {event_times.size} events were dropped from the peri-event "

@@ -1005,3 +1005,16 @@ class TestRecordedEpochs:
             event_count_in_window(
                 np.arange(3.0), np.array([1.0]), (-1.0, 0.0), epochs=(5.0, 1.0)
             )
+
+
+def test_window_ending_at_an_epoch_stop_is_inside_despite_rounding():
+    """0.1 + 0.2 is 0.30000000000000004, one ulp past the epoch stop 0.3."""
+    from neurospatial.events import event_count_in_window
+
+    counts = event_count_in_window(
+        np.array([0.1, 1.1]),
+        np.array([0.15, 1.15]),
+        (-0.1, 0.2),
+        epochs=[(0.0, 0.3), (1.0, 1.3)],
+    )
+    assert_allclose(counts, [1.0, 1.0])

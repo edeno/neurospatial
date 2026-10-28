@@ -413,3 +413,20 @@ def test_chunked_summaries_match_single_pass(events_per_chunk):
         np.nanmean(values[:, observed, 0], axis=0),
         rtol=1e-12,
     )
+
+
+def test_window_ending_at_an_epoch_stop_is_retained_despite_rounding():
+    """0.1 + 0.2 is 0.30000000000000004, one ulp past the epoch stop 0.3."""
+    from neurospatial.events import align_continuous_to_events
+
+    times = np.r_[np.linspace(0.0, 0.3, 7), np.linspace(1.0, 1.3, 7)]
+    result = align_continuous_to_events(
+        times,
+        times,
+        [0.1, 1.1],
+        (-0.1, 0.2),
+        dt=0.05,
+        epochs=[(0.0, 0.3), (1.0, 1.3)],
+        max_gap=None,
+    )
+    assert result.event_status.tolist() == ["retained", "retained"]

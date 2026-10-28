@@ -103,6 +103,19 @@ def _finite_times(
     return times
 
 
+def _inner_bounds(
+    starts: NDArray[np.float64], stops: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Shrink computed ``[starts, stops)`` bounds by their float rounding.
+
+    Bounds computed as ``time + offset`` are off by a few ulp, so a window
+    that ends exactly at an epoch's stop (``0.1 + 0.2`` against ``0.3``)
+    would read as leaving it. Test containment with these bounds instead.
+    """
+    slack = 4.0 * np.spacing(np.maximum(np.abs(starts), np.abs(stops)))
+    return starts + slack, stops - slack
+
+
 def _validate_window(
     window: tuple[float, float], *, context: str, warn_wide: bool = True
 ) -> tuple[float, float]:

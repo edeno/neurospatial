@@ -28,6 +28,7 @@ from neurospatial._results import (
     read_only_copy,
     require_label_sequence,
 )
+from neurospatial.events._core import _inner_bounds
 
 if TYPE_CHECKING:
     from neurospatial._observation import ObservationSupport
@@ -519,6 +520,8 @@ def _window_status(
         status[(stops <= times[0]) | (starts > times[-1])] = "outside_recording"
         return status
 
+    # Containment, unlike the overlap test above, allows for rounding.
+    starts, stops = _inner_bounds(starts, stops)
     covered = np.ones(event_times.shape, dtype=bool)
     for support in supports:
         covered &= intervals_contain(support.run_time_bounds, starts, stops)
