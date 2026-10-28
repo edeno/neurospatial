@@ -2837,18 +2837,9 @@ def _observed_path_length(
                 "Provide the Environment instance, or use metric='euclidean' "
                 "for straight-line distances."
             )
-        from neurospatial.behavior._environment_paths import EnvironmentPaths
+        from neurospatial.behavior._environment_paths import environment_paths
 
-        require_cartesian(
-            env.coordinate_system,
-            f"{call}(metric='geodesic')",
-            why=(
-                "positions are allocentric Cartesian positions, located in the "
-                "environment's bins."
-            ),
-            fix="use an allocentric environment, or metric='euclidean'",
-        )
-        steps = EnvironmentPaths(env).between(starts, ends)
+        steps = environment_paths(env, call=call).between(starts, ends)
     counted = ~np.isnan(steps)
     observed = np.flatnonzero(sample_valid)
     span = (
@@ -3069,21 +3060,9 @@ def shortest_path_length(
     if metric == "euclidean":
         return float(np.linalg.norm(goal - start))
 
-    require_cartesian(
-        env.coordinate_system,
-        "shortest_path_length(metric='geodesic')",
-        why=(
-            "start and goal are allocentric Cartesian positions, located in the "
-            "environment's bins."
-        ),
-        fix=(
-            "use an allocentric environment, or metric='euclidean' for the "
-            "straight-line distance from start to goal"
-        ),
-    )
-    from neurospatial.behavior._environment_paths import EnvironmentPaths
+    from neurospatial.behavior._environment_paths import environment_paths
 
-    paths = EnvironmentPaths(env)
+    paths = environment_paths(env, call="shortest_path_length")
     _require_inside(paths, {"start": start, "goal": goal}, call="shortest_path_length")
     return float(paths.to_point(start[None, :], goal)[0])
 
@@ -4405,21 +4384,9 @@ def _goal_distances(
                 ),
             )
         )
-    require_cartesian(
-        env.coordinate_system,
-        f"{call}(metric='geodesic')",
-        why=(
-            "positions and goal are allocentric Cartesian positions, located in "
-            "the environment's bins."
-        ),
-        fix=(
-            "use an allocentric environment, or metric='euclidean' for the "
-            "straight-line distance to the goal"
-        ),
-    )
-    from neurospatial.behavior._environment_paths import EnvironmentPaths
+    from neurospatial.behavior._environment_paths import environment_paths
 
-    paths = EnvironmentPaths(env)
+    paths = environment_paths(env, call=call)
     _require_inside(paths, {"goal": goal_arr}, call=call)
     return paths.to_point(positions, goal_arr)
 

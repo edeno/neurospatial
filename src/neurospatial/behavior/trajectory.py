@@ -1637,17 +1637,11 @@ def compute_step_lengths(
     else:  # metric == "geodesic"
         # Map positions to bins
         assert env is not None  # Already checked above, but satisfy type checker
-        require_cartesian(
-            env.coordinate_system,
-            "compute_step_lengths(metric='geodesic')",
-            why="It reads positions as the animal's allocentric positions, located "
-            "in the environment's bins.",
-            fix="use the allocentric environment the positions were recorded in, or "
-            "metric='euclidean'",
-        )
-        from neurospatial.behavior._environment_paths import EnvironmentPaths
+        from neurospatial.behavior._environment_paths import environment_paths
 
-        step_lengths = EnvironmentPaths(env).between(positions[:-1], positions[1:])
+        step_lengths = environment_paths(env, call="compute_step_lengths").between(
+            positions[:-1], positions[1:]
+        )
 
     return step_lengths
 
