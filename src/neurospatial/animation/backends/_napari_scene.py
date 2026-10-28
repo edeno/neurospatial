@@ -28,7 +28,7 @@ from neurospatial.animation.backends._napari_compat import (
     screen_point_options,
     set_spatial_units,
 )
-from neurospatial.environment._fastplotlib import _triangles
+from neurospatial.geometry import polygon_triangles
 
 
 def _disconnect(owner: Any, name: str, slot: Any) -> None:
@@ -793,7 +793,7 @@ class NapariScene:
                 # A napari polygon is one ring, so a polygon with holes is
                 # filled by its triangles, without edges, and outlined by its
                 # exterior and hole rings.
-                corners, _ = _triangles([region.data])
+                corners, _ = polygon_triangles([region.data])
                 faces = list(corners.reshape(-1, 3, 2)[..., ::-1])
                 rings = [
                     np.asarray(ring.coords)[:, ::-1]

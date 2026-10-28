@@ -153,6 +153,7 @@ from neurospatial.geometry._polygon import cell_polygons as cell_polygons
 from neurospatial.geometry._polygon import cells_from_locator as cells_from_locator
 from neurospatial.geometry._polygon import clip_binning as clip_binning
 from neurospatial.geometry._polygon import materialize_cells as materialize_cells
+from neurospatial.geometry._polygon import polygon_triangles as polygon_triangles
 from neurospatial.geometry._polygon_cells import ClipMapping as ClipMapping
 from neurospatial.geometry._polygon_cells import ClippedLocator as ClippedLocator
 from neurospatial.geometry._polygon_cells import PolygonCells as PolygonCells

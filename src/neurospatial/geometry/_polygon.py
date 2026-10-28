@@ -177,6 +177,35 @@ def cell_polygons(binning: Binning) -> tuple[Polygon, ...]:
     return polygons
 
 
+def polygon_triangles(
+    polygons: Sequence[Polygon],
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+    """Triangulate polygons, holes included.
+
+    The triangles cover each polygon exactly and leave its holes empty, so a
+    renderer that fills one ring per shape can draw any polygon from them.
+
+    Parameters
+    ----------
+    polygons : sequence of shapely.Polygon
+        Planar polygons, with or without holes.
+
+    Returns
+    -------
+    corners : ndarray of float64, shape (3 * n_triangles, 2)
+        The corners of each triangle.
+    owner : ndarray of intp, shape (n_triangles,)
+        The polygon each triangle belongs to.
+    """
+    triangles, owner = shapely.get_parts(
+        shapely.constrained_delaunay_triangles(np.asarray(polygons, dtype=object)),
+        return_index=True,
+    )
+    # Each triangle is a closed ring of four points; drop the repeated one.
+    corners = shapely.get_coordinates(triangles).reshape(-1, 4, 2)[:, :3]
+    return corners.reshape(-1, 2), owner
+
+
 def _parts(geometry: shapely.Geometry) -> list[Polygon]:
     if isinstance(geometry, Polygon):
         return [geometry] if geometry.area > 0 else []

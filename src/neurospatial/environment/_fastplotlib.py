@@ -32,7 +32,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial.environment._cache import CELL_POLYGONS
-from neurospatial.geometry import cell_polygons
+from neurospatial.geometry import cell_polygons, polygon_triangles
 from neurospatial.layout import _cell_shape
 
 if TYPE_CHECKING:
@@ -256,25 +256,6 @@ def _rectangles(
     return np.stack([np.column_stack(c) for c in corners], axis=1).reshape(-1, 2)
 
 
-def _triangles(polygons: Sequence[Any]) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
-    """Triangulate polygons, holes included.
-
-    Returns
-    -------
-    corners : ndarray of float64, shape (3 * n_triangles, 2)
-        The corners of each triangle.
-    owner : ndarray of intp, shape (n_triangles,)
-        The polygon each triangle belongs to.
-    """
-    triangles, owner = shapely.get_parts(
-        shapely.constrained_delaunay_triangles(np.asarray(polygons, dtype=object)),
-        return_index=True,
-    )
-    # Each triangle is a closed ring of four points; drop the repeated one.
-    corners = shapely.get_coordinates(triangles).reshape(-1, 4, 2)[:, :3]
-    return corners.reshape(-1, 2), owner
-
-
 def cell_mesh(env: Environment) -> Cells | None:
     """The bins of a 2-D environment as cells, or None to draw points.
 
@@ -295,7 +276,7 @@ def cell_mesh(env: Environment) -> Cells | None:
     )
     counts = np.bincount(owner, minlength=len(polygons))
     if shape == "polygons" or counts.min() != counts.max():
-        corners, owner = _triangles(polygons)
+        corners, owner = polygon_triangles(polygons)
         cells = _fans(corners, 3)
         return Cells(cells.positions, cells.triangles, np.repeat(owner, 3))
     # A closed ring repeats its first corner; drop it.
@@ -511,7 +492,7 @@ def _label(subplot: Any, text: str, at: ArrayLike, color: str) -> None:
 
 def _area(subplot: Any, polygon: Any, color: str, alpha: float) -> None:
     """A translucent polygon with its outline."""
-    corners, _ = _triangles([polygon])
+    corners, _ = polygon_triangles([polygon])
     cells = _fans(corners, 3)
     subplot.add_mesh(
         cells.positions,
