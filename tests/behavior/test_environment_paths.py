@@ -507,3 +507,29 @@ def test_fields_grown_only_to_the_start_bins_equal_whole_fields():
     kept = whole.between(starts, ends)
     assert np.isfinite(grown).sum() > 500
     np.testing.assert_array_equal(grown, kept)
+
+
+def test_field_cache_stays_within_its_budget(divider_arena, monkeypatch):
+    """With room for five fields, the cache never holds more, and pairwise
+    and per-target lengths equal those of an engine with room for all."""
+    import neurospatial.behavior._environment_paths as module
+
+    rng = np.random.default_rng(1)
+    points = rng.uniform(1.0, 99.0, (80, 2))
+    first, second = rng.integers(0, 80, (2, 500))
+    roomy = module.environment_paths(divider_arena, call="test")
+    expected_pairs = roomy.pairwise(points).between(first, second)
+    expected_to = [roomy.to_point(points, target) for target in points[:12]]
+
+    monkeypatch.setattr(module, "_FIELD_CACHE_BYTES", 5 * 16 * divider_arena.n_bins)
+    tight = module._OpenPaths(divider_arena)
+    fields = tight._fields
+    assert fields.limit == 5
+    pairs = tight.pairwise(points)
+    assert fields.length.shape[0] <= 5
+    np.testing.assert_array_equal(pairs.between(first, second), expected_pairs)
+    for target, expected in zip(points[:12], expected_to, strict=True):
+        np.testing.assert_array_equal(tight.to_point(points, target), expected)
+        assert fields.n_kept <= fields.length.shape[0] <= 5
+    tight.prepare(tight.bins(points))
+    assert fields.n_kept == 5

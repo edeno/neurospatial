@@ -99,6 +99,9 @@ _PROBE_CHUNK = 1_000_000
 _FIELD_CACHE_BYTES = 256_000_000
 # Targets whose fields are grown together, bounding the working memory.
 _FIELD_BATCH = 128
+# Coordinates of center differences held at once while building pair
+# tables, bounding that (targets, n_bins, n_dims) temporary.
+_PAIR_TABLE_VALUES = 4_000_000
 # Multi-bin source sets whose fields are kept.
 _SOURCE_CACHE_LIMIT = 8
 # Relative tolerance below which two bin-graph distances are equal.
@@ -489,7 +492,8 @@ class _OpenPaths(EnvironmentPaths):
         return _OpenPairDistances(self, points)
 
     def prepare(self, bins: NDArray[np.intp]) -> None:
-        self._fields.ensure(self, np.unique(bins[bins >= 0]))
+        # As many fields as the cache keeps; the rest grow when queried.
+        self._fields.ensure(self, np.unique(bins[bins >= 0])[: self._fields.limit])
 
     def from_bins(self, source_bins: NDArray[np.intp]) -> NDArray[np.float64]:
         source_bins = np.asarray(source_bins, dtype=np.intp)
@@ -1363,39 +1367,49 @@ class _OpenPairDistances(PairDistances):
 
     def __init__(self, paths: _OpenPaths, points: NDArray[np.float64]) -> None:
         super().__init__(paths, points)
-        self._centers = paths._centers
+        centers = self._centers = paths._centers
+        n_bins, n_dims = centers.shape
         roots = np.unique(self._bins[self._bins >= 0])
-        paths._fields.ensure(paths, roots)
-        fields = paths._fields
-        rows = fields.row_of_root[roots]
-        n_bins = paths._n_bins
         # Table row of each target bin.
         self._row_of = np.full(n_bins, -1, dtype=np.intp)
         self._row_of[roots] = np.arange(roots.size)
-        anchor = fields.anchor[rows].astype(np.intp)
-        length = fields.length[rows]
-        table_rows = np.arange(roots.size)[:, None]
+        shape = (roots.size, n_bins)
         # Straight: same bin, connected bins, or the bin center sees the
         # target bin center.
-        straight = anchor == roots[:, None]
-        straight[np.arange(roots.size), roots] = True
-        neighbors = paths._neighbors[roots]
-        has = neighbors >= 0
-        straight[np.nonzero(has)[0], neighbors[has]] = True
-        corner = np.maximum(anchor, 0)
-        lead = fields.lead[rows[:, None], corner].astype(np.intp)
-        lead = np.maximum(lead, 0)
-        centers = paths._centers
+        self._straight = np.empty(shape, dtype=bool)
+        self._corner = np.empty(shape, dtype=np.int32)
+        self._lead = np.empty(shape, dtype=np.int32)
         # Path length from the corner on, without its last leg to the target
         # bin center: d = |p - corner| + rest + |lead - target|.
-        rest = length[table_rows, corner] - np.linalg.norm(
-            centers[lead] - centers[roots][:, None, :], axis=2
-        )
-        rest[anchor < 0] = np.inf
-        self._straight = straight
-        self._corner = corner
-        self._lead = lead
-        self._rest = rest
+        self._rest = np.empty(shape)
+        # Targets whose fields are kept at once, and whose center
+        # differences are taken at once.
+        fields = paths._fields
+        step = max(1, _PAIR_TABLE_VALUES // max(n_bins * n_dims, 1))
+        for lo in range(0, roots.size, fields.limit):
+            part = roots[lo : lo + fields.limit]
+            fields.ensure(paths, part)
+            rows = fields.row_of_root[part]
+            table = slice(lo, lo + part.size)
+            anchor = fields.anchor[rows]
+            straight = self._straight[table]
+            straight[:] = anchor == part[:, None]
+            straight[np.arange(part.size), part] = True
+            neighbors = paths._neighbors[part]
+            has = neighbors >= 0
+            straight[np.nonzero(has)[0], neighbors[has]] = True
+            corner = self._corner[table]
+            np.maximum(anchor, 0, out=corner)
+            lead = self._lead[table]
+            np.maximum(fields.lead[rows[:, None], corner], 0, out=lead)
+            rest = self._rest[table]
+            rest[:] = fields.length[rows[:, None], corner]
+            for k in range(0, part.size, step):
+                rest[k : k + step] -= np.linalg.norm(
+                    centers[lead[k : k + step]] - centers[part[k : k + step], None, :],
+                    axis=2,
+                )
+            rest[anchor < 0] = np.inf
 
     def _between(
         self, first: NDArray[np.intp], second: NDArray[np.intp]
@@ -1438,45 +1452,66 @@ class _TrackPairDistances(PairDistances):
 
 
 class _RootFields:
-    """Kept single-bin fields, stacked so pairs gather from many at once."""
+    """Kept single-bin fields, stacked so pairs gather from many at once.
+
+    The fields fill the first ``n_kept`` rows of arrays whose capacity
+    doubles as needed, up to ``limit`` rows (``_FIELD_CACHE_BYTES``).
+    """
 
     def __init__(self, n_bins: int) -> None:
         self.n_bins = n_bins
         self.limit = max(1, _FIELD_CACHE_BYTES // (16 * max(n_bins, 1)))
         self.row_of_root = np.full(n_bins, -1, dtype=np.intp)
+        self.n_kept = 0
         self.length = np.empty((0, n_bins))
         self.anchor = np.empty((0, n_bins), dtype=np.int32)
         self.lead = np.empty((0, n_bins), dtype=np.int32)
 
     def ensure(self, paths: _OpenPaths, roots: NDArray[np.intp]) -> None:
-        """Grow and keep the field of every root not yet kept."""
+        """Grow and keep the field of every root not yet kept.
+
+        Parameters
+        ----------
+        paths : _OpenPaths
+            The engine that grows the fields.
+        roots : ndarray of int, shape (n_roots,)
+            Distinct bins, at most ``limit`` of them. When the kept fields
+            and the missing ones would exceed ``limit``, only the kept
+            fields of ``roots`` stay.
+        """
         missing = roots[self.row_of_root[roots] < 0]
         if not missing.size:
             return
-        if self.length.shape[0] + missing.size > self.limit:
+        if self.n_kept + missing.size > self.limit:
             # Start over, keeping only what this request needs.
             needed = roots[self.row_of_root[roots] >= 0]
             rows = self.row_of_root[needed]
-            self.length = self.length[rows]
-            self.anchor = self.anchor[rows]
-            self.lead = self.lead[rows]
+            for stack in (self.length, self.anchor, self.lead):
+                stack[: needed.size] = stack[rows]
             self.row_of_root[:] = -1
             self.row_of_root[needed] = np.arange(needed.size)
-        parts = [
-            paths._grow(
-                [
-                    missing[i : i + 1]
-                    for i in range(lo, min(lo + _FIELD_BATCH, missing.size))
-                ],
-                single_roots=True,
+            self.n_kept = needed.size
+        size = self.n_kept + missing.size
+        if size > self.length.shape[0]:
+            capacity = min(self.limit, max(size, 2 * self.length.shape[0]))
+            n = self.n_kept
+            length = np.empty((capacity, self.n_bins))
+            anchor = np.empty((capacity, self.n_bins), dtype=np.int32)
+            lead = np.empty((capacity, self.n_bins), dtype=np.int32)
+            length[:n], anchor[:n], lead[:n] = (
+                self.length[:n],
+                self.anchor[:n],
+                self.lead[:n],
             )
-            for lo in range(0, missing.size, _FIELD_BATCH)
-        ]
-        n_kept = self.length.shape[0]
-        self.length = np.vstack([self.length, *(p[0] for p in parts)])
-        self.anchor = np.vstack([self.anchor, *(p[1] for p in parts)])
-        self.lead = np.vstack([self.lead, *(p[2] for p in parts)])
-        self.row_of_root[missing] = n_kept + np.arange(missing.size)
+            self.length, self.anchor, self.lead = length, anchor, lead
+        for lo in range(0, missing.size, _FIELD_BATCH):
+            batch = missing[lo : lo + _FIELD_BATCH]
+            start, stop = self.n_kept, self.n_kept + batch.size
+            self.length[start:stop], self.anchor[start:stop], self.lead[start:stop] = (
+                paths._grow(list(batch[:, None]), single_roots=True)
+            )
+            self.row_of_root[batch] = np.arange(start, stop)
+            self.n_kept = stop
 
 
 class _TrackPaths(EnvironmentPaths):
