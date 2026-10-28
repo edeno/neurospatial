@@ -1383,66 +1383,76 @@ class _OpenPaths(EnvironmentPaths):
             The nodes that have no final nearer neighbor yet (they wait).
         """
         n_bins = self._n_bins
+        centers = self._centers
         nodes = np.sort(nodes)
         starts = in_ptr[nodes]
         counts = in_ptr[nodes + 1] - starts
-        node = np.repeat(nodes, counts)
+        # Each in-edge (node, parent), with the node's slot in ``nodes``.
+        slot = np.repeat(np.arange(nodes.size), counts)
         parent = in_src[np.repeat(starts, counts) + ragged_arange(counts)]
         final = settled[parent]
-        node, parent = node[final], parent[final]
+        slot, parent = slot[final], parent[final]
         ready = np.zeros(nodes.size, dtype=bool)
-        ready[np.searchsorted(nodes, node)] = True
+        ready[slot] = True
         waiting: NDArray[np.intp] = nodes[~ready]
-        nodes = nodes[ready]
-        if not nodes.size:
+        if root_of_field is not None and slot.size:
+            # A visible root is the straight line, which no chain beats even
+            # by rounding: it is chosen outright, so a node that sees its
+            # root needs no other candidate.
+            ready_at = np.flatnonzero(ready)
+            straight = nodes[ready_at]
+            straight_field = straight // n_bins
+            straight_bin = straight - straight_field * n_bins
+            root = root_of_field[straight_field]
+            sees, cost = self._trace(
+                centers[straight_bin], centers[root], straight_bin, root, rate
+            )
+            straight, root = straight[sees], root[sees]
+            length[straight] = cost[sees] + length[straight_field[sees] * n_bins + root]
+            anchor[straight] = root
+            lead[straight] = straight_bin[sees]
+            settled[straight] = True
+            ready[ready_at[sees]] = False
+            keep = ready[slot]
+            slot, parent = slot[keep], parent[keep]
+        if not slot.size:
             return waiting
+        node = nodes[slot]
         field = node // n_bins
         node_bin = node - field * n_bins
         parent_bin = parent - field * n_bins
         # Along the graph edge to a nearer neighbor: always allowed.
-        edge = np.linalg.norm(
-            self._centers[node_bin] - self._centers[parent_bin], axis=1
-        )
+        edge = np.linalg.norm(centers[node_bin] - centers[parent_bin], axis=1)
         if rate is not None:
             edge = edge * 0.5 * (rate[node_bin] + rate[parent_bin])
         edge_total = edge + length[parent]
-        # Straight to a nearer neighbor's anchor, and (single roots) to the
-        # root, when visible.
-        corner_node = node
-        corner_bin = anchor[parent].astype(np.intp)
-        if root_of_field is not None:
-            corner_node = np.r_[corner_node, nodes]
-            corner_bin = np.r_[corner_bin, root_of_field[nodes // n_bins]]
-        keys = np.unique(corner_node * n_bins + corner_bin)
+        # Straight to a nearer neighbor's anchor, when visible (not the
+        # root: these nodes do not see it).
+        keys = np.unique(node * n_bins + anchor[parent].astype(np.intp))
         cand_node, cand_bin = keys // n_bins, keys % n_bins
-        cand_node_bin = cand_node % n_bins
+        cand_field = cand_node // n_bins
+        cand_node_bin = cand_node - cand_field * n_bins
         keep = cand_bin != cand_node_bin
-        cand_node, cand_bin, cand_node_bin = (
+        if root_of_field is not None:
+            keep &= cand_bin != root_of_field[cand_field]
+        cand_node, cand_bin, cand_field, cand_node_bin = (
             cand_node[keep],
             cand_bin[keep],
+            cand_field[keep],
             cand_node_bin[keep],
         )
         visible, cost = self._trace(
-            self._centers[cand_node_bin],
-            self._centers[cand_bin],
-            cand_node_bin,
-            cand_bin,
-            rate,
+            centers[cand_node_bin], centers[cand_bin], cand_node_bin, cand_bin, rate
         )
         cand_node, cand_bin = cand_node[visible], cand_bin[visible]
-        cand_field = cand_node // n_bins
-        cand_total = cost[visible] + length[cand_field * n_bins + cand_bin]
-        # Rank per node: a visible root first (it is the straight line, which
-        # no chain beats even by rounding), then the lowest total, anchors
-        # before graph edges, then the lower bin.
+        cand_total = cost[visible] + length[cand_field[visible] * n_bins + cand_bin]
+        # Rank per node: the lowest total, anchors before graph edges, then
+        # the lower bin.
         all_node = np.r_[cand_node, node]
         all_bin = np.r_[cand_bin, parent_bin]
         all_total = np.r_[cand_total, edge_total]
         via_edge = np.r_[np.zeros(cand_node.size), np.ones(node.size)]
-        not_root = np.ones(all_node.size)
-        if root_of_field is not None:
-            not_root[: cand_node.size] = cand_bin != root_of_field[cand_field]
-        order = np.lexsort((all_bin, via_edge, all_total, not_root, all_node))
+        order = np.lexsort((all_bin, via_edge, all_total, all_node))
         order = order[np.r_[True, np.diff(all_node[order]) != 0]]
         chosen_node = all_node[order]
         chosen_bin = all_bin[order]
