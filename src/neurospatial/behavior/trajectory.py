@@ -24,7 +24,12 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._angles import cross_2d, signed_turns, unit_vector_angles
+from neurospatial._angles import (
+    cross_2d,
+    signed_turns,
+    unit_vector_angles,
+    wrap_angle,
+)
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
@@ -653,7 +658,7 @@ def _interpolate_heading_circular(
     anchors = np.isfinite(heading) & ~fill
     unwrapped = np.unwrap(heading[anchors])
     filled = np.interp(times[fill], times[anchors], unwrapped)
-    result[fill] = np.pi - np.mod(np.pi - filled, 2.0 * np.pi)
+    result[fill] = wrap_angle(filled)
     return result
 
 
