@@ -290,7 +290,7 @@ def test_vte_trial_uses_only_entry_run(pause_track):
         )
     # The entry run is stationary: an observed zero speed and no heading.
     assert result.mean_speed == 0
-    assert result.min_speed == 0
+    assert result.min_observed_speed == 0
     assert np.isnan(result.head_sweep_magnitude)
 
 

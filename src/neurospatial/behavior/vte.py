@@ -126,9 +126,10 @@ class VTETrialResult(ResultMixin):
         Mean speed in pre-decision window (environment units/s).
         NaN when the window has no observed interval (fewer than two
         consecutive observed samples); 0.0 is a measured stop.
-    min_speed : float
-        Minimum speed in pre-decision window (units/s).
-        Near-zero indicates a pause. NaN like ``mean_speed``.
+    min_observed_speed : float
+        Minimum observed speed in pre-decision window (units/s).
+        Near-zero indicates a pause. NaN like ``mean_speed``. Not to be
+        confused with the ``min_speed`` heading gate passed to the analysis.
     z_speed_inverse : float or None
         Z-scored inverse speed (higher = slower, more VTE-like).
         None if session statistics not computed; NaN when ``mean_speed`` is
@@ -170,7 +171,7 @@ class VTETrialResult(ResultMixin):
     head_sweep_magnitude: float
     z_head_sweep: float | None
     mean_speed: float
-    min_speed: float
+    min_observed_speed: float
     z_speed_inverse: float | None
     vte_index: float | None
     is_vte: bool | None
@@ -200,7 +201,7 @@ class VTETrialResult(ResultMixin):
             "head_sweep_magnitude": self.head_sweep_magnitude,
             "z_head_sweep": self.z_head_sweep,
             "mean_speed": self.mean_speed,
-            "min_speed": self.min_speed,
+            "min_observed_speed": self.min_observed_speed,
             "z_speed_inverse": self.z_speed_inverse,
             "vte_index": self.vte_index,
             "is_vte": self.is_vte,
@@ -253,7 +254,7 @@ class VTESessionResult(ResultMixin):
     ...         head_sweep_magnitude=head_sweep,
     ...         z_head_sweep=None,
     ...         mean_speed=10.0,
-    ...         min_speed=8.0,
+    ...         min_observed_speed=8.0,
     ...         z_speed_inverse=None,
     ...         vte_index=None,
     ...         is_vte=is_vte,
@@ -806,7 +807,7 @@ def compute_vte_trial(
         VTE metrics for the trial.
         Note: z-scores and classification are None for single trial analysis.
         Use compute_vte_session() for session-level analysis with z-scoring.
-        ``mean_speed`` and ``min_speed`` are NaN when the window has no
+        ``mean_speed`` and ``min_observed_speed`` are NaN when the window has no
         observed interval, and ``head_sweep_magnitude`` is NaN when no
         movement heading was observed.
 
@@ -900,7 +901,7 @@ def compute_vte_trial(
         head_sweep_magnitude=head_sweep,
         z_head_sweep=None,  # Not computed for single trial
         mean_speed=mean_spd,
-        min_speed=min_spd,
+        min_observed_speed=min_spd,
         z_speed_inverse=None,
         vte_index=None,
         is_vte=None,
@@ -1244,7 +1245,7 @@ def compute_vte_session(
                 head_sweep_magnitude=head_sweeps_arr[i],
                 z_head_sweep=float(z_head_sweeps[i]),
                 mean_speed=speeds_arr[i],
-                min_speed=raw_min_speeds[i],
+                min_observed_speed=raw_min_speeds[i],
                 z_speed_inverse=float(z_speed_inv[i]),
                 vte_index=float(vte_idx),
                 is_vte=is_vte,

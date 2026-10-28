@@ -369,7 +369,7 @@ class TestVTETrialResult:
             head_sweep_magnitude=2.5,
             z_head_sweep=1.2,
             mean_speed=15.0,
-            min_speed=2.0,
+            min_observed_speed=2.0,
             z_speed_inverse=0.8,
             vte_index=1.0,
             is_vte=True,
@@ -387,7 +387,7 @@ class TestVTETrialResult:
             head_sweep_magnitude=2.5,
             z_head_sweep=1.2,
             mean_speed=15.0,
-            min_speed=2.0,
+            min_observed_speed=2.0,
             z_speed_inverse=0.8,
             vte_index=1.0,
             is_vte=True,
@@ -441,7 +441,7 @@ class TestVTESessionResult:
             head_sweep_magnitude=2.5,
             z_head_sweep=1.2,
             mean_speed=15.0,
-            min_speed=2.0,
+            min_observed_speed=2.0,
             z_speed_inverse=0.8,
             vte_index=1.0,
             is_vte=True,
@@ -452,7 +452,7 @@ class TestVTESessionResult:
             head_sweep_magnitude=0.5,
             z_head_sweep=-0.8,
             mean_speed=30.0,
-            min_speed=25.0,
+            min_observed_speed=25.0,
             z_speed_inverse=-0.5,
             vte_index=-0.6,
             is_vte=False,
@@ -463,7 +463,7 @@ class TestVTESessionResult:
             head_sweep_magnitude=3.0,
             z_head_sweep=1.5,
             mean_speed=10.0,
-            min_speed=1.0,
+            min_observed_speed=1.0,
             z_speed_inverse=1.2,
             vte_index=1.3,
             is_vte=True,
@@ -761,7 +761,7 @@ class TestComputeVTETrial:
             times, positions, entry_time=1.05, window_duration=0.1, min_speed=0.1
         )
         assert np.isnan(result.mean_speed)
-        assert np.isnan(result.min_speed)
+        assert np.isnan(result.min_observed_speed)
         assert np.isnan(result.head_sweep_magnitude)
 
     def test_still_window_has_zero_speed_and_no_head_sweep(self):
@@ -776,7 +776,7 @@ class TestComputeVTETrial:
                 times, positions, entry_time=2.0, window_duration=1.0, min_speed=1.0
             )
         assert result.mean_speed == 0.0
-        assert result.min_speed == 0.0
+        assert result.min_observed_speed == 0.0
         assert np.isnan(result.head_sweep_magnitude)
 
     def test_break_before_equals_separate_recording(self):

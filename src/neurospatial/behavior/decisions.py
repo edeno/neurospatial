@@ -119,8 +119,8 @@ __all__ = [
 # =============================================================================
 
 
-@dataclass(frozen=True)
-class PreDecisionMetrics:
+@dataclass(frozen=True, repr=False)
+class PreDecisionMetrics(ResultMixin):
     """Metrics from the pre-decision window.
 
     The pre-decision window is the time period immediately before the animal
@@ -131,9 +131,10 @@ class PreDecisionMetrics:
     mean_speed : float
         Mean speed in pre-decision window (environment units/s).
         Low values may indicate pausing/deliberation.
-    min_speed : float
-        Minimum speed in window (units/s).
-        Near-zero indicates a pause, common during VTE.
+    min_observed_speed : float
+        Minimum observed speed in the window (units/s).
+        Near-zero indicates a pause, common during VTE. Not to be confused
+        with the ``min_speed`` heading gate passed to the analysis.
     heading_mean_direction : float
         Circular mean of heading direction (radians, -pi to pi).
     heading_circular_variance : float
@@ -141,8 +142,9 @@ class PreDecisionMetrics:
         High values (> 0.5) indicate variable heading - possible scanning.
         Low values indicate stable, consistent heading.
     heading_mean_resultant_length : float
-        Concentration of heading distribution, range [0, 1].
-        Inverse of variance: high = concentrated, low = dispersed.
+        Concentration of heading distribution, range [0, 1]:
+        ``1 - heading_circular_variance``. High = concentrated, low =
+        dispersed.
     window_duration : float
         Time from the first to the last observed sample in the window
         (seconds); 0.0 with fewer than two. Shorter than requested when the
@@ -177,7 +179,7 @@ class PreDecisionMetrics:
     """
 
     mean_speed: float
-    min_speed: float
+    min_observed_speed: float
     heading_mean_direction: float
     heading_circular_variance: float
     heading_mean_resultant_length: float
@@ -197,28 +199,55 @@ class PreDecisionMetrics:
     def suggests_deliberation(
         self,
         variance_threshold: float = 0.5,
-        min_speed: float = 10.0,
+        max_mean_speed: float = 10.0,
     ) -> bool:
         """Check if metrics suggest deliberative behavior.
+
+        A threshold screen, not a statistical test.
 
         Parameters
         ----------
         variance_threshold : float, default=0.5
-            Circular variance above this suggests head scanning.
-        min_speed : float, default=10.0
-            Mean speed below this (units/s) suggests slowing.
+            Circular variance at or above this suggests head scanning.
+        max_mean_speed : float, default=10.0
+            Mean speed at or below this (units/s) suggests slowing. A ceiling
+            on ``mean_speed``, unrelated to the ``min_speed`` heading gate.
 
         Returns
         -------
         bool
-            True if valid observations show high heading variance AND low
-            speed. False for missing evidence; inspect ``is_valid`` to
-            distinguish missing evidence from an observed negative result.
+            True if valid observations show ``heading_circular_variance >=
+            variance_threshold`` AND ``mean_speed <= max_mean_speed``. False
+            for missing evidence; inspect ``is_valid`` to distinguish missing
+            evidence from an observed negative result.
         """
         return (
             self.is_valid
-            and self.heading_circular_variance > variance_threshold
-            and self.mean_speed < min_speed
+            and self.heading_circular_variance >= variance_threshold
+            and self.mean_speed <= max_mean_speed
+        )
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar pre-decision metrics.
+
+        For a human-readable string use ``str(result)``.
+        """
+        return {
+            "mean_speed": self.mean_speed,
+            "min_observed_speed": self.min_observed_speed,
+            "heading_mean_direction": self.heading_mean_direction,
+            "heading_circular_variance": self.heading_circular_variance,
+            "heading_mean_resultant_length": self.heading_mean_resultant_length,
+            "window_duration": self.window_duration,
+            "n_samples": self.n_samples,
+            "is_valid": self.is_valid,
+        }
+
+    def __str__(self) -> str:
+        return (
+            f"Pre-decision window: {self.n_samples} samples over "
+            f"{self.window_duration:.2f} s, mean speed={self.mean_speed:.1f}, "
+            f"heading variance={self.heading_circular_variance:.2f}"
         )
 
 
@@ -374,6 +403,7 @@ class DecisionAnalysisResult(ResultMixin):
         return {
             "entry_time": self.entry_time,
             "pre_decision_mean_speed": self.pre_decision.mean_speed,
+            "pre_decision_min_observed_speed": self.pre_decision.min_observed_speed,
             "pre_decision_heading_variance": (
                 self.pre_decision.heading_circular_variance
             ),
@@ -891,7 +921,7 @@ def pre_decision_speed_stats(
     -------
     mean_speed : float
         Mean instantaneous speed (units/s).
-    min_speed : float
+    min_observed_speed : float
         Minimum instantaneous speed (units/s).
 
     Raises
@@ -923,10 +953,10 @@ def pre_decision_speed_stats(
     >>> x = np.r_[10 * times[:10], 10 * times[10:] + 50.0]  # cm
     >>> positions = np.column_stack([x, np.zeros(20)])
     >>> new_recording = times == 1.0
-    >>> mean_speed, min_speed = pre_decision_speed_stats(
+    >>> mean_speed, min_observed_speed = pre_decision_speed_stats(
     ...     times, positions, break_before=new_recording
     ... )
-    >>> round(mean_speed, 6), round(min_speed, 6)
+    >>> round(mean_speed, 6), round(min_observed_speed, 6)
     (10.0, 10.0)
     >>> round(pre_decision_speed_stats(times, positions)[0], 1)
     35.0
@@ -1096,7 +1126,7 @@ def _pre_decision_metrics(
     if observed_times.size < 2:
         return PreDecisionMetrics(
             mean_speed=np.nan,
-            min_speed=np.nan,
+            min_observed_speed=np.nan,
             heading_mean_direction=np.nan,
             heading_circular_variance=np.nan,
             heading_mean_resultant_length=np.nan,
@@ -1110,12 +1140,12 @@ def _pre_decision_metrics(
     mean_dir, circ_var, mrl = _heading_stats(
         window_times, window_positions, window_mask, min_speed=min_speed
     )
-    mean_speed, min_speed_val = _speed_stats(
+    mean_speed, min_observed_speed = _speed_stats(
         window_times, window_positions, window_mask
     )
     return PreDecisionMetrics(
         mean_speed=mean_speed,
-        min_speed=min_speed_val,
+        min_observed_speed=min_observed_speed,
         heading_mean_direction=mean_dir,
         heading_circular_variance=circ_var,
         heading_mean_resultant_length=mrl,

@@ -33,7 +33,7 @@ def _vte_trial() -> VTETrialResult:
         head_sweep_magnitude=1.5,
         z_head_sweep=2.0,
         mean_speed=8.0,
-        min_speed=1.0,
+        min_observed_speed=1.0,
         z_speed_inverse=1.2,
         vte_index=1.6,
         is_vte=True,
@@ -67,7 +67,7 @@ def _boundary() -> DecisionBoundaryMetrics:
 def _pre_decision() -> PreDecisionMetrics:
     return PreDecisionMetrics(
         mean_speed=8.0,
-        min_speed=1.0,
+        min_observed_speed=1.0,
         heading_mean_direction=0.1,
         heading_circular_variance=0.4,
         heading_mean_resultant_length=0.6,

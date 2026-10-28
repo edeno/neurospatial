@@ -290,7 +290,7 @@ def test_composites_forward_coarse_sampling_optout(continuous_recording):
         min_speed=5.0,
     )
     assert metrics.mean_speed == expected_mean
-    assert metrics.min_speed == expected_min
+    assert metrics.min_observed_speed == expected_min
     assert metrics.heading_mean_resultant_length == expected_heading[2]
     trial = compute_vte_trial(
         times, positions, entry, window_duration=duration, max_gap=None, min_speed=5.0

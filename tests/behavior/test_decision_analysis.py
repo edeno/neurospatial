@@ -77,7 +77,7 @@ class TestPreDecisionMetrics:
 
         result = PreDecisionMetrics(
             mean_speed=5.0,  # Low speed
-            min_speed=0.5,
+            min_observed_speed=0.5,
             heading_mean_direction=0.0,
             heading_circular_variance=0.7,  # High variance
             heading_mean_resultant_length=0.3,
@@ -85,7 +85,7 @@ class TestPreDecisionMetrics:
             n_samples=30,
         )
 
-        assert result.suggests_deliberation(variance_threshold=0.5, min_speed=10.0)
+        assert result.suggests_deliberation(variance_threshold=0.5, max_mean_speed=10.0)
 
     def test_suggests_deliberation_low_variance_high_speed(self):
         """Test suggests_deliberation returns False for low variance + high speed."""
@@ -93,7 +93,7 @@ class TestPreDecisionMetrics:
 
         result = PreDecisionMetrics(
             mean_speed=20.0,  # High speed
-            min_speed=15.0,
+            min_observed_speed=15.0,
             heading_mean_direction=0.0,
             heading_circular_variance=0.2,  # Low variance
             heading_mean_resultant_length=0.8,
@@ -101,7 +101,45 @@ class TestPreDecisionMetrics:
             n_samples=30,
         )
 
-        assert not result.suggests_deliberation(variance_threshold=0.5, min_speed=10.0)
+        assert not result.suggests_deliberation(
+            variance_threshold=0.5, max_mean_speed=10.0
+        )
+
+    def test_suggests_deliberation_is_inclusive_at_thresholds(self):
+        """A screen at exactly the variance floor and speed ceiling passes."""
+        from neurospatial.behavior.decisions import PreDecisionMetrics
+
+        result = PreDecisionMetrics(
+            mean_speed=10.0,
+            min_observed_speed=2.0,
+            heading_mean_direction=0.0,
+            heading_circular_variance=0.5,
+            heading_mean_resultant_length=0.5,
+            window_duration=1.0,
+            n_samples=30,
+        )
+        assert result.suggests_deliberation(variance_threshold=0.5, max_mean_speed=10.0)
+        assert not result.suggests_deliberation(
+            variance_threshold=0.5, max_mean_speed=9.9
+        )
+
+    def test_summary_and_repr(self):
+        from neurospatial.behavior.decisions import PreDecisionMetrics
+
+        result = PreDecisionMetrics(
+            mean_speed=10.0,
+            min_observed_speed=2.0,
+            heading_mean_direction=0.0,
+            heading_circular_variance=0.25,
+            heading_mean_resultant_length=0.75,
+            window_duration=1.0,
+            n_samples=30,
+        )
+        summary = result.summary()
+        assert summary["min_observed_speed"] == 2.0
+        assert summary["is_valid"] is True
+        assert repr(result).startswith("PreDecisionMetrics(")
+        assert "30 samples" in str(result)
 
 
 # =============================================================================
@@ -166,7 +204,7 @@ class TestDecisionAnalysisResult:
 
         return PreDecisionMetrics(
             mean_speed=10.0,
-            min_speed=5.0,
+            min_observed_speed=5.0,
             heading_mean_direction=0.0,
             heading_circular_variance=0.1,
             heading_mean_resultant_length=0.9,
