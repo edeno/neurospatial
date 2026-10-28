@@ -151,10 +151,8 @@ def test_broken_ring_associations_are_rejected(shapes, match):
 
 def test_shapes_compare_by_value_including_missing_metadata():
     vertices = np.array([[0.0, 0.0], [4.0, 0.0], [4.0, 3.0]])
-    shape = AnnotationShape(vertices, identifier="ring", metadata={"depth": np.nan})
-    same = AnnotationShape(
-        vertices.copy(), identifier="ring", metadata={"depth": np.nan}
-    )
+    shape = AnnotationShape(vertices, identifier="ring", metadata={"depth": None})
+    same = AnnotationShape(vertices.copy(), identifier="ring", metadata={"depth": None})
     assert shape == same
     assert hash(shape) == hash(same)
     assert shape != AnnotationShape(vertices + 1, identifier="ring")
@@ -168,17 +166,17 @@ def test_non_json_metadata_cannot_enter_a_snapshot(metadata):
         AnnotationShape(np.zeros((3, 2)), metadata=metadata)
 
 
-def test_non_finite_metadata_survives_save_and_load(tmp_path):
-    # Region metadata allows NaN for a missing value; a draft must keep it.
-    shape = AnnotationShape(
-        np.zeros((3, 2)),
-        metadata={"missing": np.nan, "limits": [-np.inf, np.inf]},
-    )
+@pytest.mark.parametrize("value", [np.nan, np.inf, [-np.inf, 1.0]])
+def test_non_finite_metadata_is_refused_like_region_metadata(value):
+    with pytest.raises(ValueError, match="finite"):
+        AnnotationShape(np.zeros((3, 2)), metadata={"depth": value})
+
+
+def test_missing_metadata_survives_save_and_load(tmp_path):
+    shape = AnnotationShape(np.zeros((3, 2)), metadata={"missing": None})
     path = tmp_path / "draft.nsp"
     AnnotationProject(np.zeros((4, 4, 3), dtype=np.uint8), shapes=[shape]).save(path)
-    metadata = AnnotationProject.load(path).shapes[0].metadata
-    assert np.isnan(metadata["missing"])
-    assert tuple(metadata["limits"]) == (-np.inf, np.inf)
+    assert AnnotationProject.load(path).shapes[0].metadata["missing"] is None
 
 
 @pytest.mark.parametrize(
