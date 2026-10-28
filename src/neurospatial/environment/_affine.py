@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 from itertools import product
 
@@ -13,6 +14,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial.environment._cache import AnalysisCache
 from neurospatial.environment._fields import with_cached_faces
 from neurospatial.environment._publication import _Derivation
+from neurospatial.environment._regions import _relabeled_region
 from neurospatial.geometry import (
     Arena,
     Binning,
@@ -30,12 +32,19 @@ def _apply_transform(
     transform: object,
     *,
     binning: Binning,
-    regions: Regions,
+    regions: Mapping[str, Region],
     landmarks: Landmarks,
     arena: Arena,
     cache: AnalysisCache,
+    units: str | None,
+    old_units: str | None,
 ) -> _Derivation:
-    """Transform owned cells, their bounds, arenas, regions and landmarks together."""
+    """Transform owned cells, their bounds, arenas, regions and landmarks together.
+
+    ``units`` is the unit label of the transformed coordinates and
+    ``old_units`` the label before; see :func:`_transformed_region` for how
+    regions that record their units in ``metadata["coord_system"]`` follow.
+    """
     n_dims = binning.bins.n_dims
     if not isinstance(transform, AffineND):
         shape = np.shape(transform) if isinstance(transform, np.ndarray) else None
@@ -94,12 +103,16 @@ def _apply_transform(
     # The build choices keep their lengths; record how much longer those
     # lengths are now, when the transform scales every direction alike.
     kind, scale, _ = _classification(np.asarray(transform.A)[:-1, :-1])
+    keeps_lengths = kind in ("translation", "similarity") and abs(scale - 1.0) <= 1e-9
     return _Derivation(
         transformed,
         "apply_transform",
         length_scale=scale if kind in ("translation", "similarity") else None,
         regions=Regions(
-            _transformed_region(region, transform) for region in regions.values()
+            _transformed_region(
+                region, transform, units, old_units, keeps_lengths=keeps_lengths
+            )
+            for region in regions.values()
         ),
         landmarks=Landmarks(
             _transformed_landmark(landmark, transform)
@@ -119,8 +132,24 @@ def _transformed_landmark(landmark: Landmark, transform: AffineND) -> Landmark:
     return Landmark(landmark.name, landmark.kind, data, landmark.metadata)
 
 
-def _transformed_region(region: Region, transform: AffineND) -> Region:
-    """Map a point or polygon region through ``transform``, marking it transformed."""
+def _transformed_region(
+    region: Region,
+    transform: AffineND,
+    units: str | None,
+    old_units: str | None,
+    *,
+    keeps_lengths: bool,
+) -> Region:
+    """Map a point or polygon region through ``transform``, marking it transformed.
+
+    A transform that keeps lengths converts no units, so a recorded
+    ``metadata["coord_system"]`` is relabelled as by ``with_metadata`` (see
+    :func:`~neurospatial.environment._regions._relabeled_region`). One that
+    changes lengths converts the region with the environment: the label
+    becomes ``units``, or is dropped when there is no new label.
+    """
+    if keeps_lengths:
+        region = _relabeled_region(region, old_units, units)
     if region.kind == "point":
         data: NDArray[np.float64] | Polygon = transform(
             np.asarray(region.data).reshape(1, -1)
@@ -129,9 +158,10 @@ def _transformed_region(region: Region, transform: AffineND) -> Region:
         # Region construction guarantees a Polygon here. The arena and the
         # cells map their vertices the same way, so shared boundaries agree.
         data = mapped_geometry(region.data, transform.A)
-    return Region(
-        name=region.name,
-        kind=region.kind,
-        data=data,
-        metadata={**region.metadata, "transformed": True},
-    )
+    metadata = {**region.metadata, "transformed": True}
+    if "coord_system" in metadata and not keeps_lengths:
+        if units is not None:
+            metadata["coord_system"] = units
+        else:
+            del metadata["coord_system"]
+    return Region(name=region.name, kind=region.kind, data=data, metadata=metadata)

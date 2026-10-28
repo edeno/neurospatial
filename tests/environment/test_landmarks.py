@@ -86,9 +86,9 @@ def test_near_reports_gaze_on_a_landmark(landmarks):
     [
         (("", "point", [0.0, 0.0]), "nonempty strings"),
         (("cue", "circle", [0.0, 0.0]), "unknown kind"),
-        (("cue", "point", [np.nan, 0.0]), "one finite point"),
-        (("monitor", "line", [(0.0, 0.0), (0.0, 0.0)]), "valid, nonempty 2-D line"),
-        (("box", "polygon", [(0, 0), (1, 1), (2, 2)]), "valid, nonempty 2-D polygon"),
+        (("cue", "point", [np.nan, 0.0]), "NaN or infinite coordinate"),
+        (("monitor", "line", [(0.0, 0.0), (0.0, 0.0)]), "not a valid line"),
+        (("box", "polygon", [(0, 0), (1, 1), (2, 2)]), "not a valid polygon"),
     ],
 )
 def test_invalid_landmarks_are_refused(arguments, match):

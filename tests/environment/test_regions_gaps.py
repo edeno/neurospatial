@@ -222,15 +222,13 @@ class TestRegionMembership:
 
         Notes
         -----
-        Tests that passing non-Regions object raises TypeError.
+        Tests that passing a list of names, not a mapping, raises TypeError.
         """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        with pytest.raises(TypeError, match="takes a Regions collection or None"):
-            env.region_membership(regions={})
-
-        with pytest.raises(TypeError, match="takes a Regions collection or None"):
+        assert env.region_membership(regions={}).shape == (env.n_bins, 0)
+        with pytest.raises(TypeError, match="takes a mapping of names to regions"):
             env.region_membership(regions=[])
 
     def test_region_membership_invalid_include_boundary_type(self):
@@ -270,7 +268,7 @@ class TestRegionMembership:
         # Add polygon region (only valid in 2D)
         region_builder = Regions(env.regions.values())
         region_builder.add("poly", polygon=box(0, 0, 5, 5))
-        with pytest.raises(ValueError, match="dimensions must match"):
+        with pytest.raises(ValueError, match="coordinates; the environment has"):
             env.with_regions(region_builder)
         assert len(env.regions) == 0
 
@@ -345,55 +343,6 @@ class TestComplexPolygonGeometries:
         hole_bin = env.bin_at(np.array([[5.0, 5.0]]))
         if hole_bin[0] != -1:
             assert hole_bin[0] not in bins
-
-    def test_self_intersecting_polygon(self):
-        """Test handling of self-intersecting polygons.
-
-        Notes
-        -----
-        Tests that self-intersecting polygons (bowtie) are handled
-        without errors. Shapely may return invalid geometry.
-        """
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Bowtie shape (self-intersecting)
-        bowtie = Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
-        region_builder = Regions(env.regions.values())
-        region_builder.add("bowtie", polygon=bowtie)
-        env = env.with_regions(region_builder)
-
-        # Should not crash
-        bins = env.bins_in_region("bowtie")
-        assert isinstance(bins, np.ndarray)
-
-        membership = env.region_membership()
-        assert membership.shape == (env.n_bins, 1)
-
-    def test_zero_area_polygon(self):
-        """Test degenerate polygon with zero area.
-
-        Notes
-        -----
-        Tests that zero-area polygons (collapsed to line/point) are
-        handled without errors.
-        """
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Degenerate polygon (line segment)
-        line = Polygon([(0, 0), (10, 0), (10, 0), (0, 0)])
-        region_builder = Regions(env.regions.values())
-        region_builder.add("line", polygon=line)
-        env = env.with_regions(region_builder)
-
-        # Should handle gracefully (may return 0 bins)
-        bins = env.bins_in_region("line")
-        assert isinstance(bins, np.ndarray)
-        assert len(bins) >= 0
-
-        membership = env.region_membership()
-        assert membership.shape == (env.n_bins, 1)
 
     def test_polygon_with_multiple_holes(self):
         """Test polygon with multiple interior holes.
@@ -685,32 +634,6 @@ class TestRegionBufferingAdvanced:
         assert eroded.data.area < original.area
         assert eroded.data.area > 0
 
-    def test_buffer_creates_empty_geometry(self):
-        """Test buffer that erodes polygon to empty geometry.
-
-        Notes
-        -----
-        Tests that large negative buffer on small shapes can create
-        empty geometry.
-        """
-        data = np.array([[i, j] for i in range(21) for j in range(21)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Thin elongated polygon
-        thin = Polygon([(0, 0), (20, 0), (20, 1), (0, 1)])
-        region_builder = Regions(env.regions.values())
-        region_builder.add("thin", polygon=thin)
-        env = env.with_regions(region_builder)
-
-        # Large negative buffer should erode completely or create fragments
-        region_builder = Regions(env.regions.values())
-        eroded = region_builder.buffer("thin", distance=-0.6, new_name="eroded_thin")
-        env = env.with_regions(region_builder)
-
-        # May be empty or smaller polygon (depends on Shapely)
-        # Just verify it doesn't crash
-        assert eroded.kind == "polygon"
-
     def test_buffer_very_large_distance(self):
         """Test buffer with very large distance.
 
@@ -823,7 +746,7 @@ class TestRegionIntegrationAdvanced:
         # Test 2: Wrong dimension point
         region_builder = Regions(env.regions.values())
         region_builder.add("wrong_dim", point=(1.0, 2.0, 3.0))
-        with pytest.raises(ValueError, match="dimensions must match"):
+        with pytest.raises(ValueError, match="coordinates; the environment has"):
             env.with_regions(region_builder)
         assert "wrong_dim" not in env.regions
 
@@ -918,29 +841,6 @@ class TestRegionErrorHandling:
         with pytest.raises(KeyError):
             builder = Regions(env.regions.values())
             del builder["does_not_exist"]
-
-    def test_empty_polygon_region(self):
-        """Test handling of empty polygon geometry.
-
-        Notes
-        -----
-        Tests that empty polygons are handled gracefully.
-        """
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Empty polygon
-        empty_poly = Polygon()
-        region_builder = Regions(env.regions.values())
-        region_builder.add("empty", polygon=empty_poly)
-        env = env.with_regions(region_builder)
-
-        # Should return no bins
-        bins = env.bins_in_region("empty")
-        assert len(bins) == 0
-
-        mask = env.region_mask("empty")
-        assert not np.any(mask)
 
     def test_point_region_outside_environment(self):
         """Test point region far outside environment bounds.

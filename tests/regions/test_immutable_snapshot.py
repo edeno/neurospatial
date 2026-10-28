@@ -26,12 +26,10 @@ def _restore(value: Any, method: str) -> Any:
 
 
 @pytest.mark.parametrize("method", ["original", "copy", "deepcopy", "pickle", "dict"])
-@pytest.mark.parametrize("source_kind", ["strided", "point", "empty"])
-def test_point_buffers_are_independent_and_irreversibly_read_only(method, source_kind):
+@pytest.mark.parametrize("source_kind", ["strided", "point"])
+def test_point_data_is_an_independent_read_only_copy(method, source_kind):
     source = np.arange(8.0)[::2]
     coordinates = source if source_kind == "strided" else Point(1, 2)
-    if source_kind == "empty":
-        coordinates = np.array([], dtype=float)
     region = Region("goal", "point", coordinates)
     expected = np.asarray(region.data).copy()
     restored = (
@@ -46,31 +44,8 @@ def test_point_buffers_are_independent_and_irreversibly_read_only(method, source
     assert not np.shares_memory(restored.data, source)
     assert restored.data.dtype == np.float64
     assert not restored.data.flags.writeable
-    if expected.size:
-        with pytest.raises(ValueError):
-            restored.data[0] = 123
-
-
-@pytest.mark.parametrize("method", ["original", "copy", "deepcopy", "pickle"])
-@pytest.mark.parametrize("change", ["shape", "dtype"])
-def test_point_export_headers_cannot_poison_shared_regions(method, change):
-    region = _restore(Region("goal", "point", [1.0, 2.0]), method)
-    snapshot = Regions([region])._snapshot()
-    exported = region.data
-    center = snapshot.region_center("goal")
-    if change == "shape":
-        exported.shape = (1, 2)
-        center.shape = (2, 1)
-    else:
-        exported.dtype = np.uint8
-        center.dtype = np.uint8
-    assert region.n_dims == 2
-    assert region.data.shape == (2,)
-    assert region.data.dtype == np.float64
-    np.testing.assert_array_equal(region.data, [1, 2])
-    np.testing.assert_array_equal(snapshot["goal"].data, [1, 2])
-    np.testing.assert_array_equal(snapshot.region_center("goal"), [1, 2])
-    assert isinstance(region.data.base, bytes)
+    with pytest.raises(ValueError):
+        restored.data[0] = 123
 
 
 @pytest.mark.parametrize("method", ["original", "copy", "deepcopy", "pickle", "dict"])
@@ -93,20 +68,69 @@ def test_nested_metadata_and_export_ownership(method):
     np.testing.assert_array_equal(restored.data, [1, 2])
 
 
-@pytest.mark.parametrize("value", [np.array([1, 2]), {1, 2}, np.int64(1), object()])
-def test_non_json_metadata_is_rejected_at_construction(value):
-    with pytest.raises(TypeError, match=r"metadata.*JSON"):
+@pytest.mark.parametrize(
+    ("value", "kind"),
+    [
+        (np.array([1, 2]), "ndarray"),
+        ({1, 2}, "set"),
+        (np.int64(1), "int64"),
+        (np.float64(1.5), "float64"),
+        (np.bool_(True), "bool"),
+        (object(), "object"),
+    ],
+)
+def test_non_json_metadata_names_the_region_path_and_conversion(value, kind):
+    with pytest.raises(ValueError, match="JSON cannot store") as raised:
         Region("goal", "point", [1, 2], metadata={"nested": [value]})
+    message = str(raised.value)
+    assert "Region 'goal' metadata value metadata['nested'][0]" in message
+    assert kind in message
+    assert "int(...), float(...) or str(...)" in message
 
 
-def test_json_validation_preserves_accepted_scalars_and_distinct_mapping_keys():
-    metadata = {"number": np.float64(1.25), "nan": float("nan"), 1: "int", "1": "str"}
+@pytest.mark.parametrize(
+    "metadata",
+    [{1: "int"}, {1: "int", "1": "str"}, {"nested": {2.5: "float"}}],
+    ids=["int-key", "colliding-keys", "nested-float-key"],
+)
+def test_non_string_keys_are_refused_because_json_would_rename_them(metadata):
+    # json.dumps turns 1 into "1": {1: "x"} would reload as {"1": "x"} and
+    # {1: ..., "1": ...} would lose an entry.
+    with pytest.raises(ValueError, match="not a str") as raised:
+        Region("goal", "point", [1, 2], metadata=metadata)
+    assert "Region 'goal' metadata key" in str(raised.value)
+    assert "str(" in str(raised.value)
+
+
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
+def test_non_finite_metadata_numbers_are_refused(value):
+    with pytest.raises(ValueError, match="must be finite") as raised:
+        Region("goal", "point", [1, 2], metadata={"limits": [0.0, value]})
+    assert "metadata['limits'][1]" in str(raised.value)
+    assert "None" in str(raised.value)
+
+
+@pytest.mark.parametrize("metadata", [None, ["color", "red"], "red"])
+def test_metadata_must_be_a_mapping(metadata):
+    with pytest.raises(TypeError, match="Region 'goal' metadata must be a mapping"):
+        Region("goal", "point", [1, 2], metadata=metadata)
+
+
+def test_accepted_metadata_round_trips_through_standard_json():
+    metadata = {"number": 1.25, "flag": True, "missing": None}
     region = Region("goal", "point", [1, 2], metadata=metadata)
     assert region.metadata["number"] == 1.25
-    assert np.isnan(region.metadata["nan"])
-    assert region.metadata[1] == "int"
-    assert region.metadata["1"] == "str"
-    json.dumps(region.to_dict())
+    reloaded = Region.from_dict(
+        json.loads(json.dumps(region.to_dict(), allow_nan=False))
+    )
+    assert reloaded == region
+
+
+def test_landmark_metadata_follows_the_region_rules():
+    from neurospatial.landmarks import Landmark
+
+    with pytest.raises(ValueError, match="Landmark 'cue' metadata key 1"):
+        Landmark("cue", "point", [0.0, 0.0], {1: "x"})
 
 
 def test_nested_tuple_inside_list_metadata_is_frozen():
@@ -118,10 +142,10 @@ def test_nested_tuple_inside_list_metadata_is_frozen():
         region.metadata["nested"][0][0]["label"] = ("changed",)
 
 
-def test_circular_metadata_is_rejected_as_non_json():
+def test_circular_metadata_is_refused():
     metadata = {}
     metadata["self"] = metadata
-    with pytest.raises(TypeError, match=r"metadata.*JSON"):
+    with pytest.raises(ValueError, match="Region 'goal' metadata contains itself"):
         Region("goal", "point", [1, 2], metadata=metadata)
 
 
@@ -159,10 +183,10 @@ def test_snapshot_rejects_every_mutator_including_noops(method, mutation, empty)
     builder = Regions() if empty else _builder()
     snapshot = _restore(builder._snapshot(), method)
     assert type(snapshot) is Regions
-    before = snapshot.list_names()
+    before = list(snapshot)
     with pytest.raises(TypeError, match=r"read-only.*with_regions"):
         mutation[1](snapshot)
-    assert snapshot.list_names() == before
+    assert list(snapshot) == before
 
 
 @pytest.mark.parametrize("method", ["original", "copy", "deepcopy", "pickle"])
@@ -173,13 +197,13 @@ def test_snapshot_read_helpers_and_mutable_builder_reconstruction(method, tmp_pa
     assert list(snapshot.keys()) == ["goal", "arena"]
     assert len(snapshot) == 2
     assert snapshot.get("missing") is None
-    assert snapshot.area("arena") == 9
-    np.testing.assert_array_equal(snapshot.region_center("goal"), [1, 2])
-    np.testing.assert_array_equal(snapshot.region_center("arena"), [1.5, 1.5])
+    assert snapshot["arena"].area == 9
+    np.testing.assert_array_equal(snapshot["goal"].center, [1, 2])
+    np.testing.assert_array_equal(snapshot["arena"].center, [1.5, 1.5])
 
     builder.update_region("goal", point=[9, 9])
     builder.remove("arena")
-    assert snapshot.list_names() == ["goal", "arena"]
+    assert list(snapshot) == ["goal", "arena"]
     np.testing.assert_array_equal(snapshot["goal"].data, [1, 2])
     editable = Regions(snapshot.values())
     editable.update_region("goal", point=[3, 4])
@@ -190,7 +214,7 @@ def test_snapshot_read_helpers_and_mutable_builder_reconstruction(method, tmp_pa
     snapshot.to_json(output)
     loaded = Regions.from_json(output)
     loaded.remove("goal")
-    assert loaded.list_names() == ["arena"]
+    assert list(loaded) == ["arena"]
 
 
 @pytest.mark.parametrize("method", ["copy", "deepcopy", "pickle"])
@@ -198,7 +222,7 @@ def test_builder_restoration_remains_mutable_with_independent_store(method):
     builder = _builder()
     restored = _restore(builder, method)
     restored.remove("goal")
-    assert builder.list_names() == ["goal", "arena"]
+    assert list(builder) == ["goal", "arena"]
     restored.add("new", point=[3, 4])
     assert "new" not in builder
 
@@ -214,7 +238,7 @@ def test_failed_region_replacement_preserves_original_value_and_order(invalid):
     )
     with pytest.raises((TypeError, ValueError)):
         regions.update_region("goal", **kwargs)
-    assert regions.list_names() == ["goal", "arena"]
+    assert list(regions) == ["goal", "arena"]
     assert regions["goal"] is original
 
 

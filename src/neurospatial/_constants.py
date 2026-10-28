@@ -29,12 +29,6 @@ ABSOLUTE_TOLERANCE = 1e-9
 # Float-equality epsilon (geometry coincidence, not a spatial tolerance).
 POINT_TOLERANCE = 1e-8
 
-# Default spatial tolerance (in the regions' coordinate units, e.g. cm or px)
-# for treating a query position as "at" a point landmark. A point region has no
-# area, so exact float equality is never the intent; this is the radius of the
-# square neighborhood around the landmark that counts as a hit.
-POINT_REGION_TOLERANCE = 1.0
-
 # Numerical stability
 # -------------------
 # Used for: division by zero prevention, log(0) prevention

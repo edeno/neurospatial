@@ -21,9 +21,11 @@ from neurospatial.geometry import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from neurospatial._keyword_hint import Translate
     from neurospatial.geometry import Arena, Binning, LookupIndexes
-    from neurospatial.regions import Regions
+    from neurospatial.regions import Region
 
 _COUNT_WORDS = {1: "one bin", 2: "two bins, a start and an end"}
 _COUNT_FIXES = {
@@ -422,7 +424,7 @@ def resolve_targets(
     binning: Binning,
     arena: Arena,
     coordinates: CartesianSystem | EgocentricPolarSystem,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
     count: int | None = None,
     indexes: LookupIndexes | None = None,
 ) -> NDArray[np.intp]:
@@ -444,7 +446,7 @@ def resolve_targets(
         Continuous domain of the bins.
     coordinates : CartesianSystem or EgocentricPolarSystem
         Coordinate meaning of the bins, for geometry-specific hints.
-    regions : Regions or None, optional
+    regions : mapping of str to Region, or None, optional
         Named regions; None when the query takes no ``region=``.
     count : int or None, optional
         Exact number of targets the query needs; None accepts any number.
@@ -529,7 +531,7 @@ def resolve_targets(
 
 def _region_targets(
     region: object,
-    regions: Regions | None,
+    regions: Mapping[str, Region] | None,
     *,
     binning: Binning,
     arena: Arena,

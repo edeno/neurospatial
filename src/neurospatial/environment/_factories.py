@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -36,7 +36,7 @@ from neurospatial.layout.helpers.track_graphs import (
     maze_track_graph,
     refuse_coincident_nodes,
 )
-from neurospatial.regions import Regions
+from neurospatial.regions import Region
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
@@ -68,7 +68,7 @@ def _from_bins(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
     arena: Arena | None = None,
 ) -> Environment:
     """Implement Environment.from_bins using explicit construction inputs."""
@@ -264,7 +264,7 @@ def _from_samples(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
     arena: Arena | None = None,
     wall_fit: Literal["snap", "split"] = "snap",
     layout: LayoutType | str = LayoutType.REGULAR_GRID,
@@ -605,7 +605,7 @@ def _linear_track(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
 ) -> Environment:
     """Implement Environment.linear_track using explicit construction inputs."""
     if endpoints is not None and node_positions is not None:
@@ -682,7 +682,7 @@ def _maze(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
 ) -> Environment:
     """Implement Environment.maze using explicit construction inputs."""
     allowed = ("w", "plus", "t")
@@ -764,7 +764,7 @@ def _from_graph(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
     track_width: float | None = None,
 ) -> Environment:
     """Implement Environment.from_graph using explicit construction inputs."""
@@ -825,7 +825,7 @@ def _from_polygon(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
     arena: Arena | None = None,
     wall_fit: Literal["snap", "split"] = "snap",
     connect_diagonal_neighbors: bool = True,
@@ -870,7 +870,7 @@ def _from_grid_mask(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
     arena: Arena | None = None,
     wall_fit: Literal["snap", "split"] = "snap",
     connect_diagonal_neighbors: bool = True,
@@ -919,7 +919,7 @@ def _from_pixel_mask(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
     arena: Arena | None = None,
     wall_fit: Literal["snap", "split"] = "snap",
     connect_diagonal_neighbors: bool = True,
@@ -952,7 +952,7 @@ def _build_layout(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
     arena: Arena | None = None,
     wall_fit: Literal["snap", "split"] = "snap",
 ) -> Environment:
@@ -979,7 +979,7 @@ def _from_layout(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
     arena: Arena | None = None,
     wall_fit: Literal["snap", "split"] = "snap",
 ) -> Environment:

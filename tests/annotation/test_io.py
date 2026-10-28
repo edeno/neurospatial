@@ -63,7 +63,8 @@ class TestRegionsFromLabelme:
 
         poly = regions["test"].data
         bounds = poly.bounds
-        assert bounds[2] == pytest.approx(20.0)  # maxx scaled
+        # LabelMe's corner-frame x = 10 is pixel-frame x = 9.5, scaled by 2.
+        assert bounds[2] == pytest.approx(19.0)
 
     def test_custom_keys(self, tmp_path):
         """Use custom label and points keys."""
@@ -135,4 +136,24 @@ class TestRegionsFromCvat:
 
         poly = regions["scaled"].data
         bounds = poly.bounds
-        assert bounds[2] == pytest.approx(50.0)  # maxx at 0.5x scale
+        # CVAT's corner-frame x = 100 is pixel-frame x = 99.5, at 0.5x scale.
+        assert bounds[2] == pytest.approx(49.75)
+
+    def test_image_choice_is_passed_through(self, tmp_path):
+        """Pick one annotated image of a multi-image export by name."""
+        xml_path = tmp_path / "annotations.xml"
+        xml_path.write_text(
+            '<annotations><image id="0" name="a.png">'
+            '<polygon label="arena" points="0,0;10,0;10,10;0,10"/></image>'
+            '<image id="1" name="b.png">'
+            '<polygon label="arena" points="0,0;20,0;20,20;0,20"/></image>'
+            "</annotations>"
+        )
+
+        with pytest.raises(ValueError, match="image="):
+            regions_from_cvat(xml_path)
+        region = regions_from_cvat(xml_path, image="b.png")["arena"]
+
+        assert region.data.area == pytest.approx(400.0)
+        assert region.metadata["source_image"] == "b.png"
+        assert region.metadata["coord_system"] == "pixels"

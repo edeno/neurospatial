@@ -5,19 +5,18 @@ Immutable *continuous* ROI objects plus optional helpers.
 
 This sub-package offers:
 
-* :class:`Region`   - an immutable, hashable ROI (point or polygon)
-* :class:`Regions`  - a small `MutableMapping[str, Region]`
+* :class:`Region`   - an immutable ROI (point or polygon), compared by value
+  and unhashable; key collections by its name
+* :class:`Regions`  - a small `MutableMapping[str, Region]` builder
 * Lightweight import / export helpers
-* A single convenience plot function (Matplotlib & Shapely imported lazily)
+* A single convenience plot function (Matplotlib imported lazily)
 
 """
 
 from __future__ import annotations
 
-from neurospatial.regions.io import _SCHEMA_TAG as _SCHEMA_TAG
-
 # --- core value objects ---------------------------------
-from .core import Region, Regions
+from .core import Region, Regions, regions_table
 from .core import _freeze_metadata as _freeze_metadata
 from .core import _snapshot_regions as _snapshot_regions
 from .core import _thaw_metadata as _thaw_metadata
@@ -45,5 +44,6 @@ __all__ = [
     "points_in_any_region",
     "regions_containing_points",
     "regions_from_json",
+    "regions_table",
     "regions_to_json",
 ]

@@ -62,7 +62,8 @@ class AnnotationShape:
         Identity of the exterior ring for an interior ring, or an empty string.
     metadata : mapping
         JSON attributes with string keys, recursively copied and made
-        read-only. Non-finite floats such as ``NaN`` are kept.
+        read-only. Numbers must be finite, as in Region metadata; record a
+        missing value as ``None``.
     """
 
     vertices: NDArray[np.float64]
@@ -93,13 +94,13 @@ class AnnotationShape:
         if not isinstance(self.metadata, Mapping):
             raise ValueError("Shape metadata must be a mapping of JSON values.")
         metadata = _thaw_metadata(self.metadata)
-        # Non-finite floats are kept, as Region metadata allows them.
-        _require_json_metadata(metadata, allow_nan=True)
+        # Refused now rather than when the draft becomes a Region.
+        _require_json_metadata(metadata, allow_nan=False)
         object.__setattr__(self, "vertices", vertices)
         object.__setattr__(self, "metadata", _freeze_metadata(metadata))
 
     def __eq__(self, other: object) -> bool:
-        """Compare by value; ``NaN`` metadata equals itself, as it round-trips."""
+        """Compare by value, metadata included."""
         if not isinstance(other, AnnotationShape):
             return NotImplemented
         return self is other or (

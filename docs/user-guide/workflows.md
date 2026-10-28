@@ -847,19 +847,10 @@ for name, coords in corners.items():
     region_builder.add(name, polygon=Polygon(coords))
 env = env.with_regions(region_builder)
 
-# Find which bins belong to each region
-region_bins = {}
-for region_name in env.regions.list_names():
-    region_polygon = env.regions[region_name].polygon
-    bins_in_region = []
-
-    for bin_idx in range(env.n_bins):
-        bin_point = Point(env.bin_centers[bin_idx])
-        if region_polygon.contains(bin_point):
-            bins_in_region.append(bin_idx)
-
-    region_bins[region_name] = np.array(bins_in_region)
-    print(f"{region_name}: {len(bins_in_region)} bins")
+# Find which bins belong to each region (a bin belongs when its center is inside)
+region_bins = {name: env.bins_in_region(name) for name in env.regions}
+for region_name, bins in region_bins.items():
+    print(f"{region_name}: {len(bins)} bins")
 
 # Compute occupancy per region
 position_bins = env.bin_at(position_data)
@@ -886,7 +877,7 @@ for region_name, bins in region_bins.items():
     else:
         region_firing_rates[region_name] = np.nan
 
-    print(f"{region_name} firing rate: {firing_rate:.2f} Hz")
+    print(f"{region_name} firing rate: {region_firing_rates[region_name]:.2f} Hz")
 
 # Statistical comparison
 # Example: Is firing rate higher in center vs. corners?
@@ -897,19 +888,9 @@ corner_rates = [r for r in corner_rates if not np.isnan(r)]
 print(f"\nCenter: {center_rate:.2f} Hz")
 print(f"Corners: {np.mean(corner_rates):.2f} ± {np.std(corner_rates):.2f} Hz")
 
-# Visualize regions
+# Visualize regions: env.plot draws and labels every region
 fig, ax = plt.subplots(figsize=(8, 8))
 env.plot(ax=ax)
-
-# Color-code regions
-colors = plt.cm.Set3(np.linspace(0, 1, len(env.regions)))
-for idx, region_name in enumerate(env.regions.list_names()):
-    region = env.regions[region_name]
-    if region.polygon:
-        x, y = region.polygon.exterior.xy
-        ax.fill(x, y, alpha=0.3, color=colors[idx], label=region_name)
-
-ax.legend()
 ax.set_title('Experimental Regions')
 plt.show()
 ```

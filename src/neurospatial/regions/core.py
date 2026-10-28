@@ -7,7 +7,6 @@ Pure data layer for *continuous* regions of interest (ROIs).
 from __future__ import annotations
 
 import copy
-import json
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,19 +14,24 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
 
 import numpy as np
+import shapely
 from numpy.typing import NDArray
-from shapely.geometry import Point, Polygon, mapping, shape
+from shapely.errors import ShapelyError
+from shapely.geometry import LineString, Point, Polygon, mapping, shape
+from shapely.geometry.base import BaseGeometry
+from shapely.validation import explain_validity
 
-from neurospatial._exceptions import RegionNotFoundError
+from neurospatial._exceptions import RegionNotFoundError, _format_error
 
 if TYPE_CHECKING:
     from pandas import DataFrame
 
 # ---------------------------------------------------------------------
-# Public type aliases
+# Type aliases
 # ---------------------------------------------------------------------
 PointCoords: TypeAlias = NDArray[np.float64] | Iterable[float] | Point
 Kind = Literal["point", "polygon"]
+_REGION_RECORD_KEYS = ("name", "kind", "geom")
 
 
 def _freeze_metadata(value: Any) -> Any:
@@ -92,27 +96,205 @@ def _thaw_metadata(value: Any, *, _active: set[int] | None = None) -> Any:
         active.remove(identity)
 
 
-def _require_json_metadata(value: Any, *, allow_nan: bool) -> None:
+def _require_json_metadata(
+    value: Any, *, allow_nan: bool, owner: str | None = None, _path: str = "metadata"
+) -> None:
     """Reject metadata that JSON would coerce or cannot store.
 
     Mapping keys must be strings at every level and leaves must be JSON
     scalars. Non-finite floats are rejected unless ``allow_nan``; Python's JSON
-    reader restores ``NaN`` and ``Infinity`` exactly.
+    reader restores ``NaN`` and ``Infinity`` exactly. ``owner``, such as
+    ``"Region 'goal'"``, names the record in the error.
     """
+    subject = "Metadata" if owner is None else f"{owner} metadata"
     if isinstance(value, Mapping):
         for key, item in value.items():
             if not isinstance(key, str):
                 raise ValueError(
-                    "Metadata keys must be strings at every nesting level."
+                    _format_error(
+                        f"{subject} key {key!r} in {_path} is a "
+                        f"{type(key).__name__}, not a str.",
+                        why=f"Why: JSON keys are strings, so saving would turn "
+                        f"it into {str(key)!r}, which can collide with an "
+                        "existing key.",
+                        fix=f"use the string key str({key!r})",
+                    )
                 )
-            _require_json_metadata(item, allow_nan=allow_nan)
+            _require_json_metadata(
+                item, allow_nan=allow_nan, owner=owner, _path=f"{_path}[{key!r}]"
+            )
     elif isinstance(value, (list, tuple)):
-        for item in value:
-            _require_json_metadata(item, allow_nan=allow_nan)
-    elif value is not None and not isinstance(value, (str, bool, int, float)):
-        raise ValueError("Metadata must contain only JSON values.")
+        for index, item in enumerate(value):
+            _require_json_metadata(
+                item, allow_nan=allow_nan, owner=owner, _path=f"{_path}[{index}]"
+            )
+    # Exact types: NumPy scalars such as np.float64 subclass float but are
+    # stored and shown as NumPy objects, unlike np.int64, which is refused.
+    elif value is not None and type(value) not in (str, bool, int, float):
+        raise ValueError(
+            _format_error(
+                f"{subject} value {_path} is a {type(value).__name__}, which "
+                "JSON cannot store.",
+                fix="convert it with int(...), float(...) or str(...), or a "
+                "NumPy array with .tolist()",
+            )
+        )
     elif not allow_nan and isinstance(value, float) and not np.isfinite(value):
-        raise ValueError("Metadata numbers must be finite.")
+        raise ValueError(
+            _format_error(
+                f"{subject} value {_path} is {value!r}, but metadata numbers "
+                "must be finite.",
+                why="Why: standard JSON has no NaN or infinity, so other tools "
+                "cannot read the saved file.",
+                fix="store a missing value as None",
+            )
+        )
+
+
+def _owned_metadata(metadata: object, *, owner: str) -> Mapping[str, Any]:
+    """Return a recursively read-only copy of standard-JSON ``metadata``."""
+    if not isinstance(metadata, Mapping):
+        raise TypeError(
+            _format_error(
+                f"{owner} metadata must be a mapping, got {type(metadata).__name__}.",
+                fix='pass a dict of JSON values, such as {"role": "reward"}',
+            )
+        )
+    try:
+        # Thawing copies every container, so the record owns its metadata.
+        thawed = _thaw_metadata(metadata)
+    except ValueError as exc:
+        raise ValueError(
+            _format_error(
+                f"{owner} metadata contains itself.",
+                fix="pass metadata without circular references",
+            )
+        ) from exc
+    _require_json_metadata(thawed, allow_nan=False, owner=owner)
+    return cast("Mapping[str, Any]", _freeze_metadata(thawed))
+
+
+# ---------------------------------------------------------------------
+# Geometry validation shared with neurospatial.landmarks
+# ---------------------------------------------------------------------
+def _require_name(name: object, *, record: str, example: str) -> None:
+    """Refuse a name that is not a nonempty string."""
+    if not isinstance(name, str) or not name:
+        raise ValueError(
+            _format_error(
+                f"{record} names must be nonempty strings, got {name!r}.",
+                fix=f'name each {record.lower()} with a string such as "{example}"',
+            )
+        )
+
+
+def _owned_point(
+    raw: object, *, owner: str, shape_kinds: Mapping[str, str]
+) -> NDArray[np.float64]:
+    """Return one finite point as a read-only float64 copy, shape ``(n_dims,)``.
+
+    ``raw`` is a coordinate sequence or a shapely ``Point``. ``shape_kinds``
+    maps the shapely geometry types ``owner`` can hold under another kind to
+    that kind's name, for the error when such a shape is passed as a point.
+    """
+    if isinstance(raw, BaseGeometry) and not isinstance(raw, Point):
+        alternative = shape_kinds.get(raw.geom_type)
+        raise TypeError(
+            _format_error(
+                f"{owner} has kind='point', but its data is a shapely {raw.geom_type}.",
+                fix=(
+                    f'use kind="{alternative}" for this shape, or '
+                    if alternative is not None
+                    else ""
+                )
+                + "pass the point's coordinates, such as [50.0, 100.0]",
+            )
+        )
+    if isinstance(raw, Point):
+        raw = raw.coords[0] if not raw.is_empty else ()
+    try:
+        point = np.array(raw, dtype=np.float64, copy=True)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(
+            _format_error(
+                f"{owner} point coordinates must be numbers, got {raw!r}.",
+                fix="pass the point's coordinates, such as [50.0, 100.0]",
+            )
+        ) from exc
+    if point.ndim != 1 or point.size == 0:
+        raise ValueError(
+            _format_error(
+                f"{owner} must be one point, shape (n_dims,), got shape {point.shape}.",
+                fix="pass the point's coordinates, such as [50.0, 100.0]",
+            )
+        )
+    if not np.all(np.isfinite(point)):
+        raise ValueError(
+            _format_error(
+                f"{owner} point {point.tolist()} has a NaN or infinite coordinate.",
+                why="Why: a point with a missing coordinate has no location, so "
+                "it would silently cover no bins.",
+                fix="pass finite coordinates in the environment's units",
+            )
+        )
+    point.setflags(write=False)
+    return point
+
+
+def _check_planar_geometry(geometry: Polygon | LineString, *, owner: str) -> None:
+    """Refuse an empty, 3-D, non-finite, invalid or zero-size polygon or line."""
+    kind = "polygon" if isinstance(geometry, Polygon) else "line"
+    if geometry.is_empty:
+        raise ValueError(
+            _format_error(
+                f"{owner} is an empty {kind}.",
+                fix="pass its vertices as (x, y) pairs in the environment's "
+                "coordinates",
+            )
+        )
+    if geometry.has_z:
+        raise ValueError(
+            _format_error(
+                f"{owner} has z coordinates, but a {kind} is 2-D.",
+                fix=f"drop the z coordinates with shapely.force_2d({kind})",
+            )
+        )
+    if not np.all(np.isfinite(shapely.get_coordinates(geometry))):
+        raise ValueError(
+            _format_error(
+                f"{owner} has a NaN or infinite vertex coordinate.",
+                fix="remove the missing vertices, or redraw the shape",
+            )
+        )
+    if not geometry.is_valid:
+        what = f"{owner} is not a valid {kind}: {explain_validity(geometry)}."
+        if kind == "line":
+            raise ValueError(
+                _format_error(
+                    what,
+                    fix="pass at least two distinct vertices, such as "
+                    "[(0.0, 100.0), (40.0, 100.0)]",
+                )
+            )
+        raise ValueError(
+            _format_error(
+                what,
+                why="Why: an outline whose edges cross has no well-defined "
+                "inside, so the bins it covers would be wrong.",
+                fix="redraw it so its edges do not cross, or repair it with "
+                "shapely.make_valid(polygon) and keep the part you meant",
+            )
+        )
+    size = geometry.area if kind == "polygon" else geometry.length
+    if size <= 0:
+        measure = "area" if kind == "polygon" else "length"
+        raise ValueError(
+            _format_error(
+                f"{owner} has zero {measure}.",
+                fix='use kind="point" for a single location, or spread the '
+                "vertices apart",
+            )
+        )
 
 
 # ---------------------------------------------------------------------
@@ -120,26 +302,54 @@ def _require_json_metadata(value: Any, *, allow_nan: bool) -> None:
 # ---------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Region:
     """Immutable description of a spatial ROI.
 
     Parameters
     ----------
-    name
-        Unique region identifier.
-    kind
-        Either ``"point"`` or ``"polygon"``.
-    data
-        • point → ``np.ndarray`` with shape ``(n_dims,)``
-        • polygon → :class:`shapely.geometry.Polygon` (always 2-D)
-    metadata
-        Optional, JSON-serialisable attributes (colour, label, …). Stored as a
-        recursively read-only mapping (:class:`types.MappingProxyType` at every
-        level, with lists frozen to tuples) so neither the top level nor any
-        nested container can be mutated after construction. Serialization via
-        :meth:`to_dict` thaws this back into plain ``dict``/``list`` data.
+    name : str
+        Unique, nonempty region identifier.
+    kind : {"point", "polygon"}
+        ``"point"`` for a location such as a reward well, ``"polygon"`` for
+        an area such as a goal zone.
+    data : array-like or shapely.geometry.Polygon
+        A point's coordinates, shape ``(n_dims,)`` (a shapely ``Point`` is
+        accepted), or a valid 2-D :class:`shapely.geometry.Polygon` with
+        positive area. Coordinates must be in the environment's units and
+        frame: a region drawn in video pixels covers the wrong bins of an
+        environment in centimeters.
+    metadata : mapping, optional
+        Standard-JSON attributes, such as ``{"role": "reward"}``: string keys
+        and finite numbers at every level. Stored as a recursively read-only
+        mapping (lists become tuples); :meth:`to_dict` thaws it back into
+        plain ``dict``/``list`` data.
 
+    Attributes
+    ----------
+    n_dims : int
+        Number of coordinates: the point's length, or 2 for a polygon.
+    area : float
+        Polygon area in coordinate units squared; 0.0 for a point.
+    center : ndarray of float64, shape (n_dims,)
+        The point, or the polygon's centroid, which can lie outside a
+        non-convex polygon.
+
+    Raises
+    ------
+    ValueError
+        If the name is empty, the kind is unknown, the point is not one
+        finite point, the polygon is empty, 3-D, non-finite, invalid or has
+        zero area, or the metadata is not standard JSON.
+    TypeError
+        If point data is a shapely shape other than a Point or not numbers,
+        polygon data is not a shapely Polygon, or metadata is not a mapping.
+
+    Notes
+    -----
+    A point's ``data`` is a read-only float64 copy, so editing the array the
+    region was built from does not move it. Regions compare by value and are
+    unhashable.
 
     Examples
     --------
@@ -147,69 +357,82 @@ class Region:
     >>> goal = Region(name="goal", kind="point", data=[5.0, 5.0])
     >>> goal.n_dims
     2
+    >>> goal.center.tolist()
+    [5.0, 5.0]
     """
 
     name: str
     kind: Kind
-    data: NDArray[np.float64] | Polygon | Point
+    data: NDArray[np.float64] | Polygon
     metadata: Mapping[str, Any] = field(default_factory=dict, repr=False)
-
-    # filled in post-init
-    n_dims: int = field(init=False, repr=False)
 
     # -----------------------------------------------------------------
     # Validation
     # -----------------------------------------------------------------
     def __post_init__(self) -> None:
-        # Thaw first (the input may already be a read-only proxy from another
-        # Region, and mappingproxy cannot be deep-copied), then deep copy so the
-        # Region owns the data, then recursively wrap it in read-only proxies.
-        # This isolates the Region from external mutation of the source dict
-        # *and* forbids mutating the stored metadata (at any nesting depth)
-        # after construction.
-        try:
-            thawed = _thaw_metadata(self.metadata)
-            json.dumps(thawed)
-        except (TypeError, ValueError, RecursionError) as exc:
-            raise TypeError("Region metadata must be JSON-serializable.") from exc
-        object.__setattr__(self, "metadata", _freeze_metadata(copy.deepcopy(thawed)))
-
+        _require_name(self.name, record="Region", example="reward_zone")
+        owner = f"Region {self.name!r}"
+        object.__setattr__(
+            self, "metadata", _owned_metadata(self.metadata, owner=owner)
+        )
         if self.kind == "point":
-            if isinstance(self.data, Point):
-                object.__setattr__(
-                    self,
-                    "data",
-                    np.array(self.data.coords[0], dtype=float),
-                )
-            arr = np.asarray(self.data, dtype=float)
-            if arr.ndim != 1:
-                raise ValueError("Point data must be a 1-D array-like.")
-            # Immutable bytes prevent callers from re-enabling NumPy writes.
-            # The buffer is independent even when arr is a caller-held view.
-            object.__setattr__(self, "data", np.frombuffer(arr.tobytes(), dtype=float))
-            object.__setattr__(self, "n_dims", arr.shape[0])
-
+            point = _owned_point(
+                self.data, owner=owner, shape_kinds={"Polygon": "polygon"}
+            )
+            object.__setattr__(self, "data", point)
         elif self.kind == "polygon":
             if not isinstance(self.data, Polygon):
-                raise TypeError("data must be a Shapely Polygon for kind='polygon'.")
-            object.__setattr__(self, "n_dims", 2)
-
-        else:  # pragma: no cover
-            raise ValueError(f"Unknown kind {self.kind!r}")
+                raise TypeError(
+                    _format_error(
+                        f"{owner} has kind='polygon', so its data must be a "
+                        f"shapely Polygon, got {type(self.data).__name__}.",
+                        fix="wrap the vertices with shapely.Polygon(vertices); "
+                        "make one region per part of a MultiPolygon",
+                    )
+                )
+            _check_planar_geometry(self.data, owner=owner)
+        else:
+            raise ValueError(
+                _format_error(
+                    f"{owner} has unknown kind {self.kind!r}.",
+                    fix='use kind="point" or kind="polygon"',
+                )
+            )
 
     # -----------------------------------------------------------------
     # Convenience
     # -----------------------------------------------------------------
-    def __getattribute__(self, name: str) -> Any:
-        value = object.__getattribute__(self, name)
-        if name == "data" and isinstance(value, np.ndarray) and hasattr(self, "n_dims"):
-            # A read-only array still has a mutable shape/dtype header. Export
-            # a new header over the immutable bytes, with no shared ndarray base.
-            return np.frombuffer(cast("bytes", value.base), dtype=np.float64)
-        return value
+    @property
+    def n_dims(self) -> int:
+        """Number of coordinates: the point's length, or 2 for a polygon."""
+        if isinstance(self.data, np.ndarray):
+            return int(self.data.size)
+        return 2
+
+    @property
+    def area(self) -> float:
+        """Polygon area in coordinate units squared; 0.0 for a point."""
+        if isinstance(self.data, Polygon):
+            return float(self.data.area)
+        return 0.0
+
+    @property
+    def center(self) -> NDArray[np.float64]:
+        """A point's coordinates, or a polygon's centroid, shape ``(n_dims,)``.
+
+        A centroid can lie outside a non-convex polygon, such as a U-shaped
+        arm; it is not guaranteed to be a position the animal can occupy.
+        """
+        if isinstance(self.data, np.ndarray):
+            return np.array(self.data, dtype=np.float64)
+        return np.array(self.data.centroid.coords[0], dtype=np.float64)
 
     def __str__(self) -> str:
         return self.name
+
+    # Value equality covers coordinate arrays and nested metadata, which have
+    # no hash, so regions are unhashable; key collections by region name.
+    __hash__ = None  # type: ignore[assignment]
 
     def __eq__(self, other: object) -> bool:
         """Compare region values, including point coordinates elementwise."""
@@ -232,27 +455,9 @@ class Region:
     # Copy / pickle support
     # -----------------------------------------------------------------
     # The stored ``metadata`` is a (recursively) read-only ``MappingProxyType``,
-    # which the stdlib copy/pickle machinery cannot handle directly. These hooks
-    # round-trip through the thawed, mutable form; the constructor re-freezes it,
-    # so the copy is an independent Region with the same immutability guarantees.
-    def __copy__(self) -> Region:
-        return Region(
-            name=self.name,
-            kind=self.kind,
-            data=self.data,
-            metadata=_thaw_metadata(self.metadata),
-        )
-
-    def __deepcopy__(self, memo: dict[int, Any]) -> Region:
-        new = Region(
-            name=copy.deepcopy(self.name, memo),
-            kind=self.kind,
-            data=copy.deepcopy(self.data, memo),
-            metadata=_thaw_metadata(self.metadata),
-        )
-        memo[id(self)] = new
-        return new
-
+    # which the stdlib copy/pickle machinery cannot handle directly. Copy,
+    # deepcopy and pickle rebuild the Region from its thawed metadata through
+    # the constructor, which re-freezes it and owns a read-only point copy.
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         # Reconstruct via the public constructor with thawed metadata.
         return (
@@ -272,14 +477,11 @@ class Region:
             Dictionary representation of the Region.
 
         """
-        if self.kind == "point":
-            geom = (
-                self.data.tolist()
-                if isinstance(self.data, np.ndarray)
-                else list(self.data.coords[0])
-            )
-        else:
-            geom = mapping(self.data)
+        geom = (
+            self.data.tolist()
+            if isinstance(self.data, np.ndarray)
+            else mapping(self.data)
+        )
 
         return {
             "name": self.name,
@@ -297,26 +499,60 @@ class Region:
         Parameters
         ----------
         payload : Mapping[str, Any]
-            Dictionary containing region data with keys: 'name', 'kind', 'geom', 'metadata'.
+            A record as :meth:`to_dict` writes it: ``"name"``, ``"kind"``
+            and ``"geom"`` (point coordinates, or a GeoJSON polygon mapping),
+            and optionally ``"metadata"`` (empty when omitted).
 
         Returns
         -------
         Region
             Reconstructed Region instance.
 
+        Raises
+        ------
+        ValueError
+            If a required key is missing, a key is unknown, or the polygon
+            geometry cannot be read; and for any invalid name, geometry or
+            metadata, as the constructor does.
         """
-        kind_str = payload["kind"]
-        if kind_str not in ("point", "polygon"):
-            raise ValueError(f"Unknown kind {kind_str!r}")
-        kind: Kind = kind_str
-
-        if kind == "point":
-            data = np.asarray(payload["geom"], dtype=float)
-        else:  # kind == "polygon"
-            data = shape(payload["geom"])
+        name = payload.get("name")
+        kind = payload.get("kind")
+        record = "A region record" if name is None else f"Region {name!r}"
+        if kind is not None:
+            record += f" (kind {kind!r})"
+        missing = [key for key in _REGION_RECORD_KEYS if key not in payload]
+        if missing:
+            raise ValueError(
+                _format_error(
+                    f"{record} is missing {missing}.",
+                    fix="store each region as Region.to_dict() writes it: "
+                    "name, kind, geom and optional metadata",
+                )
+            )
+        unknown = sorted(set(payload) - {*_REGION_RECORD_KEYS, "metadata"}, key=str)
+        if unknown:
+            raise ValueError(
+                _format_error(
+                    f"{record} has unknown keys {unknown}.",
+                    fix="remove them, or move descriptive fields into the "
+                    "record's metadata",
+                )
+            )
+        data = payload["geom"]
+        if kind == "polygon":
+            try:
+                data = shape(data)
+            except (ShapelyError, AttributeError, KeyError, TypeError) as exc:
+                raise ValueError(
+                    _format_error(
+                        f"{record} has geometry shapely cannot read: {exc}.",
+                        fix="store the polygon as a GeoJSON mapping, as "
+                        "Region.to_dict() writes it",
+                    )
+                ) from exc
         return cls(
             name=payload["name"],
-            kind=kind,
+            kind=payload["kind"],
             data=data,
             metadata=payload.get("metadata", {}),
         )
@@ -327,11 +563,26 @@ class Region:
 # ---------------------------------------------------------------------
 
 
+def _require_region(value: object, *, key: str | None) -> Region:
+    """Return ``value`` if it is a Region; otherwise say what to pass instead."""
+    if isinstance(value, Region):
+        return value
+    where = "" if key is None else f" for {key!r}"
+    raise TypeError(
+        _format_error(
+            f"Regions holds Region values, got {type(value).__name__}{where}.",
+            fix="make a region with Region(name, 'point' or 'polygon', data); "
+            "attach landmarks with env.with_landmarks(Landmarks([...])) instead",
+        )
+    )
+
+
 class Regions(MutableMapping[str, Region]):
     """A small `dict`-like container mapping *name → Region*.
 
     Provides the usual mapping API plus a few helpers
-    (`add`, `remove`, `list_names`, `buffer`, …).
+    (`add`, `update_region`, `set`, `remove`, `buffer`, …); ``list(regions)``
+    gives the names in insertion order.
     Published snapshots preserve the read API and reject mutation; construct
     ``Regions(snapshot.values())`` to obtain a mutable editing container.
 
@@ -339,6 +590,16 @@ class Regions(MutableMapping[str, Region]):
     ----------
     items : iterable of Region or None, optional
         Initial regions, keyed by each region's name. Omit for an empty container.
+
+    Raises
+    ------
+    TypeError
+        If ``items`` is a mapping (pass its ``.values()``) or holds anything
+        other than :class:`Region` values.
+    ValueError
+        If the regions' dimensions differ.
+    KeyError
+        If two regions share a name.
 
     Examples
     --------
@@ -354,9 +615,40 @@ class Regions(MutableMapping[str, Region]):
     # -------------- Mapping interface --------------------------------
     def __init__(self, items: Iterable[Region] | None = None) -> None:
         self._store: Mapping[str, Region] = {}
+        if isinstance(items, Mapping):
+            raise TypeError(
+                _format_error(
+                    f"Regions(...) takes an iterable of Region values, got a "
+                    f"{type(items).__name__} mapping.",
+                    fix="pass its values: Regions(mapping.values())",
+                )
+            )
         if items is not None:
-            for reg in items:
-                self[reg.name] = reg
+            for region in items:
+                _require_region(region, key=None)
+                self[region.name] = region
+
+    def _check_insert(self, key: str, value: object) -> Region:
+        """Refuse a non-Region, a name mismatch, or a dimension mismatch."""
+        region = _require_region(value, key=key)
+        if key != region.name:
+            raise ValueError(
+                f"Key {key!r} must match Region.name {region.name!r}. "
+                f"Cannot assign region with name {region.name!r} to key {key!r}."
+            )
+        other = next((r for name, r in self._store.items() if name != key), None)
+        if other is not None and other.n_dims != region.n_dims:
+            raise ValueError(
+                _format_error(
+                    f"Region {region.name!r} has {region.n_dims} coordinates, "
+                    f"but the other regions here have {other.n_dims}.",
+                    why="Why: a collection holds the regions of one "
+                    "environment, which has one number of dimensions.",
+                    fix="keep one Regions collection per environment, with "
+                    "coordinates in that environment's dimensions",
+                )
+            )
+        return region
 
     def _mutable_store(self) -> dict[str, Region]:
         """Return the builder's store, refusing edits to a published snapshot."""
@@ -369,7 +661,7 @@ class Regions(MutableMapping[str, Region]):
 
     def _snapshot(self) -> Regions:
         """Own an ordered, immutable store while sharing immutable Region values."""
-        return type(self)._restore(tuple(self.values()), frozen=True)
+        return _snapshot_regions(self.values())
 
     @classmethod
     def _restore(cls, items: tuple[Region, ...], frozen: bool) -> Regions:
@@ -419,7 +711,8 @@ class Regions(MutableMapping[str, Region]):
         accepts new keys but raises :class:`KeyError` if ``key`` already
         exists. Callers that want to replace an existing region must opt
         in explicitly via :meth:`set` (idempotent replace) or
-        :meth:`update_region` (replace geometry/metadata in place).
+        :meth:`update_region` (replace geometry or metadata, keeping the
+        region's position).
 
         Parameters
         ----------
@@ -430,8 +723,11 @@ class Regions(MutableMapping[str, Region]):
 
         Raises
         ------
+        TypeError
+            If ``value`` is not a :class:`Region`.
         ValueError
-            If ``key`` does not match ``value.name``.
+            If ``key`` does not match ``value.name``, or the region's
+            dimension differs from the other regions'.
         KeyError
             If ``key`` is already present in the collection.
 
@@ -449,25 +745,23 @@ class Regions(MutableMapping[str, Region]):
         To replace an existing region, pick the explicit path:
 
         >>> _ = regions.set("goal", r2)  # idempotent replace
-        >>> _ = regions.update_region("goal", point=[15.0, 25.0])  # in-place edit
+        >>> _ = regions.update_region("goal", point=[15.0, 25.0])  # same position
 
         See Also
         --------
         set : Idempotent replace (accepts both new and existing names).
-        update_region : In-place geometry/metadata edit; raises if absent.
+        update_region : Replace geometry or metadata in the same position;
+            raises if absent.
         add : Build a new Region and insert it; raises if already exists.
 
         """
         store = self._mutable_store()
-        if key != value.name:
-            raise ValueError(
-                f"Key {key!r} must match Region.name {value.name!r}. "
-                f"Cannot assign region with name {value.name!r} to key {key!r}."
-            )
+        self._check_insert(key, value)
         if key in self._store:
             raise KeyError(
                 f"Region {key!r} already exists. "
-                "Use Regions.update_region(...) to modify it in place, or "
+                "Use Regions.update_region(...) to change its geometry or "
+                "metadata, or "
                 "Regions.set(name, region) for the idempotent replace path."
             )
         store[key] = value
@@ -496,6 +790,14 @@ class Regions(MutableMapping[str, Region]):
     def setdefault(self, key: str, default: Region | None = None) -> Region:
         """Return a region, inserting a supplied default into a mutable builder."""
         self._mutable_store()
+        if key not in self._store and default is None:
+            raise TypeError(
+                _format_error(
+                    f"Regions.setdefault({key!r}) has no region to insert.",
+                    fix=f"pass one: regions.setdefault({key!r}, Region({key!r}, "
+                    '"point", [x, y]))',
+                )
+            )
         return super().setdefault(key, cast("Region", default))
 
     def update(self, *args: Any, **kwargs: Region) -> None:
@@ -555,11 +857,7 @@ class Regions(MutableMapping[str, Region]):
             raise KeyError(f"Duplicate region name {name!r}.")
 
         if point is not None:
-            # Accept either a coordinate array or a Shapely Point
-            coords = np.asarray(
-                point.coords[0] if isinstance(point, Point) else point, dtype=float
-            )
-            region = Region(name, "point", coords, metadata or {})
+            region = Region(name, "point", point, metadata or {})
         else:
             region = Region(name, "polygon", polygon, metadata or {})
 
@@ -574,33 +872,36 @@ class Regions(MutableMapping[str, Region]):
         polygon: Polygon | None = None,
         metadata: Mapping[str, Any] | None = None,
     ) -> Region:
-        """Update an existing Region.
+        """Replace a region's geometry or metadata, keeping its position.
 
-        This method replaces an existing region with a new one. The region can
-        change its type (point vs polygon) and/or data and/or metadata.
-        Metadata is preserved from the existing region if not explicitly provided.
+        Regions are immutable, so this stores a new :class:`Region` under
+        ``name`` in the same position, keeping the order of
+        ``env.region_membership`` columns. Pass ``point`` or ``polygon`` to
+        replace the geometry (the kind may change), ``metadata`` to replace the
+        metadata, or both. Omitted geometry or metadata is kept.
 
         Parameters
         ----------
         name : str
             Name of the region to update.
         point : PointCoords or None, optional
-            Point coordinates or Shapely Point object. Mutually exclusive with polygon.
+            New point coordinates or Shapely Point. Mutually exclusive with
+            polygon.
         polygon : Polygon or None, optional
-            Shapely Polygon object. Mutually exclusive with point.
+            New Shapely Polygon. Mutually exclusive with point.
         metadata : Mapping[str, Any] or None, optional
-            Optional metadata dictionary to attach to the region. If None, preserves
-            the existing region's metadata.
+            Replacement metadata. If None, keeps the existing region's metadata.
 
         Returns
         -------
         Region
-            The newly created Region instance that replaced the old one.
+            The new Region stored under ``name``.
 
         Raises
         ------
         ValueError
-            If both or neither of point/polygon are specified.
+            If both point and polygon are given, nothing is given, or the new
+            region is invalid.
         KeyError
             If name does not exist in the collection.
 
@@ -609,35 +910,45 @@ class Regions(MutableMapping[str, Region]):
         >>> from neurospatial.regions import Regions
         >>> regs = Regions()
         >>> _ = regs.add("center", point=[0.0, 0.0], metadata={"color": "red"})
-        >>> # Update coordinates while preserving metadata
+        >>> _ = regs.add("arm", point=[5.0, 0.0])
+        >>> # Update coordinates while preserving metadata and order
         >>> _ = regs.update_region("center", point=[1.0, 1.0])
         >>> regs["center"].data
         array([1., 1.])
         >>> regs["center"].metadata["color"]
         'red'
+        >>> list(regs)
+        ['center', 'arm']
+        >>> # Update metadata only, keeping the geometry
+        >>> _ = regs.update_region("center", metadata={"color": "blue"})
+        >>> regs["center"].metadata["color"], regs["center"].data.tolist()
+        ('blue', [1.0, 1.0])
 
         """
         store = self._mutable_store()
-        if (point is None) == (polygon is None):
-            raise ValueError("Specify **one** of 'point' or 'polygon'.")
+        if point is not None and polygon is not None:
+            raise ValueError("Specify **one** of 'point' or 'polygon', not both.")
+        if point is None and polygon is None and metadata is None:
+            raise ValueError(
+                _format_error(
+                    f"update_region({name!r}) was given nothing to change.",
+                    fix="pass point=, polygon= or metadata=",
+                )
+            )
         if name not in self:
             raise RegionNotFoundError(name, available=list(self), argument=None)
 
-        # Preserve existing metadata if not explicitly provided
-        old_region = self._store[name]
-        effective_metadata = metadata if metadata is not None else old_region.metadata
-
+        old = self._store[name]
+        effective_metadata = old.metadata if metadata is None else metadata
         if point is not None:
-            # Accept either a coordinate array or a Shapely Point
-            coords = np.asarray(
-                point.coords[0] if isinstance(point, Point) else point, dtype=float
-            )
-            region = Region(name, "point", coords, effective_metadata)
-        else:
+            region = Region(name, "point", point, effective_metadata)
+        elif polygon is not None:
             region = Region(name, "polygon", polygon, effective_metadata)
+        else:
+            region = Region(name, old.kind, old.data, effective_metadata)
 
-        # Validate before removing the old value, then preserve replacement order.
-        del store[name]
+        # Validate first; assigning an existing key keeps its position.
+        self._check_insert(name, region)
         store[name] = region
         return region
 
@@ -664,18 +975,20 @@ class Regions(MutableMapping[str, Region]):
 
         Raises
         ------
+        TypeError
+            If ``region`` is not a :class:`Region`.
         ValueError
-            If ``name`` does not match ``region.name``.
+            If ``name`` does not match ``region.name``, or the region's
+            dimension differs from the other regions'.
 
         See Also
         --------
         add : Insert a new region; raises if ``name`` already exists.
-        update_region : Replace an existing region's geometry/metadata
-            in place; raises if ``name`` does not exist.
+        update_region : Replace an existing region's geometry or metadata,
+            keeping its position; raises if ``name`` does not exist.
         """
         store = self._mutable_store()
-        if name != region.name:
-            raise ValueError(f"Key {name!r} must match Region.name {region.name!r}.")
+        self._check_insert(name, region)
         # Bypass __setitem__'s duplicate check; this is the idempotent path.
         store[name] = region
         return region
@@ -691,80 +1004,10 @@ class Regions(MutableMapping[str, Region]):
         Raises
         ------
         KeyError
-            If ``name`` is not in the collection. Mirrors ``del regions[name]``
-            and the rest of the contract: every Region API
-            (``add``, ``update_region``, ``__setitem__``, ``__delitem__``,
-            ``remove``) raises rather than silently absorbing the case where
-            the caller's mental model of the collection disagrees with reality.
+            If ``name`` is not in the collection, as ``del regions[name]``
+            does. The error suggests the closest existing name.
         """
         del self[name]
-
-    def list_names(self) -> list[str]:
-        """Get list of region names in insertion order.
-
-        Returns
-        -------
-        list[str]
-            Region names in the order they were added.
-
-        """
-        return list(self._store)
-
-    # ----------- lightweight geometry helper -------------------------
-    def area(self, name: str) -> float:
-        """Compute area of a region.
-
-        Parameters
-        ----------
-        name : str
-            Name of region to query.
-
-        Returns
-        -------
-        float
-            Area of the polygon region, or 0.0 for point regions.
-
-        """
-        region = self[name]
-        if region.kind == "polygon":
-            assert isinstance(region.data, Polygon)
-            return float(region.data.area)
-        return 0.0
-
-    def region_center(self, name: str) -> NDArray[np.float64] | None:
-        """Calculate the center of a specified named region.
-
-        Parameters
-        ----------
-        name : str
-            Name of region to query.
-
-        Returns
-        -------
-        Optional[NDArray[np.float64]]
-            N-D coordinates of the region's center, or None if the region
-            is empty or center cannot be determined.
-
-        Raises
-        ------
-        KeyError
-            If `name` is not present in this collection.
-
-        """
-        if name not in self._store:
-            raise RegionNotFoundError(name, available=list(self._store), argument=None)
-
-        region = self._store[name]
-
-        if region.kind == "point":
-            return np.asarray(region.data, dtype=float)
-        # region.kind == "polygon"
-        assert isinstance(region.data, Polygon)
-        if region.data.is_empty:
-            # Empty polygon has no centroid coordinates; the documented
-            # contract is to return None rather than raise.
-            return None
-        return np.array(region.data.centroid.coords[0], dtype=float)
 
     def buffer(
         self,
@@ -778,62 +1021,107 @@ class Regions(MutableMapping[str, Region]):
         Parameters
         ----------
         source : str or NDArray[np.float64]
-            Region name or point coordinates to buffer around.
+            Region name or point coordinates, shape ``(2,)``, to buffer around.
         distance : float
-            Buffer distance in spatial units.
+            Buffer distance in the regions' coordinate units. Positive grows
+            the shape; negative shrinks a polygon (a point needs a positive
+            distance).
         new_name : str
             Name for the new buffered region.
         **meta : Any
-            Additional metadata for the new region.
+            Metadata of the new region. It replaces, and does not inherit,
+            the source region's metadata.
 
         Returns
         -------
         Region
-            The newly created buffered region.
+            The newly created buffered polygon region. Shapely approximates
+            a circle by a polygon, so a buffered point's area is slightly
+            less than pi * distance**2.
 
+        Raises
+        ------
+        ValueError
+            If ``distance`` is not finite, the source is not a 2-D point or
+            polygon, or the buffer leaves nothing or splits the shape into
+            several parts.
+        KeyError
+            If ``new_name`` already exists, or the named source does not.
+
+        Examples
+        --------
+        >>> regions = Regions()
+        >>> _ = regions.add("well", point=[10.0, 10.0])
+        >>> zone = regions.buffer("well", 5.0, "well_zone", role="reward")
+        >>> round(zone.area / (np.pi * 5.0**2), 2)
+        1.0
+        >>> dict(zone.metadata)
+        {'role': 'reward'}
         """
         self._mutable_store()
-        # derive geometry in cm space
+        if not np.isfinite(distance):
+            raise ValueError(
+                _format_error(
+                    f"buffer() distance must be finite, got {distance!r}.",
+                    fix="pass a distance in the regions' coordinate units, such as 5.0",
+                )
+            )
         if isinstance(source, str):
             src = self[source]
+            described = repr(source)
             if src.kind == "polygon":
                 assert isinstance(src.data, Polygon)
-                geom = src.data
+                geom: Point | Polygon = src.data
             elif src.kind == "point" and src.n_dims == 2:
                 assert isinstance(src.data, np.ndarray)
                 geom = Point(src.data)
             else:
-                raise ValueError("Can only buffer 2-D point or polygon regions.")
+                raise ValueError(
+                    _format_error(
+                        f"Cannot buffer {src.n_dims}-D point region {source!r}.",
+                        fix="buffer a 2-D point or polygon region",
+                    )
+                )
         else:  # raw coords
             arr = np.asarray(source, dtype=float)
             if arr.shape != (2,):
-                raise ValueError("Raw source must be shape (2,) for buffering.")
+                raise ValueError(
+                    _format_error(
+                        f"buffer() source coordinates must have shape (2,), got "
+                        f"{arr.shape}.",
+                        fix="pass one (x, y) point, or a region name",
+                    )
+                )
             geom = Point(arr)
+            described = f"point {arr.tolist()}"
 
         poly = geom.buffer(distance)
+        if poly.is_empty:
+            raise ValueError(
+                _format_error(
+                    f"Buffering {described} by {distance!r} leaves nothing.",
+                    why="Why: a negative distance shrinks a polygon by that much "
+                    "from every edge, and a point needs a positive distance.",
+                    fix="use a positive distance for a point, or a negative "
+                    "distance smaller than half the polygon's narrowest width",
+                )
+            )
         if not isinstance(poly, Polygon):
-            raise ValueError("Buffer produced non-polygon geometry.")
+            n_parts = len(getattr(poly, "geoms", ()))
+            raise ValueError(
+                _format_error(
+                    f"Buffering {described} by {distance!r} splits it into "
+                    f"{n_parts} parts.",
+                    why="Why: a region is one polygon, so the parts cannot be "
+                    "stored together.",
+                    fix="use a smaller distance, or make one region per part "
+                    "from shapely's buffer result",
+                )
+            )
 
         return self.add(new_name, polygon=poly, metadata=meta)
 
-    def to_dataframe(self) -> DataFrame:
-        """Convert this collection to a Pandas DataFrame.
-        Requires Pandas to be installed.
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with columns ['name', 'kind', 'data', 'metadata'].
-            The 'data' column contains the coordinates for points or polygons.
-
-        """
-        from .io import regions_to_dataframe
-
-        return regions_to_dataframe(self)
-
     # -------------- Serialization helpers ---------------------------
-    _FMT = "Regions-v1"
-
     def to_json(self, path: str | Path, *, indent: int = 2) -> None:
         """Write collection to disk in a simple, version-tagged schema.
 
@@ -876,6 +1164,55 @@ class Regions(MutableMapping[str, Region]):
         return regions_from_json(path)
 
 
-def _snapshot_regions(regions: Regions) -> Regions:
-    """Return an ordered, immutable copy of ``regions`` for an environment to own."""
-    return regions._snapshot()
+def regions_table(regions: Mapping[str, Region]) -> DataFrame:
+    """Tabulate regions, one row per region in iteration order.
+
+    Parameters
+    ----------
+    regions : Mapping[str, Region]
+        Regions to tabulate, such as ``env.regions`` or a ``Regions`` builder.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Indexed by ``name``, with columns ``kind``, ``n_dims``, ``area``
+        (coordinate units squared; 0.0 for a point), ``center`` (a tuple of
+        ``n_dims`` coordinates; a polygon's centroid, which can lie outside a
+        non-convex polygon) and ``metadata`` (a plain ``dict``). For the
+        geometry itself use :func:`~neurospatial.regions.regions_to_json`.
+
+    Examples
+    --------
+    >>> from shapely.geometry import box
+    >>> from neurospatial import Regions
+    >>> from neurospatial.regions import regions_table
+    >>> regions = Regions()
+    >>> _ = regions.add("reward", polygon=box(0.0, 0.0, 10.0, 5.0))
+    >>> _ = regions.add("start", point=[50.0, 2.5])
+    >>> regions_table(regions)[
+    ...     ["kind", "area", "center"]
+    ... ]  # doctest: +NORMALIZE_WHITESPACE
+               kind  area       center
+    name
+    reward  polygon  50.0   (5.0, 2.5)
+    start     point   0.0  (50.0, 2.5)
+    """
+    import pandas as pd
+
+    return pd.DataFrame(
+        {
+            "kind": [region.kind for region in regions.values()],
+            "n_dims": [region.n_dims for region in regions.values()],
+            "area": [region.area for region in regions.values()],
+            "center": [tuple(region.center.tolist()) for region in regions.values()],
+            "metadata": [
+                _thaw_metadata(region.metadata) for region in regions.values()
+            ],
+        },
+        index=pd.Index([region.name for region in regions.values()], name="name"),
+    ).astype({"kind": object, "n_dims": np.int64, "area": np.float64})
+
+
+def _snapshot_regions(regions: Iterable[Region]) -> Regions:
+    """Return an ordered, immutable collection of ``regions`` for an environment."""
+    return Regions._restore(tuple(regions), frozen=True)

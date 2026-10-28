@@ -1,609 +1,390 @@
-"""Tests for regions operations module."""
+"""Tests for region membership queries on 2-D positions."""
 
 import numpy as np
 import pandas as pd
 import pytest
 from numpy.testing import assert_array_equal
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, box
 
 from neurospatial import RegionNotFoundError
 from neurospatial.regions import Region, Regions
 from neurospatial.regions.ops import (
-    _get_points_in_single_region_mask,
-    _prepare_points,
+    _prepare_positions,
     points_in_any_region,
     regions_containing_points,
 )
 
 
-class TestPreparePoints:
-    """Tests for _prepare_points helper function."""
+@pytest.fixture(scope="module")
+def square():
+    """One 10 x 10 square region named ``box``."""
+    return Regions([Region(name="box", data=box(0, 0, 10, 10), kind="polygon")])
 
-    def test_basic_2d_array(self):
-        """Test with basic 2D numpy array."""
-        pts = np.array([[1.0, 2.0], [3.0, 4.0]])
 
-        result = _prepare_points(pts)
+@pytest.fixture(scope="module")
+def overlapping():
+    """``box1`` (0-10) and ``box2`` (5-15) overlap on 5-10."""
+    return Regions(
+        [
+            Region(name="box1", data=box(0, 0, 10, 10), kind="polygon"),
+            Region(name="box2", data=box(5, 5, 15, 15), kind="polygon"),
+        ]
+    )
 
-        assert_array_equal(result, pts)
+
+@pytest.fixture(scope="module")
+def three_boxes():
+    """Three overlapping squares on the diagonal."""
+    return Regions(
+        [
+            Region(name="box1", data=box(0, 0, 10, 10), kind="polygon"),
+            Region(name="box2", data=box(5, 5, 15, 15), kind="polygon"),
+            Region(name="box3", data=box(10, 10, 20, 20), kind="polygon"),
+        ]
+    )
+
+
+@pytest.fixture(scope="module")
+def well():
+    """A point region (reward well) at (50, 50), in cm."""
+    return Regions([Region(name="well", data=np.array([50.0, 50.0]), kind="point")])
+
+
+@pytest.fixture(scope="module")
+def box_and_well(square, well):
+    """The 10 x 10 square plus the reward well."""
+    return Regions([square["box"], well["well"]])
+
+
+# Interior, two edge points and an exterior point of the 10 x 10 square.
+EDGE_PROBES = np.array([[5.0, 5.0], [0.0, 5.0], [10.0, 5.0], [15.0, 15.0]])
+EDGE_EXPECTED = {True: [True, True, True, False], False: [True, False, False, False]}
+
+
+class PixelsToCm:
+    """Divide by 10: 10 px per cm."""
+
+    def __call__(self, positions):
+        return positions / 10
+
+
+class TestPreparePositions:
+    """Shape, finiteness and transform checks shared by both queries."""
+
+    def test_returns_float64_array_from_list_input(self):
+        result = _prepare_positions([[1, 2], [3, 4]], None)
         assert result.dtype == np.float64
+        assert_array_equal(result, [[1.0, 2.0], [3.0, 4.0]])
 
-    def test_single_point_1d(self):
-        """Test single point as 1D array."""
-        pts = np.array([5.0, 10.0])
+    def test_empty_positions_keep_their_shape(self):
+        assert _prepare_positions(np.empty((0, 2)), None).shape == (0, 2)
 
-        result = _prepare_points(pts)
+    def test_bare_pair_is_refused_as_ambiguous(self):
+        with pytest.raises(ValueError, match=r"got \(2,\)") as caught:
+            _prepare_positions(np.array([5.0, 10.0]), None)
+        assert "positions[None]" in str(caught.value)
+        assert "np.atleast_2d" in str(caught.value)
 
-        assert result.shape == (1, 2)
-        assert_array_equal(result, [[5.0, 10.0]])
+    @pytest.mark.parametrize("shape", [(3,), (1, 2, 2), (2, 3), (4, 1)])
+    def test_wrong_shapes_are_refused(self, shape):
+        with pytest.raises(ValueError, match=r"\(n_positions, 2\)"):
+            _prepare_positions(np.zeros(shape), None)
 
-    def test_single_point_2d(self):
-        """Test single point as 2D array."""
-        pts = np.array([[5.0, 10.0]])
+    def test_non_numeric_input_is_refused(self):
+        with pytest.raises(ValueError, match="numeric"):
+            _prepare_positions("not positions", None)
 
-        result = _prepare_points(pts)
+    def test_transform_maps_into_region_coordinates(self):
+        result = _prepare_positions(np.array([[10.0, 20.0]]), PixelsToCm())
+        assert_array_equal(result, [[1.0, 2.0]])
 
-        assert result.shape == (1, 2)
-        assert_array_equal(result, [[5.0, 10.0]])
+    def test_transform_that_adds_a_column_is_refused(self):
+        def to_3d(positions):
+            return np.column_stack([positions, np.zeros(len(positions))])
 
-    def test_list_of_lists(self):
-        """Test with list of lists."""
-        pts = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
+        with pytest.raises(ValueError, match=r"transform returned shape \(2, 3\)"):
+            _prepare_positions(np.ones((2, 2)), to_3d)
 
-        result = _prepare_points(pts)
+    def test_transform_that_drops_rows_is_refused(self):
+        with pytest.raises(ValueError, match=r"transform returned shape \(1, 2\)"):
+            _prepare_positions(np.ones((2, 2)), lambda positions: positions[:1])
 
-        expected = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-        assert_array_equal(result, expected)
+    def test_transform_with_non_finite_output_is_refused(self):
+        def blow_up(positions):
+            out = positions.copy()
+            out[1, 0] = np.inf
+            return out
 
-    def test_empty_array(self):
-        """Test with empty array."""
-        pts = np.empty((0, 2))
-
-        result = _prepare_points(pts)
-
-        assert result.shape == (0, 2)
-
-    def test_invalid_shape_1d_wrong_size(self):
-        """Test error on 1D array with wrong size."""
-        pts = np.array([1.0, 2.0, 3.0])
-
-        with pytest.raises(ValueError, match="Single point must have 2 coordinates"):
-            _prepare_points(pts)
-
-    def test_invalid_shape_3d(self):
-        """Test error on 3D array."""
-        pts = np.array([[[1, 2], [3, 4]]])
-
-        with pytest.raises(ValueError, match="must be of shape \\(N, 2\\)"):
-            _prepare_points(pts)
-
-    def test_invalid_shape_wrong_columns(self):
-        """Test error on wrong number of columns."""
-        pts = np.array([[1, 2, 3], [4, 5, 6]])
-
-        with pytest.raises(ValueError, match="must be of shape \\(N, 2\\)"):
-            _prepare_points(pts)
-
-    def test_with_transform(self):
-        """Test with transform applied."""
-        pts = np.array([[10.0, 20.0], [30.0, 40.0]])
-
-        # Simple transform: divide by 10
-        class SimpleTransform:
-            def __call__(self, pts):
-                return pts / 10
-
-        transform = SimpleTransform()
-        result = _prepare_points(pts, transform=transform)
-
-        expected = np.array([[1.0, 2.0], [3.0, 4.0]])
-        assert_array_equal(result, expected)
-
-    def test_unconvertible_input(self):
-        """Test error on input that can't be converted."""
-        pts = "not valid input"
-
-        with pytest.raises(ValueError, match="Could not convert points"):
-            _prepare_points(pts)
+        with pytest.raises(ValueError, match=r"transform\(positions\) has 1 row"):
+            _prepare_positions(np.ones((3, 2)), blow_up)
 
 
-class TestGetPointsInSingleRegionMask:
-    """Tests for _get_points_in_single_region_mask helper function."""
+class TestMissingPositions:
+    """A NaN position is missing, not outside every region."""
 
-    def test_point_region_inside(self):
-        """Test points inside tolerance of point region."""
-        region = Region(name="center", data=np.array([5.0, 5.0]), kind="point")
-        pts = np.array([[5.0, 5.0], [5.0 + 1e-9, 5.0], [10.0, 10.0]])
+    @pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+    @pytest.mark.parametrize(
+        "query",
+        [
+            points_in_any_region,
+            regions_containing_points,
+            lambda p, r: regions_containing_points(p, r, return_dataframe=False),
+        ],
+        ids=["any", "dataframe", "list"],
+    )
+    def test_non_finite_rows_are_refused(self, square, query, bad):
+        positions = np.array([[5.0, 5.0], [1.0, 1.0], [bad, 2.0], [3.0, bad]])
 
-        mask = _get_points_in_single_region_mask(
-            pts, region, point_tolerance=1e-8, include_boundary=True
+        with pytest.raises(ValueError) as caught:
+            query(positions, square)
+
+        message = str(caught.value)
+        assert "2 row(s)" in message
+        assert "first at row 2" in message
+        assert "Fix: drop or interpolate missing samples" in message
+
+
+class TestPolygonMembership:
+    def test_inside_outside_and_edge(self, square):
+        mask = points_in_any_region(
+            np.array([[5.0, 5.0], [15.0, 15.0], [0.0, 0.0]]), square
+        )
+        assert_array_equal(mask, [True, False, True])
+
+    def test_union_of_overlapping_regions(self, overlapping):
+        positions = np.array([[2.0, 2.0], [7.0, 7.0], [12.0, 12.0], [20.0, 20.0]])
+        assert_array_equal(
+            points_in_any_region(positions, overlapping), [True, True, True, False]
         )
 
-        assert mask[0]  # Exact match
-        assert mask[1]  # Within tolerance
-        assert not mask[2]  # Outside tolerance
+    def test_hole_is_outside(self):
+        donut = Polygon(
+            [(0, 0), (10, 0), (10, 10), (0, 10)],
+            holes=[[(4, 4), (6, 4), (6, 6), (4, 6)]],
+        )
+        regions = Regions([Region(name="donut", data=donut, kind="polygon")])
+        mask = points_in_any_region(np.array([[5.0, 5.0], [2.0, 2.0]]), regions)
+        assert_array_equal(mask, [False, True])
 
-    def test_point_region_outside(self):
-        """Test points outside tolerance of point region."""
-        region = Region(name="center", data=np.array([5.0, 5.0]), kind="point")
-        pts = np.array([[5.1, 5.1], [6.0, 6.0]])
-
-        mask = _get_points_in_single_region_mask(
-            pts, region, point_tolerance=1e-8, include_boundary=True
+    def test_region_after_partial_cover_still_counts(self, three_boxes):
+        # (1, 1) is only in box1, (18, 18) only in box3, the last region.
+        positions = np.array([[1.0, 1.0], [18.0, 18.0], [30.0, 30.0]])
+        assert_array_equal(
+            points_in_any_region(positions, three_boxes), [True, True, False]
         )
 
-        assert np.all(~mask)
-
-    def test_polygon_region_inside(self):
-        """Test points inside polygon region."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        region = Region(name="box", data=poly, kind="polygon")
-        pts = np.array([[5.0, 5.0], [15.0, 15.0], [0.0, 0.0]])
-
-        mask = _get_points_in_single_region_mask(
-            pts, region, point_tolerance=1e-8, include_boundary=True
-        )
-
-        assert mask[0]  # Inside
-        assert not mask[1]  # Outside
-        assert mask[2]  # On boundary (with include_boundary=True)
-
-    def test_polygon_region_exclude_boundary(self):
-        """Test boundary points excluded when include_boundary=False."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        region = Region(name="box", data=poly, kind="polygon")
-        pts = np.array([[5.0, 5.0], [0.0, 0.0], [10.0, 5.0]])
-
-        mask = _get_points_in_single_region_mask(
-            pts, region, point_tolerance=1e-8, include_boundary=False
-        )
-
-        assert mask[0]  # Inside
-        assert not mask[1]  # On boundary (excluded)
-        assert not mask[2]  # On boundary (excluded)
-
-    def test_empty_points_array(self):
-        """Test with empty points array."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        region = Region(name="box", data=poly, kind="polygon")
-        pts = np.empty((0, 2))
-
-        mask = _get_points_in_single_region_mask(
-            pts, region, point_tolerance=1e-8, include_boundary=True
-        )
-
+    def test_empty_positions(self, square):
+        mask = points_in_any_region(np.empty((0, 2)), square)
         assert mask.shape == (0,)
         assert mask.dtype == bool
 
+    def test_no_regions(self):
+        mask = points_in_any_region(np.array([[5.0, 5.0], [1.0, 1.0]]), Regions([]))
+        assert_array_equal(mask, [False, False])
 
-class TestPointsInAnyRegion:
-    """Tests for points_in_any_region function."""
-
-    def test_single_region_polygon(self):
-        """Test with single polygon region."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        regions = Regions([Region(name="box", data=poly, kind="polygon")])
-
-        pts = np.array([[5.0, 5.0], [15.0, 15.0], [0.0, 0.0]])
-
-        mask = points_in_any_region(pts, regions)
-
-        assert mask[0]  # Inside
-        assert not mask[1]  # Outside
-        assert mask[2]  # On boundary
-
-    def test_multiple_regions(self):
-        """Test with multiple overlapping regions."""
-        poly1 = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        poly2 = Polygon([(5, 5), (15, 5), (15, 15), (5, 15)])
-        regions = Regions(
-            [
-                Region(name="box1", data=poly1, kind="polygon"),
-                Region(name="box2", data=poly2, kind="polygon"),
-            ]
+    def test_transform(self):
+        unit = Regions([Region(name="box", data=box(0, 0, 1, 1), kind="polygon")])
+        mask = points_in_any_region(
+            np.array([[5.0, 5.0], [15.0, 15.0]]), unit, transform=PixelsToCm()
         )
+        assert_array_equal(mask, [True, False])
 
-        pts = np.array([[2.0, 2.0], [7.0, 7.0], [12.0, 12.0], [20.0, 20.0]])
 
-        mask = points_in_any_region(pts, regions)
+@pytest.mark.parametrize("include_boundary", [True, False])
+class TestIncludeBoundary:
+    """Edge positions count only with ``include_boundary=True``, in every output."""
 
-        assert mask[0]  # In box1 only
-        assert mask[1]  # In both boxes (overlap)
-        assert mask[2]  # In box2 only
-        assert not mask[3]  # Outside both
-
-    def test_empty_points(self):
-        """Test with empty points array."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        regions = Regions([Region(name="box", data=poly, kind="polygon")])
-
-        pts = np.empty((0, 2))
-
-        mask = points_in_any_region(pts, regions)
-
-        assert mask.shape == (0,)
-
-    def test_empty_regions(self):
-        """Test with empty regions collection."""
-        regions = Regions([])
-
-        pts = np.array([[5.0, 5.0], [10.0, 10.0]])
-
-        mask = points_in_any_region(pts, regions)
-
-        assert np.all(~mask)  # All False
-
-    def test_point_region(self):
-        """Test with point region."""
-        regions = Regions([Region(name="pt", data=np.array([5.0, 5.0]), kind="point")])
-
-        pts = np.array([[5.0, 5.0], [5.0 + 1e-9, 5.0], [10.0, 10.0]])
-
-        mask = points_in_any_region(pts, regions, point_tolerance=1e-8)
-
-        assert mask[0]  # Exact match
-        assert mask[1]  # Within tolerance
-        assert not mask[2]  # Outside tolerance
-
-    def test_point_region_membership_at_real_coordinate(self):
-        """A non-bit-exact query near a point landmark is a hit by default."""
-        regions = Regions(
-            [Region(name="feeder", data=np.array([50.0, 50.0]), kind="point")]
+    def test_any(self, square, include_boundary):
+        mask = points_in_any_region(
+            EDGE_PROBES, square, include_boundary=include_boundary
         )
-        # A bit-exact match and a sub-millimeter offset both lie within the
-        # default spatial tolerance. The offset query is what exposes the old
-        # float-equality (1e-8) bug.
-        pts = np.array([[50.0, 50.0], [50.0001, 49.9998]])
+        assert_array_equal(mask, EDGE_EXPECTED[include_boundary])
 
-        mask = points_in_any_region(pts, regions)
-
-        assert mask[0]
-        assert mask[1]
-
-    def test_point_region_membership_far_position_false(self):
-        """A position well outside the default tolerance is not a hit."""
-        regions = Regions(
-            [Region(name="feeder", data=np.array([50.0, 50.0]), kind="point")]
+    def test_dataframe(self, square, include_boundary):
+        df = regions_containing_points(
+            EDGE_PROBES, square, include_boundary=include_boundary
         )
-        pts = np.array([[60.0, 60.0]])
+        assert_array_equal(df["box"].to_numpy(), EDGE_EXPECTED[include_boundary])
 
-        mask = points_in_any_region(pts, regions)
-
-        assert not mask[0]
-
-    def test_point_region_strict_tolerance_still_available(self):
-        """Passing a tiny tolerance reproduces strict bit-exact matching."""
-        regions = Regions(
-            [Region(name="feeder", data=np.array([50.0, 50.0]), kind="point")]
+    def test_list(self, square, include_boundary):
+        result = regions_containing_points(
+            EDGE_PROBES,
+            square,
+            return_dataframe=False,
+            include_boundary=include_boundary,
         )
-        pts = np.array([[50.0, 50.0], [50.0001, 49.9998]])
+        expected = [["box"] if hit else [] for hit in EDGE_EXPECTED[include_boundary]]
+        assert result == expected
 
-        mask = points_in_any_region(pts, regions, point_tolerance=1e-8)
-
-        assert mask[0]  # bit-exact still matches
-        assert not mask[1]  # the small offset no longer matches
-
-    def test_with_transform(self):
-        """Test with coordinate transform."""
-        poly = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-        regions = Regions([Region(name="box", data=poly, kind="polygon")])
-
-        # Points in pixel space (need to divide by 10)
-        pts_px = np.array([[5.0, 5.0], [15.0, 15.0]])
-
-        class PixelToWorld:
-            def __call__(self, pts):
-                return pts / 10
-
-        mask = points_in_any_region(pts_px, regions, transform=PixelToWorld())
-
-        assert mask[0]  # (0.5, 0.5) inside unit box
-        assert not mask[1]  # (1.5, 1.5) outside unit box
-
-    def test_early_exit_optimization(self):
-        """Test early exit when all points covered."""
-        # Create a large region that covers everything
-        large_poly = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
-        small_poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-
-        regions = Regions(
-            [
-                Region(name="large", data=large_poly, kind="polygon"),
-                Region(name="small", data=small_poly, kind="polygon"),
-            ]
+    def test_point_region_rim(self, well, include_boundary):
+        # (53, 54) is exactly 5 cm from (50, 50): a 3-4-5 triangle.
+        mask = points_in_any_region(
+            np.array([[53.0, 54.0]]),
+            well,
+            point_radius=5.0,
+            include_boundary=include_boundary,
         )
+        assert_array_equal(mask, [include_boundary])
 
-        pts = np.array([[5.0, 5.0], [20.0, 20.0], [50.0, 50.0]])
 
-        mask = points_in_any_region(pts, regions)
+class TestPointRegions:
+    """A point region is a disc of radius ``point_radius`` in the regions' units."""
 
-        # All points should be inside the large region
-        assert np.all(mask)
+    def test_euclidean_disc_not_square(self, well):
+        # (53.6, 53.6) is within 5 cm on each axis but 5.09 cm away.
+        positions = np.array([[50.0, 50.0], [54.9, 50.0], [53.6, 53.6], [53.5, 53.5]])
+        mask = points_in_any_region(positions, well, point_radius=5.0)
+        assert_array_equal(mask, [True, True, False, True])
 
-    def test_include_boundary_true(self):
-        """Test that boundary points are included when include_boundary=True."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        regions = Regions([Region(name="box", data=poly, kind="polygon")])
+    def test_radius_sets_the_hit_distance(self, well):
+        # The same 3 cm offset is in a 5 cm well and out of a 2 cm one.
+        positions = np.array([[53.0, 50.0]])
+        assert points_in_any_region(positions, well, point_radius=5.0)[0]
+        assert not points_in_any_region(positions, well, point_radius=2.0)[0]
 
-        # Points on boundary
-        pts = np.array([[0.0, 5.0], [5.0, 0.0], [10.0, 5.0]])
+    def test_zero_radius_matches_only_the_point(self, well):
+        mask = points_in_any_region(
+            np.array([[50.0, 50.0], [50.0001, 50.0]]), well, point_radius=0.0
+        )
+        assert_array_equal(mask, [True, False])
 
-        mask = points_in_any_region(pts, regions, include_boundary=True)
+    @pytest.mark.parametrize(
+        "query",
+        [points_in_any_region, regions_containing_points],
+        ids=["any", "dataframe"],
+    )
+    def test_missing_radius_names_the_point_region(self, box_and_well, query):
+        with pytest.raises(ValueError) as caught:
+            query(np.array([[50.0, 50.0]]), box_and_well)
 
-        # All boundary points should be included
-        assert np.all(mask)
+        message = str(caught.value)
+        assert "'well'" in message
+        assert "'box'" not in message
+        assert "no area" in message
+        assert "point_radius=" in message
+        assert "env.bins_in_region('well')" in message
 
-    def test_include_boundary_false(self):
-        """Test that boundary points are excluded when include_boundary=False."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        regions = Regions([Region(name="box", data=poly, kind="polygon")])
+    @pytest.mark.parametrize("radius", [-1.0, np.nan, np.inf, True, "5"])
+    def test_invalid_radius_is_refused(self, well, radius):
+        with pytest.raises(ValueError, match="point_radius must be finite"):
+            points_in_any_region(np.array([[50.0, 50.0]]), well, point_radius=radius)
 
-        # Mix of interior, boundary, and exterior points
-        pts = np.array([[5.0, 5.0], [0.0, 5.0], [10.0, 5.0], [15.0, 15.0]])
+    def test_polygon_only_selection_needs_no_radius(self, box_and_well):
+        df = regions_containing_points(
+            np.array([[5.0, 5.0], [50.0, 50.0]]), box_and_well, region_names=["box"]
+        )
+        assert_array_equal(df["box"].to_numpy(), [True, False])
 
-        mask = points_in_any_region(pts, regions, include_boundary=False)
+    def test_mixed_regions(self, box_and_well):
+        result = regions_containing_points(
+            np.array([[5.0, 5.0], [51.0, 51.0], [30.0, 30.0]]),
+            box_and_well,
+            return_dataframe=False,
+            point_radius=2.0,
+        )
+        assert result == [["box"], ["well"], []]
 
-        assert mask[0]  # Interior point included
-        assert not mask[1]  # Boundary point excluded
-        assert not mask[2]  # Boundary point excluded
-        assert not mask[3]  # Exterior point excluded
+    @pytest.mark.parametrize("coords", [[1.0, 2.0, 3.0], [4.0]], ids=["3d", "1d"])
+    @pytest.mark.parametrize(
+        "query",
+        [points_in_any_region, regions_containing_points],
+        ids=["any", "dataframe"],
+    )
+    def test_non_2d_point_region_is_refused(self, coords, query):
+        regions = Regions([Region(name="cue", data=np.array(coords), kind="point")])
+        with pytest.raises(ValueError, match=f"'cue' is a {len(coords)}-D point"):
+            query(np.array([[1.0, 2.0]]), regions, point_radius=1.0)
 
 
 class TestRegionsContainingPoints:
-    """Tests for regions_containing_points function."""
-
-    def test_return_list_format(self):
-        """Test returning list of lists of region names."""
-        poly1 = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        poly2 = Polygon([(5, 5), (15, 5), (15, 15), (5, 15)])
-        regions = Regions(
-            [
-                Region(name="box1", data=poly1, kind="polygon"),
-                Region(name="box2", data=poly2, kind="polygon"),
-            ]
+    def test_list_output_names_every_containing_region(self, overlapping):
+        positions = np.array([[2.0, 2.0], [7.0, 7.0], [12.0, 12.0], [20.0, 20.0]])
+        result = regions_containing_points(
+            positions, overlapping, return_dataframe=False
         )
+        assert result == [["box1"], ["box1", "box2"], ["box2"], []]
 
-        pts = np.array([[2.0, 2.0], [7.0, 7.0], [12.0, 12.0], [20.0, 20.0]])
+    def test_dataframe_output(self, overlapping):
+        positions = np.array([[2.0, 2.0], [7.0, 7.0], [12.0, 12.0], [20.0, 20.0]])
 
-        result = regions_containing_points(pts, regions, return_dataframe=False)
+        df = regions_containing_points(positions, overlapping)
 
-        assert len(result) == 4
-        assert result[0] == ["box1"]  # In box1 only
-        assert set(result[1]) == {"box1", "box2"}  # In both
-        assert result[2] == ["box2"]  # In box2 only
-        assert result[3] == []  # Outside both
-
-    def test_return_dataframe_format(self):
-        """Test returning DataFrame format."""
-        poly1 = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        poly2 = Polygon([(5, 5), (15, 5), (15, 15), (5, 15)])
-        regions = Regions(
-            [
-                Region(name="box1", data=poly1, kind="polygon"),
-                Region(name="box2", data=poly2, kind="polygon"),
-            ]
-        )
-
-        pts = np.array([[2.0, 2.0], [7.0, 7.0], [12.0, 12.0], [20.0, 20.0]])
-
-        df = regions_containing_points(pts, regions, return_dataframe=True)
-
-        assert isinstance(df, pd.DataFrame)
-        assert df.shape == (4, 2)
         assert list(df.columns) == ["box1", "box2"]
-        assert df.loc[0, "box1"]
-        assert not df.loc[0, "box2"]
-        assert df.loc[1, "box1"]
-        assert df.loc[1, "box2"]
-        assert not df.loc[2, "box1"]
-        assert df.loc[2, "box2"]
-        assert not df.loc[3, "box1"]
-        assert not df.loc[3, "box2"]
+        assert isinstance(df.index, pd.RangeIndex)
+        assert (df.dtypes == np.dtype(bool)).all()
+        assert_array_equal(df["box1"].to_numpy(), [True, True, False, False])
+        assert_array_equal(df["box2"].to_numpy(), [False, True, True, False])
 
-    def test_filter_by_region_names(self):
-        """Test filtering to specific region names."""
-        poly1 = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        poly2 = Polygon([(5, 5), (15, 5), (15, 15), (5, 15)])
-        poly3 = Polygon([(10, 10), (20, 10), (20, 20), (10, 20)])
-        regions = Regions(
-            [
-                Region(name="box1", data=poly1, kind="polygon"),
-                Region(name="box2", data=poly2, kind="polygon"),
-                Region(name="box3", data=poly3, kind="polygon"),
-            ]
+    def test_list_and_dataframe_agree(self, three_boxes):
+        rng = np.random.default_rng(0)
+        positions = rng.uniform(-2, 22, size=(200, 2))
+
+        df = regions_containing_points(positions, three_boxes)
+        result = regions_containing_points(
+            positions, three_boxes, return_dataframe=False
         )
 
-        pts = np.array([[7.0, 7.0], [12.0, 12.0]])
+        assert result == [list(df.columns[row]) for row in df.to_numpy()]
+        assert_array_equal(
+            df.any(axis=1).to_numpy(), points_in_any_region(positions, three_boxes)
+        )
 
+    def test_region_names_select_and_order_columns(self, three_boxes):
         df = regions_containing_points(
-            pts, regions, region_names=["box1", "box2"], return_dataframe=True
+            np.array([[5.0, 5.0]]), three_boxes, region_names=["box3", "box1"]
         )
+        assert list(df.columns) == ["box3", "box1"]
+        assert_array_equal(df.to_numpy(), [[False, True]])
 
-        assert df.shape == (2, 2)
-        assert list(df.columns) == ["box1", "box2"]
-        # box3 should not be included
+    def test_single_name_string(self, overlapping):
+        df = regions_containing_points(
+            np.array([[5.0, 5.0]]), overlapping, region_names="box1"
+        )
+        assert list(df.columns) == ["box1"]
+        assert bool(df.loc[0, "box1"])
 
-    def test_empty_points_dataframe(self):
-        """Test with empty points returns empty DataFrame."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        regions = Regions([Region(name="box", data=poly, kind="polygon")])
-
-        pts = np.empty((0, 2))
-
-        df = regions_containing_points(pts, regions, return_dataframe=True)
-
-        assert isinstance(df, pd.DataFrame)
-        assert df.shape[0] == 0
-        assert "box" in df.columns
-
-    def test_empty_points_list(self):
-        """Test with empty points returns empty list."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        regions = Regions([Region(name="box", data=poly, kind="polygon")])
-
-        pts = np.empty((0, 2))
-
-        result = regions_containing_points(pts, regions, return_dataframe=False)
-
-        assert result == []
-
-    def test_no_regions_dataframe(self):
-        """Test with no regions returns empty columns."""
-        regions = Regions([])
-        pts = np.array([[5.0, 5.0]])
-
-        df = regions_containing_points(pts, regions, return_dataframe=True)
-
-        assert isinstance(df, pd.DataFrame)
-        assert df.shape == (1, 0)
-
-    def test_region_names_not_found(self):
-        """A misspelled name is refused, not dropped from the columns."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        regions = Regions([Region(name="box1", data=poly, kind="polygon")])
-
-        pts = np.array([[5.0, 5.0]])
-
+    def test_region_names_not_found(self, square):
         with pytest.raises(RegionNotFoundError) as caught:
             regions_containing_points(
-                pts, regions, region_names=["box1", "box"], return_dataframe=True
+                np.array([[5.0, 5.0]]), square, region_names=["box", "bx"]
             )
-        assert str(caught.value).endswith("Fix: pass region_names=['box1']")
+        assert str(caught.value).endswith("Fix: pass region_names=['box']")
 
-    def test_with_point_regions(self):
-        """Test with point regions."""
-        regions = Regions(
-            [
-                Region(name="pt1", data=np.array([5.0, 5.0]), kind="point"),
-                Region(name="pt2", data=np.array([10.0, 10.0]), kind="point"),
-            ]
-        )
+    def test_duplicate_region_names_are_refused(self, overlapping):
+        with pytest.raises(ValueError, match="lists 'box1' more than once"):
+            regions_containing_points(
+                np.array([[5.0, 5.0]]),
+                overlapping,
+                region_names=["box1", "box2", "box1"],
+            )
 
-        pts = np.array([[5.0, 5.0], [10.0 + 1e-9, 10.0]])
+    def test_empty_positions_dataframe_has_bool_columns(self, overlapping):
+        df = regions_containing_points(np.empty((0, 2)), overlapping)
 
-        df = regions_containing_points(
-            pts, regions, return_dataframe=True, point_tolerance=1e-8
-        )
+        assert df.shape == (0, 2)
+        assert list(df.columns) == ["box1", "box2"]
+        assert isinstance(df.index, pd.RangeIndex)
+        assert (df.dtypes == np.dtype(bool)).all()
 
-        assert df.loc[0, "pt1"]
-        assert not df.loc[0, "pt2"]
-        assert not df.loc[1, "pt1"]
-        assert df.loc[1, "pt2"]
-
-    def test_with_transform(self):
-        """Test with coordinate transform."""
-        poly = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-        regions = Regions([Region(name="box", data=poly, kind="polygon")])
-
-        pts_px = np.array([[5.0, 5.0], [15.0, 15.0]])
-
-        class PixelToWorld:
-            def __call__(self, pts):
-                return pts / 10
-
-        df = regions_containing_points(
-            pts_px, regions, transform=PixelToWorld(), return_dataframe=True
-        )
-
-        assert df.loc[0, "box"]  # (0.5, 0.5) inside
-        assert not df.loc[1, "box"]  # (1.5, 1.5) outside
-
-    def test_maintains_region_name_order(self):
-        """Test that region_names order is preserved in DataFrame."""
-        poly1 = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        poly2 = Polygon([(5, 5), (15, 5), (15, 15), (5, 15)])
-        poly3 = Polygon([(10, 10), (20, 10), (20, 20), (10, 20)])
-        regions = Regions(
-            [
-                Region(name="box1", data=poly1, kind="polygon"),
-                Region(name="box2", data=poly2, kind="polygon"),
-                Region(name="box3", data=poly3, kind="polygon"),
-            ]
-        )
-
-        pts = np.array([[5.0, 5.0]])
-
-        # Request in specific order
-        df = regions_containing_points(
-            pts,
-            regions,
-            region_names=["box3", "box1", "box2"],
-            return_dataframe=True,
-        )
-
-        assert list(df.columns) == ["box3", "box1", "box2"]
-
-    def test_list_format_with_multiple_regions_per_point(self):
-        """Test list format returns region objects in correct format."""
-        poly1 = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        poly2 = Polygon([(5, 5), (15, 5), (15, 15), (5, 15)])
-        regions = Regions(
-            [
-                Region(name="box1", data=poly1, kind="polygon"),
-                Region(name="box2", data=poly2, kind="polygon"),
-            ]
-        )
-
-        pts = np.array([[7.0, 7.0]])  # In both regions
-
-        result = regions_containing_points(pts, regions, return_dataframe=False)
-
-        assert len(result) == 1
-        assert len(result[0]) == 2
-        # Results are region names (strings), not Region objects
-        assert isinstance(result[0][0], str)
-        assert set(result[0]) == {"box1", "box2"}
-
-    def test_include_boundary_true_dataframe(self):
-        """Test that boundary points are included in DataFrame when include_boundary=True."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        regions = Regions([Region(name="box", data=poly, kind="polygon")])
-
-        # Points on boundary
-        pts = np.array([[0.0, 5.0], [5.0, 0.0], [10.0, 5.0]])
-
-        df = regions_containing_points(pts, regions, include_boundary=True)
-
-        # All boundary points should be included
-        assert df["box"].all()
-
-    def test_include_boundary_false_dataframe(self):
-        """Test that boundary points are excluded in DataFrame when include_boundary=False."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        regions = Regions([Region(name="box", data=poly, kind="polygon")])
-
-        # Mix of interior, boundary, and exterior points
-        pts = np.array([[5.0, 5.0], [0.0, 5.0], [10.0, 5.0], [15.0, 15.0]])
-
-        df = regions_containing_points(pts, regions, include_boundary=False)
-
-        assert df.loc[0, "box"]  # Interior point included
-        assert not df.loc[1, "box"]  # Boundary point excluded
-        assert not df.loc[2, "box"]  # Boundary point excluded
-        assert not df.loc[3, "box"]  # Exterior point excluded
-
-    def test_include_boundary_false_list(self):
-        """Test that boundary points are excluded in list format when include_boundary=False."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        regions = Regions([Region(name="box", data=poly, kind="polygon")])
-
-        # Mix of interior, boundary, and exterior points
-        pts = np.array([[5.0, 5.0], [0.0, 5.0], [10.0, 5.0], [15.0, 15.0]])
-
+    def test_empty_positions_list(self, square):
         result = regions_containing_points(
-            pts, regions, return_dataframe=False, include_boundary=False
+            np.empty((0, 2)), square, return_dataframe=False
         )
+        assert result == []
 
-        assert result[0] == ["box"]  # Interior point included
-        assert result[1] == []  # Boundary point excluded
-        assert result[2] == []  # Boundary point excluded
-        assert result[3] == []  # Exterior point excluded
+    def test_no_regions(self):
+        positions = np.array([[5.0, 5.0], [1.0, 1.0]])
+        df = regions_containing_points(positions, Regions([]))
+        assert df.shape == (2, 0)
+        assert isinstance(df.index, pd.RangeIndex)
+        result = regions_containing_points(
+            positions, Regions([]), return_dataframe=False
+        )
+        assert result == [[], []]
 
-
-def test_regions_containing_points_takes_a_single_name():
-    """A string is one region name, not a list of its letters."""
-    poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-    regions = Regions([Region(name="box1", data=poly, kind="polygon")])
-    df = regions_containing_points(np.array([[5.0, 5.0]]), regions, region_names="box1")
-    assert list(df.columns) == ["box1"]
-    assert bool(df.loc[0, "box1"])
+    def test_transform(self):
+        unit = Regions([Region(name="box", data=box(0, 0, 1, 1), kind="polygon")])
+        df = regions_containing_points(
+            np.array([[5.0, 5.0], [15.0, 15.0]]), unit, transform=PixelsToCm()
+        )
+        assert_array_equal(df["box"].to_numpy(), [True, False])

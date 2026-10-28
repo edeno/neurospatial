@@ -1,31 +1,39 @@
-"""regions/io.py
-=============
+"""Read and write regions: JSON files, annotation-tool exports and image masks.
 
-Helper functions for importing *continuous* ROIs (``Region`` / ``Regions``)
-from common labelling formats and exporting them to a shareable JSON schema.
+* :func:`regions_to_json` / :func:`regions_from_json` store regions with their
+  metadata in a standard ``"Regions-v1"`` JSON file.
+* :func:`load_labelme_json` and :func:`load_cvat_xml` read LabelMe and
+  CVAT for images 1.1 annotations, in image pixels unless a ``pixel_to_world``
+  transform is given.
+* :func:`mask_to_region` traces one connected area of an image mask.
 
+Image pixel coordinates are ``(x, y)`` with ``x`` the column and ``y`` the row,
+pointing down.
 """
 
 from __future__ import annotations
 
 import json
-import warnings
 import xml.etree.ElementTree as ET
-from collections.abc import Mapping
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import shapely
 import shapely.geometry as shp
 from numpy.typing import NDArray
-from shapely.errors import ShapelyError
-from shapely.geometry import Polygon
+from shapely import affinity
+from shapely.geometry import MultiPolygon, Polygon
+from shapely.validation import explain_validity
 
-from .core import Region, Regions
+from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_finite_scalar
+
+from .core import Kind, Region, Regions
 
 if TYPE_CHECKING:
-    import pandas as pd
-
     from ..ops.transforms import SpatialTransform
 
 # --------------------------------------------------------------------------
@@ -34,56 +42,418 @@ if TYPE_CHECKING:
 _SCHEMA_TAG = "Regions-v1"
 
 
-def regions_to_json(regions: Regions, path: str | Path, *, indent: int = 2) -> None:
-    """Write a list-of-dicts file that any language can read.
+def regions_to_json(
+    regions: Mapping[str, Region], path: str | Path, *, indent: int = 2
+) -> None:
+    """Write regions to a standard JSON file that any language can read.
+
+    The file holds one object, ``{"format": "Regions-v1", "regions": [...]}``,
+    with one :meth:`Region.to_dict` entry (name, kind, GeoJSON-style geometry
+    and metadata) per region. Missing parent directories are created and an
+    existing file is overwritten.
 
     Parameters
     ----------
-    regions : Regions
+    regions : Mapping[str, Region]
         Collection of regions to write.
     path : str or Path
         Destination file path.
-    indent : int, optional
-        Indentation level for the JSON file. Default is 2 spaces.
+    indent : int, default=2
+        Indentation of the JSON text, in spaces.
 
+    Raises
+    ------
+    ValueError
+        If a region holds a NaN or infinite coordinate or metadata value,
+        which standard JSON cannot store.
+
+    See Also
+    --------
+    regions_from_json : Read the file back.
     """
     payload = {
         "format": _SCHEMA_TAG,
         "regions": [reg.to_dict() for reg in regions.values()],
     }
-    # Ensure the parent directory exists before writing
+    try:
+        text = json.dumps(payload, indent=indent, allow_nan=False)
+    except ValueError as exc:
+        bad = next(
+            (
+                region.name
+                for region in regions.values()
+                if not _is_standard_json(region.to_dict())
+            ),
+            None,
+        )
+        raise ValueError(
+            _format_error(
+                f"Cannot write {path}: region {bad!r} holds a NaN or infinite "
+                "coordinate or metadata value.",
+                why="standard JSON has no NaN or Infinity, and regions must "
+                "have finite coordinates",
+                fix="find and fix the non-finite value in that region's data "
+                "or metadata",
+            )
+        ) from exc
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(payload, indent=indent))
+    output_path.write_text(text, encoding="utf-8")
+
+
+def _is_standard_json(value: Any) -> bool:
+    try:
+        json.dumps(value, allow_nan=False)
+    except ValueError:
+        return False
+    return True
 
 
 def regions_from_json(path: str | Path) -> Regions:
-    """Load the schema written by :func:`regions_to_json`.
+    """Read a regions file written by :func:`regions_to_json`.
 
     Parameters
     ----------
     path : str or Path
-        Path to the JSON file containing regions.
+        Path to the JSON file.
 
     Returns
     -------
     Regions
-        A collection of :class:`Region` objects representing the shapes in the JSON.
+        The regions, with their metadata, in file order.
 
+    Raises
+    ------
+    ValueError
+        If the file is not a ``"Regions-v1"`` regions file: the top level is
+        not an object, the ``format`` tag is missing or different, the
+        ``regions`` list is missing, or an entry is malformed.
+    json.JSONDecodeError
+        If the file is not valid JSON.
+
+    See Also
+    --------
+    regions_to_json : Write the file.
+    load_labelme_json, load_cvat_xml : Read annotation-tool exports.
     """
-    blob = json.loads(Path(path).read_text())
-    if blob.get("format") != _SCHEMA_TAG:
-        warnings.warn(
-            f"Unrecognised format tag {blob.get('format')!r}; attempting best-effort load",
-            category=UserWarning,
-            stacklevel=2,
+    blob = json.loads(Path(path).read_text(encoding="utf-8"))
+    rewrite = (
+        "read annotation-tool exports with load_labelme_json or load_cvat_xml, "
+        "or rewrite the regions with regions_to_json"
+    )
+    if not isinstance(blob, dict):
+        raise ValueError(
+            _format_error(
+                f"{path} holds a JSON {type(blob).__name__}, not a regions file.",
+                why=f'a regions file is an object with "format": "{_SCHEMA_TAG}" '
+                'and a "regions" list',
+                fix=rewrite,
+            )
         )
-    return Regions(Region.from_dict(d) for d in blob["regions"])
+    found = blob.get("format")
+    if found != _SCHEMA_TAG:
+        what = (
+            f"{path} has no format tag."
+            if found is None
+            else f"{path} has format tag {found!r}."
+        )
+        raise ValueError(
+            _format_error(
+                what,
+                why=f"only {_SCHEMA_TAG!r} files, written by regions_to_json, are read",
+                fix=rewrite,
+            )
+        )
+    entries = blob.get("regions")
+    if not isinstance(entries, list):
+        raise ValueError(
+            _format_error(
+                f'{path} has no "regions" list.',
+                fix="rewrite the regions with regions_to_json",
+            )
+        )
+    regions = []
+    for index, entry in enumerate(entries):
+        try:
+            regions.append(Region.from_dict(entry))
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise ValueError(
+                _format_error(
+                    f"Region entry {index} in {path} is malformed: {exc!r}.",
+                    why="each entry needs the name, kind, geom and metadata "
+                    "keys written by Region.to_dict",
+                    fix="rewrite the regions with regions_to_json",
+                )
+            ) from exc
+    return Regions(regions)
 
 
 # --------------------------------------------------------------------------
-# 2.  LabelMe / CVAT / VIA-style polygon JSON/XML  → Regions
+# 2.  Shared helpers: pixel coordinates, mask tracing, names
 # --------------------------------------------------------------------------
+def _pixels_to_world(
+    points_px: NDArray[np.float64],
+    pixel_to_world: SpatialTransform | None,
+    *,
+    where: str,
+) -> NDArray[np.float64]:
+    """Apply ``pixel_to_world`` to ``(n, 2)`` pixel points and check its output.
+
+    Returns ``points_px`` unchanged when ``pixel_to_world`` is None. ``where``
+    names the shape being converted for error messages.
+    """
+    if pixel_to_world is None:
+        return points_px
+    world = np.asarray(pixel_to_world(points_px), dtype=np.float64)
+    if world.shape != points_px.shape:
+        raise ValueError(
+            _format_error(
+                f"pixel_to_world returned shape {world.shape} for {where}; "
+                f"expected {points_px.shape}, one (x, y) row per pixel point.",
+                why="regions are 2-D, so each pixel (x, y) must map to one "
+                "world (x, y)",
+                fix="pass a 2-D transform such as "
+                "VideoCalibration.transform_px_to_cm or a 2-D AffineND",
+            )
+        )
+    if not np.isfinite(world).all():
+        n_bad = int((~np.isfinite(world).all(axis=1)).sum())
+        raise ValueError(
+            _format_error(
+                f"pixel_to_world returned non-finite coordinates for {n_bad} "
+                f"of {len(world)} points of {where}.",
+                why="a region needs finite world coordinates",
+                fix="check that the transform is defined over the whole image, "
+                "for example that a homography does not send these pixels to "
+                "infinity",
+            )
+        )
+    return world
+
+
+def _polygon_to_world(
+    polygon: Polygon, pixel_to_world: SpatialTransform | None, *, where: str
+) -> Polygon:
+    """Map every ring of a pixel polygon, exterior and holes, to world units."""
+    if pixel_to_world is None:
+        return polygon
+    return Polygon(
+        _pixels_to_world(
+            np.asarray(polygon.exterior.coords), pixel_to_world, where=where
+        ),
+        [
+            _pixels_to_world(np.asarray(ring.coords), pixel_to_world, where=where)
+            for ring in polygon.interiors
+        ],
+    )
+
+
+def _simplify_together(
+    polygons: Sequence[Polygon], tolerance: float
+) -> tuple[Polygon, ...]:
+    """Simplify components as one MultiPolygon, keeping every component and hole.
+
+    Simplifying together keeps components from overlapping one another. No
+    dilation or hole filling occurs.
+    """
+    geometry = MultiPolygon(polygons).simplify(tolerance, preserve_topology=True)
+    if not isinstance(geometry, Polygon | MultiPolygon) or not geometry.is_valid:
+        raise ValueError("Simplification did not preserve valid outline geometry.")
+    # GEOS may unwrap a one-component MultiPolygon into a Polygon.
+    simplified = (geometry,) if isinstance(geometry, Polygon) else tuple(geometry.geoms)
+    if len(simplified) != len(polygons) or sorted(
+        len(polygon.interiors) for polygon in simplified
+    ) != sorted(len(polygon.interiors) for polygon in polygons):
+        raise ValueError("Simplification did not preserve every component and hole.")
+    return simplified
+
+
+def _mask_to_pixel_polygons(
+    mask: NDArray[np.bool_], *, simplify_tolerance: float = 0.0
+) -> list[Polygon]:
+    """Trace the foreground pixel cells of a 2-D boolean mask exactly.
+
+    Pixel ``(x, y)`` = ``mask[y, x]`` covers ``[x-.5, x+.5] × [y-.5, y+.5]``,
+    so the polygons have the mask's exact area. Pixels that meet only at a
+    corner are separate components (four-neighbor connectivity); every
+    component and hole is kept. Positive ``simplify_tolerance`` (pixels)
+    simplifies all components together with topology preservation.
+
+    Returns the polygons sorted by bounds and area, or an empty list for an
+    empty foreground. ``mask`` must already be a 2-D boolean array.
+    """
+    validate_finite_scalar(
+        simplify_tolerance, name="simplify_tolerance (pixels)", positive=False
+    )
+    # One rectangle per horizontal run of foreground pixels, built at once.
+    edges = np.diff(np.pad(mask, ((0, 0), (1, 1))).astype(np.int8), axis=1)
+    rows, starts = np.nonzero(edges == 1)
+    _, stops = np.nonzero(edges == -1)
+    if not rows.size:
+        return []
+    # The union keeps a vertex at every row along a straight edge; a zero
+    # tolerance drops only those collinear vertices, so the outline is exact.
+    merged = shapely.simplify(
+        shapely.union_all(
+            shapely.box(starts - 0.5, rows - 0.5, stops - 0.5, rows + 0.5)
+        ),
+        0.0,
+    )
+    polygons = [merged] if isinstance(merged, Polygon) else list(merged.geoms)
+    if simplify_tolerance:
+        polygons = list(_simplify_together(polygons, simplify_tolerance))
+    return sorted(
+        polygons, key=lambda polygon: (*polygon.bounds, polygon.area, polygon.wkb)
+    )
+
+
+def _unique_region_names(labels: Sequence[str]) -> list[str]:
+    """Name regions from their labels, one rule for every loader.
+
+    A label used once keeps its name. A repeated label becomes ``label_0``,
+    ``label_1``, … in file order, skipping any suffix that is already a label
+    or a generated name, so generated names never collide.
+    """
+    counts = Counter(labels)
+    taken = set(labels)
+    next_index: dict[str, int] = {}
+    names = []
+    for label in labels:
+        if counts[label] == 1:
+            names.append(label)
+            continue
+        index = next_index.get(label, 0)
+        while f"{label}_{index}" in taken:
+            index += 1
+        name = f"{label}_{index}"
+        taken.add(name)
+        next_index[label] = index + 1
+        names.append(name)
+    return names
+
+
+# --------------------------------------------------------------------------
+# 3.  LabelMe JSON and CVAT XML  → Regions
+# --------------------------------------------------------------------------
+_LABELME_AREA_TYPES = ("polygon", "rectangle", "oriented_rectangle", "circle")
+_LABELME_POINT_TYPES = ("point", "points")
+_LINE_FIX = (
+    "draw the area as a polygon, or keep the line as a landmark with "
+    'neurospatial.Landmark(name, "line", points) in world coordinates'
+)
+
+
+def _labelme_shape(
+    shape: Any, index: int, json_path: Path, *, label_key: str, points_key: str
+) -> tuple[str, str, NDArray[np.float64]]:
+    """Return ``(label, shape_type, points)`` of one LabelMe shape, or raise."""
+    where = f"{json_path.name}, shape {index}"
+    if not isinstance(shape, dict):
+        raise ValueError(
+            _format_error(
+                f"{where} is a {type(shape).__name__}, not a shape object.",
+                fix="check that the file is a LabelMe annotation",
+            )
+        )
+    label = shape.get(label_key)
+    if not isinstance(label, str) or not label:
+        raise ValueError(
+            _format_error(
+                f"{where} has label {label!r} under key {label_key!r}.",
+                why="each region is named by its shape's label",
+                fix="give the shape a nonempty label, or pass label_key= "
+                "naming the key that holds it",
+            )
+        )
+    where = f"{where} (label {label!r})"
+    shape_type = shape.get("shape_type") or "polygon"
+    if shape_type in ("line", "linestrip"):
+        raise ValueError(
+            _format_error(
+                f"{where} is a {shape_type!r}: an open line is not a region.",
+                why="a region is an area or a point",
+                fix=_LINE_FIX,
+            )
+        )
+    if shape_type not in (*_LABELME_AREA_TYPES, *_LABELME_POINT_TYPES):
+        raise ValueError(
+            _format_error(
+                f"{where} has shape_type {shape_type!r}, which is not read.",
+                why="supported shape types are "
+                + ", ".join(
+                    repr(t) for t in (*_LABELME_AREA_TYPES, *_LABELME_POINT_TYPES)
+                ),
+                fix="redraw the area as a polygon; for a mask, decode it and "
+                "pass the image mask to mask_to_region",
+            )
+        )
+    raw = shape.get(points_key)
+    try:
+        points = np.asarray(raw, dtype=np.float64)
+    except (TypeError, ValueError):
+        points = np.empty(0)
+    if raw is None or points.ndim != 2 or points.shape[1] != 2 or not len(points):
+        raise ValueError(
+            _format_error(
+                f"{where} has no (x, y) point list under key {points_key!r}.",
+                fix="store the points as [[x, y], ...], or pass points_key= "
+                "naming the key that holds them",
+            )
+        )
+    if not np.isfinite(points).all():
+        raise ValueError(
+            _format_error(
+                f"{where} has non-finite point coordinates.",
+                fix="fix or delete the shape in LabelMe",
+            )
+        )
+    expected = {"rectangle": 2, "circle": 2, "point": 1, "oriented_rectangle": 4}
+    n_points = expected.get(shape_type)
+    if (n_points is not None and len(points) != n_points) or (
+        shape_type == "polygon" and len(points) < 3
+    ):
+        need = "at least 3" if n_points is None else f"exactly {n_points}"
+        raise ValueError(
+            _format_error(
+                f"{where} is a {shape_type!r} with {len(points)} points; "
+                f"it needs {need}.",
+                fix="fix or delete the shape in LabelMe",
+            )
+        )
+    return label, shape_type, points
+
+
+def _labelme_polygon(
+    shape_type: str, points: NDArray[np.float64], where: str
+) -> Polygon:
+    """Build the pixel polygon of a LabelMe area shape and check it."""
+    if shape_type == "rectangle":
+        (x0, y0), (x1, y1) = points.min(axis=0), points.max(axis=0)
+        polygon = shapely.box(x0, y0, x1, y1)
+    elif shape_type == "circle":
+        # LabelMe stores the centre and one point on the rim.
+        radius = float(np.hypot(*(points[1] - points[0])))
+        polygon = shp.Point(points[0]).buffer(radius)
+    else:  # polygon, oriented_rectangle
+        polygon = Polygon(points)
+    return _require_area(polygon, where, tool="LabelMe")
+
+
+def _require_area(polygon: Polygon, where: str, *, tool: str) -> Polygon:
+    """Return ``polygon`` if it is a valid area with positive size, else raise."""
+    if polygon.is_empty or polygon.area <= 0 or not polygon.is_valid:
+        reason = "zero area" if polygon.is_valid else explain_validity(polygon)
+        raise ValueError(
+            _format_error(
+                f"{where} is not a valid area: {reason}.",
+                why="a region polygon needs a positive area and edges that do "
+                "not cross",
+                fix=f"fix the shape's vertices in {tool}",
+            )
+        )
+    return polygon
+
+
 def load_labelme_json(
     json_path: str | Path,
     *,
@@ -91,308 +461,366 @@ def load_labelme_json(
     label_key: str = "label",
     points_key: str = "points",
 ) -> Regions:
-    """Parse a *.json* file produced by many point-&-click ROI tools.
+    """Read the shapes of a LabelMe annotation file as regions.
+
+    Shapes are read by their ``shape_type`` (a missing type is a polygon, as
+    in LabelMe):
+
+    * ``"polygon"`` (3 or more vertices) and ``"oriented_rectangle"``
+      (4 corners) become polygons.
+    * ``"rectangle"`` (2 opposite corners) becomes an axis-aligned box.
+    * ``"circle"`` (centre and one rim point) becomes a 64-vertex polygon.
+    * ``"point"`` becomes a point region, and each point of ``"points"``
+      becomes its own point region.
+
+    Open ``"line"`` and ``"linestrip"`` shapes, masks and any other type raise.
+
+    Region names come from labels. A label used once keeps its name; a
+    repeated label becomes ``label_0``, ``label_1``, … in file order,
+    skipping any name that is already a label.
 
     Parameters
     ----------
     json_path : str or Path
-        Path to the JSON file.
+        Path to the LabelMe ``.json`` file: an object with a ``"shapes"``
+        list, or a bare list of shape objects.
     pixel_to_world : SpatialTransform, optional
-        Callable mapping `(N, 2)` **pixel** coordinates → `(N, 2)` **world**
-        coordinates (e.g., centimeters). If `None`, the coordinates are
-        assumed to be in pixels.
-    label_key : str, optional
-        Key in the JSON object that contains the region label.
-        Default is "label".
-    points_key : str, optional
-        Key in the JSON object that contains the list of points.
-        Default is "points".
+        Callable mapping ``(n, 2)`` pixel ``(x, y)`` coordinates to
+        ``(n, 2)`` world coordinates, such as
+        ``VideoCalibration.transform_px_to_cm``. Shapes are built in pixels
+        and their vertices are then transformed. If None, coordinates stay in
+        image pixels: ``x`` is the column, ``y`` the row (pointing down).
+        LabelMe puts pixel ``(column, row)`` on ``[column, column + 1]``;
+        shapes are moved half a pixel up and left so that pixel ``(x, y)`` is
+        centred on ``(x, y)``, as in video frames, :func:`mask_to_region` and
+        :class:`~neurospatial.ops.transforms.VideoCalibration`.
+    label_key : str, default="label"
+        Key of each shape's label.
+    points_key : str, default="points"
+        Key of each shape's ``[[x, y], ...]`` points.
 
     Returns
     -------
     Regions
-        Every polygon becomes a :class:`Region` with ``kind="polygon"``.
+        One region per area or point, in file order. Each region's metadata
+        holds ``"label"`` (the label before any suffix), ``"shape_type"``,
+        ``"source_json"`` (the file name), ``"source_image"`` (LabelMe's
+        ``imagePath``, when present) and, without ``pixel_to_world``,
+        ``"coord_system": "pixels"``.
 
     Raises
     ------
     ValueError
-        If no shapes are found in the JSON file or if a shape is missing
-        required keys.
+        If the file has no shapes, a shape is not an object, has no label or
+        no ``(n, 2)`` points, has the wrong number of points for its type, is
+        an open line or an unsupported type, or is not a valid area; or if
+        ``pixel_to_world`` does not return finite ``(n, 2)`` coordinates. The
+        message names the file, the shape index and the label.
 
+    See Also
+    --------
+    neurospatial.annotation.regions_from_labelme : The same import with a
+        video calibration, recording the coordinate units.
+    load_cvat_xml : Read a CVAT export.
     """
-    data = json.loads(Path(json_path).read_text())
-    regions_list: list[Region] = []  # Renamed to avoid conflict with Regions class
-
-    # LabelMe puts shapes in a top-level list; CVAT stores under "shapes"
-    shapes_data = data.get("shapes", data if isinstance(data, list) else [])
-    if not isinstance(shapes_data, list):  # Ensure shapes_data is a list
+    path = Path(json_path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, dict):
+        shapes = data.get("shapes")
+        image_path = data.get("imagePath")
+    else:
+        shapes, image_path = data, None
+    if not isinstance(shapes, list) or not shapes:
         raise ValueError(
-            f"Expected 'shapes' to be a list, but got {type(shapes_data).__name__} in {json_path}",
+            _format_error(
+                f"{path.name} has no shapes.",
+                why='a LabelMe file lists its annotations under "shapes"',
+                fix="annotate at least one region in LabelMe and save, or check "
+                "that this is a LabelMe file",
+            )
         )
-    if not shapes_data:
-        warnings.warn(
-            f"No shapes found in {json_path}",
-            category=UserWarning,
-            stacklevel=2,
-        )  # Changed to warning, or could be error
-        return Regions([])  # Return empty Regions if no shapes
-
-    for i, obj in enumerate(shapes_data):
-        if not isinstance(obj, dict):
-            warnings.warn(
-                f"Shape at index {i} is not a dictionary, skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            continue
-
-        name = obj.get(label_key)
-        points_data = obj.get(points_key)
-
-        if name is None:
-            warnings.warn(
-                f"Shape at index {i} is missing label (key: '{label_key}'), skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            continue
-        if points_data is None:
-            warnings.warn(
-                f"Shape '{name}' (index {i}) is missing points (key: '{points_key}'), skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            continue
-
-        try:
-            pts_px: NDArray[np.float64] = np.asarray(points_data, dtype=float)  # (M, 2)
-            if pts_px.ndim != 2 or pts_px.shape[1] != 2:
-                warnings.warn(
-                    f"Points for shape '{name}' (index {i}) are not in (M, 2) format, skipping.",
-                    category=UserWarning,
-                    stacklevel=2,
+    parsed = [
+        _labelme_shape(shape, index, path, label_key=label_key, points_key=points_key)
+        for index, shape in enumerate(shapes)
+    ]
+    entries: list[tuple[str, Kind, Polygon | NDArray[np.float64], str]] = []
+    for index, (label, shape_type, corner_points) in enumerate(parsed):
+        where = f"{path.name}, shape {index} (label {label!r})"
+        # LabelMe draws pixel (c, r) on [c, c + 1] (its canvas paints the image
+        # from (0, 0) and clips points to [0, width]); centre pixels on (c, r).
+        points = corner_points - 0.5
+        if shape_type in _LABELME_POINT_TYPES:
+            world = _pixels_to_world(points, pixel_to_world, where=where)
+            entries.extend((label, "point", point, shape_type) for point in world)
+        else:
+            polygon = _labelme_polygon(shape_type, points, where)
+            entries.append(
+                (
+                    label,
+                    "polygon",
+                    _polygon_to_world(polygon, pixel_to_world, where=where),
+                    shape_type,
                 )
-                continue
-        except ValueError as e:
-            warnings.warn(
-                f"Could not parse points for shape '{name}' (index {i}): {e}, skipping.",
-                category=UserWarning,
-                stacklevel=2,
             )
-            continue
-
-        pts_transformed = pixel_to_world(pts_px) if pixel_to_world else pts_px
-        # Ensure polygon has at least 3 points for a valid polygon
-        if len(pts_transformed) < 3:
-            warnings.warn(
-                f"Shape '{name}' (index {i}) has fewer than 3 points after processing, skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            continue
-        try:
-            poly = shp.Polygon(pts_transformed)
-        except (TypeError, ValueError, ShapelyError) as e:  # Polygon construction
-            warnings.warn(
-                f"Could not create polygon for shape '{name}' (index {i}): {e}, skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            continue
-
-        regions_list.append(
-            Region(
-                name=str(name),  # Ensure name is a string
-                kind="polygon",
-                data=poly,
-                metadata={"source_json": Path(json_path).name},
-            ),
+    base_metadata: dict[str, Any] = {"source_json": path.name}
+    if isinstance(image_path, str):
+        base_metadata["source_image"] = image_path
+    if pixel_to_world is None:
+        base_metadata["coord_system"] = "pixels"
+    names = _unique_region_names([label for label, *_ in entries])
+    return Regions(
+        Region(
+            name=name,
+            kind=kind,
+            data=geometry,
+            metadata={**base_metadata, "label": label, "shape_type": shape_type},
         )
-    return Regions(regions_list)
+        for name, (label, kind, geometry, shape_type) in zip(
+            names, entries, strict=True
+        )
+    )
 
 
-def _rle_to_mask(rle: str, height: int, width: int) -> NDArray[np.uint8]:
-    """Convert a Run-Length Encoded string to a binary mask.
+# CVAT for images 1.1 children of <image> that become regions, and the
+# image-level tags that carry no geometry and are skipped.
+_CVAT_SHAPE_TAGS = ("polygon", "box", "ellipse", "mask", "polyline", "points")
+_CVAT_SKIPPED_TAGS = ("tag",)
+_CVAT_REEXPORT = 're-export the task from CVAT with the "CVAT for images 1.1" format'
 
-    Parameters
-    ----------
-    rle : str
-        The Run-Length Encoding string, e.g., "start1,length1,start2,length2,...".
-        Values are 0-indexed and refer to the flattened image.
-    height : int
-        The height of the image (in pixels).
-    width : int
-        The width of the image (in pixels).
 
-    Returns
-    -------
-    mask : NDArray[np.uint8], shape (height, width)
-        A binary mask where 1 represents the mask area and 0 is background.
+def _cvat_number(
+    elem: ET.Element, key: str, where: str, *, default: float | None = None
+) -> float:
+    """Read one finite numeric attribute of a CVAT shape, or raise."""
+    raw = elem.get(key)
+    if raw is None and default is not None:
+        return default
+    try:
+        value = float(raw) if raw is not None else np.nan
+    except ValueError:
+        value = np.nan
+    if not np.isfinite(value):
+        raise ValueError(
+            _format_error(
+                f"{where} has {key}={raw!r}; expected a finite number.",
+                fix=_CVAT_REEXPORT,
+            )
+        )
+    return value
 
-    Raises
-    ------
-    ValueError
-        If RLE string is malformed or values are out of bounds.
 
+def _parse_cvat_points(points_str: str | None, *, where: str) -> NDArray[np.float64]:
+    """Parse CVAT's ``"x1,y1;x2,y2;..."`` points into an ``(n, 2)`` array."""
+    try:
+        points = np.array(
+            [
+                [float(v) for v in pair.split(",")]
+                for pair in (points_str or "").split(";")
+            ],
+            dtype=np.float64,
+        )
+    except ValueError:
+        points = np.empty(0)
+    if points.ndim != 2 or points.shape[1] != 2 or not np.isfinite(points).all():
+        raise ValueError(
+            _format_error(
+                f"{where} has points={points_str!r}; expected finite "
+                '"x1,y1;x2,y2;..." pairs.',
+                fix=_CVAT_REEXPORT,
+            )
+        )
+    return points
+
+
+def _rle_to_mask(rle: str, width: int, height: int, *, where: str) -> NDArray[np.bool_]:
+    """Decode a CVAT mask's ``rle`` over its own ``width × height`` box.
+
+    CVAT writes ``rle`` as alternating run lengths in row-major order over the
+    mask's tight box, starting with a run of background (0) pixels, which may
+    be 0 long (``MaskConverter.rle`` and ``dm_mask_to_cvat_rle`` in
+    cvat/apps/dataset_manager/formats/transformations.py; ``cropMask`` in
+    cvat-core/src/object-utils.ts walks the runs the same way). The box sits
+    at the ``left``/``top`` attributes. Returns ``mask[row, column]``.
     """
     try:
-        rle_values = list(map(int, rle.split(",")))
+        counts = np.array([int(v) for v in rle.split(",")], dtype=np.int64)
     except ValueError:
-        raise ValueError(f"RLE string contains non-integer values: {rle}") from None
-
-    if len(rle_values) % 2 != 0:
-        raise ValueError(f"RLE string has an odd number of values: {rle}")
-
-    mask = np.zeros(height * width, dtype=np.uint8)
-    n_pixels = height * width
-
-    # Unpack RLE values into the mask. Each (start, length) run must lie fully
-    # within the flattened image; out-of-bounds or negative runs are a malformed
-    # encoding (a clamped NumPy slice would silently produce the wrong mask).
-    for start, length in zip(rle_values[::2], rle_values[1::2], strict=True):
-        if length < 0:
-            raise ValueError(
-                f"RLE run has negative length {length} (start={start}): {rle}"
+        counts = np.array([-1])
+    if (counts < 0).any() or counts.sum() != width * height:
+        raise ValueError(
+            _format_error(
+                f"{where} has rle={rle[:60]!r}, which does not cover its "
+                f"{width} x {height} pixel box.",
+                why="CVAT stores a mask as nonnegative run lengths that add up "
+                "to width x height",
+                fix=_CVAT_REEXPORT,
             )
-        if start < 0 or start + length > n_pixels:
-            raise ValueError(
-                f"RLE run [{start}, {start + length}) is out of bounds for an "
-                f"image of {n_pixels} pixels ({height}x{width}): {rle}"
-            )
-        mask[start : start + length] = 1  # Set the corresponding region to 1
-
-    return mask.reshape((height, width))  # Reshape to image dimensions
+        )
+    # Runs alternate background, foreground, ... starting with background.
+    values = np.arange(counts.size) % 2 == 1
+    return np.repeat(values, counts).reshape(height, width)
 
 
-def _mask_to_polygon(mask: NDArray[np.uint8]) -> Polygon:
-    """Converts a binary mask to a Shapely Polygon.
-
-    Parameters
-    ----------
-    mask : np.ndarray, shape (H, W)
-        A binary mask (2D array).
-
-    Returns
-    -------
-    shapely.geometry.Polygon
-        A Shapely Polygon representing the mask.
-
-    """
-    import cv2
-
-    contours, _ = cv2.findContours(
-        mask.astype(np.uint8),
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE,
+def _cvat_mask_polygon(
+    elem: ET.Element, where: str, image_size: tuple[int, int] | None
+) -> Polygon:
+    """Trace a CVAT ``<mask>`` into one pixel polygon, keeping its holes."""
+    left, top, width, height = (
+        _cvat_number(elem, key, where) for key in ("left", "top", "width", "height")
     )
-    if contours:
-        # Take the largest contour if there are multiple
-        contour = max(contours, key=cv2.contourArea)
-        return Polygon(contour.reshape(-1, 2))  # Convert to Polygon
-    return Polygon()  # Return an empty polygon if no contour found
-
-
-def _parse_cvat_points(
-    points_str: str,
-    shape_label: str | None = None,
-    shape_index: int | None = None,
-) -> NDArray[np.float64]:
-    """Parse a CVAT-style points string into a NumPy array.
-
-    CVAT points are formatted as "x1,y1;x2,y2;...;xn,yn".
-
-    Parameters
-    ----------
-    points_str : str
-        String containing points in the format "x1,y1;x2,y2;...;xn,yn".
-    shape_label : str, optional
-        Label of the shape these points belong to (for warning messages).
-    shape_index : int, optional
-        Index of the shape these points belong to (for warning messages).
-
-
-    Returns
-    -------
-    parsed_points : NDArray[np.float64], shape (N, 2)
-        Parsed points as floats.
-
-    Raises
-    ------
-    ValueError
-        If the points string is malformed.
-
-    """
-    parsed_points: list[list[float]] = []
-    if not points_str.strip():  # Handle empty string case
-        return np.empty((0, 2), dtype=float)
-
-    point_pairs = points_str.strip().split(";")
-    for i, pt_pair_str in enumerate(point_pairs):
-        if not pt_pair_str.strip():  # Handle empty pair (e.g., "x,y;;x,y")
-            warning_msg = "Empty point pair found in points string"
-            if shape_label and shape_index is not None:
-                warning_msg += f" for shape '{shape_label}' (index {shape_index})"
-            warning_msg += f" at pair index {i}."
-            warnings.warn(
-                warning_msg + " Skipping this pair.", category=UserWarning, stacklevel=2
+    if (
+        not all(v == int(v) for v in (left, top, width, height))
+        or min(width, height) < 1
+    ):
+        raise ValueError(
+            _format_error(
+                f"{where} has left={left}, top={top}, width={width}, "
+                f"height={height}; expected whole pixels and a nonempty box.",
+                fix=_CVAT_REEXPORT,
             )
-            continue
-        try:
-            x_str, y_str = pt_pair_str.split(",")
-            parsed_points.append([float(x_str), float(y_str)])
-        except ValueError:
-            # More informative error message
-            context = ""
-            if shape_label and shape_index is not None:
-                context = f" for shape '{shape_label}' (index {shape_index})"
+        )
+    if image_size is not None and (
+        left < 0
+        or top < 0
+        or left + width > image_size[0]
+        or top + height > image_size[1]
+    ):
+        raise ValueError(
+            _format_error(
+                f"{where} covers columns {int(left)}-{int(left + width) - 1} and "
+                f"rows {int(top)}-{int(top + height) - 1}, outside the "
+                f"{image_size[0]} x {image_size[1]} image.",
+                fix=_CVAT_REEXPORT,
+            )
+        )
+    mask = _rle_to_mask(elem.get("rle") or "", int(width), int(height), where=where)
+    polygons = _mask_to_pixel_polygons(mask)
+    if not polygons:
+        raise ValueError(
+            _format_error(
+                f"{where} is a mask with no foreground pixels.",
+                fix="delete the empty mask in CVAT",
+            )
+        )
+    if len(polygons) > 1:
+        raise ValueError(
+            _format_error(
+                f"{where} is a mask with {len(polygons)} separate areas.",
+                why="a Region holds one polygon, and pixels that touch only at a "
+                "corner are not connected",
+                fix="in CVAT, keep one connected area per mask shape (split or "
+                "erase the others)",
+            )
+        )
+    # The tracer puts pixel (x, y) on [x - .5, x + .5], the package's pixel
+    # frame, so the mask needs only its offset in the image.
+    return affinity.translate(polygons[0], left, top)
+
+
+def _cvat_box_polygon(elem: ET.Element, where: str) -> Polygon:
+    """A CVAT ``<box>``, rotated about its centre by ``rotation`` degrees."""
+    xtl, ytl, xbr, ybr = (
+        _cvat_number(elem, key, where) for key in ("xtl", "ytl", "xbr", "ybr")
+    )
+    if xbr <= xtl or ybr <= ytl:
+        raise ValueError(
+            _format_error(
+                f"{where} has xtl={xtl}, ytl={ytl}, xbr={xbr}, ybr={ybr}; the "
+                "bottom-right corner must be right of and below the top-left one.",
+                fix="fix or delete the box in CVAT",
+            )
+        )
+    return _cvat_rotated(
+        shapely.box(xtl, ytl, xbr, ybr),
+        elem,
+        where,
+        centre=((xtl + xbr) / 2, (ytl + ybr) / 2),
+    )
+
+
+def _cvat_ellipse_polygon(elem: ET.Element, where: str) -> Polygon:
+    """A CVAT ``<ellipse>`` as a 64-vertex polygon, rotated like a box."""
+    cx, cy, rx, ry = (
+        _cvat_number(elem, key, where) for key in ("cx", "cy", "rx", "ry")
+    )
+    if rx <= 0 or ry <= 0:
+        raise ValueError(
+            _format_error(
+                f"{where} has radii rx={rx}, ry={ry}; both must be positive.",
+                fix="fix or delete the ellipse in CVAT",
+            )
+        )
+    ellipse = affinity.scale(shp.Point(cx, cy).buffer(1.0), rx, ry, origin=(cx, cy))
+    return _cvat_rotated(ellipse, elem, where, centre=(cx, cy))
+
+
+def _cvat_rotated(
+    polygon: Polygon, elem: ET.Element, where: str, *, centre: tuple[float, float]
+) -> Polygon:
+    """Apply CVAT's ``rotation`` attribute, degrees about the shape's centre.
+
+    CVAT rotates corners with ``x' = cx + cos(a)(x - cx) - sin(a)(y - cy)``,
+    ``y' = cy + sin(a)(x - cx) + cos(a)(y - cy)`` in image coordinates, so a
+    positive angle turns clockwise on screen (y points down)
+    (``RotatedBoxesToPolygons._rotate_point`` in
+    cvat/apps/dataset_manager/formats/transformations.py). Shapely's
+    ``rotate`` applies the same matrix.
+    """
+    angle = _cvat_number(elem, "rotation", where, default=0.0)
+    return affinity.rotate(polygon, angle, origin=centre) if angle else polygon
+
+
+def _cvat_shape_geometries(
+    elem: ET.Element, where: str, image_size: tuple[int, int] | None
+) -> list[tuple[Kind, Polygon | NDArray[np.float64]]]:
+    """Pixel geometries of one CVAT shape: one entry, or one per point."""
+    tag = elem.tag
+    if tag == "points":
+        points = _parse_cvat_points(elem.get("points"), where=where)
+        return [("point", point) for point in points]
+    if tag == "polygon":
+        points = _parse_cvat_points(elem.get("points"), where=where)
+        if len(points) < 3:
             raise ValueError(
-                f"Malformed point string{context}: "
-                f"Could not parse '{pt_pair_str}' into two float coordinates. Full string: '{points_str}'",
-            ) from None
-    return np.array(parsed_points, dtype=float)
-
-
-def _create_cvat_region(
-    name: str,
-    shape_data: Polygon | NDArray[np.float64],  # Polygon or Point data
-    kind: str,
-    xml_path: Path,
-    color: str | None,
-    additional_metadata: Mapping[str, Any] | None = None,
-) -> Region:
-    """Helper function to create a Region object for CVAT shapes."""
-    from neurospatial.regions.core import Kind
-
-    if kind not in ("point", "polygon"):
-        raise ValueError(f"Invalid kind: {kind!r}")
-    # After validation, we know kind is either "point" or "polygon"
-    kind_typed = cast("Kind", kind)
-
-    metadata = {
-        "source_xml": xml_path.name,
-        "color": color,
-        "plot_kwargs": {"color": color} if color else {},
-    }
-    if additional_metadata:
-        metadata.update(additional_metadata)
-
-    return Region(name=name, kind=kind_typed, data=shape_data, metadata=metadata)
+                _format_error(
+                    f"{where} has {len(points)} points; a polygon needs at least 3.",
+                    fix="fix or delete the polygon in CVAT",
+                )
+            )
+        polygon = Polygon(points)
+    elif tag == "polyline":
+        points = _parse_cvat_points(elem.get("points"), where=where)
+        if len(points) < 4 or not np.allclose(points[0], points[-1]):
+            raise ValueError(
+                _format_error(
+                    f"{where} is an open polyline: an open line is not a region.",
+                    why="a region is an area or a point; only a polyline whose "
+                    "last point repeats its first encloses an area",
+                    fix=_LINE_FIX,
+                )
+            )
+        polygon = Polygon(points)
+    elif tag == "box":
+        polygon = _cvat_box_polygon(elem, where)
+    elif tag == "ellipse":
+        polygon = _cvat_ellipse_polygon(elem, where)
+    elif tag == "mask":
+        polygon = _cvat_mask_polygon(elem, where, image_size)
+    else:
+        raise ValueError(
+            _format_error(
+                f"{where} is a <{tag}> shape, which is not read.",
+                why="supported shapes are <"
+                + ">, <".join(_CVAT_SHAPE_TAGS)
+                + ">; cuboids and skeletons do not describe one 2-D area",
+                fix="delete the shape in CVAT, or draw the area as a polygon",
+            )
+        )
+    return [("polygon", _require_area(polygon, where, tool="CVAT"))]
 
 
 def _get_label_colors(root: ET.Element) -> dict[str, str]:
-    """Extract label colors from CVAT XML root element.
-
-    Parameters
-    ----------
-    root : ET.Element
-        Root element of the CVAT XML tree.
-
-    Returns
-    -------
-    dict[str, str]
-        Mapping of label names to their color values.
-
-    """
+    """Map each CVAT label name to its ``<color>`` from the export's meta."""
     label_colors: dict[str, str] = {}
     labels_elem = root.find(".//labels")
     if labels_elem is not None:
@@ -409,605 +837,364 @@ def _get_label_colors(root: ET.Element) -> dict[str, str]:
     return label_colors
 
 
-def _process_cvat_polygon(
-    polygon_elem: ET.Element,
-    elem_idx: int,
-    image_id_str: str,
-    pixel_to_world: SpatialTransform | None,
-    label_colors: dict[str, str],
-) -> tuple[str, shp.Polygon, str | None] | None:
-    """Process a CVAT polygon element into geometry.
-
-    Returns None if the polygon should be skipped.
-    """
-    raw_label = polygon_elem.get("label")
-    points_str = polygon_elem.get("points")
-    processed_label, color = _get_processed_label_and_color(raw_label, label_colors)
-
-    if not points_str:
-        warnings.warn(
-            f"Image '{image_id_str}', Polygon (raw_label: {raw_label}, "
-            f"xml_idx: {elem_idx}): missing 'points'. Skipping.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        return None
-
-    try:
-        pts_px = _parse_cvat_points(points_str, raw_label, elem_idx)
-        if pts_px.shape[0] < 3:
-            warnings.warn(
-                f"Image '{image_id_str}', Polygon (raw_label: {raw_label}, "
-                f"xml_idx: {elem_idx}): < 3 points. Skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            return None
-        pts_transformed = pixel_to_world(pts_px) if pixel_to_world else pts_px
-        geom = shp.Polygon(pts_transformed)
-        return (processed_label, geom, color)
-    except (ValueError, ShapelyError) as e:
-        warnings.warn(
-            f"Image '{image_id_str}', Polygon (raw_label: {raw_label}, "
-            f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        return None
+def _describe_cvat_image(image: ET.Element) -> str:
+    return f"{image.get('name')!r} (id {image.get('id')})"
 
 
-def _process_cvat_polyline(
-    polyline_elem: ET.Element,
-    elem_idx: int,
-    image_id_str: str,
-    pixel_to_world: SpatialTransform | None,
-    label_colors: dict[str, str],
-) -> tuple[str, shp.Polygon, str | None] | None:
-    """Process a CVAT polyline element, converting closed polylines to polygons.
-
-    Returns None if the polyline should be skipped.
-    """
-    raw_label = polyline_elem.get("label")
-    points_str = polyline_elem.get("points")
-    processed_label, color = _get_processed_label_and_color(raw_label, label_colors)
-
-    if not points_str:
-        warnings.warn(
-            f"Image '{image_id_str}', Polyline (raw_label: {raw_label}, "
-            f"xml_idx: {elem_idx}): missing 'points'. Skipping.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        return None
-
-    try:
-        pts_px = _parse_cvat_points(points_str, raw_label, elem_idx)
-        if pts_px.shape[0] < 2:
-            warnings.warn(
-                f"Image '{image_id_str}', Polyline (raw_label: {raw_label}, "
-                f"xml_idx: {elem_idx}): < 2 points. Skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            return None
-
-        pts_transformed = pixel_to_world(pts_px) if pixel_to_world else pts_px
-        if pts_transformed.shape[0] >= 3 and np.allclose(
-            pts_transformed[0],
-            pts_transformed[-1],
-        ):
-            geom = shp.Polygon(pts_transformed)
-            return (processed_label, geom, color)
-        warnings.warn(
-            f"Image '{image_id_str}', Polyline (raw_label: {raw_label}, "
-            f"xml_idx: {elem_idx}): open or too few points for polygon. Skipping.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        return None
-    except (ValueError, ShapelyError) as e:
-        warnings.warn(
-            f"Image '{image_id_str}', Polyline (raw_label: {raw_label}, "
-            f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        return None
+def _list_cvat_images(images: Sequence[ET.Element], limit: int = 10) -> str:
+    listed = ", ".join(_describe_cvat_image(image) for image in images[:limit])
+    return listed + (f", ... ({len(images)} in all)" if len(images) > limit else "")
 
 
-def _process_cvat_points(
-    points_elem: ET.Element,
-    elem_idx: int,
-    image_id_str: str,
-    pixel_to_world: SpatialTransform | None,
-    label_colors: dict[str, str],
-) -> list[tuple[str, shp.Point, str | None]]:
-    """Process a CVAT points element into a list of Point geometries.
-
-    Returns empty list if the points should be skipped.
-    """
-    raw_label_group = points_elem.get("label")
-    points_str = points_elem.get("points")
-    processed_label_group, color_group = _get_processed_label_and_color(
-        raw_label_group,
-        label_colors,
-    )
-
-    if not points_str:
-        warnings.warn(
-            f"Image '{image_id_str}', Points group (raw_label: {raw_label_group}, "
-            f"xml_idx: {elem_idx}): missing 'points'. Skipping.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        return []
-
-    try:
-        pts_px = _parse_cvat_points(points_str, raw_label_group, elem_idx)
-        if pts_px.shape[0] == 0:
-            warnings.warn(
-                f"Image '{image_id_str}', Points group (raw_label: {raw_label_group}, "
-                f"xml_idx: {elem_idx}): no valid points. Skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            return []
-
-        pts_transformed = pixel_to_world(pts_px) if pixel_to_world else pts_px
-        results = []
-        for pt_data in pts_transformed:
-            geom = shp.Point(pt_data)
-            results.append((processed_label_group, geom, color_group))
-        return results
-    except (ValueError, ShapelyError) as e:
-        warnings.warn(
-            f"Image '{image_id_str}', Points group (raw_label: {raw_label_group}, "
-            f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        return []
-
-
-def _process_cvat_box(
-    box_elem: ET.Element,
-    elem_idx: int,
-    image_id_str: str,
-    pixel_to_world: SpatialTransform | None,
-    label_colors: dict[str, str],
-) -> tuple[str, shp.Polygon, str | None] | None:
-    """Process a CVAT box element into a polygon geometry.
-
-    Returns None if the box should be skipped.
-    """
-    raw_label = box_elem.get("label")
-    processed_label, color = _get_processed_label_and_color(raw_label, label_colors)
-
-    try:
-        xtl_str = box_elem.get("xtl")
-        ytl_str = box_elem.get("ytl")
-        xbr_str = box_elem.get("xbr")
-        ybr_str = box_elem.get("ybr")
-
-        if xtl_str is None or ytl_str is None or xbr_str is None or ybr_str is None:
-            raise ValueError("Missing box coordinates")
-
-        xtl = float(xtl_str)
-        ytl = float(ytl_str)
-        xbr = float(xbr_str)
-        ybr = float(ybr_str)
-        pts_px = np.array([[xtl, ytl], [xbr, ytl], [xbr, ybr], [xtl, ybr]])
-        pts_transformed = pixel_to_world(pts_px) if pixel_to_world else pts_px
-        geom = shp.Polygon(pts_transformed)
-        return (processed_label, geom, color)
-    except (TypeError, ValueError, ShapelyError) as e:
-        warnings.warn(
-            f"Image '{image_id_str}', Box (raw_label: {raw_label}, "
-            f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        return None
-
-
-def _process_cvat_mask(
-    mask_elem: ET.Element,
-    elem_idx: int,
-    image_id_str: str,
-    img_h: int,
-    img_w: int,
-    pixel_to_world: SpatialTransform | None,
-    label_colors: dict[str, str],
-) -> tuple[str, shp.Polygon, str | None] | None:
-    """Process a CVAT mask element into a polygon geometry.
-
-    Returns None if the mask should be skipped.
-    Raises ImportError if cv2 is not available.
-    """
-    raw_label = mask_elem.get("label")
-    rle_str = mask_elem.get("rle")
-    processed_label, color = _get_processed_label_and_color(raw_label, label_colors)
-
-    if not rle_str:
-        warnings.warn(
-            f"Image '{image_id_str}', Mask (raw_label: {raw_label}, "
-            f"xml_idx: {elem_idx}): missing 'rle'. Skipping.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        return None
-
-    try:
-        mask_array = _rle_to_mask(rle_str, img_h, img_w)
-        mask_poly_px = _mask_to_polygon(mask_array)
-        if mask_poly_px.is_empty:
-            warnings.warn(
-                f"Image '{image_id_str}', Mask (raw_label: {raw_label}, "
-                f"xml_idx: {elem_idx}): empty polygon from mask. Skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            return None
-
-        final_geom: shp.Polygon
-        if pixel_to_world:
-            coords_px = np.array(mask_poly_px.exterior.coords)
-            coords_transformed = pixel_to_world(coords_px)
-            interiors_transformed = [
-                pixel_to_world(np.array(i.coords)) for i in mask_poly_px.interiors
-            ]
-            final_geom = shp.Polygon(coords_transformed, holes=interiors_transformed)
-        else:
-            final_geom = mask_poly_px
-
-        return (processed_label, final_geom, color)
-    except ImportError:
-        # Let this bubble up so caller can handle it
-        raise
-    except (ValueError, ShapelyError) as e:
-        warnings.warn(
-            f"Image '{image_id_str}', Mask (raw_label: {raw_label}, "
-            f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        return None
-
-
-def _get_processed_label_and_color(
-    raw_label_xml: str | None,
-    label_colors: dict[str, str],
-) -> tuple[str, str | None]:
-    """Process raw label from XML and get its color.
-
-    Parameters
-    ----------
-    raw_label_xml : str or None
-        Raw label string from XML attribute.
-    label_colors : dict[str, str]
-        Mapping of label names to color values.
-
-    Returns
-    -------
-    tuple[str, str | None]
-        Processed label (or "unlabeled") and associated color.
-
-    """
-    processed_label = (
-        raw_label_xml.strip()
-        if raw_label_xml and raw_label_xml.strip()
-        else "unlabeled"
-    )
-    color = None
-    if raw_label_xml and raw_label_xml.strip():
-        color = label_colors.get(raw_label_xml.strip())
-    return processed_label, color
-
-
-def _collect_shapes_from_image(
-    image: ET.Element,
-    image_id_str: str,
-    pixel_to_world: SpatialTransform | None,
-    label_colors: dict[str, str],
-) -> list[tuple[str, Any, str, str | None]]:
-    """Collect all shapes from a CVAT image element.
-
-    Returns a list of (label, geometry, kind, color) tuples.
-    """
-    collected_shapes_data: list[tuple[str, Any, str, str | None]] = []
-
-    # Polygons
-    for elem_idx, polygon_elem in enumerate(image.findall("polygon")):
-        result = _process_cvat_polygon(
-            polygon_elem,
-            elem_idx,
-            image_id_str,
-            pixel_to_world,
-            label_colors,
-        )
-        if result:
-            label, geom, color = result
-            collected_shapes_data.append((label, geom, "polygon", color))
-
-    # Polylines
-    for elem_idx, polyline_elem in enumerate(image.findall("polyline")):
-        result = _process_cvat_polyline(
-            polyline_elem,
-            elem_idx,
-            image_id_str,
-            pixel_to_world,
-            label_colors,
-        )
-        if result:
-            label, geom, color = result
-            collected_shapes_data.append((label, geom, "polygon", color))
-
-    # Points
-    for elem_idx, points_elem in enumerate(image.findall("points")):
-        results = _process_cvat_points(
-            points_elem,
-            elem_idx,
-            image_id_str,
-            pixel_to_world,
-            label_colors,
-        )
-        for label, geom, color in results:
-            collected_shapes_data.append((label, geom, "point", color))
-
-    # Boxes
-    for elem_idx, box_elem in enumerate(image.findall("box")):
-        result = _process_cvat_box(
-            box_elem,
-            elem_idx,
-            image_id_str,
-            pixel_to_world,
-            label_colors,
-        )
-        if result:
-            label, geom, color = result
-            collected_shapes_data.append((label, geom, "polygon", color))
-
-    # Masks
-    image_width_str = image.get("width")
-    image_height_str = image.get("height")
-
-    if image_width_str and image_height_str:
-        try:
-            img_w, img_h = int(image_width_str), int(image_height_str)
-            if img_w > 0 and img_h > 0:
-                for elem_idx, mask_elem in enumerate(image.findall("mask")):
-                    try:
-                        result = _process_cvat_mask(
-                            mask_elem,
-                            elem_idx,
-                            image_id_str,
-                            img_h,
-                            img_w,
-                            pixel_to_world,
-                            label_colors,
-                        )
-                        if result:
-                            label, geom, color = result
-                            collected_shapes_data.append(
-                                (label, geom, "polygon", color)
-                            )
-                    except ImportError:
-                        warnings.warn(
-                            f"Image '{image_id_str}', Mask (xml_idx: {elem_idx}): "
-                            f"OpenCV (cv2) missing. Skipping remaining masks.",
-                            category=UserWarning,
-                            stacklevel=2,
-                        )
-                        break
-            else:
-                warnings.warn(
-                    f"Image '{image_id_str}': non-positive width/height. "
-                    f"Cannot process RLE.",
-                    category=UserWarning,
-                    stacklevel=2,
+def _select_cvat_image(
+    images: list[ET.Element], image: str | int | None, path: Path
+) -> ET.Element:
+    """Return the one ``<image>`` whose shapes become regions, or raise."""
+    annotated = [
+        img
+        for img in images
+        if any(child.tag not in _CVAT_SKIPPED_TAGS for child in img)
+    ]
+    if image is None:
+        if len(annotated) == 1:
+            return annotated[0]
+        if not annotated:
+            raise ValueError(
+                _format_error(
+                    f"{path.name} has no shapes in any of its {len(images)} images.",
+                    fix="draw the regions in CVAT before exporting",
                 )
-        except ValueError:
-            warnings.warn(
-                f"Image '{image_id_str}': invalid width/height. Cannot process RLE.",
-                category=UserWarning,
-                stacklevel=2,
             )
-    else:
-        warnings.warn(
-            f"Image '{image_id_str}': missing width/height. Cannot process RLE.",
-            category=UserWarning,
-            stacklevel=2,
+        raise ValueError(
+            _format_error(
+                f"{path.name} has shapes on {len(annotated)} images: "
+                f"{_list_cvat_images(annotated)}.",
+                why="one image's shapes make one set of regions; shapes from "
+                "different frames may not share a coordinate frame",
+                fix=f"pass image= with the image name or id, for example "
+                f"image={annotated[0].get('name')!r}",
+            )
         )
+    key, wanted = ("name", image) if isinstance(image, str) else ("id", str(image))
+    matches = [img for img in images if img.get(key) == wanted]
+    if len(matches) != 1:
+        found = "no" if not matches else f"{len(matches)}"
+        raise ValueError(
+            _format_error(
+                f"{path.name} has {found} images with {key} {wanted!r}.",
+                fix=f"pass one of: {_list_cvat_images(images)}",
+            )
+        )
+    if matches[0] not in annotated:
+        raise ValueError(
+            _format_error(
+                f"Image {_describe_cvat_image(matches[0])} in {path.name} has "
+                "no shapes.",
+                fix=f"pass an annotated image: {_list_cvat_images(annotated)}"
+                if annotated
+                else "draw the regions in CVAT before exporting",
+            )
+        )
+    return matches[0]
 
-    return collected_shapes_data
 
-
-def _generate_region_names(
-    collected_shapes_data: list[tuple[str, Any, str, str | None]],
-    path_obj: Path,
-) -> list[Region]:
-    """Generate unique region names and create Region objects.
-
-    Handles the two-pass naming strategy: count label occurrences,
-    then generate names with indices for duplicates.
-    """
-    # Count label occurrences
-    label_total_counts: dict[str, int] = {}
-    for label, _, _, _ in collected_shapes_data:
-        label_total_counts[label] = label_total_counts.get(label, 0) + 1
-
-    # Generate unique names and create regions
-    running_indices_for_multi_labels: dict[str, int] = {}
-    regions: list[Region] = []
-
-    for label, geom, kind, color in collected_shapes_data:
-        total_occurrences = label_total_counts[label]
-        if total_occurrences == 1:
-            region_name = label
-        else:
-            current_idx = running_indices_for_multi_labels.get(label, 0)
-            region_name = f"{label}_{current_idx}"
-            running_indices_for_multi_labels[label] = current_idx + 1
-
-        regions.append(_create_cvat_region(region_name, geom, kind, path_obj, color))
-
-    return regions
+def _image_size(image: ET.Element) -> tuple[int, int] | None:
+    try:
+        size = (int(image.get("width", "")), int(image.get("height", "")))
+    except ValueError:
+        return None
+    return size if min(size) > 0 else None
 
 
 def load_cvat_xml(
     xml_path: str | Path,
     *,
     pixel_to_world: SpatialTransform | None = None,
+    image: str | int | None = None,
 ) -> Regions:
-    """Parse a *.xml* file produced by CVAT.
+    """Read the shapes of one image in a CVAT for images 1.1 export as regions.
 
-    Region names are generated based on their label. If a label appears
-    multiple times within an image, a running index is appended (e.g., tumor_0,
-    tumor_1). If a label is unique within an image, no index is added (e.g., tumor).
-    Unlabeled shapes follow the same logic (e.g., unlabeled or unlabeled_0).
-    Open polylines are ignored. Other shapes are converted to Regions.
+    CVAT draws on a canvas where pixel ``(column, row)`` covers
+    ``[column, column + 1] × [row, row + 1]``. Shapes are moved half a pixel
+    up and left into neurospatial's pixel frame, where pixel ``(x, y)`` is
+    centred on ``(x, y)`` as in video frames, masks from
+    :func:`mask_to_region` and :class:`~neurospatial.ops.transforms.VideoCalibration`.
+
+    Supported shapes:
+
+    * ``<polygon>`` becomes a polygon.
+    * ``<box>`` becomes a rectangle, turned by its ``rotation`` attribute
+      (degrees about the box centre; positive is clockwise on screen).
+    * ``<ellipse>`` becomes a 64-vertex polygon, rotated like a box.
+    * ``<mask>`` is decoded from its run lengths and traced exactly along
+      pixel edges, keeping holes. A mask must be one connected area.
+    * ``<polyline>`` whose last point repeats its first becomes a polygon.
+    * Each point of ``<points>`` becomes a point region.
+
+    Open polylines, cuboids, skeletons and malformed shapes raise; image-level
+    ``<tag>`` labels have no geometry and are skipped. Video exports
+    (``<track>``) are refused.
+
+    Region names come from labels. A label used once keeps its name; a
+    repeated label becomes ``label_0``, ``label_1``, … in file order,
+    skipping any name that is already a label.
 
     Parameters
     ----------
     xml_path : str or Path
-        Path to the CVAT XML file.
+        Path to the CVAT XML export.
     pixel_to_world : SpatialTransform, optional
-        Callable mapping `(N,2)` pixel coords → `(N,2)` world coords.
+        Callable mapping ``(n, 2)`` pixel ``(x, y)`` coordinates to
+        ``(n, 2)`` world coordinates, such as
+        ``VideoCalibration.transform_px_to_cm``. Shapes are built in pixels
+        and every vertex, holes included, is then transformed. If None,
+        coordinates stay in image pixels: ``x`` is the column, ``y`` the
+        row (pointing down), with the first pixel centred on ``(0, 0)``.
+    image : str or int, optional
+        The image whose shapes to read: its ``name`` (str) or ``id`` (int).
+        If None, the file must have shapes on exactly one image.
 
     Returns
     -------
     Regions
-        A collection of :class:`Region` objects.
+        One region per area or point, in file order. Each region's metadata
+        holds ``"label"`` (the label before any suffix), ``"shape_type"``
+        (the XML tag), ``"source_xml"`` (the file name), ``"source_image"``
+        and ``"image_id"`` (the image's name and id), ``"color"`` and
+        ``"plot_kwargs"`` (the label color, when the export lists one) and,
+        without ``pixel_to_world``, ``"coord_system": "pixels"``.
 
     Raises
     ------
     FileNotFoundError
-        If `xml_path` does not exist.
-    ET.ParseError
-        If `xml_path` is not a valid XML file.
+        If ``xml_path`` does not exist.
+    xml.etree.ElementTree.ParseError
+        If ``xml_path`` is not valid XML.
+    ValueError
+        If the file is not a CVAT for images export, holds tracks, has no
+        shapes, has shapes on several images and ``image`` is None, ``image``
+        matches no annotated image, a shape is malformed or unsupported, or
+        ``pixel_to_world`` does not return finite ``(n, 2)`` coordinates.
+        Shape errors name the file, the image, the shape index and the label.
 
+    See Also
+    --------
+    neurospatial.annotation.regions_from_cvat : The same import with a video
+        calibration, recording the coordinate units.
+    load_labelme_json : Read a LabelMe file.
     """
-    path_obj = Path(xml_path)
-    if not path_obj.exists():
+    path = Path(xml_path)
+    if not path.exists():
         raise FileNotFoundError(f"XML file not found: {xml_path}")
-
     try:
-        tree = ET.parse(path_obj)
+        root = ET.parse(path).getroot()
     except ET.ParseError as e:
         raise ET.ParseError(f"Error parsing XML file {xml_path}: {e}") from e
-
-    root = tree.getroot()
+    if root.tag != "annotations":
+        raise ValueError(
+            _format_error(
+                f"{path.name} has root element <{root.tag}>, not <annotations>.",
+                why="CVAT XML exports start with <annotations>",
+                fix=f"check that this is a CVAT export, or {_CVAT_REEXPORT}",
+            )
+        )
+    n_tracks = len(root.findall("track"))
+    if n_tracks:
+        raise ValueError(
+            _format_error(
+                f"{path.name} holds {n_tracks} <track> elements, which are not read.",
+                why='this is a "CVAT for video 1.1" export, where shapes follow '
+                "objects across frames",
+                fix=_CVAT_REEXPORT + ", which stores the shapes of each frame "
+                "under <image>",
+            )
+        )
+    images = root.findall("image")
+    if not images:
+        raise ValueError(
+            _format_error(
+                f"{path.name} has no <image> elements.",
+                fix=_CVAT_REEXPORT,
+            )
+        )
+    selected = _select_cvat_image(images, image, path)
+    image_name = selected.get("name")
+    image_id_raw = selected.get("id")
+    image_id = (
+        int(image_id_raw) if image_id_raw and image_id_raw.isdigit() else image_id_raw
+    )
+    image_size = _image_size(selected)
     label_colors = _get_label_colors(root)
 
-    all_regions_in_file: list[Region] = []
-    for image_idx, image in enumerate(root.findall("image")):
-        image_id_str = image.get("id", f"image{image_idx}")
-
-        # Collect all shapes from this image
-        collected_shapes_data = _collect_shapes_from_image(
-            image,
-            image_id_str,
-            pixel_to_world,
-            label_colors,
+    entries: list[tuple[str, Kind, Polygon | NDArray[np.float64], str]] = []
+    for index, elem in enumerate(selected):
+        if elem.tag in _CVAT_SKIPPED_TAGS:
+            continue
+        label = (elem.get("label") or "").strip()
+        where = (
+            f"{path.name}, image {_describe_cvat_image(selected)}, shape {index} "
+            f"(<{elem.tag}>, label {label!r})"
         )
+        if not label:
+            raise ValueError(
+                _format_error(
+                    f"{where} has no label.",
+                    why="each region is named by its shape's label",
+                    fix="give the shape a label in CVAT and re-export",
+                )
+            )
+        for kind, geometry in _cvat_shape_geometries(elem, where, image_size):
+            world: Polygon | NDArray[np.float64]
+            if isinstance(geometry, Polygon):
+                if elem.tag != "mask":
+                    geometry = affinity.translate(geometry, -0.5, -0.5)
+                world = _polygon_to_world(geometry, pixel_to_world, where=where)
+            else:
+                world = _pixels_to_world(
+                    geometry[np.newaxis] - 0.5, pixel_to_world, where=where
+                )[0]
+            entries.append((label, kind, world, elem.tag))
 
-        # Generate unique names and create Region objects
-        regions = _generate_region_names(collected_shapes_data, path_obj)
-        all_regions_in_file.extend(regions)
-
-    return Regions(all_regions_in_file)
+    base_metadata: dict[str, Any] = {
+        "source_xml": path.name,
+        "source_image": image_name,
+        "image_id": image_id,
+    }
+    if pixel_to_world is None:
+        base_metadata["coord_system"] = "pixels"
+    names = _unique_region_names([label for label, *_ in entries])
+    regions = []
+    for name, (label, kind, geometry, tag) in zip(names, entries, strict=True):
+        color = label_colors.get(label)
+        regions.append(
+            Region(
+                name=name,
+                kind=kind,
+                data=geometry,
+                metadata={
+                    **base_metadata,
+                    "label": label,
+                    "shape_type": tag,
+                    "color": color,
+                    "plot_kwargs": {"color": color} if color else {},
+                },
+            )
+        )
+    return Regions(regions)
 
 
 # --------------------------------------------------------------------------
-# 3.  Binary mask  → single Region   (requires OpenCV)
+# 4.  Binary image mask  → single Region
 # --------------------------------------------------------------------------
 def mask_to_region(
-    mask_img: NDArray[np.bool_],
+    mask: NDArray[np.bool_],
     *,
     region_name: str,
     pixel_to_world: SpatialTransform | None = None,
-    approx_tol_px: float = 1.0,
+    simplify_tolerance: float = 0.0,
 ) -> Region:
-    """Trace the largest contour of a boolean mask into a polygon Region.
+    """Trace one connected area of a 2-D image mask into a polygon Region.
 
-    * Requires **opencv-python**.
-    * Assumes **2-D** image; Y axis is *not* flipped - handle upstream if needed.
+    The outline follows the pixel cells exactly, so the polygon has the
+    mask's area and keeps its holes.
 
     Parameters
     ----------
-    mask_img : NDArray[np.bool_], shape (H, W)
-        Binary mask image, where `True` indicates the region of interest.
+    mask : ndarray of bool or 0/1 values, shape (height, width)
+        Image mask indexed ``mask[row, column]``, where True (or 1) marks the
+        area. The foreground must be one connected component; pixels that
+        meet only at a corner are not connected.
     region_name : str
-        Name for the resulting region.
+        Name of the resulting region.
     pixel_to_world : SpatialTransform, optional
-        Callable mapping *(N,2)* **pixel** coords → centimeter coords.
-        If `None`, the coordinates are assumed to be in pixels.
-    approx_tol_px : float, optional
-        Approximation tolerance for contour simplification in pixels.
-        Default is 1.0 pixel.
+        Callable mapping ``(n, 2)`` pixel ``(x, y)`` coordinates to
+        ``(n, 2)`` world coordinates, such as
+        ``VideoCalibration.transform_px_to_cm``. It is applied to the
+        exterior and to every hole. If None, the polygon stays in image
+        pixels: ``x`` is the column, ``y`` the row (pointing down), and pixel
+        ``(x, y)`` covers ``[x-.5, x+.5] × [y-.5, y+.5]``.
+    simplify_tolerance : float, default=0.0
+        Finite nonnegative simplification distance in pixels. Zero keeps the
+        exact pixel outline and area; positive values simplify the outline
+        with topology preservation, keeping every hole.
 
     Returns
     -------
     Region
-        A single :class:`Region` object representing the largest contour in the mask.
+        A ``kind="polygon"`` region. ``metadata["source"]`` is ``"mask"``, and
+        ``metadata["coord_system"]`` is ``"pixels"`` when ``pixel_to_world``
+        is None.
 
+    Raises
+    ------
+    ValueError
+        If the mask is not a nonempty 2-D boolean or 0/1 array, has no
+        foreground, or has more than one connected component.
+
+    See Also
+    --------
+    neurospatial.annotation.mask_to_polygons : Every component of a mask, in
+        pixels.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.regions import mask_to_region
+    >>> mask = np.zeros((5, 6), dtype=bool)
+    >>> mask[1:4, 1:5] = True
+    >>> mask[2, 2] = False  # a one-pixel hole
+    >>> region = mask_to_region(mask, region_name="arena")
+    >>> region.data.area, len(region.data.interiors)
+    (11.0, 1)
+    >>> region.data.bounds
+    (0.5, 0.5, 4.5, 3.5)
     """
-    try:
-        import cv2
-    except ImportError as exc:
-        raise RuntimeError("mask_to_region() needs opencv-python and shapely") from exc
-
-    if mask_img.dtype != np.uint8:
-        mask_img = mask_img.astype("uint8")
-
-    cnts, _ = cv2.findContours(
-        mask_img.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
+    array = np.asarray(mask)
+    if array.ndim != 2 or array.size == 0:
+        raise ValueError(
+            _format_error(
+                f"mask must be a nonempty 2-D image (height, width), got shape "
+                f"{array.shape}.",
+                fix="pass one image-sized boolean array, indexed mask[row, column]",
+            )
+        )
+    if array.dtype != np.bool_:
+        if not (np.issubdtype(array.dtype, np.number) and np.isin(array, (0, 1)).all()):
+            raise ValueError(
+                _format_error(
+                    f"mask must hold booleans or only 0 and 1, got dtype "
+                    f"{array.dtype} with other values.",
+                    why="a value such as 255, a probability or NaN does not say "
+                    "which pixels belong to the region",
+                    fix="threshold it first, for example mask_to_region(image > 0, ...)",
+                )
+            )
+        array = array.astype(np.bool_)
+    polygons = _mask_to_pixel_polygons(array, simplify_tolerance=simplify_tolerance)
+    if not polygons:
+        raise ValueError(
+            _format_error(
+                f"mask for region {region_name!r} has no foreground pixels.",
+                fix="mark the region's pixels True",
+            )
+        )
+    if len(polygons) > 1:
+        sizes = sorted((round(p.area) for p in polygons), reverse=True)[:5]
+        raise ValueError(
+            _format_error(
+                f"mask for region {region_name!r} has {len(polygons)} separate "
+                f"areas (largest pixel counts {sizes}).",
+                why="a Region holds one polygon, and pixels that touch only at "
+                "a corner are not connected",
+                fix="select one component (for example with "
+                "scipy.ndimage.label), or make one region per area from "
+                "neurospatial.annotation.mask_to_polygons",
+            )
+        )
+    polygon = _polygon_to_world(
+        polygons[0], pixel_to_world, where=f"region {region_name!r}"
     )
-    if not cnts:
-        raise ValueError("No contours found in mask")
-
-    # Take the largest contour by area
-    cnt = max(cnts, key=cv2.contourArea)[:, 0, :]  # (N,2) pixels
-    cnt = cv2.approxPolyDP(cnt, approx_tol_px, True)[:, 0, :]
-
-    pts_cm = pixel_to_world(cnt.astype(np.float64)) if pixel_to_world else cnt
-    poly = shp.Polygon(pts_cm)
-
-    return Region(
-        name=region_name,
-        kind="polygon",
-        data=poly,
-        metadata={"source": "mask"},
-    )
-
-
-# --------------------------------------------------------------------------
-# 4.  Utility: Regions → pandas DataFrame
-# --------------------------------------------------------------------------
-def regions_to_dataframe(regions: Regions) -> pd.DataFrame:
-    """Return a *pandas* DataFrame summary.
-
-    Parameters
-    ----------
-    regions : Regions
-        Collection of regions to summarize.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame with columns for region name, kind, area, and metadata.
-
-    """
-    import pandas as pd
-
-    records: list[Mapping[str, Any]] = []
-    for reg in regions.values():
-        rec = reg.to_dict()
-        if reg.kind == "polygon":
-            assert isinstance(reg.data, Polygon)
-            rec["area"] = float(reg.data.area)
-        else:
-            rec["area"] = 0.0
-        records.append(rec)
-
-    return pd.DataFrame.from_records(records)
+    metadata: dict[str, Any] = {"source": "mask"}
+    if pixel_to_world is None:
+        metadata["coord_system"] = "pixels"
+    return Region(name=region_name, kind="polygon", data=polygon, metadata=metadata)

@@ -102,6 +102,7 @@ from neurospatial.environment._regions import (
     _bins_in_region,
     _owned_regions,
     _region_membership,
+    _relabeled_regions,
 )
 from neurospatial.environment._subset import _subset
 from neurospatial.environment._summary import (
@@ -419,8 +420,13 @@ class Environment(Generic[_C]):
         return mask
 
     @property
-    def regions(self) -> Regions:
-        """Owned immutable named regions; edit a standalone Regions builder."""
+    def regions(self) -> Mapping[str, Region]:
+        """Named regions, read-only, in their order.
+
+        Their geometry is in this environment's coordinates. To change them,
+        edit a builder, ``Regions(env.regions.values())``, and publish it with
+        :meth:`with_regions`.
+        """
         return self._regions
 
     @property
@@ -600,6 +606,10 @@ class Environment(Generic[_C]):
         units, frame : str or None, optional
             New labels. Omission preserves the label; None clears it.
             Labels describe existing coordinates and never rescale them.
+            Regions share these coordinates, so a new ``units`` label also
+            replaces each region's recorded ``metadata["coord_system"]`` when
+            it matched the old label. A region recorded in other units than
+            the new label is refused, since relabelling converts nothing.
 
         Returns
         -------
@@ -611,15 +621,21 @@ class Environment(Generic[_C]):
         result._metadata = _replace_metadata(
             self._metadata, name=name, units=units, frame=frame
         )
+        if result.units != self.units:
+            result._regions = _relabeled_regions(
+                self._regions, self.units, result.units
+            )
         return result
 
-    def with_regions(self, regions: Regions) -> Self:
+    def with_regions(self, regions: Mapping[str, Region]) -> Self:
         """Return a new environment owning a snapshot of a region collection.
 
         Parameters
         ----------
-        regions : Regions
-            Complete replacement, in iteration order. An empty builder clears
+        regions : mapping of str to Region
+            Complete replacement, in iteration order, keyed by region name: a
+            :class:`~neurospatial.regions.Regions` builder, another
+            environment's ``regions`` or a plain dict. An empty mapping clears
             all regions. Coordinates must match this environment's dimension;
             regions may extend outside the arena.
 
@@ -628,8 +644,19 @@ class Environment(Generic[_C]):
         Environment
             Same concrete type and geometry. It shares this environment's
             analysis cache, so analyses computed on either are reused by both.
+
+        Raises
+        ------
+        TypeError
+            If ``regions`` is not a mapping or holds a value that is not a
+            :class:`~neurospatial.regions.Region`.
+        ValueError
+            If a key differs from its region's name, a region's dimension
+            differs from this environment's, or a region's
+            ``metadata["coord_system"]`` (``"pixels"`` or ``"cm"``, set by
+            the annotation readers) differs from :attr:`units`.
         """
-        snapshot = _owned_regions(regions, self.n_dims)
+        snapshot = _owned_regions(regions, self.n_dims, self.units)
         result = self._replace_value()
         result._regions = snapshot
         return result
@@ -3087,6 +3114,8 @@ class Environment(Generic[_C]):
             landmarks=self.landmarks,
             arena=self._arena,
             cache=self._cache,
+            units=self.units if isinstance(units, _Unset) else units,
+            old_units=self.units,
         )
         scale = derivation.length_scale
         if (
@@ -3172,7 +3201,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        regions: Regions | None = None,
+        regions: Mapping[str, Region] | None = None,
         arena: Arena | None = None,
     ) -> Environment[CartesianSystem]:
         """Construct an environment from explicit Cartesian binning data.
@@ -3190,7 +3219,7 @@ class Environment(Generic[_C]):
             Environment name.
         units, frame : str or None, optional
             Coordinate declarations; they do not convert coordinates.
-        regions : Regions or None, optional
+        regions : mapping of str to Region, or None, optional
             Named regions to snapshot at construction.
         arena : Arena or None, optional
             Continuous domain. Omission infers only what the supplied geometry
@@ -3227,7 +3256,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        regions: Regions | None = None,
+        regions: Mapping[str, Region] | None = None,
         arena: Arena | None = None,
         wall_fit: Literal["snap", "split"] = "snap",
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
@@ -3279,7 +3308,7 @@ class Environment(Generic[_C]):
         frame : str or None, default None
             Coordinate frame identifier for the environment (e.g. a session
             label). If provided, sets ``env.frame`` on the returned Environment.
-        regions : Regions, optional
+        regions : mapping of str to Region, optional
             Named regions to snapshot with the constructed environment.
         arena : Arena, optional
             Explicit continuous domain. Without one, infer an estimated domain
@@ -3473,7 +3502,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        regions: Regions | None = None,
+        regions: Mapping[str, Region] | None = None,
         arena: Arena | None = None,
         wall_fit: Literal["snap", "split"] = "snap",
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
@@ -3508,7 +3537,7 @@ class Environment(Generic[_C]):
             Spatial units for the environment coordinates (e.g. ``"cm"``).
         frame : str or None, default None
             Coordinate frame identifier.
-        regions : Regions, optional
+        regions : mapping of str to Region, optional
             Named regions to snapshot with the constructed environment.
         arena : Arena, optional
             Explicit continuous domain. Without one, infer an estimated domain
@@ -3623,7 +3652,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        regions: Regions | None = None,
+        regions: Mapping[str, Region] | None = None,
     ) -> Environment[CartesianSystem]:
         """Create a 1D linearized track Environment from an explicit topology.
 
@@ -3661,7 +3690,7 @@ class Environment(Generic[_C]):
         frame : str or None, default None
             Coordinate frame identifier. If provided, sets ``env.frame`` on the
             returned Environment.
-        regions : Regions, optional
+        regions : mapping of str to Region, optional
             Named regions to snapshot with the constructed environment.
 
         Returns
@@ -3728,7 +3757,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        regions: Regions | None = None,
+        regions: Mapping[str, Region] | None = None,
     ) -> Environment[CartesianSystem]:
         """Create a 1D linearized W / plus / T maze Environment.
 
@@ -3812,7 +3841,7 @@ class Environment(Generic[_C]):
         frame : str or None, default None
             Coordinate frame identifier. If provided, sets ``env.frame`` on the
             returned Environment.
-        regions : Regions, optional
+        regions : mapping of str to Region, optional
             Named regions to snapshot with the constructed environment.
 
         Returns
@@ -3876,7 +3905,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        regions: Regions | None = None,
+        regions: Mapping[str, Region] | None = None,
         track_width: float | None = None,
     ) -> Environment[CartesianSystem]:
         """Create an Environment from a user-defined graph structure.
@@ -3916,7 +3945,7 @@ class Environment(Generic[_C]):
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
-        regions : Regions, optional
+        regions : mapping of str to Region, optional
             Named regions to snapshot with the constructed environment.
         track_width : float, optional
             Physical full width of the track in coordinate units. A positive
@@ -4040,7 +4069,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        regions: Regions | None = None,
+        regions: Mapping[str, Region] | None = None,
         arena: Arena | None = None,
         wall_fit: Literal["snap", "split"] = "snap",
         connect_diagonal_neighbors: bool = True,
@@ -4066,7 +4095,7 @@ class Environment(Generic[_C]):
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
-        regions : Regions, optional
+        regions : mapping of str to Region, optional
             Named regions to snapshot with the constructed environment.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active grid cells.
@@ -4154,7 +4183,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        regions: Regions | None = None,
+        regions: Mapping[str, Region] | None = None,
         arena: Arena | None = None,
         wall_fit: Literal["snap", "split"] = "snap",
         connect_diagonal_neighbors: bool = True,
@@ -4184,7 +4213,7 @@ class Environment(Generic[_C]):
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
-        regions : Regions, optional
+        regions : mapping of str to Region, optional
             Named regions to snapshot with the constructed environment.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active grid cells.
@@ -4266,7 +4295,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        regions: Regions | None = None,
+        regions: Mapping[str, Region] | None = None,
         arena: Arena | None = None,
         wall_fit: Literal["snap", "split"] = "snap",
         connect_diagonal_neighbors: bool = True,
@@ -4297,7 +4326,7 @@ class Environment(Generic[_C]):
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
-        regions : Regions, optional
+        regions : mapping of str to Region, optional
             Named regions to snapshot with the constructed environment.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active pixel-bins.
@@ -4385,7 +4414,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        regions: Regions | None = None,
+        regions: Mapping[str, Region] | None = None,
         arena: Arena | None = None,
         wall_fit: Literal["snap", "split"] = "snap",
     ) -> Environment[CartesianSystem]:
@@ -4409,7 +4438,7 @@ class Environment(Generic[_C]):
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
-        regions : Regions, optional
+        regions : mapping of str to Region, optional
             Named regions to snapshot with the constructed environment.
         arena : Arena, optional
             Continuous domain. Bins whose centers fall outside a known arena
@@ -5469,7 +5498,7 @@ class Environment(Generic[_C]):
 
     def region_membership(
         self,
-        regions: Regions | None = None,
+        regions: Mapping[str, Region] | None = None,
         *,
         include_boundary: bool = True,
     ) -> NDArray[np.bool_]:
@@ -5484,8 +5513,9 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        regions : Regions, optional
-            Regions to test against. If None (default), uses self.regions.
+        regions : mapping of str to Region, optional
+            Regions to test against, such as a Regions builder. If None
+            (default), uses self.regions.
             Allows testing against external region sets without modifying
             the environment.
         include_boundary : bool, default=True
@@ -5504,7 +5534,7 @@ class Environment(Generic[_C]):
         Raises
         ------
         TypeError
-            If regions parameter is not a Regions instance or None.
+            If regions is not a mapping of names to Region values or None.
             If include_boundary is not a boolean.
 
         See Also
@@ -5598,7 +5628,7 @@ class Environment(Generic[_C]):
 
     def region_mask(
         self,
-        regions: str | list[str | Region] | Region | Regions,
+        regions: str | list[str | Region] | Region | Mapping[str, Region],
         *,
         include_boundary: bool = True,
     ) -> NDArray[np.bool_]:
@@ -5612,9 +5642,10 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        regions : str, list of str or Region, Region, or Regions
+        regions : str, list of str or Region, Region, or mapping of str to Region
             Region(s) to select. A name refers to an entry in ``self.regions``;
-            Region objects are used directly.
+            Region objects, and the values of a mapping such as a Regions
+            builder, are used directly.
         include_boundary : bool, default=True
             For polygon regions, count a bin whose center lies exactly on the
             polygon's edge as inside (``shapely.covers``); with False only
@@ -5845,7 +5876,7 @@ class Environment(Generic[_C]):
         return _plot(
             self._binning,
             self.connectivity,
-            self.regions,
+            self._regions,
             self._plot_labels(),
             ax,
             show_regions,

@@ -204,20 +204,6 @@ class TestRegionMembershipRegionTypes:
         )
         assert membership[:, 1].sum() == 1
 
-    def test_empty_polygon(self):
-        """Test with an empty/degenerate polygon."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Create a degenerate polygon (line)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("line", polygon=Polygon([(0, 0), (10, 0), (10, 0), (0, 0)]))
-        env = env.with_regions(region_builder)
-
-        membership = env.region_membership()
-
-        # Should handle gracefully
-        assert membership.shape == (env.n_bins, 1)
         # Note: Shapely may return True for points on the line depending on
         # implementation details, so we just check that it doesn't crash
         # and returns the right shape

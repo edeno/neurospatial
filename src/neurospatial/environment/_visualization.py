@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -25,7 +25,7 @@ from neurospatial.layout import (
     _plot_binning_field,
     _plot_track_linear,
 )
-from neurospatial.regions import Regions
+from neurospatial.regions import Region
 from neurospatial.regions.plot import plot_regions
 
 if TYPE_CHECKING:
@@ -121,7 +121,7 @@ def _add_scale_bar_if_requested(
 def _plot(
     binning: Binning,
     connectivity: nx.Graph,
-    regions: Regions,
+    regions: Mapping[str, Region],
     labels: PlotLabels,
     ax: matplotlib.axes.Axes | None = None,
     show_regions: bool = True,
@@ -156,9 +156,18 @@ def _plot(
     if show_regions and len(regions):
         r_kwargs = regions_plot_kwargs if regions_plot_kwargs is not None else {}
         plot_regions(regions, ax=ax, **r_kwargs)
+        # The renderers fix the limits to the bins; a region drawn past the
+        # bins still belongs in the picture, where plot_regions drew it.
+        names = r_kwargs.get("region_names")
+        if names is None:
+            names = list(regions)
+        elif isinstance(names, str):
+            names = [names]
+        drawn = [_region_geometry(regions[name]) for name in names]
+        if (world_to_pixel := r_kwargs.get("world_to_pixel")) is not None:
+            drawn = [shapely.transform(geometry, world_to_pixel) for geometry in drawn]
+        _widen_to_show(ax, drawn)
     if landmarks:
-        # Last: drawing regions rescales the axes, which would drop the room
-        # made for landmarks outside the arena.
         _draw_landmarks(ax, landmarks)
 
     plot_title = labels.name
@@ -232,9 +241,14 @@ def _draw_landmarks(ax: matplotlib.axes.Axes, landmarks: Landmarks) -> None:
         )
     # The renderers fix the limits to the bins; a cue outside the arena
     # still belongs in the picture.
-    bounds = np.array(
-        [shapely.bounds(_landmark_geometry(item)) for item in landmarks.values()]
-    )
+    _widen_to_show(ax, [_landmark_geometry(item) for item in landmarks.values()])
+
+
+def _widen_to_show(
+    ax: matplotlib.axes.Axes, geometries: list[shapely.Geometry]
+) -> None:
+    """Grow the axis limits, never shrink them, so every geometry is visible."""
+    bounds = np.array([shapely.bounds(geometry) for geometry in geometries])
     (x_low, x_high), (y_low, y_high) = ax.get_xlim(), ax.get_ylim()
     margin = 0.05 * max(x_high - x_low, y_high - y_low)
     ax.set_xlim(
@@ -245,6 +259,11 @@ def _draw_landmarks(ax: matplotlib.axes.Axes, landmarks: Landmarks) -> None:
         min(y_low, bounds[:, 1].min() - margin),
         max(y_high, bounds[:, 3].max() + margin),
     )
+
+
+def _region_geometry(region: Region) -> shapely.Geometry:
+    data = region.data
+    return shapely.points(data[:2]) if isinstance(data, np.ndarray) else data
 
 
 def _landmark_geometry(landmark: Landmark) -> shapely.Geometry:

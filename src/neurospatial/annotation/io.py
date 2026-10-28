@@ -19,6 +19,9 @@ def regions_from_labelme(
 ) -> Regions:
     """Load regions from LabelMe JSON with optional calibration.
 
+    Shape types, region naming and errors follow
+    :func:`neurospatial.regions.load_labelme_json`.
+
     Parameters
     ----------
     json_path : str or Path
@@ -33,11 +36,13 @@ def regions_from_labelme(
     Returns
     -------
     Regions
-        Loaded regions with coordinates in cm (if calibrated) or pixels.
+        Loaded regions with coordinates in cm (if calibrated) or in LabelMe's
+        image pixels (x = column, y = row pointing down).
+        ``metadata["coord_system"]`` is ``"cm"`` or ``"pixels"``.
 
     See Also
     --------
-    neurospatial.regions.io.load_labelme_json : Underlying implementation.
+    neurospatial.regions.load_labelme_json : Underlying implementation.
 
     Examples
     --------
@@ -74,8 +79,12 @@ def regions_from_cvat(
     xml_path: str | Path,
     *,
     calibration: VideoCalibration | None = None,
+    image: str | int | None = None,
 ) -> Regions:
-    """Load regions from CVAT XML with optional calibration.
+    """Load regions from a CVAT for images 1.1 XML export with optional calibration.
+
+    Supported shapes, region naming, image selection and errors follow
+    :func:`neurospatial.regions.load_cvat_xml`.
 
     Parameters
     ----------
@@ -83,15 +92,20 @@ def regions_from_cvat(
         Path to CVAT XML export file.
     calibration : VideoCalibration, optional
         If provided, transforms pixel coordinates to world coordinates (cm).
+    image : str or int, optional
+        The image whose shapes to read: its ``name`` (str) or ``id`` (int).
+        If None, the file must have shapes on exactly one image.
 
     Returns
     -------
     Regions
-        Loaded regions with coordinates in cm (if calibrated) or pixels.
+        Loaded regions with coordinates in cm (if calibrated) or in CVAT's
+        image pixels (x = column, y = row pointing down).
+        ``metadata["coord_system"]`` is ``"cm"`` or ``"pixels"``.
 
     See Also
     --------
-    neurospatial.regions.io.load_cvat_xml : Underlying implementation.
+    neurospatial.regions.load_cvat_xml : Underlying implementation.
 
     Examples
     --------
@@ -102,7 +116,7 @@ def regions_from_cvat(
     from neurospatial.regions.io import load_cvat_xml
 
     pixel_to_world = calibration.transform_px_to_cm if calibration else None
-    regions = load_cvat_xml(xml_path, pixel_to_world=pixel_to_world)
+    regions = load_cvat_xml(xml_path, pixel_to_world=pixel_to_world, image=image)
     return _with_coordinate_units(regions, calibration)
 
 

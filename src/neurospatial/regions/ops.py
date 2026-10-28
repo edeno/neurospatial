@@ -1,70 +1,58 @@
-"""ops.py
+"""Which regions contain each 2-D position.
 
-Operations for querying point-in-region membership using Shapely and NumPy.
+These queries test positions directly against region shapes, without binning
+them first:
 
-This module provides fast, vectorized functions to determine whether one or more
-2D points lie inside polygonal (or point) Regions. It leverages Shapely's
-vectorized predicates for bulk point-in-polygon tests and returns either a boolean
-mask of “inside any region” or, for each point, the list of Regions that contain it.
-Additionally, users can request a DataFrame representation where each column is a
-region and each row corresponds to a point, indicating membership as booleans. Users
-can also limit the query to a subset of regions by name.
+- :func:`points_in_any_region` returns an ``(n_positions,)`` boolean mask that is
+  True where a position lies in at least one region.
+- :func:`regions_containing_points` returns, for each position, which regions
+  contain it: a boolean DataFrame with one column per region (the default), or
+  a list of region names per position.
 
-The key functions are:
+A position is in a polygon region when it lies inside the polygon (on its edge
+too, with the default ``include_boundary=True``). A point region, such as a
+reward well, has no area, so a position counts as in it only within a radius
+you choose with ``point_radius``, in the regions' units.
 
-- points_in_any_region:  Given an (n, 2) array of points, returns an (n,) boolean
-  array indicating whether each point is inside at least one Region.
-- regions_containing_points:  Given an (n, 2) array of points, either returns, for each
-  point, the list of Region objects that contain it, or a pandas DataFrame of shape
-  (n, m) where m is the number of selected regions and values are booleans.
+Both functions accept a ``transform`` that maps the positions into the regions'
+coordinates first: any callable that maps an ``(n, 2)`` array to an ``(n, 2)``
+array, such as an ``AffineND``.
 
-Both functions accept an optional `transform` that maps pixel-space coordinates to
-the Regions' coordinate space: any `SpatialTransform`, that is, a callable that
-maps an (n, 2) array of points to an (n, 2) array, such as an `AffineND`.
+For the bin-based rule used by analyses on an environment, see
+``env.bins_in_region`` and ``env.region_mask``.
 
 Examples
 --------
-Example usage (conceptual):
-
-.. code-block:: python
-
-    from pathlib import Path
-    import numpy as np
-    from neurospatial.regions.io import load_labelme_json
-    from neurospatial.ops.transforms import simple_scale
-    from neurospatial.regions.ops import points_in_any_region, regions_containing_points
-
-    transform = simple_scale(px_per_cm=10.0)  # pixel→world transform
-    rois = load_labelme_json(Path("annotations.json"), pixel_to_world=transform)
-    pts_pixel = np.random.rand(1000, 2) * 512
-    mask = points_in_any_region(pts_pixel, rois, transform=transform)
-    matches = regions_containing_points(
-        pts_pixel,
-        rois,
-        transform=transform,
-        include_boundary=True,
-        region_names=["regionA", "regionB"],
-        return_dataframe=True,
-    )
-
+>>> import numpy as np
+>>> from shapely.geometry import box
+>>> from neurospatial import Regions
+>>> from neurospatial.regions import points_in_any_region, regions_containing_points
+>>> regions = Regions()
+>>> _ = regions.add("start_box", polygon=box(0.0, 0.0, 20.0, 20.0))
+>>> _ = regions.add("reward_well", point=(80.0, 80.0))
+>>> positions = np.array([[10.0, 10.0], [79.0, 81.0], [50.0, 50.0]])  # cm
+>>> points_in_any_region(positions, regions, point_radius=5.0)
+array([ True,  True, False])
+>>> regions_containing_points(positions, regions, point_radius=5.0)
+   start_box  reward_well
+0       True        False
+1      False         True
+2      False        False
 """
 
 from __future__ import annotations
 
-import warnings
-from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
 import shapely
-from numpy.typing import NDArray
-from shapely import points
-from shapely.geometry import Polygon
+from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._exceptions import RegionNotFoundError
+from neurospatial._exceptions import RegionNotFoundError, _format_error
+from neurospatial._validation import validate_finite_scalar
 
-from .._constants import POINT_REGION_TOLERANCE
-from .core import Region, Regions
+from .core import Region
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -72,314 +60,426 @@ if TYPE_CHECKING:
     from ..ops.transforms import SpatialTransform
 
 
-def _prepare_points(
-    pts: Sequence[Sequence[float]] | NDArray[np.float64],
-    transform: SpatialTransform | None = None,
+def _refuse_non_finite_rows(array: NDArray[np.float64], *, name: str, fix: str) -> None:
+    """Raise if any row of an ``(n, 2)`` array has a NaN or infinite coordinate."""
+    bad = ~np.isfinite(array).all(axis=1)
+    if bad.any():
+        first = int(np.argmax(bad))
+        raise ValueError(
+            _format_error(
+                f"{name} has {int(bad.sum())} row(s) with a NaN or infinite "
+                f"coordinate (first at row {first}: {array[first].tolist()}).",
+                why="a missing position is not outside every region; counting "
+                "it as outside would turn tracking dropouts into time spent "
+                "elsewhere.",
+                fix=fix,
+            )
+        )
+
+
+def _prepare_positions(
+    positions: ArrayLike, transform: SpatialTransform | None
 ) -> NDArray[np.float64]:
-    """Convert input points to a NumPy array and optionally transform them.
+    """Return finite ``(n_positions, 2)`` positions in the regions' coordinates.
 
     Parameters
     ----------
-    pts : Union[Sequence[Sequence[float]], NDArray[np.float64]], shape (n_points, 2)
-    transform : Optional[SpatialTransform], default=None
-        If provided, a callable that maps input coordinates to the
-        Regions' coordinate space.
+    positions : array-like, shape (n_positions, 2)
+        Positions in the input space of ``transform``, or in the regions'
+        coordinates when ``transform`` is None.
+    transform : SpatialTransform or None
+        Maps ``(n, 2)`` positions to ``(n, 2)`` positions in the regions'
+        coordinates.
 
     Returns
     -------
-    NDArray[np.float64]
-        Processed points as an (N, 2) NumPy array of float64.
+    NDArray[np.float64], shape (n_positions, 2)
 
     Raises
     ------
     ValueError
-        If points cannot be converted to shape (N, 2).
-
+        If ``positions`` is not numeric, is not ``(n_positions, 2)``, has a
+        non-finite row, or ``transform`` returns a different shape or a
+        non-finite row.
     """
     try:
-        processed_pts = np.asarray(pts, dtype=np.float64)
-    except Exception as e:
-        raise ValueError(f"Could not convert points to NumPy array: {e}") from e
-
-    if processed_pts.ndim == 1:  # Handle single point case [x, y]
-        if processed_pts.shape[0] == 2:
-            processed_pts = processed_pts.reshape(1, 2)
-        else:
-            raise ValueError(
-                f"Single point must have 2 coordinates, got shape {processed_pts.shape}",
-            )
-    elif processed_pts.ndim != 2 or processed_pts.shape[1] != 2:
+        array = np.asarray(positions, dtype=np.float64)
+    except (TypeError, ValueError) as error:
         raise ValueError(
-            f"Points array must be of shape (N, 2), got {processed_pts.shape}",
+            _format_error(
+                "positions must be a numeric (n_positions, 2) array.",
+                fix="pass x, y positions as a float array, for example "
+                "np.column_stack([x, y])",
+            )
+        ) from error
+    if array.shape == (2,):
+        raise ValueError(
+            _format_error(
+                "positions must have shape (n_positions, 2), got (2,).",
+                why="a 1-D array of two numbers could be one (x, y) position or "
+                "two samples of a 1-D position.",
+                fix="for one (x, y) position pass positions[None] or "
+                "np.atleast_2d(positions)",
+            )
         )
-
-    if processed_pts.size == 0:  # Handle empty array of points (0, 2)
-        return processed_pts  # Return as is, (0,2) array
-
-    if transform is not None:
-        processed_pts = transform(processed_pts)  # Assuming transform is callable
-    return processed_pts
-
-
-def _get_points_in_single_region_mask(
-    transformed_pts: NDArray[np.float64],
-    region: Region,
-    point_tolerance: float,
-    include_boundary: bool = True,
-) -> NDArray[np.bool_]:
-    """Determine which points lie within a single Region.
-
-    Parameters
-    ----------
-    transformed_pts : NDArray[np.float64], shape (n_points, 2)
-        Points already in the Region's coordinate space.
-    region : Region
-        The Region object to test against.
-    point_tolerance : float
-        Tolerance for comparing query points to point Regions.
-    include_boundary : bool, default=True
-        If True, points on the boundary of the polygon are considered inside.
-
-    Returns
-    -------
-    in_region_mask : NDArray[np.bool_], shape (n_points,)
-        A boolean array of shape (N,) where True indicates the point is inside.
-
-    """
-    if transformed_pts.shape[0] == 0:
-        return np.array([], dtype=bool)
-
-    xs = transformed_pts[:, 0]
-    ys = transformed_pts[:, 1]
-
-    if region.kind == "point":
-        if not isinstance(region.data, np.ndarray):
-            # This should ideally not happen if Region construction is correct
-            raise TypeError(
-                f"Region '{region.name}' of kind 'point' has data of type {type(region.data)}, expected np.ndarray.",
+    if array.ndim != 2 or array.shape[1] != 2:
+        raise ValueError(
+            _format_error(
+                f"positions must have shape (n_positions, 2), got {array.shape}.",
+                why="region membership compares (x, y) positions with 2-D "
+                "polygons and points.",
+                fix="pass the two coordinates the regions use, for example "
+                "positions[:, :2], or for other dimensions bin the positions "
+                "and use env.bins_in_region or env.region_mask",
             )
-        if region.data.shape[0] != 2:  # Assuming 2D points for this module
-            warnings.warn(
-                f"Region '{region.name}' is a point of dimension {region.data.shape[0]}, but 2D comparison "
-                "is being performed. This may lead to unexpected results if not 2D.",
-                category=UserWarning,
-                stacklevel=2,
+        )
+    _refuse_non_finite_rows(
+        array,
+        name="positions",
+        fix="drop or interpolate missing samples first, or query only the "
+        "finite rows: keep = np.isfinite(positions).all(axis=1), then pass "
+        "positions[keep] and treat the other rows as missing",
+    )
+    if transform is None or len(array) == 0:
+        return array
+
+    mapped = np.asarray(transform(array), dtype=np.float64)
+    if mapped.shape != array.shape:
+        raise ValueError(
+            _format_error(
+                f"transform returned shape {mapped.shape} for positions of "
+                f"shape {array.shape}.",
+                why="each position must map to one (x, y) position in the "
+                "regions' coordinates.",
+                fix="pass a transform that maps (n, 2) arrays to (n, 2) arrays, "
+                "such as a 2-D AffineND",
             )
-            # Fallback or specific handling for non-2D points might be needed,
-            # for now, proceed if it's (2,) or raise error
-            if region.data.ndim != 1 or region.data.shape[0] != 2:
-                raise ValueError(
-                    f"Point region '{region.name}' data must be a 1D array of 2 coordinates for 2D comparison.",
+        )
+    _refuse_non_finite_rows(
+        mapped,
+        name="transform(positions)",
+        fix="check the transform: it maps finite positions to NaN or infinite "
+        "coordinates",
+    )
+    return mapped
+
+
+def _check_regions(selected: Sequence[Region], point_radius: float | None) -> None:
+    """Refuse non-2-D point regions, and point regions without ``point_radius``."""
+    validate_finite_scalar(
+        point_radius, name="point_radius", positive=False, none_allowed=True
+    )
+    for region in selected:
+        if region.n_dims != 2:
+            raise ValueError(
+                _format_error(
+                    f"Region {region.name!r} is a {region.n_dims}-D point; "
+                    "region membership queries take 2-D positions only.",
+                    fix="project the positions and the region onto two "
+                    "coordinates, or bin the positions in an environment of "
+                    "matching dimension and use "
+                    f"env.bins_in_region({region.name!r}) or env.region_mask",
                 )
-
-        px, py = region.data[0], region.data[1]
-        result = (np.abs(xs - px) <= point_tolerance) & (
-            np.abs(ys - py) <= point_tolerance
-        )
-        return np.asarray(result, dtype=bool)
-    if region.kind == "polygon":
-        # Region.data for "polygon" is shapely.geometry.Polygon
-        if not isinstance(region.data, Polygon):
-            # This should ideally not happen
-            raise TypeError(
-                f"Region '{region.name}' of kind 'polygon' has data of type {type(region.data)}, expected shapely.geometry.Polygon.",
             )
-        point_geometries = points(
-            transformed_pts,
-        )  # Vectorized creation of Point objects
+    point_names = [region.name for region in selected if region.kind == "point"]
+    if point_names and point_radius is None:
+        listed = ", ".join(repr(name) for name in point_names)
+        raise ValueError(
+            _format_error(
+                f"Region(s) {listed} are point regions, so membership needs "
+                "point_radius.",
+                why="a point has no area; whether a position is at it depends "
+                "on a distance that only you can choose.",
+                fix="pass point_radius= in the regions' units, for example "
+                "point_radius=5.0 for a 5 cm reward-well radius, or bin the "
+                f"positions and use env.bins_in_region({point_names[0]!r}) for "
+                "the bin rule",
+            )
+        )
 
+
+def _region_mask(
+    positions: NDArray[np.float64],
+    region: Region,
+    *,
+    point_radius: float | None,
+    include_boundary: bool,
+) -> NDArray[np.bool_]:
+    """Return which of ``(n_positions, 2)`` positions lie in ``region``.
+
+    A point region is a disc of radius ``point_radius`` (required by
+    :func:`_check_regions`); ``include_boundary`` keeps its rim.
+    """
+    if region.kind == "point":
+        assert point_radius is not None  # enforced by _check_regions
+        offsets = positions - region.data
+        distance = np.hypot(offsets[:, 0], offsets[:, 1])
         if include_boundary:
-            result = shapely.covers(region.data, point_geometries)
-            return np.asarray(result, dtype=bool)
-        result = shapely.contains(region.data, point_geometries)
-        return np.asarray(result, dtype=bool)
-
-    # Should not be reached if Region.kind is properly constrained by Literal type
-    raise ValueError(f"Region '{region.name}' has unknown kind '{region.kind}'.")
+            return np.asarray(distance <= point_radius, dtype=bool)
+        return np.asarray(distance < point_radius, dtype=bool)
+    query = shapely.points(positions)
+    predicate = shapely.covers if include_boundary else shapely.contains
+    return np.asarray(predicate(region.data, query), dtype=bool)
 
 
 def points_in_any_region(
-    pts: Sequence[Sequence[float]] | NDArray[np.float64],
-    regions: Regions,
+    positions: ArrayLike,
+    regions: Mapping[str, Region],
     *,
     transform: SpatialTransform | None = None,
-    point_tolerance: float = POINT_REGION_TOLERANCE,
+    point_radius: float | None = None,
     include_boundary: bool = True,
 ) -> NDArray[np.bool_]:
-    """Determine whether each point lies inside any of the provided Regions.
+    """Return whether each position lies in at least one region.
 
     Parameters
     ----------
-    pts : Union[Sequence[Sequence[float]], NDArray[np.float64]], shape (n_points, 2)
-        Array-like of points. If `transform` is not None, coordinates
-        are assumed to be in the input space of the transform; otherwise,
-        they must match the coordinate space of each Region.data.
-    regions : Regions
-        A container of Region objects.
-    transform : Optional[SpatialTransform], default=None
-        If provided, a callable that maps input coordinates to
-        the Regions' coordinate space.
-    point_tolerance : float, default=POINT_REGION_TOLERANCE
-        Spatial half-width (in the regions' coordinate units) of the square
-        neighborhood around a point region that counts as a hit. Point regions
-        have no area, so membership is a proximity test, not exact equality.
-        Ignored for polygon regions. Pass a smaller value for stricter matching.
+    positions : array-like, shape (n_positions, 2)
+        Positions in the regions' coordinates, or in the input space of
+        ``transform`` when it is given. Every row must be finite.
+    regions : Mapping[str, Region]
+        Regions to test against; all of them are used.
+    transform : SpatialTransform, optional
+        Maps ``(n, 2)`` positions into the regions' coordinates, for example
+        pixels to cm.
+    point_radius : float, optional
+        Radius around each point region, in the regions' units, within which a
+        position counts as in it (Euclidean distance), for example the radius
+        of a reward well. Required when ``regions`` holds a point region,
+        because a point has no area; not used for polygons.
     include_boundary : bool, default=True
-        If True, points on the boundary of polygon regions are considered inside.
-        If False, only points strictly inside polygons are considered inside.
+        Count positions on a polygon's edge, or exactly ``point_radius`` from a
+        point region, as inside. If False, only strictly interior positions
+        count.
 
     Returns
     -------
-    mask : NDArray[np.bool_], shape (n_points,)
-        A boolean array where `mask[i]` is True if the i-th point
-        is inside at least one Region.
+    mask : NDArray[np.bool_], shape (n_positions,)
+        True where the position lies in at least one region.
 
+    Raises
+    ------
+    ValueError
+        If ``positions`` is not ``(n_positions, 2)`` or has a NaN or infinite
+        row; if ``transform`` changes the shape or returns non-finite rows; if
+        a point region is not 2-D; if ``regions`` holds a point region and
+        ``point_radius`` is None; or if ``point_radius`` is negative or not
+        finite.
+
+    See Also
+    --------
+    regions_containing_points : Which regions contain each position.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from shapely.geometry import box
+    >>> from neurospatial import Regions
+    >>> from neurospatial.regions import points_in_any_region
+    >>> regions = Regions()
+    >>> _ = regions.add("start_box", polygon=box(0.0, 0.0, 20.0, 20.0))
+    >>> positions = np.array([[10.0, 10.0], [20.0, 5.0], [50.0, 50.0]])  # cm
+    >>> points_in_any_region(positions, regions)
+    array([ True,  True, False])
+    >>> points_in_any_region(positions, regions, include_boundary=False)
+    array([ True, False, False])
+
+    A point region needs a radius:
+
+    >>> _ = regions.add("reward_well", point=(80.0, 80.0))
+    >>> points_in_any_region([[83.0, 84.0]], regions, point_radius=5.0)
+    array([ True])
     """
-    transformed_pts = _prepare_points(pts, transform)
-    n_points = transformed_pts.shape[0]
+    transformed = _prepare_positions(positions, transform)
+    selected = list(regions.values())
+    _check_regions(selected, point_radius)
 
-    if n_points == 0:
-        return np.array([], dtype=bool)
-    if not regions:  # No regions to check against
-        return np.zeros(n_points, dtype=bool)
-
-    overall_mask = np.zeros(n_points, dtype=bool)
-
-    for region in regions.values():
-        region_mask = _get_points_in_single_region_mask(
-            transformed_pts,
+    mask = np.zeros(len(transformed), dtype=bool)
+    for region in selected:
+        if mask.all():
+            break
+        mask |= _region_mask(
+            transformed,
             region,
-            point_tolerance,
+            point_radius=point_radius,
             include_boundary=include_boundary,
         )
-        overall_mask |= region_mask
-        if overall_mask.all():  # Early exit if all points are already covered
-            break
-    return overall_mask
+    return mask
+
+
+@overload
+def regions_containing_points(
+    positions: ArrayLike,
+    regions: Mapping[str, Region],
+    *,
+    transform: SpatialTransform | None = ...,
+    region_names: Sequence[str] | None = ...,
+    return_dataframe: Literal[True] = ...,
+    point_radius: float | None = ...,
+    include_boundary: bool = ...,
+) -> pd.DataFrame: ...
+
+
+@overload
+def regions_containing_points(
+    positions: ArrayLike,
+    regions: Mapping[str, Region],
+    *,
+    transform: SpatialTransform | None = ...,
+    region_names: Sequence[str] | None = ...,
+    return_dataframe: Literal[False],
+    point_radius: float | None = ...,
+    include_boundary: bool = ...,
+) -> list[list[str]]: ...
+
+
+@overload
+def regions_containing_points(
+    positions: ArrayLike,
+    regions: Mapping[str, Region],
+    *,
+    transform: SpatialTransform | None = ...,
+    region_names: Sequence[str] | None = ...,
+    return_dataframe: bool,
+    point_radius: float | None = ...,
+    include_boundary: bool = ...,
+) -> pd.DataFrame | list[list[str]]: ...
 
 
 def regions_containing_points(
-    pts: Sequence[Sequence[float]] | NDArray[np.float64],
-    regions: Regions,
+    positions: ArrayLike,
+    regions: Mapping[str, Region],
     *,
     transform: SpatialTransform | None = None,
     region_names: Sequence[str] | None = None,
     return_dataframe: bool = True,
-    point_tolerance: float = POINT_REGION_TOLERANCE,
+    point_radius: float | None = None,
     include_boundary: bool = True,
-) -> list[list[str]] | pd.DataFrame:
-    """For each point, identify all Regions that contain it.
+) -> pd.DataFrame | list[list[str]]:
+    """Return which regions contain each position.
 
     Parameters
     ----------
-    pts : Union[Sequence[Sequence[float]], NDArray[np.float64]], shape (n_points, 2)
-        Array-like of points. If `transform` is not None, these are
-        assumed to be in the input space of the transform; otherwise,
-        they must match the coordinate space of Region.data.
-    regions : Regions
-        A container of Region objects.
-    transform : Optional[SpatialTransform], default=None
-        If provided, a callable that maps input coordinates to
-        the Regions' coordinate space.
-    region_names : Optional[Sequence[str]], default=None
-        If provided, only consider Regions whose `name` is in this sequence.
-        If None, all regions in `regions` are used.
+    positions : array-like, shape (n_positions, 2)
+        Positions in the regions' coordinates, or in the input space of
+        ``transform`` when it is given. Every row must be finite.
+    regions : Mapping[str, Region]
+        Regions to test against.
+    transform : SpatialTransform, optional
+        Maps ``(n, 2)`` positions into the regions' coordinates, for example
+        pixels to cm.
+    region_names : str or sequence of str, optional
+        Regions to test, in column order. A single string is one name. If
+        None, every region in ``regions`` is used, in collection order.
     return_dataframe : bool, default=True
-        If True, return a pandas DataFrame of shape (n_points, n_selected_regions),
-        where each column is the region name and each value is True/False.
-        If False, return a list of lists: each sublist contains region names (str)
-        that contain the corresponding point.
-    point_tolerance : float, default=POINT_REGION_TOLERANCE
-        Spatial half-width (in the regions' coordinate units) of the square
-        neighborhood around a point region that counts as a hit. Point regions
-        have no area, so membership is a proximity test, not exact equality.
-        Ignored for polygon regions. Pass a smaller value for stricter matching.
+        If True, return a boolean DataFrame with one column per region. If
+        False, return a list with the names of the regions containing each
+        position.
+    point_radius : float, optional
+        Radius around each point region, in the regions' units, within which a
+        position counts as in it (Euclidean distance), for example the radius
+        of a reward well. Required when a selected region is a point region,
+        because a point has no area; not used for polygons.
     include_boundary : bool, default=True
-        If True, points on the boundary of polygon regions are considered inside.
-        If False, only points strictly inside polygons are considered inside.
+        Count positions on a polygon's edge, or exactly ``point_radius`` from a
+        point region, as inside. If False, only strictly interior positions
+        count.
 
     Returns
     -------
-    Union[List[List[str]], pd.DataFrame], length n_points
-        - If `return_dataframe` is False: A list of length n_points. Each element is
-          a list of region names (str) that contain the corresponding point.
-        - If `return_dataframe` is True: A pandas DataFrame with index
-          range(n_points) and columns equal to selected region names.
-          Entry (i, col) is True if pts[i] is inside that region.
+    pandas.DataFrame or list of list of str
+        With ``return_dataframe=True``, a DataFrame of shape
+        ``(n_positions, n_selected_regions)`` with a ``RangeIndex`` and one
+        bool column per region; entry ``(i, name)`` is True when
+        ``positions[i]`` lies in region ``name``. With
+        ``return_dataframe=False``, a list of length ``n_positions`` whose
+        ``i``-th entry lists the names of the regions containing
+        ``positions[i]``, in column order.
 
-    Notes
-    -----
-    - A name in `region_names` that is not in `regions` raises
-      :class:`~neurospatial.RegionNotFoundError` with the closest name.
+    Raises
+    ------
+    RegionNotFoundError
+        If a name in ``region_names`` is not in ``regions``; the message names
+        the closest region.
+    ValueError
+        If ``region_names`` repeats a name; if ``positions`` is not
+        ``(n_positions, 2)`` or has a NaN or infinite row; if ``transform``
+        changes the shape or returns non-finite rows; if a selected point
+        region is not 2-D; if a selected region is a point region and
+        ``point_radius`` is None; or if ``point_radius`` is negative or not
+        finite.
 
+    See Also
+    --------
+    points_in_any_region : Whether each position lies in any region.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from shapely.geometry import box
+    >>> from neurospatial import Regions
+    >>> from neurospatial.regions import regions_containing_points
+    >>> regions = Regions()
+    >>> _ = regions.add("left_arm", polygon=box(0.0, 0.0, 20.0, 100.0))
+    >>> _ = regions.add("center", polygon=box(10.0, 40.0, 60.0, 60.0))
+    >>> positions = np.array([[5.0, 80.0], [15.0, 50.0], [90.0, 50.0]])  # cm
+    >>> regions_containing_points(positions, regions)
+       left_arm  center
+    0      True   False
+    1      True    True
+    2     False   False
+    >>> regions_containing_points(positions, regions, return_dataframe=False)
+    [['left_arm'], ['left_arm', 'center'], []]
+
+    The fraction of samples in each region:
+
+    >>> regions_containing_points(positions, regions).mean().round(3)
+    left_arm    0.667
+    center      0.333
+    dtype: float64
     """
     import pandas as pd
 
     if isinstance(region_names, str):
         region_names = [region_names]  # one name, not its characters
-    for name in region_names or ():
-        if name not in regions:
-            raise RegionNotFoundError(
-                name, available=list(regions), argument="region_names", in_list=True
-            )
-
-    transformed_pts = _prepare_points(pts, transform)
-    n_points = transformed_pts.shape[0]
-
-    if n_points == 0:  # Handle case with no input points
-        if return_dataframe:
-            return pd.DataFrame(
-                columns=(
-                    region_names
-                    if region_names is not None
-                    else [r.name for r in regions.values()]
-                ),
-            )
-        return []
-
-    # Filter regions by name if requested
-    selected_regions: list[Region]
-    if region_names is not None:
-        # Maintain order of region_names if possible, and ensure uniqueness
-        name_set = set(region_names)
-        selected_regions = [
-            regions[name]
-            for name in region_names
-            if name in regions and name in name_set
-        ]
+    if region_names is None:
+        selected = list(regions.values())
     else:
-        selected_regions = list(regions.values())
+        for name in region_names:
+            if name not in regions:
+                raise RegionNotFoundError(
+                    name, available=list(regions), argument="region_names", in_list=True
+                )
+        seen: set[str] = set()
+        for name in region_names:
+            if name in seen:
+                raise ValueError(
+                    _format_error(
+                        f"region_names lists {name!r} more than once.",
+                        why="each region is one column of the membership table.",
+                        fix="pass each name once, for example "
+                        "list(dict.fromkeys(region_names))",
+                    )
+                )
+            seen.add(name)
+        selected = [regions[name] for name in region_names]
 
-    if not selected_regions and return_dataframe:  # No regions to form columns
-        return pd.DataFrame(index=np.arange(n_points))
+    transformed = _prepare_positions(positions, transform)
+    _check_regions(selected, point_radius)
 
-    if return_dataframe:
-        # Initialize a DataFrame with shape (n_points, len(selected_regions))
-        # Using list comprehension for column names ensures they match selected_regions order
-        df_columns = [reg.name for reg in selected_regions]
-        df = pd.DataFrame(
-            index=np.arange(n_points),
-            columns=df_columns,
-            dtype=bool,
-        )
-        for reg in selected_regions:
-            df[reg.name] = _get_points_in_single_region_mask(
-                transformed_pts,
-                reg,
-                point_tolerance,
-                include_boundary=include_boundary,
-            )
-        return df
-    # Build list of lists of region names
-    output: list[list[str]] = [[] for _ in range(n_points)]
-    for region in selected_regions:
-        point_mask = _get_points_in_single_region_mask(
-            transformed_pts,
+    masks = {
+        region.name: _region_mask(
+            transformed,
             region,
-            point_tolerance,
+            point_radius=point_radius,
             include_boundary=include_boundary,
         )
-        # Iterate through points that are in the current region
-        for i in np.flatnonzero(point_mask):
-            output[i].append(region.name)
-    return output
+        for region in selected
+    }
+    if return_dataframe:
+        return pd.DataFrame(masks, index=pd.RangeIndex(len(transformed)))
+    if not masks:
+        return [[] for _ in range(len(transformed))]
+    names = list(masks)
+    membership = np.column_stack(list(masks.values()))
+    return [[names[j] for j in np.flatnonzero(row)] for row in membership]

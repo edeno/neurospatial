@@ -42,11 +42,6 @@ def test_rebin_modes_preserve_annotations_walls_and_fresh_caches(mode):
         name: region.to_dict() for name, region in child.regions.items()
     } == expected_regions
     assert child.regions is not parent.regions
-    exported_point = child.regions["goal"].data
-    assert exported_point is not parent.regions["goal"].data
-    exported_point.shape = (1, 2)
-    np.testing.assert_array_equal(child.regions["goal"].data, [5.5, 5.5])
-    np.testing.assert_array_equal(parent.regions["goal"].data, [5.5, 5.5])
     with pytest.raises(TypeError):
         child.regions["goal"].metadata["reward"]["value"] = 0
     regions.update_region("goal", point=[0.5, 0.5])

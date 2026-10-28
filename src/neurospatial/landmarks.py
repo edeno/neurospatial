@@ -11,8 +11,6 @@ resolved through ``env.landmarks``, and record the names in their results.
 
 from __future__ import annotations
 
-import copy
-import json
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
@@ -23,7 +21,13 @@ from numpy.typing import ArrayLike, NDArray
 from shapely.geometry import LineString, Polygon, mapping, shape
 
 from neurospatial._exceptions import _format_error
-from neurospatial.regions import _freeze_metadata, _thaw_metadata
+from neurospatial.regions import _thaw_metadata
+from neurospatial.regions.core import (
+    _check_planar_geometry,
+    _owned_metadata,
+    _owned_point,
+    _require_name,
+)
 
 __all__ = ["Landmark", "Landmarks"]
 
@@ -58,6 +62,8 @@ class Landmark:
     ValueError
         If the name is empty, the kind is unknown or the geometry is not
         finite and valid.
+    TypeError
+        If a point's data is another shapely shape or not numbers.
 
     Examples
     --------
@@ -73,51 +79,22 @@ class Landmark:
     metadata: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not self.name:
-            raise _error(
-                f"Landmark names must be nonempty strings, got {self.name!r}.",
-                'name each landmark with a string such as "cue_card"',
-            )
-        try:
-            thawed = _thaw_metadata(self.metadata)
-            json.dumps(thawed)
-        except (TypeError, ValueError, RecursionError) as exc:
-            raise TypeError(
-                f"Landmark {self.name!r} metadata must be JSON-serializable."
-            ) from exc
-        object.__setattr__(self, "metadata", _freeze_metadata(copy.deepcopy(thawed)))
+        _require_name(self.name, record="Landmark", example="cue_card")
+        owner = f"Landmark {self.name!r}"
+        object.__setattr__(
+            self, "metadata", _owned_metadata(self.metadata, owner=owner)
+        )
         data: NDArray[np.float64] | LineString | Polygon
         if self.kind == "point":
-            raw = self.data
-            if isinstance(raw, shapely.Point):
-                raw = raw.coords[0]
-            point = np.array(raw, dtype=np.float64, copy=True)
-            if point.ndim != 1 or not point.size or not np.all(np.isfinite(point)):
-                raise _error(
-                    f"Landmark {self.name!r} must be one finite point, shape "
-                    f"(n_dims,), got shape {point.shape}.",
-                    "pass the point's coordinates, such as [50.0, 100.0]",
-                )
-            point.setflags(write=False)
-            data = point
+            data = _owned_point(
+                self.data,
+                owner=owner,
+                shape_kinds={"Polygon": "polygon", "LineString": "line"},
+            )
         elif self.kind in ("line", "polygon"):
             kind = LineString if self.kind == "line" else Polygon
             data = self.data if isinstance(self.data, kind) else kind(self.data)
-            coordinates = shapely.get_coordinates(data)
-            if (
-                data.is_empty
-                or data.has_z
-                or not data.is_valid
-                or not np.all(np.isfinite(coordinates))
-                or (self.kind == "line" and data.length <= 0)
-                or (self.kind == "polygon" and data.area <= 0)
-            ):
-                raise _error(
-                    f"Landmark {self.name!r} must be a finite, valid, nonempty "
-                    f"2-D {self.kind}.",
-                    "pass its vertices as (x, y) pairs in the environment's "
-                    "coordinates",
-                )
+            _check_planar_geometry(data, owner=owner)
         else:
             raise _error(
                 f"Landmark {self.name!r} has unknown kind {self.kind!r}.",

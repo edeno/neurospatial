@@ -13,14 +13,14 @@ from neurospatial.io.nwb._adapters import position_units_from_series
 from neurospatial.io.nwb._core import _require_pynwb, logger
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from pynwb import NWBFile
 
     from neurospatial.environment import Environment
     from neurospatial.geometry import Arena
     from neurospatial.layout import LayoutType
-    from neurospatial.regions import Regions
+    from neurospatial.regions import Region
 
 ENVIRONMENT_SCHEMA_VERSION: str = "3.0"
 _READABLE_SCHEMA_VERSIONS: frozenset[str] = frozenset({"2.0", "3.0"})
@@ -265,139 +265,6 @@ def read_environment(
     )
 
 
-def _regions_to_json(regions) -> str:
-    """
-    Serialize Regions to a JSON string using the canonical Region schema.
-
-    Delegates to ``Region.to_dict`` so the on-disk schema matches the rest of
-    the library (``regions.json``, ``Regions.to_json``) and so per-region
-    ``metadata`` survives the NWB round-trip. The output is a list of region
-    dicts wrapped in a version-tagged payload.
-
-    Parameters
-    ----------
-    regions : Regions
-        The Regions container to serialize.
-
-    Returns
-    -------
-    str
-        JSON string containing the version-tagged region payload. Empty or
-        absent collections serialize to ``"{}"`` for backward compatibility.
-    """
-    if regions is None or len(regions) == 0:
-        return "{}"
-
-    from neurospatial.regions import _SCHEMA_TAG
-
-    payload = {
-        "format": _SCHEMA_TAG,
-        "regions": [region.to_dict() for region in regions.values()],
-    }
-    return json.dumps(payload)
-
-
-def _json_to_regions(regions_json: str) -> Regions:
-    """
-    Deserialize regions from a JSON string.
-
-    Reads the canonical Region schema produced by :func:`_regions_to_json`
-    (``{"format": ..., "regions": [<Region.to_dict()>, ...]}``) via
-    ``Region.from_dict``, so per-region ``metadata`` is restored. For backward
-    compatibility, the legacy bespoke schema
-    (``{name: {"kind": ..., "point"/"polygon": ...}}``) written by older files
-    is also accepted; legacy entries carry no metadata.
-
-    Parameters
-    ----------
-    regions_json : str
-        JSON string containing region definitions.
-
-    Returns
-    -------
-    Regions
-        Reconstructed Regions container.
-
-    Raises
-    ------
-    json.JSONDecodeError
-        If regions_json is not valid JSON.
-    KeyError
-        If a region is missing the 'kind' key.
-
-    Warns
-    -----
-    UserWarning
-        If a legacy-schema region has None data and is skipped during
-        reconstruction.
-    """
-    from neurospatial.regions import Region, Regions
-
-    blob = json.loads(regions_json)
-
-    if not blob:
-        return Regions()
-
-    # Canonical schema: version-tagged payload with a "regions" list.
-    if isinstance(blob, dict) and "regions" in blob:
-        return Regions(Region.from_dict(d) for d in blob["regions"])
-
-    # Legacy bespoke schema: {name: {"kind": ..., "point"/"polygon": ...}}.
-    return _legacy_json_to_regions(blob)
-
-
-def _legacy_json_to_regions(regions_dict: dict[str, Any]) -> Regions:
-    """Reconstruct regions from the pre-canonical NWB schema (no metadata).
-
-    Parameters
-    ----------
-    regions_dict : dict[str, Any]
-        Mapping of region name to ``{"kind": ..., "point"/"polygon": ...}``.
-
-    Returns
-    -------
-    Regions
-        Reconstructed Regions container. Regions with ``None`` geometry are
-        skipped with a warning.
-    """
-    from shapely.geometry import Polygon
-
-    from neurospatial.regions import Region, Regions
-
-    regions_list = []
-    for region_name, region_data in regions_dict.items():
-        kind = region_data["kind"]
-
-        if kind == "point":
-            point_coords = region_data.get("point")
-            if point_coords is not None:
-                point = np.array(point_coords, dtype=np.float64)
-                regions_list.append(Region(name=region_name, kind="point", data=point))
-            else:
-                warnings.warn(
-                    f"Region '{region_name}' has kind='point' but no point data. "
-                    "Skipping this region.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-        elif kind == "polygon":
-            polygon_coords = region_data.get("polygon")
-            if polygon_coords is not None:
-                polygon = Polygon(polygon_coords)
-                regions_list.append(
-                    Region(name=region_name, kind="polygon", data=polygon)
-                )
-            else:
-                warnings.warn(
-                    f"Region '{region_name}' has kind='polygon' but no polygon data. "
-                    "Skipping this region.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-
-    return Regions(regions_list)
-
-
 @keyword_hint("bin_size")
 def environment_from_position(
     nwbfile: NWBFile,
@@ -408,7 +275,7 @@ def environment_from_position(
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
     arena: Arena | None = None,
     wall_fit: Literal["snap", "split"] = "snap",
     layout: LayoutType | str = "RegularGrid",
@@ -450,7 +317,7 @@ def environment_from_position(
         ``units=`` to state the real unit.
     frame : str, optional
         Coordinate frame identifier for the environment.
-    regions : Regions, optional
+    regions : Mapping[str, Region], optional
         Named regions to snapshot with the environment.
     arena : Arena, optional
         Explicit continuous domain. See :meth:`Environment.from_samples`.

@@ -5,7 +5,7 @@ import json
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
-from shapely.geometry import Polygon
+from shapely.geometry import Point, Polygon
 
 from neurospatial.regions import Region, Regions
 from neurospatial.regions.io import (
@@ -15,7 +15,6 @@ from neurospatial.regions.io import (
     load_labelme_json,
     mask_to_region,
     regions_from_json,
-    regions_to_dataframe,
     regions_to_json,
 )
 
@@ -150,493 +149,629 @@ class TestRegionsToJson:
         # Stored metadata freezes lists to tuples; to_dict thaws them back.
         loaded_func = regions_from_json(func_path)
         loaded_method = Regions.from_json(method_path)
-        assert loaded_func.list_names() == loaded_method.list_names()
+        assert list(loaded_func) == list(loaded_method)
         assert loaded_func["box"].to_dict()["metadata"]["nested"]["k"] == [1, 2]
         assert loaded_method["box"].to_dict()["metadata"]["nested"]["k"] == [1, 2]
         assert loaded_func["pt"].metadata["id"] == 7
 
-    def test_unrecognized_format_warning(self, tmp_path):
-        """Test warning when loading unrecognized format."""
-        json_path = tmp_path / "custom.json"
-        json_path.write_text(json.dumps({"format": "CustomFormat-v1", "regions": []}))
+    def test_overwrites_existing_file(self, tmp_path):
+        json_path = tmp_path / "regions.json"
+        regions_to_json(Regions([Region("a", "point", (1.0, 2.0))]), json_path)
+        regions_to_json(Regions([Region("b", "point", (3.0, 4.0))]), json_path)
 
-        with pytest.warns(UserWarning, match="Unrecognised format"):
-            regions = regions_from_json(json_path)
+        assert list(regions_from_json(json_path)) == ["b"]
 
-        assert len(regions) == 0
+    def test_non_finite_value_raises_naming_region(self, tmp_path):
+        try:
+            bad = Region("bad", "point", (np.nan, 1.0))
+        except ValueError:
+            pytest.skip("Region already refuses non-finite coordinates")
+        regions = Regions([Region("ok", "point", (0.0, 0.0)), bad])
+        json_path = tmp_path / "nan.json"
+
+        with pytest.raises(ValueError, match="region 'bad' holds a NaN"):
+            regions_to_json(regions, json_path)
+        assert not json_path.exists()
+
+    @pytest.mark.parametrize(
+        ("payload", "match"),
+        [
+            (
+                {"format": "CustomFormat-v1", "regions": []},
+                "format tag 'CustomFormat-v1'",
+            ),
+            ({"regions": []}, "no format tag"),
+            ([{"name": "a"}], "JSON list, not a regions file"),
+            ({"format": "Regions-v1"}, 'no "regions" list'),
+            ({"format": "Regions-v1", "regions": [{"name": "a"}]}, "entry 0"),
+        ],
+    )
+    def test_refuses_other_files(self, tmp_path, payload, match):
+        json_path = tmp_path / "other.json"
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with pytest.raises(ValueError, match=match):
+            regions_from_json(json_path)
+
+
+def _write_labelme(tmp_path, shapes, **extra):
+    json_path = tmp_path / "frame.json"
+    json_path.write_text(json.dumps({"shapes": shapes, **extra}), encoding="utf-8")
+    return json_path
+
+
+def _shape(label, points, shape_type="polygon"):
+    return {"label": label, "points": points, "shape_type": shape_type}
 
 
 class TestLoadLabelmeJson:
-    """Tests for load_labelme_json function."""
+    """load_labelme_json reads each LabelMe shape type as its geometry."""
 
-    def test_basic_polygon(self, tmp_path):
-        """Test loading basic polygon from LabelMe JSON."""
-        json_data = {
-            "shapes": [
-                {
-                    "label": "reward_zone",
-                    "points": [[10, 10], [20, 10], [20, 20], [10, 20]],
-                    "shape_type": "polygon",
-                }
-            ]
+    def test_polygon_geometry_and_metadata(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path,
+            [_shape("reward_zone", [[10, 10], [20, 10], [20, 20], [10, 20]])],
+            imagePath="frame_0001.png",
+        )
+
+        region = load_labelme_json(json_path)["reward_zone"]
+
+        assert region.kind == "polygon"
+        # LabelMe puts pixel (c, r) on [c, c + 1]; the pixel frame centres it.
+        assert region.data.bounds == (9.5, 9.5, 19.5, 19.5)
+        assert region.data.area == 100.0
+        assert dict(region.metadata) == {
+            "source_json": "frame.json",
+            "source_image": "frame_0001.png",
+            "coord_system": "pixels",
+            "label": "reward_zone",
+            "shape_type": "polygon",
         }
-        json_path = tmp_path / "test.json"
-        json_path.write_text(json.dumps(json_data))
+
+    def test_missing_shape_type_is_a_polygon(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path, [{"label": "zone", "points": [[0, 0], [4, 0], [4, 3]]}]
+        )
+
+        assert load_labelme_json(json_path)["zone"].data.area == 6.0
+
+    def test_rectangle_from_any_two_opposite_corners(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path, [_shape("box", [[30, 5], [10, 25]], "rectangle")]
+        )
+
+        box = load_labelme_json(json_path)["box"].data
+
+        assert box.bounds == (9.5, 4.5, 29.5, 24.5)
+        assert box.area == 400.0
+
+    def test_circle_from_centre_and_rim_point(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path, [_shape("well", [[50, 40], [53, 44]], "circle")]
+        )
+
+        circle = load_labelme_json(json_path)["well"].data
+
+        assert_allclose(circle.centroid.coords[0], (49.5, 39.5), atol=1e-9)
+        assert_allclose(circle.bounds, (44.5, 34.5, 54.5, 44.5))
+        assert circle.area == pytest.approx(np.pi * 25.0, rel=0.01)
+
+    def test_oriented_rectangle(self, tmp_path):
+        corners = [[0, 1], [1, 0], [3, 2], [2, 3]]
+        json_path = _write_labelme(
+            tmp_path, [_shape("tilted", corners, "oriented_rectangle")]
+        )
+
+        assert load_labelme_json(json_path)["tilted"].data.area == pytest.approx(4.0)
+
+    def test_point_and_points(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path,
+            [
+                _shape("start", [[50, 60]], "point"),
+                _shape("cue", [[1, 2], [3, 4]], "points"),
+            ],
+        )
 
         regions = load_labelme_json(json_path)
 
-        assert isinstance(regions, Regions)
-        assert len(regions) == 1
-        assert "reward_zone" in regions
-        assert regions["reward_zone"].kind == "polygon"
+        assert list(regions) == ["start", "cue_0", "cue_1"]
+        assert_allclose(regions["start"].data, (49.5, 59.5))
+        assert_allclose(regions["cue_1"].data, (2.5, 3.5))
+        assert regions["cue_1"].metadata["label"] == "cue"
 
-    def test_basic_point(self, tmp_path):
-        """Test loading point from LabelMe JSON."""
-        # Note: Single points become polygons with < 3 points and are skipped
-        # This matches the actual behavior - points need to be in a valid polygon format
-        json_data = {
-            "shapes": [
-                {"label": "start_point", "points": [[50, 50]], "shape_type": "point"}
-            ]
-        }
-        json_path = tmp_path / "points.json"
-        json_path.write_text(json.dumps(json_data))
+    def test_pixel_to_world_applied_after_building_shape(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path,
+            [
+                _shape("well", [[10, 10], [12, 10]], "circle"),
+                _shape("start", [[5, 6]], "point"),
+            ],
+        )
 
-        with pytest.warns(UserWarning, match="fewer than 3 points"):
-            regions = load_labelme_json(json_path)
+        regions = load_labelme_json(json_path, pixel_to_world=_scale(0.5))
 
-        # Single points are skipped since they can't form valid polygons
-        assert len(regions) == 0
+        assert regions["well"].data.area == pytest.approx(np.pi, rel=0.01)
+        assert_allclose(regions["start"].data, (2.25, 2.75))  # (4.5, 5.5) / 2
+        assert "coord_system" not in regions["well"].metadata
+
+    def test_a_polygon_along_pixel_edges_matches_mask_to_region(self, tmp_path):
+        # The outer edges of pixels (1..2, 0) in LabelMe's canvas frame.
+        json_path = _write_labelme(
+            tmp_path, [_shape("pair", [[1, 0], [3, 0], [3, 1], [1, 1]])]
+        )
+        mask = np.zeros((2, 4), dtype=bool)
+        mask[0, 1:3] = True
+
+        drawn = load_labelme_json(json_path)["pair"].data
+        assert drawn.equals(mask_to_region(mask, region_name="pair").data)
+
+    def test_pixel_to_world_wrong_shape_raises(self, tmp_path):
+        json_path = _write_labelme(tmp_path, [_shape("zone", [[0, 0], [4, 0], [4, 3]])])
+
+        with pytest.raises(ValueError, match=r"frame\.json, shape 0"):
+            load_labelme_json(json_path, pixel_to_world=lambda p: p[:, :1])
 
     def test_custom_keys(self, tmp_path):
-        """Test loading with custom label and points keys."""
-        json_data = {
-            "shapes": [{"name": "region1", "coords": [[0, 0], [1, 0], [1, 1], [0, 1]]}]
-        }
-        json_path = tmp_path / "custom.json"
-        json_path.write_text(json.dumps(json_data))
+        json_path = _write_labelme(
+            tmp_path, [{"name": "region1", "coords": [[0, 0], [1, 0], [1, 1], [0, 1]]}]
+        )
 
         regions = load_labelme_json(json_path, label_key="name", points_key="coords")
 
-        assert len(regions) == 1
-        assert "region1" in regions
+        assert regions["region1"].data.area == 1.0
 
-    def test_empty_shapes(self, tmp_path):
-        """Test loading JSON with no shapes."""
-        json_data = {"shapes": []}
-        json_path = tmp_path / "empty.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.warns(UserWarning, match="No shapes found"):
-            regions = load_labelme_json(json_path)
-
-        assert len(regions) == 0
-
-    def test_missing_label(self, tmp_path):
-        """Test handling of shape with missing label."""
-        json_data = {
-            "shapes": [
-                {
-                    "points": [[10, 10], [20, 20]]
-                    # Missing "label" key
-                }
-            ]
-        }
-        json_path = tmp_path / "missing_label.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.warns(UserWarning, match="missing label"):
-            regions = load_labelme_json(json_path)
-
-        assert len(regions) == 0  # Shape should be skipped
-
-    def test_missing_points(self, tmp_path):
-        """Test handling of shape with missing points."""
-        json_data = {
-            "shapes": [
-                {
-                    "label": "test"
-                    # Missing "points" key
-                }
-            ]
-        }
-        json_path = tmp_path / "missing_points.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.warns(UserWarning, match="missing points"):
-            regions = load_labelme_json(json_path)
-
-        assert len(regions) == 0
-
-    def test_invalid_points_shape(self, tmp_path):
-        """Test handling of points with wrong shape."""
-        json_data = {
-            "shapes": [
-                {
-                    "label": "bad_shape",
-                    "points": [[10], [20]],  # Missing y coordinates
-                }
-            ]
-        }
-        json_path = tmp_path / "bad_shape.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.warns(UserWarning, match="not in \\(M, 2\\) format"):
-            regions = load_labelme_json(json_path)
-
-        assert len(regions) == 0
-
-    def test_too_few_points(self, tmp_path):
-        """Test handling of polygon with too few points."""
-        json_data = {
-            "shapes": [
-                {
-                    "label": "line",
-                    "points": [[10, 10], [20, 20]],  # Only 2 points
-                }
-            ]
-        }
-        json_path = tmp_path / "few_points.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.warns(UserWarning, match="fewer than 3 points"):
-            regions = load_labelme_json(json_path)
-
-        assert len(regions) == 0
-
-    def test_non_dict_shape(self, tmp_path):
-        """Test handling of non-dictionary shape."""
-        json_data = {"shapes": ["not a dict"]}
-        json_path = tmp_path / "non_dict.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.warns(UserWarning, match="not a dictionary"):
-            regions = load_labelme_json(json_path)
-
-        assert len(regions) == 0
-
-    def test_unexpected_polygon_error_propagates(self, tmp_path, monkeypatch):
-        """An unexpected error from polygon construction must propagate, not be
-        swallowed.
-
-        The ``except`` around ``shp.Polygon(...)`` is narrowed to
-        ``(TypeError, ValueError, ShapelyError)``; an unrelated error type
-        (e.g. ``KeyError``) should now surface rather than being silently
-        warned-and-skipped.
-        """
-        import neurospatial.regions.io as io_mod
-
-        def _boom(*_args, **_kwargs):
-            raise KeyError("unexpected")
-
-        monkeypatch.setattr(io_mod.shp, "Polygon", _boom)
-
-        json_data = {
-            "shapes": [
-                {"label": "region1", "points": [[0, 0], [10, 0], [10, 10], [0, 10]]}
-            ]
-        }
-        json_path = tmp_path / "boom.json"
-        json_path.write_text(json.dumps(json_data))
-
-        with pytest.raises(KeyError, match="unexpected"):
-            load_labelme_json(json_path)
-
-    def test_shapes_key_format(self, tmp_path):
-        """Test loading JSON with explicit shapes key."""
-        # Implementation expects either {"shapes": [...]} or fallback to empty list if invalid
-        json_data = {
-            "shapes": [
-                {"label": "region1", "points": [[0, 0], [10, 0], [10, 10], [0, 10]]}
-            ]
-        }
-        json_path = tmp_path / "shapes_key.json"
-        json_path.write_text(json.dumps(json_data))
+    def test_top_level_list_of_shapes(self, tmp_path):
+        json_path = tmp_path / "bare.json"
+        json_path.write_text(json.dumps([_shape("a", [[0, 0], [2, 0], [0, 2]])]))
 
         regions = load_labelme_json(json_path)
 
-        assert len(regions) == 1
-        assert "region1" in regions
+        assert regions["a"].data.area == 2.0
+        assert "source_image" not in regions["a"].metadata
+
+    def test_repeated_labels_never_collide_with_literal_labels(self, tmp_path):
+        square = [[0, 0], [1, 0], [1, 1], [0, 1]]
+        json_path = _write_labelme(
+            tmp_path,
+            [
+                _shape("zone", square),
+                _shape("zone_0", square),
+                _shape("zone", square),
+                _shape("arena", square),
+            ],
+        )
+
+        regions = load_labelme_json(json_path)
+
+        assert list(regions) == ["zone_1", "zone_0", "zone_2", "arena"]
+        assert regions["zone_0"].metadata["label"] == "zone_0"
+        assert regions["zone_2"].metadata["label"] == "zone"
+
+    @pytest.mark.parametrize("shape_type", ["line", "linestrip"])
+    def test_open_line_raises_pointing_to_landmark(self, tmp_path, shape_type):
+        json_path = _write_labelme(
+            tmp_path, [_shape("wall", [[0, 0], [5, 0]], shape_type)]
+        )
+
+        with pytest.raises(ValueError, match=r"(?s)shape 0 \(label 'wall'\).*Landmark"):
+            load_labelme_json(json_path)
+
+    @pytest.mark.parametrize("shape_type", ["mask", "ellipse"])
+    def test_unsupported_shape_type_raises(self, tmp_path, shape_type):
+        json_path = _write_labelme(
+            tmp_path, [_shape("blob", [[0, 0], [5, 5]], shape_type)]
+        )
+
+        with pytest.raises(ValueError, match=f"shape_type '{shape_type}'"):
+            load_labelme_json(json_path)
+
+    @pytest.mark.parametrize(
+        ("shapes", "match"),
+        [
+            ([], "has no shapes"),
+            (["not a dict"], "shape 0 is a str"),
+            ([{"points": [[0, 0], [1, 0], [1, 1]]}], "shape 0 has label None"),
+            ([{"label": "", "points": [[0, 0], [1, 0], [1, 1]]}], "label ''"),
+            ([{"label": "zone"}], "no \\(x, y\\) point list"),
+            ([_shape("zone", [[10], [20]])], "no \\(x, y\\) point list"),
+            ([_shape("zone", [[0, 0], [1], [2, 2]])], "no \\(x, y\\) point list"),
+            ([_shape("zone", [[0, 0], [1, 1]])], "2 points; it needs at least 3"),
+            ([_shape("box", [[0, 0]], "rectangle")], "it needs exactly 2"),
+            ([_shape("box", [[0, 0], [0, 5]], "rectangle")], "not a valid area"),
+            (
+                [_shape("bowtie", [[0, 0], [2, 2], [2, 0], [0, 2]])],
+                "not a valid area: Self-intersection",
+            ),
+        ],
+    )
+    def test_malformed_shapes_raise(self, tmp_path, shapes, match):
+        json_path = _write_labelme(tmp_path, shapes)
+
+        with pytest.raises(ValueError, match=match):
+            load_labelme_json(json_path)
+
+    def test_valid_shape_before_malformed_one_is_not_returned(self, tmp_path):
+        json_path = _write_labelme(
+            tmp_path,
+            [_shape("ok", [[0, 0], [1, 0], [1, 1]]), _shape("bad", [[0, 0]])],
+        )
+
+        with pytest.raises(ValueError, match="shape 1 \\(label 'bad'\\)"):
+            load_labelme_json(json_path)
+
+    def test_missing_shapes_key_raises(self, tmp_path):
+        json_path = tmp_path / "other.json"
+        json_path.write_text(json.dumps({"annotations": []}))
+
+        with pytest.raises(ValueError, match="has no shapes"):
+            load_labelme_json(json_path)
 
 
 class TestParseCvatPoints:
-    """Tests for _parse_cvat_points helper function."""
+    """_parse_cvat_points reads CVAT's "x1,y1;x2,y2" strings strictly."""
 
     def test_basic_parsing(self):
-        """Test basic CVAT points string parsing."""
-        points_str = "10.0,20.0;30.0,40.0;50.0,60.0"
+        result = _parse_cvat_points("10.0,20.0;30.0,40.0;50.0,60.0", where="s")
 
-        result = _parse_cvat_points(points_str)
-
-        expected = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
-        assert_allclose(result, expected)
-
-    def test_single_point(self):
-        """Test parsing single point."""
-        points_str = "5.5,10.5"
-
-        result = _parse_cvat_points(points_str)
-
-        expected = np.array([[5.5, 10.5]])
-        assert_allclose(result, expected)
-
-    def test_empty_string(self):
-        """Test parsing empty string."""
-        result = _parse_cvat_points("")
-
-        assert result.shape == (0, 2)
-
-    def test_empty_pair(self):
-        """Test handling empty pair in points string."""
-        points_str = "10.0,20.0;;30.0,40.0"
-
-        with pytest.warns(UserWarning, match="Empty point pair"):
-            result = _parse_cvat_points(points_str)
-
-        # Should skip empty pair
-        expected = np.array([[10.0, 20.0], [30.0, 40.0]])
-        assert_allclose(result, expected)
-
-    def test_malformed_pair(self):
-        """Test error on malformed point pair."""
-        points_str = "10.0,20.0;invalid;30.0,40.0"
-
-        with pytest.raises(ValueError, match="Malformed point string"):
-            _parse_cvat_points(points_str)
+        assert_allclose(result, [[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
 
     def test_whitespace_handling(self):
-        """Test that whitespace is handled correctly."""
-        points_str = "  10.0 , 20.0 ; 30.0 , 40.0  "
+        result = _parse_cvat_points("  10.0 , 20.0 ; 30.0 , 40.0  ", where="s")
 
-        result = _parse_cvat_points(points_str)
+        assert_allclose(result, [[10.0, 20.0], [30.0, 40.0]])
 
-        expected = np.array([[10.0, 20.0], [30.0, 40.0]])
-        assert_allclose(result, expected)
+    @pytest.mark.parametrize(
+        "points", ["", None, "10.0,20.0;;30.0,40.0", "10,20;invalid", "1,2,3", "1,nan"]
+    )
+    def test_malformed_points_raise(self, points):
+        with pytest.raises(ValueError, match="shape 3"):
+            _parse_cvat_points(points, where="shape 3")
 
 
 class TestRleToMask:
-    """Tests for _rle_to_mask helper function."""
+    """_rle_to_mask decodes CVAT's run lengths over the mask's own box."""
 
-    def test_basic_rle(self):
-        """Test basic RLE decoding."""
-        rle = "0,5,10,3"  # Start at 0, length 5; start at 10, length 3
-        height, width = 5, 5
+    def test_runs_alternate_from_background_in_row_major_order(self):
+        mask = _rle_to_mask("1, 2, 1, 4, 1, 2, 1", 4, 3, where="m")
 
-        mask = _rle_to_mask(rle, height, width)
+        expected = [[0, 1, 1, 0], [1, 1, 1, 1], [0, 1, 1, 0]]
+        np.testing.assert_array_equal(mask, np.array(expected, dtype=bool))
 
-        assert mask.shape == (5, 5)
-        # First 5 pixels (row 0) should be 1
-        assert np.all(mask.flat[0:5] == 1)
-        # Pixels 10-12 should be 1
-        assert np.all(mask.flat[10:13] == 1)
+    def test_zero_length_leading_background(self):
+        mask = _rle_to_mask("0,4", 2, 2, where="m")
 
-    def test_full_mask(self):
-        """Test RLE for full mask."""
-        rle = "0,25"  # All pixels
-        height, width = 5, 5
+        assert mask.all()
 
-        mask = _rle_to_mask(rle, height, width)
-
-        assert np.all(mask == 1)
-
-    def test_empty_mask(self):
-        """Test RLE for empty mask."""
-        rle = ""
-        height, width = 5, 5
-
-        with pytest.raises(ValueError, match="non-integer values"):
-            _rle_to_mask(rle, height, width)
-
-    def test_invalid_rle_non_integer(self):
-        """Test error on non-integer RLE values."""
-        rle = "0,5,abc,3"
-
-        with pytest.raises(ValueError, match="non-integer values"):
-            _rle_to_mask(rle, 5, 5)
-
-    def test_invalid_rle_odd_length(self):
-        """Test error on odd-length RLE."""
-        rle = "0,5,10"  # Missing length for second run
-
-        with pytest.raises(ValueError, match="odd number of values"):
-            _rle_to_mask(rle, 5, 5)
-
-    def test_rle_negative_start_raises(self):
-        """Negative start index is out of bounds, not a wrap-around."""
-        with pytest.raises(ValueError, match="out of bounds"):
-            _rle_to_mask("-1,3", 5, 5)
-
-    def test_rle_start_past_end_raises(self):
-        """Start at or beyond the last pixel is out of bounds."""
-        # 5x5 image has 25 pixels (indices 0..24); start=30 is past the end.
-        with pytest.raises(ValueError, match="out of bounds"):
-            _rle_to_mask("30,2", 5, 5)
-
-    def test_rle_run_overruns_end_raises(self):
-        """A run whose end exceeds the image is out of bounds."""
-        # start=23, length=5 -> end=28 > 25 pixels.
-        with pytest.raises(ValueError, match="out of bounds"):
-            _rle_to_mask("23,5", 5, 5)
-
-    def test_rle_negative_length_raises(self):
-        """A negative run length is malformed."""
-        with pytest.raises(ValueError, match="negative length"):
-            _rle_to_mask("0,-3", 5, 5)
-
-    def test_rle_in_bounds_still_works(self):
-        """In-bounds runs decode unchanged (no regression)."""
-        mask = _rle_to_mask("0,5,10,3", 5, 5)
-
-        assert mask.shape == (5, 5)
-        assert np.all(mask.flat[0:5] == 1)
-        assert np.all(mask.flat[10:13] == 1)
+    @pytest.mark.parametrize("rle", ["", "1,2,x", "1,-1,4", "1,2", "0,5"])
+    def test_runs_that_do_not_cover_the_box_raise(self, rle):
+        with pytest.raises(ValueError, match="does not cover its 2 x 2 pixel box"):
+            _rle_to_mask(rle, 2, 2, where="m")
 
 
-class TestCvatPolygonProcessor:
-    """Tests for the narrowed exception handling in _process_cvat_polygon."""
-
-    def test_cvat_polygon_processor_reraises_unexpected(self):
-        """An unexpected (non-geometry) error propagates instead of being swallowed."""
-        import xml.etree.ElementTree as ET
-        from unittest import mock
-
-        from neurospatial.regions.io import _process_cvat_polygon
-
-        elem = ET.fromstring(
-            '<polygon label="arena" points="10.0,10.0;20.0,10.0;20.0,20.0;10.0,20.0" />'
-        )
-
-        # shapely.Polygon raising KeyError simulates a real programming bug,
-        # which must surface rather than become a warning + dropped shape.
-        with (
-            mock.patch(
-                "neurospatial.regions.io.shp.Polygon", side_effect=KeyError("boom")
-            ),
-            pytest.raises(KeyError),
-        ):
-            _process_cvat_polygon(elem, 0, "img0", None, {})
-
-    def test_cvat_polygon_processor_skips_bad_geometry(self):
-        """A malformed-geometry error still warns and returns None (intended skip)."""
-        import xml.etree.ElementTree as ET
-
-        from neurospatial.regions.io import _process_cvat_polygon
-
-        # Only two distinct points -> shapely cannot build a valid polygon ring.
-        elem = ET.fromstring('<polygon label="arena" points="bad,coords" />')
-
-        with pytest.warns(UserWarning, match="error processing"):
-            result = _process_cvat_polygon(elem, 0, "img0", None, {})
-
-        assert result is None
+def _write_cvat(tmp_path, body, *, name="annotations.xml"):
+    xml_path = tmp_path / name
+    xml_path.write_text(
+        f'<?xml version="1.0" encoding="utf-8"?>\n<annotations>{body}</annotations>',
+        encoding="utf-8",
+    )
+    return xml_path
 
 
-class TestCvatBoxProcessor:
-    """Tests for the narrowed exception handling in _process_cvat_box."""
+def _image(shapes, *, image_id=0, name="frame.png", width=640, height=480):
+    return (
+        f'<image id="{image_id}" name="{name}" width="{width}" height="{height}">'
+        f"{shapes}</image>"
+    )
 
-    def test_cvat_box_processor_reraises_unexpected(self):
-        """An unexpected (non-geometry) error propagates instead of being swallowed."""
-        import xml.etree.ElementTree as ET
-        from unittest import mock
 
-        from neurospatial.regions.io import _process_cvat_box
-
-        elem = ET.fromstring(
-            '<box label="arena" xtl="10.0" ytl="10.0" xbr="20.0" ybr="20.0" />'
-        )
-
-        # shapely.Polygon raising KeyError simulates a real programming bug,
-        # which must surface rather than become a warning + dropped shape.
-        with (
-            mock.patch(
-                "neurospatial.regions.io.shp.Polygon", side_effect=KeyError("boom")
-            ),
-            pytest.raises(KeyError),
-        ):
-            _process_cvat_box(elem, 0, "img0", None, {})
-
-    def test_cvat_box_processor_skips_bad_geometry(self):
-        """A malformed-coordinate error still warns and returns None (intended skip)."""
-        import xml.etree.ElementTree as ET
-
-        from neurospatial.regions.io import _process_cvat_box
-
-        # Non-numeric coordinate -> float() raises ValueError (a real skip).
-        elem = ET.fromstring(
-            '<box label="arena" xtl="bad" ytl="10.0" xbr="20.0" ybr="20.0" />'
-        )
-
-        with pytest.warns(UserWarning, match="error processing"):
-            result = _process_cvat_box(elem, 0, "img0", None, {})
-
-        assert result is None
+def _load_one(tmp_path, shape, **kwargs):
+    regions = load_cvat_xml(_write_cvat(tmp_path, _image(shape)), **kwargs)
+    assert len(regions) == 1
+    return next(iter(regions.values()))
 
 
 class TestLoadCvatXml:
-    """Tests for load_cvat_xml function."""
+    """load_cvat_xml reads one image of a CVAT for images 1.1 export."""
 
-    def test_basic_polygon(self, tmp_path):
-        """Test loading basic polygon from CVAT XML."""
-        xml_content = """<?xml version="1.0" encoding="utf-8"?>
-<annotations>
-  <image id="0" name="test.png" width="640" height="480">
-    <polygon label="arena" points="100.0,100.0;200.0,100.0;200.0,200.0;100.0,200.0" />
-  </image>
-</annotations>
-"""
-        xml_path = tmp_path / "test.xml"
-        xml_path.write_text(xml_content)
+    def test_polygon_geometry_and_metadata(self, tmp_path):
+        region = _load_one(
+            tmp_path,
+            '<polygon label="arena" points="100,100;200,100;200,200;100,200" />',
+        )
 
-        regions = load_cvat_xml(xml_path)
+        assert region.name == "arena"
+        # CVAT's canvas puts pixel (c, r) on [c, c + 1]; the pixel frame centres it.
+        assert region.data.bounds == (99.5, 99.5, 199.5, 199.5)
+        assert dict(region.metadata) == {
+            "source_xml": "annotations.xml",
+            "source_image": "frame.png",
+            "image_id": 0,
+            "coord_system": "pixels",
+            "label": "arena",
+            "shape_type": "polygon",
+            "color": None,
+            "plot_kwargs": {},
+        }
 
-        assert isinstance(regions, Regions)
-        assert len(regions) == 1
-        assert "arena" in regions
-        assert regions["arena"].kind == "polygon"
-
-    def test_basic_point(self, tmp_path):
-        """Test loading point from CVAT XML."""
-        xml_content = """<?xml version="1.0" encoding="utf-8"?>
-<annotations>
-  <image id="0" name="test.png" width="640" height="480">
-    <points label="feeder" points="150.0,150.0" />
-  </image>
-</annotations>
-"""
-        xml_path = tmp_path / "points.xml"
-        xml_path.write_text(xml_content)
+    def test_points_group_gives_one_point_region_each(self, tmp_path):
+        xml_path = _write_cvat(
+            tmp_path, _image('<points label="feeder" points="150,150;10,20" />')
+        )
 
         regions = load_cvat_xml(xml_path)
 
-        assert len(regions) == 1
-        assert "feeder" in regions
-        assert regions["feeder"].kind == "point"
+        assert list(regions) == ["feeder_0", "feeder_1"]
+        assert regions["feeder_1"].kind == "point"
+        assert_allclose(regions["feeder_1"].data, (9.5, 19.5))
 
-    def test_box_element(self, tmp_path):
-        """Test loading box element (converted to polygon)."""
-        xml_content = """<?xml version="1.0" encoding="utf-8"?>
-<annotations>
-  <image id="0" name="test.png" width="640" height="480">
-    <box label="bbox" xtl="10" ytl="20" xbr="50" ybr="60" />
-  </image>
-</annotations>
-"""
-        xml_path = tmp_path / "box.xml"
-        xml_path.write_text(xml_content)
+    def test_box(self, tmp_path):
+        region = _load_one(
+            tmp_path, '<box label="bbox" xtl="10" ytl="20" xbr="50" ybr="60" />'
+        )
+
+        assert region.data.bounds == (9.5, 19.5, 49.5, 59.5)
+        assert region.data.area == 1600.0
+
+    def test_box_rotation_turns_clockwise_on_screen_about_centre(self, tmp_path):
+        region = _load_one(
+            tmp_path,
+            '<box label="b" xtl="0" ytl="0" xbr="4" ybr="2" rotation="90.00" />',
+        )
+
+        corners = np.asarray(region.data.exterior.coords)[:-1]
+        assert_allclose(region.data.bounds, (0.5, -1.5, 2.5, 2.5), atol=1e-12)
+        # The top-left corner (0, 0) moves to the top right, (3, -1) in CVAT's
+        # frame and (2.5, -1.5) in the pixel frame.
+        assert np.isclose(corners, (2.5, -1.5), atol=1e-12).all(axis=1).any()
+        assert region.data.area == pytest.approx(8.0)
+
+    def test_box_rotated_45_degrees_is_a_diamond(self, tmp_path):
+        region = _load_one(
+            tmp_path,
+            '<box label="b" xtl="0" ytl="0" xbr="2" ybr="2" rotation="45" />',
+        )
+
+        r = np.sqrt(2.0)
+        assert_allclose(region.data.bounds, (0.5 - r, 0.5 - r, 0.5 + r, 0.5 + r))
+        assert region.data.area == pytest.approx(4.0)
+
+    def test_rotated_ellipse(self, tmp_path):
+        region = _load_one(
+            tmp_path,
+            '<ellipse label="e" cx="10" cy="20" rx="4" ry="2" rotation="90" />',
+        )
+
+        assert_allclose(region.data.bounds, (7.5, 15.5, 11.5, 23.5), atol=1e-9)
+        assert region.data.area == pytest.approx(np.pi * 8.0, rel=0.01)
+
+    def test_mask_is_placed_at_left_top_with_pixels_centred(self, tmp_path):
+        # Mask box 4 wide, 3 tall at column 3, row 2:
+        #   . # # .
+        #   # # # #
+        #   . # # .
+        region = _load_one(
+            tmp_path,
+            '<mask label="blob" rle="1, 2, 1, 4, 1, 2, 1" left="3" top="2" '
+            'width="4" height="3" z_order="0" />',
+        )
+
+        # Pixel (column, row) is centred on (column, row).
+        assert region.data.bounds == (2.5, 1.5, 6.5, 4.5)
+        assert region.data.area == 8.0
+        assert region.data.contains(Point(4.0, 2.0))
+        assert not region.data.contains(Point(3.0, 2.0))
+        assert region.data.contains(Point(3.0, 3.0))
+
+    def test_mask_agrees_with_mask_to_region_and_a_traced_polygon(self, tmp_path):
+        region = _load_one(
+            tmp_path,
+            '<mask label="blob" rle="1, 2, 1, 4, 1, 2, 1" left="3" top="2" '
+            'width="4" height="3" />',
+        )
+        image = np.zeros((6, 8), dtype=bool)
+        image[2, 4:6] = image[3, 3:7] = image[4, 4:6] = True
+
+        traced = mask_to_region(image, region_name="blob")
+        assert region.data.normalize().equals_exact(traced.data.normalize(), 0.0)
+        # A CVAT polygon drawn along the mask's outer pixel edges lands on it too.
+        drawn = _load_one(
+            tmp_path,
+            '<polygon label="p" points="4,2;6,2;6,3;7,3;7,4;6,4;6,5;4,5;4,4;3,4;3,3;4,3" />',
+        )
+        assert drawn.data.equals(region.data)
+
+    def test_mask_keeps_holes_through_pixel_to_world(self, tmp_path):
+        mask = (
+            '<mask label="ring" rle="0, 4, 1, 4" left="10" top="20" width="3" '
+            'height="3" />'
+        )
+
+        pixel = _load_one(tmp_path, mask)
+        world = _load_one(tmp_path, mask, pixel_to_world=_scale(2.0))
+
+        assert pixel.data.bounds == (9.5, 19.5, 12.5, 22.5)
+        assert Polygon(pixel.data.interiors[0]).bounds == (10.5, 20.5, 11.5, 21.5)
+        assert world.data.area == pytest.approx(4 * 8.0)
+        assert Polygon(world.data.interiors[0]).bounds == (21.0, 41.0, 23.0, 43.0)
+
+    def test_mask_without_image_size_still_decodes(self, tmp_path):
+        xml_path = _write_cvat(
+            tmp_path,
+            '<image id="0" name="f.png"><mask label="m" rle="0, 4" left="0" '
+            'top="0" width="2" height="2" /></image>',
+        )
+
+        assert load_cvat_xml(xml_path)["m"].data.area == 4.0
+
+    @pytest.mark.parametrize(
+        ("mask", "match"),
+        [
+            ('rle="0, 1, 2, 1" left="0" top="0" width="2" height="2"', "2 separate"),
+            ('rle="0, 3" left="0" top="0" width="2" height="2"', "does not cover"),
+            ('rle="4" left="0" top="0" width="2" height="2"', "no foreground"),
+            ('rle="0, 4" left="639" top="0" width="2" height="2"', "outside the"),
+            ('rle="0, 4" left="0" top="0" width="2"', "height=None"),
+            ('rle="0, 4" left="0.5" top="0" width="2" height="2"', "whole pixels"),
+        ],
+    )
+    def test_malformed_masks_raise(self, tmp_path, mask, match):
+        xml_path = _write_cvat(tmp_path, _image(f'<mask label="m" {mask} />'))
+
+        with pytest.raises(ValueError, match=match):
+            load_cvat_xml(xml_path)
+
+    def test_closed_polyline_is_a_polygon(self, tmp_path):
+        region = _load_one(
+            tmp_path, '<polyline label="closed" points="10,10;20,10;20,20;10,10" />'
+        )
+
+        assert region.kind == "polygon"
+        assert region.data.area == 50.0
+
+    def test_open_polyline_raises_pointing_to_landmark(self, tmp_path):
+        xml_path = _write_cvat(
+            tmp_path, _image('<polyline label="wall" points="10,10;20,10;30,20" />')
+        )
+
+        with pytest.raises(
+            ValueError, match=r"(?s)shape 0 \(<polyline>, label 'wall'\).*Landmark"
+        ):
+            load_cvat_xml(xml_path)
+
+    @pytest.mark.parametrize(
+        ("shape", "match"),
+        [
+            ('<polygon points="10,10;20,10;20,20" />', "has no label"),
+            ('<polygon label="a" points="bad,coords" />', "points='bad,coords'"),
+            ('<polygon label="a" points="0,0;1,1" />', "2 points; a polygon"),
+            ('<polygon label="a" points="0,0;2,2;2,0;0,2" />', "Self-intersection"),
+            ('<box label="a" xtl="bad" ytl="1" xbr="2" ybr="3" />', "xtl='bad'"),
+            ('<box label="a" xtl="5" ytl="1" xbr="2" ybr="3" />', "bottom-right"),
+            ('<ellipse label="a" cx="1" cy="1" rx="0" ry="2" />', "both must"),
+            ('<cuboid label="a" xtl1="0" />', "<cuboid> shape"),
+            ('<skeleton label="a"></skeleton>', "<skeleton> shape"),
+        ],
+    )
+    def test_malformed_or_unsupported_shapes_raise(self, tmp_path, shape, match):
+        xml_path = _write_cvat(tmp_path, _image(shape))
+
+        with pytest.raises(ValueError, match=match):
+            load_cvat_xml(xml_path)
+
+    def test_tags_have_no_geometry_and_are_skipped(self, tmp_path):
+        xml_path = _write_cvat(
+            tmp_path,
+            _image('<tag label="sleep" /><polygon label="a" points="0,0;2,0;0,2" />'),
+        )
+
+        assert list(load_cvat_xml(xml_path)) == ["a"]
+
+    def test_repeated_labels_named_in_file_order_across_shape_types(self, tmp_path):
+        xml_path = _write_cvat(
+            tmp_path,
+            _image(
+                '<box label="zone" xtl="0" ytl="0" xbr="1" ybr="1" />'
+                '<polygon label="zone_0" points="0,0;2,0;0,2" />'
+                '<polygon label="zone" points="5,5;6,5;5,6" />'
+            ),
+        )
 
         regions = load_cvat_xml(xml_path)
 
-        assert len(regions) == 1
-        assert "bbox" in regions
-        assert regions["bbox"].kind == "polygon"
+        assert list(regions) == ["zone_1", "zone_0", "zone_2"]
+        assert regions["zone_1"].metadata["shape_type"] == "box"
+        assert regions["zone_2"].data.area == 0.5
+
+    def test_label_colors(self, tmp_path):
+        xml_path = _write_cvat(
+            tmp_path,
+            "<meta><task><labels><label><name>arena</name><color>#ff0000</color>"
+            "</label></labels></task></meta>"
+            + _image('<polygon label="arena" points="10,10;20,10;20,20;10,20" />'),
+        )
+
+        region = load_cvat_xml(xml_path)["arena"]
+
+        assert region.metadata["color"] == "#ff0000"
+        assert region.metadata["plot_kwargs"] == {"color": "#ff0000"}
+
+    def test_unannotated_images_are_ignored(self, tmp_path):
+        xml_path = _write_cvat(
+            tmp_path,
+            _image("", image_id=0, name="a.png")
+            + _image('<points label="p" points="1,2" />', image_id=7, name="b.png"),
+        )
+
+        region = load_cvat_xml(xml_path)["p"]
+
+        assert region.metadata["source_image"] == "b.png"
+        assert region.metadata["image_id"] == 7
+
+    def test_several_annotated_images_need_a_choice(self, tmp_path):
+        xml_path = _write_cvat(
+            tmp_path,
+            _image('<points label="p" points="1,2" />', image_id=0, name="a.png")
+            + _image('<points label="p" points="3,4" />', image_id=1, name="b.png"),
+        )
+
+        with pytest.raises(
+            ValueError, match=r"(?s)shapes on 2 images: 'a\.png' \(id 0\).*image="
+        ):
+            load_cvat_xml(xml_path)
+        assert_allclose(load_cvat_xml(xml_path, image="b.png")["p"].data, (2.5, 3.5))
+        assert_allclose(load_cvat_xml(xml_path, image=0)["p"].data, (0.5, 1.5))
+
+    @pytest.mark.parametrize(
+        ("image", "match"),
+        [("c.png", "no images with name 'c.png'"), (5, "no images with id '5'")],
+    )
+    def test_unknown_image_raises_listing_images(self, tmp_path, image, match):
+        xml_path = _write_cvat(
+            tmp_path, _image('<points label="p" points="1,2" />', name="a.png")
+        )
+
+        with pytest.raises(ValueError, match=rf"(?s){match}.*'a\.png' \(id 0\)"):
+            load_cvat_xml(xml_path, image=image)
+
+    def test_chosen_image_without_shapes_raises(self, tmp_path):
+        xml_path = _write_cvat(
+            tmp_path,
+            _image("", image_id=0, name="a.png")
+            + _image('<points label="p" points="1,2" />', image_id=1, name="b.png"),
+        )
+
+        with pytest.raises(ValueError, match=r"'a\.png' \(id 0\) .*has no shapes"):
+            load_cvat_xml(xml_path, image="a.png")
+
+    @pytest.mark.parametrize(
+        ("body", "match"),
+        [
+            ("", "no <image> elements"),
+            (_image("") + _image('<tag label="t" />', image_id=1), "no shapes in any"),
+            (
+                '<track id="0" label="rat"><box frame="0" xtl="0" ytl="0" '
+                'xbr="1" ybr="1" /></track>',
+                "(?s)<track>.*CVAT for images 1.1",
+            ),
+        ],
+    )
+    def test_files_without_image_shapes_raise(self, tmp_path, body, match):
+        with pytest.raises(ValueError, match=match):
+            load_cvat_xml(_write_cvat(tmp_path, body))
+
+    def test_wrong_root_raises(self, tmp_path):
+        xml_path = tmp_path / "other.xml"
+        xml_path.write_text("<dataset><image /></dataset>")
+
+        with pytest.raises(ValueError, match="<dataset>, not <annotations>"):
+            load_cvat_xml(xml_path)
 
     def test_nonexistent_file(self):
-        """Test error on nonexistent file."""
         with pytest.raises(FileNotFoundError):
             load_cvat_xml("nonexistent.xml")
 
     def test_malformed_xml(self, tmp_path):
-        """Test error on malformed XML."""
         import xml.etree.ElementTree as ET
 
         xml_path = tmp_path / "bad.xml"
@@ -645,221 +780,153 @@ class TestLoadCvatXml:
         with pytest.raises(ET.ParseError):
             load_cvat_xml(xml_path)
 
-    def test_unlabeled_shapes(self, tmp_path):
-        """Test handling of unlabeled shapes."""
-        xml_content = """<?xml version="1.0" encoding="utf-8"?>
-<annotations>
-  <image id="0" name="test.png" width="640" height="480">
-    <polygon points="10.0,10.0;20.0,10.0;20.0,20.0;10.0,20.0" />
-  </image>
-</annotations>
-"""
-        xml_path = tmp_path / "unlabeled.xml"
-        xml_path.write_text(xml_content)
+    def test_pixel_to_world_on_points_and_wrong_output(self, tmp_path):
+        xml_path = _write_cvat(tmp_path, _image('<points label="p" points="4,6" />'))
 
-        regions = load_cvat_xml(xml_path)
+        region = load_cvat_xml(xml_path, pixel_to_world=_scale(0.5))["p"]
 
-        assert len(regions) == 1
-        assert "unlabeled" in regions
-
-    def test_duplicate_labels(self, tmp_path):
-        """Test naming with duplicate labels."""
-        xml_content = """<?xml version="1.0" encoding="utf-8"?>
-<annotations>
-  <image id="0" name="test.png" width="640" height="480">
-    <polygon label="zone" points="10.0,10.0;20.0,10.0;20.0,20.0;10.0,20.0" />
-    <polygon label="zone" points="30.0,30.0;40.0,30.0;40.0,40.0;30.0,40.0" />
-  </image>
-</annotations>
-"""
-        xml_path = tmp_path / "duplicates.xml"
-        xml_path.write_text(xml_content)
-
-        regions = load_cvat_xml(xml_path)
-
-        assert len(regions) == 2
-        assert "zone_0" in regions
-        assert "zone_1" in regions
-
-    def test_closed_polyline(self, tmp_path):
-        """Test closed polyline converted to polygon."""
-        xml_content = """<?xml version="1.0" encoding="utf-8"?>
-<annotations>
-  <image id="0" name="test.png" width="640" height="480">
-    <polyline label="closed" points="10.0,10.0;20.0,10.0;20.0,20.0;10.0,10.0" />
-  </image>
-</annotations>
-"""
-        xml_path = tmp_path / "polyline.xml"
-        xml_path.write_text(xml_content)
-
-        regions = load_cvat_xml(xml_path)
-
-        assert len(regions) == 1
-        assert "closed" in regions
-        assert regions["closed"].kind == "polygon"
-
-    def test_open_polyline_skipped(self, tmp_path):
-        """Test open polyline is skipped."""
-        xml_content = """<?xml version="1.0" encoding="utf-8"?>
-<annotations>
-  <image id="0" name="test.png" width="640" height="480">
-    <polyline label="open" points="10.0,10.0;20.0,10.0;30.0,20.0" />
-  </image>
-</annotations>
-"""
-        xml_path = tmp_path / "open_polyline.xml"
-        xml_path.write_text(xml_content)
-
-        with pytest.warns(UserWarning, match="open or too few points"):
-            regions = load_cvat_xml(xml_path)
-
-        assert len(regions) == 0
-
-    def test_label_colors(self, tmp_path):
-        """Test that label colors are extracted."""
-        xml_content = """<?xml version="1.0" encoding="utf-8"?>
-<annotations>
-  <meta>
-    <labels>
-      <label>
-        <name>arena</name>
-        <color>#ff0000</color>
-      </label>
-    </labels>
-  </meta>
-  <image id="0" name="test.png" width="640" height="480">
-    <polygon label="arena" points="10.0,10.0;20.0,10.0;20.0,20.0;10.0,20.0" />
-  </image>
-</annotations>
-"""
-        xml_path = tmp_path / "colors.xml"
-        xml_path.write_text(xml_content)
-
-        regions = load_cvat_xml(xml_path)
-
-        assert "arena" in regions
-        assert regions["arena"].metadata.get("color") == "#ff0000"
+        # The transform receives pixel-frame coordinates, (3.5, 5.5).
+        assert_allclose(region.data, (1.75, 2.75))
+        assert "coord_system" not in region.metadata
+        with pytest.raises(ValueError, match="non-finite coordinates"):
+            load_cvat_xml(xml_path, pixel_to_world=lambda p: p * np.inf)
 
 
-# Check if cv2 is available
-try:
-    import cv2  # noqa: F401
-
-    CV2_AVAILABLE = True
-except ImportError:
-    CV2_AVAILABLE = False
+def _scale(factor: float):
+    """A pixel_to_world transform that scales both axes by ``factor``."""
+    return lambda points: np.asarray(points, dtype=float) * factor
 
 
-@pytest.mark.skipif(not CV2_AVAILABLE, reason="opencv-python not installed")
 class TestMaskToRegion:
-    """Tests for mask_to_region function."""
+    """mask_to_region traces exact pixel cells into one polygon."""
 
-    def test_simple_square_mask(self):
-        """Test converting simple square mask to region."""
-        mask = np.zeros((10, 10), dtype=bool)
-        mask[2:5, 2:5] = True
+    def test_straight_edges_keep_only_their_corners(self):
+        mask = np.zeros((50, 30), dtype=bool)
+        mask[5:45, 5:15] = True  # a 40-row L
+        mask[35:45, 5:25] = True
 
-        region = mask_to_region(mask, region_name="test_region")
+        polygon = mask_to_region(mask, region_name="L").data
+        assert len(polygon.exterior.coords) == 7  # six corners, closed
+        assert polygon.area == mask.sum()
 
-        assert region.name == "test_region"
+    def test_outline_follows_pixel_cells_and_keeps_holes(self):
+        mask = np.zeros((7, 9), dtype=bool)
+        mask[1:6, 2:8] = True
+        mask[3, 4] = False  # one-pixel hole
+
+        region = mask_to_region(mask, region_name="arena")
+
+        polygon = region.data
         assert region.kind == "polygon"
-        assert isinstance(region.data, Polygon)
+        assert polygon.bounds == (1.5, 0.5, 7.5, 5.5)
+        assert polygon.area == mask.sum()
+        assert len(polygon.interiors) == 1
+        assert Polygon(polygon.interiors[0]).bounds == (3.5, 2.5, 4.5, 3.5)
+        for y, x in np.ndindex(mask.shape):
+            assert polygon.contains(Point(x, y)) == mask[y, x]
+
+    @pytest.mark.parametrize(
+        ("mask", "bounds"),
+        [
+            (np.array([[False, True, False]]), (0.5, -0.5, 1.5, 0.5)),
+            (np.ones((1, 4), dtype=bool), (-0.5, -0.5, 3.5, 0.5)),
+            (np.ones((3, 1), dtype=bool), (-0.5, -0.5, 0.5, 2.5)),
+        ],
+    )
+    def test_single_pixel_row_and_column(self, mask, bounds):
+        region = mask_to_region(mask, region_name="thin")
+
+        assert region.data.bounds == bounds
+        assert region.data.area == mask.sum()
+
+    def test_zero_one_integer_mask(self):
+        mask = np.zeros((4, 4), dtype=np.uint8)
+        mask[1:3, 1:3] = 1
+
+        region = mask_to_region(mask, region_name="zone")
+
+        assert region.data.bounds == (0.5, 0.5, 2.5, 2.5)
+
+    def test_pixel_to_world_maps_exterior_and_holes(self):
+        mask = np.ones((5, 5), dtype=bool)
+        mask[2, 2] = False
+
+        region = mask_to_region(mask, region_name="ring", pixel_to_world=_scale(2.0))
+
+        assert region.data.bounds == (-1.0, -1.0, 9.0, 9.0)
+        assert Polygon(region.data.interiors[0]).bounds == (3.0, 3.0, 5.0, 5.0)
+        assert region.data.area == pytest.approx(4 * mask.sum())
+        assert "coord_system" not in region.metadata
+
+    def test_pixel_metadata(self):
+        region = mask_to_region(np.ones((2, 2), dtype=bool), region_name="r")
+
+        assert region.metadata["source"] == "mask"
+        assert region.metadata["coord_system"] == "pixels"
+
+    def test_simplify_keeps_hole_and_rejects_negative_tolerance(self):
+        mask = np.zeros((30, 30), dtype=bool)
+        mask[2:28, 2:28] = True
+        mask[10:20, 10:20] = False
+
+        region = mask_to_region(mask, region_name="r", simplify_tolerance=1.0)
+
+        assert len(region.data.interiors) == 1
+        with pytest.raises(ValueError, match="finite and nonnegative"):
+            mask_to_region(mask, region_name="r", simplify_tolerance=-1.0)
 
     def test_empty_mask_raises(self):
-        """Test that empty mask raises error."""
-        mask = np.zeros((10, 10), dtype=bool)
+        with pytest.raises(ValueError, match="no foreground"):
+            mask_to_region(np.zeros((4, 4), dtype=bool), region_name="empty")
 
-        with pytest.raises(ValueError, match="No contours found"):
-            mask_to_region(mask, region_name="empty")
+    @pytest.mark.parametrize(
+        "mask",
+        [
+            np.eye(3, dtype=bool),  # corner-touching pixels are separate
+            np.array([[1, 0, 1]], dtype=bool),
+        ],
+    )
+    def test_several_components_raise_with_count(self, mask):
+        n_areas = int(mask.sum())
+        with pytest.raises(ValueError, match=f"{n_areas} separate areas"):
+            mask_to_region(mask, region_name="split")
 
-    def test_full_mask(self):
-        """Test mask that is entirely True."""
-        mask = np.ones((5, 5), dtype=bool)
-
-        region = mask_to_region(mask, region_name="full")
-
-        assert region.kind == "polygon"
-        assert region.name == "full"
-
-    def test_uint8_conversion(self):
-        """Test automatic conversion to uint8."""
-        mask = np.zeros((5, 5), dtype=float)
-        mask[1:4, 1:4] = 1.0
-
-        region = mask_to_region(mask, region_name="converted")
-
-        assert region.kind == "polygon"
-
-    def test_metadata(self):
-        """Test that metadata is set correctly."""
-        mask = np.zeros((5, 5), dtype=bool)
-        mask[1:4, 1:4] = True
-
-        region = mask_to_region(mask, region_name="test")
-
-        assert region.metadata.get("source") == "mask"
+    @pytest.mark.parametrize(
+        ("mask", "match"),
+        [
+            (np.ones(4, dtype=bool), "2-D image"),
+            (np.ones((2, 2, 3), dtype=bool), "2-D image"),
+            (np.zeros((0, 3), dtype=bool), "2-D image"),
+            (np.full((2, 2), 255, dtype=np.uint8), "only 0 and 1"),
+            (np.array([[1.0, np.nan]]), "only 0 and 1"),
+            (np.array([["a", "b"]]), "only 0 and 1"),
+        ],
+    )
+    def test_rejects_non_mask_input(self, mask, match):
+        with pytest.raises(ValueError, match=match):
+            mask_to_region(mask, region_name="bad")
 
 
-class TestMaskToRegionErrors:
-    """Tests for mask_to_region error handling."""
+class TestPixelToWorldValidation:
+    """Every loader checks pixel_to_world output through one helper."""
 
-    def test_opencv_not_installed(self, monkeypatch):
-        """Test error when OpenCV is not installed."""
-        import sys
+    def test_wrong_shape_raises(self):
+        with pytest.raises(
+            ValueError, match=r"returned shape \(\d+,\) .*expected \(\d+, 2\)"
+        ):
+            mask_to_region(
+                np.ones((2, 2), dtype=bool),
+                region_name="r",
+                pixel_to_world=lambda points: points[:, 0],
+            )
 
-        # Mock cv2 import to fail
-        monkeypatch.setitem(sys.modules, "cv2", None)
+    def test_non_finite_raises(self):
+        def to_nan(points):
+            out = np.asarray(points, dtype=float).copy()
+            out[0] = np.nan
+            return out
 
-        mask = np.zeros((5, 5), dtype=bool)
-        mask[1:4, 1:4] = True
-
-        with pytest.raises(RuntimeError, match="opencv-python"):
-            mask_to_region(mask, region_name="test")
-
-
-class TestRegionsToDataframe:
-    """Tests for regions_to_dataframe function."""
-
-    def test_basic_conversion(self):
-        """Test converting regions to DataFrame."""
-        poly = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-        regions = Regions(
-            [
-                Region(name="box", data=poly, kind="polygon"),
-                Region(name="pt", data=(5.0, 5.0), kind="point"),
-            ]
-        )
-
-        df = regions_to_dataframe(regions)
-
-        assert len(df) == 2
-        assert "name" in df.columns
-        assert "kind" in df.columns
-        assert "area" in df.columns
-
-    def test_polygon_area(self):
-        """Test that polygon area is calculated."""
-        poly = Polygon([(0, 0), (2, 0), (2, 2), (0, 2)])  # Area = 4
-        regions = Regions([Region(name="square", data=poly, kind="polygon")])
-
-        df = regions_to_dataframe(regions)
-
-        assert df.loc[0, "area"] == 4.0
-
-    def test_point_area_zero(self):
-        """Test that point regions have zero area."""
-        regions = Regions([Region(name="pt", data=(5.0, 5.0), kind="point")])
-
-        df = regions_to_dataframe(regions)
-
-        assert df.loc[0, "area"] == 0.0
-
-    def test_empty_regions(self):
-        """Test converting empty regions collection."""
-        regions = Regions([])
-
-        df = regions_to_dataframe(regions)
-
-        assert len(df) == 0
-        assert isinstance(df.columns, object)  # Has columns even if empty
+        with pytest.raises(ValueError, match="non-finite coordinates for 1 of"):
+            mask_to_region(
+                np.ones((2, 2), dtype=bool), region_name="r", pixel_to_world=to_nan
+            )

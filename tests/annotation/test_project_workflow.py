@@ -127,17 +127,17 @@ def test_initial_region_with_missing_metadata_value_starts_saves_and_has_no_hist
 
     def populate(shapes):
         add_polygons(
-            shapes, [(box(1, 1, 8, 8), "zone", "region", {"depth": np.nan})], None
+            shapes, [(box(1, 1, 8, 8), "zone", "region", {"depth": None})], None
         )
 
     session, _viewer, _shapes, _controls = session_factory(populate=populate)
-    # NaN never equals itself; unchanged metadata must not look like an edit.
+    # Unchanged metadata must not look like an edit.
     session.checkpoint()
     session.checkpoint()
     assert not session._undo
     path = tmp_path / "draft.nsp"
     session.save_project(path)
-    assert np.isnan(AnnotationProject.load(path).shapes[0].metadata["depth"])
+    assert AnnotationProject.load(path).shapes[0].metadata["depth"] is None
 
 
 def test_pasted_polygon_with_hole_gets_its_own_identities_and_saves(

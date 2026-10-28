@@ -48,7 +48,7 @@ from neurospatial.geometry import grid_index as compute_grid_index
 from neurospatial.landmarks import Landmarks
 from neurospatial.layout import _built_layout_data
 from neurospatial.layout.base import build_choices
-from neurospatial.regions import Regions
+from neurospatial.regions import Region, Regions
 
 if TYPE_CHECKING:
     from neurospatial.arena import Arena
@@ -479,7 +479,11 @@ def _restored_state(state: object) -> dict[str, Any]:
     return {
         **state,
         "_geometry": replace(geometry, arena=own_arena(geometry.arena)),
-        "_regions": _owned_regions(state["_regions"], geometry.binning.bins.n_dims),
+        "_regions": _owned_regions(
+            state["_regions"],
+            geometry.binning.bins.n_dims,
+            state["_metadata"].units,
+        ),
         "_landmarks": owned_landmarks(
             state["_landmarks"],
             geometry.binning.bins.n_dims,
@@ -530,7 +534,7 @@ def _publish(
     coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
     provenance: _Provenance,
     metadata: _Metadata,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
     landmarks: Landmarks | None = None,
     arena: Arena | None = None,
 ) -> _EnvironmentT:
@@ -558,7 +562,7 @@ def _publish(
         Build choices and derivation history.
     metadata : _Metadata
         Name, units and frame.
-    regions : Regions or None, optional
+    regions : mapping of str to Region, or None, optional
         Named regions to snapshot.
     landmarks : Landmarks or None, optional
         Named landmarks, in the bins' coordinates.
@@ -592,7 +596,7 @@ def _publish(
         binning, graph, compute_grid_index(binning), arena, coordinates
     )
     env._regions = _owned_regions(
-        Regions() if regions is None else regions, binning.bins.n_dims
+        Regions() if regions is None else regions, binning.bins.n_dims, metadata.units
     )
     env._landmarks = owned_landmarks(
         Landmarks() if landmarks is None else landmarks,
@@ -614,7 +618,7 @@ def publish_layout(
     layout: LayoutEngine,
     *,
     metadata: _Metadata,
-    regions: Regions | None = None,
+    regions: Mapping[str, Region] | None = None,
     arena: Arena | None = None,
     coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
     wall_fit: Literal["snap", "split"] = "snap",
@@ -635,7 +639,7 @@ def publish_layout(
         Built layout engine; it is read, never modified.
     metadata : _Metadata
         Name, units and frame.
-    regions : Regions or None, optional
+    regions : mapping of str to Region, or None, optional
         Named regions to snapshot.
     arena : Arena or None, optional
         Continuous domain. Omission infers a Cartesian one from the binning;
@@ -702,7 +706,7 @@ class _Derivation:
     continues_history : bool, default=True
         Append ``step`` to the parent's derivation history. ``False`` starts
         a new history at ``step``, for a result with no single parent.
-    regions : Regions or None, optional
+    regions : mapping of str to Region, or None, optional
         Replacement regions; ``None`` keeps the parent's regions.
     landmarks : Landmarks or None, optional
         Replacement landmarks; ``None`` keeps the parent's landmarks.
@@ -715,7 +719,7 @@ class _Derivation:
     build_params: Mapping[str, Any] | None = None
     length_scale: float | None = 1.0
     continues_history: bool = True
-    regions: Regions | None = None
+    regions: Mapping[str, Region] | None = None
     landmarks: Landmarks | None = None
     arena: Arena | None = None
 

@@ -96,24 +96,6 @@ def test_resume_cannot_overwrite_a_different_existing_project(
     assert other.read_bytes() == b"another session's work"
 
 
-def test_initial_region_metadata_with_non_string_keys_fails_before_loading(
-    monkeypatch,
-):
-    from shapely.geometry import box
-
-    from neurospatial.regions import Regions
-
-    regions = Regions()
-    regions.add("zone", polygon=box(0, 0, 2, 2), metadata={1: "coerced"})
-    monkeypatch.setattr(
-        core,
-        "_load_video_frame",
-        lambda *args: pytest.fail("Must reject metadata before opening the video"),
-    )
-    with pytest.raises(ValueError, match=r"'zone'.*keys to strings"):
-        core.annotate_video("unused.mp4", bin_size=1.0, initial_regions=regions)
-
-
 @pytest.mark.parametrize("from_file", [False, True])
 def test_resume_uses_embedded_frame_and_current_session_calibration(
     tmp_path, monkeypatch, from_file

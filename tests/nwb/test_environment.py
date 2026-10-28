@@ -379,7 +379,7 @@ class TestEnvironmentFromPosition:
         np.testing.assert_array_equal(env.bin_centers, expected.bin_centers)
         np.testing.assert_array_equal(env.edge_pairs, expected.edge_pairs)
         assert (env.name, env.units) == ("arena", "cm")
-        assert env.regions.list_names() == ["goal"]
+        assert list(env.regions) == ["goal"]
         assert env.layout_parameters == expected.layout_parameters
 
     def test_every_binning_option_is_forwarded_unchanged(
@@ -1074,12 +1074,7 @@ class TestEnvironmentRoundTrip:
         assert loaded_env.frame == "session_001"
 
     def test_roundtrip_region_metadata_preserved(self, tmp_path):
-        """Region metadata survives the NWB write/read cycle.
-
-        The NWB region (de)serialization delegates to Region.to_dict /
-        Region.from_dict, so per-region metadata (which the old bespoke schema
-        dropped) is preserved through the round-trip.
-        """
+        """Region metadata survives the NWB write/read cycle."""
         from pynwb import NWBHDF5IO
 
         from neurospatial import Environment

@@ -2,8 +2,10 @@ from collections.abc import Mapping
 
 import numpy as np
 import pytest
+import shapely
 import shapely.geometry as shp
 
+from neurospatial import Environment
 from neurospatial.regions.core import Region, Regions
 
 
@@ -23,9 +25,72 @@ def test_region_point_creation(coords):
     assert isinstance(r.metadata, Mapping)
 
 
-def test_region_point_invalid_shape():
-    with pytest.raises(ValueError):
-        Region(name="bad", kind="point", data=[[1, 2], [3, 4]])
+BOWTIE = shp.Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
+
+
+@pytest.mark.parametrize(
+    ("name", "kind", "data", "error", "match"),
+    [
+        ("", "point", [1.0, 2.0], ValueError, "names must be nonempty strings"),
+        (3, "point", [1.0, 2.0], ValueError, "names must be nonempty strings"),
+        ("bad", "point", [[1, 2], [3, 4]], ValueError, r"shape \(n_dims,\)"),
+        ("bad", "point", [], ValueError, r"got shape \(0,\)"),
+        ("bad", "point", shp.Point(), ValueError, r"got shape \(0,\)"),
+        ("bad", "point", [np.nan, 2.0], ValueError, "NaN or infinite"),
+        ("bad", "point", [np.inf, 2.0], ValueError, "NaN or infinite"),
+        ("bad", "point", ["a", "b"], TypeError, "must be numbers"),
+        ("bad", "point", BOWTIE, TypeError, 'use kind="polygon"'),
+        ("bad", "polygon", [(0, 0), (1, 1)], TypeError, "must be a shapely Polygon"),
+        (
+            "bad",
+            "polygon",
+            shp.MultiPolygon([shp.box(0, 0, 1, 1), shp.box(2, 2, 3, 3)]),
+            TypeError,
+            "one region per part",
+        ),
+        ("bad", "polygon", shp.Polygon(), ValueError, "empty polygon"),
+        ("bad", "polygon", BOWTIE, ValueError, "(?s)Self-intersection.*make_valid"),
+        (
+            "bad",
+            "polygon",
+            shp.Polygon([(0, 0, 1), (1, 0, 1), (1, 1, 1)]),
+            ValueError,
+            "z coordinates",
+        ),
+        (
+            "bad",
+            "polygon",
+            shp.Polygon([(0, 0), (np.nan, 0), (1, 1)]),
+            ValueError,
+            "NaN or infinite vertex",
+        ),
+        ("bad", "unknown", [1, 2], ValueError, "unknown kind 'unknown'"),
+    ],
+)
+def test_invalid_region_geometry_is_refused_naming_the_region(
+    name, kind, data, error, match
+):
+    with pytest.raises(error, match=match) as raised:
+        Region(name=name, kind=kind, data=data)
+    if isinstance(name, str) and name:
+        assert "Region 'bad'" in str(raised.value)
+
+
+def test_self_intersecting_outline_cannot_claim_bins():
+    """A bowtie has zero shapely area yet covered 55 bins of a 10 cm grid."""
+    assert BOWTIE.area == 0
+    with pytest.raises(ValueError, match="redraw it so its edges do not cross"):
+        Region("arena", "polygon", BOWTIE)
+    repaired = shapely.make_valid(BOWTIE)
+    assert isinstance(repaired, shp.MultiPolygon)  # two triangles; pick one
+    triangle = Region("arena", "polygon", repaired.geoms[0])
+    assert triangle.data.area == pytest.approx(25.0)
+
+
+def test_point_given_as_shapely_point_is_its_coordinates():
+    region = Region("goal", "point", shp.Point(3.0, 4.0))
+    np.testing.assert_array_equal(region.data, [3.0, 4.0])
+    assert region.n_dims == 2
 
 
 def test_region_polygon_creation():
@@ -34,16 +99,6 @@ def test_region_polygon_creation():
     assert r.kind == "polygon"
     assert r.n_dims == 2
     assert r.data.equals(poly)
-
-
-def test_region_polygon_invalid_type():
-    with pytest.raises(TypeError):
-        Region(name="badpoly", kind="polygon", data=[(0, 0), (1, 1)])
-
-
-def test_region_unknown_kind():
-    with pytest.raises(ValueError):
-        Region(name="bad", kind="unknown", data=[1, 2])
 
 
 def test_region_to_dict_and_from_dict_point():
@@ -67,11 +122,50 @@ def test_region_to_dict_and_from_dict_polygon():
     assert r2.metadata["label"] == "square"
 
 
+def test_region_from_dict_metadata_is_optional():
+    region = Region.from_dict({"name": "pt", "kind": "point", "geom": [1.0, 2.0]})
+    assert region.metadata == {}
+
+
+@pytest.mark.parametrize(
+    ("payload", "match"),
+    [
+        (
+            {"name": "goal", "kind": "polygon"},
+            r"Region 'goal' \(kind 'polygon'\) is missing \['geom'\]",
+        ),
+        (
+            {"kind": "point", "geom": [1, 2]},
+            r"A region record \(kind 'point'\) is missing \['name'\]",
+        ),
+        (
+            {"name": "goal", "kind": "point", "geom": [1, 2], "color": "red"},
+            r"Region 'goal' \(kind 'point'\) has unknown keys \['color'\]",
+        ),
+        (
+            {"name": "goal", "kind": "polygon", "geom": [[0, 0], [1, 0], [1, 1]]},
+            r"Region 'goal' \(kind 'polygon'\) has geometry shapely cannot read",
+        ),
+        (
+            {"name": "goal", "kind": "polygon", "geom": {"type": "Circle"}},
+            r"Region 'goal' \(kind 'polygon'\) has geometry shapely cannot read",
+        ),
+        (
+            {"name": "goal", "kind": "circle", "geom": [1, 2]},
+            "Region 'goal' has unknown kind",
+        ),
+    ],
+)
+def test_region_from_dict_errors_name_the_record(payload, match):
+    with pytest.raises(ValueError, match=match):
+        Region.from_dict(payload)
+
+
 def test_regions_add_point_and_remove():
     regs = Regions()
     r = regs.add("pt", point=[1, 2, 3])
     assert regs["pt"] == r
-    assert regs.list_names() == ["pt"]
+    assert list(regs) == ["pt"]
     regs.remove("pt")
     assert "pt" not in regs
 
@@ -88,14 +182,27 @@ def test_region_point_value_equality():
     assert region != object()
 
 
-def test_regions_add_polygon_and_area():
-    regs = Regions()
-    poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-    r = regs.add("poly", polygon=poly)
-    assert regs["poly"] == r
-    area = regs.area("poly")
-    assert np.isclose(area, 1.0)
-    assert regs.area("poly") == poly.area
+@pytest.mark.parametrize(
+    "region",
+    [
+        Region("pt", "point", [1.0, 2.0]),
+        Region("box", "polygon", shp.box(0, 0, 1, 1), metadata={"role": "reward"}),
+    ],
+    ids=["point", "polygon"],
+)
+def test_regions_compare_by_value_but_are_unhashable(region):
+    assert region == Region.from_dict(region.to_dict())
+    with pytest.raises(TypeError, match="unhashable"):
+        hash(region)
+    assert {region.name: region}[region.name] is region
+
+
+def test_region_area_is_polygon_area_and_zero_for_points():
+    donut = shp.Polygon(
+        [(0, 0), (10, 0), (10, 10), (0, 10)], [[(2, 2), (8, 2), (8, 8), (2, 8)]]
+    )
+    assert Region("donut", "polygon", donut).area == pytest.approx(64.0)
+    assert Region("pt", "point", [1.0, 2.0]).area == 0.0
 
 
 def test_regions_add_duplicate_name():
@@ -158,18 +265,64 @@ def test_regions_set_rejects_name_mismatch():
         regs.set("foo", Region(name="bar", kind="point", data=[1, 2]))
 
 
-def test_regions_buffer_point_and_polygon(tmp_path):
+@pytest.mark.parametrize("source", ["named", "raw"])
+def test_buffered_point_is_a_disk_centered_on_the_point(source):
     regs = Regions()
-    pt = [0.0, 0.0]
-    regs.add("pt", point=pt)
-    regs.buffer("pt", distance=1.0, new_name="buf")
-    assert "buf" in regs
-    assert regs["buf"].kind == "polygon"
-    # Buffering a polygon
-    poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-    regs.add("poly", polygon=poly)
-    regs.buffer("poly", distance=0.5, new_name="buf2")
-    assert "buf2" in regs
+    regs.add("well", point=[10.0, 20.0], metadata={"role": "reward"})
+    zone = regs.buffer(
+        "well" if source == "named" else np.array([10.0, 20.0]), 5.0, "zone"
+    )
+    # Shapely approximates the circle by a polygon inscribed in it.
+    assert zone.area == pytest.approx(np.pi * 25.0, rel=0.01)
+    assert zone.area < np.pi * 25.0
+    np.testing.assert_allclose(zone.center, [10.0, 20.0], atol=1e-9)
+    assert dict(zone.metadata) == {}  # **meta replaces; nothing is inherited
+
+
+def test_buffered_polygon_covers_the_original_and_shrinking_stays_inside():
+    regs = Regions()
+    square = regs.add("arena", polygon=shp.box(0, 0, 10, 10), metadata={"a": 1})
+    grown = regs.buffer("arena", 2.0, "grown", role="margin")
+    shrunk = regs.buffer("arena", -2.0, "core")
+    assert grown.data.covers(square.data)
+    assert square.data.covers(shrunk.data)
+    assert shrunk.area == pytest.approx(36.0)
+    assert dict(grown.metadata) == {"role": "margin"}
+
+
+@pytest.mark.parametrize("distance", [np.nan, np.inf, -np.inf])
+def test_buffer_distance_must_be_finite(distance):
+    regs = Regions()
+    regs.add("well", point=[0.0, 0.0])
+    with pytest.raises(ValueError, match="distance must be finite"):
+        regs.buffer("well", distance, "zone")
+    assert "zone" not in regs
+
+
+@pytest.mark.parametrize(
+    ("source", "distance"),
+    [("well", 0.0), ("well", -1.0), ("arena", -6.0)],
+    ids=["point-zero", "point-negative", "polygon-eroded"],
+)
+def test_buffer_that_leaves_nothing_is_refused(source, distance):
+    regs = Regions()
+    regs.add("well", point=[0.0, 0.0])
+    regs.add("arena", polygon=shp.box(0, 0, 10, 10))
+    with pytest.raises(ValueError, match="leaves nothing"):
+        regs.buffer(source, distance, "zone")
+    assert "zone" not in regs
+
+
+def test_buffer_that_splits_a_region_is_refused():
+    # Two 10 x 10 rooms joined by a 2-wide corridor.
+    dumbbell = shapely.union_all(
+        [shp.box(0, 0, 10, 10), shp.box(10, 4, 20, 6), shp.box(20, 0, 30, 10)]
+    )
+    regs = Regions()
+    regs.add("rooms", polygon=dumbbell)
+    with pytest.raises(ValueError, match="splits it into 2 parts"):
+        regs.buffer("rooms", -2.0, "cores")
+    assert "cores" not in regs
 
 
 def test_regions_buffer_raw_point():
@@ -184,45 +337,26 @@ def test_regions_buffer_invalid_shape():
         regs.buffer(np.array([1.0, 2.0, 3.0]), distance=1.0, new_name="badbuf")
 
 
-def test_regions_area_point():
-    regs = Regions()
-    regs.add("pt", point=[1, 2])
-    assert regs.area("pt") == 0.0
+def test_region_center_of_a_point_is_a_copy_of_its_coordinates():
+    region = Region("pt", kind="point", data=np.array([3.0, 7.0]))
+    center = region.center
+    np.testing.assert_array_equal(center, [3.0, 7.0])
+    center[0] = -1.0  # an independent array, not the read-only data
+    np.testing.assert_array_equal(region.data, [3.0, 7.0])
 
 
-def test_region_center_empty_polygon_returns_none():
-    """An empty polygon has no centroid; region_center returns None, not IndexError."""
-    regs = Regions([Region("e", kind="polygon", data=shp.Polygon())])
-    assert regs.region_center("e") is None
+def test_region_center_of_a_polygon_is_its_centroid():
+    square = Region("box", kind="polygon", data=shp.box(0, 0, 1, 1))
+    np.testing.assert_allclose(square.center, [0.5, 0.5])
 
 
-def test_region_center_nonempty_polygon_centroid():
-    """A unit-square polygon's center is its centroid (no regression)."""
-    poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-    regs = Regions([Region("box", kind="polygon", data=poly)])
-    center = regs.region_center("box")
-    assert center is not None
-    np.testing.assert_allclose(center, [0.5, 0.5])
-
-
-def test_region_center_point_unchanged():
-    """A point region returns its coordinates (no regression)."""
-    regs = Regions([Region("pt", kind="point", data=np.array([3.0, 7.0]))])
-    center = regs.region_center("pt")
-    assert center is not None
-    np.testing.assert_allclose(center, [3.0, 7.0])
-
-
-def test_region_center_name_kwarg():
-    """region_center accepts name= keyword; the old region_name= raises TypeError."""
-    regs = Regions([Region("goal", kind="point", data=np.array([1.0, 2.0]))])
-
-    center = regs.region_center(name="goal")
-    assert center is not None
-    np.testing.assert_allclose(center, [1.0, 2.0])
-
-    with pytest.raises(TypeError):
-        regs.region_center(region_name="goal")
+def test_u_shaped_region_center_lies_outside_the_region():
+    """The documented caveat: a centroid need not be inside a non-convex arm."""
+    u_shape = shp.Polygon(
+        [(0, 0), (30, 0), (30, 30), (20, 30), (20, 10), (10, 10), (10, 30), (0, 30)]
+    )
+    region = Region("u_arm", kind="polygon", data=u_shape)
+    assert not u_shape.contains(shp.Point(region.center))
 
 
 def test_regions_remove_absent_raises():
@@ -451,16 +585,46 @@ def test_regions_update_region_nonexistent():
         regs.update_region("nonexistent", point=[1.0, 2.0])
 
 
-def test_regions_update_region_neither_point_nor_polygon():
-    """Test that update requires exactly one of point or polygon."""
+def test_regions_update_region_needs_something_to_change():
     regs = Regions()
     regs.add("pt", point=[1.0, 2.0])
-
-    # Neither point nor polygon specified
-    with pytest.raises(
-        ValueError, match="Specify \\*\\*one\\*\\* of 'point' or 'polygon'"
-    ):
+    with pytest.raises(ValueError, match="pass point=, polygon= or metadata="):
         regs.update_region("pt")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{"point": [9.0, 9.0]}, {"polygon": shp.box(0, 0, 2, 2)}, {"metadata": {"a": 1}}],
+    ids=["point", "polygon", "metadata"],
+)
+def test_update_region_keeps_its_position_and_membership_column(change):
+    from neurospatial import Environment
+
+    regs = Regions()
+    regs.add("start", point=[1.0, 1.0])
+    regs.add("goal", point=[5.0, 5.0], metadata={"color": "red"})
+    regs.add("home", point=[9.0, 1.0])
+    regs.update_region("goal", **change)
+    assert list(regs) == ["start", "goal", "home"]
+
+    edges = np.arange(0.0, 11.0, 2.0)
+    env = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool), grid_edges=(edges, edges)
+    ).with_regions(regs)
+    membership = env.region_membership()
+    np.testing.assert_array_equal(
+        membership[:, 0], env.region_mask("start")
+    )  # column 0 is still "start", not shifted by the update
+
+
+def test_update_region_metadata_only_keeps_the_geometry():
+    regs = Regions()
+    original = regs.add("zone", polygon=shp.box(0, 0, 2, 2), metadata={"color": "red"})
+    updated = regs.update_region("zone", metadata={"color": "blue"})
+    assert updated.kind == "polygon"
+    assert updated.data.equals(original.data)
+    assert dict(updated.metadata) == {"color": "blue"}
+    assert regs["zone"] is updated
 
 
 def test_regions_update_region_both_point_and_polygon():
@@ -473,3 +637,103 @@ def test_regions_update_region_both_point_and_polygon():
         ValueError, match="Specify \\*\\*one\\*\\* of 'point' or 'polygon'"
     ):
         regs.update_region("pt", point=[3.0, 4.0], polygon=poly)
+
+
+@pytest.mark.parametrize(
+    "insert",
+    [
+        lambda regs, value: Regions([value]),
+        lambda regs, value: regs.__setitem__("cue", value),
+        lambda regs, value: regs.set("cue", value),
+        lambda regs, value: regs.update({"cue": value}),
+        lambda regs, value: regs.setdefault("cue", value),
+    ],
+    ids=["init", "setitem", "set", "update", "setdefault"],
+)
+def test_regions_hold_only_region_values(insert):
+    """A line Landmark in Regions would be published as env.regions['cue']."""
+    from neurospatial.landmarks import Landmark
+
+    regs = Regions()
+    cue = Landmark("cue", "line", [(0.0, 100.0), (40.0, 100.0)])
+    with pytest.raises(TypeError, match="Regions holds Region values, got Landmark"):
+        insert(regs, cue)
+    assert "cue" not in regs
+
+
+def test_regions_from_a_mapping_says_to_pass_its_values():
+    mapping = {"goal": Region("goal", "point", [1.0, 2.0])}
+    with pytest.raises(TypeError, match=r"Regions\(mapping.values\(\)\)"):
+        Regions(mapping)
+    assert list(Regions(mapping.values())) == ["goal"]
+
+
+def test_setdefault_without_a_region_is_refused_with_the_fix():
+    regs = Regions()
+    with pytest.raises(TypeError, match=r"setdefault\('goal'\) has no region"):
+        regs.setdefault("goal")
+    assert "goal" not in regs
+    existing = regs.add("home", point=[0.0, 0.0])
+    assert regs.setdefault("home") is existing
+
+
+@pytest.mark.parametrize(
+    "insert",
+    [
+        lambda regs: Regions([*regs.values(), Region("high", "point", [1, 2, 3])]),
+        lambda regs: regs.add("high", point=[1.0, 2.0, 3.0]),
+        lambda regs: regs.set("high", Region("high", "point", [1, 2, 3])),
+        lambda regs: regs.update_region("goal", point=[1.0, 2.0, 3.0]),
+    ],
+    ids=["init", "add", "set", "update_region"],
+)
+def test_regions_refuse_mixed_dimensions(insert):
+    regs = Regions()
+    regs.add("goal", point=[1.0, 2.0])
+    regs.add("zone", polygon=shp.box(0, 0, 1, 1))
+    with pytest.raises(ValueError, match=r"'high'|'goal'") as raised:
+        insert(regs)
+    assert "has 3 coordinates, but the other regions here have 2" in str(raised.value)
+    assert list(regs) == ["goal", "zone"]
+
+
+def test_the_only_region_can_change_dimension():
+    regs = Regions()
+    regs.add("goal", point=[1.0, 2.0])
+    regs.set("goal", Region("goal", "point", [1.0, 2.0, 3.0]))
+    assert regs["goal"].n_dims == 3
+
+
+def test_regions_table_has_one_row_per_region_with_its_measures():
+    from neurospatial.regions import regions_table
+
+    regions = Regions()
+    regions.add("arm", polygon=shp.Polygon([(0, 0), (4, 0), (4, 2), (0, 2)]))
+    regions.add("well", point=[10.0, 1.0], metadata={"reward": "milk"})
+    frame = regions_table(regions)
+    assert list(frame.index) == ["arm", "well"]
+    assert frame.index.name == "name"
+    assert list(frame.columns) == ["kind", "n_dims", "area", "center", "metadata"]
+    for name, row in frame.iterrows():
+        region = regions[name]
+        assert row["kind"] == region.kind
+        assert row["n_dims"] == region.n_dims
+        assert row["area"] == region.area
+        np.testing.assert_array_equal(row["center"], region.center)
+    assert frame.loc["arm", "area"] == 8.0
+    assert frame.loc["arm", "center"] == (2.0, 1.0)
+    assert frame.loc["well", "metadata"] == {"reward": "milk"}
+
+
+def test_regions_table_reads_a_published_snapshot_and_an_empty_collection():
+    from neurospatial.regions import regions_table
+
+    regions = Regions()
+    regions.add("well", point=[1.0, 1.0])
+    env = Environment.from_samples(
+        np.array([[0.0, 0.0], [2.0, 2.0]]), bin_size=1.0
+    ).with_regions(regions)
+    assert list(regions_table(env.regions).index) == ["well"]
+    empty = regions_table(Regions())
+    assert empty.empty
+    assert list(empty.columns) == ["kind", "n_dims", "area", "center", "metadata"]

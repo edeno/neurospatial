@@ -721,6 +721,10 @@ regions = regions_from_labelme("annotations.json")
 regions = regions_from_labelme("annotations.json", calibration=calibration)
 ```
 
+Polygons, rectangles, circles and points become regions; an open line is
+refused because it encloses no area. A label used more than once is numbered
+`label_0`, `label_1`, ... in file order.
+
 ### CVAT
 
 ```python
@@ -728,6 +732,11 @@ from neurospatial.annotation import regions_from_cvat
 
 regions = regions_from_cvat("cvat_export.xml", calibration=calibration)
 ```
+
+Export with the "CVAT for images 1.1" format; video track exports are refused.
+When the export annotates more than one frame, pass the frame to read, by its
+image name or id: `regions_from_cvat("cvat_export.xml", image="frame_000120.png",
+calibration=calibration)`.
 
 ## Region Types
 

@@ -2,6 +2,98 @@
 
 ## [Unreleased]
 
+### Regions are validated, and annotation readers read what tools write
+
+A `Region` is checked when it is built, so every analysis that uses regions
+sees well-defined geometry. Readers for LabelMe, CVAT and masks now read each
+shape as the tool defines it, or refuse it, instead of silently dropping or
+reinterpreting shapes.
+
+Breaking:
+
+- `env.regions` is typed `Mapping[str, Region]`, so a type checker flags
+  `env.regions.add(...)`; `with_regions`, the factories' `regions=` and every
+  function that only reads regions accept any `Mapping[str, Region]`.
+- `Region.area` and `Region.center` replace `Regions.area(name)` and
+  `Regions.region_center(name)`. `Regions.list_names()` is removed (use
+  `list(regions)`). `Regions.to_dataframe()` and `regions_to_dataframe()` are
+  replaced by `regions_table(regions)`: one row per region, indexed by name,
+  with `kind`, `n_dims`, `area`, `center` and `metadata`.
+- `points_in_any_region` and `regions_containing_points` take `positions`
+  (was `pts`), shape `(n_positions, 2)`; a bare `(2,)` point is refused. A
+  point region is a disc of radius `point_radius=` (Euclidean), which must be
+  given when a selected region is a point: the old unit-less ±1.0 square was
+  1 cm, 1 px or 1 m depending on the data. `regions_containing_points` has
+  typed overloads for `return_dataframe`.
+- `plot_regions` returns the `Axes` and keeps axis limits the caller set.
+- `mask_to_region(mask, *, region_name, pixel_to_world=None,
+  simplify_tolerance=0.0)` replaces `mask_img=` and `approx_tol_px=`; it
+  traces exact pixel cells (the old default simplified by about 1 px), keeps
+  holes and no longer needs OpenCV.
+- `load_cvat_xml` and `regions_from_cvat` take `image=` (name or id), required
+  when the export annotates more than one image.
+- `Region` is unhashable, `n_dims` is a property, and metadata errors are
+  `ValueError`. Region and annotation-draft metadata must be standard JSON:
+  string keys, finite Python numbers (NumPy scalars such as `np.float64`
+  are refused; convert with `float(...)`); record a missing value as
+  `None`.
+- `update_region` keeps the region's position in the collection (it moved to
+  the end), so `env.region_membership()` columns stay put, and accepts a
+  metadata-only update.
+- `regions_from_json` refuses a file without the `Regions-v1` format tag
+  (it warned and loaded), and `regions_to_json` writes standard JSON.
+- The unused NWB region JSON helpers and their legacy reader are removed.
+
+Input that now raises (each was silently accepted):
+
+- `Region` refuses an empty or non-string name, non-finite or empty point
+  coordinates, and polygons that are empty, self-intersecting, zero-area,
+  have NaN vertices or Z coordinates. A self-intersecting outline covered 55
+  bins of a 10 cm grid while reporting area 0.
+- `Regions` holds only `Region` values of one dimension (a line `Landmark`
+  was published as a region). `Regions.buffer` refuses a result that is
+  empty or split into several parts.
+- `with_regions` refuses a region whose `metadata["coord_system"]` differs
+  from the environment's `units`, such as pixel annotations on a centimeter
+  environment. `with_metadata(units=...)` and a length-preserving
+  `apply_transform(..., units=...)` refuse to label an environment in units
+  other than a region's recorded ones, since neither converts the region.
+- `points_in_any_region` and `regions_containing_points` refuse NaN or
+  infinite positions, which were reported as outside every region, a
+  transform output that is not finite `(n, 2)`, and repeated `region_names`.
+- `load_labelme_json` dispatches on `shape_type`: rectangles, circles and
+  points become regions (they were dropped), open lines are refused (they
+  were closed into polygons), and malformed shapes, an empty file, duplicate
+  labels (now `label_0`, `label_1`, ...) and a top-level list of shapes no
+  longer warn-and-skip or crash.
+- `load_cvat_xml` refuses video track exports and files with no shapes
+  (both returned empty regions), and raises on malformed shapes instead of
+  skipping them.
+- `mask_to_region` refuses a mask with more than one connected area
+  (pixels touching only at a corner are separate); it kept the largest
+  contour and silently dropped the rest, such as specks in a thresholded or
+  SAM mask. Select the component you want first. `plot_regions` refuses unknown `per_region_kwargs` names and
+  point regions that are not 2-D.
+
+Results that change:
+
+- Regions from LabelMe and CVAT are in neurospatial's pixel frame, where
+  pixel `(x, y)` is centred on `(x, y)`, as in video frames, `mask_to_region`
+  and `VideoCalibration`. Both tools put pixel `(c, r)` on `[c, c + 1]`, so
+  their shapes move half a pixel up and left; calibrated regions were half a
+  pixel down and right.
+- CVAT masks are decoded as CVAT writes them, run lengths over the mask's
+  own bounding box placed at `left`/`top`; they were read as start/length
+  pairs over the whole image and came out as slivers. Rotated CVAT boxes are
+  rotated, and ellipses are read.
+- `mask_to_region` covers whole pixel cells (pixel `(x, y)` spans
+  `[x-0.5, x+0.5]`); it traced pixel centres, half a pixel inside the mask,
+  and filled holes. Outlines keep only their corners.
+- `plot_regions` draws polygon holes open whatever their winding, and
+  `env.plot` widens its limits to show the regions it draws past the bins.
+- `with_metadata(units=...)` relabels each region's recorded `coord_system`
+  that matched the old units.
+
 ### Behavior follow-ups: geodesic corners, unreachable samples, undefined correlations
 
 Results that change (each was plausible and wrong):

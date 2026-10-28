@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -19,7 +19,7 @@ from neurospatial.geometry import (
     region_bin_masks,
     select_bins,
 )
-from neurospatial.regions import Regions
+from neurospatial.regions import Region
 
 if TYPE_CHECKING:
     from neurospatial.environment._cache import AnalysisCache
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 def _subset_mask(
     binning: Binning,
     arena: Arena,
-    regions: Regions,
+    regions: Mapping[str, Region],
     cache: AnalysisCache,
     *,
     mask: NDArray[np.bool_] | None = None,
@@ -149,7 +149,7 @@ def _subset_mask(
 def _subset(
     binning: Binning,
     arena: Arena,
-    regions: Regions,
+    regions: Mapping[str, Region],
     cache: AnalysisCache,
     *,
     mask: NDArray[np.bool_] | None = None,
