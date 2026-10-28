@@ -303,12 +303,12 @@ def test_circular_mean_across_the_wrap():
 
 
 def test_circular_mean_at_half_turn_is_positive_pi():
-    # Sampled headings of pi wrap to -pi; the mean is reported in (-pi, pi].
+    # Sampled headings and their mean share the (-pi, pi] convention.
     heading = np.full(EIGHTHS.size, np.pi)
     result = align_continuous_to_events(
         EIGHTHS, heading, [3.0], (-0.5, 0.5), dt=0.1, value_kinds={0: "circular"}
     )
-    assert (result.values == -np.pi).all()
+    assert (result.values == np.pi).all()
     np.testing.assert_array_equal(result.means, np.pi)
 
 
@@ -456,7 +456,6 @@ def test_all_excluded_error_counts_each_reason():
 
 def _result_inputs():
     return {
-        "relative_times": np.array([0.0, 0.5]),
         "feature_ids": np.array(["speed"]),
         "value_kinds": ("linear",),
         "interpolation": ("linear",),
@@ -529,10 +528,12 @@ def test_result_list_fields_become_arrays_and_tuples():
         ),
         ({"dt": 0.0}, "dt must be a positive"),
         ({"window": (1.0, 0.0)}, "start < stop"),
-        ({"relative_times": np.array([7.0, 8.0])}, "query grid"),
         ({"max_gap": -3.0}, "max_gap must be None"),
         ({"interpolation": ("spline",)}, "not allowed for linear"),
         ({"epochs": np.array([1.0, 2.0, 3.0])}, "epochs must be None"),
+        ({"epochs": np.array([[2.0, 3.0], [0.0, 1.0]])}, "epochs must be None"),
+        ({"epochs": np.array([[0.0, 2.0], [1.0, 3.0]])}, "epochs must be None"),
+        ({"epochs": np.array([[0.0, 1.0], [1.0, 3.0]])}, "epochs must be None"),
         (
             {"counts": np.full((2, 1), 2, dtype=np.int64)},
             r"counts must lie in \[0, 1\]",

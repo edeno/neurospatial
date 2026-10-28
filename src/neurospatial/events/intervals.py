@@ -15,7 +15,7 @@ import numpy as np
 
 from neurospatial._intervals import _format_rows, _merge, times_in_intervals
 from neurospatial._validation import validate_finite_scalar
-from neurospatial.events._core import _event_times
+from neurospatial.events._core import _event_times, _validate_events_dataframe
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -108,14 +108,6 @@ def intervals_to_events(
     """
     import pandas as pd
 
-    # Validate input type
-    if not isinstance(intervals, pd.DataFrame):
-        raise TypeError(
-            f"Expected pd.DataFrame, got {type(intervals).__name__}.\n"
-            "  WHY: Intervals must be a pandas DataFrame.\n"
-            "  Fix: Convert using pd.DataFrame({'start_time': starts, 'stop_time': stops})"
-        )
-
     # Validate which parameter
     valid_which = {"start", "stop", "both"}
     if which not in valid_which:
@@ -125,21 +117,15 @@ def intervals_to_events(
             "  Fix: Use which='start' to extract start times only."
         )
 
-    # Validate required columns based on 'which'
-    required_cols = []
-    if which in ("start", "both"):
-        required_cols.append(start_column)
-    if which in ("stop", "both"):
-        required_cols.append(stop_column)
-
-    missing = [col for col in required_cols if col not in intervals.columns]
-    if missing:
-        raise ValueError(
-            f"Missing required columns: {missing}.\n"
-            f"  WHY: These columns are needed to extract '{which}' events.\n"
-            f"  Fix: Ensure intervals DataFrame has columns: {required_cols}.\n"
-            f"  Available columns: {list(intervals.columns)}"
-        )
+    used = [start_column] if which == "start" else [stop_column]
+    if which == "both":
+        used = [start_column, stop_column]
+    _validate_events_dataframe(
+        intervals,
+        timestamp_column=used[0],
+        required_columns=used[1:],
+        context="intervals_to_events",
+    )
 
     # Validate preserve_columns
     if preserve_columns:
@@ -153,9 +139,6 @@ def intervals_to_events(
                 f"  Fix: Check column names. Available: {list(intervals.columns)}"
             )
 
-    used = [start_column] if which == "start" else [stop_column]
-    if which == "both":
-        used = [start_column, stop_column]
     times = {
         col: _event_times(intervals, col, name="intervals", call="intervals_to_events")
         for col in used

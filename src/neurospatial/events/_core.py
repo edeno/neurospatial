@@ -12,6 +12,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from numbers import Real
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -22,6 +23,9 @@ from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
     UnitSelectionMixin,
+    align_unit_table,
+    label_at,
+    resolve_unit_ids,
 )
 from neurospatial._time_bins import _time_bin_rounding, _time_bins_in_windows
 
@@ -51,9 +55,28 @@ def _validate_event_indices(
         )
 
 
-def _finite_times(values: Any, name: str) -> NDArray[np.float64]:
-    """Return ``values`` as a 1-D float64 array of finite seconds."""
-    times = np.asarray(values, dtype=np.float64)
+def _is_real_number(value: Any) -> bool:
+    """True for one real number; False for bools, arrays, strings and None."""
+    return isinstance(value, Real) and not isinstance(value, bool | np.bool_)
+
+
+def _finite_times(
+    values: Any, name: str, *, non_empty: bool = False
+) -> NDArray[np.float64]:
+    """Return ``values`` as a 1-D float64 array of finite seconds.
+
+    ``non_empty`` also refuses an empty array, for analyses that need at
+    least one event to align to.
+    """
+    try:
+        times = np.asarray(values, dtype=np.float64)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"{name} must be numbers in seconds, got {type(values).__name__}.\n"
+            "  WHY: Each entry is one time on the recording clock.\n"
+            "  Fix: Pass a flat numeric array with one time per spike, sample or "
+            "event."
+        ) from None
     if times.ndim != 1:
         raise ValueError(
             f"{name} must be a 1-D array of times in seconds, got shape "
@@ -61,14 +84,36 @@ def _finite_times(values: Any, name: str) -> NDArray[np.float64]:
             "  WHY: Each entry is one time on the recording clock.\n"
             "  Fix: Pass a flat array with one time per spike, sample or event."
         )
+    if non_empty and times.size == 0:
+        raise ValueError(
+            f"{name} is empty.\n"
+            "  WHY: The analysis needs at least one event to align to.\n"
+            "  Fix: Provide at least one event time."
+        )
     for is_bad, what in ((np.isnan, "NaN"), (np.isinf, "infinite (Inf)")):
-        if is_bad(times).any():
+        bad = np.flatnonzero(is_bad(times))
+        if bad.size:
             raise ValueError(
-                f"{name} contains {what} values.\n"
+                f"{name} contains {bad.size} {what} value(s), first at index "
+                f"{bad[0]}.\n"
                 "  WHY: Times must be finite seconds.\n"
-                f"  Fix: Remove {what} values before calling."
+                f"  Fix: Remove them before calling, e.g. "
+                f"{name}[np.isfinite({name})]."
             )
     return times
+
+
+def _inner_bounds(
+    starts: NDArray[np.float64], stops: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Shrink computed ``[starts, stops)`` bounds by their float rounding.
+
+    Bounds computed as ``time + offset`` are off by a few ulp, so a window
+    that ends exactly at an epoch's stop (``0.1 + 0.2`` against ``0.3``)
+    would read as leaving it. Test containment with these bounds instead.
+    """
+    slack = 4.0 * np.spacing(np.maximum(np.abs(starts), np.abs(stops)))
+    return starts + slack, stops - slack
 
 
 def _validate_window(
@@ -124,8 +169,8 @@ def _validate_window(
 
 def _make_bin_edges(
     window: tuple[float, float], bin_size: float
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Build PSTH bin edges and centers that stay within the window.
+) -> NDArray[np.float64]:
+    """Build PSTH bin edges that stay within the window.
 
     When ``window_duration`` is not an integer multiple of ``bin_size``,
     the trailing partial bin is dropped rather than appended. This keeps
@@ -149,20 +194,17 @@ def _make_bin_edges(
     bin_edges : NDArray[np.float64], shape (n_bins + 1,)
         Bin edges from ``window[0]`` up to ``window[0] + n_bins * bin_size``,
         which never exceeds ``window[1]``.
-    bin_centers : NDArray[np.float64], shape (n_bins,)
-        Centers of each full bin; all lie within ``[window[0], window[1]]``.
     """
     left, right = _time_bins_in_windows(
         np.asarray([window], dtype=np.float64), bin_size
     )
-    edges = np.r_[left, right[-1]] if left.size else np.array([window[0]])
-    return edges, left + bin_size / 2
+    return np.r_[left, right[-1]] if left.size else np.array([window[0]])
 
 
 def _psth_bins(
     window: tuple[float, float], bin_size: Any, *, context: str
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Validate ``bin_size`` for a valid window; return bin edges and centers.
+) -> NDArray[np.float64]:
+    """Validate ``bin_size`` for a valid window; return the bin edges.
 
     Raises
     ------
@@ -170,12 +212,7 @@ def _psth_bins(
         If ``bin_size`` is not a finite positive number of seconds, or no
         complete bin fits in the window.
     """
-    if (
-        isinstance(bin_size, (bool, np.bool_))
-        or not isinstance(bin_size, (int, float, np.integer, np.floating))
-        or not np.isfinite(bin_size)
-        or bin_size <= 0
-    ):
+    if not (_is_real_number(bin_size) and np.isfinite(bin_size) and bin_size > 0):
         raise ValueError(
             _format_error(
                 f"{context}: bin_size must be positive and finite, got {bin_size!r}.",
@@ -183,8 +220,8 @@ def _psth_bins(
                 fix="pass bin_size=0.025 (25 ms)",
             )
         )
-    edges, centers = _make_bin_edges(window, float(bin_size))
-    if centers.size == 0:
+    edges = _make_bin_edges(window, float(bin_size))
+    if edges.size < 2:
         raise ValueError(
             _format_error(
                 f"{context}: bin_size={bin_size:g} s is longer than the "
@@ -194,7 +231,7 @@ def _psth_bins(
                 fix="choose a bin_size no larger than the window, e.g. bin_size=0.025",
             )
         )
-    return edges, centers
+    return edges
 
 
 def _validated_psth_fields(
@@ -206,7 +243,7 @@ def _validated_psth_fields(
     standing for the number of bins implied by ``window`` and ``bin_size``.
     """
     window = _validate_window(result.window, context=context, warn_wide=False)
-    _, centers = _psth_bins(window, result.bin_size, context=context)
+    n_bins = _psth_bins(window, result.bin_size, context=context).size - 1
     object.__setattr__(result, "window", window)
     object.__setattr__(result, "bin_size", float(result.bin_size))
     for name in ("n_events", "n_events_dropped"):
@@ -223,11 +260,11 @@ def _validated_psth_fields(
         )
     for name, shape in arrays.items():
         array = np.asarray(getattr(result, name), dtype=np.float64)
-        expected = tuple(centers.size if n == -1 else n for n in shape)
+        expected = tuple(n_bins if n == -1 else n for n in shape)
         if array.shape != expected:
             raise ValueError(
                 f"{context}: {name} has shape {array.shape}; window={window} "
-                f"with bin_size={result.bin_size:g} s gives {centers.size} bins, "
+                f"with bin_size={result.bin_size:g} s gives {n_bins} bins, "
                 f"so it needs shape {expected}."
             )
         if np.any(array < 0):
@@ -243,7 +280,7 @@ def _validated_psth_fields(
 
 def _pre_event_bins(window: tuple[float, float], bin_size: float) -> NDArray[np.bool_]:
     """Bins that end at or before the event, up to float rounding of the edges."""
-    edges, _ = _make_bin_edges(window, bin_size)
+    edges = _make_bin_edges(window, bin_size)
     rounding = _time_bin_rounding(np.asarray([window]), bin_size)[0]
     pre: NDArray[np.bool_] = edges[1:] <= rounding
     return pre
@@ -276,7 +313,7 @@ class _PeriEventExports:
     @property
     def bin_centers(self) -> NDArray[np.float64]:
         """Bin centers relative to the event (s), shape ``(n_bins,)``."""
-        return _make_bin_edges(self.window, self.bin_size)[1]
+        return _make_bin_edges(self.window, self.bin_size)[:-1] + self.bin_size / 2
 
     def _table_attrs(self) -> dict[str, Any]:
         """Analysis settings stored in ``df.attrs`` of every table."""
@@ -638,8 +675,6 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
     event_indices: NDArray[np.intp] | None = None
 
     def __post_init__(self) -> None:
-        from neurospatial._results import align_unit_table, resolve_unit_ids
-
         context = "PopulationPeriEventResult"
         histograms = np.asarray(self.histograms)
         if histograms.ndim != 2 or histograms.shape[0] == 0:
@@ -729,10 +764,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         'b'
         """
         idx = self._unit_position(idx)
-        unit_id_value = np.asarray(self.unit_ids)[idx]
-        unit_id = (
-            unit_id_value.item() if hasattr(unit_id_value, "item") else unit_id_value
-        )
+        unit_id = label_at(self.unit_ids, idx)
         return PeriEventResult(
             histogram=self.histograms[idx],
             sem=self.sem[idx],

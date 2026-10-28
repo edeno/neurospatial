@@ -175,3 +175,16 @@ def test_peth_rejects_unrepresentable_absolute_edges(population):
             bin_size=2e-7,
         )
     assert "Fix: subtract a time origin" in str(error.value)
+
+
+def test_window_ending_at_an_epoch_stop_is_kept_despite_rounding():
+    """0.1 + 0.2 is 0.30000000000000004, one ulp past the epoch stop 0.3."""
+    spikes = np.array([0.05, 0.15, 1.05, 1.15])
+    result = peri_event_histogram(
+        spikes,
+        np.array([0.1, 1.1]),
+        (-0.1, 0.2),
+        bin_size=0.1,
+        epochs=[(0.0, 0.3), (1.0, 1.3)],
+    )
+    assert (result.n_events, result.n_events_dropped) == (2, 0)

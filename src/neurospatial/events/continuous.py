@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from numbers import Real
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -22,7 +21,12 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
 from neurospatial._observation import validated_signals
-from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, as_label_array
+from neurospatial._results import (
+    ReadOnlyArraysMixin,
+    ResultMixin,
+    as_label_array,
+    require_label_sequence,
+)
 from neurospatial.events._continuous import (
     _ALLOWED_INTERPOLATION,
     _EVENT_STATUSES,
@@ -37,7 +41,11 @@ from neurospatial.events._continuous import (
     _Summaries,
     _window_status,
 )
-from neurospatial.events._core import _validate_window
+from neurospatial.events._core import (
+    _finite_times,
+    _is_real_number,
+    _validate_window,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -47,7 +55,6 @@ __all__ = ["ContinuousEventResult", "align_continuous_to_events"]
 
 _WINDOW_COVERAGES = ("complete", "partial")
 _REQUIRED_ARRAY_FIELDS = (
-    "relative_times",
     "feature_ids",
     "event_status",
     "overlapping",
@@ -127,8 +134,7 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
     values : NDArray[np.float64] or None, shape (n_events, n_times, n_features)
         Sampled values of the retained events, in input order; NaN where
         unsupported. Categorical codes are stored as floats. Circular values
-        are radians in ``[-pi, pi)``, while circular ``means`` are in
-        ``(-pi, pi]``, so due West reads ``-pi`` here and ``pi`` in ``means``.
+        are radians in ``(-pi, pi]``, like circular ``means``.
         None when the alignment ran with ``retain_aligned=False``.
     support : NDArray[np.bool_] or None, shape (n_events, n_times, n_features)
         True where ``values`` was observed. None with ``values``.
@@ -136,7 +142,6 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         Caller labels of the input events, when given.
     """
 
-    relative_times: NDArray[np.float64]
     feature_ids: NDArray[Any]
     value_kinds: tuple[str, ...]
     interpolation: tuple[str, ...]
@@ -182,14 +187,24 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
 
     def _inconsistencies(self) -> list[str]:
         """List every way the fields disagree with each other."""
+        # The query grid, and so every per-time shape, follows from window
+        # and dt.
+        window = self.window
+        if not (
+            len(window) == 2
+            and all(_is_real_number(v) and np.isfinite(v) for v in window)
+            and window[0] < window[1]
+        ):
+            return ["window must be two finite seconds with start < stop"]
+        if not (_is_real_number(self.dt) and np.isfinite(self.dt) and self.dt > 0):
+            return ["dt must be a positive finite number of seconds"]
         problems: list[str] = []
-        relative_times = np.asarray(self.relative_times)
         feature_ids = np.asarray(self.feature_ids)
         status = np.asarray(self.event_status)
-        if relative_times.ndim != 1 or feature_ids.ndim != 1 or status.ndim != 1:
-            return ["relative_times, feature_ids and event_status must be 1-D"]
+        if feature_ids.ndim != 1 or status.ndim != 1:
+            return ["feature_ids and event_status must be 1-D"]
         n_times, n_features, n_input = (
-            relative_times.size,
+            self.relative_times.size,
             feature_ids.size,
             status.size,
         )
@@ -268,17 +283,6 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
                 if kind == "circular" and unit != "rad":
                     problems.append(f"circular features need unit 'rad', got {unit!r}")
 
-        window = self.window
-        if not (
-            len(window) == 2
-            and all(_is_real_number(v) and np.isfinite(v) for v in window)
-            and window[0] < window[1]
-        ):
-            problems.append("window must be two finite seconds with start < stop")
-        elif not (_is_real_number(self.dt) and np.isfinite(self.dt) and self.dt > 0):
-            problems.append("dt must be a positive finite number of seconds")
-        elif not np.array_equal(relative_times, _relative_times(window, self.dt)):
-            problems.append("relative_times must be the query grid of window and dt")
         if self.max_gap is not None and not (
             _is_real_number(self.max_gap)
             and np.isfinite(self.max_gap)
@@ -294,9 +298,11 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
                 and epochs.shape[1] == 2
                 and np.isfinite(epochs).all()
                 and (epochs[:, 1] > epochs[:, 0]).all()
+                and (epochs[1:, 0] > epochs[:-1, 1]).all()
             ):
                 problems.append(
-                    "epochs must be None or finite (n, 2) rows with start < stop"
+                    "epochs must be None or finite (n, 2) rows with start < stop, "
+                    "sorted and separated as as_intervals returns them"
                 )
 
         if self.window_coverage not in _WINDOW_COVERAGES:
@@ -309,6 +315,11 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         ):
             problems.append("resultant_threshold must be finite and in [0, 1]")
         return problems
+
+    @property
+    def relative_times(self) -> NDArray[np.float64]:
+        """Query offsets from each event in seconds, shape ``(n_times,)``."""
+        return _relative_times(self.window, self.dt)
 
     @property
     def event_indices(self) -> NDArray[np.intp]:
@@ -975,7 +986,7 @@ def align_continuous_to_events(
     )
     sample_valid = np.column_stack([support.sample_valid for support in supports])
     _check_category_codes(sig, sample_valid, spec, call=call)
-    events = _validated_event_times(event_times, call=call)
+    events = _finite_times(event_times, "event_times", non_empty=True)
     ids = _validated_event_ids(event_ids, events.size, call=call)
 
     status = _window_status(
@@ -1016,7 +1027,6 @@ def align_continuous_to_events(
         )
 
     return ContinuousEventResult(
-        relative_times=relative_times,
         feature_ids=spec.feature_ids,
         value_kinds=spec.value_kinds,
         interpolation=spec.interpolation,
@@ -1043,11 +1053,6 @@ def align_continuous_to_events(
     )
 
 
-def _is_real_number(value: Any) -> bool:
-    """True for one real number; False for bools, arrays, strings and None."""
-    return isinstance(value, Real) and not isinstance(value, bool | np.bool_)
-
-
 def _positive_number(value: Any, name: str, *, call: str) -> float:
     """Return ``value`` as a float, or raise unless it is positive and finite."""
     if not (_is_real_number(value) and np.isfinite(value) and value > 0):
@@ -1062,52 +1067,13 @@ def _positive_number(value: Any, name: str, *, call: str) -> float:
     return float(value)
 
 
-def _validated_event_times(event_times: ArrayLike, *, call: str) -> NDArray[np.float64]:
-    """Return event times as a 1-D finite float array, or raise."""
-    fix = "pass a 1-D array of event times in seconds, e.g. reward_times"
-    try:
-        events = np.asarray(event_times, dtype=np.float64)
-    except (TypeError, ValueError):
-        raise ValueError(
-            _format_error(f"{call}: event_times must be numbers in seconds.", fix=fix)
-        ) from None
-    if events.ndim != 1 or events.size == 0:
-        raise ValueError(
-            _format_error(
-                f"{call}: event_times must be a non-empty 1-D array; got shape "
-                f"{events.shape}.",
-                fix=fix,
-            )
-        )
-    bad = np.flatnonzero(~np.isfinite(events))
-    if bad.size:
-        raise ValueError(
-            _format_error(
-                f"{call}: event_times has {bad.size} non-finite value(s), first at "
-                f"index {bad[0]} ({events[bad[0]]}).",
-                why="An event without a time has no window to sample.",
-                fix="drop those events, e.g. event_times[np.isfinite(event_times)]",
-            )
-        )
-    return events
-
-
 def _validated_event_ids(
     event_ids: Sequence[Any] | NDArray[Any] | None, n_events: int, *, call: str
 ) -> NDArray[Any] | None:
     """Return the event labels as an array of length ``n_events``, or None."""
     if event_ids is None:
         return None
-    if isinstance(event_ids, str | bytes) or np.ndim(event_ids) == 0:
-        raise ValueError(
-            _format_error(
-                f"{call}: event_ids must be a sequence of labels, one per event; "
-                f"got {event_ids!r}.",
-                why="A single string or number would be split or cannot label "
-                "each event.",
-                fix="pass a list or array, e.g. event_ids=['trial_1', 'trial_2']",
-            )
-        )
+    require_label_sequence(event_ids, name="event_ids", call=call, example="trial_1")
     ids = as_label_array(event_ids)
     if ids.shape != (n_events,):
         raise ValueError(

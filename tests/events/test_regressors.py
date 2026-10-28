@@ -235,6 +235,14 @@ class TestTimeToNearestEvent:
         with pytest.raises(ValueError, match=r"max_time.*non-negative"):
             time_to_nearest_event(np.arange(3.0), np.array([1.0]), max_time=np.nan)
 
+    @pytest.mark.parametrize("max_time", [True, np.inf, "1.0"])
+    def test_non_finite_or_non_numeric_max_time_raises(self, max_time):
+        """True silently clipped to 1 s; inf clipped nothing, which None says."""
+        from neurospatial.events.regressors import time_to_nearest_event
+
+        with pytest.raises(ValueError, match=r"max_time.*finite non-negative"):
+            time_to_nearest_event(np.arange(3.0), np.array([1.0]), max_time=max_time)
+
     def test_zero_max_time_clips_to_zero(self):
         """Test max_time=0.0 clips all values to zero."""
         from neurospatial.events.regressors import time_to_nearest_event
@@ -984,11 +992,18 @@ class TestRecordedEpochs:
     def test_clipped_time_to_event_needs_only_max_time_of_recording(self):
         from neurospatial.events.regressors import time_to_nearest_event
 
-        result = time_to_nearest_event(
-            np.array([1.5, 9.5]), np.array([20.0]), max_time=1.0, epochs=(0.0, 10.0)
+        samples, events = np.array([1.5, 9.5]), np.array([20.0])
+        unsigned = time_to_nearest_event(
+            samples, events, signed=False, max_time=1.0, epochs=(0.0, 10.0)
         )
         # "at least 1 s from any event" is known where (t - 1, t + 1) is recorded.
-        np.testing.assert_array_equal(result, [-1.0, np.nan])
+        np.testing.assert_array_equal(unsigned, [1.0, np.nan])
+        # The sign is not: an unseen event just before 0 s would be nearer
+        # than the one at 20 s, and before the sample.
+        signed = time_to_nearest_event(
+            samples, events, max_time=1.0, epochs=(0.0, 10.0)
+        )
+        assert np.isnan(signed).all()
 
     def test_invalid_epochs_are_refused(self):
         from neurospatial.events.regressors import event_count_in_window
@@ -997,3 +1012,49 @@ class TestRecordedEpochs:
             event_count_in_window(
                 np.arange(3.0), np.array([1.0]), (-1.0, 0.0), epochs=(5.0, 1.0)
             )
+
+
+class TestTimeToNearestEventKnownValues:
+    """A value is NaN exactly when an unrecorded event could change it."""
+
+    def test_clipped_signed_value_needs_the_true_distance_recorded(self):
+        # The nearest seen event is 5 s before; an unseen event 7.6 s after
+        # the window ends at 7.5 s would be nearer and flip the sign.
+        from neurospatial.events import time_to_nearest_event
+
+        sample, events = np.array([5.0]), np.array([0.0])
+        clipped = time_to_nearest_event(sample, events, max_time=2.0, epochs=(0, 7.5))
+        assert np.isnan(clipped).all()
+        recorded = time_to_nearest_event(sample, events, max_time=2.0, epochs=(0, 10.5))
+        assert_allclose(recorded, [2.0])
+        unsigned = time_to_nearest_event(
+            sample, events, max_time=2.0, signed=False, epochs=(0, 7.5)
+        )
+        assert_allclose(unsigned, [2.0])
+
+    def test_no_events_is_max_time_away_when_unsigned(self):
+        """A session without events is a known covariate, not missing data."""
+        from neurospatial.events import time_to_nearest_event
+
+        times = np.array([10.0, 20.0, 99.0])
+        no_events = np.array([])
+        unsigned = time_to_nearest_event(
+            times, no_events, max_time=2.0, signed=False, epochs=(0, 100)
+        )
+        assert_allclose(unsigned[:2], [2.0, 2.0])
+        assert np.isnan(unsigned[2])  # (97, 101) leaves the recording
+        assert np.isnan(time_to_nearest_event(times, no_events, max_time=2.0)).all()
+        assert np.isnan(time_to_nearest_event(times, no_events, signed=False)).all()
+
+
+def test_window_ending_at_an_epoch_stop_is_inside_despite_rounding():
+    """0.1 + 0.2 is 0.30000000000000004, one ulp past the epoch stop 0.3."""
+    from neurospatial.events import event_count_in_window
+
+    counts = event_count_in_window(
+        np.array([0.1, 1.1]),
+        np.array([0.15, 1.15]),
+        (-0.1, 0.2),
+        epochs=[(0.0, 0.3), (1.0, 1.3)],
+    )
+    assert_allclose(counts, [1.0, 1.0])

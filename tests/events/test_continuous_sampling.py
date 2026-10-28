@@ -9,7 +9,7 @@ import pytest
 
 from neurospatial._intervals import as_intervals
 from neurospatial._observation import validated_signals
-from neurospatial.events._continuous import _relative_times, _sample_feature, _wrap
+from neurospatial.events._continuous import _relative_times, _sample_feature
 
 # Two runs of dyadic samples separated by a 1 s gap: [0, 1] and [2, 3].
 TWO_RUNS = np.r_[np.arange(0, 1.0001, 0.125), np.arange(2, 3.0001, 0.125)]
@@ -71,25 +71,25 @@ def test_grid_step_not_dividing_window():
     np.testing.assert_allclose(_relative_times((0.0, 1.0), 0.3), [0, 0.3, 0.6, 0.9])
 
 
+def test_grid_query_at_the_event_is_exactly_zero():
+    # -0.33 + 0.03 * 11 is -5.6e-17: a "previous" sample at the event would be
+    # read from the sample before it.
+    rel = _relative_times((-0.33, 0.33), 0.03)
+    assert (rel == 0.0).sum() == 1
+    t = np.array([0.0, 0.25, 0.5, 0.75])
+    values, support = _sample(
+        t, [0.0, 1.0, 2.0, 3.0], 0.5 + rel, interpolation="previous", max_gap=None
+    )
+    assert support[rel == 0.0].all()
+    assert values[rel == 0.0] == 2.0
+
+
 def test_grid_excludes_stop():
     rel = _relative_times((-0.75, 0.75), 0.25)
     np.testing.assert_array_equal(rel, [-0.75, -0.5, -0.25, 0.0, 0.25, 0.5])
 
 
 # ---------------------------------------------------------------------- wrap
-
-
-def test_wrap_range_and_half_turn():
-    angles = np.array([0.0, np.pi, -np.pi, 3 * np.pi, 2 * np.pi, -0.5])
-    np.testing.assert_allclose(
-        _wrap(angles), [0, -np.pi, -np.pi, -np.pi, 0, -0.5], atol=1e-12
-    )
-
-
-def test_wrap_stays_below_pi_after_rounding():
-    # (a + π) % 2π rounds up to 2π just below -π, which would return +π.
-    out = _wrap(np.array([np.nextafter(-np.pi, -np.inf)]))
-    assert out[0] == -np.pi
 
 
 # ------------------------------------------------------------------ sampling
@@ -116,7 +116,7 @@ def test_circular_takes_shorter_arc_across_pi():
     assert abs(abs(values[0]) - np.pi) < 1e-12
 
 
-def test_circular_exact_half_turn_goes_negative():
+def test_circular_exact_half_turn_goes_positive():
     values, _ = _sample(
         [0.0, 1.0],
         [0.0, np.pi],
@@ -125,7 +125,7 @@ def test_circular_exact_half_turn_goes_negative():
         kind="circular",
         max_gap=None,
     )
-    assert values[0] == pytest.approx(-np.pi / 2, abs=1e-12)
+    assert values[0] == pytest.approx(np.pi / 2, abs=1e-12)
 
 
 def test_circular_exact_sample_is_wrapped():

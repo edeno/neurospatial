@@ -330,11 +330,10 @@ def test_circular_means_across_pi():
 
 
 def test_circular_mean_of_one_half_turn_is_positive_pi():
-    # A sampled heading of pi is wrapped to -pi; atan2 then returns -pi.
+    # atan2 gives -pi for this sine sum; means are reported in (-pi, pi].
     spec = _spec(["circular"])
     s = _Summaries.empty(1, spec)
     s.add(np.full((1, 1, 1), -np.pi), np.ones((1, 1, 1), dtype=bool))
-    assert np.arctan2(s.sin_sums, s.cos_sums)[0, 0] == -np.pi
     means, _, defined = _circular_means(s.sin_sums, s.cos_sums, s.counts, 1e-12)
     assert defined[0, 0]
     assert means[0, 0] == np.pi
@@ -414,3 +413,20 @@ def test_chunked_summaries_match_single_pass(events_per_chunk):
         np.nanmean(values[:, observed, 0], axis=0),
         rtol=1e-12,
     )
+
+
+def test_window_ending_at_an_epoch_stop_is_retained_despite_rounding():
+    """0.1 + 0.2 is 0.30000000000000004, one ulp past the epoch stop 0.3."""
+    from neurospatial.events import align_continuous_to_events
+
+    times = np.r_[np.linspace(0.0, 0.3, 7), np.linspace(1.0, 1.3, 7)]
+    result = align_continuous_to_events(
+        times,
+        times,
+        [0.1, 1.1],
+        (-0.1, 0.2),
+        dt=0.05,
+        epochs=[(0.0, 0.3), (1.0, 1.3)],
+        max_gap=None,
+    )
+    assert result.event_status.tolist() == ["retained", "retained"]

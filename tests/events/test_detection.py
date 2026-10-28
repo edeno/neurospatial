@@ -277,41 +277,27 @@ class TestAddPositions:
         with pytest.raises(ValueError, match=r"(?i)1-D|swap"):
             add_positions(events, times=positions, positions=times)
 
-    def test_nan_in_event_timestamps_handled(self):
-        """Test NaN timestamps in events are propagated to positions."""
+    def test_nan_event_timestamp_raises(self):
+        """Like every events function, a NaN event time is refused."""
         from neurospatial.events.detection import add_positions
 
         events = pd.DataFrame({"timestamp": [1.0, np.nan, 2.0]})
-
         times = np.array([0.0, 1.0, 2.0, 3.0])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
 
-        result = add_positions(events, times=times, positions=positions, max_gap=None)
+        with pytest.raises(ValueError, match=r"NaN or inf time.*row 1"):
+            add_positions(events, times=times, positions=positions, max_gap=None)
 
-        # First and third should be valid
-        assert_allclose(result["x"].values[0], 1.0)
-        assert_allclose(result["x"].values[2], 2.0)
-
-        # Second (NaN timestamp) should produce NaN position
-        assert np.isnan(result["x"].values[1])
-        assert np.isnan(result["y"].values[1])
-
-    def test_unsorted_trajectory_times_handled(self):
-        """Test that unsorted trajectory times are handled correctly."""
+    def test_unsorted_trajectory_times_raise(self):
+        """Trajectory times must increase, as for every per-sample analysis."""
         from neurospatial.events.detection import add_positions
 
         events = pd.DataFrame({"timestamp": [1.5]})
-
-        # Unsorted times and positions
         times = np.array([2.0, 0.0, 1.0, 3.0])
         positions = np.array([[4.0, 4.0], [0.0, 0.0], [2.0, 2.0], [6.0, 6.0]])
 
-        result = add_positions(events, times=times, positions=positions, max_gap=None)
-
-        # Should interpolate correctly after internal sorting
-        # t=1.5 is between t=1 (pos 2,2) and t=2 (pos 4,4) -> (3,3)
-        assert_allclose(result["x"].values, [3.0])
-        assert_allclose(result["y"].values, [3.0])
+        with pytest.raises(ValueError, match="decreases"):
+            add_positions(events, times=times, positions=positions, max_gap=None)
 
     def test_typical_neuroscience_use_case(self):
         """Test typical use case: adding positions to reward events."""
@@ -355,16 +341,18 @@ class TestAddPositions:
 class TestAddPositionsDegenerateTrajectory:
     """Tests that add_positions rejects trajectories interp1d cannot use."""
 
-    def test_add_positions_single_sample_raises(self):
-        """A single trajectory sample cannot define a linear interpolant."""
+    def test_add_positions_single_sample_is_a_point_observation(self):
+        """One sample positions an event at its time and nothing else."""
         from neurospatial.events.detection import add_positions
 
-        events = pd.DataFrame({"timestamp": [1.0]})
+        events = pd.DataFrame({"timestamp": [1.0, 1.5]})
         times = np.array([1.0])
-        positions = np.array([[0.0, 0.0]])
+        positions = np.array([[4.0, 5.0]])
 
-        with pytest.raises(ValueError, match=r"2 .*sample|at least 2"):
-            add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions)
+
+        assert_allclose(result.loc[0, ["x", "y"]].to_numpy(dtype=float), [4.0, 5.0])
+        assert result.loc[1, ["x", "y"]].isna().all()
 
     def test_add_positions_identical_times_raises(self):
         """All-identical trajectory times leave the interpolant undefined."""
@@ -374,7 +362,7 @@ class TestAddPositionsDegenerateTrajectory:
         times = np.array([2.0, 2.0, 2.0])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
 
-        with pytest.raises(ValueError, match="repeated sample"):
+        with pytest.raises(ValueError, match="strictly increasing"):
             add_positions(events, times=times, positions=positions)
 
     def test_add_positions_duplicate_time_raises(self):
@@ -385,7 +373,7 @@ class TestAddPositionsDegenerateTrajectory:
         times = np.array([0.0, 1.0, 2.0, 2.0, 3.0])
         positions = np.array([[0.0], [1.0], [2.0], [50.0], [3.0]])
 
-        with pytest.raises(ValueError, match=r"repeated sample time.*t=2 s"):
+        with pytest.raises(ValueError, match=r"strictly increasing.*== 2 at index 2"):
             add_positions(events, times=times, positions=positions)
 
     @pytest.mark.parametrize("n_dims", [0, 4])
@@ -422,42 +410,10 @@ class TestAddPositionsDegenerateTrajectory:
         with pytest.raises(ValueError, match="times"):
             add_positions(events, times=times, positions=positions)
 
-    def test_add_positions_nan_event_timestamp_still_nan(self):
-        """An event with a NaN timestamp still yields NaN x/y positions.
-
-        The trajectory itself is valid (>= 2 samples, varying times); only
-        the *event* timestamp is NaN, which is a supported, documented path.
-        """
-        from neurospatial.events.detection import add_positions
-
-        events = pd.DataFrame({"timestamp": [1.0, np.nan, 3.0]})
-        times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
-        positions = np.array(
-            [[0.0, 0.0], [2.0, 2.0], [4.0, 4.0], [6.0, 6.0], [8.0, 8.0]]
-        )
-
-        result = add_positions(events, times=times, positions=positions, max_gap=None)
-
-        # Finite events interpolate correctly.
-        assert result["x"].iloc[0] == pytest.approx(2.0)
-        assert result["y"].iloc[0] == pytest.approx(2.0)
-        assert result["x"].iloc[2] == pytest.approx(6.0)
-        assert result["y"].iloc[2] == pytest.approx(6.0)
-        # NaN event timestamp -> NaN position.
-        assert np.isnan(result["x"].iloc[1])
-        assert np.isnan(result["y"].iloc[1])
-
-    def test_add_positions_empty_events_skips_trajectory_validation(self):
-        """Empty events short-circuit before the >= 2-sample trajectory guard.
-
-        With no events to position there is nothing to interpolate, so a
-        single-sample (or empty) trajectory must not raise.
-        """
+    def test_add_positions_empty_events_get_empty_columns(self):
         from neurospatial.events.detection import add_positions
 
         events = pd.DataFrame({"timestamp": []})
-
-        # A 1-sample trajectory would fail the >= 2-sample guard if it ran.
         times = np.array([0.0])
         positions = np.array([[0.0, 0.0]])
 

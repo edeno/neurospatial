@@ -225,7 +225,7 @@ def test_nonfinite_or_multidimensional_inputs_rejected(argument, invalid):
     inputs = {"spike_times": spikes, "event_times": events}
     inputs[argument] = invalid
 
-    with pytest.raises(ValueError, match=f"{argument} must be a finite 1-D"):
+    with pytest.raises(ValueError, match=f"{argument} (must be a 1-D|contains)"):
         plot_peri_event_response(**inputs, result=result)
 
 

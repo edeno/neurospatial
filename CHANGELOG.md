@@ -34,9 +34,25 @@ Breaking:
   or infinite `bin_size` and one longer than the window, which returned an
   empty histogram and all-NaN summaries, and 2-D `event_times`, which were
   flattened into extra events.
+- `ContinuousEventResult` derives `relative_times` from `window` and `dt`
+  instead of taking it. Drop that argument when building a result by hand.
+- `add_positions` refuses unsorted trajectory `times`, which it sorted, and
+  NaN or infinite event timestamps, which it turned into NaN positions,
+  like every other events function. Sort the trajectory and drop events
+  without a time first.
 
 Results that change:
 
+- `add_positions` samples positions exactly as `align_continuous_to_events`
+  samples a signal. An event exactly at a tracked sample gets that position
+  even when the sample is isolated by gaps longer than `max_gap` (it was
+  NaN), and a one-sample trajectory is valid input. A sample exactly at an
+  epoch's stop is outside the half-open epoch, so an event there is NaN
+  (it got the sample's position).
+- `align_continuous_to_events` wraps sampled circular values to (−π, π],
+  the convention of `wrap_angle` and of its own circular `means`; they were
+  in [−π, π), so due West read −π in `values` and +π in `means`. An exact
+  half-turn between two samples is now interpolated the positive way.
 - The PSTH `baseline_rate` (in `summary()` and `summary_table()`) averages
   only bins that end at or before the event. A bin whose center was negative
   but which straddled the event counted as baseline: spikes only at +10 ms
@@ -71,8 +87,35 @@ Added:
 
 Fixed:
 
+- Every events function reports bad spike, sample or event times the same
+  way: non-numeric input names the argument instead of raising NumPy's
+  conversion error, and NaN or infinite times give their count and first
+  index.
 - `peri_event_histogram` and `population_peri_event_histogram` warn once,
   not once per unit plus once more, for a window longer than 60 s.
+- `align_continuous_to_events` queries each event at exactly 0 s. The grid
+  `start + dt * j` can land a few 1e-17 s before the event (window
+  `(-0.33, 0.33)`, `dt=0.03`), so a categorical or `"previous"` feature
+  read the sample before an event that lies on a sample: the zone at
+  the event was the previous zone.
+- With `epochs` or `spike_window`, an event window that ends exactly at an
+  epoch's stop is kept. Its stop, computed as `event + window[1]`, can round
+  one ulp past the epoch (`0.1 + 0.2` against `0.3`), which dropped the
+  event from `peri_event_histogram`, marked it `outside_epochs` in
+  `align_continuous_to_events` and gave NaN in `event_count_in_window`, so
+  identical trials were kept or dropped by where they fell on the clock.
+- `time_to_nearest_event(signed=True, max_time=..., epochs=...)` is NaN
+  where an unrecorded event could be nearer than the true nearest event,
+  not only nearer than `max_time`: the sign of a clipped value comes from
+  the true nearest event, so a seen event 5 s back read as +`max_time`
+  although an unseen one 2.6 s ahead was possible. Without any event,
+  `signed=False` with `max_time` gives `max_time` (no event is nearer),
+  checked against `epochs` like any other value, instead of all NaN; a
+  session without rewards is a known covariate, as in
+  `event_count_in_window`.
+- `time_to_nearest_event` refuses `max_time=True`, which clipped every
+  value to 1 s, and an infinite or non-numeric `max_time`; pass `None` for
+  no clipping.
 - `align_events` refuses a NaN or infinite event or reference time, which it
   dropped without a word, and a non-DataFrame input with a `TypeError`.
 - `filter_by_intervals` refuses NaN event times (with `include=False` they
@@ -92,12 +135,25 @@ Fixed:
   `time_to_nearest_event` refuses `max_time=nan`, which returned all NaN.
 - `ContinuousEventResult` turns list and tuple fields into arrays and tuples
   before checking them: a list `event_status` passed the checks and then
-  reported 0 retained events. Construction also checks `dt`, `window`, that
-  `relative_times` is their query grid, `max_gap`, `epochs`, interpolation
-  per value kind, unique `feature_ids`, counts within the retained events,
+  reported 0 retained events. Construction also checks `dt`, `window`,
+  `max_gap`, `epochs`, interpolation per value kind, unique `feature_ids`, counts within the retained events,
   finite values wherever `support` is True, and the unit of circular
-  features. `align_continuous_to_events` stores every radian spelling
+  features, and that `epochs` are sorted and separated as `as_intervals`
+  returns them. `align_continuous_to_events` stores every radian spelling
   (`"radian"`, `"radians"`) as `"rad"`.
+
+Faster:
+
+- `peri_event_histogram` and `population_peri_event_histogram` count every
+  event at once and keep one unit's counts in memory at a time. With 1e4
+  events, one unit of 1e6 spikes takes 20 ms instead of 115 ms, and 100
+  units of 1e5 spikes take 1.4 s instead of 5.6 s and peak at 25 MB instead
+  of 965 MB. Counts are unchanged.
+- `import neurospatial.events` no longer imports pandas.
+- `in_epochs`, `restrict_spike_trains` and pose heading find each time's
+  epoch with one binary search instead of comparing every time with every
+  epoch: 1e6 times against 1000 epochs take 9 ms instead of 1.2 s, without
+  the 1 GB times x epochs array. Masks are unchanged.
 
 ### Encoding cleanup and faster analyses
 
