@@ -46,6 +46,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
+import shapely
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
@@ -56,6 +57,7 @@ from .core import Region
 
 if TYPE_CHECKING:
     import pandas as pd
+    from shapely.geometry import Polygon
 
     from ..ops.transforms import SpatialTransform
 
@@ -75,6 +77,63 @@ def _refuse_non_finite_rows(array: NDArray[np.float64], *, name: str, fix: str) 
                 fix=fix,
             )
         )
+
+
+def _transform_points(
+    points: NDArray[np.float64],
+    transform: SpatialTransform | None,
+    *,
+    name: str,
+    where: str,
+) -> NDArray[np.float64]:
+    """Apply ``transform`` to ``(n, 2)`` points; refuse a reshaped or non-finite result.
+
+    Returns ``points`` unchanged when ``transform`` is None. ``name`` is the
+    argument that holds the transform and ``where`` names the points, for
+    the error.
+    """
+    if transform is None:
+        return points
+    mapped = np.asarray(transform(points), dtype=np.float64)
+    if mapped.shape != points.shape:
+        raise ValueError(
+            _format_error(
+                f"{name} returned shape {mapped.shape} for {where}; expected "
+                f"{points.shape}, one (x, y) row per point.",
+                why="regions are 2-D, so each (x, y) must map to one (x, y)",
+                fix="pass a transform that maps (n, 2) arrays to (n, 2) arrays, "
+                "such as VideoCalibration.transform_px_to_cm or a 2-D AffineND",
+            )
+        )
+    bad = ~np.isfinite(mapped).all(axis=1)
+    if bad.any():
+        first = int(np.argmax(bad))
+        raise ValueError(
+            _format_error(
+                f"{name} returned non-finite coordinates for {int(bad.sum())} of "
+                f"{len(mapped)} points of {where} (first: {points[first].tolist()}).",
+                why="a region needs finite coordinates",
+                fix="check that the transform is defined over all of these "
+                "points, for example that a homography does not send them to "
+                "infinity",
+            )
+        )
+    return mapped
+
+
+def _transform_polygon(
+    polygon: Polygon,
+    transform: SpatialTransform | None,
+    *,
+    name: str,
+    where: str,
+) -> Polygon:
+    """Apply :func:`_transform_points` to every vertex, holes included."""
+    if transform is None:
+        return polygon
+    return shapely.transform(
+        polygon, lambda xy: _transform_points(xy, transform, name=name, where=where)
+    )
 
 
 def _prepare_positions(
@@ -140,28 +199,9 @@ def _prepare_positions(
         "finite rows: keep = np.isfinite(positions).all(axis=1), then pass "
         "positions[keep] and treat the other rows as missing",
     )
-    if transform is None or len(array) == 0:
+    if len(array) == 0:
         return array
-
-    mapped = np.asarray(transform(array), dtype=np.float64)
-    if mapped.shape != array.shape:
-        raise ValueError(
-            _format_error(
-                f"transform returned shape {mapped.shape} for positions of "
-                f"shape {array.shape}.",
-                why="each position must map to one (x, y) position in the "
-                "regions' coordinates.",
-                fix="pass a transform that maps (n, 2) arrays to (n, 2) arrays, "
-                "such as a 2-D AffineND",
-            )
-        )
-    _refuse_non_finite_rows(
-        mapped,
-        name="transform(positions)",
-        fix="check the transform: it maps finite positions to NaN or infinite "
-        "coordinates",
-    )
-    return mapped
+    return _transform_points(array, transform, name="transform", where="positions")
 
 
 def _check_regions(selected: Sequence[Region], point_radius: float | None) -> None:
