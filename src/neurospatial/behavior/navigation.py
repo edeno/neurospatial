@@ -1100,11 +1100,12 @@ def distance_to_reward(
         If positions dimensionality doesn't match environment.
         If ``times`` or ``reward_times`` contain non-finite values, or
         ``positions`` or ``reward_positions`` contains an infinite value.
-        If ``times`` is not ascending when reward positions are inferred
-        (no ``reward_positions`` given) or ``break_before`` is given.
+        If ``times`` and ``positions`` are empty, or ``times`` is not
+        strictly increasing.
         If ``max_gap`` is not positive, or ``epochs`` or ``break_before`` is
         malformed.
-        If ``metric`` is not ``'geodesic'`` or ``'euclidean'``.
+        If ``metric`` is not ``'geodesic'`` or ``'euclidean'``, or ``mode``
+        is not ``'nearest'``, ``'last'`` or ``'next'``.
 
     Warns
     -----
@@ -1200,9 +1201,14 @@ def distance_to_reward(
     neurospatial.ops.nearest_boundary : Exact distance and direction to walls
     """
     from neurospatial._intervals import as_intervals, validate_max_gap
-    from neurospatial._observation import validate_break_before
-    from neurospatial._validation import validate_finite
+    from neurospatial._observation import empty_samples_error, validate_break_before
+    from neurospatial._validation import (
+        validate_finite,
+        validate_strictly_increasing,
+        validate_times_positions,
+    )
 
+    call = "distance_to_reward"
     require_cartesian(
         env.coordinate_system,
         "distance_to_reward()",
@@ -1210,59 +1216,33 @@ def distance_to_reward(
         "in the environment's bins.",
         fix="use the allocentric environment the positions were recorded in",
     )
-    paths = metric_paths(metric, env, call="distance_to_reward")
+    paths = metric_paths(metric, env, call=call)
+    if mode not in ("nearest", "last", "next"):
+        raise ValueError(f"mode must be 'nearest', 'last', or 'next', got '{mode}'.")
 
-    # A non-finite time silently corrupts interpolation and searchsorted
-    # ordering; a NaN position is a missing sample and gives NaN distance.
-    times = validate_finite(times, name="times")
+    # Reward locations are interpolated between neighbouring samples and
+    # rewards are assigned to recordings in time order, so times must be
+    # strictly increasing. A NaN position is a missing sample and gives NaN
+    # distance; an infinite one is a corrupt value.
+    times, positions = validate_times_positions(times, positions, call=call)
+    if times.size == 0:
+        raise empty_samples_error(call, ("times", "positions"))
+    validate_strictly_increasing(times, call=call)
+    positions = validate_finite(
+        positions.reshape(times.size, -1), name="positions", allow_nan=True
+    )
     reward_times = validate_finite(reward_times, name="reward_times")
     if reward_times.ndim != 1:
         raise ValueError(
             f"reward_times must be 1-D (n_events,), got shape {reward_times.shape}."
         )
-    positions = validate_finite(
-        np.asarray(positions, dtype=np.float64), name="positions", allow_nan=True
-    )
-    if positions.ndim == 1:
-        positions = positions.reshape(-1, 1)
-
-    n_samples = len(times)
-
-    if len(positions) != n_samples:
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got positions: {len(positions)}, times: {n_samples}."
-        )
+    n_samples = times.size
     validate_max_gap(max_gap)
-    breaks = validate_break_before(break_before, n_samples, call="distance_to_reward")
+    breaks = validate_break_before(break_before, n_samples, call=call)
     resolved_epochs = as_intervals(epochs, name="epochs")
-
-    # Handle empty inputs
-    if n_samples == 0:
-        return np.array([], dtype=np.float64)
 
     if len(reward_times) == 0:
         return np.full(n_samples, np.nan, dtype=np.float64)
-
-    if (reward_positions is None or breaks is not None) and np.any(np.diff(times) < 0):
-        raise ValueError(
-            "times must be sorted in ascending order to interpolate "
-            "reward positions or to assign rewards to recordings.\n"
-            "  WHY: reward locations are interpolated between neighbouring "
-            "samples and break_before splits the samples in time order; "
-            "unsorted times yield wrong reward positions and a corrupted "
-            "distance regressor.\n"
-            "  Fix: sort (times, positions) by time before calling, or "
-            "pass explicit reward_positions (without break_before) to skip "
-            "interpolation."
-        )
-
-    # Samples outside epochs have no distance, as they have no speed in
-    # compute_speed. Each sample is tested as the instant [t, t + ulp).
-    if resolved_epochs is None:
-        sample_in_epochs = np.ones(n_samples, dtype=bool)
-    else:
-        sample_in_epochs = times_in_intervals(resolved_epochs, times)
 
     # Get or interpolate reward positions
     if reward_positions is not None:
@@ -1289,10 +1269,8 @@ def distance_to_reward(
             break_before=breaks,
         )
 
-    # Map positions to bins (NaN rows are -1)
+    # Map positions and reward locations to bins (NaN rows are -1)
     position_bins = env.bin_at(positions)
-
-    # Map reward positions to bins (unknown, NaN locations are -1)
     reward_bins = env.bin_at(reward_positions)
     _warn_rewards_outside_environment(reward_positions, reward_bins)
 
@@ -1314,92 +1292,68 @@ def distance_to_reward(
             ),
         )
 
-    # Find relevant reward for each sample based on mode
+    # Find the relevant reward of each sample (an index into the time-sorted
+    # rewards, possibly out of range when there is none).
     if mode == "nearest":
-        # Find nearest reward in time (before or after)
-        # Use searchsorted to find insertion points
         idx_right = np.searchsorted(sorted_reward_times, times, side="left")
         idx_left = idx_right - 1
-
         has_left = idx_left >= 0
         has_right = idx_right < n_rewards
         if recordings is not None:
             has_left &= _same_recording(idx_left, *recordings)
             has_right &= _same_recording(idx_right, *recordings)
 
-        # Compute time distances to left and right rewards
+        # Time to the left and right rewards; the nearer one wins, the left
+        # one on a tie.
         dist_left = np.full(n_samples, np.inf)
         dist_right = np.full(n_samples, np.inf)
         dist_left[has_left] = times[has_left] - sorted_reward_times[idx_left[has_left]]
         dist_right[has_right] = (
             sorted_reward_times[idx_right[has_right]] - times[has_right]
         )
-
-        # Select nearest
-        use_left = dist_left <= dist_right
-        relevant_reward_idx = np.where(use_left, idx_left, idx_right)
-
-        # No eligible reward on either side
+        relevant_reward_idx = np.where(dist_left <= dist_right, idx_left, idx_right)
         no_reward = ~has_left & ~has_right
-        relevant_reward_idx = np.clip(relevant_reward_idx, 0, n_rewards - 1)
-
-    elif mode == "last":
-        # Find most recent reward before each sample
-        # searchsorted gives index of first reward > time, so idx-1 is last reward <= time
-        idx = np.searchsorted(sorted_reward_times, times, side="right") - 1
-        relevant_reward_idx = idx
-        no_reward = idx < 0
-        if recordings is not None:
-            no_reward |= ~_same_recording(idx, *recordings)
-
-    elif mode == "next":
-        # Find next upcoming reward after each sample
-        # searchsorted gives index of first reward >= time
-        idx = np.searchsorted(sorted_reward_times, times, side="left")
-        relevant_reward_idx = idx
-        no_reward = idx >= n_rewards
-        if recordings is not None:
-            no_reward |= ~_same_recording(idx, *recordings)
-
     else:
-        raise ValueError(f"mode must be 'nearest', 'last', or 'next', got '{mode}'.")
+        # "last": searchsorted gives the first reward > time, so idx - 1 is the
+        # last reward <= time. "next": the first reward >= time.
+        if mode == "last":
+            relevant_reward_idx = (
+                np.searchsorted(sorted_reward_times, times, side="right") - 1
+            )
+        else:
+            relevant_reward_idx = np.searchsorted(
+                sorted_reward_times, times, side="left"
+            )
+        no_reward = (relevant_reward_idx < 0) | (relevant_reward_idx >= n_rewards)
+        if recordings is not None:
+            no_reward |= ~_same_recording(relevant_reward_idx, *recordings)
 
-    # Clip indices to valid range for array access
-    relevant_reward_idx = np.clip(relevant_reward_idx, 0, len(sorted_reward_bins) - 1)
-
-    # Get reward bins for each sample
+    relevant_reward_idx = np.clip(relevant_reward_idx, 0, n_rewards - 1)
     target_bins = sorted_reward_bins[relevant_reward_idx]
+
+    # NaN without a relevant reward, at a missing or outside position, for an
+    # unknown or outside reward location, and outside epochs (as samples
+    # outside epochs have no speed in compute_speed; each sample is tested as
+    # the instant [t, t + ulp)).
+    usable = ~no_reward & (target_bins >= 0) & (position_bins >= 0)
+    if resolved_epochs is not None:
+        usable &= times_in_intervals(resolved_epochs, times)
+    starts = positions[usable]
+    ends = sorted_reward_positions[relevant_reward_idx[usable]]
 
     distances = np.full(n_samples, np.nan, dtype=np.float64)
     if paths is None:
         # The exact straight-line distance between the position and the
         # reward location, not between their bin centers.
-        distances = np.linalg.norm(
-            positions - sorted_reward_positions[relevant_reward_idx], axis=1
-        )
+        distances[usable] = np.linalg.norm(starts - ends, axis=1)
     else:
-        # The shortest path inside the environment from each position to
-        # its reward's location, one call per reward.
-        usable = ~no_reward & (target_bins >= 0) & (position_bins >= 0)
-        for reward in np.unique(relevant_reward_idx[usable]):
-            mask = usable & (relevant_reward_idx == reward)
-            distances[mask] = paths.to_point(
-                positions[mask], sorted_reward_positions[reward]
-            )
-
-    # Set NaN for samples with no relevant reward
-    distances[no_reward] = np.nan
-
-    # Set NaN for invalid trajectory bins
-    distances[position_bins < 0] = np.nan
-
-    # Set NaN for invalid or unknown reward bins
-    invalid_reward_mask = target_bins < 0
-    distances[invalid_reward_mask & ~no_reward] = np.nan
-
-    # Set NaN for samples outside epochs
-    distances[~sample_in_epochs] = np.nan
-
+        # The shortest path inside the environment from each position to its
+        # reward's location, with every reward bin's field grown at once.
+        end_bins = target_bins[usable]
+        paths.prepare(end_bins)
+        distances[usable] = paths.between(
+            starts, ends, start_bins=position_bins[usable], end_bins=end_bins
+        )
     return distances
 
 

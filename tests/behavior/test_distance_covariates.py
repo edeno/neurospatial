@@ -181,19 +181,14 @@ class TestDistanceToReward:
         assert np.all(np.isnan(result))
         assert len(result) == 3
 
-    def test_empty_positions(self, simple_grid_env):
-        """Test empty positions returns empty array."""
+    def test_empty_positions_raise(self, simple_grid_env):
+        """Zero samples are refused, naming the empty arguments."""
         from neurospatial.behavior.navigation import distance_to_reward
 
-        env = simple_grid_env
-
-        times = np.array([])
-        positions = np.empty((0, 2))
-        reward_times = np.array([1.0, 2.0])
-
-        result = distance_to_reward(env, times, positions, reward_times)
-
-        assert len(result) == 0
+        with pytest.raises(ValueError, match=r"times.*positions"):
+            distance_to_reward(
+                simple_grid_env, np.array([]), np.empty((0, 2)), np.array([1.0, 2.0])
+            )
 
     def test_reward_positions_interpolated(self, simple_grid_env):
         """Test reward positions are interpolated when not provided."""
@@ -280,7 +275,7 @@ class TestDistanceToReward:
         times = np.array([0.0, 1.0])  # Wrong length
         reward_times = np.array([0.5])
 
-        with pytest.raises(ValueError, match=r"positions and times.*same length"):
+        with pytest.raises(ValueError, match=r"times and positions.*same length"):
             distance_to_reward(env, times, positions, reward_times)
 
     @pytest.mark.parametrize("metric", ["Euclidean", "bogus"])
@@ -414,32 +409,50 @@ class TestDistanceToRewardValidation:
         positions = np.column_stack([np.linspace(0, 9, 5), np.linspace(0, 9, 5)])
         reward_times = np.array([3.0])
 
-        with pytest.raises(ValueError, match=r"ascending|sorted"):
+        with pytest.raises(ValueError, match=r"non-decreasing|sort"):
             distance_to_reward(env, times, positions, reward_times)
 
-    def test_distance_to_reward_unsorted_times_ok_with_explicit_positions(
+    def test_distance_to_reward_unsorted_times_raise_with_explicit_positions(
         self, simple_grid_env
     ):
-        """Unsorted times with explicit reward_positions must not raise."""
+        """Unsorted times are refused even with explicit reward_positions."""
         from neurospatial.behavior.navigation import distance_to_reward
 
-        env = simple_grid_env
         times = np.array([0.0, 1.0, 5.0, 2.0, 6.0])
-        positions = np.full((5, 2), 5.0)
-        reward_times = np.array([3.0])
-        reward_positions = np.array([[5.0, 5.0]])
+        with pytest.raises(ValueError, match=r"non-decreasing|sort"):
+            distance_to_reward(
+                simple_grid_env,
+                times,
+                np.full((5, 2), 5.0),
+                np.array([3.0]),
+                reward_positions=np.array([[5.0, 5.0]]),
+                metric="euclidean",
+            )
 
-        result = distance_to_reward(
-            env,
-            times,
-            positions,
-            reward_times,
-            reward_positions=reward_positions,
-            metric="euclidean",
-        )
+    def test_distance_to_reward_repeated_times_raise(self, simple_grid_env):
+        """A repeated timestamp is refused: interpolation needs elapsed time."""
+        from neurospatial.behavior.navigation import distance_to_reward
 
-        assert result.shape == (5,)
-        assert np.all(np.isfinite(result))
+        with pytest.raises(ValueError, match="strictly increasing"):
+            distance_to_reward(
+                simple_grid_env,
+                np.array([0.0, 1.0, 1.0, 2.0]),
+                np.full((4, 2), 5.0),
+                np.array([1.5]),
+            )
+
+    def test_invalid_mode_raises_before_other_checks(self, simple_grid_env):
+        """A bad mode is reported even when the trajectory is also invalid."""
+        from neurospatial.behavior.navigation import distance_to_reward
+
+        with pytest.raises(ValueError, match="mode must be"):
+            distance_to_reward(
+                simple_grid_env,
+                np.array([]),
+                np.empty((0, 2)),
+                np.array([1.0]),
+                mode="previous",
+            )
 
     def test_distance_to_reward_finite_inputs_unchanged(self, simple_grid_env):
         """A finite, sorted example returns correct, unchanged distances."""
@@ -737,7 +750,7 @@ class TestDistanceToRewardSupport:
     def test_break_before_needs_sorted_times(self, simple_grid_env):
         times = np.array([0.0, 0.1, 0.3, 0.2])
         positions = np.full((4, 2), 5.0)
-        with pytest.raises(ValueError, match=r"ascending"):
+        with pytest.raises(ValueError, match=r"non-decreasing"):
             self._distance(
                 simple_grid_env,
                 times,
