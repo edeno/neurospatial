@@ -3,24 +3,27 @@ Core dataclasses and validation helpers for the events module.
 
 This module provides:
 - Result dataclasses: PeriEventResult, PopulationPeriEventResult
-- Validation helpers: _validate_events_dataframe, _validate_spatial_columns
+- Validation helpers for windows, bins and event tables
 - Visualization: plot_peri_event_histogram
 """
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
     UnitSelectionMixin,
 )
+from neurospatial._time_bins import _time_bin_rounding, _time_bins_in_windows
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -48,11 +51,280 @@ def _validate_event_indices(
         )
 
 
+def _finite_times(values: Any, name: str) -> NDArray[np.float64]:
+    """Return ``values`` as a 1-D float64 array of finite seconds."""
+    times = np.asarray(values, dtype=np.float64)
+    if times.ndim != 1:
+        raise ValueError(
+            f"{name} must be a 1-D array of times in seconds, got shape "
+            f"{times.shape}.\n"
+            "  WHY: Each entry is one time on the recording clock.\n"
+            "  Fix: Pass a flat array with one time per spike, sample or event."
+        )
+    for is_bad, what in ((np.isnan, "NaN"), (np.isinf, "infinite (Inf)")):
+        if is_bad(times).any():
+            raise ValueError(
+                f"{name} contains {what} values.\n"
+                "  WHY: Times must be finite seconds.\n"
+                f"  Fix: Remove {what} values before calling."
+            )
+    return times
+
+
+def _validate_window(
+    window: tuple[float, float], *, context: str, warn_wide: bool = True
+) -> tuple[float, float]:
+    """Validate a window in seconds and return its bounds as floats.
+
+    ``warn_wide`` warns when the window spans more than 60 s, which for a
+    peri-event window usually means milliseconds were passed. History
+    regressors (rewards in the last two minutes) turn it off.
+    """
+    try:
+        if np.asarray(window).dtype.kind not in "biuf":
+            raise TypeError("window bounds must be real numbers")
+        bounds = np.asarray(window, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            _format_error(
+                f"{context}: window must contain two numeric bounds, got {window!r}.",
+                why="Why: peri-event windows are expressed in seconds relative to each event.",
+                fix="pass window=(-0.5, 1.0)",
+            )
+        ) from exc
+    if bounds.shape != (2,) or not np.all(np.isfinite(bounds)):
+        raise ValueError(
+            _format_error(
+                f"{context}: window must contain two finite bounds, got {window!r} with shape {bounds.shape}.",
+                why="Why: peri-event windows need a finite start and stop in seconds.",
+                fix="pass window=(-0.5, 1.0)",
+            )
+        )
+    if window[0] >= window[1]:
+        raise ValueError(
+            _format_error(
+                f"{context}: Window start ({window[0]}) must be before its stop ({window[1]}).",
+                why="Why: a peri-event window is the half-open range [start, stop) "
+                "relative to each event, so a window with stop <= start holds no time.",
+                fix="pass window=(-0.5, 1.0), with start < stop, in seconds",
+            )
+        )
+    if warn_wide and bounds[1] - bounds[0] > 60:
+        warnings.warn(
+            _format_error(
+                f"{context}: window={window!r} spans {bounds[1] - bounds[0]:g} seconds, more than 60 seconds.",
+                why="Why: an unusually wide peri-event window may be specified in milliseconds instead of seconds.",
+                fix="use window=(-0.5, 1.0) if you meant milliseconds",
+            ),
+            UserWarning,
+            stacklevel=3,
+        )
+    return float(bounds[0]), float(bounds[1])
+
+
+def _make_bin_edges(
+    window: tuple[float, float], bin_size: float
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Build PSTH bin edges and centers that stay within the window.
+
+    When ``window_duration`` is not an integer multiple of ``bin_size``,
+    the trailing partial bin is dropped rather than appended. This keeps
+    every edge (and therefore every center) inside ``[window[0],
+    window[1]]``; otherwise the final bin would extend past ``window[1]``
+    and silently absorb spikes that fall outside the requested window.
+
+    Every bin is half-open: a spike at the final whole-bin edge or at the
+    window stop is excluded. Edges are clamped to the window stop using
+    timestamp-relative rounding rather than an absolute epsilon.
+
+    Parameters
+    ----------
+    window : tuple[float, float]
+        Time window ``(start, end)`` relative to each event, in seconds.
+    bin_size : float
+        Width of each time bin in seconds.
+
+    Returns
+    -------
+    bin_edges : NDArray[np.float64], shape (n_bins + 1,)
+        Bin edges from ``window[0]`` up to ``window[0] + n_bins * bin_size``,
+        which never exceeds ``window[1]``.
+    bin_centers : NDArray[np.float64], shape (n_bins,)
+        Centers of each full bin; all lie within ``[window[0], window[1]]``.
+    """
+    left, right = _time_bins_in_windows(
+        np.asarray([window], dtype=np.float64), bin_size
+    )
+    edges = np.r_[left, right[-1]] if left.size else np.array([window[0]])
+    return edges, left + bin_size / 2
+
+
+def _psth_bins(
+    window: tuple[float, float], bin_size: Any, *, context: str
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Validate ``bin_size`` for a valid window; return bin edges and centers.
+
+    Raises
+    ------
+    ValueError
+        If ``bin_size`` is not a finite positive number of seconds, or no
+        complete bin fits in the window.
+    """
+    if (
+        isinstance(bin_size, (bool, np.bool_))
+        or not isinstance(bin_size, (int, float, np.integer, np.floating))
+        or not np.isfinite(bin_size)
+        or bin_size <= 0
+    ):
+        raise ValueError(
+            _format_error(
+                f"{context}: bin_size must be positive and finite, got {bin_size!r}.",
+                why="bin_size is the width of each peri-event time bin in seconds.",
+                fix="pass bin_size=0.025 (25 ms)",
+            )
+        )
+    edges, centers = _make_bin_edges(window, float(bin_size))
+    if centers.size == 0:
+        raise ValueError(
+            _format_error(
+                f"{context}: bin_size={bin_size:g} s is longer than the "
+                f"{window[1] - window[0]:g} s window, so no complete bin fits.",
+                why="a trailing partial bin is dropped so every bin has the same "
+                "width.",
+                fix="choose a bin_size no larger than the window, e.g. bin_size=0.025",
+            )
+        )
+    return edges, centers
+
+
+def _validated_psth_fields(
+    result: Any, arrays: dict[str, tuple[int, ...]], *, context: str
+) -> None:
+    """Check and normalize the fields shared by the PSTH results in place.
+
+    ``arrays`` maps each array field to its expected shape, with ``-1``
+    standing for the number of bins implied by ``window`` and ``bin_size``.
+    """
+    window = _validate_window(result.window, context=context, warn_wide=False)
+    _, centers = _psth_bins(window, result.bin_size, context=context)
+    object.__setattr__(result, "window", window)
+    object.__setattr__(result, "bin_size", float(result.bin_size))
+    for name in ("n_events", "n_events_dropped"):
+        value = getattr(result, name)
+        if isinstance(value, (bool, np.bool_)) or not isinstance(
+            value, (int, np.integer)
+        ):
+            raise ValueError(f"{context}: {name} must be an integer, got {value!r}.")
+        object.__setattr__(result, name, int(value))
+    if result.n_events < 1 or result.n_events_dropped < 0:
+        raise ValueError(
+            f"{context}: n_events must be at least 1 and n_events_dropped at "
+            f"least 0, got {result.n_events} and {result.n_events_dropped}."
+        )
+    for name, shape in arrays.items():
+        array = np.asarray(getattr(result, name), dtype=np.float64)
+        expected = tuple(centers.size if n == -1 else n for n in shape)
+        if array.shape != expected:
+            raise ValueError(
+                f"{context}: {name} has shape {array.shape}; window={window} "
+                f"with bin_size={result.bin_size:g} s gives {centers.size} bins, "
+                f"so it needs shape {expected}."
+            )
+        if np.any(array < 0):
+            raise ValueError(
+                f"{context}: {name} has negative values; spike counts and their "
+                "standard errors are never negative."
+            )
+        object.__setattr__(result, name, array)
+    _validate_event_indices(
+        result.event_indices, result.n_events, result.n_events_dropped
+    )
+
+
+def _pre_event_bins(window: tuple[float, float], bin_size: float) -> NDArray[np.bool_]:
+    """Bins that end at or before the event, up to float rounding of the edges."""
+    edges, _ = _make_bin_edges(window, bin_size)
+    rounding = _time_bin_rounding(np.asarray([window]), bin_size)[0]
+    pre: NDArray[np.bool_] = edges[1:] <= rounding
+    return pre
+
+
+def _response_metrics(
+    rates: NDArray[np.float64], bin_centers: NDArray[np.float64], pre: NDArray[np.bool_]
+) -> dict[str, NDArray[np.float64]]:
+    """Peak rate, peak latency and baseline rate per row of ``rates`` (Hz)."""
+    n_units = rates.shape[0]
+    peak_idx = np.nanargmax(rates, axis=1)
+    baseline = (
+        np.nanmean(rates[:, pre], axis=1) if pre.any() else np.full(n_units, np.nan)
+    )
+    return {
+        "peak_rate": rates[np.arange(n_units), peak_idx],
+        "peak_latency": bin_centers[peak_idx],
+        "baseline_rate": baseline,
+    }
+
+
+class _PeriEventExports:
+    """Tables shared by the single-unit and population PSTH results."""
+
+    window: tuple[float, float]
+    bin_size: float
+    n_events: int
+    n_events_dropped: int
+
+    @property
+    def bin_centers(self) -> NDArray[np.float64]:
+        """Bin centers relative to the event (s), shape ``(n_bins,)``."""
+        return _make_bin_edges(self.window, self.bin_size)[1]
+
+    def _table_attrs(self) -> dict[str, Any]:
+        """Analysis settings stored in ``df.attrs`` of every table."""
+        return {
+            "window": self.window,
+            "bin_size": self.bin_size,
+            "n_events": self.n_events,
+            "n_events_dropped": self.n_events_dropped,
+        }
+
+    def _metrics_table(self, rates: NDArray[np.float64], unit_ids: Any) -> pd.DataFrame:
+        import pandas as pd
+
+        metrics = _response_metrics(
+            rates, self.bin_centers, _pre_event_bins(self.window, self.bin_size)
+        )
+        df = pd.DataFrame(metrics, index=pd.Index(unit_ids, name="unit_id"))
+        df.attrs = self._table_attrs()
+        return df
+
+    def _bins_table(
+        self,
+        unit_ids: NDArray[Any],
+        histograms: NDArray[np.float64],
+        sem: NDArray[np.float64],
+    ) -> pd.DataFrame:
+        import pandas as pd
+
+        n_units, n_bins = histograms.shape
+        df = pd.DataFrame(
+            {
+                "unit_id": np.repeat(unit_ids, n_bins),
+                "bin_center": np.tile(self.bin_centers, n_units),
+                "firing_rate": (histograms / self.bin_size).reshape(-1),
+                "firing_rate_sem": (sem / self.bin_size).reshape(-1),
+                "histogram": histograms.reshape(-1),
+                "sem": sem.reshape(-1),
+            }
+        )
+        df.attrs = self._table_attrs()
+        return df
+
+
 # --- Result Dataclasses ---
 
 
 @dataclass(frozen=True, repr=False, eq=False)
-class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
+class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
     """
     Result from peri-event histogram analysis.
 
@@ -61,17 +333,24 @@ class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
 
     Attributes
     ----------
-    bin_centers : NDArray[np.float64], shape (n_bins,)
-        Time relative to event (seconds). Negative = before, positive = after.
     histogram : NDArray[np.float64], shape (n_bins,)
         Mean spike count per time bin across events.
     sem : NDArray[np.float64], shape (n_bins,)
         Standard error of the mean across events, in **count units**
-        (matching ``histogram``). Divide by ``bin_size`` to convert to
-        Hz when plotting alongside ``firing_rate``. NaN with a single
-        event (SEM is undefined).
+        (matching ``histogram``); ``firing_rate_sem`` is the same in Hz.
+        NaN with a single event (SEM is undefined).
     n_events : int
-        Number of events used in analysis.
+        Number of events used in analysis, at least 1.
+    window : tuple[float, float]
+        Time window (start, end) relative to event in seconds.
+    bin_size : float
+        Width of time bins (seconds). Together with ``window`` it fixes the
+        bins: ``histogram`` and ``sem`` need one entry per bin.
+    unit_id : int or str or None
+        Identifier for this unit. Set automatically when indexing/iterating a
+        :class:`PopulationPeriEventResult` (``rates[i].unit_id ==
+        rates.unit_ids[i]``); ``None`` for a standalone single-unit
+        computation unless supplied explicitly.
     n_events_dropped : int
         Number of events excluded because their windows leave the recording.
     event_indices : NDArray[np.intp], shape (n_events,), or None
@@ -80,18 +359,21 @@ class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
         cohort as this histogram. Read-only; None for manually constructed
         results whose original event cohort is unknown. Raw event times are
         not retained.
-    window : tuple[float, float]
-        Time window (start, end) relative to event in seconds.
-    bin_size : float
-        Width of time bins (seconds).
-    unit_id : int or str or None
-        Identifier for this unit. Set automatically when indexing/iterating a
-        :class:`PopulationPeriEventResult` (``rates[i].unit_id ==
-        rates.unit_ids[i]``); ``None`` for a standalone single-unit
-        computation unless supplied explicitly.
+    bin_centers : NDArray[np.float64], shape (n_bins,)
+        Time relative to event (seconds), derived from ``window`` and
+        ``bin_size``. Negative = before, positive = after.
     firing_rate : NDArray[np.float64], shape (n_bins,)
-        Firing rate (Hz). Cached on construction as ``histogram /
-        bin_size``; treat as a read-only attribute.
+        Firing rate (Hz), ``histogram / bin_size``.
+    firing_rate_sem : NDArray[np.float64], shape (n_bins,)
+        Standard error of ``firing_rate`` across events (Hz),
+        ``sem / bin_size``.
+
+    Raises
+    ------
+    ValueError
+        On construction, if ``window`` or ``bin_size`` is invalid, no complete
+        bin fits, an array has the wrong shape or negative values, or the
+        event counts are not non-negative integers with ``n_events >= 1``.
 
     See Also
     --------
@@ -112,7 +394,6 @@ class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
 
     """
 
-    bin_centers: NDArray[np.float64]
     histogram: NDArray[np.float64]
     sem: NDArray[np.float64]
     n_events: int
@@ -120,16 +401,25 @@ class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
     bin_size: float
     unit_id: int | str | None = None
     n_events_dropped: int = 0
-    event_indices: NDArray[np.intp] | None = field(default=None, compare=False)
-    firing_rate: NDArray[np.float64] = field(init=False)
+    event_indices: NDArray[np.intp] | None = None
 
     def __post_init__(self) -> None:
-        _validate_event_indices(
-            self.event_indices, self.n_events, self.n_events_dropped
+        _validated_psth_fields(
+            self, {"histogram": (-1,), "sem": (-1,)}, context="PeriEventResult"
         )
-        # Frozen dataclass: bypass setattr to populate the cached field.
-        object.__setattr__(self, "firing_rate", self.histogram / self.bin_size)
         self._own_arrays()
+
+    @property
+    def firing_rate(self) -> NDArray[np.float64]:
+        """Firing rate (Hz), shape ``(n_bins,)``: ``histogram / bin_size``."""
+        rate: NDArray[np.float64] = self.histogram / self.bin_size
+        return rate
+
+    @property
+    def firing_rate_sem(self) -> NDArray[np.float64]:
+        """SEM of ``firing_rate`` across events (Hz), shape ``(n_bins,)``."""
+        sem: NDArray[np.float64] = self.sem / self.bin_size
+        return sem
 
     def to_dataframe(self) -> pd.DataFrame:
         """Dense tidy table of the PSTH: one row per time bin.
@@ -142,16 +432,16 @@ class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
         -------
         pandas.DataFrame
             Columns ``unit_id``, ``bin_center`` (s, time relative to event),
-            ``firing_rate`` (Hz), ``histogram`` (mean spike count per bin), and
-            ``sem`` (count units).
+            ``firing_rate`` (Hz), ``firing_rate_sem`` (Hz), ``histogram``
+            (mean spike count per bin), and ``sem`` (count units).
+            ``df.attrs`` holds ``window``, ``bin_size``, ``n_events`` and
+            ``n_events_dropped``.
 
         Examples
         --------
         >>> import numpy as np
         >>> from neurospatial.events._core import PeriEventResult
-        >>> bc = np.array([-0.5, 0.0, 0.5])
         >>> result = PeriEventResult(
-        ...     bin_centers=bc,
         ...     histogram=np.array([0.1, 0.4, 0.2]),
         ...     sem=np.array([0.01, 0.02, 0.01]),
         ...     n_events=10,
@@ -161,22 +451,33 @@ class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
         ... )
         >>> df = result.to_dataframe()
         >>> list(df.columns)
-        ['unit_id', 'bin_center', 'firing_rate', 'histogram', 'sem']
-        >>> len(df)
-        3
+        ['unit_id', 'bin_center', 'firing_rate', 'firing_rate_sem', 'histogram', 'sem']
+        >>> df["bin_center"].tolist()
+        [-0.5, 0.0, 0.5]
         """
-        import pandas as pd
+        return self._bins_table(
+            np.array([self.unit_id], dtype=object),
+            self.histogram[np.newaxis],
+            self.sem[np.newaxis],
+        )
 
-        bin_centers = np.asarray(self.bin_centers)
-        n_bins = bin_centers.shape[0]
-        return pd.DataFrame(
-            {
-                "unit_id": [self.unit_id] * n_bins,
-                "bin_center": bin_centers,
-                "firing_rate": np.asarray(self.firing_rate),
-                "histogram": np.asarray(self.histogram),
-                "sem": np.asarray(self.sem),
-            }
+    def summary_table(self) -> pd.DataFrame:
+        """Scalar response metrics in one row, indexed by ``unit_id``.
+
+        Same columns as :meth:`PopulationPeriEventResult.summary_table`.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row indexed by ``unit_id`` with ``peak_rate`` (Hz),
+            ``peak_latency`` (s, time of the peak relative to the event) and
+            ``baseline_rate`` (Hz, mean rate over the bins that end at or
+            before the event; NaN when the window has none). ``df.attrs``
+            holds ``window``, ``bin_size``, ``n_events`` and
+            ``n_events_dropped``.
+        """
+        return self._metrics_table(
+            self.firing_rate[np.newaxis], np.array([self.unit_id], dtype=object)
         )
 
     def summary(self) -> dict[str, Any]:
@@ -185,17 +486,17 @@ class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
         Returns
         -------
         dict
-            Mapping with ``unit_id``, ``n_events`` (int), ``peak_rate`` (Hz),
-            ``peak_latency`` (s, time of the peak relative to the event), and
-            ``baseline_rate`` (Hz, mean rate over the pre-event window).
+            Mapping with ``unit_id``, ``n_events`` and ``n_events_dropped``
+            (int), ``peak_rate`` (Hz), ``peak_latency`` (s, time of the peak
+            relative to the event), and ``baseline_rate`` (Hz, mean rate over
+            the bins that end at or before the event; a bin that straddles
+            the event is not baseline).
 
         Examples
         --------
         >>> import numpy as np
         >>> from neurospatial.events._core import PeriEventResult
-        >>> bc = np.array([-0.5, 0.0, 0.5])
         >>> result = PeriEventResult(
-        ...     bin_centers=bc,
         ...     histogram=np.array([0.1, 0.4, 0.2]),
         ...     sem=np.array([0.01, 0.02, 0.01]),
         ...     n_events=10,
@@ -208,25 +509,16 @@ class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
         >>> round(s["peak_latency"], 3)
         0.0
         """
-        rate = np.asarray(self.firing_rate)
-        bin_centers = np.asarray(self.bin_centers)
-        if rate.size == 0:
-            peak_rate = float("nan")
-            peak_latency = float("nan")
-        else:
-            peak_idx = int(np.nanargmax(rate))
-            peak_rate = float(rate[peak_idx])
-            peak_latency = float(bin_centers[peak_idx])
-
-        pre = bin_centers < 0
-        baseline_rate = float(np.nanmean(rate[pre])) if np.any(pre) else float("nan")
+        metrics = _response_metrics(
+            self.firing_rate[np.newaxis],
+            self.bin_centers,
+            _pre_event_bins(self.window, self.bin_size),
+        )
         return {
             "unit_id": self.unit_id,
-            "n_events": int(self.n_events),
-            "n_events_dropped": int(self.n_events_dropped),
-            "peak_rate": peak_rate,
-            "peak_latency": peak_latency,
-            "baseline_rate": baseline_rate,
+            "n_events": self.n_events,
+            "n_events_dropped": self.n_events_dropped,
+            **{name: float(values[0]) for name, values in metrics.items()},
         }
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
@@ -250,7 +542,7 @@ class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
 
 
 @dataclass(frozen=True, repr=False, eq=False)
-class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
+class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMixin):
     """
     Result from population peri-event histogram analysis.
 
@@ -259,28 +551,20 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
 
     Attributes
     ----------
-    bin_centers : NDArray[np.float64], shape (n_bins,)
-        Time relative to event (seconds).
     histograms : NDArray[np.float64], shape (n_units, n_bins)
-        Per-unit spike count per time bin.
+        Per-unit mean spike count per time bin across events.
     sem : NDArray[np.float64], shape (n_units, n_bins)
         Per-unit standard error of the mean across events, in **count
         units** (matching ``histograms``). Divide by ``bin_size`` to
         convert to Hz.
-    mean_histogram : NDArray[np.float64], shape (n_bins,)
-        Population average histogram across all units.
+    mean_sem : NDArray[np.float64], shape (n_bins,)
+        Standard error across events of the population-mean histogram, in
+        count units: the SEM of each event's mean count over units. This is
+        the uncertainty of ``mean_histogram`` and the band ``plot`` draws.
+        For the spread across units use
+        ``histograms.std(axis=0, ddof=1) / np.sqrt(n_units)``.
     n_events : int
-        Number of events used in analysis.
-    n_units : int
-        Number of units in population.
-    n_events_dropped : int
-        Number of events excluded because their windows leave the recording.
-    event_indices : NDArray[np.intp], shape (n_events,), or None
-        Original input positions of retained events, in input order. Use
-        ``event_times[result.event_indices]`` to align a raster to the same
-        cohort as this histogram. Read-only; None for manually constructed
-        results whose original event cohort is unknown. Raw event times are
-        not retained.
+        Number of events used in analysis, at least 1.
     window : tuple[float, float]
         Time window (start, end) relative to event in seconds.
     bin_size : float
@@ -294,13 +578,32 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
         quality, depth, inclusion flags), one row per unit; ``None`` when not
         provided. Labelled tables align by unit identity; an unnamed default
         RangeIndex uses unit order. Mismatched or duplicate labels raise ValueError.
+    n_events_dropped : int
+        Number of events excluded because their windows leave the recording.
+    event_indices : NDArray[np.intp], shape (n_events,), or None
+        Original input positions of retained events, in input order. Use
+        ``event_times[result.event_indices]`` to align a raster to the same
+        cohort as this histogram. Read-only; None for manually constructed
+        results whose original event cohort is unknown. Raw event times are
+        not retained.
+    bin_centers : NDArray[np.float64], shape (n_bins,)
+        Time relative to event (seconds), derived from ``window`` and
+        ``bin_size``.
+    n_units : int
+        Number of units, ``len(histograms)``.
+    mean_histogram : NDArray[np.float64], shape (n_bins,)
+        Population average histogram, ``histograms.mean(axis=0)``.
     firing_rates : NDArray[np.float64], shape (n_units, n_bins)
-        Per-unit firing rates (Hz). Cached on construction as
-        ``histograms / bin_size``; treat as a read-only attribute.
+        Per-unit firing rates (Hz), ``histograms / bin_size``.
     mean_firing_rate : NDArray[np.float64], shape (n_bins,)
-        Population-average firing rate (Hz). Cached on construction as
-        ``mean_histogram / bin_size``; the population-level analog of
-        ``PeriEventResult.firing_rate``. Treat as a read-only attribute.
+        Population-average firing rate (Hz), ``mean_histogram / bin_size``;
+        the population-level analog of ``PeriEventResult.firing_rate``.
+
+    Raises
+    ------
+    ValueError
+        On construction, as for :class:`PeriEventResult`, and if
+        ``unit_ids`` has the wrong length or repeats a value.
 
     See Also
     --------
@@ -323,46 +626,62 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
 
     """
 
-    bin_centers: NDArray[np.float64]
     histograms: NDArray[np.float64]
     sem: NDArray[np.float64]
-    mean_histogram: NDArray[np.float64]
+    mean_sem: NDArray[np.float64]
     n_events: int
-    n_units: int
     window: tuple[float, float]
     bin_size: float
-    unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
-    unit_table: pd.DataFrame | None = field(default=None, compare=False)
-    n_events_dropped: int = field(default=0, compare=False)
-    event_indices: NDArray[np.intp] | None = field(default=None, compare=False)
-    firing_rates: NDArray[np.float64] = field(init=False)
-    mean_firing_rate: NDArray[np.float64] = field(init=False)
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None
+    unit_table: pd.DataFrame | None = None
+    n_events_dropped: int = 0
+    event_indices: NDArray[np.intp] | None = None
 
     def __post_init__(self) -> None:
-        _validate_event_indices(
-            self.event_indices, self.n_events, self.n_events_dropped
-        )
         from neurospatial._results import align_unit_table, resolve_unit_ids
 
-        # Frozen dataclass: bypass setattr to populate the cached fields.
-        object.__setattr__(self, "firing_rates", self.histograms / self.bin_size)
-        object.__setattr__(
-            self, "mean_firing_rate", self.mean_histogram / self.bin_size
-        )
-        n_units = int(np.asarray(self.histograms).shape[0])
-        object.__setattr__(
+        context = "PopulationPeriEventResult"
+        histograms = np.asarray(self.histograms)
+        if histograms.ndim != 2 or histograms.shape[0] == 0:
+            raise ValueError(
+                f"{context}: histograms must have shape (n_units, n_bins) with at "
+                f"least one unit, got {histograms.shape}."
+            )
+        n_units = histograms.shape[0]
+        _validated_psth_fields(
             self,
-            "unit_ids",
-            resolve_unit_ids(self.unit_ids, n_units),
+            {"histograms": (n_units, -1), "sem": (n_units, -1), "mean_sem": (-1,)},
+            context=context,
         )
+        object.__setattr__(self, "unit_ids", resolve_unit_ids(self.unit_ids, n_units))
         object.__setattr__(
             self,
             "unit_table",
-            align_unit_table(
-                self.unit_table, self.unit_ids, context="PopulationPeriEventResult"
-            ),
+            align_unit_table(self.unit_table, self.unit_ids, context=context),
         )
         self._own_arrays()
+
+    @property
+    def n_units(self) -> int:
+        """Number of units, ``len(histograms)``."""
+        return len(self)
+
+    @property
+    def mean_histogram(self) -> NDArray[np.float64]:
+        """Population average histogram (counts), shape ``(n_bins,)``."""
+        mean: NDArray[np.float64] = self.histograms.mean(axis=0)
+        return mean
+
+    @property
+    def firing_rates(self) -> NDArray[np.float64]:
+        """Per-unit firing rates (Hz), shape ``(n_units, n_bins)``."""
+        rates: NDArray[np.float64] = self.histograms / self.bin_size
+        return rates
+
+    @property
+    def mean_firing_rate(self) -> NDArray[np.float64]:
+        """Population-average firing rate (Hz), shape ``(n_bins,)``."""
+        return self.mean_histogram / self.bin_size
 
     def __len__(self) -> int:
         """Return the number of units in the population.
@@ -372,7 +691,7 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
         int
             Number of units (first dimension of ``histograms``).
         """
-        return int(np.asarray(self.histograms).shape[0])
+        return int(self.histograms.shape[0])
 
     def __getitem__(self, idx: int) -> PeriEventResult:
         """Return the single-unit :class:`PeriEventResult` for unit ``idx``.
@@ -396,15 +715,12 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
         --------
         >>> import numpy as np
         >>> from neurospatial.events._core import PopulationPeriEventResult
-        >>> bc = np.array([-0.5, 0.0, 0.5])
         >>> hist = np.array([[0.1, 0.4, 0.2], [0.0, 0.1, 0.5]])
         >>> result = PopulationPeriEventResult(
-        ...     bin_centers=bc,
         ...     histograms=hist,
         ...     sem=np.zeros_like(hist),
-        ...     mean_histogram=hist.mean(axis=0),
+        ...     mean_sem=np.zeros(3),
         ...     n_events=10,
-        ...     n_units=2,
         ...     window=(-0.75, 0.75),
         ...     bin_size=0.5,
         ...     unit_ids=["a", "b"],
@@ -413,16 +729,13 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
         'b'
         """
         idx = self._unit_position(idx)
-        histograms = np.asarray(self.histograms)
-        sem = np.asarray(self.sem)
         unit_id_value = np.asarray(self.unit_ids)[idx]
         unit_id = (
             unit_id_value.item() if hasattr(unit_id_value, "item") else unit_id_value
         )
         return PeriEventResult(
-            bin_centers=np.asarray(self.bin_centers),
-            histogram=histograms[idx],
-            sem=sem[idx],
+            histogram=self.histograms[idx],
+            sem=self.sem[idx],
             n_events=self.n_events,
             window=self.window,
             bin_size=self.bin_size,
@@ -454,46 +767,30 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
         -------
         pandas.DataFrame
             Columns ``unit_id``, ``bin_center`` (s), ``firing_rate`` (Hz),
-            ``histogram`` (mean spike count per bin), and ``sem`` (count units).
+            ``firing_rate_sem`` (Hz), ``histogram`` (mean spike count per
+            bin), and ``sem`` (count units). ``df.attrs`` holds ``window``,
+            ``bin_size``, ``n_events`` and ``n_events_dropped``.
 
         Examples
         --------
         >>> import numpy as np
         >>> from neurospatial.events._core import PopulationPeriEventResult
-        >>> bc = np.array([-0.5, 0.0, 0.5])
         >>> hist = np.array([[0.1, 0.4, 0.2], [0.0, 0.1, 0.5]])
         >>> result = PopulationPeriEventResult(
-        ...     bin_centers=bc,
         ...     histograms=hist,
         ...     sem=np.zeros_like(hist),
-        ...     mean_histogram=hist.mean(axis=0),
+        ...     mean_sem=np.zeros(3),
         ...     n_events=10,
-        ...     n_units=2,
         ...     window=(-0.75, 0.75),
         ...     bin_size=0.5,
         ... )
         >>> df = result.to_dataframe()
         >>> list(df.columns)
-        ['unit_id', 'bin_center', 'firing_rate', 'histogram', 'sem']
+        ['unit_id', 'bin_center', 'firing_rate', 'firing_rate_sem', 'histogram', 'sem']
         >>> len(df) == 2 * 3
         True
         """
-        import pandas as pd
-
-        bin_centers = np.asarray(self.bin_centers)
-        n_units, n_bins = np.asarray(self.histograms).shape
-        firing_rates = np.asarray(self.firing_rates)
-        histograms = np.asarray(self.histograms)
-        sem = np.asarray(self.sem)
-        return pd.DataFrame(
-            {
-                "unit_id": np.repeat(np.asarray(self.unit_ids), n_bins),
-                "bin_center": np.tile(bin_centers, n_units),
-                "firing_rate": firing_rates.reshape(-1),
-                "histogram": histograms.reshape(-1),
-                "sem": sem.reshape(-1),
-            }
-        )
+        return self._bins_table(np.asarray(self.unit_ids), self.histograms, self.sem)
 
     def summary_table(self) -> pd.DataFrame:
         """Per-unit scalar summary: one row per unit, ``unit_id``-indexed.
@@ -507,21 +804,19 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
             One row per unit, indexed by ``unit_id``, with columns
             ``peak_rate`` (Hz), ``peak_latency`` (s, time of the per-unit peak
             relative to the event), and ``baseline_rate`` (Hz, mean rate over
-            the pre-event window).
+            the bins that end at or before the event). ``df.attrs`` holds
+            ``window``, ``bin_size``, ``n_events`` and ``n_events_dropped``.
 
         Examples
         --------
         >>> import numpy as np
         >>> from neurospatial.events._core import PopulationPeriEventResult
-        >>> bc = np.array([-0.5, 0.0, 0.5])
         >>> hist = np.array([[0.1, 0.4, 0.2], [0.0, 0.1, 0.5]])
         >>> result = PopulationPeriEventResult(
-        ...     bin_centers=bc,
         ...     histograms=hist,
         ...     sem=np.zeros_like(hist),
-        ...     mean_histogram=hist.mean(axis=0),
+        ...     mean_sem=np.zeros(3),
         ...     n_events=10,
-        ...     n_units=2,
         ...     window=(-0.75, 0.75),
         ...     bin_size=0.5,
         ... )
@@ -533,34 +828,7 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
         >>> len(df)
         2
         """
-        import pandas as pd
-
-        rates = np.asarray(self.firing_rates)
-        bin_centers = np.asarray(self.bin_centers)
-        n_units = rates.shape[0]
-
-        if rates.size == 0:
-            peak_rates = np.full(n_units, np.nan)
-            peak_latencies = np.full(n_units, np.nan)
-        else:
-            peak_idx = np.nanargmax(rates, axis=1)
-            peak_rates = rates[np.arange(n_units), peak_idx]
-            peak_latencies = bin_centers[peak_idx]
-
-        pre = bin_centers < 0
-        if np.any(pre):
-            baseline_rates = np.nanmean(rates[:, pre], axis=1)
-        else:
-            baseline_rates = np.full(n_units, np.nan)
-
-        return pd.DataFrame(
-            {
-                "peak_rate": peak_rates,
-                "peak_latency": peak_latencies,
-                "baseline_rate": baseline_rates,
-            },
-            index=pd.Index(np.asarray(self.unit_ids), name="unit_id"),
-        )
+        return self._metrics_table(self.firing_rates, np.asarray(self.unit_ids))
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of population headline scalars.
@@ -568,55 +836,42 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
         Returns
         -------
         dict
-            Mapping with ``n_units`` (int), ``n_events`` (int),
-            ``mean_peak_rate`` (Hz, population-average peak firing rate), and
-            ``population_peak_latency`` (s, time of the mean histogram peak).
+            Mapping with ``n_units``, ``n_events`` and ``n_events_dropped``
+            (int), ``mean_peak_rate`` (Hz, population-average peak firing
+            rate), and ``population_peak_latency`` (s, time of the mean
+            histogram peak).
 
         Examples
         --------
         >>> import numpy as np
         >>> from neurospatial.events._core import PopulationPeriEventResult
-        >>> bc = np.array([-0.5, 0.0, 0.5])
         >>> hist = np.array([[0.1, 0.4, 0.2], [0.0, 0.1, 0.5]])
         >>> result = PopulationPeriEventResult(
-        ...     bin_centers=bc,
         ...     histograms=hist,
         ...     sem=np.zeros_like(hist),
-        ...     mean_histogram=hist.mean(axis=0),
+        ...     mean_sem=np.zeros(3),
         ...     n_events=10,
-        ...     n_units=2,
         ...     window=(-0.75, 0.75),
         ...     bin_size=0.5,
         ... )
         >>> sorted(result.summary())
         ['mean_peak_rate', 'n_events', 'n_events_dropped', 'n_units', 'population_peak_latency']
         """
-        mean_rate = np.asarray(self.mean_firing_rate)
-        bin_centers = np.asarray(self.bin_centers)
-        if mean_rate.size == 0:
-            pop_peak_latency = float("nan")
-        else:
-            pop_peak_latency = float(bin_centers[int(np.nanargmax(mean_rate))])
-
-        rates = np.asarray(self.firing_rates)
-        if rates.size == 0:
-            mean_peak_rate = float("nan")
-        else:
-            mean_peak_rate = float(np.nanmean(np.nanmax(rates, axis=1)))
-
         return {
-            "n_units": int(self.n_units),
-            "n_events": int(self.n_events),
-            "n_events_dropped": int(self.n_events_dropped),
-            "mean_peak_rate": mean_peak_rate,
-            "population_peak_latency": pop_peak_latency,
+            "n_units": self.n_units,
+            "n_events": self.n_events,
+            "n_events_dropped": self.n_events_dropped,
+            "mean_peak_rate": float(np.nanmean(np.nanmax(self.firing_rates, axis=1))),
+            "population_peak_latency": float(
+                self.bin_centers[int(np.nanargmax(self.mean_firing_rate))]
+            ),
         }
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the population-average PSTH, returning the axis.
 
-        Builds a :class:`PeriEventResult` from the population-average histogram
-        and delegates to :func:`plot_peri_event_histogram`.
+        The band is ``mean_sem``, the standard error across events of the
+        population-mean histogram.
 
         Parameters
         ----------
@@ -630,11 +885,9 @@ class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
         matplotlib.axes.Axes
             The axes the population-average PSTH was drawn on.
         """
-        mean_sem = np.nanmean(np.asarray(self.sem), axis=0)
         mean_result = PeriEventResult(
-            bin_centers=np.asarray(self.bin_centers),
-            histogram=np.asarray(self.mean_histogram),
-            sem=mean_sem,
+            histogram=self.mean_histogram,
+            sem=self.mean_sem,
             n_events=self.n_events,
             window=self.window,
             bin_size=self.bin_size,
@@ -702,7 +955,7 @@ def _validate_events_dataframe(
     if not isinstance(df, pd.DataFrame):
         raise TypeError(
             f"Expected pd.DataFrame, got {type(df).__name__}.\n"
-            "  WHY: Events must be a pandas DataFrame for NWB compatibility.\n"
+            "  WHY: Event tables are pandas DataFrames with one row per event.\n"
             "  Fix: Convert using pd.DataFrame({'timestamp': times})"
         )
 
@@ -728,69 +981,44 @@ def _validate_events_dataframe(
         )
 
 
-def _validate_spatial_columns(
-    df: pd.DataFrame,
-    *,
-    require_positions: bool = False,
-    context: str = "",
-) -> bool:
-    """
-    Check if DataFrame has spatial columns (x, y); optionally require them.
-
-    This function checks for the presence of 'x' and 'y' columns in an
-    events DataFrame. Spatial columns are needed for functions that
-    compute spatial event rates or filter events by region.
+def _event_times(
+    df: pd.DataFrame, column: str, *, name: str, call: str
+) -> NDArray[np.float64]:
+    """Validate an event table and return its ``column`` as finite seconds.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Events DataFrame to check.
-    require_positions : bool, default=False
-        If True, raise ValueError when spatial columns are missing.
-    context : str, optional
-        Context for error messages (e.g., function name).
+        Event or interval table.
+    column : str
+        Numeric time column in seconds.
+    name, call : str
+        Argument and function names for the error messages.
 
     Returns
     -------
-    bool
-        True if spatial columns ('x', 'y') are present, False otherwise.
+    NDArray[np.float64], shape (n_rows,)
 
     Raises
     ------
+    TypeError
+        If ``df`` is not a DataFrame.
     ValueError
-        If require_positions=True and spatial columns are missing.
-
-    Examples
-    --------
-    >>> import pandas as pd
-    >>> df = pd.DataFrame({"timestamp": [1.0], "x": [10.0], "y": [20.0]})
-    >>> _validate_spatial_columns(df)
-    True
-
-    >>> df_no_spatial = pd.DataFrame({"timestamp": [1.0]})
-    >>> _validate_spatial_columns(df_no_spatial)
-    False
-
-    >>> _validate_spatial_columns(  # doctest: +IGNORE_EXCEPTION_DETAIL
-    ...     df_no_spatial, require_positions=True
-    ... )
-    Traceback (most recent call last):
-        ...
-    ValueError: Events DataFrame missing spatial columns...
+        If ``column`` is missing or not numeric, or holds NaN or inf.
     """
-    has_x = "x" in df.columns
-    has_y = "y" in df.columns
-    has_positions = has_x and has_y
-
-    if require_positions and not has_positions:
-        context_str = context if context else "This function"
+    _validate_events_dataframe(df, timestamp_column=column, context=f"{call} {name}")
+    times: NDArray[np.float64] = df[column].to_numpy(dtype=np.float64)
+    bad = np.flatnonzero(~np.isfinite(times))
+    if bad.size:
         raise ValueError(
-            "Events DataFrame missing spatial columns ('x', 'y').\n"
-            f"  WHY: {context_str} requires event positions.\n"
-            "  Fix: Use add_positions(events, times=times, positions=positions)"
+            f"{call}: {name}[{column!r}] has {bad.size} NaN or inf time(s), "
+            f"first at row {int(bad[0])}.\n"
+            "  WHY: a row without a time cannot be placed on the clock, and "
+            "dropping or keeping it silently would change the result.\n"
+            f"  Fix: drop or repair those rows first, e.g. "
+            f"{name}.dropna(subset=[{column!r}])."
         )
-
-    return has_positions
+    return times
 
 
 # --- Visualization ---
@@ -843,13 +1071,13 @@ def plot_peri_event_histogram(
 
     Examples
     --------
-    >>> result = peri_event_histogram(spikes, events)  # doctest: +SKIP
-    >>> ax = plot_peri_event_histogram(
-    ...     result, title="Reward response"
-    ... )  # doctest: +SKIP
-    >>> ax.axvline(
-    ...     0, color="k", linestyle="--", alpha=0.5
-    ... )  # Mark event  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial.events import peri_event_histogram
+    >>> spikes = np.array([0.8, 1.0, 1.2, 2.8, 3.0, 3.2])
+    >>> result = peri_event_histogram(
+    ...     spikes, np.array([1.0, 3.0]), window=(-0.5, 0.5), bin_size=0.1
+    ... )
+    >>> ax = plot_peri_event_histogram(result, title="Reward response")
     """
     import matplotlib.pyplot as plt
 
@@ -860,7 +1088,7 @@ def plot_peri_event_histogram(
     x = result.bin_centers
     if as_rate:
         y = result.firing_rate
-        sem = result.sem / result.bin_size
+        sem = result.firing_rate_sem
     else:
         y = result.histogram
         sem = result.sem

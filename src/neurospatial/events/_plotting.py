@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.events._core import PeriEventResult
-from neurospatial.events.alignment import _iter_peri_event_bin_edges, _make_bin_edges
+from neurospatial.events._core import PeriEventResult, _make_bin_edges
+from neurospatial.events.alignment import _iter_peri_event_bin_edges
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -96,6 +96,7 @@ def plot_peri_event_response(
 
     Examples
     --------
+    >>> import numpy as np
     >>> from neurospatial.events import (
     ...     peri_event_histogram,
     ...     plot_peri_event_response,
@@ -138,17 +139,7 @@ def plot_peri_event_response(
             "(n_events + n_events_dropped). Pass the complete original event array, "
             "including excluded events, in its original order."
         )
-    bin_edges, bin_centers = _make_bin_edges(result.window, result.bin_size)
-    if result.n_events == 0 or bin_centers.size == 0:
-        raise ValueError(
-            "A response plot requires retained events and at least one complete bin. "
-            "Choose a bin_size no larger than the analysis window."
-        )
-    if not np.array_equal(bin_centers, result.bin_centers):
-        raise ValueError(
-            "result.bin_centers does not match its window and bin_size. "
-            "Recompute the histogram before plotting a matching raster."
-        )
+    bin_edges, _ = _make_bin_edges(result.window, result.bin_size)
     if axes is not None:
         try:
             raster_ax, histogram_ax = axes

@@ -808,7 +808,7 @@ class TestPopulationPeriEventHistogram:
         event_times = np.array([10.0])
         window = (-0.5, 0.5)
 
-        with pytest.raises(ValueError, match="spike_trains"):
+        with pytest.raises(ValueError, match="spike_times is empty"):
             population_peri_event_histogram(spike_trains, event_times, window)
 
     # --- Output properties ---
@@ -1200,6 +1200,72 @@ class TestAlignEvents:
 
         assert len(result) == 1
         assert result["relative_time"].iloc[0] == 0.0
+
+    def test_columns_dtypes_and_row_labels_are_kept(self):
+        """Integer ids survive exactly; rows keep their labels in ``events``.
+
+        A float round trip merged 2**60 + 1 and 2**60 + 3 into one id.
+        """
+        import pandas as pd
+
+        from neurospatial.events.alignment import align_events
+
+        events = pd.DataFrame(
+            {
+                "timestamp": [1.0, 2.0, 9.0],
+                "unit": np.array([2**60 + 1, 2**60 + 3, 7], dtype=np.int64),
+                "label": ["a", "b", "c"],
+            },
+            index=[100, 200, 300],
+        )
+        reference = pd.DataFrame({"timestamp": [1.5, 2.5]})
+
+        result = align_events(events, reference, window=(-1.0, 1.0))
+
+        assert result["unit"].dtype == np.int64
+        assert result["unit"].tolist() == [2**60 + 1, 2**60 + 3, 2**60 + 3]
+        assert result.index.tolist() == [100, 200, 200]
+        assert result["label"].tolist() == ["a", "b", "b"]
+        assert result["reference_index"].tolist() == [0, 0, 1]
+        np.testing.assert_allclose(result["relative_time"], [-0.5, 0.5, -0.5])
+
+    def test_no_match_keeps_the_same_dtypes(self):
+        import pandas as pd
+
+        from neurospatial.events.alignment import align_events
+
+        events = pd.DataFrame({"timestamp": [1.0], "unit": [3]})
+        hit = align_events(events, pd.DataFrame({"timestamp": [1.0]}), (-1.0, 1.0))
+        miss = align_events(events, pd.DataFrame({"timestamp": [50.0]}), (-1.0, 1.0))
+
+        assert len(miss) == 0
+        assert dict(miss.dtypes) == dict(hit.dtypes)
+
+    @pytest.mark.parametrize("which", ["events", "reference_events"])
+    def test_nan_time_is_refused(self, which):
+        """A NaN time cannot be placed in a window; it must not vanish."""
+        import pandas as pd
+
+        from neurospatial.events.alignment import align_events
+
+        frames = {
+            "events": pd.DataFrame({"timestamp": [1.0, 2.0]}),
+            "reference_events": pd.DataFrame({"timestamp": [1.5, 3.0]}),
+        }
+        frames[which].loc[1, "timestamp"] = np.nan
+
+        with pytest.raises(ValueError, match=rf"{which}.*NaN"):
+            align_events(frames["events"], frames["reference_events"], (-1.0, 1.0))
+
+    def test_array_reference_is_refused_with_a_type_error(self):
+        import pandas as pd
+
+        from neurospatial.events.alignment import align_events
+
+        with pytest.raises(TypeError, match="DataFrame"):
+            align_events(
+                pd.DataFrame({"timestamp": [1.0]}), np.array([1.0]), (-1.0, 1.0)
+            )
 
 
 class TestPlotPeriEventHistogram:

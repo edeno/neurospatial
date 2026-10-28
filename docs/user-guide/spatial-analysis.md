@@ -64,9 +64,9 @@ def occupancy(
         ``None`` bridges every gap.
     epochs : (start, stop), array of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows
-        (seconds, same clock as ``times``). An interval counts only if it
-        lies entirely inside one window. ``None`` (default) means
-        unrestricted.
+        (seconds, same clock as ``times``). The interval between two
+        consecutive samples counts only if it lies entirely inside one
+        window. ``None`` (default) means unrestricted.
     bandwidth : float, optional
         If provided, apply diffusion kernel smoothing with this bandwidth
         (in physical units). Preserves total occupancy time.

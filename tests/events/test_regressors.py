@@ -185,7 +185,7 @@ class TestTimeToNearestEvent:
         sample_times = np.array([0.0, np.nan, 2.0])
         event_times = np.array([1.0])
 
-        with pytest.raises(ValueError, match=r"sample_times.*NaN"):
+        with pytest.raises(ValueError, match=r"^times.*NaN"):
             time_to_nearest_event(sample_times, event_times)
 
     def test_nan_in_event_times_raises(self):
@@ -205,7 +205,7 @@ class TestTimeToNearestEvent:
         sample_times = np.array([0.0, np.inf, 2.0])
         event_times = np.array([1.0])
 
-        with pytest.raises(ValueError, match=r"sample_times.*inf"):
+        with pytest.raises(ValueError, match=r"^times.*inf"):
             time_to_nearest_event(sample_times, event_times)
 
     def test_inf_in_event_times_raises(self):
@@ -227,6 +227,13 @@ class TestTimeToNearestEvent:
 
         with pytest.raises(ValueError, match=r"max_time.*non-negative"):
             time_to_nearest_event(sample_times, event_times, max_time=-1.0)
+
+    def test_nan_max_time_raises(self):
+        """NaN would otherwise clip every value to NaN."""
+        from neurospatial.events.regressors import time_to_nearest_event
+
+        with pytest.raises(ValueError, match=r"max_time.*non-negative"):
+            time_to_nearest_event(np.arange(3.0), np.array([1.0]), max_time=np.nan)
 
     def test_zero_max_time_clips_to_zero(self):
         """Test max_time=0.0 clips all values to zero."""
@@ -433,6 +440,54 @@ class TestEventCountInWindow:
 
         assert counts.sum() == len(event_times)
 
+    @pytest.mark.parametrize("clock_start", [0.0, 5000.0])
+    def test_bin_edges_on_a_non_dyadic_clock_count_each_event_once(self, clock_start):
+        """Events on a 20 Hz camera clock fall on the edges of 10 Hz bins.
+
+        0.1 s is not exact in binary, so each edge is computed twice with
+        different rounding; every event must still land at one sample, the
+        one whose bin holds it.
+        """
+        from neurospatial.events.regressors import event_count_in_window
+
+        dt = 0.1
+        sample_times = clock_start + np.arange(1000) * dt
+        frames = clock_start + np.arange(1, 1999) * (dt / 2)
+        midpoints = sample_times[:-1] + dt / 2
+
+        for event_times in (frames, midpoints):
+            counts = event_count_in_window(
+                sample_times, event_times, window=(-dt / 2, dt / 2)
+            )
+            assert counts.sum() == event_times.size
+            assert counts.max() <= 2
+
+    @pytest.mark.parametrize("window", [(np.nan, 1.0), (-1.0, np.inf)])
+    def test_non_finite_window_is_refused(self, window):
+        """A NaN bound would otherwise produce negative counts."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        with pytest.raises(ValueError, match="finite bounds"):
+            event_count_in_window(np.arange(5.0), np.array([1.0, 2.0]), window=window)
+
+    def test_two_dimensional_times_are_refused(self):
+        from neurospatial.events.regressors import event_count_in_window
+
+        with pytest.raises(ValueError, match="1-D"):
+            event_count_in_window(
+                np.arange(4.0).reshape(2, 2), np.array([1.0]), window=(-1.0, 0.0)
+            )
+
+    def test_long_history_window_does_not_warn(self, recwarn):
+        """Reward history over minutes is a valid regressor, not milliseconds."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        counts = event_count_in_window(
+            np.array([0.0, 200.0]), np.array([50.0, 150.0]), window=(-120.0, 0.0)
+        )
+        np.testing.assert_array_equal(counts, [0, 1])
+        assert not [w for w in recwarn if issubclass(w.category, UserWarning)]
+
     def test_unsorted_events_handled(self):
         """Test unsorted event times are handled correctly."""
         from neurospatial.events.regressors import event_count_in_window
@@ -454,7 +509,7 @@ class TestEventCountInWindow:
         event_times = np.array([1.0])
         window = (-1.0, 1.0)
 
-        with pytest.raises(ValueError, match=r"sample_times.*NaN"):
+        with pytest.raises(ValueError, match=r"^times.*NaN"):
             event_count_in_window(sample_times, event_times, window=window)
 
     def test_nan_in_event_times_raises(self):
@@ -476,7 +531,7 @@ class TestEventCountInWindow:
         event_times = np.array([1.0])
         window = (-1.0, 1.0)
 
-        with pytest.raises(ValueError, match=r"sample_times.*inf"):
+        with pytest.raises(ValueError, match=r"^times.*inf"):
             event_count_in_window(sample_times, event_times, window=window)
 
     def test_inf_in_event_times_raises(self):
@@ -712,7 +767,7 @@ class TestEventIndicator:
         sample_times = np.array([0.0, np.nan, 2.0])
         event_times = np.array([1.0])
 
-        with pytest.raises(ValueError, match=r"sample_times.*NaN"):
+        with pytest.raises(ValueError, match=r"^times.*NaN"):
             event_indicator(sample_times, event_times, window=(-0.5, 0.5))
 
     def test_nan_in_event_times_raises(self):
@@ -732,7 +787,7 @@ class TestEventIndicator:
         sample_times = np.array([0.0, np.inf, 2.0])
         event_times = np.array([1.0])
 
-        with pytest.raises(ValueError, match=r"sample_times.*inf"):
+        with pytest.raises(ValueError, match=r"^times.*inf"):
             event_indicator(sample_times, event_times, window=(-0.5, 0.5))
 
     def test_inf_in_event_times_raises(self):
@@ -816,26 +871,18 @@ class TestEventIndicator:
         assert n_true > 0  # Some True values
         assert n_true < len(sample_times)  # Not all True
 
-    def test_glm_design_matrix_use_case(self):
-        """Test use in GLM design matrix context."""
+    def test_impulse_regressor_marks_the_nearest_sample(self):
+        """A bin-centred window marks each reward at the sample nearest it."""
         from neurospatial.events.regressors import event_indicator
 
-        # Typical neural data: 30Hz sampling over 100s
-        sample_times = np.linspace(0, 100, 3000)
-        # Reward events
-        event_times = np.array([10.0, 30.0, 50.0, 70.0, 90.0])
-        # Narrow window for impulse-like regressor
-        window = (-0.1, 0.1)
+        dt = 1 / 30
+        sample_times = np.arange(3000) * dt
+        event_times = np.array([10.01, 30.02, 50.0, 70.03, 90.0])
 
-        result = event_indicator(sample_times, event_times, window=window)
+        result = event_indicator(sample_times, event_times, window=(-dt / 2, dt / 2))
 
-        # Result should be sparse (mostly False)
-        sparsity = result.sum() / len(result)
-        assert sparsity < 0.1  # Less than 10% True
-
-        # Can be used directly in design matrix
-        X = result.astype(float)
-        assert X.dtype == np.float64
+        nearest = np.abs(sample_times[:, None] - event_times).argmin(axis=0)
+        np.testing.assert_array_equal(np.flatnonzero(result), np.sort(nearest))
 
 
 # =============================================================================
@@ -844,48 +891,109 @@ class TestEventIndicator:
 
 
 class TestWindowContract:
-    """Pin the unified (start, end) keyword-only window contract."""
+    """window follows the canonical events order f(times, event_times, window)."""
 
-    def test_event_indicator_window_tuple(self):
-        """event_indicator takes a required window=(start, stop); start>=stop raises."""
+    @pytest.mark.parametrize("name", ["event_count_in_window", "event_indicator"])
+    def test_window_is_required_and_positional(self, name):
         import inspect
 
-        from neurospatial.events.regressors import event_indicator
+        from neurospatial.events import regressors
 
-        sample_times = np.array([0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0])
-        event_times = np.array([1.5])
+        function = getattr(regressors, name)
+        parameters = inspect.signature(function).parameters
+        assert list(parameters)[:3] == ["times", "event_times", "window"]
+        assert parameters["window"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        assert parameters["window"].default is inspect.Parameter.empty
+        assert parameters["epochs"].kind is inspect.Parameter.KEYWORD_ONLY
 
-        # A symmetric (-w, w) tuple reproduces the old scalar half-width=w.
-        tuple_result = event_indicator(sample_times, event_times, window=(-0.5, 0.5))
-        expected = np.array(
-            [False, False, False, True, True, False, False], dtype=np.bool_
+        times = np.array([0.0, 3.0, 6.0, 10.0])
+        rewards = np.array([1.0, 2.0, 5.0])
+        np.testing.assert_array_equal(
+            function(times, rewards, (-5.0, 0.0)),
+            function(times, rewards, window=(-5.0, 0.0)),
         )
-        np.testing.assert_array_equal(tuple_result, expected)
 
-        # window is keyword-only and required: no window suits every rate.
-        sig = inspect.signature(event_indicator)
-        assert sig.parameters["window"].kind is inspect.Parameter.KEYWORD_ONLY
-        assert sig.parameters["window"].default is inspect.Parameter.empty
 
-        # start > end raises ValueError.
-        with pytest.raises(ValueError, match=r"window.*start.*stop"):
-            event_indicator(sample_times, event_times, window=(0.5, -0.5))
+class TestRecordedEpochs:
+    """A sample whose value depends on unrecorded time is NaN, not 0."""
 
-    def test_event_count_in_window_keyword_only(self):
-        """event_count_in_window window is keyword-only; positional raises."""
-        import inspect
-
+    def test_history_before_the_recording_is_missing(self):
         from neurospatial.events.regressors import event_count_in_window
 
-        sample_times = np.array([0.0, 3.0, 6.0, 10.0])
-        reward_times = np.array([1.0, 2.0, 5.0])
+        times = np.array([0.0, 3.0, 6.0, 10.0])
+        rewards = np.array([1.0, 2.0, 5.0])
 
-        result = event_count_in_window(sample_times, reward_times, window=(-5.0, 0.0))
-        np.testing.assert_array_equal(result, np.array([0, 2, 3, 1]))
+        counts = event_count_in_window(times, rewards, (-5.0, 0.0), epochs=(0.0, 20.0))
 
-        sig = inspect.signature(event_count_in_window)
-        assert sig.parameters["window"].kind is inspect.Parameter.KEYWORD_ONLY
+        np.testing.assert_array_equal(counts, [np.nan, np.nan, 3.0, 1.0])
+        assert counts.dtype == np.float64
 
-        # Passing window positionally now raises TypeError.
-        with pytest.raises(TypeError):
-            event_count_in_window(sample_times, reward_times, (-5.0, 0.0))
+    def test_window_across_a_gap_is_missing_and_abutting_epochs_merge(self):
+        from neurospatial.events.regressors import event_count_in_window
+
+        times = np.array([1.0, 4.0, 9.0, 12.0])
+        epochs = [(0.0, 5.0), (8.0, 10.0), (10.0, 20.0)]
+
+        counts = event_count_in_window(
+            times, np.array([9.5]), (-1.0, 1.0), epochs=epochs
+        )
+
+        # [3, 5) fits, [8, 10) fits, [11, 13) is inside the merged [8, 20).
+        np.testing.assert_array_equal(counts, [0.0, 0.0, 1.0, 0.0])
+        counts = event_count_in_window(
+            np.array([4.5, 7.0]), np.array([9.5]), (-1.0, 1.0), epochs=epochs
+        )
+        np.testing.assert_array_equal(counts, [np.nan, np.nan])
+
+    def test_indicator_is_nan_where_the_count_is(self):
+        from neurospatial.events.regressors import event_indicator
+
+        times = np.array([0.0, 1.0, 2.0, 3.0])
+        result = event_indicator(
+            times, np.array([1.0, 3.0]), (-0.5, 0.5), epochs=(0.25, 10.0)
+        )
+        np.testing.assert_array_equal(result, [np.nan, 1.0, 0.0, 1.0])
+
+    def test_without_events_unrecorded_samples_are_still_missing(self):
+        from neurospatial.events.regressors import event_count_in_window
+
+        counts = event_count_in_window(
+            np.array([0.5, 5.0]), np.array([]), (-1.0, 0.0), epochs=(0.0, 10.0)
+        )
+        np.testing.assert_array_equal(counts, [np.nan, 0.0])
+
+    def test_epochs_none_keeps_integer_and_bool_dtypes(self):
+        from neurospatial.events.regressors import (
+            event_count_in_window,
+            event_indicator,
+        )
+
+        times, events = np.arange(4.0), np.array([1.0])
+        assert event_count_in_window(times, events, (-0.5, 0.5)).dtype == np.int64
+        assert event_indicator(times, events, (-0.5, 0.5)).dtype == np.bool_
+
+    def test_time_to_event_is_missing_when_an_unseen_event_could_be_nearer(self):
+        from neurospatial.events.regressors import time_to_nearest_event
+
+        times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 9.5])
+        result = time_to_nearest_event(times, np.array([2.0]), epochs=(1.0, 10.0))
+
+        # (t - d, t + d) must be recorded: fails for t = 0, 1 and 9.5.
+        np.testing.assert_array_equal(result, [np.nan, np.nan, 0.0, 1.0, 2.0, np.nan])
+
+    def test_clipped_time_to_event_needs_only_max_time_of_recording(self):
+        from neurospatial.events.regressors import time_to_nearest_event
+
+        result = time_to_nearest_event(
+            np.array([1.5, 9.5]), np.array([20.0]), max_time=1.0, epochs=(0.0, 10.0)
+        )
+        # "at least 1 s from any event" is known where (t - 1, t + 1) is recorded.
+        np.testing.assert_array_equal(result, [-1.0, np.nan])
+
+    def test_invalid_epochs_are_refused(self):
+        from neurospatial.events.regressors import event_count_in_window
+
+        with pytest.raises(ValueError, match="epochs"):
+            event_count_in_window(
+                np.arange(3.0), np.array([1.0]), (-1.0, 0.0), epochs=(5.0, 1.0)
+            )

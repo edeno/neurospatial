@@ -14,8 +14,6 @@ Covers the v0.6 "Unit identity" api-contract rule for the events module:
 
 from __future__ import annotations
 
-import dataclasses
-
 import numpy as np
 import pytest
 
@@ -78,19 +76,17 @@ def test_string_ids_round_trip(spike_trains, event_times):
     assert list(result.unit_ids) == STR_IDS
 
 
-def test_population_unit_id_fields_are_compare_false():
-    fields = {f.name: f for f in dataclasses.fields(PopulationPeriEventResult)}
-    assert fields["unit_ids"].compare is False
-    assert fields["unit_table"].compare is False
+def test_population_results_compare_by_identity():
+    """Array-holding results never compare field by field."""
+    assert PopulationPeriEventResult.__eq__ is object.__eq__
+    assert PeriEventResult.__eq__ is object.__eq__
 
 
 def test_peri_event_result_has_unit_id():
     """Single-unit PeriEventResult carries an optional unit_id (default None)."""
-    bin_centers = np.array([-0.25, 0.25, 0.75])
     histogram = np.array([1.0, 2.0, 3.0])
     sem = np.array([0.1, 0.2, 0.3])
     default = PeriEventResult(
-        bin_centers=bin_centers,
         histogram=histogram,
         sem=sem,
         n_events=3,
@@ -100,7 +96,6 @@ def test_peri_event_result_has_unit_id():
     assert default.unit_id is None
 
     labeled = PeriEventResult(
-        bin_centers=bin_centers,
         histogram=histogram,
         sem=sem,
         n_events=3,
@@ -109,7 +104,7 @@ def test_peri_event_result_has_unit_id():
         unit_id="ca1_07",
     )
     assert labeled.unit_id == "ca1_07"
-    # The cached firing_rate field still computes correctly.
+    # The derived firing_rate still computes correctly.
     np.testing.assert_allclose(labeled.firing_rate, histogram / 0.5)
 
 
@@ -153,12 +148,10 @@ def test_population_unit_table_wrong_length_raises(spike_trains, event_times):
     bad_table = pd.DataFrame({"region": ["ca1"] * (n_units + 1)})
     with pytest.raises(ValueError, match="unit_table length mismatch"):
         PopulationPeriEventResult(
-            bin_centers=np.array([-0.25, 0.25, 0.75]),
             histograms=histograms,
             sem=np.zeros_like(histograms),
-            mean_histogram=histograms.mean(axis=0),
+            mean_sem=np.zeros(3),
             n_events=3,
-            n_units=n_units,
             window=(-0.5, 1.0),
             bin_size=0.5,
             unit_table=bad_table,

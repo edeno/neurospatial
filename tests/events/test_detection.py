@@ -215,7 +215,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
 
-        with pytest.raises(ValueError, match=r"timestamp.*column"):
+        with pytest.raises(ValueError, match=r"Missing required columns.*timestamp"):
             add_positions(events, times=times, positions=positions)
 
     def test_non_dataframe_raises(self):
@@ -374,8 +374,42 @@ class TestAddPositionsDegenerateTrajectory:
         times = np.array([2.0, 2.0, 2.0])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
 
-        with pytest.raises(ValueError, match=r"identical|non-zero"):
+        with pytest.raises(ValueError, match="repeated sample"):
             add_positions(events, times=times, positions=positions)
+
+    def test_add_positions_duplicate_time_raises(self):
+        """Which of two positions at one instant wins depended on sort order."""
+        from neurospatial.events.detection import add_positions
+
+        events = pd.DataFrame({"timestamp": [2.0, 2.5]})
+        times = np.array([0.0, 1.0, 2.0, 2.0, 3.0])
+        positions = np.array([[0.0], [1.0], [2.0], [50.0], [3.0]])
+
+        with pytest.raises(ValueError, match=r"repeated sample time.*t=2 s"):
+            add_positions(events, times=times, positions=positions)
+
+    @pytest.mark.parametrize("n_dims", [0, 4])
+    def test_add_positions_refuses_other_than_1_to_3_dims(self, n_dims):
+        """Only x, y and z are written; a 4th column was silently dropped."""
+        from neurospatial.events.detection import add_positions
+
+        times = np.arange(5.0)
+        with pytest.raises(ValueError, match=f"{n_dims} columns"):
+            add_positions(
+                pd.DataFrame({"timestamp": [1.5]}),
+                times=times,
+                positions=np.zeros((5, n_dims)),
+            )
+
+    def test_add_positions_refuses_text_timestamps(self):
+        from neurospatial.events.detection import add_positions
+
+        with pytest.raises(ValueError, match="non-numeric"):
+            add_positions(
+                pd.DataFrame({"timestamp": ["1.5"]}),
+                times=np.arange(3.0),
+                positions=np.zeros((3, 2)),
+            )
 
     def test_add_positions_nan_trajectory_time_raises(self):
         """A NaN trajectory timestamp must raise, naming the argument."""

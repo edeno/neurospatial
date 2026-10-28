@@ -17,100 +17,29 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import _format_error
-from neurospatial._intervals import intervals_contain, resolve_time_windows
+from neurospatial._intervals import (
+    intervals_contain,
+    ragged_arange,
+    resolve_time_windows,
+)
 from neurospatial._spikes import _as_spike_trains_with_ids
 from neurospatial._time_bins import (
     _count_spikes_in_time_bins,
     _time_bin_rounding,
-    _time_bins_in_windows,
 )
-from neurospatial.events._core import PeriEventResult, PopulationPeriEventResult
+from neurospatial.events._core import (
+    PeriEventResult,
+    PopulationPeriEventResult,
+    _event_times,
+    _finite_times,
+    _psth_bins,
+    _validate_window,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
 
     from neurospatial._typing import SpikeTrainsLike
-
-
-def _validate_window(window: tuple[float, float], *, context: str) -> None:
-    """Validate a peri-event window expressed in seconds."""
-    try:
-        if np.asarray(window).dtype.kind not in "biuf":
-            raise TypeError("window bounds must be real numbers")
-        bounds = np.asarray(window, dtype=np.float64)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            _format_error(
-                f"{context}: window must contain two numeric bounds, got {window!r}.",
-                why="Why: peri-event windows are expressed in seconds relative to each event.",
-                fix="pass window=(-0.5, 1.0)",
-            )
-        ) from exc
-    if bounds.shape != (2,) or not np.all(np.isfinite(bounds)):
-        raise ValueError(
-            _format_error(
-                f"{context}: window must contain two finite bounds, got {window!r} with shape {bounds.shape}.",
-                why="Why: peri-event windows need a finite start and stop in seconds.",
-                fix="pass window=(-0.5, 1.0)",
-            )
-        )
-    if window[0] >= window[1]:
-        raise ValueError(
-            _format_error(
-                f"{context}: Window start ({window[0]}) must be before its stop ({window[1]}).",
-                why="Why: a peri-event window is the half-open range [start, stop) "
-                "relative to each event, so a window with stop <= start holds no time.",
-                fix="pass window=(-0.5, 1.0), with start < stop, in seconds",
-            )
-        )
-    if bounds[1] - bounds[0] > 60:
-        warnings.warn(
-            _format_error(
-                f"{context}: window={window!r} spans {bounds[1] - bounds[0]:g} seconds, more than 60 seconds.",
-                why="Why: an unusually wide peri-event window may be specified in milliseconds instead of seconds.",
-                fix="use window=(-0.5, 1.0) if you meant milliseconds",
-            ),
-            UserWarning,
-            stacklevel=3,
-        )
-
-
-def _make_bin_edges(
-    window: tuple[float, float], bin_size: float
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Build PSTH bin edges and centers that stay within the window.
-
-    When ``window_duration`` is not an integer multiple of ``bin_size``,
-    the trailing partial bin is dropped rather than appended. This keeps
-    every edge (and therefore every center) inside ``[window[0],
-    window[1]]``; otherwise the final bin would extend past ``window[1]``
-    and silently absorb spikes that fall outside the requested window.
-
-    Every bin is half-open: a spike at the final whole-bin edge or at the
-    window stop is excluded. Edges are clamped to the window stop using
-    timestamp-relative rounding rather than an absolute epsilon.
-
-    Parameters
-    ----------
-    window : tuple[float, float]
-        Time window ``(start, end)`` relative to each event, in seconds.
-    bin_size : float
-        Width of each time bin in seconds.
-
-    Returns
-    -------
-    bin_edges : NDArray[np.float64], shape (n_bins + 1,)
-        Bin edges from ``window[0]`` up to ``window[0] + n_bins * bin_size``,
-        which never exceeds ``window[1]``.
-    bin_centers : NDArray[np.float64], shape (n_bins,)
-        Centers of each full bin; all lie within ``[window[0], window[1]]``.
-    """
-    left, right = _time_bins_in_windows(
-        np.asarray([window], dtype=np.float64), bin_size
-    )
-    edges = np.r_[left, right[-1]] if left.size else np.array([window[0]])
-    return edges, left + bin_size / 2
 
 
 def align_spikes_to_events(
@@ -177,41 +106,9 @@ def align_spikes_to_events(
     ...     # Plot each trial's spikes at y=trial_idx
     ...     pass  # plt.scatter(trial_spikes, [trial_idx]*len(trial_spikes))
     """
-    # Validate window
     _validate_window(window, context="align_spikes_to_events")
-
-    # Convert to arrays if needed
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    event_times = np.asarray(event_times, dtype=np.float64)
-
-    # Validate no NaN/Inf
-    if spike_times.size > 0:
-        if np.any(np.isnan(spike_times)):
-            raise ValueError(
-                "spike_times contains NaN values.\n"
-                "  WHY: Cannot compute relative times with undefined values.\n"
-                "  Fix: Remove or interpolate NaN values before alignment."
-            )
-        if np.any(np.isinf(spike_times)):
-            raise ValueError(
-                "spike_times contains Inf values.\n"
-                "  WHY: Cannot compute relative times with infinite values.\n"
-                "  Fix: Remove Inf values before alignment."
-            )
-
-    if event_times.size > 0:
-        if np.any(np.isnan(event_times)):
-            raise ValueError(
-                "event_times contains NaN values.\n"
-                "  WHY: Cannot align spikes to undefined event times.\n"
-                "  Fix: Remove NaN event times before alignment."
-            )
-        if np.any(np.isinf(event_times)):
-            raise ValueError(
-                "event_times contains Inf values.\n"
-                "  WHY: Cannot align spikes to infinite event times.\n"
-                "  Fix: Remove Inf event times before alignment."
-            )
+    spike_times = _finite_times(spike_times, "spike_times")
+    event_times = _finite_times(event_times, "event_times")
 
     # Handle empty cases
     if event_times.size == 0:
@@ -247,18 +144,12 @@ def _keep_observed_events(
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
 ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
-    """Keep events with observed windows and return their original input indices.
-
-    Non-finite events are kept so align_spikes_to_events still raises on them.
-    """
+    """Keep events with observed windows and return their original input indices."""
     keep = np.ones(event_times.shape, dtype=bool)
-    finite = np.isfinite(event_times)
     for windows in (epochs, spike_window):
         if windows is not None:
-            keep[finite] &= intervals_contain(
-                windows,
-                event_times[finite] + window[0],
-                event_times[finite] + window[1],
+            keep &= intervals_contain(
+                windows, event_times + window[0], event_times + window[1]
             )
     n_dropped = int(event_times.size - keep.sum())
     if n_dropped == event_times.size:
@@ -303,10 +194,9 @@ def _count_peri_event_bins(
     bin_size: float,
 ) -> NDArray[np.float64]:
     """Count on the absolute clock without rounding spikes across boundaries."""
-    # Preserve the primitive's spike/event validation. Its relative-time output
-    # cannot be used for counting: subtraction can move an exact boundary spike.
-    align_spikes_to_events(spike_times, event_times, window)
-    spikes = np.sort(np.asarray(spike_times, dtype=np.float64))
+    # Count on the absolute clock, not on relative times: subtraction can move
+    # an exact boundary spike across a bin edge.
+    spikes = np.sort(_finite_times(spike_times, "spike_times"))
     histograms = np.zeros((event_times.size, bin_edges.size - 1), dtype=np.float64)
     for i, edges in enumerate(
         _iter_peri_event_bin_edges(event_times, window, bin_edges, bin_size)
@@ -378,13 +268,16 @@ def peri_event_histogram(
     Raises
     ------
     ValueError
-        If window is inverted, bin_size is non-positive, event_times is empty,
+        If window is invalid or inverted, bin_size is not a finite positive
+        number or leaves no complete bin in the window, spike_times or
+        event_times is not 1-D or holds NaN or Inf, event_times is empty,
         time windows are invalid, or all events are dropped.
 
     Warns
     -----
     UserWarning
-        When computing PSTH with a single event (SEM is undefined).
+        When computing PSTH with a single event (SEM is undefined), and when
+        the window spans more than 60 s (it may be in milliseconds).
 
     Notes
     -----
@@ -417,19 +310,10 @@ def peri_event_histogram(
 
     >>> rate = result.firing_rate  # spikes/second
     """
-    # Validate bin_size
-    if bin_size <= 0:
-        raise ValueError(
-            f"bin_size must be positive, got {bin_size}.\n"
-            "  WHY: bin_size defines histogram bin width.\n"
-            "  Fix: Use a positive value like bin_size=0.025 (25ms)."
-        )
-
-    # Validate window
-    _validate_window(window, context="peri_event_histogram")
-
-    # Convert to arrays
-    event_times = np.asarray(event_times, dtype=np.float64)
+    window = _validate_window(window, context="peri_event_histogram")
+    bin_edges, _ = _psth_bins(window, bin_size, context="peri_event_histogram")
+    spike_times = _finite_times(spike_times, "spike_times")
+    event_times = _finite_times(event_times, "event_times")
 
     # Validate event_times not empty
     if event_times.size == 0:
@@ -455,9 +339,7 @@ def peri_event_histogram(
             stacklevel=2,
         )
 
-    # Create bin edges (see _make_bin_edges for the partial-bin policy).
-    bin_edges, bin_centers = _make_bin_edges(window, bin_size)
-    n_bins = len(bin_centers)
+    n_bins = bin_edges.size - 1
 
     # Compute histogram for each event
     histograms = _count_peri_event_bins(
@@ -474,7 +356,6 @@ def peri_event_histogram(
         sem = np.full(n_bins, np.nan, dtype=np.float64)
 
     return PeriEventResult(
-        bin_centers=bin_centers,
         histogram=mean_histogram,
         sem=sem,
         n_events=n_events,
@@ -510,7 +391,9 @@ def population_peri_event_histogram(
     event_times : NDArray[np.float64], shape (n_events,)
         Event times (e.g., stimulus onset) in seconds.
     window : tuple[float, float]
-        Time window (start, end) relative to each event.
+        Time window (start, stop) relative to each event, in seconds,
+        half-open ``[start, stop)``: a spike exactly at ``event + stop`` is
+        left out.
     bin_size : float, default=0.025
         Width of time bins in seconds (default 25ms).
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
@@ -541,6 +424,8 @@ def population_peri_event_histogram(
         - histograms: Per-unit mean spike counts, shape (n_units, n_bins)
         - sem: Per-unit SEM across events, shape (n_units, n_bins)
         - mean_histogram: Population average, shape (n_bins,)
+        - mean_sem: SEM across events of the population average, shape
+          (n_bins,)
         - n_events: Number of retained events
         - n_events_dropped: Events whose windows leave the recording
         - event_indices: Positions of retained events in the original input;
@@ -552,9 +437,16 @@ def population_peri_event_histogram(
     Raises
     ------
     ValueError
-        If spike_times is empty, event_times is empty, window is inverted,
-        bin_size is non-positive, time windows are invalid, or all events are
-        dropped.
+        If spike_times is empty, a spike train or event_times is not 1-D or
+        holds NaN or Inf, event_times is empty, window is invalid or
+        inverted, bin_size is not a finite positive number or leaves no
+        complete bin, time windows are invalid, or all events are dropped.
+
+    Warns
+    -----
+    UserWarning
+        With a single event (SEM is undefined), and when the window spans
+        more than 60 s (it may be in milliseconds).
 
     Notes
     -----
@@ -593,27 +485,17 @@ def population_peri_event_histogram(
     # yields its keys, not its trains).
     trains, extracted_ids = _as_spike_trains_with_ids(spike_times)
 
-    # Validate spike_trains
     if len(trains) == 0:
         raise ValueError(
-            "spike_trains is empty.\n"
+            "spike_times is empty.\n"
             "  WHY: Cannot compute population PSTH without any units.\n"
             "  Fix: Provide at least one spike train."
         )
-
-    # Validate bin_size
-    if bin_size <= 0:
-        raise ValueError(
-            f"bin_size must be positive, got {bin_size}.\n"
-            "  WHY: bin_size defines histogram bin width.\n"
-            "  Fix: Use a positive value like bin_size=0.025 (25ms)."
-        )
-
-    # Validate window
-    _validate_window(window, context="population_peri_event_histogram")
-
-    # Convert event_times to array
-    event_times = np.asarray(event_times, dtype=np.float64)
+    context = "population_peri_event_histogram"
+    window = _validate_window(window, context=context)
+    bin_edges, _ = _psth_bins(window, bin_size, context=context)
+    trains = [_finite_times(train, "spike_times") for train in trains]
+    event_times = _finite_times(event_times, "event_times")
 
     # Validate event_times not empty
     if event_times.size == 0:
@@ -651,9 +533,7 @@ def population_peri_event_histogram(
             stacklevel=2,
         )
 
-    # Create bin edges (see _make_bin_edges for the partial-bin policy).
-    bin_edges, bin_centers = _make_bin_edges(window, bin_size)
-    n_bins = len(bin_centers)
+    n_bins = bin_edges.size - 1
 
     # Compute per-unit histograms
     # Shape: (n_units, n_events, n_bins)
@@ -668,22 +548,21 @@ def population_peri_event_histogram(
     # histograms shape: (n_units, n_bins)
     histograms = all_histograms.mean(axis=1)
 
+    # The population mean's SEM is across events of each event's mean over
+    # units, the same estimand as each unit's SEM.
+    per_event_mean = all_histograms.mean(axis=0)
     if n_events > 1:
-        # SEM = std / sqrt(n) for each unit
         sem = all_histograms.std(axis=1, ddof=1) / np.sqrt(n_events)
+        mean_sem = per_event_mean.std(axis=0, ddof=1) / np.sqrt(n_events)
     else:
         sem = np.full((n_units, n_bins), np.nan, dtype=np.float64)
-
-    # Population mean is average across units
-    mean_histogram = histograms.mean(axis=0)
+        mean_sem = np.full(n_bins, np.nan, dtype=np.float64)
 
     return PopulationPeriEventResult(
-        bin_centers=bin_centers,
         histograms=histograms,
         sem=sem,
-        mean_histogram=mean_histogram,
+        mean_sem=mean_sem,
         n_events=n_events,
-        n_units=n_units,
         window=window,
         bin_size=bin_size,
         unit_ids=resolved_unit_ids,
@@ -725,16 +604,23 @@ def align_events(
     -------
     pd.DataFrame
         Events with added columns:
-        - 'relative_time': Time relative to reference event (event - reference)
-        - 'reference_index': Index of the reference event (0-indexed)
+        - 'relative_time': Time relative to reference event (event - reference),
+          in seconds
+        - 'reference_index': Position (0-based) of the reference event in
+          ``reference_events``, not its index label
 
-        All original columns from events are preserved. If an event falls
-        within multiple reference windows, it appears multiple times.
+        All original columns and dtypes from events are preserved, and the
+        index holds each row's label in ``events``. An event inside several
+        reference windows appears once per window, repeating its label. Rows
+        are ordered by reference event, then by time.
 
     Raises
     ------
+    TypeError
+        If events or reference_events is not a DataFrame.
     ValueError
-        If window is inverted or required columns are missing.
+        If the window is invalid, a time column is missing or not numeric, or
+        a time is NaN or infinite.
 
     See Also
     --------
@@ -759,76 +645,22 @@ def align_events(
     1       10.2            0.2                0
     2       20.1            0.1                1
     """
-    import pandas as pd
-
-    # Validate window
     _validate_window(window, context="align_events")
+    event_times = _event_times(events, event_column, name="events", call="align_events")
+    ref_times = _event_times(
+        reference_events, reference_column, name="reference_events", call="align_events"
+    )
 
-    # Validate event_column exists
-    if event_column not in events.columns:
-        raise ValueError(
-            f"Events DataFrame missing '{event_column}' column.\n"
-            "  WHY: Need timestamps to compute relative times.\n"
-            f"  Fix: Ensure events has '{event_column}' column.\n"
-            f"  Available columns: {list(events.columns)}"
-        )
-
-    # Validate reference_column exists
-    if reference_column not in reference_events.columns:
-        raise ValueError(
-            f"Reference DataFrame missing '{reference_column}' column.\n"
-            "  WHY: Need reference timestamps to align events to.\n"
-            f"  Fix: Ensure reference_events has '{reference_column}' column.\n"
-            f"  Available columns: {list(reference_events.columns)}"
-        )
-
-    # Handle empty cases
-    if len(events) == 0 or len(reference_events) == 0:
-        result = events.iloc[0:0].copy()
-        result["relative_time"] = pd.Series([], dtype=np.float64)
-        result["reference_index"] = pd.Series([], dtype=np.int64)
-        return result
-
-    # Get timestamps as arrays
-    event_times = events[event_column].values
-    ref_times = reference_events[reference_column].values
-
-    # Sort event times for efficient searching
-    sorted_idx = np.argsort(event_times)
-    sorted_event_times = event_times[sorted_idx]
-
-    # Collect aligned events
-    aligned_rows = []
-
-    for ref_idx, ref_t in enumerate(ref_times):
-        # Compute window bounds
-        t_start = ref_t + window[0]
-        t_end = ref_t + window[1]
-
-        # Find events within window using binary search
-        idx_start = np.searchsorted(sorted_event_times, t_start, side="left")
-        idx_end = np.searchsorted(sorted_event_times, t_end, side="left")
-
-        # Get original indices of events in window
-        event_indices = sorted_idx[idx_start:idx_end]
-
-        for orig_idx in event_indices:
-            event_t = event_times[orig_idx]
-            relative_time = event_t - ref_t
-
-            # Copy event row with new columns
-            row_data = events.iloc[orig_idx].to_dict()
-            row_data["relative_time"] = relative_time
-            row_data["reference_index"] = ref_idx
-            aligned_rows.append(row_data)
-
-    # Create result DataFrame
-    if aligned_rows:
-        result = pd.DataFrame(aligned_rows)
-    else:
-        # Empty result with correct columns
-        result = events.iloc[0:0].copy()
-        result["relative_time"] = pd.Series([], dtype=np.float64)
-        result["reference_index"] = pd.Series([], dtype=np.int64)
-
-    return result
+    # Events in each reference's half-open window, grouped by reference and
+    # ordered by time within each group.
+    order = np.argsort(event_times, kind="stable")
+    sorted_times = event_times[order]
+    first = np.searchsorted(sorted_times, ref_times + window[0], side="left")
+    stop = np.searchsorted(sorted_times, ref_times + window[1], side="left")
+    n_per_reference = stop - first
+    reference_index = np.repeat(np.arange(ref_times.size), n_per_reference)
+    rows = order[np.repeat(first, n_per_reference) + ragged_arange(n_per_reference)]
+    return events.iloc[rows].assign(
+        relative_time=event_times[rows] - ref_times[reference_index],
+        reference_index=reference_index.astype(np.int64),
+    )

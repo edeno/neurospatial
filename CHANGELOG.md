@@ -2,6 +2,103 @@
 
 ## [Unreleased]
 
+### Event analyses refuse bad input instead of returning wrong numbers
+
+Breaking:
+
+- `time_to_nearest_event`, `event_count_in_window` and `event_indicator` name
+  their first argument `times`, not `sample_times`, like every other
+  per-sample function. `window` may be passed by position, in the canonical
+  events order `f(times, event_times, window)`; `window=` still works.
+- `events_to_intervals` raises when an interval stops before it starts; it
+  warned and kept the negative-duration row, which also passed any
+  `max_duration` filter. Sequential pairing (`match_by=None`) also raises
+  unless the sorted starts and stops alternate, `start[k] <= stop[k] <=
+  start[k+1]`: a missed exit plus an extra one kept the counts equal and
+  silently paired every later event with the wrong partner, returning
+  overlapping intervals. Pair by an id column with `match_by=` instead.
+- `PeriEventResult` and `PopulationPeriEventResult` derive `bin_centers`,
+  `firing_rate(s)`, `mean_firing_rate`, `n_units` and `mean_histogram`
+  instead of taking or caching them, so they can no longer disagree with
+  `window`, `bin_size` and `histograms` (a hand-built result with `n_units=7`
+  and 3 rows reported 7 units). Drop those arguments when building a result
+  by hand. Construction now checks every array's shape against the bins
+  `window` and `bin_size` give, a finite positive `bin_size`, and integer
+  event counts with `n_events >= 1`.
+- `PopulationPeriEventResult` takes `mean_sem`, the standard error across
+  events of the population-mean histogram, and `plot()` draws it as the
+  band. The band was the mean of the per-unit SEMs, which is not the
+  uncertainty of the plotted curve: two units firing on alternate events
+  have an exactly flat population mean, and got a +/-0.17 count band.
+- `peri_event_histogram` and `population_peri_event_histogram` refuse a NaN
+  or infinite `bin_size` and one longer than the window, which returned an
+  empty histogram and all-NaN summaries, and 2-D `event_times`, which were
+  flattened into extra events.
+
+Results that change:
+
+- The PSTH `baseline_rate` (in `summary()` and `summary_table()`) averages
+  only bins that end at or before the event. A bin whose center was negative
+  but which straddled the event counted as baseline: spikes only at +10 ms
+  and +20 ms gave a 5 Hz baseline instead of 0.
+
+- `event_count_in_window` and `event_indicator` count each event at exactly
+  one sample when bin-centred windows tile time. Window edges computed twice
+  with different float rounding (`s[k] + dt/2` and `s[k+1] - dt/2`) left gaps
+  and overlaps: 11,999 events on a 20 Hz camera clock gave 12,462 counts in
+  10 Hz bins, and events exactly at sample midpoints were lost about half the
+  time. Edges that agree up to rounding are now one instant.
+- `align_events` keeps column dtypes and the row labels of `events`. It
+  copied each row through a float Series, so integer ids came back as floats
+  and two ids above 2**53 could merge into one; the index was reset to
+  0..n-1. An event in several windows repeats its label.
+
+Added:
+
+- `epochs=` on `time_to_nearest_event`, `event_count_in_window` and
+  `event_indicator`: when events were recorded. A sample whose value depends
+  on unrecorded time is NaN instead of counting the unseen stretch as "no
+  event": a 5 s reward-history window at the first second of a recording
+  reported 0 rewards. With `epochs`, counts and the indicator are float64
+  (the indicator 1.0 / 0.0 / NaN); without it they keep their int64 and bool
+  dtypes. A time to the nearest event is NaN when an unrecorded event could
+  be nearer.
+- `PeriEventResult.summary_table()`, with the same columns as the
+  population result's. PSTH `summary_table()` and `to_dataframe()` record
+  `window`, `bin_size`, `n_events` and `n_events_dropped` in `df.attrs`, and
+  `to_dataframe()` has a `firing_rate_sem` column in Hz next to the
+  count-unit `sem`. `PeriEventResult.firing_rate_sem` gives the same array.
+
+Fixed:
+
+- `peri_event_histogram` and `population_peri_event_histogram` warn once,
+  not once per unit plus once more, for a window longer than 60 s.
+- `align_events` refuses a NaN or infinite event or reference time, which it
+  dropped without a word, and a non-DataFrame input with a `TypeError`.
+- `filter_by_intervals` refuses NaN event times (with `include=False` they
+  were kept as "outside every artifact") and NaN or inverted intervals,
+  which silently matched nothing. Membership is one binary search per event
+  instead of an events x intervals array.
+- `events_to_intervals` and `intervals_to_events` refuse NaN times, a NaN
+  `match_by` key and a NaN or negative `max_duration` (NaN dropped every
+  interval). `intervals_to_events(which="both")` lists a stop before a start
+  at the same time, and an empty input gives a float `timestamp` column.
+- `add_positions` refuses positions with more than 3 columns (the 4th and
+  later were dropped) or none, repeated trajectory times (which of two
+  positions at one instant won depended on sort order; `align_continuous_to_events`
+  already refused them) and non-numeric timestamps, which it parsed.
+- `event_count_in_window` and `event_indicator` refuse a NaN or infinite
+  window bound (a NaN start gave negative counts) and 2-D time arrays.
+  `time_to_nearest_event` refuses `max_time=nan`, which returned all NaN.
+- `ContinuousEventResult` turns list and tuple fields into arrays and tuples
+  before checking them: a list `event_status` passed the checks and then
+  reported 0 retained events. Construction also checks `dt`, `window`, that
+  `relative_times` is their query grid, `max_gap`, `epochs`, interpolation
+  per value kind, unique `feature_ids`, counts within the retained events,
+  finite values wherever `support` is True, and the unit of circular
+  features. `align_continuous_to_events` stores every radian spelling
+  (`"radian"`, `"radians"`) as `"rad"`.
+
 ### Encoding cleanup and faster analyses
 
 Single-unit and population rate maps now share one code path in every

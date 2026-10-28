@@ -9,10 +9,13 @@ This module provides functions to convert between point events and intervals:
 
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
+
+from neurospatial._intervals import _format_rows, _merge, times_in_intervals
+from neurospatial._validation import validate_finite_scalar
+from neurospatial.events._core import _event_times
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -55,15 +58,17 @@ def intervals_to_events(
     pd.DataFrame
         Events DataFrame with 'timestamp' column. When which="both",
         includes a 'boundary' column with values "start" or "stop".
-        Output is sorted by timestamp with reset index.
+        Output is sorted by timestamp with reset index; at equal times a stop
+        comes before a start, so abutting intervals read stop, start.
 
     Raises
     ------
     TypeError
         If intervals is not a DataFrame.
     ValueError
-        If required columns are missing, if which is invalid,
-        or if preserve_columns contains non-existent columns.
+        If required columns are missing, not numeric, or hold NaN or inf, if
+        which is invalid, if preserve_columns contains non-existent columns,
+        or (``which="both"``) if an interval stops before it starts.
 
     See Also
     --------
@@ -148,57 +153,52 @@ def intervals_to_events(
                 f"  Fix: Check column names. Available: {list(intervals.columns)}"
             )
 
-    # Handle empty intervals
-    if len(intervals) == 0:
-        columns = ["timestamp"]
+    used = [start_column] if which == "start" else [stop_column]
+    if which == "both":
+        used = [start_column, stop_column]
+    times = {
+        col: _event_times(intervals, col, name="intervals", call="intervals_to_events")
+        for col in used
+    }
+    if which == "both":
+        _refuse_inverted(times[start_column], times[stop_column], "intervals_to_events")
+
+    def boundary_events(column: str) -> pd.DataFrame:
+        frame = pd.DataFrame({"timestamp": times[column]})
         if which == "both":
-            columns.append("boundary")
-        if preserve_columns:
-            columns.extend(preserve_columns)
-        return pd.DataFrame(columns=columns)
+            frame["boundary"] = "start" if column == start_column else "stop"
+        for col in preserve_columns or []:
+            frame[col] = intervals[col].to_numpy()
+        return frame
 
-    # Extract events based on 'which'
-    if which == "start":
-        result = pd.DataFrame({"timestamp": intervals[start_column].values})
-        if preserve_columns:
-            for col in preserve_columns:
-                result[col] = intervals[col].values
+    result = pd.concat([boundary_events(col) for col in used], ignore_index=True)
+    # A stop sorts before a start at the same time, so abutting intervals read
+    # stop, start; equal times otherwise keep their input order.
+    is_start = (
+        result["boundary"].to_numpy() == "start"
+        if which == "both"
+        else np.zeros(len(result), dtype=bool)
+    )
+    order = np.lexsort((is_start, result["timestamp"].to_numpy()))
+    return result.iloc[order].reset_index(drop=True)
 
-    elif which == "stop":
-        result = pd.DataFrame({"timestamp": intervals[stop_column].values})
-        if preserve_columns:
-            for col in preserve_columns:
-                result[col] = intervals[col].values
 
-    else:  # which == "both"
-        # Create start events
-        start_df = pd.DataFrame(
-            {
-                "timestamp": intervals[start_column].values,
-                "boundary": "start",
-            }
+def _refuse_inverted(
+    starts: np.ndarray, stops: np.ndarray, call: str, *, rows: np.ndarray | None = None
+) -> None:
+    """Raise if any interval stops before it starts."""
+    inverted = np.flatnonzero(stops < starts)
+    if inverted.size:
+        labels = inverted if rows is None else rows[inverted]
+        k = inverted[0]
+        raise ValueError(
+            f"{call}: interval row(s) {_format_rows(labels)} stop before they "
+            f"start (e.g. start {starts[k]:g} s, stop {stops[k]:g} s).\n"
+            "  WHY: an interval [start, stop) needs stop >= start; a negative "
+            "duration means a start and stop were mismatched.\n"
+            "  Fix: repair those rows, or pair starts and stops by an id with "
+            "match_by=."
         )
-        # Create stop events
-        stop_df = pd.DataFrame(
-            {
-                "timestamp": intervals[stop_column].values,
-                "boundary": "stop",
-            }
-        )
-
-        # Add preserved columns to both
-        if preserve_columns:
-            for col in preserve_columns:
-                start_df[col] = intervals[col].values
-                stop_df[col] = intervals[col].values
-
-        # Combine and sort
-        result = pd.concat([start_df, stop_df], ignore_index=True)
-
-    # Sort by timestamp and reset index
-    result = result.sort_values("timestamp").reset_index(drop=True)
-
-    return result
 
 
 def events_to_intervals(
@@ -225,7 +225,8 @@ def events_to_intervals(
         Column to match start/stop events by (e.g., "trial_id").
         If None, pairs sequentially (first start with first stop, etc.).
     max_duration : float, optional
-        Maximum interval duration. Intervals longer than this are excluded.
+        Maximum interval duration in seconds. Intervals longer than this are
+        excluded.
 
     Returns
     -------
@@ -240,17 +241,18 @@ def events_to_intervals(
 
     Raises
     ------
+    TypeError
+        If start_events or stop_events is not a DataFrame.
     ValueError
-        If event counts don't match (when match_by is None),
-        if match_by column is missing from either DataFrame,
-        if there are unmatched values in the match_by column,
-        or if the match_by column contains duplicate values in either
-        DataFrame (one-to-one pairing is required).
-
-    Warns
-    -----
-    UserWarning
-        If any interval has negative duration (stop before start).
+        If a 'timestamp' column is missing, not numeric, or holds NaN or inf;
+        if ``max_duration`` is negative or not finite.
+        Sequential pairing (``match_by=None``): if event counts don't match,
+        or if the sorted starts and stops do not alternate
+        (``start[k] <= stop[k] <= start[k + 1]``), which means an event is
+        missing or extra.
+        Matching (``match_by=...``): if the column is missing or has missing
+        values, if a value is unmatched or duplicated (one-to-one pairing is
+        required), or if a pair stops before it starts.
 
     See Also
     --------
@@ -292,13 +294,15 @@ def events_to_intervals(
     """
     import pandas as pd
 
-    # Get number of events
-    n_start = len(start_events)
-    n_stop = len(stop_events)
-
-    # Handle empty case
-    if n_start == 0 and n_stop == 0:
-        return pd.DataFrame(columns=["start_time", "stop_time", "duration"])
+    call = "events_to_intervals"
+    start_times = _event_times(
+        start_events, "timestamp", name="start_events", call=call
+    )
+    stop_times = _event_times(stop_events, "timestamp", name="stop_events", call=call)
+    validate_finite_scalar(
+        max_duration, name="max_duration", positive=False, none_allowed=True
+    )
+    n_start, n_stop = start_times.size, stop_times.size
 
     if match_by is None:
         # Sequential pairing: require matching counts
@@ -309,38 +313,29 @@ def events_to_intervals(
                 "  Fix: Use match_by='column_name' for non-sequential pairing,\n"
                 "       or ensure equal numbers of start and stop events."
             )
-
-        # Sort both by timestamp
-        start_sorted = start_events.sort_values("timestamp").reset_index(drop=True)
-        stop_sorted = stop_events.sort_values("timestamp").reset_index(drop=True)
-
-        # Create intervals
-        result = pd.DataFrame(
-            {
-                "start_time": start_sorted["timestamp"].values,
-                "stop_time": stop_sorted["timestamp"].values,
-            }
-        )
-
-        # Preserve additional columns from start_events
-        for col in start_sorted.columns:
-            if col != "timestamp" and col not in result.columns:
-                result[col] = start_sorted[col].values
-
+        start_order = np.argsort(start_times, kind="stable")
+        starts = start_times[start_order]
+        stops = np.sort(stop_times, kind="stable")
+        _refuse_unpaired_sequence(starts, stops)
+        result = pd.DataFrame({"start_time": starts, "stop_time": stops})
+        extra = start_events.iloc[start_order].drop(columns="timestamp")
     else:
-        # Match by column value
-        if match_by not in start_events.columns:
-            raise ValueError(
-                f"Column '{match_by}' not found in start_events.\n"
-                f"  WHY: Cannot match by a column that doesn't exist.\n"
-                f"  Available columns: {list(start_events.columns)}"
-            )
-        if match_by not in stop_events.columns:
-            raise ValueError(
-                f"Column '{match_by}' not found in stop_events.\n"
-                f"  WHY: Cannot match by a column that doesn't exist.\n"
-                f"  Available columns: {list(stop_events.columns)}"
-            )
+        for frame, name in (
+            (start_events, "start_events"),
+            (stop_events, "stop_events"),
+        ):
+            if match_by not in frame.columns:
+                raise ValueError(
+                    f"Column '{match_by}' not found in {name}.\n"
+                    f"  WHY: Cannot match by a column that doesn't exist.\n"
+                    f"  Available columns: {list(frame.columns)}"
+                )
+            if frame[match_by].isna().any():
+                raise ValueError(
+                    f"{call}: {name}[{match_by!r}] has missing values.\n"
+                    "  WHY: a row without an id cannot be paired.\n"
+                    f"  Fix: drop or label those rows before pairing by {match_by!r}."
+                )
 
         # Check for unmatched values
         start_values = set(start_events[match_by])
@@ -354,7 +349,7 @@ def events_to_intervals(
                 f"  Start events with no matching stop: {unmatched_start}\n"
                 f"  Stop events with no matching start: {unmatched_stop}\n"
                 "  WHY: Each start event needs a matching stop event.\n"
-                "  Fix: Ensure all values in '{match_by}' column have both start and stop."
+                f"  Fix: Ensure all values in '{match_by}' column have both start and stop."
             )
 
         # Each match_by value must appear at most once on each side. Without
@@ -371,8 +366,8 @@ def events_to_intervals(
             raise ValueError(
                 f"Duplicate values in '{match_by}' column prevent one-to-one "
                 f"start/stop pairing.\n"
-                f"  Duplicated in start_events: {sorted(start_dups.tolist())}\n"
-                f"  Duplicated in stop_events: {sorted(stop_dups.tolist())}\n"
+                f"  Duplicated in start_events: {start_dups.tolist()}\n"
+                f"  Duplicated in stop_events: {stop_dups.tolist()}\n"
                 "  WHY: Matching by a non-unique key would cross-join "
                 "(Cartesian product) every repeated value, producing more "
                 "intervals than real start/stop pairs.\n"
@@ -381,46 +376,55 @@ def events_to_intervals(
                 "for sequential pairing of equal-length start/stop events."
             )
 
-        # Merge on match_by column
-        start_df = start_events.copy()
-        stop_df = stop_events[["timestamp", match_by]].copy()
-        stop_df = stop_df.rename(columns={"timestamp": "stop_time"})
-
-        merged = start_df.merge(stop_df, on=match_by, how="inner")
-
-        result = pd.DataFrame(
-            {
-                "start_time": merged["timestamp"].values,
-                "stop_time": merged["stop_time"].values,
-            }
+        stop_df = stop_events[["timestamp", match_by]].rename(
+            columns={"timestamp": "stop_time"}
         )
+        merged = start_events.merge(stop_df, on=match_by, how="inner")
+        merged_starts = merged["timestamp"].to_numpy(dtype=np.float64)
+        merged_stops = merged["stop_time"].to_numpy(dtype=np.float64)
+        _refuse_inverted(merged_starts, merged_stops, call, rows=np.arange(len(merged)))
+        result = pd.DataFrame({"start_time": merged_starts, "stop_time": merged_stops})
+        extra = merged.drop(columns=["timestamp", "stop_time"])
 
-        # Preserve additional columns from start_events
-        for col in merged.columns:
-            if col not in ["timestamp", "stop_time"] and col not in result.columns:
-                result[col] = merged[col].values
+    # Preserve additional columns from start_events
+    for col in extra.columns:
+        if col not in result.columns:
+            result[col] = extra[col].to_numpy()
+    result.insert(2, "duration", result["stop_time"] - result["start_time"])
 
-    # Calculate duration
-    result["duration"] = result["stop_time"] - result["start_time"]
-
-    # Warn about negative durations
-    if (result["duration"] < 0).any():
-        n_negative = (result["duration"] < 0).sum()
-        warnings.warn(
-            f"Found {n_negative} interval(s) with negative duration "
-            "(stop time before start time).",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    # Filter by max_duration if specified
     if max_duration is not None:
-        result = result[result["duration"] <= max_duration].copy()
+        result = result[result["duration"] <= max_duration]
 
-    # Sort by start_time and reset index
-    result = result.sort_values("start_time").reset_index(drop=True)
+    return result.sort_values("start_time", kind="stable").reset_index(drop=True)
 
-    return result
+
+def _refuse_unpaired_sequence(starts: np.ndarray, stops: np.ndarray) -> None:
+    """Raise unless sorted starts and stops alternate, start <= stop <= next start.
+
+    Pairing the k-th start with the k-th stop is right only when they
+    alternate; a missed and an extra event elsewhere keep the counts equal and
+    otherwise pair every event in between with the wrong partner.
+    """
+    before = np.flatnonzero(stops < starts)
+    after = np.flatnonzero(stops[:-1] > starts[1:])
+    if not (before.size or after.size):
+        return
+    k = int(min(before[:1].tolist() + after[:1].tolist()))
+    if before.size and before[0] == k:
+        problem = f"stop {stops[k]:g} s comes before its start {starts[k]:g} s"
+    else:
+        problem = (
+            f"start {starts[k + 1]:g} s comes before stop {stops[k]:g} s of the "
+            f"start at {starts[k]:g} s"
+        )
+    raise ValueError(
+        f"events_to_intervals: start and stop events do not alternate in time: "
+        f"{problem} (pair {k} in time order).\n"
+        "  WHY: sequential pairing takes the k-th start with the k-th stop, so a "
+        "missing or extra event pairs every later event with the wrong partner.\n"
+        "  Fix: repair the missing or extra event near that time, or pair by an "
+        "id column with match_by=."
+    )
 
 
 def filter_by_intervals(
@@ -462,8 +466,12 @@ def filter_by_intervals(
 
     Raises
     ------
+    TypeError
+        If events or intervals is not a DataFrame.
     ValueError
-        If required columns are missing from events or intervals.
+        If a time column is missing, not numeric, or holds NaN or inf, or if
+        an interval stops before it starts. A missing event time is neither
+        inside nor outside an interval, so it is refused in both modes.
 
     See Also
     --------
@@ -505,55 +513,19 @@ def filter_by_intervals(
     [ 5. 25. 35.]
     """
 
-    # Validate events has timestamp column
-    if timestamp_column not in events.columns:
-        raise ValueError(
-            f"Events DataFrame missing '{timestamp_column}' column.\n"
-            "  WHY: Need timestamps to check interval membership.\n"
-            f"  Fix: Ensure events has '{timestamp_column}' column.\n"
-            f"  Available columns: {list(events.columns)}"
-        )
+    call = "filter_by_intervals"
+    timestamps = _event_times(events, timestamp_column, name="events", call=call)
+    starts = _event_times(intervals, start_column, name="intervals", call=call)
+    stops = _event_times(intervals, stop_column, name="intervals", call=call)
+    _refuse_inverted(starts, stops, call)
 
-    # Validate intervals has required columns
-    for col, name in [(start_column, "start"), (stop_column, "stop")]:
-        if col not in intervals.columns:
-            raise ValueError(
-                f"Intervals DataFrame missing '{col}' column.\n"
-                f"  WHY: Need {name} times to define intervals.\n"
-                f"  Fix: Ensure intervals has '{col}' column.\n"
-                f"  Available columns: {list(intervals.columns)}"
-            )
+    if not (stops > starts).any():
+        in_any_interval = np.zeros(timestamps.size, dtype=bool)
+    else:
+        # Zero-length rows hold no time; merging the rest makes membership one
+        # binary search per event.
+        rows = np.column_stack([starts, stops])[stops > starts]
+        in_any_interval = times_in_intervals(_merge(rows), timestamps)
 
-    # Handle empty cases
-    if len(events) == 0:
-        return events.copy()
-
-    if len(intervals) == 0:
-        if include:
-            # No intervals to include from → return empty
-            return events.iloc[0:0].copy()
-        else:
-            # No intervals to exclude → return all
-            return events.copy()
-
-    # Get event timestamps
-    timestamps = events[timestamp_column].values
-
-    # Create mask for events within any interval
-    # Using vectorized comparison with broadcasting
-    starts = intervals[start_column].values
-    stops = intervals[stop_column].values
-
-    # For each event, check if it's within any interval
-    # Shape: (n_events, n_intervals)
-    within_intervals = (timestamps[:, np.newaxis] >= starts) & (
-        timestamps[:, np.newaxis] < stops
-    )
-
-    # Event is "in an interval" if it's within any interval
-    in_any_interval = within_intervals.any(axis=1)
-
-    # Apply filter based on include flag
     mask = in_any_interval if include else ~in_any_interval
-
     return events[mask].copy()

@@ -1325,17 +1325,20 @@ raster_ax, rate_ax = plot_peri_event_response(
 )
 raster_ax.set_yticks(np.arange(len(event_times)), selected["event_id"])
 
+# A sample whose +/- 1 s window leaves the epochs could miss an event there,
+# so its regressor is NaN (missing), not 0. Drop those rows before fitting.
 regressors = pd.DataFrame({
     "timestamp": times,
-    "event_count": event_count_in_window(times, event_times, window=window),
-    "event_present": event_indicator(times, event_times, window=window),
+    "event_count": event_count_in_window(times, event_times, window, epochs=epochs),
+    "event_present": event_indicator(times, event_times, window, epochs=epochs),
 })
+observed = regressors.dropna()
 positioned = add_positions(selected, times=times, positions=positions, epochs=epochs)
 table = events.join(positioned[["x", "y"]])
 assert psth.n_events == len(positioned) == 2
 assert selected["event_id"].tolist() == ["reward-a", "reward-c"]
-assert regressors["event_count"].dtype == np.int64
-assert regressors["event_present"].dtype == np.bool_
+assert observed["timestamp"].between(2.0, 8.0).sum() == 61
+assert observed["event_count"].sum() == 2 * 20  # 2 s of 10 Hz samples per event
 print(table.to_string(index=False))
 
 # Raster, PSTH and regressors all use half-open [start, stop) windows.

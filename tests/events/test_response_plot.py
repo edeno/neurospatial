@@ -251,23 +251,12 @@ def test_invalid_axes_pair_rejected(invalid):
         plot_peri_event_response(spikes, events, result, axes=invalid)
 
 
-def test_inconsistent_bin_metadata_rejected():
+def test_no_complete_bin_is_refused_when_computing():
     events = np.array([1.0, 2.0])
     spikes = np.array([1.0])
-    result = peri_event_histogram(spikes, events, (-0.5, 0.5))
-    altered = replace(result, bin_centers=result.bin_centers + 0.001)
 
-    with pytest.raises(ValueError, match="bin_centers does not match"):
-        plot_peri_event_response(spikes, events, altered)
-
-
-def test_no_complete_bin_rejected_with_actionable_error():
-    events = np.array([1.0, 2.0])
-    spikes = np.array([1.0])
-    result = peri_event_histogram(spikes, events, (0.0, 0.1), bin_size=0.25)
-
-    with pytest.raises(ValueError, match="at least one complete bin"):
-        plot_peri_event_response(spikes, events, result)
+    with pytest.raises(ValueError, match="no complete bin fits"):
+        peri_event_histogram(spikes, events, (0.0, 0.1), bin_size=0.25)
 
 
 def test_plotting_does_not_retain_or_mutate_raw_inputs_or_result_arrays():
@@ -289,7 +278,6 @@ def test_plotting_does_not_retain_or_mutate_raw_inputs_or_result_arrays():
         assert_array_equal(getattr(result, name), values)
         assert not getattr(result, name).flags.writeable
     assert {item.name for item in fields(result)} == {
-        "bin_centers",
         "histogram",
         "sem",
         "n_events",
@@ -298,7 +286,6 @@ def test_plotting_does_not_retain_or_mutate_raw_inputs_or_result_arrays():
         "unit_id",
         "n_events_dropped",
         "event_indices",
-        "firing_rate",
     }
 
 

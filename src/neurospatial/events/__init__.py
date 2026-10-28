@@ -1,8 +1,8 @@
 """
 Events module for neurospatial.
 
-This module provides tools for event detection, temporal alignment, and
-GLM regressor generation for neural data analysis.
+This module aligns spikes, continuous signals and event tables to events,
+converts between point events and intervals, and builds GLM regressors.
 
 Public API
 ----------
@@ -11,7 +11,7 @@ Result Dataclasses:
     PopulationPeriEventResult : Result from population peri-event analysis
 
 Spatial Utilities:
-    add_positions : Add x, y columns to events by interpolation
+    add_positions : Add x, y (and z) columns to events by interpolation
 
 Interval Utilities:
     intervals_to_events : Convert intervals to point events
