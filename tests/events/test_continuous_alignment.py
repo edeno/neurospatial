@@ -456,7 +456,6 @@ def test_all_excluded_error_counts_each_reason():
 
 def _result_inputs():
     return {
-        "relative_times": np.array([0.0, 0.5]),
         "feature_ids": np.array(["speed"]),
         "value_kinds": ("linear",),
         "interpolation": ("linear",),
@@ -529,7 +528,6 @@ def test_result_list_fields_become_arrays_and_tuples():
         ),
         ({"dt": 0.0}, "dt must be a positive"),
         ({"window": (1.0, 0.0)}, "start < stop"),
-        ({"relative_times": np.array([7.0, 8.0])}, "query grid"),
         ({"max_gap": -3.0}, "max_gap must be None"),
         ({"interpolation": ("spline",)}, "not allowed for linear"),
         ({"epochs": np.array([1.0, 2.0, 3.0])}, "epochs must be None"),

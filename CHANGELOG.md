@@ -34,6 +34,8 @@ Breaking:
   or infinite `bin_size` and one longer than the window, which returned an
   empty histogram and all-NaN summaries, and 2-D `event_times`, which were
   flattened into extra events.
+- `ContinuousEventResult` derives `relative_times` from `window` and `dt`
+  instead of taking it. Drop that argument when building a result by hand.
 
 Results that change:
 
@@ -92,9 +94,8 @@ Fixed:
   `time_to_nearest_event` refuses `max_time=nan`, which returned all NaN.
 - `ContinuousEventResult` turns list and tuple fields into arrays and tuples
   before checking them: a list `event_status` passed the checks and then
-  reported 0 retained events. Construction also checks `dt`, `window`, that
-  `relative_times` is their query grid, `max_gap`, `epochs`, interpolation
-  per value kind, unique `feature_ids`, counts within the retained events,
+  reported 0 retained events. Construction also checks `dt`, `window`,
+  `max_gap`, `epochs`, interpolation per value kind, unique `feature_ids`, counts within the retained events,
   finite values wherever `support` is True, and the unit of circular
   features. `align_continuous_to_events` stores every radian spelling
   (`"radian"`, `"radians"`) as `"rad"`.

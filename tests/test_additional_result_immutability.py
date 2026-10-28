@@ -200,7 +200,6 @@ CASES = [
     (
         ContinuousEventResult,
         {
-            "relative_times": np.array([0.0, 0.5]),
             "feature_ids": np.array(["speed", "zone"]),
             "value_kinds": ("linear", "categorical"),
             "interpolation": ("linear", "previous"),

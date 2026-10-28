@@ -47,7 +47,6 @@ __all__ = ["ContinuousEventResult", "align_continuous_to_events"]
 
 _WINDOW_COVERAGES = ("complete", "partial")
 _REQUIRED_ARRAY_FIELDS = (
-    "relative_times",
     "feature_ids",
     "event_status",
     "overlapping",
@@ -136,7 +135,6 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         Caller labels of the input events, when given.
     """
 
-    relative_times: NDArray[np.float64]
     feature_ids: NDArray[Any]
     value_kinds: tuple[str, ...]
     interpolation: tuple[str, ...]
@@ -182,14 +180,24 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
 
     def _inconsistencies(self) -> list[str]:
         """List every way the fields disagree with each other."""
+        # The query grid, and so every per-time shape, follows from window
+        # and dt.
+        window = self.window
+        if not (
+            len(window) == 2
+            and all(_is_real_number(v) and np.isfinite(v) for v in window)
+            and window[0] < window[1]
+        ):
+            return ["window must be two finite seconds with start < stop"]
+        if not (_is_real_number(self.dt) and np.isfinite(self.dt) and self.dt > 0):
+            return ["dt must be a positive finite number of seconds"]
         problems: list[str] = []
-        relative_times = np.asarray(self.relative_times)
         feature_ids = np.asarray(self.feature_ids)
         status = np.asarray(self.event_status)
-        if relative_times.ndim != 1 or feature_ids.ndim != 1 or status.ndim != 1:
-            return ["relative_times, feature_ids and event_status must be 1-D"]
+        if feature_ids.ndim != 1 or status.ndim != 1:
+            return ["feature_ids and event_status must be 1-D"]
         n_times, n_features, n_input = (
-            relative_times.size,
+            self.relative_times.size,
             feature_ids.size,
             status.size,
         )
@@ -268,17 +276,6 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
                 if kind == "circular" and unit != "rad":
                     problems.append(f"circular features need unit 'rad', got {unit!r}")
 
-        window = self.window
-        if not (
-            len(window) == 2
-            and all(_is_real_number(v) and np.isfinite(v) for v in window)
-            and window[0] < window[1]
-        ):
-            problems.append("window must be two finite seconds with start < stop")
-        elif not (_is_real_number(self.dt) and np.isfinite(self.dt) and self.dt > 0):
-            problems.append("dt must be a positive finite number of seconds")
-        elif not np.array_equal(relative_times, _relative_times(window, self.dt)):
-            problems.append("relative_times must be the query grid of window and dt")
         if self.max_gap is not None and not (
             _is_real_number(self.max_gap)
             and np.isfinite(self.max_gap)
@@ -309,6 +306,11 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         ):
             problems.append("resultant_threshold must be finite and in [0, 1]")
         return problems
+
+    @property
+    def relative_times(self) -> NDArray[np.float64]:
+        """Query offsets from each event in seconds, shape ``(n_times,)``."""
+        return _relative_times(self.window, self.dt)
 
     @property
     def event_indices(self) -> NDArray[np.intp]:
@@ -1016,7 +1018,6 @@ def align_continuous_to_events(
         )
 
     return ContinuousEventResult(
-        relative_times=relative_times,
         feature_ids=spec.feature_ids,
         value_kinds=spec.value_kinds,
         interpolation=spec.interpolation,
