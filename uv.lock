@@ -4052,7 +4052,7 @@ requires-dist = [
     { name = "scikit-image", specifier = ">=0.19.0" },
     { name = "scikit-learn", specifier = ">=1.2.0" },
     { name = "scipy", specifier = ">=1.10.0" },
-    { name = "shapely", specifier = ">=2.0.0" },
+    { name = "shapely", specifier = ">=2.1.0" },
     { name = "simplejpeg", marker = "python_full_version >= '3.11' and extra == 'fastplotlib'", specifier = ">=1.7" },
     { name = "statsmodels", marker = "extra == 'dev'", specifier = ">=0.14.0" },
     { name = "tqdm", specifier = ">=4.67.1" },

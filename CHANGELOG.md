@@ -16,6 +16,9 @@ LabelMe circle vertices, which can differ by float rounding (1e-15 px).
   filled, so a ring-shaped region looked like a solid square.
 - The napari animation backend draws polygon regions with holes, like the
   notebook widget, fastplotlib and exported files; it refused them.
+- neurospatial requires shapely 2.1 or newer (was 2.0). The fastplotlib
+  renderer and napari's holed regions triangulate polygons with
+  `shapely.constrained_delaunay_triangles`, which shapely 2.0 lacks.
 - `plot_regions` refuses a `world_to_pixel` that changes the shape of its
   input or returns NaN, naming the region, instead of failing inside
   Matplotlib.
