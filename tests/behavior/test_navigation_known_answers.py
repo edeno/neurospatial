@@ -464,7 +464,7 @@ class TestTrialHelpersOnAnotherClock:
                 end_time=4.0 * scale,
                 start_region="home",
                 end_region="goal",
-                success=True,
+                outcome="reached",
             )
         ]
 

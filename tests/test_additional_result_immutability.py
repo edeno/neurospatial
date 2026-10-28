@@ -133,7 +133,14 @@ CASES = [
     ),
     (
         Run,
-        {"start_time": 0.0, "end_time": 1.0, "bins": np.array([0, 1]), "success": True},
+        {
+            "start_time": 0.0,
+            "end_time": 1.0,
+            "source_region": "home",
+            "target_region": "goal",
+            "outcome": "reached",
+            "bins": np.array([0, 1]),
+        },
     ),
     (
         AssemblyPattern,

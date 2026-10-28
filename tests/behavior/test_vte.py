@@ -1433,7 +1433,7 @@ def test_session_entry_is_searched_inside_epochs(t_maze_environment):
             end_time=10.0,
             start_region="start",
             end_region="left",
-            success=True,
+            outcome="reached",
         )
     ]
     kwargs = {"decision_region": "center", "window_duration": 1.0, "min_speed": 5.0}
@@ -1470,7 +1470,7 @@ def test_session_keeps_one_result_per_trial_in_input_order(t_maze_environment):
         end_time=2000.0,
         start_region="start",
         end_region="center",
-        success=True,
+        outcome="reached",
     )
     trials = [trials[0], ms_trial, trials[1], trials[2]]
     with pytest.warns(UserWarning) as record:
@@ -1673,7 +1673,7 @@ def test_session_z_scores_vte_index_and_verdicts(t_maze_environment):
             end_time=t[-1],
             start_region="start",
             end_region="center",
-            success=True,
+            outcome="reached",
         )
         for t, _ in pieces
     ]
