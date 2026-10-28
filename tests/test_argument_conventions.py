@@ -188,7 +188,7 @@ REQUIRED_DATA_NAMES = {
     *("G", "graph", "nodes", "sources", "bin_from", "bin_to", "centers"),
     *("nwbfile", "session", "obj", "data", "df", "path"),
     *("video_path", "xml_path", "json_path", "mask_img", "mask", "project"),
-    *("times", "t", "positions", "position", "points", "pts"),
+    *("times", "t", "positions", "position", "points"),
     *("position_bins", "position_bins1", "position_bins2"),
     *("headings", "heading", "nose", "tail", "speeds", "lfp", "signals"),
     *("spike_times", "spike_counts", "template_counts", "match_counts"),

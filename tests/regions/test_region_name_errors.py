@@ -96,7 +96,7 @@ def _lookups(env: Environment, folder: Path) -> dict[str, tuple[Any, Any, str]]:
         ),
         "regions_containing_points": (
             lambda value: regions_containing_points(
-                positions, env.regions, region_names=value
+                positions, env.regions, region_names=value, point_radius=2.0
             ),
             ["rewrd"],
             "pass region_names=['reward']",

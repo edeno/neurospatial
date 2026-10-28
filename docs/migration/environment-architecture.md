@@ -1585,7 +1585,9 @@ try:
     regions_containing_points(positions, regions, region_names=["rewrd"])
 except RegionNotFoundError as error:
     print(str(error).splitlines()[-1])  # Fix: pass region_names=['reward']
-table = regions_containing_points(positions, regions, region_names=["reward"])
+table = regions_containing_points(
+    positions, regions, region_names=["reward"], point_radius=5.0  # cm
+)
 ```
 
 ## Bin indices are `np.intp`
