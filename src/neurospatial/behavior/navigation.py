@@ -934,11 +934,10 @@ def path_progress(
         position_bins[same_start_goal] == goal_bins[same_start_goal], 1.0, np.nan
     )
 
+    # NaN where either distance is undefined (a -1 position, start or goal
+    # bin) or infinite (disconnected).
     disconnected = ~np.isfinite(distances_to_goal) | ~np.isfinite(distances_from_start)
     progress[disconnected] = np.nan
-
-    invalid_bins = (start_bins == -1) | (goal_bins == -1) | (position_bins == -1)
-    progress[invalid_bins] = np.nan
 
     return progress
 
