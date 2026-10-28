@@ -21,6 +21,7 @@ def test_velocity_heading_uses_actual_intervals():
         positions,
         observed_interval_mask(times, max_gap=0.5, epochs=None),
         smooth_window=0.0,
+        min_speed=0.0,
     )
     velocity = np.array(
         [
@@ -32,6 +33,28 @@ def test_velocity_heading_uses_actual_intervals():
     np.testing.assert_allclose(headings, np.arctan2(velocity[:, 1], velocity[:, 0]))
     np.testing.assert_allclose(speed, np.hypot(velocity[:, 0], velocity[:, 1]))
     np.testing.assert_allclose(speed[[0, 2]], [10.0, 20.0])  # one-sided ends
+
+
+def test_velocity_heading_is_nan_where_not_moving():
+    """A still animal has no direction of movement, not arctan2(0, 0) = East."""
+    from neurospatial._intervals import observed_interval_mask
+    from neurospatial.behavior._kinematics import _movement_heading_and_speed
+
+    times = np.arange(6) * 0.1
+    # Still, then 10 cm/s North, then 30 cm/s North.
+    y = np.array([0.0, 0.0, 0.0, 1.0, 2.0, 5.0])
+    positions = np.column_stack([np.zeros(6), y])
+    headings, speed = _movement_heading_and_speed(
+        times,
+        positions,
+        observed_interval_mask(times, max_gap=0.5, epochs=None),
+        smooth_window=0.0,
+        min_speed=15.0,
+    )
+    assert_allclose(speed, [0.0, 0.0, 5.0, 10.0, 20.0, 30.0])
+    moving = speed >= 15.0
+    assert np.isnan(headings[~moving]).all()
+    assert_allclose(headings[moving], np.pi / 2)
 
 
 def test_velocity_smoothing_is_separate_per_run(two_epoch_recording):
@@ -46,6 +69,7 @@ def test_velocity_smoothing_is_separate_per_run(two_epoch_recording):
         r.positions,
         observed_interval_mask(r.times, max_gap=0.5, epochs=None),
         smooth_window=0.04,  # two 50 Hz samples
+        min_speed=0.0,
     )
     for run in (slice(0, 5000), slice(5000, 10000)):
         velocity = np.gradient(r.positions[run], r.times[run], axis=0)

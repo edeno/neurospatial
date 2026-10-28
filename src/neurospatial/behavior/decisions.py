@@ -88,6 +88,7 @@ from neurospatial._observation import (
 )
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_speed
+from neurospatial.behavior._kinematics import validated_min_speed
 from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _safe_gather
@@ -656,22 +657,6 @@ def extract_pre_decision_window(
     return times[window], positions[window]
 
 
-def _validated_min_speed(min_speed: float, *, call: str) -> float:
-    """A finite, non-negative heading speed gate in position units per second."""
-    value = float(min_speed)
-    if not (np.isfinite(value) and value >= 0):
-        raise ValueError(
-            f"{call}() needs a finite, non-negative min_speed; got "
-            f"{min_speed!r}.\n"
-            "Why: min_speed is the speed below which the direction of movement "
-            "is not observed; a NaN or negative gate would silently drop or "
-            "keep every heading.\n"
-            "Fix: pass min_speed in position units per second, e.g. 5.0 for "
-            "5 cm/s with positions in cm."
-        )
-    return value
-
-
 def _validated_window_duration(
     window_duration: float, *, name: str, call: str
 ) -> float:
@@ -842,7 +827,7 @@ def pre_decision_heading_stats(
         result="the heading statistics are NaN",
     )
     _validate_velocity_positions(raw_positions, call="pre_decision_heading_stats")
-    min_speed = _validated_min_speed(min_speed, call="pre_decision_heading_stats")
+    min_speed = validated_min_speed(min_speed, call="pre_decision_heading_stats")
     return _heading_stats(times, positions, support.interval_mask, min_speed=min_speed)
 
 
@@ -861,12 +846,14 @@ def _heading_stats(
 
     if len(positions) < 2:
         return np.nan, np.nan, np.nan
-    headings, speed = _movement_heading_and_speed(
-        times, positions, interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
+    headings, _ = _movement_heading_and_speed(
+        times,
+        positions,
+        interval_mask,
+        smooth_window=DEFAULT_SPEED_SMOOTHING,
+        min_speed=min_speed,
     )
-    valid_headings = headings[
-        (speed >= min_speed) & (speed > 0) & np.isfinite(headings)
-    ]
+    valid_headings = headings[np.isfinite(headings)]
 
     if len(valid_headings) == 0:
         return np.nan, np.nan, np.nan
@@ -1098,7 +1085,7 @@ def compute_pre_decision_metrics(
         result="the pre-decision metrics are NaN",
     )
     _validate_velocity_positions(raw_positions, call="compute_pre_decision_metrics")
-    min_speed = _validated_min_speed(min_speed, call="compute_pre_decision_metrics")
+    min_speed = validated_min_speed(min_speed, call="compute_pre_decision_metrics")
     window_duration = _validated_window_duration(
         window_duration, name="window_duration", call="compute_pre_decision_metrics"
     )
@@ -1787,10 +1774,7 @@ def compute_decision_analysis(
 
     from neurospatial.behavior._kinematics import resolve_min_speed
 
-    min_speed = _validated_min_speed(
-        resolve_min_speed(env, min_speed, call="compute_decision_analysis()"),
-        call="compute_decision_analysis",
-    )
+    min_speed = resolve_min_speed(env, min_speed, call="compute_decision_analysis")
     # Compute pre-decision metrics
     pre_decision = _pre_decision_metrics(
         times, positions, support, entry_time, pre_window, min_speed=min_speed

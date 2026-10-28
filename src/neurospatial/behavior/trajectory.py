@@ -476,9 +476,10 @@ def heading_from_velocity(
         If there are no samples, if positions is not 2-D with at least x/y
         coordinates, if times is not 1-D, finite, strictly increasing (no
         repeated timestamp) and aligned with positions, if ``break_before`` is
-        not a Boolean array with one entry per sample, or if every observed
-        sample is below ``min_speed`` or still and ``allow_all_nan`` is
-        ``False`` (the default).
+        not a Boolean array with one entry per sample, if ``min_speed`` is not
+        finite and non-negative, or if every observed sample is below
+        ``min_speed`` or still and ``allow_all_nan`` is ``False`` (the
+        default).
 
     Warns
     -----
@@ -566,6 +567,7 @@ def heading_from_velocity(
     from neurospatial.behavior._kinematics import (
         _movement_heading_and_speed,
         _validate_velocity_positions,
+        validated_min_speed,
     )
 
     # Validate first so a swapped (positions, times) call gets that message.
@@ -580,12 +582,16 @@ def heading_from_velocity(
         result="every heading is NaN",
     )
     _validate_velocity_positions(raw_positions, call="heading_from_velocity")
+    min_speed = validated_min_speed(min_speed, call="heading_from_velocity")
     heading, speed = _movement_heading_and_speed(
-        times, positions, support.interval_mask, smooth_window=smooth_window
+        times,
+        positions,
+        support.interval_mask,
+        smooth_window=smooth_window,
+        min_speed=min_speed,
     )
     # The velocity direction is observed only where the animal moves.
-    moving = (speed > 0) & (speed >= min_speed)
-    heading[~moving] = np.nan
+    moving = np.isfinite(heading)
     in_run = support.run_ids >= 0
     if in_run.any() and not moving.any():
         fastest = float(np.max(speed[in_run]))

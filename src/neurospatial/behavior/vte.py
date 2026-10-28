@@ -669,8 +669,10 @@ def head_sweep_from_positions(
     >>> head_sweep_from_positions(times, still, min_speed=1.0)
     nan
     """
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
-    from neurospatial.behavior.decisions import _validated_min_speed
+    from neurospatial.behavior._kinematics import (
+        _validate_velocity_positions,
+        validated_min_speed,
+    )
 
     raw_positions = positions
     times, positions, support = validated_observations(
@@ -683,7 +685,7 @@ def head_sweep_from_positions(
         result="no head sweep was observed",
     )
     _validate_velocity_positions(raw_positions, call="head_sweep_from_positions")
-    min_speed = _validated_min_speed(min_speed, call="head_sweep_from_positions")
+    min_speed = validated_min_speed(min_speed, call="head_sweep_from_positions")
     return _head_sweep(times, positions, support.interval_mask, min_speed=min_speed)
 
 
@@ -699,11 +701,14 @@ def _head_sweep(
 
     if not interval_mask.any():
         return np.nan
-    heading, speed = _movement_heading_and_speed(
-        times, positions, interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
+    # NaN where the animal is not moving: no direction of movement.
+    heading, _ = _movement_heading_and_speed(
+        times,
+        positions,
+        interval_mask,
+        smooth_window=DEFAULT_SPEED_SMOOTHING,
+        min_speed=min_speed,
     )
-    # The velocity direction is observed only where the animal moves.
-    heading[~((speed > 0) & (speed >= min_speed))] = np.nan
     sweeps = [
         head_sweep_magnitude(heading[first : last + 1])
         for first, last in run_sample_bounds(interval_mask)
@@ -1060,11 +1065,13 @@ def compute_vte_trial(
     >>> result.mean_speed, result.head_sweep_magnitude
     (nan, nan)
     """
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
+    from neurospatial.behavior._kinematics import (
+        _validate_velocity_positions,
+        validated_min_speed,
+    )
     from neurospatial.behavior.decisions import (
         _pre_decision_window,
         _validated_entry_time,
-        _validated_min_speed,
         _validated_window_duration,
     )
 
@@ -1083,7 +1090,7 @@ def compute_vte_trial(
         window_duration, name="window_duration", call="compute_vte_trial"
     )
     entry_time = _validated_entry_time(times, entry_time, call="compute_vte_trial")
-    min_speed = _validated_min_speed(min_speed, call="compute_vte_trial")
+    min_speed = validated_min_speed(min_speed, call="compute_vte_trial")
     window = _pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
@@ -1331,7 +1338,6 @@ def compute_vte_session(
     )
     from neurospatial.behavior.decisions import (
         _in_epochs,
-        _validated_min_speed,
         _validated_window_duration,
     )
 
@@ -1349,10 +1355,7 @@ def compute_vte_session(
             "Fix: pass a finite threshold on the VTE index, e.g. "
             "vte_threshold=0.5."
         )
-    min_speed = _validated_min_speed(
-        resolve_min_speed(env, min_speed, call="compute_vte_session()"),
-        call="compute_vte_session",
-    )
+    min_speed = resolve_min_speed(env, min_speed, call="compute_vte_session")
     region_bins = env.bins_in_region(decision_region)
     in_epochs = _in_epochs(times, support.epochs)
     measured: list[_TrialMeasurement] = []

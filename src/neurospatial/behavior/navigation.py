@@ -2502,16 +2502,9 @@ def heading_direction_labels(
     --------
     goal_pair_direction_labels : Direction labels for trialized tasks
     """
-    if not (np.isfinite(min_speed) and min_speed >= 0):
-        raise ValueError(
-            _format_error(
-                f"heading_direction_labels() got min_speed={min_speed!r}.",
-                why="min_speed is a speed in position units per second; NaN "
-                "would label every sample 'stationary'.",
-                fix="pass a finite min_speed >= 0, e.g. 5.0 for 5 cm/s with "
-                "positions in cm",
-            )
-        )
+    from neurospatial.behavior._kinematics import validated_min_speed
+
+    min_speed = validated_min_speed(min_speed, call="heading_direction_labels")
     if (
         isinstance(n_directions, bool)
         or not isinstance(n_directions, (int, np.integer))
@@ -2605,6 +2598,7 @@ def heading_direction_labels(
             positions_arr,
             support.interval_mask,
             smooth_window=DEFAULT_SPEED_SMOOTHING,
+            min_speed=min_speed,
         )
         observed = support.run_ids >= 0
 
@@ -3930,8 +3924,9 @@ def instantaneous_goal_alignment(
     ValueError
         If the inputs are empty, have different lengths, ``times`` is not
         finite and strictly increasing, ``positions`` has no x and y columns,
-        ``break_before`` is not a Boolean array with one entry per sample, or
-        ``goal`` has a different number of dimensions than ``positions``.
+        ``break_before`` is not a Boolean array with one entry per sample,
+        ``min_speed`` is not finite and non-negative, or ``goal`` has a
+        different number of dimensions than ``positions``.
 
     Notes
     -----
@@ -3960,7 +3955,10 @@ def instantaneous_goal_alignment(
     (True, True)
     """
     from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
+    from neurospatial.behavior._kinematics import (
+        _validate_velocity_positions,
+        validated_min_speed,
+    )
 
     raw = positions
     times, positions, support = validated_observations(
@@ -3973,6 +3971,7 @@ def instantaneous_goal_alignment(
         result="every alignment is NaN",
     )
     _validate_velocity_positions(raw, call="instantaneous_goal_alignment")
+    min_speed = validated_min_speed(min_speed, call="instantaneous_goal_alignment")
     return _goal_alignment(
         times,
         positions,
@@ -4023,15 +4022,19 @@ def _goal_alignment(
     # Checks the goal's dimensions before the velocity is computed.
     vec = _goal_vector(positions, goal, call=call)
     goal_heading = np.arctan2(vec[:, 1], vec[:, 0])
-    heading, speed = _movement_heading_and_speed(
-        times, positions, support.interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
+    # NaN where the animal is not moving: no direction of movement.
+    heading, _ = _movement_heading_and_speed(
+        times,
+        positions,
+        support.interval_mask,
+        smooth_window=DEFAULT_SPEED_SMOOTHING,
+        min_speed=min_speed,
     )
-    moving = (speed > 0) & (speed >= min_speed)
     # At the goal itself there is no direction to the goal (arctan2(0, 0)
     # would read as East and score an arrival from the East as -1).
     away_from_goal = np.any(vec != 0, axis=1)
     alignment: NDArray[np.float64] = np.where(
-        moving & away_from_goal, np.cos(heading - goal_heading), np.nan
+        away_from_goal, np.cos(heading - goal_heading), np.nan
     )
     return alignment
 
@@ -4090,8 +4093,9 @@ def goal_bias(
     ValueError
         If the inputs are empty, have different lengths, ``times`` is not
         finite and strictly increasing, ``positions`` has no x and y columns,
-        ``break_before`` is not a Boolean array with one entry per sample, or
-        ``goal`` has a different number of dimensions than ``positions``.
+        ``break_before`` is not a Boolean array with one entry per sample,
+        ``min_speed`` is not finite and non-negative, or ``goal`` has a
+        different number of dimensions than ``positions``.
 
     Notes
     -----
@@ -4120,7 +4124,10 @@ def goal_bias(
     nan
     """
     from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
+    from neurospatial.behavior._kinematics import (
+        _validate_velocity_positions,
+        validated_min_speed,
+    )
 
     raw = positions
     times, positions, support = validated_observations(
@@ -4133,6 +4140,7 @@ def goal_bias(
         result="the goal bias is NaN",
     )
     _validate_velocity_positions(raw, call="goal_bias")
+    min_speed = validated_min_speed(min_speed, call="goal_bias")
     alignment = _goal_alignment(
         times, positions, goal, support, min_speed=min_speed, call="goal_bias"
     )
@@ -4417,7 +4425,8 @@ def compute_goal_directed_metrics(
         ``metric`` is not recognized, ``goal_radius`` is negative or not
         finite, or (geodesic) the goal is outside the environment.
     ValueError
-        If ``min_speed`` is None and ``env.units`` is not a metric length.
+        If ``min_speed`` is not finite and non-negative, or is None and
+        ``env.units`` is not a metric length.
 
     Notes
     -----
@@ -4471,9 +4480,7 @@ def compute_goal_directed_metrics(
     call = "compute_goal_directed_metrics"
     paths = metric_paths(metric, env, call=call)
     goal = _validated_goal(goal, positions.shape[1], call=call)
-    min_speed = resolve_min_speed(
-        env, min_speed, call="compute_goal_directed_metrics()"
-    )
+    min_speed = resolve_min_speed(env, min_speed, call=call)
     _validate_velocity_positions(raw, call=call)
     if goal_radius is not None and not (np.isfinite(goal_radius) and goal_radius >= 0):
         raise ValueError(
