@@ -11,6 +11,9 @@ prepared polygon instead of building one shapely point per position:
 pixel-frame shift and one region builder; their output is unchanged except
 LabelMe circle vertices, which can differ by float rounding (1e-15 px).
 
+- `Animation(..., show_regions=...)` frames, rendered or exported with
+  Matplotlib, leave a polygon region's holes unfilled; they were drawn
+  filled, so a ring-shaped region looked like a solid square.
 - `plot_regions` refuses a `world_to_pixel` that changes the shape of its
   input or returns NaN, naming the region, instead of failing inside
   Matplotlib.

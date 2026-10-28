@@ -685,10 +685,12 @@ def _render_regions_matplotlib(
 
     Notes
     -----
-    Uses PathPatch for polygon regions and circles for point regions.
+    Uses PathPatch for polygon regions, leaving their holes unfilled, and
+    circles for point regions.
     """
     from matplotlib.patches import Circle, PathPatch
-    from matplotlib.path import Path as MplPath
+
+    from neurospatial.regions.plot import _polygon_path
 
     for region_name in region_names:
         region = env.regions[region_name]
@@ -706,7 +708,7 @@ def _render_regions_matplotlib(
         elif region.kind == "polygon":
             ax.add_patch(
                 PathPatch(
-                    MplPath(np.array(region.data.exterior.coords)),
+                    _polygon_path(region.data),
                     facecolor="white",
                     edgecolor="white",
                     alpha=region_alpha,
