@@ -937,6 +937,88 @@ def _require_run_speed_frame(env: Environment, *, call: str) -> None:
     )
 
 
+def _attempts(
+    times: NDArray[np.float64],
+    in_start: NDArray[np.bool_],
+    in_ends: NDArray[np.bool_],
+    *,
+    clock_starts_inside: bool,
+    min_duration: float,
+    max_duration: float,
+) -> list[tuple[int, int, Outcome, int | None]]:
+    """Attempts to get from a start region to an end region in one recording.
+
+    Each departure from the start region begins one attempt. Its clock starts
+    at the last sample inside the start region (``clock_starts_inside``, as
+    for trials) or at the first sample outside it (as for runs). The attempt
+    ends at the first of these samples:
+
+    - a sample later than ``max_duration``: ``"timeout"`` at the sample
+      before it;
+    - a sample in an end region: ``"reached"`` (also when it is exactly at
+      ``max_duration``, and also when it is in the start region too);
+    - a sample back in the start region: ``"returned"``;
+    - a sample exactly at ``max_duration``: ``"timeout"`` there;
+    - the recording's last sample: ``"censored"``.
+
+    Attempts never overlap: a new one can begin only after a return.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64], shape (n_samples,)
+        Strictly increasing sample times (seconds).
+    in_start : NDArray[np.bool_], shape (n_samples,)
+        Samples in the start region.
+    in_ends : NDArray[np.bool_], shape (n_end_regions, n_samples)
+        Samples in each end region; a sample in several reaches the first.
+    clock_starts_inside : bool
+        Whether an attempt starts at the last sample inside the start region
+        rather than at the first sample outside it.
+    min_duration, max_duration : float
+        Attempts shorter than ``min_duration`` seconds are dropped; none
+        lasts longer than ``max_duration``.
+
+    Returns
+    -------
+    list of (int, int, str, int or None)
+        ``(first, last, outcome, end_region)`` per attempt in time order:
+        the indices of its first and last sample, how it ended, and the
+        index into ``in_ends`` of the end region reached (None unless
+        ``"reached"``).
+    """
+    n_samples = times.size
+    reached_any = np.any(in_ends, axis=0)
+    # Samples where an attempt under way ends by arriving or returning.
+    stops = np.flatnonzero(reached_any | in_start)
+    attempts: list[tuple[int, int, Outcome, int | None]] = []
+    for exit_idx in (np.flatnonzero(in_start[:-1] & ~in_start[1:]) + 1).tolist():
+        first = exit_idx - 1 if clock_starts_inside else exit_idx
+        k = int(np.searchsorted(stops, exit_idx))
+        stop = int(stops[k]) if k < stops.size else n_samples
+        # Elapsed time at each sample up to the arrival or return.
+        elapsed = times[exit_idx : stop + 1] - times[first]
+        late = np.flatnonzero(elapsed >= max_duration)
+        # First sample at or past the deadline; it is at most ``stop``.
+        deadline = exit_idx + int(late[0]) if late.size else n_samples
+        outcome: Outcome
+        end_region: int | None = None
+        if late.size and elapsed[late[0]] > max_duration:
+            last, outcome = deadline - 1, "timeout"
+        elif deadline < stop:
+            last, outcome = deadline, "timeout"
+        elif stop < n_samples:
+            last = stop
+            if in_ends[:, stop].any():
+                outcome, end_region = "reached", int(np.argmax(in_ends[:, stop]))
+            else:
+                outcome = "returned"
+        else:
+            last, outcome = n_samples - 1, "censored"
+        if times[last] - times[first] >= min_duration:
+            attempts.append((first, last, outcome, end_region))
+    return attempts
+
+
 def _detect_runs_between_regions_contiguous(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
@@ -955,64 +1037,18 @@ def _detect_runs_between_regions_contiguous(
     ``source_mask`` and ``target_mask`` (shape ``(n_bins,)``) mark the bins
     of ``source`` and ``target``.
     """
-    in_source = source_mask[position_bins]
-    in_target = target_mask[position_bins]
-
-    # Detect source exits
-    source_exits = []
-    for i in range(1, len(in_source)):
-        if in_source[i - 1] and not in_source[i]:  # Exit source
-            source_exits.append(i)
-
-    # For each exit, track trajectory until target entry or timeout
-    runs = []
-
-    for exit_idx in source_exits:
-        start_time = times[exit_idx]
-
-        # Track trajectory: advance end_idx through samples until the target is
-        # reached or the run times out. end_idx always points at the last
-        # sample belonging to the run, so the run path is the single contiguous
-        # slice position_bins[exit_idx : end_idx + 1]. Both the stored path and
-        # the optional velocity filter are derived from this one slice so they
-        # can never diverge (e.g. by an off-by-one at the timeout boundary).
-        # Only the last exit before the target counts: re-entering the source
-        # ends the attempt ("returned"), so runs never overlap. A run that
-        # reaches the end of the recording is censored: its result is unknown.
-        outcome: Outcome = "censored"
-        end_idx = exit_idx
-
-        for j in range(exit_idx, len(position_bins)):
-            elapsed = times[j] - start_time
-
-            # Check timeout (do not include the timing-out sample in the run)
-            if elapsed > max_duration:
-                outcome = "timeout"
-                break
-
-            end_idx = j
-
-            if in_target[j]:
-                outcome = "reached"
-                break
-            if in_source[j]:
-                outcome = "returned"
-                break
-            if elapsed >= max_duration:
-                # The deadline passed at this sample without an arrival.
-                outcome = "timeout"
-                break
-
-        run_slice = slice(exit_idx, end_idx + 1)
-        run_bin_idx = position_bins[run_slice]
-        run_times = times[run_slice]
-
-        end_time = times[end_idx]
-        duration = end_time - start_time
-
-        # Filter by duration
-        if duration < min_duration:
-            continue
+    runs: list[Run] = []
+    for first, last, outcome, _ in _attempts(
+        times,
+        source_mask[position_bins],
+        target_mask[position_bins][np.newaxis],
+        clock_starts_inside=False,
+        min_duration=min_duration,
+        max_duration=max_duration,
+    ):
+        # The stored path and the speed filter use this one slice.
+        run_bin_idx = position_bins[first : last + 1]
+        run_times = times[first : last + 1]
 
         # Optional velocity filter (bin-quantized), using the same slice as the
         # stored path. Every sample is in a bin (the caller removed missing
@@ -1027,11 +1063,10 @@ def _detect_runs_between_regions_contiguous(
             if float(np.mean(distances / np.diff(run_times))) < min_speed:
                 continue
 
-        # Create run
         runs.append(
             Run(
-                start_time=start_time,
-                end_time=end_time,
+                start_time=times[first],
+                end_time=times[last],
                 source_region=source,
                 target_region=target,
                 outcome=outcome,
@@ -2732,64 +2767,27 @@ def _segment_trials_contiguous(
     ``start_mask`` and each of ``end_masks`` (shape ``(n_bins,)``) mark a
     region's bins; ``end_masks`` is in ``end_regions`` order.
     """
-    # Check which trajectory samples are in which regions. Unlocated samples
-    # were removed by the caller and the gaps around them bridged.
-    in_start = start_mask[position_bins]
-    in_end_regions = {region: mask[position_bins] for region, mask in end_masks.items()}
-
-    # Segment into trials. A trial starts when the animal leaves the start
-    # region, at the last sample inside it, so time spent waiting at the start
-    # does not count toward the trial. It ends at whichever comes first: an
-    # end-region entry, a return to the start region, the max_duration
-    # deadline, or the end of this recording.
-    trials: list[Trial] = []
-    trial_start_time: float | None = None
-
-    def _emit(end_time: float, outcome: Outcome, end_region: str | None) -> None:
-        assert trial_start_time is not None
-        if end_time - trial_start_time >= min_duration:
-            trials.append(
-                Trial(
-                    start_time=trial_start_time,
-                    end_time=end_time,
-                    start_region=start_region,
-                    end_region=end_region,
-                    outcome=outcome,
-                )
-            )
-
-    for i in range(len(position_bins)):
-        if trial_start_time is None:
-            if i > 0 and in_start[i - 1] and not in_start[i]:
-                trial_start_time = float(times[i - 1])
-            else:
-                continue
-
-        elapsed = times[i] - trial_start_time
-        if elapsed > max_duration:
-            # The deadline fell between samples: the trial timed out at the
-            # last sample within it, whatever this sample shows.
-            _emit(float(times[i - 1]), "timeout", None)
-            trial_start_time = None
-            continue
-        reached = next(
-            (region for region, inside in in_end_regions.items() if inside[i]), None
+    # A trial starts when the animal leaves the start region, at the last
+    # sample inside it, so time spent waiting at the start does not count
+    # toward the trial.
+    names = list(end_masks)
+    return [
+        Trial(
+            start_time=float(times[first]),
+            end_time=float(times[last]),
+            start_region=start_region,
+            end_region=None if end_region is None else names[end_region],
+            outcome=outcome,
         )
-        if reached is not None:
-            _emit(float(times[i]), "reached", reached)
-        elif in_start[i]:
-            _emit(float(times[i]), "returned", None)
-        elif elapsed >= max_duration:
-            _emit(float(times[i]), "timeout", None)
-        else:
-            continue
-        trial_start_time = None
-
-    # A trial still under way when the recording ends was not seen to finish.
-    if trial_start_time is not None:
-        _emit(float(times[-1]), "censored", None)
-
-    return trials
+        for first, last, outcome, end_region in _attempts(
+            times,
+            start_mask[position_bins],
+            np.stack([mask[position_bins] for mask in end_masks.values()]),
+            clock_starts_inside=True,
+            min_duration=min_duration,
+            max_duration=max_duration,
+        )
+    ]
 
 
 # =============================================================================
