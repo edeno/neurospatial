@@ -394,16 +394,29 @@ class Crossing:
     Attributes
     ----------
     time : float
-        Time of crossing event (seconds).
-    direction : str
-        Direction of crossing: 'entry' or 'exit'.
+        Time of crossing event (seconds): the first sample inside the region
+        for an entry, the first sample outside it for an exit.
+    direction : {'entry', 'exit'}
+        Direction of crossing.
     bin_index : int
-        Bin index at crossing.
+        Bin index of the sample at ``time``.
+    region : str
+        Name of the region crossed.
     """
 
     time: float
     direction: Literal["entry", "exit"]
     bin_index: int
+    region: str
+
+    def __post_init__(self) -> None:
+        """Check the direction and store plain Python scalars."""
+        _check_choice("Crossing", "direction", self.direction, ("entry", "exit"))
+        time = float(self.time)
+        if not np.isfinite(time):
+            raise ValueError(f"Crossing.time must be finite; got {time!r}.")
+        object.__setattr__(self, "time", time)
+        object.__setattr__(self, "bin_index", int(self.bin_index))
 
 
 @dataclass(frozen=True, eq=False)
@@ -497,6 +510,24 @@ class Lap:
     end_time: float
     direction: Literal["clockwise", "counter-clockwise", "unknown"]
     overlap_score: float
+
+    def __post_init__(self) -> None:
+        """Check the record and store plain Python floats."""
+        start, end = _checked_interval("Lap", self.start_time, self.end_time)
+        object.__setattr__(self, "start_time", start)
+        object.__setattr__(self, "end_time", end)
+        _check_choice(
+            "Lap",
+            "direction",
+            self.direction,
+            ("clockwise", "counter-clockwise", "unknown"),
+        )
+        score = float(self.overlap_score)
+        if not (np.isnan(score) or 0.0 <= score <= 1.0):
+            raise ValueError(
+                f"Lap.overlap_score must be in [0, 1] or NaN; got {score!r}."
+            )
+        object.__setattr__(self, "overlap_score", score)
 
 
 @dataclass(frozen=True)
@@ -619,8 +650,8 @@ def detect_region_crossings(
     Returns
     -------
     list[Crossing]
-        List of crossing events, each with time, direction, and bin_index.
-        Sorted by time in ascending order.
+        List of crossing events, each with time, direction, bin_index and
+        region name. Sorted by time in ascending order.
 
     Raises
     ------
@@ -747,7 +778,10 @@ def _detect_region_crossings_contiguous(
         for idx in entry_indices:
             crossings.append(
                 Crossing(
-                    time=times[idx], direction="entry", bin_index=position_bins[idx]
+                    time=times[idx],
+                    direction="entry",
+                    bin_index=position_bins[idx],
+                    region=region_name,
                 )
             )
 
@@ -756,7 +790,10 @@ def _detect_region_crossings_contiguous(
         for idx in exit_indices:
             crossings.append(
                 Crossing(
-                    time=times[idx], direction="exit", bin_index=position_bins[idx]
+                    time=times[idx],
+                    direction="exit",
+                    bin_index=position_bins[idx],
+                    region=region_name,
                 )
             )
 

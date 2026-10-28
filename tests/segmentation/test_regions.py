@@ -698,3 +698,60 @@ class TestRunsEndOnSourceReentry:
         expected[65:85] = "outbound"  # [6.5, 8.5) center -> right
         expected[95:115] = "inbound"  # [9.5, 11.5) right -> center
         assert labels.tolist() == expected.tolist()
+
+
+class TestCrossingAndLapRecords:
+    """Crossing names its region; records hold plain, checked scalars."""
+
+    def test_crossing_records_region_and_plain_scalars(self):
+        from shapely.geometry import box
+
+        from neurospatial.behavior.segmentation import detect_region_crossings
+
+        xs = np.linspace(0.0, 100.0, 401)
+        env = Environment.from_samples(np.c_[xs, np.zeros_like(xs)], bin_size=2.0)
+        regions = Regions(env.regions.values())
+        regions.add("goal", polygon=box(95.0, -5.0, 105.0, 5.0))
+        env = env.with_regions(regions)
+        x = np.array([90.0, 92.0, 96.0, 98.0, 92.0])
+        bins = env.bin_at(np.c_[x, np.zeros_like(x)])
+
+        crossings = detect_region_crossings(
+            bins, np.arange(5.0), env, region_name="goal", max_gap=None
+        )
+
+        assert [(c.time, c.direction, c.region) for c in crossings] == [
+            (2.0, "entry", "goal"),
+            (4.0, "exit", "goal"),
+        ]
+        assert all(type(c.time) is float for c in crossings)
+        assert all(type(c.bin_index) is int for c in crossings)
+
+    def test_invalid_crossing_raises(self):
+        from neurospatial.behavior.segmentation import Crossing
+
+        with pytest.raises(ValueError, match="direction must be one of"):
+            Crossing(1.0, "enter", 3, "goal")  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="time must be finite"):
+            Crossing(np.nan, "entry", 3, "goal")
+
+    @pytest.mark.parametrize(
+        ("args", "match"),
+        [
+            ((4.0, 1.0, "clockwise", 0.9), "start_time <= end_time"),
+            ((0.0, 1.0, "cw", 0.9), "direction must be one of"),
+            ((0.0, 1.0, "clockwise", 1.5), r"overlap_score must be in \[0, 1\]"),
+        ],
+    )
+    def test_invalid_lap_raises(self, args, match):
+        from neurospatial.behavior.segmentation import Lap
+
+        with pytest.raises(ValueError, match=match):
+            Lap(*args)
+
+    def test_lap_stores_floats_and_allows_nan_overlap(self):
+        from neurospatial.behavior.segmentation import Lap
+
+        lap = Lap(np.int64(0), np.float32(2.5), "unknown", np.nan)
+        assert (type(lap.start_time), type(lap.end_time)) == (float, float)
+        assert np.isnan(lap.overlap_score)
