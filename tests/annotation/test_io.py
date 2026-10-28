@@ -135,7 +135,8 @@ class TestRegionsFromCvat:
 
         poly = regions["scaled"].data
         bounds = poly.bounds
-        assert bounds[2] == pytest.approx(50.0)  # maxx at 0.5x scale
+        # CVAT's corner-frame x = 100 is pixel-frame x = 99.5, at 0.5x scale.
+        assert bounds[2] == pytest.approx(49.75)
 
     def test_image_choice_is_passed_through(self, tmp_path):
         """Pick one annotated image of a multi-image export by name."""

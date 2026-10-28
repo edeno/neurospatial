@@ -469,7 +469,8 @@ class TestLoadCvatXml:
         )
 
         assert region.name == "arena"
-        assert region.data.bounds == (100.0, 100.0, 200.0, 200.0)
+        # CVAT's canvas puts pixel (c, r) on [c, c + 1]; the pixel frame centres it.
+        assert region.data.bounds == (99.5, 99.5, 199.5, 199.5)
         assert dict(region.metadata) == {
             "source_xml": "annotations.xml",
             "source_image": "frame.png",
@@ -490,14 +491,14 @@ class TestLoadCvatXml:
 
         assert list(regions) == ["feeder_0", "feeder_1"]
         assert regions["feeder_1"].kind == "point"
-        assert_allclose(regions["feeder_1"].data, (10.0, 20.0))
+        assert_allclose(regions["feeder_1"].data, (9.5, 19.5))
 
     def test_box(self, tmp_path):
         region = _load_one(
             tmp_path, '<box label="bbox" xtl="10" ytl="20" xbr="50" ybr="60" />'
         )
 
-        assert region.data.bounds == (10.0, 20.0, 50.0, 60.0)
+        assert region.data.bounds == (9.5, 19.5, 49.5, 59.5)
         assert region.data.area == 1600.0
 
     def test_box_rotation_turns_clockwise_on_screen_about_centre(self, tmp_path):
@@ -507,9 +508,10 @@ class TestLoadCvatXml:
         )
 
         corners = np.asarray(region.data.exterior.coords)[:-1]
-        assert_allclose(region.data.bounds, (1.0, -1.0, 3.0, 3.0), atol=1e-12)
-        # The top-left corner (0, 0) moves to the top right, (3, -1).
-        assert np.isclose(corners, (3.0, -1.0), atol=1e-12).all(axis=1).any()
+        assert_allclose(region.data.bounds, (0.5, -1.5, 2.5, 2.5), atol=1e-12)
+        # The top-left corner (0, 0) moves to the top right, (3, -1) in CVAT's
+        # frame and (2.5, -1.5) in the pixel frame.
+        assert np.isclose(corners, (2.5, -1.5), atol=1e-12).all(axis=1).any()
         assert region.data.area == pytest.approx(8.0)
 
     def test_box_rotated_45_degrees_is_a_diamond(self, tmp_path):
@@ -519,7 +521,7 @@ class TestLoadCvatXml:
         )
 
         r = np.sqrt(2.0)
-        assert_allclose(region.data.bounds, (1 - r, 1 - r, 1 + r, 1 + r))
+        assert_allclose(region.data.bounds, (0.5 - r, 0.5 - r, 0.5 + r, 0.5 + r))
         assert region.data.area == pytest.approx(4.0)
 
     def test_rotated_ellipse(self, tmp_path):
@@ -528,10 +530,10 @@ class TestLoadCvatXml:
             '<ellipse label="e" cx="10" cy="20" rx="4" ry="2" rotation="90" />',
         )
 
-        assert_allclose(region.data.bounds, (8.0, 16.0, 12.0, 24.0), atol=1e-9)
+        assert_allclose(region.data.bounds, (7.5, 15.5, 11.5, 23.5), atol=1e-9)
         assert region.data.area == pytest.approx(np.pi * 8.0, rel=0.01)
 
-    def test_mask_is_placed_at_left_top_in_cvat_pixel_frame(self, tmp_path):
+    def test_mask_is_placed_at_left_top_with_pixels_centred(self, tmp_path):
         # Mask box 4 wide, 3 tall at column 3, row 2:
         #   . # # .
         #   # # # #
@@ -542,11 +544,30 @@ class TestLoadCvatXml:
             'width="4" height="3" z_order="0" />',
         )
 
-        assert region.data.bounds == (3.0, 2.0, 7.0, 5.0)
+        # Pixel (column, row) is centred on (column, row).
+        assert region.data.bounds == (2.5, 1.5, 6.5, 4.5)
         assert region.data.area == 8.0
-        assert region.data.contains(Point(4.5, 2.5))
-        assert not region.data.contains(Point(3.5, 2.5))
-        assert region.data.contains(Point(3.5, 3.5))
+        assert region.data.contains(Point(4.0, 2.0))
+        assert not region.data.contains(Point(3.0, 2.0))
+        assert region.data.contains(Point(3.0, 3.0))
+
+    def test_mask_agrees_with_mask_to_region_and_a_traced_polygon(self, tmp_path):
+        region = _load_one(
+            tmp_path,
+            '<mask label="blob" rle="1, 2, 1, 4, 1, 2, 1" left="3" top="2" '
+            'width="4" height="3" />',
+        )
+        image = np.zeros((6, 8), dtype=bool)
+        image[2, 4:6] = image[3, 3:7] = image[4, 4:6] = True
+
+        traced = mask_to_region(image, region_name="blob")
+        assert region.data.normalize().equals_exact(traced.data.normalize(), 0.0)
+        # A CVAT polygon drawn along the mask's outer pixel edges lands on it too.
+        drawn = _load_one(
+            tmp_path,
+            '<polygon label="p" points="4,2;6,2;6,3;7,3;7,4;6,4;6,5;4,5;4,4;3,4;3,3;4,3" />',
+        )
+        assert drawn.data.equals(region.data)
 
     def test_mask_keeps_holes_through_pixel_to_world(self, tmp_path):
         mask = (
@@ -557,10 +578,10 @@ class TestLoadCvatXml:
         pixel = _load_one(tmp_path, mask)
         world = _load_one(tmp_path, mask, pixel_to_world=_scale(2.0))
 
-        assert pixel.data.bounds == (10.0, 20.0, 13.0, 23.0)
-        assert Polygon(pixel.data.interiors[0]).bounds == (11.0, 21.0, 12.0, 22.0)
+        assert pixel.data.bounds == (9.5, 19.5, 12.5, 22.5)
+        assert Polygon(pixel.data.interiors[0]).bounds == (10.5, 20.5, 11.5, 21.5)
         assert world.data.area == pytest.approx(4 * 8.0)
-        assert Polygon(world.data.interiors[0]).bounds == (22.0, 42.0, 24.0, 44.0)
+        assert Polygon(world.data.interiors[0]).bounds == (21.0, 41.0, 23.0, 43.0)
 
     def test_mask_without_image_size_still_decodes(self, tmp_path):
         xml_path = _write_cvat(
@@ -686,8 +707,8 @@ class TestLoadCvatXml:
             ValueError, match=r"(?s)shapes on 2 images: 'a\.png' \(id 0\).*image="
         ):
             load_cvat_xml(xml_path)
-        assert_allclose(load_cvat_xml(xml_path, image="b.png")["p"].data, (3, 4))
-        assert_allclose(load_cvat_xml(xml_path, image=0)["p"].data, (1, 2))
+        assert_allclose(load_cvat_xml(xml_path, image="b.png")["p"].data, (2.5, 3.5))
+        assert_allclose(load_cvat_xml(xml_path, image=0)["p"].data, (0.5, 1.5))
 
     @pytest.mark.parametrize(
         ("image", "match"),
@@ -752,7 +773,8 @@ class TestLoadCvatXml:
 
         region = load_cvat_xml(xml_path, pixel_to_world=_scale(0.5))["p"]
 
-        assert_allclose(region.data, (2.0, 3.0))
+        # The transform receives pixel-frame coordinates, (3.5, 5.5).
+        assert_allclose(region.data, (1.75, 2.75))
         assert "coord_system" not in region.metadata
         with pytest.raises(ValueError, match="non-finite coordinates"):
             load_cvat_xml(xml_path, pixel_to_world=lambda p: p * np.inf)

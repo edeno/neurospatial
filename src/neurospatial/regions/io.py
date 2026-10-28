@@ -701,11 +701,9 @@ def _cvat_mask_polygon(
                 "erase the others)",
             )
         )
-    # The tracer puts pixel (x, y) on [x - .5, x + .5]. CVAT's image frame puts
-    # pixel (column, row) on [column, column + 1], the frame of its polygons and
-    # boxes: the canvas draws the mask with its top-left corner at (left, top)
-    # (cvat-canvas/src/typescript/masksHandler.ts).
-    return affinity.translate(polygons[0], left + 0.5, top + 0.5)
+    # The tracer puts pixel (x, y) on [x - .5, x + .5], the package's pixel
+    # frame, so the mask needs only its offset in the image.
+    return affinity.translate(polygons[0], left, top)
 
 
 def _cvat_box_polygon(elem: ET.Element, where: str) -> Polygon:
@@ -905,16 +903,20 @@ def load_cvat_xml(
 ) -> Regions:
     """Read the shapes of one image in a CVAT for images 1.1 export as regions.
 
-    Supported shapes, all in CVAT's image frame:
+    CVAT draws on a canvas where pixel ``(column, row)`` covers
+    ``[column, column + 1] × [row, row + 1]``. Shapes are moved half a pixel
+    up and left into neurospatial's pixel frame, where pixel ``(x, y)`` is
+    centred on ``(x, y)`` as in video frames, masks from
+    :func:`mask_to_region` and :class:`~neurospatial.ops.transforms.VideoCalibration`.
+
+    Supported shapes:
 
     * ``<polygon>`` becomes a polygon.
     * ``<box>`` becomes a rectangle, turned by its ``rotation`` attribute
       (degrees about the box centre; positive is clockwise on screen).
     * ``<ellipse>`` becomes a 64-vertex polygon, rotated like a box.
     * ``<mask>`` is decoded from its run lengths and traced exactly along
-      pixel edges, keeping holes; pixel ``(column, row)`` covers
-      ``[column, column + 1] × [row, row + 1]``. A mask must be one connected
-      area.
+      pixel edges, keeping holes. A mask must be one connected area.
     * ``<polyline>`` whose last point repeats its first becomes a polygon.
     * Each point of ``<points>`` becomes a point region.
 
@@ -935,9 +937,8 @@ def load_cvat_xml(
         ``(n, 2)`` world coordinates, such as
         ``VideoCalibration.transform_px_to_cm``. Shapes are built in pixels
         and every vertex, holes included, is then transformed. If None,
-        coordinates stay in CVAT's image pixels: ``x`` is the column, ``y``
-        the row (pointing down), with the origin at the image's top-left
-        corner.
+        coordinates stay in image pixels: ``x`` is the column, ``y`` the
+        row (pointing down), with the first pixel centred on ``(0, 0)``.
     image : str or int, optional
         The image whose shapes to read: its ``name`` (str) or ``id`` (int).
         If None, the file must have shapes on exactly one image.
@@ -1034,10 +1035,12 @@ def load_cvat_xml(
         for kind, geometry in _cvat_shape_geometries(elem, where, image_size):
             world: Polygon | NDArray[np.float64]
             if isinstance(geometry, Polygon):
+                if elem.tag != "mask":
+                    geometry = affinity.translate(geometry, -0.5, -0.5)
                 world = _polygon_to_world(geometry, pixel_to_world, where=where)
             else:
                 world = _pixels_to_world(
-                    geometry[np.newaxis], pixel_to_world, where=where
+                    geometry[np.newaxis] - 0.5, pixel_to_world, where=where
                 )[0]
             entries.append((label, kind, world, elem.tag))
 
