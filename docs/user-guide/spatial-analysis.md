@@ -853,7 +853,7 @@ slice_points = np.column_stack([x_slice, np.full_like(x_slice, y_fixed)])
 values_along_slice = env.interpolate(field, slice_points, mode='linear')
 
 # Compare field values at region centers
-region_centers = np.array([env.regions.region_center(name) for name in env.regions.keys()])
+region_centers = np.array([region.center for region in env.regions.values()])
 values_at_regions = env.interpolate(field, region_centers, mode='nearest')
 ```
 
