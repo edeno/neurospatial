@@ -89,7 +89,6 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._results import ReadOnlyArraysMixin
-from neurospatial._validation import validate_finite
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
@@ -140,6 +139,42 @@ def _safe_gather(
     gathered: NDArray = values[safe_idx]
     gathered[~in_bounds] = fill
     return gathered
+
+
+def _validated_samples(
+    position_bins: ArrayLike, times: ArrayLike, env: Environment, *, call: str
+) -> tuple[NDArray[np.int64], NDArray[np.float64]]:
+    """Check a bin trajectory and its timestamps; return int64 and float64 copies.
+
+    ``position_bins`` must be integer bin indices of ``env`` or ``-1`` (outside
+    the environment, as :meth:`Environment.bin_at` returns); a float array
+    would be truncated to unrelated bins. ``times`` must be finite and
+    strictly increasing, in seconds.
+    """
+    from neurospatial._observation import _validated_signal_times
+    from neurospatial.environment import _validate_target_bins
+
+    n_bins, n_times = np.shape(position_bins), np.shape(times)
+    if len(n_bins) != 1 or len(n_times) != 1 or n_bins != n_times:
+        raise ValueError(
+            _format_error(
+                f"position_bins and times must be 1-D with the same length; got "
+                f"shapes {n_bins} and {n_times}.",
+                why="each trajectory sample needs its corresponding timestamp.",
+                fix="pass one timestamp per position bin on the same clock.",
+            )
+        )
+    bins = _validate_target_bins(
+        position_bins,
+        n_bins=env.n_bins,
+        coordinates=env.coordinate_system,
+        operation=f"{call}()",
+        argument="position_bins",
+        allow_missing=True,
+    ).astype(np.int64)
+    if n_times[0] == 0:
+        return bins, np.asarray(times, dtype=np.float64)
+    return bins, _validated_signal_times(times, call=call)
 
 
 def _located(position_bins: NDArray[np.int64], env: Environment) -> NDArray[np.bool_]:
@@ -550,7 +585,12 @@ def detect_region_crossings(
     ValueError
         If region_name not in env.regions.
     ValueError
-        If position_bins and times have different lengths.
+        If position_bins and times are not 1-D with the same length, if
+        times are not finite and strictly increasing, or if a bin index is
+        neither -1 nor a bin of ``env``.
+    TypeError
+        If position_bins does not hold integer bin indices (a float array
+        would be truncated to unrelated bins).
     ValueError
         If ``break_before`` is not a Boolean array with one entry per sample.
 
@@ -604,14 +644,9 @@ def detect_region_crossings(
         env, region_name, operation="detect_region_crossings()", argument="region_name"
     )
 
-    if len(position_bins) != len(times):
-        raise ValueError(
-            f"position_bins and times must have same length. "
-            f"Got {len(position_bins)} and {len(times)}"
-        )
-
-    position_bins = np.asarray(position_bins, dtype=np.int64)
-    times = np.asarray(times, dtype=np.float64)
+    position_bins, times = _validated_samples(
+        position_bins, times, env, call="detect_region_crossings"
+    )
     breaks = validate_break_before(
         break_before, len(times), call="detect_region_crossings"
     )
@@ -767,11 +802,12 @@ def detect_runs_between_regions(
     ValueError
         If source or target regions not in env.regions.
     ValueError
-        If position_bins and times have different lengths.
-    ValueError
-        If times contains non-finite values, or if a run's frame times are
-        not strictly increasing when ``min_speed`` filtering is applied
-        (duplicate frame times would yield ``inf`` velocity).
+        If position_bins and times are not 1-D with the same length, if
+        times are not finite and strictly increasing, or if a bin index is
+        neither -1 nor a bin of ``env``.
+    TypeError
+        If position_bins does not hold integer bin indices (a float array
+        would be truncated to unrelated bins).
     CartesianOnlyError
         If ``min_speed`` is given and ``env`` is polar: run speed comes from
         Cartesian distances between bin centers.
@@ -867,16 +903,9 @@ def detect_runs_between_regions(
             env, name, operation="detect_runs_between_regions()", argument=argument
         )
 
-    if len(position_bins) != len(times):
-        raise ValueError(
-            f"position_bins and times must have same length. "
-            f"Got {len(position_bins)} and {len(times)}"
-        )
-
-    validate_finite(times, name="times")
-
-    position_bins = np.asarray(position_bins, dtype=np.int64)
-    times = np.asarray(times, dtype=np.float64)
+    position_bins, times = _validated_samples(
+        position_bins, times, env, call="detect_runs_between_regions"
+    )
     breaks = validate_break_before(
         break_before, len(times), call="detect_runs_between_regions"
     )
@@ -1009,7 +1038,7 @@ def _detect_runs_between_regions_contiguous(
             run_positions = env.bin_centers[safe_idx]
             displacements = np.diff(run_positions, axis=0)
             distances = np.linalg.norm(displacements, axis=1)
-            dt = _positive_dt(run_times, name="times")
+            dt = np.diff(run_times)  # > 0: times are strictly increasing
             velocities = (distances / dt)[pair_valid]
             mean_velocity = float(np.mean(velocities))
 
@@ -1437,6 +1466,13 @@ def detect_laps(
         If ``env`` is polar: each lap's clockwise or counter-clockwise
         direction is the signed area of Cartesian bin centers.
     ValueError
+        If position_bins and times are not 1-D with the same length, if
+        times are not finite and strictly increasing, or if a bin index is
+        neither -1 nor a bin of ``env``.
+    TypeError
+        If position_bins does not hold integer bin indices (a float array
+        would be truncated to unrelated bins).
+    ValueError
         If ``break_before`` is not a Boolean array with one entry per sample.
 
     See Also
@@ -1648,15 +1684,9 @@ def detect_laps(
             env, start_region, operation="detect_laps()", argument="start_region"
         )
 
-    if len(position_bins) != len(times):
-        raise ValueError(
-            f"position_bins and times must have same length; got "
-            f"{len(position_bins)} and {len(times)}.\n"
-            "Why: each trajectory sample needs its corresponding timestamp.\n"
-            "Fix: pass one timestamp per position bin on the same clock."
-        )
-    position_bins = np.asarray(position_bins, dtype=np.int64)
-    times = np.asarray(times, dtype=np.float64)
+    position_bins, times = _validated_samples(
+        position_bins, times, env, call="detect_laps"
+    )
     breaks = validate_break_before(break_before, len(times), call="detect_laps")
     runs = _event_runs(
         times,
@@ -2142,7 +2172,11 @@ def running_direction_labels(
     ValueError
         If ``start_region`` or any end region is not in ``env.regions``
         (raised by :func:`detect_runs_between_regions`), or if
-        ``position_bins`` and ``times`` have different lengths.
+        ``position_bins`` and ``times`` are not 1-D with the same length,
+        times are not finite and strictly increasing, or a bin index is
+        neither -1 nor a bin of ``env``.
+    TypeError
+        If position_bins does not hold integer bin indices.
     ValueError
         If ``break_before`` is not a Boolean array with one entry per sample.
 
@@ -2193,11 +2227,9 @@ def running_direction_labels(
     >>> "outbound" in labels and "inbound" in labels
     True
     """
-    if len(position_bins) != len(times):
-        raise ValueError(
-            f"position_bins and times must have same length. "
-            f"Got {len(position_bins)} and {len(times)}"
-        )
+    position_bins, times = _validated_samples(
+        position_bins, times, env, call="running_direction_labels"
+    )
 
     if isinstance(end_regions, str):
         end_region_names: list[str] = [end_regions]
@@ -2371,7 +2403,12 @@ def segment_trials(
     ValueError
         If end_regions is None, empty, or any region not in env.regions.
     ValueError
-        If position_bins and times have different lengths.
+        If position_bins and times are not 1-D with the same length, if
+        times are not finite and strictly increasing, or if a bin index is
+        neither -1 nor a bin of ``env``.
+    TypeError
+        If position_bins does not hold integer bin indices (a float array
+        would be truncated to unrelated bins).
     ValueError
         If min_duration is not positive.
     ValueError
@@ -2519,11 +2556,9 @@ def segment_trials(
             f"Start and end regions must be spatially distinct for trial segmentation."
         )
 
-    if len(position_bins) != len(times):
-        raise ValueError(
-            f"position_bins and times must have same length. "
-            f"Got {len(position_bins)} and {len(times)}"
-        )
+    position_bins, times = _validated_samples(
+        position_bins, times, env, call="segment_trials"
+    )
 
     if min_duration <= 0:
         raise ValueError(f"min_duration must be positive, got {min_duration}")
@@ -2534,8 +2569,6 @@ def segment_trials(
             f"Got max_duration={max_duration}, min_duration={min_duration}"
         )
 
-    position_bins = np.asarray(position_bins)
-    times = np.asarray(times, dtype=np.float64)
     breaks = validate_break_before(break_before, len(times), call="segment_trials")
     results: list[Trial] = []
     for run in _event_runs(
@@ -3031,6 +3064,13 @@ def detect_goal_directed_runs(
     ValueError
         If min_progress is negative.
     ValueError
+        If position_bins and times are not 1-D with the same length, if
+        times are not finite and strictly increasing, or if a bin index is
+        neither -1 nor a bin of ``env``.
+    TypeError
+        If position_bins does not hold integer bin indices (a float array
+        would be truncated to unrelated bins).
+    ValueError
         If ``break_before`` is not a Boolean array with one entry per sample.
 
     See Also
@@ -3121,25 +3161,9 @@ def detect_goal_directed_runs(
     if min_progress < 0:
         raise ValueError(f"min_progress must be non-negative, got {min_progress}")
 
-    # Handle empty trajectory
-    if len(position_bins) != len(times):
-        raise ValueError(
-            f"position_bins and times must have same length; got "
-            f"{len(position_bins)} and {len(times)}.\n"
-            "Why: each trajectory sample needs its corresponding timestamp.\n"
-            "Fix: pass one timestamp per position bin on the same clock."
-        )
-    from neurospatial.environment import _validate_target_bins
-
-    position_bins = _validate_target_bins(
-        position_bins,
-        n_bins=env.n_bins,
-        coordinates=env.coordinate_system,
-        operation="detect_goal_directed_runs()",
-        argument="position_bins",
-        allow_missing=True,
+    position_bins, times = _validated_samples(
+        position_bins, times, env, call="detect_goal_directed_runs"
     )
-    times = np.asarray(times, dtype=np.float64)
     breaks = validate_break_before(
         break_before, len(times), call="detect_goal_directed_runs"
     )
