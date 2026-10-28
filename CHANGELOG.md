@@ -93,6 +93,11 @@ Fixed:
   index.
 - `peri_event_histogram` and `population_peri_event_histogram` warn once,
   not once per unit plus once more, for a window longer than 60 s.
+- `align_continuous_to_events` queries each event at exactly 0 s. The grid
+  `start + dt * j` can land a few 1e-17 s before the event (window
+  `(-0.33, 0.33)`, `dt=0.03`), so a categorical or `"previous"` feature
+  read the sample before an event that lies on a sample: the zone at
+  the event was the previous zone.
 - With `epochs` or `spike_window`, an event window that ends exactly at an
   epoch's stop is kept. Its stop, computed as `event + window[1]`, can round
   one ulp past the epoch (`0.1 + 0.2` against `0.3`), which dropped the

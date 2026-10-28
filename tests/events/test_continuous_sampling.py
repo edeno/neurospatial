@@ -71,6 +71,19 @@ def test_grid_step_not_dividing_window():
     np.testing.assert_allclose(_relative_times((0.0, 1.0), 0.3), [0, 0.3, 0.6, 0.9])
 
 
+def test_grid_query_at_the_event_is_exactly_zero():
+    # -0.33 + 0.03 * 11 is -5.6e-17: a "previous" sample at the event would be
+    # read from the sample before it.
+    rel = _relative_times((-0.33, 0.33), 0.03)
+    assert (rel == 0.0).sum() == 1
+    t = np.array([0.0, 0.25, 0.5, 0.75])
+    values, support = _sample(
+        t, [0.0, 1.0, 2.0, 3.0], 0.5 + rel, interpolation="previous", max_gap=None
+    )
+    assert support[rel == 0.0].all()
+    assert values[rel == 0.0] == 2.0
+
+
 def test_grid_excludes_stop():
     rel = _relative_times((-0.75, 0.75), 0.25)
     np.testing.assert_array_equal(rel, [-0.75, -0.5, -0.25, 0.0, 0.25, 0.5])

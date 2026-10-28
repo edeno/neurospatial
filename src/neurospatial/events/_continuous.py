@@ -370,11 +370,15 @@ def _relative_times(window: tuple[float, float], dt: float) -> NDArray[np.float6
     ndarray of float64, shape (n_times,)
         ``start + dt * j`` for every integer ``j >= 0`` with
         ``start + dt * j < stop - 1e-9 * dt``; the tolerance keeps a rounding
-        error from adding a query at ``stop``.
+        error from adding a query at ``stop``. An offset within the same
+        tolerance of 0 is exactly 0, so that query is at the event itself
+        (``-0.33 + 0.03 * 11`` is ``-5.6e-17``, which would read the sample
+        before an event that lies on a sample).
     """
     start, stop = window
     n_candidates = int(np.ceil((stop - start) / dt)) + 1
     offsets = start + dt * np.arange(n_candidates, dtype=np.float64)
+    offsets[np.abs(offsets) < 1e-9 * dt] = 0.0
     kept: NDArray[np.float64] = offsets[offsets < stop - 1e-9 * dt]
     return kept
 
