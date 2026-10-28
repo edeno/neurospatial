@@ -1162,7 +1162,11 @@ class _OpenPaths(EnvironmentPaths):
         adjacency = (
             self._adjacency if rate is None else _rate_weighted(self._adjacency, rate)
         )
-        if single_roots:
+        if single_roots and stop_bins is not None and rate is None:
+            graph = self._graph_through(
+                np.array([s[0] for s in source_sets], dtype=np.intp), stop_bins
+            )
+        elif single_roots:
             graph = np.atleast_2d(
                 dijkstra(
                     adjacency,
@@ -1284,6 +1288,79 @@ class _OpenPaths(EnvironmentPaths):
                 break
         shape = (n_sets, n_bins)
         return length.reshape(shape), anchor.reshape(shape), lead.reshape(shape)
+
+    def _graph_through(
+        self, roots: NDArray[np.intp], stop_bins: list[NDArray[np.intp]]
+    ) -> NDArray[np.float64]:
+        """Bin-graph distance from each root, as far as its growth needs.
+
+        Dijkstra stops at a distance limit, below which its distances are
+        exactly those of an unlimited search. The limit starts near the
+        straight-line reach of the root's stop bins and is raised until it
+        covers the layer of the farthest of them (or every bin, when a stop
+        bin is not found), so every bin :meth:`_grow` reads has its exact
+        distance; bins beyond are ``inf`` or exact.
+
+        Parameters
+        ----------
+        roots : ndarray of int, shape (n_roots,)
+        stop_bins : list of ndarray of int
+            Per root, the bins its field is needed for.
+
+        Returns
+        -------
+        ndarray, shape (n_roots, n_bins)
+        """
+        from scipy.sparse.csgraph import dijkstra
+
+        width = self._spacing / _PROBE_FRACTION
+        centers = self._centers
+        stops = [np.asarray(stop, dtype=np.intp) for stop in stop_bins]
+        stops = [stop[stop != root] for stop, root in zip(stops, roots, strict=True)]
+        reach = np.array(
+            [
+                float(np.linalg.norm(centers[stop] - centers[root], axis=1).max())
+                if stop.size
+                else 0.0
+                for stop, root in zip(stops, roots, strict=True)
+            ]
+        )
+        limit = 1.5 * reach + 2.0 * width
+        graph = np.full((roots.size, self._n_bins), np.inf)
+        pending = np.arange(roots.size)
+        for attempt in range(4):
+            if attempt == 3:
+                limit[pending] = np.inf
+            used = np.empty(roots.size)
+            # Roots with limits within a factor of two share one search.
+            with np.errstate(divide="ignore"):
+                group_of = np.floor(np.log2(limit[pending]))
+            for group in np.unique(group_of):
+                rows = pending[group_of == group]
+                used[rows] = limit[rows].max()
+                graph[rows] = dijkstra(
+                    self._adjacency,
+                    directed=False,
+                    indices=roots[rows],
+                    limit=used[rows[0]],
+                )
+            still = []
+            for row in pending:
+                found = graph[row, stops[row]]
+                if not np.all(np.isfinite(found)):
+                    if np.isfinite(used[row]):
+                        limit[row] = 4.0 * used[row]
+                        still.append(row)
+                    continue
+                farthest = float(found.max(initial=0.0))
+                need = (np.floor(farthest / width) + 1.0) * width * (1.0 + 1e-9)
+                if need > used[row]:
+                    limit[row] = need
+                    still.append(row)
+            pending = np.array(still, dtype=np.intp)
+            if not pending.size:
+                break
+        return graph
 
     def _settle(
         self,
