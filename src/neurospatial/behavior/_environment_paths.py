@@ -1322,7 +1322,8 @@ class PairDistances(ABC):
 
     Made by :meth:`EnvironmentPaths.pairwise`, which locates the positions
     once and prepares what every pair needs; results equal
-    :meth:`EnvironmentPaths.between`.
+    :meth:`EnvironmentPaths.between` up to rounding (an open environment's
+    tables sum the same terms in another order).
     """
 
     def __init__(self, paths: EnvironmentPaths, points: NDArray[np.float64]) -> None:
