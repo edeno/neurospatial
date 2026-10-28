@@ -736,10 +736,11 @@ class _OpenPaths(EnvironmentPaths):
         """
         grid = self._grid
         assert grid is not None
-        located = grid.bin_of(grid.half_open(points))
+        cells = grid.half_open(points)
+        located = grid.bin_of(cells)
         rest = np.flatnonzero(located < 0)
         if rest.size:
-            located[rest] = self._cells(points[rest])
+            located[rest] = grid.outline(points[rest], cells[rest], self)
         return located
 
     def _probe_cells(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
@@ -2079,9 +2080,33 @@ class _GridCells(_BoxCells):
     def missing(
         self, points: NDArray[np.float64], paths: _OpenPaths
     ) -> NDArray[np.intp]:
-        outside = np.flatnonzero(self.bin_of(self.half_open(points)) < 0)
-        missing: NDArray[np.intp] = outside[paths._cells(points[outside]) < 0]
+        cells = self.half_open(points)
+        outside = np.flatnonzero(self.bin_of(cells) < 0)
+        missing: NDArray[np.intp] = outside[
+            self.outline(points[outside], cells[outside], paths) < 0
+        ]
         return missing
+
+    def outline(
+        self, points: NDArray[np.float64], cells: NDArray[np.intp], paths: _OpenPaths
+    ) -> NDArray[np.intp]:
+        """:meth:`_OpenPaths._cells` of points in no bin's half-open cell.
+
+        Such a point is in a bin only on the outline of the bins, where it
+        lies on the lower face of its half-open cell (``cells``) on some
+        axis, the upper face of a bin; only those points go to the locator,
+        and the rest are in no bin.
+        """
+        on_edge = np.zeros(points.shape[0], dtype=bool)
+        for axis, edge in enumerate(self.edges):
+            on_edge |= (
+                points[:, axis] == edge[np.clip(cells[:, axis], 0, edge.size - 1)]
+            )
+        located = np.full(points.shape[0], -1, dtype=np.intp)
+        rows = np.flatnonzero(on_edge)
+        if rows.size:
+            located[rows] = paths._cells(points[rows])
+        return located
 
     def half_open(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Half-open grid cell of each point per axis, as the locator finds it.

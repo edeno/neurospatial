@@ -121,6 +121,18 @@ class TestOpenEnvironments:
                 np.linalg.norm(end - start), rel=1e-12
             )
 
+    @pytest.mark.parametrize(
+        ("start", "end"), [((100.0, 5.0), (100.0, 95.0)), ((5.0, 100.0), (95.0, 100.0))]
+    )
+    def test_a_line_along_the_closed_outline_is_straight(self, start, end):
+        """The outline of a grid belongs to its bins, so a line along the
+        outer face of the last cells is inside the whole way."""
+        edges = np.arange(0.0, 101.0, 10.0)
+        env = Environment.from_grid_mask(
+            np.ones((10, 10), dtype=bool), grid_edges=(edges, edges)
+        )
+        assert shortest_path_length(env, np.array(start), np.array(end)) == 90.0
+
 
 def _w_track(bin_size, track_width):
     """A W-track: a 40 cm center stem and two 40 cm outer arms joined by
