@@ -60,9 +60,9 @@ class MSDResult(ReadOnlyArraysMixin, ResultMixin):
     Attributes
     ----------
     lags : NDArray[np.float64], shape (n_lags,)
-        Lag times τ (in the same units as the input ``times`` array) at
-        which MSD was computed. Always strictly increasing and starts at
-        the median sample interval.
+        Lag times τ in seconds, strictly increasing. Lag ``k`` is the mean
+        time separation of the sample pairs averaged there: ``k`` times the
+        median sample interval for uniform sampling.
     msd : NDArray[np.float64], shape (n_lags,)
         Mean square displacement values, one per lag. NaN when no valid
         displacement pair supports that lag.
@@ -1914,9 +1914,10 @@ def mean_square_displacement(
         Environment instance for computing geodesic distances. Required if
         metric="geodesic", ignored otherwise.
     max_tau : float, optional
-        Maximum lag time to compute. If None, uses half the total duration.
-        Recommended: use max_tau ≤ T/4 where T is total duration, to ensure
-        sufficient samples for reliable averaging.
+        Longest lag, in seconds. Lags are the whole multiples of the median
+        sample interval up to ``max_tau``, at most ``n_samples // 2`` of them.
+        ``None`` uses half the recording's duration. Use at most a quarter of
+        the duration to average enough pairs at every lag.
     epochs : array-like, shape (n_epochs, 2), optional
         ``(start, stop)`` windows in seconds. A displacement pair is used only
         when both samples lie in the same window; touching windows merge.
@@ -1937,6 +1938,8 @@ def mean_square_displacement(
     ------
     ValueError
         If metric="geodesic" but env is None.
+        If ``max_tau`` is not positive and finite, is longer than the
+        recording or is shorter than one sample interval.
         If there are no samples, or positions and times have different lengths.
         If times are not finite and strictly increasing (a repeated timestamp
         raises).
@@ -1958,8 +1961,13 @@ def mean_square_displacement(
     where :math:`r(t)` is the position at time t, and the angle brackets denote
     averaging over all time points t.
 
-    Each target time is matched to the nearest recorded sample within half
-    the median sample interval. Targets beyond the recording are excluded.
+    The ``k``-th lag is ``k`` times the median sample interval ``dt``. Each
+    target time ``t + k * dt`` is matched to the nearest recorded sample
+    within ``dt / 2``, and the reported lag is the mean time separation of
+    the pairs averaged there, so it is exactly ``k * dt`` for uniform sampling
+    and stays the lag actually measured for irregular sampling. A lag with no
+    pair reports ``k * dt`` and NaN MSD. Targets beyond the recording are
+    excluded.
     Pairs with missing positions are excluded; geodesic pairs additionally
     require both positions to be inside the environment and connected. A pair
     is also excluded when a declared ``break_before`` or an ``epochs`` edge
@@ -2080,23 +2088,59 @@ def mean_square_displacement(
             "metric='euclidean'",
         )
 
+    if max_tau is not None and not (np.isfinite(max_tau) and max_tau > 0):
+        raise ValueError(
+            _format_error(
+                f"mean_square_displacement() needs max_tau to be a positive, "
+                f"finite number of seconds; got {max_tau!r}.",
+                why="max_tau is the longest time lag at which displacement is "
+                "measured.",
+                fix="pass max_tau in seconds, for example a quarter of the "
+                "recording, or None for half of it.",
+            )
+        )
+
     n_samples = len(positions)
     if n_samples < 2:
         return MSDResult(lags=np.empty(0), msd=np.empty(0))
 
-    # Determine lag times to compute
+    duration = float(times[-1] - times[0])
     if max_tau is None:
-        max_tau = (times[-1] - times[0]) / 2.0
+        max_tau = duration / 2.0
+    elif max_tau > duration:
+        raise ValueError(
+            _format_error(
+                f"mean_square_displacement() got max_tau={max_tau!r} s, which is "
+                f"longer than the recording ({duration:.6g} s).",
+                why="no two samples are farther apart in time than the "
+                "recording lasts, so no displacement is observed at that lag.",
+                fix="pass a shorter max_tau (at most a quarter of the recording "
+                "averages enough pairs per lag), and check that times are in "
+                "seconds.",
+            )
+        )
 
-    # Find all unique time differences up to max_tau
-    time_diffs = np.diff(times)
-    # The resolver guarantees strictly increasing times, so dt > 0.
-    dt = float(np.median(time_diffs))  # Typical time step
-    n_lags = int(max_tau / dt)
-    n_lags = max(1, min(n_lags, n_samples // 2))  # At least 1, at most n_samples/2
+    # The resolver guarantees strictly increasing times, so dt > 0. Lags are
+    # whole multiples of the typical interval, so each target time matches a
+    # recorded sample; the tolerance absorbs roundoff in max_tau / dt.
+    dt = float(np.median(np.diff(times)))
+    n_lags = min(int(np.floor(max_tau / dt + 1e-9)), n_samples // 2)
+    if n_lags < 1:
+        raise ValueError(
+            _format_error(
+                f"mean_square_displacement() got max_tau={max_tau!r} s, which is "
+                f"shorter than one sample interval (median {dt:.6g} s).",
+                why="the shortest lag that can be measured is the time between "
+                "two consecutive samples.",
+                fix=f"pass max_tau of at least {dt:.6g} s.",
+            )
+        )
 
-    tau_values = np.linspace(dt, max_tau, n_lags)
+    tau_values = dt * np.arange(1, n_lags + 1)
     msd_values = np.full(n_lags, np.nan, dtype=np.float64)
+    # Reported lag: the mean time separation of the pairs averaged at each
+    # lag (k * dt exactly for uniform sampling); nominal where none exist.
+    lag_values = tau_values.copy()
 
     if metric == "geodesic":
         # Map positions to bins for geodesic distance
@@ -2152,8 +2196,10 @@ def mean_square_displacement(
         finite_distances = np.isfinite(sq_dists)
         if np.any(finite_distances):
             msd_values[i] = np.mean(sq_dists[finite_distances])
+            separations = times[future_idx[valid_pairs]] - times[valid_pairs]
+            lag_values[i] = np.mean(separations[finite_distances])
 
-    return MSDResult(lags=tau_values, msd=msd_values)
+    return MSDResult(lags=lag_values, msd=msd_values)
 
 
 def compute_trajectory_curvature(

@@ -411,10 +411,10 @@ class TestMeanSquareDisplacement:
             times, positions, metric=metric, env=env, max_tau=2.2
         )
 
-        # Targets 2.2..9.2 match samples 2..9; later targets are beyond
-        # recording support. Five moving pairs contribute 4,4,4,4,1.
-        assert result.lags[-1] == pytest.approx(2.2)
-        assert result.msd[-1] == pytest.approx(17 / 8)
+        # max_tau=2.2 gives lags 1 and 2 s. The nine pairs two samples
+        # apart contribute 4, 4, 4, 4, 1 while moving and 0 after stopping.
+        assert result.lags[-1] == pytest.approx(2.0)
+        assert result.msd[-1] == pytest.approx(17 / 9)
 
     def test_msd_uses_both_neighbors_for_irregular_samples(self):
         """Both sides of a target can be its nearest recorded observation."""
@@ -466,8 +466,11 @@ class TestMeanSquareDisplacement:
 
         result = mean_square_displacement(times, times[:, None], max_tau=10.0)
 
-        assert result.msd[0] == pytest.approx(1.0)
-        assert np.isnan(result.msd[1:]).all()
+        # At most n // 2 = 3 lags. Lags 1 and 2 s are observed within each
+        # stretch; no pair is 3 s apart.
+        np.testing.assert_allclose(result.lags, [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(result.msd[:2], [1.0, 4.0])
+        assert np.isnan(result.msd[2])
 
     @pytest.mark.parametrize("missing", [100.0, np.nan, np.inf])
     def test_geodesic_msd_excludes_missing_or_outside_bins(self, missing):
@@ -967,3 +970,58 @@ class TestMeanSquareDisplacementBreaks:
         # displacement is at most 3 bin-widths.
         assert np.all(joined.msd > 100.0)
         np.testing.assert_allclose(split.msd, [1.0, 4.0, 9.0], atol=1.5)
+
+
+class TestMeanSquareDisplacementLags:
+    """Each reported lag is the time separation of the pairs it averages."""
+
+    V = 3.0  # cm/s
+
+    def _ballistic(self, n=100, dt=0.1):
+        times = np.arange(n) * dt
+        return times, np.c_[self.V * times, np.zeros(n)]
+
+    @pytest.mark.parametrize("max_tau", [None, 0.55, 2.0, 2.04])
+    def test_ballistic_msd_is_speed_times_lag_squared(self, max_tau):
+        times, positions = self._ballistic()
+        result = mean_square_displacement(times, positions, max_tau=max_tau)
+        assert_allclose(result.msd, (self.V * result.lags) ** 2, rtol=1e-12)
+        # Lags are whole multiples of the 0.1 s sample interval.
+        k = np.arange(1, result.lags.size + 1)
+        assert_allclose(result.lags, 0.1 * k, rtol=1e-12)
+        alpha = np.polyfit(np.log(result.lags), np.log(result.msd), 1)[0]
+        assert alpha == pytest.approx(2.0, abs=1e-9)
+
+    def test_lags_stop_at_max_tau(self):
+        times, positions = self._ballistic()
+        assert mean_square_displacement(times, positions, max_tau=0.55).lags.size == 5
+        assert mean_square_displacement(times, positions, max_tau=0.3).lags.size == 3
+
+    def test_default_max_tau_is_half_the_recording(self):
+        times, positions = self._ballistic()
+        result = mean_square_displacement(times, positions)
+        # 9.9 s recording: half is 4.95 s, so lags 0.1 .. 4.9 s.
+        assert result.lags.size == 49
+        assert result.lags[-1] == pytest.approx(4.9)
+
+    def test_irregular_lag_is_mean_separation_of_its_pairs(self):
+        # Median interval 1 s; the 2 s lag averages pairs 2.3, 2.2 and 1.7 s apart.
+        times = np.array([0.0, 1.0, 2.3, 3.2, 4.0, 5.0])
+        result = mean_square_displacement(times, times[:, None], max_tau=2.1)
+        assert result.lags[-1] == pytest.approx((2.3 + 2.2 + 1.7) / 3)
+
+    @pytest.mark.parametrize("max_tau", [0.0, -1.0, np.nan, np.inf])
+    def test_max_tau_must_be_positive_and_finite(self, max_tau):
+        times, positions = self._ballistic()
+        with pytest.raises(ValueError, match="max_tau"):
+            mean_square_displacement(times, positions, max_tau=max_tau)
+
+    def test_max_tau_longer_than_recording_raises(self):
+        times, positions = self._ballistic()
+        with pytest.raises(ValueError, match="longer than the recording"):
+            mean_square_displacement(times, positions, max_tau=100.0)
+
+    def test_max_tau_shorter_than_one_sample_interval_raises(self):
+        times, positions = self._ballistic()
+        with pytest.raises(ValueError, match="shorter than one sample interval"):
+            mean_square_displacement(times, positions, max_tau=0.04)
