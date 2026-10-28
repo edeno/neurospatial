@@ -47,13 +47,13 @@ class TestDetectRegionCrossings:
             max_gap=None,
         )
 
-        # Should detect entries and exits
-        assert len(crossings) > 0
-        # Verify crossings have required attributes
-        for crossing in crossings:
-            assert hasattr(crossing, "time")
-            assert hasattr(crossing, "direction")
-            assert crossing.direction in ["entry", "exit"]
+        # Region bins have centers 40-60 cm on this row, so x = 40, 50, 55 are
+        # inside and x = 20, 30 outside: in at 2 s, out at 7 s, in at 9 s.
+        assert [(c.time, c.direction) for c in crossings] == [
+            (2.0, "entry"),
+            (7.0, "exit"),
+            (9.0, "entry"),
+        ]
 
     def test_detect_entries_only(self):
         """Test detection of only entry events."""
@@ -66,8 +66,9 @@ class TestDetectRegionCrossings:
         region_builder.add("target", polygon=Point(50.0, 50.0).buffer(10.0))
         env = env.with_regions(region_builder)
 
-        x_traj = np.array([20.0, 40.0, 50.0, 55.0, 50.0, 40.0, 50.0])
-        y_traj = np.array([50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0])
+        # Outside (20, 30 cm) and inside (40, 50 cm): entries at 1 s and 4 s.
+        x_traj = np.array([20.0, 40.0, 50.0, 30.0, 50.0])
+        y_traj = np.full(5, 50.0)
         trajectory = np.column_stack([x_traj, y_traj])
         position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
@@ -83,8 +84,10 @@ class TestDetectRegionCrossings:
             max_gap=None,
         )
 
-        # All crossings should be entries
-        assert all(c.direction == "entry" for c in crossings)
+        assert [(c.time, c.direction) for c in crossings] == [
+            (1.0, "entry"),
+            (4.0, "entry"),
+        ]
 
     def test_detect_exits_only(self):
         """Test detection of only exit events."""
@@ -97,9 +100,9 @@ class TestDetectRegionCrossings:
         region_builder.add("target", polygon=Point(50.0, 50.0).buffer(10.0))
         env = env.with_regions(region_builder)
 
-        # Start inside region
-        x_traj = np.array([50.0, 55.0, 50.0, 40.0, 20.0, 50.0, 40.0])
-        y_traj = np.array([50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0])
+        # Start inside the region; exits at 2 s and 4 s.
+        x_traj = np.array([50.0, 55.0, 30.0, 50.0, 20.0])
+        y_traj = np.full(5, 50.0)
         trajectory = np.column_stack([x_traj, y_traj])
         position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
@@ -115,8 +118,10 @@ class TestDetectRegionCrossings:
             max_gap=None,
         )
 
-        # All crossings should be exits
-        assert all(c.direction == "exit" for c in crossings)
+        assert [(c.time, c.direction) for c in crossings] == [
+            (2.0, "exit"),
+            (4.0, "exit"),
+        ]
 
     def test_no_crossings(self):
         """Test trajectory that never enters region."""
