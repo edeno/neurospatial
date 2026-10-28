@@ -74,11 +74,6 @@ def _lookups(env: Environment, folder: Path) -> dict[str, tuple[Any, Any, str]]:
             "rewrd",
             "use 'reward'",
         ),
-        "Regions.region_center": (
-            lambda value: builder.region_center(value),
-            "rewrd",
-            "use 'reward'",
-        ),
         "region_reward_field": (
             lambda value: region_reward_field(env, region_name=value),
             "rewrd",
@@ -135,7 +130,6 @@ _CALLS = [
     "subset",
     "Regions.remove",
     "Regions.update_region",
-    "Regions.region_center",
     "region_reward_field",
     "compute_region_coverage",
     "decision_region_entry_time",

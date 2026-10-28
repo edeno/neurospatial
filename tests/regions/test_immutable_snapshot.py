@@ -181,10 +181,10 @@ def test_snapshot_rejects_every_mutator_including_noops(method, mutation, empty)
     builder = Regions() if empty else _builder()
     snapshot = _restore(builder._snapshot(), method)
     assert type(snapshot) is Regions
-    before = snapshot.list_names()
+    before = list(snapshot)
     with pytest.raises(TypeError, match=r"read-only.*with_regions"):
         mutation[1](snapshot)
-    assert snapshot.list_names() == before
+    assert list(snapshot) == before
 
 
 @pytest.mark.parametrize("method", ["original", "copy", "deepcopy", "pickle"])
@@ -195,13 +195,13 @@ def test_snapshot_read_helpers_and_mutable_builder_reconstruction(method, tmp_pa
     assert list(snapshot.keys()) == ["goal", "arena"]
     assert len(snapshot) == 2
     assert snapshot.get("missing") is None
-    assert snapshot.area("arena") == 9
-    np.testing.assert_array_equal(snapshot.region_center("goal"), [1, 2])
-    np.testing.assert_array_equal(snapshot.region_center("arena"), [1.5, 1.5])
+    assert snapshot["arena"].area == 9
+    np.testing.assert_array_equal(snapshot["goal"].center, [1, 2])
+    np.testing.assert_array_equal(snapshot["arena"].center, [1.5, 1.5])
 
     builder.update_region("goal", point=[9, 9])
     builder.remove("arena")
-    assert snapshot.list_names() == ["goal", "arena"]
+    assert list(snapshot) == ["goal", "arena"]
     np.testing.assert_array_equal(snapshot["goal"].data, [1, 2])
     editable = Regions(snapshot.values())
     editable.update_region("goal", point=[3, 4])
@@ -212,7 +212,7 @@ def test_snapshot_read_helpers_and_mutable_builder_reconstruction(method, tmp_pa
     snapshot.to_json(output)
     loaded = Regions.from_json(output)
     loaded.remove("goal")
-    assert loaded.list_names() == ["arena"]
+    assert list(loaded) == ["arena"]
 
 
 @pytest.mark.parametrize("method", ["copy", "deepcopy", "pickle"])
@@ -220,7 +220,7 @@ def test_builder_restoration_remains_mutable_with_independent_store(method):
     builder = _builder()
     restored = _restore(builder, method)
     restored.remove("goal")
-    assert builder.list_names() == ["goal", "arena"]
+    assert list(builder) == ["goal", "arena"]
     restored.add("new", point=[3, 4])
     assert "new" not in builder
 
@@ -236,7 +236,7 @@ def test_failed_region_replacement_preserves_original_value_and_order(invalid):
     )
     with pytest.raises((TypeError, ValueError)):
         regions.update_region("goal", **kwargs)
-    assert regions.list_names() == ["goal", "arena"]
+    assert list(regions) == ["goal", "arena"]
     assert regions["goal"] is original
 
 

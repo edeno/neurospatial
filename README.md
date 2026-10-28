@@ -441,11 +441,11 @@ env = env.with_regions(region_builder)
 
 # Access region information
 print(f"Number of regions: {len(env.regions)}")
-print(f"Region names: {env.regions.list_names()}")
+print(f"Region names: {list(env.regions)}")
 
 # Get region statistics
-area = env.regions.area("RewardZone1")
-center = env.regions.region_center("RewardZone1")
+area = env.regions["RewardZone1"].area
+center = env.regions["RewardZone1"].center
 print(f"RewardZone1 area: {area:.2f}, center: {center}")
 ```
 

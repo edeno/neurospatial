@@ -11,7 +11,7 @@ from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
+from typing import Any, Literal, TypeAlias, cast
 
 import numpy as np
 import shapely
@@ -23,11 +23,8 @@ from shapely.validation import explain_validity
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
 
-if TYPE_CHECKING:
-    from pandas import DataFrame
-
 # ---------------------------------------------------------------------
-# Public type aliases
+# Type aliases
 # ---------------------------------------------------------------------
 PointCoords: TypeAlias = NDArray[np.float64] | Iterable[float] | Point
 Kind = Literal["point", "polygon"]
@@ -377,6 +374,24 @@ class Region:
             return int(self.data.size)
         return 2
 
+    @property
+    def area(self) -> float:
+        """Polygon area in coordinate units squared; 0.0 for a point."""
+        if isinstance(self.data, Polygon):
+            return float(self.data.area)
+        return 0.0
+
+    @property
+    def center(self) -> NDArray[np.float64]:
+        """A point's coordinates, or a polygon's centroid, shape ``(n_dims,)``.
+
+        A centroid can lie outside a non-convex polygon, such as a U-shaped
+        arm; it is not guaranteed to be a position the animal can occupy.
+        """
+        if isinstance(self.data, np.ndarray):
+            return np.array(self.data, dtype=np.float64)
+        return np.array(self.data.centroid.coords[0], dtype=np.float64)
+
     def __str__(self) -> str:
         return self.name
 
@@ -531,7 +546,8 @@ class Regions(MutableMapping[str, Region]):
     """A small `dict`-like container mapping *name → Region*.
 
     Provides the usual mapping API plus a few helpers
-    (`add`, `remove`, `list_names`, `buffer`, …).
+    (`add`, `update_region`, `set`, `remove`, `buffer`, …); ``list(regions)``
+    gives the names in insertion order.
     Published snapshots preserve the read API and reject mutation; construct
     ``Regions(snapshot.values())`` to obtain a mutable editing container.
 
@@ -660,7 +676,8 @@ class Regions(MutableMapping[str, Region]):
         accepts new keys but raises :class:`KeyError` if ``key`` already
         exists. Callers that want to replace an existing region must opt
         in explicitly via :meth:`set` (idempotent replace) or
-        :meth:`update_region` (replace geometry/metadata in place).
+        :meth:`update_region` (replace geometry or metadata, keeping the
+        region's position).
 
         Parameters
         ----------
@@ -693,12 +710,13 @@ class Regions(MutableMapping[str, Region]):
         To replace an existing region, pick the explicit path:
 
         >>> _ = regions.set("goal", r2)  # idempotent replace
-        >>> _ = regions.update_region("goal", point=[15.0, 25.0])  # in-place edit
+        >>> _ = regions.update_region("goal", point=[15.0, 25.0])  # same position
 
         See Also
         --------
         set : Idempotent replace (accepts both new and existing names).
-        update_region : In-place geometry/metadata edit; raises if absent.
+        update_region : Replace geometry or metadata in the same position;
+            raises if absent.
         add : Build a new Region and insert it; raises if already exists.
 
         """
@@ -707,7 +725,8 @@ class Regions(MutableMapping[str, Region]):
         if key in self._store:
             raise KeyError(
                 f"Region {key!r} already exists. "
-                "Use Regions.update_region(...) to modify it in place, or "
+                "Use Regions.update_region(...) to change its geometry or "
+                "metadata, or "
                 "Regions.set(name, region) for the idempotent replace path."
             )
         store[key] = value
@@ -930,8 +949,8 @@ class Regions(MutableMapping[str, Region]):
         See Also
         --------
         add : Insert a new region; raises if ``name`` already exists.
-        update_region : Replace an existing region's geometry/metadata
-            in place; raises if ``name`` does not exist.
+        update_region : Replace an existing region's geometry or metadata,
+            keeping its position; raises if ``name`` does not exist.
         """
         store = self._mutable_store()
         self._check_insert(name, region)
@@ -950,80 +969,10 @@ class Regions(MutableMapping[str, Region]):
         Raises
         ------
         KeyError
-            If ``name`` is not in the collection. Mirrors ``del regions[name]``
-            and the rest of the contract: every Region API
-            (``add``, ``update_region``, ``__setitem__``, ``__delitem__``,
-            ``remove``) raises rather than silently absorbing the case where
-            the caller's mental model of the collection disagrees with reality.
+            If ``name`` is not in the collection, as ``del regions[name]``
+            does. The error suggests the closest existing name.
         """
         del self[name]
-
-    def list_names(self) -> list[str]:
-        """Get list of region names in insertion order.
-
-        Returns
-        -------
-        list[str]
-            Region names in the order they were added.
-
-        """
-        return list(self._store)
-
-    # ----------- lightweight geometry helper -------------------------
-    def area(self, name: str) -> float:
-        """Compute area of a region.
-
-        Parameters
-        ----------
-        name : str
-            Name of region to query.
-
-        Returns
-        -------
-        float
-            Area of the polygon region, or 0.0 for point regions.
-
-        """
-        region = self[name]
-        if region.kind == "polygon":
-            assert isinstance(region.data, Polygon)
-            return float(region.data.area)
-        return 0.0
-
-    def region_center(self, name: str) -> NDArray[np.float64] | None:
-        """Calculate the center of a specified named region.
-
-        Parameters
-        ----------
-        name : str
-            Name of region to query.
-
-        Returns
-        -------
-        Optional[NDArray[np.float64]]
-            N-D coordinates of the region's center, or None if the region
-            is empty or center cannot be determined.
-
-        Raises
-        ------
-        KeyError
-            If `name` is not present in this collection.
-
-        """
-        if name not in self._store:
-            raise RegionNotFoundError(name, available=list(self._store), argument=None)
-
-        region = self._store[name]
-
-        if region.kind == "point":
-            return np.asarray(region.data, dtype=float)
-        # region.kind == "polygon"
-        assert isinstance(region.data, Polygon)
-        if region.data.is_empty:
-            # Empty polygon has no centroid coordinates; the documented
-            # contract is to return None rather than raise.
-            return None
-        return np.array(region.data.centroid.coords[0], dtype=float)
 
     def buffer(
         self,
@@ -1052,7 +1001,6 @@ class Regions(MutableMapping[str, Region]):
 
         """
         self._mutable_store()
-        # derive geometry in cm space
         if isinstance(source, str):
             src = self[source]
             if src.kind == "polygon":
@@ -1075,24 +1023,7 @@ class Regions(MutableMapping[str, Region]):
 
         return self.add(new_name, polygon=poly, metadata=meta)
 
-    def to_dataframe(self) -> DataFrame:
-        """Convert this collection to a Pandas DataFrame.
-        Requires Pandas to be installed.
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with columns ['name', 'kind', 'data', 'metadata'].
-            The 'data' column contains the coordinates for points or polygons.
-
-        """
-        from .io import regions_to_dataframe
-
-        return regions_to_dataframe(self)
-
     # -------------- Serialization helpers ---------------------------
-    _FMT = "Regions-v1"
-
     def to_json(self, path: str | Path, *, indent: int = 2) -> None:
         """Write collection to disk in a simple, version-tagged schema.
 

@@ -164,7 +164,7 @@ def test_regions_add_point_and_remove():
     regs = Regions()
     r = regs.add("pt", point=[1, 2, 3])
     assert regs["pt"] == r
-    assert regs.list_names() == ["pt"]
+    assert list(regs) == ["pt"]
     regs.remove("pt")
     assert "pt" not in regs
 
@@ -196,14 +196,12 @@ def test_regions_compare_by_value_but_are_unhashable(region):
     assert {region.name: region}[region.name] is region
 
 
-def test_regions_add_polygon_and_area():
-    regs = Regions()
-    poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-    r = regs.add("poly", polygon=poly)
-    assert regs["poly"] == r
-    area = regs.area("poly")
-    assert np.isclose(area, 1.0)
-    assert regs.area("poly") == poly.area
+def test_region_area_is_polygon_area_and_zero_for_points():
+    donut = shp.Polygon(
+        [(0, 0), (10, 0), (10, 10), (0, 10)], [[(2, 2), (8, 2), (8, 8), (2, 8)]]
+    )
+    assert Region("donut", "polygon", donut).area == pytest.approx(64.0)
+    assert Region("pt", "point", [1.0, 2.0]).area == 0.0
 
 
 def test_regions_add_duplicate_name():
@@ -292,39 +290,26 @@ def test_regions_buffer_invalid_shape():
         regs.buffer(np.array([1.0, 2.0, 3.0]), distance=1.0, new_name="badbuf")
 
 
-def test_regions_area_point():
-    regs = Regions()
-    regs.add("pt", point=[1, 2])
-    assert regs.area("pt") == 0.0
+def test_region_center_of_a_point_is_a_copy_of_its_coordinates():
+    region = Region("pt", kind="point", data=np.array([3.0, 7.0]))
+    center = region.center
+    np.testing.assert_array_equal(center, [3.0, 7.0])
+    center[0] = -1.0  # an independent array, not the read-only data
+    np.testing.assert_array_equal(region.data, [3.0, 7.0])
 
 
-def test_region_center_nonempty_polygon_centroid():
-    """A unit-square polygon's center is its centroid (no regression)."""
-    poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-    regs = Regions([Region("box", kind="polygon", data=poly)])
-    center = regs.region_center("box")
-    assert center is not None
-    np.testing.assert_allclose(center, [0.5, 0.5])
+def test_region_center_of_a_polygon_is_its_centroid():
+    square = Region("box", kind="polygon", data=shp.box(0, 0, 1, 1))
+    np.testing.assert_allclose(square.center, [0.5, 0.5])
 
 
-def test_region_center_point_unchanged():
-    """A point region returns its coordinates (no regression)."""
-    regs = Regions([Region("pt", kind="point", data=np.array([3.0, 7.0]))])
-    center = regs.region_center("pt")
-    assert center is not None
-    np.testing.assert_allclose(center, [3.0, 7.0])
-
-
-def test_region_center_name_kwarg():
-    """region_center accepts name= keyword; the old region_name= raises TypeError."""
-    regs = Regions([Region("goal", kind="point", data=np.array([1.0, 2.0]))])
-
-    center = regs.region_center(name="goal")
-    assert center is not None
-    np.testing.assert_allclose(center, [1.0, 2.0])
-
-    with pytest.raises(TypeError):
-        regs.region_center(region_name="goal")
+def test_u_shaped_region_center_lies_outside_the_region():
+    """The documented caveat: a centroid need not be inside a non-convex arm."""
+    u_shape = shp.Polygon(
+        [(0, 0), (30, 0), (30, 30), (20, 30), (20, 10), (10, 10), (10, 30), (0, 30)]
+    )
+    region = Region("u_arm", kind="polygon", data=u_shape)
+    assert not u_shape.contains(shp.Point(region.center))
 
 
 def test_regions_remove_absent_raises():

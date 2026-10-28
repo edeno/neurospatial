@@ -38,7 +38,7 @@ def test_open_field_maze_publishes_all_reward_locations():
 
 def test_barnes_escape_hole_uses_the_complete_region_builder():
     maze = make_barnes_maze(bin_size=10.0, escape_hole_index=9)
-    names = maze.env_2d.regions.list_names()
+    names = list(maze.env_2d.regions)
     assert names[9] == "escape_hole"
     assert names[-1] == "start_box"
     assert maze.env_2d.landmarks["escape_hole"].metadata["index"] == 9

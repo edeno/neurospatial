@@ -379,7 +379,7 @@ class TestEnvironmentFromPosition:
         np.testing.assert_array_equal(env.bin_centers, expected.bin_centers)
         np.testing.assert_array_equal(env.edge_pairs, expected.edge_pairs)
         assert (env.name, env.units) == ("arena", "cm")
-        assert env.regions.list_names() == ["goal"]
+        assert list(env.regions) == ["goal"]
         assert env.layout_parameters == expected.layout_parameters
 
     def test_every_binning_option_is_forwarded_unchanged(

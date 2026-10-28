@@ -306,12 +306,12 @@ regions.add("RewardZone", polygon=Point(10.0, 10.0).buffer(5.0))
 env = env.with_regions(regions)
 
 # Access regions
-print(env.regions.list_names())  # ['StartLocation', 'RewardZone']
+print(list(env.regions))  # ['StartLocation', 'RewardZone']
 print(env.regions["RewardZone"].kind)  # 'polygon'
 
 # Region operations
-area = env.regions.area("RewardZone")
-center = env.regions.region_center("RewardZone")
+area = env.regions["RewardZone"].area  # coordinate units squared
+center = env.regions["RewardZone"].center  # centroid; may lie outside a U shape
 
 # Edit the builder and publish a replacement; env keeps its original snapshot.
 regions.update_region("StartLocation", point=(5.0, 5.0))

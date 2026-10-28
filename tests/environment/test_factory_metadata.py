@@ -111,7 +111,7 @@ def test_every_cartesian_factory_snapshots_regions(kind):
     regions = Regions([Region("goal", "point", [1.0, 0.0])])
     env = _create(kind, regions=regions)
     regions.remove("goal")
-    assert env.regions.list_names() == ["goal"]
+    assert list(env.regions) == ["goal"]
     np.testing.assert_array_equal(env.regions["goal"].data, [1.0, 0.0])
     np.testing.assert_array_equal(env.bin_centers, _create(kind).bin_centers)
 
@@ -132,7 +132,7 @@ def test_explicit_arena_center_selection_retains_requested_name_labels_and_regio
     )
     assert env.n_bins == 4
     assert (env.name, env.units, env.frame) == ("selected", "cm", "world")
-    assert env.regions.list_names() == ["goal"]
+    assert list(env.regions) == ["goal"]
 
 
 def test_sample_factory_snapshots_regions_without_passing_them_to_layout_builder():
@@ -144,7 +144,7 @@ def test_sample_factory_snapshots_regions_without_passing_them_to_layout_builder
         infer_active_bins=False,
     )
     regions.remove("goal")
-    assert env.regions.list_names() == ["goal"]
+    assert list(env.regions) == ["goal"]
 
 
 @pytest.mark.parametrize("kind", ["grid_mask", "polar_create", "graph"])
