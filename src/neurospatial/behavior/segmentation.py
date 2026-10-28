@@ -78,7 +78,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import networkx as nx
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from scipy.spatial.distance import directed_hausdorff, euclidean
+from scipy.spatial.distance import cdist, directed_hausdorff
 from scipy.stats import pearsonr
 
 from neurospatial._exceptions import _format_error
@@ -3187,35 +3187,39 @@ def trajectory_similarity(
 def _dtw_distance(seq1: NDArray[np.float64], seq2: NDArray[np.float64]) -> float:
     """Compute Dynamic Time Warping distance between two sequences.
 
+    The cumulative cost ``D[i, j] = cost(i, j) + min(D[i-1, j], D[i, j-1],
+    D[i-1, j-1])`` is filled one anti-diagonal ``i + j = k`` at a time: every
+    cell on diagonal ``k`` depends only on diagonals ``k - 1`` and ``k - 2``,
+    so each diagonal is one vectorized step and only three diagonals are kept.
+
     Parameters
     ----------
     seq1 : NDArray[np.float64], shape (n1, n_dims)
-        First sequence of positions.
+        First sequence of positions; non-empty.
     seq2 : NDArray[np.float64], shape (n2, n_dims)
-        Second sequence of positions.
+        Second sequence of positions; non-empty.
 
     Returns
     -------
     float
-        DTW distance.
+        DTW distance: the smallest summed Euclidean distance over monotone
+        alignments of the two sequences.
     """
-    n1, n2 = len(seq1), len(seq2)
-
-    # Initialize cost matrix
-    dtw_matrix = np.full((n1 + 1, n2 + 1), np.inf)
-    dtw_matrix[0, 0] = 0.0
-
-    # Fill cost matrix
-    for i in range(1, n1 + 1):
-        for j in range(1, n2 + 1):
-            cost = euclidean(seq1[i - 1], seq2[j - 1])
-            dtw_matrix[i, j] = cost + min(
-                dtw_matrix[i - 1, j],  # insertion
-                dtw_matrix[i, j - 1],  # deletion
-                dtw_matrix[i - 1, j - 1],  # match
-            )
-
-    return float(dtw_matrix[n1, n2])
+    cost = cdist(seq1, seq2)
+    n1, n2 = cost.shape
+    # Diagonals indexed by row i of D (shape (n1 + 1, n2 + 1)); D[0, 0] = 0 and
+    # the rest of row 0 and column 0 is inf.
+    before_previous = np.full(n1 + 1, np.inf)
+    before_previous[0] = 0.0
+    previous = np.full(n1 + 1, np.inf)
+    for k in range(2, n1 + n2 + 1):
+        rows = np.arange(max(1, k - n2), min(n1, k - 1) + 1)
+        current = np.full(n1 + 1, np.inf)
+        current[rows] = cost[rows - 1, k - rows - 1] + np.minimum(
+            np.minimum(previous[rows - 1], previous[rows]), before_previous[rows - 1]
+        )
+        before_previous, previous = previous, current
+    return float(previous[n1])
 
 
 def detect_goal_directed_runs(
