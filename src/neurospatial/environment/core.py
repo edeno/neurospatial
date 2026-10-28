@@ -102,6 +102,7 @@ from neurospatial.environment._regions import (
     _bins_in_region,
     _owned_regions,
     _region_membership,
+    _relabeled_regions,
 )
 from neurospatial.environment._subset import _subset
 from neurospatial.environment._summary import (
@@ -605,6 +606,8 @@ class Environment(Generic[_C]):
         units, frame : str or None, optional
             New labels. Omission preserves the label; None clears it.
             Labels describe existing coordinates and never rescale them.
+            Regions share these coordinates, so a new ``units`` label also
+            replaces each region's recorded ``metadata["coord_system"]``.
 
         Returns
         -------
@@ -616,6 +619,8 @@ class Environment(Generic[_C]):
         result._metadata = _replace_metadata(
             self._metadata, name=name, units=units, frame=frame
         )
+        if result.units != self.units:
+            result._regions = _relabeled_regions(self._regions, result.units)
         return result
 
     def with_regions(self, regions: Mapping[str, Region]) -> Self:

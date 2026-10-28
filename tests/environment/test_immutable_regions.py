@@ -216,3 +216,21 @@ def test_unlabeled_transform_drops_a_stale_coord_system(matrix, kept):
     env = _grid(None).with_regions(_drawn("pixels"))
     moved = env.apply_transform(AffineND(matrix))
     assert ("coord_system" in moved.regions["reward"].metadata) is kept
+
+
+@pytest.mark.parametrize("new_units", ["cm", None])
+def test_relabelling_units_relabels_the_regions(new_units):
+    edges = np.arange(0.0, 1001.0, 100.0)
+    pixels = Environment.from_grid_mask(
+        np.ones((10, 10), dtype=bool), grid_edges=(edges, edges), units="pixels"
+    ).with_regions(_drawn("pixels"))
+    relabeled = pixels.with_metadata(units=new_units)
+    reward = relabeled.regions["reward"]
+    assert reward.metadata.get("coord_system") == new_units
+    assert reward.data.equals(pixels.regions["reward"].data)  # never rescaled
+    # The relabelled environment accepts its own regions again.
+    assert list(relabeled.with_regions(relabeled.regions).regions) == ["reward"]
+    assert (
+        pixels.with_metadata(name="x").regions["reward"].metadata["coord_system"]
+        == "pixels"
+    )

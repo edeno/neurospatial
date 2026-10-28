@@ -45,6 +45,25 @@ def _region_values(regions: Mapping[object, object]) -> list[Region]:
     return values
 
 
+def _relabeled_regions(regions: Regions, units: str | None) -> Regions:
+    """Return ``regions`` with each recorded ``coord_system`` set to ``units``.
+
+    Regions share the environment's coordinates, so relabelling the
+    environment's units relabels theirs; None drops the label.
+    """
+    relabeled = []
+    for region in regions.values():
+        metadata = dict(region.metadata)
+        if "coord_system" in metadata:
+            if units is None:
+                del metadata["coord_system"]
+            else:
+                metadata["coord_system"] = units
+            region = Region(region.name, region.kind, region.data, metadata)
+        relabeled.append(region)
+    return _snapshot_regions(relabeled)
+
+
 def _owned_regions(regions: object, n_dims: int, units: str | None) -> Regions:
     """Return an immutable snapshot of ``regions`` for an ``n_dims`` environment.
 
