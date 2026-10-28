@@ -438,37 +438,6 @@ class TestRegionEdgeCases:
         # May have 0 or 1 bins depending on alignment
         assert len(bins) <= 1
 
-    def test_degenerate_polygon_line(self):
-        """Test with degenerate polygon (line)."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Degenerate polygon (line)
-        line = Polygon([(0, 0), (10, 0), (10, 0), (0, 0)])
-        region_builder = Regions(env.regions.values())
-        region_builder.add("line", polygon=line)
-        env = env.with_regions(region_builder)
-
-        # Should handle gracefully
-        bins = env.bins_in_region("line")
-        assert isinstance(bins, np.ndarray)
-
-    def test_self_intersecting_polygon(self):
-        """Test with self-intersecting polygon."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Bowtie shape (self-intersecting)
-        bowtie = Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
-        region_builder = Regions(env.regions.values())
-        region_builder.add("bowtie", polygon=bowtie)
-        env = env.with_regions(region_builder)
-
-        # Shapely should handle this (may or may not be valid)
-        # Just check it doesn't crash
-        bins = env.bins_in_region("bowtie")
-        assert isinstance(bins, np.ndarray)
-
     def test_polygon_with_hole(self):
         """Test polygon with interior hole."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])

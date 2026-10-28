@@ -15,10 +15,13 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
 
 import numpy as np
+import shapely
 from numpy.typing import NDArray
-from shapely.geometry import Point, Polygon, mapping, shape
+from shapely.geometry import LineString, Point, Polygon, mapping, shape
+from shapely.geometry.base import BaseGeometry
+from shapely.validation import explain_validity
 
-from neurospatial._exceptions import RegionNotFoundError
+from neurospatial._exceptions import RegionNotFoundError, _format_error
 
 if TYPE_CHECKING:
     from pandas import DataFrame
@@ -116,6 +119,129 @@ def _require_json_metadata(value: Any, *, allow_nan: bool) -> None:
 
 
 # ---------------------------------------------------------------------
+# Geometry validation shared with neurospatial.landmarks
+# ---------------------------------------------------------------------
+def _require_name(name: object, *, record: str, example: str) -> None:
+    """Refuse a name that is not a nonempty string."""
+    if not isinstance(name, str) or not name:
+        raise ValueError(
+            _format_error(
+                f"{record} names must be nonempty strings, got {name!r}.",
+                fix=f'name each {record.lower()} with a string such as "{example}"',
+            )
+        )
+
+
+def _owned_point(
+    raw: object, *, owner: str, shape_kinds: Mapping[str, str]
+) -> NDArray[np.float64]:
+    """Return one finite point as a read-only float64 copy, shape ``(n_dims,)``.
+
+    ``raw`` is a coordinate sequence or a shapely ``Point``. ``shape_kinds``
+    maps the shapely geometry types ``owner`` can hold under another kind to
+    that kind's name, for the error when such a shape is passed as a point.
+    """
+    if isinstance(raw, BaseGeometry) and not isinstance(raw, Point):
+        alternative = shape_kinds.get(raw.geom_type)
+        raise TypeError(
+            _format_error(
+                f"{owner} has kind='point', but its data is a shapely {raw.geom_type}.",
+                fix=(
+                    f'use kind="{alternative}" for this shape, or '
+                    if alternative is not None
+                    else ""
+                )
+                + "pass the point's coordinates, such as [50.0, 100.0]",
+            )
+        )
+    if isinstance(raw, Point):
+        raw = raw.coords[0] if not raw.is_empty else ()
+    try:
+        point = np.array(raw, dtype=np.float64, copy=True)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(
+            _format_error(
+                f"{owner} point coordinates must be numbers, got {raw!r}.",
+                fix="pass the point's coordinates, such as [50.0, 100.0]",
+            )
+        ) from exc
+    if point.ndim != 1 or point.size == 0:
+        raise ValueError(
+            _format_error(
+                f"{owner} must be one point, shape (n_dims,), got shape {point.shape}.",
+                fix="pass the point's coordinates, such as [50.0, 100.0]",
+            )
+        )
+    if not np.all(np.isfinite(point)):
+        raise ValueError(
+            _format_error(
+                f"{owner} point {point.tolist()} has a NaN or infinite coordinate.",
+                why="Why: a point with a missing coordinate has no location, so "
+                "it would silently cover no bins.",
+                fix="pass finite coordinates in the environment's units",
+            )
+        )
+    point.setflags(write=False)
+    return point
+
+
+def _check_planar_geometry(geometry: Polygon | LineString, *, owner: str) -> None:
+    """Refuse an empty, 3-D, non-finite, invalid or zero-size polygon or line."""
+    kind = "polygon" if isinstance(geometry, Polygon) else "line"
+    if geometry.is_empty:
+        raise ValueError(
+            _format_error(
+                f"{owner} is an empty {kind}.",
+                fix="pass its vertices as (x, y) pairs in the environment's "
+                "coordinates",
+            )
+        )
+    if geometry.has_z:
+        raise ValueError(
+            _format_error(
+                f"{owner} has z coordinates, but a {kind} is 2-D.",
+                fix=f"drop the z coordinates with shapely.force_2d({kind})",
+            )
+        )
+    if not np.all(np.isfinite(shapely.get_coordinates(geometry))):
+        raise ValueError(
+            _format_error(
+                f"{owner} has a NaN or infinite vertex coordinate.",
+                fix="remove the missing vertices, or redraw the shape",
+            )
+        )
+    if not geometry.is_valid:
+        what = f"{owner} is not a valid {kind}: {explain_validity(geometry)}."
+        if kind == "line":
+            raise ValueError(
+                _format_error(
+                    what,
+                    fix="pass at least two distinct vertices, such as "
+                    "[(0.0, 100.0), (40.0, 100.0)]",
+                )
+            )
+        raise ValueError(
+            _format_error(
+                what,
+                why="Why: an outline whose edges cross has no well-defined "
+                "inside, so the bins it covers would be wrong.",
+                fix="redraw it so its edges do not cross, or repair it with "
+                "shapely.make_valid(polygon) and keep the part you meant",
+            )
+        )
+    size = geometry.area if kind == "polygon" else geometry.length
+    if size <= 0:
+        measure = "area" if kind == "polygon" else "length"
+        raise ValueError(
+            _format_error(
+                f"{owner} has zero {measure}.",
+                fix='use kind="point" for a single location, or spread the '
+                "vertices apart",
+            )
+        )
+
+
+# ---------------------------------------------------------------------
 # Region — immutable value object
 # ---------------------------------------------------------------------
 
@@ -158,6 +284,7 @@ class Region:
     # Validation
     # -----------------------------------------------------------------
     def __post_init__(self) -> None:
+        _require_name(self.name, record="Region", example="reward_zone")
         # Thaw first (the input may already be a read-only proxy from another
         # Region, and mappingproxy cannot be deep-copied), then deep copy so the
         # Region owns the data, then recursively wrap it in read-only proxies.
@@ -171,22 +298,30 @@ class Region:
             raise TypeError("Region metadata must be JSON-serializable.") from exc
         object.__setattr__(self, "metadata", _freeze_metadata(copy.deepcopy(thawed)))
 
+        owner = f"Region {self.name!r}"
         if self.kind == "point":
-            raw = self.data
-            if isinstance(raw, Point):
-                raw = raw.coords[0]
-            point = np.array(raw, dtype=np.float64, copy=True)
-            if point.ndim != 1:
-                raise ValueError("Point data must be a 1-D array-like.")
-            point.setflags(write=False)
+            point = _owned_point(
+                self.data, owner=owner, shape_kinds={"Polygon": "polygon"}
+            )
             object.__setattr__(self, "data", point)
-
         elif self.kind == "polygon":
             if not isinstance(self.data, Polygon):
-                raise TypeError("data must be a Shapely Polygon for kind='polygon'.")
-
-        else:  # pragma: no cover
-            raise ValueError(f"Unknown kind {self.kind!r}")
+                raise TypeError(
+                    _format_error(
+                        f"{owner} has kind='polygon', so its data must be a "
+                        f"shapely Polygon, got {type(self.data).__name__}.",
+                        fix="wrap the vertices with shapely.Polygon(vertices); "
+                        "make one region per part of a MultiPolygon",
+                    )
+                )
+            _check_planar_geometry(self.data, owner=owner)
+        else:
+            raise ValueError(
+                _format_error(
+                    f"{owner} has unknown kind {self.kind!r}.",
+                    fix='use kind="point" or kind="polygon"',
+                )
+            )
 
     # -----------------------------------------------------------------
     # Convenience
@@ -245,7 +380,9 @@ class Region:
 
         """
         geom = (
-            self.data.tolist() if isinstance(self.data, np.ndarray) else mapping(self.data)
+            self.data.tolist()
+            if isinstance(self.data, np.ndarray)
+            else mapping(self.data)
         )
 
         return {

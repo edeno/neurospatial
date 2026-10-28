@@ -209,38 +209,6 @@ class TestValidateRegionWithinBoundary:
         issues = validate_region_within_boundary(point_region, boundary_region)
         assert len(issues) == 0
 
-    def test_self_intersecting_region_does_not_raise(self, boundary_region):
-        """An invalid (self-intersecting) region polygon must not raise.
-
-        Self-intersecting polygons make Shapely's contains/intersection raise a
-        GEOSException. The validator must repair such geometries (make_valid)
-        before the spatial predicates so it returns issues instead of crashing.
-        """
-        # Bowtie polygon: a valid Polygon *type* but topologically invalid.
-        bowtie = Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
-        assert not bowtie.is_valid
-        region = Region(name="bowtie", kind="polygon", data=bowtie)
-
-        # Must not raise (previously raised shapely GEOSException).
-        issues = validate_region_within_boundary(
-            region, boundary_region, warn_outside=False
-        )
-        assert isinstance(issues, list)
-
-    def test_self_intersecting_boundary_does_not_raise(self, region_inside_boundary):
-        """An invalid (self-intersecting) boundary polygon must not raise."""
-        bowtie_boundary = Region(
-            name="bad_boundary",
-            kind="polygon",
-            data=Polygon([(0, 0), (200, 200), (200, 0), (0, 200)]),
-        )
-        assert not bowtie_boundary.data.is_valid
-
-        issues = validate_region_within_boundary(
-            region_inside_boundary, bowtie_boundary, warn_outside=False
-        )
-        assert isinstance(issues, list)
-
 
 # =============================================================================
 # Tests for validate_region_overlap
@@ -299,31 +267,6 @@ class TestValidateRegionOverlap:
         regions = Regions([region_inside_boundary])
         issues = validate_region_overlap(regions)
         assert len(issues) == 0
-
-    def test_validate_region_overlap_invalid_polygon_warns_not_raises(self):
-        """An invalid (self-intersecting) polygon warns rather than raising.
-
-        The module contract is "warn, never raise". A bowtie polygon makes
-        shapely's overlap computation throw a ``GEOSException``; the function
-        must catch it, record an issue, and emit a ``UserWarning`` instead of
-        propagating the exception.
-        """
-        bowtie = Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])
-        assert not bowtie.is_valid
-
-        r1 = Region(name="bowtie", kind="polygon", data=bowtie)
-        r2 = Region(
-            name="ok",
-            kind="polygon",
-            data=Polygon([(0, 0), (2, 0), (2, 2), (0, 2)]),
-        )
-        regions = Regions([r1, r2])
-
-        with pytest.warns(UserWarning, match="invalid geometry"):
-            issues = validate_region_overlap(regions)
-
-        assert len(issues) > 0
-        assert any("invalid geometry" in issue for issue in issues)
 
     def test_validate_region_overlap_valid_polygons_unchanged(self):
         """Valid overlapping polygons still produce the overlap warning/issue.

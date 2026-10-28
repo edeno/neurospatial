@@ -2,6 +2,7 @@ from collections.abc import Mapping
 
 import numpy as np
 import pytest
+import shapely
 import shapely.geometry as shp
 
 from neurospatial.regions.core import Region, Regions
@@ -23,9 +24,72 @@ def test_region_point_creation(coords):
     assert isinstance(r.metadata, Mapping)
 
 
-def test_region_point_invalid_shape():
-    with pytest.raises(ValueError):
-        Region(name="bad", kind="point", data=[[1, 2], [3, 4]])
+BOWTIE = shp.Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
+
+
+@pytest.mark.parametrize(
+    ("name", "kind", "data", "error", "match"),
+    [
+        ("", "point", [1.0, 2.0], ValueError, "names must be nonempty strings"),
+        (3, "point", [1.0, 2.0], ValueError, "names must be nonempty strings"),
+        ("bad", "point", [[1, 2], [3, 4]], ValueError, r"shape \(n_dims,\)"),
+        ("bad", "point", [], ValueError, r"got shape \(0,\)"),
+        ("bad", "point", shp.Point(), ValueError, r"got shape \(0,\)"),
+        ("bad", "point", [np.nan, 2.0], ValueError, "NaN or infinite"),
+        ("bad", "point", [np.inf, 2.0], ValueError, "NaN or infinite"),
+        ("bad", "point", ["a", "b"], TypeError, "must be numbers"),
+        ("bad", "point", BOWTIE, TypeError, 'use kind="polygon"'),
+        ("bad", "polygon", [(0, 0), (1, 1)], TypeError, "must be a shapely Polygon"),
+        (
+            "bad",
+            "polygon",
+            shp.MultiPolygon([shp.box(0, 0, 1, 1), shp.box(2, 2, 3, 3)]),
+            TypeError,
+            "one region per part",
+        ),
+        ("bad", "polygon", shp.Polygon(), ValueError, "empty polygon"),
+        ("bad", "polygon", BOWTIE, ValueError, "(?s)Self-intersection.*make_valid"),
+        (
+            "bad",
+            "polygon",
+            shp.Polygon([(0, 0, 1), (1, 0, 1), (1, 1, 1)]),
+            ValueError,
+            "z coordinates",
+        ),
+        (
+            "bad",
+            "polygon",
+            shp.Polygon([(0, 0), (np.nan, 0), (1, 1)]),
+            ValueError,
+            "NaN or infinite vertex",
+        ),
+        ("bad", "unknown", [1, 2], ValueError, "unknown kind 'unknown'"),
+    ],
+)
+def test_invalid_region_geometry_is_refused_naming_the_region(
+    name, kind, data, error, match
+):
+    with pytest.raises(error, match=match) as raised:
+        Region(name=name, kind=kind, data=data)
+    if isinstance(name, str) and name:
+        assert "Region 'bad'" in str(raised.value)
+
+
+def test_self_intersecting_outline_cannot_claim_bins():
+    """A bowtie has zero shapely area yet covered 55 bins of a 10 cm grid."""
+    assert BOWTIE.area == 0
+    with pytest.raises(ValueError, match="redraw it so its edges do not cross"):
+        Region("arena", "polygon", BOWTIE)
+    repaired = shapely.make_valid(BOWTIE)
+    assert isinstance(repaired, shp.MultiPolygon)  # two triangles; pick one
+    triangle = Region("arena", "polygon", repaired.geoms[0])
+    assert triangle.data.area == pytest.approx(25.0)
+
+
+def test_point_given_as_shapely_point_is_its_coordinates():
+    region = Region("goal", "point", shp.Point(3.0, 4.0))
+    np.testing.assert_array_equal(region.data, [3.0, 4.0])
+    assert region.n_dims == 2
 
 
 def test_region_polygon_creation():
@@ -34,16 +98,6 @@ def test_region_polygon_creation():
     assert r.kind == "polygon"
     assert r.n_dims == 2
     assert r.data.equals(poly)
-
-
-def test_region_polygon_invalid_type():
-    with pytest.raises(TypeError):
-        Region(name="badpoly", kind="polygon", data=[(0, 0), (1, 1)])
-
-
-def test_region_unknown_kind():
-    with pytest.raises(ValueError):
-        Region(name="bad", kind="unknown", data=[1, 2])
 
 
 def test_region_to_dict_and_from_dict_point():
@@ -188,12 +242,6 @@ def test_regions_area_point():
     regs = Regions()
     regs.add("pt", point=[1, 2])
     assert regs.area("pt") == 0.0
-
-
-def test_region_center_empty_polygon_returns_none():
-    """An empty polygon has no centroid; region_center returns None, not IndexError."""
-    regs = Regions([Region("e", kind="polygon", data=shp.Polygon())])
-    assert regs.region_center("e") is None
 
 
 def test_region_center_nonempty_polygon_centroid():

@@ -26,12 +26,10 @@ def _restore(value: Any, method: str) -> Any:
 
 
 @pytest.mark.parametrize("method", ["original", "copy", "deepcopy", "pickle", "dict"])
-@pytest.mark.parametrize("source_kind", ["strided", "point", "empty"])
-def test_point_buffers_are_independent_and_irreversibly_read_only(method, source_kind):
+@pytest.mark.parametrize("source_kind", ["strided", "point"])
+def test_point_data_is_an_independent_read_only_copy(method, source_kind):
     source = np.arange(8.0)[::2]
     coordinates = source if source_kind == "strided" else Point(1, 2)
-    if source_kind == "empty":
-        coordinates = np.array([], dtype=float)
     region = Region("goal", "point", coordinates)
     expected = np.asarray(region.data).copy()
     restored = (
@@ -46,9 +44,8 @@ def test_point_buffers_are_independent_and_irreversibly_read_only(method, source
     assert not np.shares_memory(restored.data, source)
     assert restored.data.dtype == np.float64
     assert not restored.data.flags.writeable
-    if expected.size:
-        with pytest.raises(ValueError):
-            restored.data[0] = 123
+    with pytest.raises(ValueError):
+        restored.data[0] = 123
 
 
 @pytest.mark.parametrize("method", ["original", "copy", "deepcopy", "pickle", "dict"])

@@ -656,33 +656,6 @@ def test_delete_that_resolves_to_nothing_still_resets_identity_defaults():
 
 
 @pytest.mark.gui
-def test_invalid_initial_region_loads_for_repair():
-    napari = pytest.importorskip("napari")
-
-    from neurospatial.annotation._napari_widget import (
-        setup_shapes_layer_for_annotation,
-    )
-
-    viewer = napari.Viewer(show=False)
-    try:
-        shapes = setup_shapes_layer_for_annotation(viewer, "region")
-        bowtie = Polygon([(0, 0), (10, 10), (0, 10), (10, 0)])
-        _add_initial_regions(
-            shapes, Regions([Region("bowtie", "polygon", bowtie)]), None
-        )
-        assert list(shapes.features["name"]) == ["bowtie"]
-        with pytest.raises(ValueError, match="Cannot save region 'bowtie'"):
-            _process_annotation_results(shapes, "regions", None, None, None, "last")
-        shapes.data = [np.array([[0.0, 0.0], [0.0, 10.0], [10.0, 10.0], [10.0, 0.0]])]
-        result = _process_annotation_results(
-            shapes, "regions", None, None, None, "last"
-        )
-        assert result.regions["bowtie"].data.area == 100.0
-    finally:
-        viewer.close()
-
-
-@pytest.mark.gui
 def test_copied_interior_pasted_before_its_exterior_stays_linked():
     napari = pytest.importorskip("napari")
 
