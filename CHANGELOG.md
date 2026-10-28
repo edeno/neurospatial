@@ -2,6 +2,81 @@
 
 ## [Unreleased]
 
+### Behavior cleanup and faster analyses
+
+Behavior functions share one metric resolver, one `position_bins`
+validator, one movement-heading rule and one attempt state machine for runs
+and trials. Results for valid input are unchanged except where listed below
+or at float rounding where noted.
+
+Breaking:
+
+- `running_direction_labels(successful_only=)` is renamed `success_only=`,
+  matching `runs_to_direction_labels` and `Run.success`.
+
+Input that now raises (each was silently accepted):
+
+- `distance_to_reward` refuses an unknown `metric`; `"Euclidean"` or a typo
+  ran the geodesic metric. It also refuses empty input, repeated timestamps
+  and decreasing times when `reward_positions` is given, and checks `mode`
+  first.
+- `position_bins` outside `[-1, n_bins)` raise `BinIndexOutOfRangeError`, and
+  float or boolean bins raise `TypeError`, in `detect_boundary_crossings`
+  (float bins were truncated, 0.9 read as bin 0), `decision_region_entry_time`
+  (out-of-range bins read as "never enters"), `detect_region_visits`
+  (skipped as missing) and `distance_to_decision_boundary` (returned NaN).
+- A NaN, infinite or negative `min_speed` raises in `heading_from_velocity`,
+  `instantaneous_goal_alignment`, `goal_bias` and
+  `compute_goal_directed_metrics`; `goal_bias(min_speed=nan)` returned NaN.
+- `segment_by_velocity` refuses empty input (it returned a `(0, 2)` array)
+  and checks all timestamps, so a repeated timestamp next to a NaN row
+  raises.
+- `time_to_goal` and `trials_to_region_arrays` refuse empty, unsorted,
+  repeated or non-finite `times`.
+
+Results that change:
+
+- `compute_turn_angles` (and `compute_trajectory_curvature`) returns +π for
+  a planar reversal, matching `compute_planar_turn_angles` and the
+  (-π, π] convention; it returned -π.
+- `distance_to_reward` with all-NaN positions and inferred rewards returns
+  NaN with the unknown-reward warning; it raised numpy's "array of sample
+  points is empty".
+- `running_direction_labels` gives its excluded-interval warning once, not
+  twice per end region.
+- The geodesic path engine returns NaN for a target outside the
+  environment; it measured to the last bin's field. Public functions already
+  refused such targets, so their results do not change.
+- Error messages for a geodesic metric without `env`, an unknown metric,
+  mismatched `position_bins`/`times`, and positions without x and y columns
+  read the same in every behavior function.
+
+Faster (same results):
+
+- `mean_square_displacement` with the euclidean metric and uniform sampling
+  uses FFT correlations per recording segment: 54k samples took 36 s and
+  take 0.01 s. Values agree with the pair loop to about 1e-12 relative
+  (below 1e-10 at 500k samples). Irregular sampling and `metric="geodesic"`
+  keep the pair loop.
+- `trajectory_similarity(method="dtw")` is about 100× faster.
+- `segment_trials`, `detect_region_crossings`, `detect_runs_between_regions`
+  and `running_direction_labels` compute region masks once per call instead
+  of once per recording segment (`running_direction_labels` with 500 epochs:
+  0.44 s → 0.02 s); direction labels, `time_to_goal` and
+  `trials_to_region_arrays` slice sorted times per interval instead of
+  building one full-length mask per trial (1.8M samples, 450 trials:
+  ~1 s → 0.05 s).
+- The 0.1 s position smoothing used by `angular_efficiency`,
+  `compute_path_efficiency` and `subgoal_efficiency` is 3× faster at high
+  sampling rates (rounding-level differences, below 1e-13).
+- Geodesic `distance_to_reward` prepares all reward fields in one batch.
+- Geodesic path lengths (`compute_step_lengths`, `traveled_path_length`,
+  `compute_path_efficiency`) are about a third faster on long trajectories:
+  each distance field grows only as far as the farthest bin it is asked
+  about. The cached distance fields stay within their memory budget, and
+  geodesic `mean_square_displacement` pair tables use about half the
+  memory.
+
 ### Behavior analyses measure what they say
 
 Results that change (each was plausible and wrong):
