@@ -468,10 +468,10 @@ class _OpenPaths(EnvironmentPaths):
         # Each bin's open neighbors, padded with -1: a membership test reads
         # one short row instead of searching every connection.
         degree = np.diff(adjacency.indptr)
-        # Row (bin) of each stored connection.
-        self._edge_rows = np.repeat(np.arange(n_bins), degree)
         self._neighbors = np.full((n_bins, int(degree.max(initial=0))), -1, np.intp)
-        self._neighbors[self._edge_rows, ragged_arange(degree)] = adjacency.indices
+        self._neighbors[np.repeat(np.arange(n_bins), degree), ragged_arange(degree)] = (
+            adjacency.indices
+        )
         lengths = adjacency.data[adjacency.data > 0]
         self._spacing = (
             _PROBE_FRACTION * float(lengths.min()) if lengths.size else np.inf
@@ -963,9 +963,11 @@ class _OpenPaths(EnvironmentPaths):
             Each set is one bin, and a bin whose center sees it connects
             straight to it.
         stop_bins : list of ndarray of int, optional
-            Per set, the bins it is needed for: its growth stops once they
-            are reached. Bins it did not reach are left ``inf``/-1. A bin's
-            value never depends on whether growth stopped later.
+            Per set, the bins it is needed for: it grows only through the
+            layer of the farthest of them and stops once they are reached.
+            Bins it did not reach are left ``inf``/-1. A bin's value depends
+            only on bins in its own and earlier layers, so it never depends
+            on where growth stopped.
 
         Returns
         -------
@@ -1000,20 +1002,7 @@ class _OpenPaths(EnvironmentPaths):
                     for s in source_sets
                 ]
             )
-        # In-edges v <- u of each node v from its nearer neighbors u
-        # (g[u] < g[v]), as global ids f * n + bin. The bin graph is
-        # symmetric with sorted rows, so reading row v as v's in-edges lists
-        # them grouped by (field, v) and then by u, with no sort.
-        v_bin, u_bin = self._edge_rows, self._adjacency.indices
-        g_v, g_u = graph[:, v_bin], graph[:, u_bin]
-        with np.errstate(invalid="ignore"):
-            oriented = np.isfinite(g_v) & (g_u < g_v - _GRAPH_RTOL * g_v)
-        field_of, edge_of = np.nonzero(oriented)
-        dst = field_of * n_bins + v_bin[edge_of]
-        in_src = field_of * n_bins + u_bin[edge_of]
         n_nodes = n_sets * n_bins
-        in_ptr = np.r_[0, np.cumsum(np.bincount(dst, minlength=n_nodes))]
-
         length = np.full(n_nodes, np.inf)
         anchor = np.full(n_nodes, -1, dtype=np.int32)
         lead = np.full(n_nodes, -1, dtype=np.int32)
@@ -1025,30 +1014,54 @@ class _OpenPaths(EnvironmentPaths):
             anchor[ids] = sources
             lead[ids] = sources
         settled = is_source.copy()
+        flat = graph.ravel()
+        # Layers of graph distance, one shortest edge thick (inf unreached).
+        layer_of = np.floor(flat / (self._spacing / _PROBE_FRACTION))
+        needed = None
+        if stop_bins is None:
+            grown = np.flatnonzero(np.isfinite(flat))
+        else:
+            needed = np.zeros(n_nodes, dtype=bool)
+            for f, stop in enumerate(stop_bins):
+                needed[f * n_bins + np.asarray(stop, dtype=np.intp)] = True
+            needed &= ~is_source & np.isfinite(flat)
+            # Each field grows through the layer of its farthest needed bin.
+            last = np.full(n_sets, -1.0)
+            need = np.flatnonzero(needed)
+            np.maximum.at(last, need // n_bins, layer_of[need])
+            grown = np.flatnonzero(layer_of <= np.repeat(last, n_bins))
+        # In-edges v <- u of each grown node v from its nearer neighbors u
+        # (g[u] < g[v]), as global ids f * n + bin. The bin graph is
+        # symmetric with sorted rows, so reading row v as v's in-edges lists
+        # them grouped by (field, v) and then by u, with no sort. A nearer
+        # neighbor is in the same or an earlier layer, so it is grown too.
+        adjacency_rows = self._adjacency.indptr
+        grown_bin = grown % n_bins
+        degree = adjacency_rows[grown_bin + 1] - adjacency_rows[grown_bin]
+        dst = np.repeat(grown, degree)
+        src = (dst - np.repeat(grown_bin, degree)) + self._adjacency.indices[
+            np.repeat(adjacency_rows[grown_bin], degree) + ragged_arange(degree)
+        ]
+        g_v = flat[dst]
+        nearer = flat[src] < g_v - _GRAPH_RTOL * g_v
+        in_src, dst = src[nearer], dst[nearer]
+        in_ptr = np.r_[0, np.cumsum(np.bincount(dst, minlength=n_nodes))]
+
         root_of_field = (
             np.array([s[0] for s in source_sets], dtype=np.intp)
             if single_roots
             else None
         )
-        # Layers of graph distance, one shortest edge thick.
-        flat = graph.ravel()
-        reached = np.flatnonzero(np.isfinite(flat) & ~is_source)
-        layer = np.floor(flat[reached] / (self._spacing / _PROBE_FRACTION)).astype(
-            np.intp
-        )
+        reached = grown[~is_source[grown]]
+        layer = layer_of[reached].astype(np.intp)
         by_layer = np.argsort(layer, kind="stable")
         reached, layer = reached[by_layer], layer[by_layer]
         bounds = np.flatnonzero(np.diff(layer)) + 1
         waves = np.split(reached, bounds)
-        needed = None
-        if stop_bins is not None:
-            needed = np.zeros(n_nodes, dtype=bool)
-            for f, stop in enumerate(stop_bins):
-                needed[f * n_bins + np.asarray(stop, dtype=np.intp)] = True
-            needed &= ~settled & np.isfinite(graph.ravel())
-            open_fields = (
-                np.bincount(np.flatnonzero(needed) // n_bins, minlength=n_sets) > 0
-            )
+        if needed is not None:
+            # Needed bins each field has yet to settle.
+            remaining = np.bincount(need // n_bins, minlength=n_sets)
+            open_fields = remaining > 0
         waiting = np.zeros(0, dtype=np.intp)
         for wave in [*waves, np.zeros(0, dtype=np.intp)]:
             nodes = np.r_[waiting, wave] if waiting.size else wave
@@ -1072,9 +1085,8 @@ class _OpenPaths(EnvironmentPaths):
             if needed is not None:
                 done = nodes[settled[nodes] & needed[nodes]]
                 needed[done] = False
-                open_fields = (
-                    np.bincount(np.flatnonzero(needed) // n_bins, minlength=n_sets) > 0
-                )
+                remaining -= np.bincount(done // n_bins, minlength=n_sets)
+                open_fields = remaining > 0
                 if not open_fields.any():
                     break
         while waiting.size:

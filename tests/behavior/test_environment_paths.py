@@ -475,3 +475,35 @@ class TestTargetOutsideTheEnvironment:
         points = env.bin_centers[:: max(1, env.n_bins // 10)]
         assert np.isnan(paths.to_point(points, outside)).all()
         assert np.isnan(paths.directions(points, outside)).all()
+
+
+def test_fields_grown_only_to_the_start_bins_equal_whole_fields():
+    """between() grows each target's field only as far as its start bins;
+    the lengths equal those read from whole, kept fields."""
+    from neurospatial.behavior._environment_paths import environment_paths
+
+    edges = np.arange(0.0, 101.0, BIN)
+
+    def arena():
+        return Environment.from_grid_mask(
+            np.ones((20, 20), dtype=bool),
+            grid_edges=(edges, edges),
+            arena=OpenArena(
+                box(0, 0, 100, 100),
+                walls={"divider": LineString([(50, 0), (50, 70)])},
+            ),
+        )
+
+    rng = np.random.default_rng(0)
+    # A random walk of about two-bin steps: short and long reaches, some
+    # around the wall end.
+    walk = np.abs(
+        np.mod(np.cumsum(rng.normal(0, 8.0, (600, 2)), axis=0) + 50, 198) - 99
+    )
+    starts, ends = walk[:-1] + 0.5, walk[1:] + 0.5
+    grown = environment_paths(arena(), call="test").between(starts, ends)
+    whole = environment_paths(arena(), call="test")
+    whole.prepare(whole.bins(ends))
+    kept = whole.between(starts, ends)
+    assert np.isfinite(grown).sum() > 500
+    np.testing.assert_array_equal(grown, kept)
