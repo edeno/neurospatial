@@ -895,21 +895,28 @@ laps = detect_laps(
 
 ### Region Method
 
-Define laps as segments between start region entries. A lap must reach the
-far side of the track (a bin at least half the greatest path distance from the
-start region), so tracking jitter across the region edge does not split a lap.
-Region laps have `overlap_score = NaN` (no template).
+A lap is a trip out of a start region, round the loop and back into it. Draw
+the start region across the track: it cuts the loop into a stretch on each side.
+A trip counts as a lap when it leaves on one side and comes back on the other,
+which means it passed the far side of the loop. A trip that comes back the way
+it went (an aborted run, however far it got) is not a lap, and its time belongs
+to no lap; tracking jitter across the region's edge does not split a lap. Each
+lap runs from the entry before its trip to the entry that ends it; if the
+recording starts inside the start region, the first lap starts at the first
+sample. Region laps have `overlap_score = NaN` (no template). The region method
+needs a loop of connected bins: in an open arena use `method="auto"` or
+`"reference"`, and on a back-and-forth track use `segment_trials`.
 
 ```python
 from neurospatial import Regions
 
-# Add start region (crossing point on track)
+# Add start region (drawn across the track)
 from shapely.geometry import Point
 region_builder = Regions(env.regions.values())
 region_builder.add("start", polygon=Point(50, 50).buffer(5.0))
 env = env.with_regions(region_builder)
 
-# Detect laps as inter-crossing intervals
+# Detect laps as trips round the loop between start-region entries
 laps = detect_laps(
     position_bins,
     times,

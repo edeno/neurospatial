@@ -1523,8 +1523,8 @@ def detect_laps(
         Bin sequence of one complete lap, for the 'reference' method; its
         first bin marks where laps start. Required when method='reference'.
     start_region : str | None, optional
-        Name of start region for 'region' method.
-        Required when method='region'.
+        Name of start region for 'region' method, drawn across the loop
+        track. Required when method='region'.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1561,7 +1561,9 @@ def detect_laps(
     ValueError
         If method='region' but start_region not provided.
     ValueError
-        If start_region not in env.regions.
+        If start_region not in env.regions, or (method='region') if it does
+        not cut a loop of connected bins into two sides: in an open arena,
+        at a dead end, or where the environment's bins do not connect.
     CartesianOnlyError
         If ``env`` is polar: each lap's clockwise or counter-clockwise
         direction is the signed area of Cartesian bin centers.
@@ -1613,14 +1615,26 @@ def detect_laps(
       greatest path distance away). This first circuit is itself the first
       lap. Useful when no canonical lap is at hand; use 'reference' when the
       first circuit is atypical.
-    - **Region**: Defines laps as segments between entries to a start
-      region, useful for well-controlled tasks with clear start zones. A lap
-      must reach the far side of the track, a bin at least half the greatest
-      path distance from the start region (on a closed loop of length L the
-      farthest point is L/2 away, and every full circuit passes it), so
-      tracking jitter across the region edge does not split a lap. Each lap
-      covers ``[entry, next lap's entry)``: ``end_time`` is the entry that
-      starts the next lap. ``overlap_score`` is NaN.
+    - **Region**: A lap is a trip out of a start region and round the loop
+      back into it, useful for well-controlled tasks with clear start zones.
+      The start region cuts the loop track into a stretch on each side of
+      it. A trip goes round the loop when, staying away from the region, it
+      moves from the stretch on one side to the stretch on the other; the
+      two stretches meet only at the far side of the loop, so every lap
+      passes it. A trip that comes back the way it went (an out-and-back,
+      however far) is a turn back and not a lap, and a trip that stays
+      within the few bins around the region, such as tracking jitter
+      across the region's edge, does not interrupt a lap. Each lap covers
+      ``[entry, entry that ends its trip)``, starting at the entry that
+      precedes the trip, so time spent on a turn back belongs to no lap.
+      When the recording starts inside the start region, the first lap
+      starts at the first sample. ``overlap_score`` is NaN.
+
+      "Stay away from the region" is measured in connectivity-graph steps:
+      the bins ``k`` and ``k + 1`` steps from the region form a band, and
+      the sides are the separate pieces of the first band that falls apart
+      (``k = 1`` for a region drawn across the track; a larger ``k`` when
+      the region leaves a gap beside it).
 
     **Direction Detection:**
 
@@ -1791,19 +1805,15 @@ def detect_laps(
     laps: list[Lap] = []
     if method == "region":
         assert start_region is not None
-        from_start, far_distance = _distances_from(
-            env, env.bins_in_region(start_region)
-        )
+        sides = _region_sides(env, start_region)
         for run in runs:
             laps.extend(
                 _detect_laps_region_contiguous(
                     position_bins[run],
                     times[run],
                     env,
-                    start_region=start_region,
+                    sides=sides,
                     direction=direction,
-                    from_start=from_start,
-                    far_distance=far_distance,
                 )
             )
         return laps
@@ -1855,48 +1865,161 @@ def _detect_laps_region_contiguous(
     times: NDArray[np.float64],
     env: Environment,
     *,
-    start_region: str,
+    sides: _RegionSides,
     direction: str,
-    from_start: NDArray[np.float64],
-    far_distance: float,
 ) -> list[Lap]:
-    """Pair start-region entries within one recording into laps.
+    """Find the trips round the loop within one recording.
 
-    A lap runs from one entry to the next entry that follows a trip to the
-    far side of the track: a bin at least ``far_distance`` (half the
-    greatest path distance from the start region) away. Re-entries without
-    such a trip, such as tracking jitter across the region edge, stay inside
-    the lap instead of splitting it.
+    A trip is the stretch between leaving the start region and entering it
+    again. It goes round the loop when, while staying at least ``sides.cut``
+    steps from the region, it moves from the stretch of track on one side of
+    the region to the stretch on the other: that change happens only at the
+    far side of the loop. A trip that comes back the way it went is a turn
+    back. A trip that never gets more than ``sides.cut`` steps from the
+    region, such as tracking jitter across the region's edge, is ignored.
+    A lap runs from the entry that precedes its trip (the recording's first
+    sample if the animal starts in the region) to the entry that ends it, so
+    time spent on a turn back belongs to no lap.
     """
-    crossings = _detect_region_crossings_contiguous(
-        position_bins, times, env, region_name=start_region, direction="entry"
-    )
-    entry_indices = [int(np.searchsorted(times, c.time)) for c in crossings]
-    if len(entry_indices) < 2:
-        return []
-
-    # Lap boundaries: the first entry, then each entry that ends a far trip.
-    boundaries = [entry_indices[0]]
-    for previous, entry in itertools.pairwise(entry_indices):
-        if from_start[position_bins[previous:entry]].max() >= far_distance:
-            boundaries.append(entry)
-
+    inside = sides.in_region[position_bins]
+    steps = sides.steps[position_bins]
+    side = sides.side[position_bins]
+    # Stretches outside the region as [first sample out, first sample back).
+    edges = np.diff(np.r_[1, inside.astype(np.int8), 1])
+    exits, returns = np.flatnonzero(edges == -1), np.flatnonzero(edges == 1)
+    lap_start: int | None = 0 if inside[0] else None
     laps: list[Lap] = []
-    for start_idx, end_idx in itertools.pairwise(boundaries):
-        lap_direction = _detect_lap_direction(
-            env.bin_centers, position_bins[start_idx:end_idx]
-        )
-        if direction != "both" and lap_direction != direction:
+    for leave, back in zip(exits, returns, strict=True):
+        if leave == 0:  # the recording starts outside: wait for an entry
+            lap_start = int(back)
             continue
-        laps.append(
-            Lap(
-                start_time=float(times[start_idx]),
-                end_time=float(times[end_idx]),
-                direction=lap_direction,
-                overlap_score=np.nan,  # no template to overlap
+        if back == len(inside):  # still outside when the recording stops
+            break
+        if steps[leave:back].max() <= sides.cut:
+            continue  # the animal never got away from the region
+        if lap_start is not None and _goes_round(
+            steps[leave:back], side[leave:back], sides.cut
+        ):
+            lap_bins = position_bins[lap_start:back]
+            lap_direction = _detect_lap_direction(env.bin_centers, lap_bins)
+            if direction == "both" or lap_direction == direction:
+                laps.append(
+                    Lap(
+                        start_time=float(times[lap_start]),
+                        end_time=float(times[back]),
+                        direction=lap_direction,
+                        overlap_score=np.nan,  # no template to overlap
+                    )
+                )
+        lap_start = int(back)
+    return laps
+
+
+def _goes_round(steps: NDArray[np.float64], side: NDArray[np.intp], cut: int) -> bool:
+    """Whether a trip changes side while staying ``cut`` or more steps out."""
+    away = np.r_[False, steps >= cut, False]
+    starts = np.flatnonzero(~away[:-1] & away[1:])
+    stops = np.flatnonzero(away[:-1] & ~away[1:]) - 1
+    first, last = side[starts], side[stops]
+    return bool(np.any((first != last) & (first >= 0) & (last >= 0)))
+
+
+@dataclass(frozen=True, eq=False)
+class _RegionSides:
+    """Where each bin lies relative to a start region on a loop track.
+
+    Attributes
+    ----------
+    in_region : NDArray[np.bool_], shape (n_bins,)
+        Bins in the region.
+    steps : NDArray[np.float64], shape (n_bins,)
+        Fewest connectivity-graph steps from each bin to a region bin; inf
+        when none is reachable.
+    cut : int
+        The step count at which the track splits into separate stretches,
+        one on each side of the region.
+    side : NDArray[np.intp], shape (n_bins,)
+        Which stretch each bin ``cut`` or more steps out belongs to; -1 for
+        nearer bins.
+    """
+
+    in_region: NDArray[np.bool_]
+    steps: NDArray[np.float64]
+    cut: int
+    side: NDArray[np.intp]
+
+
+def _region_sides(env: Environment, region: str) -> _RegionSides:
+    """Split the track around ``region`` into the stretches on each side.
+
+    The bins ``k`` and ``k + 1`` steps from the region form a band; ``cut``
+    is the smallest ``k`` at which the band falls into two or more connected
+    pieces. A region drawn across a loop track cuts it at once (``k = 1``);
+    a region that leaves a gap beside it at the track's edge cuts it once
+    ``k`` passes the gap. Each piece is one side, and every bin farther out
+    takes the side of the band bin it reaches in the fewest steps without
+    coming nearer the region, so the sides meet only at the far side of the
+    loop.
+
+    Raises
+    ------
+    ValueError
+        If no band splits: the region is not on a loop of connected bins (an
+        open arena, a dead end, or an environment whose bins do not connect).
+    """
+    from scipy.sparse import diags_array
+    from scipy.sparse.csgraph import connected_components, dijkstra
+
+    from neurospatial.ops.distance import _bin_adjacency
+    from neurospatial.ops.mapping import regions_to_mask
+
+    in_region = np.asarray(regions_to_mask(env, [region]), dtype=bool)
+    adjacency = _bin_adjacency(env.connectivity, weight=None, operation="detect_laps()")
+    steps = dijkstra(
+        adjacency,
+        directed=False,
+        indices=np.flatnonzero(in_region),
+        unweighted=True,
+        min_only=True,
+    )
+    reachable = steps[np.isfinite(steps)]
+    farthest = int(reachable.max()) if reachable.size else 0
+    for cut in range(1, farthest):
+        band = np.flatnonzero((steps == cut) | (steps == cut + 1))
+        n_pieces, piece = connected_components(adjacency[band][:, band], directed=False)
+        if n_pieces >= 2:
+            break
+    else:
+        raise ValueError(
+            _format_error(
+                f"start_region {region!r} does not cut a loop: the track around "
+                "it does not split into one stretch on each side.",
+                why="a region lap is a trip that leaves the start region on one "
+                "side and comes back on the other after going round the loop; "
+                "in an open arena, at a dead end, or where the environment's bins "
+                "do not connect, every trip out is a turn back.",
+                fix="draw start_region across the full width of a loop track whose "
+                "bins connect (for example Environment.from_samples on densely "
+                "sampled positions). In an open arena use method='auto' or "
+                "'reference'; on a track the animal runs back and forth use "
+                "segment_trials or detect_runs_between_regions.",
             )
         )
-    return laps
+    piece_of = np.full(env.n_bins, -1, dtype=np.intp)
+    piece_of[band] = piece
+    # Spread each band piece outward without stepping nearer the region.
+    away = diags_array((steps >= cut).astype(np.float64))
+    _, _, nearest = dijkstra(
+        away @ adjacency @ away,
+        directed=False,
+        indices=np.flatnonzero(steps == cut),
+        unweighted=True,
+        min_only=True,
+        return_predecessors=True,
+    )
+    side = np.where(nearest >= 0, piece_of[np.maximum(nearest, 0)], -1)
+    side[steps < cut] = -1
+    return _RegionSides(in_region, steps, cut, side.astype(np.intp))
 
 
 def _distances_from(
@@ -1904,7 +2027,7 @@ def _distances_from(
 ) -> tuple[NDArray[np.float64], float]:
     """Path distance from ``sources`` to every bin, and half its finite maximum.
 
-    The second value is the "far side" threshold of the lap detectors: on a
+    The second value is the "far side" threshold of the first circuit: on a
     closed loop of length L the farthest point from any place is L/2 away,
     and every full circuit passes it.
     """

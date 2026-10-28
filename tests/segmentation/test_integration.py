@@ -36,18 +36,19 @@ class TestFullTrajectoryAnalysisWorkflow:
 
     def test_circular_track_complete_workflow(self) -> None:
         """Test full circular track analysis: laps → metrics → similarity."""
-        # Create environment (20x20 cm, 2cm bins)
-        x = np.linspace(0, 20, 100)
-        y = np.linspace(0, 20, 100)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=2.0)
-
-        # Generate circular trajectory (3 clockwise laps)
-        n_samples = 300
-        t = np.linspace(0, 3 * 2 * np.pi, n_samples)
+        # A circular track of radius 6 cm centered at (10, 10), 2 cm bins.
+        # Region laps need a loop: the start region must cut the track.
         center = np.array([10.0, 10.0])
         radius = 6.0
+        track = np.linspace(0, 2 * np.pi, 400)
+        env = Environment.from_samples(
+            center + radius * np.column_stack([np.cos(track), np.sin(track)]),
+            bin_size=2.0,
+        )
+
+        # Generate circular trajectory (3 counter-clockwise laps)
+        n_samples = 300
+        t = np.linspace(0, 3 * 2 * np.pi, n_samples)
         traj_positions = center + radius * np.column_stack([np.cos(t), np.sin(t)])
         times = np.linspace(0, 30, n_samples)  # 30 seconds, 10s per lap
 

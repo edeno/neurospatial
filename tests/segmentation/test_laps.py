@@ -161,9 +161,11 @@ class TestDetectLaps:
             min_overlap=0.0,  # Not used for region method
         )
 
-        # The 2-lap (4pi) trajectory crosses the start region twice, which
-        # bounds exactly one lap segment between the crossings.
-        assert len(laps) == 1
+        # The 2-lap (4pi) trajectory starts in the start region and enters it
+        # twice more; each trip between them goes round the loop, so both
+        # laps count, the first from the recording's first sample.
+        assert len(laps) == 2
+        assert laps[0].start_time == times[0]
         for lap in laps:
             assert lap.end_time > lap.start_time
 
@@ -424,11 +426,14 @@ class TestRegionLaps:
         env, bins, times = self._circle_with_jitter()
         laps = detect_laps(bins, times, env, method="region", start_region="start")
 
+        # The recording starts in the region (samples 0-1), so the first lap
+        # runs from the first sample to the entry at 79.
         assert [(lap.start_time, lap.end_time) for lap in laps] == [
+            (times[0], times[79]),
             (times[79], times[161]),
             (times[161], times[243]),
         ]
-        assert [lap.direction for lap in laps] == ["counter-clockwise"] * 2
+        assert [lap.direction for lap in laps] == ["counter-clockwise"] * 3
         assert all(np.isnan(lap.overlap_score) for lap in laps)
 
 
@@ -523,3 +528,180 @@ class TestTemplateLaps:
         env, bins, times, _ = self._ring()
         with pytest.raises(ValueError, match="direction must be one of"):
             detect_laps(bins, times, env, direction="cw")  # type: ignore[arg-type]
+
+
+def _ring_arc(theta0, theta1, n_samples, radius=30.0):
+    """Positions along a ring centered at (50, 50), from angle theta0 to theta1."""
+    theta = np.linspace(theta0, theta1, n_samples)
+    return np.c_[50 + radius * np.cos(theta), 50 + radius * np.sin(theta)]
+
+
+class TestRegionLapsGoRoundTheLoop:
+    """A region lap leaves the start region on one side and returns on the other.
+
+    The ring has radius 30 cm and the start region is a 5 cm disc at angle 0.
+    Samples are at 30 Hz; a full circuit takes 10 s (301 samples including both
+    ends). The region is entered at the first sample whose bin lies in it.
+    """
+
+    FS = 30.0
+
+    @staticmethod
+    def _env():
+        env = Environment.from_samples(_ring_arc(0, 2 * np.pi, 400), bin_size=3.0)
+        regions = Regions(env.regions.values())
+        regions.add("start", polygon=Point(80.0, 50.0).buffer(5.0))
+        return env.with_regions(regions)
+
+    def _detect(self, env, positions):
+        from neurospatial.behavior.segmentation import detect_laps
+
+        times = np.arange(len(positions)) / self.FS
+        laps = detect_laps(
+            env.bin_at(positions), times, env, method="region", start_region="start"
+        )
+        return laps, times
+
+    @staticmethod
+    def _entries(env, positions):
+        """Sample indices where the trajectory steps into the start region."""
+        inside = np.isin(env.bin_at(positions), env.bins_in_region("start"))
+        return np.flatnonzero(~inside[:-1] & inside[1:]) + 1
+
+    def test_excursion_between_laps_is_not_a_lap(self):
+        """Lap, a 0.4-circuit excursion and back, lap: exactly the two laps."""
+        env = self._env()
+        lap1 = _ring_arc(0, 2 * np.pi, 301)
+        excursion = np.r_[
+            _ring_arc(0, 0.8 * np.pi, 121)[1:], _ring_arc(0.8 * np.pi, 0, 121)[1:]
+        ]
+        lap2 = _ring_arc(0, 2 * np.pi, 301)[1:]
+        positions = np.r_[lap1, excursion, lap2]
+        laps, times = self._detect(env, positions)
+
+        # Entries: end of lap 1, end of the excursion, end of lap 2.
+        end_lap1, end_excursion, end_lap2 = self._entries(env, positions)
+        assert end_lap1 < 301 <= end_excursion < 301 + 240 <= end_lap2
+        # The recording starts in the start region, so the first lap starts at
+        # the first sample; the second lap starts when the excursion returns.
+        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+            (0.0, times[end_lap1]),
+            (times[end_excursion], times[end_lap2]),
+        ]
+        assert [lap.direction for lap in laps] == ["counter-clockwise"] * 2
+
+    @pytest.mark.parametrize("fraction", [0.3, 0.5, 0.9])
+    def test_out_and_back_is_not_a_lap(self, fraction):
+        """Out past the far side of the loop and back the same way is no lap."""
+        env = self._env()
+        turn = fraction * 2 * np.pi
+        # Arrive at the start region, run out and come back the same way.
+        positions = np.r_[
+            _ring_arc(-0.5, 0, 16),
+            _ring_arc(0, turn, 200)[1:],
+            _ring_arc(turn, 0, 200)[1:],
+        ]
+        laps, _ = self._detect(env, positions)
+        assert len(self._entries(env, positions)) == 2
+        assert laps == []
+
+    def test_laps_at_varying_speeds_in_both_directions(self):
+        """Two counter-clockwise laps (10 s, 4 s), then a clockwise one (6 s)."""
+        env = self._env()
+        positions = np.r_[
+            _ring_arc(0, 2 * np.pi, 301),
+            _ring_arc(0, 2 * np.pi, 121)[1:],
+            _ring_arc(0, -2 * np.pi, 181)[1:],
+        ]
+        laps, times = self._detect(env, positions)
+        entries = self._entries(env, positions)
+        assert len(entries) == 3
+        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+            (0.0, times[entries[0]]),
+            (times[entries[0]], times[entries[1]]),
+            (times[entries[1]], times[entries[2]]),
+        ]
+        assert [lap.direction for lap in laps] == [
+            "counter-clockwise",
+            "counter-clockwise",
+            "clockwise",
+        ]
+
+    def test_recording_starting_outside_waits_for_the_first_entry(self):
+        """Starting mid-lap, the part before the first entry is not a lap."""
+        env = self._env()
+        # Half a lap to the start region, two laps, then a quarter lap on.
+        positions = _ring_arc(np.pi, 6.5 * np.pi, 826)
+        laps, times = self._detect(env, positions)
+        first, second, third = self._entries(env, positions)
+        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+            (times[first], times[second]),
+            (times[second], times[third]),
+        ]
+
+    def test_region_at_a_corridor_end_raises(self):
+        """A region at a dead end does not cut a loop: every trip turns back."""
+        from neurospatial.behavior.segmentation import detect_laps
+
+        x = np.linspace(0, 100, 201)
+        env = Environment.from_samples(np.c_[x, np.zeros_like(x)], bin_size=2.0)
+        regions = Regions(env.regions.values())
+        regions.add("start", polygon=Point(0.0, 0.0).buffer(5.0))
+        env = env.with_regions(regions)
+        xs = np.r_[x, x[::-1][1:]]
+        bins = env.bin_at(np.c_[xs, np.zeros_like(xs)])
+        with pytest.raises(ValueError, match="does not cut a loop"):
+            detect_laps(
+                bins,
+                np.arange(xs.size) / 30.0,
+                env,
+                method="region",
+                start_region="start",
+            )
+
+    def test_open_arena_raises(self):
+        """Circling in an open arena has no loop for the region to cut."""
+        from neurospatial.behavior.segmentation import detect_laps
+
+        x = np.linspace(0, 100, 101)
+        xx, yy = np.meshgrid(x, x)
+        env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=4.0)
+        regions = Regions(env.regions.values())
+        regions.add("start", polygon=Point(80.0, 50.0).buffer(5.0))
+        env = env.with_regions(regions)
+        positions = _ring_arc(0, 4 * np.pi, 601)
+        with pytest.raises(ValueError, match="method='auto'"):
+            detect_laps(
+                env.bin_at(positions),
+                np.arange(601) / 30.0,
+                env,
+                method="region",
+                start_region="start",
+            )
+
+    def test_wide_track_small_region_and_weaving_turn_back(self):
+        """A 10 cm wide ring with a 3 cm region at its outer edge.
+
+        The region leaves a gap beside it, so the track splits into two sides
+        a few bins out. An excursion out along the outer edge and back along
+        the inner edge does not retrace its path but still turns back.
+        """
+        track = np.concatenate(
+            [_ring_arc(0, 2 * np.pi, 800, radius=r) for r in np.arange(25, 35.1)]
+        )
+        env = Environment.from_samples(track, bin_size=2.0)
+        regions = Regions(env.regions.values())
+        regions.add("start", polygon=Point(82.0, 50.0).buffer(3.0))
+        env = env.with_regions(regions)
+        positions = np.r_[
+            _ring_arc(0, 2 * np.pi, 301, radius=32),
+            _ring_arc(0, 0.8 * np.pi, 121, radius=33)[1:],
+            _ring_arc(0.8 * np.pi, 0, 121, radius=27)[1:],
+            _ring_arc(0, 2 * np.pi, 301, radius=32)[1:],
+        ]
+        laps, times = self._detect(env, positions)
+        end_lap1, end_excursion, end_lap2 = self._entries(env, positions)
+        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+            (0.0, times[end_lap1]),
+            (times[end_excursion], times[end_lap2]),
+        ]

@@ -419,7 +419,10 @@ def test_region_lap_does_not_end_at_an_epoch_stop_sample():
     """A start-region entry at an epoch's stop does not close a lap."""
     theta = np.linspace(0.0, 4 * np.pi, 81)  # two laps, 40 samples each
     positions = np.c_[50 + 30 * np.cos(theta), 50 + 30 * np.sin(theta)]
-    env = Environment.from_samples(positions, bin_size=3.0)
+    track = np.linspace(0.0, 2 * np.pi, 400)  # dense, so the ring's bins connect
+    env = Environment.from_samples(
+        np.c_[50 + 30 * np.cos(track), 50 + 30 * np.sin(track)], bin_size=3.0
+    )
     regions = Regions(env.regions.values())
     regions.add("start", polygon=Point(80.0, 50.0).buffer(4.0))
     env = env.with_regions(regions)
