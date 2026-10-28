@@ -262,46 +262,6 @@ def _event_runs(
     return [run for run in trimmed if run.size]
 
 
-def _positive_dt(
-    times: NDArray[np.float64], *, name: str = "times"
-) -> NDArray[np.float64]:
-    """Return strictly-positive consecutive time deltas, or raise.
-
-    Computes ``np.diff(times)`` and rejects any delta that is not strictly
-    positive (duplicate or out-of-order timestamps) with an actionable message.
-    Use this before dividing distances/displacements by a per-sample ``dt``.
-
-    Parameters
-    ----------
-    times : NDArray[np.float64], shape (n_samples,)
-        Monotonically increasing timestamps in seconds.
-    name : str, optional
-        Argument name, used in the error message. Default ``"times"``.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_samples - 1,)
-        Consecutive time deltas, all ``> 0``.
-
-    Raises
-    ------
-    ValueError
-        If any ``np.diff(times) <= 0`` (duplicate or non-increasing timestamps).
-    """
-    dt = np.diff(np.asarray(times, dtype=np.float64))
-    bad = dt <= 0
-    if bad.any():
-        n = int(bad.sum())
-        first = int(np.argmax(bad))
-        raise ValueError(
-            f"{name} must be strictly increasing for a per-sample time step, "
-            f"but {n} consecutive delta(s) are <= 0 "
-            f"(first between index {first} and {first + 1}: "
-            f"dt={dt[first]!r}). Sort and de-duplicate timestamps before calling."
-        )
-    return dt
-
-
 def _interval_labels(
     times: NDArray[np.float64],
     intervals: Iterable[tuple[float, float, object]],
@@ -1221,7 +1181,7 @@ def segment_by_velocity(
     Raises
     ------
     ValueError
-        If positions and times have different lengths.
+        If positions and times have different lengths, or are empty.
     ValueError
         If ``min_speed`` is not finite and positive, ``min_duration`` or
         ``smooth_window`` is negative or not finite, or ``hysteresis`` is not
@@ -1285,11 +1245,16 @@ def segment_by_velocity(
     >>> bool(np.all(segments[:, 1] - segments[:, 0] >= 0.5))  # min_duration
     True
     """
-    # Validate inputs
-    from neurospatial._validation import validate_times_positions
+    from neurospatial._observation import validated_observations
 
-    times, positions = validate_times_positions(
-        times, positions, call="segment_by_velocity"
+    times, positions, support = validated_observations(
+        times,
+        positions,
+        call="segment_by_velocity",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="no movement epoch was found",
     )
     validate_finite_scalar(min_speed, name="min_speed", positive=True)
     validate_finite_scalar(min_duration, name="min_duration", positive=False)
@@ -1297,97 +1262,62 @@ def segment_by_velocity(
     validate_finite_scalar(hysteresis, name="hysteresis", positive=True)
     if hysteresis <= 1.0:
         raise ValueError(f"hysteresis must be > 1.0 for stability. Got {hysteresis}")
-    breaks = validate_break_before(break_before, len(times), call="segment_by_velocity")
 
-    results: list[tuple[float, float]] = []
-    for run in observed_runs(
-        times,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=breaks,
-        sample_valid=np.asarray(np.isfinite(positions).all(axis=1), dtype=bool),
-    ):
-        results.extend(
-            _segment_by_velocity_contiguous(
-                positions[run],
-                times[run],
-                min_speed,
-                min_duration=min_duration,
-                hysteresis=hysteresis,
-                smooth_window=smooth_window,
-            )
+    segments = [
+        _segment_by_velocity_contiguous(
+            positions[run],
+            times[run],
+            min_speed=min_speed,
+            min_duration=min_duration,
+            hysteresis=hysteresis,
+            smooth_window=smooth_window,
         )
-    return np.array(results, dtype=np.float64).reshape(-1, 2)
+        for run in support.run_samples()
+    ]
+    return np.concatenate([np.empty((0, 2)), *segments])
 
 
 def _segment_by_velocity_contiguous(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
-    min_speed: float,
     *,
-    min_duration: float = 0.5,
-    hysteresis: float = 2.0,
-    smooth_window: float = 0.2,
-) -> list[tuple[float, float]]:
-    """Analyze one recording after the public input validation."""
+    min_speed: float,
+    min_duration: float,
+    hysteresis: float,
+    smooth_window: float,
+) -> NDArray[np.float64]:
+    """Movement epochs of one recording, shape (n_epochs, 2).
+
+    ``times`` and ``positions`` are the valid samples of one observed run,
+    already validated by :func:`segment_by_velocity`.
+    """
     from neurospatial._velocity import smoothed_speed
 
-    _positive_dt(times, name="times")
-    # Speed of each transition i -> i+1, read at its end sample (see the
-    # segment loop below); one run, so every interval is observed.
+    # Speed of each transition i -> i+1, read at its end sample: a state
+    # change at transition i starts or stops an epoch at times[i + 1]. One
+    # run, so every interval is observed.
     speed = smoothed_speed(
         times,
         positions,
         np.ones(len(times) - 1, dtype=bool),
         smooth_window=smooth_window,
-    )
-    velocities = speed[1:]
+    )[1:]
 
-    # Hysteresis thresholding
-    lower_threshold = min_speed / hysteresis
-    is_moving = np.zeros(len(velocities), dtype=bool)
-    currently_moving = False
+    # Hysteresis: movement switches on when speed exceeds min_speed and off
+    # when it drops below min_speed / hysteresis; in between (or NaN) the
+    # state holds. Since min_speed / hysteresis < min_speed the two events are
+    # exclusive, so the state at i is the last event at or before i.
+    switch_on = speed > min_speed
+    is_event = switch_on | (speed < min_speed / hysteresis)
+    last_event = np.maximum.accumulate(np.where(is_event, np.arange(speed.size), -1))
+    is_moving = (last_event >= 0) & switch_on[last_event]
 
-    for i in range(len(velocities)):
-        if currently_moving:
-            # Continue moving until velocity drops below lower threshold
-            if velocities[i] < lower_threshold:
-                currently_moving = False
-            else:
-                is_moving[i] = True
-        else:
-            # Start moving when velocity exceeds min_speed
-            if velocities[i] > min_speed:
-                currently_moving = True
-                is_moving[i] = True
-
-    # Detect segments (note: velocities correspond to transitions, so index times[1:])
-    epochs: list[tuple[float, float]] = []
-    in_segment = False
-    segment_start: float | None = None
-
-    def _emit(start: float, end: float) -> None:
-        if (end - start) >= min_duration:
-            epochs.append((float(start), float(end)))
-
-    for i in range(len(is_moving)):
-        time_idx = i + 1  # Velocity at i corresponds to transition from i to i+1
-
-        if is_moving[i] and not in_segment:
-            in_segment = True
-            segment_start = times[time_idx]
-
-        elif not is_moving[i] and in_segment:
-            assert segment_start is not None  # Type narrowing for mypy
-            _emit(segment_start, times[time_idx])
-            in_segment = False
-
-    # Handle case where trajectory ends while moving
-    if in_segment:
-        assert segment_start is not None  # Type narrowing for mypy
-        _emit(segment_start, times[-1])
-
-    return epochs
+    edges = np.diff(np.concatenate([[False], is_moving, [False]]).astype(np.int8))
+    starts = times[np.flatnonzero(edges == 1) + 1]
+    # An epoch still in progress at the end of the run is truncated there.
+    stops = times[np.minimum(np.flatnonzero(edges == -1) + 1, times.size - 1)]
+    keep = (stops - starts) >= min_duration
+    return np.column_stack([starts[keep], stops[keep]])
 
 
 # =============================================================================
