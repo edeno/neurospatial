@@ -243,10 +243,14 @@ def _interval_labels(
     """
     times = np.asarray(times, dtype=np.float64)
     labels: NDArray[np.object_] = np.full(len(times), None, dtype=object)
-
+    # Each interval's samples are one slice of the sorted times (NaN sorts
+    # last and lies in no interval), so each costs only its own samples.
+    order = np.argsort(times, kind="stable")
+    sorted_times = times[order]
     for start_time, end_time, label in intervals:
-        mask = (times >= start_time) & (times < end_time)
-        labels[mask] = label
+        lo, hi = np.searchsorted(sorted_times, [start_time, end_time], side="left")
+        # In sample order, as a Boolean mask would assign them.
+        labels[np.sort(order[lo:hi])] = label
 
     return labels
 
