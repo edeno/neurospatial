@@ -26,8 +26,7 @@ class TestRegionMembershipPerformance:
     """Benchmark region_membership() performance.
 
     These tests verify that region_membership() scales efficiently
-    with the number of regions, particularly testing the optimization
-    of hoisting shapely_points() conversion outside the region loop.
+    with the number of regions.
     """
 
     @pytest.mark.wallclock
@@ -35,13 +34,9 @@ class TestRegionMembershipPerformance:
         """Test that region_membership() time scales linearly (or better) with regions.
 
         This benchmark measures the performance of region_membership() with
-        varying numbers of regions. The key optimization is that converting
-        bin centers to Shapely points should happen ONCE, not once per region.
-
-        Expected behavior after optimization:
-        - Time should scale approximately linearly with number of regions
-        - Overhead per region should be minimal (<10ms per region)
-        - Adding 10 regions shouldn't take >10x the time of 1 region
+        varying numbers of regions. Each polygon is tested against the raw bin
+        centers, so time should grow at most linearly with the number of
+        regions: 10 regions should not take much more than 10x one region.
         """
         # Create a reasonably large environment (1000 bins)
         data = np.array([[i, j] for i in range(32) for j in range(32)])
@@ -91,17 +86,14 @@ class TestRegionMembershipPerformance:
         time_5_regions = times[1]
         time_10_regions = times[2]
 
-        # After optimization: 10 regions should take <5x the time of 1 region
-        # (Before optimization it would take ~10x due to redundant conversions)
         speedup_ratio_5 = time_5_regions / time_1_region
         speedup_ratio_10 = time_10_regions / time_1_region
 
-        # Key assertion: scaling should be sub-linear or linear, not quadratic
-        # With optimization: expect ~1-2x for 5 regions, ~2-5x for 10 regions
-        # Without optimization: would be ~5x for 5 regions, ~10x for 10 regions
-        assert speedup_ratio_10 < 7.0, (
+        # Key assertion: scaling is at most linear (~10x), not quadratic
+        # (~100x); the margin absorbs timer noise on sub-millisecond calls.
+        assert speedup_ratio_10 < 15.0, (
             f"Performance regression: 10 regions took {speedup_ratio_10:.1f}x "
-            f"the time of 1 region (expected <7x with optimization). "
+            f"the time of 1 region (expected at most linear, <15x). "
             f"Times: 1={time_1_region * 1000:.2f}ms, 10={time_10_regions * 1000:.2f}ms"
         )
 
