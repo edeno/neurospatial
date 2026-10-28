@@ -358,7 +358,7 @@ class TestSegmentTrials:
             )
 
         # Negative min_duration
-        with pytest.raises(ValueError, match=r"min_duration.*must be positive"):
+        with pytest.raises(ValueError, match=r"min_duration must be finite and nonneg"):
             segment_trials(
                 position_bins,
                 times,
@@ -369,9 +369,7 @@ class TestSegmentTrials:
             )
 
         # max_duration < min_duration
-        with pytest.raises(
-            ValueError, match=r"max_duration.*must be greater than min_duration"
-        ):
+        with pytest.raises(ValueError, match=r"needs max_duration > min_duration"):
             segment_trials(
                 position_bins,
                 times,

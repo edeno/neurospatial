@@ -89,6 +89,7 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._results import ReadOnlyArraysMixin
+from neurospatial._validation import validate_finite_scalar
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
@@ -175,6 +176,47 @@ def _validated_samples(
     if n_times[0] == 0:
         return bins, np.asarray(times, dtype=np.float64)
     return bins, _validated_signal_times(times, call=call)
+
+
+def _validate_durations(min_duration: float, max_duration: float, *, call: str) -> None:
+    """Require finite ``0 <= min_duration < max_duration`` (seconds)."""
+    validate_finite_scalar(min_duration, name="min_duration", positive=False)
+    validate_finite_scalar(max_duration, name="max_duration", positive=True)
+    if max_duration <= min_duration:
+        raise ValueError(
+            _format_error(
+                f"{call}() needs max_duration > min_duration; got "
+                f"max_duration={max_duration}, min_duration={min_duration}.",
+                why="no attempt could be both long enough and short enough, so "
+                "every one would be dropped.",
+                fix="pass a max_duration longer than min_duration (seconds).",
+            )
+        )
+
+
+def _region_names(regions: str | Sequence[str], *, argument: str) -> list[str]:
+    """One region name or a sequence of them, as a list.
+
+    A plain string is one name; iterating it would give its characters.
+    """
+    names = [regions] if isinstance(regions, str) else list(regions)
+    if not names:
+        raise ValueError(
+            _format_error(
+                f"{argument} cannot be empty",
+                fix=f"pass {argument}=['goal']",
+                why="each attempt must finish at a named region.",
+            )
+        )
+    return names
+
+
+DEFAULT_MIN_PROGRESS_CM = 20.0
+"""Default net progress toward the goal of a goal-directed run, in cm.
+
+About one rat body length, so a run must bring the animal at least one body
+length closer to the goal; expressed in ``env.units`` when they are metric.
+"""
 
 
 def _located(position_bins: NDArray[np.int64], env: Environment) -> NDArray[np.bool_]:
@@ -583,7 +625,8 @@ def detect_region_crossings(
     Raises
     ------
     ValueError
-        If region_name not in env.regions.
+        If region_name not in env.regions, or direction is not one of
+        'both', 'entry', 'exit'.
     ValueError
         If position_bins and times are not 1-D with the same length, if
         times are not finite and strictly increasing, or if a bin index is
@@ -642,6 +685,9 @@ def detect_region_crossings(
     # Validate inputs
     _require_region_mask(
         env, region_name, operation="detect_region_crossings()", argument="region_name"
+    )
+    _check_choice(
+        "detect_region_crossings()", "direction", direction, ("both", "entry", "exit")
     )
 
     position_bins, times = _validated_samples(
@@ -802,6 +848,9 @@ def detect_runs_between_regions(
     ValueError
         If source or target regions not in env.regions.
     ValueError
+        If min_duration is negative or not finite, max_duration is not
+        greater than min_duration, or min_speed is negative or not finite.
+    ValueError
         If position_bins and times are not 1-D with the same length, if
         times are not finite and strictly increasing, or if a bin index is
         neither -1 nor a bin of ``env``.
@@ -902,6 +951,10 @@ def detect_runs_between_regions(
         _require_region_mask(
             env, name, operation="detect_runs_between_regions()", argument=argument
         )
+    _validate_durations(min_duration, max_duration, call="detect_runs_between_regions")
+    validate_finite_scalar(
+        min_speed, name="min_speed", positive=False, none_allowed=True
+    )
 
     position_bins, times = _validated_samples(
         position_bins, times, env, call="detect_runs_between_regions"
@@ -1130,7 +1183,9 @@ def segment_by_velocity(
     ValueError
         If positions and times have different lengths.
     ValueError
-        If ``min_speed <= 0`` or ``hysteresis <= 1``.
+        If ``min_speed`` is not finite and positive, ``min_duration`` or
+        ``smooth_window`` is negative or not finite, or ``hysteresis`` is not
+        a finite number greater than 1.
     ValueError
         If times contains non-finite values, or is not strictly increasing
         (duplicate or out-of-order timestamps would yield ``inf`` velocities).
@@ -1193,9 +1248,10 @@ def segment_by_velocity(
     times, positions = validate_times_positions(
         times, positions, call="segment_by_velocity"
     )
-    if min_speed <= 0:
-        raise ValueError(f"min_speed must be positive. Got {min_speed}")
-
+    validate_finite_scalar(min_speed, name="min_speed", positive=True)
+    validate_finite_scalar(min_duration, name="min_duration", positive=False)
+    validate_finite_scalar(smooth_window, name="smooth_window", positive=False)
+    validate_finite_scalar(hysteresis, name="hysteresis", positive=True)
     if hysteresis <= 1.0:
         raise ValueError(f"hysteresis must be > 1.0 for stability. Got {hysteresis}")
     breaks = validate_break_before(break_before, len(times), call="segment_by_velocity")
@@ -2231,10 +2287,8 @@ def running_direction_labels(
         position_bins, times, env, call="running_direction_labels"
     )
 
-    if isinstance(end_regions, str):
-        end_region_names: list[str] = [end_regions]
-    else:
-        end_region_names = list(end_regions)
+    end_region_names = _region_names(end_regions, argument="end_regions")
+    _validate_durations(min_duration, max_duration, call="running_direction_labels")
     _require_region_mask(
         env,
         start_region,
@@ -2314,7 +2368,7 @@ def segment_trials(
     env: Environment,
     *,
     start_region: str,
-    end_regions: list[str],
+    end_regions: str | Sequence[str],
     min_duration: float = 1.0,
     max_duration: float = 15.0,
     max_gap: float | None = DEFAULT_MAX_GAP,
@@ -2357,9 +2411,9 @@ def segment_trials(
         Environment containing region definitions.
     start_region : str
         Name of start region. Must exist in env.regions.
-    end_regions : list[str]
-        List of end region names (e.g., ['left', 'right'] for T-maze).
-        Must all exist in env.regions.
+    end_regions : str or sequence of str
+        End region name(s) (e.g., ``['left', 'right']`` for a T-maze). A
+        single string is one region. Must all exist in env.regions.
     min_duration : float, optional
         Minimum trial duration in seconds. Default: 1.0.
         Trials shorter than this are excluded.
@@ -2410,9 +2464,10 @@ def segment_trials(
         If position_bins does not hold integer bin indices (a float array
         would be truncated to unrelated bins).
     ValueError
-        If min_duration is not positive.
+        If min_duration is negative or not finite, or max_duration is not
+        greater than min_duration.
     ValueError
-        If max_duration < min_duration.
+        If ``start_region`` is also one of ``end_regions``.
     ValueError
         If ``break_before`` is not a Boolean array with one entry per sample.
 
@@ -2531,15 +2586,7 @@ def segment_trials(
         env, start_region, operation="segment_trials()", argument="start_region"
     )
 
-    if len(end_regions) == 0:
-        raise ValueError(
-            _format_error(
-                "end_regions cannot be empty",
-                fix="pass end_regions=['goal']",
-                why="Why: each trial must finish at a named end region.",
-            )
-        )
-
+    end_regions = _region_names(end_regions, argument="end_regions")
     for region in end_regions:
         _require_region_mask(
             env,
@@ -2560,14 +2607,7 @@ def segment_trials(
         position_bins, times, env, call="segment_trials"
     )
 
-    if min_duration <= 0:
-        raise ValueError(f"min_duration must be positive, got {min_duration}")
-
-    if max_duration <= min_duration:
-        raise ValueError(
-            f"max_duration must be greater than min_duration. "
-            f"Got max_duration={max_duration}, min_duration={min_duration}"
-        )
+    _validate_durations(min_duration, max_duration, call="segment_trials")
 
     breaks = validate_break_before(break_before, len(times), call="segment_trials")
     results: list[Trial] = []
@@ -3003,7 +3043,7 @@ def detect_goal_directed_runs(
     *,
     goal_region: str,
     directedness_threshold: float = 0.7,
-    min_progress: float = 20.0,
+    min_progress: float | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -3028,9 +3068,12 @@ def detect_goal_directed_runs(
     directedness_threshold : float, optional
         Minimum directedness score to classify as goal-directed. Range [0, 1].
         Higher values require more efficient paths. Default is 0.7.
-    min_progress : float, optional
-        Minimum distance progress toward goal (physical units). Filters out
-        short runs with minimal displacement. Default is 20.0.
+    min_progress : float or None, optional
+        Minimum net progress toward the goal, in the environment's units
+        (path distance at the start minus at the end). Filters out short runs
+        with little displacement. None (default) means 20 cm, about one rat
+        body length, expressed in ``env.units``; pass a value when the units
+        are not a metric length.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -3062,7 +3105,8 @@ def detect_goal_directed_runs(
         If goal_region not in env.regions, or if directedness_threshold
         not in [0, 1].
     ValueError
-        If min_progress is negative.
+        If min_progress is negative or not finite, or is None while
+        ``env.units`` is not a metric length.
     ValueError
         If position_bins and times are not 1-D with the same length, if
         times are not finite and strictly increasing, or if a bin index is
@@ -3158,8 +3202,24 @@ def detect_goal_directed_runs(
             f"directedness_threshold must be in [0, 1], got {directedness_threshold}"
         )
 
-    if min_progress < 0:
-        raise ValueError(f"min_progress must be non-negative, got {min_progress}")
+    if min_progress is None:
+        from neurospatial._units import units_per_centimeter
+
+        per_cm = units_per_centimeter(env.units)
+        if per_cm is None:
+            raise ValueError(
+                _format_error(
+                    f"detect_goal_directed_runs needs min_progress: the "
+                    f"environment's units ({env.units!r}) are not a known length, "
+                    f"so the {DEFAULT_MIN_PROGRESS_CM:g} cm default cannot be "
+                    "expressed in them.",
+                    why="min_progress is a distance in the environment's units.",
+                    fix="pass min_progress=<distance in position units>, or "
+                    "declare the units with env.with_metadata(units='cm')",
+                )
+            )
+        min_progress = DEFAULT_MIN_PROGRESS_CM * per_cm
+    validate_finite_scalar(min_progress, name="min_progress", positive=False)
 
     position_bins, times = _validated_samples(
         position_bins, times, env, call="detect_goal_directed_runs"

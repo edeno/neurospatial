@@ -354,7 +354,7 @@ class TestDetectGoalDirectedRuns:
             )
 
         # Negative min_progress
-        with pytest.raises(ValueError, match=r"min_progress must be non-negative"):
+        with pytest.raises(ValueError, match=r"min_progress must be finite and nonneg"):
             detect_goal_directed_runs(
                 position_bins,
                 times,
@@ -383,7 +383,7 @@ class TestDetectGoalDirectedRuns:
         empty_times = np.array([])
 
         runs = detect_goal_directed_runs(
-            empty_bins, empty_times, env, goal_region="goal"
+            empty_bins, empty_times, env, goal_region="goal", min_progress=20.0
         )
 
         assert runs.shape == (0, 2)
@@ -549,10 +549,10 @@ class TestSimilarityIntegration:
 
         # Detect goal-directed runs
         runs1 = detect_goal_directed_runs(
-            traj1_bins, traj1_times, env, goal_region="goal"
+            traj1_bins, traj1_times, env, goal_region="goal", min_progress=20.0
         )
         runs2 = detect_goal_directed_runs(
-            traj2_bins, traj2_times, env, goal_region="goal"
+            traj2_bins, traj2_times, env, goal_region="goal", min_progress=20.0
         )
 
         # Both are straight walks toward the goal corner.
