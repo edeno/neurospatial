@@ -13,6 +13,28 @@ Breaking:
 
 - `running_direction_labels(successful_only=)` is renamed `success_only=`,
   matching `runs_to_direction_labels` and `Run.success`.
+- `compute_turn_angles` and `compute_trajectory_curvature` are removed. Use
+  `compute_planar_turn_angles(times, positions)` for the turn at each frame;
+  its new `smooth_window=` (seconds, default 0) gives the smoothed turn the
+  old curvature function returned, for example `smooth_window=0.2` for 30–60
+  Hz video. Use `compute_planar_curvature` to compare path shape (1/cm)
+  across frame rates and speeds, and `compute_movement_angular_velocity` for
+  rad/s. The smoothing now weights neighbours by elapsed time, so a bridged
+  gap no longer counts as one frame; pauses are NaN instead of taking the
+  turn between the positions on either side. Unsigned 3-D turns are no
+  longer offered; pass `positions[:, :2]` for horizontal-plane turns.
+- `heading_direction_labels(times, positions, *, min_speed, ...)` takes a
+  trajectory only. To label headings you already have, for example from
+  `heading_from_body_orientation`, use the new
+  `headings_to_direction_labels(headings, speeds, *, min_speed,
+  n_directions=8)` instead of `speed=`/`heading=`. It refuses infinite
+  headings and negative or infinite speeds, which were read as "not
+  observed" or "stationary".
+- `mean_square_displacement(max_tau=None)` measures lags up to a quarter of
+  the recording, not half: past that, few independent displacements back
+  each value, as its own error messages already advised. Values at the lags
+  still reported are unchanged (FFT path: within 2e-13 relative). Pass
+  `max_tau` to keep longer lags.
 
 Input that now raises (each was silently accepted):
 
@@ -36,14 +58,18 @@ Input that now raises (each was silently accepted):
 
 Results that change:
 
-- `compute_turn_angles` (and `compute_trajectory_curvature`) returns +π for
-  a planar reversal, matching `compute_planar_turn_angles` and the
-  (-π, π] convention; it returned -π.
 - `distance_to_reward` with all-NaN positions and inferred rewards returns
   NaN with the unknown-reward warning; it raised numpy's "array of sample
   points is empty".
 - `running_direction_labels` gives its excluded-interval warning once, not
   twice per end region.
+- Behavior and event analyses warn "Interval filtering excluded ALL
+  trajectory intervals" when every gap across missing samples is longer than
+  `max_gap`, even though each sampling interval is shorter (10 Hz tracking
+  with every other row NaN and `max_gap=0.15`). The check ran before missing
+  samples were bridged, so these calls returned empty or NaN results
+  silently. The warning names the longest gap and says to raise `max_gap`.
+  All-NaN input warns too.
 - The geodesic path engine returns NaN for a target outside the
   environment; it measured to the last bin's field. Public functions already
   refused such targets, so their results do not change.
