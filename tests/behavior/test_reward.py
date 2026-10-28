@@ -504,3 +504,64 @@ class TestGoalRewardField:
             goal_reward_field(
                 env, goal_bins=center_bin, decay="exponential", scale=-1.0
             )
+
+
+class TestGoalRewardFieldKnownAnswers:
+    """Known answers on two disconnected tracks with the goal at x = 0 cm.
+
+    Along island A the geodesic distance from bin x to the goal bin is x;
+    island B (x >= 60) cannot reach the goal.
+    """
+
+    @pytest.mark.parametrize(
+        ("decay", "kwargs", "formula"),
+        [
+            ("exponential", {"scale": 4.0}, lambda d: 4.0 * np.exp(-d / 4.0)),
+            (
+                "linear",
+                {"scale": 2.0, "max_distance": 8.0},
+                lambda d: 2.0 * np.clip(1 - d / 8.0, 0, None),
+            ),
+            ("inverse", {"scale": 2.0}, lambda d: 2.0 / (1 + d)),
+        ],
+    )
+    def test_reward_and_unreachable_bins(self, two_islands_env, decay, kwargs, formula):
+        """Reward follows the stated formula of d; unreachable bins get 0."""
+        env = two_islands_env
+        x = env.bin_centers[:, 0]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            reward = goal_reward_field(env, goal_bins=0, decay=decay, **kwargs)
+        expected = np.where(x < 50, formula(x), 0.0)
+        np.testing.assert_allclose(reward, expected, rtol=1e-12, atol=1e-12)
+
+    def test_exponential_scale_is_decay_length(self, two_islands_env):
+        """At d = scale the exponential reward is scale / e."""
+        env = two_islands_env
+        reward = goal_reward_field(env, goal_bins=0, decay="exponential", scale=4.0)
+        assert reward[env.bin_centers[:, 0] == 4.0][0] == pytest.approx(4.0 / np.e)
+
+    def test_inverse_halves_one_distance_unit_from_goal(self, two_islands_env):
+        """scale / (1 + d) at d = 2 cm is scale / 3: the 1 is one distance unit."""
+        env = two_islands_env
+        reward = goal_reward_field(env, goal_bins=0, decay="inverse", scale=1.0)
+        assert reward[env.bin_centers[:, 0] == 2.0][0] == pytest.approx(1.0 / 3.0)
+
+    @pytest.mark.parametrize(
+        ("decay", "kwargs", "match"),
+        [
+            ("linear", {"max_distance": 0.0}, "max_distance must be finite"),
+            ("linear", {"max_distance": -5.0}, "max_distance must be finite"),
+            ("linear", {"max_distance": np.inf}, "max_distance must be finite"),
+            ("linear", {}, "max_distance parameter is required"),
+            ("exponential", {"max_distance": 5.0}, "max_distance=5.0 has no effect"),
+            ("inverse", {"max_distance": 5.0}, "max_distance=5.0 has no effect"),
+            ("exponential", {"scale": 0.0}, "scale must be finite and positive"),
+            ("exponential", {"scale": np.nan}, "scale must be finite and positive"),
+            ("gaussian", {}, "Invalid decay type"),
+        ],
+    )
+    def test_invalid_parameters_raise(self, two_islands_env, decay, kwargs, match):
+        """Missing, unused, non-positive or non-finite parameters raise."""
+        with pytest.raises(ValueError, match=match):
+            goal_reward_field(two_islands_env, goal_bins=0, decay=decay, **kwargs)

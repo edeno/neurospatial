@@ -252,45 +252,56 @@ def goal_reward_field(
     goal_bins : int or list[int] or NDArray[np.int_]
         Goal bin index or indices. Can be scalar or array.
     decay : {'linear', 'exponential', 'inverse'}, default='exponential'
-        Distance-based decay function:
+        Distance-based decay function of the geodesic distance ``d`` (in the
+        environment's distance units) from the bin centre to the nearest
+        goal bin centre:
+
         - 'linear': reward = scale * max(0, 1 - d/max_distance)
         - 'exponential': reward = scale * exp(-d/scale)
         - 'inverse': reward = scale / (1 + d)
     scale : float, default=1.0
-        Reward scale parameter. Interpretation depends on decay type:
-        - 'linear': maximum reward at goal
-        - 'exponential': reward at goal (also decay rate)
-        - 'inverse': reward scale factor
+        Reward at the goal for every decay. For 'exponential' it is also the
+        decay length, in distance units (not a rate): the reward falls to
+        ``scale / e`` at ``d = scale``, so a larger scale decays more slowly.
+        Must be finite and positive for 'exponential'.
     max_distance : float, optional
-        Maximum distance for linear decay. Required for decay='linear'.
-        Reward is zero beyond this distance.
+        Distance, in the environment's distance units, at which the linear
+        reward reaches 0. Required for, and only accepted with,
+        ``decay='linear'``; must be finite and positive.
 
     Returns
     -------
     reward : NDArray[np.float64], shape (n_bins,)
-        Distance-based reward field.
+        Distance-based reward field. Bins that cannot reach any goal (another
+        connected component) get 0 for every decay.
 
     Raises
     ------
     ValueError
-        If scale <= 0 for decay='exponential'.
-        If max_distance not provided for decay='linear'.
-        If goal_bins contains invalid indices.
+        If ``decay`` is unknown; if ``scale`` is not finite and positive for
+        ``decay='exponential'``; if ``max_distance`` is missing, not finite
+        and positive for ``decay='linear'``, or given for another decay; or
+        if ``goal_bins`` contains invalid indices.
 
     Notes
     -----
     **Decay Functions**:
 
     - **Exponential**: Most common in RL literature. Provides smooth gradients
-      that decay exponentially with distance. Scale parameter controls both
-      peak reward and decay rate. Larger scale = slower decay.
+      that decay exponentially with distance. ``scale`` sets both the peak
+      reward and the decay length, so they cannot be chosen separately; for
+      a unit peak with decay length ``L``, divide the field from
+      ``scale=L`` by ``L``.
 
     - **Linear**: Reaches exactly zero at max_distance. Useful when reward
       should be strictly local. Provides constant gradient within range.
 
     - **Inverse**: Inverse distance function (1/(1+d)). Never reaches zero,
       providing global gradients. Can lead to suboptimal policies if not
-      carefully tuned.
+      carefully tuned. The ``1`` in ``1 + d`` is one distance unit, so the
+      shape depends on the units of the environment: the reward halves 1 cm
+      from the goal in a centimetre environment but 1 m from it in a metre
+      environment.
 
     **Multiple Goals**: When goal_bins contains multiple indices, distance
     is computed to the *nearest* goal. This creates a Voronoi-like partition
@@ -323,6 +334,15 @@ def goal_reward_field(
     """
     from neurospatial.environment import _validate_target_bins
 
+    if decay not in ("linear", "exponential", "inverse"):
+        raise ValueError(
+            f"Invalid decay type: {decay!r}. "
+            "Must be one of: 'linear', 'exponential', 'inverse'."
+        )
+    _reject_unused_parameter("max_distance", max_distance, decay, uses="linear")
+    validate_finite_scalar(
+        max_distance, name="max_distance", positive=True, none_allowed=True
+    )
     goal_bins_list = _validate_target_bins(
         goal_bins,
         n_bins=env.n_bins,
@@ -334,31 +354,18 @@ def goal_reward_field(
     # Compute distance field from goals
     distances = distance_field(env.connectivity, sources=goal_bins_list)
 
+    # Unreachable bins have d = inf, which every decay below maps to 0.
     if decay == "exponential":
-        # Exponential decay: reward = scale * exp(-d / scale)
-        if scale <= 0:
-            raise ValueError(
-                f"scale must be positive for exponential decay (got {scale})"
-            )
+        validate_finite_scalar(scale, name="scale", positive=True)
         reward = scale * np.exp(-distances / scale)
-
     elif decay == "linear":
-        # Linear decay: reward = scale * max(0, 1 - d/max_distance)
         if max_distance is None:
             raise ValueError(
                 "max_distance parameter is required for decay='linear'. "
                 "Specify the distance at which reward reaches zero."
             )
         reward = scale * np.maximum(0, 1 - distances / max_distance)
-
-    elif decay == "inverse":
-        # Inverse distance: reward = scale / (1 + d)
-        reward = scale / (1 + distances)
-
     else:
-        raise ValueError(
-            f"Invalid decay type: {decay}. "
-            f"Must be one of: 'linear', 'exponential', 'inverse'"
-        )
+        reward = scale / (1 + distances)
 
     return reward
