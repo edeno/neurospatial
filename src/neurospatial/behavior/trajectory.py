@@ -1987,8 +1987,10 @@ def compute_home_range(
     )
     # The home range is a level set of occupancy: every bin tied with the
     # cutoff bin is in it, so the result never depends on tie order.
-    home_range = sorted_bins[sorted_share >= sorted_share[cutoff]]
-    return home_range.astype(np.intp)
+    home_range: NDArray[np.intp] = sorted_bins[
+        sorted_share >= sorted_share[cutoff]
+    ].astype(np.intp)
+    return home_range
 
 
 def mean_square_displacement(
