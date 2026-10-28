@@ -250,6 +250,20 @@ def test_invalid_clock_rejected(region_env, times):
         )
 
 
+@pytest.mark.parametrize(
+    ("bins", "times"),
+    [
+        (np.array([0, 0, 1]), np.array([0.0, 0.1])),
+        (np.array([0, 0]), np.array([0.0, 0.1, 0.2])),
+        (np.array([[0, 0], [1, 1]]), np.array([0.0, 0.1])),
+        (np.array([0, 1]), np.array([[0.0, 0.1]])),
+    ],
+)
+def test_bins_and_times_must_be_aligned_1d(region_env, bins, times):
+    with pytest.raises(ValueError, match="1-D arrays of equal length"):
+        detect_region_visits(bins, times, region_env, region_names=["A"])
+
+
 @pytest.mark.parametrize("gap", [0, -1, np.nan, np.inf])
 def test_invalid_gap_rejected(region_env, gap):
     with pytest.raises(ValueError, match="max_gap"):
