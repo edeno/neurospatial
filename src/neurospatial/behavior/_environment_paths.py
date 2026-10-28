@@ -64,6 +64,7 @@ References
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -78,7 +79,6 @@ if TYPE_CHECKING:
     from scipy.sparse import csr_array
 
     from neurospatial.environment import Environment
-    from neurospatial.geometry._binning import TrackLinearization
 
 # Probe a segment every half of the shortest graph edge. Consecutive probes
 # must land in the same or connected bins, so a probe step shorter than a bin
@@ -118,6 +118,8 @@ def environment_paths(env: Environment, *, call: str) -> EnvironmentPaths:
     Returns
     -------
     EnvironmentPaths
+        The track engine for a track environment, else the open-environment
+        engine.
 
     Raises
     ------
@@ -136,17 +138,47 @@ def environment_paths(env: Environment, *, call: str) -> EnvironmentPaths:
         fix="use the allocentric environment the positions were recorded in, "
         "or metric='euclidean'",
     )
-    return env._cache.get(_PATHS_KEY, lambda: EnvironmentPaths(env))
+    return env._cache.get(
+        _PATHS_KEY,
+        lambda: (
+            _TrackPaths(env)
+            if env.binning.linearization is not None
+            else _OpenPaths(env)
+        ),
+    )
 
 
 _PATHS_KEY: CacheKey[EnvironmentPaths] = CacheKey("environment paths")
 
 
-class EnvironmentPaths:
-    """Shortest path lengths inside one environment, with cached fields.
+def _bin_graph(env: Environment) -> csr_array:
+    """Symmetric bin-graph edge lengths with sorted, unique entries per row."""
+    from neurospatial.ops.distance import _bin_adjacency
+
+    adjacency = _bin_adjacency(
+        env.connectivity, weight="distance", operation="geodesic path length"
+    )
+    adjacency.sum_duplicates()
+    adjacency.sort_indices()
+    return adjacency
+
+
+def _rate_weighted(adjacency: csr_array, rate: NDArray[np.float64]) -> csr_array:
+    """Edge costs: each edge's length times the mean rate of its two bins."""
+    weighted = adjacency.copy()
+    rows = np.repeat(np.arange(adjacency.shape[0]), np.diff(adjacency.indptr))
+    weighted.data = adjacency.data * 0.5 * (rate[rows] + rate[adjacency.indices])
+    return weighted
+
+
+class EnvironmentPaths(ABC):
+    """Shortest path lengths inside one environment.
 
     Use :func:`environment_paths` to get the shared instance of an
-    environment.
+    environment: the open-environment engine (grids, polygons, meshes) or the
+    track engine, which answer the same queries. Each query handles missing
+    positions (NaN rows and positions outside the environment give NaN) and
+    passes the located rest to its engine.
 
     Parameters
     ----------
@@ -155,44 +187,10 @@ class EnvironmentPaths:
     """
 
     def __init__(self, env: Environment) -> None:
-        from neurospatial.ops.distance import _bin_adjacency
-
         self._env = env
         self._centers = np.asarray(env.bin_centers, dtype=float)
-        n_bins = self._centers.shape[0]
-        self._n_bins = n_bins
-        binning = env.binning
-        self._locator = binning.locator
-        self._track = (
-            _TrackPaths(binning.linearization)
-            if binning.linearization is not None
-            else None
-        )
-        adjacency = _bin_adjacency(
-            env.connectivity, weight="distance", operation="geodesic path length"
-        )
-        adjacency.sum_duplicates()
-        adjacency.sort_indices()
-        self._adjacency: csr_array = adjacency
-        # Each bin's open neighbors, padded with -1: a membership test reads
-        # one short row instead of searching every connection.
-        degree = np.diff(adjacency.indptr)
-        self._neighbors = np.full((n_bins, int(degree.max(initial=0))), -1, np.intp)
-        self._neighbors[np.repeat(np.arange(n_bins), degree), ragged_arange(degree)] = (
-            adjacency.indices
-        )
-        lengths = adjacency.data[adjacency.data > 0]
-        self._spacing = (
-            _PROBE_FRACTION * float(lengths.min()) if lengths.size else np.inf
-        )
-        self._grid = _GridCells.of(self._locator, self._centers)
-        # Bins this close share a face: a straight stretch between them
-        # stays in the two.
-        self._nearest = float(lengths.min()) * (1 + 1e-6) if lengths.size else np.inf
-        self._fields = _RootFields(n_bins)
-        self._source_fields: dict[
-            tuple[int, ...], tuple[NDArray[np.float64], NDArray[np.int32]]
-        ] = {}
+        self._n_bins = self._centers.shape[0]
+        self._adjacency: csr_array = _bin_graph(env)
 
     # ------------------------------------------------------------------
     # Public queries
@@ -203,15 +201,6 @@ class EnvironmentPaths:
         if points.shape[0] == 0:
             return np.zeros(0, dtype=np.intp)
         return np.asarray(self._env.bin_at(points), dtype=np.intp)
-
-    def _cells(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Bin whose cell holds each point, -1 in no bin's cell.
-
-        Probes use the bins' own cells: a straight segment between bin
-        centers stays inside the environment when it stays inside the union
-        of the bins' cells.
-        """
-        return np.asarray(self._locator.locate(points, self._env._cache), dtype=np.intp)
 
     def to_point(
         self, points: NDArray[np.float64], target: NDArray[np.float64]
@@ -230,26 +219,14 @@ class EnvironmentPaths:
         ndarray, shape (n_points,)
             Path lengths; ``inf`` for points disconnected from the target.
         """
-        root = int(self.bins(target[None, :])[0])
         out = np.full(points.shape[0], np.nan)
+        root = int(self.bins(target[None, :])[0])
         if root < 0:
             return out
-        if self._track is not None:
-            return self._track.between(
-                points, np.broadcast_to(target, points.shape), self.bins(points)
-            )
         point_bins = self.bins(points)
         rows = np.flatnonzero(point_bins >= 0)
-        fields = self._fields
-        fields.ensure(self, np.array([root]))
-        out[rows] = self._join(
-            points[rows],
-            point_bins[rows],
-            np.broadcast_to(target, (rows.size, target.size)),
-            np.full(rows.size, root),
-            (fields.length, fields.anchor, fields.lead),
-            np.full(rows.size, fields.row_of_root[root]),
-        )
+        if rows.size:
+            out[rows] = self._to_point(points[rows], point_bins[rows], target, root)
         return out
 
     def between(
@@ -280,57 +257,11 @@ class EnvironmentPaths:
             start_bins = self.bins(starts)
         if end_bins is None:
             end_bins = self.bins(ends)
-        if self._track is not None:
-            out = self._track.between(starts, ends, start_bins)
-            out[end_bins < 0] = np.nan
-            return out
         out = np.full(starts.shape[0], np.nan)
         rows = np.flatnonzero((start_bins >= 0) & (end_bins >= 0))
-        a, b = start_bins[rows], end_bins[rows]
-        # Points in one bin or in two connected bins see each other.
-        straight = (a == b) | self._connected(a, b)
-        out[rows[straight]] = np.linalg.norm(
-            ends[rows[straight]] - starts[rows[straight]], axis=1
-        )
-        rest = rows[~straight]
-        if not rest.size:
-            return out
-        a, b = start_bins[rest], end_bins[rest]
-        fields = self._fields
-        kept = fields.row_of_root[b] >= 0
-        if kept.any():
-            rows_kept = fields.row_of_root[b[kept]]
-            out[rest[kept]] = self._join(
-                starts[rest[kept]],
-                a[kept],
-                ends[rest[kept]],
-                b[kept],
-                (fields.length, fields.anchor, fields.lead),
-                rows_kept,
-            )
-        # Other targets: grow each field only as far as its start bins.
-        grow = np.flatnonzero(~kept)
-        if grow.size:
-            roots, field_rows = np.unique(b[grow], return_inverse=True)
-            field_rows = field_rows.ravel()
-            parts = []
-            for lo in range(0, roots.size, _FIELD_BATCH):
-                batch = np.arange(lo, min(lo + _FIELD_BATCH, roots.size))
-                parts.append(
-                    self._grow(
-                        [roots[i : i + 1] for i in batch],
-                        single_roots=True,
-                        stop_bins=[np.unique(a[grow][field_rows == i]) for i in batch],
-                    )
-                )
-            grown = tuple(np.vstack([part[k] for part in parts]) for k in range(3))
-            out[rest[grow]] = self._join(
-                starts[rest[grow]],
-                a[grow],
-                ends[rest[grow]],
-                b[grow],
-                grown,  # type: ignore[arg-type]
-                field_rows,
+        if rows.size:
+            out[rows] = self._between(
+                starts[rows], ends[rows], start_bins[rows], end_bins[rows]
             )
         return out
 
@@ -358,13 +289,13 @@ class EnvironmentPaths:
             end_bins=end_bins,
         )
 
+    @abstractmethod
     def pairwise(self, points: NDArray[np.float64]) -> PairDistances:
         """Distances between many pairs of the same positions, ``(i, j)``.
 
-        Locates the positions once and grows the field of every bin they
-        lie in together, so each later call is a lookup. For analyses that
-        compare every sample with many others, such as mean square
-        displacement.
+        Locates the positions once and prepares what every pair needs, so
+        each later call is a lookup. For analyses that compare every sample
+        with many others, such as mean square displacement.
 
         Parameters
         ----------
@@ -375,16 +306,14 @@ class EnvironmentPaths:
         -------
         PairDistances
         """
-        return PairDistances(self, points)
 
-    def prepare(self, bins: NDArray[np.intp]) -> None:
-        """Grow and keep the fields of every target bin in ``bins`` at once.
+    def prepare(self, bins: NDArray[np.intp]) -> None:  # noqa: B027
+        """Get ready to measure paths to every target bin in ``bins``.
 
         Callers that will measure paths to many targets (every pair of a
-        trajectory) call this once so the fields are grown together.
+        trajectory) call this once, so an engine that keeps per-target work
+        does it for all of them together. The track engine keeps none.
         """
-        if self._track is None:
-            self._fields.ensure(self, np.unique(bins[bins >= 0]))
 
     def directions(
         self, points: NDArray[np.float64], target: NDArray[np.float64]
@@ -408,29 +337,17 @@ class EnvironmentPaths:
             the target. NaN where it is undefined: at the target, at a point
             disconnected from it, or outside the environment.
         """
-        root = int(self.bins(target[None, :])[0])
         out = np.full(points.shape, np.nan)
+        root = int(self.bins(target[None, :])[0])
         if root < 0:
             return out
         point_bins = self.bins(points)
-        if self._track is not None:
-            return self._track.directions(points, target, point_bins)
-        self._fields.ensure(self, np.array([root]))
         rows = np.flatnonzero(point_bins >= 0)
-        a = point_bins[rows]
-        field_row = self._fields.row_of_root[root]
-        anchor = self._fields.anchor[field_row, a]
-        reachable = np.isfinite(self._fields.length[field_row, a])
-        straight = (a == root) | (anchor == root)
-        waypoint = np.where(
-            straight[:, None], target[None, :], self._centers[np.maximum(anchor, 0)]
-        )
-        vector = waypoint - points[rows]
-        norm = np.linalg.norm(vector, axis=1)
-        defined = reachable & (norm > 0)
-        out[rows[defined]] = vector[defined] / norm[defined, None]
+        if rows.size:
+            out[rows] = self._directions(points[rows], point_bins[rows], target, root)
         return out
 
+    @abstractmethod
     def from_bins(self, source_bins: NDArray[np.intp]) -> NDArray[np.float64]:
         """Distance from every bin center to the nearest source bin center.
 
@@ -444,28 +361,15 @@ class EnvironmentPaths:
         ndarray, shape (n_bins,)
             ``inf`` for bins that cannot reach any source.
         """
-        source_bins = np.asarray(source_bins, dtype=np.intp)
-        if self._track is not None:
-            return self._track.from_points(
-                self._centers[source_bins], self._centers, np.arange(self._n_bins)
-            )
-        if source_bins.size == 1:
-            # One source: the same field as a target position in that bin.
-            self._fields.ensure(self, source_bins)
-            row = self._fields.row_of_root[source_bins[0]]
-            single: NDArray[np.float64] = self._fields.length[row].copy()
-            return single
-        distances: NDArray[np.float64] = self._source_field(source_bins)[0].copy()
-        return distances
 
     def from_bins_at(
         self, source_bins: NDArray[np.intp], points: NDArray[np.float64]
     ) -> NDArray[np.float64]:
         """Distance from each point to the nearest source bin center.
 
-        With several sources, a point's path leaves straight for the anchor
-        of its own bin or, when visible from the point, of a neighboring
-        bin, whichever is shortest.
+        With several sources in an open environment, a point's path leaves
+        straight for the anchor of its own bin or, when visible from the
+        point, of a neighboring bin, whichever is shortest.
 
         Parameters
         ----------
@@ -479,49 +383,14 @@ class EnvironmentPaths:
         ndarray, shape (n_points,)
         """
         source_bins = np.asarray(source_bins, dtype=np.intp)
-        point_bins = self.bins(points)
-        if self._track is not None:
-            return self._track.from_points(
-                self._centers[source_bins], points, point_bins
-            )
-        if source_bins.size == 1:
-            return self.to_point(points, self._centers[source_bins[0]])
-        length, anchor = self._source_field(source_bins)
         out = np.full(points.shape[0], np.nan)
+        point_bins = self.bins(points)
         rows = np.flatnonzero(point_bins >= 0)
-        out[rows] = np.inf
-        # Candidate corners: the anchor of the point's bin (its center sees
-        # it) and, when the point sees them, the anchors of the bin's open
-        # neighbors, so the nearest source is chosen from the point itself.
-        own = anchor[point_bins[rows]].astype(np.intp)
-        degree = (self._neighbors[point_bins[rows]] >= 0).sum(axis=1)
-        owner = np.repeat(np.arange(rows.size), degree)
-        neighbor = self._neighbors[point_bins[rows]][
-            self._neighbors[point_bins[rows]] >= 0
-        ]
-        corner = anchor[neighbor].astype(np.intp)
-        keep = (corner >= 0) & (corner != own[owner])
-        keys = np.unique(owner[keep] * self._n_bins + corner[keep])
-        owner, corner = keys // self._n_bins, keys % self._n_bins
-        visible, _ = self._trace(
-            points[rows[owner]],
-            self._centers[corner],
-            point_bins[rows[owner]],
-            corner,
-        )
-        owner = np.r_[np.arange(rows.size), owner[visible]]
-        corner = np.r_[own, corner[visible]]
-        found = corner >= 0
-        owner, corner = owner[found], corner[found]
-        total = (
-            np.linalg.norm(points[rows[owner]] - self._centers[corner], axis=1)
-            + length[corner]
-        )
-        best = np.full(rows.size, np.inf)
-        np.minimum.at(best, owner, total)
-        out[rows] = best
+        if rows.size:
+            out[rows] = self._from_bins_at(source_bins, points[rows], point_bins[rows])
         return out
 
+    @abstractmethod
     def costs_from_bins(
         self, source_bins: NDArray[np.intp], rate: NDArray[np.float64]
     ) -> NDArray[np.float64]:
@@ -543,8 +412,99 @@ class EnvironmentPaths:
         ndarray, shape (n_bins,)
             ``inf`` for bins that cannot reach any source.
         """
-        if self._track is not None:
-            return self._track.costs_from_bins(source_bins, rate, self._adjacency)
+
+    # ------------------------------------------------------------------
+    # Engine hooks: every point is inside the environment, in its bin
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def _to_point(
+        self,
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+        target: NDArray[np.float64],
+        root: int,
+    ) -> NDArray[np.float64]:
+        """:meth:`to_point` for points in ``point_bins``, target in ``root``."""
+
+    @abstractmethod
+    def _between(
+        self,
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        start_bins: NDArray[np.intp],
+        end_bins: NDArray[np.intp],
+    ) -> NDArray[np.float64]:
+        """:meth:`between` for pairs whose two points are both located."""
+
+    @abstractmethod
+    def _directions(
+        self,
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+        target: NDArray[np.float64],
+        root: int,
+    ) -> NDArray[np.float64]:
+        """:meth:`directions` for points in ``point_bins``, target in ``root``."""
+
+    @abstractmethod
+    def _from_bins_at(
+        self,
+        source_bins: NDArray[np.intp],
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+    ) -> NDArray[np.float64]:
+        """:meth:`from_bins_at` for points in ``point_bins``."""
+
+
+class _OpenPaths(EnvironmentPaths):
+    """Any-angle shortest paths in an open environment, with cached fields."""
+
+    def __init__(self, env: Environment) -> None:
+        super().__init__(env)
+        n_bins = self._n_bins
+        self._locator = env.binning.locator
+        adjacency = self._adjacency
+        # Each bin's open neighbors, padded with -1: a membership test reads
+        # one short row instead of searching every connection.
+        degree = np.diff(adjacency.indptr)
+        self._neighbors = np.full((n_bins, int(degree.max(initial=0))), -1, np.intp)
+        self._neighbors[np.repeat(np.arange(n_bins), degree), ragged_arange(degree)] = (
+            adjacency.indices
+        )
+        lengths = adjacency.data[adjacency.data > 0]
+        self._spacing = (
+            _PROBE_FRACTION * float(lengths.min()) if lengths.size else np.inf
+        )
+        self._grid = _GridCells.of(self._locator, self._centers)
+        # Bins this close share a face: a straight stretch between them
+        # stays in the two.
+        self._nearest = float(lengths.min()) * (1 + 1e-6) if lengths.size else np.inf
+        self._fields = _RootFields(n_bins)
+        self._source_fields: dict[
+            tuple[int, ...], tuple[NDArray[np.float64], NDArray[np.int32]]
+        ] = {}
+
+    def pairwise(self, points: NDArray[np.float64]) -> PairDistances:
+        return _OpenPairDistances(self, points)
+
+    def prepare(self, bins: NDArray[np.intp]) -> None:
+        self._fields.ensure(self, np.unique(bins[bins >= 0]))
+
+    def from_bins(self, source_bins: NDArray[np.intp]) -> NDArray[np.float64]:
+        source_bins = np.asarray(source_bins, dtype=np.intp)
+        if source_bins.size == 1:
+            # One source: the same field as a target position in that bin.
+            self._fields.ensure(self, source_bins)
+            row = self._fields.row_of_root[source_bins[0]]
+            single: NDArray[np.float64] = self._fields.length[row].copy()
+            return single
+        distances: NDArray[np.float64] = self._source_field(source_bins)[0].copy()
+        return distances
+
+    def costs_from_bins(
+        self, source_bins: NDArray[np.intp], rate: NDArray[np.float64]
+    ) -> NDArray[np.float64]:
         source_bins = np.asarray(source_bins, dtype=np.intp)
         length, _, _ = self._grow(
             [source_bins], rate=rate, single_roots=source_bins.size == 1
@@ -552,9 +512,148 @@ class EnvironmentPaths:
         costs: NDArray[np.float64] = length[0]
         return costs
 
+    def _to_point(
+        self,
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+        target: NDArray[np.float64],
+        root: int,
+    ) -> NDArray[np.float64]:
+        fields = self._fields
+        fields.ensure(self, np.array([root]))
+        return self._join(
+            points,
+            point_bins,
+            np.broadcast_to(target, points.shape),
+            np.full(points.shape[0], root),
+            (fields.length, fields.anchor, fields.lead),
+            np.full(points.shape[0], fields.row_of_root[root]),
+        )
+
+    def _between(
+        self,
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        start_bins: NDArray[np.intp],
+        end_bins: NDArray[np.intp],
+    ) -> NDArray[np.float64]:
+        out = np.empty(starts.shape[0])
+        # Points in one bin or in two connected bins see each other.
+        straight = (start_bins == end_bins) | self._connected(start_bins, end_bins)
+        out[straight] = np.linalg.norm(ends[straight] - starts[straight], axis=1)
+        rest = np.flatnonzero(~straight)
+        if not rest.size:
+            return out
+        a, b = start_bins[rest], end_bins[rest]
+        fields = self._fields
+        kept = fields.row_of_root[b] >= 0
+        if kept.any():
+            out[rest[kept]] = self._join(
+                starts[rest[kept]],
+                a[kept],
+                ends[rest[kept]],
+                b[kept],
+                (fields.length, fields.anchor, fields.lead),
+                fields.row_of_root[b[kept]],
+            )
+        # Other targets: grow each field only as far as its start bins.
+        grow = np.flatnonzero(~kept)
+        if grow.size:
+            roots, field_rows = np.unique(b[grow], return_inverse=True)
+            field_rows = field_rows.ravel()
+            parts = []
+            for lo in range(0, roots.size, _FIELD_BATCH):
+                batch = np.arange(lo, min(lo + _FIELD_BATCH, roots.size))
+                parts.append(
+                    self._grow(
+                        [roots[i : i + 1] for i in batch],
+                        single_roots=True,
+                        stop_bins=[np.unique(a[grow][field_rows == i]) for i in batch],
+                    )
+                )
+            grown = tuple(np.vstack([part[k] for part in parts]) for k in range(3))
+            out[rest[grow]] = self._join(
+                starts[rest[grow]],
+                a[grow],
+                ends[rest[grow]],
+                b[grow],
+                grown,  # type: ignore[arg-type]
+                field_rows,
+            )
+        return out
+
+    def _directions(
+        self,
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+        target: NDArray[np.float64],
+        root: int,
+    ) -> NDArray[np.float64]:
+        fields = self._fields
+        fields.ensure(self, np.array([root]))
+        out = np.full(points.shape, np.nan)
+        field_row = fields.row_of_root[root]
+        anchor = fields.anchor[field_row, point_bins]
+        reachable = np.isfinite(fields.length[field_row, point_bins])
+        straight = (point_bins == root) | (anchor == root)
+        waypoint = np.where(
+            straight[:, None], target[None, :], self._centers[np.maximum(anchor, 0)]
+        )
+        vector = waypoint - points
+        norm = np.linalg.norm(vector, axis=1)
+        defined = reachable & (norm > 0)
+        out[defined] = vector[defined] / norm[defined, None]
+        return out
+
+    def _from_bins_at(
+        self,
+        source_bins: NDArray[np.intp],
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+    ) -> NDArray[np.float64]:
+        if source_bins.size == 1:
+            source = int(source_bins[0])
+            return self._to_point(points, point_bins, self._centers[source], source)
+        length, anchor = self._source_field(source_bins)
+        n_points = points.shape[0]
+        # Candidate corners: the anchor of the point's bin (its center sees
+        # it) and, when the point sees them, the anchors of the bin's open
+        # neighbors, so the nearest source is chosen from the point itself.
+        own = anchor[point_bins].astype(np.intp)
+        neighbors = self._neighbors[point_bins]
+        open_neighbor = neighbors >= 0
+        owner = np.repeat(np.arange(n_points), open_neighbor.sum(axis=1))
+        corner = anchor[neighbors[open_neighbor]].astype(np.intp)
+        keep = (corner >= 0) & (corner != own[owner])
+        keys = np.unique(owner[keep] * self._n_bins + corner[keep])
+        owner, corner = keys // self._n_bins, keys % self._n_bins
+        visible, _ = self._trace(
+            points[owner], self._centers[corner], point_bins[owner], corner
+        )
+        owner = np.r_[np.arange(n_points), owner[visible]]
+        corner = np.r_[own, corner[visible]]
+        found = corner >= 0
+        owner, corner = owner[found], corner[found]
+        total = (
+            np.linalg.norm(points[owner] - self._centers[corner], axis=1)
+            + (length[corner])
+        )
+        best = np.full(n_points, np.inf)
+        np.minimum.at(best, owner, total)
+        return best
+
     # ------------------------------------------------------------------
-    # Internals: open environments
+    # Internals
     # ------------------------------------------------------------------
+
+    def _cells(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Bin whose cell holds each point, -1 in no bin's cell.
+
+        Probes use the bins' own cells: a straight segment between bin
+        centers stays inside the environment when it stays inside the union
+        of the bins' cells.
+        """
+        return np.asarray(self._locator.locate(points, self._env._cache), dtype=np.intp)
 
     def _connected(self, a: NDArray[np.intp], b: NDArray[np.intp]) -> NDArray[np.bool_]:
         """Whether each bin pair is joined by an open connection."""
@@ -883,14 +982,9 @@ class EnvironmentPaths:
         from scipy.sparse.csgraph import dijkstra
 
         n_bins, n_sets = self._n_bins, len(source_sets)
-        adjacency = self._adjacency
-        if rate is not None:
-            weighted = adjacency.copy()
-            rows = np.repeat(np.arange(n_bins), np.diff(adjacency.indptr))
-            weighted.data = (
-                adjacency.data * 0.5 * (rate[rows] + rate[adjacency.indices])
-            )
-            adjacency = weighted
+        adjacency = (
+            self._adjacency if rate is None else _rate_weighted(self._adjacency, rate)
+        )
         if single_roots:
             graph = np.atleast_2d(
                 dijkstra(
@@ -1204,26 +1298,57 @@ class _GridCells:
         return walked, blocked
 
 
-class PairDistances:
+class PairDistances(ABC):
     """Shortest path lengths between pairs of one set of positions.
 
-    Made by :meth:`EnvironmentPaths.pairwise`. The fields of every bin the
-    positions visit are reduced to per-bin-pair tables once, so each pair
-    is a few lookups; results equal :meth:`EnvironmentPaths.between`.
+    Made by :meth:`EnvironmentPaths.pairwise`, which locates the positions
+    once and prepares what every pair needs; results equal
+    :meth:`EnvironmentPaths.between`.
     """
 
     def __init__(self, paths: EnvironmentPaths, points: NDArray[np.float64]) -> None:
-        self._paths = paths
         self._points = points
         self._bins = paths.bins(points)
-        if paths._track is not None:
-            located = np.flatnonzero(self._bins >= 0)
-            self._segment = np.zeros(points.shape[0], dtype=np.intp)
-            self._offset = np.full(points.shape[0], np.nan)
-            self._segment[located], self._offset[located] = paths._track.project(
-                points[located]
-            )
-            return
+
+    def between(
+        self, first: NDArray[np.intp], second: NDArray[np.intp]
+    ) -> NDArray[np.float64]:
+        """Path length from ``points[first[k]]`` to ``points[second[k]]``.
+
+        Parameters
+        ----------
+        first, second : ndarray of int, shape (n_pairs,)
+            Row indices into the positions.
+
+        Returns
+        -------
+        ndarray, shape (n_pairs,)
+            NaN where either position is missing or outside the
+            environment; ``inf`` between disconnected parts.
+        """
+        out = np.full(first.size, np.nan)
+        ok = np.flatnonzero((self._bins[first] >= 0) & (self._bins[second] >= 0))
+        if ok.size:
+            out[ok] = self._between(first[ok], second[ok])
+        return out
+
+    @abstractmethod
+    def _between(
+        self, first: NDArray[np.intp], second: NDArray[np.intp]
+    ) -> NDArray[np.float64]:
+        """:meth:`between` for pairs whose two positions are both located."""
+
+
+class _OpenPairDistances(PairDistances):
+    """Pair distances in an open environment, from per-bin-pair tables.
+
+    The fields of every bin the positions visit are reduced to tables once,
+    so each pair is a few lookups.
+    """
+
+    def __init__(self, paths: _OpenPaths, points: NDArray[np.float64]) -> None:
+        super().__init__(paths, points)
+        self._centers = paths._centers
         roots = np.unique(self._bins[self._bins >= 0])
         paths._fields.ensure(paths, roots)
         fields = paths._fields
@@ -1257,46 +1382,44 @@ class PairDistances:
         self._lead = lead
         self._rest = rest
 
-    def between(
+    def _between(
         self, first: NDArray[np.intp], second: NDArray[np.intp]
     ) -> NDArray[np.float64]:
-        """Path length from ``points[first[k]]`` to ``points[second[k]]``.
-
-        Parameters
-        ----------
-        first, second : ndarray of int, shape (n_pairs,)
-            Row indices into the positions.
-
-        Returns
-        -------
-        ndarray, shape (n_pairs,)
-            NaN where either position is missing or outside the
-            environment; ``inf`` between disconnected parts.
-        """
-        paths = self._paths
-        out = np.full(first.size, np.nan)
-        start_bins, end_bins = self._bins[first], self._bins[second]
-        ok = np.flatnonzero((start_bins >= 0) & (end_bins >= 0))
-        if paths._track is not None:
-            out[ok] = paths._track._pair(
-                self._segment[first[ok]],
-                self._offset[first[ok]],
-                self._segment[second[ok]],
-                self._offset[second[ok]],
-            )
-            return out
-        a, row = start_bins[ok], self._row_of[end_bins[ok]]
-        starts, ends = self._points[first[ok]], self._points[second[ok]]
-        straight = self._straight[row, a]
-        centers = paths._centers
+        a, row = self._bins[first], self._row_of[self._bins[second]]
+        starts, ends = self._points[first], self._points[second]
+        centers = self._centers
         corner, lead = self._corner[row, a], self._lead[row, a]
         around = (
             np.linalg.norm(starts - centers[corner], axis=1)
             + self._rest[row, a]
             + np.linalg.norm(centers[lead] - ends, axis=1)
         )
-        out[ok] = np.where(straight, np.linalg.norm(ends - starts, axis=1), around)
-        return out
+        distances: NDArray[np.float64] = np.where(
+            self._straight[row, a], np.linalg.norm(ends - starts, axis=1), around
+        )
+        return distances
+
+
+class _TrackPairDistances(PairDistances):
+    """Pair distances along a track, from each position's projection."""
+
+    def __init__(self, paths: _TrackPaths, points: NDArray[np.float64]) -> None:
+        super().__init__(paths, points)
+        self._paths = paths
+        located = np.flatnonzero(self._bins >= 0)
+        self._segment = np.zeros(points.shape[0], dtype=np.intp)
+        self._offset = np.full(points.shape[0], np.nan)
+        self._segment[located], self._offset[located] = paths.project(points[located])
+
+    def _between(
+        self, first: NDArray[np.intp], second: NDArray[np.intp]
+    ) -> NDArray[np.float64]:
+        return self._paths._pair(
+            self._segment[first],
+            self._offset[first],
+            self._segment[second],
+            self._offset[second],
+        )
 
 
 class _RootFields:
@@ -1310,7 +1433,7 @@ class _RootFields:
         self.anchor = np.empty((0, n_bins), dtype=np.int32)
         self.lead = np.empty((0, n_bins), dtype=np.int32)
 
-    def ensure(self, paths: EnvironmentPaths, roots: NDArray[np.intp]) -> None:
+    def ensure(self, paths: _OpenPaths, roots: NDArray[np.intp]) -> None:
         """Grow and keep the field of every root not yet kept."""
         missing = roots[self.row_of_root[roots] < 0]
         if not missing.size:
@@ -1341,13 +1464,16 @@ class _RootFields:
         self.row_of_root[missing] = n_kept + np.arange(missing.size)
 
 
-class _TrackPaths:
+class _TrackPaths(EnvironmentPaths):
     """Distances along a track graph between projections onto the track."""
 
-    def __init__(self, linearization: TrackLinearization) -> None:
+    def __init__(self, env: Environment) -> None:
         from scipy.sparse import csr_array
         from scipy.sparse.csgraph import dijkstra
 
+        super().__init__(env)
+        linearization = env.binning.linearization
+        assert linearization is not None  # environment_paths dispatches on it
         graph = linearization.graph
         nodes = list(graph.nodes)
         index = {node: i for i, node in enumerate(nodes)}
@@ -1372,6 +1498,112 @@ class _TrackPaths:
         )
         self._node_distance = dijkstra(matrix, directed=False)
 
+    def pairwise(self, points: NDArray[np.float64]) -> PairDistances:
+        return _TrackPairDistances(self, points)
+
+    def from_bins(self, source_bins: NDArray[np.intp]) -> NDArray[np.float64]:
+        source_bins = np.asarray(source_bins, dtype=np.intp)
+        return self._from_bins_at(source_bins, self._centers, np.arange(self._n_bins))
+
+    def costs_from_bins(
+        self, source_bins: NDArray[np.intp], rate: NDArray[np.float64]
+    ) -> NDArray[np.float64]:
+        """Least travel cost along the track's bin graph.
+
+        A track's bins lie on its centerline and its bin graph runs along
+        it, so the bin-graph path is the along-track path.
+        """
+        from scipy.sparse.csgraph import dijkstra
+
+        cost: NDArray[np.float64] = dijkstra(
+            _rate_weighted(self._adjacency, rate),
+            directed=False,
+            indices=source_bins,
+            min_only=True,
+        )
+        return cost
+
+    def _to_point(
+        self,
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+        target: NDArray[np.float64],
+        root: int,
+    ) -> NDArray[np.float64]:
+        return self._along(points, np.broadcast_to(target, points.shape))
+
+    def _between(
+        self,
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        start_bins: NDArray[np.intp],
+        end_bins: NDArray[np.intp],
+    ) -> NDArray[np.float64]:
+        return self._along(starts, ends)
+
+    def _directions(
+        self,
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+        target: NDArray[np.float64],
+        root: int,
+    ) -> NDArray[np.float64]:
+        """Unit vector along the track toward ``target`` at each point.
+
+        NaN at the target and at a point whose projection is a node from
+        which the route leaves along another segment.
+        """
+        out = np.full(points.shape, np.nan)
+        seg, off = self.project(points)
+        seg_t, off_t = self.project(target[None, :])
+        nodes, reach = self._ends(seg, off)
+        nodes_t, reach_t = self._ends(seg_t, off_t)
+        # Cost of leaving through each end of the point's segment.
+        via = reach + (self._node_distance[nodes][:, :, nodes_t[0]] + reach_t[0]).min(
+            axis=2
+        )
+        toward_v = via[:, 1] < via[:, 0]
+        same = seg == seg_t[0]
+        direct = np.abs(off - off_t[0])
+        along_edge = same & (direct <= via.min(axis=1))
+        toward_v = np.where(along_edge, off_t[0] > off, toward_v)
+        sign = np.where(toward_v, 1.0, -1.0)
+        remaining = np.where(toward_v, reach[:, 1], reach[:, 0])
+        if along_edge.any():
+            remaining[along_edge] = direct[along_edge]
+        unit = (
+            self._direction[seg]
+            / np.where(self._length[seg] > 0, self._length[seg], np.inf)[:, None]
+        )
+        defined = (remaining > 0) & (self._length[seg] > 0)
+        out[defined] = sign[defined, None] * unit[defined]
+        return out
+
+    def _from_bins_at(
+        self,
+        source_bins: NDArray[np.intp],
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+    ) -> NDArray[np.float64]:
+        seg_p, off_p = self.project(points)
+        seg_s, off_s = self.project(self._centers[source_bins])
+        n_points, n_sources = points.shape[0], source_bins.size
+        nearest: NDArray[np.float64] = (
+            self._pair(
+                np.repeat(seg_p, n_sources),
+                np.repeat(off_p, n_sources),
+                np.tile(seg_s, n_points),
+                np.tile(off_s, n_points),
+            )
+            .reshape(n_points, n_sources)
+            .min(axis=1)
+        )
+        return nearest
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
     def project(
         self, points: NDArray[np.float64]
     ) -> tuple[NDArray[np.intp], NDArray[np.float64]]:
@@ -1379,24 +1611,21 @@ class _TrackPaths:
 
         A point as near, within rounding, to several segments takes the one
         first in the track's linear order, as ``Environment.to_linear`` does.
-        Rows with a non-finite coordinate get segment 0 (callers mask them).
         """
         from neurospatial.geometry._locators import _coordinate_roundoff
 
-        finite = np.all(np.isfinite(points), axis=1)
-        values = np.where(finite[:, None], points, 0.0)
         squared = self._length**2
         with np.errstate(divide="ignore", invalid="ignore"):
             along = (
                 np.einsum(
-                    "sd,psd->ps", self._direction, values[:, None, :] - self._first
+                    "sd,psd->ps", self._direction, points[:, None, :] - self._first
                 )
                 / squared
             )
         along = np.clip(np.where(squared > 0, along, 0.0), 0.0, 1.0)
         projected = self._first + along[:, :, None] * self._direction
-        distance = np.linalg.norm(values[:, None, :] - projected, axis=2)
-        tolerance = _coordinate_roundoff(values, self._scale)
+        distance = np.linalg.norm(points[:, None, :] - projected, axis=2)
+        tolerance = _coordinate_roundoff(points, self._scale)
         tied = distance <= (distance.min(axis=1) + tolerance)[:, None]
         segment = np.argmax(tied, axis=1)
         rows = np.arange(points.shape[0])
@@ -1430,107 +1659,10 @@ class _TrackPaths:
         best[same] = np.minimum(best[same], np.abs(off_a[same] - off_b[same]))
         return best
 
-    def between(
-        self,
-        starts: NDArray[np.float64],
-        ends: NDArray[np.float64],
-        start_bins: NDArray[np.intp],
+    def _along(
+        self, starts: NDArray[np.float64], ends: NDArray[np.float64]
     ) -> NDArray[np.float64]:
-        """Along-track distance per pair; NaN where ``start_bins`` is -1.
-
-        ``ends`` must be finite where the start is in the track.
-        """
-        out = np.full(starts.shape[0], np.nan)
-        rows = np.flatnonzero((start_bins >= 0) & np.all(np.isfinite(ends), axis=1))
-        if rows.size:
-            seg_a, off_a = self.project(starts[rows])
-            seg_b, off_b = self.project(ends[rows])
-            out[rows] = self._pair(seg_a, off_a, seg_b, off_b)
-        return out
-
-    def from_points(
-        self,
-        sources: NDArray[np.float64],
-        points: NDArray[np.float64],
-        point_bins: NDArray[np.intp],
-    ) -> NDArray[np.float64]:
-        """Distance from each point to the nearest of ``sources``."""
-        out = np.full(points.shape[0], np.nan)
-        rows = np.flatnonzero(point_bins >= 0)
-        if not rows.size:
-            return out
-        seg_p, off_p = self.project(points[rows])
-        seg_s, off_s = self.project(sources)
-        n_points, n_sources = rows.size, sources.shape[0]
-        out[rows] = (
-            self._pair(
-                np.repeat(seg_p, n_sources),
-                np.repeat(off_p, n_sources),
-                np.tile(seg_s, n_points),
-                np.tile(off_s, n_points),
-            )
-            .reshape(n_points, n_sources)
-            .min(axis=1)
-        )
-        return out
-
-    def directions(
-        self,
-        points: NDArray[np.float64],
-        target: NDArray[np.float64],
-        point_bins: NDArray[np.intp],
-    ) -> NDArray[np.float64]:
-        """Unit vector along the track toward ``target`` at each point.
-
-        NaN at the target, at a point whose projection is a node from
-        which the route leaves along another segment, and outside the track.
-        """
-        out = np.full(points.shape, np.nan)
-        rows = np.flatnonzero(point_bins >= 0)
-        if not rows.size:
-            return out
-        seg, off = self.project(points[rows])
-        seg_t, off_t = self.project(target[None, :])
-        nodes, reach = self._ends(seg, off)
-        nodes_t, reach_t = self._ends(seg_t, off_t)
-        # Cost of leaving through each end of the point's segment.
-        via = reach + (self._node_distance[nodes][:, :, nodes_t[0]] + reach_t[0]).min(
-            axis=2
-        )
-        toward_v = via[:, 1] < via[:, 0]
-        same = seg == seg_t[0]
-        direct = np.abs(off - off_t[0])
-        along_edge = same & (direct <= via.min(axis=1))
-        toward_v = np.where(along_edge, off_t[0] > off, toward_v)
-        sign = np.where(toward_v, 1.0, -1.0)
-        remaining = np.where(toward_v, reach[:, 1], reach[:, 0])
-        if along_edge.any():
-            remaining[along_edge] = direct[along_edge]
-        unit = (
-            self._direction[seg]
-            / np.where(self._length[seg] > 0, self._length[seg], np.inf)[:, None]
-        )
-        defined = (remaining > 0) & (self._length[seg] > 0)
-        out[rows[defined]] = sign[defined, None] * unit[defined]
-        return out
-
-    def costs_from_bins(
-        self,
-        source_bins: NDArray[np.intp],
-        rate: NDArray[np.float64],
-        adjacency: csr_array,
-    ) -> NDArray[np.float64]:
-        """Least travel cost along the track's bin graph.
-
-        A track's bins lie on its centerline and its bin graph runs along
-        it, so the bin-graph path is the along-track path.
-        """
-        from scipy.sparse.csgraph import dijkstra
-
-        weighted = adjacency.copy()
-        rows = np.repeat(np.arange(adjacency.shape[0]), np.diff(adjacency.indptr))
-        weighted.data = adjacency.data * 0.5 * (rate[rows] + rate[adjacency.indices])
-        cost: NDArray[np.float64] = dijkstra(
-            weighted, directed=False, indices=source_bins, min_only=True
-        )
-        return cost
+        """Along-track distance between the projections of each pair."""
+        seg_a, off_a = self.project(starts)
+        seg_b, off_b = self.project(ends)
+        return self._pair(seg_a, off_a, seg_b, off_b)
