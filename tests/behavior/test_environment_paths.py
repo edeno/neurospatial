@@ -260,3 +260,39 @@ class TestBinInputsUseBinCenters:
         )
         with pytest.raises(CartesianOnlyError, match="path_progress"):
             path_progress(np.array([0, 1]), polar, start_bins=0, goal_bins=5)
+
+
+class TestPositionInputsUseThePositionItself:
+    def test_distance_to_reward_goes_around_the_wall(self, divider_arena):
+        from neurospatial.behavior import distance_to_reward
+
+        positions = np.array([[42.5, 12.5], [43.0, 12.5]])
+        reward = np.array([[57.5, 12.5]])
+        distances = distance_to_reward(
+            divider_arena,
+            np.array([0.0, 0.1]),
+            positions,
+            np.array([0.05]),
+            reward,
+            metric="geodesic",
+        )
+        # Up to the center above the wall end, across, and down to the
+        # reward; the second position starts 0.5 cm further right.
+        climb_from = np.linalg.norm(positions - [47.5, 72.5], axis=1)
+        np.testing.assert_allclose(
+            distances, climb_from + 5.0 + np.hypot(5.0, 60.0), atol=1e-9
+        )
+
+    @pytest.mark.parametrize("metric", ["geodesic", "euclidean"])
+    def test_distance_to_boundary_is_not_quantized_to_bins(self, metric):
+        from neurospatial.behavior import distance_to_boundary
+
+        edges = np.arange(0.0, 11.0, 1.0)
+        env = Environment.from_grid_mask(
+            np.ones((10, 10), dtype=bool), grid_edges=(edges, edges)
+        )
+        # The rim bin centers nearest (5.2, 5.0) are (9.5, 4.5) and
+        # (9.5, 5.5), hypot(4.3, 0.5) away along a straight line inside the
+        # arena. Its bin's center (5.5, 5.5) is 4.0 cm from the rim.
+        distances = distance_to_boundary(env, np.array([[5.2, 5.0]]), metric=metric)
+        np.testing.assert_allclose(distances, [np.hypot(4.3, 0.5)], rtol=1e-12)

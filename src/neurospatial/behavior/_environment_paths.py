@@ -447,6 +447,10 @@ class EnvironmentPaths:
     ) -> NDArray[np.float64]:
         """Distance from each point to the nearest source bin center.
 
+        With several sources, a point's path leaves straight for the anchor
+        of its own bin or, when visible from the point, of a neighboring
+        bin, whichever is shortest.
+
         Parameters
         ----------
         source_bins : ndarray of int, shape (n_sources,)
@@ -469,15 +473,37 @@ class EnvironmentPaths:
         length, anchor = self._source_field(source_bins)
         out = np.full(points.shape[0], np.nan)
         rows = np.flatnonzero(point_bins >= 0)
-        corner = anchor[point_bins[rows]]
-        reachable = corner >= 0
         out[rows] = np.inf
-        out[rows[reachable]] = (
-            np.linalg.norm(
-                points[rows[reachable]] - self._centers[corner[reachable]], axis=1
-            )
-            + length[corner[reachable]]
+        # Candidate corners: the anchor of the point's bin (its center sees
+        # it) and, when the point sees them, the anchors of the bin's open
+        # neighbors, so the nearest source is chosen from the point itself.
+        own = anchor[point_bins[rows]].astype(np.intp)
+        degree = (self._neighbors[point_bins[rows]] >= 0).sum(axis=1)
+        owner = np.repeat(np.arange(rows.size), degree)
+        neighbor = self._neighbors[point_bins[rows]][
+            self._neighbors[point_bins[rows]] >= 0
+        ]
+        corner = anchor[neighbor].astype(np.intp)
+        keep = (corner >= 0) & (corner != own[owner])
+        keys = np.unique(owner[keep] * self._n_bins + corner[keep])
+        owner, corner = keys // self._n_bins, keys % self._n_bins
+        visible, _ = self._trace(
+            points[rows[owner]],
+            self._centers[corner],
+            point_bins[rows[owner]],
+            corner,
         )
+        owner = np.r_[np.arange(rows.size), owner[visible]]
+        corner = np.r_[own, corner[visible]]
+        found = corner >= 0
+        owner, corner = owner[found], corner[found]
+        total = (
+            np.linalg.norm(points[rows[owner]] - self._centers[corner], axis=1)
+            + length[corner]
+        )
+        best = np.full(rows.size, np.inf)
+        np.minimum.at(best, owner, total)
+        out[rows] = best
         return out
 
     def costs_from_bins(

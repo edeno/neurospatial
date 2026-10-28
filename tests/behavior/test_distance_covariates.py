@@ -740,7 +740,6 @@ class TestDistanceToRewardSupport:
         picks each sample's reward by brute force.
         """
         from neurospatial.behavior.navigation import distance_to_reward
-        from neurospatial.ops.distance import distance_field
 
         env = simple_grid_env
         rng = np.random.default_rng(5)
@@ -781,12 +780,10 @@ class TestDistanceToRewardSupport:
                 )
             if pick is None or reward_bins[pick] < 0 or position_bins[i] < 0:
                 continue
-            if metric == "euclidean":
-                # Exact distance between the position and the reward location.
-                expected[i] = np.linalg.norm(positions[i] - reward_xy[pick])
-            else:
-                field = distance_field(env.connectivity, [int(reward_bins[pick])])
-                expected[i] = field[position_bins[i]]
+            # Exact distance between the position and the reward location;
+            # the square arena is convex, so the shortest path inside it
+            # (geodesic) is the same straight line.
+            expected[i] = np.linalg.norm(positions[i] - reward_xy[pick])
 
         np.testing.assert_allclose(result, expected, rtol=0, atol=1e-12)
         assert np.isfinite(result).sum() > 100

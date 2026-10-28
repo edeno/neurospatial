@@ -1102,15 +1102,12 @@ def distance_to_reward(
         Notes); a reward whose location cannot be read that way has an
         unknown location. A NaN row is an unknown location.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
-        Distance metric:
-
-        - 'geodesic': Shortest-path distance through the connectivity graph,
-          respecting walls and holes, between the center of the position's
-          bin and the center of the reward's bin. It is quantized to bins:
-          within one bin it is constant and it steps by about one bin
-          spacing between neighboring bins.
-        - 'euclidean': Exact straight-line distance between the position
-          and the reward location. Ignores walls.
+        ``'euclidean'`` is the straight-line distance between the position
+        and the reward location. ``'geodesic'`` is the length of the shortest
+        path between two positions that stays inside the environment: it
+        goes around walls and never leaves the environment, and on a track
+        it runs along the track's centerline. Both are measured from the
+        position itself, not its bin center.
     mode : {'nearest', 'last', 'next'}, default='nearest'
         Which reward to use for distance computation:
 
@@ -1201,10 +1198,9 @@ def distance_to_reward(
 
     **Performance**:
 
-    This function computes distance fields for each unique reward location,
-    which is O(V log V + E) per location using Dijkstra's algorithm. For
-    many unique reward locations, consider caching or using Euclidean
-    distances.
+    The geodesic distance is grown once per bin holding a reward location
+    and kept on the environment, so rewards delivered at the same ports
+    cost one field per port.
 
     Examples
     --------
@@ -1260,7 +1256,6 @@ def distance_to_reward(
     from neurospatial._intervals import as_intervals, validate_max_gap
     from neurospatial._observation import validate_break_before
     from neurospatial._validation import validate_finite
-    from neurospatial.ops.distance import distance_field
 
     require_cartesian(
         env.coordinate_system,
@@ -1436,17 +1431,16 @@ def distance_to_reward(
             positions - sorted_reward_positions[relevant_reward_idx], axis=1
         )
     else:
-        # Geodesic distance between bin centers, one distance field per
-        # distinct reward bin.
-        unique_targets = np.unique(target_bins[~no_reward])
-        for target_bin in unique_targets[unique_targets >= 0]:
-            mask = (target_bins == target_bin) & ~no_reward
-            dist_field = distance_field(env.connectivity, [int(target_bin)])
-            sample_bins = position_bins[mask]
-            distances[mask] = np.where(
-                sample_bins >= 0,
-                dist_field[np.clip(sample_bins, 0, len(dist_field) - 1)],
-                np.nan,
+        # The shortest path inside the environment from each position to
+        # its reward's location, one call per reward.
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        paths = environment_paths(env, call="distance_to_reward")
+        usable = ~no_reward & (target_bins >= 0) & (position_bins >= 0)
+        for reward in np.unique(relevant_reward_idx[usable]):
+            mask = usable & (relevant_reward_idx == reward)
+            distances[mask] = paths.to_point(
+                positions[mask], sorted_reward_positions[reward]
             )
 
     # Set NaN for samples with no relevant reward
@@ -1686,8 +1680,9 @@ def distance_to_boundary(
         - 'edge': Distance to the environment's boundary bins,
           :attr:`Environment.boundary_bins`: on a grid, bins next to
           unoccupied space (the outer rim and the rim of every hole); on a
-          track, the dead ends of its arms. This is quantized to bin centers
-          and is not the exact distance to the arena's walls; for that use
+          track, the dead ends of its arms. It is measured to the boundary
+          bins' centers, about half a bin inside the walls, and is not the
+          exact distance to the arena's walls; for that use
           :func:`neurospatial.ops.nearest_boundary`.
         - 'region': Distance to boundary of a specific named region.
           Requires ``region_name`` parameter.
@@ -1695,18 +1690,18 @@ def distance_to_boundary(
         Name of region for boundary_type='region'. Required when
         boundary_type='region', ignored otherwise.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
-        Distance metric:
-
-        - 'geodesic': Shortest-path distance respecting environment geometry.
-        - 'euclidean': Straight-line L2 distance.
+        ``'euclidean'`` is the straight-line distance. ``'geodesic'`` is the
+        length of the shortest path between two positions that stays inside
+        the environment: it goes around walls and never leaves the
+        environment, and on a track it runs along the track's centerline.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Distance from each position to the center of the nearest boundary
-        bin, so it is quantized to bin centers.
-        Units match environment coordinates (e.g., cm).
-        Returns NaN for positions outside the environment.
+        Distance from each position (not its bin center) to the center of
+        the nearest boundary bin, in environment units (e.g., cm). NaN for
+        positions outside the environment or missing (NaN rows); ``inf``
+        (geodesic) where no boundary bin can be reached.
 
     Raises
     ------
@@ -1728,10 +1723,8 @@ def distance_to_boundary(
 
     **Performance**:
 
-    The distance field is computed once and cached for the duration of the
-    call. For repeated queries with different positions but the same
-    boundary, consider caching the distance field manually using
-    ``distance_field(env.connectivity, boundary_bins)``.
+    The geodesic field from the boundary bins is grown once and kept on the
+    environment, so repeated calls with the same boundary are lookups.
 
     Examples
     --------
@@ -1766,7 +1759,6 @@ def distance_to_boundary(
     neurospatial.ops.compute_boundary_distances : Distance to walls along
         each direction
     """
-    from neurospatial.ops.distance import distance_field
     from neurospatial.ops.mapping import _require_region_mask
 
     require_cartesian(
@@ -1778,6 +1770,7 @@ def distance_to_boundary(
     )
 
     # Input validation
+    _require_path_metric(metric, call="distance_to_boundary")
     positions = np.asarray(positions, dtype=np.float64)
     n_samples = len(positions)
 
@@ -1820,22 +1813,21 @@ def distance_to_boundary(
             + ". Check that the environment has valid boundaries."
         )
 
-    # Compute distance field from boundary bins
-    dist_field = distance_field(
-        env.connectivity,
-        list(boundary_bins),
-        metric=metric,
-        bin_centers=env.bin_centers if metric == "euclidean" else None,
-    )
+    boundary_bins = np.unique(np.asarray(boundary_bins, dtype=np.intp))
+    if metric == "geodesic":
+        from neurospatial.behavior._environment_paths import environment_paths
 
-    # Map positions to bins
-    position_bins = env.bin_at(positions)
+        return environment_paths(env, call="distance_to_boundary").from_bins_at(
+            boundary_bins, positions
+        )
 
-    # Look up distances
+    from scipy.spatial import cKDTree
+
     distances = np.full(n_samples, np.nan, dtype=np.float64)
-    valid_bins = position_bins >= 0
-    distances[valid_bins] = dist_field[position_bins[valid_bins]]
-
+    inside = env.bin_at(positions) >= 0
+    distances[inside] = cKDTree(env.bin_centers[boundary_bins]).query(
+        positions[inside]
+    )[0]
     return distances
 
 
