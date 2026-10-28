@@ -102,6 +102,9 @@ _PROBE_PHASE = 2.0 - 2.0**0.5
 # is shorter than _SPLIT_RESOLUTION probe spacings.
 _SPLIT_AT = 2.0**0.5 - 1.0
 _SPLIT_RESOLUTION = 1e-2
+# Points of each segment located in the first round of :meth:`_trace`; each
+# round after doubles it.
+_FIRST_ROUND = 8
 # Runs of at most this many probe stretches that are not clean are probed.
 _TRACE_RUN = 8
 # Probe points located per call to ``Environment.bin_at``.
@@ -1022,7 +1025,9 @@ class _OpenPaths(EnvironmentPaths):
         a segment stops being probed at its first obstruction, so a blocked
         segment costs about as much as its distance to the obstruction. On a
         grid or a hexagonal lattice, visibility alone skips the probes of
-        clean stretches (:meth:`_trace_boxes`).
+        clean stretches (:meth:`_trace_boxes`); on a grid, the rate integral
+        of the visible segments is then summed in one pass
+        (:meth:`_rate_integral`).
 
         Parameters
         ----------
@@ -1048,15 +1053,31 @@ class _OpenPaths(EnvironmentPaths):
         if n_segments == 0:
             return visible, cost
         n_steps = np.maximum(np.ceil(lengths / self._spacing).astype(np.intp), 1)
-        if rate is None and self._boxes is not None and self._boxes.boxes(self):
+        boxes = self._boxes is not None and self._boxes.boxes(self)
+        # A rate integral needs every probe's bin: worth locating them in
+        # one pass where that is cheap, on a grid.
+        if boxes and (
+            rate is None or (self._grid is not None and self._rounds_fit(n_steps))
+        ):
             visible = self._trace_boxes(starts, ends, start_bins, end_bins, n_steps)
+            if rate is not None:
+                cost[:] = np.inf
+                rows = np.flatnonzero(visible)
+                cost[rows] = self._rate_integral(
+                    starts[rows],
+                    ends[rows],
+                    start_bins[rows],
+                    end_bins[rows],
+                    n_steps[rows],
+                    rate,
+                )
             return visible, cost
         if rate is not None:
             cost[:] = 0.0
         previous = start_bins.astype(np.intp, copy=True)
         done = np.zeros(n_segments, dtype=np.intp)  # points located so far
         active = np.arange(n_segments)
-        batch = 8
+        batch = _FIRST_ROUND
         while active.size:
             # Next points of each active segment: probes 1 .. n_steps, then
             # the end (point n_steps + 1).
@@ -1117,6 +1138,96 @@ class _OpenPaths(EnvironmentPaths):
             return visible, cost
         cost[~visible] = np.inf
         return visible, cost
+
+    @staticmethod
+    def _rounds_fit(n_steps: NDArray[np.intp]) -> bool:
+        """Whether every round of :meth:`_trace` takes its full doubling batch.
+
+        A round takes fewer points than its batch, from each of its active
+        segments, only when they would exceed ``_PROBE_CHUNK``. Counting
+        every unfinished segment as active (a blocked one leaves early)
+        bounds them, so when that bound fits every round, each segment's
+        rounds are its own points 1 .. 8, 9 .. 24, ..., whatever the
+        others do.
+        """
+        remaining = np.sort(n_steps + 1)
+        batch, done = _FIRST_ROUND, 0
+        while True:
+            active = remaining.size - int(
+                np.searchsorted(remaining, done, side="right")
+            )
+            if not active:
+                return True
+            if _PROBE_CHUNK // active < batch:
+                return False
+            done += batch
+            batch *= 2
+
+    def _rate_integral(
+        self,
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        start_bins: NDArray[np.intp],
+        end_bins: NDArray[np.intp],
+        n_steps: NDArray[np.intp],
+        rate: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        """:meth:`_trace`'s rate integral of visible segments, in one pass.
+
+        The same stretches as the round-by-round probe walk, each
+        ``0.5 * (rate[left] + rate[right]) * (fraction step)``, are summed
+        per segment within each of its rounds (:meth:`_rounds_fit` holds),
+        in order, and the round sums times the length are added in turn, as
+        the walk adds them, so the cost is the same to the last bit.
+        """
+        cost = np.zeros(starts.shape[0])
+        lengths = np.linalg.norm(ends - starts, axis=1)
+        count = n_steps + 1
+        # Segments in chunks of at most _PROBE_CHUNK points.
+        breaks = np.searchsorted(
+            np.cumsum(count),
+            np.arange(_PROBE_CHUNK, int(count.sum()), _PROBE_CHUNK),
+            side="right",
+        )
+        for lo, hi in itertools.pairwise(np.r_[0, breaks, starts.shape[0]]):
+            seg = np.arange(lo, hi)
+            if not seg.size:
+                continue
+            owner = np.repeat(np.arange(seg.size), count[seg])
+            step = ragged_arange(count[seg]) + 1
+            segment = seg[owner]
+            fraction = self._probe_fraction(step, n_steps[segment])
+            located = np.empty(step.size, dtype=np.intp)
+            at_end = step == n_steps[segment] + 1
+            located[at_end] = end_bins[segment[at_end]]
+            probe = ~at_end
+            located[probe] = self._probe_cells(
+                starts[segment[probe]]
+                + fraction[probe, None]
+                * (ends[segment[probe]] - starts[segment[probe]])
+            )
+            left = np.empty(step.size, dtype=np.intp)
+            left[1:] = located[:-1]
+            left[np.cumsum(count[seg]) - count[seg]] = start_bins[seg]
+            stretch = (
+                0.5
+                * (rate[left] + rate[located])
+                * (fraction - self._probe_fraction(step - 1, n_steps[segment]))
+            )
+            # Round of each point: 0 for points 1 .. 8, 1 for 9 .. 24, ...
+            _, exponent = np.frexp((step - 1) // _FIRST_ROUND + 1)
+            round_of = exponent.astype(np.intp) - 1
+            n_rounds = int(round_of.max()) + 1
+            sums = np.bincount(
+                owner * n_rounds + round_of,
+                weights=stretch,
+                minlength=seg.size * n_rounds,
+            ).reshape(seg.size, n_rounds)
+            total = np.zeros(seg.size)
+            for k in range(n_rounds):
+                total += sums[:, k] * lengths[seg]
+            cost[seg] = total
+        return cost
 
     def _trace_boxes(
         self,

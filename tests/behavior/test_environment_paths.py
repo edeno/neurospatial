@@ -712,3 +712,32 @@ def test_deep_mesh_interiors_locate_points_as_the_locator_does():
     visible, _ = paths._trace(starts, ends, a, b)
     np.testing.assert_array_equal(visible, probed._trace(starts, ends, a, b)[0])
     assert 300 < visible.sum() < visible.size - 300
+
+
+@pytest.mark.parametrize("probe_chunk", [None, 600])
+def test_rate_integral_on_a_grid_equals_the_probe_walk(
+    divider_arena, probe_chunk, monkeypatch
+):
+    """On a grid, the travel cost of visible segments summed in one pass
+    equals, bit for bit, the cost the round-by-round probe walk adds up,
+    and blocked segments cost inf; with rounds too large to take whole
+    (a small probe chunk) the walk itself is used."""
+    import neurospatial.behavior._environment_paths as module
+
+    if probe_chunk is not None:
+        monkeypatch.setattr(module, "_PROBE_CHUNK", probe_chunk)
+    env = divider_arena
+    rng = np.random.default_rng(4)
+    a, b = rng.integers(0, env.n_bins, (2, 2000))
+    starts = env.bin_centers[a] + rng.uniform(-2.4, 2.4, (a.size, 2))
+    ends, rate = env.bin_centers[b], rng.uniform(0.5, 2.0, env.n_bins)
+    a = env.bin_at(starts)
+    one_pass = module._OpenPaths(env)
+    probed = module._OpenPaths(env)
+    probed._boxes = None
+    visible, cost = one_pass._trace(starts, ends, a, b, rate)
+    expected_visible, expected_cost = probed._trace(starts, ends, a, b, rate)
+    np.testing.assert_array_equal(visible, expected_visible)
+    np.testing.assert_array_equal(cost, expected_cost)
+    assert 300 < visible.sum() < visible.size - 300
+    assert np.isinf(cost[~visible]).all()
