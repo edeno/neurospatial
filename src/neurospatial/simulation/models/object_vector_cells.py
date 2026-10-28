@@ -89,10 +89,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._units import default_length
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import distance_field
 from neurospatial.ops.egocentric import compute_egocentric_bearing
-from neurospatial.simulation.models.base import default_length, geodesic_lookup_bins
+from neurospatial.simulation.models.base import geodesic_lookup_bins
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment

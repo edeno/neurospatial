@@ -3381,22 +3381,14 @@ def detect_goal_directed_runs(
         )
 
     if min_progress is None:
-        from neurospatial._units import units_per_centimeter
+        from neurospatial._units import default_length
 
-        per_cm = units_per_centimeter(env.units)
-        if per_cm is None:
-            raise ValueError(
-                _format_error(
-                    f"detect_goal_directed_runs needs min_progress: the "
-                    f"environment's units ({env.units!r}) are not a known length, "
-                    f"so the {DEFAULT_MIN_PROGRESS_CM:g} cm default cannot be "
-                    "expressed in them.",
-                    why="min_progress is a distance in the environment's units.",
-                    fix="pass min_progress=<distance in position units>, or "
-                    "declare the units with env.with_metadata(units='cm')",
-                )
-            )
-        min_progress = DEFAULT_MIN_PROGRESS_CM * per_cm
+        min_progress = default_length(
+            env,
+            DEFAULT_MIN_PROGRESS_CM,
+            name="min_progress",
+            call="detect_goal_directed_runs()",
+        )
     validate_finite_scalar(min_progress, name="min_progress", positive=False)
 
     position_bins, times = _validated_samples(

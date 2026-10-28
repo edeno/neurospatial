@@ -46,6 +46,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._units import default_length
 from neurospatial.geometry import (
     boundary_geometry,
     require_cartesian,
@@ -54,7 +55,6 @@ from neurospatial.geometry import (
 )
 from neurospatial.ops.boundary_vectors import boundary_directions, nearest_boundary
 from neurospatial.simulation._walls import Walls
-from neurospatial.simulation.models.base import default_length
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
