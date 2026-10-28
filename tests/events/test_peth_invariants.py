@@ -178,3 +178,11 @@ def test_two_dimensional_event_times_are_refused(population_call):
             population_peri_event_histogram([spikes], events, (-0.5, 0.5))
         else:
             peri_event_histogram(spikes, events, (-0.5, 0.5))
+
+
+def test_bad_event_time_errors_name_the_first_bad_entry():
+    spikes = np.array([1.0, 2.0])
+    with pytest.raises(ValueError, match=r"event_times must be numbers"):
+        peri_event_histogram(spikes, ["1.0", "soon"], (-0.5, 0.5))
+    with pytest.raises(ValueError, match=r"2 NaN value\(s\), first at index 1"):
+        peri_event_histogram(spikes, [1.0, np.nan, np.nan], (-0.5, 0.5))

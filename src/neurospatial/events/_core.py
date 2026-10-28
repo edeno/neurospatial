@@ -12,6 +12,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from numbers import Real
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -54,9 +55,28 @@ def _validate_event_indices(
         )
 
 
-def _finite_times(values: Any, name: str) -> NDArray[np.float64]:
-    """Return ``values`` as a 1-D float64 array of finite seconds."""
-    times = np.asarray(values, dtype=np.float64)
+def _is_real_number(value: Any) -> bool:
+    """True for one real number; False for bools, arrays, strings and None."""
+    return isinstance(value, Real) and not isinstance(value, bool | np.bool_)
+
+
+def _finite_times(
+    values: Any, name: str, *, non_empty: bool = False
+) -> NDArray[np.float64]:
+    """Return ``values`` as a 1-D float64 array of finite seconds.
+
+    ``non_empty`` also refuses an empty array, for analyses that need at
+    least one event to align to.
+    """
+    try:
+        times = np.asarray(values, dtype=np.float64)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"{name} must be numbers in seconds, got {type(values).__name__}.\n"
+            "  WHY: Each entry is one time on the recording clock.\n"
+            "  Fix: Pass a flat numeric array with one time per spike, sample or "
+            "event."
+        ) from None
     if times.ndim != 1:
         raise ValueError(
             f"{name} must be a 1-D array of times in seconds, got shape "
@@ -64,12 +84,21 @@ def _finite_times(values: Any, name: str) -> NDArray[np.float64]:
             "  WHY: Each entry is one time on the recording clock.\n"
             "  Fix: Pass a flat array with one time per spike, sample or event."
         )
+    if non_empty and times.size == 0:
+        raise ValueError(
+            f"{name} is empty.\n"
+            "  WHY: The analysis needs at least one event to align to.\n"
+            "  Fix: Provide at least one event time."
+        )
     for is_bad, what in ((np.isnan, "NaN"), (np.isinf, "infinite (Inf)")):
-        if is_bad(times).any():
+        bad = np.flatnonzero(is_bad(times))
+        if bad.size:
             raise ValueError(
-                f"{name} contains {what} values.\n"
+                f"{name} contains {bad.size} {what} value(s), first at index "
+                f"{bad[0]}.\n"
                 "  WHY: Times must be finite seconds.\n"
-                f"  Fix: Remove {what} values before calling."
+                f"  Fix: Remove them before calling, e.g. "
+                f"{name}[np.isfinite({name})]."
             )
     return times
 
@@ -170,12 +199,7 @@ def _psth_bins(
         If ``bin_size`` is not a finite positive number of seconds, or no
         complete bin fits in the window.
     """
-    if (
-        isinstance(bin_size, (bool, np.bool_))
-        or not isinstance(bin_size, (int, float, np.integer, np.floating))
-        or not np.isfinite(bin_size)
-        or bin_size <= 0
-    ):
+    if not (_is_real_number(bin_size) and np.isfinite(bin_size) and bin_size > 0):
         raise ValueError(
             _format_error(
                 f"{context}: bin_size must be positive and finite, got {bin_size!r}.",

@@ -208,13 +208,7 @@ def _peri_event_histograms(
         Events whose windows leave ``epochs`` or ``spike_window``.
     """
     bin_edges = _psth_bins(window, bin_size, context=context)
-    event_times = _finite_times(event_times, "event_times")
-    if event_times.size == 0:
-        raise ValueError(
-            "event_times is empty.\n"
-            "  WHY: Cannot compute PSTH without events to align to.\n"
-            "  Fix: Provide at least one event time."
-        )
+    event_times = _finite_times(event_times, "event_times", non_empty=True)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     n_input_events = event_times.size
     event_times, event_indices = _keep_observed_events(

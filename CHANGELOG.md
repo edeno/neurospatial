@@ -73,6 +73,10 @@ Added:
 
 Fixed:
 
+- Every events function reports bad spike, sample or event times the same
+  way: non-numeric input names the argument instead of raising NumPy's
+  conversion error, and NaN or infinite times give their count and first
+  index.
 - `peri_event_histogram` and `population_peri_event_histogram` warn once,
   not once per unit plus once more, for a window longer than 60 s.
 - `align_events` refuses a NaN or infinite event or reference time, which it

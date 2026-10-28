@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.events._core import PeriEventResult, _make_bin_edges
+from neurospatial.events._core import (
+    PeriEventResult,
+    _finite_times,
+    _make_bin_edges,
+)
 from neurospatial.events.alignment import _peri_event_bin_edges, _sorted_times
 
 if TYPE_CHECKING:
@@ -124,14 +128,8 @@ def plot_peri_event_response(
             "result.event_indices is unknown; a matching raster cohort cannot be inferred. "
             "Compute the result with peri_event_histogram or population_peri_event_histogram."
         )
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    event_times = np.asarray(event_times, dtype=np.float64)
-    for name, values in (("spike_times", spike_times), ("event_times", event_times)):
-        if values.ndim != 1 or not np.all(np.isfinite(values)):
-            raise ValueError(
-                f"{name} must be a finite 1-D array of times in seconds. "
-                "Pass one unit's spike train and the complete original event array."
-            )
+    spike_times = _finite_times(spike_times, "spike_times")
+    event_times = _finite_times(event_times, "event_times")
     n_input_events = result.n_events + result.n_events_dropped
     if event_times.size != n_input_events:
         raise ValueError(

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from numbers import Real
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -42,7 +41,11 @@ from neurospatial.events._continuous import (
     _Summaries,
     _window_status,
 )
-from neurospatial.events._core import _validate_window
+from neurospatial.events._core import (
+    _finite_times,
+    _is_real_number,
+    _validate_window,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -982,7 +985,7 @@ def align_continuous_to_events(
     )
     sample_valid = np.column_stack([support.sample_valid for support in supports])
     _check_category_codes(sig, sample_valid, spec, call=call)
-    events = _validated_event_times(event_times, call=call)
+    events = _finite_times(event_times, "event_times", non_empty=True)
     ids = _validated_event_ids(event_ids, events.size, call=call)
 
     status = _window_status(
@@ -1049,11 +1052,6 @@ def align_continuous_to_events(
     )
 
 
-def _is_real_number(value: Any) -> bool:
-    """True for one real number; False for bools, arrays, strings and None."""
-    return isinstance(value, Real) and not isinstance(value, bool | np.bool_)
-
-
 def _positive_number(value: Any, name: str, *, call: str) -> float:
     """Return ``value`` as a float, or raise unless it is positive and finite."""
     if not (_is_real_number(value) and np.isfinite(value) and value > 0):
@@ -1066,36 +1064,6 @@ def _positive_number(value: Any, name: str, *, call: str) -> float:
             )
         )
     return float(value)
-
-
-def _validated_event_times(event_times: ArrayLike, *, call: str) -> NDArray[np.float64]:
-    """Return event times as a 1-D finite float array, or raise."""
-    fix = "pass a 1-D array of event times in seconds, e.g. reward_times"
-    try:
-        events = np.asarray(event_times, dtype=np.float64)
-    except (TypeError, ValueError):
-        raise ValueError(
-            _format_error(f"{call}: event_times must be numbers in seconds.", fix=fix)
-        ) from None
-    if events.ndim != 1 or events.size == 0:
-        raise ValueError(
-            _format_error(
-                f"{call}: event_times must be a non-empty 1-D array; got shape "
-                f"{events.shape}.",
-                fix=fix,
-            )
-        )
-    bad = np.flatnonzero(~np.isfinite(events))
-    if bad.size:
-        raise ValueError(
-            _format_error(
-                f"{call}: event_times has {bad.size} non-finite value(s), first at "
-                f"index {bad[0]} ({events[bad[0]]}).",
-                why="An event without a time has no window to sample.",
-                fix="drop those events, e.g. event_times[np.isfinite(event_times)]",
-            )
-        )
-    return events
 
 
 def _validated_event_ids(
