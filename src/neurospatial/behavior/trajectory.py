@@ -2055,8 +2055,7 @@ def mean_square_displacement(
     max_tau : float, optional
         Longest lag, in seconds. Lags are the whole multiples of the median
         sample interval up to ``max_tau``, at most ``n_samples // 2`` of them.
-        ``None`` uses half the recording's duration. Use at most a quarter of
-        the duration to average enough pairs at every lag.
+        ``None`` uses a quarter of the recording's duration (see Notes).
     epochs : array-like, shape (n_epochs, 2), optional
         ``(start, stop)`` windows in seconds. A displacement pair is used only
         when both samples lie in the same window; touching windows merge.
@@ -2121,7 +2120,15 @@ def mean_square_displacement(
     in ``O(n log n)`` time; the result equals the pair average up to
     roundoff (below 1e-10 relative for 500,000 samples). Irregular sampling
     and the geodesic metric average each lag separately, in ``O(n)`` per
-    lag, so the default ``max_tau`` takes ``O(n^2)`` time there.
+    lag, so their cost grows with the number of lags: the default
+    ``max_tau`` takes ``O(n^2)`` time there.
+
+    The default ``max_tau`` is a quarter of the recording. The pairs at a
+    lag ``tau`` overlap in time, so in a recording of duration ``T`` their
+    average rests on only about ``T / tau`` independent displacements; at
+    long lags the MSD is noisy and depends on the few stretches it samples.
+    Pass a longer ``max_tau`` only when the recording has enough such
+    stretches to average.
 
     There is no ``max_gap``. MSD compares two observed positions a lag apart
     and does not integrate along the path, so samples missing between them do
@@ -2229,8 +2236,7 @@ def mean_square_displacement(
                 f"finite number of seconds; got {max_tau!r}.",
                 why="max_tau is the longest time lag at which displacement is "
                 "measured.",
-                fix="pass max_tau in seconds, for example a quarter of the "
-                "recording, or None for half of it.",
+                fix="pass max_tau in seconds, or None for a quarter of the recording.",
             )
         )
 
@@ -2242,7 +2248,7 @@ def mean_square_displacement(
 
     duration = float(times[-1] - times[0])
     if max_tau is None:
-        max_tau = duration / 2.0
+        max_tau = duration / 4.0
     elif max_tau > duration:
         raise ValueError(
             _format_error(
@@ -2250,9 +2256,9 @@ def mean_square_displacement(
                 f"longer than the recording ({duration:.6g} s).",
                 why="no two samples are farther apart in time than the "
                 "recording lasts, so no displacement is observed at that lag.",
-                fix="pass a shorter max_tau (at most a quarter of the recording "
-                "averages enough pairs per lag), and check that times are in "
-                "seconds.",
+                fix="pass a shorter max_tau, or None for a quarter of the "
+                "recording (longer lags average few independent "
+                "displacements), and check that times are in seconds.",
             )
         )
 

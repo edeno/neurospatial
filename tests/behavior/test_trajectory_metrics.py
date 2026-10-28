@@ -1132,7 +1132,8 @@ class TestMeanSquareDisplacementUniformSampling:
 
         result = mean_square_displacement(times, positions, break_before=break_before)
 
-        n_lags = self.N // 2
+        # The default max_tau is a quarter of the 150 s recording: 75 lags.
+        n_lags = 75
         expected = self._pair_average(positions, np.cumsum(break_before), n_lags)
         np.testing.assert_array_equal(np.isnan(result.msd), np.isnan(expected))
         np.testing.assert_allclose(result.msd, expected, rtol=1e-10)
@@ -1180,12 +1181,14 @@ class TestMeanSquareDisplacementLags:
         assert mean_square_displacement(times, positions, max_tau=0.55).lags.size == 5
         assert mean_square_displacement(times, positions, max_tau=0.3).lags.size == 3
 
-    def test_default_max_tau_is_half_the_recording(self):
+    def test_default_max_tau_is_a_quarter_of_the_recording(self):
         times, positions = self._ballistic()
         result = mean_square_displacement(times, positions)
-        # 9.9 s recording: half is 4.95 s, so lags 0.1 .. 4.9 s.
-        assert result.lags.size == 49
-        assert result.lags[-1] == pytest.approx(4.9)
+        # 9.9 s recording: a quarter is 2.475 s, so lags 0.1 .. 2.4 s.
+        assert result.lags.size == 24
+        assert result.lags[-1] == pytest.approx(2.4)
+        explicit = mean_square_displacement(times, positions, max_tau=9.9 / 4)
+        np.testing.assert_array_equal(result.msd, explicit.msd)
 
     def test_irregular_lag_is_mean_separation_of_its_pairs(self):
         # Median interval 1 s; the 2 s lag averages pairs 2.3, 2.2 and 1.7 s apart.
