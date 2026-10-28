@@ -15,11 +15,9 @@ allowing users to proceed with awareness of potential issues.
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from shapely import Polygon
-from shapely.errors import GEOSException
-from shapely.geometry.base import BaseGeometry
 from shapely.validation import explain_validity
 
 if TYPE_CHECKING:
@@ -154,24 +152,13 @@ def validate_region_within_boundary(
     are acceptable due to drawing imprecision. Larger extensions trigger warnings.
 
     """
-    from shapely import make_valid
-
     issues: list[str] = []
 
     if region.kind != "polygon" or boundary.kind != "polygon":
         return issues  # Only check polygon regions
 
-    # The Region constructor guarantees polygon-kind data is a Shapely Polygon,
-    # but it may be topologically invalid (e.g. self-intersecting), which makes
-    # contains()/intersection() raise a GEOSException. Repair invalid geometries
-    # with make_valid first; the result may be a MultiPolygon, which the
-    # downstream predicates (contains/intersection/area) handle transparently.
-    region_poly: BaseGeometry = cast("BaseGeometry", region.data)
-    boundary_poly: BaseGeometry = cast("BaseGeometry", boundary.data)
-    if not region_poly.is_valid:
-        region_poly = make_valid(region_poly)
-    if not boundary_poly.is_valid:
-        boundary_poly = make_valid(boundary_poly)
+    region_poly: Polygon = region.data
+    boundary_poly: Polygon = boundary.data
 
     # Check if region is completely within boundary
     if not boundary_poly.contains(region_poly):
@@ -260,47 +247,31 @@ def validate_region_overlap(
             poly1: Polygon = r1.data
             poly2: Polygon = r2.data
 
-            try:
-                if not poly1.intersects(poly2):
-                    continue
+            if not poly1.intersects(poly2):
+                continue
 
-                intersection = poly1.intersection(poly2)
-                intersection_area = intersection.area
+            intersection = poly1.intersection(poly2)
+            intersection_area = intersection.area
 
-                # Check overlap fraction for both regions
-                overlap_frac_1 = intersection_area / poly1.area if poly1.area > 0 else 0
-                overlap_frac_2 = intersection_area / poly2.area if poly2.area > 0 else 0
-                max_overlap = max(overlap_frac_1, overlap_frac_2)
+            # Check overlap fraction for both regions
+            overlap_frac_1 = intersection_area / poly1.area if poly1.area > 0 else 0
+            overlap_frac_2 = intersection_area / poly2.area if poly2.area > 0 else 0
+            max_overlap = max(overlap_frac_1, overlap_frac_2)
 
-                if max_overlap > overlap_threshold:
-                    issues.append(
-                        f"Regions '{r1.name}' and '{r2.name}' overlap heavily "
-                        f"({max_overlap:.1%} of smaller region)",
-                    )
-                    if warn_overlap:
-                        warnings.warn(
-                            f"Regions '{r1.name}' and '{r2.name}' overlap "
-                            f"heavily ({max_overlap:.1%} of the smaller "
-                            f"region's area). This may be intentional, but "
-                            f"could indicate a drawing error.",
-                            UserWarning,
-                            stacklevel=3,
-                        )
-            except GEOSException as exc:
+            if max_overlap > overlap_threshold:
                 issues.append(
-                    f"Could not check overlap between '{r1.name}' and "
-                    f"'{r2.name}': invalid geometry ({exc})",
+                    f"Regions '{r1.name}' and '{r2.name}' overlap heavily "
+                    f"({max_overlap:.1%} of smaller region)",
                 )
                 if warn_overlap:
                     warnings.warn(
-                        f"Could not check overlap between regions '{r1.name}' "
-                        f"and '{r2.name}' because one of them has invalid "
-                        f"geometry ({exc}). Fix the polygon (e.g. it may be "
-                        f"self-intersecting) and re-validate.",
+                        f"Regions '{r1.name}' and '{r2.name}' overlap "
+                        f"heavily ({max_overlap:.1%} of the smaller "
+                        f"region's area). This may be intentional, but "
+                        f"could indicate a drawing error.",
                         UserWarning,
                         stacklevel=3,
                     )
-                continue
 
     return issues
 
