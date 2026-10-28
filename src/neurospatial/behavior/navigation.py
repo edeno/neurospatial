@@ -3812,8 +3812,9 @@ def instantaneous_goal_alignment(
     NDArray[np.float64], shape (n_samples,)
         Cosine of angle between velocity and goal direction, range [-1, 1].
         NaN where the animal is not moving (speed zero or below
-        ``min_speed``) or not observed (a missing position or a sample in no
-        observed run).
+        ``min_speed``), not observed (a missing position or a sample in no
+        observed run), or exactly at the goal, where there is no direction
+        to the goal.
 
     Raises
     ------
@@ -3904,7 +3905,8 @@ def _goal_alignment(
     Returns
     -------
     ndarray, shape (n_samples,)
-        ``cos(heading - goal_direction)`` where the animal moves, else NaN.
+        ``cos(heading - goal_direction)`` where the animal moves, else NaN;
+        also NaN at a sample exactly at the goal (no goal direction).
     """
     from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
     from neurospatial.behavior._kinematics import _movement_heading_and_speed
@@ -3916,8 +3918,11 @@ def _goal_alignment(
         times, positions, support.interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
     )
     moving = (speed > 0) & (speed >= min_speed)
+    # At the goal itself there is no direction to the goal (arctan2(0, 0)
+    # would read as East and score an arrival from the East as -1).
+    away_from_goal = np.any(vec != 0, axis=1)
     alignment: NDArray[np.float64] = np.where(
-        moving, np.cos(heading - goal_heading), np.nan
+        moving & away_from_goal, np.cos(heading - goal_heading), np.nan
     )
     return alignment
 
@@ -3968,9 +3973,9 @@ def goal_bias(
     Returns
     -------
     float
-        Mean goal alignment over the samples where the animal moves, range
-        [-1, 1]. NaN if the animal is never moving (speed zero or below
-        ``min_speed``) at an observed sample.
+        Mean goal alignment over the samples where the animal moves and is
+        not exactly at the goal, range [-1, 1]. NaN if the animal is never
+        moving (speed zero or below ``min_speed``) at an observed sample.
 
     Raises
     ------
@@ -3997,8 +4002,8 @@ def goal_bias(
     >>> positions = np.column_stack([np.linspace(0, 100, 101), np.zeros(101)])
     >>> times = np.linspace(0, 10, 101)
     >>> goal = np.array([100.0, 0.0])
-    >>> goal_bias(times, positions, goal, min_speed=0.0) > 0.8
-    True
+    >>> float(goal_bias(times, positions, goal, min_speed=0.0))
+    1.0
 
     An animal that never moves has no direction of movement, so no bias:
 

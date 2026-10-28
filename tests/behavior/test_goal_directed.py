@@ -105,10 +105,26 @@ class TestInstantaneousGoalAlignment:
 
         result = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
 
-        # Should be ~1.0 everywhere (ignoring edge effects)
-        valid_alignment = result[~np.isnan(result)]
-        assert len(valid_alignment) > 0
-        assert np.mean(valid_alignment) > 0.9
+        # Exactly 1 at every sample but the last, which is at the goal.
+        np.testing.assert_allclose(result[:-1], 1.0, rtol=1e-12)
+        assert np.isnan(result[-1])
+
+    def test_westward_arrival_is_aligned(self):
+        """Running West onto the goal scores 1 up to it and NaN on it.
+
+        At the goal the direction to the goal was arctan2(0, 0) = East, so a
+        westward arrival scored -1 there.
+        """
+        from neurospatial.behavior.navigation import instantaneous_goal_alignment
+
+        positions = np.column_stack([np.linspace(100, 0, 21), np.zeros(21)])
+        times = np.linspace(0, 10, 21)
+        goal = np.array([0.0, 0.0])
+
+        result = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
+
+        np.testing.assert_allclose(result[:-1], 1.0, rtol=1e-12)
+        assert np.isnan(result[-1])
 
     def test_moving_away_from_goal(self):
         """Test alignment is negative when moving away from goal."""
@@ -127,10 +143,7 @@ class TestInstantaneousGoalAlignment:
 
         result = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
 
-        # Should be ~-1.0 (moving away)
-        valid_alignment = result[~np.isnan(result)]
-        assert len(valid_alignment) > 0
-        assert np.mean(valid_alignment) < -0.8
+        np.testing.assert_allclose(result, -1.0, rtol=1e-12)
 
     def test_orthogonal_movement(self):
         """Test alignment is ~0 when moving in circle around goal.
@@ -183,7 +196,7 @@ class TestGoalBias:
     """Test goal_bias function."""
 
     def test_strong_goal_directed(self):
-        """Test goal_bias > 0.8 for direct approach."""
+        """A direct approach has goal bias 1."""
         from neurospatial.behavior.navigation import goal_bias
 
         # Moving directly toward goal
@@ -196,10 +209,21 @@ class TestGoalBias:
 
         result = goal_bias(times, positions, goal, min_speed=0.0)
 
-        assert result > 0.8
+        assert result == pytest.approx(1.0, rel=1e-12)
+
+    def test_westward_approach_has_bias_one(self):
+        """The arrival sample used to score -1, pulling the bias to 0.9."""
+        from neurospatial.behavior.navigation import goal_bias
+
+        positions = np.column_stack([np.linspace(100, 0, 21), np.zeros(21)])
+        times = np.linspace(0, 10, 21)
+
+        result = goal_bias(times, positions, np.array([0.0, 0.0]), min_speed=0.0)
+
+        assert result == pytest.approx(1.0, rel=1e-12)
 
     def test_negative_goal_bias_moving_away(self):
-        """Test goal_bias < -0.5 when moving away from goal."""
+        """Moving straight away from the goal has goal bias -1."""
         from neurospatial.behavior.navigation import goal_bias
 
         # Moving away from goal
@@ -215,7 +239,7 @@ class TestGoalBias:
 
         result = goal_bias(times, positions, goal, min_speed=0.0)
 
-        assert result < -0.5
+        assert result == pytest.approx(-1.0, rel=1e-12)
 
     def test_circular_path_around_goal(self):
         """Test goal_bias ~0 for circular path around goal."""
