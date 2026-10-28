@@ -969,13 +969,17 @@ def distance_to_reward(
         Reward locations in environment coordinates. If None, each reward
         location is read from the tracked positions at its reward time (see
         Notes); a reward whose location cannot be read that way has an
-        unknown location.
+        unknown location. A NaN row is an unknown location.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
         Distance metric:
 
-        - 'geodesic': Shortest-path distance respecting environment geometry
-          (walls, obstacles). Uses graph-based distances.
-        - 'euclidean': Straight-line L2 distance. Ignores obstacles.
+        - 'geodesic': Shortest-path distance through the connectivity graph,
+          respecting walls and holes, between the center of the position's
+          bin and the center of the reward's bin. It is quantized to bins:
+          within one bin it is constant and it steps by about one bin
+          spacing between neighboring bins.
+        - 'euclidean': Exact straight-line distance between the position
+          and the reward location. Ignores walls.
     mode : {'nearest', 'last', 'next'}, default='nearest'
         Which reward to use for distance computation:
 
@@ -1022,7 +1026,7 @@ def distance_to_reward(
         If reward_positions provided but doesn't match reward_times length.
         If positions dimensionality doesn't match environment.
         If ``times`` or ``reward_times`` contain non-finite values, or
-        ``positions`` contains an infinite value.
+        ``positions`` or ``reward_positions`` contains an infinite value.
         If ``times`` is not ascending when reward positions are inferred
         (no ``reward_positions`` given) or ``break_before`` is given.
         If ``max_gap`` is not positive, or ``epochs`` or ``break_before`` is
@@ -1034,6 +1038,9 @@ def distance_to_reward(
         When some reward locations cannot be inferred from ``positions``,
         naming how many and why (outside the recorded span, in a gap longer
         than ``max_gap``, across a declared break or at missing positions).
+        When explicit ``reward_times`` fall outside the recorded span of
+        ``times`` (often a different clock, such as milliseconds), or a
+        known reward location lies outside the environment.
 
     Notes
     -----
@@ -1041,12 +1048,13 @@ def distance_to_reward(
 
     When ``reward_positions`` is not provided, a reward exactly at an
     observed sample time uses that sample's position. Otherwise the position
-    is linearly interpolated between the two samples around the reward
-    time, but only when that interval is usable: no longer than ``max_gap``,
-    not crossed by a declared break, and observed at both ends. ``epochs``
-    play no part here. A reward in a tracking gap, across a recording join, next to a
-    missing sample or outside the recorded span has an unknown location, and
-    the samples that select it get NaN. They never fall back to another
+    is linearly interpolated between the nearest observed samples before and
+    after the reward time. A missing sample (a NaN row) between them is
+    bridged like a deleted row when those observed samples are no more than
+    ``max_gap`` apart; only a longer gap, a declared break between them, or a
+    reward before the first or after the last observed position leaves the
+    location unknown. ``epochs`` play no part here. The samples that select a
+    reward of unknown location get NaN; they never fall back to another
     reward or to the nearest recorded position. Provide explicit
     ``reward_positions`` (for example the reward port's coordinates) when the
     tracked position at the reward time is not reliable.
@@ -1074,7 +1082,7 @@ def distance_to_reward(
     >>> from neurospatial.behavior import distance_to_reward
     >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
     >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=1.0)
-    >>> times = np.arange(6) * 0.1  # seconds
+    >>> times = np.arange(6) / 10  # seconds
     >>> positions = np.c_[np.arange(6.0), np.full(6, 5.0)]  # running along y = 5
     >>> reward_times = np.array([0.3])  # the reward is at sample 3, x = 3
     >>> distance_to_reward(env, times, positions, reward_times, metric="euclidean")
@@ -1185,13 +1193,20 @@ def distance_to_reward(
 
     # Get or interpolate reward positions
     if reward_positions is not None:
-        reward_positions = np.asarray(reward_positions, dtype=np.float64)
+        reward_positions = validate_finite(
+            np.asarray(reward_positions, dtype=np.float64),
+            name="reward_positions",
+            allow_nan=True,
+        )
+        if reward_positions.ndim == 1 and positions.shape[1] == 1:
+            reward_positions = reward_positions.reshape(-1, 1)
         if len(reward_positions) != len(reward_times):
             raise ValueError(
                 f"reward_positions and reward_times must have same length. "
                 f"Got reward_positions: {len(reward_positions)}, "
                 f"reward_times: {len(reward_times)}."
             )
+        _warn_rewards_outside_recording(times, reward_times)
     else:
         reward_positions = _infer_reward_positions(
             times,
@@ -1206,11 +1221,13 @@ def distance_to_reward(
 
     # Map reward positions to bins (unknown, NaN locations are -1)
     reward_bins = env.bin_at(reward_positions)
+    _warn_rewards_outside_environment(reward_positions, reward_bins)
 
     # Sort rewards by time for efficient lookup
     sorted_idx = np.argsort(reward_times)
     sorted_reward_times = reward_times[sorted_idx]
     sorted_reward_bins = reward_bins[sorted_idx]
+    sorted_reward_positions = reward_positions[sorted_idx]
     n_rewards = len(sorted_reward_times)
 
     # Recording of each sample (by declared breaks) and of each reward (by
@@ -1280,38 +1297,26 @@ def distance_to_reward(
     # Get reward bins for each sample
     target_bins = sorted_reward_bins[relevant_reward_idx]
 
-    # Compute distances
-    # Find unique target bins to minimize distance field computations
-    unique_targets = np.unique(target_bins[~no_reward])
-    unique_targets = unique_targets[unique_targets >= 0]  # Filter invalid bins
-
-    # Initialize distances
     distances = np.full(n_samples, np.nan, dtype=np.float64)
-
-    # Compute distance field for each unique target
-    for target_bin in unique_targets:
-        # Find samples with this target
-        mask = (target_bins == target_bin) & ~no_reward
-
-        if not np.any(mask):
-            continue
-
-        # Compute distance field from this reward location
-        dist_field = distance_field(
-            env.connectivity,
-            [int(target_bin)],
-            metric=metric,
-            bin_centers=env.bin_centers if metric == "euclidean" else None,
+    if metric == "euclidean":
+        # The exact straight-line distance between the position and the
+        # reward location, not between their bin centers.
+        distances = np.linalg.norm(
+            positions - sorted_reward_positions[relevant_reward_idx], axis=1
         )
-
-        # Look up distances for trajectory bins
-        sample_bins = position_bins[mask]
-        valid_bins = sample_bins >= 0
-        distances[mask] = np.where(
-            valid_bins,
-            dist_field[np.clip(sample_bins, 0, len(dist_field) - 1)],
-            np.nan,
-        )
+    else:
+        # Geodesic distance between bin centers, one distance field per
+        # distinct reward bin.
+        unique_targets = np.unique(target_bins[~no_reward])
+        for target_bin in unique_targets[unique_targets >= 0]:
+            mask = (target_bins == target_bin) & ~no_reward
+            dist_field = distance_field(env.connectivity, [int(target_bin)])
+            sample_bins = position_bins[mask]
+            distances[mask] = np.where(
+                sample_bins >= 0,
+                dist_field[np.clip(sample_bins, 0, len(dist_field) - 1)],
+                np.nan,
+            )
 
     # Set NaN for samples with no relevant reward
     distances[no_reward] = np.nan
@@ -1327,6 +1332,67 @@ def distance_to_reward(
     distances[~sample_in_epochs] = np.nan
 
     return distances
+
+
+def _warn_rewards_outside_recording(
+    times: NDArray[np.float64], reward_times: NDArray[np.float64]
+) -> None:
+    """Warn when explicit reward times fall outside the recorded span.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Finite sample times in seconds.
+    reward_times : ndarray, shape (n_rewards,)
+        Finite reward times in seconds.
+    """
+    import warnings
+
+    from neurospatial._stacklevel import _external_stacklevel
+
+    first, last = float(times.min()), float(times.max())
+    outside = (reward_times < first) | (reward_times > last)
+    if outside.any():
+        warnings.warn(
+            f"{int(outside.sum())} of {len(reward_times)} reward_times fall "
+            f"outside the recorded span [{first:g}, {last:g}] s. Samples still "
+            "select the temporally nearest, last or next reward, so a reward "
+            "time on another clock (for example milliseconds against seconds) "
+            "gives plausible but wrong distances. Fix: check that reward_times "
+            "are on the same clock as times; ignore this warning if rewards "
+            "were truly delivered before or after tracking.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+
+def _warn_rewards_outside_environment(
+    reward_positions: NDArray[np.float64], reward_bins: NDArray[np.intp]
+) -> None:
+    """Warn when known reward locations lie in no bin of the environment.
+
+    Parameters
+    ----------
+    reward_positions : ndarray, shape (n_rewards, n_dims)
+        Reward locations; NaN rows are unknown (already reported).
+    reward_bins : ndarray of intp, shape (n_rewards,)
+        Bin of each location, -1 when it is outside or unknown.
+    """
+    import warnings
+
+    from neurospatial._stacklevel import _external_stacklevel
+
+    unlocated = (reward_bins < 0) & np.isfinite(reward_positions).all(axis=1)
+    if unlocated.any():
+        warnings.warn(
+            f"{int(unlocated.sum())} of {len(reward_bins)} reward locations lie "
+            "outside the environment, so samples whose selected reward is one "
+            "of them get NaN distance. Fix: check that reward_positions are in "
+            "the environment's coordinates and units, or build the environment "
+            "so it covers the reward sites.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
 
 
 def _same_recording(

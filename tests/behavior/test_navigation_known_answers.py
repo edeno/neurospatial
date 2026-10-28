@@ -13,6 +13,7 @@ from neurospatial import BinIndexOutOfRangeError, Environment
 from neurospatial.behavior import (
     cost_to_goal,
     distance_to_region,
+    distance_to_reward,
     graph_turn_sequence,
     path_progress,
 )
@@ -260,3 +261,68 @@ class TestGraphTurnSequence:
     def test_out_of_range_bins_are_refused(self, t_maze):
         with pytest.raises(BinIndexOutOfRangeError):
             graph_turn_sequence(t_maze, np.array([0, 1, t_maze.n_bins]))
+
+
+@pytest.fixture(scope="module")
+def field_1cm() -> Environment:
+    """A 10 x 10 cm field of 1 cm bins."""
+    x, y = np.meshgrid(np.arange(0.5, 10.0), np.arange(0.5, 10.0))
+    return Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=1.0)
+
+
+class TestDistanceToReward:
+    def test_euclidean_is_the_exact_distance_not_bin_centre_to_bin_centre(
+        self, field_1cm
+    ):
+        times = np.arange(5) * 0.1
+        positions = np.c_[np.array([0.2, 1.3, 2.9, 3.4, 6.1]), np.full(5, 5.2)]
+        reward_xy = np.array([[3.2, 5.2]])
+        result = distance_to_reward(
+            field_1cm,
+            times,
+            positions,
+            np.array([0.2]),
+            reward_xy,
+            metric="euclidean",
+        )
+        np.testing.assert_allclose(result, np.abs(positions[:, 0] - 3.2))
+
+    def test_reward_next_to_a_missing_sample_is_interpolated(self, field_1cm):
+        """A missing sample is bridged: a reward on it is located between its
+        observed neighbours, here at x = 4.5."""
+        times = np.arange(8) * 0.1
+        positions = np.c_[np.arange(8.0) + 0.5, np.full(8, 5.5)]
+        positions[4] = np.nan
+        result = distance_to_reward(
+            field_1cm, times, positions, np.array([0.4]), metric="euclidean"
+        )
+        expected = np.abs(positions[:, 0] - 4.5)
+        np.testing.assert_allclose(result, expected)
+
+    def test_explicit_rewards_on_another_clock_warn(self, field_1cm):
+        """Reward times in ms against times in s used to give plausible distances."""
+        times = np.arange(10) * 0.1
+        positions = np.c_[np.arange(10.0) + 0.5, np.full(10, 5.5)]
+        with pytest.warns(UserWarning, match=r"recorded span"):
+            distance_to_reward(
+                field_1cm,
+                times,
+                positions,
+                np.array([300.0, 700.0]),
+                np.array([[3.5, 5.5], [7.5, 5.5]]),
+                metric="euclidean",
+            )
+
+    def test_explicit_reward_outside_the_environment_warns_and_is_nan(self, field_1cm):
+        times = np.arange(4) * 0.1
+        positions = np.c_[np.arange(4.0) + 0.5, np.full(4, 5.5)]
+        with pytest.warns(UserWarning, match=r"outside the environment"):
+            result = distance_to_reward(
+                field_1cm,
+                times,
+                positions,
+                np.array([0.1]),
+                np.array([[50.0, 50.0]]),
+                metric="euclidean",
+            )
+        assert np.all(np.isnan(result))

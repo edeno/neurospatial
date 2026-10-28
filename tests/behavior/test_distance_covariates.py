@@ -444,12 +444,8 @@ class TestDistanceToRewardValidation:
 
         assert result.shape == (n_samples,)
         assert np.all(np.isfinite(result))
-        # Distance decreases monotonically toward the reward, then increases.
-        reward_idx = int(np.argmin(result))
-        assert np.all(np.diff(result[: reward_idx + 1]) <= 1e-9)
-        assert np.all(np.diff(result[reward_idx:]) >= -1e-9)
-        # First sample is at x=0; reward at x=4.5 -> distance 4.5.
-        assert result[0] == pytest.approx(4.5, abs=0.6)
+        # Euclidean distance is exact: |x - 4.5| along the y = 5 line.
+        np.testing.assert_allclose(result, np.abs(np.arange(10.0) - 4.5))
 
 
 class TestDistanceToRewardSupport:
@@ -484,11 +480,8 @@ class TestDistanceToRewardSupport:
     def test_reward_between_samples_is_interpolated(self, simple_grid_env, run):
         times, positions = run
         result = self._distance(simple_grid_env, times, positions, np.array([0.25]))
-        # Interpolated to x = 2.5, between the bins centered at x = 2 and 3;
-        # the reward's bin, not the raw coordinate, sets the distance.
-        assert np.isfinite(result).all()
-        assert result[[2, 3]].min() == 0.0
-        assert result[[2, 3]].max() == 1.0
+        # Interpolated to x = 2.5; the Euclidean distance is exact.
+        np.testing.assert_allclose(result, np.abs(np.arange(10.0) - 2.5))
 
     @pytest.mark.parametrize(
         ("change", "reason"),
@@ -788,15 +781,14 @@ class TestDistanceToRewardSupport:
                 )
             if pick is None or reward_bins[pick] < 0 or position_bins[i] < 0:
                 continue
-            field = distance_field(
-                env.connectivity,
-                [int(reward_bins[pick])],
-                metric=metric,
-                bin_centers=env.bin_centers if metric == "euclidean" else None,
-            )
-            expected[i] = field[position_bins[i]]
+            if metric == "euclidean":
+                # Exact distance between the position and the reward location.
+                expected[i] = np.linalg.norm(positions[i] - reward_xy[pick])
+            else:
+                field = distance_field(env.connectivity, [int(reward_bins[pick])])
+                expected[i] = field[position_bins[i]]
 
-        assert_array_equal(result, expected)
+        np.testing.assert_allclose(result, expected, rtol=0, atol=1e-12)
         assert np.isfinite(result).sum() > 100
 
 
