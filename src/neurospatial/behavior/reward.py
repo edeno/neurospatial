@@ -23,6 +23,8 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
+from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_finite_scalar
 from neurospatial.ops.distance import distance_field
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -39,6 +41,7 @@ def region_reward_field(
     reward_value: float = 1.0,
     decay: Literal["constant", "linear", "gaussian"] = "constant",
     bandwidth: float | None = None,
+    max_distance: float | None = None,
 ) -> NDArray[np.float64]:
     """Generate reward field from a named region.
 
@@ -59,8 +62,16 @@ def region_reward_field(
         - 'linear': Linear decay from region boundary
         - 'gaussian': Smooth Gaussian falloff from region
     bandwidth : float, optional
-        Gaussian smoothing bandwidth (required for decay='gaussian').
-        Should be in same units as environment coordinates.
+        Gaussian smoothing bandwidth, in the environment's distance units.
+        Required for, and only accepted with, ``decay='gaussian'``.
+    max_distance : float, optional
+        Geodesic distance from the region, in the environment's distance
+        units, at which the linear reward reaches 0. Only accepted with
+        ``decay='linear'``. Default: the distance of the farthest bin that
+        can reach the region, so every reachable bin outside the region gets
+        a nonzero gradient. That default depends on the arena size: the same
+        distance gets a different reward in a larger arena. Pass
+        ``max_distance`` to compare reward fields across arenas.
 
     Returns
     -------
@@ -69,10 +80,13 @@ def region_reward_field(
 
     Raises
     ------
-    KeyError
-        If region_name is not found in env.regions.
+    RegionNotFoundError
+        If region_name is not found in env.regions (a ``KeyError``).
     ValueError
-        If bandwidth is not provided for decay='gaussian'.
+        If ``decay`` is unknown; if ``bandwidth`` is missing for
+        ``decay='gaussian'``; if ``bandwidth`` or ``max_distance`` is given
+        for a decay that does not use it; or if either is not finite and
+        positive.
 
     Notes
     -----
@@ -81,11 +95,10 @@ def region_reward_field(
     - **Constant**: Binary reward useful for sparse reward RL tasks.
       Creates clear goal regions with no reward shaping.
 
-    - **Linear**: Linear decay from region boundary. Provides gradient
-      information while maintaining clear boundaries. Distance computed
-      using graph connectivity (respects environment structure) and
-      normalized by the farthest bin that can reach the region. Bins that
-      cannot reach the region (another connected component) get 0.
+    - **Linear**: ``reward_value * max(0, 1 - d / max_distance)``, where
+      ``d`` is the geodesic distance from the bin centre to the nearest
+      region bin centre along the connectivity graph (respects walls).
+      Bins that cannot reach the region (another connected component) get 0.
 
     - **Gaussian**: Smooth falloff using Gaussian kernel smoothing.
       After smoothing, rescales so maximum *within the region* equals
@@ -118,6 +131,12 @@ def region_reward_field(
     >>> reward_smooth = region_reward_field(
     ...     env, region_name="goal", decay="gaussian", bandwidth=10.0
     ... )
+    >>> # Linear decay that reaches 0 at 30 units from the region
+    >>> reward_linear = region_reward_field(
+    ...     env, region_name="goal", decay="linear", max_distance=30.0
+    ... )
+    >>> float(reward_linear.max()), float(reward_linear.min())
+    (1.0, 0.0)
 
     See Also
     --------
@@ -131,7 +150,19 @@ def region_reward_field(
            under reward transformations: Theory and application to reward
            shaping. ICML.
     """
-    # Validate region exists
+    if decay not in ("constant", "linear", "gaussian"):
+        raise ValueError(
+            f"Invalid decay type: {decay!r}. "
+            "Must be one of: 'constant', 'linear', 'gaussian'."
+        )
+    _reject_unused_parameter("bandwidth", bandwidth, decay, uses="gaussian")
+    _reject_unused_parameter("max_distance", max_distance, decay, uses="linear")
+    validate_finite_scalar(
+        bandwidth, name="bandwidth", positive=True, none_allowed=True
+    )
+    validate_finite_scalar(
+        max_distance, name="max_distance", positive=True, none_allowed=True
+    )
     region_mask = _require_region_mask(
         env, region_name, operation="region_reward_field()", argument="region_name"
     )
@@ -151,7 +182,9 @@ def region_reward_field(
         reachable = np.isfinite(distances) & ~region_mask
         reward = np.where(region_mask, reward_value, 0.0)
         if reachable.any():
-            decay_length = distances[reachable].max()
+            decay_length = (
+                distances[reachable].max() if max_distance is None else max_distance
+            )
             reward[reachable] = reward_value * np.maximum(
                 0.0, 1.0 - distances[reachable] / decay_length
             )
@@ -176,23 +209,27 @@ def region_reward_field(
             0.0,
         )
 
-        # CRITICAL FIX: Scale by max IN REGION (not global max)
-        # This ensures the peak reward within the actual region equals reward_value
-        max_in_region = smoothed[region_mask].max()
-
-        if max_in_region > 0:
-            reward = (smoothed / max_in_region) * reward_value
-        else:
-            # Edge case: region has no bins or smoothing failed
-            reward = np.zeros(env.n_bins, dtype=np.float64)
-
-    else:
-        raise ValueError(
-            f"Invalid decay type: {decay}. "
-            f"Must be one of: 'constant', 'linear', 'gaussian'"
-        )
+        # Scale by the maximum inside the region (not the global maximum) so
+        # the peak reward in the region equals reward_value. The region has at
+        # least one bin and each bin keeps positive weight on itself, so this
+        # maximum is positive.
+        reward = (smoothed / smoothed[region_mask].max()) * reward_value
 
     return reward
+
+
+def _reject_unused_parameter(
+    name: str, value: float | None, decay: str, *, uses: str
+) -> None:
+    """Raise when a decay-specific parameter is passed with another decay."""
+    if value is not None and decay != uses:
+        raise ValueError(
+            _format_error(
+                f"{name}={value!r} has no effect with decay={decay!r}.",
+                why=f"{name} only sets the shape of decay={uses!r}.",
+                fix=f"remove {name}, or pass decay={uses!r}.",
+            )
+        )
 
 
 def goal_reward_field(

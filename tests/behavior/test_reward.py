@@ -154,6 +154,65 @@ class TestRegionRewardField:
         np.testing.assert_allclose(reward, expected, atol=1e-12)
         assert reward[x == 12][0] == pytest.approx(0.5)
 
+    def test_linear_decay_explicit_max_distance(self, two_islands_env):
+        """Reward reaches 0 at max_distance from the region: 1 - (x - 4) / 8."""
+        env = two_islands_env
+        x = env.bin_centers[:, 0]
+        reward = region_reward_field(
+            env, region_name="goal", decay="linear", reward_value=2.0, max_distance=8.0
+        )
+        expected = np.where(x <= 4, 2.0, 2.0 * np.clip(1 - (x - 4) / 8, 0, None))
+        expected[x > 50] = 0.0
+        np.testing.assert_allclose(reward, expected, atol=1e-12)
+        assert reward[x == 8][0] == pytest.approx(1.0)
+
+    def test_linear_max_distance_is_arena_independent(self):
+        """The same distance from the region gets the same reward in any arena."""
+        rewards = []
+        for length in (50.0, 200.0):
+            track = np.column_stack([np.linspace(0, length, 2000), np.zeros(2000)])
+            env = Environment.from_samples(track, bin_size=2.0)
+            regions = Regions(env.regions.values())
+            regions.add("goal", polygon=box(-1, -1, 5, 1))
+            env = env.with_regions(regions)
+            reward = region_reward_field(
+                env, region_name="goal", decay="linear", max_distance=40.0
+            )
+            # Bin centre at x = 24 lies 20 cm beyond the region's last bin (x = 4).
+            rewards.append(reward[np.argmin(np.abs(env.bin_centers[:, 0] - 24))])
+        assert rewards == pytest.approx([0.5, 0.5])
+
+    def test_linear_region_covering_component(self, two_islands_env):
+        """A region with no reachable outside bin: full reward in it, 0 elsewhere."""
+        env = two_islands_env
+        regions = Regions(env.regions.values())
+        regions.add("island_a", polygon=box(-1, -1, 21, 1))
+        env = env.with_regions(regions)
+        reward = region_reward_field(env, region_name="island_a", decay="linear")
+        np.testing.assert_array_equal(reward, (env.bin_centers[:, 0] < 50) * 1.0)
+
+    @pytest.mark.parametrize(
+        ("decay", "kwargs", "match"),
+        [
+            ("constant", {"bandwidth": 5.0}, "bandwidth=5.0 has no effect"),
+            ("linear", {"bandwidth": 5.0}, "bandwidth=5.0 has no effect"),
+            ("constant", {"max_distance": 5.0}, "max_distance=5.0 has no effect"),
+            ("gaussian", {"bandwidth": 5.0, "max_distance": 5.0}, "max_distance"),
+            ("linear", {"max_distance": 0.0}, "max_distance must be finite"),
+            ("linear", {"max_distance": -5.0}, "max_distance must be finite"),
+            ("linear", {"max_distance": np.nan}, "max_distance must be finite"),
+            ("gaussian", {"bandwidth": 0.0}, "bandwidth must be finite"),
+            ("gaussian", {"bandwidth": np.inf}, "bandwidth must be finite"),
+            ("cubic", {}, "Invalid decay type"),
+        ],
+    )
+    def test_invalid_parameters_raise(self, two_islands_env, decay, kwargs, match):
+        """Unused, non-positive or non-finite shape parameters raise."""
+        with pytest.raises(ValueError, match=match):
+            region_reward_field(
+                two_islands_env, region_name="goal", decay=decay, **kwargs
+            )
+
     def test_region_reward_field_gaussian(self):
         """Test Gaussian falloff with smooth decay."""
         positions = np.column_stack(
