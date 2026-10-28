@@ -64,15 +64,50 @@ class MSDResult(ReadOnlyArraysMixin, ResultMixin):
         time separation of the sample pairs averaged there: ``k`` times the
         median sample interval for uniform sampling.
     msd : NDArray[np.float64], shape (n_lags,)
-        Mean square displacement values, one per lag. NaN when no valid
-        displacement pair supports that lag.
+        Mean square displacement values, one per lag, in squared position
+        units. NaN when no valid displacement pair supports that lag.
+    metric : {"euclidean", "geodesic"}
+        Distance the displacements were measured with.
+    epochs : NDArray[np.float64] or None, shape (n_epochs, 2)
+        Normalized half-open ``[start, stop)`` windows that were applied.
     """
 
     lags: NDArray[np.float64]
     msd: NDArray[np.float64]
+    metric: DistanceMetric
+    epochs: NDArray[np.float64] | None
 
     def __post_init__(self) -> None:
-        """Own read-only copies of lags and displacement values."""
+        """Check the curve and own read-only copies of its arrays."""
+        lags = np.asarray(self.lags, dtype=np.float64)
+        msd = np.asarray(self.msd, dtype=np.float64)
+        if lags.ndim != 1 or msd.shape != lags.shape:
+            raise ValueError(
+                _format_error(
+                    f"MSDResult needs 1-D lags and msd of the same length; got "
+                    f"shapes {lags.shape} and {msd.shape}.",
+                    why="each MSD value is the mean square displacement at one lag.",
+                    fix="pass one msd value per lag.",
+                )
+            )
+        if np.any(np.diff(lags) <= 0):
+            raise ValueError(
+                _format_error(
+                    "MSDResult needs strictly increasing lags.",
+                    why="each lag is a distinct time separation.",
+                    fix="sort the lags and their msd values together.",
+                )
+            )
+        if self.metric not in ("euclidean", "geodesic"):
+            raise ValueError(
+                _format_error(
+                    f"MSDResult got metric={self.metric!r}.",
+                    why="displacements are Euclidean or geodesic distances.",
+                    fix="pass metric='euclidean' or metric='geodesic'.",
+                )
+            )
+        object.__setattr__(self, "lags", lags)
+        object.__setattr__(self, "msd", msd)
         self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
@@ -2100,7 +2135,9 @@ def mean_square_displacement(
 
     n_samples = len(positions)
     if n_samples < 2:
-        return MSDResult(lags=np.empty(0), msd=np.empty(0))
+        return MSDResult(
+            lags=np.empty(0), msd=np.empty(0), metric=metric, epochs=support.epochs
+        )
 
     duration = float(times[-1] - times[0])
     if max_tau is None:
@@ -2197,7 +2234,9 @@ def mean_square_displacement(
             separations = times[future_idx[valid_pairs]] - times[valid_pairs]
             lag_values[i] = np.mean(separations[finite_distances])
 
-    return MSDResult(lags=lag_values, msd=msd_values)
+    return MSDResult(
+        lags=lag_values, msd=msd_values, metric=metric, epochs=support.epochs
+    )
 
 
 def compute_trajectory_curvature(

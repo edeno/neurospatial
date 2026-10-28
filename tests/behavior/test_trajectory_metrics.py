@@ -1021,6 +1021,38 @@ class TestMeanSquareDisplacementLags:
         with pytest.raises(ValueError, match="longer than the recording"):
             mean_square_displacement(times, positions, max_tau=100.0)
 
+    def test_result_records_metric_and_epochs(self):
+        times, positions = self._ballistic()
+        result = mean_square_displacement(
+            times, positions, max_tau=1.0, epochs=(0.0, 5.0)
+        )
+        assert result.metric == "euclidean"
+        np.testing.assert_array_equal(result.epochs, [[0.0, 5.0]])
+        assert mean_square_displacement(times, positions, max_tau=1.0).epochs is None
+
+    def test_result_is_exported_from_behavior(self):
+        import neurospatial.behavior as behavior
+        from neurospatial.behavior.trajectory import MSDResult
+
+        assert behavior.MSDResult is MSDResult
+        assert "MSDResult" in behavior.__all__
+
+    @pytest.mark.parametrize(
+        ("lags", "msd", "metric", "match"),
+        [
+            ([1.0, 2.0], [1.0], "euclidean", "same length"),
+            ([2.0, 1.0], [1.0, 4.0], "euclidean", "strictly increasing"),
+            ([1.0, 2.0], [1.0, 4.0], "manhattan", "metric"),
+        ],
+    )
+    def test_result_rejects_inconsistent_fields(self, lags, msd, metric, match):
+        from neurospatial.behavior.trajectory import MSDResult
+
+        with pytest.raises(ValueError, match=match):
+            MSDResult(
+                lags=np.array(lags), msd=np.array(msd), metric=metric, epochs=None
+            )
+
     def test_max_tau_shorter_than_one_sample_interval_raises(self):
         times, positions = self._ballistic()
         with pytest.raises(ValueError, match="shorter than one sample interval"):

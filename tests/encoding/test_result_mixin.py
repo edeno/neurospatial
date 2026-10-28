@@ -295,7 +295,15 @@ class TestRetrofittedResultSummaries:
                 LinearFitResult(slope=1.5, intercept=0.2, r_squared=0.9, slope_std=0.1),
                 {"slope", "intercept", "r_squared"},
             ),
-            (MSDResult(lags=np.arange(5.0), msd=np.arange(5.0) ** 2), {"n_lags"}),
+            (
+                MSDResult(
+                    lags=np.arange(1.0, 6.0),
+                    msd=np.arange(1.0, 6.0) ** 2,
+                    metric="euclidean",
+                    epochs=None,
+                ),
+                {"n_lags"},
+            ),
         ]
 
     def test_summary_is_scalar_dict_and_drives_repr(self) -> None:

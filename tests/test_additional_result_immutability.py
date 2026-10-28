@@ -114,7 +114,15 @@ CASES = [
             "metric": "euclidean",
         },
     ),
-    (MSDResult, {"lags": np.ones(2), "msd": np.ones(2)}),
+    (
+        MSDResult,
+        {
+            "lags": np.array([1.0, 2.0]),
+            "msd": np.ones(2),
+            "metric": "euclidean",
+            "epochs": np.array([[0.0, 1.0]]),
+        },
+    ),
     (
         Run,
         {"start_time": 0.0, "end_time": 1.0, "bins": np.array([0, 1]), "success": True},
