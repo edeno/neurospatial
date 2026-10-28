@@ -109,6 +109,14 @@ def test_a_region_past_the_bins_is_in_view(apparatus):
     assert ax.get_ylim()[1] == pytest.approx(40.0)  # never shrinks or overgrows
 
 
+def test_only_drawn_regions_widen_the_view(apparatus):
+    regions = Regions(apparatus.regions.values())
+    regions.add("far", polygon=box(1000.0, 0.0, 1010.0, 10.0))
+    env = apparatus.with_regions(regions)
+    ax = env.plot(show_landmarks=False, regions_plot_kwargs={"region_names": ["goal"]})
+    assert ax.get_xlim()[1] < 100.0
+
+
 def test_each_layer_can_be_hidden(apparatus):
     ax = apparatus.plot(show_walls=False, show_landmarks=False, show_regions=False)
     assert _texts(ax) == set()

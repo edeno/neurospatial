@@ -157,8 +157,16 @@ def _plot(
         r_kwargs = regions_plot_kwargs if regions_plot_kwargs is not None else {}
         plot_regions(regions, ax=ax, **r_kwargs)
         # The renderers fix the limits to the bins; a region drawn past the
-        # bins still belongs in the picture.
-        _widen_to_show(ax, [_region_geometry(region) for region in regions.values()])
+        # bins still belongs in the picture, where plot_regions drew it.
+        names = r_kwargs.get("region_names")
+        if names is None:
+            names = list(regions)
+        elif isinstance(names, str):
+            names = [names]
+        drawn = [_region_geometry(regions[name]) for name in names]
+        if (world_to_pixel := r_kwargs.get("world_to_pixel")) is not None:
+            drawn = [shapely.transform(geometry, world_to_pixel) for geometry in drawn]
+        _widen_to_show(ax, drawn)
     if landmarks:
         _draw_landmarks(ax, landmarks)
 
