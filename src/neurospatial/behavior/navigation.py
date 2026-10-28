@@ -110,7 +110,6 @@ References
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -534,7 +533,7 @@ def trials_to_region_arrays(
 
 
 def _validated_position_bins(
-    position_bins: object, env: Environment, *, operation: str
+    position_bins: ArrayLike, env: Environment, *, operation: str
 ) -> NDArray[np.intp]:
     """Check per-sample bin indices: integers in ``[0, n_bins)`` or ``-1``.
 
@@ -1938,16 +1937,23 @@ def time_to_goal(
     return ttg
 
 
+# A heading change wider than this is a reversal (within 30 degrees of
+# straight back), which is neither a left nor a right turn.
+_MAX_TURN_ANGLE = 5 * np.pi / 6
+
+
 def graph_turn_sequence(
     env: Environment[CartesianSystem],
     position_bins: NDArray[np.int_],
     *,
-    min_samples_per_edge: int = 50,
+    tolerance: float | None = None,
 ) -> str:
     """Extract discrete turn sequence from trajectory.
 
-    Analyzes which bins were traversed and classifies turns based on
-    changes in movement direction. Works for any Cartesian layout type.
+    Reduces the sequence of visited bins to the straight legs of the route
+    and labels the turn at each corner between legs. Works for any Cartesian
+    layout type: a track graph (T-maze, multiple-T maze, plus maze) or an
+    open field.
 
     Left and right are the animal's own (egocentric) sides: a turn is "left"
     when the new direction is counterclockwise from the old one, so heading
@@ -1963,22 +1969,58 @@ def graph_turn_sequence(
         Cartesian spatial environment (any layout type).
     position_bins : NDArray[np.int_], shape (n_samples,)
         Bin indices along trajectory (single trial or segment), in time
-        order. The order of the samples sets the direction of travel.
-    min_samples_per_edge : int, default=50
-        Minimum trajectory samples required on a transition to count.
+        order, as from ``env.bin_at``. The order of the samples sets the
+        direction of travel. ``-1`` (outside the environment) is skipped as
+        if its sample were deleted.
+    tolerance : float, optional
+        How far, in the environment's units, the route may stray from a
+        straight leg before the departure counts as a corner. Default: one
+        bin diagonal, ``sqrt(2) * env.bin_spacing``, the largest straying
+        that bin quantization alone can produce (see Notes). Raise it to
+        ignore wider wobbles; a corner whose legs are shorter than about
+        ``tolerance`` cannot be told apart from quantization and is not
+        reported.
 
     Returns
     -------
     str
         Turn sequence like "left-right-left", or empty string "" if no
         turns detected. Each turn is separated by "-". Only the first two
-        coordinates set the turn direction.
+        coordinates set the turn direction. A heading change of more than
+        150 degrees is a reversal, neither left nor right, and is left out.
 
     Raises
     ------
     CartesianOnlyError
         If ``env`` is polar: left and right come from cross products of
         Cartesian bin-center displacements.
+    TypeError
+        If ``position_bins`` is not integer bin indices.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
+    ValueError
+        If ``tolerance`` is not finite and non-negative.
+
+    Notes
+    -----
+    The route is the visited bin centers in the x-y plane with repeats
+    removed, so the answer depends on where the animal went, not on the
+    frame rate or how long it dwelt in a bin. It is simplified with the
+    Ramer-Douglas-Peucker algorithm [1]_: a leg is split at the bin farthest
+    from it whenever that bin strays more than ``tolerance``. Each bin center
+    lies within half a bin diagonal of the true position, so a straight path,
+    and the chord between its quantized ends, both stay within half a
+    diagonal of the true line; its bin centers therefore stray at most one
+    diagonal from the chord, and the default never splits a straight run
+    (such as the staircase of bins along an oblique line) or flicker between
+    neighboring bins. The sign of the cross product of consecutive legs gives
+    the turn direction.
+
+    References
+    ----------
+    .. [1] Douglas, D. H., & Peucker, T. K. (1973). Algorithms for the
+       reduction of the number of points required to represent a digitized
+       line or its caricature. Cartographica 10(2), 112-122.
 
     Examples
     --------
@@ -2003,89 +2045,83 @@ def graph_turn_sequence(
             "positions, for example Environment.from_samples(positions, bin_size=...)"
         ),
     )
-    consecutive_bins = np.column_stack([position_bins[:-1], position_bins[1:]])
-    transition_counts = Counter(map(tuple, consecutive_bins))
-
-    valid_transitions = [
-        trans
-        for trans, count in transition_counts.items()
-        if count >= min_samples_per_edge
-    ]
-
-    if len(valid_transitions) == 0:
-        return ""
-
-    # Get unique bins preserving order (first occurrence)
-    _, unique_indices = np.unique(position_bins, return_index=True)
-    unique_bins_ordered = position_bins[np.sort(unique_indices)]
-
-    # Build set of valid bins from transitions
-    valid_bins = set()
-    for u, v in valid_transitions:
-        valid_bins.add(u)
-        valid_bins.add(v)
-
-    # Filter to valid bins
-    path_bins = np.array([b for b in unique_bins_ordered if b in valid_bins])
-
-    if len(path_bins) < 3:
-        return ""
-
-    bin_centers = env.bin_centers
-    n_dims = bin_centers.shape[1]
-
-    # Vectorized turn angle computation
-    # Get positions for all path bins
-    positions = bin_centers[path_bins]  # Shape: (n_path, n_dims)
-
-    # Compute consecutive vectors: vec1[i] = pos[i+1] - pos[i]
-    vec1 = np.diff(positions, axis=0)  # Shape: (n_path-1, n_dims)
-    vec2 = vec1[1:]  # vec2[i] = pos[i+2] - pos[i+1], Shape: (n_path-2, n_dims)
-    vec1 = vec1[:-1]  # Align: vec1[i] = pos[i+1] - pos[i], Shape: (n_path-2, n_dims)
-
-    # Compute norms
-    vec1_norms = np.linalg.norm(vec1, axis=1)
-    vec2_norms = np.linalg.norm(vec2, axis=1)
-
-    # Mask for valid vectors (non-zero length)
-    valid_mask = (vec1_norms >= 1e-10) & (vec2_norms >= 1e-10)
-
-    if not np.any(valid_mask):
-        return ""
-
-    # Normalize vectors
-    vec1_norm_safe = np.where(
-        vec1_norms[:, np.newaxis] > 0, vec1_norms[:, np.newaxis], 1.0
+    bins = _validated_position_bins(
+        position_bins, env, operation="graph_turn_sequence()"
     )
-    vec2_norm_safe = np.where(
-        vec2_norms[:, np.newaxis] > 0, vec2_norms[:, np.newaxis], 1.0
-    )
-    vec1_normalized = vec1 / vec1_norm_safe
-    vec2_normalized = vec2 / vec2_norm_safe
-
-    # Compute 2D cross product (z-component of 3D cross)
-    # cross = vec1_x * vec2_y - vec1_y * vec2_x
-    if n_dims >= 2:
-        cross = (
-            vec1_normalized[:, 0] * vec2_normalized[:, 1]
-            - vec1_normalized[:, 1] * vec2_normalized[:, 0]
+    if tolerance is None:
+        tolerance = float(np.sqrt(2.0) * env.bin_spacing)
+    elif not (np.isfinite(tolerance) and tolerance >= 0):
+        raise ValueError(
+            _format_error(
+                f"graph_turn_sequence() got tolerance={tolerance!r}.",
+                why="tolerance is a distance in the environment's units.",
+                fix="pass a finite tolerance >= 0, or None for one bin diagonal",
+            )
         )
-    else:
+    if env.bin_centers.shape[1] < 2:
         return ""
 
-    # Filter to significant turns (|cross| > 0.1) and valid vectors
-    significant_mask = valid_mask & (np.abs(cross) > 0.1)
+    points = env.bin_centers[bins[bins >= 0], :2]
+    if len(points) == 0:
+        return ""
+    # One point per visit, whatever the frame rate or dwell time.
+    route = points[np.r_[True, np.any(np.diff(points, axis=0) != 0, axis=1)]]
+    corners = route[_simplified_polyline(route, tolerance)]
+    if len(corners) < 3:
+        return ""
 
-    # Build turns list
-    turns = []
-    for i in np.where(significant_mask)[0]:
-        # Counterclockwise (cross > 0) in a y-up frame is the animal's left.
-        if cross[i] > 0:
-            turns.append("left")
-        else:
-            turns.append("right")
+    legs = np.diff(corners, axis=0)
+    cross = legs[:-1, 0] * legs[1:, 1] - legs[:-1, 1] * legs[1:, 0]
+    dot = np.sum(legs[:-1] * legs[1:], axis=1)
+    angle = np.arctan2(cross, dot)
+    # Counterclockwise (angle > 0) in a y-up frame is the animal's left.
+    turns = angle[(angle != 0) & (np.abs(angle) <= _MAX_TURN_ANGLE)]
+    return "-".join("left" if turn > 0 else "right" for turn in turns)
 
-    return "-".join(turns)
+
+def _simplified_polyline(
+    points: NDArray[np.float64], tolerance: float
+) -> NDArray[np.intp]:
+    """Indices of the Ramer-Douglas-Peucker simplification of a polyline.
+
+    Parameters
+    ----------
+    points : ndarray, shape (n_points, 2)
+        Polyline vertices in order.
+    tolerance : float
+        A segment is split at its farthest intermediate vertex when that
+        vertex is more than ``tolerance`` from the segment.
+
+    Returns
+    -------
+    ndarray of intp
+        Sorted indices of the kept vertices, always including both ends.
+    """
+    n = len(points)
+    keep = np.zeros(n, dtype=bool)
+    keep[[0, -1]] = True
+    stack = [(0, n - 1)]
+    while stack:
+        i, j = stack.pop()
+        if j <= i + 1:
+            continue
+        start, chord = points[i], points[j] - points[i]
+        offsets = points[i + 1 : j] - start
+        length_sq = float(chord @ chord)
+        # Distance to the segment (not the infinite line), so a reversal
+        # past the segment's end is a corner too.
+        along = (
+            np.zeros(len(offsets))
+            if length_sq == 0
+            else np.clip(offsets @ chord / length_sq, 0.0, 1.0)
+        )
+        distance = np.linalg.norm(offsets - along[:, None] * chord, axis=1)
+        k = int(np.argmax(distance))
+        if distance[k] > tolerance:
+            split = i + 1 + k
+            keep[split] = True
+            stack.extend([(i, split), (split, j)])
+    return np.flatnonzero(keep)
 
 
 def goal_pair_direction_labels(

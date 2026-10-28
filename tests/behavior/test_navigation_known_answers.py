@@ -10,7 +10,12 @@ import numpy as np
 import pytest
 
 from neurospatial import BinIndexOutOfRangeError, Environment
-from neurospatial.behavior import cost_to_goal, distance_to_region, path_progress
+from neurospatial.behavior import (
+    cost_to_goal,
+    distance_to_region,
+    graph_turn_sequence,
+    path_progress,
+)
 
 
 @pytest.fixture(scope="module")
@@ -172,3 +177,86 @@ class TestCostToGoal:
             cost_map=np.ones(corridor.n_bins),
         )
         np.testing.assert_array_equal(result, [10.0, np.nan])
+
+
+@pytest.fixture(scope="module")
+def t_maze() -> Environment:
+    """A T-maze track: a 50 cm stem heading North and two 50 cm arms, 5 cm bins."""
+    import networkx as nx
+
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, -50.0))
+    graph.add_node(1, pos=(0.0, 0.0))
+    graph.add_node(2, pos=(-50.0, 0.0))
+    graph.add_node(3, pos=(50.0, 0.0))
+    for u, v in [(0, 1), (1, 2), (1, 3)]:
+        graph.add_edge(u, v, distance=50.0)
+    return Environment.from_graph(
+        graph,
+        edge_order=[(0, 1), (1, 2), (1, 3)],
+        edge_spacing=0.0,
+        bin_size=5.0,
+        track_width=5.0,
+    )
+
+
+def _t_maze_run(env: Environment, arm_x: float, rate_hz: float) -> np.ndarray:
+    """Bins of a 20 cm/s run up the stem and out to the arm end at ``arm_x``."""
+    n = round(50 / 20 * rate_hz)
+    stem = np.c_[np.zeros(n), np.linspace(-49.0, -1.0, n)]
+    arm = np.c_[np.linspace(0.0, arm_x, n), np.zeros(n)]
+    return env.bin_at(np.vstack([stem, arm]))
+
+
+class TestGraphTurnSequence:
+    @pytest.mark.parametrize("rate_hz", [30.0, 500.0])
+    @pytest.mark.parametrize(("arm_x", "expected"), [(-49.0, "left"), (49.0, "right")])
+    def test_one_turn_at_a_t_junction_at_any_frame_rate(
+        self, t_maze, rate_hz, arm_x, expected
+    ):
+        """Heading North, the West arm is a left turn, the East arm a right."""
+        bins = _t_maze_run(t_maze, arm_x, rate_hz)
+        assert graph_turn_sequence(t_maze, bins) == expected
+
+    def test_a_straight_oblique_run_has_no_turns(self):
+        """A lattice staircase along a straight line is not a sequence of turns."""
+        x, y = np.meshgrid(np.arange(0.0, 50.0), np.arange(0.0, 50.0))
+        field = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        t = np.linspace(0, 1, 2000)
+        run = np.c_[5 + 30 * t, 5 + 20 * t]
+        assert graph_turn_sequence(field, field.bin_at(run)) == ""
+
+    def test_jitter_at_a_bin_border_is_not_a_turn(self):
+        """Flicking between two bins, then running straight East: no turn."""
+        x, y = np.meshgrid(np.arange(0.0, 50.0), np.arange(0.0, 50.0))
+        field = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        rng = np.random.default_rng(0)
+        dwell = np.c_[np.full(200, 10.0), 20.0 + rng.normal(0, 0.3, 200)]
+        run = np.c_[np.linspace(10.0, 40.0, 300), 20.0 + rng.normal(0, 0.3, 300)]
+        bins = field.bin_at(np.vstack([dwell, run]))
+        assert len(np.unique(bins[:200])) == 2  # the dwell does flicker
+        assert graph_turn_sequence(field, bins) == ""
+
+    def test_noisy_corner_in_an_open_field_is_one_left_turn(self):
+        """East 30 cm, then North 30 cm, with 0.3 cm tracking noise: one left."""
+        x, y = np.meshgrid(np.arange(0.0, 50.0), np.arange(0.0, 50.0))
+        field = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        rng = np.random.default_rng(1)
+        east = np.c_[np.linspace(5.0, 35.0, 300), np.full(300, 5.0)]
+        north = np.c_[np.full(300, 35.0), np.linspace(5.0, 35.0, 300)]
+        run = np.vstack([east, north]) + rng.normal(0, 0.3, (600, 2))
+        assert graph_turn_sequence(field, field.bin_at(run)) == "left"
+
+    def test_samples_outside_the_environment_are_skipped(self, t_maze):
+        """-1 must not read as the last bin and invent a turn there."""
+        bins = _t_maze_run(t_maze, -49.0, 30.0)
+        bins[::7] = -1
+        assert graph_turn_sequence(t_maze, bins) == "left"
+
+    def test_float_bins_are_refused(self, t_maze):
+        with pytest.raises(TypeError, match=r"position_bins"):
+            graph_turn_sequence(t_maze, np.array([0.0, 1.0, 2.0]))
+
+    def test_out_of_range_bins_are_refused(self, t_maze):
+        with pytest.raises(BinIndexOutOfRangeError):
+            graph_turn_sequence(t_maze, np.array([0, 1, t_maze.n_bins]))

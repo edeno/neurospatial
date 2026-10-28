@@ -1470,7 +1470,6 @@ def test_graph_turn_sequence_ymaze_north_arm_into_west_arm_is_right(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        min_samples_per_edge=10,
     )
 
     assert turn_seq == "right"
@@ -1513,7 +1512,6 @@ def test_graph_turn_sequence_ymaze_north_arm_into_east_arm_is_left(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        min_samples_per_edge=10,
     )
 
     assert turn_seq == "left"
@@ -1534,11 +1532,13 @@ def test_graph_turn_sequence_grid_multiple(small_2d_env):
 
     # Define a path that makes clear turns
     # Start at one corner and trace a rectangular path
+    # Legs of four 2 cm bins: a one-bin leg is below the default tolerance
+    # (one bin diagonal) and cannot be told apart from a lattice staircase.
     path_positions = [
         bin_centers[0],  # Start
-        bin_centers[0] + [2, 0],  # Move right
-        bin_centers[0] + [2, 2],  # Move up (North): a left turn
-        bin_centers[0] + [0, 2],  # Move West: a left turn again
+        bin_centers[0] + [8, 0],  # Move right
+        bin_centers[0] + [8, 8],  # Move up (North): a left turn
+        bin_centers[0] + [0, 8],  # Move West: a left turn again
     ]
 
     # Find bins closest to each position
@@ -1559,7 +1559,6 @@ def test_graph_turn_sequence_grid_multiple(small_2d_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        min_samples_per_edge=20,
     )
 
     # East, then North, then West: two counterclockwise turns.
@@ -1572,9 +1571,7 @@ def _turns_along(env, corners, samples_per_bin=60):
 
     bins = env.bin_at(np.asarray(corners, dtype=float))
     assert np.all(bins >= 0)
-    return graph_turn_sequence(
-        env, np.repeat(bins, samples_per_bin), min_samples_per_edge=20
-    )
+    return graph_turn_sequence(env, np.repeat(bins, samples_per_bin))
 
 
 @pytest.fixture(scope="module")
@@ -1634,51 +1631,27 @@ def test_graph_turn_sequence_straight(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        min_samples_per_edge=10,
     )
 
     # Center → straight ahead is one direction, so no turn.
     assert turn_seq == ""
 
 
-def test_graph_turn_sequence_min_samples_filter(ymaze_env):
-    """Test turn sequence filters brief crossings (min_samples_per_edge)."""
+def test_graph_turn_sequence_one_step_is_not_a_turn(ymaze_env):
+    """Two visited bins make one leg, which has no corner to turn at."""
     from neurospatial.behavior.navigation import graph_turn_sequence
 
     env = ymaze_env
-
-    # Get bin centers to map nodes to bins
     bin_centers = env.bin_centers
-    node_positions = {
-        0: (0.0, 0.0),  # Center
-        2: (-7.0, 7.0),  # Left
-    }
 
     def find_closest_bin(pos):
-        distances = np.linalg.norm(bin_centers - pos, axis=1)
-        return np.argmin(distances)
+        return np.argmin(np.linalg.norm(bin_centers - pos, axis=1))
 
-    center_bin = find_closest_bin(node_positions[0])
-    left_bin = find_closest_bin(node_positions[2])
+    center_bin = find_closest_bin((0.0, 0.0))
+    left_bin = find_closest_bin((-7.0, 7.0))
+    position_bins = np.r_[np.full(10, center_bin), np.full(5, left_bin)]
 
-    # Create trajectory with brief crossing (< min_samples_per_edge)
-    # Only 5 samples on the transition, but min_samples_per_edge=50
-    position_bins = np.concatenate(
-        [
-            np.full(10, center_bin, dtype=np.int_),
-            np.full(5, left_bin, dtype=np.int_),  # Brief crossing
-        ]
-    )
-
-    # Call function with default min_samples_per_edge=50
-    turn_seq = graph_turn_sequence(
-        env,
-        position_bins,
-        min_samples_per_edge=50,
-    )
-
-    # The 5-sample crossing is below min_samples_per_edge, so nothing is left.
-    assert turn_seq == ""
+    assert graph_turn_sequence(env, position_bins) == ""
 
 
 def test_graph_turn_sequence_3d(simple_3d_env):
@@ -1703,7 +1676,6 @@ def test_graph_turn_sequence_3d(simple_3d_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        min_samples_per_edge=5,  # Lower threshold for 3D
     )
 
     # Turns are read in the x-y plane. The walk climbs in z and steps along y
