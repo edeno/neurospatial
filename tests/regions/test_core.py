@@ -553,16 +553,46 @@ def test_regions_update_region_nonexistent():
         regs.update_region("nonexistent", point=[1.0, 2.0])
 
 
-def test_regions_update_region_neither_point_nor_polygon():
-    """Test that update requires exactly one of point or polygon."""
+def test_regions_update_region_needs_something_to_change():
     regs = Regions()
     regs.add("pt", point=[1.0, 2.0])
-
-    # Neither point nor polygon specified
-    with pytest.raises(
-        ValueError, match="Specify \\*\\*one\\*\\* of 'point' or 'polygon'"
-    ):
+    with pytest.raises(ValueError, match="pass point=, polygon= or metadata="):
         regs.update_region("pt")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{"point": [9.0, 9.0]}, {"polygon": shp.box(0, 0, 2, 2)}, {"metadata": {"a": 1}}],
+    ids=["point", "polygon", "metadata"],
+)
+def test_update_region_keeps_its_position_and_membership_column(change):
+    from neurospatial import Environment
+
+    regs = Regions()
+    regs.add("start", point=[1.0, 1.0])
+    regs.add("goal", point=[5.0, 5.0], metadata={"color": "red"})
+    regs.add("home", point=[9.0, 1.0])
+    regs.update_region("goal", **change)
+    assert list(regs) == ["start", "goal", "home"]
+
+    edges = np.arange(0.0, 11.0, 2.0)
+    env = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool), grid_edges=(edges, edges)
+    ).with_regions(regs)
+    membership = env.region_membership()
+    np.testing.assert_array_equal(
+        membership[:, 0], env.region_mask("start")
+    )  # column 0 is still "start", not shifted by the update
+
+
+def test_update_region_metadata_only_keeps_the_geometry():
+    regs = Regions()
+    original = regs.add("zone", polygon=shp.box(0, 0, 2, 2), metadata={"color": "red"})
+    updated = regs.update_region("zone", metadata={"color": "blue"})
+    assert updated.kind == "polygon"
+    assert updated.data.equals(original.data)
+    assert dict(updated.metadata) == {"color": "blue"}
+    assert regs["zone"] is updated
 
 
 def test_regions_update_region_both_point_and_polygon():

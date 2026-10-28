@@ -803,11 +803,7 @@ class Regions(MutableMapping[str, Region]):
             raise KeyError(f"Duplicate region name {name!r}.")
 
         if point is not None:
-            # Accept either a coordinate array or a Shapely Point
-            coords = np.asarray(
-                point.coords[0] if isinstance(point, Point) else point, dtype=float
-            )
-            region = Region(name, "point", coords, metadata or {})
+            region = Region(name, "point", point, metadata or {})
         else:
             region = Region(name, "polygon", polygon, metadata or {})
 
@@ -822,33 +818,36 @@ class Regions(MutableMapping[str, Region]):
         polygon: Polygon | None = None,
         metadata: Mapping[str, Any] | None = None,
     ) -> Region:
-        """Update an existing Region.
+        """Replace a region's geometry or metadata, keeping its position.
 
-        This method replaces an existing region with a new one. The region can
-        change its type (point vs polygon) and/or data and/or metadata.
-        Metadata is preserved from the existing region if not explicitly provided.
+        Regions are immutable, so this stores a new :class:`Region` under
+        ``name`` in the same position, keeping the order of
+        ``env.region_membership`` columns. Pass ``point`` or ``polygon`` to
+        replace the geometry (the kind may change), ``metadata`` to replace the
+        metadata, or both. Omitted geometry or metadata is kept.
 
         Parameters
         ----------
         name : str
             Name of the region to update.
         point : PointCoords or None, optional
-            Point coordinates or Shapely Point object. Mutually exclusive with polygon.
+            New point coordinates or Shapely Point. Mutually exclusive with
+            polygon.
         polygon : Polygon or None, optional
-            Shapely Polygon object. Mutually exclusive with point.
+            New Shapely Polygon. Mutually exclusive with point.
         metadata : Mapping[str, Any] or None, optional
-            Optional metadata dictionary to attach to the region. If None, preserves
-            the existing region's metadata.
+            Replacement metadata. If None, keeps the existing region's metadata.
 
         Returns
         -------
         Region
-            The newly created Region instance that replaced the old one.
+            The new Region stored under ``name``.
 
         Raises
         ------
         ValueError
-            If both or neither of point/polygon are specified.
+            If both point and polygon are given, nothing is given, or the new
+            region is invalid.
         KeyError
             If name does not exist in the collection.
 
@@ -857,36 +856,45 @@ class Regions(MutableMapping[str, Region]):
         >>> from neurospatial.regions import Regions
         >>> regs = Regions()
         >>> _ = regs.add("center", point=[0.0, 0.0], metadata={"color": "red"})
-        >>> # Update coordinates while preserving metadata
+        >>> _ = regs.add("arm", point=[5.0, 0.0])
+        >>> # Update coordinates while preserving metadata and order
         >>> _ = regs.update_region("center", point=[1.0, 1.0])
         >>> regs["center"].data
         array([1., 1.])
         >>> regs["center"].metadata["color"]
         'red'
+        >>> list(regs)
+        ['center', 'arm']
+        >>> # Update metadata only, keeping the geometry
+        >>> _ = regs.update_region("center", metadata={"color": "blue"})
+        >>> regs["center"].metadata["color"], regs["center"].data.tolist()
+        ('blue', [1.0, 1.0])
 
         """
         store = self._mutable_store()
-        if (point is None) == (polygon is None):
-            raise ValueError("Specify **one** of 'point' or 'polygon'.")
+        if point is not None and polygon is not None:
+            raise ValueError("Specify **one** of 'point' or 'polygon', not both.")
+        if point is None and polygon is None and metadata is None:
+            raise ValueError(
+                _format_error(
+                    f"update_region({name!r}) was given nothing to change.",
+                    fix="pass point=, polygon= or metadata=",
+                )
+            )
         if name not in self:
             raise RegionNotFoundError(name, available=list(self), argument=None)
 
-        # Preserve existing metadata if not explicitly provided
-        old_region = self._store[name]
-        effective_metadata = metadata if metadata is not None else old_region.metadata
-
+        old = self._store[name]
+        effective_metadata = old.metadata if metadata is None else metadata
         if point is not None:
-            # Accept either a coordinate array or a Shapely Point
-            coords = np.asarray(
-                point.coords[0] if isinstance(point, Point) else point, dtype=float
-            )
-            region = Region(name, "point", coords, effective_metadata)
-        else:
+            region = Region(name, "point", point, effective_metadata)
+        elif polygon is not None:
             region = Region(name, "polygon", polygon, effective_metadata)
+        else:
+            region = Region(name, old.kind, old.data, effective_metadata)
 
-        # Validate before removing the old value, then preserve replacement order.
+        # Validate first; assigning an existing key keeps its position.
         self._check_insert(name, region)
-        del store[name]
         store[name] = region
         return region
 
