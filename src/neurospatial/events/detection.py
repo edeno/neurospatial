@@ -6,10 +6,9 @@ Spatial annotation of event tables.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import pandas as pd
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import (
@@ -21,6 +20,9 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial.events._core import _validate_events_dataframe
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 def add_positions(
@@ -203,8 +205,8 @@ def add_positions(
     from neurospatial._validation import validate_finite
 
     # Trajectory timestamps must be finite to define the interpolant; a NaN/Inf
-    # time silently maps every event to NaN/Inf. (Event timestamps may still be
-    # NaN -> NaN position, handled separately below.)
+    # time silently maps every event to NaN/Inf. (A NaN event timestamp lies
+    # in no tracked run below, so its position is NaN.)
     times = validate_finite(times, name="times")
 
     # A linear interpolant needs at least two samples spanning a non-zero time
@@ -267,10 +269,6 @@ def add_positions(
         run_index = np.searchsorted(runs[:, 0], event_times, side="right") - 1
         observed = (run_index >= 0) & (event_times <= runs[np.maximum(run_index, 0), 1])
     interpolated[~observed, :] = np.nan
-
-    # Handle NaN timestamps - propagate to positions
-    nan_mask = np.isnan(event_times)
-    interpolated[nan_mask, :] = np.nan
 
     # Create result DataFrame (copy to preserve original)
     result = events.copy()

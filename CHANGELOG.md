@@ -107,6 +107,7 @@ Faster:
   events, one unit of 1e6 spikes takes 20 ms instead of 115 ms, and 100
   units of 1e5 spikes take 1.4 s instead of 5.6 s and peak at 25 MB instead
   of 965 MB. Counts are unchanged.
+- `import neurospatial.events` no longer imports pandas.
 
 ### Encoding cleanup and faster analyses
 

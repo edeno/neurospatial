@@ -22,7 +22,12 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
 from neurospatial._observation import validated_signals
-from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, as_label_array
+from neurospatial._results import (
+    ReadOnlyArraysMixin,
+    ResultMixin,
+    as_label_array,
+    require_label_sequence,
+)
 from neurospatial.events._continuous import (
     _ALLOWED_INTERPOLATION,
     _EVENT_STATUSES,
@@ -1099,16 +1104,7 @@ def _validated_event_ids(
     """Return the event labels as an array of length ``n_events``, or None."""
     if event_ids is None:
         return None
-    if isinstance(event_ids, str | bytes) or np.ndim(event_ids) == 0:
-        raise ValueError(
-            _format_error(
-                f"{call}: event_ids must be a sequence of labels, one per event; "
-                f"got {event_ids!r}.",
-                why="A single string or number would be split or cannot label "
-                "each event.",
-                fix="pass a list or array, e.g. event_ids=['trial_1', 'trial_2']",
-            )
-        )
+    require_label_sequence(event_ids, name="event_ids", call=call, example="trial_1")
     ids = as_label_array(event_ids)
     if ids.shape != (n_events,):
         raise ValueError(

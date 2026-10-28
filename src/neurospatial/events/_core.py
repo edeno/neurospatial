@@ -22,6 +22,9 @@ from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
     UnitSelectionMixin,
+    align_unit_table,
+    label_at,
+    resolve_unit_ids,
 )
 from neurospatial._time_bins import _time_bin_rounding, _time_bins_in_windows
 
@@ -635,8 +638,6 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
     event_indices: NDArray[np.intp] | None = None
 
     def __post_init__(self) -> None:
-        from neurospatial._results import align_unit_table, resolve_unit_ids
-
         context = "PopulationPeriEventResult"
         histograms = np.asarray(self.histograms)
         if histograms.ndim != 2 or histograms.shape[0] == 0:
@@ -726,10 +727,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         'b'
         """
         idx = self._unit_position(idx)
-        unit_id_value = np.asarray(self.unit_ids)[idx]
-        unit_id = (
-            unit_id_value.item() if hasattr(unit_id_value, "item") else unit_id_value
-        )
+        unit_id = label_at(self.unit_ids, idx)
         return PeriEventResult(
             histogram=self.histograms[idx],
             sem=self.sem[idx],
