@@ -1193,7 +1193,11 @@ def geodesic_voronoi_labels(
     """Label each bin by its nearest goal using geodesic distance.
 
     Creates a Voronoi-like partition of the environment where each bin
-    is assigned to the goal with the shortest geodesic path.
+    is assigned to the goal with the shortest geodesic path. The geodesic
+    distance is the length of the shortest path between two positions that
+    stays inside the environment: it goes around walls and never leaves the
+    environment, and on a track it runs along the track's centerline. Bins
+    and goals are measured from their centers.
 
     Parameters
     ----------
@@ -1210,17 +1214,22 @@ def geodesic_voronoi_labels(
         nearest goals (it lies on the decision boundary, so the animal there
         is undecided), or no goal is reachable from it.
 
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment, whose bins are
+        (distance, angle), not positions.
+
     Notes
     -----
     Two geodesic distances count as equal when they agree to a relative
-    tolerance of 1e-9, far below bin quantization, so floating-point
-    rounding along different paths cannot break a geometric tie. Labeling a
-    tie -1 instead of the first goal keeps the labels independent of goal
-    order and mirror-symmetric on a symmetric maze.
+    tolerance of 1e-9, far below a bin, so floating-point rounding along
+    different paths cannot break a geometric tie. Labeling a tie -1 instead
+    of the first goal keeps the labels independent of goal order and
+    mirror-symmetric on a symmetric maze.
 
-    Performance: O(n_goals * n_bins * log(n_bins)) using Dijkstra's algorithm.
-    For large environments (n_bins > 5000) with many goals (> 10), this may
-    take several seconds. Consider caching results if calling repeatedly.
+    The shortest-path field of each goal bin is grown once and kept on the
+    environment, so later calls with the same goals are lookups.
 
     Examples
     --------
@@ -1236,7 +1245,6 @@ def geodesic_voronoi_labels(
     [0, 0, 0, 0, 0, -1, 1, 1, 1, 1, 1]
     """
     from neurospatial.environment import _validate_target_bins
-    from neurospatial.ops.distance import distance_field
 
     goal_bins_arr = _validate_target_bins(
         goal_bins,
@@ -1246,12 +1254,7 @@ def geodesic_voronoi_labels(
         argument="goal_bins",
     )
     n_goals = len(goal_bins_arr)
-    n_bins = env.n_bins
-
-    # Compute distance field from each goal
-    distances = np.full((n_goals, n_bins), np.inf)
-    for i, goal_bin in enumerate(goal_bins_arr):
-        distances[i] = distance_field(env.connectivity, [goal_bin], metric="geodesic")
+    distances = _goal_fields(env, goal_bins_arr, call="geodesic_voronoi_labels")
 
     labels_int: NDArray[np.int_] = np.argmin(distances, axis=0).astype(np.int_)
     sorted_distances = np.sort(distances, axis=0)
@@ -1266,6 +1269,28 @@ def geodesic_voronoi_labels(
         )
     labels_int[undecided] = -1
     return labels_int
+
+
+def _goal_fields(
+    env: Environment, goal_bins: NDArray[np.intp], *, call: str
+) -> NDArray[np.float64]:
+    """Geodesic distance from every bin center to each goal bin's center.
+
+    Returns
+    -------
+    ndarray, shape (n_goals, n_bins)
+        ``inf`` where a goal cannot be reached.
+    """
+    from neurospatial.behavior._environment_paths import environment_paths
+
+    paths = environment_paths(env, call=call)
+    goal_bins = np.asarray(goal_bins, dtype=np.intp)
+    paths.prepare(goal_bins)
+    if not goal_bins.size:
+        return np.full((0, env.n_bins), np.inf)
+    return np.vstack(
+        [paths.from_bins(goal_bins[i : i + 1]) for i in range(goal_bins.size)]
+    )
 
 
 def distance_to_decision_boundary(
@@ -1309,8 +1334,10 @@ def distance_to_decision_boundary(
     example in a dead-end side arm, it is a lower bound: each geodesic
     distance changes by at most the distance walked.
 
-    Distances are between bin centers, so they are quantized to the
-    environment's bins.
+    The geodesic distance is the length of the shortest path between two
+    positions that stays inside the environment: it goes around walls and
+    never leaves the environment, and on a track it runs along the track's
+    centerline. Bins and goals are measured from their centers.
 
     Examples
     --------
@@ -1328,7 +1355,6 @@ def distance_to_decision_boundary(
     [20.0, 0.0, 40.0]
     """
     from neurospatial.environment import _validate_target_bins
-    from neurospatial.ops.distance import distance_field
 
     goal_bins_arr = _validate_target_bins(
         goal_bins,
@@ -1343,12 +1369,9 @@ def distance_to_decision_boundary(
         # With a single goal there is no boundary.
         return np.full(len(position_bins), np.inf)
 
-    # Compute distance from each goal to all bins
-    all_distances = np.zeros((n_goals, env.n_bins))
-    for i, goal_bin in enumerate(goal_bins_arr):
-        all_distances[i] = distance_field(
-            env.connectivity, [goal_bin], metric="geodesic"
-        )
+    all_distances = _goal_fields(
+        env, goal_bins_arr, call="distance_to_decision_boundary"
+    )
 
     # For each trajectory bin, the boundary lies halfway between the two
     # nearest goals: (d2 - d1) / 2 after sorting the per-bin goal distances.

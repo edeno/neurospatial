@@ -353,3 +353,21 @@ class TestMirrorSymmetry:
         distance = distance_to_region(np.array([start]), t_maze, target_bins=int(goal))
         around_corner = np.hypot(7.5, 12.5) + np.hypot(2.5, 2.5)
         assert distance[0] >= around_corner - 1e-9
+
+
+class TestDecisionBoundaries:
+    def test_boundary_above_the_wall_end_is_half_a_bin_away(self, divider_arena):
+        from neurospatial.behavior import (
+            distance_to_decision_boundary,
+            geodesic_voronoi_labels,
+        )
+
+        goals = divider_arena.bin_at(np.array([[42.5, 12.5], [57.5, 12.5]]))
+        above = divider_arena.bin_at(np.array([[47.5, 72.5], [52.5, 72.5]]))
+        labels = geodesic_voronoi_labels(divider_arena, goals)
+        assert labels[above].tolist() == [0, 1]
+        # (47.5, 72.5) is hypot(5, 60) from the left goal and 5 cm further
+        # from the right one (across to (52.5, 72.5), then down), so the
+        # equidistant boundary is (65.21 - 60.21) / 2 = 2.5 cm away.
+        distances = distance_to_decision_boundary(divider_arena, above, goals)
+        np.testing.assert_allclose(distances, [2.5, 2.5], atol=1e-9)
