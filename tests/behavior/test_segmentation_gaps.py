@@ -165,14 +165,24 @@ def test_boundary_crossing_not_in_pause(pause_track):
     assert directions.shape == (0, 2)
 
 
-def test_goal_directed_runs_are_candidates_per_recording(pause_track):
+def test_goal_directed_runs_do_not_span_pause(pause_track):
+    """The approach starting at 98 s ends at the pause.
+
+    The animal rests at x = 5 cm, leaves at 98 s at 12.5 cm/s and is cut off
+    by the pause after 99.9 s, 23.75 cm on (more than the 20 cm default
+    min_progress); after the pause it stays at the target.
+    """
     r = pause_track
     runs = detect_goal_directed_runs(
         r.position_bins, r.times, r.env, goal_region="target"
     )
     assert runs.shape == (1, 2)
-    assert runs[0, 0] == 0
-    assert runs[0, 1] <= 99.9
+    # The departure is the last sample in the resting bin: within the time to
+    # cross one 2 cm bin, plus one sample, of 98 s.
+    assert runs[0, 0] == pytest.approx(98.0, abs=2.0 / 12.5 + 0.1)
+    # The arrival is the first sample in the closest bin reached before the
+    # pause: 27.5 cm at 99.8 s and 28.75 cm at 99.9 s share the bin [27, 29).
+    assert runs[0, 1] == r.times[998]
 
 
 def test_running_labels_inherit_observed_runs(pause_track):

@@ -243,38 +243,6 @@ class TestDetectGoalDirectedRuns:
 
         assert runs.shape == (0, 2)
 
-    def test_detour_directedness_is_progress_over_path_length(self):
-        """10 -> 60 -> 30 -> 90 cm: directedness = 80 / 140 cm = 0.571."""
-        env = self._corridor()
-        x = np.r_[
-            np.linspace(10.0, 60.0, 26),
-            np.linspace(60.0, 30.0, 16)[1:],
-            np.linspace(30.0, 90.0, 31)[1:],
-        ]
-        times = np.arange(x.size) / 10.0
-        bins = env.bin_at(np.c_[x, np.zeros_like(x)])
-        centers = env.bin_centers[
-            env.bin_at(np.array([[10.0, 0], [60, 0], [30, 0], [90, 0]])), 0
-        ]
-        progress = centers[3] - centers[0]
-        path = (
-            (centers[1] - centers[0])
-            + (centers[1] - centers[2])
-            + (centers[3] - centers[2])
-        )
-        directedness = progress / path
-        assert directedness == pytest.approx(80.0 / 140.0, abs=0.02)
-
-        common = {"goal_region": "goal", "min_progress": 0.0}
-        below = detect_goal_directed_runs(
-            bins, times, env, directedness_threshold=directedness - 1e-9, **common
-        )
-        above = detect_goal_directed_runs(
-            bins, times, env, directedness_threshold=directedness + 1e-9, **common
-        )
-        np.testing.assert_array_equal(below, [[times[0], times[-1]]])
-        assert above.shape == (0, 2)
-
     def test_detect_goal_directed_runs_min_progress_filter(self):
         """Test that min_progress filters out short runs."""
         # Create 2D environment with deterministic grid
@@ -385,6 +353,99 @@ class TestDetectGoalDirectedRuns:
         )
 
         assert runs.shape == (0, 2)
+
+
+class TestGoalDirectedApproachBouts:
+    """Each approach toward the goal is scored on its own.
+
+    A 100 cm corridor of 2 cm bins centered on even centimeters, with a goal
+    box covering the bins at 96, 98 and 100 cm, so the distance to the goal
+    from a bin at x <= 96 cm is 96 - x. The animal moves one bin (2 cm) per
+    25 Hz sample (50 cm/s), so every sample is in a new bin and the departure
+    (last sample at the starting distance) and arrival (first sample at the
+    closest distance) are exact samples. Rows are [departure, arrival).
+    """
+
+    FS = 25.0
+
+    @staticmethod
+    def _corridor():
+        from shapely.geometry import box
+
+        xs = np.linspace(0.0, 100.0, 401)
+        env = Environment.from_samples(np.c_[xs, np.zeros_like(xs)], bin_size=2.0)
+        env = env.with_metadata(units="cm")
+        regions = Regions(env.regions.values())
+        regions.add("goal", polygon=box(95.0, -5.0, 105.0, 5.0))
+        return env.with_regions(regions)
+
+    def _runs(self, x, **kwargs):
+        env = self._corridor()
+        bins = env.bin_at(np.c_[x, np.zeros_like(x)])
+        times = np.arange(x.size) / self.FS
+        return detect_goal_directed_runs(bins, times, env, goal_region="goal", **kwargs)
+
+    LEG = np.arange(0.0, 101.0, 2.0)  # 0 -> 100 cm, 51 samples
+
+    def test_three_trips_give_the_two_approaches(self):
+        """0 -> 100, 100 -> 0, 0 -> 100 cm: two goal-directed rows."""
+        x = np.r_[self.LEG, self.LEG[::-1][1:], self.LEG[1:]]
+        # Leave 0 cm at sample 0, reach 96 cm (the goal) at sample 48; back
+        # at 0 cm at sample 100, reach the goal again at sample 148.
+        np.testing.assert_array_equal(
+            self._runs(x), [[0.0, 48 / self.FS], [100 / self.FS, 148 / self.FS]]
+        )
+
+    def test_rest_before_the_trip_is_excluded(self):
+        """10 s at 0 cm, then one trip: the row starts when the animal leaves."""
+        x = np.r_[np.zeros(250), self.LEG]
+        np.testing.assert_array_equal(self._runs(x), [[10.0, 298 / self.FS]])
+
+    def test_retreat_is_not_goal_directed(self):
+        x = self.LEG[::-1]
+        assert self._runs(x, directedness_threshold=0.0, min_progress=0.0).shape == (
+            0,
+            2,
+        )
+
+    def test_pause_on_the_way_stays_in_the_approach(self):
+        """10 -> 50 cm, 3 s pause, 50 -> 90 cm: one approach with the pause."""
+        x = np.r_[
+            np.arange(10.0, 51.0, 2.0), np.full(75, 50.0), np.arange(52.0, 91.0, 2.0)
+        ]
+        np.testing.assert_array_equal(self._runs(x), [[0.0, (x.size - 1) / self.FS]])
+
+    def test_one_bin_step_back_is_jitter(self):
+        """10 -> 60, back to 58, 60 -> 90 cm: one approach, D = 80 / 84 cm.
+
+        A step back of one bin (one edge, 2 cm) can be tracking jitter across
+        a bin edge, so it does not end the approach; it lengthens the path.
+        """
+        x = np.r_[np.arange(10.0, 61.0, 2.0), 58.0, np.arange(60.0, 91.0, 2.0)]
+        directedness = 80.0 / 84.0
+        row = [[0.0, (x.size - 1) / self.FS]]
+        below = self._runs(x, directedness_threshold=directedness - 1e-9)
+        above = self._runs(x, directedness_threshold=directedness + 1e-9)
+        np.testing.assert_array_equal(below, row)
+        assert above.shape == (0, 2)
+
+    def test_retreat_beyond_one_bin_splits_approaches(self):
+        """10 -> 60 -> 30 -> 90 cm: two approaches, each straight."""
+        x = np.r_[
+            np.arange(10.0, 61.0, 2.0),
+            np.arange(58.0, 29.0, -2.0),
+            np.arange(32.0, 91.0, 2.0),
+        ]
+        at_60, at_30 = 25, 25 + 15
+        np.testing.assert_array_equal(
+            self._runs(x, directedness_threshold=1.0, min_progress=50.0),
+            [[0.0, at_60 / self.FS], [at_30 / self.FS, (x.size - 1) / self.FS]],
+        )
+        # The first approach gains 50 cm, the second 60 cm.
+        np.testing.assert_array_equal(
+            self._runs(x, directedness_threshold=1.0, min_progress=55.0),
+            [[at_30 / self.FS, (x.size - 1) / self.FS]],
+        )
 
 
 class TestSimilarityIntegration:

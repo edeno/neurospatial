@@ -1239,7 +1239,13 @@ similarity = trajectory_similarity(
 
 ### Directedness Score
 
-Quantifies how efficiently an animal moves toward a goal.
+Finds each approach to a goal and keeps the efficient ones. An approach runs
+from the departure (the last sample before the distance to the goal starts to
+fall, so rest beforehand is excluded) to the arrival (the first sample at the
+closest point, so rest at the goal is excluded). A step back of one bin or a
+pause on the way does not end an approach; a larger retreat does. On a track
+the animal runs back and forth, every run toward the goal is its own approach,
+and runs away from it are not goal-directed.
 
 ```python
 from neurospatial.behavior.segmentation import detect_goal_directed_runs
@@ -1254,7 +1260,7 @@ goal_runs = detect_goal_directed_runs(
     min_progress=20.0,  # cm
 )
 
-# goal_runs is an (n_runs, 2) array of [start, stop) times in seconds
+# goal_runs is an (n_runs, 2) array of [departure, arrival) times in seconds
 for start, stop in goal_runs:
     print(f"Goal-directed run: {start:.1f}-{stop:.1f} s ({stop - start:.1f} s)")
 ```
@@ -1266,14 +1272,13 @@ $$
 $$
 
 **Where**:
-- $d_{\text{start}}$: Distance from start position to goal
-- $d_{\text{end}}$: Distance from end position to goal
-- path_length: Actual path traveled
+- $d_{\text{start}}$: Distance from the departure position to the goal
+- $d_{\text{end}}$: Distance from the arrival position to the goal
+- path length: Path traveled between departure and arrival
 
 **Interpretation**:
-- directedness = 1.0: Perfectly efficient (straight line)
-- directedness = 0.0: No net progress toward goal
-- directedness < 0.0: Moving away from goal
+- directedness = 1.0: Perfectly efficient (straight toward the goal)
+- lower values: a detour on the way
 
 ---
 

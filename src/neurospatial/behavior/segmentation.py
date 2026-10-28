@@ -48,7 +48,7 @@ segment_trials
 trajectory_similarity
     Compare similarity between two trajectories
 detect_goal_directed_runs
-    Goal-directed stretches of recording, as an (n, 2) array
+    Efficient approaches to a goal, as an (n, 2) array
 laps_to_direction_labels
     Per-sample direction labels from detected laps
 runs_to_direction_labels
@@ -71,7 +71,6 @@ Run
 
 from __future__ import annotations
 
-import itertools
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -3299,10 +3298,12 @@ def detect_goal_directed_runs(
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
-    """Detect goal-directed runs in a trajectory.
+    """Detect goal-directed runs: approaches to a goal that are efficient.
 
-    Identifies segments where the animal moves efficiently toward a goal region.
-    Useful for analyzing goal-directed replay, learning dynamics, and navigation
+    Splits the trajectory into approaches (stretches where the distance to
+    the goal falls, from the departure to the closest point reached) and
+    keeps those that move efficiently toward the goal region. Useful for
+    analyzing goal-directed replay, learning dynamics, and navigation
     strategies.
 
     Parameters
@@ -3317,12 +3318,13 @@ def detect_goal_directed_runs(
     goal_region : str
         Name of goal region in env.regions. Runs are detected toward this region.
     directedness_threshold : float, optional
-        Minimum directedness score to classify as goal-directed. Range [0, 1].
-        Higher values require more efficient paths. Default is 0.7.
+        Minimum directedness score of an approach to classify it as
+        goal-directed. Range [0, 1]. Higher values require more efficient
+        paths. Default is 0.7.
     min_progress : float or None, optional
-        Minimum net progress toward the goal, in the environment's units
-        (path distance at the start minus at the end). Filters out short runs
-        with little displacement. None (default) means 20 cm, about one rat
+        Minimum net progress of an approach toward the goal, in the
+        environment's units (path distance at the departure minus at the
+        arrival). Filters out short approaches. None (default) means 20 cm, about one rat
         body length, expressed in ``env.units``; pass a value when the units
         are not a metric length.
     max_gap : float or None, default=1.0
@@ -3345,10 +3347,14 @@ def detect_goal_directed_runs(
     Returns
     -------
     NDArray[np.float64], shape (n_runs, 2)
-        Goal-directed stretches as ``[start, stop)`` rows in seconds, in time
-        order. A row means the directedness and net-progress criteria were
-        met; it does not require reaching the goal region. Pass the rows as
-        ``epochs=`` to restrict another analysis to them.
+        Goal-directed approaches as ``[start, stop)`` rows in seconds, in
+        time order: ``start`` is the departure sample and ``stop`` the
+        arrival sample, so a row covers the travel between them (interval
+        ``k`` is ``[times[k], times[k + 1])``, as in
+        :func:`segment_by_velocity`). A row means the directedness and
+        net-progress criteria were met; the arrival need not be in the goal
+        region. Pass the rows as ``epochs=`` to restrict another analysis to
+        them.
 
     Raises
     ------
@@ -3381,25 +3387,34 @@ def detect_goal_directed_runs(
     ``break_before`` splits the recording; each resulting stretch is analyzed
     on its own, so no segment spans a pause.
 
-    Each recording supplies one candidate spanning its complete observed
-    sample run; this function does not split repeated approaches into separate
-    bouts. A returned row means the directedness and net-progress thresholds
-    were met, even when the last sample is still outside the goal. To segment
-    completed source-to-goal traversals, use ``detect_runs_between_regions``.
+    **Approaches.** Within each recording, the distance from each sample's
+    bin to the goal is followed through time. An approach starts at the
+    departure, the last sample at a peak of that distance (so rest before
+    leaving is excluded), and ends at the arrival, the first sample at the
+    following trough (so rest at the goal is excluded). Rises of up to one
+    edge length between neighboring bins do not end an approach: moving to
+    a neighboring bin changes the distance by at most that edge (triangle
+    inequality), so such a rise can be tracking jitter across a bin edge.
+    Pauses on the way stay inside the approach. A larger step back ends it,
+    and the next approach starts at the farthest point of the retreat. This
+    assumes tracking jitter smaller than a bin; smooth noisier positions
+    first, or one approach may be split in two. A walk away from the goal
+    is never an approach. To segment completed source-to-goal traversals,
+    use ``detect_runs_between_regions``.
 
-    **Directedness score** measures path efficiency:
+    **Directedness score** measures each approach's efficiency:
 
     .. math::
 
         D = \\frac{d_{start} - d_{end}}{L_{path}}
 
-    where :math:`d_{start}` and :math:`d_{end}` are distances to goal at
-    trajectory start and end, and :math:`L_{path}` is total path length.
+    where :math:`d_{start}` and :math:`d_{end}` are distances to the goal at
+    the departure and the arrival, and :math:`L_{path}` is the path length
+    between them.
 
-    A straight path toward goal has :math:`D \\approx 1.0`, while a random
-    walk has :math:`D \\approx 0.0`. Negative values indicate movement away
-    from goal. Distances are path distances between bin centers on the
-    environment's connectivity graph.
+    A straight path toward the goal has :math:`D = 1`; a detour lowers it.
+    Distances are path distances between bin centers on the environment's
+    connectivity graph.
 
     Examples
     --------
@@ -3420,6 +3435,19 @@ def detect_goal_directed_runs(
     >>> times = np.arange(41) / 10.0
     >>> detect_goal_directed_runs(position_bins, times, env, goal_region="goal")
     array([[0., 4.]])
+
+    Out to the goal, back, and out again: each approach is its own row, and
+    the walk back is not goal-directed:
+
+    >>> trips = np.r_[x, x[::-1][1:], x[1:]]
+    >>> detect_goal_directed_runs(
+    ...     env.bin_at(np.c_[trips, np.zeros_like(trips)]),
+    ...     np.arange(trips.size) / 10.0,
+    ...     env,
+    ...     goal_region="goal",
+    ... )
+    array([[ 0.,  4.],
+           [ 8., 12.]])
 
     Walking the same path away from the goal is not goal-directed:
 
@@ -3468,21 +3496,14 @@ def detect_goal_directed_runs(
         break_before, len(times), call="detect_goal_directed_runs"
     )
 
-    from neurospatial.ops.distance import distance_field
+    from neurospatial.ops.distance import _bin_adjacency
     from neurospatial.ops.mapping import regions_to_mask
 
-    goal_bin_indices = np.flatnonzero(regions_to_mask(env, [goal_region]))
-    # Compute distance from each bin to nearest goal bin using graph distance,
-    # once for every run. A single multi-source Dijkstra (via distance_field)
-    # computes, for every bin, the shortest-path distance to the nearest goal
-    # bin. This is equivalent to (but far cheaper than) looping over every
-    # (bin, goal_bin) pair with nx.shortest_path_length; unreachable bins
-    # remain np.inf.
-    distances_to_goal = distance_field(
-        env.connectivity, list(goal_bin_indices), weight="distance"
+    goal_bins = np.flatnonzero(regions_to_mask(env, [goal_region]))
+    distance_to_goal = _distance_to_bins(env, goal_bins)
+    edges = _bin_adjacency(
+        env.connectivity, weight="distance", operation="detect_goal_directed_runs()"
     )
-    # A recording continues across bridged gaps between samples inside the
-    # environment.
     results: list[tuple[float, float]] = []
     for run in observed_runs(
         times,
@@ -3495,8 +3516,8 @@ def detect_goal_directed_runs(
             _detect_goal_directed_runs_contiguous(
                 position_bins[run],
                 times[run],
-                env,
-                distances_to_goal=distances_to_goal,
+                edges=edges,
+                distance_to_goal=distance_to_goal,
                 directedness_threshold=directedness_threshold,
                 min_progress=min_progress,
             )
@@ -3504,61 +3525,102 @@ def detect_goal_directed_runs(
     return np.array(results, dtype=np.float64).reshape(-1, 2)
 
 
+def _distance_to_bins(
+    env: Environment, targets: NDArray[np.intp]
+) -> NDArray[np.float64]:
+    """Distance from every bin to the nearest of ``targets``; inf if unreachable.
+
+    The one place the goal-directed runs measure distance to the goal.
+    """
+    from neurospatial.ops.distance import distance_field
+
+    distances: NDArray[np.float64] = distance_field(
+        env.connectivity, list(targets), weight="distance"
+    )
+    return distances
+
+
+def _step_lengths(edges: Any, bins: NDArray[np.int64]) -> NDArray[np.float64]:
+    """Distance between consecutive bins, shape ``(len(bins) - 1,)``.
+
+    The one place the goal-directed runs measure path length. ``edges`` is
+    the sparse ``(n_bins, n_bins)`` matrix of edge lengths. Adjacent bins
+    use their edge length; any other pair (a sample that skipped bins) the
+    shortest path between them. Both bins of every step the caller sums lie
+    in the goal's connected component, so every step is finite.
+    """
+    from scipy.sparse.csgraph import dijkstra
+
+    src, dst = bins[:-1], bins[1:]
+    lengths = np.asarray(edges[src, dst], dtype=np.float64).ravel()
+    skipped = np.flatnonzero((lengths == 0) & (src != dst))
+    if skipped.size:
+        sources, rows = np.unique(src[skipped], return_inverse=True)
+        lengths[skipped] = dijkstra(edges, directed=False, indices=sources)[
+            rows, dst[skipped]
+        ]
+    return lengths
+
+
+def _approach_bouts(
+    distances: NDArray[np.float64], tolerance: float
+) -> list[tuple[int, int]]:
+    """Approaches in a distance-to-goal series, as (departure, arrival) indices.
+
+    An approach starts at the last sample at a local maximum of the distance
+    and ends at the first sample at the following local minimum. Changes of
+    no more than ``tolerance`` against the current direction (jitter, pauses)
+    do not end an approach or a retreat.
+    """
+    bouts: list[tuple[int, int]] = []
+    peak, trough, approaching = 0, 0, False
+    for k in range(1, len(distances)):
+        d = distances[k]
+        if approaching:
+            if d < distances[trough]:
+                trough = k  # first sample at the new minimum
+            elif d > distances[trough] + tolerance:
+                bouts.append((peak, trough))
+                peak, approaching = k, False
+        elif d >= distances[peak]:
+            peak = k  # last sample at the maximum: the departure
+        elif d < distances[peak] - tolerance:
+            trough, approaching = k, True
+    if approaching:
+        bouts.append((peak, trough))
+    return bouts
+
+
 def _detect_goal_directed_runs_contiguous(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
-    env: Environment,
     *,
-    distances_to_goal: NDArray[np.float64],
-    directedness_threshold: float = 0.7,
-    min_progress: float = 20.0,
+    edges: Any,
+    distance_to_goal: NDArray[np.float64],
+    directedness_threshold: float,
+    min_progress: float,
 ) -> list[tuple[float, float]]:
-    """Analyze one recording after the public input validation."""
-    # Get start and end positions
-    start_bin = position_bins[0]
-    end_bin = position_bins[-1]
-
-    d_start = distances_to_goal[start_bin]
-    d_end = distances_to_goal[end_bin]
-
-    # Check if start or end can reach goal
-    # If either is infinite, cannot compute meaningful directedness
-    if np.isinf(d_start) or np.isinf(d_end):
-        # Cannot reach goal from start or end position
-        return []
-
-    # Compute path length (sum of graph distances between consecutive bins).
-    # Adjacent bins (the common case) are resolved with a direct edge-weight
-    # lookup; non-adjacent consecutive samples fall back to the geodesic
-    # shortest-path length, preserving the original semantics. Disconnected
-    # consecutive pairs contribute nothing (skipped).
-    path_length = 0.0
-    for src, dst in itertools.pairwise(position_bins):
-        src_i, dst_i = int(src), int(dst)
-        if src_i == dst_i:
-            continue
-        edge_data = env.connectivity.get_edge_data(src_i, dst_i)
-        if edge_data is not None:
-            path_length += edge_data["distance"]
-            continue
-        try:
-            path_length += nx.shortest_path_length(
-                env.connectivity, src_i, dst_i, weight="distance"
-            )
-        except nx.NetworkXNoPath:
-            # Disconnected bins - skip this segment
-            continue
-
-    # Compute directedness
-    directedness = 0.0 if path_length == 0 else (d_start - d_end) / path_length
-
-    # Compute progress toward goal
-    progress = d_start - d_end
-
-    # Check if run meets criteria
-    if directedness >= directedness_threshold and progress >= min_progress:
-        return [(float(times[0]), float(times[-1]))]
-    return []
+    """Score each approach to the goal within one recording."""
+    distances = distance_to_goal[position_bins]
+    # A move between neighboring bins changes the distance by at most the
+    # edge between them (triangle inequality), so a change of one edge can
+    # be jitter across a bin edge; anything larger is movement. The factor
+    # allows for rounding in the summed edge lengths.
+    tolerance = float(edges.max()) * (1 + 1e-9) if edges.nnz else 0.0
+    path = np.r_[0.0, np.cumsum(_step_lengths(edges, position_bins))]
+    rows: list[tuple[float, float]] = []
+    # Samples that cannot reach the goal split the recording.
+    finite = np.r_[False, np.isfinite(distances), False]
+    starts = np.flatnonzero(~finite[:-1] & finite[1:])
+    stops = np.flatnonzero(finite[:-1] & ~finite[1:])
+    for first, stop in zip(starts, stops, strict=True):
+        for departure, arrival in _approach_bouts(distances[first:stop], tolerance):
+            departure, arrival = first + departure, first + arrival
+            progress = distances[departure] - distances[arrival]
+            directedness = progress / (path[arrival] - path[departure])
+            if directedness >= directedness_threshold and progress >= min_progress:
+                rows.append((float(times[departure]), float(times[arrival])))
+    return rows
 
 
 # =============================================================================
