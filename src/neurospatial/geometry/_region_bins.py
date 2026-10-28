@@ -25,7 +25,6 @@ def polygon_bin_mask(
     centers: NDArray[np.float64],
     *,
     include_boundary: bool = True,
-    points: NDArray[np.object_] | None = None,
 ) -> NDArray[np.bool_]:
     """Select the bins whose centers lie inside a polygon.
 
@@ -39,9 +38,6 @@ def polygon_bin_mask(
         Bin centers.
     include_boundary : bool, default=True
         Count a center exactly on the polygon's edge as inside.
-    points : ndarray of shapely Point, shape (n_bins,), optional
-        ``shapely.points(centers)``, built once by a caller that tests several
-        polygons. None builds them for this call.
 
     Returns
     -------
@@ -68,14 +64,10 @@ def polygon_bin_mask(
                 fix="use a point region, or select bins with a boolean mask",
             )
         )
-    if points is None:
-        points = shapely.points(centers)
-    covered = (
-        shapely.covers(polygon, points)
-        if include_boundary
-        else shapely.contains(polygon, points)
-    )
-    return np.asarray(covered, dtype=np.bool_)
+    # For a point, intersects is covers. The _xy predicates take raw
+    # coordinates and prepare the polygon, so no Point objects are built.
+    predicate = shapely.intersects_xy if include_boundary else shapely.contains_xy
+    return np.asarray(predicate(polygon, centers[:, 0], centers[:, 1]), dtype=np.bool_)
 
 
 def region_bin_mask(
@@ -146,8 +138,7 @@ def region_bin_masks(
 ) -> NDArray[np.bool_]:
     """Select the bins each of several regions covers, by one rule.
 
-    Each column is :func:`region_bin_mask` of one region. The bin centers'
-    shapely points are built once for all polygon regions.
+    Each column is :func:`region_bin_mask` of one region.
 
     Parameters
     ----------
@@ -184,13 +175,10 @@ def region_bin_masks(
     n_bins, n_dims = binning.bins.n_bins, binning.bins.n_dims
     centers = binning.bins.centers
     masks = np.zeros((n_bins, len(regions)), dtype=np.bool_)
-    points: NDArray[np.object_] | None = None
     for column, region in enumerate(regions):
         if region.kind == "polygon":
-            if points is None and n_dims == 2:
-                points = shapely.points(centers)
             masks[:, column] = polygon_bin_mask(
-                region.data, centers, include_boundary=include_boundary, points=points
+                region.data, centers, include_boundary=include_boundary
             )
             if arena.coordinate_kind == "polar":
                 for turns in _polygon_turns(region.data, centers):

@@ -46,11 +46,11 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
-import shapely
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
 from neurospatial._validation import validate_finite_scalar
+from neurospatial.geometry._region_bins import polygon_bin_mask
 
 from .core import Region
 
@@ -214,12 +214,8 @@ def _region_mask(
         assert point_radius is not None  # enforced by _check_regions
         offsets = positions - region.data
         distance = np.hypot(offsets[:, 0], offsets[:, 1])
-        if include_boundary:
-            return np.asarray(distance <= point_radius, dtype=bool)
-        return np.asarray(distance < point_radius, dtype=bool)
-    query = shapely.points(positions)
-    predicate = shapely.covers if include_boundary else shapely.contains
-    return np.asarray(predicate(region.data, query), dtype=bool)
+        return distance <= point_radius if include_boundary else distance < point_radius
+    return polygon_bin_mask(region.data, positions, include_boundary=include_boundary)
 
 
 def points_in_any_region(
@@ -296,10 +292,12 @@ def points_in_any_region(
 
     mask = np.zeros(len(transformed), dtype=bool)
     for region in selected:
-        if mask.all():
+        # Test only the positions no earlier region contains.
+        outside = np.flatnonzero(~mask)
+        if not outside.size:
             break
-        mask |= _region_mask(
-            transformed,
+        mask[outside] = _region_mask(
+            transformed[outside],
             region,
             point_radius=point_radius,
             include_boundary=include_boundary,
