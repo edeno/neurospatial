@@ -497,7 +497,7 @@ def trials_to_region_arrays(
     ...     trials, times, env
     ... )  # doctest: +SKIP
     >>> progress = path_progress(
-    ...     env, position_bins, start_bins, goal_bins
+    ...     position_bins, env, start_bins=start_bins, goal_bins=goal_bins
     ... )  # doctest: +SKIP
     >>> dist = distance_to_region(
     ...     position_bins, env, target_bins=goal_bins
@@ -533,6 +533,49 @@ def trials_to_region_arrays(
     return start_bins, goal_bins
 
 
+def _validated_position_bins(
+    position_bins: object, env: Environment, *, operation: str
+) -> NDArray[np.intp]:
+    """Check per-sample bin indices: integers in ``[0, n_bins)`` or ``-1``.
+
+    ``-1`` is ``env.bin_at``'s marker for a position outside the environment
+    and becomes NaN downstream. Any other negative index would silently
+    count from the end of the bin arrays, and a float bin would be truncated
+    to an unrelated bin, so both are refused.
+
+    Parameters
+    ----------
+    position_bins : array-like of int, shape (n_samples,)
+        Bin index at each sample.
+    env : Environment
+        Environment the bins belong to.
+    operation : str
+        The call named in errors, e.g. ``"path_progress()"``.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_samples,)
+    """
+    from neurospatial.environment._targets import _validate_target_bins
+
+    if np.ndim(position_bins) != 1:
+        raise ValueError(
+            _format_error(
+                f"{operation} got position_bins with shape {np.shape(position_bins)}.",
+                why="position_bins holds one bin index per sample.",
+                fix="pass a 1-D integer array, for example env.bin_at(positions)",
+            )
+        )
+    return _validate_target_bins(
+        position_bins,
+        n_bins=env.n_bins,
+        coordinates=env.coordinate_system,
+        operation=operation,
+        argument="position_bins",
+        allow_missing=True,
+    )
+
+
 def path_progress(
     position_bins: NDArray[np.int_],
     env: Environment,
@@ -550,7 +593,8 @@ def path_progress(
     Parameters
     ----------
     position_bins : NDArray[np.int_], shape (n_samples,)
-        Current bin index at each timepoint.
+        Current bin index at each timepoint, as from ``env.bin_at``; ``-1``
+        marks a sample outside the environment (NaN).
     env : Environment
         Spatial environment.
     start_bins : int or NDArray[np.int_], shape (n_samples,)
@@ -566,11 +610,19 @@ def path_progress(
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Path progress from 0 to 1 at each timepoint. NaN for invalid bins (-1)
-        or when no path exists between bins.
+        Path progress from 0 to 1 at each timepoint, clipped to ``[0, 1]``.
+        NaN for invalid bins (-1), when no path exists between bins, or when
+        start and goal are the same bin and the sample is elsewhere.
 
     Raises
     ------
+    TypeError
+        If ``position_bins`` (or a start or goal) is not integer bin indices.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
+    ValueError
+        If ``start_bins`` or ``goal_bins`` has neither one nor ``n_samples``
+        entries.
     CartesianOnlyError
         If ``metric="euclidean"`` and ``env`` is polar. Use
         ``metric="geodesic"``.
@@ -588,12 +640,22 @@ def path_progress(
     - **Large environments** (>=5000 bins): Computes per-pair distance fields.
       Memory-efficient but slower for many unique pairs.
 
+    **What progress measures**: the distance from the start, as a fraction of
+    the start-to-goal distance. It is not the distance left to the goal. On a
+    branched maze a sample in a wrong arm as far from the start as the goal
+    also reads 1.0, so progress alone does not establish arrival; pair it
+    with :func:`distance_to_region` to the goal.
+
     **Edge cases**:
 
-    - start_bin == goal_bin: Returns 1.0 (already at goal)
+    - start_bin == goal_bin: 1.0 on the goal bin; NaN elsewhere, since the
+      ratio is 0/0 and there is no path to make progress along
     - No path exists (graph disconnected): Returns NaN (distance = inf)
     - Invalid bins (-1): Returns NaN
-    - Detours (progress > 1): Clipped to 1.0
+    - Farther from the start than the goal is (overshoot or detour): clipped
+      to 1.0. The result is a fraction of the start-to-goal path, so values
+      above 1 would not be "more progress"; use ``distance_to_region`` from
+      the start bin for the unclipped distance.
 
     Examples
     --------
@@ -635,6 +697,9 @@ def path_progress(
 
     from neurospatial.environment import _validate_sample_targets
 
+    position_bins = _validated_position_bins(
+        position_bins, env, operation="path_progress()"
+    )
     n_samples = len(position_bins)
     # A single start or goal applies to every sample.
     start_bins, goal_bins = (
@@ -703,9 +768,12 @@ def path_progress(
     with np.errstate(divide="ignore", invalid="ignore"):
         progress = distances_from_start / total_distances
 
-    # Handle edge cases
+    # With start == goal the ratio is 0/0. A sample on the goal has arrived
+    # (1.0); any other sample has no defined progress (NaN), not "arrived".
     same_start_goal = start_bins == goal_bins
-    progress[same_start_goal] = 1.0
+    progress[same_start_goal] = np.where(
+        position_bins[same_start_goal] == goal_bins[same_start_goal], 1.0, np.nan
+    )
 
     disconnected = ~np.isfinite(total_distances) | ~np.isfinite(distances_from_start)
     progress[disconnected] = np.nan
@@ -734,7 +802,8 @@ def distance_to_region(
     Parameters
     ----------
     position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices over time.
+        Bin indices over time, as from ``env.bin_at``; ``-1`` marks a sample
+        outside the environment (NaN).
     env : Environment
         Spatial environment.
     target_bins : NDArray[np.int_] or int
@@ -752,10 +821,15 @@ def distance_to_region(
     -------
     NDArray[np.float64], shape (n_samples,)
         Distance from current position to target at each timepoint.
-        Units match environment coordinates (e.g., cm).
+        Units match environment coordinates (e.g., cm). NaN where the
+        position or the target is ``-1``.
 
     Raises
     ------
+    TypeError
+        If ``position_bins`` or ``target_bins`` is not integer bin indices.
+    BinIndexOutOfRangeError
+        If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
     CartesianOnlyError
         If ``metric="euclidean"`` and ``env`` is polar. Use
         ``metric="geodesic"``.
@@ -800,6 +874,9 @@ def distance_to_region(
 
     from neurospatial.environment import _validate_sample_targets
 
+    position_bins = _validated_position_bins(
+        position_bins, env, operation="distance_to_region()"
+    )
     targets, per_sample = _validate_sample_targets(
         target_bins,
         n_samples=len(position_bins),
@@ -1655,6 +1732,9 @@ def cost_to_goal(
     from neurospatial.environment import _validate_sample_targets
     from neurospatial.ops.distance import distance_field
 
+    position_bins = _validated_position_bins(
+        position_bins, env, operation="cost_to_goal()"
+    )
     goals, per_sample = _validate_sample_targets(
         goal_bins,
         n_samples=len(position_bins),
