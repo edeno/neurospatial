@@ -101,7 +101,7 @@ class TestNavigationFunctionality:
         result = GoalDirectedMetrics(
             goal_bias=0.65,
             mean_approach_rate=-8.5,
-            time_to_goal=5.2,
+            time_to_reach_goal=5.2,
             min_distance_to_goal=2.1,
             goal_distance_at_start=50.0,
             goal_distance_at_end=2.1,

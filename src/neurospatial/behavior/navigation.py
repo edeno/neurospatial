@@ -428,18 +428,20 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
         Mean rate of distance change in environment units per second.
         Negative values indicate approaching the goal.
         Interpretation: -10 cm/s means closing 10 cm per second on average.
-    time_to_goal : float or None
-        Time until goal region entered (seconds). None if goal not reached.
+    time_to_reach_goal : float or None
+        Seconds from the first measured sample to the first sample within
+        ``goal_radius`` of the goal. None when no ``goal_radius`` was given
+        (arrival not tested); NaN when the goal was never reached. Not to be
+        confused with :func:`time_to_goal`, which returns a per-sample array.
     min_distance_to_goal : float
-        Closest straight-line distance to the goal over observed samples
-        (finite coordinates), in environment units. NaN when no sample is
-        observed.
+        Closest distance to the goal (under ``metric``) over the measured
+        samples, in environment units. NaN when no sample is measured.
     goal_distance_at_start : float
-        Distance to the goal at the first observed sample, in environment
-        units. NaN when no sample is observed.
+        Distance to the goal at the first measured sample, in environment
+        units. NaN when no sample is measured.
     goal_distance_at_end : float
-        Distance to the goal at the last observed sample, in environment
-        units. NaN when no sample is observed.
+        Distance to the goal at the last measured sample, in environment
+        units. NaN when no sample is measured.
     goal_position : NDArray[np.float64]
         Goal position used for computation, shape (n_dims,).
     metric : {"euclidean", "geodesic"}
@@ -467,7 +469,7 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
 
     goal_bias: float
     mean_approach_rate: float
-    time_to_goal: float | None
+    time_to_reach_goal: float | None
     min_distance_to_goal: float
     goal_distance_at_start: float
     goal_distance_at_end: float
@@ -485,11 +487,11 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
         ):
             value = _require_length(name, length, getattr(self, length))
             object.__setattr__(self, length, value)
-        if self.time_to_goal is not None:
+        if self.time_to_reach_goal is not None:
             object.__setattr__(
                 self,
-                "time_to_goal",
-                _require_length(name, "time_to_goal", self.time_to_goal),
+                "time_to_reach_goal",
+                _require_length(name, "time_to_reach_goal", self.time_to_reach_goal),
             )
         object.__setattr__(self, "goal_bias", float(self.goal_bias))
         object.__setattr__(self, "mean_approach_rate", float(self.mean_approach_rate))
@@ -531,7 +533,7 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
             "goal_distance_at_start": self.goal_distance_at_start,
             "goal_distance_at_end": self.goal_distance_at_end,
             "min_distance_to_goal": self.min_distance_to_goal,
-            "time_to_goal": self.time_to_goal,
+            "time_to_reach_goal": self.time_to_reach_goal,
         }
 
     def __str__(self) -> str:
@@ -543,10 +545,12 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
             f"{self.goal_distance_at_end:.1f} units",
             f"  Closest approach: {self.min_distance_to_goal:.1f} units",
         ]
-        if self.time_to_goal is not None:
-            lines.append(f"  Time to goal: {self.time_to_goal:.2f} s")
+        if self.time_to_reach_goal is None:
+            lines.append("  Time to reach goal: not tested (no goal_radius)")
+        elif np.isnan(self.time_to_reach_goal):
+            lines.append("  Time to reach goal: not reached")
         else:
-            lines.append("  Time to goal: not reached")
+            lines.append(f"  Time to reach goal: {self.time_to_reach_goal:.2f} s")
         return "\n".join(lines)
 
 
@@ -4190,16 +4194,26 @@ def _approach_rate(
         Distance change per second over the interval ending at each sample;
         NaN at the first sample and where that interval is not usable.
     """
+    distances = _goal_distances(positions, goal, metric=metric, env=env, call=call)
+    return _distance_rates(times, distances, support)
+
+
+def _distance_rates(
+    times: NDArray[np.float64],
+    distances: NDArray[np.float64],
+    support: ObservationSupport,
+) -> NDArray[np.float64]:
+    """Change of ``distances`` per second over each usable interval.
+
+    A sample whose distance is not finite (a position outside the
+    environment, or disconnected from the goal) is missing for the rate, so
+    its gap is gated again like a deleted row's.
+    """
     from neurospatial.behavior._kinematics import interval_velocity
 
-    distances = _goal_distances(positions, goal, metric=metric, env=env, call=call)
-    if metric == "geodesic":
-        # A position outside the environment has no geodesic distance: it is
-        # missing for the rate, so its gap is gated like a deleted row's.
-        support = support.restricted(times, np.isfinite(distances))
-
+    support = support.restricted(times, np.isfinite(distances))
     velocity = interval_velocity(times, distances[:, None], support.interval_mask)
-    rates = np.full(len(positions), np.nan)
+    rates = np.full(len(distances), np.nan)
     rates[1:] = velocity[:, 0]
     # A bridged gap's rate belongs to the valid sample that ends it.
     rates[~np.isfinite(distances)] = np.nan
@@ -4309,14 +4323,21 @@ def compute_goal_directed_metrics(
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     metric : {"geodesic", "euclidean"}, default="euclidean"
-        Distance metric for approach rate and distance computations.
+        Distance metric for the approach rate, the goal distances and goal
+        arrival. ``"geodesic"`` is the shortest path inside the environment
+        from each position to the goal, as in :func:`approach_rate`; a
+        position outside the environment then has no distance and is left
+        out of the distance summaries.
     min_speed : float or None, default=None
         In position units per second. None is 5 cm/s expressed in
         ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
         units that are not a metric length, pass it explicitly.
         Minimum speed for valid heading (units/s).
     goal_radius : float, optional
-        Radius for goal arrival detection.
+        Arrival radius, in the units of ``positions``: the goal is reached at
+        the first measured sample whose distance to the goal (under
+        ``metric``) is at most ``goal_radius``. Finite and >= 0. None skips
+        arrival detection.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -4338,33 +4359,41 @@ def compute_goal_directed_metrics(
     -------
     GoalDirectedMetrics
         Dataclass containing all goal-directed metrics. ``goal_bias`` is NaN
-        if the animal never moves at an observed sample.
-        ``min_distance_to_goal`` is the minimum straight-line distance over
-        observed samples (finite coordinates); ``goal_distance_at_start`` and
-        ``goal_distance_at_end`` are the distances at the first and last
-        observed samples. All three are NaN when no sample is observed.
+        if the animal never moves at an observed sample. The distance
+        summaries use the measured samples: finite coordinates, inside
+        ``epochs`` when given, and (geodesic) inside the environment.
+        ``min_distance_to_goal`` is the minimum distance under ``metric``
+        over them; ``goal_distance_at_start`` and ``goal_distance_at_end``
+        are the distances at the first and last of them. All three are NaN
+        when no sample is measured. ``time_to_reach_goal`` is None without
+        ``goal_radius``, the seconds from the first measured sample to the
+        first measured sample within ``goal_radius``, or NaN when the goal
+        is never reached.
 
     Raises
     ------
     ValueError
         If the inputs are empty, have different lengths, ``times`` is not
         finite and strictly increasing, ``positions`` has no x and y columns,
-        ``break_before`` is not a Boolean array with one entry per sample, or
-        ``goal`` has a different number of dimensions than ``positions``.
+        ``break_before`` is not a Boolean array with one entry per sample,
+        ``goal`` does not have one finite coordinate per position dimension,
+        ``metric`` is not recognized, ``goal_radius`` is negative or not
+        finite, or (geodesic) the goal is outside the environment.
     ValueError
         If ``min_speed`` is None and ``env.units`` is not a metric length.
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
-    not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause. A missing position (a NaN row) is
-    skipped as if its row were deleted.
+    A NaN row is bridged like a deleted row when its valid neighbours are no
+    more than ``max_gap`` apart; only a longer gap, an ``epochs`` edge or a
+    declared ``break_before`` splits the recording into runs, and no
+    velocity or heading spans a split.
 
     Heading alignment and approach-rate averages use observed intervals; the
     direction of movement exists only where the animal moves, the rule of
-    :func:`heading_from_velocity`. Time-to-goal remains wall-clock time from
-    ``times[0]``, which is known across a pause.
+    :func:`heading_from_velocity`. Arrival is searched only among measured
+    samples (inside ``epochs``), and ``time_to_reach_goal`` is wall-clock
+    time from the first of them, which is known across a pause.
 
     Examples
     --------
@@ -4402,46 +4431,62 @@ def compute_goal_directed_metrics(
         break_before=break_before,
         result="the goal-directed metrics are NaN",
     )
-    goal = np.asarray(goal)
+    call = "compute_goal_directed_metrics"
+    goal = _validated_goal(goal, positions.shape[1], call=call)
     min_speed = resolve_min_speed(
         env, min_speed, call="compute_goal_directed_metrics()"
     )
-    _validate_velocity_positions(raw, call="compute_goal_directed_metrics")
-    call = "compute_goal_directed_metrics"
+    _validate_velocity_positions(raw, call=call)
+    if goal_radius is not None and not (np.isfinite(goal_radius) and goal_radius >= 0):
+        raise ValueError(
+            _format_error(
+                f"{call}() got goal_radius={goal_radius!r}; it must be a finite "
+                "distance >= 0.",
+                why=(
+                    "the goal is reached at the first sample whose distance to "
+                    "the goal is at most goal_radius."
+                ),
+                fix=(
+                    "pass the reward zone's radius in the units of positions, "
+                    "e.g. goal_radius=5.0 for 5 cm, or None to skip arrival."
+                ),
+            )
+        )
     bias = _mean_alignment(
         _goal_alignment(times, positions, goal, support, min_speed=min_speed, call=call)
     )
 
-    rates = _approach_rate(
-        times, positions, goal, support, metric=metric, env=env, call=call
-    )
+    distances = _goal_distances(positions, goal, metric=metric, env=env, call=call)
+    rates = _distance_rates(times, distances, support)
     mean_rate = float(np.nanmean(rates)) if np.any(~np.isnan(rates)) else np.nan
 
-    goal_vec = _goal_vector(positions, goal, call=call)
-    distances = np.linalg.norm(goal_vec, axis=1)
-
-    observed = distances[support.sample_valid]
-    if observed.size:
-        min_dist = float(np.min(observed))
-        start_dist = float(observed[0])
-        end_dist = float(observed[-1])
+    # Samples measured for the distance summaries: observed (and, with the
+    # geodesic metric, inside the environment) and inside ``epochs``.
+    measured = support.sample_valid & ~np.isnan(distances)
+    if support.epochs is not None:
+        measured &= times_in_intervals(support.epochs, times)
+    rows = np.flatnonzero(measured)
+    if rows.size:
+        min_dist = float(np.min(distances[rows]))
+        start_dist = float(distances[rows[0]])
+        end_dist = float(distances[rows[-1]])
     else:
         min_dist = start_dist = end_dist = np.nan
 
-    time_to_goal_val: float | None = None
+    time_to_reach: float | None = None
     if goal_radius is not None:
-        arrival_mask = distances <= goal_radius
-        if np.any(arrival_mask):
-            arrival_idx = np.argmax(arrival_mask)
-            time_to_goal_val = float(times[arrival_idx] - times[0])
+        arrived = rows[distances[rows] <= goal_radius]
+        time_to_reach = (
+            float(times[arrived[0]] - times[rows[0]]) if arrived.size else np.nan
+        )
 
     return GoalDirectedMetrics(
         goal_bias=bias,
         mean_approach_rate=mean_rate,
-        time_to_goal=time_to_goal_val,
+        time_to_reach_goal=time_to_reach,
         min_distance_to_goal=min_dist,
         goal_distance_at_start=start_dist,
         goal_distance_at_end=end_dist,
-        goal_position=goal.copy(),
+        goal_position=goal,
         metric=metric,
     )

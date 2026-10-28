@@ -459,7 +459,7 @@ class TestGoalDirectedMetrics:
         result = GoalDirectedMetrics(
             goal_bias=0.6,
             mean_approach_rate=-10.0,
-            time_to_goal=5.0,
+            time_to_reach_goal=5.0,
             min_distance_to_goal=2.0,
             goal_distance_at_start=50.0,
             goal_distance_at_end=2.0,
@@ -540,7 +540,7 @@ def _goal_metrics(**overrides):
     values = {
         "goal_bias": 0.3,
         "mean_approach_rate": -10.0,
-        "time_to_goal": 5.0,
+        "time_to_reach_goal": 5.0,
         "min_distance_to_goal": 2.0,
         "goal_distance_at_start": 50.0,
         "goal_distance_at_end": 2.0,
@@ -564,3 +564,96 @@ def test_goal_directed_metrics_invariants():
     with pytest.raises(ValueError, match="goal_position has shape"):
         _goal_metrics(goal_position=np.zeros((1, 2)))
     assert type(_goal_metrics(goal_bias=np.float64(0.5)).goal_bias) is float
+
+
+class TestGoalDirectedDistances:
+    """Distance summaries and arrival use the metric and the epochs."""
+
+    @staticmethod
+    def _run():
+        """10 cm/s East from x = 0 to x = 100 cm, goal at x = 100."""
+        x, y = np.meshgrid(np.arange(0.0, 101.0), np.arange(-5.0, 6.0))
+        env = Environment.from_samples(
+            np.c_[x.ravel(), y.ravel()], bin_size=2.0, units="cm"
+        )
+        times = np.arange(101) / 10
+        positions = np.column_stack([10.0 * times, np.zeros(101)])
+        return env, times, positions, np.array([100.0, 0.0])
+
+    def test_arrival_without_and_with_epochs(self):
+        from neurospatial.behavior import compute_goal_directed_metrics
+
+        env, times, positions, goal = self._run()
+        whole = compute_goal_directed_metrics(
+            env, times, positions, goal, goal_radius=50.0
+        )
+        # Inside [2, 8) s the first sample is x = 20 and the last x = 79.
+        window = compute_goal_directed_metrics(
+            env, times, positions, goal, goal_radius=50.0, epochs=(2.0, 8.0)
+        )
+        assert whole.time_to_reach_goal == pytest.approx(5.0)
+        assert (whole.goal_distance_at_start, whole.goal_distance_at_end) == (
+            100.0,
+            0.0,
+        )
+        assert window.time_to_reach_goal == pytest.approx(3.0)
+        assert window.goal_distance_at_start == pytest.approx(80.0)
+        assert window.goal_distance_at_end == pytest.approx(21.0)
+        assert window.min_distance_to_goal == pytest.approx(21.0)
+
+    def test_not_reached_is_nan_and_not_tested_is_none(self):
+        from neurospatial.behavior import compute_goal_directed_metrics
+
+        env, times, positions, goal = self._run()
+        not_reached = compute_goal_directed_metrics(
+            env, times, positions, goal, goal_radius=1.0, epochs=(2.0, 8.0)
+        )
+        not_tested = compute_goal_directed_metrics(env, times, positions, goal)
+        assert np.isnan(not_reached.time_to_reach_goal)
+        assert not_tested.time_to_reach_goal is None
+        assert "not reached" in str(not_reached)
+        assert "not tested" in str(not_tested)
+
+    @pytest.mark.parametrize("goal_radius", [-1.0, np.nan])
+    def test_goal_radius_must_be_finite_and_non_negative(self, goal_radius):
+        from neurospatial.behavior import compute_goal_directed_metrics
+
+        env, times, positions, goal = self._run()
+        with pytest.raises(ValueError, match="finite distance >= 0"):
+            compute_goal_directed_metrics(
+                env, times, positions, goal, goal_radius=goal_radius
+            )
+
+    def test_geodesic_distances_go_around_the_wall(self):
+        """With metric='geodesic' the summaries are geodesic, not straight-line.
+
+        In a U-maze the goal (45, 5) is 40 cm away in a straight line but
+        2 * hypot(5, 45) + 30 = 120.55 cm around the wall (plus at most one
+        2 cm bin per corner); it used to report 40.
+        """
+        from neurospatial.behavior import (
+            compute_goal_directed_metrics,
+            shortest_path_length,
+        )
+
+        cells = np.array(
+            [(x + 1.0, y + 1.0) for x in range(0, 50, 2) for y in range(0, 60, 2)]
+        )
+        u_maze = cells[(cells[:, 0] < 10) | (cells[:, 0] > 40) | (cells[:, 1] > 50)]
+        env = Environment.from_samples(u_maze, bin_size=2.0, units="cm")
+        times = np.arange(50) / 30
+        positions = np.column_stack([np.full(50, 5.0), np.linspace(5, 30, 50)])
+        goal = np.array([45.0, 5.0])
+
+        geodesic = compute_goal_directed_metrics(
+            env, times, positions, goal, metric="geodesic"
+        )
+        euclidean = compute_goal_directed_metrics(env, times, positions, goal)
+
+        exact = 2 * np.hypot(5.0, 45.0) + 30.0
+        assert euclidean.goal_distance_at_start == 40.0
+        assert exact <= geodesic.goal_distance_at_start <= exact + 4.0
+        assert geodesic.goal_distance_at_start == shortest_path_length(
+            env, positions[0], goal
+        )
+        assert geodesic.min_distance_to_goal < geodesic.goal_distance_at_start

@@ -114,7 +114,7 @@ CASES = [
         {
             "goal_bias": 1.0,
             "mean_approach_rate": -1.0,
-            "time_to_goal": None,
+            "time_to_reach_goal": None,
             "min_distance_to_goal": 1.0,
             "goal_distance_at_start": 2.0,
             "goal_distance_at_end": 1.0,

@@ -260,18 +260,38 @@ def test_curvature_isolated_sample_nan(two_epoch_recording):
 
 
 def test_goal_metrics_keep_known_wall_clock_time(two_epoch_recording):
+    """Time to reach the goal is wall-clock time, known across the pause."""
     r = two_epoch_recording
-    result = compute_goal_directed_metrics(
-        r.env,
-        r.times,
-        r.positions,
-        r.positions[5000],
-        goal_radius=0,
-        epochs=(500, 600),
+    goal = r.positions[5000]  # first sample of the second recording, t = 1100 s
+    across_pause = compute_goal_directed_metrics(
+        r.env, r.times, r.positions, goal, goal_radius=0
     )
+    second_recording = compute_goal_directed_metrics(
+        r.env, r.times, r.positions, goal, goal_radius=0, epochs=(1100, 1200)
+    )
+    assert across_pause.time_to_reach_goal == 1100
+    assert second_recording.time_to_reach_goal == 0.0
+
+
+def test_goal_metrics_with_no_sample_in_epochs_are_nan(two_epoch_recording):
+    """Epochs in the pause hold no sample: nothing is measured or reached.
+
+    Arrival used to be searched outside the epochs, giving 1100 s.
+    """
+    r = two_epoch_recording
+    with pytest.warns(UserWarning):
+        result = compute_goal_directed_metrics(
+            r.env,
+            r.times,
+            r.positions,
+            r.positions[5000],
+            goal_radius=0,
+            epochs=(500, 600),
+        )
     assert np.isnan(result.goal_bias)
     assert np.isnan(result.mean_approach_rate)
-    assert result.time_to_goal == 1100
+    assert np.isnan(result.goal_distance_at_start)
+    assert np.isnan(result.time_to_reach_goal)
 
 
 def test_composites_forward_coarse_sampling_optout(continuous_recording):
