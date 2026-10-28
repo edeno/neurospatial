@@ -58,7 +58,7 @@ def coarse_track():
 def _vte_session(env, times, positions, **kwargs):
     """VTE session with a straight approach and one through a turnaround.
 
-    With every interval excluded, both trials are skipped with a warning.
+    With every interval excluded, both trials are unmeasured, with a warning.
     """
     trials = [
         Trial(0.0, 39.0, "start", "mid_area", True),
@@ -77,7 +77,7 @@ def _vte_session(env, times, positions, **kwargs):
     with pytest.warns(UserWarning, match=r"only 0 observed sample\(s\)") as record:
         result = compute_vte_session(env, times, positions, **options, **kwargs)
     assert sum("only 0 observed" in str(w.message) for w in record) == 2
-    assert result.trial_results == []
+    assert [t.status for t in result.trial_results] == ["too_few_samples"] * 2
     return result
 
 

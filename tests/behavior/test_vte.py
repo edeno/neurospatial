@@ -375,6 +375,7 @@ class TestVTETrialResult:
             is_vte=True,
             window_start=0.0,
             window_end=1.0,
+            status="ok",
         )
 
         assert result.idphi == result.head_sweep_magnitude
@@ -393,45 +394,62 @@ class TestVTETrialResult:
             is_vte=True,
             window_start=0.0,
             window_end=1.0,
+            status="ok",
         )
 
         assert result.z_idphi == result.z_head_sweep
 
 
+def _two_trials():
+    """Measured trials with head sweeps 1 and 2 rad and speeds 15 and 30 cm/s."""
+    from neurospatial.behavior.vte import VTETrialResult
+
+    return tuple(
+        VTETrialResult(
+            head_sweep_magnitude=head_sweep,
+            z_head_sweep=None,
+            mean_speed=speed,
+            min_observed_speed=speed / 2,
+            z_speed_inverse=None,
+            vte_index=None,
+            is_vte=None,
+            window_start=0.0,
+            window_end=1.0,
+            status="ok",
+        )
+        for head_sweep, speed in [(1.0, 15.0), (2.0, 30.0)]
+    )
+
+
 class TestVTESessionResult:
     """Test VTESessionResult dataclass."""
+
+    def test_session_statistics_are_derived_from_trials(self):
+        """Mean and population std of the trials' observed metrics."""
+        from neurospatial.behavior.vte import VTESessionResult
+
+        session = VTESessionResult(trial_results=_two_trials())
+        assert session.mean_head_sweep == 1.5
+        assert session.std_head_sweep == 0.5
+        assert session.mean_speed == 22.5
+        assert session.std_speed == 7.5
+        assert isinstance(session.trial_results, tuple)
 
     def test_mean_idphi_alias(self):
         """Test that mean_idphi property is alias for mean_head_sweep."""
         from neurospatial.behavior.vte import VTESessionResult
 
-        session = VTESessionResult(
-            trial_results=[],
-            mean_head_sweep=1.5,
-            std_head_sweep=1.0,
-            mean_speed=22.5,
-            std_speed=7.5,
-            n_vte_trials=0,
-            vte_fraction=0.0,
-        )
+        session = VTESessionResult(trial_results=_two_trials())
 
-        assert session.mean_idphi == session.mean_head_sweep
+        assert session.mean_idphi == session.mean_head_sweep == 1.5
 
     def test_std_idphi_alias(self):
         """Test that std_idphi property is alias for std_head_sweep."""
         from neurospatial.behavior.vte import VTESessionResult
 
-        session = VTESessionResult(
-            trial_results=[],
-            mean_head_sweep=1.5,
-            std_head_sweep=1.0,
-            mean_speed=22.5,
-            std_speed=7.5,
-            n_vte_trials=0,
-            vte_fraction=0.0,
-        )
+        session = VTESessionResult(trial_results=_two_trials())
 
-        assert session.std_idphi == session.std_head_sweep
+        assert session.std_idphi == session.std_head_sweep == 0.5
 
     def test_get_vte_trials(self):
         """Test get_vte_trials() returns only VTE trials."""
@@ -447,6 +465,7 @@ class TestVTESessionResult:
             is_vte=True,
             window_start=0.0,
             window_end=1.0,
+            status="ok",
         )
         trial2 = VTETrialResult(
             head_sweep_magnitude=0.5,
@@ -458,6 +477,7 @@ class TestVTESessionResult:
             is_vte=False,
             window_start=1.0,
             window_end=2.0,
+            status="ok",
         )
         trial3 = VTETrialResult(
             head_sweep_magnitude=3.0,
@@ -469,17 +489,10 @@ class TestVTESessionResult:
             is_vte=True,
             window_start=2.0,
             window_end=3.0,
+            status="ok",
         )
 
-        session = VTESessionResult(
-            trial_results=[trial1, trial2, trial3],
-            mean_head_sweep=2.0,
-            std_head_sweep=1.0,
-            mean_speed=18.3,
-            std_speed=8.0,
-            n_vte_trials=2,
-            vte_fraction=2 / 3,
-        )
+        session = VTESessionResult(trial_results=[trial1, trial2, trial3])
 
         vte_trials = session.get_vte_trials()
         assert len(vte_trials) == 2
@@ -935,8 +948,12 @@ class TestComputeVTESession:
                 min_speed=1.0,
             )
 
-        # No valid trials: nothing was measured, so no statistic is 0.
-        assert len(result.trial_results) == 0
+        # The trial keeps its place, but nothing was measured, so no
+        # statistic is 0.
+        (trial,) = result.trial_results
+        assert trial.status == "no_entry"
+        assert np.isnan(trial.head_sweep_magnitude)
+        assert trial.is_vte is None
         assert result.n_vte_trials == 0
         for value in (
             result.vte_fraction,
@@ -1174,7 +1191,12 @@ def test_session_warns_when_trial_window_too_short(zig_zag_then_run):
             min_speed=5.0,
         )
 
-    assert result.trial_results == []
+    (trial,) = result.trial_results
+    assert trial.status == "too_few_samples"
+    assert trial.window_start == 5.2
+    assert_allclose(trial.window_end, 5.0 + 8 / 30, rtol=1e-12)
+    assert np.isnan(trial.mean_speed)
+    assert trial.is_vte is None
 
 
 def _t_maze_session(amplitudes, *, creep=None):
@@ -1269,11 +1291,13 @@ def test_session_skips_trial_with_too_few_observed_samples(t_maze_environment):
     entry = _first_center_sample(env, times, positions, after=3.0)
     positions[entry - 15 : entry - 2] = np.nan  # keep 2 of the 15 window rows
 
-    with pytest.warns(UserWarning, match=r"only 2 observed sample\(s\)"):
+    with pytest.warns(UserWarning, match=r"Trial 1 .*only 2 observed sample\(s\)"):
         result = compute_vte_session(
             env, times, positions, trials=trials, **_SESSION_KWARGS
         )
-    assert len(result.trial_results) == 2
+    statuses = [t.status for t in result.trial_results]
+    assert statuses == ["ok", "too_few_samples", "ok"]
+    assert result.trial_results[1].is_vte is None
 
 
 def test_session_break_before_ends_the_window(t_maze_environment):
@@ -1361,15 +1385,7 @@ def test_session_summary_counts_classified_trials(t_maze_environment):
 def test_session_text_without_classified_trials():
     from neurospatial.behavior.vte import VTESessionResult
 
-    empty = VTESessionResult(
-        trial_results=[],
-        mean_head_sweep=np.nan,
-        std_head_sweep=np.nan,
-        mean_speed=np.nan,
-        std_speed=np.nan,
-        n_vte_trials=0,
-        vte_fraction=np.nan,
-    )
+    empty = VTESessionResult(trial_results=())
     text = str(empty)
     assert "nan%" not in text
     assert text.splitlines()[0] == "VTE session: no trial could be classified"
@@ -1430,3 +1446,78 @@ def test_session_entry_is_searched_inside_epochs(t_maze_environment):
     assert_allclose(whole.trial_results[0].window_end, 2.8, rtol=1e-12)
     assert_allclose(late.trial_results[0].window_end, 7.9, rtol=1e-12)
     assert_allclose(late.trial_results[0].mean_speed, 20.0, rtol=1e-9)
+
+
+def test_session_keeps_one_result_per_trial_in_input_order(t_maze_environment):
+    """Unmeasured trials keep their place, with NaN metrics and a status."""
+    from neurospatial.behavior.segmentation import Trial
+    from neurospatial.behavior.vte import compute_vte_session
+
+    times, positions, trials = _t_maze_session([2.0, 4.0, 8.0])
+    # Trial 1 never reaches the center: it stays low on the stem.
+    in_trial_1 = (times >= trials[1].start_time) & (times <= trials[1].end_time)
+    positions[in_trial_1, 1] = np.linspace(10.0, 30.0, in_trial_1.sum())
+    # A trial on a millisecond clock has no samples on the seconds clock.
+    ms_trial = Trial(
+        start_time=1000.0,
+        end_time=2000.0,
+        start_region="start",
+        end_region="center",
+        success=True,
+    )
+    trials = [trials[0], ms_trial, trials[1], trials[2]]
+    with pytest.warns(UserWarning) as record:
+        result = compute_vte_session(
+            t_maze_environment, times, positions, trials=trials, **_SESSION_KWARGS
+        )
+    messages = [str(w.message) for w in record]
+    assert any("Trial 1 " in m and "no samples" in m and "clock" in m for m in messages)
+    assert any("Trial 2 " in m and "never enters" in m for m in messages)
+
+    assert [t.status for t in result.trial_results] == [
+        "ok",
+        "no_samples",
+        "no_entry",
+        "ok",
+    ]
+    for unmeasured in result.trial_results[1:3]:
+        assert np.isnan(unmeasured.head_sweep_magnitude)
+        assert np.isnan(unmeasured.window_end)
+        assert np.isnan(unmeasured.vte_index)
+        assert unmeasured.is_vte is None
+    measured = [result.trial_results[i] for i in (0, 3)]
+    assert measured[0].window_end < measured[1].window_end
+    assert measured[0].head_sweep_magnitude < measured[1].head_sweep_magnitude
+    assert result.n_classified == 2
+
+    table = result.trials_table()
+    assert table.index.name == "trial"
+    assert table.index.tolist() == [0, 1, 2, 3]
+    assert table["status"].tolist() == ["ok", "no_samples", "no_entry", "ok"]
+    assert list(table.columns)[:3] == ["window_start", "window_end", "status"]
+    assert list(table.columns)[-1] == "is_vte"
+
+
+def test_trial_result_validates_status_and_window():
+    from neurospatial.behavior.vte import VTETrialResult
+
+    fields = {
+        "head_sweep_magnitude": 1.0,
+        "z_head_sweep": None,
+        "mean_speed": 10.0,
+        "min_observed_speed": 5.0,
+        "z_speed_inverse": None,
+        "vte_index": None,
+        "is_vte": None,
+        "window_start": 0.0,
+        "window_end": 1.0,
+        "status": "ok",
+    }
+    with pytest.raises(ValueError, match="status must be one of"):
+        VTETrialResult(**{**fields, "status": "skipped"})
+    with pytest.raises(ValueError, match="window_start"):
+        VTETrialResult(**{**fields, "window_start": 2.0})
+    with pytest.raises(ValueError, match="cannot be classified"):
+        VTETrialResult(**{**fields, "status": "no_entry", "is_vte": False})
+    plain = VTETrialResult(**{**fields, "mean_speed": np.float64(10.0)})
+    assert type(plain.mean_speed) is float

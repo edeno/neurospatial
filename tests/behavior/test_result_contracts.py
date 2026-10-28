@@ -39,6 +39,7 @@ def _vte_trial() -> VTETrialResult:
         is_vte=True,
         window_start=10.0,
         window_end=11.0,
+        status="ok",
     )
 
 
@@ -85,15 +86,7 @@ _CASES = [
         "VTE",
     ),
     (
-        VTESessionResult(
-            trial_results=[_vte_trial()],
-            mean_head_sweep=1.0,
-            std_head_sweep=0.5,
-            mean_speed=8.0,
-            std_speed=2.0,
-            n_vte_trials=1,
-            vte_fraction=1.0,
-        ),
+        VTESessionResult(trial_results=(_vte_trial(),)),
         {"n_trials", "n_vte_trials", "vte_fraction", "mean_head_sweep"},
         ("n_trials", 1),
         "VTE session",
