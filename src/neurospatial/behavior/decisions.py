@@ -814,9 +814,6 @@ def pre_decision_heading_stats(
     >>> pre_decision_heading_stats(times, np.ones((10, 2)), min_speed=1.0)
     (nan, nan, nan)
     """
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
-
-    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -825,8 +822,8 @@ def pre_decision_heading_stats(
         epochs=epochs,
         break_before=break_before,
         result="the heading statistics are NaN",
+        columns="xy",
     )
-    _validate_velocity_positions(raw_positions, call="pre_decision_heading_stats")
     min_speed = validated_min_speed(min_speed, call="pre_decision_heading_stats")
     return _heading_stats(times, positions, support.interval_mask, min_speed=min_speed)
 
@@ -1072,9 +1069,6 @@ def compute_pre_decision_metrics(
     >>> round(metrics.heading_circular_variance, 6)
     0.0
     """
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
-
-    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -1083,8 +1077,8 @@ def compute_pre_decision_metrics(
         epochs=epochs,
         break_before=break_before,
         result="the pre-decision metrics are NaN",
+        columns="xy",
     )
-    _validate_velocity_positions(raw_positions, call="compute_pre_decision_metrics")
     min_speed = validated_min_speed(min_speed, call="compute_pre_decision_metrics")
     window_duration = _validated_window_duration(
         window_duration, name="window_duration", call="compute_pre_decision_metrics"
@@ -1719,9 +1713,6 @@ def compute_decision_analysis(
         "speeds and regions in the same Cartesian coordinates.",
         fix="use the allocentric environment the positions were recorded in",
     )
-    from neurospatial.behavior._kinematics import _validate_velocity_positions
-
-    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -1730,8 +1721,8 @@ def compute_decision_analysis(
         epochs=epochs,
         break_before=break_before,
         result="the pre-decision metrics are NaN and no boundary crossing was observed",
+        columns="xy",
     )
-    _validate_velocity_positions(raw_positions, call="compute_decision_analysis")
     pre_window = _validated_window_duration(
         pre_window, name="pre_window", call="compute_decision_analysis"
     )

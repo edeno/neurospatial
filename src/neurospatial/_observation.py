@@ -17,7 +17,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Hashable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -436,6 +436,7 @@ def validated_observations(
     epochs: Any,
     break_before: Any,
     result: str,
+    columns: Literal["xy", "xy_only"] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], ObservationSupport]:
     """Validate a ``(times, positions)`` pair and resolve its observation support.
 
@@ -451,6 +452,11 @@ def validated_observations(
         The shared interval gates (``observed_interval_mask``).
     result : str
         What an all-excluded selection leaves, for the shared warning.
+    columns : {"xy", "xy_only"} or None, default=None
+        Columns a planar analysis needs, checked on the shape as passed
+        (before 1-D input is reshaped): ``"xy"`` needs at least x and y
+        columns (a movement direction in the x-y plane), ``"xy_only"``
+        exactly those two (a signed turn). None accepts any number.
 
     Returns
     -------
@@ -463,14 +469,16 @@ def validated_observations(
     ------
     ValueError
         If the inputs are malformed or empty (zero samples), if ``times``
-        are not strictly increasing, or if ``max_gap`` or ``break_before``
-        is invalid. One sample is valid input: it has a position but no
-        observed interval.
+        are not strictly increasing, if ``max_gap`` or ``break_before`` is
+        invalid, or if ``positions`` lacks the ``columns``. One sample is
+        valid input: it has a position but no observed interval.
     """
     t, p = validate_times_positions(times, positions, call=call)
     if t.size == 0:
         raise empty_samples_error(call, ("times", "positions"))
     validate_strictly_increasing(t, call=call)
+    if columns is not None:
+        _require_xy_columns(p.shape, exact=columns == "xy_only", call=call)
     if p.ndim == 1:
         p = p[:, None]
     validate_max_gap(max_gap)
@@ -479,6 +487,41 @@ def validated_observations(
         t, p, max_gap=max_gap, epochs=epochs, break_before=breaks, result=result
     )
     return t, p, support
+
+
+def _require_xy_columns(shape: tuple[int, ...], *, exact: bool, call: str) -> None:
+    """Refuse positions without x and y columns (or with more, when ``exact``).
+
+    Parameters
+    ----------
+    shape : tuple of int
+        Shape of the positions as the scientist passed them.
+    exact : bool
+        Require exactly the two columns x and y.
+    call : str
+        Public function name, used in the message.
+    """
+    if len(shape) == 2 and (shape[1] == 2 if exact else shape[1] >= 2):
+        return
+    needs = "exactly two columns (x, y)" if exact else "x and y columns"
+    why = (
+        "a movement heading is the direction of travel in the x-y plane, so it "
+        "needs both x and y; 1-D positions (such as a linearized track) have "
+        "only one coordinate"
+    )
+    if exact:
+        why += ", and in 3-D a turn has no sign without a reference axis"
+    raise ValueError(
+        _format_error(
+            f"{call}() needs positions with {needs}; got shape {shape}.",
+            why=f"{why}.",
+            fix=(
+                "pass positions with shape (n_samples, 2), for example "
+                "np.column_stack([x, y]) or positions[:, :2] for the horizontal "
+                "plane, with one timestamp per row."
+            ),
+        )
+    )
 
 
 def empty_samples_error(call: str, names: tuple[str, ...]) -> ValueError:

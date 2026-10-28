@@ -566,22 +566,20 @@ def heading_from_velocity(
     from neurospatial._observation import validated_observations
     from neurospatial.behavior._kinematics import (
         _movement_heading_and_speed,
-        _validate_velocity_positions,
         validated_min_speed,
     )
 
     # Validate first so a swapped (positions, times) call gets that message.
-    raw_positions = positions
     times, positions, support = validated_observations(
         times,
-        raw_positions,
+        positions,
         call="heading_from_velocity",
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
         result="every heading is NaN",
+        columns="xy",
     )
-    _validate_velocity_positions(raw_positions, call="heading_from_velocity")
     min_speed = validated_min_speed(min_speed, call="heading_from_velocity")
     heading, speed = _movement_heading_and_speed(
         times,
@@ -1059,21 +1057,8 @@ def _planar_turns(
         epochs=epochs,
         break_before=break_before,
         result="no turning was observed",
+        columns="xy_only",
     )
-    shape = np.shape(positions)
-    if len(shape) != 2 or shape[1] != 2:
-        raise ValueError(
-            _format_error(
-                f"{call}() needs positions with exactly two columns (x, y); "
-                f"got shape {shape}.",
-                why=(
-                    "a signed turn, planar curvature and the angular velocity of "
-                    "the movement direction are defined in a plane; in 3-D a turn "
-                    "has no sign without a reference axis."
-                ),
-                fix="pass positions[:, :2] to analyze movement in the horizontal plane",
-            )
-        )
     n_samples = t.size
     a = np.full((n_samples, 2), np.nan)
     b = np.full((n_samples, 2), np.nan)

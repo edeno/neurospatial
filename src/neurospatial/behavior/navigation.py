@@ -2558,9 +2558,7 @@ def heading_direction_labels(
                     f"(e.g. compute_speed(times, positions, {given[0]}=...)).",
                 )
             )
-        from neurospatial.encoding._validation import (
-            warn_if_angles_look_like_degrees,
-        )
+        from neurospatial.encoding._validation import warn_if_angles_look_like_degrees
 
         warn_if_angles_look_like_degrees(
             heading_arr, name="heading", context="heading_direction_labels"
@@ -2577,22 +2575,18 @@ def heading_direction_labels(
 
         from neurospatial._observation import validated_observations
         from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
-        from neurospatial.behavior._kinematics import (
-            _movement_heading_and_speed,
-            _validate_velocity_positions,
-        )
+        from neurospatial.behavior._kinematics import _movement_heading_and_speed
 
-        raw = positions
         times_arr, positions_arr, support = validated_observations(
             times,
-            raw,
+            positions,
             call="heading_direction_labels",
             max_gap=max_gap,
             epochs=epochs,
             break_before=break_before,
             result="every label is None",
+            columns="xy",
         )
-        _validate_velocity_positions(raw, call="heading_direction_labels")
         heading_arr, speed_arr = _movement_heading_and_speed(
             times_arr,
             positions_arr,
@@ -3955,22 +3949,18 @@ def instantaneous_goal_alignment(
     (True, True)
     """
     from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import (
-        _validate_velocity_positions,
-        validated_min_speed,
-    )
+    from neurospatial.behavior._kinematics import validated_min_speed
 
-    raw = positions
     times, positions, support = validated_observations(
         times,
-        raw,
+        positions,
         call="instantaneous_goal_alignment",
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
         result="every alignment is NaN",
+        columns="xy",
     )
-    _validate_velocity_positions(raw, call="instantaneous_goal_alignment")
     min_speed = validated_min_speed(min_speed, call="instantaneous_goal_alignment")
     return _goal_alignment(
         times,
@@ -4124,22 +4114,18 @@ def goal_bias(
     nan
     """
     from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import (
-        _validate_velocity_positions,
-        validated_min_speed,
-    )
+    from neurospatial.behavior._kinematics import validated_min_speed
 
-    raw = positions
     times, positions, support = validated_observations(
         times,
-        raw,
+        positions,
         call="goal_bias",
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
         result="the goal bias is NaN",
+        columns="xy",
     )
-    _validate_velocity_positions(raw, call="goal_bias")
     min_speed = validated_min_speed(min_speed, call="goal_bias")
     alignment = _goal_alignment(
         times, positions, goal, support, min_speed=min_speed, call="goal_bias"
@@ -4462,26 +4448,22 @@ def compute_goal_directed_metrics(
     0.0
     """
     from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import (
-        _validate_velocity_positions,
-        resolve_min_speed,
-    )
+    from neurospatial.behavior._kinematics import resolve_min_speed
 
-    raw = positions
     times, positions, support = validated_observations(
         times,
-        raw,
+        positions,
         call="compute_goal_directed_metrics",
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
         result="the goal-directed metrics are NaN",
+        columns="xy",
     )
     call = "compute_goal_directed_metrics"
     paths = metric_paths(metric, env, call=call)
     goal = _validated_goal(goal, positions.shape[1], call=call)
     min_speed = resolve_min_speed(env, min_speed, call=call)
-    _validate_velocity_positions(raw, call=call)
     if goal_radius is not None and not (np.isfinite(goal_radius) and goal_radius >= 0):
         raise ValueError(
             _format_error(

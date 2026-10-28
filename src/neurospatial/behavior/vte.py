@@ -669,12 +669,8 @@ def head_sweep_from_positions(
     >>> head_sweep_from_positions(times, still, min_speed=1.0)
     nan
     """
-    from neurospatial.behavior._kinematics import (
-        _validate_velocity_positions,
-        validated_min_speed,
-    )
+    from neurospatial.behavior._kinematics import validated_min_speed
 
-    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -683,8 +679,8 @@ def head_sweep_from_positions(
         epochs=epochs,
         break_before=break_before,
         result="no head sweep was observed",
+        columns="xy",
     )
-    _validate_velocity_positions(raw_positions, call="head_sweep_from_positions")
     min_speed = validated_min_speed(min_speed, call="head_sweep_from_positions")
     return _head_sweep(times, positions, support.interval_mask, min_speed=min_speed)
 
@@ -1065,17 +1061,13 @@ def compute_vte_trial(
     >>> result.mean_speed, result.head_sweep_magnitude
     (nan, nan)
     """
-    from neurospatial.behavior._kinematics import (
-        _validate_velocity_positions,
-        validated_min_speed,
-    )
+    from neurospatial.behavior._kinematics import validated_min_speed
     from neurospatial.behavior.decisions import (
         _pre_decision_window,
         _validated_entry_time,
         _validated_window_duration,
     )
 
-    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -1084,8 +1076,8 @@ def compute_vte_trial(
         epochs=epochs,
         break_before=break_before,
         result="no VTE metric was observed",
+        columns="xy",
     )
-    _validate_velocity_positions(raw_positions, call="compute_vte_trial")
     window_duration = _validated_window_duration(
         window_duration, name="window_duration", call="compute_vte_trial"
     )
@@ -1316,7 +1308,6 @@ def compute_vte_session(
         "head sweeps and speeds in the same Cartesian coordinates.",
         fix="use the allocentric environment the positions were recorded in",
     )
-    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -1325,6 +1316,7 @@ def compute_vte_session(
         epochs=epochs,
         break_before=break_before,
         result="no VTE trial was observed",
+        columns="xy",
     )
     _require_region_mask(
         env,
@@ -1332,16 +1324,12 @@ def compute_vte_session(
         operation="compute_vte_session()",
         argument="decision_region",
     )
-    from neurospatial.behavior._kinematics import (
-        _validate_velocity_positions,
-        resolve_min_speed,
-    )
+    from neurospatial.behavior._kinematics import resolve_min_speed
     from neurospatial.behavior.decisions import (
         _in_epochs,
         _validated_window_duration,
     )
 
-    _validate_velocity_positions(raw_positions, call="compute_vte_session")
     window_duration = _validated_window_duration(
         window_duration, name="window_duration", call="compute_vte_session"
     )
