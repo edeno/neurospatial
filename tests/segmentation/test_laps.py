@@ -345,3 +345,44 @@ class TestLapRoundTrip:
         assert len(laps) in {n_laps - 1, n_laps}, (
             f"Simulated {n_laps} laps but detected {len(laps)}"
         )
+
+
+class TestLapDirection:
+    """Lap direction is the sign of the closed path's enclosed area."""
+
+    @pytest.mark.parametrize("center", [(0.0, 0.0), (300.0, 300.0), (-1e4, 5e3)])
+    @pytest.mark.parametrize("phase", np.arange(8) * np.pi / 4)
+    @pytest.mark.parametrize(
+        ("sign", "expected"), [(1, "counter-clockwise"), (-1, "clockwise")]
+    )
+    def test_partial_lap_direction_ignores_origin_and_start_phase(
+        self, center, phase, sign, expected
+    ):
+        """An 85% arc keeps its turning direction wherever it is drawn."""
+        from neurospatial.behavior.segmentation import _detect_lap_direction
+
+        theta = phase + sign * np.linspace(0.0, 0.85 * 2 * np.pi, 100)
+        points = np.c_[center[0] + 30 * np.cos(theta), center[1] + 30 * np.sin(theta)]
+        assert _detect_lap_direction(points, np.arange(100)) == expected
+
+    def test_region_laps_far_from_origin(self):
+        """Counter-clockwise laps on a track centered at (300, 300) cm."""
+        from neurospatial.behavior.segmentation import detect_laps
+
+        theta = np.linspace(0, 6 * np.pi, 300)
+        positions = np.column_stack(
+            [300 + 30 * np.cos(theta), 300 + 30 * np.sin(theta)]
+        )
+        env = Environment.from_samples(positions, bin_size=3.0)
+        regions = Regions(env.regions.values())
+        regions.add("start", polygon=Point(300.0, 330.0).buffer(5.0))  # top
+        env = env.with_regions(regions)
+        laps = detect_laps(
+            env.bin_at(positions),
+            np.linspace(0, 60, 300),
+            env,
+            method="region",
+            start_region="start",
+        )
+        assert len(laps) == 2
+        assert [lap.direction for lap in laps] == ["counter-clockwise"] * 2

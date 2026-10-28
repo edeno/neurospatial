@@ -1299,7 +1299,13 @@ def _compute_overlap_jaccard(
 def _detect_lap_direction(
     bin_centers: NDArray[np.float64], bins: NDArray[np.int64]
 ) -> Literal["clockwise", "counter-clockwise", "unknown"]:
-    """Detect lap direction using signed area.
+    """Detect lap direction from the signed area of the closed lap path.
+
+    The path is closed back to its first point and centered on its centroid
+    before the shoelace sum, so the sign does not depend on where the
+    coordinate origin is or at which phase of the circuit the lap starts.
+    An open path's shoelace sum is not translation invariant: an 85%
+    counter-clockwise arc far from the origin can read as clockwise.
 
     Parameters
     ----------
@@ -1311,30 +1317,24 @@ def _detect_lap_direction(
     Returns
     -------
     str
-        'clockwise', 'counter-clockwise', or 'unknown'.
+        'clockwise', 'counter-clockwise', or 'unknown' (fewer than three
+        samples, a non-2-D environment, or zero enclosed area).
     """
-    if len(bins) < 3:
+    if len(bins) < 3 or bin_centers.shape[1] != 2:
         return "unknown"
 
-    # Get trajectory positions
+    # (n_samples, 2), centered so the sum is well conditioned far from 0.
     positions = bin_centers[bins]
+    positions = positions - positions.mean(axis=0)
+    x, y = positions[:, 0], positions[:, 1]
+    # Shoelace over the closed polygon (last point joined to the first).
+    area = 0.5 * np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y)
 
-    # For 2D, compute signed area using shoelace formula
-    if positions.shape[1] == 2:
-        x = positions[:, 0]
-        y = positions[:, 1]
-        # Signed area = 0.5 * sum(x[i] * y[i+1] - x[i+1] * y[i])
-        area = 0.5 * np.sum(x[:-1] * y[1:] - x[1:] * y[:-1])
-
-        if area > 0:
-            return "counter-clockwise"
-        elif area < 0:
-            return "clockwise"
-        else:
-            return "unknown"
-    else:
-        # For non-2D, cannot determine direction
-        return "unknown"
+    if area > 0:
+        return "counter-clockwise"
+    if area < 0:
+        return "clockwise"
+    return "unknown"
 
 
 def detect_laps(
@@ -1454,9 +1454,11 @@ def detect_laps(
 
     **Direction Detection:**
 
-    For 2D trajectories, direction is determined using the signed area of the
-    polygon formed by the lap trajectory (shoelace formula). Positive area
-    indicates counter-clockwise, negative indicates clockwise.
+    For 2D trajectories, direction is the sign of the area enclosed by the
+    lap path closed back to its start (shoelace formula on bin centers):
+    positive is counter-clockwise, negative clockwise. Closing the path makes
+    the answer independent of the coordinate origin and of where on the
+    circuit the lap starts.
 
     **Applications:**
 
