@@ -175,3 +175,42 @@ def test_consecutive_non_finite_rows_do_not_warn():
 
     # The two missing rows are bridged: 1 cm across the 0.3 s gap, then 1 cm.
     assert result.total_distance == 2.0
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("step_lengths", np.ones(3)),
+        ("run_sample_bounds", np.array([[1, 0]], dtype=np.intp)),
+        ("run_time_bounds", np.array([[0.1, 0.0]])),
+        ("run_ids", np.array([0, 3], dtype=np.intp)),
+    ],
+    ids=["step-lengths-length", "first-after-last", "start-after-stop", "run-id"],
+)
+def test_result_rejects_inconsistent_fields(field, value):
+    from neurospatial.behavior import CumulativeDistanceResult
+
+    fields = {
+        "step_lengths": np.ones(1),
+        "run_distance": np.array([0.0, 1.0]),
+        "run_ids": np.zeros(2, dtype=np.intp),
+        "sample_valid": np.ones(2, dtype=bool),
+        "run_sample_bounds": np.array([[0, 1]], dtype=np.intp),
+        "run_time_bounds": np.array([[0.0, 0.1]]),
+        "run_path_lengths": np.ones(1),
+        "max_gap": 0.5,
+        "epochs": None,
+    }
+    fields[field] = value
+    with pytest.raises(ValueError, match="inconsistent fields"):
+        CumulativeDistanceResult(**fields)
+
+
+def test_cumulative_distance_is_earlier_runs_plus_run_distance():
+    times = np.arange(5) * 0.1
+    positions = np.c_[[0.0, 1.0, 3.0, 50.0, 54.0], np.zeros(5)]
+    result = compute_cumulative_distance(
+        times, positions, break_before=np.array([False, False, False, True, False])
+    )
+    np.testing.assert_array_equal(result.run_path_lengths, [3.0, 4.0])
+    np.testing.assert_array_equal(result.cumulative_distance, [0, 1, 3, 3, 7])

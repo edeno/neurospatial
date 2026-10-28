@@ -118,8 +118,86 @@ class MSDResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+def _invalid_result(owner: str, problem: str) -> ValueError:
+    """The error for a result built from fields that disagree."""
+    return ValueError(
+        _format_error(
+            f"{owner} got inconsistent fields: {problem}.",
+            why=f"{owner} describes runs of one path, so its arrays must agree "
+            "in length and its run bounds must be ordered and in range.",
+            fix="build it with the function that returns it rather than by hand.",
+        )
+    )
+
+
+class _RunPathMixin:
+    """Run structure shared by the distance results along an observed path.
+
+    Subclasses are frozen dataclasses with ``run_distance``, ``run_ids``,
+    ``run_sample_bounds``, ``run_time_bounds`` and ``run_path_lengths``.
+    """
+
+    run_distance: NDArray[np.float64]
+    run_ids: NDArray[np.intp]
+    run_sample_bounds: NDArray[np.intp]
+    run_time_bounds: NDArray[np.float64]
+    run_path_lengths: NDArray[np.float64]
+
+    @property
+    def cumulative_distance(self) -> NDArray[np.float64]:
+        """Path length of all earlier runs plus ``run_distance``, read-only.
+
+        NaN where ``run_ids == -1``.
+        """
+        offsets = np.r_[0.0, np.cumsum(self.run_path_lengths)[:-1]]
+        in_run = self.run_ids >= 0
+        value = np.full(self.run_ids.shape, np.nan)
+        value[in_run] = offsets[self.run_ids[in_run]] + self.run_distance[in_run]
+        value.setflags(write=False)
+        return value
+
+    def _check_runs(self, owner: str, *, n_samples: int, n_source: int) -> None:
+        """Check the run arrays against each other and the source samples.
+
+        ``n_samples`` is the length of ``run_ids``; ``n_source`` the number
+        of original samples the run bounds index.
+        """
+        bounds = np.asarray(self.run_sample_bounds)
+        time_bounds = np.asarray(self.run_time_bounds)
+        run_ids = np.asarray(self.run_ids)
+        n_runs = len(self.run_path_lengths)
+        if bounds.shape != (n_runs, 2) or time_bounds.shape != (n_runs, 2):
+            raise _invalid_result(
+                owner,
+                f"run_sample_bounds {bounds.shape} and run_time_bounds "
+                f"{time_bounds.shape} must both be ({n_runs}, 2), one row per "
+                "run_path_lengths entry",
+            )
+        if np.shape(self.run_distance) != (n_samples,):
+            raise _invalid_result(
+                owner,
+                f"run_distance has shape {np.shape(self.run_distance)}, but "
+                f"run_ids has {n_samples} entries",
+            )
+        if n_runs and (
+            np.any(bounds[:, 0] > bounds[:, 1])
+            or bounds.min() < 0
+            or bounds.max() >= n_source
+            or np.any(time_bounds[:, 0] > time_bounds[:, 1])
+        ):
+            raise _invalid_result(
+                owner,
+                "each run needs first <= last sample, inside the "
+                f"{n_source} source samples, and start <= stop time",
+            )
+        if n_samples and (run_ids.min() < -1 or run_ids.max() >= n_runs):
+            raise _invalid_result(
+                owner, f"run_ids must be -1 or a run index below {n_runs}"
+            )
+
+
 @dataclass(frozen=True, repr=False, eq=False)
-class CumulativeDistanceResult(ReadOnlyArraysMixin, ResultMixin):
+class CumulativeDistanceResult(_RunPathMixin, ReadOnlyArraysMixin, ResultMixin):
     """Observed distance travelled, returned by ``compute_cumulative_distance``.
 
     Distances are Euclidean arclength along the observed polyline, in the
@@ -139,8 +217,9 @@ class CumulativeDistanceResult(ReadOnlyArraysMixin, ResultMixin):
         Distance since the start of the sample's run (0 at each run start);
         NaN where ``run_ids == -1``.
     cumulative_distance : NDArray[np.float64], shape (n_samples,)
-        Observed distance since the first sample, summed over all runs so far;
-        NaN where ``run_ids == -1``.
+        Observed distance since the first sample, summed over all runs so far:
+        the path length of earlier runs plus ``run_distance``. NaN where
+        ``run_ids == -1``. Derived from those fields, read-only.
     run_ids : NDArray[np.intp], shape (n_samples,)
         Run index in time order; -1 for samples that touch no usable interval.
     sample_valid : NDArray[np.bool_], shape (n_samples,)
@@ -159,7 +238,6 @@ class CumulativeDistanceResult(ReadOnlyArraysMixin, ResultMixin):
 
     step_lengths: NDArray[np.float64]
     run_distance: NDArray[np.float64]
-    cumulative_distance: NDArray[np.float64]
     run_ids: NDArray[np.intp]
     sample_valid: NDArray[np.bool_]
     run_sample_bounds: NDArray[np.intp]
@@ -169,7 +247,18 @@ class CumulativeDistanceResult(ReadOnlyArraysMixin, ResultMixin):
     epochs: NDArray[np.float64] | None
 
     def __post_init__(self) -> None:
-        """Own read-only copies of the arrays."""
+        """Check that the fields describe one path, then own the arrays."""
+        owner = "CumulativeDistanceResult"
+        n_samples = len(self.run_ids)
+        if np.shape(self.sample_valid) != (n_samples,) or np.shape(
+            self.step_lengths
+        ) != (max(n_samples - 1, 0),):
+            raise _invalid_result(
+                owner,
+                f"sample_valid {np.shape(self.sample_valid)} and step_lengths "
+                f"{np.shape(self.step_lengths)} must match {n_samples} samples",
+            )
+        self._check_runs(owner, n_samples=n_samples, n_source=n_samples)
         self._own_arrays()
 
     @property
@@ -1704,7 +1793,6 @@ def compute_cumulative_distance(
     return CumulativeDistanceResult(
         step_lengths=steps,
         run_distance=run_distance,
-        cumulative_distance=np.where(in_run, cumulative, np.nan),
         run_ids=support.run_ids,
         sample_valid=support.sample_valid,
         run_sample_bounds=bounds,

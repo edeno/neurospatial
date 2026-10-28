@@ -18,7 +18,11 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
 from neurospatial._observation import validated_observations
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial.behavior.trajectory import _observed_cumulative
+from neurospatial.behavior.trajectory import (
+    _invalid_result,
+    _observed_cumulative,
+    _RunPathMixin,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -29,7 +33,7 @@ _SNAP_TOLERANCE = 1e-9  # fraction of ``spacing``
 
 
 @dataclass(frozen=True, repr=False, eq=False)
-class ResampledPathResult(ReadOnlyArraysMixin, ResultMixin):
+class ResampledPathResult(_RunPathMixin, ReadOnlyArraysMixin, ResultMixin):
     """Equal-distance samples of a path, returned by ``resample_by_distance``.
 
     Output sample ``k`` lies between original samples ``source_left[k]`` and
@@ -48,7 +52,8 @@ class ResampledPathResult(ReadOnlyArraysMixin, ResultMixin):
         Distance since the start of the sample's run: a multiple of
         ``spacing``, or the run's full length for an off-grid endpoint.
     cumulative_distance : NDArray[np.float64], shape (n_out,)
-        Path length of all earlier runs plus ``run_distance``.
+        Path length of all earlier runs plus ``run_distance``. Derived from
+        those fields, read-only.
     run_ids : NDArray[np.intp], shape (n_out,)
         Run of each sample, ``0..n_runs - 1`` in time order.
     source_left : NDArray[np.intp], shape (n_out,)
@@ -85,7 +90,6 @@ class ResampledPathResult(ReadOnlyArraysMixin, ResultMixin):
     times: NDArray[np.float64]
     positions: NDArray[np.float64]
     run_distance: NDArray[np.float64]
-    cumulative_distance: NDArray[np.float64]
     run_ids: NDArray[np.intp]
     source_left: NDArray[np.intp]
     source_right: NDArray[np.intp]
@@ -101,7 +105,43 @@ class ResampledPathResult(ReadOnlyArraysMixin, ResultMixin):
     epochs: NDArray[np.float64] | None
 
     def __post_init__(self) -> None:
-        """Own read-only copies of the arrays."""
+        """Check that the fields describe one resampled path, then own them."""
+        owner = "ResampledPathResult"
+        n_out = len(self.times)
+        per_sample = (
+            "run_ids",
+            "source_left",
+            "source_right",
+            "weights",
+            "off_grid_endpoint",
+        )
+        shapes = {name: np.shape(getattr(self, name)) for name in per_sample}
+        if any(shape != (n_out,) for shape in shapes.values()) or (
+            np.shape(self.positions)[:1] != (n_out,)
+        ):
+            raise _invalid_result(
+                owner,
+                f"every per-sample array needs {n_out} entries, one per time; got "
+                f"positions {np.shape(self.positions)} and "
+                + ", ".join(f"{name} {shape}" for name, shape in shapes.items()),
+            )
+        left = np.asarray(self.source_left)
+        right = np.asarray(self.source_right)
+        weights = np.asarray(self.weights)
+        if n_out and (
+            left.min() < 0
+            or np.any(right < left)
+            or right.max() >= self.n_source_samples
+            or np.any((weights < 0) | (weights >= 1))
+        ):
+            raise _invalid_result(
+                owner,
+                "each sample needs 0 <= source_left <= source_right < "
+                f"n_source_samples ({self.n_source_samples}) and a weight in [0, 1)",
+            )
+        if n_out and np.asarray(self.run_ids).min() < 0:
+            raise _invalid_result(owner, "every resampled sample belongs to a run")
+        self._check_runs(owner, n_samples=n_out, n_source=self.n_source_samples)
         self._own_arrays()
 
     @property
@@ -423,7 +463,6 @@ def resample_by_distance(
         positions=(1 - weights)[:, None] * positions_arr[source_left]
         + weights[:, None] * positions_arr[source_right],
         run_distance=run_distance,
-        cumulative_distance=cumulative[bounds[out_run_ids, 0]] + run_distance,
         run_ids=out_run_ids,
         source_left=source_left,
         source_right=source_right,

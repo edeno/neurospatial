@@ -48,7 +48,6 @@ CASES = [
         {
             "step_lengths": np.ones(1),
             "run_distance": np.array([0.0, 1.0]),
-            "cumulative_distance": np.array([0.0, 1.0]),
             "run_ids": np.zeros(2, dtype=np.intp),
             "sample_valid": np.ones(2, dtype=bool),
             "run_sample_bounds": np.array([[0, 1]], dtype=np.intp),
@@ -172,7 +171,6 @@ CASES = [
             "times": np.array([0.0, 0.5]),
             "positions": np.array([[0.0, 0.0], [1.0, 0.0]]),
             "run_distance": np.array([0.0, 1.0]),
-            "cumulative_distance": np.array([0.0, 1.0]),
             "run_ids": np.zeros(2, dtype=np.intp),
             "source_left": np.array([0, 0], dtype=np.intp),
             "source_right": np.array([0, 1], dtype=np.intp),

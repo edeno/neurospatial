@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pytest
 
@@ -477,3 +479,64 @@ def test_source_right_is_the_next_valid_sample():
     np.testing.assert_array_equal(result.source_right, [0, 1, 3, 3])
     np.testing.assert_allclose(result.weights, [0, 0, 0.5, 0])
     np.testing.assert_allclose(result.times, [0, 1, 2, 3])
+
+
+def test_cumulative_distance_is_derived_from_runs():
+    times = np.arange(6) * 0.1
+    x = [0.0, 1.0, 2.0, 50.0, 51.0, 52.0]
+    breaks = np.array([False, False, False, True, False, False])
+    result = resample_by_distance(
+        times, _xline(x, times), spacing=1.0, break_before=breaks
+    )
+    assert "cumulative_distance" not in {f.name for f in dataclasses.fields(result)}
+    np.testing.assert_allclose(result.run_distance, [0, 1, 2, 0, 1, 2])
+    np.testing.assert_allclose(result.cumulative_distance, [0, 1, 2, 2, 3, 4])
+    with pytest.raises(ValueError, match="read-only"):
+        result.cumulative_distance[0] = 1.0
+
+
+def _valid_fields():
+    return {
+        "times": np.array([0.0, 0.5]),
+        "positions": np.array([[0.0, 0.0], [1.0, 0.0]]),
+        "run_distance": np.array([0.0, 1.0]),
+        "run_ids": np.zeros(2, dtype=np.intp),
+        "source_left": np.array([0, 0], dtype=np.intp),
+        "source_right": np.array([0, 1], dtype=np.intp),
+        "weights": np.array([0.0, 0.5]),
+        "off_grid_endpoint": np.zeros(2, dtype=bool),
+        "run_sample_bounds": np.array([[0, 1]], dtype=np.intp),
+        "run_time_bounds": np.array([[0.0, 1.0]]),
+        "run_path_lengths": np.array([2.0]),
+        "n_source_samples": 2,
+        "spacing": 1.0,
+        "include_endpoint": False,
+        "max_gap": 0.5,
+        "epochs": None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("weights", np.array([0.0])),
+        ("source_right", np.array([0, 2], dtype=np.intp)),
+        ("weights", np.array([0.0, 1.0])),
+        ("run_sample_bounds", np.array([[1, 0]], dtype=np.intp)),
+        ("run_time_bounds", np.array([[1.0, 0.0]])),
+        ("run_ids", np.array([0, 1], dtype=np.intp)),
+    ],
+    ids=[
+        "short-weights",
+        "right-out-of-range",
+        "weight-one",
+        "first-after-last",
+        "start-after-stop",
+        "run-id-out-of-range",
+    ],
+)
+def test_result_rejects_inconsistent_fields(field, value):
+    fields = _valid_fields()
+    fields[field] = value
+    with pytest.raises(ValueError, match="inconsistent fields"):
+        ResampledPathResult(**fields)
