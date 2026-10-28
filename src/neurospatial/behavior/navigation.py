@@ -2778,8 +2778,8 @@ def _require_path_metric(metric: str, *, call: str) -> None:
                 f"{call}() got metric={metric!r}; it must be "
                 "'euclidean' or 'geodesic'.",
                 why=(
-                    "path length is summed either along straight lines or along "
-                    "the environment's connectivity graph."
+                    "distances are measured either along straight lines or along "
+                    "the shortest path inside the environment."
                 ),
                 fix=(
                     "use metric='euclidean' for straight-line distances, or "
