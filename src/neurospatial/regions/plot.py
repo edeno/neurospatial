@@ -9,12 +9,12 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import shapely
 from shapely.geometry.polygon import orient
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
 
 from .core import Region
+from .ops import _named_regions, _transform_points, _transform_polygon
 
 if TYPE_CHECKING:
     import matplotlib.axes
@@ -36,7 +36,7 @@ def _polygon_path(polygon: Polygon) -> MplPath:
     oriented = orient(polygon, sign=1.0)
     paths = []
     for ring in (oriented.exterior, *oriented.interiors):
-        vertices = np.asarray(ring.coords)[:, :2]
+        vertices = np.asarray(ring.coords)
         codes = np.full(len(vertices), MplPath.LINETO, dtype=np.uint8)
         codes[0], codes[-1] = MplPath.MOVETO, MplPath.CLOSEPOLY
         paths.append(MplPath(vertices, codes))
@@ -126,16 +126,7 @@ def plot_regions(
     import matplotlib.pyplot as plt
     from matplotlib.patches import PathPatch
 
-    if region_names is None:
-        region_names = tuple(regions.keys())
-    elif isinstance(region_names, str):
-        region_names = (region_names,)  # one name, not its characters
-
-    for name in region_names:
-        if name not in regions:
-            raise RegionNotFoundError(
-                name, available=list(regions), argument="region_names", in_list=True
-            )
+    region_names = _named_regions(regions, region_names)
     for name in per_region_kwargs:
         if name not in regions:
             raise RegionNotFoundError(name, available=list(regions), argument=None)
@@ -163,10 +154,11 @@ def plot_regions(
         label = opts.pop("label", name)
         alpha = opts.pop("alpha", 0.5)
 
+        where = f"region {name!r}"
         if region.kind == "point":
-            xy = np.asarray(region.data, dtype=np.float64)[None]
-            if world_to_pixel is not None:
-                xy = world_to_pixel(xy)
+            xy = _transform_points(
+                region.data[None], world_to_pixel, name="world_to_pixel", where=where
+            )
             ax.scatter(
                 xy[:, 0],
                 xy[:, 1],
@@ -177,9 +169,9 @@ def plot_regions(
                 **opts,
             )
         else:
-            polygon = region.data
-            if world_to_pixel is not None:
-                polygon = shapely.transform(polygon, world_to_pixel)
+            polygon = _transform_polygon(
+                region.data, world_to_pixel, name="world_to_pixel", where=where
+            )
             ax.add_patch(
                 PathPatch(
                     _polygon_path(polygon),

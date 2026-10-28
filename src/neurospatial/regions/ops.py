@@ -204,6 +204,26 @@ def _prepare_positions(
     return _transform_points(array, transform, name="transform", where="positions")
 
 
+def _named_regions(
+    regions: Mapping[str, Region], region_names: str | Sequence[str] | None
+) -> list[str]:
+    """Return the names to use: all of ``regions``, or ``region_names`` checked.
+
+    A single string is one name, not its characters. A name not in ``regions``
+    raises :class:`~neurospatial.RegionNotFoundError` with the closest name.
+    """
+    if region_names is None:
+        return list(regions)
+    if isinstance(region_names, str):
+        region_names = [region_names]
+    for name in region_names:
+        if name not in regions:
+            raise RegionNotFoundError(
+                name, available=list(regions), argument="region_names", in_list=True
+            )
+    return list(region_names)
+
+
 def _check_regions(selected: Sequence[Region], point_radius: float | None) -> None:
     """Refuse non-2-D point regions, and point regions without ``point_radius``."""
     validate_finite_scalar(
@@ -478,29 +498,20 @@ def regions_containing_points(
     """
     import pandas as pd
 
-    if isinstance(region_names, str):
-        region_names = [region_names]  # one name, not its characters
-    if region_names is None:
-        selected = list(regions.values())
-    else:
-        for name in region_names:
-            if name not in regions:
-                raise RegionNotFoundError(
-                    name, available=list(regions), argument="region_names", in_list=True
+    names = _named_regions(regions, region_names)
+    seen: set[str] = set()
+    for name in names:
+        if name in seen:
+            raise ValueError(
+                _format_error(
+                    f"region_names lists {name!r} more than once.",
+                    why="each region is one column of the membership table.",
+                    fix="pass each name once, for example "
+                    "list(dict.fromkeys(region_names))",
                 )
-        seen: set[str] = set()
-        for name in region_names:
-            if name in seen:
-                raise ValueError(
-                    _format_error(
-                        f"region_names lists {name!r} more than once.",
-                        why="each region is one column of the membership table.",
-                        fix="pass each name once, for example "
-                        "list(dict.fromkeys(region_names))",
-                    )
-                )
-            seen.add(name)
-        selected = [regions[name] for name in region_names]
+            )
+        seen.add(name)
+    selected = [regions[name] for name in names]
 
     transformed = _prepare_positions(positions, transform)
     _check_regions(selected, point_radius)
