@@ -1313,22 +1313,28 @@ class _OpenPaths(EnvironmentPaths):
             bad[origin[walked & blocked]] = True
             origin, a, b, seg = (x[~walked] for x in (origin, a, b, seg))
             f0, f1 = f0[~walked], f1[~walked]
+        # Per piece: its segment's length, and (while its two bins are
+        # those of an earlier piece) their distance and whether they are
+        # flanked, which depend on the bins alone.
+        length = np.linalg.norm(ends[seg] - starts[seg], axis=1)
+        gap = np.full(origin.size, np.nan)
+        flank = np.full(origin.size, -1, dtype=np.intp)
         while origin.size:
-            gap = np.linalg.norm(self._centers[a] - self._centers[b], axis=1)
-            piece = (f1 - f0) * np.linalg.norm(ends[seg] - starts[seg], axis=1)
+            new = np.isnan(gap)
+            gap[new] = np.linalg.norm(
+                self._centers[a[new]] - self._centers[b[new]], axis=1
+            )
+            piece = (f1 - f0) * length
             split = (gap > self._nearest) & (piece > _SPLIT_RESOLUTION * self._spacing)
-            split[split] = ~self._flanked(a[split], b[split])
+            unknown = split & (flank < 0)
+            flank[unknown] = self._flanked(a[unknown], b[unknown])
+            split &= flank == 0
             joined = ~split
             # Several pieces can share an origin: mark, never unmark.
             bad[origin[joined][~self._connected(a[joined], b[joined])]] = True
             keep = split & ~bad[origin]
-            origin, a, b, seg, f0, f1 = (
-                origin[keep],
-                a[keep],
-                b[keep],
-                seg[keep],
-                f0[keep],
-                f1[keep],
+            origin, a, b, seg, f0, f1, length, gap, flank = (
+                x[keep] for x in (origin, a, b, seg, f0, f1, length, gap, flank)
             )
             if not origin.size:
                 break
@@ -1341,15 +1347,29 @@ class _OpenPaths(EnvironmentPaths):
             outside = m < 0
             bad[origin[outside]] = True
             inside = ~outside
-            origin, a, b, seg, m = (x[inside] for x in (origin, a, b, seg, m))
+            origin, a, b, seg, m, length, gap, flank = (
+                x[inside] for x in (origin, a, b, seg, m, length, gap, flank)
+            )
             f0, f1, fm = f0[inside], f1[inside], fm[inside]
+            # A piece keeps its pair's distance and flank when the split
+            # point lies in the bin at its far end.
+            same_left, same_right = m == b, m == a
             origin = np.r_[origin, origin]
             a, b = np.r_[a, m], np.r_[m, b]
             seg = np.r_[seg, seg]
             f0, f1 = np.r_[f0, fm], np.r_[fm, f1]
+            length = np.r_[length, length]
+            gap = np.r_[
+                np.where(same_left, gap, np.nan), np.where(same_right, gap, np.nan)
+            ]
+            flank = np.r_[
+                np.where(same_left, flank, -1), np.where(same_right, flank, -1)
+            ]
             # A piece within one bin stays inside it.
             differ = a != b
-            origin, a, b, seg = (x[differ] for x in (origin, a, b, seg))
+            origin, a, b, seg, length, gap, flank = (
+                x[differ] for x in (origin, a, b, seg, length, gap, flank)
+            )
             f0, f1 = f0[differ], f1[differ]
         return bad
 
