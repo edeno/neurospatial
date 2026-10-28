@@ -479,7 +479,11 @@ def _restored_state(state: object) -> dict[str, Any]:
     return {
         **state,
         "_geometry": replace(geometry, arena=own_arena(geometry.arena)),
-        "_regions": _owned_regions(state["_regions"], geometry.binning.bins.n_dims),
+        "_regions": _owned_regions(
+            state["_regions"],
+            geometry.binning.bins.n_dims,
+            state["_metadata"].units,
+        ),
         "_landmarks": owned_landmarks(
             state["_landmarks"],
             geometry.binning.bins.n_dims,
@@ -592,7 +596,7 @@ def _publish(
         binning, graph, compute_grid_index(binning), arena, coordinates
     )
     env._regions = _owned_regions(
-        Regions() if regions is None else regions, binning.bins.n_dims
+        Regions() if regions is None else regions, binning.bins.n_dims, metadata.units
     )
     env._landmarks = owned_landmarks(
         Landmarks() if landmarks is None else landmarks,

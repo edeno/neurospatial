@@ -642,10 +642,12 @@ class Environment(Generic[_C]):
             If ``regions`` is not a mapping or holds a value that is not a
             :class:`~neurospatial.regions.Region`.
         ValueError
-            If a key differs from its region's name, or a region's dimension
-            differs from this environment's.
+            If a key differs from its region's name, a region's dimension
+            differs from this environment's, or a region's
+            ``metadata["coord_system"]`` (``"pixels"`` or ``"cm"``, set by
+            the annotation readers) differs from :attr:`units`.
         """
-        snapshot = _owned_regions(regions, self.n_dims)
+        snapshot = _owned_regions(regions, self.n_dims, self.units)
         result = self._replace_value()
         result._regions = snapshot
         return result
@@ -3103,6 +3105,7 @@ class Environment(Generic[_C]):
             landmarks=self.landmarks,
             arena=self._arena,
             cache=self._cache,
+            units=self.units if isinstance(units, _Unset) else units,
         )
         scale = derivation.length_scale
         if (

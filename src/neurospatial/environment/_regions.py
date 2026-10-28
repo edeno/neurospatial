@@ -45,16 +45,20 @@ def _region_values(regions: Mapping[object, object]) -> list[Region]:
     return values
 
 
-def _owned_regions(regions: object, n_dims: int) -> Regions:
+def _owned_regions(regions: object, n_dims: int, units: str | None) -> Regions:
     """Return an immutable snapshot of ``regions`` for an ``n_dims`` environment.
+
+    ``units`` is the environment's unit label. A region whose
+    ``metadata["coord_system"]`` (set by the annotation readers to
+    ``"pixels"`` or ``"cm"``) names other units is refused.
 
     Raises
     ------
     TypeError
         If ``regions`` is not a mapping of names to Region values.
     ValueError
-        If a key differs from its region's name, or a region's coordinates
-        have a different dimension.
+        If a key differs from its region's name, a region's coordinates
+        have a different dimension, or its coordinate units differ.
     """
     if not isinstance(regions, Mapping):
         raise TypeError(
@@ -72,6 +76,23 @@ def _owned_regions(regions: object, n_dims: int) -> Regions:
                     f"Region {region.name!r} has {region.n_dims} coordinates; "
                     f"the environment has {n_dims}.",
                     fix="give regions coordinates in the environment's frame",
+                )
+            )
+        region_units = region.metadata.get("coord_system")
+        if units is not None and region_units is not None and region_units != units:
+            raise ValueError(
+                _format_error(
+                    f"Region {region.name!r} is in {region_units!r} (its "
+                    f"metadata['coord_system']), but the environment is in "
+                    f"{units!r}.",
+                    why="Why: a region covers the bins whose centers lie in "
+                    "it, so a region drawn in video pixels would cover the "
+                    "wrong bins of an environment in centimeters.",
+                    fix="load the annotation with its calibration "
+                    "(calibration= for the annotation readers, pixel_to_world= "
+                    "for load_cvat_xml or load_labelme_json) so its coordinates "
+                    f"are in {units!r}; if they already are, rebuild the region "
+                    f"with metadata['coord_system'] = {units!r}",
                 )
             )
     return _snapshot_regions(values)

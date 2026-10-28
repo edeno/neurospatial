@@ -131,3 +131,88 @@ def test_with_regions_refuses_values_that_are_not_regions():
 def test_with_regions_refuses_a_key_that_is_not_the_region_name():
     with pytest.raises(ValueError, match=r"regions\['home'\] holds .* 'goal'"):
         _environment().with_regions({"home": Region("goal", "point", [0.25, 0.25])})
+
+
+def _grid(units):
+    edges = np.arange(0.0, 101.0, 10.0)
+    return Environment.from_grid_mask(
+        np.ones((10, 10), dtype=bool), grid_edges=(edges, edges), units=units
+    )
+
+
+def _drawn(coord_system):
+    # A reward zone as the annotation readers return it.
+    return Regions(
+        [
+            Region(
+                "reward",
+                "polygon",
+                box(400.0, 400.0, 600.0, 600.0),
+                metadata={"coord_system": coord_system},
+            )
+        ]
+    )
+
+
+def test_pixel_regions_are_refused_by_a_centimeter_environment():
+    with pytest.raises(ValueError, match="'reward' is in 'pixels'") as raised:
+        _grid("cm").with_regions(_drawn("pixels"))
+    message = str(raised.value)
+    assert "environment is in 'cm'" in message
+    assert "calibration=" in message and "pixel_to_world=" in message
+    edges = np.arange(0.0, 101.0, 10.0)
+    with pytest.raises(ValueError, match="'reward' is in 'pixels'"):
+        Environment.from_grid_mask(
+            np.ones((10, 10), dtype=bool),
+            grid_edges=(edges, edges),
+            units="cm",
+            regions=_drawn("pixels"),
+        )
+
+
+@pytest.mark.parametrize(
+    ("env_units", "coord_system"),
+    [("cm", "cm"), ("pixels", "pixels"), (None, "pixels"), ("cm", None)],
+)
+def test_regions_in_matching_or_undeclared_units_are_accepted(env_units, coord_system):
+    regions = (
+        _drawn(coord_system)
+        if coord_system is not None
+        else Regions([Region("reward", "polygon", box(40.0, 40.0, 60.0, 60.0))])
+    )
+    assert list(_grid(env_units).with_regions(regions).regions) == ["reward"]
+
+
+def test_unit_converting_transform_moves_regions_into_the_new_units():
+    from neurospatial.ops.transforms import AffineND
+
+    edges = np.arange(0.0, 1001.0, 100.0)
+    pixels = Environment.from_grid_mask(
+        np.ones((10, 10), dtype=bool), grid_edges=(edges, edges), units="pixels"
+    ).with_regions(_drawn("pixels"))
+    to_cm = AffineND(np.diag([0.1, 0.1, 1.0]))  # 10 pixels per cm
+    cm = pixels.apply_transform(to_cm, units="cm")
+    reward = cm.regions["reward"]
+    assert reward.metadata["coord_system"] == "cm"
+    assert reward.data.equals(box(40.0, 40.0, 60.0, 60.0))
+    np.testing.assert_array_equal(
+        cm.bins_in_region("reward"), pixels.bins_in_region("reward")
+    )
+    # The transformed environment accepts its own regions back.
+    assert list(cm.with_regions(cm.regions).regions) == ["reward"]
+
+
+@pytest.mark.parametrize(
+    ("matrix", "kept"),
+    [
+        (np.array([[1.0, 0, 5.0], [0, 1.0, 5.0], [0, 0, 1.0]]), True),
+        (np.diag([0.1, 0.1, 1.0]), False),
+    ],
+    ids=["translation", "scaling"],
+)
+def test_unlabeled_transform_drops_a_stale_coord_system(matrix, kept):
+    from neurospatial.ops.transforms import AffineND
+
+    env = _grid(None).with_regions(_drawn("pixels"))
+    moved = env.apply_transform(AffineND(matrix))
+    assert ("coord_system" in moved.regions["reward"].metadata) is kept

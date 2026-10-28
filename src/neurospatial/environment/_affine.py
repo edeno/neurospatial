@@ -35,8 +35,13 @@ def _apply_transform(
     landmarks: Landmarks,
     arena: Arena,
     cache: AnalysisCache,
+    units: str | None,
 ) -> _Derivation:
-    """Transform owned cells, their bounds, arenas, regions and landmarks together."""
+    """Transform owned cells, their bounds, arenas, regions and landmarks together.
+
+    ``units`` is the unit label of the transformed coordinates; regions that
+    record their units in ``metadata["coord_system"]`` take it on.
+    """
     n_dims = binning.bins.n_dims
     if not isinstance(transform, AffineND):
         shape = np.shape(transform) if isinstance(transform, np.ndarray) else None
@@ -95,12 +100,14 @@ def _apply_transform(
     # The build choices keep their lengths; record how much longer those
     # lengths are now, when the transform scales every direction alike.
     kind, scale, _ = _classification(np.asarray(transform.A)[:-1, :-1])
+    keeps_lengths = kind in ("translation", "similarity") and abs(scale - 1.0) <= 1e-9
     return _Derivation(
         transformed,
         "apply_transform",
         length_scale=scale if kind in ("translation", "similarity") else None,
         regions=Regions(
-            _transformed_region(region, transform) for region in regions.values()
+            _transformed_region(region, transform, units, keeps_lengths=keeps_lengths)
+            for region in regions.values()
         ),
         landmarks=Landmarks(
             _transformed_landmark(landmark, transform)
@@ -120,8 +127,15 @@ def _transformed_landmark(landmark: Landmark, transform: AffineND) -> Landmark:
     return Landmark(landmark.name, landmark.kind, data, landmark.metadata)
 
 
-def _transformed_region(region: Region, transform: AffineND) -> Region:
-    """Map a point or polygon region through ``transform``, marking it transformed."""
+def _transformed_region(
+    region: Region, transform: AffineND, units: str | None, *, keeps_lengths: bool
+) -> Region:
+    """Map a point or polygon region through ``transform``, marking it transformed.
+
+    A recorded ``metadata["coord_system"]`` becomes ``units``. Without a new
+    unit label it is kept when lengths are unchanged and dropped otherwise,
+    since the old label no longer describes the coordinates.
+    """
     if region.kind == "point":
         data: NDArray[np.float64] | Polygon = transform(
             np.asarray(region.data).reshape(1, -1)
@@ -130,9 +144,10 @@ def _transformed_region(region: Region, transform: AffineND) -> Region:
         # Region construction guarantees a Polygon here. The arena and the
         # cells map their vertices the same way, so shared boundaries agree.
         data = mapped_geometry(region.data, transform.A)
-    return Region(
-        name=region.name,
-        kind=region.kind,
-        data=data,
-        metadata={**region.metadata, "transformed": True},
-    )
+    metadata = {**region.metadata, "transformed": True}
+    if "coord_system" in metadata:
+        if units is not None:
+            metadata["coord_system"] = units
+        elif not keeps_lengths:
+            del metadata["coord_system"]
+    return Region(name=region.name, kind=region.kind, data=data, metadata=metadata)
