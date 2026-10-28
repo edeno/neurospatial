@@ -277,11 +277,19 @@ def test_lap_spanning_break_is_dropped(laps):
     )
     spans = [lap for lap in joined if lap.start_time < r.times[BREAK] <= lap.end_time]
     assert len(spans) == 1
-    assert len(split) == len(joined) - 1
     assert all(
         lap.end_time < r.times[BREAK] or lap.start_time >= r.times[BREAK]
         for lap in split
     )
+    # Laps before the break are unaffected by declaring it.
+    before = r.times[BREAK]
+
+    def bounds(found):
+        return [
+            (lap.start_time, lap.end_time) for lap in found if lap.end_time < before
+        ]
+
+    assert bounds(split) == bounds(joined)
 
 
 def test_heading_labels_refuse_breaks_with_precomputed_kinematics():

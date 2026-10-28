@@ -410,7 +410,9 @@ class Lap:
     direction : str
         Direction of lap: 'clockwise', 'counter-clockwise', or 'unknown'.
     overlap_score : float
-        Jaccard overlap with template lap [0, 1].
+        Jaccard overlap with the template lap, in [0, 1], for the
+        ``'auto'`` and ``'reference'`` methods; NaN for the ``'region'``
+        method, which uses no template.
     """
 
     start_time: float
@@ -1449,8 +1451,14 @@ def detect_laps(
       overlap.
     - **Reference**: Uses user-provided reference lap as template, useful when
       first lap is atypical or for comparing to a canonical lap pattern.
-    - **Region**: Defines laps as segments between consecutive crossings of
-      a start region, useful for well-controlled tasks with clear start zones.
+    - **Region**: Defines laps as segments between entries to a start
+      region, useful for well-controlled tasks with clear start zones. A lap
+      must reach the far side of the track, a bin at least half the greatest
+      path distance from the start region (on a closed loop of length L the
+      farthest point is L/2 away, and every full circuit passes it), so
+      tracking jitter across the region edge does not split a lap. Each lap
+      covers ``[entry, next lap's entry)``: ``end_time`` is the entry that
+      starts the next lap. ``overlap_score`` is NaN.
 
     **Direction Detection:**
 
@@ -1616,6 +1624,14 @@ def detect_laps(
     laps: list[Lap] = []
     if method == "region":
         assert start_region is not None
+        from neurospatial.ops.distance import distance_field
+
+        # Path distance from the start region to every bin, once per call.
+        from_start = distance_field(
+            env.connectivity, env.bins_in_region(start_region), weight="distance"
+        )
+        finite = from_start[np.isfinite(from_start)]
+        far_distance = 0.5 * float(finite.max()) if finite.size else 0.0
         for run in runs:
             laps.extend(
                 _detect_laps_region_contiguous(
@@ -1624,6 +1640,8 @@ def detect_laps(
                     env,
                     start_region=start_region,
                     direction=direction,
+                    from_start=from_start,
+                    far_distance=far_distance,
                 )
             )
         return laps
@@ -1663,38 +1681,45 @@ def _detect_laps_region_contiguous(
     *,
     start_region: str,
     direction: str,
+    from_start: NDArray[np.float64],
+    far_distance: float,
 ) -> list[Lap]:
-    """Pair entries within one recording using the existing region method."""
-    laps: list[Lap] = []
+    """Pair start-region entries within one recording into laps.
+
+    A lap runs from one entry to the next entry that follows a trip to the
+    far side of the track: a bin at least ``far_distance`` (half the
+    greatest path distance from the start region) away. Re-entries without
+    such a trip, such as tracking jitter across the region edge, stay inside
+    the lap instead of splitting it.
+    """
     crossings = _detect_region_crossings_contiguous(
         position_bins, times, env, region_name=start_region, direction="entry"
     )
-
-    if len(crossings) < 2:
+    entry_indices = [int(np.searchsorted(times, c.time)) for c in crossings]
+    if len(entry_indices) < 2:
         return []
 
-    # Each pair of consecutive entries defines a lap
-    for i in range(len(crossings) - 1):
-        start_idx = int(np.searchsorted(times, crossings[i].time))
-        end_idx = int(np.searchsorted(times, crossings[i + 1].time))
+    # Lap boundaries: the first entry, then each entry that ends a far trip.
+    boundaries = [entry_indices[0]]
+    for previous, entry in itertools.pairwise(entry_indices):
+        if from_start[position_bins[previous:entry]].max() >= far_distance:
+            boundaries.append(entry)
 
-        if end_idx > start_idx:
-            lap_bins = position_bins[start_idx:end_idx]
-            lap_direction = _detect_lap_direction(env.bin_centers, lap_bins)
-
-            # Filter by direction
-            if direction != "both" and lap_direction != direction:
-                continue
-
-            laps.append(
-                Lap(
-                    start_time=crossings[i].time,
-                    end_time=crossings[i + 1].time,
-                    direction=lap_direction,
-                    overlap_score=1.0,  # Region method doesn't use overlap
-                )
+    laps: list[Lap] = []
+    for start_idx, end_idx in itertools.pairwise(boundaries):
+        lap_direction = _detect_lap_direction(
+            env.bin_centers, position_bins[start_idx:end_idx]
+        )
+        if direction != "both" and lap_direction != direction:
+            continue
+        laps.append(
+            Lap(
+                start_time=float(times[start_idx]),
+                end_time=float(times[end_idx]),
+                direction=lap_direction,
+                overlap_score=np.nan,  # no template to overlap
             )
-
+        )
     return laps
 
 

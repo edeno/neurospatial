@@ -386,3 +386,39 @@ class TestLapDirection:
         )
         assert len(laps) == 2
         assert [lap.direction for lap in laps] == ["counter-clockwise"] * 2
+
+
+class TestRegionLaps:
+    """Region laps need a trip to the far side; jitter does not split them."""
+
+    @staticmethod
+    def _circle_with_jitter():
+        theta = np.linspace(0, 6 * np.pi, 241)  # 3 laps of 80 samples
+        circle = np.c_[50 + 30 * np.cos(theta), 50 + 30 * np.sin(theta)]
+        env = Environment.from_samples(circle, bin_size=3.0)
+        regions = Regions(env.regions.values())
+        # Samples 0-1, 79-81, 159-161, 239-240 fall in this region; the
+        # animal enters it at samples 79, 159 and 239.
+        regions.add("start", polygon=Point(80.0, 50.0).buffer(4.0))
+        env = env.with_regions(regions)
+        # After the entries at 79 and 159, tracking jitters out and back in
+        # for one frame: entries now at samples 79, 81, 161, 163 and 243.
+        order = np.r_[
+            np.arange(0, 80), 78, 79, np.arange(80, 160), 158, 159, np.arange(160, 241)
+        ]
+        positions = circle[order]
+        times = np.arange(order.size) * 0.25
+        return env, env.bin_at(positions), times
+
+    def test_boundary_jitter_does_not_split_laps(self):
+        from neurospatial.behavior.segmentation import detect_laps
+
+        env, bins, times = self._circle_with_jitter()
+        laps = detect_laps(bins, times, env, method="region", start_region="start")
+
+        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+            (times[79], times[161]),
+            (times[161], times[243]),
+        ]
+        assert [lap.direction for lap in laps] == ["counter-clockwise"] * 2
+        assert all(np.isnan(lap.overlap_score) for lap in laps)
