@@ -448,4 +448,32 @@ def test_samples_table_columns_and_values(n_dims, names):
     np.testing.assert_array_equal(df["weight"], result.weights)
     np.testing.assert_array_equal(df["off_grid_endpoint"], result.off_grid_endpoint)
     np.testing.assert_array_equal(df[names].to_numpy(), result.positions)
-    assert df.attrs == {"spacing": 2.0, "include_endpoint": True, "max_gap": None}
+    assert df.attrs == {
+        "spacing": 2.0,
+        "include_endpoint": True,
+        "max_gap": None,
+        "epochs": None,
+    }
+
+
+def test_samples_table_records_epochs_as_a_writable_copy():
+    times = np.arange(20) * 0.1
+    result = resample_by_distance(
+        times, _xline(np.arange(20.0), times), spacing=2.0, epochs=(0.0, 1.0)
+    )
+    attrs = result.samples_table().attrs
+    np.testing.assert_array_equal(attrs["epochs"], [[0.0, 1.0]])
+    attrs["epochs"][0, 0] = 5.0
+    np.testing.assert_array_equal(result.epochs, [[0.0, 1.0]])
+
+
+def test_source_right_is_the_next_valid_sample():
+    # Sample 2 is missing; distance 2 lies halfway between samples 1 and 3.
+    times = np.arange(4.0)
+    result = resample_by_distance(
+        times, _xline([0, 1, np.nan, 3], times), spacing=1.0, max_gap=None
+    )
+    np.testing.assert_array_equal(result.source_left, [0, 1, 1, 3])
+    np.testing.assert_array_equal(result.source_right, [0, 1, 3, 3])
+    np.testing.assert_allclose(result.weights, [0, 0, 0.5, 0])
+    np.testing.assert_allclose(result.times, [0, 1, 2, 3])

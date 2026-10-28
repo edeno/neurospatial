@@ -55,7 +55,9 @@ class ResampledPathResult(ReadOnlyArraysMixin, ResultMixin):
         Index of the original sample at or before each output sample.
     source_right : NDArray[np.intp], shape (n_out,)
         Equal to ``source_left`` when the sample falls exactly on an original
-        sample, otherwise ``source_left + 1``.
+        sample, otherwise the next valid original sample after
+        ``source_left`` (missing samples between them are skipped, as if
+        deleted).
     weights : NDArray[np.float64], shape (n_out,)
         Interpolation weight toward ``source_right``, in ``[0, 1)``; 0 for
         exact samples.
@@ -187,7 +189,8 @@ class ResampledPathResult(ReadOnlyArraysMixin, ResultMixin):
             up to three dimensions, otherwise ``position_0``, ``position_1``,
             ...), ``source_left``, ``source_right``, ``weight`` and
             ``off_grid_endpoint``. ``df.attrs`` holds ``spacing``,
-            ``include_endpoint`` and ``max_gap``.
+            ``include_endpoint``, ``max_gap`` and ``epochs`` (a copy of the
+            applied windows, or None).
         """
         import pandas as pd
 
@@ -214,6 +217,7 @@ class ResampledPathResult(ReadOnlyArraysMixin, ResultMixin):
             spacing=self.spacing,
             include_endpoint=self.include_endpoint,
             max_gap=self.max_gap,
+            epochs=None if self.epochs is None else self.epochs.copy(),
         )
         return df
 
