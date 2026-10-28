@@ -5,6 +5,7 @@ positions that stays inside the environment. Expected values come from the
 geometry of each environment, not from the code under test.
 """
 
+import networkx as nx
 import numpy as np
 import pytest
 from shapely.geometry import LineString, Polygon, box
@@ -115,6 +116,55 @@ class TestOpenEnvironments:
             assert shortest_path_length(env, start, end) == pytest.approx(
                 np.linalg.norm(end - start), rel=1e-12
             )
+
+
+def _w_track(bin_size, track_width):
+    """A W-track: a 40 cm center stem and two 40 cm outer arms joined by
+    30 cm crossbars at y = 40."""
+    graph = nx.Graph()
+    nodes = [
+        (0.0, 0.0),
+        (0.0, 40.0),
+        (-30.0, 40.0),
+        (30.0, 40.0),
+        (-30.0, 0.0),
+        (30.0, 0.0),
+    ]
+    for node, pos in enumerate(nodes):
+        graph.add_node(node, pos=pos)
+    for u, v in [(0, 1), (1, 2), (1, 3), (2, 4), (3, 5)]:
+        graph.add_edge(
+            u, v, distance=float(np.linalg.norm(np.subtract(nodes[u], nodes[v])))
+        )
+    return Environment.from_graph(
+        graph,
+        [(0, 1), (1, 2), (2, 4), (1, 3), (3, 5)],
+        bin_size=bin_size,
+        track_width=track_width,
+    )
+
+
+class TestTrackEnvironments:
+    @pytest.mark.parametrize("bin_size", [1.0, 2.0, 5.0])
+    @pytest.mark.parametrize("track_width", [4.0, 7.0, 10.0])
+    def test_arm_end_to_arm_end_is_the_centerline_length(self, bin_size, track_width):
+        # (-30, 1) is 39 cm down the left arm from its top; along the
+        # centerline: 39 up + 30 + 30 across + 39 down the right arm.
+        env = _w_track(bin_size, track_width)
+        start, goal = np.array([-30.0, 1.0]), np.array([30.0, 1.0])
+        assert shortest_path_length(env, start, goal) == pytest.approx(138.0)
+        times = np.arange(2) / 10
+        assert traveled_path_length(
+            times, np.vstack([start, goal]), metric="geodesic", env=env
+        ) == pytest.approx(138.0)
+
+    def test_position_off_the_centerline_is_measured_from_its_projection(self):
+        env = _w_track(2.0, 10.0)
+        # 3 cm beside the left arm at y = 20: projects to (-30, 20).
+        length = shortest_path_length(
+            env, np.array([-33.0, 20.0]), np.array([0.0, 20.0])
+        )
+        assert length == pytest.approx(20.0 + 30.0 + 20.0)
 
 
 @pytest.mark.wallclock
