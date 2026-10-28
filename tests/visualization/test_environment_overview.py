@@ -101,6 +101,14 @@ def test_walls_landmarks_and_regions_are_drawn_by_default(apparatus):
     assert ax.get_ylim()[1] > 55.0  # the cue beyond the arena is in view
 
 
+def test_a_region_past_the_bins_is_in_view(apparatus):
+    regions = Regions(apparatus.regions.values())
+    regions.add("start_box", polygon=box(40.0, 0.0, 60.0, 10.0))
+    ax = apparatus.with_regions(regions).plot(show_landmarks=False)
+    assert ax.get_xlim()[1] > 60.0
+    assert ax.get_ylim()[1] == pytest.approx(40.0)  # never shrinks or overgrows
+
+
 def test_each_layer_can_be_hidden(apparatus):
     ax = apparatus.plot(show_walls=False, show_landmarks=False, show_regions=False)
     assert _texts(ax) == set()

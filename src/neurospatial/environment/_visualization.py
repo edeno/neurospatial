@@ -25,7 +25,7 @@ from neurospatial.layout import (
     _plot_binning_field,
     _plot_track_linear,
 )
-from neurospatial.regions import Regions
+from neurospatial.regions import Region, Regions
 from neurospatial.regions.plot import plot_regions
 
 if TYPE_CHECKING:
@@ -156,9 +156,10 @@ def _plot(
     if show_regions and len(regions):
         r_kwargs = regions_plot_kwargs if regions_plot_kwargs is not None else {}
         plot_regions(regions, ax=ax, **r_kwargs)
+        # The renderers fix the limits to the bins; a region drawn past the
+        # bins still belongs in the picture.
+        _widen_to_show(ax, [_region_geometry(region) for region in regions.values()])
     if landmarks:
-        # Last: landmarks widen the final limits to show cues outside the
-        # arena, so they run after regions may have grown autoscaled limits.
         _draw_landmarks(ax, landmarks)
 
     plot_title = labels.name
@@ -232,9 +233,14 @@ def _draw_landmarks(ax: matplotlib.axes.Axes, landmarks: Landmarks) -> None:
         )
     # The renderers fix the limits to the bins; a cue outside the arena
     # still belongs in the picture.
-    bounds = np.array(
-        [shapely.bounds(_landmark_geometry(item)) for item in landmarks.values()]
-    )
+    _widen_to_show(ax, [_landmark_geometry(item) for item in landmarks.values()])
+
+
+def _widen_to_show(
+    ax: matplotlib.axes.Axes, geometries: list[shapely.Geometry]
+) -> None:
+    """Grow the axis limits, never shrink them, so every geometry is visible."""
+    bounds = np.array([shapely.bounds(geometry) for geometry in geometries])
     (x_low, x_high), (y_low, y_high) = ax.get_xlim(), ax.get_ylim()
     margin = 0.05 * max(x_high - x_low, y_high - y_low)
     ax.set_xlim(
@@ -245,6 +251,11 @@ def _draw_landmarks(ax: matplotlib.axes.Axes, landmarks: Landmarks) -> None:
         min(y_low, bounds[:, 1].min() - margin),
         max(y_high, bounds[:, 3].max() + margin),
     )
+
+
+def _region_geometry(region: Region) -> shapely.Geometry:
+    data = region.data
+    return shapely.points(data[:2]) if isinstance(data, np.ndarray) else data
 
 
 def _landmark_geometry(landmark: Landmark) -> shapely.Geometry:
