@@ -28,12 +28,15 @@ Breaking:
 - `plot_regions` returns the `Axes` and keeps axis limits the caller set.
 - `mask_to_region(mask, *, region_name, pixel_to_world=None,
   simplify_tolerance=0.0)` replaces `mask_img=` and `approx_tol_px=`; it
-  traces exact pixel cells, keeps holes and no longer needs OpenCV.
+  traces exact pixel cells (the old default simplified by about 1 px), keeps
+  holes and no longer needs OpenCV.
 - `load_cvat_xml` and `regions_from_cvat` take `image=` (name or id), required
   when the export annotates more than one image.
 - `Region` is unhashable, `n_dims` is a property, and metadata errors are
   `ValueError`. Region and annotation-draft metadata must be standard JSON:
-  string keys, finite numbers; record a missing value as `None`.
+  string keys, finite Python numbers (NumPy scalars such as `np.float64`
+  are refused; convert with `float(...)`); record a missing value as
+  `None`.
 - `update_region` keeps the region's position in the collection (it moved to
   the end), so `env.region_membership()` columns stay put, and accepts a
   metadata-only update.
@@ -52,7 +55,9 @@ Input that now raises (each was silently accepted):
   empty or split into several parts.
 - `with_regions` refuses a region whose `metadata["coord_system"]` differs
   from the environment's `units`, such as pixel annotations on a centimeter
-  environment.
+  environment. `with_metadata(units=...)` and a length-preserving
+  `apply_transform(..., units=...)` refuse to label an environment in units
+  other than a region's recorded ones, since neither converts the region.
 - `points_in_any_region` and `regions_containing_points` refuse NaN or
   infinite positions, which were reported as outside every region, a
   transform output that is not finite `(n, 2)`, and repeated `region_names`.
@@ -63,21 +68,31 @@ Input that now raises (each was silently accepted):
   longer warn-and-skip or crash.
 - `load_cvat_xml` refuses video track exports and files with no shapes
   (both returned empty regions), and raises on malformed shapes instead of
-  skipping them. `plot_regions` refuses unknown `per_region_kwargs` names and
+  skipping them.
+- `mask_to_region` refuses a mask with more than one connected area
+  (pixels touching only at a corner are separate); it kept the largest
+  contour and silently dropped the rest, such as specks in a thresholded or
+  SAM mask. Select the component you want first. `plot_regions` refuses unknown `per_region_kwargs` names and
   point regions that are not 2-D.
 
 Results that change:
 
+- Regions from LabelMe and CVAT are in neurospatial's pixel frame, where
+  pixel `(x, y)` is centred on `(x, y)`, as in video frames, `mask_to_region`
+  and `VideoCalibration`. Both tools put pixel `(c, r)` on `[c, c + 1]`, so
+  their shapes move half a pixel up and left; calibrated regions were half a
+  pixel down and right.
 - CVAT masks are decoded as CVAT writes them, run lengths over the mask's
   own bounding box placed at `left`/`top`; they were read as start/length
   pairs over the whole image and came out as slivers. Rotated CVAT boxes are
   rotated, and ellipses are read.
 - `mask_to_region` covers whole pixel cells (pixel `(x, y)` spans
-  `[x-0.5, x+0.5]`), as the annotation tools do; it traced pixel centres, half
-  a pixel inside the mask, and filled holes.
+  `[x-0.5, x+0.5]`); it traced pixel centres, half a pixel inside the mask,
+  and filled holes. Outlines keep only their corners.
 - `plot_regions` draws polygon holes open whatever their winding, and
-  `env.plot` widens its limits to show regions past the bins.
-- `with_metadata(units=...)` relabels each region's recorded `coord_system`.
+  `env.plot` widens its limits to show the regions it draws past the bins.
+- `with_metadata(units=...)` relabels each region's recorded `coord_system`
+  that matched the old units.
 
 ### Behavior follow-ups: geodesic corners, unreachable samples, undefined correlations
 

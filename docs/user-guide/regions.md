@@ -93,7 +93,9 @@ near_any = points_in_any_region(positions, env.regions, point_radius=3.0)
 ## Regions drawn on a video frame
 
 Regions drawn in LabelMe or CVAT, or traced from a binary mask, start in image
-pixels: x is the column and y the row, increasing downward. The
+pixels: x is the column and y the row, increasing downward, with pixel
+`(x, y)` centred on `(x, y)` as in a video frame array (both tools store
+pixel corners; the readers shift their shapes by half a pixel). The
 [video annotation guide](video-annotation.md) shows the calibrated path,
 `regions_from_labelme(..., calibration=...)` and
 `regions_from_cvat(..., calibration=...)`, which converts pixels to
