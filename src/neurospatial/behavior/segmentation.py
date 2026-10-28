@@ -81,7 +81,12 @@ from scipy.spatial.distance import directed_hausdorff, euclidean
 from scipy.stats import pearsonr
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import DEFAULT_MAX_GAP, observed_runs
+from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
+    as_intervals,
+    observed_runs,
+    times_in_intervals,
+)
 from neurospatial._observation import validate_break_before
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_finite
@@ -146,6 +151,37 @@ def _located(position_bins: NDArray[np.int64], env: Environment) -> NDArray[np.b
     bins = np.asarray(position_bins)
     located: NDArray[np.bool_] = (bins >= 0) & (bins < env.n_bins)
     return located
+
+
+def _event_runs(
+    times: NDArray[np.float64],
+    *,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: NDArray[np.bool_] | None,
+    sample_valid: NDArray[np.bool_],
+) -> list[NDArray[np.intp]]:
+    """Observed runs holding only samples inside the half-open ``epochs``.
+
+    :func:`observed_runs` keeps the sample at an epoch's ``stop``, because the
+    interval that ends there lies inside the epoch. That instant is outside
+    ``[start, stop)``, so an event detector must not report an entry, exit
+    or trial end there: such a run ends at its last sample before ``stop``,
+    as :func:`detect_region_visits` does.
+    """
+    runs = observed_runs(
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        sample_valid=sample_valid,
+    )
+    windows = as_intervals(epochs, name="epochs")
+    if windows is None:
+        return runs
+    inside = times_in_intervals(windows, times)
+    trimmed = [run[inside[run]] for run in runs]
+    return [run for run in trimmed if run.size]
 
 
 def _positive_dt(
@@ -492,8 +528,9 @@ def detect_region_crossings(
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
-        counts only if it lies entirely inside one window. ``None`` (default)
-        means unrestricted.
+        counts only if it lies entirely inside one window, and a sample at a
+        window's ``stop`` is outside it, so no event is reported there.
+        ``None`` (default) means unrestricted.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -576,7 +613,7 @@ def detect_region_crossings(
         break_before, len(times), call="detect_region_crossings"
     )
     results: list[Crossing] = []
-    for run in observed_runs(
+    for run in _event_runs(
         times,
         max_gap=max_gap,
         epochs=epochs,
@@ -705,8 +742,9 @@ def detect_runs_between_regions(
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
-        counts only if it lies entirely inside one window. ``None`` (default)
-        means unrestricted.
+        counts only if it lies entirely inside one window, and a sample at a
+        window's ``stop`` is outside it, so no event is reported there.
+        ``None`` (default) means unrestricted.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -840,7 +878,7 @@ def detect_runs_between_regions(
         break_before, len(times), call="detect_runs_between_regions"
     )
     results: list[Run] = []
-    for run in observed_runs(
+    for run in _event_runs(
         times,
         max_gap=max_gap,
         epochs=epochs,
@@ -1356,8 +1394,9 @@ def detect_laps(
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
-        counts only if it lies entirely inside one window. ``None`` (default)
-        means unrestricted.
+        counts only if it lies entirely inside one window, and a sample at a
+        window's ``stop`` is outside it, so no event is reported there.
+        ``None`` (default) means unrestricted.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -1565,7 +1604,7 @@ def detect_laps(
     position_bins = np.asarray(position_bins, dtype=np.int64)
     times = np.asarray(times, dtype=np.float64)
     breaks = validate_break_before(break_before, len(times), call="detect_laps")
-    runs = observed_runs(
+    runs = _event_runs(
         times,
         max_gap=max_gap,
         epochs=epochs,
@@ -1956,8 +1995,9 @@ def running_direction_labels(
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
-        counts only if it lies entirely inside one window. ``None`` (default)
-        means unrestricted.
+        counts only if it lies entirely inside one window, and a sample at a
+        window's ``stop`` is outside it, so no event is reported there.
+        ``None`` (default) means unrestricted.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2178,8 +2218,9 @@ def segment_trials(
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
-        counts only if it lies entirely inside one window. ``None`` (default)
-        means unrestricted.
+        counts only if it lies entirely inside one window, and a sample at a
+        window's ``stop`` is outside it, so no event is reported there.
+        ``None`` (default) means unrestricted.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2369,7 +2410,7 @@ def segment_trials(
     times = np.asarray(times, dtype=np.float64)
     breaks = validate_break_before(break_before, len(times), call="segment_trials")
     results: list[Trial] = []
-    for run in observed_runs(
+    for run in _event_runs(
         times,
         max_gap=max_gap,
         epochs=epochs,

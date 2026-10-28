@@ -4,7 +4,9 @@ import warnings
 
 import numpy as np
 import pytest
+from shapely.geometry import Point
 
+from neurospatial import Environment, Regions
 from neurospatial.behavior import (
     detect_goal_directed_runs,
     detect_laps,
@@ -33,7 +35,8 @@ def test_no_crossing_reported_across_pause(pause_track):
 
 def test_crossing_epochs_equal_slicing(continuous_pause_track):
     r = continuous_pause_track
-    selected = r.times <= 100
+    # [0, 100) excludes the sample at 100 s, where the target is entered.
+    selected = r.times < 100
     expected = detect_region_crossings(
         r.position_bins[selected], r.times[selected], r.env, region_name="target"
     )
@@ -188,7 +191,10 @@ def test_running_labels_inherit_observed_runs(pause_track):
 @pytest.mark.parametrize("kind", ["trials", "velocity"])
 def test_segment_epochs_equal_slicing(continuous_pause_track, kind):
     r = continuous_pause_track
-    selected = r.times <= 100
+    # epochs=(0, 100) is half-open: no trial event at the 100 s sample, but
+    # the interval ending there is inside the epoch, so a movement epoch can
+    # run up to 100 s.
+    selected = r.times < 100 if kind == "trials" else r.times <= 100
     if kind == "trials":
         function = segment_trials
         data = r.position_bins
@@ -365,3 +371,70 @@ def test_auto_laps_with_missing_template_rows_equal_deleted_rows():
     expected = detect_laps(position_bins[kept], times[kept], env, method="auto")
     assert expected
     assert detect_laps(position_bins, times, env, method="auto") == expected
+
+
+def _corridor_with_wells():
+    from shapely.geometry import box
+
+    xs = np.linspace(0.0, 100.0, 401)
+    env = Environment.from_samples(np.c_[xs, np.zeros_like(xs)], bin_size=2.0)
+    regions = Regions(env.regions.values())
+    regions.add("start", polygon=box(-5.0, -5.0, 5.0, 5.0))  # bins 0-4 cm
+    regions.add("goal", polygon=box(95.0, -5.0, 105.0, 5.0))  # bins 96-100 cm
+    return env.with_regions(regions)
+
+
+def test_no_event_at_an_epoch_stop_sample():
+    """An arrival exactly at an epoch's stop lies outside [start, stop).
+
+    Leave the start well at 1 s and arrive at the goal at 5 s; with
+    epochs=(0, 5) the arrival is not observed, so there is no goal entry,
+    the run and the trial are censored at 4 s, the last sample inside.
+    """
+    env = _corridor_with_wells()
+    x = np.array([0.0, 0.0, 20.0, 50.0, 80.0, 98.0, 98.0])
+    times = np.arange(x.size, dtype=float)
+    bins = env.bin_at(np.c_[x, np.zeros_like(x)])
+    common = {"max_gap": None, "epochs": (0.0, 5.0)}
+
+    assert detect_region_crossings(bins, times, env, region_name="goal", **common) == []
+    (run,) = detect_runs_between_regions(
+        bins, times, env, source="start", target="goal", **common
+    )
+    assert (run.start_time, run.end_time, run.outcome) == (2.0, 4.0, "censored")
+    (trial,) = segment_trials(
+        bins, times, env, start_region="start", end_regions=["goal"], **common
+    )
+    assert (trial.start_time, trial.end_time, trial.outcome) == (1.0, 4.0, "censored")
+
+    # Without the epoch the same arrival is observed at 5 s.
+    (entry,) = detect_region_crossings(
+        bins, times, env, region_name="goal", direction="entry", max_gap=None
+    )
+    assert entry.time == 5.0
+
+
+def test_region_lap_does_not_end_at_an_epoch_stop_sample():
+    """A start-region entry at an epoch's stop does not close a lap."""
+    theta = np.linspace(0.0, 4 * np.pi, 81)  # two laps, 40 samples each
+    positions = np.c_[50 + 30 * np.cos(theta), 50 + 30 * np.sin(theta)]
+    env = Environment.from_samples(positions, bin_size=3.0)
+    regions = Regions(env.regions.values())
+    regions.add("start", polygon=Point(80.0, 50.0).buffer(4.0))
+    env = env.with_regions(regions)
+    bins = env.bin_at(positions)
+    times = np.arange(theta.size, dtype=float)
+    laps = detect_laps(bins, times, env, method="region", start_region="start")
+    entries = sorted({lap.start_time for lap in laps} | {lap.end_time for lap in laps})
+    second_entry = entries[1]
+
+    clipped = detect_laps(
+        bins,
+        times,
+        env,
+        method="region",
+        start_region="start",
+        epochs=(0.0, second_entry),
+    )
+
+    assert clipped == []
