@@ -167,10 +167,13 @@ class TestTrackEnvironments:
         assert length == pytest.approx(20.0 + 30.0 + 20.0)
 
 
+# Serial runs take about 0.45 s and 0.40 s; the budgets leave room for a
+# loaded machine while still catching the per-bin path rebuild this replaced
+# (6 s and 13 s).
 @pytest.mark.wallclock
 @pytest.mark.parametrize(
     ("maze", "budget"),
-    [("make_hampton_court_maze", 0.5), ("make_rat_hexmaze", 1.0)],
+    [("make_hampton_court_maze", 2.0), ("make_rat_hexmaze", 3.0)],
 )
 def test_geodesic_approach_rate_of_a_ten_minute_session_is_fast(maze, budget):
     """One goal, 10 min at 30 Hz: one field per goal, then lookups."""
