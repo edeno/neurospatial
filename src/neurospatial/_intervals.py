@@ -911,6 +911,7 @@ def observed_interval_mask(
         max_gap=max_gap,
         epochs=resolved_epochs,
         break_before=break_before,
+        sample_valid=sample_valid,
         result=result,
     )
     return mask
@@ -927,6 +928,7 @@ def warn_excluded_intervals(
     start_bin_gate: bool = False,
     samples: Literal["positions", "headings"] = "positions",
     break_before: NDArray[np.bool_] | None = None,
+    sample_valid: NDArray[np.bool_] | None = None,
     result: str = "the result is empty or NaN rather than a measurement",
     suppress_hint: str = "",
 ) -> None:
@@ -965,6 +967,10 @@ def warn_excluded_intervals(
         What the start-bin gate bins, so the message names the right input.
     break_before : ndarray of bool, shape (n_samples,), or None
         Declared recording breaks, named when any is set.
+    sample_valid : ndarray of bool, shape (n_samples,), or None
+        False at missing samples, which ``interval_mask`` bridged like
+        deleted rows. When every interval is excluded only because the gaps
+        across missing samples exceed ``max_gap``, the message says so.
     result : str
         What an all-excluded mask leaves, e.g. ``"the rate map is empty"``.
     suppress_hint : str, optional
@@ -1028,6 +1034,22 @@ def warn_excluded_intervals(
         fixes.append(f"{rounded}: {rounded_fix}")
     elif n_long:
         fixes.append("pass max_gap=None to disable gap gating")
+    elif max_gap is not None and sample_valid is not None:
+        start, end, linked = gap_endpoints(sample_valid)
+        bridged = times[end] - times[start]
+        rounding = 8.0 * np.spacing(
+            np.maximum(np.abs(times[start]), np.abs(times[end]))
+        )
+        n_bridged_long = int(np.count_nonzero(linked & (bridged - max_gap > rounding)))
+        if n_bridged_long:
+            fixes.append(
+                f"{n_bridged_long} of {dt.size} sampling intervals lie in gaps "
+                f"across missing samples (non-finite rows) longer than "
+                f"max_gap={max_gap} s; raise max_gap above the longest gap that "
+                "should be bridged (the longest is "
+                f"{float(np.max(bridged[linked])):.4g} s), or pass max_gap=None "
+                "to disable gap gating"
+            )
     if min_speed is not None:
         gates.append(f"min_speed={min_speed}")
         fixes.append(

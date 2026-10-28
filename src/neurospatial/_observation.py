@@ -29,11 +29,11 @@ from neurospatial._intervals import (
     as_intervals,
     gap_endpoints,
     interval_valid_mask,
-    observed_interval_mask,
     ragged_arange,
     run_sample_bounds,
     times_in_intervals,
     validate_max_gap,
+    warn_excluded_intervals,
 )
 from neurospatial._results import ReadOnlyArraysMixin, plain_value, read_only_copy
 from neurospatial._stacklevel import _external_stacklevel
@@ -328,19 +328,10 @@ def resolve_sample_support(
     [ True False False  True]
     """
     resolved_epochs = as_intervals(epochs, name="epochs")
-    if result is None:
-        raw_gates = interval_valid_mask(
-            times, max_gap=max_gap, epochs=resolved_epochs, break_before=break_before
-        )
-    else:
-        raw_gates = observed_interval_mask(
-            times,
-            max_gap=max_gap,
-            epochs=resolved_epochs,
-            break_before=break_before,
-            result=result,
-        )
-    return _support_from_gates(
+    raw_gates = interval_valid_mask(
+        times, max_gap=max_gap, epochs=resolved_epochs, break_before=break_before
+    )
+    support = _support_from_gates(
         times,
         sample_valid,
         raw_gates,
@@ -348,6 +339,20 @@ def resolve_sample_support(
         epochs=resolved_epochs,
         break_before=break_before,
     )
+    if result is not None:
+        # Warn on the usable intervals, after missing samples are bridged: a
+        # gap across missing samples can exceed max_gap although every
+        # sampling interval passes it.
+        warn_excluded_intervals(
+            times,
+            support.interval_mask,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            break_before=break_before,
+            sample_valid=sample_valid,
+            result=result,
+        )
+    return support
 
 
 def sample_feature(
@@ -840,10 +845,10 @@ def validated_signals(
     sample_valid = np.isfinite(sig)
     if flags is not None:
         sample_valid = sample_valid & flags
-    raw_gates = observed_interval_mask(
-        t, max_gap=max_gap, epochs=epochs, break_before=breaks, result=result
-    )
     resolved_epochs = as_intervals(epochs, name="epochs")
+    raw_gates = interval_valid_mask(
+        t, max_gap=max_gap, epochs=resolved_epochs, break_before=breaks
+    )
     supports = tuple(
         _support_from_gates(
             t,
@@ -854,5 +859,16 @@ def validated_signals(
             break_before=breaks,
         )
         for f in range(sig.shape[1])
+    )
+    # One warning for the table, when no feature keeps a usable interval.
+    usable = np.any([support.interval_mask for support in supports], axis=0)
+    warn_excluded_intervals(
+        t,
+        usable,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        break_before=breaks,
+        sample_valid=np.asarray(sample_valid.any(axis=1)),
+        result=result,
     )
     return t, sig, supports
