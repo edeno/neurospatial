@@ -55,7 +55,6 @@ Neurospatial provides a comprehensive suite of tools for analyzing animal trajec
    - [Dynamic Time Warping](#dynamic-time-warping)
 6. [Goal-Directed Behavior](#goal-directed-behavior)
    - [Directedness Score](#directedness-score)
-   - [Replay Analysis](#replay-analysis)
 7. [Complete Workflows](#complete-workflows)
    - [Circular Track Lap-by-Lap Analysis](#circular-track-lap-by-lap-analysis)
    - [T-maze Trial Analysis](#t-maze-trial-analysis)
@@ -622,10 +621,11 @@ before filtering visits, since omitted visit identifiers are not bridged.
 Entry-to-entry `duration` includes source dwell time. Use
 `detect_runs_between_regions` below for source-exit to target-entry intervals.
 
-Invalid bins (`-1` or outside the environment's bin range), recording gaps,
-declared breaks (`break_before`, see [Joined Recordings](#joined-recordings))
-and excluded epochs break observation continuity; they do not fabricate exits or
-entries. Valid bins outside all selected regions are observed travel. Singleton
+A sample outside the environment (bin `-1`) is missing: it is skipped as if
+its row were deleted, and the gap around it is bridged when the valid samples on
+either side are no more than `max_gap` apart. Only a longer gap, a declared break
+(`break_before`, see [Joined Recordings](#joined-recordings)) or an epoch edge
+breaks observation continuity; none of them fabricates an exit or an entry. Valid bins outside all selected regions are observed travel. Singleton
 observations are retained as zero-duration, doubly censored visits. Empty event
 lists remain empty; check for an empty list before grouping a DataFrame made
 from it.
@@ -646,16 +646,16 @@ Detect runs from a source region to a target region, tracking success and failur
 ```python
 from neurospatial.behavior.segmentation import detect_runs_between_regions
 
-# Detect runs from start to goal
+# Detect runs from start to goal (bin indices, from env.bin_at(positions))
 runs = detect_runs_between_regions(
-    positions,
+    env.bin_at(positions),
     times,
     env,
     source="start",
     target="goal",
     min_duration=1.0,
     max_duration=10.0,
-    min_speed=5.0,  # Optional speed filter
+    min_speed=5.0,  # optional: drop runs whose mean speed is below 5 cm/s
 )
 
 # Success rate among runs whose result was observed: a censored run was
@@ -687,7 +687,8 @@ print(f"Mean duration (successful): {np.mean([r.end_time - r.start_time for r in
 
 ### Velocity-Based Segmentation
 
-Segment trajectory into movement vs rest periods based on velocity.
+Find movement epochs, stretches where the smoothed speed stays above a
+threshold, as an `(n_epochs, 2)` array of `[start, stop)` times.
 
 ```python
 from neurospatial.behavior.segmentation import segment_by_velocity
@@ -958,9 +959,6 @@ cw_laps = detect_laps(
 - **Lap-by-lap learning**: Performance improvement over laps
 - **Strategy consistency**: Stereotypy of paths
 - **Trajectory variability**: Spatial consistency analysis
-- **Hippocampal replay**: Lap templates for sequence detection
-
-**References**: Barnes et al. (1997), Dupret et al. (2010)
 
 ---
 
@@ -1137,7 +1135,6 @@ where $A$ and $B$ are the visited bins and $|\cdot|$ is their area
 **Range**: [0, 1] where 1.0 = identical, 0.0 = disjoint
 
 **Applications**:
-- **Replay analysis**: Compare awake trajectory to sleep reactivation
 - **Learning**: Increasing similarity to optimal path
 - **Spatial overlap**: Shared territory between animals
 
@@ -1225,8 +1222,6 @@ similarity = trajectory_similarity(
 
 **Complexity**: O(n₁ × n₂) time and space
 
-**Reference**: Davidson et al. (2009)
-
 ---
 
 ## Goal-Directed Behavior
@@ -1253,7 +1248,7 @@ for start, stop in goal_runs:
     print(f"Goal-directed run: {start:.1f}-{stop:.1f} s ({stop - start:.1f} s)")
 ```
 
-**Directedness Formula** (Pfeiffer & Foster, 2013):
+**Directedness Formula**:
 
 $$
 \text{directedness} = \frac{d_{\text{start}} - d_{\text{end}}}{\text{path length}}
@@ -1268,43 +1263,6 @@ $$
 - directedness = 1.0: Perfectly efficient (straight line)
 - directedness = 0.0: No net progress toward goal
 - directedness < 0.0: Moving away from goal
-
----
-
-### Replay Analysis
-
-Detect hippocampal replay sequences that match awake trajectories.
-
-```python
-# Awake exploration
-awake_trajectory = position_bins[:1000]
-
-# Sleep/rest epochs (detected separately)
-sleep_epochs = [(1000, 1200), (1500, 1800), (2000, 2300)]
-
-# Detect replays matching awake trajectory
-replays = []
-for start, end in sleep_epochs:
-    sleep_segment = position_bins[start:end]
-    similarity = trajectory_similarity(
-        awake_trajectory,
-        sleep_segment,
-        env,
-        method="jaccard"
-    )
-    if similarity > 0.5:  # Threshold for significant replay
-        replays.append((start, end, similarity))
-
-print(f"Detected {len(replays)} replay events")
-```
-
-**Use Cases**:
-- **Memory consolidation**: Sleep replay of learned routes
-- **Planning**: Forward replay toward goals
-- **Reverse replay**: Backward sequences from goal
-- **Preplay**: Replay before first experience (rodents)
-
-**References**: Pfeiffer & Foster (2013), Davidson et al. (2009), Wilson & McNaughton (1993)
 
 ---
 
@@ -1494,7 +1452,7 @@ if transition_idx:
 
 ### Choosing Similarity Metrics
 
-- **Jaccard**: Spatial overlap, order-independent → Replay analysis, territory overlap
+- **Jaccard**: Spatial overlap, order-independent → Territory overlap, route coverage
 - **Correlation**: Sequential patterns → Route learning, temporal matching
 - **Hausdorff**: Maximum deviation → Path consistency, outlier detection
 - **DTW**: Timing-invariant alignment → Same path at different speeds
@@ -1531,18 +1489,9 @@ if transition_idx:
 - Traja: [https://github.com/traja-team/traja](https://github.com/traja-team/traja)
 - Sims, D. W., et al. (2014). "Hierarchical random walks in trace fossils and the origin of optimal search behavior." *PNAS*, 111(30), 11073-11078.
 
-**Lap Detection**:
-- Barnes, C. A., et al. (1997). "Comparison of spatial and temporal characteristics of neuronal activity in sequential stages of hippocampal processing." *Progress in Brain Research*, 83, 287-300.
-- Dupret, D., et al. (2010). "The reorganization and reactivation of hippocampal maps predict spatial memory performance." *Nature Neuroscience*, 13(8), 995-1002.
-
 **Trial Segmentation**:
 - Olton, D. S., & Samuelson, R. J. (1976). "Remembrance of places passed: Spatial memory in rats." *Journal of Experimental Psychology: Animal Behavior Processes*, 2(2), 97-116.
 - Wood, E. R., et al. (2000). "Hippocampal neurons encode information about different types of memory episodes occurring in the same location." *Neuron*, 27(3), 623-633.
-
-**Trajectory Similarity & Replay**:
-- Pfeiffer, B. E., & Foster, D. J. (2013). "Hippocampal place-cell sequences depict future paths to remembered goals." *Nature*, 497(7447), 74-79.
-- Davidson, T. J., Kloosterman, F., & Wilson, M. A. (2009). "Hippocampal replay of extended experience." *Neuron*, 63(4), 497-507.
-- Wilson, M. A., & McNaughton, B. L. (1993). "Dynamics of the hippocampal ensemble code for space." *Science*, 261(5124), 1055-1058.
 
 ---
 
