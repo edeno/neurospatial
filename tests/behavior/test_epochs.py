@@ -130,6 +130,15 @@ def test_in_epochs_single_interval_half_open() -> None:
     np.testing.assert_array_equal(both, [False, True, True, True, False])
 
 
+def test_restrict_default_excludes_the_stop() -> None:
+    """restrict keeps start <= t < stop by default; closed='both' adds the stop."""
+    times = np.array([0.0, 1.0, 2.0, 3.0])
+    np.testing.assert_array_equal(restrict(times, epochs=(1.0, 3.0)), [1.0, 2.0])
+    np.testing.assert_array_equal(
+        restrict(times, epochs=(1.0, 3.0), closed="both"), [1.0, 2.0, 3.0]
+    )
+
+
 def test_adjacent_windows_split_points_without_sharing_any() -> None:
     """A spike on the boundary of two adjacent windows lands in exactly one."""
     spikes = np.array([0.5, 1.0, 1.5, 2.0])

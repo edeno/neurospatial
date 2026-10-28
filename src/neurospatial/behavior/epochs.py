@@ -258,7 +258,9 @@ def restrict(
         ``closed`` controls point membership in the normalized windows.
     closed : {"both", "left", "right", "neither"}, optional
         Endpoint inclusivity, forwarded to :func:`in_epochs`. Default
-        ``"both"``; analysis windows are half-open, see :func:`in_epochs`.
+        ``"left"``: ``start <= t < stop``, the half-open windows of every
+        analysis ``epochs=`` argument. ``"both"`` matches pynapple's
+        inclusive ``restrict``.
 
     Returns
     -------
@@ -360,7 +362,9 @@ def restrict_spike_trains(
         ``closed`` controls point membership in the normalized windows.
     closed : {"both", "left", "right", "neither"}, optional
         Endpoint inclusivity, forwarded to :func:`in_epochs`. Default
-        ``"both"``; analysis windows are half-open, see :func:`in_epochs`.
+        ``"left"``: ``start <= t < stop``, the half-open windows of every
+        analysis ``epochs=`` argument. ``"both"`` matches pynapple's
+        inclusive ``restrict``.
 
     Returns
     -------
