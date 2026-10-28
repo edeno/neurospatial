@@ -11,8 +11,6 @@ resolved through ``env.landmarks``, and record the names in their results.
 
 from __future__ import annotations
 
-import copy
-import json
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
@@ -23,9 +21,10 @@ from numpy.typing import ArrayLike, NDArray
 from shapely.geometry import LineString, Polygon, mapping, shape
 
 from neurospatial._exceptions import _format_error
-from neurospatial.regions import _freeze_metadata, _thaw_metadata
+from neurospatial.regions import _thaw_metadata
 from neurospatial.regions.core import (
     _check_planar_geometry,
+    _owned_metadata,
     _owned_point,
     _require_name,
 )
@@ -81,16 +80,11 @@ class Landmark:
 
     def __post_init__(self) -> None:
         _require_name(self.name, record="Landmark", example="cue_card")
-        try:
-            thawed = _thaw_metadata(self.metadata)
-            json.dumps(thawed)
-        except (TypeError, ValueError, RecursionError) as exc:
-            raise TypeError(
-                f"Landmark {self.name!r} metadata must be JSON-serializable."
-            ) from exc
-        object.__setattr__(self, "metadata", _freeze_metadata(copy.deepcopy(thawed)))
-        data: NDArray[np.float64] | LineString | Polygon
         owner = f"Landmark {self.name!r}"
+        object.__setattr__(
+            self, "metadata", _owned_metadata(self.metadata, owner=owner)
+        )
+        data: NDArray[np.float64] | LineString | Polygon
         if self.kind == "point":
             data = _owned_point(
                 self.data,

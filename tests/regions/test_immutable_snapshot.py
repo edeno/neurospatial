@@ -68,20 +68,67 @@ def test_nested_metadata_and_export_ownership(method):
     np.testing.assert_array_equal(restored.data, [1, 2])
 
 
-@pytest.mark.parametrize("value", [np.array([1, 2]), {1, 2}, np.int64(1), object()])
-def test_non_json_metadata_is_rejected_at_construction(value):
-    with pytest.raises(TypeError, match=r"metadata.*JSON"):
+@pytest.mark.parametrize(
+    ("value", "kind"),
+    [
+        (np.array([1, 2]), "ndarray"),
+        ({1, 2}, "set"),
+        (np.int64(1), "int64"),
+        (object(), "object"),
+    ],
+)
+def test_non_json_metadata_names_the_region_path_and_conversion(value, kind):
+    with pytest.raises(ValueError, match="JSON cannot store") as raised:
         Region("goal", "point", [1, 2], metadata={"nested": [value]})
+    message = str(raised.value)
+    assert "Region 'goal' metadata value metadata['nested'][0]" in message
+    assert kind in message
+    assert "int(...), float(...) or str(...)" in message
 
 
-def test_json_validation_preserves_accepted_scalars_and_distinct_mapping_keys():
-    metadata = {"number": np.float64(1.25), "nan": float("nan"), 1: "int", "1": "str"}
+@pytest.mark.parametrize(
+    "metadata",
+    [{1: "int"}, {1: "int", "1": "str"}, {"nested": {2.5: "float"}}],
+    ids=["int-key", "colliding-keys", "nested-float-key"],
+)
+def test_non_string_keys_are_refused_because_json_would_rename_them(metadata):
+    # json.dumps turns 1 into "1": {1: "x"} would reload as {"1": "x"} and
+    # {1: ..., "1": ...} would lose an entry.
+    with pytest.raises(ValueError, match="not a str") as raised:
+        Region("goal", "point", [1, 2], metadata=metadata)
+    assert "Region 'goal' metadata key" in str(raised.value)
+    assert "str(" in str(raised.value)
+
+
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
+def test_non_finite_metadata_numbers_are_refused(value):
+    with pytest.raises(ValueError, match="must be finite") as raised:
+        Region("goal", "point", [1, 2], metadata={"limits": [0.0, value]})
+    assert "metadata['limits'][1]" in str(raised.value)
+    assert "None" in str(raised.value)
+
+
+@pytest.mark.parametrize("metadata", [None, ["color", "red"], "red"])
+def test_metadata_must_be_a_mapping(metadata):
+    with pytest.raises(TypeError, match="Region 'goal' metadata must be a mapping"):
+        Region("goal", "point", [1, 2], metadata=metadata)
+
+
+def test_accepted_metadata_round_trips_through_standard_json():
+    metadata = {"number": np.float64(1.25), "flag": True, "missing": None}
     region = Region("goal", "point", [1, 2], metadata=metadata)
     assert region.metadata["number"] == 1.25
-    assert np.isnan(region.metadata["nan"])
-    assert region.metadata[1] == "int"
-    assert region.metadata["1"] == "str"
-    json.dumps(region.to_dict())
+    reloaded = Region.from_dict(
+        json.loads(json.dumps(region.to_dict(), allow_nan=False))
+    )
+    assert reloaded == region
+
+
+def test_landmark_metadata_follows_the_region_rules():
+    from neurospatial.landmarks import Landmark
+
+    with pytest.raises(ValueError, match="Landmark 'cue' metadata key 1"):
+        Landmark("cue", "point", [0.0, 0.0], {1: "x"})
 
 
 def test_nested_tuple_inside_list_metadata_is_frozen():
@@ -93,10 +140,10 @@ def test_nested_tuple_inside_list_metadata_is_frozen():
         region.metadata["nested"][0][0]["label"] = ("changed",)
 
 
-def test_circular_metadata_is_rejected_as_non_json():
+def test_circular_metadata_is_refused():
     metadata = {}
     metadata["self"] = metadata
-    with pytest.raises(TypeError, match=r"metadata.*JSON"):
+    with pytest.raises(ValueError, match="Region 'goal' metadata contains itself"):
         Region("goal", "point", [1, 2], metadata=metadata)
 
 

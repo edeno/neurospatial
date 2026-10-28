@@ -7,7 +7,6 @@ Pure data layer for *continuous* regions of interest (ROIs).
 from __future__ import annotations
 
 import copy
-import json
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -95,27 +94,80 @@ def _thaw_metadata(value: Any, *, _active: set[int] | None = None) -> Any:
         active.remove(identity)
 
 
-def _require_json_metadata(value: Any, *, allow_nan: bool) -> None:
+def _require_json_metadata(
+    value: Any, *, allow_nan: bool, owner: str | None = None, _path: str = "metadata"
+) -> None:
     """Reject metadata that JSON would coerce or cannot store.
 
     Mapping keys must be strings at every level and leaves must be JSON
     scalars. Non-finite floats are rejected unless ``allow_nan``; Python's JSON
-    reader restores ``NaN`` and ``Infinity`` exactly.
+    reader restores ``NaN`` and ``Infinity`` exactly. ``owner``, such as
+    ``"Region 'goal'"``, names the record in the error.
     """
+    subject = "Metadata" if owner is None else f"{owner} metadata"
     if isinstance(value, Mapping):
         for key, item in value.items():
             if not isinstance(key, str):
                 raise ValueError(
-                    "Metadata keys must be strings at every nesting level."
+                    _format_error(
+                        f"{subject} key {key!r} in {_path} is a "
+                        f"{type(key).__name__}, not a str.",
+                        why=f"Why: JSON keys are strings, so saving would turn "
+                        f"it into {str(key)!r}, which can collide with an "
+                        "existing key.",
+                        fix=f"use the string key str({key!r})",
+                    )
                 )
-            _require_json_metadata(item, allow_nan=allow_nan)
+            _require_json_metadata(
+                item, allow_nan=allow_nan, owner=owner, _path=f"{_path}[{key!r}]"
+            )
     elif isinstance(value, (list, tuple)):
-        for item in value:
-            _require_json_metadata(item, allow_nan=allow_nan)
+        for index, item in enumerate(value):
+            _require_json_metadata(
+                item, allow_nan=allow_nan, owner=owner, _path=f"{_path}[{index}]"
+            )
     elif value is not None and not isinstance(value, (str, bool, int, float)):
-        raise ValueError("Metadata must contain only JSON values.")
+        raise ValueError(
+            _format_error(
+                f"{subject} value {_path} is a {type(value).__name__}, which "
+                "JSON cannot store.",
+                fix="convert it with int(...), float(...) or str(...), or a "
+                "NumPy array with .tolist()",
+            )
+        )
     elif not allow_nan and isinstance(value, float) and not np.isfinite(value):
-        raise ValueError("Metadata numbers must be finite.")
+        raise ValueError(
+            _format_error(
+                f"{subject} value {_path} is {value!r}, but metadata numbers "
+                "must be finite.",
+                why="Why: standard JSON has no NaN or infinity, so other tools "
+                "cannot read the saved file.",
+                fix="store a missing value as None",
+            )
+        )
+
+
+def _owned_metadata(metadata: object, *, owner: str) -> Mapping[str, Any]:
+    """Return a recursively read-only copy of standard-JSON ``metadata``."""
+    if not isinstance(metadata, Mapping):
+        raise TypeError(
+            _format_error(
+                f"{owner} metadata must be a mapping, got {type(metadata).__name__}.",
+                fix='pass a dict of JSON values, such as {"role": "reward"}',
+            )
+        )
+    try:
+        # Thawing copies every container, so the record owns its metadata.
+        thawed = _thaw_metadata(metadata)
+    except ValueError as exc:
+        raise ValueError(
+            _format_error(
+                f"{owner} metadata contains itself.",
+                fix="pass metadata without circular references",
+            )
+        ) from exc
+    _require_json_metadata(thawed, allow_nan=False, owner=owner)
+    return cast("Mapping[str, Any]", _freeze_metadata(thawed))
 
 
 # ---------------------------------------------------------------------
@@ -285,20 +337,10 @@ class Region:
     # -----------------------------------------------------------------
     def __post_init__(self) -> None:
         _require_name(self.name, record="Region", example="reward_zone")
-        # Thaw first (the input may already be a read-only proxy from another
-        # Region, and mappingproxy cannot be deep-copied), then deep copy so the
-        # Region owns the data, then recursively wrap it in read-only proxies.
-        # This isolates the Region from external mutation of the source dict
-        # *and* forbids mutating the stored metadata (at any nesting depth)
-        # after construction.
-        try:
-            thawed = _thaw_metadata(self.metadata)
-            json.dumps(thawed)
-        except (TypeError, ValueError, RecursionError) as exc:
-            raise TypeError("Region metadata must be JSON-serializable.") from exc
-        object.__setattr__(self, "metadata", _freeze_metadata(copy.deepcopy(thawed)))
-
         owner = f"Region {self.name!r}"
+        object.__setattr__(
+            self, "metadata", _owned_metadata(self.metadata, owner=owner)
+        )
         if self.kind == "point":
             point = _owned_point(
                 self.data, owner=owner, shape_kinds={"Polygon": "polygon"}
