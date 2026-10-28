@@ -391,7 +391,7 @@ print(f"Turn variance: {turn_variance:.3f}")
 
 ### Step Lengths
 
-Step lengths are the distances between consecutive positions. Supports both Euclidean (straight-line) and geodesic (graph-based) distances.
+Step lengths are the distances between consecutive positions. Supports both Euclidean (straight-line) and geodesic (shortest path inside the environment) distances.
 
 ```python
 from neurospatial.behavior.trajectory import compute_step_lengths
@@ -1395,9 +1395,11 @@ for trial in trials[:5]:  # First 5 trials
 Detect behavioral shift from exploration to exploitation.
 
 ```python
-# Compute MSD in sliding windows using continuous positions
-window_size = 100  # samples
-hop_size = 20
+# Compute MSD in sliding 20 s windows using continuous positions. Each window
+# must be longer than max_tau, the longest lag the MSD is measured at.
+dt = np.median(np.diff(times))
+window_size = int(round(20.0 / dt))  # samples in 20 s
+hop_size = max(1, window_size // 5)
 alphas = []
 
 for i in range(0, len(positions) - window_size, hop_size):
@@ -1423,7 +1425,7 @@ for i in range(0, len(positions) - window_size, hop_size):
 threshold = 1.2  # Superdiffusive
 transition_idx = next((i for i, a in enumerate(alphas) if a > threshold), None)
 
-if transition_idx:
+if transition_idx is not None:
     transition_time = times[transition_idx * hop_size]
     print(f"Exploration → goal-directed transition at t={transition_time:.1f}s")
 
