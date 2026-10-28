@@ -3117,13 +3117,14 @@ def angular_efficiency(
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> float:
-    """Compute how directly each step heads toward the goal.
+    """Compute how directly the path heads toward the goal.
 
     For every observed step, the angle between the step's direction and the
     direction from the step's start to the goal is measured; the result is
-    ``1 - mean(angle) / pi``. A run straight toward the goal scores 1, a run
-    straight away scores 0, and steps perpendicular to the goal direction
-    score 0.5.
+    ``1 - sum(length * angle) / (pi * sum(length))``, the mean angle per unit
+    of distance traveled. A run straight toward the goal scores 1, a run
+    straight away scores 0, and a run perpendicular to the goal direction
+    scores 0.5.
 
     Parameters
     ----------
@@ -3169,6 +3170,13 @@ def angular_efficiency(
     only a longer gap, an ``epochs`` edge or a declared break leaves the step
     out. A step of zero length has no direction and is left out, as is a
     step that starts at the goal (no goal direction).
+
+    Each step's angle counts in proportion to its length, so the result
+    does not depend on the sampling rate along a smooth path, and a pause
+    adds little: a short jittery step weighs little. Tracking jitter still
+    adds path in random directions, as it adds length to
+    :func:`traveled_path_length`, so a long pause with jittery positions
+    pulls the result toward 0.5; smooth noisy positions first.
 
     The angle between step ``s`` and goal direction ``g`` is computed as
     ``2 * arctan2(|u - v|, |u + v|)`` with unit vectors ``u = s / |s|`` and
@@ -3238,7 +3246,7 @@ def _angular_efficiency(
     *,
     call: str,
 ) -> float:
-    """``1 - mean(angle) / pi`` over steps with a defined goal-relative angle.
+    """``1 - sum(length * angle) / (pi * sum(length))`` over steps with an angle.
 
     Parameters
     ----------
@@ -3260,7 +3268,9 @@ def _angular_efficiency(
     angle = 2.0 * np.arctan2(
         np.linalg.norm(u - v, axis=1), np.linalg.norm(u + v, axis=1)
     )
-    return float(1.0 - np.mean(angle / np.pi))
+    # Mean angle per unit of distance traveled.
+    weight = step_norm[defined]
+    return float(1.0 - np.sum(weight * angle) / (np.pi * np.sum(weight)))
 
 
 def subgoal_efficiency(

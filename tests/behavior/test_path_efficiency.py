@@ -599,15 +599,34 @@ class TestAngularEfficiency:
         eff = angular_efficiency(times, positions, np.array([0.0, 5.0]))
         assert eff == pytest.approx(0.5, abs=1e-15)
 
-    def test_mean_over_steps(self):
-        """One step toward (angle 0) and one at 90 degrees (pi/2) give 0.75."""
+    def test_angles_are_weighted_by_step_length(self):
+        """A 10 cm step toward (angle 0) and a 1 cm step at pi/2.
+
+        Per unit of distance: 1 - (1 * pi/2) / (pi * 11) = 1 - 1/22.
+        """
         from neurospatial.behavior.navigation import angular_efficiency
 
         times = np.array([0.0, 0.1, 0.2])
         # Goal at (1, 10): from (1, 0) it is due North, the second step East.
         positions = np.array([[1.0, -10.0], [1.0, 0.0], [2.0, 0.0]])
         eff = angular_efficiency(times, positions, np.array([1.0, 10.0]))
-        assert eff == pytest.approx(0.75, abs=1e-15)
+        assert eff == pytest.approx(1.0 - 1.0 / 22.0, abs=1e-15)
+
+    def test_a_short_wiggle_after_a_run_weighs_little(self):
+        """100 cm toward the goal, then ten 0.1 cm steps across its direction.
+
+        The wiggle is 1 cm of 101 cm at pi/2: 1 - 0.5 / 101. Counting steps
+        equally it would be 1 - 0.5 * 10 / 30.
+        """
+        from neurospatial.behavior.navigation import angular_efficiency
+
+        run = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
+        wiggle = np.column_stack([np.full(10, 100.0), 0.1 * (np.arange(1, 11) % 2)])
+        positions = np.vstack([run, wiggle])
+        eff = angular_efficiency(
+            np.arange(len(positions)) / 10, positions, np.array([1e7, 0.0])
+        )
+        assert eff == pytest.approx(1.0 - 0.5 / 101.0, abs=1e-6)
 
     def test_independent_of_goal_distance_along_heading(self):
         """The old turn-angle score could not tell these goals apart."""
@@ -642,8 +661,10 @@ class TestAngularEfficiency:
         positions = np.array([[0.0, 0.0], [1.0, 0.0], [-20.0, 0.0], [-19.0, 0.0]])
         goal = np.array([100.0, 0.0])
         assert angular_efficiency(times, positions, goal) == 1.0
+        # Bridged: 1 cm toward, 21 cm straight away (pi), 1 cm toward, so
+        # 1 - 21 / 23 per unit of distance.
         assert angular_efficiency(times, positions, goal, max_gap=None) == (
-            pytest.approx(1.0 - (1 / 3))
+            pytest.approx(2.0 / 23.0)
         )
 
     def test_lost_frame_is_bridged_like_a_deleted_row(self):
