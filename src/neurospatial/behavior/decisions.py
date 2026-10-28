@@ -86,7 +86,14 @@ from neurospatial._observation import (
     validated_signals,
 )
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_speed
+from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
+from neurospatial.behavior._decision_windows import (
+    first_entry,
+    pre_decision_window,
+    speed_stats,
+    validated_entry_time,
+    validated_window_duration,
+)
 from neurospatial.behavior._kinematics import validated_min_speed
 from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.behavior._region_bins import region_representative_bin
@@ -497,22 +504,12 @@ def decision_region_entry_time(
         position_bins, env, call="decision_region_entry_time", times=times
     )
     times = _validated_signal_times(times, call="decision_region_entry_time")
-    entry = _first_entry(
+    entry = first_entry(
         position_bins, env.bins_in_region(region), np.ones(times.shape, dtype=bool)
     )
     if entry is None:
         raise ValueError(_never_enters_message(region, epochs=None))
     return float(times[entry])
-
-
-def _first_entry(
-    position_bins: NDArray[np.int64],
-    region_bins: NDArray[np.int_],
-    observed: NDArray[np.bool_],
-) -> int | None:
-    """Index of the first observed sample inside the region; None if none."""
-    hits = np.flatnonzero(observed & np.isin(position_bins, region_bins))
-    return int(hits[0]) if hits.size else None
 
 
 def _never_enters_message(region: str, *, epochs: Any) -> str:
@@ -635,72 +632,16 @@ def extract_pre_decision_window(
         break_before=break_before,
         result="no pre-decision window was observed",
     )
-    window_duration = _validated_window_duration(
+    window_duration = validated_window_duration(
         window_duration, name="window_duration", call="extract_pre_decision_window"
     )
-    entry_time = _validated_entry_time(
+    entry_time = validated_entry_time(
         times, entry_time, call="extract_pre_decision_window"
     )
-    window = _pre_decision_window(
+    window = pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
     return times[window], positions[window]
-
-
-def _validated_window_duration(
-    window_duration: float, *, name: str, call: str
-) -> float:
-    """A finite, positive pre-decision window length in seconds."""
-    duration = float(window_duration)
-    if not (np.isfinite(duration) and duration > 0):
-        raise ValueError(
-            f"{call}() needs a finite, positive {name} in seconds; got "
-            f"{window_duration!r}.\n"
-            "Why: the pre-decision window is the stretch of time before the "
-            "decision-region entry; an empty or reversed window measures "
-            "nothing.\n"
-            f"Fix: pass {name} as the window length in seconds, e.g. {name}=1.0."
-        )
-    return duration
-
-
-def _validated_entry_time(
-    times: NDArray[np.float64], entry_time: float, *, call: str
-) -> float:
-    """A finite entry time inside the recording, ``[times[0], times[-1]]``."""
-    entry = float(entry_time)
-    if not (np.isfinite(entry) and times[0] <= entry <= times[-1]):
-        raise ValueError(
-            f"{call}() got entry_time={entry_time!r}, outside the recording "
-            f"[{times[0]:g}, {times[-1]:g}] s.\n"
-            "Why: the pre-decision window ends at the entry time, so an entry "
-            "the recording does not cover has no window.\n"
-            "Fix: pass the decision-region entry in seconds on the same clock "
-            "as times (a millisecond entry_time with times in seconds lands "
-            "past the recording), e.g. from decision_region_entry_time()."
-        )
-    return entry
-
-
-def _pre_decision_window(
-    times: NDArray[np.float64],
-    interval_gates: NDArray[np.bool_],
-    entry_time: float,
-    window_duration: float,
-) -> slice:
-    """Sample slice of the pre-decision window; empty if entry is in no segment.
-
-    Segments are runs of ``interval_gates`` (``max_gap``, ``epochs`` and
-    declared breaks), whatever the validity of their samples.
-    """
-    for first, last in run_sample_bounds(interval_gates):
-        if times[first] <= entry_time <= times[last]:
-            window_start = max(entry_time - window_duration, times[first])
-            segment = times[first : last + 1]
-            start = int(first + np.searchsorted(segment, window_start, side="left"))
-            stop = int(first + np.searchsorted(segment, entry_time, side="left"))
-            return slice(start, stop)
-    return slice(0, 0)
 
 
 def pre_decision_heading_stats(
@@ -950,21 +891,7 @@ def pre_decision_speed_stats(
         break_before=break_before,
         result="the speed statistics are NaN",
     )
-    return _speed_stats(times, positions, support.interval_mask)
-
-
-def _speed_stats(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    interval_mask: NDArray[np.bool_],
-) -> tuple[float, float]:
-    """Mean and minimum smoothed speed over usable intervals; NaN without any."""
-    if not interval_mask.any():
-        return np.nan, np.nan
-    speeds = smoothed_speed(
-        times, positions, interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
-    )
-    return float(np.nanmean(speeds)), float(np.nanmin(speeds))
+    return speed_stats(times, positions, support.interval_mask)
 
 
 def compute_pre_decision_metrics(
@@ -1070,10 +997,10 @@ def compute_pre_decision_metrics(
         columns="xy",
     )
     min_speed = validated_min_speed(min_speed, call="compute_pre_decision_metrics")
-    window_duration = _validated_window_duration(
+    window_duration = validated_window_duration(
         window_duration, name="window_duration", call="compute_pre_decision_metrics"
     )
-    entry_time = _validated_entry_time(
+    entry_time = validated_entry_time(
         times, entry_time, call="compute_pre_decision_metrics"
     )
     return _pre_decision_metrics(
@@ -1096,7 +1023,7 @@ def _pre_decision_metrics(
     min_speed: float,
 ) -> PreDecisionMetrics:
     """Speed and heading metrics of the pre-decision window under ``support``."""
-    window = _pre_decision_window(
+    window = pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
     window_times = times[window]
@@ -1118,7 +1045,7 @@ def _pre_decision_metrics(
     mean_dir, circ_var, mrl = _heading_stats(
         window_times, window_positions, window_mask, min_speed=min_speed
     )
-    mean_speed, min_observed_speed = _speed_stats(
+    mean_speed, min_observed_speed = speed_stats(
         window_times, window_positions, window_mask
     )
     return PreDecisionMetrics(
@@ -1713,7 +1640,7 @@ def compute_decision_analysis(
         result="the pre-decision metrics are NaN and no boundary crossing was observed",
         columns="xy",
     )
-    pre_window = _validated_window_duration(
+    pre_window = validated_window_duration(
         pre_window, name="pre_window", call="compute_decision_analysis"
     )
 
@@ -1748,7 +1675,7 @@ def compute_decision_analysis(
 
     # The entry is the first decision-region sample inside the epochs.
     in_epochs = support.sample_in_epochs
-    entry = _first_entry(position_bins, env.bins_in_region(decision_region), in_epochs)
+    entry = first_entry(position_bins, env.bins_in_region(decision_region), in_epochs)
     if entry is None:
         raise ValueError(_never_enters_message(decision_region, epochs=epochs))
     entry_time = float(times[entry])

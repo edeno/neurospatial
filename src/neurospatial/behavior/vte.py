@@ -1061,12 +1061,12 @@ def compute_vte_trial(
     >>> result.mean_speed, result.head_sweep_magnitude
     (nan, nan)
     """
-    from neurospatial.behavior._kinematics import validated_min_speed
-    from neurospatial.behavior.decisions import (
-        _pre_decision_window,
-        _validated_entry_time,
-        _validated_window_duration,
+    from neurospatial.behavior._decision_windows import (
+        pre_decision_window,
+        validated_entry_time,
+        validated_window_duration,
     )
+    from neurospatial.behavior._kinematics import validated_min_speed
 
     times, positions, support = validated_observations(
         times,
@@ -1078,12 +1078,12 @@ def compute_vte_trial(
         result="no VTE metric was observed",
         columns="xy",
     )
-    window_duration = _validated_window_duration(
+    window_duration = validated_window_duration(
         window_duration, name="window_duration", call="compute_vte_trial"
     )
-    entry_time = _validated_entry_time(times, entry_time, call="compute_vte_trial")
+    entry_time = validated_entry_time(times, entry_time, call="compute_vte_trial")
     min_speed = validated_min_speed(min_speed, call="compute_vte_trial")
-    window = _pre_decision_window(
+    window = pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
     head_sweep, mean_spd, min_spd = _window_metrics(
@@ -1116,7 +1116,7 @@ def _window_metrics(
     The window lies inside one gate segment, so its usable intervals are the
     support's usable intervals between its first and last sample.
     """
-    from neurospatial.behavior.decisions import _speed_stats
+    from neurospatial.behavior._decision_windows import speed_stats
 
     window_times = times[window]
     window_positions = positions[window]
@@ -1124,7 +1124,7 @@ def _window_metrics(
     head_sweep = _head_sweep(
         window_times, window_positions, window_mask, min_speed=min_speed
     )
-    mean_speed, min_speed_value = _speed_stats(
+    mean_speed, min_speed_value = speed_stats(
         window_times, window_positions, window_mask
     )
     return head_sweep, mean_speed, min_speed_value
@@ -1324,10 +1324,10 @@ def compute_vte_session(
         operation="compute_vte_session()",
         argument="decision_region",
     )
+    from neurospatial.behavior._decision_windows import validated_window_duration
     from neurospatial.behavior._kinematics import resolve_min_speed
-    from neurospatial.behavior.decisions import _validated_window_duration
 
-    window_duration = _validated_window_duration(
+    window_duration = validated_window_duration(
         window_duration, name="window_duration", call="compute_vte_session"
     )
     alpha = _validated_alpha(alpha, call="compute_vte_session")
@@ -1416,7 +1416,7 @@ def _measure_trial(
     min_speed: float,
 ) -> _TrialMeasurement:
     """Raw metrics of one trial, or the status saying why it has none."""
-    from neurospatial.behavior.decisions import _first_entry, _pre_decision_window
+    from neurospatial.behavior._decision_windows import first_entry, pre_decision_window
 
     span = f"Trial {index} spanning [{trial.start_time:.3f}, {trial.end_time:.3f}] s"
     # The trial's samples, start_time <= t <= end_time, are contiguous.
@@ -1434,7 +1434,7 @@ def _measure_trial(
         return _TrialMeasurement(status="no_samples")
     trial_times = times[first:stop]
     # The entry is the trial's first decision-region sample inside epochs.
-    entry = _first_entry(
+    entry = first_entry(
         env.bin_at(positions[first:stop]), region_bins, in_epochs[first:stop]
     )
     if entry is None:
@@ -1451,7 +1451,7 @@ def _measure_trial(
     # The pre-decision window comes from this trial's samples only, so it
     # stops at the trial start; the trial's interval gates are the session's
     # gates between its first and last sample.
-    in_trial = _pre_decision_window(
+    in_trial = pre_decision_window(
         trial_times,
         support.interval_gates[first : stop - 1],
         entry_time,
