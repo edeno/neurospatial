@@ -848,6 +848,30 @@ class TestMeanSquareDisplacementUniformSampling:
         expected = self._pair_average(positions, group, 120)
         np.testing.assert_allclose(result.msd, expected, rtol=1e-10)
 
+    @pytest.mark.parametrize("seed", range(4))
+    def test_value_at_a_lag_does_not_depend_on_max_tau(self, seed):
+        times, positions = self._walk(2)
+        rng = np.random.default_rng(seed)
+        break_before = np.zeros(self.N, dtype=bool)
+        break_before[rng.choice(np.arange(1, self.N), seed, replace=False)] = True
+        epochs = np.array([[100.0, 180.0], [190.0, 250.0]]) if seed % 2 else None
+
+        short, long = (
+            mean_square_displacement(
+                times,
+                positions,
+                max_tau=max_tau,
+                epochs=epochs,
+                break_before=break_before,
+            )
+            for max_tau in (10.0, 140.0)
+        )
+
+        # Bitwise: a longer max_tau only appends lags.
+        n_lags = short.msd.size
+        np.testing.assert_array_equal(short.msd, long.msd[:n_lags])
+        np.testing.assert_array_equal(short.lags, long.lags[:n_lags])
+
 
 class TestMeanSquareDisplacementLags:
     """Each reported lag is the time separation of the pairs it averages."""

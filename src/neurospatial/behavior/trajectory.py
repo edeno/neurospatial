@@ -2432,14 +2432,20 @@ def _uniform_euclidean_msd(
     # Per lag k = 1..n_lags: pair count, summed squared displacement and
     # summed drift difference, each a sum over the pairs (i, i + k).
     totals = np.zeros((3, n_lags))
-    # Segments of similar length share one batched FFT, zero-padded to the
-    # longest of them plus its largest lag so correlations do not wrap.
-    size_class = np.ceil(np.log2(lengths)).astype(int)
-    for size in np.unique(size_class):
-        in_class = size_class == size
+    # Each segment is zero-padded to an FFT length set by its own length L,
+    # at least 2 L - 1 so no lag wraps. Its spectra then depend on its own
+    # samples alone, not on max_tau or on the segments batched with it, and
+    # the value at a lag is the same whatever max_tau. Segments of one FFT
+    # length share a batched transform.
+    unique_lengths, length_index = np.unique(lengths, return_inverse=True)
+    fft_lengths = np.array(
+        [next_fast_len(2 * int(length) - 1, real=True) for length in unique_lengths],
+        dtype=np.intp,
+    )[length_index]
+    for n_fft in np.unique(fft_lengths).tolist():
+        in_class = fft_lengths == n_fft
         width = int(lengths[in_class].max())
         max_lag = min(n_lags, width - 1)
-        n_fft = next_fast_len(width + max_lag, real=True)
         offsets = np.arange(width)
         inside = offsets < lengths[in_class, None]
         rows = np.where(inside, starts[in_class, None] + offsets, 0)
