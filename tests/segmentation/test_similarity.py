@@ -448,6 +448,48 @@ class TestGoalDirectedApproachBouts:
         )
 
 
+class TestGoalDirectedRunsUnreachableSamples:
+    """A sample that cannot reach the goal splits the recording like a gap.
+
+    Ten 1-unit bins in a row with the goal in the last one, plus a two-bin
+    island not connected to them. A walk along the row toward the goal is
+    one straight approach; an island sample before or between such walks
+    must not change how the walks are scored.
+    """
+
+    @staticmethod
+    def _env():
+        from shapely.geometry import box
+
+        row = np.c_[np.arange(10) + 0.5, np.full(10, 0.5)]
+        island = np.array([[30.5, 0.5], [31.5, 0.5]])
+        env = Environment.from_samples(np.vstack([row, island]), bin_size=1.0)
+        regions = Regions(env.regions.values())
+        regions.add("goal", polygon=box(9, 0, 10, 1))
+        env = env.with_regions(regions)
+        walk = env.bin_at(np.c_[np.arange(10) + 0.5, np.full(10, 0.5)])
+        island_bin = env.bin_at(island[:1])
+        return env, walk, island_bin
+
+    def _runs(self, bins, env):
+        times = np.arange(bins.size) * 0.1
+        return detect_goal_directed_runs(
+            bins, times, env, goal_region="goal", min_progress=1.0
+        )
+
+    def test_island_sample_before_the_approach(self):
+        env, walk, island_bin = self._env()
+        np.testing.assert_allclose(self._runs(walk, env), [[0.0, 0.9]])
+        np.testing.assert_allclose(
+            self._runs(np.r_[island_bin, walk], env), [[0.1, 1.0]]
+        )
+
+    def test_island_sample_between_two_approaches(self):
+        env, walk, island_bin = self._env()
+        bins = np.r_[walk, island_bin, walk]
+        np.testing.assert_allclose(self._runs(bins, env), [[0.0, 0.9], [1.1, 2.0]])
+
+
 class TestSimilarityIntegration:
     """Integration tests combining similarity functions."""
 

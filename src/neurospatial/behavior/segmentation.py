@@ -3184,7 +3184,10 @@ def detect_goal_directed_runs(
     its row were deleted, and the gap around it is bridged when the valid
     samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
     ``break_before`` splits the recording; each resulting stretch is analyzed
-    on its own, so no segment spans a pause.
+    on its own, so no segment spans a pause. A sample in a part of the
+    environment that is not connected to the goal has no distance to it and
+    splits the recording the same way: no approach includes it, and the
+    approaches before and after it are scored on their own.
 
     **Approaches.** Within each recording, the distance from each sample's
     bin to the goal is followed through time. An approach starts at the
@@ -3368,23 +3371,24 @@ def _detect_goal_directed_runs_contiguous(
     # be jitter across a bin edge; anything larger is movement. The factor
     # allows for rounding in the summed edge lengths.
     tolerance = float(edges.max()) * (1 + 1e-9) if edges.nnz else 0.0
-    # Both bins of every step summed below lie in the goal's connected
-    # component, so every summed step is finite.
-    path = np.r_[
-        0.0, np.cumsum(paths.between_bins(position_bins[:-1], position_bins[1:]))
-    ]
     rows: list[tuple[float, float]] = []
     # Samples that cannot reach the goal split the recording.
     finite = np.r_[False, np.isfinite(distances), False]
     starts = np.flatnonzero(~finite[:-1] & finite[1:])
     stops = np.flatnonzero(finite[:-1] & ~finite[1:])
     for first, stop in zip(starts, stops, strict=True):
+        # Path length accumulates within the stretch only: both bins of each
+        # step reach the goal, so they lie in its connected component and the
+        # step is finite. A step to an unreachable bin would add inf.
+        stretch = position_bins[first:stop]
+        path = np.r_[0.0, np.cumsum(paths.between_bins(stretch[:-1], stretch[1:]))]
         for departure, arrival in _approach_bouts(distances[first:stop], tolerance):
-            departure, arrival = first + departure, first + arrival
-            progress = distances[departure] - distances[arrival]
+            progress = distances[first + departure] - distances[first + arrival]
             directedness = progress / (path[arrival] - path[departure])
             if directedness >= directedness_threshold and progress >= min_progress:
-                rows.append((float(times[departure]), float(times[arrival])))
+                rows.append(
+                    (float(times[first + departure]), float(times[first + arrival]))
+                )
     return rows
 
 
