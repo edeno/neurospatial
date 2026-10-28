@@ -44,6 +44,7 @@ from neurospatial._validation import (
     validate_times_positions,
 )
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
+from neurospatial.behavior._metric import metric_paths, require_metric
 from neurospatial.behavior.epochs import _mask_in_intervals
 
 if TYPE_CHECKING:
@@ -96,14 +97,7 @@ class MSDResult(ReadOnlyArraysMixin, ResultMixin):
                     fix="sort the lags and their msd values together.",
                 )
             )
-        if self.metric not in ("euclidean", "geodesic"):
-            raise ValueError(
-                _format_error(
-                    f"MSDResult got metric={self.metric!r}.",
-                    why="displacements are Euclidean or geodesic distances.",
-                    fix="pass metric='euclidean' or metric='geodesic'.",
-                )
-            )
+        require_metric(self.metric, where="MSDResult")
         object.__setattr__(self, "lags", lags)
         object.__setattr__(self, "msd", msd)
         self._own_arrays()
@@ -1615,33 +1609,13 @@ def compute_step_lengths(
     if len(positions) == 0:
         raise empty_samples_error("compute_step_lengths", ("positions",))
 
-    if metric not in ("euclidean", "geodesic"):
-        raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
-
-    if metric == "geodesic" and env is None:
-        raise ValueError(
-            "metric='geodesic' requires env parameter. "
-            "Use metric='euclidean' if env is not available."
+    paths = metric_paths(metric, env, call="compute_step_lengths")
+    if paths is None:
+        step_lengths: NDArray[np.float64] = np.linalg.norm(
+            np.diff(positions, axis=0), axis=1
         )
-
-    n_steps = len(positions) - 1
-    step_lengths = np.zeros(n_steps, dtype=np.float64)
-
-    if metric == "euclidean":
-        # Vectorized Euclidean distance computation
-        displacements = np.diff(positions, axis=0)
-        step_lengths = np.linalg.norm(displacements, axis=1)
-
-    else:  # metric == "geodesic"
-        # Map positions to bins
-        assert env is not None  # Already checked above, but satisfy type checker
-        from neurospatial.behavior._environment_paths import environment_paths
-
-        step_lengths = environment_paths(env, call="compute_step_lengths").between(
-            positions[:-1], positions[1:]
-        )
-
-    return step_lengths
+        return step_lengths
+    return paths.between(positions[:-1], positions[1:])
 
 
 def _observed_cumulative(
@@ -2265,20 +2239,7 @@ def mean_square_displacement(
         break_before=break_before,
         result="no displacement pair was observed",
     )
-    if metric not in ("euclidean", "geodesic"):
-        raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
-
-    if metric == "geodesic" and env is None:
-        raise ValueError(
-            "metric='geodesic' requires env parameter. "
-            "Use metric='euclidean' if env is not available."
-        )
-
-    if metric == "geodesic":
-        assert env is not None  # Already checked above
-        from neurospatial.behavior._environment_paths import environment_paths
-
-        paths = environment_paths(env, call="mean_square_displacement")
+    paths = metric_paths(metric, env, call="mean_square_displacement")
 
     if max_tau is not None and not (np.isfinite(max_tau) and max_tau > 0):
         raise ValueError(
@@ -2336,10 +2297,9 @@ def mean_square_displacement(
     # lag (k * dt exactly for uniform sampling); nominal where none exist.
     lag_values = tau_values.copy()
 
-    if metric == "geodesic":
-        # Locate the positions and grow the field of every bin they visit
-        # once; each lag is then a lookup.
-        pairs = paths.pairwise(positions)
+    # Locate the positions and grow the field of every bin they visit once;
+    # each geodesic lag is then a lookup.
+    pairs = None if paths is None else paths.pairwise(positions)
 
     sample_indices = np.arange(n_samples)
     finite_positions = support.sample_valid
@@ -2368,7 +2328,7 @@ def mean_square_displacement(
             & (segment == segment[future_idx])
         )
 
-        if metric == "euclidean":
+        if pairs is None:
             displacements = positions[future_idx[valid_pairs]] - positions[valid_pairs]
             sq_dists = np.sum(displacements**2, axis=1)
         else:

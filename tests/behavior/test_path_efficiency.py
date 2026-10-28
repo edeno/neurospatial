@@ -72,7 +72,9 @@ class TestTraveledPathLength:
 
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
 
-        with pytest.raises(ValueError, match="env parameter is required"):
+        with pytest.raises(
+            ValueError, match=r"traveled_path_length\(metric='geodesic'\) needs env="
+        ):
             traveled_path_length(np.arange(21) * 0.1, positions, metric="geodesic")
 
     def test_unknown_metric_raises(self):

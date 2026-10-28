@@ -283,6 +283,24 @@ class TestDistanceToReward:
         with pytest.raises(ValueError, match=r"positions and times.*same length"):
             distance_to_reward(env, times, positions, reward_times)
 
+    @pytest.mark.parametrize("metric", ["Euclidean", "bogus"])
+    def test_unknown_metric_raises(self, simple_grid_env, metric):
+        """An unrecognized metric used to run the geodesic branch silently."""
+        from neurospatial.behavior.navigation import distance_to_reward
+
+        positions = np.array([[0.0, 0.0], [5.0, 5.0]])
+        with pytest.raises(
+            ValueError,
+            match=rf"distance_to_reward\(\) got metric='{metric}'; it must be",
+        ):
+            distance_to_reward(
+                simple_grid_env,
+                np.array([0.0, 1.0]),
+                positions,
+                np.array([0.5]),
+                metric=metric,
+            )
+
     def test_reward_positions_times_mismatch_raises(self, simple_grid_env):
         """Test mismatched reward_positions and reward_times raises ValueError."""
         from neurospatial.behavior.navigation import distance_to_reward

@@ -124,6 +124,7 @@ from neurospatial._intervals import (
     times_in_intervals,
 )
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.behavior._metric import metric_paths, require_metric
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.geometry import require_cartesian
 
@@ -176,17 +177,6 @@ __all__ = [  # noqa: RUF022
 def _result_error(result: str, what: str, *, why: str, fix: str) -> ValueError:
     """A ValueError for an invalid result field, naming the result class."""
     return ValueError(_format_error(f"{result}: {what}", why=why, fix=fix))
-
-
-def _require_result_metric(result: str, metric: object) -> None:
-    """Raise unless ``metric`` is ``"euclidean"`` or ``"geodesic"``."""
-    if metric not in ("euclidean", "geodesic"):
-        raise _result_error(
-            result,
-            f"metric={metric!r} is not 'euclidean' or 'geodesic'.",
-            why="the result records which distance its lengths were measured with.",
-            fix="pass metric='euclidean' or metric='geodesic'.",
-        )
 
 
 def _require_length(result: str, name: str, value: float) -> float:
@@ -259,7 +249,7 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     def __post_init__(self) -> None:
         """Validate the fields, derive the efficiency and own the positions."""
         name = "PathEfficiencyResult"
-        _require_result_metric(name, self.metric)
+        require_metric(self.metric, where=name)
         traveled = _require_length(name, "traveled_length", self.traveled_length)
         shortest = _require_length(name, "shortest_length", self.shortest_length)
         start = np.asarray(self.start_position, dtype=float)
@@ -480,7 +470,7 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     def __post_init__(self) -> None:
         """Validate the fields and own a read-only copy of the goal position."""
         name = "GoalDirectedMetrics"
-        _require_result_metric(name, self.metric)
+        require_metric(self.metric, where=name)
         for length in (
             "min_distance_to_goal",
             "goal_distance_at_start",
@@ -758,17 +748,18 @@ def _bin_distances(
     bins: NDArray[np.intp],
     targets: NDArray[np.intp],
     *,
-    metric: str,
+    paths: EnvironmentPaths | None,
     call: str,
 ) -> NDArray[np.float64]:
-    """Distance from each bin center to its target bin center under ``metric``.
+    """Distance from each bin center to its target bin center.
 
     Parameters
     ----------
     env : Environment
     bins, targets : ndarray of int, shape (n,)
         Bin indices; a pair with a ``-1`` gives NaN.
-    metric : {"euclidean", "geodesic"}
+    paths : EnvironmentPaths or None
+        Geodesic engine (``metric_paths``), or None for straight lines.
     call : str
         Public function name, used in messages.
 
@@ -782,10 +773,8 @@ def _bin_distances(
     CartesianOnlyError
         If ``env`` is an egocentric polar environment.
     """
-    if metric == "geodesic":
-        from neurospatial.behavior._environment_paths import environment_paths
-
-        return environment_paths(env, call=call).between_bins(bins, targets)
+    if paths is not None:
+        return paths.between_bins(bins, targets)
     require_cartesian(
         env.coordinate_system,
         f"{call}(metric='euclidean')",
@@ -908,7 +897,6 @@ def path_progress(
     trials_to_region_arrays : Helper to construct start/goal arrays from trials
     distance_to_region : Distance to target region over time
     """
-    _require_path_metric(metric, call="path_progress")
     from neurospatial.environment import _validate_sample_targets
 
     position_bins = _validated_position_bins(
@@ -930,14 +918,15 @@ def path_progress(
         )
         for bins, argument in ((start_bins, "start_bins"), (goal_bins, "goal_bins"))
     )
+    paths = metric_paths(metric, env, call="path_progress")
 
     # Distance from the start, grown from each start bin, and to the goal,
     # grown from each goal bin.
     distances_from_start = _bin_distances(
-        env, position_bins, start_bins, metric=metric, call="path_progress"
+        env, position_bins, start_bins, paths=paths, call="path_progress"
     )
     distances_to_goal = _bin_distances(
-        env, position_bins, goal_bins, metric=metric, call="path_progress"
+        env, position_bins, goal_bins, paths=paths, call="path_progress"
     )
 
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -1037,7 +1026,6 @@ def distance_to_region(
     distance_to_reward : Distance to the reward location at each sample
     neurospatial.ops.nearest_boundary : Exact distance and direction to walls
     """
-    _require_path_metric(metric, call="distance_to_region")
     from neurospatial.environment import _validate_sample_targets
 
     position_bins = _validated_position_bins(
@@ -1051,12 +1039,12 @@ def distance_to_region(
         operation="distance_to_region()",
         argument="target_bins",
     )
-
+    paths = metric_paths(metric, env, call="distance_to_region")
     return _bin_distances(
         env,
         position_bins,
         np.broadcast_to(targets if per_sample else targets[0], position_bins.shape),
-        metric=metric,
+        paths=paths,
         call="distance_to_region",
     )
 
@@ -1160,6 +1148,7 @@ def distance_to_reward(
         (no ``reward_positions`` given) or ``break_before`` is given.
         If ``max_gap`` is not positive, or ``epochs`` or ``break_before`` is
         malformed.
+        If ``metric`` is not ``'geodesic'`` or ``'euclidean'``.
 
     Warns
     -----
@@ -1265,6 +1254,7 @@ def distance_to_reward(
         "in the environment's bins.",
         fix="use the allocentric environment the positions were recorded in",
     )
+    paths = metric_paths(metric, env, call="distance_to_reward")
 
     # A non-finite time silently corrupts interpolation and searchsorted
     # ordering; a NaN position is a missing sample and gives NaN distance.
@@ -1425,7 +1415,7 @@ def distance_to_reward(
     target_bins = sorted_reward_bins[relevant_reward_idx]
 
     distances = np.full(n_samples, np.nan, dtype=np.float64)
-    if metric == "euclidean":
+    if paths is None:
         # The exact straight-line distance between the position and the
         # reward location, not between their bin centers.
         distances = np.linalg.norm(
@@ -1434,9 +1424,6 @@ def distance_to_reward(
     else:
         # The shortest path inside the environment from each position to
         # its reward's location, one call per reward.
-        from neurospatial.behavior._environment_paths import environment_paths
-
-        paths = environment_paths(env, call="distance_to_reward")
         usable = ~no_reward & (target_bins >= 0) & (position_bins >= 0)
         for reward in np.unique(relevant_reward_idx[usable]):
             mask = usable & (relevant_reward_idx == reward)
@@ -1771,7 +1758,7 @@ def distance_to_boundary(
     )
 
     # Input validation
-    _require_path_metric(metric, call="distance_to_boundary")
+    paths = metric_paths(metric, env, call="distance_to_boundary")
     positions = np.asarray(positions, dtype=np.float64)
     n_samples = len(positions)
 
@@ -1815,12 +1802,8 @@ def distance_to_boundary(
         )
 
     boundary_bins = np.unique(np.asarray(boundary_bins, dtype=np.intp))
-    if metric == "geodesic":
-        from neurospatial.behavior._environment_paths import environment_paths
-
-        return environment_paths(env, call="distance_to_boundary").from_bins_at(
-            boundary_bins, positions
-        )
+    if paths is not None:
+        return paths.from_bins_at(boundary_bins, positions)
 
     from scipy.spatial import cKDTree
 
@@ -2709,40 +2692,12 @@ def heading_direction_labels(
 # =============================================================================
 
 
-def _require_path_metric(metric: str, *, call: str) -> None:
-    """Raise unless ``metric`` is a path-length metric.
-
-    Parameters
-    ----------
-    metric : str
-    call : str
-        Name of the public function, for the error message.
-    """
-    if metric not in ("euclidean", "geodesic"):
-        raise ValueError(
-            _format_error(
-                f"{call}() got metric={metric!r}; it must be "
-                "'euclidean' or 'geodesic'.",
-                why=(
-                    "distances are measured either along straight lines or along "
-                    "the shortest path inside the environment."
-                ),
-                fix=(
-                    "use metric='euclidean' for straight-line distances, or "
-                    "metric='geodesic' with env= to respect barriers."
-                ),
-            )
-        )
-
-
 def _observed_path_length(
     positions: NDArray[np.float64],
     sample_valid: NDArray[np.bool_],
     interval_mask: NDArray[np.bool_],
     *,
-    metric: DistanceMetric,
-    env: Environment | None,
-    call: str,
+    paths: EnvironmentPaths | None,
 ) -> tuple[float, bool]:
     """Path length over usable intervals, and whether every interval counted.
 
@@ -2753,11 +2708,8 @@ def _observed_path_length(
         ``ObservationSupport.sample_valid`` of the same samples.
     interval_mask : ndarray of bool, shape (n_samples - 1,)
         ``ObservationSupport.interval_mask`` of the same samples.
-    metric : {"euclidean", "geodesic"}
-    env : Environment or None
-        Required for ``metric="geodesic"``.
-    call : str
-        Public function name, used in messages.
+    paths : EnvironmentPaths or None
+        Geodesic engine (``metric_paths``), or None for straight steps.
 
     Returns
     -------
@@ -2774,18 +2726,11 @@ def _observed_path_length(
     # One step per usable gap, from the valid sample before it to the one
     # ending it; only usable steps are measured.
     starts, ends = _observed_steps(positions, sample_valid, interval_mask)
-    if metric == "euclidean":
-        steps = np.linalg.norm(ends - starts, axis=1)
-    else:
-        if env is None:
-            raise ValueError(
-                "env parameter is required when metric='geodesic'. "
-                "Provide the Environment instance, or use metric='euclidean' "
-                "for straight-line distances."
-            )
-        from neurospatial.behavior._environment_paths import environment_paths
-
-        steps = environment_paths(env, call=call).between(starts, ends)
+    steps = (
+        np.linalg.norm(ends - starts, axis=1)
+        if paths is None
+        else paths.between(starts, ends)
+    )
     counted = ~np.isnan(steps)
     observed = np.flatnonzero(sample_valid)
     span = (
@@ -2900,13 +2845,7 @@ def traveled_path_length(
     """
     from neurospatial._observation import validated_observations
 
-    _require_path_metric(metric, call="traveled_path_length")
-    if metric == "geodesic" and env is None:
-        raise ValueError(
-            "env parameter is required when metric='geodesic'. "
-            "Provide the Environment instance, or use metric='euclidean' "
-            "for straight-line distances."
-        )
+    paths = metric_paths(metric, env, call="traveled_path_length")
 
     _, positions_arr, support = validated_observations(
         times,
@@ -2921,9 +2860,7 @@ def traveled_path_length(
         positions_arr,
         support.sample_valid,
         support.interval_mask,
-        metric=metric,
-        env=env,
-        call="traveled_path_length",
+        paths=paths,
     )
     return length
 
@@ -2996,7 +2933,7 @@ def shortest_path_length(
     >>> shortest_path_length(arena, np.array([10.0, 10.0]), np.array([40.0, 50.0]))
     50.0
     """
-    _require_path_metric(metric, call="shortest_path_length")
+    paths = metric_paths(metric, env, call="shortest_path_length")
     start = np.asarray(start, dtype=float)
     if start.ndim != 1:
         raise ValueError(
@@ -3009,12 +2946,9 @@ def shortest_path_length(
         )
     goal = _validated_goal(goal, start.size, call="shortest_path_length")
 
-    if metric == "euclidean":
+    if paths is None:
         return float(np.linalg.norm(goal - start))
 
-    from neurospatial.behavior._environment_paths import environment_paths
-
-    paths = environment_paths(env, call="shortest_path_length")
     _require_inside(paths, {"start": start, "goal": goal}, call="shortest_path_length")
     return float(paths.to_point(start[None, :], goal)[0])
 
@@ -3225,6 +3159,7 @@ def angular_efficiency(
     """
     from neurospatial._observation import validated_observations
 
+    paths = metric_paths(metric, env, call="angular_efficiency")
     times_arr, positions_arr, support = validated_observations(
         times,
         positions,
@@ -3238,7 +3173,7 @@ def angular_efficiency(
         times_arr, positions_arr, support.sample_valid, support.interval_mask
     )
     return _angular_efficiency(
-        starts, steps, goal, metric=metric, env=env, call="angular_efficiency"
+        starts, steps, goal, paths=paths, call="angular_efficiency"
     )
 
 
@@ -3389,8 +3324,7 @@ def _angular_efficiency(
     step: NDArray[np.float64],
     goal: ArrayLike,
     *,
-    metric: DistanceMetric,
-    env: Environment | None,
+    paths: EnvironmentPaths | None,
     call: str,
 ) -> float:
     """``1 - sum(length * angle) / (pi * sum(length))`` over steps with an angle.
@@ -3400,19 +3334,17 @@ def _angular_efficiency(
     starts, step : ndarray, shape (n_steps, n_dims)
         Step start positions and (smoothed) displacements.
     goal : array-like, shape (n_dims,)
-    metric : {"euclidean", "geodesic"}
-        Shortest path whose first direction is the goal direction.
-    env : Environment or None
-        Required when ``metric="geodesic"``.
+    paths : EnvironmentPaths or None
+        Geodesic engine (``metric_paths``), whose shortest path's first
+        direction is the goal direction, or None for the straight line.
     call : str
         Public function name, used in messages.
     """
-    _require_path_metric(metric, call=call)
     goal_arr = _validated_goal(goal, starts.shape[1], call=call)
-    if metric == "euclidean":
+    if paths is None:
         to_goal = goal_arr[None, :] - starts
     else:
-        paths = _geodesic_paths(env, goal_arr, call=call)
+        _require_inside(paths, {"goal": goal_arr}, call=call)
         to_goal = paths.directions(starts, goal_arr)
     step_norm = np.linalg.norm(step, axis=1)
     goal_norm = np.linalg.norm(to_goal, axis=1)
@@ -3540,7 +3472,7 @@ def subgoal_efficiency(
     from neurospatial._stacklevel import _external_stacklevel
 
     call = "subgoal_efficiency"
-    _require_path_metric(metric, call=call)
+    paths = metric_paths(metric, env, call=call)
     times_arr, positions_arr, support = validated_observations(
         times,
         positions,
@@ -3573,9 +3505,7 @@ def subgoal_efficiency(
     segment_results = []
     start: int | None = None
     for index, subgoal in enumerate(subgoal_arr):
-        distances = _goal_distances(
-            positions_arr, subgoal, metric=metric, env=env, call=call
-        )
+        distances = _goal_distances(positions_arr, subgoal, paths=paths, call=call)
         rows = np.flatnonzero(measured & ~np.isnan(distances))
         if start is None:
             if not rows.size:
@@ -3615,9 +3545,7 @@ def subgoal_efficiency(
             positions_arr[segment],
             support.sample_valid[segment],
             support.interval_mask[start:arrival],
-            metric=metric,
-            env=env,
-            call=call,
+            paths=paths,
         )
         segment_results.append(
             PathEfficiencyResult(
@@ -3633,8 +3561,7 @@ def subgoal_efficiency(
                         smoothed=smoothed[segment],
                     ),
                     subgoal,
-                    metric=metric,
-                    env=env,
+                    paths=paths,
                     call=call,
                 ),
                 start_position=positions_arr[start],
@@ -3785,7 +3712,7 @@ def compute_path_efficiency(
     """
     from neurospatial._observation import validated_observations
 
-    _require_path_metric(metric, call="compute_path_efficiency")
+    paths = metric_paths(metric, env, call="compute_path_efficiency")
     times_arr, positions_arr, support = validated_observations(
         times,
         positions,
@@ -3803,17 +3730,14 @@ def compute_path_efficiency(
         positions_arr,
         support.sample_valid,
         support.interval_mask,
-        metric=metric,
-        env=env,
-        call="compute_path_efficiency",
+        paths=paths,
     )
     ang_eff = _angular_efficiency(
         *_smoothed_steps(
             times_arr, positions_arr, support.sample_valid, support.interval_mask
         ),
         goal,
-        metric=metric,
-        env=env,
+        paths=paths,
         call="compute_path_efficiency",
     )
     # Missing rows before the first or after the last observed sample are
@@ -4376,6 +4300,7 @@ def approach_rate(
     """
     from neurospatial._observation import validated_observations
 
+    paths = metric_paths(metric, env, call="approach_rate")
     times, positions, support = validated_observations(
         times,
         positions,
@@ -4385,55 +4310,7 @@ def approach_rate(
         break_before=break_before,
         result="every approach rate is NaN",
     )
-    return _approach_rate(
-        times,
-        positions,
-        goal,
-        support,
-        metric=metric,
-        env=env,
-        call="approach_rate",
-    )
-
-
-def _approach_rate(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    goal: NDArray[np.float64],
-    support: ObservationSupport,
-    *,
-    metric: DistanceMetric,
-    env: Environment | None,
-    call: str,
-) -> NDArray[np.float64]:
-    """Rate of distance change toward the goal over each usable interval.
-
-    No observation validation or warning: ``support`` is already resolved.
-
-    Parameters
-    ----------
-    times : ndarray, shape (n_samples,)
-        Validated, strictly increasing timestamps in seconds.
-    positions : ndarray, shape (n_samples, n_dims)
-        Validated positions; NaN rows are missing.
-    goal : ndarray, shape (n_dims,)
-        Goal position.
-    support : ObservationSupport
-        Usable intervals of ``(times, positions)``.
-    metric : {"euclidean", "geodesic"}
-        Distance metric; geodesic needs ``env``.
-    env : Environment or None
-        Required when ``metric="geodesic"``.
-    call : str
-        Public function name, used in messages.
-
-    Returns
-    -------
-    ndarray, shape (n_samples,)
-        Distance change per second over the interval ending at each sample;
-        NaN at the first sample and where that interval is not usable.
-    """
-    distances = _goal_distances(positions, goal, metric=metric, env=env, call=call)
+    distances = _goal_distances(positions, goal, paths=paths, call="approach_rate")
     return _distance_rates(times, distances, support)
 
 
@@ -4464,23 +4341,20 @@ def _goal_distances(
     positions: NDArray[np.float64],
     goal: ArrayLike,
     *,
-    metric: str,
-    env: Environment | None,
+    paths: EnvironmentPaths | None,
     call: str,
 ) -> NDArray[np.float64]:
-    """Distance from each position to the goal under ``metric``.
+    """Distance from each position to the goal.
 
     Parameters
     ----------
     positions : ndarray, shape (n_samples, n_dims)
         NaN rows are missing.
     goal : array-like, shape (n_dims,)
-    metric : {"euclidean", "geodesic"}
-        ``"geodesic"`` is the length of the shortest path inside the
-        environment from the position itself (not its bin center), as in
-        :func:`shortest_path_length`.
-    env : Environment or None
-        Required when ``metric="geodesic"``.
+    paths : EnvironmentPaths or None
+        Geodesic engine (``metric_paths``), measuring the shortest path inside
+        the environment from the position itself (not its bin center), as in
+        :func:`shortest_path_length`; None for the straight line.
     call : str
         Public function name, used in messages.
 
@@ -4494,48 +4368,15 @@ def _goal_distances(
     Raises
     ------
     ValueError
-        If ``metric`` is not recognized, ``goal`` has the wrong shape or a
-        non-finite coordinate, or (geodesic) ``env`` is None or the goal is
-        outside the environment.
-    CartesianOnlyError
-        For ``metric="geodesic"`` on an egocentric polar environment.
+        If ``goal`` has the wrong shape or a non-finite coordinate, or
+        (geodesic) the goal is outside the environment.
     """
-    _require_path_metric(metric, call=call)
     goal_arr = _validated_goal(goal, positions.shape[1], call=call)
-    if metric == "euclidean":
+    if paths is None:
         distances: NDArray[np.float64] = np.linalg.norm(goal_arr - positions, axis=1)
         return distances
-    return _geodesic_paths(env, goal_arr, call=call).to_point(positions, goal_arr)
-
-
-def _geodesic_paths(
-    env: Environment | None, goal: NDArray[np.float64], *, call: str
-) -> EnvironmentPaths:
-    """The environment's shortest-path engine, with ``goal`` checked inside.
-
-    Raises
-    ------
-    ValueError
-        If ``env`` is None or ``goal`` is outside the environment.
-    CartesianOnlyError
-        If ``env`` is an egocentric polar environment.
-    """
-    if env is None:
-        raise ValueError(
-            _format_error(
-                f"{call}(metric='geodesic') needs env=.",
-                why="the geodesic distance is a path inside the environment.",
-                fix=(
-                    "pass the Environment the positions were recorded in, or use "
-                    "metric='euclidean' for straight-line distances."
-                ),
-            )
-        )
-    from neurospatial.behavior._environment_paths import environment_paths
-
-    paths = environment_paths(env, call=call)
-    _require_inside(paths, {"goal": goal}, call=call)
-    return paths
+    _require_inside(paths, {"goal": goal_arr}, call=call)
+    return paths.to_point(positions, goal_arr)
 
 
 def compute_goal_directed_metrics(
@@ -4676,6 +4517,7 @@ def compute_goal_directed_metrics(
         result="the goal-directed metrics are NaN",
     )
     call = "compute_goal_directed_metrics"
+    paths = metric_paths(metric, env, call=call)
     goal = _validated_goal(goal, positions.shape[1], call=call)
     min_speed = resolve_min_speed(
         env, min_speed, call="compute_goal_directed_metrics()"
@@ -4700,7 +4542,7 @@ def compute_goal_directed_metrics(
         _goal_alignment(times, positions, goal, support, min_speed=min_speed, call=call)
     )
 
-    distances = _goal_distances(positions, goal, metric=metric, env=env, call=call)
+    distances = _goal_distances(positions, goal, paths=paths, call=call)
     rates = _distance_rates(times, distances, support)
     mean_rate = float(np.nanmean(rates)) if np.any(~np.isnan(rates)) else np.nan
 
