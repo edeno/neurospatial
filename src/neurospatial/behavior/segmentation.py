@@ -668,44 +668,20 @@ def _detect_region_crossings_contiguous(
     ``region_mask`` (shape ``(n_bins,)``) marks the region's bins.
     """
     in_region = region_mask[position_bins]
-
-    # Detect transitions using vectorized diff operation
-    # Convert bool to int: in_region[i] - in_region[i-1]
-    # +1 = entry (False -> True), -1 = exit (True -> False)
-    transitions = np.diff(in_region.astype(np.int8))
-
-    # Find entry and exit indices
-    crossings = []
-
-    if direction in ["both", "entry"]:
-        entry_indices = np.where(transitions == 1)[0] + 1  # +1 because diff shifts by 1
-        for idx in entry_indices:
-            crossings.append(
-                Crossing(
-                    time=times[idx],
-                    direction="entry",
-                    bin_index=position_bins[idx],
-                    region=region_name,
-                )
-            )
-
-    if direction in ["both", "exit"]:
-        exit_indices = np.where(transitions == -1)[0] + 1
-        for idx in exit_indices:
-            crossings.append(
-                Crossing(
-                    time=times[idx],
-                    direction="exit",
-                    bin_index=position_bins[idx],
-                    region=region_name,
-                )
-            )
-
-    # Sort by time if we collected both entry and exit
-    if direction == "both" and len(crossings) > 1:
-        crossings.sort(key=lambda c: c.time)
-
-    return crossings
+    # Samples whose region membership differs from the sample before, in time
+    # order: an entry where the sample is inside, an exit where it is outside.
+    changes = np.flatnonzero(in_region[1:] != in_region[:-1]) + 1
+    kinds = np.where(in_region[changes], "entry", "exit")
+    keep = kinds == direction if direction != "both" else slice(None)
+    return [
+        Crossing(
+            time=times[idx],
+            direction=kind,
+            bin_index=position_bins[idx],
+            region=region_name,
+        )
+        for idx, kind in zip(changes[keep].tolist(), kinds[keep].tolist(), strict=True)
+    ]
 
 
 def detect_runs_between_regions(
