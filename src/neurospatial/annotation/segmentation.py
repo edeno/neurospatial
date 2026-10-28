@@ -133,7 +133,7 @@ class SegmentationProposal(ReadOnlyArraysMixin):
         owned_metadata = {} if metadata is None else deepcopy(dict(metadata))
         try:
             encoded = json.dumps(owned_metadata, allow_nan=False)
-            _require_json_metadata(owned_metadata, allow_nan=False)
+            _require_json_metadata(owned_metadata)
             # Round-tripping also owns nested values and normalizes JSON tuples.
             owned_metadata = json.loads(encoded)
         except (TypeError, ValueError, OverflowError) as exc:

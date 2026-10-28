@@ -17,7 +17,6 @@ from __future__ import annotations
 
 # --- core value objects ---------------------------------
 from .core import Region, Regions, regions_table
-from .core import _freeze_metadata as _freeze_metadata
 from .core import _snapshot_regions as _snapshot_regions
 from .core import _thaw_metadata as _thaw_metadata
 
