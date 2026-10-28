@@ -270,8 +270,9 @@ plt.show()
 # ## 4. Compare position over the course of complete traversals
 #
 # Put each complete traversal on a common scale: zero marks its observed start,
-# and one marks entry into the right zone. `path_progress()` measures distance
-# along the track from that start, divided by the start-to-arrival distance.
+# and one marks entry into the right zone. `path_progress()` divides the track
+# distance already covered from that start by that distance plus the track
+# distance still left to the arrival bin, so it reaches one only at arrival.
 # It follows the bend and uses the first arrival bin as the endpoint.
 #
 # Scale elapsed time by each traversal's duration as well. This lets us compare
