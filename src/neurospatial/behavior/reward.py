@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 
 from neurospatial._exceptions import _format_error
 from neurospatial._validation import validate_finite_scalar
-from neurospatial.ops.distance import distance_field
 from neurospatial.ops.mapping import _require_region_mask
 
 __all__ = [
@@ -98,8 +97,11 @@ def region_reward_field(
 
     - **Linear**: ``reward_value * max(0, 1 - d / max_distance)``, where
       ``d`` is the geodesic distance from the bin centre to the nearest
-      region bin centre along the connectivity graph (respects walls).
-      Bins that cannot reach the region (another connected component) get 0.
+      region bin centre: the length of the shortest path between two
+      positions that stays inside the environment (it goes around walls and
+      never leaves the environment, and on a track it runs along the
+      track's centerline). Bins that cannot reach the region (another
+      connected component) get 0.
 
     - **Gaussian**: Smooth falloff using Gaussian kernel smoothing.
       After smoothing, rescales so maximum *within the region* equals
@@ -145,7 +147,7 @@ def region_reward_field(
     See Also
     --------
     goal_reward_field : Distance-based rewards from goal bins
-    neurospatial.ops.distance_field : Compute distance maps
+    neurospatial.ops.distance_field : Bin-graph distance maps
     neurospatial.ops.regions_to_mask : Convert regions to binary masks
 
     References
@@ -180,8 +182,8 @@ def region_reward_field(
         # inf for bins that cannot reach it. A shortest path into the region
         # enters through a boundary bin, so this is the distance from the
         # region boundary.
-        distances = distance_field(
-            env.connectivity, sources=np.flatnonzero(region_mask)
+        distances = _geodesic_from_bins(
+            env, np.flatnonzero(region_mask), call="region_reward_field"
         )
         reachable = np.isfinite(distances) & ~region_mask
         reward = np.where(region_mask, reward_value, 0.0)
@@ -258,7 +260,10 @@ def goal_reward_field(
     decay : {'linear', 'exponential', 'inverse'}, default='exponential'
         Distance-based decay function of the geodesic distance ``d`` (in the
         environment's distance units) from the bin centre to the nearest
-        goal bin centre:
+        goal bin centre, the length of the shortest path between two
+        positions that stays inside the environment (it goes around walls
+        and never leaves the environment, and on a track it runs along the
+        track's centerline):
 
         - 'linear': reward = scale * max(0, 1 - d/max_distance)
         - 'exponential': reward = scale * exp(-d/scale)
@@ -334,7 +339,7 @@ def goal_reward_field(
     See Also
     --------
     region_reward_field : Reward fields from spatial regions
-    neurospatial.ops.distance_field : Compute distance maps
+    neurospatial.ops.distance_field : Bin-graph distance maps
     """
     from neurospatial.environment import _validate_target_bins
 
@@ -355,8 +360,9 @@ def goal_reward_field(
         argument="goal_bins",
     ).tolist()
 
-    # Compute distance field from goals
-    distances = distance_field(env.connectivity, sources=goal_bins_list)
+    distances = _geodesic_from_bins(
+        env, np.unique(goal_bins_list), call="goal_reward_field"
+    )
 
     # Unreachable bins have d = inf, which every decay below maps to 0.
     if decay == "exponential":
@@ -373,3 +379,20 @@ def goal_reward_field(
         reward = scale / (1 + distances)
 
     return reward
+
+
+def _geodesic_from_bins(
+    env: Environment, source_bins: NDArray[np.intp], *, call: str
+) -> NDArray[np.float64]:
+    """Geodesic distance from every bin center to the nearest source bin center.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
+    """
+    from neurospatial.behavior._environment_paths import environment_paths
+
+    return environment_paths(env, call=call).from_bins(
+        np.asarray(source_bins, dtype=np.intp)
+    )

@@ -371,3 +371,14 @@ class TestDecisionBoundaries:
         # equidistant boundary is (65.21 - 60.21) / 2 = 2.5 cm away.
         distances = distance_to_decision_boundary(divider_arena, above, goals)
         np.testing.assert_allclose(distances, [2.5, 2.5], atol=1e-9)
+
+
+def test_goal_reward_decays_with_the_path_around_a_wall(divider_arena):
+    from neurospatial.behavior import goal_reward_field
+
+    left, goal = divider_arena.bin_at(np.array([[42.5, 12.5], [57.5, 12.5]]))
+    reward = goal_reward_field(
+        divider_arena, goal_bins=int(goal), decay="linear", max_distance=200.0
+    )
+    around = 2 * np.hypot(5.0, 60.0) + 5.0  # not the 15 cm straight line
+    assert reward[left] == pytest.approx(1.0 - around / 200.0, abs=1e-12)
