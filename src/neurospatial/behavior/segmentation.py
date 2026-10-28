@@ -403,9 +403,10 @@ class Trial:
 
         - ``'reached'``: entered an end region within ``max_duration``;
           ``end_time`` is the first sample inside it.
-        - ``'timeout'``: ``max_duration`` elapsed first.
+        - ``'timeout'``: ``max_duration`` elapsed first; ``end_time`` is the
+          last sample at or before ``start_time + max_duration``.
         - ``'returned'``: re-entered the start region first (an aborted
-          trial).
+          trial); ``end_time`` is the first sample back inside it.
         - ``'censored'``: observation stopped first (a tracking gap longer
           than ``max_gap``, an ``epochs`` edge, a ``break_before`` or the end
           of the recording); ``end_time`` is the last observed sample, and
@@ -2164,7 +2165,9 @@ def segment_trials(
         Trials shorter than this are excluded.
     max_duration : float, optional
         Maximum trial duration in seconds. Default: 15.0.
-        Trials exceeding this are marked as failed (timeout).
+        A trial that has not reached an end region by ``start_time +
+        max_duration`` times out at the last sample within that deadline,
+        even when the next sample is inside an end region.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -2414,101 +2417,56 @@ def _segment_trials_contiguous(
     }
 
     # Segment into trials. A trial starts when the animal leaves the start
-    # region, at the last sample inside it, so time spent waiting at
-    # the start does not count toward the trial.
+    # region, at the last sample inside it, so time spent waiting at the start
+    # does not count toward the trial. It ends at whichever comes first: an
+    # end-region entry, a return to the start region, the max_duration
+    # deadline, or the end of this recording.
     trials: list[Trial] = []
-    trial_start_idx: int | None = None
     trial_start_time: float | None = None
-    last_start_time: float | None = None
 
-    for i in range(len(position_bins)):
-        if in_start[i]:
-            last_start_time = times[i]
-            if i > 0 and not in_start[i - 1] and trial_start_time is not None:
-                # The animal came back to the start region before reaching an
-                # end region: emit the aborted trial as failed (subject to
-                # min_duration) instead of dropping it, matching the timeout
-                # semantics below.
-                duration = times[i - 1] - trial_start_time
-                if duration >= min_duration:
-                    trials.append(
-                        Trial(
-                            start_time=trial_start_time,
-                            end_time=times[i - 1],
-                            start_region=start_region,
-                            end_region=None,
-                            outcome="returned",
-                        )
-                    )
-                trial_start_idx = None
-                trial_start_time = None
-            continue
-
-        if i > 0 and in_start[i - 1] and last_start_time is not None:
-            # Departure from the start region begins a trial.
-            trial_start_idx = i
-            trial_start_time = last_start_time
-
-        # If we're in a trial, check for end region entry
-        if trial_start_idx is not None and trial_start_time is not None:
-            # Check if we entered any end region
-            for region, in_region in in_end_regions.items():
-                if in_region[i] and (i == 0 or not in_region[i - 1]):
-                    # Reached end region
-                    duration = times[i] - trial_start_time
-
-                    # Check duration bounds
-                    if duration >= min_duration and duration <= max_duration:
-                        trials.append(
-                            Trial(
-                                start_time=trial_start_time,
-                                end_time=times[i],
-                                start_region=start_region,
-                                end_region=region,
-                                outcome="reached",
-                            )
-                        )
-
-                    # Reset trial tracking
-                    trial_start_idx = None
-                    trial_start_time = None
-                    break
-
-            # Check for timeout (still in trial at this point)
-            if trial_start_idx is not None and trial_start_time is not None:
-                duration = times[i] - trial_start_time
-                if duration >= max_duration:
-                    # Trial timed out
-                    if duration >= min_duration:
-                        trials.append(
-                            Trial(
-                                start_time=trial_start_time,
-                                end_time=times[i],
-                                start_region=start_region,
-                                end_region=None,
-                                outcome="timeout",
-                            )
-                        )
-                    # Reset trial tracking
-                    trial_start_idx = None
-                    trial_start_time = None
-
-    # Handle final trial if still in progress when the recording ends. Such a
-    # trial never reached an end region, so emit it as a failed trial (subject
-    # to min_duration) instead of dropping it when it ran less than
-    # max_duration.
-    if trial_start_idx is not None and trial_start_time is not None:
-        duration = times[-1] - trial_start_time
-        if duration >= min_duration:
+    def _emit(end_time: float, outcome: Outcome, end_region: str | None) -> None:
+        assert trial_start_time is not None
+        if end_time - trial_start_time >= min_duration:
             trials.append(
                 Trial(
                     start_time=trial_start_time,
-                    end_time=times[-1],
+                    end_time=end_time,
                     start_region=start_region,
-                    end_region=None,
-                    outcome="censored",
+                    end_region=end_region,
+                    outcome=outcome,
                 )
             )
+
+    for i in range(len(position_bins)):
+        if trial_start_time is None:
+            if i > 0 and in_start[i - 1] and not in_start[i]:
+                trial_start_time = float(times[i - 1])
+            else:
+                continue
+
+        elapsed = times[i] - trial_start_time
+        if elapsed > max_duration:
+            # The deadline fell between samples: the trial timed out at the
+            # last sample within it, whatever this sample shows.
+            _emit(float(times[i - 1]), "timeout", None)
+            trial_start_time = None
+            continue
+        reached = next(
+            (region for region, inside in in_end_regions.items() if inside[i]), None
+        )
+        if reached is not None:
+            _emit(float(times[i]), "reached", reached)
+        elif in_start[i]:
+            _emit(float(times[i]), "returned", None)
+        elif elapsed >= max_duration:
+            _emit(float(times[i]), "timeout", None)
+        else:
+            continue
+        trial_start_time = None
+
+    # A trial still under way when the recording ends was not seen to finish.
+    if trial_start_time is not None:
+        _emit(float(times[-1]), "censored", None)
 
     return trials
 

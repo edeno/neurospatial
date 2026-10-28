@@ -87,25 +87,11 @@ class TestSegmentTrials:
             max_gap=None,
         )
 
-        # Should detect 3 trials
-        assert len(trials) >= 2, "Should detect at least 2 trials"
-
-        # Verify trial structure
+        assert [trial.end_region for trial in trials] == ["left", "right", "left"]
+        assert [trial.outcome for trial in trials] == ["reached"] * 3
         for trial in trials:
-            assert hasattr(trial, "start_time")
-            assert hasattr(trial, "end_time")
-            assert hasattr(trial, "start_region")
-            assert hasattr(trial, "end_region")
-            assert hasattr(trial, "success")
             assert trial.end_time > trial.start_time
-            assert trial.start_region == "start", "start_region should be 'start'"
-            assert trial.end_region in ["left", "right"]
-            assert isinstance(trial.success, bool)
-
-        # Check end_regions
-        end_regions = [trial.end_region for trial in trials]
-        assert "left" in end_regions, "Should have at least one left trial"
-        assert "right" in end_regions, "Should have at least one right trial"
+            assert trial.start_region == "start"
 
     def test_segment_trials_duration_filter_min(self):
         """Test that trials shorter than min_duration are excluded."""
@@ -180,13 +166,13 @@ class TestSegmentTrials:
             max_gap=None,
         )
 
-        # Should detect the trial but mark as failed (timeout)
-        if len(trials) > 0:
-            assert not trials[0].success, "Long trial should be marked as failed"
-            assert trials[0].end_region is None, (
-                "Failed trial should have no end_region"
-            )
-            assert trials[0].start_region == "start", "start_region should be 'start'"
+        # One trial that times out exactly max_duration after it started
+        # (1 Hz samples, so a sample lands on the deadline).
+        assert len(trials) == 1
+        assert trials[0].outcome == "timeout"
+        assert trials[0].end_region is None
+        assert trials[0].start_region == "start"
+        assert trials[0].end_time - trials[0].start_time == 20.0
 
     def test_segment_trials_successful_completion(self):
         """Test successful trial completion within duration bounds."""
@@ -289,9 +275,9 @@ class TestSegmentTrials:
             max_gap=None,
         )
 
-        # Should detect trial start but timeout
-        if len(trials) > 0:
-            assert not trials[0].success, "Trial should fail (timeout)"
+        assert len(trials) == 1
+        assert trials[0].outcome == "timeout"
+        assert trials[0].end_time - trials[0].start_time == 20.0
 
     def test_segment_trials_parameter_validation(self):
         """Test parameter validation."""
@@ -401,7 +387,7 @@ class TestSegmentTrials:
 
         A trial that ran well under max_duration but was abandoned when the
         animal re-entered the start region must still be emitted with
-        success=False and end_region=None (subject to min_duration), not
+        outcome="returned" and end_region=None (subject to min_duration), not
         silently dropped.
         """
         x = np.linspace(0, 100, 100)
@@ -459,7 +445,7 @@ class TestSegmentTrials:
         assert aborted.success is False
         assert aborted.end_region is None
         assert aborted.start_region == "start"
-        # Aborted trial ended at the sample before re-entry, well under max_duration.
+        # Aborted trial ended at the re-entry sample, well under max_duration.
         assert (aborted.end_time - aborted.start_time) < 50.0
         # Trial 2 is the successful one.
         assert trials[1].outcome == "reached"
@@ -660,38 +646,35 @@ class TestSegmentTrials:
         region_builder.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
         env = env.with_regions(region_builder)
 
-        # Enter start near the very end of recording; trial only ~3s long.
-        x_traj = np.concatenate(
-            [
-                np.linspace(50, 50, 10),  # outside start
-                np.linspace(50, 20, 4),  # enter start at end
-            ]
-        )
-        y_traj = np.concatenate(
-            [
-                np.linspace(50, 50, 10),
-                np.linspace(50, 20, 4),
-            ]
-        )
+        # Wait in the start region, then leave it 3 s before the recording
+        # ends: the trial in progress lasts 3 s from its start sample.
+        x_traj = np.r_[np.full(10, 20.0), 40.0, 45.0, 50.0]
+        y_traj = np.r_[np.full(10, 20.0), 40.0, 45.0, 50.0]
         trajectory = np.column_stack([x_traj, y_traj])
         position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import segment_trials
 
-        trials = segment_trials(
-            position_bins,
-            times,
-            env,
-            start_region="start",
-            end_regions=["goal"],
-            min_duration=10.0,
-            max_duration=50.0,
-            max_gap=None,
+        options = {
+            "start_region": "start",
+            "end_regions": ["goal"],
+            "max_duration": 50.0,
+            "max_gap": None,
+        }
+        long_enough = segment_trials(
+            position_bins, times, env, min_duration=3.0, **options
+        )
+        too_short = segment_trials(
+            position_bins, times, env, min_duration=3.5, **options
         )
 
-        # Trial in progress at end is too short -> dropped.
-        assert len(trials) == 0
+        # The trial runs from the last sample in the start region (9 s) to
+        # the end of the recording (12 s) and is censored there.
+        assert [(t.start_time, t.end_time, t.outcome) for t in long_enough] == [
+            (9.0, 12.0, "censored")
+        ]
+        assert too_short == []
 
     def test_segment_trials_multiple_starts(self):
         """Test handling of multiple trial starts without completion."""
@@ -741,12 +724,12 @@ class TestSegmentTrials:
             max_gap=None,
         )
 
-        # Should handle multiple start entries gracefully
-        # Either count as separate trials or as one trial from last start
-        assert len(trials) >= 1, "Should detect at least one trial"
-        if len(trials) > 0:
-            # Last trial should be successful
-            assert any(t.success for t in trials), "Should have successful trial"
+        # The first departure comes back to the start (returned); the second
+        # reaches the goal. The aborted trial ends at the re-entry sample,
+        # where the next trial starts after a single sample inside.
+        assert [t.outcome for t in trials] == ["returned", "reached"]
+        assert trials[1].end_region == "goal"
+        assert trials[0].end_time <= trials[1].start_time
 
 
 class TestTrialRecord:
@@ -790,3 +773,65 @@ class TestTrialRecord:
         }
         with pytest.raises(ValueError, match=match):
             Trial(**{**fields, **kwargs})
+
+
+class TestTrialEnds:
+    """Exact trial boundaries on a corridor sampled at bin centers."""
+
+    @staticmethod
+    def _corridor():
+        from shapely.geometry import box
+
+        xs = np.linspace(0.0, 100.0, 401)
+        env = Environment.from_samples(np.c_[xs, np.zeros_like(xs)], bin_size=2.0)
+        regions = Regions(env.regions.values())
+        regions.add("start", polygon=box(-5.0, -5.0, 5.0, 5.0))  # bins 0-4 cm
+        regions.add("goal", polygon=box(95.0, -5.0, 105.0, 5.0))  # bins 96-100 cm
+        return env.with_regions(regions)
+
+    def _trials(self, x, times, **options):
+        from neurospatial.behavior.segmentation import segment_trials
+
+        env = self._corridor()
+        x = np.asarray(x, dtype=float)
+        trials = segment_trials(
+            env.bin_at(np.c_[x, np.zeros_like(x)]),
+            np.asarray(times, dtype=float),
+            env,
+            start_region="start",
+            end_regions=["goal"],
+            max_gap=None,
+            **options,
+        )
+        return [(t.start_time, t.end_time, t.end_region, t.outcome) for t in trials]
+
+    def test_goal_entry_after_the_deadline_is_a_timeout(self):
+        """Arrival 10.5 s after departure with max_duration=10 is a timeout.
+
+        The trial starts at 1 s (last sample in the start region) and times
+        out at 6 s, the last sample within the 11 s deadline. It used to be
+        dropped because the goal-entry sample was past the deadline.
+        """
+        x = [0, 0, 30, 60, 98, 98]
+        times = [0, 1, 2, 6, 11.5, 12]
+        assert self._trials(x, times, min_duration=1.0, max_duration=10.0) == [
+            (1.0, 6.0, None, "timeout")
+        ]
+        assert self._trials(x, times, min_duration=1.0, max_duration=11.0) == [
+            (1.0, 11.5, "goal", "reached")
+        ]
+
+    def test_sample_on_the_deadline_ends_a_timeout(self):
+        x = [0, 0, 20, 30, 40]
+        times = [0, 1, 6, 11, 12]
+        assert self._trials(x, times, min_duration=1.0, max_duration=10.0) == [
+            (1.0, 11.0, None, "timeout")
+        ]
+
+    def test_returned_trial_ends_at_the_reentry_sample(self):
+        x = [0, 0, 10, 20, 10, 4, 30, 60, 98]
+        times = np.arange(len(x))
+        assert self._trials(x, times, min_duration=1.0, max_duration=10.0) == [
+            (1.0, 5.0, None, "returned"),
+            (5.0, 8.0, "goal", "reached"),
+        ]
