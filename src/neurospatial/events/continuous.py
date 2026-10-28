@@ -134,8 +134,7 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
     values : NDArray[np.float64] or None, shape (n_events, n_times, n_features)
         Sampled values of the retained events, in input order; NaN where
         unsupported. Categorical codes are stored as floats. Circular values
-        are radians in ``[-pi, pi)``, while circular ``means`` are in
-        ``(-pi, pi]``, so due West reads ``-pi`` here and ``pi`` in ``means``.
+        are radians in ``(-pi, pi]``, like circular ``means``.
         None when the alignment ran with ``retain_aligned=False``.
     support : NDArray[np.bool_] or None, shape (n_events, n_times, n_features)
         True where ``values`` was observed. None with ``values``.

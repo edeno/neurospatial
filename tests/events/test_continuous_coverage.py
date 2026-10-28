@@ -330,11 +330,10 @@ def test_circular_means_across_pi():
 
 
 def test_circular_mean_of_one_half_turn_is_positive_pi():
-    # A sampled heading of pi is wrapped to -pi; atan2 then returns -pi.
+    # atan2 gives -pi for this sine sum; means are reported in (-pi, pi].
     spec = _spec(["circular"])
     s = _Summaries.empty(1, spec)
     s.add(np.full((1, 1, 1), -np.pi), np.ones((1, 1, 1), dtype=bool))
-    assert np.arctan2(s.sin_sums, s.cos_sums)[0, 0] == -np.pi
     means, _, defined = _circular_means(s.sin_sums, s.cos_sums, s.counts, 1e-12)
     assert defined[0, 0]
     assert means[0, 0] == np.pi

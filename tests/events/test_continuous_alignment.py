@@ -303,12 +303,12 @@ def test_circular_mean_across_the_wrap():
 
 
 def test_circular_mean_at_half_turn_is_positive_pi():
-    # Sampled headings of pi wrap to -pi; the mean is reported in (-pi, pi].
+    # Sampled headings and their mean share the (-pi, pi] convention.
     heading = np.full(EIGHTHS.size, np.pi)
     result = align_continuous_to_events(
         EIGHTHS, heading, [3.0], (-0.5, 0.5), dt=0.1, value_kinds={0: "circular"}
     )
-    assert (result.values == -np.pi).all()
+    assert (result.values == np.pi).all()
     np.testing.assert_array_equal(result.means, np.pi)
 
 

@@ -39,6 +39,10 @@ Breaking:
 
 Results that change:
 
+- `align_continuous_to_events` wraps sampled circular values to (−π, π],
+  the convention of `wrap_angle` and of its own circular `means`; they were
+  in [−π, π), so due West read −π in `values` and +π in `means`. An exact
+  half-turn between two samples is now interpolated the positive way.
 - The PSTH `baseline_rate` (in `summary()` and `summary_table()`) averages
   only bins that end at or before the event. A bin whose center was negative
   but which straddled the event counted as baseline: spikes only at +10 ms

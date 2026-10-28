@@ -16,8 +16,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from numpy.typing import ArrayLike, NDArray
+from numpy.typing import NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import gap_endpoints, intervals_contain
 from neurospatial._observation import _MAX_EXACT_INTEGER
@@ -377,14 +378,6 @@ def _relative_times(window: tuple[float, float], dt: float) -> NDArray[np.float6
     return kept
 
 
-def _wrap(angles: ArrayLike) -> NDArray[np.float64]:
-    """Wrap angles in radians to ``[-pi, pi)``; a half-turn maps to ``-pi``."""
-    wrapped = np.mod(np.asarray(angles, dtype=np.float64) + np.pi, 2 * np.pi) - np.pi
-    # np.mod rounds a tiny negative remainder up to 2*pi, which would give +pi.
-    out: NDArray[np.float64] = np.where(wrapped >= np.pi, -np.pi, wrapped)
-    return out
-
-
 def _sample_feature(
     times: NDArray[np.float64],
     values: NDArray[np.float64],
@@ -419,10 +412,10 @@ def _sample_feature(
     interpolation : {"linear", "circular", "previous"}
         ``"linear"``: straight line between the bracketing samples.
         ``"circular"``: shorter arc in radians; an exact half-turn goes the
-        negative way. ``"previous"``: the value of the preceding sample.
+        positive way. ``"previous"``: the value of the preceding sample.
     kind : {"linear", "circular", "categorical"}
         The feature's value kind. Every sampled value of a circular feature is
-        wrapped to ``[-pi, pi)``, whatever the interpolation.
+        wrapped to ``(-pi, pi]``, whatever the interpolation.
     epochs : ndarray of float64, shape (n_epochs, 2), or None
         Sorted, merged ``[start, stop)`` rows (from ``as_intervals``), the same
         epochs used to resolve ``support``. They gate exact-time queries,
@@ -467,7 +460,7 @@ def _sample_feature(
         weight = (q[between] - times[left]) / (times[right] - times[left])
         step = values[right] - x0
         if interpolation == "circular":
-            sampled[between] = x0 + weight * _wrap(step)
+            sampled[between] = x0 + weight * wrap_angle(step)
         elif interpolation == "linear":
             sampled[between] = x0 + weight * step
         else:
@@ -475,7 +468,7 @@ def _sample_feature(
 
     supported: NDArray[np.bool_] = at_sample | between
     if kind == "circular":
-        sampled[supported] = _wrap(sampled[supported])
+        sampled[supported] = wrap_angle(sampled[supported])
     return sampled, supported
 
 
@@ -758,8 +751,6 @@ def _circular_means(
     lengths = np.full(counts.shape, np.nan)
     np.divide(np.hypot(sin_sums, cos_sums), counts, out=lengths, where=observed)
     defined: NDArray[np.bool_] = observed & (lengths > threshold)
-    means = np.where(defined, np.arctan2(sin_sums, cos_sums), np.nan)
-    # Sampled angles lie in [-pi, pi), so a half-turn's sine sum is a tiny
-    # negative number and atan2 returns -pi; report the half-turn as +pi.
-    means[means == -np.pi] = np.pi
+    # atan2 can return -pi for a half-turn; the convention is (-pi, pi].
+    means = np.where(defined, wrap_angle(np.arctan2(sin_sums, cos_sums)), np.nan)
     return means, lengths, defined
