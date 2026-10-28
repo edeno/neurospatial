@@ -74,11 +74,11 @@ class TestWriteTrialsFromTrialObjects:
         # Check custom columns
         assert "start_region" in nwbfile.trials.colnames
         assert "end_region" in nwbfile.trials.colnames
-        assert "success" in nwbfile.trials.colnames
+        assert "outcome" in nwbfile.trials.colnames
 
         assert nwbfile.trials["start_region"][0] == "start_zone"
         assert nwbfile.trials["end_region"][0] == "reward_left"
-        assert nwbfile.trials["success"][0] is True
+        assert nwbfile.trials["outcome"][0] == "reached"
 
     def test_trial_with_none_end_region(self, empty_nwb):
         """Test that None end_region is handled correctly."""
@@ -148,7 +148,7 @@ class TestWriteTrialsFromArrays:
         stop_times = np.array([5.0, 15.0])
         start_regions = ["home", "home"]
         end_regions = ["goal_left", "goal_right"]
-        successes = [True, True]
+        outcomes = ["reached", "censored"]
 
         write_trials(
             nwbfile,
@@ -156,13 +156,25 @@ class TestWriteTrialsFromArrays:
             stop_times=stop_times,
             start_regions=start_regions,
             end_regions=end_regions,
-            successes=successes,
+            outcomes=outcomes,
         )
 
         assert len(nwbfile.trials) == 2
         assert "start_region" in nwbfile.trials.colnames
         assert "end_region" in nwbfile.trials.colnames
-        assert "success" in nwbfile.trials.colnames
+        assert list(nwbfile.trials["outcome"][:]) == outcomes
+
+    def test_arrays_reject_an_unknown_outcome(self, empty_nwb):
+        """A boolean-era value is not a trial outcome."""
+        from neurospatial.io.nwb import write_trials
+
+        with pytest.raises(ValueError, match="not a trial outcome"):
+            write_trials(
+                empty_nwb,
+                start_times=np.array([0.0]),
+                stop_times=np.array([5.0]),
+                outcomes=["success"],
+            )
 
     def test_arrays_with_partial_optional_columns(self, empty_nwb):
         """Test writing trials with only some optional columns."""
@@ -173,7 +185,7 @@ class TestWriteTrialsFromArrays:
         stop_times = np.array([5.0, 15.0])
         start_regions = ["home", "home"]
 
-        # Only start_regions provided, no end_regions or successes
+        # Only start_regions provided, no end_regions or outcomes
         write_trials(
             nwbfile,
             start_times=start_times,
@@ -185,7 +197,7 @@ class TestWriteTrialsFromArrays:
         assert "start_region" in nwbfile.trials.colnames
         # These columns should NOT be present since not provided
         assert "end_region" not in nwbfile.trials.colnames
-        assert "success" not in nwbfile.trials.colnames
+        assert "outcome" not in nwbfile.trials.colnames
 
 
 class TestWriteTrialsValidation:
@@ -440,12 +452,12 @@ class TestReadTrials:
         # Check custom columns present
         assert "start_region" in result.columns
         assert "end_region" in result.columns
-        assert "success" in result.columns
+        assert "outcome" in result.columns
 
         # Check values
         assert result["start_region"].iloc[0] == "home"
         assert result["end_region"].iloc[0] == "goal_left"
-        assert result["success"].iloc[0] == True  # noqa: E712
+        assert result["outcome"].iloc[0] == "reached"
 
     def test_roundtrip_data_integrity(self, empty_nwb):
         """Test data integrity through write/read round-trip."""
@@ -473,7 +485,7 @@ class TestReadTrials:
                 end_time=40.0,
                 start_region="start_zone",
                 end_region=None,
-                outcome="timeout",
+                outcome="censored",
             ),
         ]
 
@@ -498,10 +510,8 @@ class TestReadTrials:
         assert result["end_region"].iloc[0] == "reward_right"
         assert result["end_region"].iloc[1] == "reward_left"
 
-        # Check success (use == for numpy bool comparison)
-        assert result["success"].iloc[0] == True  # noqa: E712
-        assert result["success"].iloc[1] == True  # noqa: E712
-        assert result["success"].iloc[2] == False  # noqa: E712
+        # A censored trial survives the round trip as censored, not as failed.
+        assert list(result["outcome"]) == ["reached", "reached", "censored"]
 
 
 class TestWriteTrialsDescription:
