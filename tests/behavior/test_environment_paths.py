@@ -533,3 +533,46 @@ def test_field_cache_stays_within_its_budget(divider_arena, monkeypatch):
         assert fields.n_kept <= fields.length.shape[0] <= 5
     tight.prepare(tight.bins(points))
     assert fields.n_kept == 5
+
+
+@pytest.fixture(scope="module")
+def walled_hex_arena():
+    """Hexagons of a 60 x 60 cm room with a notch and a slanted wall."""
+    rng = np.random.default_rng(0)
+    samples = rng.uniform(0, 60, (20_000, 2))
+    notch = (samples[:, 0] > 20) & (samples[:, 0] < 40) & (samples[:, 1] < 25)
+    with pytest.warns(UserWarning, match="wall_fit='snap'"):
+        return Environment.from_samples(
+            samples[~notch],
+            bin_size=3.0,
+            layout="hexagonal",
+            arena=OpenArena(
+                box(0, 0, 60, 60), walls={"wall": LineString([(10, 30), (50, 40)])}
+            ),
+        )
+
+
+def test_clean_hexagon_boxes_give_the_probe_walks_visibility(walled_hex_arena):
+    """On a hexagonal lattice, skipping the probes of clean runs finds the
+    same visible and blocked segments as probing every stretch, around the
+    notch, along the wall and past its ends."""
+    from neurospatial.behavior._environment_paths import _HexCells, _OpenPaths
+
+    env = walled_hex_arena
+    rng = np.random.default_rng(2)
+    a, b = rng.integers(0, env.n_bins, (2, 4000))
+    starts = env.bin_centers[a]
+    # Ends anywhere in their hexagons, not only at centers.
+    ends = env.bin_centers[b] + rng.uniform(-1.2, 1.2, (b.size, 2))
+    located = env.bin_at(ends)
+    keep = located >= 0
+    starts, ends, a, b = starts[keep], ends[keep], a[keep], located[keep]
+
+    boxed = _OpenPaths(env)
+    assert isinstance(boxed._boxes, _HexCells)
+    probed = _OpenPaths(env)
+    probed._boxes = None
+    visible, _ = boxed._trace(starts, ends, a, b)
+    expected, _ = probed._trace(starts, ends, a, b)
+    assert 500 < visible.sum() < visible.size - 500
+    np.testing.assert_array_equal(visible, expected)

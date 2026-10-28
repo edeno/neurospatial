@@ -75,11 +75,13 @@ from numpy.typing import NDArray
 from neurospatial._intervals import ragged_arange
 from neurospatial.environment._cache import CacheKey
 from neurospatial.geometry import require_cartesian
+from neurospatial.geometry._hex_lookup import cartesian_to_fractional_cube
 
 if TYPE_CHECKING:
     from scipy.sparse import csr_array
 
     from neurospatial.environment import Environment
+    from neurospatial.geometry._locators import HexLocator
 
 # Probe a segment every half of the shortest graph edge. Consecutive probes
 # must land in the same or connected bins, so a probe step shorter than a bin
@@ -483,6 +485,12 @@ class _OpenPaths(EnvironmentPaths):
             _PROBE_FRACTION * float(lengths.min()) if lengths.size else np.inf
         )
         self._grid = _GridCells.of(self._locator, self._centers)
+        # The lattice whose clean boxes skip probing (:meth:`_trace_boxes`).
+        self._boxes: _BoxCells | None = (
+            self._grid
+            if self._grid is not None
+            else _HexCells.of(self._locator, self._centers)
+        )
         # Bins this close share a face: a straight stretch between them
         # stays in the two.
         self._nearest = float(lengths.min()) * (1 + 1e-6) if lengths.size else np.inf
@@ -679,6 +687,12 @@ class _OpenPaths(EnvironmentPaths):
             located[rest] = self._cells(points[rest])
         return located
 
+    def _probe_cells(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """:meth:`_cells` of probes, from the half-open cells on a grid."""
+        if self._grid is not None:
+            return self._grid_cells(points)
+        return self._cells(points)
+
     def _connected(self, a: NDArray[np.intp], b: NDArray[np.intp]) -> NDArray[np.bool_]:
         """Whether each bin pair is joined by an open connection."""
         found: NDArray[np.bool_] = np.any(self._neighbors[a] == b[:, None], axis=1)
@@ -777,8 +791,8 @@ class _OpenPaths(EnvironmentPaths):
         Probes are located in rounds of doubling length from the start, and
         a segment stops being probed at its first obstruction, so a blocked
         segment costs about as much as its distance to the obstruction. On a
-        grid, visibility alone skips the probes of clean stretches
-        (:meth:`_trace_boxes`).
+        grid or a hexagonal lattice, visibility alone skips the probes of
+        clean stretches (:meth:`_trace_boxes`).
 
         Parameters
         ----------
@@ -804,7 +818,7 @@ class _OpenPaths(EnvironmentPaths):
         if n_segments == 0:
             return visible, cost
         n_steps = np.maximum(np.ceil(lengths / self._spacing).astype(np.intp), 1)
-        if rate is None and self._grid is not None and self._grid.boxes(self):
+        if rate is None and self._boxes is not None and self._boxes.boxes(self):
             visible = self._trace_boxes(starts, ends, start_bins, end_bins, n_steps)
             return visible, cost
         if rate is not None:
@@ -882,18 +896,18 @@ class _OpenPaths(EnvironmentPaths):
         end_bins: NDArray[np.intp],
         n_steps: NDArray[np.intp],
     ) -> NDArray[np.bool_]:
-        """:meth:`_trace` visibility on a grid, skipping clean stretches.
+        """:meth:`_trace` visibility on a lattice, skipping clean stretches.
 
-        A run of probes whose grid cells span a box of active cells, all
-        joined to one another, has no blocked stretch: every probe and every
-        cell a stretch walks through lies in the box (coordinates and cells
-        are monotone along a segment). Runs are halved until they are clean
-        or short, and only short runs that are not clean are probed, with
-        the same probes and stretch tests as :meth:`_trace`, so the result
-        is the same.
+        A run of probes whose lattice cells span a box of bins, every two
+        neighbors in it joined, has no blocked stretch (:meth:`_BoxCells.clean`
+        says why): the cells of the run's points lie in the box spanned by
+        those of its two ends, since lattice coordinates are linear along a
+        segment. Runs are halved until they are clean or short, and only
+        short runs that are not clean are probed, with the same probes and
+        stretch tests as :meth:`_trace`, so the result is the same.
         """
-        grid = self._grid
-        assert grid is not None
+        cells = self._boxes
+        assert cells is not None
         visible = np.ones(starts.shape[0], dtype=bool)
         geometry = (starts, ends, start_bins, end_bins, n_steps)
         # Runs of points lo .. hi of a segment (0 = start, n_steps + 1 = end),
@@ -906,7 +920,7 @@ class _OpenPaths(EnvironmentPaths):
         lo_low, lo_high = self._end_cells(starts, start_bins)
         hi_low, hi_high = self._end_cells(starts + (ends - starts), end_bins)
         while seg.size:
-            dirty = ~grid.clean(
+            dirty = ~cells.clean(
                 np.minimum(lo_low, hi_low), np.maximum(lo_high, hi_high)
             )
             short = dirty & (hi - lo <= _TRACE_RUN)
@@ -922,18 +936,16 @@ class _OpenPaths(EnvironmentPaths):
             mid = (lo + hi) // 2
             # The middle is a probe: in no bin, its segment is blocked.
             mid_points = self._point_coordinates(seg, mid, starts, ends, n_steps)
-            mid_low = grid.half_open(mid_points)
-            mid_high = mid_low
-            outside = np.flatnonzero(grid.bin_of(mid_low) < 0)
-            if outside.size:
-                missing = outside[self._cells(mid_points[outside]) < 0]
+            mid_low, mid_high = cells.point_cells(mid_points)
+            missing = cells.missing(mid_points, self)
+            if missing.size:
                 visible[seg[missing]] = False
                 keep = visible[seg]
                 seg, lo, hi, mid = seg[keep], lo[keep], hi[keep], mid[keep]
-                lo_low, lo_high, hi_low, hi_high, mid_low = (
-                    x[keep] for x in (lo_low, lo_high, hi_low, hi_high, mid_low)
+                lo_low, lo_high, hi_low, hi_high, mid_low, mid_high = (
+                    x[keep]
+                    for x in (lo_low, lo_high, hi_low, hi_high, mid_low, mid_high)
                 )
-                mid_high = mid_low
             seg, lo, hi = np.r_[seg, seg], np.r_[lo, mid], np.r_[mid, hi]
             lo_low, hi_low = np.r_[lo_low, mid_low], np.r_[mid_low, hi_low]
             lo_high, hi_high = np.r_[lo_high, mid_high], np.r_[mid_high, hi_high]
@@ -944,18 +956,18 @@ class _OpenPaths(EnvironmentPaths):
     ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
         """Cell range a run may touch at a segment's end, in ``bins``.
 
-        The cell of the bin, joined with the half-open cell of the point
-        where it is not the bin's center (a center lies in its own cell).
+        The cell of the bin, joined with the cells of the point where it is
+        not the bin's center (a center lies in its own cell).
         """
-        grid = self._grid
-        assert grid is not None
-        low = grid.cell[bins]
+        cells = self._boxes
+        assert cells is not None
+        low = cells.cell[bins]
         high = low.copy()
         off = np.flatnonzero(np.any(points != self._centers[bins], axis=1))
         if off.size:
-            cells = grid.half_open(points[off])
-            low[off] = np.minimum(low[off], cells)
-            high[off] = np.maximum(high[off], cells)
+            point_low, point_high = cells.point_cells(points[off])
+            low[off] = np.minimum(low[off], point_low)
+            high[off] = np.maximum(high[off], point_high)
         return low, high
 
     def _point_coordinates(
@@ -996,7 +1008,7 @@ class _OpenPaths(EnvironmentPaths):
         located[at_end] = end_bins[segment[at_end]]
         probe = ~(at_start | at_end)
         if probe.any():
-            located[probe] = self._grid_cells(
+            located[probe] = self._probe_cells(
                 self._point_coordinates(
                     segment[probe], step[probe], starts, ends, n_steps
                 )
@@ -1467,17 +1479,34 @@ class _OpenPaths(EnvironmentPaths):
         return waiting
 
 
-class _GridCells:
-    """Grid cell of each bin on a rectilinear grid, for exact cell walks."""
+class _BoxCells(ABC):
+    """Bins as the cells of an integer lattice, with box-sum tables of defects.
+
+    :meth:`clean` says whether a box of lattice cells holds only bins, every
+    two in neighboring cells joined. Then no stretch of a run of probes whose
+    points all lie in the box's cells is blocked, provided a stretch (at most
+    one probe spacing long) cannot reach past a neighboring cell
+    (:meth:`steps_stay_near`): every point :meth:`_OpenPaths._crossing_blocked`
+    locates lies on the stretch, so in a bin of the box, and every pair of
+    bins it requires to be joined holds two points of the stretch, so they
+    are one cell or two neighboring cells.
+
+    Parameters
+    ----------
+    flat_to_active : ndarray of int, shape (prod(shape),)
+        Active bin of each lattice cell in row-major order, -1 for none.
+    shape : tuple of int
+        Lattice cells along each axis.
+    cell : ndarray of int, shape (n_bins, n_dims)
+        Lattice cell of each bin.
+    """
 
     def __init__(
         self,
-        edges: tuple[NDArray[np.float64], ...],
         flat_to_active: NDArray[np.intp],
         shape: tuple[int, ...],
         cell: NDArray[np.intp],
     ) -> None:
-        self.edges = edges
         self.flat_to_active = flat_to_active
         self.shape = shape
         self.cell = cell
@@ -1487,18 +1516,38 @@ class _GridCells:
         self._usable: bool | None = None
 
     def boxes(self, paths: _OpenPaths) -> bool:
-        """Whether :meth:`clean` can stand in for probing ``paths``'s stretches.
-
-        It can when a stretch between two probes (at most one probe spacing
-        long) cannot step over a cell, so the cell walk resolves every
-        stretch between bins.
-        """
+        """Whether :meth:`clean` can stand in for probing ``paths``'s stretches."""
         if self._usable is None:
-            narrowest = min(float(np.diff(edge).min()) for edge in self.edges)
-            self._usable = paths._spacing * (1 + 1e-6) < narrowest
+            self._usable = self.steps_stay_near(paths._spacing)
             if self._usable:
                 self._build_defects(paths._connected)
         return self._usable
+
+    @abstractmethod
+    def steps_stay_near(self, spacing: float) -> bool:
+        """Whether two points ``spacing`` apart are in one or neighboring cells."""
+
+    @staticmethod
+    @abstractmethod
+    def neighbor_offsets(n_dims: int) -> list[tuple[int, ...]]:
+        """Offsets to neighboring cells, one of each pair of opposites."""
+
+    @abstractmethod
+    def point_cells(
+        self, points: NDArray[np.float64]
+    ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+        """First and last cell, per axis, of the cells a point may be located in.
+
+        Returns
+        -------
+        low, high : ndarray of int, shape (n_points, n_dims)
+        """
+
+    @abstractmethod
+    def missing(
+        self, points: NDArray[np.float64], paths: _OpenPaths
+    ) -> NDArray[np.intp]:
+        """Indices of the probes that lie in no bin."""
 
     def _build_defects(
         self,
@@ -1506,11 +1555,11 @@ class _GridCells:
     ) -> None:
         """Box-sum tables of inactive cells and of closed neighbor pairs.
 
-        A closed pair is two active bins that differ by at most one on every
-        axis and are not joined by an open connection. It lies in a box when
-        its lowest corner cell ``m`` does and ``m + extent`` too, where the
-        extent is 0 or 1 per axis, so one table per extent counts closed
-        pairs at ``m`` (extent 0: inactive cells). Each table is padded
+        A closed pair is two active bins in neighboring cells (one of
+        :meth:`neighbor_offsets` apart) not joined by an open connection. It
+        lies in a box when its lowest corner cell ``m`` does and
+        ``m + extent`` too, where the extent is 0 or 1 per axis, so one table
+        per extent counts closed pairs at ``m`` (extent 0: inactive cells). Each table is padded
         with a leading zero on every axis and summed cumulatively along
         every axis.
         """
@@ -1518,9 +1567,7 @@ class _GridCells:
         n_dims = len(shape)
         bins = self.flat_to_active.reshape(shape)
         by_extent = {(0,) * n_dims: bins < 0}
-        for offset in itertools.product((-1, 0, 1), repeat=n_dims):
-            if offset <= (0,) * n_dims:
-                continue
+        for offset in self.neighbor_offsets(n_dims):
             here = tuple(
                 slice(max(0, -o), n - max(0, o))
                 for o, n in zip(offset, shape, strict=True)
@@ -1554,31 +1601,6 @@ class _GridCells:
             np.cumsum(summed, axis=axis, out=summed)
         return summed.reshape(tables.shape[0], -1)
 
-    def half_open(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Half-open grid cell of each point per axis, as the locator finds it.
-
-        Returns
-        -------
-        ndarray of int, shape (n_points, n_dims)
-            ``-1`` below an axis's first edge, ``shape[d]`` at or above its
-            last.
-        """
-        return np.column_stack(
-            [
-                np.digitize(points[:, axis], edge) - 1
-                for axis, edge in enumerate(self.edges)
-            ]
-        ).astype(np.intp, copy=False)
-
-    def bin_of(self, cells: NDArray[np.intp]) -> NDArray[np.intp]:
-        """Active bin of each grid cell, -1 for an inactive cell or off the grid."""
-        inside = np.all((cells >= 0) & (cells < np.asarray(self.shape)), axis=1)
-        bins = np.full(cells.shape[0], -1, dtype=np.intp)
-        bins[inside] = self.flat_to_active[
-            np.ravel_multi_index(tuple(cells[inside].T), self.shape)
-        ]
-        return bins
-
     def clean(self, low: NDArray[np.intp], high: NDArray[np.intp]) -> NDArray[np.bool_]:
         """Whether each box of cells is all active bins, all joined pairwise.
 
@@ -1590,9 +1612,9 @@ class _GridCells:
         Returns
         -------
         ndarray of bool, shape (n,)
-            True when the box lies in the grid, every cell in it is an
-            active bin, and every two of them that differ by at most one on
-            every axis are joined by an open connection.
+            True when the box lies in the lattice, every cell in it is an
+            active bin, and every two of them in neighboring cells are joined
+            by an open connection.
         """
         assert self._defects is not None
         clean = np.zeros(low.shape[0], dtype=bool)
@@ -1637,6 +1659,73 @@ class _GridCells:
             sign = (-1) ** (n_dims - sum(corner))
             total += sign * summed[tables, index]
         return total
+
+
+class _GridCells(_BoxCells):
+    """Grid cell of each bin on a rectilinear grid, for exact cell walks."""
+
+    def __init__(
+        self,
+        edges: tuple[NDArray[np.float64], ...],
+        flat_to_active: NDArray[np.intp],
+        shape: tuple[int, ...],
+        cell: NDArray[np.intp],
+    ) -> None:
+        super().__init__(flat_to_active, shape, cell)
+        self.edges = edges
+
+    def steps_stay_near(self, spacing: float) -> bool:
+        # A stretch shorter than every cell cannot step over one, so the
+        # cell walk resolves every stretch between bins.
+        narrowest = min(float(np.diff(edge).min()) for edge in self.edges)
+        return spacing * (1 + 1e-6) < narrowest
+
+    @staticmethod
+    def neighbor_offsets(n_dims: int) -> list[tuple[int, ...]]:
+        # Cells that differ by at most one on every axis.
+        return [
+            offset
+            for offset in itertools.product((-1, 0, 1), repeat=n_dims)
+            if offset > (0,) * n_dims
+        ]
+
+    def point_cells(
+        self, points: NDArray[np.float64]
+    ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+        cells = self.half_open(points)
+        return cells, cells
+
+    def missing(
+        self, points: NDArray[np.float64], paths: _OpenPaths
+    ) -> NDArray[np.intp]:
+        outside = np.flatnonzero(self.bin_of(self.half_open(points)) < 0)
+        missing: NDArray[np.intp] = outside[paths._cells(points[outside]) < 0]
+        return missing
+
+    def half_open(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Half-open grid cell of each point per axis, as the locator finds it.
+
+        Returns
+        -------
+        ndarray of int, shape (n_points, n_dims)
+            ``-1`` below an axis's first edge, ``shape[d]`` at or above its
+            last.
+        """
+        return np.column_stack(
+            [
+                np.digitize(points[:, axis], edge) - 1
+                for axis, edge in enumerate(self.edges)
+            ]
+        ).astype(np.intp, copy=False)
+
+    def bin_of(self, cells: NDArray[np.intp]) -> NDArray[np.intp]:
+        """Active bin of each grid cell, -1 for an inactive cell or off the grid."""
+        inside = np.all((cells >= 0) & (cells < np.asarray(self.shape)), axis=1)
+        bins = np.full(cells.shape[0], -1, dtype=np.intp)
+        bins[inside] = self.flat_to_active[
+            np.ravel_multi_index(tuple(cells[inside].T), self.shape)
+        ]
+        return bins
 
     @classmethod
     def of(cls, locator: object, centers: NDArray[np.float64]) -> _GridCells | None:
@@ -1726,6 +1815,117 @@ class _GridCells:
             committed[commit] = np.where(enter >= 0, enter, committed[commit])
         blocked[rows] = bad
         return walked, blocked
+
+
+class _HexCells(_BoxCells):
+    """Axial lattice cell of each bin of a hexagonal layout, for clean boxes.
+
+    Cells are indexed by axial coordinates ``(q - q_min, r)`` of the pointy-top
+    lattice of :class:`~neurospatial.geometry._locators.HexLocator`, so a
+    segment's fractional axial coordinates are linear along it.
+    """
+
+    # The locator gives a point a hexagon whose center is as near as the
+    # nearest one, within its rounding tolerance, so the point lies in that
+    # hexagon, whose points are at most 2/3 from its center in fractional
+    # axial coordinates (its corners, on one axis). The margin covers the
+    # tolerance, which is far smaller on lattices of fewer than _HEX_SPAN
+    # hexagons across.
+    _REACH = 2.0 / 3.0 + 1e-6
+    _HEX_SPAN = 1e6
+
+    def __init__(
+        self,
+        locator: HexLocator,
+        flat_to_active: NDArray[np.intp],
+        shape: tuple[int, ...],
+        cell: NDArray[np.intp],
+        q_min: int,
+    ) -> None:
+        super().__init__(flat_to_active, shape, cell)
+        self._locator = locator
+        self._q_min = q_min
+
+    def steps_stay_near(self, spacing: float) -> bool:
+        # Hexagons that are not neighbors are at least one side length (the
+        # radius) apart: the two common neighbors of a pair two steps apart
+        # share a side between them.
+        return spacing * (1 + 1e-6) < self._locator.radius
+
+    @staticmethod
+    def neighbor_offsets(n_dims: int) -> list[tuple[int, ...]]:
+        return [(0, 1), (1, -1), (1, 0)]
+
+    def point_cells(
+        self, points: NDArray[np.float64]
+    ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+        locator = self._locator
+        q, r, _ = cartesian_to_fractional_cube(
+            points[:, 0] - locator.offset_x,
+            points[:, 1] - locator.offset_y,
+            locator.radius,
+        )
+        axial = np.column_stack([q - self._q_min, r])
+        low = np.ceil(axial - self._REACH).astype(np.intp)
+        high = np.floor(axial + self._REACH).astype(np.intp)
+        return low, high
+
+    def missing(
+        self, points: NDArray[np.float64], paths: _OpenPaths
+    ) -> NDArray[np.intp]:
+        return np.flatnonzero(paths._cells(points) < 0)
+
+    @classmethod
+    def of(cls, locator: object, centers: NDArray[np.float64]) -> _HexCells | None:
+        """The lattice of a hexagonal locator whose bins are its active cells."""
+        from neurospatial.geometry._hex_lookup import (
+            axial_to_offset_bin_indices,
+            round_fractional_cube_to_integer_axial,
+        )
+        from neurospatial.geometry._locators import HexLocator, SubsetLocator
+
+        # Subsets (cells clipped by an arena) map the lattice's bins on.
+        subsets = []
+        while isinstance(locator, SubsetLocator):
+            subsets.append(locator.parent_to_child)
+            locator = locator.base
+        if not isinstance(locator, HexLocator) or not centers.size:
+            return None
+        flat_to_active = locator.flat_to_active
+        for parent_to_child in reversed(subsets):
+            flat_to_active = np.where(
+                flat_to_active >= 0,
+                parent_to_child[np.maximum(flat_to_active, 0)],
+                -1,
+            )
+        n_rows, n_cols = locator.centers_shape
+        width = np.sqrt(3.0) * locator.radius
+        extent = max(abs(locator.offset_x), abs(locator.offset_y)) + width * (
+            max(n_rows, n_cols) + 1
+        )
+        if extent > cls._HEX_SPAN * locator.radius:
+            return None
+        q, r, s = cartesian_to_fractional_cube(
+            centers[:, 0] - locator.offset_x,
+            centers[:, 1] - locator.offset_y,
+            locator.radius,
+        )
+        q_bin, r_bin = round_fractional_cube_to_integer_axial(q, r, s)
+        flat = axial_to_offset_bin_indices(q_bin, r_bin, n_cols, n_rows)
+        if np.any(flat < 0) or not np.array_equal(
+            flat_to_active[flat], np.arange(len(centers))
+        ):
+            return None
+        # Every hexagon of the lattice, in axial coordinates (odd-r offset
+        # rows are shifted half a hexagon right).
+        row, col = np.divmod(np.arange(n_rows * n_cols), n_cols)
+        q_all = col - (row - (row & 1)) // 2
+        q_min = int(q_all.min())
+        shape = (int(q_all.max()) - q_min + 1, n_rows)
+        table = np.full(shape, -1, dtype=np.intp)
+        table[q_all - q_min, row] = flat_to_active
+        cell = np.column_stack([q_bin - q_min, r_bin]).astype(np.intp)
+        return cls(locator, table.ravel(), shape, cell, q_min)
 
 
 class PairDistances(ABC):
