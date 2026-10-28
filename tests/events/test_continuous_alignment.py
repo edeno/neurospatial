@@ -531,6 +531,9 @@ def test_result_list_fields_become_arrays_and_tuples():
         ({"max_gap": -3.0}, "max_gap must be None"),
         ({"interpolation": ("spline",)}, "not allowed for linear"),
         ({"epochs": np.array([1.0, 2.0, 3.0])}, "epochs must be None"),
+        ({"epochs": np.array([[2.0, 3.0], [0.0, 1.0]])}, "epochs must be None"),
+        ({"epochs": np.array([[0.0, 2.0], [1.0, 3.0]])}, "epochs must be None"),
+        ({"epochs": np.array([[0.0, 1.0], [1.0, 3.0]])}, "epochs must be None"),
         (
             {"counts": np.full((2, 1), 2, dtype=np.int64)},
             r"counts must lie in \[0, 1\]",

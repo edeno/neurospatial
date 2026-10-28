@@ -118,7 +118,8 @@ Fixed:
   reported 0 retained events. Construction also checks `dt`, `window`,
   `max_gap`, `epochs`, interpolation per value kind, unique `feature_ids`, counts within the retained events,
   finite values wherever `support` is True, and the unit of circular
-  features. `align_continuous_to_events` stores every radian spelling
+  features, and that `epochs` are sorted and separated as `as_intervals`
+  returns them. `align_continuous_to_events` stores every radian spelling
   (`"radian"`, `"radians"`) as `"rad"`.
 
 Faster:

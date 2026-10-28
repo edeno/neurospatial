@@ -298,9 +298,11 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
                 and epochs.shape[1] == 2
                 and np.isfinite(epochs).all()
                 and (epochs[:, 1] > epochs[:, 0]).all()
+                and (epochs[1:, 0] > epochs[:-1, 1]).all()
             ):
                 problems.append(
-                    "epochs must be None or finite (n, 2) rows with start < stop"
+                    "epochs must be None or finite (n, 2) rows with start < stop, "
+                    "sorted and separated as as_intervals returns them"
                 )
 
         if self.window_coverage not in _WINDOW_COVERAGES:
