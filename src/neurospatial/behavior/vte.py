@@ -68,7 +68,7 @@ References
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import numpy as np
@@ -1089,17 +1089,14 @@ def compute_vte_trial(
     head_sweep, mean_spd, min_spd = _window_metrics(
         times, positions, support, window, min_speed=min_speed
     )
-    return VTETrialResult(
-        head_sweep_magnitude=head_sweep,
-        z_head_sweep=None,  # Not computed for single trial
+    # A single trial has no session baseline, so it is not z-scored.
+    return _unscored_trial(
+        status="ok",
+        head_sweep=head_sweep,
         mean_speed=mean_spd,
         min_observed_speed=min_spd,
-        z_speed_inverse=None,
-        vte_index=None,
-        is_vte=None,
         window_start=entry_time - window_duration,
         window_end=entry_time,
-        status="ok",
     )
 
 
@@ -1343,7 +1340,7 @@ def compute_vte_session(
     min_speed = resolve_min_speed(env, min_speed, call="compute_vte_session")
     region_bins = env.bins_in_region(decision_region)
     in_epochs = support.sample_in_epochs
-    measured: list[_TrialMeasurement] = []
+    measured: list[VTETrialResult] = []
     for index, trial in enumerate(trials):
         measured.append(
             _measure_trial(
@@ -1363,8 +1360,8 @@ def compute_vte_session(
 
     # Z-scores over the session: unmeasured trials carry NaN metrics, so they
     # get NaN z-scores and stay out of the baseline.
-    head_sweeps = np.array([m.head_sweep for m in measured], dtype=np.float64)
-    speeds = np.array([m.mean_speed for m in measured], dtype=np.float64)
+    head_sweeps = np.array([m.head_sweep_magnitude for m in measured])
+    speeds = np.array([m.mean_speed for m in measured])
     z_head_sweeps, z_speed_inv = normalize_vte_scores(head_sweeps, speeds)
 
     trial_results = []
@@ -1373,32 +1370,38 @@ def compute_vte_session(
     ):
         vte_idx = compute_vte_index(float(z_head_sweep), float(z_speed), alpha=alpha)
         trial_results.append(
-            VTETrialResult(
-                head_sweep_magnitude=m.head_sweep,
-                z_head_sweep=float(z_head_sweep),
-                mean_speed=m.mean_speed,
-                min_observed_speed=m.min_observed_speed,
-                z_speed_inverse=float(z_speed),
-                vte_index=float(vte_idx),
+            replace(
+                m,
+                z_head_sweep=z_head_sweep,
+                z_speed_inverse=z_speed,
+                vte_index=vte_idx,
                 is_vte=classify_vte(vte_idx, threshold=vte_threshold),
-                window_start=m.window_start,
-                window_end=m.window_end,
-                status=m.status,
             )
         )
     return VTESessionResult(trial_results=tuple(trial_results))
 
 
-@dataclass(frozen=True)
-class _TrialMeasurement:
-    """Raw pre-decision metrics of one session trial, before z-scoring."""
-
-    status: VTETrialStatus
-    head_sweep: float = np.nan
-    mean_speed: float = np.nan
-    min_observed_speed: float = np.nan
-    window_start: float = np.nan
-    window_end: float = np.nan
+def _unscored_trial(
+    status: VTETrialStatus,
+    head_sweep: float = np.nan,
+    mean_speed: float = np.nan,
+    min_observed_speed: float = np.nan,
+    window_start: float = np.nan,
+    window_end: float = np.nan,
+) -> VTETrialResult:
+    """Raw pre-decision metrics of one trial, before session z-scoring."""
+    return VTETrialResult(
+        head_sweep_magnitude=head_sweep,
+        z_head_sweep=None,
+        mean_speed=mean_speed,
+        min_observed_speed=min_observed_speed,
+        z_speed_inverse=None,
+        vte_index=None,
+        is_vte=None,
+        window_start=window_start,
+        window_end=window_end,
+        status=status,
+    )
 
 
 def _measure_trial(
@@ -1414,8 +1417,8 @@ def _measure_trial(
     decision_region: str,
     window_duration: float,
     min_speed: float,
-) -> _TrialMeasurement:
-    """Raw metrics of one trial, or the status saying why it has none."""
+) -> VTETrialResult:
+    """Unscored metrics of one trial, or the status saying why it has none."""
     from neurospatial.behavior._decision_windows import first_entry, pre_decision_window
 
     span = f"Trial {index} spanning [{trial.start_time:.3f}, {trial.end_time:.3f}] s"
@@ -1431,7 +1434,7 @@ def _measure_trial(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-        return _TrialMeasurement(status="no_samples")
+        return _unscored_trial(status="no_samples")
     trial_times = times[first:stop]
     # The entry is the trial's first decision-region sample inside epochs.
     entry = first_entry(
@@ -1444,7 +1447,7 @@ def _measure_trial(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-        return _TrialMeasurement(status="no_entry")
+        return _unscored_trial(status="no_entry")
     entry_time = float(trial_times[entry])
     window_start = max(entry_time - window_duration, float(trial.start_time))
 
@@ -1467,13 +1470,13 @@ def _measure_trial(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-        return _TrialMeasurement(
+        return _unscored_trial(
             status="too_few_samples", window_start=window_start, window_end=entry_time
         )
     head_sweep, mean_speed, min_observed_speed = _window_metrics(
         times, positions, support, window, min_speed=min_speed
     )
-    return _TrialMeasurement(
+    return _unscored_trial(
         status="ok",
         head_sweep=head_sweep,
         mean_speed=mean_speed,
