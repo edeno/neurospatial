@@ -39,7 +39,12 @@ _SCHEMA_TAG = "Regions-v1"
 
 
 def regions_to_json(regions: Regions, path: str | Path, *, indent: int = 2) -> None:
-    """Write a list-of-dicts file that any language can read.
+    """Write regions to a standard JSON file that any language can read.
+
+    The file holds one object, ``{"format": "Regions-v1", "regions": [...]}``,
+    with one :meth:`Region.to_dict` entry (name, kind, GeoJSON-style geometry
+    and metadata) per region. Missing parent directories are created and an
+    existing file is overwritten.
 
     Parameters
     ----------
@@ -47,42 +52,134 @@ def regions_to_json(regions: Regions, path: str | Path, *, indent: int = 2) -> N
         Collection of regions to write.
     path : str or Path
         Destination file path.
-    indent : int, optional
-        Indentation level for the JSON file. Default is 2 spaces.
+    indent : int, default=2
+        Indentation of the JSON text, in spaces.
 
+    Raises
+    ------
+    ValueError
+        If a region holds a NaN or infinite coordinate or metadata value,
+        which standard JSON cannot store.
+
+    See Also
+    --------
+    regions_from_json : Read the file back.
     """
     payload = {
         "format": _SCHEMA_TAG,
         "regions": [reg.to_dict() for reg in regions.values()],
     }
-    # Ensure the parent directory exists before writing
+    try:
+        text = json.dumps(payload, indent=indent, allow_nan=False)
+    except ValueError as exc:
+        bad = next(
+            (
+                region.name
+                for region in regions.values()
+                if not _is_standard_json(region.to_dict())
+            ),
+            None,
+        )
+        raise ValueError(
+            _format_error(
+                f"Cannot write {path}: region {bad!r} holds a NaN or infinite "
+                "coordinate or metadata value.",
+                why="standard JSON has no NaN or Infinity, and regions must "
+                "have finite coordinates",
+                fix="find and fix the non-finite value in that region's data "
+                "or metadata",
+            )
+        ) from exc
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(payload, indent=indent))
+    output_path.write_text(text, encoding="utf-8")
+
+
+def _is_standard_json(value: Any) -> bool:
+    try:
+        json.dumps(value, allow_nan=False)
+    except ValueError:
+        return False
+    return True
 
 
 def regions_from_json(path: str | Path) -> Regions:
-    """Load the schema written by :func:`regions_to_json`.
+    """Read a regions file written by :func:`regions_to_json`.
 
     Parameters
     ----------
     path : str or Path
-        Path to the JSON file containing regions.
+        Path to the JSON file.
 
     Returns
     -------
     Regions
-        A collection of :class:`Region` objects representing the shapes in the JSON.
+        The regions, with their metadata, in file order.
 
+    Raises
+    ------
+    ValueError
+        If the file is not a ``"Regions-v1"`` regions file: the top level is
+        not an object, the ``format`` tag is missing or different, the
+        ``regions`` list is missing, or an entry is malformed.
+    json.JSONDecodeError
+        If the file is not valid JSON.
+
+    See Also
+    --------
+    regions_to_json : Write the file.
+    load_labelme_json, load_cvat_xml : Read annotation-tool exports.
     """
-    blob = json.loads(Path(path).read_text())
-    if blob.get("format") != _SCHEMA_TAG:
-        warnings.warn(
-            f"Unrecognised format tag {blob.get('format')!r}; attempting best-effort load",
-            category=UserWarning,
-            stacklevel=2,
+    blob = json.loads(Path(path).read_text(encoding="utf-8"))
+    rewrite = (
+        "read annotation-tool exports with load_labelme_json or load_cvat_xml, "
+        "or rewrite the regions with regions_to_json"
+    )
+    if not isinstance(blob, dict):
+        raise ValueError(
+            _format_error(
+                f"{path} holds a JSON {type(blob).__name__}, not a regions file.",
+                why=f'a regions file is an object with "format": "{_SCHEMA_TAG}" '
+                'and a "regions" list',
+                fix=rewrite,
+            )
         )
-    return Regions(Region.from_dict(d) for d in blob["regions"])
+    found = blob.get("format")
+    if found != _SCHEMA_TAG:
+        what = (
+            f"{path} has no format tag."
+            if found is None
+            else f"{path} has format tag {found!r}."
+        )
+        raise ValueError(
+            _format_error(
+                what,
+                why=f"only {_SCHEMA_TAG!r} files, written by regions_to_json, are read",
+                fix=rewrite,
+            )
+        )
+    entries = blob.get("regions")
+    if not isinstance(entries, list):
+        raise ValueError(
+            _format_error(
+                f'{path} has no "regions" list.',
+                fix="rewrite the regions with regions_to_json",
+            )
+        )
+    regions = []
+    for index, entry in enumerate(entries):
+        try:
+            regions.append(Region.from_dict(entry))
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise ValueError(
+                _format_error(
+                    f"Region entry {index} in {path} is malformed: {exc!r}.",
+                    why="each entry needs the name, kind, geom and metadata "
+                    "keys written by Region.to_dict",
+                    fix="rewrite the regions with regions_to_json",
+                )
+            ) from exc
+    return Regions(regions)
 
 
 # --------------------------------------------------------------------------

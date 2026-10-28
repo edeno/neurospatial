@@ -155,15 +155,44 @@ class TestRegionsToJson:
         assert loaded_method["box"].to_dict()["metadata"]["nested"]["k"] == [1, 2]
         assert loaded_func["pt"].metadata["id"] == 7
 
-    def test_unrecognized_format_warning(self, tmp_path):
-        """Test warning when loading unrecognized format."""
-        json_path = tmp_path / "custom.json"
-        json_path.write_text(json.dumps({"format": "CustomFormat-v1", "regions": []}))
+    def test_overwrites_existing_file(self, tmp_path):
+        json_path = tmp_path / "regions.json"
+        regions_to_json(Regions([Region("a", "point", (1.0, 2.0))]), json_path)
+        regions_to_json(Regions([Region("b", "point", (3.0, 4.0))]), json_path)
 
-        with pytest.warns(UserWarning, match="Unrecognised format"):
-            regions = regions_from_json(json_path)
+        assert regions_from_json(json_path).list_names() == ["b"]
 
-        assert len(regions) == 0
+    def test_non_finite_value_raises_naming_region(self, tmp_path):
+        try:
+            bad = Region("bad", "point", (np.nan, 1.0))
+        except ValueError:
+            pytest.skip("Region already refuses non-finite coordinates")
+        regions = Regions([Region("ok", "point", (0.0, 0.0)), bad])
+        json_path = tmp_path / "nan.json"
+
+        with pytest.raises(ValueError, match="region 'bad' holds a NaN"):
+            regions_to_json(regions, json_path)
+        assert not json_path.exists()
+
+    @pytest.mark.parametrize(
+        ("payload", "match"),
+        [
+            (
+                {"format": "CustomFormat-v1", "regions": []},
+                "format tag 'CustomFormat-v1'",
+            ),
+            ({"regions": []}, "no format tag"),
+            ([{"name": "a"}], "JSON list, not a regions file"),
+            ({"format": "Regions-v1"}, 'no "regions" list'),
+            ({"format": "Regions-v1", "regions": [{"name": "a"}]}, "entry 0"),
+        ],
+    )
+    def test_refuses_other_files(self, tmp_path, payload, match):
+        json_path = tmp_path / "other.json"
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with pytest.raises(ValueError, match=match):
+            regions_from_json(json_path)
 
 
 class TestLoadLabelmeJson:
