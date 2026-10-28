@@ -20,15 +20,28 @@ _THREE_D_TIMES = np.arange(len(_THREE_D)) * 0.1
 _WITH_DUPLICATE_TIMES = np.arange(len(_WITH_DUPLICATE)) * 0.1
 
 
-def test_three_dimensional_turn_mixes_xy_cross_with_full_dot_product():
-    np.testing.assert_allclose(compute_turn_angles(_THREE_D), [np.pi / 4], **_TOL)
+# Steps (1, 0, 1) and (0, 1, 1): cos(angle) = 1 / (sqrt(2) sqrt(2)), so pi / 3.
+# The golden was pi / 4 while the turn mixed an x-y cross product with a 3-D
+# dot product, which is neither the planar nor the 3-D angle.
+def test_three_dimensional_turn_is_the_unsigned_angle_between_steps():
+    np.testing.assert_allclose(
+        compute_turn_angles(_THREE_D), [np.pi / 3], rtol=1e-15, atol=0
+    )
 
 
-def test_three_dimensional_curvature_mixes_xy_cross_with_full_dot_product():
+def test_three_dimensional_curvature_is_the_unsigned_angle_between_steps():
     np.testing.assert_allclose(
         compute_trajectory_curvature(_THREE_D_TIMES, _THREE_D, smooth_window=None),
-        [0.0, np.pi / 4, 0.0],
-        **_TOL,
+        [0.0, np.pi / 3, 0.0],
+        rtol=1e-15,
+        atol=1e-15,
+    )
+
+
+def test_three_dimensional_reversal_and_straight_step():
+    positions = np.array([[0.0, 0, 0], [1, 1, 1], [2, 2, 2], [1, 1, 1]])
+    np.testing.assert_allclose(
+        compute_turn_angles(positions), [0.0, np.pi], rtol=1e-15, atol=1e-15
     )
 
 

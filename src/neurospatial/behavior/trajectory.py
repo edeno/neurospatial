@@ -766,7 +766,8 @@ def compute_turn_angles(
     Returns
     -------
     NDArray[np.float64], shape (n_angles,)
-        Turn angles in radians, in the range [-π, π]. Consecutive duplicate
+        Turn angles in radians, in the range [-π, π] (unsigned, in [0, π],
+        for three or more columns; see Notes). Consecutive duplicate
         positions (stationary periods) are dropped first, so the length is
         ``n_unique - 2``, where ``n_unique`` is the number of positions left,
         not ``n_samples - 2``. A turn whose incoming or outgoing step touches a
@@ -787,14 +788,14 @@ def compute_turn_angles(
     where :math:`v_i` is the movement vector from position i-1 to position i.
 
     With ``v1`` and ``v2`` the incoming and outgoing movement vectors, the
-    angle is ``atan2(v1_x * v2_y - v1_y * v2_x, sum(v1 * v2))``. The cross
-    product uses the first two columns (x, y); the dot product sums over all
-    columns. For positions with more than two columns this mixes a projected
-    cross product with a full-dimensional dot product, so the result is neither
-    the angle in the x-y plane nor the angle in 3-D space. The positions
-    ``[[0, 0, 0], [1, 0, 1], [1, 1, 2]]`` give ``π/4`` here, whereas the x-y
-    projection ``positions[:, :2]`` gives ``π/2``. For a horizontal-plane
-    analysis pass ``positions[:, :2]`` explicitly.
+    planar angle is ``atan2(v1_x * v2_y - v1_y * v2_x, v1 . v2)``. One column
+    gives 0 (same direction) or π (reversal). With three or more columns
+    a turn has no sign without a reference axis, so the result is the
+    unsigned angle between ``v1`` and ``v2`` in the full space, in
+    ``[0, π]``: the positions ``[[0, 0, 0], [1, 0, 1], [1, 1, 2]]`` give
+    ``π/3``, whereas the x-y projection ``positions[:, :2]`` gives the signed
+    ``π/2``. For a horizontal-plane analysis pass ``positions[:, :2]``
+    explicitly.
 
     Stationary periods (consecutive duplicate positions) are removed before
     computing turn angles to avoid undefined angles from zero-length vectors.
@@ -832,11 +833,10 @@ def compute_turn_angles(
     >>> float(angles[0])  # π/2: a 90° left turn
     1.5707963267948966
     >>>
-    >>> # With more than two columns the cross product uses x, y only but the
-    >>> # dot product uses every column
+    >>> # With three columns the turn is the unsigned 3-D angle
     >>> positions_3d = np.array([[0.0, 0, 0], [1, 0, 1], [1, 1, 2]])
-    >>> float(compute_turn_angles(positions_3d)[0])  # π/4
-    0.7853981633974483
+    >>> round(float(compute_turn_angles(positions_3d)[0]), 12)  # π/3
+    1.047197551197
     >>> float(compute_turn_angles(positions_3d[:, :2])[0])  # x-y projection, π/2
     1.5707963267948966
 
@@ -899,12 +899,22 @@ def compute_turn_angles(
 
     n_dims = vectors.shape[1]
     angles: NDArray[np.float64]
-    if n_dims >= 2:
+    if n_dims == 2:
         # 2D cross product (scalar): v1[0]*v2[1] - v1[1]*v2[0]
         cross = v1[:, 0] * v2[:, 1] - v1[:, 1] * v2[:, 0]
         # Dot product
         dot = np.sum(v1 * v2, axis=1)
         angles = np.arctan2(cross, dot)
+    elif n_dims > 2:
+        # Unsigned angle between the full vectors (no turn sign exists in 3D
+        # without a reference axis), by Kahan's formula, accurate near 0 and
+        # pi: 2 atan2(|u - w|, |u + w|) for unit vectors u, w.
+        with np.errstate(invalid="ignore", divide="ignore"):
+            u = v1 / norms1[:, np.newaxis]
+            w = v2 / norms2[:, np.newaxis]
+        angles = 2.0 * np.arctan2(
+            np.linalg.norm(u - w, axis=1), np.linalg.norm(u + w, axis=1)
+        )
     else:
         # 1D: 0 if same direction, π if opposite, NaN next to a missing
         # sample (as in 2D, where NaN propagates through atan2).
@@ -2311,8 +2321,8 @@ def compute_trajectory_curvature(
     Despite its name, this returns turning angles in radians (the signed change
     of movement direction at each sample), not geometric curvature. For
     curvature in inverse length units use ``compute_planar_curvature``.
-    Works for any number of columns (1D, 2D, 3D, N-D), but see Notes for how
-    extra columns enter. Only observed movement is used: no turn is computed
+    Works for any number of columns (1D, 2D, 3D, N-D); with three or more
+    columns the turn is unsigned (see Notes). Only observed movement is used: no turn is computed
     or smoothed across a missing sample, a time gap or a declared recording
     break.
 
@@ -2384,12 +2394,10 @@ def compute_trajectory_curvature(
     Stationary duplicates and the first and last retained positions of a run
     have zero turn before smoothing, preserving the timestamps of actual turns.
 
-    For positions with more than two columns the angle is
-    ``atan2(v1_x * v2_y - v1_y * v2_x, sum(v1 * v2))``: the cross product uses
-    the first two columns (x, y) and the dot product sums over all columns
-    (as in `compute_turn_angles()`). This is neither the horizontal-plane angle
-    nor the 3-D angle; pass ``positions[:, :2]`` for a horizontal-plane
-    analysis.
+    For positions with three or more columns the turn is the unsigned angle
+    between consecutive steps in the full space, in ``[0, π]`` (as in
+    `compute_turn_angles()`): a 3-D turn has no sign without a reference
+    axis. Pass ``positions[:, :2]`` for a signed horizontal-plane analysis.
 
     The turn is per sample, so it depends on the frame rate and the running
     speed. To compare path shape across sessions, use
@@ -2435,14 +2443,13 @@ def compute_trajectory_curvature(
     >>> np.round(turns, 4).tolist()
     [0.0, 0.0, 1.5708, 0.0, nan, 0.0, 0.0]
 
-    With three columns the cross product uses x, y and the dot product uses
-    all three: the turn at the middle sample is π/4, not the π/2 of the x-y
-    projection:
+    With three columns the turn is the unsigned 3-D angle between the two
+    steps, π/3 here, not the signed π/2 of the x-y projection:
 
     >>> times = np.array([0.0, 0.1, 0.2])
     >>> x = np.array([[0.0, 0, 0], [1, 0, 1], [1, 1, 2]])
-    >>> float(compute_trajectory_curvature(times, x, smooth_window=None)[1])
-    0.7853981633974483
+    >>> round(float(compute_trajectory_curvature(times, x, smooth_window=None)[1]), 12)
+    1.047197551197
     >>> float(compute_trajectory_curvature(times, x[:, :2], smooth_window=None)[1])
     1.5707963267948966
 
