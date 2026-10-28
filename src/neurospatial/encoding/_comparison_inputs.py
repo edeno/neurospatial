@@ -97,23 +97,6 @@ def _check_pair(rates_a: object, rates_b: object) -> bool:
     return population
 
 
-def _check_choice(
-    argument: str,
-    value: object,
-    allowed: tuple[str, ...],
-    caller: _Caller,
-) -> None:
-    """Refuse an option outside its allowed values."""
-    if value not in allowed:
-        options = ", ".join(repr(option) for option in allowed)
-        raise ValueError(
-            _format_error(
-                f"{caller.operation} got {argument}={value!r}.",
-                fix=f"pass {argument}= one of {options}",
-            )
-        )
-
-
 def _check_min_common_bins(min_common_bins: object) -> None:
     """Require an integer of at least 3."""
     if isinstance(min_common_bins, bool) or not isinstance(

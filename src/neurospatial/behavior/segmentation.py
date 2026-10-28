@@ -91,7 +91,7 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._results import ReadOnlyArraysMixin
-from neurospatial._validation import validate_finite_scalar
+from neurospatial._validation import validate_choice, validate_finite_scalar
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
@@ -288,20 +288,6 @@ def _checked_interval(record: str, start: object, end: object) -> tuple[float, f
     return start_f, end_f
 
 
-def _check_choice(
-    record: str, name: str, value: object, choices: Sequence[str]
-) -> None:
-    """Raise a ValueError naming ``choices`` when ``value`` is not one of them."""
-    if value not in choices:
-        raise ValueError(
-            _format_error(
-                f"{record}.{name} must be one of {list(choices)}; got {value!r}.",
-                why=f"each {name} has one documented meaning.",
-                fix=f"pass one of {list(choices)}.",
-            )
-        )
-
-
 @dataclass(frozen=True)
 class Crossing:
     """Region crossing event.
@@ -326,7 +312,9 @@ class Crossing:
 
     def __post_init__(self) -> None:
         """Check the direction and store plain Python scalars."""
-        _check_choice("Crossing", "direction", self.direction, ("entry", "exit"))
+        validate_choice(
+            self.direction, ("entry", "exit"), name="direction", owner="Crossing"
+        )
         time = float(self.time)
         if not np.isfinite(time):
             raise ValueError(f"Crossing.time must be finite; got {time!r}.")
@@ -386,7 +374,7 @@ class Run(ReadOnlyArraysMixin):
         start, end = _checked_interval("Run", self.start_time, self.end_time)
         object.__setattr__(self, "start_time", start)
         object.__setattr__(self, "end_time", end)
-        _check_choice("Run", "outcome", self.outcome, _OUTCOMES)
+        validate_choice(self.outcome, _OUTCOMES, name="outcome", owner="Run")
         bins = np.asarray(self.bins)
         if bins.ndim != 1 or (bins.size and bins.dtype.kind not in "iu"):
             raise ValueError(
@@ -431,11 +419,11 @@ class Lap:
         start, end = _checked_interval("Lap", self.start_time, self.end_time)
         object.__setattr__(self, "start_time", start)
         object.__setattr__(self, "end_time", end)
-        _check_choice(
-            "Lap",
-            "direction",
+        validate_choice(
             self.direction,
             ("clockwise", "counter-clockwise", "unknown"),
+            name="direction",
+            owner="Lap",
         )
         score = float(self.overlap_score)
         if not (np.isnan(score) or 0.0 <= score <= 1.0):
@@ -489,7 +477,7 @@ class Trial:
         start, end = _checked_interval("Trial", self.start_time, self.end_time)
         object.__setattr__(self, "start_time", start)
         object.__setattr__(self, "end_time", end)
-        _check_choice("Trial", "outcome", self.outcome, _OUTCOMES)
+        validate_choice(self.outcome, _OUTCOMES, name="outcome", owner="Trial")
         if (self.outcome == "reached") != (self.end_region is not None):
             raise ValueError(
                 _format_error(
@@ -630,8 +618,11 @@ def detect_region_crossings(
     region_mask = _require_region_mask(
         env, region_name, operation="detect_region_crossings()", argument="region_name"
     )
-    _check_choice(
-        "detect_region_crossings()", "direction", direction, ("both", "entry", "exit")
+    validate_choice(
+        direction,
+        ("both", "entry", "exit"),
+        name="direction",
+        owner="detect_region_crossings()",
     )
 
     position_bins, times = _validated_samples(
@@ -2797,7 +2788,8 @@ def trajectory_similarity(
           both trajectories share, over the area either visits. Range [0, 1].
         - 'correlation': Pearson correlation of the positions along the
           track, with negative correlations reported as 0. Needs a 1-D
-          environment or a linearized track. Range [0, 1].
+          environment or a linearized track. Range [0, 1], or NaN when
+          undefined (see Returns).
         - 'hausdorff': 1 - Hausdorff distance / environment extent. Range [0, 1].
         - 'dtw': 1 - dynamic time warping distance / its largest possible
           value in this environment. Range [0, 1].
@@ -2807,7 +2799,12 @@ def trajectory_similarity(
     -------
     float
         Similarity score in [0, 1] where 1.0 indicates identical trajectories
-        and 0.0 indicates completely different trajectories.
+        and 0.0 indicates completely different trajectories. For
+        ``method='correlation'``, NaN when the correlation is undefined:
+        fewer than 3 aligned pairs have both samples inside the environment
+        (two points always correlate exactly +-1), or either trajectory stays
+        in one bin over those pairs. NaN is not 0 ("unrelated"); skip such
+        pairs with ``np.nanmean`` or ``np.isfinite`` when averaging.
 
     Raises
     ------
@@ -2985,24 +2982,18 @@ def trajectory_similarity(
             shorter, longer = position_bins2, position_bins1
 
         # Sample longer trajectory at same rate as shorter
-        if len(shorter) < 2:
-            # Can't compute correlation with < 2 points
-            return 1.0 if np.array_equal(position_bins1, position_bins2) else 0.0
-
         indices = np.linspace(0, len(longer) - 1, len(shorter), dtype=int)
         longer_sampled = longer[indices]
         # Compare only aligned pairs in which both samples have a place.
         observed = (shorter >= 0) & (longer_sampled >= 0)
-        shorter, longer_sampled = shorter[observed], longer_sampled[observed]
-        if len(shorter) < 2:
-            return 1.0 if np.array_equal(shorter, longer_sampled) else 0.0
-
         # Correlate positions along the track, not bin numbers.
-        first = track_position[shorter]
-        second = track_position[longer_sampled]
-        if np.ptp(first) == 0 or np.ptp(second) == 0:
-            # Constant sequence - return 1 if identical, 0 otherwise
-            return 1.0 if np.array_equal(first, second) else 0.0
+        first = track_position[shorter[observed]]
+        second = track_position[longer_sampled[observed]]
+        # Fewer than 3 aligned pairs (two points always correlate +-1, fewer
+        # not at all) or a sequence that stays in one bin has no defined
+        # correlation, which is not "no similarity".
+        if first.size < 3 or np.ptp(first) == 0 or np.ptp(second) == 0:
+            return np.nan
 
         corr, _ = pearsonr(first, second)
         # Map [-1, 1] to [0, 1], clamp negative correlations to 0
@@ -3193,7 +3184,10 @@ def detect_goal_directed_runs(
     its row were deleted, and the gap around it is bridged when the valid
     samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
     ``break_before`` splits the recording; each resulting stretch is analyzed
-    on its own, so no segment spans a pause.
+    on its own, so no segment spans a pause. A sample in a part of the
+    environment that is not connected to the goal has no distance to it and
+    splits the recording the same way: no approach includes it, and the
+    approaches before and after it are scored on their own.
 
     **Approaches.** Within each recording, the distance from each sample's
     bin to the goal is followed through time. An approach starts at the
@@ -3377,23 +3371,24 @@ def _detect_goal_directed_runs_contiguous(
     # be jitter across a bin edge; anything larger is movement. The factor
     # allows for rounding in the summed edge lengths.
     tolerance = float(edges.max()) * (1 + 1e-9) if edges.nnz else 0.0
-    # Both bins of every step summed below lie in the goal's connected
-    # component, so every summed step is finite.
-    path = np.r_[
-        0.0, np.cumsum(paths.between_bins(position_bins[:-1], position_bins[1:]))
-    ]
     rows: list[tuple[float, float]] = []
     # Samples that cannot reach the goal split the recording.
     finite = np.r_[False, np.isfinite(distances), False]
     starts = np.flatnonzero(~finite[:-1] & finite[1:])
     stops = np.flatnonzero(finite[:-1] & ~finite[1:])
     for first, stop in zip(starts, stops, strict=True):
+        # Path length accumulates within the stretch only: both bins of each
+        # step reach the goal, so they lie in its connected component and the
+        # step is finite. A step to an unreachable bin would add inf.
+        stretch = position_bins[first:stop]
+        path = np.r_[0.0, np.cumsum(paths.between_bins(stretch[:-1], stretch[1:]))]
         for departure, arrival in _approach_bouts(distances[first:stop], tolerance):
-            departure, arrival = first + departure, first + arrival
-            progress = distances[departure] - distances[arrival]
+            progress = distances[first + departure] - distances[first + arrival]
             directedness = progress / (path[arrival] - path[departure])
             if directedness >= directedness_threshold and progress >= min_progress:
-                rows.append((float(times[departure]), float(times[arrival])))
+                rows.append(
+                    (float(times[first + departure]), float(times[first + arrival]))
+                )
     return rows
 
 

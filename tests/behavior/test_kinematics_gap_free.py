@@ -17,7 +17,10 @@ The ``compute_path_efficiency``, ``compute_path_efficiency_geodesic`` and
 efficiency began to weight each step by its length (and, under the geodesic
 metric, to follow the direction of the shortest path inside the
 environment), and geodesic distances began to be any-angle paths that keep
-out of missing cells.
+out of missing cells. The two geodesic entries were captured again when a
+straight leg from a position (to the goal, or to the first corner) began to
+be checked for line of sight: 333 of the 10,000 distances to the goal, whose
+old line cut through a missing cell, grew by up to 14%.
 """
 
 import json

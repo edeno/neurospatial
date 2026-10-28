@@ -1207,3 +1207,22 @@ def test_construction_checks_shapes(env) -> None:
             unit_ids_only_a=np.array([]),
             unit_ids_only_b=np.array([]),
         )
+
+
+@pytest.mark.parametrize(
+    ("option", "value", "allowed"),
+    [
+        ("method", "kendall", "'pearson', 'spearman'"),
+        ("unit_selection", "union", "'intersection', 'exact'"),
+        ("topology", "any", "'same', 'may_differ'"),
+    ],
+)
+def test_an_unknown_option_names_the_function_and_its_choices(
+    make, option, value, allowed
+) -> None:
+    rates = make([F])
+    with pytest.raises(ValueError) as info:
+        compare_spatial_rates(rates, rates, **{option: value})
+    message = str(info.value)
+    assert f"compare_spatial_rates() got {option}={value!r}" in message
+    assert f"{option} must be one of {allowed}" in message

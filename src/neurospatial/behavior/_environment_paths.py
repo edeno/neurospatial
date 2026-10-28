@@ -40,12 +40,18 @@ space instead:
    sees the target's bin center, the distance is the straight
    ``|p - target|``; otherwise it is ``|p - anchor|`` plus the anchor's path,
    with the path's last leg ending at the target itself rather than at its
-   bin center. Visibility is decided between the two bin centers, so near a
-   wall end a position can be up to a bin's width from where the straight
-   line actually becomes blocked. Two positions in one bin or in two
-   connected bins are always the straight line apart. Toward several source
-   bins at once, a position leaves for the anchor of its own bin or, when
-   visible from it, of a neighboring bin.
+   bin center. Which of the two is used is decided between the bin centers,
+   so near a wall end a position can be up to a bin's width from where the
+   straight line actually becomes blocked; but a leg that starts or ends at
+   a position (the straight line, the leg to the anchor, the last leg) is
+   used only where it is itself visible. Where it is not, the path goes
+   through the bin's own center or ends through the target bin's center,
+   whichever is shortest, so no path cuts a corner that the bin centers
+   clear. Two positions in one bin are always the straight line apart, and
+   two in connected bins are when that line is visible. Toward several
+   source bins at once, a position leaves for the anchor of its own bin or
+   of a neighboring bin, whichever it sees, or else through its bin's
+   center.
 
 **Track environments** (``Environment.from_graph``, ``linear_track``,
 ``maze``) are one-dimensional: the distance is measured along the track graph
@@ -75,11 +81,13 @@ from numpy.typing import NDArray
 from neurospatial._intervals import ragged_arange
 from neurospatial.environment._cache import CacheKey
 from neurospatial.geometry import require_cartesian
+from neurospatial.geometry._hex_lookup import cartesian_to_fractional_cube
 
 if TYPE_CHECKING:
     from scipy.sparse import csr_array
 
     from neurospatial.environment import Environment
+    from neurospatial.geometry._locators import HexLocator, LookupIndexes
 
 # Probe a segment every half of the shortest graph edge. Consecutive probes
 # must land in the same or connected bins, so a probe step shorter than a bin
@@ -94,6 +102,9 @@ _PROBE_PHASE = 2.0 - 2.0**0.5
 # is shorter than _SPLIT_RESOLUTION probe spacings.
 _SPLIT_AT = 2.0**0.5 - 1.0
 _SPLIT_RESOLUTION = 1e-2
+# Points of each segment located in the first round of :meth:`_trace`; each
+# round after doubles it.
+_FIRST_ROUND = 8
 # Runs of at most this many probe stretches that are not clean are probed.
 _TRACE_RUN = 8
 # Probe points located per call to ``Environment.bin_at``.
@@ -483,6 +494,15 @@ class _OpenPaths(EnvironmentPaths):
             _PROBE_FRACTION * float(lengths.min()) if lengths.size else np.inf
         )
         self._grid = _GridCells.of(self._locator, self._centers)
+        # Deep interiors of a mesh's triangles, where a point's bin is known
+        # without the locator.
+        self._cores = _MeshCores.of(self._locator, n_bins, env._cache)
+        # The lattice whose clean boxes skip probing (:meth:`_trace_boxes`).
+        self._boxes: _BoxCells | None = (
+            self._grid
+            if self._grid is not None
+            else _HexCells.of(self._locator, self._centers)
+        )
         # Bins this close share a face: a straight stretch between them
         # stays in the two.
         self._nearest = float(lengths.min()) * (1 + 1e-6) if lengths.size else np.inf
@@ -535,7 +555,7 @@ class _OpenPaths(EnvironmentPaths):
             np.full(points.shape[0], root),
             (fields.length, fields.anchor, fields.lead),
             np.full(points.shape[0], fields.row_of_root[root]),
-        )
+        )[0]
 
     def _between(
         self,
@@ -545,8 +565,14 @@ class _OpenPaths(EnvironmentPaths):
         end_bins: NDArray[np.intp],
     ) -> NDArray[np.float64]:
         out = np.empty(starts.shape[0])
-        # Points in one bin or in two connected bins see each other.
-        straight = (start_bins == end_bins) | self._connected(start_bins, end_bins)
+        # Points in one bin see each other (cells are convex); points in two
+        # connected bins do when the segment between them stays inside.
+        straight = start_bins == end_bins
+        joined = np.flatnonzero(~straight & self._connected(start_bins, end_bins))
+        if joined.size:
+            straight[joined] = self._sees(
+                starts[joined], ends[joined], start_bins[joined], end_bins[joined]
+            )
         out[straight] = np.linalg.norm(ends[straight] - starts[straight], axis=1)
         rest = np.flatnonzero(~straight)
         if not rest.size:
@@ -562,7 +588,7 @@ class _OpenPaths(EnvironmentPaths):
                 b[kept],
                 (fields.length, fields.anchor, fields.lead),
                 fields.row_of_root[b[kept]],
-            )
+            )[0]
         # Other targets: grow each field only as far as its start bins.
         grow = np.flatnonzero(~kept)
         if grow.size:
@@ -589,7 +615,7 @@ class _OpenPaths(EnvironmentPaths):
                 b[grow],
                 grown,  # type: ignore[arg-type]
                 field_rows,
-            )
+            )[0]
         return out
 
     def _directions(
@@ -602,16 +628,19 @@ class _OpenPaths(EnvironmentPaths):
         fields = self._fields
         fields.ensure(self, np.array([root]))
         out = np.full(points.shape, np.nan)
-        field_row = fields.row_of_root[root]
-        anchor = fields.anchor[field_row, point_bins]
-        reachable = np.isfinite(fields.length[field_row, point_bins])
-        straight = (point_bins == root) | (anchor == root)
-        waypoint = np.where(
-            straight[:, None], target[None, :], self._centers[np.maximum(anchor, 0)]
+        length, waypoint = self._join(
+            points,
+            point_bins,
+            np.broadcast_to(target, points.shape),
+            np.full(points.shape[0], root),
+            (fields.length, fields.anchor, fields.lead),
+            np.full(points.shape[0], fields.row_of_root[root]),
+            waypoints=True,
         )
+        assert waypoint is not None
         vector = waypoint - points
         norm = np.linalg.norm(vector, axis=1)
-        defined = reachable & (norm > 0)
+        defined = np.isfinite(length) & (norm > 0)
         out[defined] = vector[defined] / norm[defined, None]
         return out
 
@@ -626,10 +655,18 @@ class _OpenPaths(EnvironmentPaths):
             return self._to_point(points, point_bins, self._centers[source], source)
         length, anchor = self._source_field(source_bins)
         n_points = points.shape[0]
-        # Candidate corners: the anchor of the point's bin (its center sees
-        # it) and, when the point sees them, the anchors of the bin's open
-        # neighbors, so the nearest source is chosen from the point itself.
+        # Candidate corners: the anchor of the point's bin and the anchors of
+        # the bin's open neighbors, each where the point sees it, so the
+        # nearest source is chosen from the point itself. Where the point
+        # does not see its bin's anchor, it goes through its bin's center,
+        # which it sees.
         own = anchor[point_bins].astype(np.intp)
+        check = np.flatnonzero((own >= 0) & (own != point_bins))
+        if check.size:
+            hidden = ~self._sees(
+                points[check], self._centers[own[check]], point_bins[check], own[check]
+            )
+            own[check[hidden]] = point_bins[check[hidden]]
         neighbors = self._neighbors[point_bins]
         open_neighbor = neighbors >= 0
         owner = np.repeat(np.arange(n_points), open_neighbor.sum(axis=1))
@@ -656,14 +693,37 @@ class _OpenPaths(EnvironmentPaths):
     # Internals
     # ------------------------------------------------------------------
 
-    def _cells(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+    def _cells(
+        self,
+        points: NDArray[np.float64],
+        near: tuple[NDArray[np.intp], ...] = (),
+    ) -> NDArray[np.intp]:
         """Bin whose cell holds each point, -1 in no bin's cell.
 
         Probes use the bins' own cells: a straight segment between bin
         centers stays inside the environment when it stays inside the union
-        of the bins' cells.
+        of the bins' cells. On a mesh, a point deep inside a triangle
+        (:class:`_MeshCores`), one of the ``near`` bins of each point or
+        found from a table of cells, is that triangle's without the locator,
+        exactly as the locator would find it.
         """
-        return np.asarray(self._locator.locate(points, self._env._cache), dtype=np.intp)
+        cores = self._cores
+        if cores is None or not points.shape[0]:
+            return np.asarray(
+                self._locator.locate(points, self._env._cache), dtype=np.intp
+            )
+        located = np.full(points.shape[0], -1, dtype=np.intp)
+        for bins in near:
+            rest = np.flatnonzero(located < 0)
+            found = cores.deep(points[rest], bins[rest])
+            located[rest[found]] = bins[rest[found]]
+        rest = np.flatnonzero(located < 0)
+        if rest.size:
+            located[rest] = cores.lookup(points[rest])
+        rest = np.flatnonzero(located < 0)
+        if rest.size:
+            located[rest] = self._locator.locate(points[rest], self._env._cache)
+        return located
 
     def _grid_cells(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """:meth:`_cells` on a grid: a point's half-open cell when it is a bin.
@@ -678,6 +738,12 @@ class _OpenPaths(EnvironmentPaths):
         if rest.size:
             located[rest] = self._cells(points[rest])
         return located
+
+    def _probe_cells(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """:meth:`_cells` of probes, from the half-open cells on a grid."""
+        if self._grid is not None:
+            return self._grid_cells(points)
+        return self._cells(points)
 
     def _connected(self, a: NDArray[np.intp], b: NDArray[np.intp]) -> NDArray[np.bool_]:
         """Whether each bin pair is joined by an open connection."""
@@ -712,7 +778,9 @@ class _OpenPaths(EnvironmentPaths):
         roots: NDArray[np.intp],
         fields: tuple[NDArray[np.float64], NDArray[np.int32], NDArray[np.int32]],
         field_rows: NDArray[np.intp],
-    ) -> NDArray[np.float64]:
+        *,
+        waypoints: bool = False,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
         """Join each point to its target through the target bin's field.
 
         Parameters
@@ -728,27 +796,206 @@ class _OpenPaths(EnvironmentPaths):
             (n_fields, n_bins); each point's bin is reached in its field.
         field_rows : ndarray of int, shape (n,)
             Row of each target's field.
+        waypoints : bool
+            Also return each path's first waypoint.
+
+        Returns
+        -------
+        length : ndarray, shape (n,)
+        waypoint : ndarray, shape (n, n_dims), or None
+            See :meth:`_route`.
         """
         length_of, anchor_of, lead_of = fields
         anchor = anchor_of[field_rows, point_bins].astype(np.intp)
         length = length_of[field_rows, point_bins]
-        out = np.full(points.shape[0], np.inf)
+        reached = np.isfinite(length)
+        corner = np.maximum(anchor, 0)
+        corner_length = np.where(reached, length_of[field_rows, corner], np.inf)
+        lead = lead_of[field_rows, corner].astype(np.intp)
         straight = (point_bins == roots) | (anchor == roots)
-        out[straight] = np.linalg.norm(targets[straight] - points[straight], axis=1)
-        around = np.flatnonzero(~straight & np.isfinite(length))
-        if around.size:
-            corner = anchor[around]
-            lead_center = self._centers[lead_of[field_rows[around], corner]]
-            root_center = self._centers[roots[around]]
+        around = np.full(points.shape[0], np.inf)
+        rows = np.flatnonzero(~straight & reached)
+        if rows.size:
+            lead_center = self._centers[lead[rows]]
+            root_center = self._centers[roots[rows]]
             # The field's last leg ends at the root bin's center; end it at
             # the target instead.
-            out[around] = (
-                np.linalg.norm(points[around] - self._centers[corner], axis=1)
-                + length_of[field_rows[around], corner]
+            around[rows] = (
+                np.linalg.norm(points[rows] - self._centers[corner[rows]], axis=1)
+                + length_of[field_rows[rows], corner[rows]]
                 - np.linalg.norm(lead_center - root_center, axis=1)
-                + np.linalg.norm(lead_center - targets[around], axis=1)
+                + np.linalg.norm(lead_center - targets[rows], axis=1)
             )
-        return out
+        return self._route(
+            points,
+            point_bins,
+            targets,
+            roots,
+            straight,
+            corner,
+            corner_length,
+            lead,
+            around,
+            waypoints=waypoints,
+        )
+
+    def _route(
+        self,
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+        targets: NDArray[np.float64],
+        roots: NDArray[np.intp],
+        straight: NDArray[np.bool_],
+        corner: NDArray[np.intp],
+        corner_length: NDArray[np.float64],
+        lead: NDArray[np.intp],
+        around: NDArray[np.float64],
+        *,
+        waypoints: bool = False,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
+        """Path from each point to its target, with the legs at positions checked.
+
+        A field's line of sight is decided between bin centers. The legs of
+        a path that start or end at a position (the point straight to the
+        target, the point to its bin's anchor, the last waypoint to the
+        target) are taken only where they stay inside (:meth:`_sees`), so a
+        path never cuts a corner its bin centers clear. Where one is
+        blocked, the path is the shortest of the routes whose legs stay
+        inside: from the point to its bin's anchor or to its bin's own
+        center (inside the bin's convex cell), then along the field, ending
+        at the target from the path's last waypoint or from the root bin's
+        center. The bin's own path has length ``|center - anchor| +
+        length[anchor]``, as the field sums it.
+
+        Parameters
+        ----------
+        points, targets : ndarray, shape (n, n_dims)
+            Positions, in ``point_bins`` and ``roots``.
+        point_bins, roots : ndarray of int, shape (n,)
+        straight : ndarray of bool, shape (n,)
+            The field takes the point straight to its target.
+        corner : ndarray of int, shape (n,)
+            Anchor of each point's bin.
+        corner_length : ndarray, shape (n,)
+            Field length from the anchor's center; ``inf`` where the point's
+            bin is not reached.
+        lead : ndarray of int, shape (n,)
+            Last waypoint before the root on the anchor's path.
+        around : ndarray, shape (n,)
+            Length through the anchor, ending at the target from ``lead``,
+            where the path is not straight.
+        waypoints : bool
+            Also return each path's first waypoint.
+
+        Returns
+        -------
+        length : ndarray, shape (n,)
+            ``inf`` where the point's bin is not reached.
+        waypoint : ndarray, shape (n, n_dims), or None
+            The first point the path heads for after the point itself (the
+            target, a bin center), NaN where it is not reached.
+        """
+        n = points.shape[0]
+        centers = self._centers
+        out = np.full(n, np.inf)
+        waypoint = np.full(points.shape, np.nan) if waypoints else None
+        direct = straight.copy()
+        check = np.flatnonzero(straight & (point_bins != roots))
+        if check.size:
+            direct[check] = self._sees(
+                points[check], targets[check], point_bins[check], roots[check]
+            )
+        out[direct] = np.linalg.norm(targets[direct] - points[direct], axis=1)
+        if waypoint is not None:
+            waypoint[direct] = targets[direct]
+        rest = np.flatnonzero(~direct & np.isfinite(corner_length))
+        if not rest.size:
+            return out, waypoint
+        p, a, t, r = points[rest], point_bins[rest], targets[rest], roots[rest]
+        c, c_length, c_lead = corner[rest], corner_length[rest], lead[rest]
+        # The last waypoint on the own center's path: the bin itself when
+        # its anchor is the root, else the anchor's.
+        own_lead = np.where(c == r, a, c_lead)
+        # Legs to check: point to anchor (never in the point's own bin
+        # here), and last waypoint to target unless it is the root's center.
+        m = rest.size
+        index = np.arange(m)
+        last_from = np.flatnonzero(c_lead != r)
+        own_from = np.flatnonzero(c == r)
+        legs = np.r_[index, last_from, own_from]
+        leg_start = np.r_[c, c_lead[last_from], a[own_from]]
+        sees = self._sees(
+            np.r_[p, centers[leg_start[m:]]],
+            np.r_[centers[c], t[legs[m:]]],
+            np.r_[a, leg_start[m:]],
+            np.r_[c, r[legs[m:]]],
+        )
+        first = sees[:m]
+        last = c_lead == r
+        last[last_from] = sees[m : m + last_from.size]
+        own_last = last.copy()
+        own_last[own_from] = sees[m + last_from.size :]
+        tail = np.linalg.norm(centers[r] - t, axis=1)
+        via = np.linalg.norm(p - centers[c], axis=1) + c_length
+        own = np.linalg.norm(p - centers[a], axis=1) + (
+            np.linalg.norm(centers[a] - centers[c], axis=1) + c_length
+        )
+        options = np.stack(
+            [
+                np.where(
+                    first & last,
+                    via
+                    - np.linalg.norm(centers[c_lead] - centers[r], axis=1)
+                    + np.linalg.norm(centers[c_lead] - t, axis=1),
+                    np.inf,
+                ),
+                np.where(first, via + tail, np.inf),
+                np.where(
+                    own_last,
+                    own
+                    - np.linalg.norm(centers[own_lead] - centers[r], axis=1)
+                    + np.linalg.norm(centers[own_lead] - t, axis=1),
+                    np.inf,
+                ),
+                own + tail,
+            ]
+        )
+        choice = np.argmin(options, axis=0)
+        value = options[choice, index]
+        # Where the field's own legs stay inside, its length is kept.
+        kept = first & last & ~straight[rest]
+        value[kept] = around[rest[kept]]
+        out[rest] = value
+        if waypoint is not None:
+            to_corner = kept | (choice <= 1)
+            first_point = np.where(to_corner[:, None], centers[c], centers[a])
+            # From the own center itself, the path heads on to the target
+            # (the center sees it) or to the anchor.
+            at_center = np.flatnonzero(~to_corner & np.all(p == centers[a], axis=1))
+            onward = (choice[at_center] == 2) & (own_lead[at_center] == a[at_center])
+            first_point[at_center] = np.where(
+                onward[:, None], t[at_center], centers[c[at_center]]
+            )
+            waypoint[rest] = first_point
+        return out, waypoint
+
+    def _sees(
+        self,
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        start_bins: NDArray[np.intp],
+        end_bins: NDArray[np.intp],
+    ) -> NDArray[np.bool_]:
+        """Whether each straight segment between two points stays inside.
+
+        Parameters
+        ----------
+        starts, ends : ndarray, shape (n, n_dims)
+            Points in ``start_bins`` and ``end_bins``.
+        start_bins, end_bins : ndarray of int, shape (n,)
+        """
+        visible, _ = self._trace(starts, ends, start_bins, end_bins)
+        return visible
 
     def _source_field(
         self, source_bins: NDArray[np.intp]
@@ -777,8 +1024,10 @@ class _OpenPaths(EnvironmentPaths):
         Probes are located in rounds of doubling length from the start, and
         a segment stops being probed at its first obstruction, so a blocked
         segment costs about as much as its distance to the obstruction. On a
-        grid, visibility alone skips the probes of clean stretches
-        (:meth:`_trace_boxes`).
+        grid or a hexagonal lattice, visibility alone skips the probes of
+        clean stretches (:meth:`_trace_boxes`); on a grid, the rate integral
+        of the visible segments is then summed in one pass
+        (:meth:`_rate_integral`).
 
         Parameters
         ----------
@@ -804,15 +1053,31 @@ class _OpenPaths(EnvironmentPaths):
         if n_segments == 0:
             return visible, cost
         n_steps = np.maximum(np.ceil(lengths / self._spacing).astype(np.intp), 1)
-        if rate is None and self._grid is not None and self._grid.boxes(self):
+        boxes = self._boxes is not None and self._boxes.boxes(self)
+        # A rate integral needs every probe's bin: worth locating them in
+        # one pass where that is cheap, on a grid.
+        if boxes and (
+            rate is None or (self._grid is not None and self._rounds_fit(n_steps))
+        ):
             visible = self._trace_boxes(starts, ends, start_bins, end_bins, n_steps)
+            if rate is not None:
+                cost[:] = np.inf
+                rows = np.flatnonzero(visible)
+                cost[rows] = self._rate_integral(
+                    starts[rows],
+                    ends[rows],
+                    start_bins[rows],
+                    end_bins[rows],
+                    n_steps[rows],
+                    rate,
+                )
             return visible, cost
         if rate is not None:
             cost[:] = 0.0
         previous = start_bins.astype(np.intp, copy=True)
         done = np.zeros(n_segments, dtype=np.intp)  # points located so far
         active = np.arange(n_segments)
-        batch = 8
+        batch = _FIRST_ROUND
         while active.size:
             # Next points of each active segment: probes 1 .. n_steps, then
             # the end (point n_steps + 1).
@@ -874,6 +1139,96 @@ class _OpenPaths(EnvironmentPaths):
         cost[~visible] = np.inf
         return visible, cost
 
+    @staticmethod
+    def _rounds_fit(n_steps: NDArray[np.intp]) -> bool:
+        """Whether every round of :meth:`_trace` takes its full doubling batch.
+
+        A round takes fewer points than its batch, from each of its active
+        segments, only when they would exceed ``_PROBE_CHUNK``. Counting
+        every unfinished segment as active (a blocked one leaves early)
+        bounds them, so when that bound fits every round, each segment's
+        rounds are its own points 1 .. 8, 9 .. 24, ..., whatever the
+        others do.
+        """
+        remaining = np.sort(n_steps + 1)
+        batch, done = _FIRST_ROUND, 0
+        while True:
+            active = remaining.size - int(
+                np.searchsorted(remaining, done, side="right")
+            )
+            if not active:
+                return True
+            if _PROBE_CHUNK // active < batch:
+                return False
+            done += batch
+            batch *= 2
+
+    def _rate_integral(
+        self,
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        start_bins: NDArray[np.intp],
+        end_bins: NDArray[np.intp],
+        n_steps: NDArray[np.intp],
+        rate: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        """:meth:`_trace`'s rate integral of visible segments, in one pass.
+
+        The same stretches as the round-by-round probe walk, each
+        ``0.5 * (rate[left] + rate[right]) * (fraction step)``, are summed
+        per segment within each of its rounds (:meth:`_rounds_fit` holds),
+        in order, and the round sums times the length are added in turn, as
+        the walk adds them, so the cost is the same to the last bit.
+        """
+        cost = np.zeros(starts.shape[0])
+        lengths = np.linalg.norm(ends - starts, axis=1)
+        count = n_steps + 1
+        # Segments in chunks of at most _PROBE_CHUNK points.
+        breaks = np.searchsorted(
+            np.cumsum(count),
+            np.arange(_PROBE_CHUNK, int(count.sum()), _PROBE_CHUNK),
+            side="right",
+        )
+        for lo, hi in itertools.pairwise(np.r_[0, breaks, starts.shape[0]]):
+            seg = np.arange(lo, hi)
+            if not seg.size:
+                continue
+            owner = np.repeat(np.arange(seg.size), count[seg])
+            step = ragged_arange(count[seg]) + 1
+            segment = seg[owner]
+            fraction = self._probe_fraction(step, n_steps[segment])
+            located = np.empty(step.size, dtype=np.intp)
+            at_end = step == n_steps[segment] + 1
+            located[at_end] = end_bins[segment[at_end]]
+            probe = ~at_end
+            located[probe] = self._probe_cells(
+                starts[segment[probe]]
+                + fraction[probe, None]
+                * (ends[segment[probe]] - starts[segment[probe]])
+            )
+            left = np.empty(step.size, dtype=np.intp)
+            left[1:] = located[:-1]
+            left[np.cumsum(count[seg]) - count[seg]] = start_bins[seg]
+            stretch = (
+                0.5
+                * (rate[left] + rate[located])
+                * (fraction - self._probe_fraction(step - 1, n_steps[segment]))
+            )
+            # Round of each point: 0 for points 1 .. 8, 1 for 9 .. 24, ...
+            _, exponent = np.frexp((step - 1) // _FIRST_ROUND + 1)
+            round_of = exponent.astype(np.intp) - 1
+            n_rounds = int(round_of.max()) + 1
+            sums = np.bincount(
+                owner * n_rounds + round_of,
+                weights=stretch,
+                minlength=seg.size * n_rounds,
+            ).reshape(seg.size, n_rounds)
+            total = np.zeros(seg.size)
+            for k in range(n_rounds):
+                total += sums[:, k] * lengths[seg]
+            cost[seg] = total
+        return cost
+
     def _trace_boxes(
         self,
         starts: NDArray[np.float64],
@@ -882,18 +1237,18 @@ class _OpenPaths(EnvironmentPaths):
         end_bins: NDArray[np.intp],
         n_steps: NDArray[np.intp],
     ) -> NDArray[np.bool_]:
-        """:meth:`_trace` visibility on a grid, skipping clean stretches.
+        """:meth:`_trace` visibility on a lattice, skipping clean stretches.
 
-        A run of probes whose grid cells span a box of active cells, all
-        joined to one another, has no blocked stretch: every probe and every
-        cell a stretch walks through lies in the box (coordinates and cells
-        are monotone along a segment). Runs are halved until they are clean
-        or short, and only short runs that are not clean are probed, with
-        the same probes and stretch tests as :meth:`_trace`, so the result
-        is the same.
+        A run of probes whose lattice cells span a box of bins, every two
+        neighbors in it joined, has no blocked stretch (:meth:`_BoxCells.clean`
+        says why): the cells of the run's points lie in the box spanned by
+        those of its two ends, since lattice coordinates are linear along a
+        segment. Runs are halved until they are clean or short, and only
+        short runs that are not clean are probed, with the same probes and
+        stretch tests as :meth:`_trace`, so the result is the same.
         """
-        grid = self._grid
-        assert grid is not None
+        cells = self._boxes
+        assert cells is not None
         visible = np.ones(starts.shape[0], dtype=bool)
         geometry = (starts, ends, start_bins, end_bins, n_steps)
         # Runs of points lo .. hi of a segment (0 = start, n_steps + 1 = end),
@@ -906,7 +1261,7 @@ class _OpenPaths(EnvironmentPaths):
         lo_low, lo_high = self._end_cells(starts, start_bins)
         hi_low, hi_high = self._end_cells(starts + (ends - starts), end_bins)
         while seg.size:
-            dirty = ~grid.clean(
+            dirty = ~cells.clean(
                 np.minimum(lo_low, hi_low), np.maximum(lo_high, hi_high)
             )
             short = dirty & (hi - lo <= _TRACE_RUN)
@@ -922,18 +1277,16 @@ class _OpenPaths(EnvironmentPaths):
             mid = (lo + hi) // 2
             # The middle is a probe: in no bin, its segment is blocked.
             mid_points = self._point_coordinates(seg, mid, starts, ends, n_steps)
-            mid_low = grid.half_open(mid_points)
-            mid_high = mid_low
-            outside = np.flatnonzero(grid.bin_of(mid_low) < 0)
-            if outside.size:
-                missing = outside[self._cells(mid_points[outside]) < 0]
+            mid_low, mid_high = cells.point_cells(mid_points)
+            missing = cells.missing(mid_points, self)
+            if missing.size:
                 visible[seg[missing]] = False
                 keep = visible[seg]
                 seg, lo, hi, mid = seg[keep], lo[keep], hi[keep], mid[keep]
-                lo_low, lo_high, hi_low, hi_high, mid_low = (
-                    x[keep] for x in (lo_low, lo_high, hi_low, hi_high, mid_low)
+                lo_low, lo_high, hi_low, hi_high, mid_low, mid_high = (
+                    x[keep]
+                    for x in (lo_low, lo_high, hi_low, hi_high, mid_low, mid_high)
                 )
-                mid_high = mid_low
             seg, lo, hi = np.r_[seg, seg], np.r_[lo, mid], np.r_[mid, hi]
             lo_low, hi_low = np.r_[lo_low, mid_low], np.r_[mid_low, hi_low]
             lo_high, hi_high = np.r_[lo_high, mid_high], np.r_[mid_high, hi_high]
@@ -944,18 +1297,18 @@ class _OpenPaths(EnvironmentPaths):
     ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
         """Cell range a run may touch at a segment's end, in ``bins``.
 
-        The cell of the bin, joined with the half-open cell of the point
-        where it is not the bin's center (a center lies in its own cell).
+        The cell of the bin, joined with the cells of the point where it is
+        not the bin's center (a center lies in its own cell).
         """
-        grid = self._grid
-        assert grid is not None
-        low = grid.cell[bins]
+        cells = self._boxes
+        assert cells is not None
+        low = cells.cell[bins]
         high = low.copy()
         off = np.flatnonzero(np.any(points != self._centers[bins], axis=1))
         if off.size:
-            cells = grid.half_open(points[off])
-            low[off] = np.minimum(low[off], cells)
-            high[off] = np.maximum(high[off], cells)
+            point_low, point_high = cells.point_cells(points[off])
+            low[off] = np.minimum(low[off], point_low)
+            high[off] = np.maximum(high[off], point_high)
         return low, high
 
     def _point_coordinates(
@@ -996,7 +1349,7 @@ class _OpenPaths(EnvironmentPaths):
         located[at_end] = end_bins[segment[at_end]]
         probe = ~(at_start | at_end)
         if probe.any():
-            located[probe] = self._grid_cells(
+            located[probe] = self._probe_cells(
                 self._point_coordinates(
                     segment[probe], step[probe], starts, ends, n_steps
                 )
@@ -1071,41 +1424,63 @@ class _OpenPaths(EnvironmentPaths):
             bad[origin[walked & blocked]] = True
             origin, a, b, seg = (x[~walked] for x in (origin, a, b, seg))
             f0, f1 = f0[~walked], f1[~walked]
+        # Per piece: its segment's length, and (while its two bins are
+        # those of an earlier piece) their distance and whether they are
+        # flanked, which depend on the bins alone.
+        length = np.linalg.norm(ends[seg] - starts[seg], axis=1)
+        gap = np.full(origin.size, np.nan)
+        flank = np.full(origin.size, -1, dtype=np.intp)
         while origin.size:
-            gap = np.linalg.norm(self._centers[a] - self._centers[b], axis=1)
-            piece = (f1 - f0) * np.linalg.norm(ends[seg] - starts[seg], axis=1)
+            new = np.isnan(gap)
+            gap[new] = np.linalg.norm(
+                self._centers[a[new]] - self._centers[b[new]], axis=1
+            )
+            piece = (f1 - f0) * length
             split = (gap > self._nearest) & (piece > _SPLIT_RESOLUTION * self._spacing)
-            split[split] = ~self._flanked(a[split], b[split])
+            unknown = split & (flank < 0)
+            flank[unknown] = self._flanked(a[unknown], b[unknown])
+            split &= flank == 0
             joined = ~split
             # Several pieces can share an origin: mark, never unmark.
             bad[origin[joined][~self._connected(a[joined], b[joined])]] = True
             keep = split & ~bad[origin]
-            origin, a, b, seg, f0, f1 = (
-                origin[keep],
-                a[keep],
-                b[keep],
-                seg[keep],
-                f0[keep],
-                f1[keep],
+            origin, a, b, seg, f0, f1, length, gap, flank = (
+                x[keep] for x in (origin, a, b, seg, f0, f1, length, gap, flank)
             )
             if not origin.size:
                 break
             # Split at an irrational fraction, so the split point does not
             # land on a bin edge either.
             fm = f0 + _SPLIT_AT * (f1 - f0)
-            m = self._cells(starts[seg] + fm[:, None] * (ends[seg] - starts[seg]))
+            m = self._cells(
+                starts[seg] + fm[:, None] * (ends[seg] - starts[seg]), near=(a, b)
+            )
             outside = m < 0
             bad[origin[outside]] = True
             inside = ~outside
-            origin, a, b, seg, m = (x[inside] for x in (origin, a, b, seg, m))
+            origin, a, b, seg, m, length, gap, flank = (
+                x[inside] for x in (origin, a, b, seg, m, length, gap, flank)
+            )
             f0, f1, fm = f0[inside], f1[inside], fm[inside]
+            # A piece keeps its pair's distance and flank when the split
+            # point lies in the bin at its far end.
+            same_left, same_right = m == b, m == a
             origin = np.r_[origin, origin]
             a, b = np.r_[a, m], np.r_[m, b]
             seg = np.r_[seg, seg]
             f0, f1 = np.r_[f0, fm], np.r_[fm, f1]
+            length = np.r_[length, length]
+            gap = np.r_[
+                np.where(same_left, gap, np.nan), np.where(same_right, gap, np.nan)
+            ]
+            flank = np.r_[
+                np.where(same_left, flank, -1), np.where(same_right, flank, -1)
+            ]
             # A piece within one bin stays inside it.
             differ = a != b
-            origin, a, b, seg = (x[differ] for x in (origin, a, b, seg))
+            origin, a, b, seg, length, gap, flank = (
+                x[differ] for x in (origin, a, b, seg, length, gap, flank)
+            )
             f0, f1 = f0[differ], f1[differ]
         return bad
 
@@ -1467,17 +1842,34 @@ class _OpenPaths(EnvironmentPaths):
         return waiting
 
 
-class _GridCells:
-    """Grid cell of each bin on a rectilinear grid, for exact cell walks."""
+class _BoxCells(ABC):
+    """Bins as the cells of an integer lattice, with box-sum tables of defects.
+
+    :meth:`clean` says whether a box of lattice cells holds only bins, every
+    two in neighboring cells joined. Then no stretch of a run of probes whose
+    points all lie in the box's cells is blocked, provided a stretch (at most
+    one probe spacing long) cannot reach past a neighboring cell
+    (:meth:`steps_stay_near`): every point :meth:`_OpenPaths._crossing_blocked`
+    locates lies on the stretch, so in a bin of the box, and every pair of
+    bins it requires to be joined holds two points of the stretch, so they
+    are one cell or two neighboring cells.
+
+    Parameters
+    ----------
+    flat_to_active : ndarray of int, shape (prod(shape),)
+        Active bin of each lattice cell in row-major order, -1 for none.
+    shape : tuple of int
+        Lattice cells along each axis.
+    cell : ndarray of int, shape (n_bins, n_dims)
+        Lattice cell of each bin.
+    """
 
     def __init__(
         self,
-        edges: tuple[NDArray[np.float64], ...],
         flat_to_active: NDArray[np.intp],
         shape: tuple[int, ...],
         cell: NDArray[np.intp],
     ) -> None:
-        self.edges = edges
         self.flat_to_active = flat_to_active
         self.shape = shape
         self.cell = cell
@@ -1487,18 +1879,38 @@ class _GridCells:
         self._usable: bool | None = None
 
     def boxes(self, paths: _OpenPaths) -> bool:
-        """Whether :meth:`clean` can stand in for probing ``paths``'s stretches.
-
-        It can when a stretch between two probes (at most one probe spacing
-        long) cannot step over a cell, so the cell walk resolves every
-        stretch between bins.
-        """
+        """Whether :meth:`clean` can stand in for probing ``paths``'s stretches."""
         if self._usable is None:
-            narrowest = min(float(np.diff(edge).min()) for edge in self.edges)
-            self._usable = paths._spacing * (1 + 1e-6) < narrowest
+            self._usable = self.steps_stay_near(paths._spacing)
             if self._usable:
                 self._build_defects(paths._connected)
         return self._usable
+
+    @abstractmethod
+    def steps_stay_near(self, spacing: float) -> bool:
+        """Whether two points ``spacing`` apart are in one or neighboring cells."""
+
+    @staticmethod
+    @abstractmethod
+    def neighbor_offsets(n_dims: int) -> list[tuple[int, ...]]:
+        """Offsets to neighboring cells, one of each pair of opposites."""
+
+    @abstractmethod
+    def point_cells(
+        self, points: NDArray[np.float64]
+    ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+        """First and last cell, per axis, of the cells a point may be located in.
+
+        Returns
+        -------
+        low, high : ndarray of int, shape (n_points, n_dims)
+        """
+
+    @abstractmethod
+    def missing(
+        self, points: NDArray[np.float64], paths: _OpenPaths
+    ) -> NDArray[np.intp]:
+        """Indices of the probes that lie in no bin."""
 
     def _build_defects(
         self,
@@ -1506,11 +1918,11 @@ class _GridCells:
     ) -> None:
         """Box-sum tables of inactive cells and of closed neighbor pairs.
 
-        A closed pair is two active bins that differ by at most one on every
-        axis and are not joined by an open connection. It lies in a box when
-        its lowest corner cell ``m`` does and ``m + extent`` too, where the
-        extent is 0 or 1 per axis, so one table per extent counts closed
-        pairs at ``m`` (extent 0: inactive cells). Each table is padded
+        A closed pair is two active bins in neighboring cells (one of
+        :meth:`neighbor_offsets` apart) not joined by an open connection. It
+        lies in a box when its lowest corner cell ``m`` does and
+        ``m + extent`` too, where the extent is 0 or 1 per axis, so one table
+        per extent counts closed pairs at ``m`` (extent 0: inactive cells). Each table is padded
         with a leading zero on every axis and summed cumulatively along
         every axis.
         """
@@ -1518,9 +1930,7 @@ class _GridCells:
         n_dims = len(shape)
         bins = self.flat_to_active.reshape(shape)
         by_extent = {(0,) * n_dims: bins < 0}
-        for offset in itertools.product((-1, 0, 1), repeat=n_dims):
-            if offset <= (0,) * n_dims:
-                continue
+        for offset in self.neighbor_offsets(n_dims):
             here = tuple(
                 slice(max(0, -o), n - max(0, o))
                 for o, n in zip(offset, shape, strict=True)
@@ -1554,31 +1964,6 @@ class _GridCells:
             np.cumsum(summed, axis=axis, out=summed)
         return summed.reshape(tables.shape[0], -1)
 
-    def half_open(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Half-open grid cell of each point per axis, as the locator finds it.
-
-        Returns
-        -------
-        ndarray of int, shape (n_points, n_dims)
-            ``-1`` below an axis's first edge, ``shape[d]`` at or above its
-            last.
-        """
-        return np.column_stack(
-            [
-                np.digitize(points[:, axis], edge) - 1
-                for axis, edge in enumerate(self.edges)
-            ]
-        ).astype(np.intp, copy=False)
-
-    def bin_of(self, cells: NDArray[np.intp]) -> NDArray[np.intp]:
-        """Active bin of each grid cell, -1 for an inactive cell or off the grid."""
-        inside = np.all((cells >= 0) & (cells < np.asarray(self.shape)), axis=1)
-        bins = np.full(cells.shape[0], -1, dtype=np.intp)
-        bins[inside] = self.flat_to_active[
-            np.ravel_multi_index(tuple(cells[inside].T), self.shape)
-        ]
-        return bins
-
     def clean(self, low: NDArray[np.intp], high: NDArray[np.intp]) -> NDArray[np.bool_]:
         """Whether each box of cells is all active bins, all joined pairwise.
 
@@ -1590,9 +1975,9 @@ class _GridCells:
         Returns
         -------
         ndarray of bool, shape (n,)
-            True when the box lies in the grid, every cell in it is an
-            active bin, and every two of them that differ by at most one on
-            every axis are joined by an open connection.
+            True when the box lies in the lattice, every cell in it is an
+            active bin, and every two of them in neighboring cells are joined
+            by an open connection.
         """
         assert self._defects is not None
         clean = np.zeros(low.shape[0], dtype=bool)
@@ -1637,6 +2022,73 @@ class _GridCells:
             sign = (-1) ** (n_dims - sum(corner))
             total += sign * summed[tables, index]
         return total
+
+
+class _GridCells(_BoxCells):
+    """Grid cell of each bin on a rectilinear grid, for exact cell walks."""
+
+    def __init__(
+        self,
+        edges: tuple[NDArray[np.float64], ...],
+        flat_to_active: NDArray[np.intp],
+        shape: tuple[int, ...],
+        cell: NDArray[np.intp],
+    ) -> None:
+        super().__init__(flat_to_active, shape, cell)
+        self.edges = edges
+
+    def steps_stay_near(self, spacing: float) -> bool:
+        # A stretch shorter than every cell cannot step over one, so the
+        # cell walk resolves every stretch between bins.
+        narrowest = min(float(np.diff(edge).min()) for edge in self.edges)
+        return spacing * (1 + 1e-6) < narrowest
+
+    @staticmethod
+    def neighbor_offsets(n_dims: int) -> list[tuple[int, ...]]:
+        # Cells that differ by at most one on every axis.
+        return [
+            offset
+            for offset in itertools.product((-1, 0, 1), repeat=n_dims)
+            if offset > (0,) * n_dims
+        ]
+
+    def point_cells(
+        self, points: NDArray[np.float64]
+    ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+        cells = self.half_open(points)
+        return cells, cells
+
+    def missing(
+        self, points: NDArray[np.float64], paths: _OpenPaths
+    ) -> NDArray[np.intp]:
+        outside = np.flatnonzero(self.bin_of(self.half_open(points)) < 0)
+        missing: NDArray[np.intp] = outside[paths._cells(points[outside]) < 0]
+        return missing
+
+    def half_open(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Half-open grid cell of each point per axis, as the locator finds it.
+
+        Returns
+        -------
+        ndarray of int, shape (n_points, n_dims)
+            ``-1`` below an axis's first edge, ``shape[d]`` at or above its
+            last.
+        """
+        return np.column_stack(
+            [
+                np.digitize(points[:, axis], edge) - 1
+                for axis, edge in enumerate(self.edges)
+            ]
+        ).astype(np.intp, copy=False)
+
+    def bin_of(self, cells: NDArray[np.intp]) -> NDArray[np.intp]:
+        """Active bin of each grid cell, -1 for an inactive cell or off the grid."""
+        inside = np.all((cells >= 0) & (cells < np.asarray(self.shape)), axis=1)
+        bins = np.full(cells.shape[0], -1, dtype=np.intp)
+        bins[inside] = self.flat_to_active[
+            np.ravel_multi_index(tuple(cells[inside].T), self.shape)
+        ]
+        return bins
 
     @classmethod
     def of(cls, locator: object, centers: NDArray[np.float64]) -> _GridCells | None:
@@ -1728,6 +2180,327 @@ class _GridCells:
         return walked, blocked
 
 
+class _HexCells(_BoxCells):
+    """Axial lattice cell of each bin of a hexagonal layout, for clean boxes.
+
+    Cells are indexed by axial coordinates ``(q - q_min, r)`` of the pointy-top
+    lattice of :class:`~neurospatial.geometry._locators.HexLocator`, so a
+    segment's fractional axial coordinates are linear along it.
+    """
+
+    # The locator gives a point a hexagon whose center is as near as the
+    # nearest one, within its rounding tolerance, so the point lies in that
+    # hexagon, whose points are at most 2/3 from its center in fractional
+    # axial coordinates (its corners, on one axis). The margin covers the
+    # tolerance, which is far smaller on lattices of fewer than _HEX_SPAN
+    # hexagons across.
+    _REACH = 2.0 / 3.0 + 1e-6
+    _HEX_SPAN = 1e6
+
+    def __init__(
+        self,
+        locator: HexLocator,
+        flat_to_active: NDArray[np.intp],
+        shape: tuple[int, ...],
+        cell: NDArray[np.intp],
+        q_min: int,
+    ) -> None:
+        super().__init__(flat_to_active, shape, cell)
+        self._locator = locator
+        self._q_min = q_min
+
+    def steps_stay_near(self, spacing: float) -> bool:
+        # Hexagons that are not neighbors are at least one side length (the
+        # radius) apart: the two common neighbors of a pair two steps apart
+        # share a side between them.
+        return spacing * (1 + 1e-6) < self._locator.radius
+
+    @staticmethod
+    def neighbor_offsets(n_dims: int) -> list[tuple[int, ...]]:
+        return [(0, 1), (1, -1), (1, 0)]
+
+    def point_cells(
+        self, points: NDArray[np.float64]
+    ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+        locator = self._locator
+        q, r, _ = cartesian_to_fractional_cube(
+            points[:, 0] - locator.offset_x,
+            points[:, 1] - locator.offset_y,
+            locator.radius,
+        )
+        axial = np.column_stack([q - self._q_min, r])
+        low = np.ceil(axial - self._REACH).astype(np.intp)
+        high = np.floor(axial + self._REACH).astype(np.intp)
+        return low, high
+
+    def missing(
+        self, points: NDArray[np.float64], paths: _OpenPaths
+    ) -> NDArray[np.intp]:
+        return np.flatnonzero(paths._cells(points) < 0)
+
+    @classmethod
+    def of(cls, locator: object, centers: NDArray[np.float64]) -> _HexCells | None:
+        """The lattice of a hexagonal locator whose bins are its active cells."""
+        from neurospatial.geometry._hex_lookup import (
+            axial_to_offset_bin_indices,
+            round_fractional_cube_to_integer_axial,
+        )
+        from neurospatial.geometry._locators import HexLocator, SubsetLocator
+
+        # Subsets (cells clipped by an arena) map the lattice's bins on.
+        subsets = []
+        while isinstance(locator, SubsetLocator):
+            subsets.append(locator.parent_to_child)
+            locator = locator.base
+        if not isinstance(locator, HexLocator) or not centers.size:
+            return None
+        flat_to_active = locator.flat_to_active
+        for parent_to_child in reversed(subsets):
+            flat_to_active = np.where(
+                flat_to_active >= 0,
+                parent_to_child[np.maximum(flat_to_active, 0)],
+                -1,
+            )
+        n_rows, n_cols = locator.centers_shape
+        width = np.sqrt(3.0) * locator.radius
+        extent = max(abs(locator.offset_x), abs(locator.offset_y)) + width * (
+            max(n_rows, n_cols) + 1
+        )
+        if extent > cls._HEX_SPAN * locator.radius:
+            return None
+        q, r, s = cartesian_to_fractional_cube(
+            centers[:, 0] - locator.offset_x,
+            centers[:, 1] - locator.offset_y,
+            locator.radius,
+        )
+        q_bin, r_bin = round_fractional_cube_to_integer_axial(q, r, s)
+        flat = axial_to_offset_bin_indices(q_bin, r_bin, n_cols, n_rows)
+        if np.any(flat < 0) or not np.array_equal(
+            flat_to_active[flat], np.arange(len(centers))
+        ):
+            return None
+        # Every hexagon of the lattice, in axial coordinates (odd-r offset
+        # rows are shifted half a hexagon right).
+        row, col = np.divmod(np.arange(n_rows * n_cols), n_cols)
+        q_all = col - (row - (row & 1)) // 2
+        q_min = int(q_all.min())
+        shape = (int(q_all.max()) - q_min + 1, n_rows)
+        table = np.full(shape, -1, dtype=np.intp)
+        table[q_all - q_min, row] = flat_to_active
+        cell = np.column_stack([q_bin - q_min, r_bin]).astype(np.intp)
+        return cls(locator, table.ravel(), shape, cell, q_min)
+
+
+class _MeshCores:
+    """Deep interiors of a mesh's triangles, where the locator's answer is known.
+
+    :class:`~neurospatial.geometry._locators.MeshLocator` gives a point the
+    lowest-numbered stored triangle whose barycentric test (within a
+    tolerance of 100 machine epsilons) accepts it, or -1 off its boundary
+    polygon. A point at least ``4 * margin`` inside every edge of a triangle
+    (``margin`` a billionth of the mesh's coordinate scale, far above that
+    tolerance and the rounding of the coordinates) is the triangle's when:
+
+    - every other stored triangle whose lookup box meets the triangle's is
+      separated from it with room to spare: an edge line of the triangle
+      has all of the other's vertices within ``margin`` of its outside, or
+      an edge line of the other has all of the triangle's ``2 * margin``
+      core outside it by ``2 * margin``, so no point of the deep interior
+      passes the other's test;
+    - the boundary polygon covers the ``2 * margin`` core;
+    - the triangle is not much thinner than the mesh's rounding (its
+      altitudes differ by less than ``_ASPECT``).
+
+    Triangles that fail any check have no deep interior here. A table of
+    square cells, each inside one deep interior with room for rounding,
+    gives most points their bin with one lookup.
+
+    Parameters
+    ----------
+    entry : ndarray of int, shape (n_bins,)
+        Row of each bin's triangle in the transforms, -1 for no deep interior.
+    inverse : ndarray, shape (n_rows, 2, 2)
+    origin : ndarray, shape (n_rows, 2)
+        The locator's barycentric transforms.
+    threshold : ndarray, shape (n_rows, 3)
+        Least barycentric coordinate of the deep interior.
+    """
+
+    _ASPECT = 1e5
+    # Cells of the lookup table per smallest inradius, and at most this many.
+    _CELLS_PER_INRADIUS = 8
+    _MAX_CELLS = 4_000_000
+
+    def __init__(
+        self,
+        entry: NDArray[np.intp],
+        inverse: NDArray[np.float64],
+        origin: NDArray[np.float64],
+        threshold: NDArray[np.float64],
+    ) -> None:
+        self.entry = entry
+        self.inverse = inverse
+        self.origin = origin
+        self.threshold = threshold
+        self._table = np.full((0, 0), -1, dtype=np.intp)
+        self._low = np.zeros(2)
+        self._width = 1.0
+
+    def coordinates(
+        self, points: NDArray[np.float64], rows: NDArray[np.intp]
+    ) -> NDArray[np.float64]:
+        """Barycentric coordinates of each point in triangle ``rows``, shape (n, 3)."""
+        coords = np.einsum("kij,kj->ki", self.inverse[rows], points - self.origin[rows])
+        return np.column_stack((coords, 1.0 - coords[:, 0] - coords[:, 1]))
+
+    def deep(
+        self, points: NDArray[np.float64], bins: NDArray[np.intp]
+    ) -> NDArray[np.bool_]:
+        """Whether each point lies in the deep interior of its bin's triangle."""
+        rows = np.where(bins >= 0, self.entry[np.maximum(bins, 0)], -1)
+        found = np.zeros(points.shape[0], dtype=bool)
+        known = np.flatnonzero(rows >= 0)
+        if known.size:
+            coords = self.coordinates(points[known], rows[known])
+            found[known] = np.all(coords >= self.threshold[rows[known]], axis=1)
+        return found
+
+    def lookup(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Bin of each point from the table of cells, -1 where it is not known."""
+        cell = np.floor((points - self._low) / self._width)
+        shape = np.asarray(self._table.shape)
+        inside = np.all((cell >= 0) & (cell < shape), axis=1)
+        located = np.full(points.shape[0], -1, dtype=np.intp)
+        index = cell[inside].astype(np.intp)
+        located[inside] = self._table[index[:, 0], index[:, 1]]
+        return located
+
+    @classmethod
+    def of(
+        cls, locator: object, n_bins: int, indexes: LookupIndexes | None
+    ) -> _MeshCores | None:
+        """The deep interiors of a mesh locator's bins, or None for other locators."""
+        import shapely
+
+        from neurospatial.geometry._locators import (
+            MeshLocator,
+            _lookup_index,
+            _triangle_index,
+        )
+
+        if not isinstance(locator, MeshLocator) or not n_bins:
+            return None
+        index = _lookup_index(
+            locator, indexes, lambda: _triangle_index(locator.points, locator.simplices)
+        )
+        vertices = locator.points[locator.simplices[index.triangles]]
+        # Edge j is opposite vertex j; the locator's coordinates are those
+        # of vertices 0, 1 and 2.
+        edge = np.linalg.norm(vertices[:, [2, 0, 1]] - vertices[:, [1, 2, 0]], axis=2)
+        first = vertices[:, 0] - vertices[:, 2]
+        second = vertices[:, 1] - vertices[:, 2]
+        area = 0.5 * np.abs(first[:, 0] * second[:, 1] - first[:, 1] * second[:, 0])
+        altitude = 2.0 * area[:, None] / edge
+        span = np.ptp(vertices, axis=1).sum(axis=1)
+        margin = 1e-9 * (float(np.abs(locator.points).max()) + float(span.max()))
+        threshold = 4.0 * margin / altitude
+        core = 2.0 * margin / altitude
+        safe = (altitude.max(axis=1) < cls._ASPECT * altitude.min(axis=1)) & (
+            threshold.sum(axis=1) < 0.5
+        )
+        # Vertex j of the 2 * margin core: coordinate j takes what the other
+        # two leave.
+        weights = np.repeat(core[:, None, :], 3, axis=1)
+        diagonal = np.arange(3)
+        weights[:, diagonal, diagonal] = 0.0
+        weights[:, diagonal, diagonal] = 1.0 - weights.sum(axis=2)
+        core_vertices = np.einsum("nkj,njd->nkd", weights, vertices)
+        boxes = index.tree.geometries
+        left, right = index.tree.query(boxes)
+        other = left != right
+        left, right = left[other], right[other]
+
+        def inside(rows, points, row_scale):
+            # Signed distance inside each edge of triangle ``rows``,
+            # shape (n, n_points, 3).
+            flat = points.reshape(-1, 2)
+            rep = np.repeat(rows, points.shape[1])
+            coords = np.einsum(
+                "kij,kj->ki", index.inverse[rep], flat - index.origin[rep]
+            )
+            coords = np.column_stack((coords, 1.0 - coords.sum(axis=1)))
+            return (
+                coords.reshape(points.shape[0], points.shape[1], 3)
+                * row_scale[:, None, :]
+            )
+
+        beyond_own = inside(left, vertices[right], altitude[left]).max(axis=1)
+        beyond_other = inside(right, core_vertices[left], altitude[right]).max(axis=1)
+        separated = np.any(beyond_own <= margin, axis=1) | np.any(
+            beyond_other <= -2.0 * margin, axis=1
+        )
+        safe[left[~separated]] = False
+        if locator.boundary is not None:
+            rows = np.flatnonzero(safe)
+            safe[rows] = shapely.covers(
+                locator.boundary, shapely.polygons(core_vertices[rows])
+            )
+        active = locator.simplex_to_active[index.triangles]
+        entry = np.full(n_bins, -1, dtype=np.intp)
+        keep = np.flatnonzero(safe & (active >= 0))
+        entry[active[keep]] = keep
+        cores = cls(entry, index.inverse, index.origin, threshold)
+        cores._build_table(vertices, keep, area, edge)
+        return cores
+
+    def _build_table(
+        self,
+        vertices: NDArray[np.float64],
+        rows: NDArray[np.intp],
+        area: NDArray[np.float64],
+        edge: NDArray[np.float64],
+    ) -> None:
+        """Cells whose four corners are twice as deep as a deep interior."""
+        if not rows.size:
+            return
+        low = vertices[rows].min(axis=(0, 1))
+        high = vertices[rows].max(axis=(0, 1))
+        inradius = 2.0 * area[rows] / edge[rows].sum(axis=1)
+        width = float(inradius.min()) / self._CELLS_PER_INRADIUS
+        extent = high - low
+        width = max(width, float(np.sqrt(np.prod(extent) / self._MAX_CELLS)))
+        shape = np.maximum(np.ceil(extent / width).astype(np.intp), 1)
+        table = np.full(tuple(shape), -1, dtype=np.intp)
+        first = np.floor((vertices[rows].min(axis=1) - low) / width).astype(np.intp)
+        last = np.minimum(
+            np.floor((vertices[rows].max(axis=1) - low) / width).astype(np.intp),
+            shape - 1,
+        )
+        count = last - first + 1
+        n_cells = count[:, 0] * count[:, 1]
+        owner = np.repeat(np.arange(rows.size), n_cells)
+        k = ragged_arange(n_cells)
+        cell = first[owner] + np.column_stack(
+            (k // count[owner, 1], k % count[owner, 1])
+        )
+        corners = np.stack(
+            [
+                low + (cell + np.array(offset)) * width
+                for offset in itertools.product((0, 1), repeat=2)
+            ],
+            axis=1,
+        )
+        tri = np.repeat(rows[owner], 4)
+        coords = self.coordinates(corners.reshape(-1, 2), tri).reshape(-1, 4, 3)
+        deep = np.all(
+            coords >= 2.0 * self.threshold[rows[owner]][:, None, :], axis=(1, 2)
+        )
+        bin_of_row = np.full(self.inverse.shape[0], -1, dtype=np.intp)
+        bin_of_row[self.entry[self.entry >= 0]] = np.flatnonzero(self.entry >= 0)
+        table[cell[deep, 0], cell[deep, 1]] = bin_of_row[rows[owner[deep]]]
+        self._table, self._low, self._width = table, low, width
+
+
 class PairDistances(ABC):
     """Shortest path lengths between pairs of one set of positions.
 
@@ -1779,6 +2552,7 @@ class _OpenPairDistances(PairDistances):
 
     def __init__(self, paths: _OpenPaths, points: NDArray[np.float64]) -> None:
         super().__init__(paths, points)
+        self._paths = paths
         centers = self._centers = paths._centers
         n_bins, n_dims = centers.shape
         roots = np.unique(self._bins[self._bins >= 0])
@@ -1826,17 +2600,30 @@ class _OpenPairDistances(PairDistances):
     def _between(
         self, first: NDArray[np.intp], second: NDArray[np.intp]
     ) -> NDArray[np.float64]:
-        a, row = self._bins[first], self._row_of[self._bins[second]]
+        a, b = self._bins[first], self._bins[second]
+        row = self._row_of[b]
         starts, ends = self._points[first], self._points[second]
         centers = self._centers
-        corner, lead = self._corner[row, a], self._lead[row, a]
+        corner = self._corner[row, a].astype(np.intp)
+        lead = self._lead[row, a].astype(np.intp)
+        rest = self._rest[row, a]
         around = (
             np.linalg.norm(starts - centers[corner], axis=1)
-            + self._rest[row, a]
+            + rest
             + np.linalg.norm(centers[lead] - ends, axis=1)
         )
-        distances: NDArray[np.float64] = np.where(
-            self._straight[row, a], np.linalg.norm(ends - starts, axis=1), around
+        # The tables hold each path between bin centers; the legs at the
+        # positions are checked as for single pairs.
+        distances, _ = self._paths._route(
+            starts,
+            a,
+            ends,
+            b,
+            self._straight[row, a],
+            corner,
+            rest + np.linalg.norm(centers[lead] - centers[b], axis=1),
+            lead,
+            around,
         )
         return distances
 

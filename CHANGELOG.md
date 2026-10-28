@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+### Behavior follow-ups: geodesic corners, unreachable samples, undefined correlations
+
+Results that change (each was plausible and wrong):
+
+- `metric="geodesic"` distances from positions (`compute_step_lengths`,
+  `traveled_path_length`, `shortest_path_length`, `compute_path_efficiency`,
+  `approach_rate`, `distance_to_reward`, goal directions, pairwise
+  `mean_square_displacement`) could cut across a missing cell or the end of
+  a wall. Line of sight was decided between bin centres and then reused for
+  the actual positions, so two positions whose bin centres see each other
+  were joined by a straight line even when the line between the positions
+  leaves the environment: on an L-shaped grid the distance read 1.41 where
+  any path inside is at least 1.81. Every straight piece from a position is
+  now checked, and a blocked piece routes through bin centres instead.
+  Distances only grow; most are unchanged, and in a typical open-field
+  session about 3% of distances to a goal grow, by at most 14%. Distances
+  between bins (`distance_to_region`, `path_progress`, `cost_to_goal`, the
+  reward fields) are unchanged.
+- `detect_goal_directed_runs` keeps approaches that follow a sample in a
+  part of the environment not connected to the goal. Such a sample made the
+  summed path length infinite, so every later approach scored NaN and was
+  dropped; it now splits the recording like a gap.
+- `trajectory_similarity(method="correlation")` is NaN when the correlation
+  is undefined: fewer than three aligned pairs with both samples inside the
+  environment (two points always correlate ±1), or a trajectory that stays
+  in one bin. With no usable pair it returned 1.0, a perfect match. NaN is
+  not 0; skip such pairs with `np.nanmean` or `np.isfinite`.
+- `mean_square_displacement` gives the same value at a lag whatever
+  `max_tau` is; on the uniform-sampling fast path the values shifted by
+  about 1e-13 with `max_tau`.
+- Error messages for an invalid choice argument (`compare_spatial_rates`,
+  `population_vector_correlation`, `detect_region_crossings`, and the
+  `Run`, `Trial`, `Lap` and `Crossing` records) and for an invalid `valid=`
+  sample mask read the same everywhere.
+
+Faster (same results):
+
+- `metric="geodesic"` on hexagonal layouts is about 4× faster and on
+  triangular meshes about 2.5× faster. Rate-weighted geodesic costs on grids
+  are up to 2× faster.
+
 ### Behavior cleanup and faster analyses
 
 Behavior functions share one metric resolver, one `position_bins`
