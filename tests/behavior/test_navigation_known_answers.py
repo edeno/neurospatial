@@ -51,6 +51,33 @@ class TestPathProgress:
             )
             np.testing.assert_allclose(progress, [0.0, 0.25, 0.5, 1.0])
 
+    def test_overshoot_past_the_goal_reads_below_one(self, corridor):
+        """Only the goal is 1: 20 cm past it, 80 cm covered of a 100 cm route."""
+        start, goal = _bin(corridor, 10.5), _bin(corridor, 70.5)
+        position_bins = np.array([goal, _bin(corridor, 90.5)])
+        progress = path_progress(
+            position_bins, corridor, start_bins=start, goal_bins=goal
+        )
+        np.testing.assert_allclose(progress, [1.0, 80.0 / 100.0])
+
+    def test_wrong_arm_of_a_t_maze_reads_below_one(self):
+        """At the end of the wrong arm the whole goal arm is still ahead."""
+        stem = np.c_[np.zeros(40), np.arange(0.5, 40.0, 1.0)]
+        left = np.c_[-np.arange(0.5, 30.0, 1.0), np.full(30, 39.5)]
+        right = np.c_[np.arange(0.5, 30.0, 1.0), np.full(30, 39.5)]
+        env = Environment.from_samples(np.vstack([stem, left, right]), bin_size=1.0)
+        start, goal, wrong_end = env.bin_at(
+            np.array([[0.0, 0.5], [29.5, 39.5], [-29.5, 39.5]])
+        )
+        progress = path_progress(
+            np.array([wrong_end]), env, start_bins=start, goal_bins=goal
+        )
+        d_start = env.distance_between(bins=[start, wrong_end])
+        d_goal = env.distance_between(bins=[wrong_end, goal])
+        np.testing.assert_allclose(progress, [d_start / (d_start + d_goal)])
+        # About 70 cm covered of a ~130 cm start-wrong-end-goal route.
+        assert progress[0] < 0.6
+
     def test_start_equal_to_goal_has_no_progress_away_from_it(self, corridor):
         """With start == goal the ratio is 0/0: only the goal bin itself is 1."""
         goal = _bin(corridor, 50.5)

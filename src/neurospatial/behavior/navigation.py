@@ -762,9 +762,11 @@ def path_progress(
 ) -> NDArray[np.float64]:
     """Compute normalized path progress from start to goal (0 -> 1).
 
-    Fully vectorized computation over entire session. For each timepoint t:
-        progress[t] = distance(start_bins[t], position_bins[t]) /
-                      distance(start_bins[t], goal_bins[t])
+    Fully vectorized computation over entire session. For each timepoint t,
+    with ``d_start = distance(start_bins[t], position_bins[t])`` and
+    ``d_goal = distance(position_bins[t], goal_bins[t])``::
+
+        progress[t] = d_start / (d_start + d_goal)
 
     Parameters
     ----------
@@ -786,7 +788,7 @@ def path_progress(
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Path progress from 0 to 1 at each timepoint, clipped to ``[0, 1]``.
+        Path progress at each timepoint: 0 at the start, 1 only at the goal.
         NaN for invalid bins (-1), when no path exists between bins, or when
         start and goal are the same bin and the sample is elsewhere.
 
@@ -816,11 +818,13 @@ def path_progress(
     - **Large environments** (>=5000 bins): Computes per-pair distance fields.
       Memory-efficient but slower for many unique pairs.
 
-    **What progress measures**: the distance from the start, as a fraction of
-    the start-to-goal distance. It is not the distance left to the goal. On a
-    branched maze a sample in a wrong arm as far from the start as the goal
-    also reads 1.0, so progress alone does not establish arrival; pair it
-    with :func:`distance_to_region` to the goal.
+    **What progress measures**: the distance already covered from the start
+    as a fraction of the shortest route from the start through the current
+    position to the goal. On the shortest start-to-goal path this is the
+    fraction of that path covered. Off it (a wrong arm of a branched maze, or
+    a detour) the distance still left to the goal keeps progress below 1, so
+    1.0 means the animal is at the goal. The ratio lies in ``[0, 1]`` by
+    construction and needs no clipping.
 
     **Edge cases**:
 
@@ -828,10 +832,9 @@ def path_progress(
       ratio is 0/0 and there is no path to make progress along
     - No path exists (graph disconnected): Returns NaN (distance = inf)
     - Invalid bins (-1): Returns NaN
-    - Farther from the start than the goal is (overshoot or detour): clipped
-      to 1.0. The result is a fraction of the start-to-goal path, so values
-      above 1 would not be "more progress"; use ``distance_to_region`` from
-      the start bin for the unclipped distance.
+    - Wrong arm or detour: below 1.0 by the share of the route still left
+      to the goal; use :func:`distance_to_region` to the goal for the
+      distance itself
 
     Examples
     --------
@@ -907,11 +910,8 @@ def path_progress(
         else:  # euclidean
             dist_matrix = euclidean_distance_matrix(env.bin_centers)
 
-        # Vectorized lookup: distance from start to current position
         distances_from_start = dist_matrix[start_bins, position_bins]
-
-        # Vectorized lookup: total distance from start to goal
-        total_distances = dist_matrix[start_bins, goal_bins]
+        distances_to_goal = dist_matrix[position_bins, goal_bins]
 
     else:
         # Large environment - compute per-unique-pair distance fields
@@ -919,7 +919,7 @@ def path_progress(
 
         # Initialize arrays
         distances_from_start = np.full(n_samples, np.nan)
-        total_distances = np.full(n_samples, np.nan)
+        distances_to_goal = np.full(n_samples, np.nan)
 
         # Find unique (start, goal) pairs
         valid_mask = (start_bins >= 0) & (goal_bins >= 0)
@@ -930,19 +930,21 @@ def path_progress(
         for start_bin, goal_bin in unique_pairs:
             pair_mask = (start_bins == start_bin) & (goal_bins == goal_bin)
 
-            start_dist_field = distance_field(
-                env.connectivity,
-                [start_bin],
-                metric=metric,
-                bin_centers=env.bin_centers if metric == "euclidean" else None,
+            start_dist_field, goal_dist_field = (
+                distance_field(
+                    env.connectivity,
+                    [source],
+                    metric=metric,
+                    bin_centers=env.bin_centers if metric == "euclidean" else None,
+                )
+                for source in (start_bin, goal_bin)
             )
 
             distances_from_start[pair_mask] = start_dist_field[position_bins[pair_mask]]
-            total_distances[pair_mask] = start_dist_field[goal_bin]
+            distances_to_goal[pair_mask] = goal_dist_field[position_bins[pair_mask]]
 
-    # Compute progress
     with np.errstate(divide="ignore", invalid="ignore"):
-        progress = distances_from_start / total_distances
+        progress = distances_from_start / (distances_from_start + distances_to_goal)
 
     # With start == goal the ratio is 0/0. A sample on the goal has arrived
     # (1.0); any other sample has no defined progress (NaN), not "arrived".
@@ -951,13 +953,11 @@ def path_progress(
         position_bins[same_start_goal] == goal_bins[same_start_goal], 1.0, np.nan
     )
 
-    disconnected = ~np.isfinite(total_distances) | ~np.isfinite(distances_from_start)
+    disconnected = ~np.isfinite(distances_to_goal) | ~np.isfinite(distances_from_start)
     progress[disconnected] = np.nan
 
     invalid_bins = (start_bins == -1) | (goal_bins == -1) | (position_bins == -1)
     progress[invalid_bins] = np.nan
-
-    progress = np.clip(progress, 0.0, 1.0)
 
     return progress
 
