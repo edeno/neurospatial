@@ -1035,7 +1035,7 @@ class TestMeanSquareDisplacementBreaks:
             times, positions, max_tau=3.0, break_before=break_before
         )
         np.testing.assert_array_equal(result.lags, [1.0, 2.0, 3.0])
-        np.testing.assert_array_equal(result.msd, [1.0, 4.0, 9.0])
+        np.testing.assert_allclose(result.msd, [1.0, 4.0, 9.0], rtol=1e-12)
 
     def test_without_break_pairs_span_the_join(self):
         times, positions = self._two_recordings()
@@ -1049,7 +1049,7 @@ class TestMeanSquareDisplacementBreaks:
         result = mean_square_displacement(
             times, positions, max_tau=3.0, epochs=[(0.0, 4.5), (5.0, 10.0)]
         )
-        np.testing.assert_array_equal(result.msd, [1.0, 4.0, 9.0])
+        np.testing.assert_allclose(result.msd, [1.0, 4.0, 9.0], rtol=1e-12)
 
     def test_touching_epochs_merge(self):
         times, positions = self._two_recordings()
@@ -1064,7 +1064,7 @@ class TestMeanSquareDisplacementBreaks:
         positions = np.c_[np.arange(10.0), np.zeros(10)]
         positions[5] = np.nan
         result = mean_square_displacement(times, positions, max_tau=3.0)
-        np.testing.assert_array_equal(result.msd, [1.0, 4.0, 9.0])
+        np.testing.assert_allclose(result.msd, [1.0, 4.0, 9.0], rtol=1e-12)
 
     def test_lag_with_no_pair_inside_a_segment_is_nan(self):
         times, positions = self._two_recordings()
@@ -1074,7 +1074,7 @@ class TestMeanSquareDisplacementBreaks:
             times, positions[:, :1], max_tau=5.0, break_before=break_before
         )
         # Each recording spans four seconds, so lag 5 has no pair inside one.
-        np.testing.assert_array_equal(result.msd[:4], [1.0, 4.0, 9.0, 16.0])
+        np.testing.assert_allclose(result.msd[:4], [1.0, 4.0, 9.0, 16.0], rtol=1e-12)
         assert np.isnan(result.msd[4])
 
     def test_geodesic_pairs_do_not_span_the_break(self):
@@ -1098,6 +1098,61 @@ class TestMeanSquareDisplacementBreaks:
         # displacement is at most 3 bin-widths.
         assert np.all(joined.msd > 100.0)
         np.testing.assert_allclose(split.msd, [1.0, 4.0, 9.0], atol=1.5)
+
+
+class TestMeanSquareDisplacementUniformSampling:
+    """Uniformly sampled MSD equals the average over sample pairs ``k`` apart."""
+
+    N = 301
+    DT = 0.5
+
+    @staticmethod
+    def _pair_average(positions, group, n_lags):
+        """Mean squared displacement over valid pairs in one group, per lag."""
+        valid = np.isfinite(positions).all(axis=1) & (group >= 0)
+        msd = np.full(n_lags, np.nan)
+        for k in range(1, n_lags + 1):
+            i = np.flatnonzero(valid[:-k] & valid[k:] & (group[:-k] == group[k:]))
+            if i.size:
+                msd[k - 1] = np.mean(np.sum((positions[i + k] - positions[i]) ** 2, 1))
+        return msd
+
+    def _walk(self, n_dims):
+        rng = np.random.default_rng(n_dims)
+        times = 100.0 + self.DT * np.arange(self.N)
+        positions = 1e3 + np.cumsum(rng.normal(size=(self.N, n_dims)), axis=0)
+        positions[rng.random(self.N) < 0.1] = np.nan
+        return times, positions
+
+    @pytest.mark.parametrize("n_dims", [1, 2, 3])
+    def test_default_lags_with_missing_rows_and_breaks(self, n_dims):
+        times, positions = self._walk(n_dims)
+        break_before = np.zeros(self.N, dtype=bool)
+        break_before[[50, 51, 200]] = True
+
+        result = mean_square_displacement(times, positions, break_before=break_before)
+
+        n_lags = self.N // 2
+        expected = self._pair_average(positions, np.cumsum(break_before), n_lags)
+        np.testing.assert_array_equal(np.isnan(result.msd), np.isnan(expected))
+        np.testing.assert_allclose(result.msd, expected, rtol=1e-10)
+        np.testing.assert_allclose(
+            result.lags, self.DT * np.arange(1, n_lags + 1), rtol=1e-14
+        )
+
+    def test_pairs_stay_inside_one_epoch(self):
+        times, positions = self._walk(2)
+        epochs = np.array([[100.0, 140.2], [140.2, 160.0], [170.0, 240.0]])
+
+        result = mean_square_displacement(times, positions, max_tau=60.0, epochs=epochs)
+
+        # Touching windows merge. Every interval between a pair's samples lies
+        # in one window, so the sample at a window's stop still pairs.
+        group = np.full(self.N, -1)
+        group[(times >= 100.0) & (times <= 160.0)] = 0
+        group[(times >= 170.0) & (times <= 240.0)] = 1
+        expected = self._pair_average(positions, group, 120)
+        np.testing.assert_allclose(result.msd, expected, rtol=1e-10)
 
 
 class TestMeanSquareDisplacementLags:

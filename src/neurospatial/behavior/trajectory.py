@@ -2115,6 +2115,13 @@ def mean_square_displacement(
     is also excluded when a declared ``break_before`` or an ``epochs`` edge
     lies between its two samples. A single sample returns an empty result.
 
+    For the euclidean metric with uniform sampling (every target matches
+    the sample ``k`` rows later), all lags come from FFT correlations [4]_
+    in ``O(n log n)`` time; the result equals the pair average up to
+    roundoff (below 1e-10 relative for 500,000 samples). Irregular sampling
+    and the geodesic metric average each lag separately, in ``O(n)`` per
+    lag, so the default ``max_tau`` takes ``O(n^2)`` time there.
+
     There is no ``max_gap``. MSD compares two observed positions a lag apart
     and does not integrate along the path, so samples missing between them do
     not change the displacement. A gap matters only when the two positions are
@@ -2198,6 +2205,10 @@ def mean_square_displacement(
            estimation of anomalous diffusion exponents in single-particle
            tracking experiments." Physical Review E, 87(5), 052713.
     .. [3] Traja documentation: https://traja.readthedocs.io/
+    .. [4] Calandrini, V., Pellegrini, E., Calligari, P., Hinsen, K., &
+           Kneller, G. R. (2011). nMoldyn: interfacing spectroscopic
+           experiments, molecular dynamics simulations and models for time
+           correlation functions. Collection SFN, 12, 201-232.
     """
     times, positions, support = validated_observations(
         times,
@@ -2260,7 +2271,29 @@ def mean_square_displacement(
             )
         )
 
-    tau_values = dt * np.arange(1, n_lags + 1)
+    tau_values = dt * np.arange(1, n_lags + 1, dtype=np.float64)
+    # Segments are separated by declared breaks and epoch edges; a pair is
+    # valid only inside one segment.
+    segment = np.r_[0, np.cumsum(~support.interval_gates)]
+    # Adding a lag can round an observed endpoint one timestamp ULP upward.
+    # Allow that roundoff without extending support by the matching tolerance.
+    recording_stop = np.nextafter(times[-1], np.inf)
+
+    drift = _grid_drift(times, dt, n_lags)
+    if paths is None and drift is not None:
+        lag_values, msd_values = _uniform_euclidean_msd(
+            times,
+            positions,
+            support.sample_valid,
+            segment,
+            tau_values,
+            drift,
+            recording_stop=recording_stop,
+        )
+        return MSDResult(
+            lags=lag_values, msd=msd_values, metric=metric, epochs=support.epochs
+        )
+
     msd_values = np.full(n_lags, np.nan, dtype=np.float64)
     # Reported lag: the mean time separation of the pairs averaged at each
     # lag (k * dt exactly for uniform sampling); nominal where none exist.
@@ -2272,12 +2305,6 @@ def mean_square_displacement(
 
     sample_indices = np.arange(n_samples)
     finite_positions = support.sample_valid
-    # Segments are separated by declared breaks and epoch edges; a pair is
-    # valid only inside one segment.
-    segment = np.r_[0, np.cumsum(~support.interval_gates)]
-    # Adding a lag can round an observed endpoint one timestamp ULP upward.
-    # Allow that roundoff without extending support by the matching tolerance.
-    recording_stop = np.nextafter(times[-1], np.inf)
     for i, tau in enumerate(tau_values):
         target_times = times + tau
         # searchsorted gives the successor, which need not be the nearest
@@ -2317,6 +2344,192 @@ def mean_square_displacement(
     return MSDResult(
         lags=lag_values, msd=msd_values, metric=metric, epochs=support.epochs
     )
+
+
+def _grid_drift(
+    times: NDArray[np.float64], dt: float, n_lags: int
+) -> NDArray[np.float64] | None:
+    """Offset of each sample from the regular grid, or None if not uniform.
+
+    ``mean_square_displacement`` pairs sample ``i`` at lag ``k`` with the
+    sample nearest ``times[i] + k * dt``. Sampling is uniform when that is
+    sample ``i + k`` for every ``i`` and every lag up to ``n_lags``, with a
+    quarter of ``dt`` to spare. With ``J`` the largest change of the drift
+    ``times[j] - times[0] - j * dt`` within ``n_lags`` samples and ``rho`` a
+    bound on the roundoff of ``times[i] + k * dt``, sample ``i + k`` is at
+    most ``J + rho`` from the target and its neighbours at least
+    ``dt - 2 J - rho``, so ``3 J + 2 rho < 0.75 dt`` suffices.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64], shape (n_samples,)
+        Strictly increasing timestamps in seconds, ``n_samples >= 2``.
+    dt : float
+        Median sample interval in seconds.
+    n_lags : int
+        Number of lags, at most ``n_samples // 2``.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_samples,), or None
+        The drift in seconds, accumulated from the sample intervals so it
+        stays accurate far from ``times[0]``; None when the sampling is not
+        uniform.
+    """
+    from scipy.ndimage import maximum_filter1d, minimum_filter1d
+
+    drift: NDArray[np.float64] = np.r_[0.0, np.cumsum(np.diff(times) - dt)]
+    # Every window of n_lags + 1 samples is one of these (clipped) windows.
+    window = n_lags + 1
+    jitter = np.max(
+        maximum_filter1d(drift, window, mode="nearest")
+        - minimum_filter1d(drift, window, mode="nearest")
+    )
+    roundoff = 4.0 * np.spacing(np.max(np.abs(times[[0, -1]])))
+    if 3.0 * jitter + 2.0 * roundoff >= 0.75 * dt:
+        return None
+    return drift
+
+
+def _uniform_euclidean_msd(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    sample_valid: NDArray[np.bool_],
+    segment: NDArray[np.intp],
+    tau_values: NDArray[np.float64],
+    drift: NDArray[np.float64],
+    *,
+    recording_stop: float,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Euclidean MSD of uniformly sampled positions from FFT correlations.
+
+    With uniform sampling the pair at lag ``k`` of sample ``i`` is sample
+    ``i + k`` (`_grid_drift`). With mask ``m`` and centered positions ``y``,
+    the summed squared displacement is
+    ``sum_i m_i m_{i+k} (|y_{i+k}|^2 + |y_i|^2 - 2 y_i . y_{i+k})``, three
+    correlations computed by FFT within each segment [1]_. The pairs are
+    those the matching loop of ``mean_square_displacement`` uses: both
+    samples valid and in one segment, the lagged time no later than
+    ``recording_stop``.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64], shape (n_samples,)
+        Strictly increasing timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Positions; rows with ``sample_valid`` False are ignored.
+    sample_valid : NDArray[np.bool_], shape (n_samples,)
+        True where the position is observed.
+    segment : NDArray[np.intp], shape (n_samples,)
+        Nondecreasing segment label of each sample; pairs never cross labels.
+    tau_values : NDArray[np.float64], shape (n_lags,)
+        Nominal lags ``k * dt`` in seconds, ``k = 1..n_lags``.
+    drift : NDArray[np.float64], shape (n_samples,)
+        Offset of each sample from the regular grid (`_grid_drift`).
+    recording_stop : float
+        Latest lagged time that still matches a sample.
+
+    Returns
+    -------
+    lags : NDArray[np.float64], shape (n_lags,)
+        Mean time separation of the pairs at each lag; nominal where none.
+    msd : NDArray[np.float64], shape (n_lags,)
+        Mean squared displacement; NaN where no pair exists.
+
+    References
+    ----------
+    .. [1] Calandrini, V., Pellegrini, E., Calligari, P., Hinsen, K., &
+       Kneller, G. R. (2011). nMoldyn: interfacing spectroscopic experiments,
+       molecular dynamics simulations and models for time correlation
+       functions. Collection SFN, 12, 201-232.
+    """
+    from scipy.fft import irfft, next_fast_len, rfft
+
+    n_samples = times.size
+    n_lags = tau_values.size
+    mask = sample_valid.astype(np.float64)
+    # Center each segment for accuracy: the correlations of |y|^2 and y . y
+    # then cancel little at short lags. Displacements do not change.
+    n_segments = int(segment[-1]) + 1
+    n_valid = np.bincount(segment, weights=mask, minlength=n_segments)
+    observed = np.where(sample_valid[:, None], positions, 0.0)
+    sums = np.stack(
+        [
+            np.bincount(segment, weights=column, minlength=n_segments)
+            for column in observed.T
+        ],
+        axis=1,
+    )
+    means = np.divide(
+        sums, n_valid[:, None], out=np.zeros_like(sums), where=n_valid[:, None] > 0
+    )
+    centered = np.where(sample_valid[:, None], positions - means[segment], 0.0)
+    # Rows: mask m, m |y|^2, m * drift, then each centered coordinate.
+    signals = np.vstack(
+        [
+            mask,
+            np.sum(centered**2, axis=1),
+            np.where(sample_valid, drift, 0.0),
+            *centered.T,
+        ]
+    )
+
+    starts = np.r_[0, np.flatnonzero(np.diff(segment)) + 1]
+    lengths = np.diff(np.r_[starts, n_samples])
+    paired = n_valid[segment[starts]] >= 2
+    starts, lengths = starts[paired], lengths[paired]
+
+    # Per lag k = 1..n_lags: pair count, summed squared displacement and
+    # summed drift difference, each a sum over the pairs (i, i + k).
+    totals = np.zeros((3, n_lags))
+    # Segments of similar length share one batched FFT, zero-padded to the
+    # longest of them plus its largest lag so correlations do not wrap.
+    size_class = np.ceil(np.log2(lengths)).astype(int)
+    for size in np.unique(size_class):
+        in_class = size_class == size
+        width = int(lengths[in_class].max())
+        max_lag = min(n_lags, width - 1)
+        n_fft = next_fast_len(width + max_lag, real=True)
+        offsets = np.arange(width)
+        inside = offsets < lengths[in_class, None]
+        rows = np.where(inside, starts[in_class, None] + offsets, 0)
+        # spectra[s, j]: spectrum of signal s over segment j, zero past its end.
+        spectra = rfft(np.where(inside, signals[:, rows], 0.0), n=n_fft, axis=-1)
+        m, q, r, coordinates = spectra[0], spectra[1], spectra[2], spectra[3:]
+        # conj(A) B is the spectrum of sum_i a_i b_{i+k}.
+        products = np.stack(
+            [
+                np.abs(m) ** 2,
+                2.0 * (np.conj(m) * q).real - 2.0 * np.sum(np.abs(coordinates) ** 2, 0),
+                np.conj(m) * r - m * np.conj(r),
+            ]
+        ).sum(axis=1)
+        totals[:, :max_lag] += irfft(products, n=n_fft, axis=-1)[:, 1 : max_lag + 1]
+    counts, total_squares, total_drift = totals
+    counts = np.rint(counts)
+
+    # The pair ending at the last sample is dropped when adding the lag
+    # rounds past recording_stop, as in the matching loop (n_lags is at most
+    # n_samples // 2, so every lag has such a pair).
+    first = n_samples - 2 - np.arange(n_lags)
+    late = np.flatnonzero(
+        sample_valid[first]
+        & sample_valid[-1]
+        & (segment[first] == segment[-1])
+        & ~(times[first] + tau_values <= recording_stop)
+    )
+    first, k = first[late], late
+    counts[k] -= 1
+    total_squares[k] -= np.sum((positions[-1] - positions[first]) ** 2, axis=1)
+    total_drift[k] -= drift[-1] - drift[first]
+
+    has_pairs = counts > 0
+    msd = np.full(n_lags, np.nan)
+    lags = tau_values.copy()
+    # Rounding can leave a stationary path a tiny negative sum.
+    msd[has_pairs] = np.maximum(total_squares[has_pairs], 0.0) / counts[has_pairs]
+    lags[has_pairs] += total_drift[has_pairs] / counts[has_pairs]
+    return lags, msd
 
 
 def compute_trajectory_curvature(
