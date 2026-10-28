@@ -299,7 +299,10 @@ class DecisionAnalysisResult(ResultMixin):
     boundary : DecisionBoundaryMetrics or None
         Boundary metrics. None if only one goal (no boundary defined).
     chosen_goal : int or None
-        Index of goal reached. None if trial timed out or goal not reached.
+        Index into ``goal_regions`` of the first goal region the animal
+        entered after ``entry_time``. Goals visited before the decision-region
+        entry (such as the goal the trial started from) do not count. None if
+        no goal region was entered after ``entry_time``.
     """
 
     entry_time: float
@@ -336,7 +339,7 @@ class DecisionAnalysisResult(ResultMixin):
         if self.chosen_goal is not None:
             lines.append(f"  Chosen goal: {self.chosen_goal}")
         else:
-            lines.append("  Chosen goal: none (timeout)")
+            lines.append("  Chosen goal: none entered")
         return "\n".join(lines)
 
 
@@ -1498,21 +1501,34 @@ def compute_decision_analysis(
         crossing_directions=crossing_directions,
     )
 
-    # Determine chosen goal (which goal region was reached)
-    chosen_goal: int | None = None
-    for i, goal_region in enumerate(goal_regions):
-        goal_region_bins = set(env.bins_in_region(goal_region))
-        # Check if trajectory ends in this goal region
-        for bin_idx in reversed(position_bins):
-            if bin_idx in goal_region_bins:
-                chosen_goal = i
-                break
-        if chosen_goal is not None:
-            break
-
     return DecisionAnalysisResult(
         entry_time=entry_time,
         pre_decision=pre_decision,
         boundary=boundary,
-        chosen_goal=chosen_goal,
+        chosen_goal=_first_goal_entered(
+            env, position_bins, times, goal_regions, after=entry_time
+        ),
     )
+
+
+def _first_goal_entered(
+    env: Environment,
+    position_bins: NDArray[np.int64],
+    times: NDArray[np.float64],
+    goal_regions: list[str],
+    *,
+    after: float,
+) -> int | None:
+    """Index of the first goal region occupied at or after ``after``; None if none.
+
+    Goal occupancy before the decision-region entry (for example the goal
+    the trial started from) does not count. A sample inside several goal
+    regions picks the first of them in ``goal_regions`` order.
+    """
+    in_goal = np.stack(
+        [np.isin(position_bins, env.bins_in_region(name)) for name in goal_regions]
+    )
+    reached = np.flatnonzero((times >= after) & in_goal.any(axis=0))
+    if reached.size == 0:
+        return None
+    return int(np.argmax(in_goal[:, reached[0]]))

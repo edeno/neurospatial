@@ -566,6 +566,47 @@ class TestComputeDecisionAnalysis:
         # Should choose right (index 1)
         assert result.chosen_goal == 1
 
+    @staticmethod
+    def _chosen_goal_region(env, x, y, goal_regions):
+        from neurospatial.behavior.decisions import compute_decision_analysis
+
+        result = compute_decision_analysis(
+            env,
+            np.arange(len(x)) / 10,
+            np.column_stack([x, y]),
+            decision_region="center",
+            goal_regions=goal_regions,
+            min_speed=5.0,
+        )
+        return None if result.chosen_goal is None else goal_regions[result.chosen_goal]
+
+    def test_goal_the_trial_started_from_is_not_chosen(self, t_maze_environment):
+        """Starting at the left goal and running to the right chooses right."""
+        x = np.r_[np.linspace(10, 50, 40), np.linspace(50, 90, 40)]
+        y = np.full(80, 55.0)
+        for goals in (["left", "right"], ["right", "left"]):
+            assert self._chosen_goal_region(t_maze_environment, x, y, goals) == (
+                "right"
+            )
+
+    def test_first_goal_entered_after_entry_is_chosen(self, t_maze_environment):
+        """Up the stem, right goal, then back to the left goal: right was chosen."""
+        x = np.r_[np.full(30, 50.0), np.linspace(50, 90, 30), np.linspace(90, 10, 60)]
+        y = np.r_[np.linspace(5, 55, 30), np.full(90, 55.0)]
+        for goals in (["left", "right"], ["right", "left"]):
+            assert self._chosen_goal_region(t_maze_environment, x, y, goals) == (
+                "right"
+            )
+
+    def test_no_goal_entered_after_entry_is_none(self, t_maze_environment):
+        """Start at the left goal, stop at the center: no goal was chosen."""
+        x = np.linspace(10, 50, 40)
+        y = np.full(40, 55.0)
+        assert (
+            self._chosen_goal_region(t_maze_environment, x, y, ["left", "right"])
+            is None
+        )
+
 
 # =============================================================================
 # Test Error Handling
