@@ -72,16 +72,10 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._intervals import (
-    DEFAULT_MAX_GAP,
-    as_intervals,
-    interval_valid_mask,
-    run_sample_bounds,
-)
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._observation import (
     ObservationSupport,
     _validated_signal_times,
-    validate_break_before,
     validated_observations,
     validated_signals,
 )
@@ -1409,55 +1403,36 @@ def detect_boundary_crossings(
         times=times,
         n_bins=np.shape(voronoi_labels)[0],
     )
-    times, _, _ = validated_signals(
+    # A sample at bin -1 is missing.
+    times, _, supports = validated_signals(
         times,
         position_bins,
-        valid=None,
+        valid=position_bins >= 0,
         call="detect_boundary_crossings",
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
         result="no boundary crossing was observed",
     )
-    return _boundary_crossings(
-        position_bins,
-        voronoi_labels,
-        times,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=validate_break_before(
-            break_before, len(times), call="detect_boundary_crossings"
-        ),
-    )
+    return _boundary_crossings(position_bins, voronoi_labels, times, supports[0])
 
 
 def _boundary_crossings(
     position_bins: NDArray[np.int64],
     voronoi_labels: NDArray[np.int_],
     times: NDArray[np.float64],
-    *,
-    max_gap: float | None,
-    epochs: Any,
-    break_before: NDArray[np.bool_] | None,
+    support: ObservationSupport,
 ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
-    """Boundary crossings within each run of located samples.
+    """Boundary crossings within each run of ``support``.
 
-    A sample outside every bin is missing and skipped as if its row were
-    deleted, so a crossing across it is timed between the located samples
-    on either side when the gap between them is bridged.
+    ``support`` treats every sample at bin -1 as missing, so it is skipped
+    as if its row were deleted, and a crossing across it is timed between
+    the located samples on either side when the gap between them is
+    bridged.
     """
-    located = (position_bins >= 0) & (position_bins < voronoi_labels.shape[0])
-    mask = interval_valid_mask(
-        times,
-        max_gap=max_gap,
-        epochs=as_intervals(epochs, name="epochs"),
-        break_before=break_before,
-        sample_valid=located,
-    )
     crossing_times = [np.empty(0)]
     crossing_directions = [np.empty((0, 2), dtype=np.intp)]
-    for first, last in run_sample_bounds(mask):
-        run = first + np.flatnonzero(located[first : last + 1])
+    for run in support.run_samples():
         run_times, run_directions = _detect_boundary_crossings_contiguous(
             position_bins[run], voronoi_labels, times[run]
         )
@@ -1700,11 +1675,8 @@ def compute_decision_analysis(
             position_bins,
             voronoi_labels,
             times,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=validate_break_before(
-                break_before, len(times), call="compute_decision_analysis"
-            ),
+            # A position outside every bin is missing too.
+            support.restricted(times, position_bins >= 0),
         )
         boundary = DecisionBoundaryMetrics(
             goal_labels=np.where(position_bins >= 0, voronoi_labels[position_bins], -1),
