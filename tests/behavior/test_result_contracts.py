@@ -58,7 +58,7 @@ def _path_efficiency() -> PathEfficiencyResult:
 def _boundary() -> DecisionBoundaryMetrics:
     return DecisionBoundaryMetrics(
         goal_labels=np.array([0, 0, 1]),
-        distance_to_boundary=np.array([2.0, 1.0, 3.0]),
+        distance_to_decision_boundary=np.array([2.0, 1.0, 3.0]),
         crossing_times=[5.0],
         crossing_directions=[(0, 1)],
     )
@@ -100,7 +100,7 @@ _CASES = [
     ),
     (
         _boundary(),
-        {"n_crossings", "mean_distance_to_boundary"},
+        {"n_crossings", "mean_distance_to_decision_boundary"},
         ("n_crossings", 1),
         "Decision boundary",
     ),

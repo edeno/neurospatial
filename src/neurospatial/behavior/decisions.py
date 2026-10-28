@@ -244,9 +244,11 @@ class DecisionBoundaryMetrics(ReadOnlyArraysMixin, ResultMixin):
     goal_labels : NDArray[np.int_]
         Per-timepoint label of nearest goal (Voronoi region), shape (n_samples,).
         Values are indices into the goal_bins list.
-    distance_to_boundary : NDArray[np.float64]
-        Distance to nearest decision boundary at each timepoint, shape (n_samples,).
-        Units match environment. Small values = near boundary = uncommitted.
+    distance_to_decision_boundary : NDArray[np.float64], shape (n_samples,)
+        Geodesic distance from each sample's bin to the decision boundary, in
+        environment units (see :func:`distance_to_decision_boundary`). Small
+        values = near the boundary = uncommitted; NaN for a sample outside
+        every bin.
     crossing_times : list[float]
         Times when trajectory crossed a decision boundary.
     crossing_directions : list[tuple[int, int]]
@@ -255,7 +257,7 @@ class DecisionBoundaryMetrics(ReadOnlyArraysMixin, ResultMixin):
     """
 
     goal_labels: NDArray[np.int_]
-    distance_to_boundary: NDArray[np.float64]
+    distance_to_decision_boundary: NDArray[np.float64]
     crossing_times: list[float]
     crossing_directions: list[tuple[int, int]]
 
@@ -275,14 +277,17 @@ class DecisionBoundaryMetrics(ReadOnlyArraysMixin, ResultMixin):
         """
         return {
             "n_crossings": self.n_crossings,
-            "mean_distance_to_boundary": float(np.nanmean(self.distance_to_boundary)),
+            "mean_distance_to_decision_boundary": float(
+                np.nanmean(self.distance_to_decision_boundary)
+            ),
         }
 
     def __str__(self) -> str:
         return (
             f"Decision boundary: {self.n_crossings} crossing"
             f"{'s' if self.n_crossings != 1 else ''}, "
-            f"mean distance to boundary: {np.nanmean(self.distance_to_boundary):.1f}"
+            "mean distance to boundary: "
+            f"{np.nanmean(self.distance_to_decision_boundary):.1f}"
         )
 
 
@@ -1029,37 +1034,59 @@ def distance_to_decision_boundary(
     position_bins: NDArray[np.int_],
     goal_bins: list[int] | NDArray[np.int_],
 ) -> NDArray[np.float64]:
-    """Compute distance to nearest decision boundary for each trajectory point.
+    """Geodesic distance from each trajectory bin to the decision boundary.
 
-    The decision boundary is the Voronoi edge between goal regions - the set
-    of points equidistant (geodesically) from multiple goals.
+    The decision boundary is the set of points equidistant (geodesically)
+    from the two nearest goals: the edge between their geodesic Voronoi
+    regions.
 
     Parameters
     ----------
     env : Environment
         Spatial environment.
     position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices along the trajectory.
+        Bin indices along the trajectory; -1 (or any index outside
+        ``[0, env.n_bins)``) marks a sample outside every bin.
     goal_bins : list[int] or NDArray[np.int_]
         Bin indices of goal locations.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Distance to nearest decision boundary at each trajectory point.
-        Units match environment. Small values = near boundary = uncommitted.
+        Distance to the decision boundary in environment units:
+        ``(d2 - d1) / 2``, where ``d1`` and ``d2`` are the geodesic distances
+        from the sample's bin to its nearest and second-nearest goal. 0 on
+        the boundary; small values = uncommitted. NaN for a sample outside
+        every bin; inf where the second-nearest goal is unreachable or with
+        fewer than two goals (there is no boundary).
 
     Notes
     -----
-    Distance to boundary is computed as the absolute difference between
-    distances to the two nearest goals. At the boundary, this difference is 0.
+    Walking from the bin toward the second-nearest goal along the path
+    between the two goals shortens ``d2`` and lengthens ``d1`` by the
+    distance walked, so the two meet after ``(d2 - d1) / 2``. This is the
+    exact geodesic distance to the boundary for a bin on the path between
+    the goals (a linear track, the arms of a T-maze). Off that path, for
+    example in a dead-end side arm, it is a lower bound: each geodesic
+    distance changes by at most the distance walked.
+
+    Distances are between bin centers, so they are quantized to the
+    environment's bins.
 
     Examples
     --------
-    >>> distances = distance_to_decision_boundary(
-    ...     env, position_bins, goal_bins
-    ... )  # doctest: +SKIP
-    >>> commitment_mask = distances > 20.0  # Committed to a goal  # doctest: +SKIP
+    A 100 cm linear track with a goal at each end. The bin at 30 cm is 30 cm
+    from one goal and 70 cm from the other, so the boundary at 50 cm is
+    20 cm away:
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import distance_to_decision_boundary
+    >>> env = Environment.from_samples(np.arange(101.0)[:, None], bin_size=10.0)
+    >>> goal_bins = env.bin_at(np.array([[0.0], [100.0]]))
+    >>> position_bins = env.bin_at(np.array([[30.0], [50.0], [90.0]]))
+    >>> distance_to_decision_boundary(env, position_bins, goal_bins).tolist()
+    [20.0, 0.0, 40.0]
     """
     from neurospatial.environment import _validate_target_bins
     from neurospatial.ops.distance import distance_field
@@ -1074,7 +1101,7 @@ def distance_to_decision_boundary(
     n_goals = len(goal_bins_arr)
 
     if n_goals < 2:
-        # With single goal, there's no boundary - return infinity
+        # With a single goal there is no boundary.
         return np.full(len(position_bins), np.inf)
 
     # Compute distance from each goal to all bins
@@ -1084,9 +1111,8 @@ def distance_to_decision_boundary(
             env.connectivity, [goal_bin], metric="geodesic"
         )
 
-    # For each trajectory bin, the boundary distance is the gap between the two
-    # nearest goals: d2 - d1 after sorting the per-bin goal distances. This is
-    # computed in one vectorized pass over the trajectory.
+    # For each trajectory bin, the boundary lies halfway between the two
+    # nearest goals: (d2 - d1) / 2 after sorting the per-bin goal distances.
     position_bins = np.asarray(position_bins).ravel()
     boundary_distances = np.full(len(position_bins), np.nan)
 
@@ -1104,11 +1130,13 @@ def distance_to_decision_boundary(
     second = sorted_dists[1]
 
     # When the nearest goal is unreachable (inf), the boundary distance is inf;
-    # otherwise it is the gap to the second-nearest goal. Compute the gap only
-    # where the nearest goal is finite to avoid inf - inf = nan.
+    # otherwise it is half the gap to the second-nearest goal. Compute the gap
+    # only where the nearest goal is finite to avoid inf - inf = nan.
     finite_nearest = np.isfinite(nearest)
     valid_boundary = np.full(valid_bins.shape, np.inf)
-    valid_boundary[finite_nearest] = second[finite_nearest] - nearest[finite_nearest]
+    valid_boundary[finite_nearest] = (
+        second[finite_nearest] - nearest[finite_nearest]
+    ) / 2
     boundary_distances[valid] = valid_boundary
 
     return boundary_distances
@@ -1496,7 +1524,7 @@ def compute_decision_analysis(
 
     boundary = DecisionBoundaryMetrics(
         goal_labels=trajectory_labels,
-        distance_to_boundary=boundary_distances,
+        distance_to_decision_boundary=boundary_distances,
         crossing_times=crossing_times,
         crossing_directions=crossing_directions,
     )

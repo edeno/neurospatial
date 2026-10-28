@@ -73,7 +73,7 @@ CASES = [
         DecisionBoundaryMetrics,
         {
             "goal_labels": np.array([0, 1]),
-            "distance_to_boundary": np.ones(2),
+            "distance_to_decision_boundary": np.ones(2),
             "crossing_times": [],
             "crossing_directions": [],
         },

@@ -118,7 +118,7 @@ class TestDecisionBoundaryMetrics:
 
         result = DecisionBoundaryMetrics(
             goal_labels=np.array([0, 1, 0, 1]),
-            distance_to_boundary=np.array([5.0, 5.0, 5.0, 5.0]),
+            distance_to_decision_boundary=np.array([5.0, 5.0, 5.0, 5.0]),
             crossing_times=[1.0, 2.0, 3.0],
             crossing_directions=[(0, 1), (1, 0), (0, 1)],
         )
@@ -405,8 +405,8 @@ class TestDistanceToDecisionBoundary:
 
         distances = distance_to_decision_boundary(env, position_bins, goal_bins)
 
-        # At center, distance to boundary should be small
-        assert distances[0] < 10.0
+        # The center bin is equidistant from both goals: on the boundary.
+        assert distances.tolist() == [0.0]
 
     def test_far_from_boundary(self, t_maze_environment):
         """Test that distance is large far from boundary."""
@@ -426,8 +426,9 @@ class TestDistanceToDecisionBoundary:
 
         distances = distance_to_decision_boundary(env, position_bins, goal_bins)
 
-        # At goal, distance to boundary should be larger
-        assert distances[0] > 20.0
+        # The goals are 80 cm apart along the crossbar: the boundary is
+        # halfway, 40 cm from the left goal.
+        assert_allclose(distances, [40.0], rtol=1e-12)
 
 
 # =============================================================================
@@ -636,109 +637,57 @@ class TestDistanceToDecisionBoundaryEdgeCases:
         assert np.isnan(distances[2])  # out of bounds
 
 
-class TestDistanceToDecisionBoundaryEquivalence:
-    """Pin the vectorized boundary-distance against the per-sample loop."""
+def _linear_track():
+    """A 100 cm track with bin centers every 10 cm from 0 to 100."""
+    return Environment.from_samples(np.arange(101.0)[:, None], bin_size=10.0)
 
-    @staticmethod
-    def _reference(env, position_bins, goal_bins):
-        """Original per-sample np.sort loop implementation."""
-        from neurospatial.ops.distance import distance_field
 
-        goal_bins_arr = np.asarray(goal_bins)
-        n_goals = len(goal_bins_arr)
-        if n_goals < 2:
-            return np.full(len(position_bins), np.inf)
+def _bins_at(env, xs):
+    return env.bin_at(np.asarray(xs, dtype=float)[:, None])
 
-        all_distances = np.zeros((n_goals, env.n_bins))
-        for i, goal_bin in enumerate(goal_bins_arr):
-            all_distances[i] = distance_field(
-                env.connectivity, [int(goal_bin)], metric="geodesic"
-            )
 
-        boundary_distances = np.zeros(len(position_bins))
-        for i, bin_idx in enumerate(position_bins):
-            if bin_idx < 0 or bin_idx >= env.n_bins:
-                boundary_distances[i] = np.nan
-                continue
-            sorted_dists = np.sort(all_distances[:, bin_idx])
-            if np.isinf(sorted_dists[0]):
-                boundary_distances[i] = np.inf
-            else:
-                boundary_distances[i] = float(sorted_dists[1]) - float(sorted_dists[0])
-        return boundary_distances
+class TestDistanceToDecisionBoundaryKnownAnswers:
+    """Distances to the equidistant point between goals, from track geometry."""
 
-    def test_matches_reference_two_goals(self, t_maze_environment):
-        """Vectorized output equals the loop reference for two goals."""
+    def test_two_goals_on_a_linear_track(self):
+        """Goals at 0 and 100 cm: the boundary is at 50 cm."""
         from neurospatial.behavior.decisions import distance_to_decision_boundary
 
-        env = t_maze_environment
-        left_bin = int(env.bin_at(np.array([[10.0, 55.0]]))[0])
-        right_bin = int(env.bin_at(np.array([[90.0, 55.0]]))[0])
-        goal_bins = [left_bin, right_bin]
-
-        # Sweep a representative set of bins plus invalid indices.
-        position_bins = np.array(
-            [0, 5, left_bin, right_bin, env.n_bins // 2, -1, env.n_bins + 7],
-            dtype=np.int64,
+        env = _linear_track()
+        result = distance_to_decision_boundary(
+            env, _bins_at(env, [0, 30, 50, 70, 90]), _bins_at(env, [0, 100])
         )
+        assert_allclose(result, [50.0, 20.0, 0.0, 20.0, 40.0], rtol=1e-12)
 
-        reference = self._reference(env, position_bins, goal_bins)
-        result = distance_to_decision_boundary(env, position_bins, goal_bins)
-
-        np.testing.assert_array_equal(np.isnan(reference), np.isnan(result))
-        finite = ~np.isnan(reference)
-        np.testing.assert_allclose(
-            result[finite], reference[finite], rtol=1e-9, atol=1e-9
-        )
-
-    def test_matches_reference_three_goals(self, simple_2d_environment):
-        """Vectorized output equals the loop reference for three goals."""
+    def test_three_goals_use_the_two_nearest(self):
+        """Goals at 0, 50 and 100 cm: boundaries at 25 and 75 cm."""
         from neurospatial.behavior.decisions import distance_to_decision_boundary
 
-        env = simple_2d_environment
-        g0 = int(env.bin_at(np.array([[10.0, 10.0]]))[0])
-        g1 = int(env.bin_at(np.array([[90.0, 10.0]]))[0])
-        g2 = int(env.bin_at(np.array([[50.0, 90.0]]))[0])
-        goal_bins = [g0, g1, g2]
-
-        rng = np.random.default_rng(0)
-        position_bins = rng.integers(0, env.n_bins, size=25).astype(np.int64)
-
-        reference = self._reference(env, position_bins, goal_bins)
-        result = distance_to_decision_boundary(env, position_bins, goal_bins)
-
-        np.testing.assert_array_equal(np.isnan(reference), np.isnan(result))
-        finite = ~np.isnan(reference)
-        np.testing.assert_allclose(
-            result[finite], reference[finite], rtol=1e-9, atol=1e-9
+        env = _linear_track()
+        result = distance_to_decision_boundary(
+            env, _bins_at(env, [10, 30, 50, 70]), _bins_at(env, [0, 50, 100])
         )
+        assert_allclose(result, [15.0, 5.0, 25.0, 5.0], rtol=1e-12)
 
-    def test_matches_reference_with_unreachable_goal(self):
-        """Inf handling matches when a goal is on a disconnected component."""
+    def test_unreachable_second_goal_is_infinite(self):
+        """A goal on a disconnected piece of track has no boundary with ours."""
         from neurospatial.behavior.decisions import distance_to_decision_boundary
 
-        # Two disconnected blobs so one goal is unreachable from the other side.
-        left = np.column_stack([np.linspace(0, 20, 40), np.linspace(0, 20, 40)])
-        right = np.column_stack([np.linspace(80, 100, 40), np.linspace(80, 100, 40)])
-        positions = np.vstack([left, right])
-        env = Environment.from_samples(positions, bin_size=3.0)
-
-        g_left = int(env.bin_at(np.array([[2.0, 2.0]]))[0])
-        g_right = int(env.bin_at(np.array([[98.0, 98.0]]))[0])
-        goal_bins = [g_left, g_right]
-
-        position_bins = np.arange(env.n_bins, dtype=np.int64)
-
-        reference = self._reference(env, position_bins, goal_bins)
-        result = distance_to_decision_boundary(env, position_bins, goal_bins)
-
-        # Compare inf, nan, and finite parts explicitly.
-        np.testing.assert_array_equal(np.isinf(reference), np.isinf(result))
-        np.testing.assert_array_equal(np.isnan(reference), np.isnan(result))
-        finite = np.isfinite(reference)
-        np.testing.assert_allclose(
-            result[finite], reference[finite], rtol=1e-9, atol=1e-9
+        samples = np.r_[np.arange(0, 31.0), np.arange(70, 101.0)][:, None]
+        env = Environment.from_samples(samples, bin_size=10.0)
+        result = distance_to_decision_boundary(
+            env, _bins_at(env, [10, 90]), _bins_at(env, [0, 100])
         )
+        assert result.tolist() == [np.inf, np.inf]
+
+    def test_single_goal_has_no_boundary(self):
+        from neurospatial.behavior.decisions import distance_to_decision_boundary
+
+        env = _linear_track()
+        result = distance_to_decision_boundary(
+            env, _bins_at(env, [10, 90]), _bins_at(env, [0])
+        )
+        assert result.tolist() == [np.inf, np.inf]
 
 
 class TestErrorHandling:
@@ -846,7 +795,7 @@ def test_goal_regions_are_represented_by_their_centroid_bin():
     for name, goal in zip(["west", "east"], goals, strict=True):
         assert goal != env.bins_in_region(name)[0]  # not the lowest-index bin
     np.testing.assert_array_equal(
-        result.boundary.distance_to_boundary,
+        result.boundary.distance_to_decision_boundary,
         distance_to_decision_boundary(env, env.bin_at(positions), goals),
     )
 
