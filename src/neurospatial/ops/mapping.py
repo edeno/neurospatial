@@ -11,6 +11,7 @@ These are core primitives used throughout neurospatial and by downstream package
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Literal, TypeAlias, overload
 
 import numpy as np
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
         ResampleSourceConsumer,
         ResampleTargetConsumer,
     )
-    from neurospatial.regions import Region, Regions
+    from neurospatial.regions import Region
 
 
 TieBreakStrategy: TypeAlias = Literal["lowest_index", "closest_center"]
@@ -139,7 +140,7 @@ def _nearest_bin_query(
 
 def regions_to_mask(
     env: RegionMaskConsumer,
-    regions: str | list[str | Region] | Region | Regions,
+    regions: str | list[str | Region] | Region | Mapping[str, Region],
     *,
     include_boundary: bool = True,
 ) -> NDArray[np.bool_]:
@@ -155,9 +156,10 @@ def regions_to_mask(
     ----------
     env : Environment
         Environment whose bins are selected.
-    regions : str, list of str or Region, Region, or Regions
+    regions : str, list of str or Region, Region, or mapping of str to Region
         Region(s) to select. A name refers to an entry in ``env.regions``;
-        Region objects are used directly.
+        Region objects, and the values of a mapping such as a Regions builder,
+        are used directly.
     include_boundary : bool, default=True
         For polygon regions, count a bin whose center lies exactly on the
         polygon's edge as inside (``shapely.covers``); with False only centers
@@ -300,16 +302,17 @@ def _require_region_mask(
 
 
 def _regions_mask(
-    regions: str | list[str | Region] | Region | Regions,
+    regions: str | list[str | Region] | Region | Mapping[str, Region],
     *,
-    named_regions: Regions,
+    named_regions: Mapping[str, Region],
     binning: Binning,
     arena: Arena,
     include_boundary: bool,
 ) -> NDArray[np.bool_]:
     """Union of the bins covered by regions or by names in ``named_regions``."""
     from neurospatial._exceptions import RegionNotFoundError
-    from neurospatial.regions import Region, Regions
+    from neurospatial.regions import Region
+    from neurospatial.regions.core import _require_region
 
     def named(name: str) -> Region:
         if name not in named_regions:
@@ -325,12 +328,12 @@ def _regions_mask(
         resolved = [named(r) if isinstance(r, str) else r for r in regions]
     elif isinstance(regions, Region):
         resolved = [regions]
-    elif isinstance(regions, Regions):
-        resolved = list(regions.values())
+    elif isinstance(regions, Mapping):
+        resolved = [_require_region(r, key=k) for k, r in regions.items()]
     else:
         raise TypeError(
-            "regions must be str, list[str], Region, or Regions; "
-            f"got {type(regions).__name__}."
+            "regions must be str, list[str], Region, or a mapping of names to "
+            f"Region values; got {type(regions).__name__}."
         )
     if not isinstance(include_boundary, bool):
         raise TypeError(

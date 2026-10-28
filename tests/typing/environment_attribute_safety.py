@@ -14,3 +14,6 @@ if TYPE_CHECKING:
         _ = env.nonexistent_attribute  # type: ignore[attr-defined]
         _missing: MissingOperation = env  # type: ignore[assignment]
         _polar_missing: MissingOperation = polar  # type: ignore[assignment]
+        # Published regions are a read-only mapping; edit a Regions builder.
+        env.regions.add("goal", point=(0.0, 0.0))  # type: ignore[attr-defined]
+        env.regions["goal"] = env.regions["home"]  # type: ignore[index]

@@ -222,15 +222,13 @@ class TestRegionMembership:
 
         Notes
         -----
-        Tests that passing non-Regions object raises TypeError.
+        Tests that passing a list of names, not a mapping, raises TypeError.
         """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        with pytest.raises(TypeError, match="takes a Regions collection or None"):
-            env.region_membership(regions={})
-
-        with pytest.raises(TypeError, match="takes a Regions collection or None"):
+        assert env.region_membership(regions={}).shape == (env.n_bins, 0)
+        with pytest.raises(TypeError, match="takes a mapping of names to regions"):
             env.region_membership(regions=[])
 
     def test_region_membership_invalid_include_boundary_type(self):
@@ -270,7 +268,7 @@ class TestRegionMembership:
         # Add polygon region (only valid in 2D)
         region_builder = Regions(env.regions.values())
         region_builder.add("poly", polygon=box(0, 0, 5, 5))
-        with pytest.raises(ValueError, match="dimensions must match"):
+        with pytest.raises(ValueError, match="coordinates; the environment has"):
             env.with_regions(region_builder)
         assert len(env.regions) == 0
 
@@ -748,7 +746,7 @@ class TestRegionIntegrationAdvanced:
         # Test 2: Wrong dimension point
         region_builder = Regions(env.regions.values())
         region_builder.add("wrong_dim", point=(1.0, 2.0, 3.0))
-        with pytest.raises(ValueError, match="dimensions must match"):
+        with pytest.raises(ValueError, match="coordinates; the environment has"):
             env.with_regions(region_builder)
         assert "wrong_dim" not in env.regions
 

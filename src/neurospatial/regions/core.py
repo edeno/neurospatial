@@ -656,7 +656,7 @@ class Regions(MutableMapping[str, Region]):
 
     def _snapshot(self) -> Regions:
         """Own an ordered, immutable store while sharing immutable Region values."""
-        return type(self)._restore(tuple(self.values()), frozen=True)
+        return _snapshot_regions(self.values())
 
     @classmethod
     def _restore(cls, items: tuple[Region, ...], frozen: bool) -> Regions:
@@ -1159,6 +1159,6 @@ class Regions(MutableMapping[str, Region]):
         return regions_from_json(path)
 
 
-def _snapshot_regions(regions: Regions) -> Regions:
-    """Return an ordered, immutable copy of ``regions`` for an environment to own."""
-    return regions._snapshot()
+def _snapshot_regions(regions: Iterable[Region]) -> Regions:
+    """Return an ordered, immutable collection of ``regions`` for an environment."""
+    return Regions._restore(tuple(regions), frozen=True)

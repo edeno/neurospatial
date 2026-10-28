@@ -460,8 +460,7 @@ CASES: dict[str, Case] = {
     "region_membership(list of names)": Case(
         _with_regions,
         lambda n: n["env"].region_membership(["reward"]),
-        "from neurospatial import Regions; env.region_membership(Regions("
-        "env.regions[name] for name in ['reward']))",
+        "env.region_membership({name: env.regions[name] for name in ['reward']})",
     ),
     "bin_at on a track without track_width": Case(
         _widthless_track,

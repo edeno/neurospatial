@@ -9,8 +9,9 @@ from __future__ import annotations
 import copy
 import pickle
 import tempfile
+from collections.abc import MutableMapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -104,7 +105,8 @@ def assert_environment_contract(
     graph.clear()
     assert env.connectivity.number_of_nodes() == env.n_bins
     try:
-        env.regions.clear()
+        # Typed as a read-only Mapping; check the runtime object refuses too.
+        cast("MutableMapping[str, Any]", env.regions).clear()
     except TypeError:
         pass
     else:

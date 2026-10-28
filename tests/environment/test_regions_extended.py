@@ -126,7 +126,7 @@ class TestBinsInRegion:
         # Add 3D point to 2D environment
         region_builder = Regions(env.regions.values())
         region_builder.add("wrong_dim", point=(5.0, 5.0, 5.0))
-        with pytest.raises(ValueError, match="dimensions must match"):
+        with pytest.raises(ValueError, match="coordinates; the environment has"):
             env.with_regions(region_builder)
         assert "wrong_dim" not in env.regions
 

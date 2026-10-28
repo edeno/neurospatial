@@ -15,7 +15,7 @@ two composites need becomes a base.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 if TYPE_CHECKING:
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
         EgocentricPolarSystem,
     )
     from neurospatial.ops._types import KernelMode
-    from neurospatial.regions import Regions
+    from neurospatial.regions import Region
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +172,7 @@ class RegionMaskConsumer(BinningConsumer, Protocol):
     """Bins, their domain and the named regions for region membership masks."""
 
     @property
-    def regions(self) -> Regions: ...
+    def regions(self) -> Mapping[str, Region]: ...
 
 
 class FeatureLookupConsumer(

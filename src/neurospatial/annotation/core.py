@@ -21,6 +21,8 @@ from neurospatial.annotation._types import (
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     import napari
     from numpy.typing import NDArray
     from shapely.geometry import LineString, Polygon
@@ -32,7 +34,7 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.landmarks import Landmarks
     from neurospatial.ops.transforms import VideoCalibration
-    from neurospatial.regions import Regions
+    from neurospatial.regions import Region, Regions
 
 
 __all__ = ["AnnotationResult", "annotate_project", "annotate_video"]
@@ -73,7 +75,7 @@ def annotate_video(
     video_path: str | Path,
     *,
     config: AnnotationConfig | None = None,
-    initial_regions: Regions | None = None,
+    initial_regions: Mapping[str, Region] | None = None,
     calibration: VideoCalibration | None = None,
     mode: Literal["environment", "regions", "both"] = "both",
     bin_size: float | None = None,
@@ -107,8 +109,8 @@ def annotate_video(
         Configuration for annotation UI settings. Groups frame_index,
         simplify_tolerance, multiple_boundaries, and show_positions.
         Individual parameters override config values if both provided.
-    initial_regions : Regions, optional
-        Pre-existing regions to display for editing.
+    initial_regions : mapping of str to Region, optional
+        Pre-existing regions to display for editing, such as ``env.regions``.
     calibration : VideoCalibration, optional
         Pixel-to-cm transform. If provided, output coordinates are in cm.
         If None, coordinates remain in pixels.
@@ -457,7 +459,7 @@ def _require_napari() -> None:
         ) from exc
 
 
-def _validate_initial_metadata(regions: Regions) -> None:
+def _validate_initial_metadata(regions: Mapping[str, Region]) -> None:
     """Reject polygon metadata that an editable project cannot store."""
     from neurospatial.regions.core import _require_json_metadata, _thaw_metadata
 
@@ -491,7 +493,7 @@ def _run_annotation_editor(
     segmentation_provider: SegmentationProvider | None,
     boundary_polygon: Polygon | None = None,
     positions_for_display: NDArray[np.float64] | None = None,
-    initial_regions: Regions | None = None,
+    initial_regions: Mapping[str, Region] | None = None,
 ) -> AnnotationResult:
     """Run the common editor and export from its current scientific settings.
 
@@ -559,7 +561,7 @@ def _run_annotation_editor(
 
 def _add_initial_regions(
     shapes_layer: napari.layers.Shapes,
-    regions: Regions,
+    regions: Mapping[str, Region],
     calibration: VideoCalibration | None,
 ) -> None:
     """Add existing regions to shapes layer for editing.
@@ -655,7 +657,9 @@ def _add_positions_layer(
     )
 
 
-def _filter_environment_regions(regions: Regions) -> Regions:
+def _filter_environment_regions(
+    regions: Mapping[str, Region],
+) -> Mapping[str, Region]:
     """Filter out environment regions and warn if any were found.
 
     This function is called when both initial_boundary and initial_regions
@@ -669,8 +673,9 @@ def _filter_environment_regions(regions: Regions) -> Regions:
 
     Returns
     -------
-    Regions
-        New Regions collection without environment regions.
+    mapping of str to Region
+        ``regions`` itself, or a new Regions collection without the
+        environment regions.
 
     """
     from neurospatial.regions import Regions
@@ -863,7 +868,7 @@ def _setup_annotation_viewer(
     mode: Literal["environment", "regions", "both"],
     boundary_polygon: Polygon | None,
     positions_for_display: NDArray[np.float64] | None,
-    initial_regions: Regions | None,
+    initial_regions: Mapping[str, Region] | None,
     calibration: VideoCalibration | None,
     *,
     draft: AnnotationProject | None = None,
@@ -882,7 +887,7 @@ def _setup_annotation_viewer(
         Initial boundary polygon to display.
     positions_for_display : NDArray or None
         Position data for reference Points layer.
-    initial_regions : Regions or None
+    initial_regions : mapping of str to Region, or None
         Pre-existing regions to display.
     calibration : VideoCalibration or None
         Coordinate transform for conversions.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 from itertools import product
 
@@ -30,7 +31,7 @@ def _apply_transform(
     transform: object,
     *,
     binning: Binning,
-    regions: Regions,
+    regions: Mapping[str, Region],
     landmarks: Landmarks,
     arena: Arena,
     cache: AnalysisCache,

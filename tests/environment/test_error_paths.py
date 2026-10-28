@@ -115,7 +115,7 @@ class TestBinsInRegionErrorPaths:
         shapely_poly = ShapelyPolygon(polygon_coords)
         region_builder = Regions(env.regions.values())
         region_builder.add("test_poly", polygon=shapely_poly)
-        with pytest.raises(ValueError, match="dimensions must match"):
+        with pytest.raises(ValueError, match="coordinates; the environment has"):
             env.with_regions(region_builder)
         assert "test_poly" not in env.regions
 

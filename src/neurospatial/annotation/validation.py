@@ -23,7 +23,9 @@ from shapely.geometry.base import BaseGeometry
 from shapely.validation import explain_validity
 
 if TYPE_CHECKING:
-    from neurospatial.regions import Region, Regions
+    from collections.abc import Mapping
+
+    from neurospatial.regions import Region
 
 
 # Default thresholds for validation
@@ -199,7 +201,7 @@ def validate_region_within_boundary(
 
 
 def validate_region_overlap(
-    regions: Regions,
+    regions: Mapping[str, Region],
     *,
     overlap_threshold: float = DEFAULT_OVERLAP_THRESHOLD,
     warn_overlap: bool = True,
@@ -208,8 +210,8 @@ def validate_region_overlap(
 
     Parameters
     ----------
-    regions : Regions
-        Collection of regions to check for overlap.
+    regions : mapping of str to Region
+        Regions to check for overlap, such as a Regions builder.
     overlap_threshold : float, default=0.5
         Fraction of region area overlapping another region that triggers
         a warning. Set to 1.0 to disable overlap warnings.
@@ -352,7 +354,7 @@ def validate_environment_boundary(
 
 
 def validate_annotations(
-    regions: Regions,
+    regions: Mapping[str, Region],
     boundary: Region | None = None,
     *,
     min_area: float = DEFAULT_MIN_AREA_THRESHOLD,
@@ -371,8 +373,8 @@ def validate_annotations(
 
     Parameters
     ----------
-    regions : Regions
-        Collection of annotated regions.
+    regions : mapping of str to Region
+        Annotated regions, such as a Regions builder.
     boundary : Region, optional
         Environment boundary polygon. If provided, regions are checked
         for containment within the boundary.

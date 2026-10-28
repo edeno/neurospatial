@@ -24,8 +24,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from neurospatial.environment import Environment
-    from neurospatial.regions import Regions
+    from neurospatial.regions import Region, Regions
 
 
 MAZE_LANDMARK_ROLES = frozenset(
@@ -136,7 +138,7 @@ class MazeEnvironments:
             self.env_track = self.env_track.with_landmarks(self.env_2d.landmarks)
 
 
-def _regions_on_track(regions: Regions, track: Environment) -> Regions:
+def _regions_on_track(regions: Mapping[str, Region], track: Environment) -> Regions:
     """Copy ``regions``, moving each point onto the track's nearest location.
 
     A simplified track graph need not pass through every well of the 2-D maze;
