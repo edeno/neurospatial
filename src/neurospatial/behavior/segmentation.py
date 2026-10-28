@@ -1325,32 +1325,6 @@ def _segment_by_velocity_contiguous(
 # =============================================================================
 
 
-def _widened_overlap(
-    template: NDArray[np.bool_],
-    bins: NDArray[np.int64],
-    adjacency: Any,
-) -> float:
-    """Jaccard index of two paths, each widened by one ring of neighbor bins.
-
-    Parameters
-    ----------
-    template : NDArray[np.bool_], shape (n_bins,)
-        The template's widened bins, from :func:`_widen`.
-    bins : NDArray[np.int64], shape (n_samples,)
-        Bin sequence of a candidate lap.
-    adjacency : scipy.sparse array, shape (n_bins, n_bins)
-        Bin connectivity.
-
-    Returns
-    -------
-    float
-        |A & B| / |A | B| of the widened bin sets, in [0, 1].
-    """
-    lap = _widen(bins, adjacency)
-    union = np.count_nonzero(template | lap)
-    return float(np.count_nonzero(template & lap) / union) if union else 0.0
-
-
 def _widen(bins: NDArray[np.int64], adjacency: Any) -> NDArray[np.bool_]:
     """Bins visited by a path plus their neighbors, as a mask over bins.
 
