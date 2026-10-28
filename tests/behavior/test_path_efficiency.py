@@ -606,8 +606,10 @@ class TestAngularEfficiency:
         """
         from neurospatial.behavior.navigation import angular_efficiency
 
-        times = np.array([0.0, 0.1, 0.2])
-        # Goal at (1, 10): from (1, 0) it is due North, the second step East.
+        # Samples 1 s apart lie beyond the 0.1 s position smoothing, so the
+        # steps are exactly these. Goal at (1, 10): from (1, 0) it is due
+        # North, the second step East.
+        times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[1.0, -10.0], [1.0, 0.0], [2.0, 0.0]])
         eff = angular_efficiency(times, positions, np.array([1.0, 10.0]))
         assert eff == pytest.approx(1.0 - 1.0 / 22.0, abs=1e-15)
@@ -623,10 +625,29 @@ class TestAngularEfficiency:
         run = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
         wiggle = np.column_stack([np.full(10, 100.0), 0.1 * (np.arange(1, 11) % 2)])
         positions = np.vstack([run, wiggle])
+        # 1 s apart: beyond the position smoothing, so the steps are exact.
         eff = angular_efficiency(
-            np.arange(len(positions)) / 10, positions, np.array([1e7, 0.0])
+            np.arange(len(positions)) * 1.0, positions, np.array([1e7, 0.0])
         )
         assert eff == pytest.approx(1.0 - 0.5 / 101.0, abs=1e-6)
+
+    def test_tracking_jitter_during_a_pause_weighs_almost_nothing(self):
+        """A 60 cm run toward the goal, then 4 s still with 0.3 cm jitter.
+
+        Raw steps: the jitter adds as much path as the run, in random
+        directions, which would score about 0.75. The smoothed path keeps the
+        run and averages the jitter away.
+        """
+        from neurospatial.behavior.navigation import angular_efficiency
+
+        rng = np.random.default_rng(0)
+        run = np.column_stack([np.linspace(0.0, 60.0, 61), np.zeros(61)])
+        pause = run[-1] + rng.normal(0.0, 0.3, (120, 2))
+        positions = np.vstack([run, pause])
+        times = np.arange(len(positions)) / 30
+        goal = np.array([100.0, 0.0])
+        assert angular_efficiency(times[:61], run, goal) == pytest.approx(1.0)
+        assert angular_efficiency(times, positions, goal) > 0.95
 
     def test_independent_of_goal_distance_along_heading(self):
         """The old turn-angle score could not tell these goals apart."""

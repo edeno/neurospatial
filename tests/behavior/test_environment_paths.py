@@ -414,7 +414,9 @@ class TestGeodesicGoalDirection:
         from neurospatial.behavior import angular_efficiency
 
         positions = self._shortest_route()
-        times = np.arange(len(positions)) / 10
+        times = (
+            np.arange(len(positions)) * 0.5
+        )  # Samples 0.5 s apart lie beyond the 0.1 s position smoothing, so the path is exact.
         goal = positions[-1]
         geodesic = angular_efficiency(
             times, positions, goal, metric="geodesic", env=narrow_u
@@ -428,7 +430,7 @@ class TestGeodesicGoalDirection:
 
         positions = self._shortest_route()
         result = compute_path_efficiency(
-            narrow_u, np.arange(len(positions)) / 10, positions, positions[-1]
+            narrow_u, np.arange(len(positions)) * 0.5, positions, positions[-1]
         )
         assert result.angular_efficiency == pytest.approx(1.0, abs=1e-12)
 
@@ -443,7 +445,9 @@ class TestGeodesicGoalDirection:
         across = np.c_[np.arange(-29.0, 31.0), np.full(60, 40.0)]
         down = np.c_[np.full(39, 30.0), np.arange(39.0, 0.0, -1.0)]
         positions = np.vstack([up, across, down])
-        times = np.arange(len(positions)) / 30
+        times = (
+            np.arange(len(positions)) * 0.5
+        )  # Samples 0.5 s apart lie beyond the 0.1 s position smoothing, so the path is exact.
         efficiency = angular_efficiency(
             times, positions, positions[-1], metric="geodesic", env=env
         )

@@ -3196,12 +3196,16 @@ def angular_efficiency(
     out. A step of zero length has no direction and is left out, as is a
     step that starts at the goal (no goal direction).
 
-    Each step's angle counts in proportion to its length, so the result
-    does not depend on the sampling rate along a smooth path, and a pause
-    adds little: a short jittery step weighs little. Tracking jitter still
-    adds path in random directions, as it adds length to
-    :func:`traveled_path_length`, so a long pause with jittery positions
-    pulls the result toward 0.5; smooth noisy positions first.
+    Steps are measured on positions smoothed by a Gaussian in time (0.1 s
+    standard deviation, the smoothing of :func:`compute_speed`, weighted by
+    time difference so it never reaches across a bridged gap much longer
+    than that), and each step's angle counts in proportion to its smoothed
+    length. The result does not depend on the sampling rate along a smooth
+    path, and tracking jitter while the animal pauses, which smoothing
+    averages to almost no movement, weighs almost nothing: with raw steps,
+    4 s of 0.3 cm jitter after a 60 cm run toward the goal added as much
+    path as the run and pulled the result from 1 to 0.75. Smoothing rounds
+    sharp corners over about 0.1 s of travel.
 
     The angle between step ``s`` and goal direction ``g`` is computed as
     ``2 * arctan2(|u - v|, |u + v|)`` with unit vectors ``u = s / |s|`` and
@@ -3221,7 +3225,7 @@ def angular_efficiency(
     """
     from neurospatial._observation import validated_observations
 
-    _, positions_arr, support = validated_observations(
+    times_arr, positions_arr, support = validated_observations(
         times,
         positions,
         call="angular_efficiency",
@@ -3230,12 +3234,126 @@ def angular_efficiency(
         break_before=break_before,
         result="the angular efficiency is NaN",
     )
-    starts, ends = _observed_steps(
-        positions_arr, support.sample_valid, support.interval_mask
+    starts, steps = _smoothed_steps(
+        times_arr, positions_arr, support.sample_valid, support.interval_mask
     )
     return _angular_efficiency(
-        starts, ends, goal, metric=metric, env=env, call="angular_efficiency"
+        starts, steps, goal, metric=metric, env=env, call="angular_efficiency"
     )
+
+
+def _smoothed_steps(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    sample_valid: NDArray[np.bool_],
+    interval_mask: NDArray[np.bool_],
+    smoothed: NDArray[np.float64] | None = None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Start and displacement of each usable step of the smoothed path.
+
+    A step joins consecutive valid samples (a bridged stretch of missing
+    samples is one step), measured on positions smoothed over time by
+    :func:`_time_smoothed_positions`.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+    positions : ndarray, shape (n_samples, n_dims)
+    sample_valid, interval_mask : ndarray of bool
+        ``ObservationSupport.sample_valid`` (n_samples,) and
+        ``ObservationSupport.interval_mask`` (n_samples - 1,).
+    smoothed : ndarray, shape (n_samples, n_dims), optional
+        Smoothed positions, when the caller already has them for a longer
+        recording that these samples are a slice of.
+
+    Returns
+    -------
+    starts, steps : ndarray, shape (n_steps, n_dims)
+    """
+    from neurospatial._intervals import gap_endpoints
+
+    if smoothed is None:
+        smoothed = _time_smoothed_positions(times, positions, interval_mask)
+    first, last, _ = gap_endpoints(sample_valid)
+    counted = interval_mask & sample_valid[1:]
+    first, last = first[counted], last[counted]
+    return smoothed[first], smoothed[last] - smoothed[first]
+
+
+def _time_smoothed_positions(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    interval_mask: NDArray[np.bool_],
+) -> NDArray[np.float64]:
+    """Positions smoothed by Gaussian-weighted local linear fits in time.
+
+    Each valid sample is replaced by the value at its own time of a straight
+    line fitted, within its observed run, to the samples weighted by a
+    Gaussian of their time difference (standard deviation
+    ``DEFAULT_SPEED_SMOOTHING`` seconds, cut at four standard deviations).
+    A local linear fit leaves motion at constant velocity unchanged, also at
+    the ends of a run, and averages tracking jitter away. Weighting by time
+    rather than sample distance means a bridged gap much longer than the
+    kernel is not smoothed across. Missing rows stay NaN.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+    positions : ndarray, shape (n_samples, n_dims)
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        ``ObservationSupport.interval_mask``.
+
+    Returns
+    -------
+    ndarray, shape (n_samples, n_dims)
+    """
+    from neurospatial._intervals import run_sample_bounds
+    from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
+
+    sigma = DEFAULT_SPEED_SMOOTHING
+    reach = 4.0 * sigma
+    finite = np.all(np.isfinite(positions), axis=1)
+    smoothed = positions.astype(np.float64, copy=True)
+    mask = np.asarray(interval_mask, dtype=bool) & (np.diff(times) > 0)
+    for first, last in run_sample_bounds(mask):
+        run = first + np.flatnonzero(finite[first : last + 1])
+        if run.size < 2:
+            continue
+        t, p = times[run], positions[run]
+        index = np.arange(run.size)
+        lo = np.searchsorted(t, t - reach, side="left")
+        hi = np.searchsorted(t, t + reach, side="right")
+        widest = int(max(np.max(index - lo), np.max(hi - 1 - index)))
+        # Weighted sums for the local fit p_j - p_i ~ a + b * (t_j - t_i),
+        # in differences from each sample so a still animal stays exactly still.
+        s0 = np.zeros(run.size)
+        s1 = np.zeros(run.size)
+        s2 = np.zeros(run.size)
+        m0 = np.zeros_like(p)
+        m1 = np.zeros_like(p)
+        for offset in range(-widest, widest + 1):
+            other = np.clip(index + offset, 0, run.size - 1)
+            lag = t[other] - t
+            inside = (index + offset >= 0) & (index + offset < run.size)
+            weight = np.where(
+                inside & (np.abs(lag) <= reach), np.exp(-0.5 * (lag / sigma) ** 2), 0.0
+            )
+            s0 += weight
+            s1 += weight * lag
+            s2 += weight * lag**2
+            deviation = p[other] - p
+            m0 += weight[:, None] * deviation
+            m1 += (weight * lag)[:, None] * deviation
+        det = s0 * s2 - s1**2
+        # A sample alone in its window (det ~ 0) keeps its own position.
+        fitted = det > 1e-12 * s0 * np.maximum(s2, np.finfo(float).tiny)
+        shift = np.where(
+            fitted[:, None],
+            (s2[:, None] * m0 - s1[:, None] * m1) / np.where(fitted, det, 1.0)[:, None],
+            0.0,
+        )
+        smoothed[run] = p + shift
+    return smoothed
 
 
 def _observed_steps(
@@ -3268,7 +3386,7 @@ def _observed_steps(
 
 def _angular_efficiency(
     starts: NDArray[np.float64],
-    ends: NDArray[np.float64],
+    step: NDArray[np.float64],
     goal: ArrayLike,
     *,
     metric: DistanceMetric,
@@ -3279,8 +3397,8 @@ def _angular_efficiency(
 
     Parameters
     ----------
-    starts, ends : ndarray, shape (n_steps, n_dims)
-        Step endpoints.
+    starts, step : ndarray, shape (n_steps, n_dims)
+        Step start positions and (smoothed) displacements.
     goal : array-like, shape (n_dims,)
     metric : {"euclidean", "geodesic"}
         Shortest path whose first direction is the goal direction.
@@ -3296,7 +3414,6 @@ def _angular_efficiency(
     else:
         paths = _geodesic_paths(env, goal_arr, call=call)
         to_goal = paths.directions(starts, goal_arr)
-    step = ends - starts
     step_norm = np.linalg.norm(step, axis=1)
     goal_norm = np.linalg.norm(to_goal, axis=1)
     with np.errstate(invalid="ignore"):
@@ -3433,6 +3550,7 @@ def subgoal_efficiency(
         break_before=break_before,
         result="no path was observed",
     )
+    smoothed = _time_smoothed_positions(times_arr, positions_arr, support.interval_mask)
     n_dims = positions_arr.shape[1]
     subgoal_arr = np.asarray(subgoals, dtype=float)
     if subgoal_arr.ndim == 1:
@@ -3507,10 +3625,12 @@ def subgoal_efficiency(
                 shortest_length=float(distances[start]),
                 time_efficiency=None,
                 angular_efficiency=_angular_efficiency(
-                    *_observed_steps(
+                    *_smoothed_steps(
+                        times_arr[segment],
                         positions_arr[segment],
                         support.sample_valid[segment],
                         support.interval_mask[start:arrival],
+                        smoothed=smoothed[segment],
                     ),
                     subgoal,
                     metric=metric,
@@ -3688,7 +3808,9 @@ def compute_path_efficiency(
         call="compute_path_efficiency",
     )
     ang_eff = _angular_efficiency(
-        *_observed_steps(positions_arr, support.sample_valid, support.interval_mask),
+        *_smoothed_steps(
+            times_arr, positions_arr, support.sample_valid, support.interval_mask
+        ),
         goal,
         metric=metric,
         env=env,
