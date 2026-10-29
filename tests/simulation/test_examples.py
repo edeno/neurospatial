@@ -17,6 +17,15 @@ from neurospatial.simulation.examples import (
 from neurospatial.simulation.session import SimulationSession
 
 
+def assert_square_arena(env, side):
+    """Bin centers span a ``side`` cm square, give or take one bin."""
+    step = float(np.max(env.bin_sizes)) ** 0.5
+    for axis in range(2):
+        low, high = env.bin_centers[:, axis].min(), env.bin_centers[:, axis].max()
+        assert -step <= low <= step
+        assert side - step <= high <= side + step
+
+
 class TestOpenFieldSession:
     """Tests for open_field_session() convenience function."""
 
@@ -79,17 +88,10 @@ class TestOpenFieldSession:
 
     def test_open_field_session_custom_arena_size(self):
         """open_field_session() should create arena with custom size."""
-        arena_size = 50.0
         session = open_field_session(
-            duration=10.0, arena_size=arena_size, bin_size=1.0, n_place_cells=5
+            duration=10.0, arena_size=50.0, bin_size=1.0, n_place_cells=5, seed=0
         )
-
-        env = session.env
-
-        # Check environment dimensions (approximately arena_size / bin_size bins per dimension)
-        # With some tolerance for rounding
-        expected_bins_per_dim = int(arena_size / 1.0)
-        assert env.n_bins >= expected_bins_per_dim  # At least this many bins
+        assert_square_arena(session.env, 50.0)
 
     def test_open_field_session_custom_bin_size(self):
         """open_field_session() should use custom bin_size."""
@@ -534,20 +536,15 @@ class TestBorderCellSession:
 
     def test_border_cell_session_custom_arena_size(self):
         """border_cell_session() should create arena with custom size."""
-        arena_size = 80.0
         session = border_cell_session(
             distance_tolerance=5.0,
             duration=10.0,
-            arena_size=arena_size,
+            arena_size=80.0,
             n_border_cells=5,
             n_place_cells=5,
+            seed=0,
         )
-
-        env = session.env
-
-        # Environment should be created
-        assert env is not None
-        assert env.n_bins > 0
+        assert_square_arena(session.env, 80.0)
 
     def test_border_cell_session_metadata(self):
         """border_cell_session() metadata should contain session info."""
@@ -674,38 +671,31 @@ class TestGridCellSession:
 
     def test_grid_cell_session_returns_simulation_session(self):
         """grid_cell_session() should return SimulationSession instance."""
-        session = grid_cell_session(duration=10.0, n_grid_cells=5)
+        session = grid_cell_session(duration=10.0, n_grid_cells=5, seed=0)
 
         assert isinstance(session, SimulationSession)
 
     def test_grid_cell_session_default_parameters(self):
-        """grid_cell_session() should work with default parameters."""
-        session = grid_cell_session()
-
-        # Should create session
-        assert isinstance(session, SimulationSession)
-        assert session.env is not None
-        assert len(session.spike_times) > 0
+        """Defaults: 40 cells of one 41 cm module in a 150 cm arena."""
+        session = grid_cell_session(duration=10.0, seed=0)
+        assert len(session.spike_times) == 40
+        assert {m.grid_spacing for m in session.models} == {41.0}
+        assert len({m.grid_orientation for m in session.models}) == 40
+        assert_square_arena(session.env, 150.0)
 
     def test_grid_cell_session_creates_2d_arena(self):
         """grid_cell_session() should create 2D arena environment."""
-        arena_size = 150.0
         session = grid_cell_session(
-            duration=10.0, arena_size=arena_size, n_grid_cells=5
+            duration=10.0, arena_size=150.0, n_grid_cells=5, seed=0
         )
-
-        env = session.env
-
-        # Check that environment is 2D
-        assert env.n_dims == 2
-
-        # Check environment units
-        assert env.units == "cm"
+        assert session.env.n_dims == 2
+        assert session.env.units == "cm"
+        assert_square_arena(session.env, 150.0)
 
     def test_grid_cell_session_correct_number_of_cells(self):
         """grid_cell_session() should create correct number of grid cells."""
         n_cells = 20
-        session = grid_cell_session(duration=10.0, n_grid_cells=n_cells)
+        session = grid_cell_session(duration=10.0, n_grid_cells=n_cells, seed=0)
 
         assert len(session.models) == n_cells
         assert len(session.spike_times) == n_cells
@@ -715,7 +705,7 @@ class TestGridCellSession:
         """grid_cell_session() should create only grid cells."""
         from neurospatial.simulation.models import GridCellModel
 
-        session = grid_cell_session(duration=10.0, n_grid_cells=5)
+        session = grid_cell_session(duration=10.0, n_grid_cells=5, seed=0)
 
         # All models should be grid cells
         assert all(isinstance(m, GridCellModel) for m in session.models)
@@ -738,38 +728,30 @@ class TestGridCellSession:
     def test_grid_cell_session_custom_duration(self):
         """grid_cell_session() should respect custom duration."""
         duration = 60.0
-        session = grid_cell_session(duration=duration, n_grid_cells=5)
+        session = grid_cell_session(duration=duration, n_grid_cells=5, seed=0)
 
         # Check that session duration matches
         assert session.times[-1] >= duration * 0.9  # Allow small tolerance
 
     def test_grid_cell_session_custom_arena_size(self):
         """grid_cell_session() should create arena with custom size."""
-        arena_size = 100.0
         session = grid_cell_session(
-            duration=10.0, arena_size=arena_size, n_grid_cells=5
+            duration=10.0, arena_size=100.0, n_grid_cells=5, seed=0
         )
-
-        env = session.env
-
-        # Environment should be created
-        assert env is not None
-        assert env.n_bins > 0
+        assert_square_arena(session.env, 100.0)
 
     def test_grid_cell_session_custom_grid_spacing(self):
         """grid_cell_session() should use custom grid_spacing."""
-        grid_spacing = 30.0
         session = grid_cell_session(
-            duration=10.0, grid_spacing=grid_spacing, n_grid_cells=5, seed=42
+            duration=10.0, grid_spacing=30.0, n_grid_cells=5, seed=42
         )
-
-        # Should complete without error
-        assert session is not None
-        assert len(session.models) == 5
+        assert [m.grid_spacing for m in session.models] == [30.0] * 5
+        assert all(t["grid_spacing"] == 30.0 for t in session.ground_truth.values())
+        assert session.metadata["grid_spacing"] == 30.0
 
     def test_grid_cell_session_metadata(self):
         """grid_cell_session() metadata should contain session info."""
-        session = grid_cell_session(duration=10.0, n_grid_cells=5)
+        session = grid_cell_session(duration=10.0, n_grid_cells=5, seed=0)
 
         meta = session.metadata
         assert "cell_type" in meta
@@ -815,14 +797,14 @@ class TestGridCellSession:
             grid_cell_session(duration=-1.0, n_grid_cells=5)
 
         with pytest.raises(ValueError, match="duration must be positive"):
-            grid_cell_session(duration=0.0, n_grid_cells=5)
+            grid_cell_session(duration=0.0, n_grid_cells=5, seed=0)
 
     def test_grid_cell_session_validates_n_grid_cells(self):
         """grid_cell_session() should reject non-positive n_grid_cells."""
         import pytest
 
         with pytest.raises(ValueError, match="n_grid_cells must be positive"):
-            grid_cell_session(duration=30.0, n_grid_cells=0)
+            grid_cell_session(duration=30.0, n_grid_cells=0, seed=0)
 
         with pytest.raises(ValueError, match="n_grid_cells must be positive"):
             grid_cell_session(duration=30.0, n_grid_cells=-5)
