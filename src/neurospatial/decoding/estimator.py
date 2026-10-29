@@ -808,15 +808,14 @@ warn_on_drop
         n_models = self._check_fitted().shape[0]
         fit_labelled = not self._unit_ids_generated
         if fit_labelled != (input_ids is not None):
-            given, missing = (
-                ("the fitted models", f"the {caller} input")
+            what = (
+                f"the fitted models have unit labels but the {caller} input has none"
                 if fit_labelled
-                else (f"the {caller} input", "the fitted models")
+                else f"the {caller} input has unit labels but the fitted models have none"
             )
             raise ValueError(
                 _format_error(
-                    f"BayesianDecoder.{caller}: {given} carry unit labels but "
-                    f"{missing} do not.",
+                    f"BayesianDecoder.{caller}: {what}.",
                     why="Why: the spike trains would be paired with encoding "
                     "models by position, so a group whose units are listed in "
                     "another order would silently decode with the wrong models.",
