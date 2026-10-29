@@ -37,7 +37,7 @@ mean_position : Posterior mean position
 posterior_entropy : Posterior entropy in bits
     Uncertainty measure (0 = certain, log2(n_bins) = uniform).
 
-credible_region : Highest posterior density region
+credible_region : Highest-density credible region (bins added by density)
     Smallest set of bins containing specified probability mass.
 
 Quality Metrics

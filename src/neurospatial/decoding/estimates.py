@@ -11,7 +11,7 @@ map_bin : MAP bin index (highest posterior density)
 map_position : MAP position (highest posterior density) in environment coordinates
 mean_position : Posterior mean position (expected value)
 posterior_entropy : Posterior entropy in bits (entropy measure)
-credible_region : Highest posterior density region
+credible_region : Highest-density credible region
 
 Notes
 -----
@@ -395,11 +395,10 @@ def credible_region(
     *,
     level: float = 0.95,
 ) -> list[NDArray[np.int64]]:
-    """Highest posterior density region containing specified probability mass.
+    """Highest-density credible region containing a given probability mass.
 
-    Returns the smallest region, by length, area or volume, that contains at
-    least the specified probability mass: bins are added in order of
-    decreasing probability density until their mass reaches ``level``.
+    Bins are added in order of decreasing probability density (mass per
+    unit length, area or volume) until their mass reaches ``level``.
 
     Parameters
     ----------
@@ -410,14 +409,14 @@ def credible_region(
         Each row should sum to 1.0.
     level : float, default=0.95
         Probability mass to include. Must be in (0, 1).
-        Common values: 0.5 (median region), 0.9, 0.95, 0.99.
+        Common values: 0.5 (50% region), 0.9, 0.95, 0.99.
 
     Returns
     -------
     list[NDArray[np.int64]]
         List of arrays, one per time bin. Each array contains the bin
-        indices in the HPD region, sorted by density (highest first) and by
-        bin index within tied densities.
+        indices in the credible region, sorted by density (highest first) and
+        by bin index within tied densities.
 
     Raises
     ------
@@ -427,12 +426,16 @@ def credible_region(
 
     Notes
     -----
-    The Highest Posterior Density (HPD) region is the smallest region
-    containing the specified probability mass. The posterior holds a
-    probability mass per bin, so each bin's density is its mass divided by
-    its size (``env.bin_sizes``). Bins enter in order of decreasing density
-    until the cumulative mass reaches ``level``; ranking by mass instead
-    would favor large bins and give a larger region.
+    This is a highest posterior density (HPD) region built greedily by
+    density. The posterior holds a probability mass per bin, so each bin's
+    density is its mass divided by its size (``env.bin_sizes``). Bins enter
+    in order of decreasing density until the cumulative mass reaches
+    ``level``; ranking by mass instead would favor large bins. On equal
+    bins the region has the fewest bins that reach ``level``, apart from
+    the tied bins described below. On unequal bins it can be
+    slightly larger in length or area than the smallest region holding
+    ``level``, because the last bin needed may overshoot: a smaller bin
+    further down the ranking could reach ``level`` with less space.
 
     Bins tied in density with the last bin needed all enter the region, so
     the region does not depend on bin numbering. Densities that agree to
@@ -444,9 +447,10 @@ def credible_region(
     For a unimodal posterior, the HPD region is a contiguous set of bins
     around the mode.
 
-    NaN/Inf posterior bins (e.g. masked or off-track positions) are
-    excluded from the HPD region: they are never reported as members,
-    including as the leading (highest-density) member.
+    NaN/Inf posterior bins (e.g. masked or off-track positions) and bins
+    with zero mass are never members. A row whose finite mass is below
+    ``level`` keeps every bin with mass, and an undecodable (entirely NaN)
+    row has an empty region.
 
     See Also
     --------
@@ -495,9 +499,10 @@ def credible_region(
     n_bins_needed = in_region.sum(axis=1)
 
     # A row whose finite mass never reaches `level` (e.g. off-track/NaN rows)
-    # keeps every finite bin and never the NaN/Inf ones.
+    # keeps every bin with mass and never a NaN/Inf or zero-mass one; an
+    # undecodable row gets an empty region.
     never_reached = ~reached.any(axis=1)
-    n_bins_needed[never_reached] = finite.sum(axis=1)[never_reached]
+    n_bins_needed[never_reached] = (mass > 0).sum(axis=1)[never_reached]
 
     # Build result list (variable-length arrays require Python loop)
     return [

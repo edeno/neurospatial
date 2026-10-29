@@ -519,3 +519,16 @@ def test_map_bin_ignores_nonfinite_bins(small_2d_env):
     posterior[0, 1] = np.nan
     posterior[1, 2] = np.inf
     np.testing.assert_array_equal(map_bin(small_2d_env, posterior), [5, 5])
+
+
+def test_credible_region_never_includes_zero_mass_bins(small_2d_env):
+    """A row whose mass never reaches ``level`` keeps only bins with mass."""
+    from neurospatial.decoding.estimates import credible_region
+
+    posterior = np.zeros((2, small_2d_env.n_bins))
+    posterior[0, :2] = np.nan
+    posterior[0, 2] = 0.3
+    posterior[0, 3] = 0.2
+    regions = credible_region(small_2d_env, posterior, level=0.95)
+    assert sorted(regions[0].tolist()) == [2, 3]
+    assert regions[1].size == 0
