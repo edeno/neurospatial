@@ -59,6 +59,7 @@ from neurospatial.simulation.mazes._base import (
     check_count,
     check_lengths,
     refuse,
+    warn_if_bins_too_coarse,
 )
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
@@ -222,7 +223,8 @@ def make_radial_arm_maze(
     along the arm; the cup is laid with its length along the arm, as they
     give the arms' "76 cm long x 9 cm wide", so the 5 cm side fits across
     the 9 cm arm. With bins much larger than the cup, a cup's region may
-    cover no bin centre.
+    cover no bin centre; the maze then warns, naming a bin size that covers
+    every cup.
 
     Track Graph Topology:
 
@@ -344,6 +346,12 @@ def make_radial_arm_maze(
     if include_track:
         env_track = _create_radial_arm_track_graph(dims, bin_size)
 
+    warn_if_bins_too_coarse(
+        env_2d,
+        maze="radial arm maze",
+        bin_size=bin_size,
+        narrowest_corridor=dims.corridor_width,
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 

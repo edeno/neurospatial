@@ -62,6 +62,7 @@ from neurospatial.simulation.mazes._base import (
     MazeEnvironments,
     check_lengths,
     refuse,
+    warn_if_bins_too_coarse,
 )
 from neurospatial.simulation.mazes._geometry import (
     compass_quadrants,
@@ -259,4 +260,7 @@ def make_watermaze(
     # No track graph for open field
     env_track = None
 
+    warn_if_bins_too_coarse(
+        env_2d, maze="watermaze", bin_size=bin_size, narrowest_corridor=None
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)

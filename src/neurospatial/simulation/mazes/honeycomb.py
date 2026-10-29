@@ -78,6 +78,7 @@ from neurospatial.simulation.mazes._base import (
     MazeEnvironments,
     check_count,
     check_lengths,
+    warn_if_bins_too_coarse,
 )
 
 
@@ -265,6 +266,9 @@ def make_honeycomb_maze(
     if include_track:
         env_track = _create_honeycomb_track_graph(dims, bin_size)
 
+    warn_if_bins_too_coarse(
+        env_2d, maze="honeycomb maze", bin_size=bin_size, narrowest_corridor=None
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 

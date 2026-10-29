@@ -71,6 +71,7 @@ from neurospatial.simulation.mazes._base import (
     MazeEnvironments,
     check_lengths,
     refuse,
+    warn_if_bins_too_coarse,
 )
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
@@ -294,6 +295,12 @@ def make_crossword_maze(
     if include_track:
         env_track = _create_crossword_track_graph(dims, bin_size)
 
+    warn_if_bins_too_coarse(
+        env_2d,
+        maze="crossword maze",
+        bin_size=bin_size,
+        narrowest_corridor=dims.corridor_width,
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 

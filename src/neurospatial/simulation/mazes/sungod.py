@@ -55,7 +55,11 @@ from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    warn_if_bins_too_coarse,
+)
 from neurospatial.simulation.mazes._geometry import corridor_width
 
 # Calibration: pixels to cm conversion for Sungod maze
@@ -391,6 +395,12 @@ def make_sungod_maze(
             port_positions["home_port"], box_center, arm_polygons, bin_size
         )
 
+    warn_if_bins_too_coarse(
+        env_2d,
+        maze="Sungod maze",
+        bin_size=bin_size,
+        narrowest_corridor=min(corridor_width(arm) for arm in arm_polygons),
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 

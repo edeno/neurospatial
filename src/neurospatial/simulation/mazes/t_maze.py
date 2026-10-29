@@ -52,6 +52,7 @@ from neurospatial.simulation.mazes._base import (
     MazeEnvironments,
     check_lengths,
     check_longer_than_wide,
+    warn_if_bins_too_coarse,
 )
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
@@ -273,6 +274,9 @@ def make_t_maze(
     if include_track:
         env_track = _create_t_maze_track_graph(dims, bin_size)
 
+    warn_if_bins_too_coarse(
+        env_2d, maze="T-maze", bin_size=bin_size, narrowest_corridor=dims.corridor_width
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 

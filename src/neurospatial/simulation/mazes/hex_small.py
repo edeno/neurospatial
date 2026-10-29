@@ -69,7 +69,11 @@ from shapely.ops import unary_union
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    warn_if_bins_too_coarse,
+)
 from neurospatial.simulation.mazes._geometry import widest_corridor
 
 # Hexes per row from the top port down, and the hex ids in each row from left
@@ -444,6 +448,12 @@ def make_small_hex_maze(
     if include_track:
         env_track = _create_hex_track_graph(dims, centroids, floor, bin_size)
 
+    warn_if_bins_too_coarse(
+        env_2d,
+        maze="small hex maze",
+        bin_size=bin_size,
+        narrowest_corridor=dims.hex_side,
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 

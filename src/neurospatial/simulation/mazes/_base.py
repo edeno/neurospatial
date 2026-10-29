@@ -19,15 +19,18 @@ MazeDims()
 from __future__ import annotations
 
 import math
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, fields
 from numbers import Integral, Real
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING, NoReturn, cast
 
 import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from shapely.geometry import MultiPolygon, Polygon
 
     from neurospatial.environment import Environment
     from neurospatial.regions import Region, Regions
@@ -213,6 +216,100 @@ def refuse(dims: MazeDims, names: Sequence[str], problem: str, fix: str) -> NoRe
 def _default(dims: MazeDims, name: str) -> object:
     """The default of field ``name`` of ``dims``'s class."""
     return next(f.default for f in fields(dims) if f.name == name)
+
+
+def warn_if_bins_too_coarse(
+    env: Environment,
+    *,
+    maze: str,
+    bin_size: float,
+    narrowest_corridor: float | None,
+) -> None:
+    """Warn when bins are too coarse for a maze's corridors or regions.
+
+    A 2-D maze keeps the bins whose centres lie on its floor. Bins wider
+    than about half a corridor can leave a stretch of corridor with no bin
+    centre, splitting the maze into pieces an animal could never walk
+    between; and a region smaller than a bin can contain no bin centre, so
+    visit and occupancy analyses refuse it.
+
+    Parameters
+    ----------
+    env : Environment
+        The maze's 2-D environment, with its regions.
+    maze : str
+        The maze's name, for the message.
+    bin_size : float
+        The bin size the maze was built with, in cm.
+    narrowest_corridor : float or None
+        Width of the maze's narrowest corridor or passage in cm, or None
+        for an open field.
+
+    Examples
+    --------
+    >>> import warnings
+    >>> from neurospatial.simulation.mazes import make_crossword_maze
+    >>> with warnings.catch_warnings(record=True) as caught:
+    ...     warnings.simplefilter("always")
+    ...     maze = make_crossword_maze(bin_size=5.0, include_track=False)
+    >>> print(caught[0].message)  # doctest: +ELLIPSIS
+    bin_size=5.0 cm splits the crossword maze into 2 unconnected pieces...
+    """
+    import shapely
+
+    n_pieces = len(env.components())
+    if n_pieces > 1:
+        corridor = (
+            ""
+            if narrowest_corridor is None
+            else f": its narrowest corridor is {narrowest_corridor:.2f} cm wide"
+        )
+        fix = (
+            "a smaller bin_size"
+            if narrowest_corridor is None
+            else f"bin_size at most {_round_down(narrowest_corridor / 2)} cm, half "
+            "the narrowest corridor"
+        )
+        warnings.warn(
+            f"bin_size={bin_size} cm splits the {maze} into {n_pieces} "
+            f"unconnected pieces{corridor}, and bins this coarse leave stretches "
+            "of it without a bin, so paths and distances cannot cross them. "
+            f"Use {fix}.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    # Every maze is built from its floor polygon.
+    floor = cast("Polygon | MultiPolygon", env.arena.polygonal_domain())
+    empty = [name for name in env.regions if len(env.bins_in_region(name)) == 0]
+    if empty:
+        # A disc of radius r always holds a bin centre when bin_size <= r
+        # sqrt(2), and a point lies in an active bin when the bin's centre,
+        # within bin_size / sqrt(2) of it, is on the floor.
+        clearance = []
+        for name in empty:
+            region = env.regions[name]
+            if region.kind == "point":
+                clearance.append(floor.boundary.distance(shapely.Point(region.data)))
+            else:
+                clearance.append(shapely.maximum_inscribed_circle(region.data).length)
+        largest = _round_down(min(clearance) * math.sqrt(2.0))
+        warnings.warn(
+            f"At bin_size={bin_size} cm, the {maze}'s region"
+            f"{'s' if len(empty) > 1 else ''} {', '.join(empty)} cover"
+            f"{'' if len(empty) > 1 else 's'} no bin, so visit and occupancy "
+            "analyses refuse "
+            f"{'them' if len(empty) > 1 else 'it'}. Use bin_size at most "
+            f"{largest} cm, or add a larger region around "
+            f"{'them' if len(empty) > 1 else 'it'} for visits.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+
+def _round_down(value: float) -> float:
+    """``value`` rounded down to 0.1."""
+    return math.floor(value * 10.0) / 10.0
 
 
 @dataclass

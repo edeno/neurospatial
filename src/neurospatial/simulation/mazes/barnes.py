@@ -59,6 +59,7 @@ from neurospatial.simulation.mazes._base import (
     check_count,
     check_lengths,
     refuse,
+    warn_if_bins_too_coarse,
 )
 from neurospatial.simulation.mazes._geometry import make_circular_arena
 
@@ -179,7 +180,10 @@ def make_barnes_maze(
     - Angles: 2π * i / n_holes for i = 0, 1, ..., n_holes-1
 
     Every hole is a landmark in ``env_2d.landmarks`` with a region of the
-    same name: a circle of the hole's diameter (9.5 cm by default).
+    same name: a circle of the hole's diameter (9.5 cm by default). With
+    bins coarser than about 6.7 cm (the hole's radius times sqrt(2)), a
+    hole's circle can hold no bin centre; the maze then warns, naming a bin
+    size that covers every hole.
 
     - escape_hole: the hole above the escape box, the hole at
       ``escape_hole_index``. Landmark role ``"escape_hole"``.
@@ -298,4 +302,7 @@ def make_barnes_maze(
     # No track graph for open field
     env_track = None
 
+    warn_if_bins_too_coarse(
+        env_2d, maze="Barnes maze", bin_size=bin_size, narrowest_corridor=None
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
