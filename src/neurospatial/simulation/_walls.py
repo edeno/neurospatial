@@ -101,18 +101,19 @@ class Walls:
         """What keeps an animal inside ``env``: its outline and internal walls.
 
         The outline is the arena's polygon when it is known, else the outline
-        of the bins; None when neither is planar geometry. Outline segments
-        are one-sided, open toward the inside.
+        of the bins; None when neither is planar geometry (bins that are not
+        2-D areas, such as a track's lengths). Outline segments are one-sided,
+        open toward the inside.
         """
         from neurospatial.geometry import materialize_cells
 
         arena = env.arena
         domain = arena.polygonal_domain() if arena.domain_known else None
         if domain is None:
-            try:
-                domain = unary_union(list(materialize_cells(env.binning)))
-            except ValueError:
+            bins = env.binning.bins
+            if bins.n_dims != 2 or not bins.has_measure_dim(2):
                 return None
+            domain = unary_union(list(materialize_cells(env.binning)))
         # Counter-clockwise outlines and clockwise holes: the inside is on
         # the left of every outline segment.
         rings = shapely.get_rings(shapely.get_parts(shapely.orient_polygons(domain)))
