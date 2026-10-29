@@ -335,9 +335,10 @@ def confusion_matrix(
     -------
     cm : NDArray[np.float64], shape (n_bins, n_bins)
         Confusion matrix. Rows are actual bins, columns are decoded bins.
-        For ``method="map"``, the matrix sums to n_time_bins.
-        For ``method="expected"``, each row sums to the count of that bin's
-        occurrences in actual_bins.
+        For ``method="map"``, the matrix sums to the number of time bins
+        with a finite posterior row (n_time_bins when none is dropped; see
+        Notes). For ``method="expected"``, each row sums to the count of
+        that bin's occurrences in actual_bins among those time bins.
 
     Raises
     ------
@@ -415,11 +416,12 @@ def confusion_matrix(
     # Initialize confusion matrix
     cm = np.zeros((n_bins, n_bins), dtype=np.float64)
 
-    # Rows with any non-finite posterior entry are undecodable (e.g. a
-    # time bin with no spikes against a masked environment). argmax over
-    # a NaN row returns bin 0, and accumulating a NaN row into the
-    # "expected" matrix poisons that actual-bin's entire row. Drop such
-    # rows from both summaries and surface how many were excluded.
+    # Rows with any non-finite posterior entry are undecodable (e.g. the
+    # all-NaN rows that normalize_to_posterior(handle_degenerate="nan")
+    # gives where the likelihood is zero in every bin). argmax over a NaN
+    # row returns bin 0, and accumulating a NaN row into the "expected"
+    # matrix poisons that actual-bin's entire row. Drop such rows from both
+    # summaries and surface how many were excluded.
     finite_rows = np.isfinite(posterior).all(axis=1)
     n_dropped = int(np.sum(~finite_rows))
     if n_dropped > 0:
