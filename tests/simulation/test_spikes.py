@@ -560,32 +560,64 @@ class TestGeneratePopulationSpikes:
         assert isinstance(spike_trains[0], np.ndarray)
 
 
+def _circular_mean(angles):
+    return float(np.angle(np.mean(np.exp(1j * angles))))
+
+
 class TestAddModulation:
     """Tests for rhythmic spike modulation."""
 
-    def test_modulation_reduces_spike_count(self):
-        """Test that modulation thins spike train."""
-        # Create spike train with uniform distribution
-        spike_times = np.linspace(0, 10, 500)  # 50 Hz
+    @pytest.fixture(scope="class")
+    def dense_train(self):
+        """200,000 spikes spread uniformly over 100 s (800 theta cycles)."""
+        return np.sort(np.random.default_rng(11).uniform(0.0, 100.0, 200_000))
 
-        # Apply strong modulation
-        modulated = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
+    @pytest.mark.parametrize("phase", [0.0, np.pi / 2, np.pi, -np.pi / 2])
+    def test_kept_spikes_concentrate_at_the_preferred_phase(self, dense_train, phase):
+        """φ = 0 keeps cosine peaks, φ = π/2 sine peaks, and so on."""
+        freq = 8.0
+        kept = add_modulation(
+            dense_train,
+            modulation_freq=freq,
             modulation_depth=0.8,
-            seed=42,
+            modulation_phase=phase,
+            seed=3,
+        )
+        oscillation_phase = 2 * np.pi * freq * kept
+        error = np.angle(np.exp(1j * (_circular_mean(oscillation_phase) - phase)))
+        assert abs(error) < 0.02
+
+    @pytest.mark.parametrize("depth", [1e-6, 0.25, 0.5, 1.0])
+    def test_kept_fraction_is_one_over_one_plus_depth(self, dense_train, depth):
+        """Thinning keeps 1 / (1 + d) of the spikes; all of them as d -> 0."""
+        kept = add_modulation(
+            dense_train, modulation_freq=8.0, modulation_depth=depth, seed=4
+        )
+        assert len(kept) / len(dense_train) == pytest.approx(1 / (1 + depth), abs=0.005)
+
+    def test_preferred_phase_keeps_the_input_rate(self, dense_train):
+        """Every spike at the preferred phase is kept, so its rate is unchanged."""
+        freq, phase = 8.0, np.pi
+        kept = add_modulation(
+            dense_train,
+            modulation_freq=freq,
+            modulation_depth=0.5,
+            modulation_phase=phase,
+            seed=5,
         )
 
-        # Should reduce spike count
-        assert len(modulated) < len(spike_times)
-        # Modulated spikes should be subset of original
-        assert all(t in spike_times for t in modulated)
+        def near_preferred(spikes):
+            offset = np.angle(np.exp(1j * (2 * np.pi * freq * spikes - phase)))
+            return np.abs(offset) < 0.05
+
+        assert near_preferred(kept).sum() == pytest.approx(
+            near_preferred(dense_train).sum(), rel=0.01
+        )
 
     def test_zero_modulation_depth_returns_all_spikes(self):
         """Test that zero modulation depth keeps all spikes."""
         spike_times = np.linspace(0, 5, 200)
 
-        # Zero modulation should keep all spikes
         modulated = add_modulation(
             spike_times,
             modulation_freq=8.0,
@@ -593,217 +625,66 @@ class TestAddModulation:
             seed=42,
         )
 
-        # Should keep all spikes
         np.testing.assert_array_equal(modulated, spike_times)
 
-    def test_phase_preference(self):
-        """Test that modulation creates phase preference."""
-        # Generate many spikes over multiple cycles
-        spike_times = np.linspace(0, 10, 5000)  # Dense sampling
-        modulation_freq = 8.0  # 8 Hz theta
+    def test_modulated_spikes_are_a_sorted_subset(self):
+        spike_times = np.linspace(0, 5, 300)
 
-        # Apply modulation with zero phase
         modulated = add_modulation(
-            spike_times,
-            modulation_freq=modulation_freq,
-            modulation_depth=0.9,
-            modulation_phase=0.0,
-            seed=42,
+            spike_times, modulation_freq=8.0, modulation_depth=0.5, seed=42
         )
 
-        # Compute phases of modulated spikes
-        phases = (2 * np.pi * modulation_freq * modulated) % (2 * np.pi)
-
-        # Mean resultant length should be high (indicates phase locking)
-        mean_cos = np.mean(np.cos(phases))
-        mean_sin = np.mean(np.sin(phases))
-        mean_resultant_length = np.sqrt(mean_cos**2 + mean_sin**2)
-
-        # Should be phase-locked (MRL > 0.3 indicates moderate to strong locking)
-        assert mean_resultant_length > 0.3
-
-    def test_different_modulation_depths(self):
-        """Test that higher modulation depth removes more spikes on average."""
-        spike_times = np.linspace(0, 10, 2000)  # More spikes for clearer signal
-
-        # Very low modulation
-        modulated_low = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.1,  # Very weak modulation
-            seed=42,
-        )
-
-        # Very high modulation
-        modulated_high = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.95,  # Very strong modulation
-            seed=42,
-        )
-
-        # With larger depth difference and more spikes, high depth should
-        # reliably remove more spikes than low depth
-        assert len(modulated_high) < len(modulated_low)
+        assert np.all(np.diff(modulated) >= 0)
+        assert np.isin(modulated, spike_times).all()
 
     def test_reproducibility_with_seed(self):
         """Test that same seed produces same modulated spikes."""
         spike_times = np.linspace(0, 5, 300)
 
         modulated1 = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.5,
-            seed=42,
+            spike_times, modulation_freq=8.0, modulation_depth=0.5, seed=42
         )
         modulated2 = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.5,
-            seed=42,
+            spike_times, modulation_freq=8.0, modulation_depth=0.5, seed=42
         )
 
         np.testing.assert_array_equal(modulated1, modulated2)
 
-    def test_different_seeds_produce_different_results(self):
-        """Test that different seeds produce different results."""
-        spike_times = np.linspace(0, 5, 300)
-
-        modulated1 = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.5,
-            seed=42,
-        )
-        modulated2 = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.5,
-            seed=43,
-        )
-
-        # Should be different
-        assert not np.array_equal(modulated1, modulated2)
-
-    def test_modulated_spikes_sorted(self):
-        """Test that modulated spikes remain sorted."""
-        spike_times = np.linspace(0, 5, 300)
-
-        modulated = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.5,
-            seed=42,
-        )
-
-        # Should be sorted
-        assert np.all(np.diff(modulated) >= 0)
-
     def test_empty_spike_train(self):
         """Test with empty spike train."""
-        spike_times = np.array([])
-
         modulated = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.5,
-            seed=42,
+            np.array([]), modulation_freq=8.0, modulation_depth=0.5, seed=42
         )
 
         assert len(modulated) == 0
 
-    def test_modulation_phase_shift(self):
-        """Test that modulation phase affects which spikes are kept."""
-        spike_times = np.linspace(0, 10, 1000)
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"modulation_depth": 1.5}, "modulation_depth must be in"),
+            ({"modulation_depth": -0.1}, "modulation_depth must be in"),
+            ({"modulation_depth": np.nan}, "modulation_depth must be in"),
+            ({"modulation_freq": -8.0}, "modulation_freq must be a finite positive"),
+            ({"modulation_freq": 0.0}, "modulation_freq must be a finite positive"),
+            ({"modulation_freq": np.nan}, "modulation_freq must be a finite positive"),
+            ({"modulation_phase": np.nan}, "modulation_phase must be a finite"),
+        ],
+    )
+    @pytest.mark.parametrize("n_spikes", [0, 100])
+    def test_invalid_parameters_raise(self, kwargs, match, n_spikes):
+        """Refused even for an empty train; NaN would otherwise delete every spike."""
+        params = {"modulation_freq": 8.0, **kwargs}
+        with pytest.raises(ValueError, match=match):
+            add_modulation(np.linspace(0, 5, n_spikes), **params)
 
-        # Same modulation, different phase
-        modulated_phase0 = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.7,
-            modulation_phase=0.0,
-            seed=42,
-        )
-
-        modulated_phase_pi = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.7,
-            modulation_phase=np.pi,
-            seed=42,
-        )
-
-        # Different phases should keep different spikes
-        # (though some overlap is expected)
-        assert not np.array_equal(modulated_phase0, modulated_phase_pi)
-
-    def test_full_modulation_depth(self):
-        """Test behavior with maximum modulation depth."""
-        spike_times = np.linspace(0, 10, 1000)
-
-        # Full modulation (depth = 1.0)
-        modulated = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=1.0,
-            seed=42,
-        )
-
-        # Should still have some spikes (at preferred phases)
-        assert len(modulated) > 0
-        # But should be significantly reduced
-        assert len(modulated) < len(spike_times) * 0.7
-
-    def test_invalid_modulation_depth_too_high(self):
-        """Test that modulation depth > 1 raises ValueError."""
-        spike_times = np.linspace(0, 5, 100)
-
-        with pytest.raises(ValueError, match="modulation_depth must be in range"):
-            add_modulation(spike_times, modulation_freq=8.0, modulation_depth=1.5)
-
-    def test_invalid_modulation_depth_negative(self):
-        """Test that negative modulation depth raises ValueError."""
-        spike_times = np.linspace(0, 5, 100)
-
-        with pytest.raises(ValueError, match="modulation_depth must be in range"):
-            add_modulation(spike_times, modulation_freq=8.0, modulation_depth=-0.1)
-
-    def test_invalid_modulation_freq_negative(self):
-        """Test that negative frequency raises ValueError."""
-        spike_times = np.linspace(0, 5, 100)
-
-        with pytest.raises(ValueError, match="modulation_freq must be positive"):
-            add_modulation(spike_times, modulation_freq=-8.0)
-
-    def test_invalid_modulation_freq_zero(self):
-        """Test that zero frequency raises ValueError."""
-        spike_times = np.linspace(0, 5, 100)
-
-        with pytest.raises(ValueError, match="modulation_freq must be positive"):
-            add_modulation(spike_times, modulation_freq=0.0)
-
-    def test_single_spike(self):
-        """Test modulation with single spike."""
-        spike_times = np.array([1.0])
-
-        modulated = add_modulation(
-            spike_times, modulation_freq=8.0, modulation_depth=0.5, seed=42
-        )
-
-        # Should return either 1 spike or 0 spikes
-        assert len(modulated) in [0, 1]
-        if len(modulated) == 1:
-            assert modulated[0] == spike_times[0]
-
-    def test_high_frequency_modulation(self):
-        """Test that high frequency modulation works correctly."""
-        spike_times = np.linspace(0, 1, 1000)
-
-        # 100 Hz modulation (many cycles in 1 second)
-        modulated = add_modulation(
-            spike_times, modulation_freq=100.0, modulation_depth=0.5, seed=42
-        )
-
-        # Should modulate spikes (not keep all or remove all)
-        assert len(modulated) < len(spike_times)
-        assert len(modulated) > 0
+    @pytest.mark.parametrize(
+        ("spike_times", "match"),
+        [
+            (np.array([0.1, np.nan, 0.3]), "spike_times"),
+            (np.array([0.3, 0.1, 0.2]), "sorted"),
+            (np.zeros((2, 2)), "1-D"),
+        ],
+    )
+    def test_invalid_spike_times_raise(self, spike_times, match):
+        with pytest.raises(ValueError, match=match):
+            add_modulation(spike_times, modulation_freq=8.0)

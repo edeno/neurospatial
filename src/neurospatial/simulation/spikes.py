@@ -639,25 +639,30 @@ def add_modulation(
 ) -> NDArray[np.float64]:
     """Add rhythmic modulation to spike train (e.g., theta oscillation).
 
-    Implements non-homogeneous thinning to create phase-locked firing patterns.
-    This simulates the tendency of neurons to fire at specific phases of ongoing
-    oscillations, common in hippocampus (theta), cortex (gamma), and other regions.
+    Thins the spike train so that the kept spikes lock to a phase of an
+    oscillation, as neurons fire at preferred phases of ongoing rhythms such
+    as hippocampal theta or cortical gamma.
 
     Parameters
     ----------
     spike_times : NDArray[np.float64], shape (n_spikes,)
-        Original spike times in seconds.
+        Original spike times in seconds, finite and sorted in ascending order.
     modulation_freq : float
         Modulation frequency in Hz (e.g., 8 Hz for hippocampal theta,
         40 Hz for cortical gamma).
     modulation_depth : float, optional
         Modulation strength from 0 (no modulation) to 1 (full modulation).
         Default: 0.5 (moderate modulation).
+
         - 0.0: No modulation, all spikes kept
-        - 0.5: Moderate phase locking
-        - 1.0: Strong phase locking, spikes at anti-preferred phases removed
+        - 0.5: The anti-preferred phase keeps a third as many spikes as the
+          preferred phase
+        - 1.0: No spikes at the anti-preferred phase
     modulation_phase : float, optional
-        Phase offset in radians (default: 0.0). Controls preferred firing phase.
+        Preferred oscillation phase in radians (default: 0.0): the kept
+        spikes concentrate where ``2π · modulation_freq · t`` (mod 2π) equals
+        it.
+
         - 0.0: Spikes preferred at cosine peaks
         - π/2: Spikes preferred at sine peaks
         - π: Spikes preferred at cosine troughs
@@ -670,34 +675,37 @@ def add_modulation(
         Spike times after rhythmic modulation (subset of original spikes).
         Spikes are kept in sorted order.
 
+    Raises
+    ------
+    ValueError
+        If ``modulation_freq`` is not finite and positive,
+        ``modulation_depth`` is not in [0, 1], ``modulation_phase`` is not
+        finite, or ``spike_times`` is not a 1-D array of finite times in
+        ascending order.
+
     Notes
     -----
-    **Algorithm (non-homogeneous thinning)**:
+    **Algorithm (thinning)**: each spike at time ``t`` is kept with
+    probability
 
-    1. Compute phase of each spike:
+        p(t) = (1 + d cos(2π f t - φ)) / (1 + d),
 
-       phase[i] = 2π * freq * spike_times[i] + phase_offset
+    with ``d = modulation_depth``, ``f = modulation_freq`` and
+    ``φ = modulation_phase``. At the preferred phase ``p = 1``, so the rate
+    there equals the input rate; at the anti-preferred phase
+    ``p = (1 - d) / (1 + d)``. ``p`` changes continuously with ``d`` and is 1
+    everywhere at ``d = 0``.
 
-    2. Compute acceptance probability based on cosine modulation:
+    **Mean rate**: averaged over the oscillation, thinning keeps ``1 / (1 + d)``
+    of the spikes, so the mean rate falls by that factor (two thirds of the
+    spikes at ``d = 0.5``). To modulate a cell without changing its mean
+    rate, modulate the rate itself before drawing spikes,
+    ``generate_poisson_spikes(rate * (1 + d * np.cos(2 * np.pi * f * times - φ)), times)``.
 
-       p_accept[i] = (1 + depth * cos(phase[i])) / 2
-
-       This ensures:
-       - p_accept ∈ [0, 1] for all phases
-       - At preferred phase (cos = 1): p = (1 + depth) / 2
-       - At anti-preferred phase (cos = -1): p = (1 - depth) / 2
-
-    3. Randomly keep or discard each spike based on acceptance probability
-
-    **Biological Motivation**: Many neurons show phase-locked firing to local
-    field potential oscillations. Examples:
-
-    - Hippocampal place cells preferentially fire on theta trough (~180°)
-    - Interneurons often fire on theta peak (0°)
-    - Cortical neurons show gamma phase locking (30-80 Hz)
-
-    **Performance**: O(n) time complexity for n spikes. Typical processing
-    time <10ms for 1000 spikes.
+    **Biological Motivation**: Many neurons fire phase-locked to local field
+    potential oscillations. Hippocampal pyramidal cells fire most near the
+    trough of theta recorded in the CA1 pyramidal layer (Buzsáki 2002), and
+    cortical neurons lock to gamma (30-80 Hz).
 
     Examples
     --------
@@ -724,20 +732,21 @@ def add_modulation(
     ...     env, duration=60.0, seed=42, speed_units="cm"
     ... )
     >>> rates = pc.firing_rate(positions)
-    >>> spike_times = generate_poisson_spikes(rates, times, seed=42)
+    >>> spike_times = generate_poisson_spikes(rates, times, seed=7)
     >>>
-    >>> # Add theta modulation (8 Hz, moderate depth)
-    >>> if len(spike_times) > 0:
-    ...     theta_modulated = add_modulation(
-    ...         spike_times,
-    ...         modulation_freq=8.0,
-    ...         modulation_depth=0.7,
-    ...         seed=42,
-    ...     )
-    ...     # Modulation reduces spike count
-    ...     assert len(theta_modulated) < len(spike_times)
-    ...     # Modulated spikes are subset of original
-    ...     assert all(t in spike_times for t in theta_modulated)
+    >>> # Add theta modulation (8 Hz, preferred phase at the theta trough)
+    >>> theta_modulated = add_modulation(
+    ...     spike_times,
+    ...     modulation_freq=8.0,
+    ...     modulation_depth=0.7,
+    ...     modulation_phase=np.pi,
+    ...     seed=42,
+    ... )
+    >>> bool(np.isin(theta_modulated, spike_times).all())  # a subset
+    True
+    >>> # About 1 / (1 + 0.7) = 59% of the spikes are kept
+    >>> bool(0.5 < len(theta_modulated) / len(spike_times) < 0.7)
+    True
 
     Compare modulation depths:
 
@@ -760,45 +769,57 @@ def add_modulation(
 
     References
     ----------
-    O'Keefe & Recce (1993), Hippocampus - Theta phase precession
-    Buzsáki (2002), Neuron - Theta oscillations review
+    Buzsáki, G. (2002). Theta oscillations in the hippocampus. Neuron, 33(3),
+        325-340.
     """
-    # Handle empty spike train
-    if len(spike_times) == 0:
-        return np.array([], dtype=np.float64)
-
-    # Validate parameters
-    if not 0.0 <= modulation_depth <= 1.0:
+    if not (np.isfinite(modulation_freq) and modulation_freq > 0.0):
         raise ValueError(
-            f"modulation_depth must be in range [0, 1], got {modulation_depth}"
+            _format_error(
+                f"modulation_freq must be a finite positive frequency in Hz, got "
+                f"{modulation_freq!r}.",
+                fix="pass the oscillation frequency, e.g. modulation_freq=8.0 "
+                "for theta",
+            )
+        )
+    if not (np.isfinite(modulation_depth) and 0.0 <= modulation_depth <= 1.0):
+        raise ValueError(
+            _format_error(
+                f"modulation_depth must be in [0, 1], got {modulation_depth!r}.",
+                fix="pass 0 for no modulation up to 1 for no spikes at the "
+                "anti-preferred phase",
+            )
+        )
+    if not np.isfinite(modulation_phase):
+        raise ValueError(
+            _format_error(
+                f"modulation_phase must be a finite angle in radians, got "
+                f"{modulation_phase!r}.",
+                fix="pass the preferred phase, e.g. modulation_phase=np.pi for "
+                "the trough",
+            )
+        )
+    spike_times = np.asarray(spike_times, dtype=np.float64)
+    if spike_times.ndim != 1:
+        raise ValueError(
+            _format_error(
+                f"spike_times must be 1-D, got shape {spike_times.shape}.",
+                fix="pass one neuron's spike times in seconds",
+            )
+        )
+    spike_times = validate_finite(spike_times, name="spike_times")
+    if np.any(np.diff(spike_times) < 0):
+        raise ValueError(
+            _format_error(
+                "spike_times must be sorted in ascending order.",
+                fix="pass np.sort(spike_times)",
+            )
         )
 
-    if modulation_freq <= 0.0:
-        raise ValueError(
-            f"modulation_freq must be positive (Hz), got {modulation_freq}"
-        )
-
-    # Special case: zero modulation depth means no modulation (keep all spikes)
-    if modulation_depth == 0.0:
-        return np.array(spike_times, dtype=np.float64, copy=True)
-
-    # Initialize random number generator
     rng = np.random.default_rng(seed)
-
-    # Compute phase of each spike time
-    # phase = 2π * frequency * time + phase_offset
-    phases = 2 * np.pi * modulation_freq * spike_times + modulation_phase
-
-    # Compute acceptance probability using cosine modulation
-    # p_accept = (1 + depth * cos(phase)) / 2
-    # This ensures p ∈ [0, 1] for all phases
-    acceptance_prob = (1.0 + modulation_depth * np.cos(phases)) / 2.0
-
-    # Thin spikes: keep spike if random value < acceptance probability
-    random_values = rng.random(len(spike_times))
-    keep_mask = random_values < acceptance_prob
-
-    # Return modulated spikes (already sorted since input is sorted)
-    modulated_spikes = spike_times[keep_mask]
-
+    phases = 2 * np.pi * modulation_freq * spike_times - modulation_phase
+    acceptance_prob = (1.0 + modulation_depth * np.cos(phases)) / (
+        1.0 + modulation_depth
+    )
+    keep_mask = rng.random(len(spike_times)) < acceptance_prob
+    modulated_spikes: NDArray[np.float64] = spike_times[keep_mask]
     return modulated_spikes
