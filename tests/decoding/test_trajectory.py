@@ -932,3 +932,79 @@ class TestArgumentChecks:
         env, posterior, times = sweep
         with pytest.raises(ValueError, match=r"n_samples.*at least 2"):
             fit_linear_trajectory(env, posterior, times, n_samples=n_samples)
+
+
+class TestReplayShuffleCalibration:
+    """A replay screen against a circular-shift null keeps its error rate.
+
+    Events are decoded from Poisson spikes of 40 place cells (8 cm fields,
+    20 Hz peak, 1 Hz baseline) on a 100 cm track, ten 20 ms time bins each.
+    The score is the R² of the MAP line fit, and the null circularly shifts
+    each time bin's posterior along the track.
+    """
+
+    DT = 0.02
+    N_TIME_BINS = 10
+    FIELD_CENTERS = np.linspace(0.0, 100.0, 40)
+
+    @pytest.fixture(scope="class")
+    def track(self):
+        return Environment.linear_track(
+            endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
+        )
+
+    def _rates(self, positions):
+        """Firing rate of each cell at each position, shape (n, n_cells), Hz."""
+        offset = positions[:, None] - self.FIELD_CENTERS[None, :]
+        return 1.0 + 20.0 * np.exp(-0.5 * (offset / 8.0) ** 2)
+
+    def _decode(self, env, positions, spike_rng):
+        from neurospatial.decoding import decode_position
+
+        counts = spike_rng.poisson(self._rates(positions) * self.DT)
+        models = self._rates(env.bin_centers[:, 0]).T
+        return decode_position(env, counts, models, dt=self.DT).posterior
+
+    def _p_value(self, env, posterior, *, n_shuffles, seed):
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.stats import (
+            compute_shuffle_pvalue,
+            shuffle_posterior_circular,
+        )
+
+        times = np.arange(self.N_TIME_BINS) * self.DT
+
+        def score(rows):
+            return fit_linear_trajectory(env, rows, times, method="map").r_squared
+
+        null = [
+            score(shuffled)
+            for shuffled in shuffle_posterior_circular(
+                env, posterior, n_shuffles=n_shuffles, rng=seed
+            )
+        ]
+        return compute_shuffle_pvalue(score(posterior), np.array(null))
+
+    def test_events_without_sequences_are_rarely_significant(self, track):
+        stimulus_rng = np.random.default_rng(1)
+        spike_rng = np.random.default_rng(2)
+        p_values = [
+            self._p_value(
+                track,
+                self._decode(
+                    track, stimulus_rng.uniform(0, 100, self.N_TIME_BINS), spike_rng
+                ),
+                n_shuffles=99,
+                seed=seed,
+            )
+            for seed in range(200)
+        ]
+
+        assert np.mean(np.array(p_values) <= 0.05) <= 0.08
+
+    def test_planted_sweep_is_significant(self, track):
+        posterior = self._decode(
+            track, np.linspace(10.0, 90.0, self.N_TIME_BINS), np.random.default_rng(2)
+        )
+
+        assert self._p_value(track, posterior, n_shuffles=199, seed=999) < 0.01

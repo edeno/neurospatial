@@ -1131,6 +1131,55 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 # =============================================================================
 
 
+class TestShufflePvalueCalibration:
+    """Under the null, P(p <= alpha) is alpha and p is uniform.
+
+    The observed score and its 199 null scores come from one distribution,
+    so the observed rank is uniform among the 200 and the Phipson-Smyth
+    p-value (k + 1) / (n + 1) satisfies P(p <= alpha) = alpha for alpha a
+    multiple of 1/200. With 2000 trials the Monte Carlo standard error is
+    0.005 at alpha = 0.05 and 0.007 at alpha = 0.1.
+    """
+
+    @pytest.fixture(scope="class")
+    def null_pvalues(self) -> dict[str, np.ndarray]:
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
+
+        rng = np.random.default_rng(2026)
+        observed = rng.standard_normal(2000)
+        null = rng.standard_normal((2000, 199))
+        return {
+            tail: np.array(
+                [
+                    compute_shuffle_pvalue(score, scores, tail=tail)
+                    for score, scores in zip(observed, null, strict=True)
+                ]
+            )
+            for tail in ("greater", "less", "two-sided")
+        }
+
+    @pytest.mark.parametrize("tail", ["greater", "less"])
+    @pytest.mark.parametrize("alpha", [0.05, 0.1])
+    def test_one_sided_false_positive_rate_is_alpha(
+        self, null_pvalues: dict[str, np.ndarray], tail: str, alpha: float
+    ) -> None:
+        assert np.mean(null_pvalues[tail] <= alpha) == pytest.approx(alpha, abs=0.015)
+
+    @pytest.mark.parametrize("alpha", [0.05, 0.1])
+    def test_two_sided_false_positive_rate_is_at_most_alpha(
+        self, null_pvalues: dict[str, np.ndarray], alpha: float
+    ) -> None:
+        assert np.mean(null_pvalues["two-sided"] <= alpha) <= alpha + 0.015
+
+    @pytest.mark.parametrize("tail", ["greater", "less", "two-sided"])
+    def test_null_pvalues_are_uniform(
+        self, null_pvalues: dict[str, np.ndarray], tail: str
+    ) -> None:
+        from scipy.stats import kstest
+
+        assert kstest(null_pvalues[tail], "uniform").pvalue > 0.01
+
+
 class TestComputeShufflePvalue:
     """Tests for compute_shuffle_pvalue function."""
 
