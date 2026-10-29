@@ -616,12 +616,16 @@ def simulate_trajectory_sinusoidal(
         None (default) uses 10 cm/s expressed in ``env.units``; environments
         without metric units need an explicit value.
     period : float | None, optional
-        Period of sinusoidal motion in seconds. If None, computed from
-        track length and speed: period = 2 * track_length / speed.
+        Time to run from one end to the other and back, in seconds, not
+        counting pauses. If None, computed from track length and speed:
+        period = 2 * track_length / speed.
     pause_duration : float, optional
-        Pause at track ends in seconds (default: 0.0).
+        Time the animal holds still at each end of the track, in seconds
+        (default: 0.0). One cycle there and back lasts
+        ``period + 2 * pause_duration``.
     pause_at_peaks : bool, optional
-        Whether to pause at track extrema (default: True).
+        Whether to pause at the track ends (default: True). False ignores
+        ``pause_duration``.
     seed : int | None, optional
         Accepted for a uniform trajectory API but has no effect: this trajectory
         is fully deterministic (a closed-form sinusoid with deterministic
@@ -726,35 +730,19 @@ def simulate_trajectory_sinusoidal(
     n_steps = _sample_count(duration, dt, "1 / sampling_frequency", call)
     times = np.arange(n_steps) * dt
 
-    # Distance along the track: d(t) = L/2 + L/2 sin(2π t / period)
-    angular_freq = 2 * np.pi / period
-    distance = track_length / 2 * (1 + np.sin(angular_freq * times))
-
-    # Handle pauses at peaks if requested
-    if pause_at_peaks and pause_duration > 0:
-        # Find peaks (times when sin(ωt) ≈ ±1)
-        phase = angular_freq * times
-        # Peaks occur when phase ≈ π/2 + nπ
-        at_peak = np.abs(np.abs(np.sin(phase)) - 1.0) < 0.1
-
-        # Create pause mask
-        pause_samples = int(pause_duration * sampling_frequency)
-        paused = np.zeros(n_steps, dtype=bool)
-
-        # Mark samples near peaks as paused
-        peak_indices = np.where(at_peak)[0]
-        for idx in peak_indices:
-            start = max(0, idx - pause_samples // 2)
-            end = min(n_steps, idx + pause_samples // 2)
-            paused[start:end] = True
-
-        # Hold position constant during pauses
-        last_valid = distance[0]
-        for i in range(n_steps):
-            if paused[i]:
-                distance[i] = last_valid
-            else:
-                last_valid = distance[i]
+    # Each cycle runs there and back in ``period`` seconds and holds still
+    # for ``hold`` seconds at each end: at the far end a quarter period in,
+    # at the near end three quarters in. The sinusoid's clock stops while
+    # the animal holds.
+    hold = pause_duration if pause_at_peaks else 0.0
+    into_cycle = np.mod(times, period + 2 * hold)
+    motion_time = (
+        into_cycle
+        - np.clip(into_cycle - period / 4, 0.0, hold)
+        - np.clip(into_cycle - 3 * period / 4 - hold, 0.0, hold)
+    )
+    # Distance along the track: d = L/2 + L/2 sin(2π motion_time / period)
+    distance = track_length / 2 * (1 + np.sin(2 * np.pi * motion_time / period))
 
     positions = np.column_stack(
         [

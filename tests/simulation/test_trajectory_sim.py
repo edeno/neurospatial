@@ -750,6 +750,40 @@ class TestSimulateTrajectorysinusoidal:
         assert positions[:, 1].min() == pytest.approx(0.0, abs=1e-6)
         assert np.abs(positions[:, 0]).max() == pytest.approx(30.0, abs=1e-6)
 
+    def test_pauses_hold_at_each_end_for_pause_duration(self, linear_track_env):
+        """The animal reaches both ends of a 100 cm track and waits 0.5 s at each."""
+        sampling_frequency, pause_duration = 100.0, 0.5
+        positions, times = simulate_trajectory_sinusoidal(
+            linear_track_env,
+            duration=60.0,
+            sampling_frequency=sampling_frequency,
+            speed=10.0,
+            pause_duration=pause_duration,
+        )
+        np.testing.assert_allclose(np.diff(times), 1 / sampling_frequency)
+        x = positions[:, 0]
+        for end in (0.0, 100.0):
+            at_end = np.isclose(x, end, rtol=0, atol=1e-9)
+            # Each visit is one run of samples at the end, lasting the pause.
+            edges = np.flatnonzero(np.diff(np.r_[0, at_end.astype(int), 0]))
+            starts, stops = edges[::2], edges[1::2]
+            assert len(starts) >= 2
+            held = (stops - 1 - starts) / sampling_frequency
+            np.testing.assert_allclose(
+                held, pause_duration, atol=1 / sampling_frequency
+            )
+        # Nowhere else does the animal stand still.
+        still = np.diff(x) == 0
+        at_an_end = np.isclose(x[:-1], 0.0, atol=1e-9) | np.isclose(
+            x[:-1], 100.0, atol=1e-9
+        )
+        assert not np.any(still & ~at_an_end)
+        # One cycle: 20 s of running there and back, plus two pauses.
+        crossings = np.flatnonzero(np.diff((x >= 50.0).astype(int)) > 0)
+        np.testing.assert_allclose(
+            np.diff(crossings) / sampling_frequency, 21.0, atol=0.02
+        )
+
     def test_without_pauses_the_ends_are_not_held(self, linear_track_env):
         positions, _ = simulate_trajectory_sinusoidal(
             linear_track_env,
