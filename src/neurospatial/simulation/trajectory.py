@@ -246,7 +246,13 @@ def simulate_trajectory_ou(
     longer than the coherence time. In 1-D the animal keeps its direction
     until a wall reverses it. In three or more dimensions the heading diffuses
     on the sphere, decorrelating as ``exp(-t / τ)`` with
-    ``τ = rotational_velocity_coherence_time``.
+    ``τ = rotational_velocity_coherence_time`` at any ``dt``: each step turns
+    the heading toward a uniformly random perpendicular direction by an
+    angle whose cosine is drawn from the von Mises-Fisher distribution with
+    mean ``exp(-dt / τ)`` (Wood 1994). The expected next heading is then
+    ``exp(-dt / τ)`` times the current one, so the correlation after ``k``
+    steps is exactly ``exp(-k dt / τ)``; for short steps the turns approach
+    Brownian rotation.
 
     Each OU process ``x`` is advanced exactly,
     ``x(t + dt) = x(t) e^(-dt/τ) + σ sqrt(1 - e^(-2 dt/τ)) ξ``, so its
@@ -274,6 +280,10 @@ def simulate_trajectory_ou(
     Gillespie, D. T. (1996). Exact numerical simulation of the
     Ornstein-Uhlenbeck process and its integral. Physical Review E, 54(2),
     2084-2091.
+
+    Wood, A. T. A. (1994). Simulation of the von Mises Fisher distribution.
+    Communications in Statistics - Simulation and Computation, 23(1),
+    157-164.
 
     Examples
     --------
@@ -424,13 +434,10 @@ def simulate_trajectory_ou(
         unit = rng.standard_normal(n_dims)
         unit /= np.linalg.norm(unit)
         if n_dims > 2:
-            # Rotational diffusion on the sphere with coefficient D: heading
-            # correlation decays as exp(-(n_dims - 1) D t), so D = 1 /
-            # ((n_dims - 1) tau) gives time constant tau; each step adds
-            # independent N(0, 2 D dt) to every component.
-            heading_noise = rng.standard_normal((n_steps, n_dims)) * np.sqrt(
-                2 * dt / ((n_dims - 1) * rotational_velocity_coherence_time)
+            turn_cosines = _sphere_turn_cosines(
+                n_steps, n_dims, dt / rotational_velocity_coherence_time, rng
             )
+            turn_directions = rng.standard_normal((n_steps, n_dims))
 
     positions = np.zeros((n_steps, n_dims), dtype=np.float64)
     positions[0] = position
@@ -442,7 +449,12 @@ def simulate_trajectory_ou(
                 [cos * unit[0] - sin * unit[1], sin * unit[0] + cos * unit[1]]
             )
         elif n_dims > 2:
-            unit = unit + heading_noise[i]
+            # Turn toward a uniformly random direction perpendicular to the
+            # heading, by the angle whose cosine was drawn for this step.
+            across = turn_directions[i] - (turn_directions[i] @ unit) * unit
+            across /= np.linalg.norm(across)
+            cos = turn_cosines[i]
+            unit = cos * unit + np.sqrt(1.0 - cos**2) * across
             unit /= np.linalg.norm(unit)
         step = speeds[i] * dt * unit
 
@@ -524,6 +536,49 @@ def _ou_step_integrals(
         + np.sqrt(residual_variance) * rng.standard_normal(n_steps - 1)
     )
     return integrals
+
+
+def _sphere_turn_cosines(
+    n_steps: int, n_dims: int, dt_over_tau: float, rng: np.random.Generator
+) -> NDArray[np.float64]:
+    """Cosines of each step's turn of a heading on the sphere, shape (n_steps,).
+
+    Drawn from the von Mises-Fisher distribution on the sphere in
+    ``n_dims`` dimensions whose mean cosine is ``exp(-dt_over_tau)``, by
+    Wood's (1994) rejection sampler. Its concentration ``κ`` solves
+    ``I_{p/2}(κ) / I_{p/2 - 1}(κ) = exp(-dt_over_tau)`` with ``p = n_dims``.
+    """
+    from scipy.optimize import brentq
+    from scipy.special import ive
+
+    mean_cosine = float(np.exp(-dt_over_tau))
+    order = n_dims / 2
+
+    def excess(kappa: float) -> float:
+        return float(ive(order, kappa) / ive(order - 1, kappa)) - mean_cosine
+
+    # The mean cosine is below kappa / n_dims, so kappa = mean_cosine is too
+    # small; it approaches 1 - (n_dims - 1) / (2 kappa) from below.
+    upper = n_dims / -np.expm1(-dt_over_tau)
+    while excess(upper) < 0:
+        upper *= 2
+    kappa = brentq(excess, mean_cosine, upper, xtol=1e-12, rtol=1e-12)
+
+    dims = n_dims - 1
+    b = dims / (2 * kappa + np.sqrt(4 * kappa**2 + dims**2))
+    x0 = (1 - b) / (1 + b)
+    c = kappa * x0 + dims * np.log(1 - x0**2)
+    cosines = np.empty(n_steps)
+    pending = np.arange(n_steps)
+    while pending.size:
+        z = rng.beta(dims / 2, dims / 2, pending.size)
+        w = (1 - (1 + b) * z) / (1 - (1 - b) * z)
+        accept = kappa * w + dims * np.log(1 - x0 * w) - c >= np.log(
+            rng.uniform(size=pending.size)
+        )
+        cosines[pending[accept]] = w[accept]
+        pending = pending[~accept]
+    return cosines
 
 
 def _ou_speeds(

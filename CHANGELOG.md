@@ -126,7 +126,10 @@ default lap route all changed.
 - Lap pause samples have `lap_id = -1` and `direction = "pause"`, and lap
   boundaries no longer repeat a sample.
 - OU headings use the exact integral of the turning rate. At `dt = 0.1` s
-  the old update overstated heading variance by 17%.
+  the old update overstated heading variance by 17%. In 3-D, each step
+  turns the heading by a von Mises-Fisher angle, so its correlation is
+  `exp(-t/τ)` at any `dt`. At lag τ the old Euler step gave 0.48 at
+  `dt = τ`, not 0.37.
 - Default speeds are 8 cm/s (OU) and 10 cm/s (sinusoidal), expressed in
   `env.units`.
 - Sinusoidal trajectories on a circular track run once around the loop and

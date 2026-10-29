@@ -118,6 +118,40 @@ class TestSimulateTrajectoryOU:
         np.testing.assert_allclose(results[:, :2], [[8.0, 4.0]] * 3, atol=0.5)
         np.testing.assert_allclose(results[:, 2:], results[[0] * 3, 2:], atol=0.05)
 
+    @pytest.mark.parametrize("dt_over_tau", [1 / 8, 1 / 2, 1.0, 2.0])
+    def test_3d_heading_decorrelates_as_exp_minus_t_over_tau_at_any_dt(
+        self, dt_over_tau
+    ):
+        """Heading correlation at lag ``t`` is ``exp(-t / τ)`` at any time step.
+
+        The walk is too slow to reach a wall, so every step's direction is
+        the heading.
+        """
+        from neurospatial import Environment
+
+        corners = np.stack(
+            np.meshgrid(*[np.linspace(0, 1000, 11)] * 3, indexing="ij"), axis=-1
+        ).reshape(-1, 3)
+        env = Environment.from_samples(corners, bin_size=100.0, units="cm")
+        tau = 1.0
+        dt = dt_over_tau * tau
+        positions, _ = simulate_trajectory_ou(
+            env,
+            duration=4000 * tau,
+            dt=dt,
+            speed_units="cm",
+            speed_mean=1e-3,
+            speed_std=0.0,
+            rotational_velocity_coherence_time=tau,
+            start_position=np.array([500.0, 500.0, 500.0]),
+            seed=3,
+        )
+        headings = np.diff(positions, axis=0)
+        headings /= np.linalg.norm(headings, axis=1, keepdims=True)
+        lag = max(1, round(tau / dt))
+        correlation = np.mean(np.sum(headings[:-lag] * headings[lag:], axis=1))
+        assert correlation == pytest.approx(np.exp(-lag * dt / tau), abs=0.04)
+
     def test_default_speed_is_rat_scale_in_the_environment_units(self):
         """8 cm/s by default, expressed in env.units."""
         from shapely.geometry import box
