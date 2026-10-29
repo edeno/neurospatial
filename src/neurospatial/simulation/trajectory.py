@@ -267,7 +267,11 @@ def simulate_trajectory_ou(
     as about 6 degrees; an animal still blocked waits one step. An animal that
     starts on the outline (to within rounding) leaves it only toward the
     inside; one that starts on an internal wall may leave it to either side
-    and does not cross it afterward. Elsewhere the
+    and does not cross it afterward. The walls follow the arena's outline,
+    not the bins: the tip of a corner sharper than the bins resolve can hold
+    no bin center, and no bin. In the last centimeter of a 6-10 degree wedge
+    with 0.5 cm bins, for example, a sample the walk takes there has
+    ``env.bin_at(...) == -1``; smaller bins resolve the tip. Elsewhere the
     walls are the faces of the bins: a step that would leave the bins
     reverses each velocity component whose move alone would leave them.
 
