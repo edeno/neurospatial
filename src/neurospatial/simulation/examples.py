@@ -13,6 +13,7 @@ from neurospatial.simulation.models.place_cells import (
 )
 
 if TYPE_CHECKING:
+    from neurospatial.simulation.models import NeuralModel
     from neurospatial.simulation.session import SimulationSession
 
 
@@ -812,7 +813,9 @@ def grid_cell_session(
     n_grid_cells : int, optional
         Number of grid cells (default: 40).
     seed : int | None, optional
-        Random seed for reproducibility (default: None).
+        Random seed for reproducibility (default: None). The trajectory, the
+        cells' phases and orientations, and the spikes draw from independent
+        streams spawned from it.
 
     Returns
     -------
@@ -823,7 +826,7 @@ def grid_cell_session(
         - times: Time points matching trajectory
         - spike_times: Poisson spikes for each grid cell
         - models: GridCellModel instances
-        - ground_truth: True parameters for each cell
+        - ground_truth: Each model's ``ground_truth``, by unit label
         - metadata: Session configuration
 
     Raises
@@ -903,7 +906,7 @@ def grid_cell_session(
     # Import here to avoid circular dependencies
     from neurospatial.environment import Environment
     from neurospatial.simulation.models import GridCellModel
-    from neurospatial.simulation.session import SimulationSession
+    from neurospatial.simulation.session import SimulationSession, _stream_seeds
     from neurospatial.simulation.spikes import generate_population_spikes
     from neurospatial.simulation.trajectory import simulate_trajectory_ou
 
@@ -940,53 +943,33 @@ def grid_cell_session(
     env = Environment.from_samples(arena_data, bin_size=bin_size)
     env = env.with_metadata(units="cm")
 
-    # Generate trajectory using OU process
+    # Independent streams for the trajectory, the cells' phases and
+    # orientations, and the spikes.
+    trajectory_seed, field_seed, spike_seed = _stream_seeds(seed, 3)
     positions, times = simulate_trajectory_ou(
-        env, duration=duration, speed_units="cm", seed=seed
+        env, duration=duration, speed_units="cm", seed=trajectory_seed
     )
 
-    # Create grid cell models with random phases
-    # Sample phase offsets uniformly from environment
-    rng = np.random.default_rng(seed)
+    # Phases from bin centers spread over the arena, in a random order, and
+    # random orientations.
+    rng = np.random.default_rng(field_seed)
     step = max(1, env.n_bins // n_grid_cells)
     # Copy: shuffling a view would permute the environment's own bin centers.
     phase_centers = env.bin_centers[::step][:n_grid_cells].copy()
-
-    # Shuffle to randomize phase distribution
     rng.shuffle(phase_centers)
-
-    # Generate random orientations for grid cells
     orientations = rng.uniform(0, np.pi / 3, size=n_grid_cells)
-
-    models: list = []
-    ground_truth = {}
-
-    for i in range(n_grid_cells):
-        # Use phase_center from shuffled list
-        phase = phase_centers[i] if i < len(phase_centers) else phase_centers[0]
-
-        # Create grid cell with specified spacing, random phase and orientation
-        model = GridCellModel(
+    models: list[NeuralModel] = [
+        GridCellModel(
             env,
             grid_spacing=grid_spacing,
-            phase_offset=phase,
+            phase_offset=phase_centers[i % len(phase_centers)],
             grid_orientation=orientations[i],
         )
-        models.append(model)
+        for i in range(n_grid_cells)
+    ]
 
-        # Store ground truth
-        ground_truth[i] = {
-            "cell_type": "grid",
-            "grid_spacing": float(grid_spacing),
-            "phase_offset": phase.tolist(),
-            "orientation": float(model.grid_orientation),
-            "max_rate": float(model.max_rate),
-            "baseline_rate": float(model.baseline_rate),
-        }
-
-    # Generate spikes for all cells
     spike_times = generate_population_spikes(
-        models, times, positions, seed=seed, show_progress=False
+        models, times, positions, seed=spike_seed, show_progress=False
     )
 
     # Create metadata
@@ -1003,16 +986,13 @@ def grid_cell_session(
         "seed": seed,
     }
 
-    # Create and return session
-    session = SimulationSession(
+    return SimulationSession(
         env=env,
         positions=positions,
         times=times,
         spike_times=spike_times,
-        unit_ids=np.arange(len(spike_times), dtype=np.int64),
+        unit_ids=np.arange(len(models), dtype=np.int64),
         models=models,
-        ground_truth=ground_truth,
+        ground_truth={i: model.ground_truth for i, model in enumerate(models)},
         metadata=metadata,
     )
-
-    return session

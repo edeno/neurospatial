@@ -862,3 +862,64 @@ class TestGridCellSession:
             grid_cell_session(
                 duration=30.0, arena_size=100.0, grid_spacing=150.0, n_grid_cells=5
             )
+
+    def test_ground_truth_is_each_models_own(self):
+        session = grid_cell_session(duration=5.0, n_grid_cells=4, seed=0)
+        for label, model in zip(session.unit_ids, session.models, strict=True):
+            truth = session.ground_truth[int(label)]
+            assert truth.keys() == model.ground_truth.keys()
+            assert truth["grid_orientation"] == model.grid_orientation
+            np.testing.assert_array_equal(truth["phase_offset"], model.phase_offset)
+
+
+_SEED = 7
+_EXAMPLE_SESSIONS = {
+    "open_field": lambda: open_field_session(
+        duration=20.0, n_place_cells=4, max_rate=40.0, width=20.0, seed=_SEED
+    ),
+    "linear_track": lambda: linear_track_session(
+        duration=20.0, n_place_cells=4, n_laps=4, seed=_SEED
+    ),
+    "tmaze": lambda: tmaze_alternation_session(
+        duration=20.0, n_trials=2, n_place_cells=4, seed=_SEED
+    ),
+    "border": lambda: border_cell_session(
+        duration=20.0, n_border_cells=2, n_place_cells=2, seed=_SEED
+    ),
+    "grid": lambda: grid_cell_session(duration=20.0, n_grid_cells=4, seed=_SEED),
+}
+
+
+@pytest.mark.parametrize("name", list(_EXAMPLE_SESSIONS))
+def test_example_spike_streams_are_independent_of_the_trajectory(name):
+    """No example draws its spikes or its trajectory from the bare seed.
+
+    A session that used ``seed`` for both the trajectory and the spikes (as
+    ``grid_cell_session`` did, also for unit 0's phase draws) would have its
+    spike trains reproduced by regenerating them with ``seed``.
+    """
+    from neurospatial.simulation import generate_population_spikes
+
+    session = _EXAMPLE_SESSIONS[name]()
+    assert sum(len(train) for train in session.spike_times) > 0
+    shared_stream = generate_population_spikes(
+        session.models,
+        session.times,
+        session.positions,
+        seed=_SEED,
+        show_progress=False,
+    )
+    assert any(
+        not np.array_equal(own, shared)
+        for own, shared in zip(session.spike_times, shared_stream, strict=True)
+        if len(own) or len(shared)
+    )
+
+
+def test_grid_phases_and_orientations_have_their_own_stream():
+    """Grid tuning is not drawn from the stream the bare seed starts."""
+    session = grid_cell_session(duration=5.0, n_grid_cells=6, seed=_SEED)
+    orientations = [m.grid_orientation for m in session.models]
+    shared = np.random.default_rng(_SEED)
+    shared.shuffle(np.zeros((6, 2)))
+    assert not np.allclose(orientations, shared.uniform(0, np.pi / 3, size=6))
