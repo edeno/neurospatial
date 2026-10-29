@@ -516,9 +516,9 @@ def test_held_out_maze_geodesic_accuracy() -> None:
     centers = env.bin_centers[np.linspace(0, env.n_bins - 1, 30).astype(int)]
     spikes = [
         generate_poisson_spikes(
-            PlaceCellModel(
-                env, center=c, width=8.0, max_rate=25.0, seed=i
-            ).firing_rate(positions, times),
+            PlaceCellModel(env, center=c, width=8.0, max_rate=25.0, seed=i).firing_rate(
+                positions, times
+            ),
             times,
             seed=100 + i,
         )
