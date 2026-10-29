@@ -5,6 +5,8 @@ Tests cover cell assembly detection, activation computation, and reactivation an
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -155,39 +157,32 @@ class TestDetectAssemblies:
             f"{[sorted(m) for m in detected_members]}"
         )
 
-    def test_random_data_few_assemblies(self, random_spike_counts: np.ndarray) -> None:
-        """Random data should yield few significant assemblies."""
-        result = detect_assemblies(random_spike_counts, rng=42)
+    @pytest.mark.parametrize("seed", range(5))
+    def test_independent_neurons_have_no_significant_dimension(self, seed: int) -> None:
+        """Independent Poisson neurons stay below the Marchenko-Pastur bound."""
+        counts = np.random.default_rng(seed).poisson(5, (3000, 30)).astype(float)
+        with pytest.warns(UserWarning, match="Marchenko-Pastur bound"):
+            result = detect_assemblies(counts, rng=42)
 
-        # Random data should have 0-2 significant assemblies
-        assert result.n_significant <= 2
+        assert result.n_significant == 0
+        assert len(result.patterns) == 0
 
-    def test_pca_method(self, small_spike_counts: np.ndarray) -> None:
-        """PCA method should work and return valid results."""
-        result = detect_assemblies(small_spike_counts, algorithm="pca")
+    @pytest.mark.parametrize("algorithm", ["pca", "ica", "nmf"])
+    def test_method_is_recorded(
+        self, spike_counts_with_assemblies: np.ndarray, algorithm: str
+    ) -> None:
+        result = detect_assemblies(
+            spike_counts_with_assemblies, algorithm=algorithm, rng=42
+        )
 
-        assert result.method == "pca"
-        assert len(result.patterns) >= 1
+        assert result.method == algorithm
+        assert len(result.patterns) == 3
         assert result.activations.shape[0] == len(result.patterns)
-
-    def test_ica_method(self, small_spike_counts: np.ndarray) -> None:
-        """ICA method should work and return valid results."""
-        result = detect_assemblies(small_spike_counts, algorithm="ica", rng=42)
-
-        assert result.method == "ica"
-        assert len(result.patterns) >= 1
-
-    def test_nmf_method(self, small_spike_counts: np.ndarray) -> None:
-        """NMF method should work and return valid results."""
-        result = detect_assemblies(small_spike_counts, algorithm="nmf", rng=42)
-
-        assert result.method == "nmf"
-        assert len(result.patterns) >= 1
 
     def test_patterns_have_correct_shape(self, small_spike_counts: np.ndarray) -> None:
         """Pattern weights should have n_neurons elements."""
         n_neurons = small_spike_counts.shape[1]  # (n_time_bins, n_neurons)
-        result = detect_assemblies(small_spike_counts, rng=42)
+        result = detect_assemblies(small_spike_counts, n_components=2, rng=42)
 
         for pattern in result.patterns:
             assert len(pattern.weights) == n_neurons
@@ -197,13 +192,15 @@ class TestDetectAssemblies:
     ) -> None:
         """Activations should have shape (n_assemblies, n_time_bins)."""
         n_time = small_spike_counts.shape[0]  # (n_time_bins, n_neurons)
-        result = detect_assemblies(small_spike_counts, rng=42)
+        result = detect_assemblies(small_spike_counts, n_components=2, rng=42)
 
         assert result.activations.shape == (len(result.patterns), n_time)
 
-    def test_eigenvalues_descending(self, small_spike_counts: np.ndarray) -> None:
+    def test_eigenvalues_descending(
+        self, spike_counts_with_assemblies: np.ndarray
+    ) -> None:
         """Eigenvalues should be in descending order."""
-        result = detect_assemblies(small_spike_counts, rng=42)
+        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
 
         # Check monotonically decreasing
         diffs = np.diff(result.eigenvalues)
@@ -217,13 +214,24 @@ class TestDetectAssemblies:
         assert len(result.patterns) == n_comp
         assert result.activations.shape[0] == n_comp
 
-    def test_n_components_auto(self, small_spike_counts: np.ndarray) -> None:
-        """Auto n_components should use Marchenko-Pastur threshold."""
-        result = detect_assemblies(small_spike_counts, n_components="auto", rng=42)
+    def test_n_components_auto(self, spike_counts_with_assemblies: np.ndarray) -> None:
+        """Auto n_components keeps the dimensions above the Marchenko-Pastur bound."""
+        result = detect_assemblies(
+            spike_counts_with_assemblies, n_components="auto", rng=42
+        )
 
-        # n_significant should be based on threshold
-        expected_n = max(1, result.n_significant)
-        assert len(result.patterns) == expected_n
+        assert len(result.patterns) == result.n_significant == 3
+
+    @pytest.mark.parametrize("algorithm", ["pca", "ica", "nmf"])
+    def test_no_dimension_above_bound_gives_no_patterns(
+        self, random_spike_counts: np.ndarray, algorithm: str
+    ) -> None:
+        """Without correlation structure there is no pattern, not an exploratory one."""
+        with pytest.warns(UserWarning, match="Marchenko-Pastur bound"):
+            result = detect_assemblies(random_spike_counts, algorithm=algorithm, rng=42)
+        assert result.n_significant == 0
+        assert len(result.patterns) == 0
+        assert result.activations.shape == (0, random_spike_counts.shape[0])
 
     def test_z_threshold_affects_membership(
         self, spike_counts_with_assemblies: np.ndarray
@@ -247,11 +255,12 @@ class TestDetectAssemblies:
         assert avg_low >= avg_high
 
     def test_reproducibility_with_random_state(
-        self, small_spike_counts: np.ndarray
+        self, spike_counts_with_assemblies: np.ndarray
     ) -> None:
         """Same random_state should give same results."""
-        result1 = detect_assemblies(small_spike_counts, rng=42)
-        result2 = detect_assemblies(small_spike_counts, rng=42)
+        result1 = detect_assemblies(spike_counts_with_assemblies, rng=42)
+        result2 = detect_assemblies(spike_counts_with_assemblies, rng=42)
+        assert len(result1.patterns) == 3
 
         assert_allclose(result1.activations, result2.activations)
         for p1, p2 in zip(result1.patterns, result2.patterns, strict=True):
@@ -295,17 +304,39 @@ class TestDetectAssemblies:
         msg = str(record[0].message).lower()
         assert "transpos" in msg or "time-first" in msg
 
-    def test_handles_zero_variance_neurons(self, rng: np.random.Generator) -> None:
-        """Should handle neurons with constant firing."""
-        spike_counts = rng.poisson(5, (100, 10)).astype(np.float64)  # t, n
-        # Make one neuron (column) constant
-        spike_counts[:, 0] = 5.0
+    @pytest.mark.parametrize("algorithm", ["pca", "ica", "nmf"])
+    def test_constant_neurons_are_excluded(
+        self, spike_counts_with_assemblies: np.ndarray, algorithm: str
+    ) -> None:
+        """A constant neuron gets weight 0 and does not change the detection."""
+        counts = spike_counts_with_assemblies.copy()
+        counts[:, 7] = 5.0
+        keep = np.arange(counts.shape[1]) != 7
+        with pytest.warns(
+            UserWarning, match=r"same count in every time bin \(units \[7\]\)"
+        ):
+            result = detect_assemblies(counts, algorithm=algorithm, rng=42)
+        without = detect_assemblies(counts[:, keep], algorithm=algorithm, rng=42)
 
-        with pytest.warns(UserWarning, match="zero variance"):
-            result = detect_assemblies(spike_counts, rng=42)
+        assert result.n_significant == without.n_significant == 3
+        # The threshold uses the 49 varying neurons, not all 50.
+        assert result.threshold == marchenko_pastur_threshold(49, counts.shape[0])
+        assert_allclose(result.eigenvalues[:49], without.eigenvalues)
+        assert result.eigenvalues[49] == 0.0
+        for pattern, reference in zip(result.patterns, without.patterns, strict=True):
+            assert pattern.weights[7] == 0.0
+            assert_allclose(pattern.weights[keep], reference.weights, atol=1e-10)
+            assert_allclose(
+                pattern.explained_variance_ratio, reference.explained_variance_ratio
+            )
+            assert 7 not in pattern.member_indices
 
-        # Should still return valid results
-        assert len(result.patterns) >= 1
+    def test_too_few_varying_neurons_raise(self, rng: np.random.Generator) -> None:
+        spike_counts = rng.poisson(5, (100, 4)).astype(np.float64)
+        spike_counts[:, [1, 3]] = 0.0
+        with pytest.raises(ValueError, match=r"only 2 of 4 neurons vary") as caught:
+            detect_assemblies(spike_counts, rng=42)
+        assert "units [1, 3]" in str(caught.value)
 
 
 class TestPatternSign:
@@ -775,10 +806,11 @@ class TestEdgeCases:
     def test_minimum_neurons(self, rng: np.random.Generator) -> None:
         """Should work with minimum 3 neurons."""
         spike_counts = rng.poisson(5, (500, 3)).astype(np.float64)  # 3 neurons
+        spike_counts[:, 1] += spike_counts[:, 0]
 
         result = detect_assemblies(spike_counts, rng=42)
 
-        assert len(result.patterns) >= 1
+        assert len(result.patterns) == result.n_significant == 1
 
     def test_single_time_bin_activation(
         self, spike_counts_with_assemblies: np.ndarray, rng: np.random.Generator
@@ -794,16 +826,11 @@ class TestEdgeCases:
         assert len(activation) == 10
 
     def test_all_zero_spike_counts(self) -> None:
-        """Should handle all-zero spike counts without NaN."""
+        """All-silent counts have no assemblies to find: raise, not zero patterns."""
         spike_counts = np.zeros((10, 100), dtype=np.float64)
 
-        with pytest.warns(UserWarning, match="zero variance"):
-            result = detect_assemblies(spike_counts, rng=42)
-
-        # Should not have NaN in results
-        assert not np.any(np.isnan(result.activations))
-        for pattern in result.patterns:
-            assert not np.any(np.isnan(pattern.weights))
+        with pytest.raises(ValueError, match="only 0 of 100 neurons vary"):
+            detect_assemblies(spike_counts, rng=42)
 
     def test_explained_variance_identical_correlations(self) -> None:
         """EV should be 1 for identical correlation vectors."""
@@ -963,9 +990,11 @@ def test_ica_whitens_scores_and_recovers_independent_sources(n_components):
     rng = np.random.default_rng(42)
     sources = rng.poisson([2.0, 7.0], size=(20000, 2))
     counts = sources @ np.array([[1, 2, 3, 0], [3, 1, 0, 2]])
-    result = detect_assemblies(
-        counts, algorithm="ica", n_components=n_components, rng=0
-    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "1 of the 3 requested components")
+        result = detect_assemblies(
+            counts, algorithm="ica", n_components=n_components, rng=0
+        )
     recovered = result.activations[:2]
     assert_allclose(np.cov(recovered, bias=True), np.eye(2), atol=1e-10)
     recovery_correlations = np.abs(np.corrcoef(sources.T, recovered)[:2, 2:])
@@ -984,10 +1013,9 @@ def test_ica_whitens_scores_and_recovers_independent_sources(n_components):
         expected = reconstructed.var(axis=0).sum() / total_variance
         assert_allclose(pattern.explained_variance_ratio, expected, atol=1e-12)
     assert_allclose(sum(p.explained_variance_ratio for p in result.patterns), 1.0)
-    if n_components == 3:
-        assert_allclose(result.activations[2], 0.0)
-        assert_allclose(weights[2], 0.0)
-        assert result.patterns[2].explained_variance_ratio == 0.0
+    # The counts span two dimensions; a third requested component has no
+    # variance and is dropped.
+    assert len(result.patterns) == 2
 
 
 class TestOneCountConvention:
@@ -1010,8 +1038,9 @@ class TestOneCountConvention:
         # default orient='time_x_neuron' -> (n_time_bins, n_neurons)
         assert counts.shape[1] == n_neurons
 
-        result = detect_assemblies(counts.astype(np.float64), rng=0)
+        result = detect_assemblies(counts.astype(np.float64), n_components=2, rng=0)
         # Orientation consumed correctly: weights are sized by neuron count.
+        assert len(result.patterns) == 2
         for pattern in result.patterns:
             assert len(pattern.weights) == n_neurons
 

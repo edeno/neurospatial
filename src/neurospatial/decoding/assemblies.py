@@ -253,13 +253,16 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     n_significant : int
         Number of PCA eigenvalues above the Marchenko-Pastur reference
         threshold. This counts retained dimensions, not assemblies with
-        thresholded core members. It may differ from len(patterns), for example
-        when n_components was specified manually or no eigenvalue exceeds
-        the threshold and the algorithm returns one exploratory component.
-    eigenvalues : NDArray[np.float64]
-        Eigenvalues from PCA, useful for scree plots.
+        thresholded core members. It equals len(patterns) with
+        ``n_components="auto"`` (zero patterns when no eigenvalue exceeds the
+        threshold) and may differ when n_components was specified manually.
+    eigenvalues : NDArray[np.float64], shape (n_neurons,)
+        Eigenvalues of the correlation matrix of the neurons that vary over
+        time, in descending order, useful for scree plots. Each excluded
+        constant neuron adds an eigenvalue of 0 at the end.
     threshold : float
-        Marchenko-Pastur threshold used for significance.
+        Marchenko-Pastur threshold for the number of varying neurons and
+        time bins.
     unit_ids : ndarray, shape (n_neurons,)
         Label of each column of the detection counts (read-only), the same
         labels every pattern carries: the ``unit_ids=`` given to
@@ -632,8 +635,10 @@ def detect_assemblies(
     Raises
     ------
     ValueError
-        If spike_counts has wrong shape or invalid parameters, or
-        ``unit_ids`` does not hold one distinct label per column.
+        If spike_counts has wrong shape, holds NaN, infinite or negative
+        values, has fewer than 3 neurons that vary over time, or has invalid
+        parameters, or ``unit_ids`` does not hold one distinct label per
+        column.
 
     Notes
     -----
@@ -647,8 +652,14 @@ def detect_assemblies(
     6. Threshold weights to identify core members
     7. Compute activation time series
 
-    For ICA, requested components beyond the numerical rank of the data
-    have zero weights, activations, and explained variance.
+    **Excluded neurons and components**: A neuron with the same count in
+    every time bin has no correlation with any other neuron. It is excluded
+    from every method (with a warning), gets weight 0 in every pattern, and
+    the Marchenko-Pastur threshold uses the number of varying neurons. With
+    ``n_components="auto"`` and no eigenvalue above the threshold, the result
+    has no patterns and a warning says so. Requested components beyond the
+    numerical rank of the counts carry no variance and are dropped with a
+    warning, so a result can hold fewer patterns than ``n_components``.
 
     **Sign convention**: ICA and PCA determine a pattern only up to its sign.
     Each pattern is flipped so that its largest-magnitude weight is positive,
@@ -718,6 +729,8 @@ def detect_assemblies(
     """
     spike_counts = _validated_counts(spike_counts, call="detect_assemblies()")
     n_time_bins, n_neurons = spike_counts.shape
+    if algorithm not in ("ica", "pca", "nmf"):
+        raise ValueError(f"Unknown algorithm: {algorithm}. Use 'ica', 'pca', or 'nmf'.")
 
     if n_neurons < 3:
         raise ValueError(
@@ -738,42 +751,65 @@ def detect_assemblies(
             stacklevel=2,
         )
 
-    # Work internally in (n_neurons, n_time_bins): the assembly structure is a
-    # correlation over neurons, so z-score each neuron over time and correlate
-    # neuron-wise.
-    spike_counts = spike_counts.T
-
-    # Z-score each neuron's activity
-    spike_counts_z = stats.zscore(spike_counts, axis=1)
-
-    # Handle neurons with zero variance (constant firing)
-    zero_var_mask = np.isnan(spike_counts_z).any(axis=1)
-    if np.any(zero_var_mask):
-        n_zero = np.sum(zero_var_mask)
+    # A neuron whose count never changes has no variance to correlate: it
+    # cannot take part in any covariance pattern, so every method excludes it.
+    constant = np.ptp(spike_counts, axis=0) == 0
+    retained = np.flatnonzero(~constant)
+    n_retained = retained.size
+    if n_retained < 3:
+        raise ValueError(
+            _format_error(
+                f"detect_assemblies(): only {n_retained} of {n_neurons} neurons "
+                f"vary over time; units {labels[constant].tolist()} have the same "
+                "count in every time bin.",
+                why="Why: assemblies are patterns of correlated activity, and a "
+                "neuron whose count never changes has no correlation with any "
+                "other; at least 3 varying neurons are needed.",
+                fix="check that spike_counts covers a period in which the units "
+                "fire, or select the units that fire in this period",
+            )
+        )
+    if np.any(constant):
         warnings.warn(
-            f"{n_zero} neurons have zero variance and will be excluded.",
+            f"detect_assemblies(): {int(constant.sum())} of {n_neurons} neurons "
+            f"have the same count in every time bin (units "
+            f"{labels[constant].tolist()}), so they have no correlation with "
+            "other neurons. They are excluded from detection and get weight 0 "
+            "in every pattern.",
             UserWarning,
             stacklevel=2,
         )
-        spike_counts_z[zero_var_mask] = 0  # Set to zero rather than NaN
 
-    # Compute correlation matrix using numpy
+    # Work internally in (n_neurons, n_time_bins): the assembly structure is a
+    # correlation over neurons, so z-score each neuron over time and correlate
+    # neuron-wise.
+    retained_counts = spike_counts[:, retained].T
+    spike_counts_z = stats.zscore(retained_counts, axis=1)
+
+    # Eigenvalues of the retained neurons' correlation matrix, in descending
+    # order; each excluded neuron adds an eigenvalue of 0.
     corr_matrix = np.corrcoef(spike_counts_z)
+    eigenvalues = np.r_[
+        np.sort(linalg.eigvalsh(corr_matrix))[::-1], np.zeros(n_neurons - n_retained)
+    ]
 
-    # Handle NaN in correlation matrix
-    corr_matrix = np.nan_to_num(corr_matrix, nan=0.0)
-
-    # Eigendecomposition using scipy
-    eigenvalues = linalg.eigvalsh(corr_matrix)
-    eigenvalues = np.sort(eigenvalues)[::-1]  # Descending order
-
-    # Compute Marchenko-Pastur threshold
-    mp_threshold = marchenko_pastur_threshold(n_neurons, n_time_bins)
+    mp_threshold = marchenko_pastur_threshold(n_retained, n_time_bins)
     n_significant = int(np.sum(eigenvalues > mp_threshold))
 
     # Determine number of components
     if n_components == "auto":
-        n_comp = max(1, n_significant)  # At least 1 component
+        n_comp = n_significant
+        if n_comp == 0:
+            warnings.warn(
+                f"detect_assemblies(): no eigenvalue of the correlation matrix "
+                f"exceeds the Marchenko-Pastur bound {mp_threshold:.3f} (largest "
+                f"{eigenvalues[0]:.3f}), so the counts show no correlation "
+                "structure beyond what independent neurons would give. The "
+                "result has no patterns; pass n_components= to fit exploratory "
+                "patterns anyway.",
+                UserWarning,
+                stacklevel=2,
+            )
     else:
         n_comp = int(n_components)
         if n_comp < 1:
@@ -783,14 +819,14 @@ def detect_assemblies(
                 f"n_components ({n_comp}) cannot exceed n_neurons ({n_neurons})"
             )
 
-    # The factorization can yield at most min(n_neurons, n_time_bins)
-    # components. Requesting more (short recordings) would index past the
-    # SVD output and raise IndexError downstream; clamp with a warning.
-    max_rank = min(n_neurons, n_time_bins)
+    # The factorization can yield at most min(n_retained, n_time_bins)
+    # components. Requesting more (short recordings, excluded neurons) would
+    # index past the SVD output; clamp with a warning.
+    max_rank = min(n_retained, n_time_bins)
     if n_comp > max_rank:
         warnings.warn(
             f"n_components ({n_comp}) exceeds the achievable rank "
-            f"min(n_neurons, n_time_bins) = {max_rank}; using {max_rank}.",
+            f"min(n_varying_neurons, n_time_bins) = {max_rank}; using {max_rank}.",
             UserWarning,
             stacklevel=2,
         )
@@ -807,49 +843,55 @@ def detect_assemblies(
         seed = int(rng)
 
     # Perform dimensionality reduction
-    if algorithm == "pca":
+    if n_comp == 0:
+        patterns = np.zeros((0, n_retained))
+        activations = np.zeros((0, n_time_bins))
+        explained_var = np.zeros(0)
+    elif algorithm == "pca":
         patterns, activations, explained_var = _detect_pca(spike_counts_z, n_comp)
     elif algorithm == "ica":
         patterns, activations, explained_var = _detect_ica(spike_counts_z, n_comp, seed)
-    elif algorithm == "nmf":
+    else:
         patterns, activations, explained_var = _detect_nmf(
-            spike_counts,
+            retained_counts,
             n_comp,
             seed,  # NMF uses original counts
         )
-    else:
-        raise ValueError(f"Unknown algorithm: {algorithm}. Use 'ica', 'pca', or 'nmf'.")
+    n_found = patterns.shape[0]
+    if n_found < n_comp:
+        warnings.warn(
+            f"detect_assemblies(): {n_comp - n_found} of the {n_comp} requested "
+            f"components carry no variance (the counts span only {n_found} "
+            "dimensions), so they define no pattern and are dropped.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     # ICA and eigenvector signs are arbitrary. Orient each pattern so its
     # largest-magnitude weight is positive, and flip its activation with it so
     # weights @ z-scored counts == activations still holds. An assembly's
     # events then raise its activation instead of lowering it.
-    largest = patterns[np.arange(n_comp), np.argmax(np.abs(patterns), axis=1)]
+    largest = patterns[np.arange(n_found), np.argmax(np.abs(patterns), axis=1)]
     signs = np.where(largest < 0, -1.0, 1.0)
     patterns = patterns * signs[:, None]
     activations = activations * signs[:, None]
 
-    # Create AssemblyPattern objects - vectorized z-score computation
-    # Compute z-scores for all patterns at once: shape (n_comp, n_neurons)
-    abs_patterns = np.abs(patterns)
-    # stats.zscore along axis=1 normalizes each row (pattern) independently
-    weights_z_all = stats.zscore(abs_patterns, axis=1)
+    # Members: absolute weights z-scored across the retained neurons, then
+    # thresholded; shape (n_found, n_retained).
+    member_masks = stats.zscore(np.abs(patterns), axis=1) > z_threshold
+    full_patterns = np.zeros((n_found, n_neurons))
+    full_patterns[:, retained] = patterns
 
-    # Find member masks for all patterns at once
-    member_masks = weights_z_all > z_threshold  # Shape: (n_comp, n_neurons)
-
-    assembly_patterns = []
-    for i in range(n_comp):
-        member_indices = np.where(member_masks[i])[0].astype(np.int64)
-        assembly_patterns.append(
-            AssemblyPattern(
-                weights=patterns[i],
-                member_indices=member_indices,
-                explained_variance_ratio=explained_var[i],
-                unit_ids=labels,
-                _unit_ids_generated=unit_ids_generated,
-            )
+    assembly_patterns = [
+        AssemblyPattern(
+            weights=full_patterns[i],
+            member_indices=retained[member_masks[i]].astype(np.int64),
+            explained_variance_ratio=explained_var[i],
+            unit_ids=labels,
+            _unit_ids_generated=unit_ids_generated,
         )
+        for i in range(n_found)
+    ]
 
     return AssemblyDetectionResult(
         patterns=assembly_patterns,
@@ -876,33 +918,29 @@ def _detect_pca(
 
     Returns
     -------
-    patterns : array, shape (n_components, n_neurons)
-    activations : array, shape (n_components, n_time_bins)
-    explained_variance_ratio : array, shape (n_components,)
+    patterns : array, shape (n_live, n_neurons)
+        Eigenvectors of the ``n_live <= n_components`` leading components
+        with nonzero variance; components beyond the numerical rank are
+        dropped.
+    activations : array, shape (n_live, n_time_bins)
+    explained_variance_ratio : array, shape (n_live,)
     """
-    # Use SVD for numerical stability
-    # SVD: Z = U @ S @ Vh where Z is (n_neurons, n_time_bins)
-    # The correlation matrix C = Z @ Z.T / T has eigenvectors in U
-    # (since C = U @ S^2 @ U.T / T from SVD)
+    # SVD: Z = U @ S @ Vh where Z is (n_neurons, n_time_bins). The correlation
+    # matrix C = Z @ Z.T / T = U @ S^2 @ U.T / T has eigenvectors in U.
     u, s, _vh = linalg.svd(spike_counts_z, full_matrices=False)
 
-    # u has shape (n_neurons, min(n_neurons, n_time_bins))
-    # Each column is a pattern (eigenvector of correlation matrix)
-    # Select top n_components columns and transpose to get (n_components, n_neurons)
-    patterns = u[:, :n_components].T  # (n_components, n_neurons)
+    # Components beyond the numerical rank have arbitrary eigenvectors.
+    rank_tol = np.finfo(np.float64).eps * max(spike_counts_z.shape) * s[0]
+    n_live = int(np.sum(s[:n_components] > rank_tol))
 
-    # Compute activations by projecting data onto patterns
+    # Each column of u is a pattern; transpose to (n_live, n_neurons).
+    patterns = u[:, :n_live].T
+
     # activation[i, t] = sum_j patterns[i, j] * spike_counts_z[j, t]
-    activations = patterns @ spike_counts_z  # (n_components, n_time_bins)
+    activations = patterns @ spike_counts_z  # (n_live, n_time_bins)
 
-    # Explained variance ratio from singular values
-    # Eigenvalues of C are s^2 / T
-    total_var = np.sum(s**2)
-    explained_var = (
-        (s[:n_components] ** 2) / total_var
-        if total_var > 0
-        else np.zeros(n_components, dtype=np.float64)
-    )
+    # Eigenvalues of C are s^2 / T, and they sum to the total variance.
+    explained_var = (s[:n_live] ** 2) / np.sum(s**2)
 
     return patterns, activations, explained_var
 
@@ -921,28 +959,20 @@ def _detect_ica(
 
     Returns
     -------
-    patterns : array, shape (n_components, n_neurons)
-    activations : array, shape (n_components, n_time_bins)
-    explained_variance_ratio : array, shape (n_components,)
+    patterns : array, shape (n_live, n_neurons)
+        One pattern per principal component with nonzero variance,
+        ``n_live <= n_components``.
+    activations : array, shape (n_live, n_time_bins)
+    explained_variance_ratio : array, shape (n_live,)
     """
     from sklearn.decomposition import FastICA
 
-    # First reduce to n_components via PCA
+    # First reduce to n_components via PCA. PCA decorrelates scores but
+    # leaves their variances equal to the eigenvalues; FastICA must whiten
+    # these scores before its rotation. _detect_pca drops null PCs, so
+    # whitening cannot amplify numerical noise or divide by zero.
     patterns_pca, activations_pca, _ = _detect_pca(spike_counts_z, n_components)
-
-    # PCA decorrelates scores but leaves their variances equal to the
-    # eigenvalues. FastICA must whiten these scores before its rotation.
-    # Exclude null PCs so whitening cannot amplify numerical noise or divide
-    # by zero on constant / rank-deficient recordings.
-    score_norms = np.linalg.norm(activations_pca, axis=1)
-    rank_tol = np.finfo(np.float64).eps * max(spike_counts_z.shape) * score_norms.max()
-    live = score_norms > rank_tol
-    n_live = int(live.sum())
-    patterns = np.zeros((n_components, spike_counts_z.shape[0]), dtype=np.float64)
-    activations = np.zeros((n_components, spike_counts_z.shape[1]), dtype=np.float64)
-    explained_var = np.zeros(n_components, dtype=np.float64)
-    if n_live == 0:
-        return patterns, activations, explained_var
+    n_live = patterns_pca.shape[0]
 
     ica = FastICA(
         n_components=n_live,
@@ -950,20 +980,19 @@ def _detect_ica(
         max_iter=1000,
         whiten="unit-variance",
     )
-    sources = ica.fit_transform(activations_pca[live].T)
-    activations[:n_live] = sources.T
+    activations = ica.fit_transform(activations_pca.T).T
 
     # components_ includes the whitening transform as well as the ICA
     # rotation. Compose it with the projection to preserve neuron-space
     # weights @ z-scored counts == activations.
-    patterns[:n_live] = ica.components_ @ patterns_pca[live]
+    patterns = ica.components_ @ patterns_pca
 
     # Unit-variance, uncorrelated sources contribute the squared norm of
     # their neuron-space mixing column to the reconstructed variance.
     # Individual PCA variances do not correspond to the rotated ICA sources.
-    loadings = patterns_pca[live].T @ ica.mixing_
+    loadings = patterns_pca.T @ ica.mixing_
     total_var = np.sum(spike_counts_z**2) / spike_counts_z.shape[1]
-    explained_var[:n_live] = np.sum(loadings**2, axis=0) / total_var
+    explained_var = np.sum(loadings**2, axis=0) / total_var
 
     return patterns, activations, explained_var
 
@@ -979,16 +1008,20 @@ def _detect_nmf(
     Note: Uses original spike counts (not z-scored) since NMF requires
     non-negative input.
 
+    Parameters
+    ----------
+    spike_counts : array, shape (n_neurons, n_time_bins)
+        Non-negative counts of the neurons that vary over time.
+
     Returns
     -------
-    patterns : array, shape (n_components, n_neurons)
-    activations : array, shape (n_components, n_time_bins)
-    explained_variance_ratio : array, shape (n_components,)
+    patterns : array, shape (n_live, n_neurons)
+        Components with nonzero weights and activations,
+        ``n_live <= n_components``.
+    activations : array, shape (n_live, n_time_bins)
+    explained_variance_ratio : array, shape (n_live,)
     """
     from sklearn.decomposition import NMF
-
-    # Ensure non-negative
-    spike_counts_nn = np.maximum(spike_counts, 0)
 
     nmf = NMF(
         n_components=n_components,
@@ -1000,24 +1033,23 @@ def _detect_nmf(
     # NMF: X ≈ W @ H
     # W: (n_neurons, n_components) - basis vectors
     # H: (n_components, n_time_bins) - activations
-    basis = nmf.fit_transform(spike_counts_nn)
+    basis = nmf.fit_transform(spike_counts)
     activations = nmf.components_
-
     patterns = basis.T  # (n_components, n_neurons)
 
+    # A component with all-zero weights or activations reconstructs nothing.
+    live = (np.abs(patterns).sum(axis=1) > 0) & (np.abs(activations).sum(axis=1) > 0)
+    patterns, activations = patterns[live], activations[live]
+
     # Compute explained variance
-    reconstruction = basis @ activations
-    total_var = np.var(spike_counts_nn)
-    residual_var = np.var(spike_counts_nn - reconstruction)
-    total_explained = 1 - residual_var / total_var if total_var > 0 else 0
+    reconstruction = patterns.T @ activations
+    total_var = np.var(spike_counts)
+    residual_var = np.var(spike_counts - reconstruction)
+    total_explained = 1 - residual_var / total_var
 
     # Approximate per-component variance (proportional to pattern norm)
     pattern_norms = np.linalg.norm(patterns, axis=1)
-    total_norm = np.sum(pattern_norms)
-    if total_norm > 0:
-        explained_var = pattern_norms / total_norm * total_explained
-    else:
-        explained_var = np.zeros(n_components)
+    explained_var = pattern_norms / np.sum(pattern_norms) * total_explained
 
     return patterns, activations, explained_var
 
