@@ -313,17 +313,54 @@ class TestErrorAlongTheEnvironment:
         )
         assert decoding_error(w_track, decoded, actual)[0] > 100.0
 
-    def test_far_outside_position_is_measured_from_its_own_nearest_bin(self):
-        """However far off, a position is measured from its nearest bin, never
-        from bin -1 (the last bin) when a lookup cutoff gives up."""
+    def test_far_outside_position_has_no_geodesic_error(self):
+        """A position far beyond the environment is not in it: NaN, warned."""
         from neurospatial.decoding.metrics import decoding_error
 
         row = Environment.from_grid_mask(
             np.ones((5, 1), dtype=bool),
             grid_edges=(np.arange(6.0), np.array([0.0, 1.0])),
         )
-        far_left, first = np.array([[-1000.0, 0.5]]), np.array([[0.5, 0.5]])
-        np.testing.assert_array_equal(decoding_error(row, far_left, first), [0.0])
+        decoded = np.array([[-1000.0, 0.5], [1e6, 0.5], [2.5, 0.5]])
+        actual = np.array([[0.5, 0.5], [0.5, 0.5], [0.5, 0.5]])
+        with pytest.warns(UserWarning, match=r"2 of 3 time bins.*outside"):
+            errors = decoding_error(row, decoded, actual)
+        np.testing.assert_array_equal(errors, [np.nan, np.nan, 2.0])
+
+    def test_tracking_jitter_just_outside_the_track_is_measured(self, w_track):
+        """Half a centimeter beyond the 8 cm track width is still on the maze."""
+        import warnings
+
+        from neurospatial.decoding.metrics import decoding_error
+
+        jitter = np.array([[60.0, -4.5]])
+        assert w_track.bin_at(jitter)[0] == -1
+        nearest = w_track.bin_centers[w_track.nearest_bin(jitter)]
+        actual = np.array([[0.0, 79.0]])
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            error = decoding_error(w_track, jitter, actual)
+        np.testing.assert_allclose(error, decoding_error(w_track, nearest, actual))
+
+    def test_geodesic_error_is_between_bin_centers(self, small_2d_env):
+        """Two positions in one bin are zero apart along the graph."""
+        from neurospatial.decoding.metrics import decoding_error
+
+        center = small_2d_env.bin_centers[[0]]
+        offset = center + 0.2 * small_2d_env.bin_spacing
+        assert small_2d_env.bin_at(offset)[0] == 0
+        assert decoding_error(small_2d_env, center, offset)[0] == 0.0
+        assert decoding_error(small_2d_env, center, offset, metric="euclidean")[0] > 0
+
+    @pytest.mark.parametrize("metric", ["geodesic", "euclidean"])
+    def test_infinite_positions_are_refused(self, small_2d_env, metric):
+        from neurospatial.decoding.metrics import decoding_error
+
+        positions = small_2d_env.bin_centers[:3].copy()
+        bad = positions.copy()
+        bad[1, 0] = np.inf
+        with pytest.raises(ValueError, match=r"decoded_positions.*Inf.*1 of 3"):
+            decoding_error(small_2d_env, bad, positions, metric=metric)
 
     def test_geodesic_matches_all_pairs_shortest_paths(self, small_2d_env):
         from neurospatial.decoding.metrics import decoding_error
@@ -348,6 +385,42 @@ class TestErrorAlongTheEnvironment:
             decoding_error(
                 small_2d_env, np.zeros((3, 1)), np.zeros((3, 1)), metric="euclidean"
             )
+
+
+class TestPolarEuclideanError:
+    """On an egocentric polar environment the error is the physical distance."""
+
+    @pytest.fixture(scope="class")
+    def surround(self):
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 40.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 4,
+        )
+
+    def test_error_across_the_behind_seam_is_short(self, surround):
+        """Two places 0.4 cm apart behind the animal are 0.4 cm apart."""
+        from neurospatial.decoding.metrics import decoding_error
+
+        decoded = np.array([[10.0, np.pi - 0.02]])
+        actual = np.array([[10.0, -np.pi + 0.02]])
+        error = decoding_error(surround, decoded, actual, metric="euclidean")
+        np.testing.assert_allclose(error, [2 * 10.0 * np.sin(0.02)])
+
+    def test_error_is_the_chord_between_places(self, surround):
+        from neurospatial.decoding.metrics import decoding_error
+
+        decoded = np.array([[5.0, 0.0], [20.0, np.pi / 3]])
+        actual = np.array([[5.0, np.pi / 2], [10.0, 0.0]])
+        error = decoding_error(surround, decoded, actual, metric="euclidean")
+        expected = np.sqrt(
+            decoded[:, 0] ** 2
+            + actual[:, 0] ** 2
+            - 2 * decoded[:, 0] * actual[:, 0] * np.cos(decoded[:, 1] - actual[:, 1])
+        )
+        np.testing.assert_allclose(error, expected)
+        np.testing.assert_allclose(error[0], 5.0 * np.sqrt(2))
 
 
 class TestMedianDecodingError:

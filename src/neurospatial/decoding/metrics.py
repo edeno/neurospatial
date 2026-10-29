@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import _geodesic_pair_distances
 
@@ -60,12 +61,21 @@ def decoding_error(
 
         - "geodesic": Shortest-path distance between the positions' bins
           along the environment's connectivity graph (along the track on a
-          linearized track). A position outside every bin, such as a
-          posterior mean between two arms, is measured from its nearest bin.
-          Bins in disconnected components are ``inf`` apart. On an open grid
-          the graph path can exceed the straight line by up to about 8%
+          linearized track), measured between bin centers: the error is
+          quantized to the bins, and two positions in one bin are 0 apart.
+          A position outside every bin but within one ``env.bin_spacing``
+          of the environment's extent (its bounding box), such as tracking
+          jitter at an edge or a posterior mean between two arms, is
+          measured from its nearest bin. A position farther out is not in
+          the environment: its error is NaN, with a warning. Bins in
+          disconnected components are ``inf`` apart. On an open grid the
+          graph path can exceed the straight line by up to about 8%
           (8-connected neighbors).
-        - "euclidean": Straight-line distance between the positions.
+        - "euclidean": Straight-line distance between the positions. On an
+          egocentric polar environment, the distance between the two
+          places in the animal's plane (the chord
+          ``sqrt(r1**2 + r2**2 - 2 * r1 * r2 * cos(angle1 - angle2))``), so
+          angles a turn apart coincide.
 
     Returns
     -------
@@ -77,15 +87,23 @@ def decoding_error(
     ------
     ValueError
         If the position arrays differ in shape or do not have ``env.n_dims``
-        columns, or if ``metric`` is not "euclidean" or "geodesic".
+        columns, if either contains Inf, or if ``metric`` is not
+        "euclidean" or "geodesic".
     CartesianOnlyError
         If ``metric="geodesic"`` on an egocentric polar environment.
 
+    Warns
+    -----
+    UserWarning
+        If ``metric="geodesic"`` and a position lies outside the
+        environment (see ``metric``); its error is NaN.
+
     Notes
     -----
-    NaN values in either input propagate to NaN in output. This allows
-    downstream functions (like ``median_decoding_error``) to use
-    ``np.nanmedian`` for robust statistics.
+    NaN values in either input propagate to NaN in output: a missing
+    position has no error. This allows downstream functions (like
+    ``median_decoding_error``) to use ``np.nanmedian`` for robust
+    statistics.
 
     Examples
     --------
@@ -126,13 +144,36 @@ def decoding_error(
             "Pass (n_time_bins, n_dims) positions in the environment's coordinates."
         )
 
-    if metric == "euclidean":
-        diff = decoded_positions - actual_positions
-        return cast("NDArray[np.float64]", np.linalg.norm(diff, axis=1))
-    if metric != "geodesic":
+    if metric not in ("euclidean", "geodesic"):
         raise ValueError(
             f"Invalid metric '{metric}'. Must be 'euclidean' or 'geodesic'."
         )
+    for name, positions in (
+        ("decoded_positions", decoded_positions),
+        ("actual_positions", actual_positions),
+    ):
+        infinite = np.isinf(positions).any(axis=1)
+        if np.any(infinite):
+            raise ValueError(
+                _format_error(
+                    f"decoding_error(): {name} contains Inf in "
+                    f"{int(np.sum(infinite))} of {len(positions)} time bins.",
+                    why="an infinite position is not a place, so it has no "
+                    "distance to another position",
+                    fix="mark missing or invalid positions as NaN (their error "
+                    "is NaN), e.g. positions[np.isinf(positions).any(axis=1)] "
+                    "= np.nan",
+                )
+            )
+
+    if metric == "euclidean":
+        if env.coordinate_kind == "polar":
+            # (distance, angle) rows: measure between places in the animal's
+            # plane, so angles a turn apart coincide.
+            decoded_positions = _egocentric_plane(decoded_positions)
+            actual_positions = _egocentric_plane(actual_positions)
+        diff = decoded_positions - actual_positions
+        return cast("NDArray[np.float64]", np.linalg.norm(diff, axis=1))
 
     require_cartesian(
         env.coordinate_system,
@@ -147,26 +188,63 @@ def decoding_error(
         np.any(np.isnan(decoded_positions), axis=1)
         | np.any(np.isnan(actual_positions), axis=1)
     )
-    if np.any(valid):
-        errors[valid] = _geodesic_pair_distances(
+    decoded_bins = np.full(len(errors), -1, dtype=np.intp)
+    actual_bins = np.full(len(errors), -1, dtype=np.intp)
+    decoded_bins[valid] = _bins_or_nearest(env, decoded_positions[valid])
+    actual_bins[valid] = _bins_or_nearest(env, actual_positions[valid])
+    far = valid & ((decoded_bins < 0) | (actual_bins < 0))
+    if np.any(far):
+        warnings.warn(
+            f"decoding_error(): {int(np.sum(far))} of {len(errors)} time bins "
+            "have a decoded or actual position outside the environment, more "
+            "than one bin spacing beyond its extent, so their geodesic error "
+            "is NaN. Check those positions for tracking glitches or a "
+            "different coordinate frame, or use metric='euclidean'.",
+            UserWarning,
+            stacklevel=2,
+        )
+    measured = valid & ~far
+    if np.any(measured):
+        errors[measured] = _geodesic_pair_distances(
             env.connectivity,
-            _bins_or_nearest(env, decoded_positions[valid]),
-            _bins_or_nearest(env, actual_positions[valid]),
+            decoded_bins[measured],
+            actual_bins[measured],
             operation="decoding_error()",
         )
     return errors
 
 
+def _egocentric_plane(positions: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Polar ``(distance, angle)`` rows as ``(x ahead, y to the left)``."""
+    distance, angle = positions[:, 0], positions[:, 1]
+    return np.column_stack([distance * np.cos(angle), distance * np.sin(angle)])
+
+
 def _bins_or_nearest(
     env: Environment, positions: NDArray[np.float64]
 ) -> NDArray[np.intp]:
-    """Bin of each finite position, or its nearest bin when outside every bin."""
+    """Bin of each finite position, its nearest bin when just outside, else -1.
+
+    A position outside every bin is measured from its nearest bin when it
+    lies within one ``env.bin_spacing`` of the environment's extent (its
+    domain's bounding box, or the bin centers' when the domain is unknown):
+    tracking jitter at an edge, or a posterior mean between two arms of a
+    maze. A position farther out is not in the environment and gets -1.
+    """
     bins = np.asarray(env.bin_at(positions), dtype=np.intp)
-    outside = bins < 0
-    if np.any(outside):
-        # Every position is measured from its own nearest bin, however far
-        # off the tracking glitch or decode lies.
-        bins[outside] = env.nearest_bin(positions[outside])
+    outside = np.flatnonzero(bins < 0)
+    if outside.size:
+        bounds = env.arena.domain_bounds()
+        if bounds is None:
+            centers = env.bin_centers
+            bounds = np.stack([centers.min(axis=0), centers.max(axis=0)])
+        margin = env.bin_spacing
+        near = np.all(
+            (positions[outside] >= bounds[0] - margin)
+            & (positions[outside] <= bounds[1] + margin),
+            axis=1,
+        )
+        bins[outside[near]] = env.nearest_bin(positions[outside[near]])
     return bins
 
 
