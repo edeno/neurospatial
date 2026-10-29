@@ -158,10 +158,11 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
         [0, 1]. Higher values indicate more prominent assemblies. For PCA it
         is the pattern's eigenvalue over the number of varying neurons; for
         ICA, the variance of the z-scored counts reconstructed from the
-        pattern's source; for NMF, the variance over time of the pattern's
-        rank-1 reconstruction of the raw counts, as a fraction of their
-        summed variance. NMF components can overlap in time, so their
-        fractions need not add up to the variance the fit explains.
+        pattern's source; for NMF, the variance of the raw counts along the
+        unit-length pattern, ``w' S w / trace(S)`` for the counts'
+        covariance ``S``, which for a PCA eigenvector would equal its
+        eigenvalue fraction. NMF components can overlap, so their fractions
+        need not add up to the variance the fit explains.
     unit_ids : ndarray, shape (n_neurons,)
         Label of the unit each weight belongs to (read-only): the
         ``unit_ids=`` given to :func:`detect_assemblies`, else
@@ -1053,20 +1054,18 @@ def _detect_nmf(
 
     # W @ H is unchanged when a pattern is scaled by c and its activation by
     # 1 / c. Give every pattern unit length, as for PCA and ICA.
-    norms = np.linalg.norm(patterns, axis=1, keepdims=True)
-    patterns, activations = patterns / norms, activations * norms
+    patterns = patterns / np.linalg.norm(patterns, axis=1, keepdims=True)
 
-    # Explained variance of component k: the variance over time of its rank-1
-    # reconstruction outer(w_k, h_k), summed over neurons, as a fraction of
-    # the summed variance of the counts. Unlike a share of the total fit
-    # split by pattern norm, this does not depend on the W/H scaling.
-    # Components can overlap in time, so the fractions need not add up to the
-    # variance the whole factorization explains.
-    explained_var = (
-        np.sum(patterns**2, axis=1)
-        * np.var(activations, axis=1)
-        / np.sum(np.var(spike_counts, axis=1))
-    )
+    # Explained variance of component k: the variance of the counts along
+    # its unit pattern w_k, w_k' S w_k / trace(S) with S the counts'
+    # covariance. This is the variance of the least-squares reconstruction of
+    # the counts from that one direction, so it lies in [0, 1] and, unlike a
+    # share of the total fit split by pattern norm, it does not depend on the
+    # W/H scaling. For PCA eigenvectors the same definition gives the
+    # eigenvalue fraction. Components can overlap, so the fractions need not
+    # add up to the variance the whole factorization explains.
+    centered = spike_counts - spike_counts.mean(axis=1, keepdims=True)
+    explained_var = np.sum((patterns @ centered) ** 2, axis=1) / np.sum(centered**2)
 
     return patterns, explained_var
 

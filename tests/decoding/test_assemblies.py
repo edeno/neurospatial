@@ -169,6 +169,23 @@ class TestDetectAssemblies:
             residual = indicator - weights.T @ (weights @ indicator)
             assert np.linalg.norm(residual) < 0.2
 
+    @pytest.mark.parametrize("shape", [(3000, 40), (3, 8)], ids=["long", "short"])
+    def test_nmf_explained_variance_is_variance_along_the_pattern(
+        self, rng: np.random.Generator, shape: tuple[int, int]
+    ) -> None:
+        """w' S w / trace(S): bounded by 1 and free of the W/H scaling."""
+        counts = rng.poisson(3, shape).astype(np.float64)
+        counts[:, :4] += rng.poisson(3, (shape[0], 1))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            result = detect_assemblies(counts, algorithm="nmf", n_components=3, rng=0)
+        covariance = np.cov(counts, rowvar=False)
+        for pattern in result.patterns:
+            weights = pattern.weights
+            expected = weights @ covariance @ weights / np.trace(covariance)
+            assert_allclose(pattern.explained_variance_ratio, expected, rtol=1e-10)
+            assert 0.0 <= pattern.explained_variance_ratio <= 1.0
+
     @pytest.fixture
     def assemblies_of_unequal_strength(self) -> np.ndarray:
         """Three 5-cell assemblies whose shared drive is 2, 4 and 6 spikes."""
