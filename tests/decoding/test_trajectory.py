@@ -549,6 +549,34 @@ class TestDetectTrajectoryRadon:
         assert radon.speed == pytest.approx(linear.slope, rel=0.02)
         assert abs(radon.start_position - 20.0) <= _start_step(radon)
 
+    @pytest.mark.parametrize("tail", ["uniform", "gaussian"])
+    def test_partial_sweep_scores_the_same_reversed_in_time(self, tail):
+        """A sweep that fills part of the event may enter as well as leave the track.
+
+        Rows 0-5 sweep from 60 to 98 cm; the rest are spread out. Reversed in
+        time, the best line enters the track partway through the event.
+        """
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
+        )
+        times = np.arange(12) * 0.02
+        posterior = np.zeros((12, env.n_bins))
+        posterior[np.arange(6), 30 + 3 * np.arange(6) + 1] = 1.0
+        if tail == "uniform":
+            posterior[6:] = 1.0 / env.n_bins
+        else:
+            posterior[6:] = _wrapped_bump(env, np.full(6, 50.0), 25.0)
+
+        forward = detect_trajectory_radon(env, posterior, times)
+        position_reversed = detect_trajectory_radon(env, posterior[:, ::-1], times)
+        time_reversed = detect_trajectory_radon(env, posterior[::-1], times)
+
+        assert position_reversed.score == pytest.approx(forward.score, abs=1e-12)
+        assert time_reversed.score == pytest.approx(forward.score, abs=1e-12)
+        assert time_reversed.speed == pytest.approx(-forward.speed)
+
     def test_uniform_posterior_scores_below_a_sharp_sweep(self, forward):
         """A uniform posterior puts 2 * band / track length within the band."""
         from neurospatial.decoding.trajectory import detect_trajectory_radon
@@ -585,8 +613,12 @@ class TestDetectTrajectoryRadon:
         starts, speeds = result.sinogram_start_positions, result.sinogram_speeds
         np.testing.assert_allclose(np.diff(starts), _start_step(result))
         assert _start_step(result) <= 15.0 / 5
-        assert starts[0] == pytest.approx(_start_step(result) / 2)
-        assert starts[-1] == pytest.approx(self.N - _start_step(result) / 2)
+        # Starts are symmetric about the track's center and reach as far
+        # beyond its ends as the fastest trajectory travels in the event.
+        np.testing.assert_allclose(starts + starts[::-1], self.N)
+        reach = speeds[-1] * (times[-1] - times[0])
+        assert starts[0] <= -reach + _start_step(result)
+        assert np.any(np.isclose(starts, _start_step(result) / 2))
         np.testing.assert_allclose(np.diff(speeds), _speed_step(result))
         assert _speed_step(result) * (times[-1] - times[0]) == pytest.approx(
             _start_step(result)
@@ -625,6 +657,14 @@ class TestDetectTrajectoryRadon:
 
         with pytest.raises(ValueError, match=match):
             detect_trajectory_radon(*forward, **kwargs)
+
+    def test_times_in_milliseconds_are_refused(self, forward):
+        """Times 1000x too large make a search far beyond any replay event."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        env, posterior, times = forward
+        with pytest.raises(ValueError, match=r"(?s)would score.*in seconds"):
+            detect_trajectory_radon(env, posterior, times * 1000)
 
     def test_times_must_increase(self, forward):
         from neurospatial.decoding.trajectory import detect_trajectory_radon
@@ -1075,11 +1115,10 @@ class TestReplayScore:
         )
 
         starts_grid = result.sinogram_start_positions
+        on_track = starts_grid[(starts_grid >= edges[0]) & (starts_grid <= edges[-1])]
         off_track_mass = np.array(
             [
-                np.median(
-                    [_band_mass(starts, stops, row, x, band) for x in starts_grid]
-                )
+                np.median([_band_mass(starts, stops, row, x, band) for x in on_track])
                 for row in posterior
             ]
         )
@@ -1088,6 +1127,10 @@ class TestReplayScore:
             for j in range(0, len(starts_grid), 5):
                 path = starts_grid[j] + result.sinogram_speeds[i] * (times - times[0])
                 off = (path < edges[0]) | (path > edges[-1])
+                if off.all():
+                    # Never on the track: not a candidate.
+                    assert np.isnan(result.sinogram[i, j])
+                    continue
                 checked_off_track |= bool(off.any())
                 expected = np.mean(
                     [
@@ -1250,6 +1293,31 @@ class TestReplaySignificance:
         # Under the null, P(p <= 0.1) = 0.1: 20 of 200 expected (sd 4.2).
         assert 8 <= np.sum(p_values <= 0.1) <= 32
         assert 0.4 < np.mean(p_values) < 0.6
+
+    def test_shuffles_tied_with_the_observed_score_count_as_ties(self):
+        """Scores equal up to rounding compare equal, so ties raise the p-value.
+
+        Every row is a delta within the band of a stationary line, so the
+        observed score and many shuffles' scores are exactly 1.
+        """
+        from neurospatial.decoding import replay_trajectory_significance
+
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0, units="cm"
+        )
+        times = np.arange(3) * 0.02
+        posterior = np.zeros((3, env.n_bins))
+        posterior[:, 10] = 1.0
+        result = replay_trajectory_significance(
+            env, posterior, times, n_shuffles=200, rng=0
+        )
+        null = result.shuffles["column_cycle"].null_scores
+
+        assert result.trajectory.score == 1.0
+        assert null.max() <= 1.0
+        tied = int(np.sum(null == 1.0))
+        assert tied > 0
+        assert result.p_value == pytest.approx((tied + 1) / 201)
 
     def test_seeded_results_repeat(self, place_code):
         from neurospatial.decoding import replay_trajectory_significance

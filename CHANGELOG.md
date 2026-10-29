@@ -101,8 +101,12 @@ matches the region's mass to within 0.0032.
 - New `replay_trajectory_significance` tests the replay score against
   Davidson et al.'s column-cycle, unit-identity and pseudo-event shuffles
   (1500 each by default), refitting the trajectory to every shuffle, and
-  reports each p-value and the largest. A 0.5 s event on a 2 m track takes
-  about 3 s with all three shuffles.
+  reports each p-value and the largest. Trajectories that enter the track
+  during the event are searched as well as those that leave it, and scores
+  equal up to rounding compare equal, so ties with the observed score count
+  against it. A 0.5 s event on a 2 m track takes about 7 s with all three
+  shuffles. Times that make the search implausibly large (for example times
+  in milliseconds) are refused.
 - A stationary decode has `r_squared = NaN` (it was 1, which passed replay
   screens) and an isotonic `direction` of `None`.
 - `decoding_error(metric="euclidean")` on polar environments returns the
