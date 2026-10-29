@@ -69,11 +69,13 @@ class TMazeDims(MazeDims):
     Attributes
     ----------
     stem_length : float
-        Length of the stem's centreline in cm, from its far end to the
-        crossbar's centreline. Default is 100.0.
+        Length of the stem's centreline in cm, from its far end wall to the
+        junction centre, where the stem's and the crossbar's centrelines
+        cross. Default is 100.0.
     arm_length : float
-        Length of each arm's centreline in cm, from the stem's centreline to
-        the arm's far end. Default is 50.0.
+        Length of each arm's centreline in cm, from the junction centre to
+        the arm's far end wall, as in the Y, plus and W mazes. Default is
+        50.0, so the crossbar spans ``2 * arm_length`` (100 cm).
     corridor_width : float
         Width of all corridors in cm. Default is 10.0.
 

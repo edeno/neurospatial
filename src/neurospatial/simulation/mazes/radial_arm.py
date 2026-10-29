@@ -80,8 +80,11 @@ class RadialArmDims(MazeDims):
         Radius of the central platform in cm. Default is 17.75 (35.5 cm
         diameter).
     arm_length : float
-        Length of each arm from the edge of the central platform to the arm's
-        far end in cm. Default is 76.0.
+        Length of each arm in cm along its centreline, from the edge of the
+        central platform to the arm's far end, the length Zoladek & Roberts
+        (1978) give. Unlike the T, Y, plus and W mazes, it excludes the
+        platform: an arm's end lies ``center_radius + arm_length`` from the
+        maze centre. Default is 76.0.
     corridor_width : float
         Width of each arm corridor in cm. Default is 9.0.
     n_arms : int

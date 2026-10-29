@@ -94,9 +94,17 @@ class RepeatedYDims(MazeDims):
     n_junctions : int
         Number of Y-junctions in series. Default is 4.
     arm_length : float
-        Length of each arm in the Y-junction in cm. Default is 25.0.
+        Length of each arm's centreline in cm, from the junction centre to
+        the centre of the arm's rounded end. Arms that join neighbouring
+        junctions meet end to end, so those junctions are
+        ``2 * arm_length`` apart along the corridor; an arm with a free end
+        reaches ``arm_length + corridor_width / 2`` from its junction.
+        Default is 25.0, a placeholder.
     fork_length : float
-        Length of the small fork arms at each terminal in cm. Default is 12.0.
+        Length of each fork arm's centreline in cm, from the terminal arm's
+        end to the centre of the fork arm's rounded end, which reaches
+        ``fork_length + corridor_width / 2``. Default is 12.0, a
+        placeholder.
     corridor_width : float
         Width of all corridors in cm. Default is 10.16 (4 in; an estimate,
         since Warden's alley width is not reproduced here).

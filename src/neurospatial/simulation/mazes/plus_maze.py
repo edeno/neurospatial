@@ -69,8 +69,9 @@ class PlusMazeDims(MazeDims):
     Attributes
     ----------
     arm_length : float
-        Length of each arm in cm, from the centre to the arm's far end wall.
-        Default is 45.0.
+        Length of each arm's centreline in cm, from the junction centre,
+        where the arms' centrelines cross, to the arm's far end wall, as in
+        the T, Y and W mazes. Default is 45.0.
     corridor_width : float
         Width of all corridors in cm. Default is 10.0.
 

@@ -108,11 +108,16 @@ class RepeatedTDims(MazeDims):
     corridor_width : float
         Width of every alley in cm. Default is 10.16 (4 in, from the figure).
     arm_length : float
-        Length of each alley segment in cm. Default is 40.64 (16 in, from the
-        figure).
+        Length of each alley segment in cm, measured as the figure labels
+        it: along the alley's walls, from the side wall of the alley it
+        leaves to the side wall of the next alley (or to its end), so it
+        excludes the half widths of the alleys at each end. Neighbouring
+        choice points are ``arm_length + corridor_width`` apart centre to
+        centre. Default is 40.64 (16 in, from the figure).
     long_arm_length : float
         Length of the two segments that join choice points 4, 5 and 6, in
-        cm. Default is 45.72 (18 in, from the figure). It must exceed
+        cm, measured along the walls like ``arm_length``. Default is 45.72
+        (18 in, from the figure). It must exceed
         ``arm_length``: the difference is the wall between blind alley 6 and
         the alley to choice point 3.
     wall_thickness : float

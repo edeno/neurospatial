@@ -59,7 +59,15 @@ class MazeDims:
     Notes
     -----
     All MazeDims subclasses are frozen dataclasses, making dimension
-    specifications immutable after creation.
+    specifications immutable after creation. Lengths are in cm.
+
+    ``arm_length`` is measured from the junction centre, where the
+    corridors' centrelines meet, to the arm's far end wall in the T, Y, plus
+    and W mazes. The radial-arm and repeated T mazes keep their source's
+    measure (from the platform's edge, and along the walls between crossing
+    alleys), so their published lengths stay as published; the repeated Y
+    maze measures to the centre of an arm's rounded end. Each class's
+    attributes say exactly what is measured.
 
     Examples
     --------
