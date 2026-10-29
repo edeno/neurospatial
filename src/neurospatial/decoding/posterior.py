@@ -1008,8 +1008,8 @@ def _decode_and_reduce_block(
     prior_block: NDArray[np.float64] | None,
     validate: bool,
     dtype: Any,
-    mean_basis: NDArray[np.float64] | None = None,
-    measures: NDArray[np.float64] | None = None,
+    mean_basis: NDArray[np.float64],
+    measures: NDArray[np.float64] | None,
 ) -> tuple[
     NDArray[np.int64],
     NDArray[np.float64],
@@ -1043,9 +1043,11 @@ def _decode_and_reduce_block(
         If ``True``, run the per-block posterior-sum output check.
     dtype : np.float32 or np.float64
         Working dtype of the posterior block.
-    mean_basis : NDArray[np.float64] or None, shape (n_bins, n_dims)
-        Coordinates averaged for the posterior mean; defaults to
-        ``bin_centers``. Polar callers pass egocentric-plane coordinates.
+    mean_basis : NDArray[np.float64], shape (n_bins, n_dims)
+        Coordinates averaged for the posterior mean, from
+        :func:`~neurospatial.decoding.estimates._posterior_mean_basis`: bin
+        centers, or egocentric-plane coordinates for polar environments.
+        Pass the block means through ``_finish_posterior_mean``.
     measures : NDArray[np.float64] or None, shape (n_bins,)
         Bin measures relative to the largest bin, used for the MAP bin;
         ``None`` for equal bins.
@@ -1055,7 +1057,7 @@ def _decode_and_reduce_block(
     map_bin : NDArray[np.int64], shape (n_block,)
         MAP bin index per time bin.
     mean_position : NDArray[np.float64], shape (n_block, n_dims)
-        Posterior-mean position per time bin.
+        Posterior-weighted mean of ``mean_basis`` per time bin.
     entropy : NDArray[np.float64], shape (n_block,)
         Posterior entropy (bits) per time bin.
     peak_prob : NDArray[np.float64], shape (n_block,)
@@ -1070,7 +1072,7 @@ def _decode_and_reduce_block(
     if validate:
         _validate_output(post_block)
     block_map_bin, block_mean, block_entropy, block_peak = _reduce_posterior_block(
-        post_block, bin_centers if mean_basis is None else mean_basis, measures
+        post_block, mean_basis, measures
     )
     # post_block goes out of scope and is reclaimed before the next block.
     return block_map_bin, block_mean, block_entropy, block_peak

@@ -1082,7 +1082,13 @@ def _decode_with_models_summary(
     )
     prior_is_time_varying = prior is not None and np.ndim(prior) == 2
 
+    from neurospatial.decoding.estimates import (
+        _finish_posterior_mean,
+        _posterior_mean_basis,
+    )
+
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
+    mean_basis = _posterior_mean_basis(env)
     measures = relative_bin_measures(env, context=context)
     n_dims = bin_centers.shape[1]
 
@@ -1120,6 +1126,7 @@ def _decode_with_models_summary(
             prior_block=block_prior,
             validate=validate,
             dtype=dtype,
+            mean_basis=mean_basis,
             measures=measures,
         )
         map_bin[start:stop] = block_map_bin
@@ -1128,6 +1135,7 @@ def _decode_with_models_summary(
         peak_prob[start:stop] = block_peak
         # counts_block / block posterior go out of scope before the next block.
 
+    mean_position = _finish_posterior_mean(env, mean_position)
     return DecodingSummary._from_owned(
         times=bin_centers_time,
         mean_position=mean_position,

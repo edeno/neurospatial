@@ -881,3 +881,37 @@ class TestSummaryDecodeStreamingThroughput:
         assert result.map_bin.shape[0] == n_time
         assert spy.call_count > 0
         assert spy.call_count == expected_blocks == 4
+
+
+def test_polar_summary_mean_matches_full_posterior_mean():
+    """predict_summary averages polar bins in the egocentric plane, like predict.
+
+    Averaging raw (distance, angle) columns gives a different, wrong point.
+    """
+    from neurospatial import Environment
+    from neurospatial.decoding import BayesianDecoder
+
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 30.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 8,
+    )
+    rng = np.random.default_rng(0)
+    centers = env.bin_centers
+    xy = np.column_stack(
+        [centers[:, 0] * np.cos(centers[:, 1]), centers[:, 0] * np.sin(centers[:, 1])]
+    )
+    peaks = rng.uniform(-25.0, 25.0, (8, 2))
+    distances_sq = ((xy[None] - peaks[:, None]) ** 2).sum(axis=-1)
+    models = 2.0 + 20.0 * np.exp(-distances_sq / (2 * 8.0**2))
+    decoder = BayesianDecoder.from_models(env, models, dt=0.25)
+
+    times = np.arange(0.0, 20.0, 0.25)
+    spike_rng = np.random.default_rng(1)
+    spikes = [np.sort(spike_rng.uniform(0.0, 20.0, 40)) for _ in range(8)]
+    full = decoder.predict(spikes, times)
+    summary = decoder.predict_summary(spikes, times, time_chunk=7)
+
+    np.testing.assert_allclose(summary.mean_position, full.mean_position, atol=1e-9)
+    np.testing.assert_array_equal(summary.map_bin, full.map_bin)
