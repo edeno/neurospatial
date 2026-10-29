@@ -277,26 +277,21 @@ class TestEdgeCases:
         from neurospatial import Environment
         from neurospatial.decoding import DecodingResult
 
-        # Create a minimal single-bin environment
-        env = Environment.from_samples(
-            np.array([[0.0, 0.0], [1.0, 1.0]]),
-            bin_size=10.0,  # Large bin size to get single bin
+        env = Environment.from_grid_mask(
+            np.ones(1, dtype=bool), grid_edges=(np.array([0.0, 10.0]),)
         )
+        assert env.n_bins == 1
+        n_time_bins = 5
+        posterior = np.ones((n_time_bins, 1))  # Only one bin, always prob=1
 
-        if env.n_bins == 1:
-            n_time_bins = 5
-            posterior = np.ones((n_time_bins, 1))  # Only one bin, always prob=1
+        result = DecodingResult(posterior=posterior, env=env)
 
-            result = DecodingResult(posterior=posterior, env=env)
-
-            assert result.n_time_bins == n_time_bins
-            np.testing.assert_array_equal(result.map_bin, np.zeros(n_time_bins))
-            # Entropy of single bin is 0 (log2(1) = 0)
-            np.testing.assert_array_almost_equal(
-                result.posterior_entropy, np.zeros(n_time_bins)
-            )
-        else:
-            pytest.skip("Could not create single-bin environment")
+        assert result.n_time_bins == n_time_bins
+        np.testing.assert_array_equal(result.map_bin, np.zeros(n_time_bins))
+        np.testing.assert_array_equal(result.map_position, 5.0)
+        # Entropy of single bin is 0 (log2(1) = 0)
+        np.testing.assert_array_equal(result.posterior_entropy, 0.0)
+        assert result.summary()["max_entropy"] == 0.0
 
 
 class TestPlotMethod:

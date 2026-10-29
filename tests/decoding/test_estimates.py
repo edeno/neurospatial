@@ -388,30 +388,24 @@ class TestEdgeCases:
             posterior_entropy,
         )
 
-        # Create a minimal single-bin environment
-        env = Environment.from_samples(
-            np.array([[0.0, 0.0], [1.0, 1.0]]),
-            bin_size=10.0,  # Large bin size to get single bin
+        env = Environment.from_grid_mask(
+            np.ones(1, dtype=bool), grid_edges=(np.array([0.0, 10.0]),)
         )
+        assert env.n_bins == 1
+        n_time_bins = 5
+        posterior = np.ones((n_time_bins, 1))  # Only one bin, always prob=1
 
-        if env.n_bins == 1:
-            n_time_bins = 5
-            posterior = np.ones((n_time_bins, 1))  # Only one bin, always prob=1
-
-            np.testing.assert_array_equal(
-                map_bin(env, posterior), np.zeros(n_time_bins)
-            )
-            assert map_position(env, posterior).shape == (n_time_bins, env.n_dims)
-            assert mean_position(env, posterior).shape == (n_time_bins, env.n_dims)
-            # Entropy of single bin is 0 (log2(1) = 0)
-            np.testing.assert_array_almost_equal(
-                posterior_entropy(posterior), np.zeros(n_time_bins)
-            )
-            # Credible region with single bin
-            regions = credible_region(env, posterior, level=0.5)
-            assert all(len(r) == 1 for r in regions)
-        else:
-            pytest.skip("Could not create single-bin environment")
+        np.testing.assert_array_equal(map_bin(env, posterior), np.zeros(n_time_bins))
+        np.testing.assert_array_equal(
+            map_position(env, posterior), np.full((n_time_bins, 1), 5.0)
+        )
+        np.testing.assert_array_equal(
+            mean_position(env, posterior), np.full((n_time_bins, 1), 5.0)
+        )
+        # Entropy of single bin is 0 (log2(1) = 0)
+        np.testing.assert_array_equal(posterior_entropy(posterior), 0.0)
+        regions = credible_region(env, posterior, level=0.5)
+        assert [r.tolist() for r in regions] == [[0]] * n_time_bins
 
 
 class TestCredibleRegionNaN:
