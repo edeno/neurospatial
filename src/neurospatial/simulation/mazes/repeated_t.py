@@ -88,6 +88,7 @@ from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
+    single_floor,
     union_polygons,
     warn_if_bins_bridge_walls,
 )
@@ -250,7 +251,7 @@ def make_repeated_t_maze(
         stem_end,
         dims.start_box_width / 2.0,
     )
-    maze_polygon = union_polygons([*alleys, start_box])
+    maze_polygon = single_floor(union_polygons([*alleys, start_box]), dims)
 
     # Put the origin at the centre of the maze's bounding box.
     min_x, min_y, max_x, max_y = maze_polygon.bounds

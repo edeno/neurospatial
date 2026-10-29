@@ -52,6 +52,7 @@ from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
+    single_floor,
     union_polygons,
 )
 
@@ -190,7 +191,7 @@ def make_y_maze(
     ]
 
     # Union all corridors into single polygon
-    y_polygon = union_polygons(arm_polygons)
+    y_polygon = single_floor(union_polygons(arm_polygons), dims)
 
     # Create 2D environment
     env_2d = Environment.from_polygon(

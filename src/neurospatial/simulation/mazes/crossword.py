@@ -70,6 +70,7 @@ from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
+    single_floor,
     union_polygons,
 )
 
@@ -239,7 +240,7 @@ def make_crossword_maze(
             x - half_box, y - half_box, x + half_box, y + half_box
         )
 
-    floor = union_polygons([*tracks, *boxes.values()])
+    floor = single_floor(union_polygons([*tracks, *boxes.values()]), dims)
     env_2d = Environment.from_polygon(
         polygon=floor,
         bin_size=bin_size,

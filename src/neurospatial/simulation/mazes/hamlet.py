@@ -102,6 +102,7 @@ from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_corridor_polygon,
+    single_floor,
     union_polygons,
 )
 
@@ -313,7 +314,7 @@ def make_hamlet_maze(
         make_corridor_polygon((0.0, 0.0), tuple(end), dims.corridor_width)
         for end in _agora_exits(dims, ring)
     ]
-    floor = union_polygons([alleys, agora, *exits, *houses])
+    floor = single_floor(union_polygons([alleys, agora, *exits, *houses]), dims)
 
     env_2d = Environment.from_polygon(
         polygon=floor,

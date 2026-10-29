@@ -58,7 +58,6 @@ from neurospatial.simulation.mazes._geometry import (
     make_buffered_line,
     make_circular_arena,
     make_corridor_polygon,
-    make_star_graph,
     union_polygons,
 )
 from neurospatial.simulation.mazes.barnes import (
@@ -196,7 +195,6 @@ __all__ = [
     "make_repeated_y_maze",
     "make_small_hex_maze",
     "make_square_maze",
-    "make_star_graph",
     "make_sungod_maze",
     "make_t_maze",
     "make_w_maze",

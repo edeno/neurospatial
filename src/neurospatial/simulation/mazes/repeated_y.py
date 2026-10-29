@@ -73,7 +73,11 @@ from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
-from neurospatial.simulation.mazes._geometry import make_buffered_line, union_polygons
+from neurospatial.simulation.mazes._geometry import (
+    make_buffered_line,
+    single_floor,
+    union_polygons,
+)
 
 
 @dataclass(frozen=True)
@@ -302,7 +306,7 @@ def make_repeated_y_maze(
         regions[f"junction_{junction_idx + 1}"] = junction_pos.copy()
 
     # Union all corridors and put the origin at the centre of the bounding box
-    maze_polygon = union_polygons(polygons)
+    maze_polygon = single_floor(union_polygons(polygons), dims)
     min_x, min_y, max_x, max_y = maze_polygon.bounds
     offset = np.array([(min_x + max_x) / 2.0, (min_y + max_y) / 2.0])
     maze_polygon = translate(maze_polygon, -offset[0], -offset[1])

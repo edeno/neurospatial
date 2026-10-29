@@ -59,6 +59,7 @@ from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_buffered_line,
+    single_floor,
     union_polygons,
 )
 
@@ -274,7 +275,7 @@ def make_rat_hexmaze(
     }
 
     env_2d = Environment.from_polygon(
-        polygon=union_polygons([all_modules, *bridges.values()]),
+        polygon=single_floor(union_polygons([all_modules, *bridges.values()]), dims),
         bin_size=bin_size,
         name="rat_hexmaze",
         connect_diagonal_neighbors=True,

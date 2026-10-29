@@ -58,6 +58,7 @@ from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_circular_arena,
     make_corridor_polygon,
+    single_floor,
     union_polygons,
 )
 
@@ -260,7 +261,7 @@ def make_radial_arm_maze(
         )
 
     # Union center and all arms into single polygon
-    radial_polygon = union_polygons([center_polygon, *arm_polygons])
+    radial_polygon = single_floor(union_polygons([center_polygon, *arm_polygons]), dims)
 
     # Create 2D environment
     env_2d = Environment.from_polygon(
