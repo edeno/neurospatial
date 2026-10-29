@@ -124,12 +124,13 @@ class HamptonCourtDims(MazeDims):
 
     Attributes
     ----------
-    width : float
+    frame_width : float
         East-west extent of the frame in cm. Default is 243.84 (8 ft, Small
         1901).
-    height : float
+    frame_depth : float
         North-south extent of the frame in cm, entrance side to far side.
-        Default is 182.88 (6 ft, Small 1901).
+        Default is 182.88 (6 ft, Small 1901). Small's "height of the sides"
+        is the walls' height, 4 in, which the floor plan does not use.
     corridor_width : float
         Width of every gallery in cm. Default is 10.16 (4 in, Small 1901).
 
@@ -141,15 +142,15 @@ class HamptonCourtDims(MazeDims):
     Examples
     --------
     >>> dims = HamptonCourtDims()
-    >>> dims.width, dims.height, dims.corridor_width
+    >>> dims.frame_width, dims.frame_depth, dims.corridor_width
     (243.84, 182.88, 10.16)
 
     >>> HamptonCourtDims(corridor_width=8.0).corridor_width
     8.0
     """
 
-    width: float = 243.84
-    height: float = 182.88
+    frame_width: float = 243.84
+    frame_depth: float = 182.88
     corridor_width: float = 10.16
 
 
@@ -219,7 +220,9 @@ def make_hampton_court_maze(
 
     A smaller copy with the same layout:
 
-    >>> dims = HamptonCourtDims(width=200.0, height=150.0, corridor_width=8.0)
+    >>> dims = HamptonCourtDims(
+    ...     frame_width=200.0, frame_depth=150.0, corridor_width=8.0
+    ... )
     >>> maze = make_hampton_court_maze(dims=dims, include_track=False)
     >>> maze.env_track is None
     True
@@ -231,11 +234,12 @@ def make_hampton_court_maze(
     if dims is None:
         dims = HamptonCourtDims()
     if (
-        dims.width <= _N_COLUMNS * dims.corridor_width
-        or dims.height <= _N_ROWS * dims.corridor_width
+        dims.frame_width <= _N_COLUMNS * dims.corridor_width
+        or dims.frame_depth <= _N_ROWS * dims.corridor_width
     ):
         raise ValueError(
-            f"HamptonCourtDims(width={dims.width}, height={dims.height}) cannot "
+            f"HamptonCourtDims(frame_width={dims.frame_width}, "
+            f"frame_depth={dims.frame_depth}) cannot "
             f"hold {_N_COLUMNS} x {_N_ROWS} galleries {dims.corridor_width} cm "
             "wide with walls between them. Make the frame larger than "
             f"{_N_COLUMNS * dims.corridor_width} x "
@@ -280,8 +284,8 @@ def make_hampton_court_maze(
 def _pitch(dims: HamptonCourtDims) -> tuple[float, float]:
     """Centre-to-centre spacing of neighbouring galleries (x, y), in cm."""
     return (
-        (dims.width - dims.corridor_width) / (_N_COLUMNS - 1),
-        (dims.height - dims.corridor_width) / (_N_ROWS - 1),
+        (dims.frame_width - dims.corridor_width) / (_N_COLUMNS - 1),
+        (dims.frame_depth - dims.corridor_width) / (_N_ROWS - 1),
     )
 
 
@@ -290,15 +294,15 @@ def _cell_center(cell: _Cell, dims: HamptonCourtDims) -> tuple[float, float]:
     half = dims.corridor_width / 2.0
     pitch_x, pitch_y = _pitch(dims)
     return (
-        -dims.width / 2.0 + half + cell[0] * pitch_x,
-        -dims.height / 2.0 + half + cell[1] * pitch_y,
+        -dims.frame_width / 2.0 + half + cell[0] * pitch_x,
+        -dims.frame_depth / 2.0 + half + cell[1] * pitch_y,
     )
 
 
 def _entrance(dims: HamptonCourtDims) -> tuple[float, float]:
     """The entrance gap in the middle of the south wall."""
     x, _ = _cell_center((_ENTRANCE_COLUMN, 0), dims)
-    return (x, -dims.height / 2.0)
+    return (x, -dims.frame_depth / 2.0)
 
 
 def _room_center(dims: HamptonCourtDims) -> tuple[float, float]:

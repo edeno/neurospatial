@@ -114,7 +114,7 @@ class TestRepeatedMazesSpecificBehavior:
     def test_hampton_court_is_large(self):
         """Small's (1901) maze measured 8 by 6 ft."""
         dims = HamptonCourtDims()
-        assert (dims.width, dims.height) == pytest.approx((243.84, 182.88))
+        assert (dims.frame_width, dims.frame_depth) == pytest.approx((243.84, 182.88))
 
 
 class TestRepeatedMazesComplexity:
