@@ -916,13 +916,12 @@ class TestSimulateTrajectoryLaps:
             "direction should have same length as positions"
         )
 
-        # Check direction values are valid
-        unique_directions = np.unique(metadata["direction"])
-        valid_directions = {"outbound", "inbound"}
-        for direction in unique_directions:
-            assert direction in valid_directions, (
-                f"Invalid direction '{direction}', expected one of {valid_directions}"
-            )
+        # Running samples are outbound or inbound; pause samples are neither
+        # and belong to no lap.
+        assert set(np.unique(metadata["direction"])) == {"outbound", "inbound", "pause"}
+        paused = metadata["direction"] == "pause"
+        np.testing.assert_array_equal(metadata["lap_ids"][paused], -1)
+        assert np.all(metadata["lap_ids"][~paused] >= 0)
 
     def test_pauses_at_lap_ends(self, connected_arena_env):
         """Test that trajectory includes pauses at lap ends."""

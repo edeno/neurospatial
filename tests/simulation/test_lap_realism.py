@@ -40,21 +40,10 @@ def box_laps(box_env):
     return simulate_trajectory_laps(box_env, n_laps=3, seed=1, return_metadata=True)
 
 
-def _pause_mask(metadata):
-    """True for the pause samples that end every lap but the last."""
-    lap_ids = metadata["lap_ids"]
-    paused = np.zeros(lap_ids.size, dtype=bool)
-    for lap in np.unique(lap_ids)[:-1]:
-        paused[np.flatnonzero(lap_ids == lap)[-PAUSE_SAMPLES:]] = True
-    return paused
-
-
 def _moving_steps(metadata):
-    """True for steps whose two samples are outside pauses and not a lap start."""
-    paused = _pause_mask(metadata)
-    lap_start = np.zeros(paused.size, dtype=bool)
-    lap_start[metadata["lap_boundaries"]] = True
-    return ~paused[:-1] & ~paused[1:] & ~lap_start[1:]
+    """True for steps whose two samples belong to one traversal."""
+    lap_ids = metadata["lap_ids"]
+    return (lap_ids[:-1] == lap_ids[1:]) & (lap_ids[1:] >= 0)
 
 
 def _steps(positions):
@@ -84,22 +73,47 @@ def test_path_is_smooth(box_laps):
 
 
 def test_pauses_only_at_lap_ends(box_laps):
-    positions, _times, metadata = box_laps
-    zero_steps = np.flatnonzero(_steps(positions) == 0)
+    """The animal stands still only during pauses, for exactly pause_duration."""
+    positions, times, metadata = box_laps
+    still = _steps(positions) == 0
     # Step i joins samples i and i + 1. The pause before the lap starting at
-    # boundary b fills samples [b - PAUSE_SAMPLES, b) at the previous lap's end,
-    # and the next lap starts there, so its zero steps are [b - PAUSE_SAMPLES - 1, b).
+    # boundary b fills samples [b - PAUSE_SAMPLES, b) at the previous lap's
+    # last position, so its still steps are [b - PAUSE_SAMPLES - 1, b - 1).
     boundaries = metadata["lap_boundaries"][1:]
-    at_lap_end = np.any(
-        (zero_steps[:, None] >= boundaries - PAUSE_SAMPLES - 1)
-        & (zero_steps[:, None] < boundaries),
-        axis=1,
-    )
-    assert np.all(at_lap_end)
-    # Every lap end but the last holds still for the whole pause.
+    expected = np.zeros_like(still)
     for boundary in boundaries:
-        pause_steps = _steps(positions)[boundary - PAUSE_SAMPLES - 1 : boundary]
-        assert np.all(pause_steps == 0)
+        expected[boundary - PAUSE_SAMPLES - 1 : boundary - 1] = True
+    np.testing.assert_array_equal(still, expected)
+    # Held from arrival at the well to the last pause sample: 0.5 s.
+    for boundary in boundaries:
+        held = times[boundary - 1] - times[boundary - PAUSE_SAMPLES - 1]
+        assert held == pytest.approx(0.5)
+
+
+def test_pause_samples_are_labelled_as_pauses(box_laps):
+    """Directional occupancy from the labels counts only running samples."""
+    positions, _times, metadata = box_laps
+    paused = metadata["direction"] == "pause"
+    np.testing.assert_array_equal(paused, metadata["lap_ids"] == -1)
+    assert paused.sum() == 2 * PAUSE_SAMPLES
+    assert set(np.unique(metadata["direction"])) == {"outbound", "inbound", "pause"}
+    # Every running sample but a lap's last moves on to the next sample.
+    running = _moving_steps(metadata)
+    assert np.all(_steps(positions)[running] > 0)
+    # Laps start at their boundaries and alternate direction.
+    starts = metadata["lap_boundaries"]
+    np.testing.assert_array_equal(metadata["lap_ids"][starts], [0, 1, 2])
+    np.testing.assert_array_equal(
+        metadata["direction"][starts], ["outbound", "inbound", "outbound"]
+    )
+
+
+def test_no_sample_repeats_at_a_lap_boundary_without_pauses(box_env):
+    positions, _times, metadata = simulate_trajectory_laps(
+        box_env, n_laps=4, pause_duration=0.0, seed=1, return_metadata=True
+    )
+    assert np.all(_steps(positions) > 0)
+    assert not np.any(metadata["direction"] == "pause")
 
 
 def test_laps_stay_inside_environment(box_env, box_laps):

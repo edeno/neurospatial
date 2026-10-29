@@ -900,7 +900,8 @@ def simulate_trajectory_laps(
         Bin indices for the inbound traversal, with the same rule as
         ``outbound_path``. If None, reverses outbound_path.
     pause_duration : float, optional
-        Pause at lap ends in seconds (default: 0.5s).
+        Time the animal holds still at the end of each traversal but the
+        last, in seconds (default: 0.5 s), rounded to whole samples.
     sampling_frequency : float, optional
         Samples per second (default: 500 Hz).
     seed : int | None, optional
@@ -921,9 +922,15 @@ def simulate_trajectory_laps(
     metadata : dict, optional (if return_metadata=True)
         Dictionary with keys:
 
-        - 'lap_ids' : NDArray[np.int_], shape (n_time,) - Lap number for each time
-        - 'lap_boundaries' : NDArray[np.int_] - Indices where laps start
-        - 'direction' : NDArray[str] - 'outbound' or 'inbound' for each time
+        - 'lap_ids' : NDArray[np.int_], shape (n_time,) - Traversal number
+          (0, 1, ...) of each sample, -1 during a pause.
+        - 'lap_boundaries' : NDArray[np.int_], shape (n_laps,) - Index of the
+          first sample of each traversal.
+        - 'direction' : NDArray[str], shape (n_time,) - 'outbound' or
+          'inbound' while running, 'pause' while holding still at a lap end.
+
+        A pause belongs to no traversal, so selecting
+        ``direction == "outbound"`` counts only time spent running outbound.
 
     Raises
     ------
@@ -1183,6 +1190,9 @@ def _simulate_trajectory_laps(
     # Time step
     dt = 1.0 / sampling_frequency
 
+    # A pause holds the arrival position for pause_duration: this many more
+    # samples after the lap's last one.
+    pause_samples = round(pause_duration * sampling_frequency)
     lap_sample_counts = None
     if duration is not None:
         # Allocate the requested clock first, keeping fixed pauses and at least
@@ -1190,7 +1200,6 @@ def _simulate_trajectory_laps(
         total_samples = int(np.ceil(duration * sampling_frequency))
         if (total_samples - 1) / sampling_frequency >= duration:
             total_samples -= 1
-        pause_samples = int(pause_duration * sampling_frequency)
         minimum_samples = 2 * n_laps + pause_samples * (n_laps - 1)
         if total_samples < minimum_samples:
             raise ValueError(
@@ -1225,13 +1234,13 @@ def _simulate_trajectory_laps(
         extras[order[:remaining]] += 1
         lap_sample_counts = extras + 2
 
-    # Build trajectory by concatenating laps
-    all_positions = []
-    all_times = []
-    all_lap_ids = []
-    all_directions = []
-    lap_boundaries_list = [0]  # Start of first lap (will convert to array later)
-    current_time = 0.0
+    # Build trajectory by concatenating laps. A lap that starts where the
+    # previous one ended does not repeat that position: its first sample is
+    # its first step.
+    all_positions: list[NDArray[np.float64]] = []
+    all_lap_ids: list[int] = []
+    all_directions: list[str] = []
+    lap_boundaries_list = [0]
 
     for lap_idx in range(n_laps):
         # Alternate between outbound and inbound
@@ -1242,18 +1251,24 @@ def _simulate_trajectory_laps(
         cumulative_distances = route_distances[lap_idx % 2]
         # The last waypoint's own distance, so the lap ends exactly on it.
         total_distance = cumulative_distances[-1]
+        continues = lap_idx > 0 and np.array_equal(
+            path_positions[0], all_positions[-1][-1]
+        )
 
         if lap_sample_counts is None:
-            # Direct calls retain their speed-driven timing and RNG draws.
+            # Direct calls take their timing from the drawn speed.
             speed = rng.normal(speed_mean, speed_std)
             speed = max(speed, 0.1 * speed_mean)
-            path_duration = total_distance / speed
-            n_samples = max(2, int(path_duration / dt))
+            n_steps = max(1, round(total_distance / speed / dt))
         else:
-            n_samples = int(lap_sample_counts[lap_idx])
+            n_emitted = int(lap_sample_counts[lap_idx])
+            n_steps = n_emitted if continues else n_emitted - 1
 
         # Interpolate positions along the route
-        interpolation_points = np.linspace(0, total_distance, n_samples)
+        interpolation_points = np.linspace(0, total_distance, n_steps + 1)
+        if continues:
+            interpolation_points = interpolation_points[1:]
+        n_samples = len(interpolation_points)
 
         # Interpolate each dimension separately
         lap_positions = np.zeros((n_samples, env.n_dims))
@@ -1262,40 +1277,21 @@ def _simulate_trajectory_laps(
                 interpolation_points, cumulative_distances, path_positions[:, dim]
             )
 
-        # Generate times for this lap
-        lap_times = current_time + np.arange(n_samples) * dt
-        current_time = lap_times[-1] + dt
-
-        # Append to trajectory
         all_positions.append(lap_positions)
-        all_times.append(lap_times)
         all_lap_ids.extend([lap_idx] * n_samples)
         all_directions.extend([direction] * n_samples)
 
-        # Add pause at lap end (except after last lap)
-        if lap_idx < n_laps - 1 and pause_duration > 0:
-            pause_samples = int(pause_duration * sampling_frequency)
-            if pause_samples > 0:
-                # Hold position constant during pause
-                pause_position = lap_positions[-1:].repeat(pause_samples, axis=0)
-                pause_times = current_time + np.arange(pause_samples) * dt
-                current_time = pause_times[-1] + dt
-
-                all_positions.append(pause_position)
-                all_times.append(pause_times)
-                all_lap_ids.extend([lap_idx] * pause_samples)
-                all_directions.extend([direction] * pause_samples)
-
-        # Record lap boundary (start of next lap)
+        # Pause at the lap end (except after the last lap): no traversal.
         if lap_idx < n_laps - 1:
+            if pause_samples > 0:
+                all_positions.append(lap_positions[-1:].repeat(pause_samples, axis=0))
+                all_lap_ids.extend([-1] * pause_samples)
+                all_directions.extend(["pause"] * pause_samples)
             lap_boundaries_list.append(len(all_lap_ids))
 
-    # Concatenate all segments
     positions = np.vstack(all_positions)
-    times = np.concatenate(all_times)
-    if duration is not None:
-        # One clock avoids accumulated rounding at lap/pause boundaries.
-        times = np.arange(len(positions), dtype=np.float64) / sampling_frequency
+    # One clock avoids accumulated rounding at lap/pause boundaries.
+    times = np.arange(len(positions), dtype=np.float64) / sampling_frequency
     lap_ids = np.array(all_lap_ids, dtype=np.int_)
     directions = np.array(all_directions)
     lap_boundaries = np.array(lap_boundaries_list, dtype=np.int_)
