@@ -106,10 +106,6 @@ def _make_linear_track_sim(
 class TestDecodeSessionGoldenPath:
     """decode_session exists and produces a tracking DecodingResult."""
 
-    def test_import(self) -> None:
-        """decode_session is importable from neurospatial.decoding (canonical path)."""
-        from neurospatial.decoding import decode_session  # noqa: F401
-
     def test_returns_decoding_result(self) -> None:
         """Return type is always DecodingResult."""
         from neurospatial.decoding import decode_session
@@ -190,33 +186,29 @@ class TestDecodeSessionGoldenPath:
             _decode_with_models(env, spike_times, times.reshape(-1, 1), models, dt=0.1)
 
     def test_map_tracks_trajectory(self) -> None:
-        """MAP position should track the true trajectory (median error < 25 cm on 100-cm track)."""
+        """MAP error is within two bins and well below chance.
+
+        Chance is the error after permuting the MAP positions in time: the
+        same distribution of decoded positions, unrelated to the animal's.
+        """
         from neurospatial.decoding import decode_session, decoding_error
 
         env, spike_times, times, positions = _make_linear_track_sim(
             n_neurons=20, duration=30.0, seed=42
         )
-        dt = 0.1
-        result = decode_session(env, spike_times, times, positions, dt=dt)
+        result = decode_session(env, spike_times, times, positions, dt=0.1)
 
-        assert isinstance(result, DecodingResult)
-        assert result.times is not None
-
-        # Align decoded time bins to the trajectory
-        decoded_times = result.times  # bin centers
-        # Interpolate true positions to decoded time bins
-        true_x = np.interp(decoded_times, times, positions[:, 0])
-        true_y = np.interp(decoded_times, times, positions[:, 1])
-        true_positions_at_decode = np.column_stack([true_x, true_y])
-
-        errors = decoding_error(env, result.map_position, true_positions_at_decode)
-        med_err = float(np.nanmedian(errors))
-
-        # On a 100-cm track with 20 neurons, median error well below 25 cm
-        assert med_err < 25.0, (
-            f"MAP not tracking trajectory: median error = {med_err:.2f} cm "
-            f"(threshold 25 cm). Likely an orientation/shape bug."
+        true_at_decode = np.column_stack(
+            [np.interp(result.times, times, positions[:, d]) for d in range(2)]
         )
+        errors = decoding_error(env, result.map_position, true_at_decode)
+        median_error = float(np.nanmedian(errors))
+        shuffled = np.random.default_rng(7).permutation(result.map_position)
+        chance = float(np.nanmedian(decoding_error(env, shuffled, true_at_decode)))
+
+        bin_size = 5.0
+        assert median_error <= 2 * bin_size, median_error
+        assert median_error < 0.5 * chance, (median_error, chance)
 
 
 class TestDecodeSessionEquivalence:

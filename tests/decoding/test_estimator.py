@@ -14,7 +14,7 @@ Tests
 5. Unfitted predict/predict_summary/score raise a clear RuntimeError.
 6. Immutability: fit returns a new object; original stays unfitted; frozen.
 7. SpikeTrains (a spike group) input yields the plain-list posterior.
-8. Linearized-track smoke: fit + predict runs on a 1-D track env.
+8. Held-out accuracy in an open field and, geodesically, on a W-maze.
 """
 
 from __future__ import annotations
@@ -467,21 +467,74 @@ def test_plain_list_unit_ids_default_to_arange(sim) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 8. Linearized-track differentiator (smoke)
+# 8. Held-out accuracy
 # ---------------------------------------------------------------------------
 
 
-def test_linearized_track_smoke() -> None:
-    """fit + predict runs on a 1-D linearized track env (env-based decode)."""
-    env, spikes, times, positions = _make_linear_sim()
+def _chance_error(env, result, times, positions, metric):
+    """Median error after permuting the MAP positions in time."""
+    from neurospatial.decoding import decoding_error
+
+    actual = np.column_stack(
+        [np.interp(result.times, times, positions[:, d]) for d in range(2)]
+    )
+    shuffled = np.random.default_rng(3).permutation(result.map_position)
+    return float(np.nanmedian(decoding_error(env, shuffled, actual, metric=metric)))
+
+
+def test_held_out_open_field_accuracy() -> None:
+    """Fit on the first half, decode the second: error well below chance."""
+    env, spikes, times, positions = _make_sim(n_neurons=12, duration=120.0)
+    half = times[len(times) // 2]
+    test = (half, times[-1] + 1e-9)
+    decoder = BayesianDecoder(env, dt=0.5).fit(
+        spikes, times, positions, epochs=(times[0], half)
+    )
+    result = decoder.predict(spikes, times, epochs=test)
+    error = float(
+        np.nanmedian(result.error_against(times, positions, metric="euclidean"))
+    )
+    chance = _chance_error(env, result, times, positions, "euclidean")
+    assert error < 10.0, error
+    assert error < 0.4 * chance, (error, chance)
+
+
+def test_held_out_maze_geodesic_accuracy() -> None:
+    """On a W-maze track, held-out geodesic error is about one bin."""
+    from neurospatial.simulation import (
+        PlaceCellModel,
+        generate_poisson_spikes,
+        simulate_trajectory_ou,
+    )
+    from neurospatial.simulation.mazes import make_w_maze
+
+    env = make_w_maze(bin_size=4.0).env_track
     assert env.is_linearized_track
-
-    fit = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
-    result = fit.predict(spikes, times)
-
-    assert isinstance(result, DecodingResult)
-    assert result.posterior.shape[1] == env.n_bins
-    assert result.posterior.shape[0] == result.times.shape[0]
+    positions, times = simulate_trajectory_ou(
+        env, duration=300.0, seed=0, speed_units="cm"
+    )
+    centers = env.bin_centers[np.linspace(0, env.n_bins - 1, 30).astype(int)]
+    spikes = [
+        generate_poisson_spikes(
+            PlaceCellModel(
+                env, center=c, width=8.0, max_rate=25.0, seed=i
+            ).firing_rate(positions, times),
+            times,
+            seed=100 + i,
+        )
+        for i, c in enumerate(centers)
+    ]
+    half = times[len(times) // 2]
+    test = (half, times[-1] + 1e-9)
+    decoder = BayesianDecoder(env, dt=0.25).fit(
+        spikes, times, positions, epochs=(times[0], half)
+    )
+    error = decoder.score(spikes, times, positions, epochs=test, distance="geodesic")
+    result = decoder.predict(spikes, times, epochs=test)
+    chance = _chance_error(env, result, times, positions, "geodesic")
+    bin_size = float(np.median(env.bin_sizes))
+    assert error <= 2 * bin_size, error
+    assert error < 0.2 * chance, (error, chance)
 
 
 # ---------------------------------------------------------------------------

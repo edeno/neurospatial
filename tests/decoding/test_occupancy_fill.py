@@ -417,3 +417,89 @@ def test_decode_no_spike_valid_model_yields_uniform_posterior() -> None:
     np.testing.assert_allclose(post.sum(axis=1), 1.0, atol=1e-6)
     # Flat likelihood -> uniform posterior.
     np.testing.assert_allclose(post[0], 1.0 / n_bins, atol=1e-9)
+
+
+@pytest.fixture
+def supported_rates():
+    """Binned rates on a 1-D track where the animal never visited 80-100 cm."""
+    from neurospatial.encoding import compute_spatial_rates
+
+    env = Environment.from_samples(np.linspace(0.0, 100.0, 200)[:, None], bin_size=10.0)
+    times = np.arange(0.0, 60.0, 0.05)
+    x = 40.0 + 39.0 * np.sin(2 * np.pi * times / 15.0)  # stays below 80 cm
+    positions = x[:, None]
+    spike_rng = np.random.default_rng(1)
+    spikes = [np.sort(spike_rng.uniform(0.0, 60.0, n)) for n in (200, 300)]
+    rates = compute_spatial_rates(
+        env, spikes, times, positions, method="binned", bandwidth=0.0
+    )
+    assert not rates.spatial_support.all()
+    return env, rates
+
+
+def test_rate_result_with_user_prior_is_bayes_on_the_support(supported_rates):
+    """Prior p with a rate result equals Bayes with prior p * spatial_support."""
+    from scipy.stats import poisson
+
+    env, rates = supported_rates
+    support = rates.spatial_support
+    prior = np.linspace(1.0, 2.0, env.n_bins)
+    counts = np.array([[0, 1], [2, 0], [1, 3]])
+    dt = 0.25
+    result = decode_position(env, counts, rates, dt=dt, prior=prior)
+
+    filled = np.where(support, np.asarray(rates.firing_rates), 0.0)
+    likelihood = poisson.pmf(counts[:, :, None], filled[None] * dt).prod(axis=1)
+    unnormalized = likelihood * prior * support
+    expected = unnormalized / unnormalized.sum(axis=1, keepdims=True)
+    np.testing.assert_array_equal(result.posterior[:, ~support], 0.0)
+    np.testing.assert_allclose(result.posterior, expected, rtol=1e-10)
+
+
+@pytest.mark.parametrize(
+    ("support", "match"),
+    [
+        ("short", r"shape \(11,\), got dtype bool with shape \(3,\)"),
+        ("integer", r"got dtype int64"),
+        ("none_supported", "No spatial bin has supported training data"),
+    ],
+)
+def test_invalid_spatial_support_is_named(support, match):
+    """A support mask must be boolean, one entry per bin, with a supported bin."""
+    from neurospatial.decoding import BayesianDecoder
+
+    env = Environment.from_samples(np.linspace(0.0, 100.0, 200)[:, None], bin_size=10.0)
+    assert env.n_bins == 11
+    mask = {
+        "short": np.ones(3, dtype=bool),
+        "integer": np.ones(env.n_bins, dtype=np.int64),
+        "none_supported": np.zeros(env.n_bins, dtype=bool),
+    }[support]
+    with pytest.raises(ValueError, match=match) as err:
+        BayesianDecoder.from_models(
+            env, np.full((1, env.n_bins), 5.0), spatial_support=mask
+        )
+    assert "Fix:" in str(err.value)
+
+
+@pytest.mark.parametrize(
+    ("prior", "match"),
+    [
+        ("negative", "negative or non-finite"),
+        ("nan", "negative or non-finite"),
+        ("off_support", "no probability to supported training bins"),
+        ("wrong_shape", "prior has shape"),
+    ],
+)
+def test_invalid_prior_with_rate_result(supported_rates, prior, match):
+    env, rates = supported_rates
+    support = rates.spatial_support
+    values = {
+        "negative": np.where(np.arange(env.n_bins) == 0, -1.0, 1.0),
+        "nan": np.where(np.arange(env.n_bins) == 0, np.nan, 1.0),
+        "off_support": (~support).astype(float),
+        "wrong_shape": np.ones(env.n_bins + 1),
+    }[prior]
+    with pytest.raises(ValueError, match=match) as err:
+        decode_position(env, np.array([[0, 1]]), rates, dt=0.25, prior=values)
+    assert "Fix:" in str(err.value)

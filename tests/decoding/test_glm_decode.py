@@ -51,20 +51,6 @@ def _tiled_session(env: Environment, *, n_units: int = 4, seed: int = 0):
 
 
 class TestDecodeSessionGlm:
-    def test_decode_session_glm(self) -> None:
-        """decode_session(method="glm", penalty=None) -> valid DecodingResult."""
-        from neurospatial.decoding import DecodingResult, decode_session
-
-        env, spike_times, times, positions = _tiled_session(_grid_open_field())
-        result = decode_session(
-            env, spike_times, times, positions, dt=0.1, method="glm", penalty=None
-        )
-        assert isinstance(result, DecodingResult)
-        assert result.posterior.shape[1] == env.n_bins
-        assert np.all(np.isfinite(result.posterior))
-        # Each posterior row is a normalized distribution over bins.
-        np.testing.assert_allclose(result.posterior.sum(axis=1), 1.0, atol=1e-6)
-
     def test_decode_session_summary_glm_matches_full(self) -> None:
         """decode_session_summary(method="glm") shares decode_session's encoding.
 
@@ -84,33 +70,86 @@ class TestDecodeSessionGlm:
         # Same encoding model => identical MAP positions.
         np.testing.assert_array_equal(summary.map_position, full.map_position)
 
-    def test_decode_session_glm_rank_forwarded(self) -> None:
-        """An explicit rank is accepted and reaches the encoder (no error)."""
-        from neurospatial.decoding import DecodingResult, decode_session
+    def test_decode_session_glm_rank_changes_the_maps(self) -> None:
+        """rank reaches the encoder: a 2-function basis gives other posteriors."""
+        from neurospatial.decoding import decode_session
 
         env, spike_times, times, positions = _tiled_session(_grid_open_field())
-        result = decode_session(
-            env, spike_times, times, positions, dt=0.1, method="glm", rank=8
+        low, high = (
+            decode_session(
+                env, spike_times, times, positions, dt=0.1, method="glm", rank=r
+            )
+            for r in (2, 8)
         )
-        assert isinstance(result, DecodingResult)
+        assert not np.allclose(low.posterior, high.posterior, atol=1e-3)
 
 
 class TestBayesianDecoderGlm:
-    def test_bayesian_decoder_glm_fit_predict(self) -> None:
-        """BayesianDecoder(method="glm", rank=...).fit(...).predict(...) runs."""
-        from neurospatial.decoding import BayesianDecoder, DecodingResult
+    @pytest.fixture(scope="class")
+    def running_session(self):
+        """200 s of running in a 40 cm box with 16 place cells."""
+        from neurospatial.simulation import (
+            PlaceCellModel,
+            generate_poisson_spikes,
+            simulate_trajectory_ou,
+        )
 
-        env, spike_times, times, positions = _tiled_session(_grid_open_field())
-        decoder = BayesianDecoder(env, dt=0.1, method="glm", rank=8)
-        # Nullable bandwidth / min_occupancy: default None, not 5.0 / 0.0.
-        assert decoder.bandwidth is None
-        assert decoder.min_occupancy is None
+        edges = np.linspace(0.0, 40.0, 11)
+        env = Environment.from_grid_mask(
+            np.ones((10, 10), dtype=bool), grid_edges=(edges, edges), units="cm"
+        )
+        positions, times = simulate_trajectory_ou(
+            env, duration=200.0, seed=0, speed_units="cm"
+        )
+        centers = np.random.default_rng(5).uniform(4.0, 36.0, (16, 2))
+        spikes = [
+            generate_poisson_spikes(
+                PlaceCellModel(
+                    env, center=c, width=8.0, max_rate=25.0, seed=i
+                ).firing_rate(positions, times),
+                times,
+                seed=50 + i,
+            )
+            for i, c in enumerate(centers)
+        ]
+        half = times[len(times) // 2]
+        return env, spikes, times, positions, (times[0], half), (half, times[-1] + 1)
 
-        fitted = decoder.fit(spike_times, times, positions)
-        assert fitted.is_fitted
-        result = fitted.predict(spike_times, times)
-        assert isinstance(result, DecodingResult)
-        assert result.posterior.shape[1] == env.n_bins
+    @pytest.mark.parametrize("rank", [2, 8])
+    def test_rank_is_recorded(self, running_session, rank) -> None:
+        from neurospatial.decoding import BayesianDecoder
+
+        env, spikes, times, positions, train, _ = running_session
+        fitted = BayesianDecoder(env, dt=0.25, method="glm", rank=rank).fit(
+            spikes, times, positions, epochs=train
+        )
+        assert fitted.analysis_settings["rank"] == rank
+
+    def test_rank_changes_the_posterior(self, running_session) -> None:
+        from neurospatial.decoding import BayesianDecoder
+
+        env, spikes, times, positions, train, test = running_session
+        low, high = (
+            BayesianDecoder(env, dt=0.25, method="glm", rank=r)
+            .fit(spikes, times, positions, epochs=train)
+            .predict(spikes, times, epochs=test)
+            for r in (2, 8)
+        )
+        assert np.abs(low.posterior - high.posterior).max() > 0.1
+
+    def test_held_out_error_is_under_two_bins(self, running_session) -> None:
+        from neurospatial.decoding import BayesianDecoder
+
+        env, spikes, times, positions, train, test = running_session
+        fitted = BayesianDecoder(env, dt=0.25, method="glm", rank=8).fit(
+            spikes, times, positions, epochs=train
+        )
+        assert fitted.bandwidth is None
+        assert fitted.min_occupancy is None
+        error = fitted.score(
+            spikes, times, positions, epochs=test, distance="euclidean"
+        )
+        assert error < 2 * 4.0, error
 
     def test_bayesian_decoder_glm_default_rank(self) -> None:
         """method="glm" with default (None) rank/penalty is constructible + fits."""

@@ -796,47 +796,30 @@ class TestDecodePosition:
     # Integration tests
     # -------------------------------------------------------------------------
 
-    def test_end_to_end_simple(
+    def test_end_to_end_matches_bayes_rule(
         self,
         simple_env: Environment,
         simple_spike_counts: np.ndarray,
         simple_encoding_models: np.ndarray,
     ) -> None:
-        """End-to-end test with simple data."""
+        """The posterior is Poisson likelihood times the uniform-over-space prior."""
+        from scipy.stats import poisson
+
         from neurospatial.decoding.posterior import decode_position
 
+        dt = 0.025
         result = decode_position(
-            simple_env, simple_spike_counts, simple_encoding_models, dt=0.025
+            simple_env, simple_spike_counts, simple_encoding_models, dt=dt
         )
-
-        # Verify all derived properties work
-        assert result.map_bin.shape == (simple_spike_counts.shape[0],)
-        assert result.map_position.shape == (
-            simple_spike_counts.shape[0],
-            simple_env.n_dims,
+        likelihood = poisson.pmf(
+            simple_spike_counts[:, :, None], simple_encoding_models[None] * dt
+        ).prod(axis=1)
+        unnormalized = likelihood * simple_env.bin_sizes
+        expected = unnormalized / unnormalized.sum(axis=1, keepdims=True)
+        assert_allclose(result.posterior, expected, rtol=1e-10)
+        assert_allclose(
+            result.mean_position, expected @ simple_env.bin_centers, rtol=1e-10
         )
-        assert result.mean_position.shape == (
-            simple_spike_counts.shape[0],
-            simple_env.n_dims,
-        )
-        assert result.posterior_entropy.shape == (simple_spike_counts.shape[0],)
-
-    def test_reproducibility(
-        self,
-        simple_env: Environment,
-        simple_spike_counts: np.ndarray,
-        simple_encoding_models: np.ndarray,
-    ) -> None:
-        """Multiple calls with same data should give identical results."""
-        from neurospatial.decoding.posterior import decode_position
-
-        result1 = decode_position(
-            simple_env, simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        result2 = decode_position(
-            simple_env, simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        assert_allclose(result1.posterior, result2.posterior)
 
 
 # =============================================================================

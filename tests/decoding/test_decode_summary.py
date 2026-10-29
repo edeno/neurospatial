@@ -597,31 +597,12 @@ class TestDecodeSessionSummary:
         assert isinstance(full, DecodingResult)
         assert isinstance(full.posterior, np.ndarray)
 
-    def test_session_summary_overlong_prior_raises(self, small_2d_env):
-        """decode_session_summary threads prior -> inherits shape validation.
-
-        An over-long 2-D prior must raise (not silently truncate) when forwarded
-        through decode_session_summary's **decode_kwargs.
-        """
-        from neurospatial.decoding import decode_session_summary
-
-        spike_times, times, positions = self._session_inputs(small_2d_env)
-        # n_time bins for dt=0.1 over [0, 10] is 100; pass a clearly over-long
-        # 2-D prior so the count never accidentally matches.
-        bad_prior = np.ones((1000, small_2d_env.n_bins))
-        with pytest.raises(ValueError, match="prior"):
-            decode_session_summary(
-                small_2d_env, spike_times, times, positions, dt=0.1, prior=bad_prior
-            )
-
 
 class TestDecodePositionSummaryPriorValidation:
-    """decode_position_summary validates prior shape before streaming.
+    """Streamed decoders validate the prior shape before the block loop.
 
-    Reproduces and guards the silent-truncation bug: an over-long 2-D prior
-    (n_time + k, n_bins) used to be silently sliced to n_time rows because the
-    block loop only iterates over n_time. The full decode_position path raises
-    on the same mismatch, so the summary path must match that contract.
+    The loop iterates over n_time rows, so an over-long 2-D prior would
+    otherwise be truncated silently.
     """
 
     def test_exact_2d_prior_parity(self, small_2d_env):
@@ -641,55 +622,6 @@ class TestDecodePositionSummaryPriorValidation:
         np.testing.assert_array_equal(summ.map_bin, full.map_bin)
         np.testing.assert_array_equal(summ.map_position, full.map_position)
 
-    def test_overlong_2d_prior_raises(self, small_2d_env):
-        """The reproduced bug: (n_time + 3, n_bins) must raise, not truncate."""
-        from neurospatial.decoding import decode_position_summary
-
-        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
-        n_time = spike_counts.shape[0]
-        bad_prior = np.ones((n_time + 3, small_2d_env.n_bins))
-        with pytest.raises(ValueError, match="prior"):
-            decode_position_summary(
-                small_2d_env, spike_counts, encoding_models, dt=0.025, prior=bad_prior
-            )
-
-    def test_overlong_2d_prior_message_names_shape(self, small_2d_env):
-        from neurospatial.decoding import decode_position_summary
-
-        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
-        n_time = spike_counts.shape[0]
-        bad_prior = np.ones((n_time + 3, small_2d_env.n_bins))
-        with pytest.raises(ValueError) as exc:
-            decode_position_summary(
-                small_2d_env, spike_counts, encoding_models, dt=0.025, prior=bad_prior
-            )
-        msg = str(exc.value)
-        assert "prior" in msg
-        # Received and expected shapes are both reported.
-        assert str((n_time + 3, small_2d_env.n_bins)) in msg
-        assert str((n_time, small_2d_env.n_bins)) in msg
-
-    def test_short_2d_prior_raises(self, small_2d_env):
-        from neurospatial.decoding import decode_position_summary
-
-        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
-        n_time = spike_counts.shape[0]
-        bad_prior = np.ones((n_time - 2, small_2d_env.n_bins))
-        with pytest.raises(ValueError, match="prior"):
-            decode_position_summary(
-                small_2d_env, spike_counts, encoding_models, dt=0.025, prior=bad_prior
-            )
-
-    def test_wrong_n_bins_1d_prior_raises(self, small_2d_env):
-        from neurospatial.decoding import decode_position_summary
-
-        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
-        bad_prior = np.ones(small_2d_env.n_bins + 1)
-        with pytest.raises(ValueError, match="prior"):
-            decode_position_summary(
-                small_2d_env, spike_counts, encoding_models, dt=0.025, prior=bad_prior
-            )
-
     def test_correct_1d_prior_parity(self, small_2d_env):
         from neurospatial.decoding import decode_position, decode_position_summary
 
@@ -705,16 +637,53 @@ class TestDecodePositionSummaryPriorValidation:
         np.testing.assert_array_equal(summ.map_bin, full.map_bin)
         np.testing.assert_array_equal(summ.map_position, full.map_position)
 
-    def test_3d_prior_raises(self, small_2d_env):
-        from neurospatial.decoding import decode_position_summary
+    @pytest.mark.parametrize(
+        "entry",
+        ["decode_position", "decode_position_summary", "decode_session_summary"],
+    )
+    @pytest.mark.parametrize("shape", ["long", "short", "bins", "3d"])
+    def test_wrong_prior_shape_names_received_and_expected(
+        self, small_2d_env, entry, shape
+    ):
+        """No entry point truncates or broadcasts a prior of the wrong shape."""
+        import neurospatial.decoding as decoding
 
-        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
-        n_time = spike_counts.shape[0]
-        bad_prior = np.ones((n_time, small_2d_env.n_bins, 1))
-        with pytest.raises(ValueError, match="prior"):
-            decode_position_summary(
-                small_2d_env, spike_counts, encoding_models, dt=0.025, prior=bad_prior
+        env = small_2d_env
+        if entry == "decode_session_summary":
+            rng = np.random.default_rng(0)
+            times = np.linspace(0.0, 10.0, 400)
+            positions = rng.uniform(
+                env.bin_centers.min(axis=0), env.bin_centers.max(axis=0), (400, 2)
             )
+            spikes = [np.sort(rng.uniform(0.0, 10.0, 40)) for _ in range(3)]
+            n_time = 100  # whole 0.1 s bins in [0, 10]
+
+            def call(prior):
+                return decoding.decode_session_summary(
+                    env, spikes, times, positions, dt=0.1, prior=prior
+                )
+        else:
+            counts, models = _make_decode_inputs(env)
+            n_time = counts.shape[0]
+
+            def call(prior):
+                return getattr(decoding, entry)(
+                    env, counts, models, dt=0.025, prior=prior
+                )
+
+        n_bins = env.n_bins
+        bad = {
+            "long": (n_time + 3, n_bins),
+            "short": (n_time - 2, n_bins),
+            "bins": (n_bins + 1,),
+            "3d": (n_time, n_bins, 1),
+        }[shape]
+        with pytest.raises(ValueError, match="prior has shape") as err:
+            call(np.ones(bad))
+        message = str(err.value)
+        assert str(bad) in message
+        assert f"({n_time}, {env.n_bins})" in message
+        assert "Fix:" in message
 
 
 class TestSummaryDecodeStreamingThroughput:
