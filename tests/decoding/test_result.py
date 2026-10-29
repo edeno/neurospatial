@@ -5,6 +5,7 @@ and computes derived properties (MAP, mean, entropy) via cached properties.
 """
 
 import numpy as np
+import pandas as pd
 import pytest
 
 
@@ -666,3 +667,56 @@ def test_result_equality_is_identity(env_4bin):
     assert r != same_values
     assert hash(r) != hash(same_values)
     assert r in [same_values, r]
+
+
+_ARRAY_ATTRIBUTES = (
+    "posterior",
+    "times",
+    "spike_window",
+    "map_bin",
+    "map_position",
+    "mean_position",
+    "posterior_entropy",
+)
+
+
+@pytest.fixture
+def windowed_result(env_4bin):
+    from neurospatial.decoding import DecodingResult
+
+    return DecodingResult(
+        posterior=np.array([[0.9, 0.1, 0.0, 0.0], [0.0, 0.2, 0.8, 0.0]]),
+        env=env_4bin,
+        times=np.array([0.5, 1.5]),
+        spike_window=np.array([[0.0, 2.0]]),
+    )
+
+
+@pytest.mark.parametrize("name", _ARRAY_ATTRIBUTES)
+def test_every_result_array_is_read_only(windowed_result, name):
+    """Writing into a derived array would corrupt later exports."""
+    before = windowed_result.to_dataframe()
+    array = getattr(windowed_result, name)
+    assert array.flags.writeable is False
+    with pytest.raises(ValueError, match="read-only"):
+        array[...] = 3
+    pd.testing.assert_frame_equal(windowed_result.to_dataframe(), before)
+
+
+@pytest.mark.parametrize("how", ["pickle", "deepcopy"])
+def test_copied_result_keeps_every_array_read_only(windowed_result, how):
+    """Cached arrays and spike windows stay read-only across copies."""
+    import copy
+    import pickle
+
+    for name in _ARRAY_ATTRIBUTES:
+        getattr(windowed_result, name)  # populate the cached arrays
+    copied = (
+        pickle.loads(pickle.dumps(windowed_result))
+        if how == "pickle"
+        else copy.deepcopy(windowed_result)
+    )
+    for name in _ARRAY_ATTRIBUTES:
+        array = getattr(copied, name)
+        assert array.flags.writeable is False, name
+        np.testing.assert_array_equal(array, getattr(windowed_result, name))

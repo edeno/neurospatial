@@ -9,7 +9,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 import numpy as np
 import pandas as pd
@@ -29,6 +29,15 @@ if TYPE_CHECKING:
 
     from neurospatial.environment import Environment
     from neurospatial.ops._types import DistanceMetric
+
+
+_ArrayT = TypeVar("_ArrayT", bound=np.ndarray)
+
+
+def _read_only(array: _ArrayT) -> _ArrayT:
+    """Mark an array this result just computed read-only and return it."""
+    array.setflags(write=False)
+    return array
 
 
 def _recording_breaks(times: NDArray[np.float64] | None) -> NDArray[np.intp]:
@@ -157,7 +166,7 @@ def _align_true_positions(
 
 
 @dataclass(frozen=True, repr=False, eq=False)
-class DecodingResult(ResultMixin):
+class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
     """Container for Bayesian decoding results.
 
     Stores the posterior distribution over positions for each time bin,
@@ -219,8 +228,10 @@ class DecodingResult(ResultMixin):
     The result is frozen, and its array fields are read-only copies
     that the result owns: the constructor always copies them, so later edits to
     the arrays (or views of them) that the caller passed in cannot change the
-    result or leave its cached properties stale. Results compare equal only
-    to themselves. To get a modified result, use
+    result or leave its cached properties stale. The derived arrays
+    (``map_bin``, ``map_position``, ``mean_position``, ``posterior_entropy``)
+    are read-only as well; copy one with ``np.array(...)`` to modify it.
+    Results compare equal only to themselves. To get a modified result, use
     ``dataclasses.replace(result, posterior=new)``, which copies ``new``.
 
     Memory usage is dominated by the posterior array:
@@ -281,15 +292,6 @@ class DecodingResult(ResultMixin):
             object.__setattr__(
                 self, "spike_window", read_only_copy(self.spike_window, np.float64)
             )
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore from pickle or deepcopy, keeping the arrays read-only."""
-        self.__dict__.update(state)
-        self.posterior.flags.writeable = False
-        if self.times is not None:
-            self.times.flags.writeable = False
-        if self.spike_window is not None:
-            self.spike_window.flags.writeable = False
 
     @classmethod
     def _from_owned_posterior(
@@ -388,7 +390,7 @@ class DecodingResult(ResultMixin):
         from neurospatial.decoding.estimates import _density_mode
 
         measures = relative_bin_measures(self.env, context="map_bin")
-        return _density_mode(self.posterior, measures)
+        return _read_only(_density_mode(self.posterior, measures))
 
     @cached_property
     def map_position(self) -> NDArray[np.float64]:
@@ -407,7 +409,7 @@ class DecodingResult(ResultMixin):
         map_bin : MAP bin index
         mean_position : Posterior mean position
         """
-        return self.env.bin_centers[self.map_bin]
+        return _read_only(self.env.bin_centers[self.map_bin])
 
     @cached_property
     def mean_position(self) -> NDArray[np.float64]:
@@ -436,7 +438,7 @@ class DecodingResult(ResultMixin):
         """
         from neurospatial.decoding.estimates import mean_position
 
-        return mean_position(self.env, self.posterior)
+        return _read_only(mean_position(self.env, self.posterior))
 
     @cached_property
     def posterior_entropy(self) -> NDArray[np.float64]:
@@ -476,7 +478,7 @@ class DecodingResult(ResultMixin):
         entropy: NDArray[np.float64] = cast(
             "NDArray[np.float64]", -np.sum(p * log_p, axis=1)
         )
-        return entropy
+        return _read_only(entropy)
 
     def plot(
         self,
