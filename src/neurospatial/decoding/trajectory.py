@@ -463,8 +463,10 @@ def fit_isotonic_trajectory(
     ------
     ValueError
         If method is not "map" or "expected", if ``env`` is neither 1-D nor
-        a linearized track, or if ``posterior`` does not have one column per
-        bin.
+        a linearized track, if ``posterior`` does not have one column per
+        bin, if a posterior row is not a probability mass (NaN or Inf,
+        negative, or not summing to 1), or if ``times`` does not have one
+        finite entry per row or holds a single distinct time.
 
     See Also
     --------
@@ -512,6 +514,7 @@ def fit_isotonic_trajectory(
     posterior, starts, stops = _track_positions(
         env, posterior, "fit_isotonic_trajectory()"
     )
+    times = _require_times(times, len(posterior), "fit_isotonic_trajectory()")
     positions = _decoded_positions(posterior, starts, stops, method)
 
     # Fit the requested direction, or both and keep the better fit.
@@ -592,7 +595,9 @@ def fit_linear_trajectory(
         in the regression. Need not be uniformly spaced.
     n_samples : int, optional
         Number of Monte Carlo samples from the posterior for uncertainty
-        estimation (only used when method="sample"). Default is 1000.
+        estimation (only used when method="sample"), at least 2. Default is
+        1000, which estimates slope_std to within about 2% (its relative
+        standard error is about ``1 / sqrt(2 * (n_samples - 1))``).
     method : {"map", "sample"}, optional
         How to fit the linear trajectory:
         - "map": Use the center of the MAP bin, the bin of highest posterior
@@ -619,7 +624,11 @@ def fit_linear_trajectory(
         If method is not "map" or "sample".
         If ``env`` is neither 1-D nor a linearized track.
         If posterior is not 2D or does not have one column per bin.
-        If times length doesn't match posterior shape.
+        If ``times`` does not have one finite entry per posterior row, or
+        holds a single distinct time.
+        If ``n_samples`` is less than 2.
+        If a posterior row is not a probability mass: NaN or Inf, negative,
+        or not summing to 1.
 
     See Also
     --------
@@ -667,29 +676,30 @@ def fit_linear_trajectory(
     if method not in ("map", "sample"):
         raise ValueError(f"method must be 'map' or 'sample', got {method!r}")
 
+    if n_samples < 2:
+        raise ValueError(
+            _format_error(
+                f"fit_linear_trajectory() needs n_samples of at least 2, got "
+                f"{n_samples}.",
+                why="slope_std is the spread of the sampled slopes, which "
+                "needs at least two samples",
+                fix="keep the default n_samples=1000, or use method='map' for "
+                "a fit without sampling",
+            )
+        )
     posterior, starts, stops = _track_positions(
         env, posterior, "fit_linear_trajectory()"
     )
-    centers = (starts + stops) / 2
-    n_time_bins = posterior.shape[0]
-
-    if len(times) != n_time_bins:
-        raise ValueError(
-            f"times length ({len(times)}) must match posterior shape[0] ({n_time_bins})"
-        )
+    times = _require_times(times, len(posterior), "fit_linear_trajectory()")
 
     if method == "map":
         positions = _decoded_positions(posterior, starts, stops, "map")
-
-        # Simple linear regression
-        slope, intercept = _fit_line(times, positions)
-        predicted = slope * times + intercept
-        r_squared = _compute_r_squared(positions, predicted)
-
+        slope, intercept = _fit_lines(times, positions)
+        r_squared = _compute_r_squared(positions, slope * times + intercept)
         return LinearFitResult(
             slope=float(slope),
             intercept=float(intercept),
-            r_squared=float(r_squared),
+            r_squared=r_squared,
             slope_std=None,
         )
 
@@ -698,74 +708,113 @@ def fit_linear_trajectory(
 
     rng_gen = _ensure_rng(rng)
 
-    # Invert the cumulative posterior (bins in track order); this is
-    # numerically stable for peaky posteriors.
+    # Invert each row's cumulative mass (bins in track order): the drawn bin
+    # is the first whose cumulative mass exceeds u times the row's total, so
+    # a bin with no mass is never drawn and rounding in the row sum cannot
+    # push a draw past the last bin.
     cumsum = np.cumsum(posterior, axis=1)
-    u = rng_gen.random((n_samples, n_time_bins, 1))
+    u = rng_gen.random((n_samples, len(posterior), 1)) * cumsum[:, -1:]
+    centers = (starts + stops) / 2
     # Shape: (n_samples, n_time_bins)
-    sampled_positions = centers[np.argmax(cumsum >= u, axis=-1)]
-
-    # Fit line to each sample
-    slopes = np.empty(n_samples)
-    intercepts = np.empty(n_samples)
-
-    for i in range(n_samples):
-        slopes[i], intercepts[i] = _fit_line(times, sampled_positions[i])
+    sampled_positions = centers[np.argmax(cumsum > u, axis=-1)]
+    slopes, intercepts = _fit_lines(times, sampled_positions)
 
     # Average coefficients
-    mean_slope = np.mean(slopes)
-    mean_intercept = np.mean(intercepts)
-    slope_std = np.std(slopes, ddof=1)
+    mean_slope = float(np.mean(slopes))
+    mean_intercept = float(np.mean(intercepts))
 
     # Compute R² using mean coefficients on the posterior mean positions
     expected_positions = _decoded_positions(posterior, starts, stops, "expected")
-    predicted = mean_slope * times + mean_intercept
-    r_squared = _compute_r_squared(expected_positions, predicted)
+    r_squared = _compute_r_squared(
+        expected_positions, mean_slope * times + mean_intercept
+    )
 
     return LinearFitResult(
-        slope=float(mean_slope),
-        intercept=float(mean_intercept),
-        r_squared=float(r_squared),
-        slope_std=float(slope_std),
+        slope=mean_slope,
+        intercept=mean_intercept,
+        r_squared=r_squared,
+        slope_std=float(np.std(slopes, ddof=1)),
     )
 
 
-def _fit_line(x: NDArray[np.float64], y: NDArray[np.float64]) -> tuple[float, float]:
-    """Fit a line y = slope*x + intercept using least squares.
+def _require_times(
+    times: NDArray[np.float64], n_time_bins: int, operation: str
+) -> NDArray[np.float64]:
+    """Check one finite time per posterior row, with at least two distinct.
 
     Parameters
     ----------
-    x : NDArray[np.float64]
-        Independent variable.
-    y : NDArray[np.float64]
-        Dependent variable.
+    times : NDArray[np.float64], shape (n_time_bins,)
+        Time of each posterior row, in seconds.
+    n_time_bins : int
+        Number of posterior rows.
+    operation : str
+        The calling function, for the refusal message.
 
     Returns
     -------
-    tuple[float, float]
-        (slope, intercept) of the fitted line.
+    NDArray[np.float64], shape (n_time_bins,)
+        ``times`` as float64.
+
+    Raises
+    ------
+    ValueError
+        If ``times`` is not 1-D with one entry per row, holds NaN or Inf, or
+        has a single distinct value.
     """
-    x_mean = np.mean(x)
-    y_mean = np.mean(y)
-
-    # Compute slope and intercept
-    numerator = np.sum((x - x_mean) * (y - y_mean))
-    denominator = np.sum((x - x_mean) ** 2)
-
-    if denominator == 0:
+    times = np.asarray(times, dtype=np.float64)
+    if times.ndim != 1 or len(times) != n_time_bins:
         raise ValueError(
             _format_error(
-                "fit_linear_trajectory() needs at least two distinct times, "
-                "but every time bin has the same time.",
+                f"{operation}: times has {times.size} entries in shape "
+                f"{times.shape}, but posterior has {n_time_bins} rows.",
+                why="each posterior row is the decode at one time",
+                fix="pass one time per posterior row, in seconds, with shape "
+                "(n_time_bins,); drop the times of any rows you dropped",
+            )
+        )
+    if not np.all(np.isfinite(times)):
+        raise ValueError(
+            _format_error(
+                f"{operation}: times contains NaN or Inf at "
+                f"{int(np.sum(~np.isfinite(times)))} of {n_time_bins} rows.",
+                why="a fit along time needs the time of every posterior row",
+                fix="drop those rows from both posterior and times",
+            )
+        )
+    if np.ptp(times) == 0:
+        raise ValueError(
+            _format_error(
+                f"{operation} needs at least two distinct times, but every "
+                "time bin has the same time.",
                 why="a line through identical times has no slope",
                 fix="pass the center time of each posterior row, in seconds",
             )
         )
+    return times
 
-    slope = numerator / denominator
-    intercept = y_mean - slope * x_mean
 
-    return float(slope), float(intercept)
+def _fit_lines(
+    times: NDArray[np.float64], positions: NDArray[np.float64]
+) -> tuple[Any, Any]:
+    """Least-squares lines ``positions = slope * times + intercept``.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64], shape (n_time_bins,)
+        At least two distinct times.
+    positions : NDArray[np.float64], shape (..., n_time_bins)
+        One position sequence per leading index.
+
+    Returns
+    -------
+    slope, intercept : NDArray[np.float64] or float, shape (...)
+        Coefficients of the line fitted to each sequence.
+    """
+    centered = times - times.mean()
+    slope = (positions @ centered) / (centered @ centered)
+    intercept = positions.mean(axis=-1) - slope * times.mean()
+    return slope, intercept
 
 
 def _posterior_image(

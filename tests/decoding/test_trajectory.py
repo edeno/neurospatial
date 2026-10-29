@@ -488,21 +488,6 @@ class TestFitLinearTrajectory:
         with pytest.raises(ValueError, match=r"posterior must be 2D"):
             fit_linear_trajectory(simple_env, posterior_1d, times)
 
-    def test_fit_linear_trajectory_times_mismatch_raises(self, simple_env):
-        """Mismatched times length should raise ValueError."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
-
-        n_time_bins = 10
-        n_bins = simple_env.n_bins
-        times = np.linspace(0, 1, n_time_bins + 5)  # Wrong length
-
-        posterior = np.zeros((n_time_bins, n_bins))
-        for t in range(n_time_bins):
-            posterior[t, t % n_bins] = 1.0
-
-        with pytest.raises(ValueError, match=r"times length.*must match posterior"):
-            fit_linear_trajectory(simple_env, posterior, times)
-
 
 class TestDetectTrajectoryRadon:
     """Test detect_trajectory_radon function (requires scikit-image)."""
@@ -995,3 +980,42 @@ class TestStationaryDecode:
             fit_linear_trajectory(
                 _track_for(posterior), posterior, np.zeros(5), method="map"
             )
+
+
+class TestArgumentChecks:
+    """Times and sample counts are checked before fitting."""
+
+    @pytest.fixture
+    def sweep(self):
+        posterior = np.eye(10, 20)
+        return _track_for(posterior), posterior, np.arange(10) * 0.01
+
+    @pytest.mark.parametrize(
+        "fit", ["fit_linear_trajectory", "fit_isotonic_trajectory"]
+    )
+    def test_times_must_match_posterior_rows(self, sweep, fit):
+        import neurospatial.decoding.trajectory as trajectory
+
+        env, posterior, _ = sweep
+        with pytest.raises(ValueError, match=r"times has 15 entries.*10 rows"):
+            getattr(trajectory, fit)(env, posterior, np.arange(15) * 0.01)
+
+    @pytest.mark.parametrize(
+        "fit", ["fit_linear_trajectory", "fit_isotonic_trajectory"]
+    )
+    def test_times_must_be_finite(self, sweep, fit):
+        import neurospatial.decoding.trajectory as trajectory
+
+        env, posterior, times = sweep
+        times = times.copy()
+        times[4] = np.nan
+        with pytest.raises(ValueError, match=r"times.*NaN or Inf"):
+            getattr(trajectory, fit)(env, posterior, times)
+
+    @pytest.mark.parametrize("n_samples", [0, 1])
+    def test_sampling_needs_two_samples(self, sweep, n_samples):
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        env, posterior, times = sweep
+        with pytest.raises(ValueError, match=r"n_samples.*at least 2"):
+            fit_linear_trajectory(env, posterior, times, n_samples=n_samples)
