@@ -629,7 +629,7 @@ class TestSimulateTrajectorysinusoidal:
             simulate_trajectory_sinusoidal(simple_2d_env, duration=10.0)
 
     def test_basic_sinusoidal_generation(self, linear_track_env):
-        """Produces (n_time, 1) positions sampled at the requested rate."""
+        """Produces (n_time, n_dims) positions sampled at the requested rate."""
         positions, times = simulate_trajectory_sinusoidal(
             linear_track_env,
             duration=10.0,
@@ -672,37 +672,60 @@ class TestSimulateTrajectorysinusoidal:
         second = positions[n_per_period : 2 * n_per_period, 0]
         np.testing.assert_allclose(first, second, atol=1e-6)
 
-    def test_oscillates_over_the_whole_length_of_a_bent_track(self):
-        """On a 120 + 80 cm L-shaped track the motion spans 200 cm of track.
+    def test_default_speed_follows_environment_units(self, linear_track_env):
+        """10 cm/s by default: a track in meters takes as long as one in cm."""
+        import networkx as nx
 
-        The positions are linear positions along the track, so their range
-        is the track length, not the x extent of the bend (120 cm).
-        """
         from neurospatial import Environment
 
-        track = Environment.linear_track(
-            node_positions=[(0.0, 0.0), (120.0, 0.0), (120.0, 80.0)],
-            bin_size=2.0,
-            track_width=10.0,
-            units="cm",
+        graph = nx.Graph()
+        graph.add_node(0, pos=(0.0,))
+        graph.add_node(1, pos=(0.5,))
+        graph.add_node(2, pos=(1.0,))
+        graph.add_edge(0, 1, distance=0.5)
+        graph.add_edge(1, 2, distance=0.5)
+        track_m = Environment.from_graph(
+            graph=graph,
+            edge_order=[(0, 1), (1, 2)],
+            edge_spacing=0.0,
+            bin_size=0.02,
+            units="m",
         )
-        positions, _ = simulate_trajectory_sinusoidal(
-            track,
-            duration=8.0,
-            sampling_frequency=100.0,
-            speed=20.0,
-            period=8.0,
-            pause_at_peaks=False,
+        positions_cm, times_cm = simulate_trajectory_sinusoidal(
+            linear_track_env, duration=30.0, sampling_frequency=50.0
         )
-        assert positions.min() == pytest.approx(0.0, abs=1e-3)
-        assert positions.max() == pytest.approx(200.0, abs=1e-3)
-        # The default period runs the track there and back at the speed.
-        positions, times = simulate_trajectory_sinusoidal(
-            track, duration=1.0, speed=20.0
+        positions_m, times_m = simulate_trajectory_sinusoidal(
+            track_m, duration=30.0, sampling_frequency=50.0
         )
-        np.testing.assert_allclose(
-            positions[:, 0], 100.0 + 100.0 * np.sin(2 * np.pi * times / 20.0)
-        )
+        np.testing.assert_allclose(times_m, times_cm)
+        np.testing.assert_allclose(positions_m, positions_cm / 100, atol=1e-12)
+
+    @pytest.mark.parametrize(
+        ("option", "value"),
+        [
+            ("duration", -5.0),
+            ("duration", 0.0),
+            ("duration", np.nan),
+            ("sampling_frequency", 0.0),
+            ("sampling_frequency", np.inf),
+            ("speed", 0.0),
+            ("speed", -10.0),
+            ("speed", np.nan),
+            ("period", 0.0),
+            ("pause_duration", -1.0),
+            ("pause_duration", np.nan),
+        ],
+    )
+    def test_invalid_timing_is_refused(self, linear_track_env, option, value):
+        options = {"duration": 10.0, option: value}
+        with pytest.raises(ValueError, match=f"{option} must be finite"):
+            simulate_trajectory_sinusoidal(linear_track_env, **options)
+
+    def test_duration_shorter_than_one_sample_is_refused(self, linear_track_env):
+        with pytest.raises(ValueError, match="shorter than one sample"):
+            simulate_trajectory_sinusoidal(
+                linear_track_env, duration=0.001, sampling_frequency=100.0
+            )
 
     def test_seed_has_no_effect(self, linear_track_env):
         """`seed` is a documented no-op: output is identical regardless of seed."""

@@ -106,8 +106,7 @@ def _sample_count(duration: float, step: float, step_name: str, call: str) -> in
                 why="Why: the trajectory is sampled every "
                 f"{step_name} seconds from time 0, so it needs at least one "
                 "sample.",
-                fix=f"pass a duration of at least {step} s, or a shorter "
-                f"{step_name}",
+                fix=f"pass a duration of at least {step} s, or a shorter {step_name}",
             )
         )
     return n_samples
@@ -584,12 +583,16 @@ def _move_within_bins(
     return position, unit
 
 
+#: Default sinusoidal running speed, in centimeters per second.
+_DEFAULT_SINUSOIDAL_SPEED_CM_PER_S = 10.0
+
+
 def simulate_trajectory_sinusoidal(
     env: Environment,
     *,
     duration: float,
     sampling_frequency: float = 500.0,
-    speed: float = 10.0,
+    speed: float | None = None,
     period: float | None = None,
     pause_duration: float = 0.0,
     pause_at_peaks: bool = True,
@@ -608,8 +611,10 @@ def simulate_trajectory_sinusoidal(
         Total simulation duration in seconds.
     sampling_frequency : float, optional
         Samples per second (default: 500 Hz).
-    speed : float, optional
-        Running speed in environment units/second (default: 10.0 cm/s).
+    speed : float or None, optional
+        Mean running speed along the track, in environment units per second.
+        None (default) uses 10 cm/s expressed in ``env.units``; environments
+        without metric units need an explicit value.
     period : float | None, optional
         Period of sinusoidal motion in seconds. If None, computed from
         track length and speed: period = 2 * track_length / speed.
@@ -636,6 +641,12 @@ def simulate_trajectory_sinusoidal(
     ------
     ValueError
         If environment is not 1D (env.is_linearized_track == False).
+    ValueError
+        If ``duration``, ``sampling_frequency``, ``speed`` or ``period`` is
+        not finite and positive, ``pause_duration`` is not finite and
+        non-negative, or ``duration`` is shorter than one sample.
+    ValueError
+        If ``speed`` is None and ``env.units`` is not a metric length.
 
     Examples
     --------
@@ -666,6 +677,25 @@ def simulate_trajectory_sinusoidal(
     if not env.is_linearized_track:
         msg = "Sinusoidal trajectory only works for 1D environments (env.is_linearized_track must be True)"
         raise ValueError(msg)
+    call = "simulate_trajectory_sinusoidal()"
+    if speed is None:
+        speed = default_speed(
+            env.units,
+            _DEFAULT_SINUSOIDAL_SPEED_CM_PER_S,
+            name="speed",
+            call=call,
+            problem="not a metric length unit, so the default 10 cm/s",
+            placeholder="running speed",
+        )
+    _require_finite(
+        [
+            ("duration", duration, True),
+            ("sampling_frequency", sampling_frequency, True),
+            ("speed", speed, True),
+            *([] if period is None else [("period", period, True)]),
+            ("pause_duration", pause_duration, False),
+        ]
+    )
 
     # The motion runs along the track, in linear position: from the start of
     # the first bin to the end of the last one.
@@ -682,7 +712,7 @@ def simulate_trajectory_sinusoidal(
 
     # Time setup
     dt = 1.0 / sampling_frequency
-    n_steps = int(duration / dt)
+    n_steps = _sample_count(duration, dt, "1 / sampling_frequency", call)
     times = np.arange(n_steps) * dt
 
     # Generate sinusoidal position
