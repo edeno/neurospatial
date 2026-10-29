@@ -392,6 +392,71 @@ class ExplainedVarianceResult(ResultMixin):
         }
 
 
+def _validated_counts(
+    spike_counts: NDArray[np.float64] | Sequence[Any],
+    *,
+    call: str,
+    argument: str = "spike_counts",
+    nonnegative: bool = True,
+) -> NDArray[np.float64]:
+    """Return ``spike_counts`` as a 2-D float array of observed counts.
+
+    Parameters
+    ----------
+    spike_counts : array-like, shape (n_time_bins, n_neurons)
+        Counts to check.
+    call, argument : str
+        Function and argument names for error messages.
+    nonnegative : bool, default=True
+        Refuse negative values. False for counts the caller normalized.
+
+    Returns
+    -------
+    ndarray, shape (n_time_bins, n_neurons)
+        The counts as float64.
+
+    Raises
+    ------
+    ValueError
+        If the counts are not 2-D, hold NaN or infinite values, or hold
+        negative values when ``nonnegative``.
+    """
+    counts = np.asarray(spike_counts, dtype=np.float64)
+    if counts.ndim != 2:
+        raise ValueError(
+            f"{argument} must be 2D (n_time_bins, n_neurons), got shape {counts.shape}"
+        )
+    finite = np.isfinite(counts)
+    if not finite.all():
+        n_bad_bins = int(np.sum(~finite.all(axis=1)))
+        columns = np.flatnonzero(~finite.all(axis=0)).tolist()
+        raise ValueError(
+            _format_error(
+                f"{call}: {argument} has NaN or infinite values in {n_bad_bins} "
+                f"of {counts.shape[0]} time bins, in neuron columns {columns}.",
+                why="Why: a NaN bin was not observed, so it has no count. "
+                "Z-scoring through it would remove the neuron for the whole "
+                "period, and filling it with 0 would count the gap as silence.",
+                fix=f"drop the gap bins before the call, e.g. "
+                f"{argument}[np.isfinite({argument}).all(axis=1)], or bin only "
+                "the recorded epochs",
+            )
+        )
+    if nonnegative and np.any(counts < 0):
+        columns = np.flatnonzero((counts < 0).any(axis=0)).tolist()
+        raise ValueError(
+            _format_error(
+                f"{call}: {argument} has negative values in neuron columns {columns}.",
+                why="Why: spike counts are numbers of spikes per bin and cannot "
+                "be negative; negative values usually mean the counts were "
+                "already normalized or a fill value marks missing bins.",
+                fix="pass the raw binned spike counts from bin_spikes_in_time(), "
+                "and drop bins that were not recorded",
+            )
+        )
+    return counts
+
+
 # =============================================================================
 # Marchenko-Pastur Threshold
 # =============================================================================
@@ -651,15 +716,7 @@ def detect_assemblies(
     Lopes-dos-Santos V, Ribeiro S, Bhattacharyya A (2013). Detecting cell
         assemblies in large neuronal populations. J Neurosci Methods.
     """
-    # Validate input
-    spike_counts = np.asarray(spike_counts, dtype=np.float64)
-
-    if spike_counts.ndim != 2:
-        raise ValueError(
-            f"spike_counts must be 2D (n_time_bins, n_neurons), "
-            f"got shape {spike_counts.shape}"
-        )
-
+    spike_counts = _validated_counts(spike_counts, call="detect_assemblies()")
     n_time_bins, n_neurons = spike_counts.shape
 
     if n_neurons < 3:
@@ -1078,14 +1135,9 @@ def assembly_activation(
     detect_assemblies : Detect assembly patterns
     reactivation_strength : Compare activations between periods
     """
-    spike_counts = np.asarray(spike_counts, dtype=np.float64)
-
-    if spike_counts.ndim != 2:
-        raise ValueError(
-            f"spike_counts must be 2D (n_time_bins, n_neurons), "
-            f"got shape {spike_counts.shape}"
-        )
-
+    spike_counts = _validated_counts(
+        spike_counts, call="assembly_activation()", nonnegative=z_score_input
+    )
     spike_counts = _columns_by_label(
         spike_counts, unit_ids, pattern, call="assembly_activation()"
     )
@@ -1286,13 +1338,7 @@ def pairwise_correlations(
     ...     match_unit_ids=sleep_unit_ids,
     ... )
     """
-    spike_counts = np.asarray(spike_counts, dtype=np.float64)
-
-    if spike_counts.ndim != 2:
-        raise ValueError(
-            f"spike_counts must be 2D (n_time_bins, n_neurons), "
-            f"got shape {spike_counts.shape}"
-        )
+    spike_counts = _validated_counts(spike_counts, call="pairwise_correlations()")
 
     # Work internally in (n_neurons, n_time_bins).
     spike_counts = spike_counts.T
@@ -1439,7 +1485,7 @@ def reactivation_strength(
             )
         )
     template_counts = _columns_by_label(
-        np.asarray(template_counts, dtype=np.float64),
+        _validated_counts(template_counts, call=call, argument="template_counts"),
         template_unit_ids,
         pattern,
         call=call,
@@ -1447,7 +1493,7 @@ def reactivation_strength(
         labels_argument="template_unit_ids",
     ).T
     match_counts = _columns_by_label(
-        np.asarray(match_counts, dtype=np.float64),
+        _validated_counts(match_counts, call=call, argument="match_counts"),
         match_unit_ids,
         pattern,
         call=call,

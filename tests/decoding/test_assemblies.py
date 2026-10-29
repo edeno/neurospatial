@@ -951,3 +951,78 @@ class TestOneCountConvention:
         # Orientation consumed correctly: weights are sized by neuron count.
         for pattern in result.patterns:
             assert len(pattern.weights) == n_neurons
+
+
+class TestCountsMustBeObserved:
+    """A NaN bin is missing, not silent: every assembly entry point refuses it."""
+
+    @pytest.fixture
+    def counts(self) -> np.ndarray:
+        rng = np.random.default_rng(5)
+        counts = rng.poisson(1.0, (600, 8)).astype(np.float64)
+        counts[:, :3] += 3 * rng.poisson(0.3, (600, 1))
+        return counts
+
+    @pytest.fixture
+    def pattern(self) -> AssemblyPattern:
+        weights = np.r_[np.full(3, 1 / np.sqrt(3)), np.zeros(5)]
+        return AssemblyPattern(weights, np.array([0, 1, 2]), 0.3)
+
+    def _calls(self, pattern):
+        return {
+            "detect_assemblies": lambda c: detect_assemblies(c, rng=0),
+            "assembly_activation": lambda c: assembly_activation(c, pattern),
+            "pairwise_correlations": pairwise_correlations,
+            "reactivation_strength (template)": lambda c: reactivation_strength(
+                c, np.nan_to_num(c), pattern
+            ),
+            "reactivation_strength (match)": lambda c: reactivation_strength(
+                np.nan_to_num(c), c, pattern
+            ),
+        }
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "detect_assemblies",
+            "assembly_activation",
+            "pairwise_correlations",
+            "reactivation_strength (template)",
+            "reactivation_strength (match)",
+        ],
+    )
+    def test_nan_bins_raise_with_columns_and_bin_count(
+        self, counts: np.ndarray, pattern: AssemblyPattern, name: str
+    ) -> None:
+        gapped = counts.copy()
+        gapped[[10, 11], 2] = np.nan
+        gapped[40, 5] = np.inf
+        with pytest.raises(ValueError, match="NaN or infinite") as caught:
+            self._calls(pattern)[name](gapped)
+        message = str(caught.value)
+        assert "in 3 of 600 time bins, in neuron columns [2, 5]" in message
+        assert "drop the gap bins" in message
+
+    @pytest.mark.parametrize(
+        "name",
+        ["detect_assemblies", "assembly_activation", "pairwise_correlations"],
+    )
+    def test_negative_counts_raise(
+        self, counts: np.ndarray, pattern: AssemblyPattern, name: str
+    ) -> None:
+        negative = counts.copy()
+        negative[3, 4] = -1.0
+        with pytest.raises(
+            ValueError, match=r"negative values in neuron columns \[4\]"
+        ):
+            self._calls(pattern)[name](negative)
+
+    def test_prenormalized_activation_input_may_be_negative(
+        self, counts: np.ndarray, pattern: AssemblyPattern
+    ) -> None:
+        from scipy.stats import zscore
+
+        activation = assembly_activation(
+            zscore(counts, axis=0), pattern, z_score_input=False
+        )
+        assert np.all(np.isfinite(activation))
