@@ -12,22 +12,29 @@ linearized track, or the coordinate of a 1-D environment), so slopes are in
 environment units per second and do not depend on how bins are numbered. They
 refuse 2-D and 3-D arenas, which have no single axis to fit along.
 
+A positive slope or speed, or an "increasing" fit, means that the decoded
+position increases along the track (away from its start). Whether that is
+forward or reverse replay depends on the direction the animal was running,
+which these functions do not know: compare the sign with the animal's running
+direction around the event.
+
 The fits do not themselves detect the sharp-wave-ripple (SWR) events that
 delimit replay. neurospatial does not implement ripple detection. Instead,
 detect ripple intervals with the external ``ripple_detection`` package
 (``pip install ripple_detection``), then decode the spikes within each
-returned interval and fit the posterior with the functions in this module.
+interval and fit the posterior with the functions in this module.
 
-The intervals ``ripple_detection`` returns (an array of ``(start_time,
-end_time)`` pairs in seconds) also feed directly into
-:func:`neurospatial.events.peri_event_histogram` — pass the interval start
-times as the event times to build a peri-ripple histogram. For example::
+Its detectors return a pandas DataFrame with one row per event and
+``start_time`` and ``end_time`` columns in seconds. The start times feed
+directly into :func:`neurospatial.events.peri_event_histogram` as event
+times to build a peri-ripple histogram. For example::
 
-    from ripple_detection import Kay_ripple_detector
+    from ripple_detection import Kay_ripple_detector, filter_ripple_band
     from neurospatial.events import peri_event_histogram
 
-    ripple_times = Kay_ripple_detector(time, lfps, speed, sampling_frequency)
-    ripple_starts = ripple_times[:, 0]  # (start, end) pairs -> start times
+    filtered_lfps = filter_ripple_band(lfps, sampling_frequency)
+    ripple_times = Kay_ripple_detector(time, filtered_lfps, speed, sampling_frequency)
+    ripple_starts = ripple_times["start_time"].to_numpy()
     psth = peri_event_histogram(spike_times, ripple_starts, window=(-0.5, 0.5))
 
 Functions
@@ -37,7 +44,7 @@ fit_isotonic_trajectory
 fit_linear_trajectory
     Fit linear trajectory with optional Monte Carlo uncertainty.
 detect_trajectory_radon
-    Detect linear trajectory using Radon transform.
+    Detect the line holding the most posterior mass (a discrete Radon transform).
 
 Result Dataclasses
 ------------------
@@ -69,8 +76,8 @@ if TYPE_CHECKING:
 class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
     """Container for isotonic regression trajectory fit results.
 
-    Isotonic regression fits a monotonic (either strictly increasing or
-    decreasing) function to the decoded position sequence. This is useful
+    Isotonic regression fits a monotonic (non-decreasing or non-increasing)
+    function to the decoded position sequence. This is useful
     for detecting replay events that represent sequential traversal of
     spatial locations.
 
@@ -78,8 +85,8 @@ class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
     ----------
     fitted_positions : NDArray[np.float64]
         Fitted monotonic positions along the track, in environment units,
-        shape (n_time_bins,). These are constrained to be monotonically
-        increasing or decreasing.
+        shape (n_time_bins,). These are constrained to be non-decreasing or
+        non-increasing in time.
     r_squared : float
         Coefficient of determination (R²) measuring goodness of fit.
         Range [0, 1] where 1 indicates perfect fit. NaN when the decoded
@@ -89,7 +96,8 @@ class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
         Monotonic constraint of the reported fit. "increasing" means
         position along the track does not decrease with time, "decreasing"
         that it does not increase. None when the decoded position never
-        changes, so the decode has no direction.
+        changes, so the decode has no direction. Whether a direction is
+        forward or reverse replay depends on the animal's running direction.
     residuals : NDArray[np.float64]
         Residuals (observed - fitted) for each time bin, in environment
         units, shape (n_time_bins,). Useful for diagnostics and outlier
@@ -138,7 +146,9 @@ class LinearFitResult(ResultMixin):
     slope : float
         Slope of the fitted line: replay speed along the track in
         environment units per second (cm/s for a track in cm). Positive
-        slope means position increases along the track with time.
+        slope means position increases along the track with time; whether
+        that is forward or reverse replay depends on the animal's running
+        direction.
     intercept : float
         Position along the track, in environment units, where the fitted
         line crosses ``times == 0``. This is time zero of the ``times``
