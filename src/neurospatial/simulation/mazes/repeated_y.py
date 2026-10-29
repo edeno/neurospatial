@@ -10,17 +10,17 @@ diagonally.
 This maze is used to study sequential decision-making, working memory across
 multiple choice points, and the ability to learn complex spatial strategies.
 
-The design follows Warden's (1929) repeated Y-mazes (the Warner-Warden maze),
-built from modular units whose dead ends first split into two short corridors,
-so an animal cannot see that a corridor ends before entering it (Wijnen et
-al., 2024). Warden's dimensions are not reproduced here: the 10.16 cm (4 in)
+The design follows the Warner-Warden unit maze as Warden (1931) describes
+it and Wijnen et al. (2024) draw it: modular units whose dead ends first split
+into two short corridors, so an animal cannot see that a corridor ends before
+entering it (Wijnen et al., 2024). Warden's dimensions are not reproduced here: the 10.16 cm (4 in)
 corridor width is an estimate, the alley width typical of rat mazes of the
 period (e.g. Small 1901; Tolman & Nyswander 1927), and the arm lengths are
 placeholders. The origin is the centre of the maze's bounding box.
 
 The rat enters from an entrance box and runs to a food box. Warden's 1929
-papers were not available to check (UNVERIFIED); Warden (1931, pp. 458-462)
-describes the Warner-Warden unit maze with an "entrance compartment" and a
+papers, which introduced the maze, were not available to check; Warden (1931,
+pp. 458-462) describes the Warner-Warden unit maze with an "entrance compartment" and a
 "food box", separated from the maze by doors, and "whole-wheat bread and milk"
 as food, but gives neither box's size. The two boxes are therefore landmarks
 with point regions at the ends of the first and last arms.
@@ -44,7 +44,7 @@ Psychology, 36(1), 177-178.
 
 Wijnen, K., Genzel, L., & van der Meij, J. (2024). Rodent maze studies: from
 following simple rules to complex map learning. Brain Structure and Function,
-229, 823. https://doi.org/10.1007/s00429-024-02771-x
+229(4), 823–841. https://doi.org/10.1007/s00429-024-02771-x
 
 Examples
 --------

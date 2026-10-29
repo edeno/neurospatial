@@ -9,7 +9,7 @@ east vs go west, or go to the light vs go to the dark arm).
 The plus maze provides more decision alternatives than a T-maze while
 maintaining a simple structure that supports both egocentric (body-turn)
 and allocentric (world-centered) navigation strategies. Wijnen et al. (2024),
-Brain Struct Funct 229:823-841, doi:10.1007/s00429-024-02771-x, discuss plus
+Brain Struct Funct 229(4), 823–841, doi:10.1007/s00429-024-02771-x, discuss plus
 mazes in their review text; the plus maze is not among the mazes drawn in
 their Fig. 1. Plus-maze sizes vary between labs, and the defaults here are
 not taken from a published apparatus.

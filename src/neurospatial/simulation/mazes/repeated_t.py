@@ -54,7 +54,7 @@ https://doi.org/10.1037/h0072851
 
 Wijnen, K., Genzel, L., & van der Meij, J. (2024). Rodent maze studies: from
 following simple rules to complex map learning. Brain Structure and Function,
-229, 823.
+229(4), 823–841.
 https://doi.org/10.1007/s00429-024-02771-x
 
 Examples

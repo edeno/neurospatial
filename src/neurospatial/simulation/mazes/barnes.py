@@ -15,7 +15,7 @@ Barnes, "in her original study, utilized a circular platform (122 cm in
 diameter) with 18 circular holes (9.5 cm in diameter) evenly spaced around the
 periphery." That account does not give the distance from the rim to the
 holes; the 12 cm default is an estimate read from the Barnes maze drawn in Wijnen et al.
-(2024), Brain Struct Funct 229:823-841, doi:10.1007/s00429-024-02771-x,
+(2024), Brain Struct Funct 229(4), 823–841, doi:10.1007/s00429-024-02771-x,
 Fig. 1c, where the hole centres lie at about 0.8 of the platform radius.
 
 Gawel et al. (2018) also describe where the apparatus puts the animal and its

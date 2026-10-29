@@ -20,10 +20,10 @@ in diameter", and the platform is "usually about 10-15 cm in diameter and thus
 between 1/50th and 1/100th of the surface area of the pool". The default
 150 cm pool and 15 cm platform lie in those ranges.
 
-The platform sits by default in the centre of the NE quadrant, which by the
-usual convention is halfway between the pool centre and the wall along the
-quadrant's diagonal; that placement is a convention, not taken from Morris
-(1984) (UNVERIFIED). North is +y and east is +x.
+The platform sits by default in the centre of the NE quadrant, halfway
+between the pool centre and the wall along the quadrant's diagonal. The
+NE-quadrant-centre placement is a common convention; Morris (1984) does not
+specify it. North is +y and east is +x.
 
 The quadrants are quarters of the pool for probe trials, in which "the
 escape platform is removed from the pool" and "a well-trained rat will swim

@@ -5,7 +5,7 @@ It consists of a central stem with a perpendicular crossbar forming a "T" shape.
 Animals must choose between turning left or right at the junction, making it ideal
 for studying egocentric (body-turn) learning and alternation behaviors.
 
-Wijnen et al. (2024), Brain Struct Funct 229:823-841,
+Wijnen et al. (2024), Brain Struct Funct 229(4), 823–841,
 doi:10.1007/s00429-024-02771-x, review the design: "Thus, in a T-maze the
 animal must make an active decision between left and right without being able
 to see what is ahead (Stewart et al.)."

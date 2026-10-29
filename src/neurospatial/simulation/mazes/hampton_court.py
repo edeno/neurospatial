@@ -33,7 +33,7 @@ modeled as opaque.
 Reference: Small, W. S. (1901). Experimental study of the mental processes of
 the rat. II. American Journal of Psychology, 12(2), 206-239.
 https://doi.org/10.2307/1412534. Drawn as the Hampton Court maze in Wijnen et
-al. (2024), Brain Structure and Function 229, Fig. 1b.
+al. (2024), Brain Structure and Function 229(4), 823–841, Fig. 1b.
 https://doi.org/10.1007/s00429-024-02771-x
 
 Examples

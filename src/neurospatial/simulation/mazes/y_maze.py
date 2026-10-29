@@ -8,7 +8,7 @@ than revisiting the same arm consecutively.
 
 The arms point at 270° (down), 30° (up-right) and 150° (up-left), so the
 single arm points down as in the Y-maze drawn in Wijnen et al. (2024),
-Brain Struct Funct 229:823-841, doi:10.1007/s00429-024-02771-x, Fig. 1a.
+Brain Struct Funct 229(4), 823–841, doi:10.1007/s00429-024-02771-x, Fig. 1a.
 Y-maze sizes vary between labs; the 50 cm arms and 10 cm width are
 figure-consistent defaults, not a published apparatus.
 
