@@ -195,7 +195,7 @@ if np.any(~decoder.spatial_support):
 # %% [markdown]
 # All 51 track bins have enough training occupancy, all test positions lie in
 # those bins, and all 599 test intervals have measurable errors. Yet the 95th
-# percentile error is 98 cm, almost the full track length. Missing spatial
+# percentile error is 96 cm, almost the full track length. Missing spatial
 # coverage does not explain that large tail. Inspect the learned place fields
 # and position traces next.
 #
@@ -255,7 +255,7 @@ plt.show()
 #
 # The next plot shows the first 30 s of test estimates in centimeters and the
 # error distribution for the full test period. The median of 2 cm and 95th
-# percentile of 98 cm describe different parts of that distribution; report
+# percentile of 96 cm describe different parts of that distribution; report
 # both rather than allowing the median to hide the large errors.
 
 # %%

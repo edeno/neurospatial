@@ -110,13 +110,13 @@ print("Uncovered positions, rounded to 10 cm:",
       np.unique(np.round(gap_positions, -1)))
 print("Uncovered bins the animal never visited:",
       int((~rates.spatial_support[coverage.uncovered_bins]).sum()))
-assert np.isclose(coverage.coverage_fraction, 0.94, atol=0.006)
+assert np.isclose(coverage.coverage_fraction, 0.91, atol=0.006)
 assert np.isclose(coverage.fields_per_place_cell, 1.0, atol=0.06)
 ```
 
 With all 25 maps the track looks fully covered, but only because the detector
 found fields in the flat maps of the untuned units. The 20 screened place cells
-cover 94% of the bins with one field each. The gaps are the two ends of the
+cover 91% of the bins with one field each. The gaps are the two ends of the
 track, where no simulated place cell has its field. Every gap bin was visited,
 so these are locations without a field, not locations without data. In your
 own recording, check `rates.spatial_support` the same way: coverage counts an
@@ -133,7 +133,7 @@ how many fields include each bin:
 density = field_density_map(coverage.place_fields, env.n_bins)
 covered = density[coverage.covered_bins]
 print(f"Fields per covered bin: median {np.median(covered):.0f}, max {covered.max()}")
-assert covered.max() == 12
+assert covered.max() == 11
 
 fig, ax = plt.subplots(figsize=(8, 2.5))
 plot_population_coverage(env, coverage, show_field_count=True, ax=ax)
@@ -141,7 +141,7 @@ plt.show()
 ```
 
 `plot_population_coverage` draws the same count from the coverage result:
-how many place fields include each position, zero at both ends and up to twelve
+how many place fields include each position, zero at both ends and up to eleven
 overlapping fields in between. Dashed lines mark the uncovered bins, and the
 title gives the coverage fraction. A location covered by several fields is
 represented redundantly; a location covered by none is decoded poorly, if at

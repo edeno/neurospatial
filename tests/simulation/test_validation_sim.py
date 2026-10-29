@@ -162,13 +162,13 @@ class TestValidateSimulation:
 
         session = simulate_session(
             simple_2d_env,
-            duration=30.0,
+            duration=120.0,
             n_cells=3,
             cell_type="place",
             seed=42,
             show_progress=False,
-            # 12 cm fields: a 30 s walk crosses them (6 cm default fields fire
-            # 0, 0 and 1 spikes here).
+            # 12 cm fields and 120 s: the walk crosses at least one field for
+            # every spike seed tried (a 30 s walk can miss all three).
             width=12.0,
         )
 
@@ -184,10 +184,10 @@ class TestValidateSimulation:
 
         # At least one cell must recover its field shape above noise. We assert
         # on the *best* cell, not the mean: field-shape correlation from a short
-        # (30 s) Poisson session is inherently noisy for a 3-cell population, so
+        # (120 s) Poisson session is inherently noisy for a 3-cell population, so
         # the mean is not a stable target. A regression that broke field-shape
         # recovery entirely would leave only chance-level correlations (~0) and
-        # fail here. With seed=42 the best cell recovers ~0.47, so the 0.3 bar
+        # fail here. With seed=42 the best cell recovers ~0.57, so the 0.3 bar
         # clears chance by a wide margin while tolerating the short-session
         # noise. (For an end-to-end recovery threshold see
         # test_place_field_detection_accuracy in test_integration.py, which uses

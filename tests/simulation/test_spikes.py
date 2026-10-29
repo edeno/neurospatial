@@ -374,6 +374,23 @@ class TestGeneratePopulationSpikes:
         # Null standard deviation of a correlation is ~1/sqrt(n_bins).
         assert np.all(np.abs(correlation) < 4 / np.sqrt(n_bins))
 
+    def test_seeds_do_not_share_streams(self):
+        """Seed 1 is not seed 0 shifted by one unit."""
+        times = np.linspace(0.0, 20.0, 2_001)
+        positions = np.zeros((len(times), 2))
+        models = [_ConstantModel(20.0) for _ in range(3)]
+
+        run0, run1 = (
+            generate_population_spikes(
+                models, times, positions, seed=seed, show_progress=False
+            )
+            for seed in (0, 1)
+        )
+
+        for a in run0:
+            for b in run1:
+                assert not np.array_equal(a, b)
+
     def test_reproducibility_with_seed(self, simple_2d_env):
         """Test that same seed produces same spike trains."""
         n_cells = 3

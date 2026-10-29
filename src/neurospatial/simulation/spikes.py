@@ -284,8 +284,9 @@ def generate_population_spikes(
     refractory_period : float, optional
         Refractory period for each neuron in seconds (default: 2ms).
     seed : int | None, optional
-        Random seed for reproducibility. Each neuron gets a derived seed
-        (seed + i) to ensure independence while maintaining reproducibility.
+        Random seed for reproducibility. Each neuron's spikes come from its
+        own child of ``np.random.SeedSequence(seed)``, so the trains are
+        independent and no two seeds share a stream.
     show_progress : bool, optional
         Show progress bar during spike generation (default: True).
         Set to False for quiet operation in scripts or tests.
@@ -404,8 +405,10 @@ def generate_population_spikes(
     - Number of spikes generated for current cell
     - Mean firing rate for current cell
 
-    **Reproducibility**: Each model gets a derived seed (seed + i), so the
-    same ``seed`` reproduces the trains.
+    **Reproducibility**: ``np.random.SeedSequence(seed).spawn(len(models))``
+    gives every model its own stream, so trains are independent across
+    neurons, the same ``seed`` reproduces them, and runs with different seeds
+    share no stream.
 
     **Headings**: without ``headings``, models that need one see the
     direction of movement, which assumes the animal faces where it goes.
@@ -438,6 +441,11 @@ def generate_population_spikes(
     if derived:
         headings = _held_movement_heading(times, positions, break_before=breaks)
 
+    model_seeds: list[np.random.SeedSequence | None] = (
+        [None] * len(models)
+        if seed is None
+        else list(np.random.SeedSequence(seed).spawn(len(models)))
+    )
     duration = float(times[-1] - times[0])
     spike_trains = []
     iterator = tqdm(
@@ -457,7 +465,7 @@ def generate_population_spikes(
             rates,
             times,
             refractory_period=refractory_period,
-            seed=None if seed is None else seed + i,
+            seed=_seed_int(model_seeds[i]),
         )
         spike_trains.append(spikes)
         iterator.set_postfix(
@@ -476,6 +484,11 @@ def generate_population_spikes(
         )
 
     return spike_trains
+
+
+def _seed_int(sequence: np.random.SeedSequence | None) -> int | None:
+    """An integer seed drawn from ``sequence``, or None for fresh entropy."""
+    return None if sequence is None else int(sequence.generate_state(1)[0])
 
 
 def _check_model_rates(
