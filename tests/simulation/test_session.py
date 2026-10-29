@@ -7,7 +7,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.simulation.models import (
-    BorderCellModel,
+    BoundaryVectorCellModel,
     GridCellModel,
     PlaceCellModel,
 )
@@ -219,28 +219,74 @@ class TestSimulateSession:
         )
 
         assert len(session.models) == 5
-        assert all(isinstance(m, BorderCellModel) for m in session.models)
+        assert all(isinstance(m, BoundaryVectorCellModel) for m in session.models)
         assert all(m.distance_tolerance == 5.0 for m in session.models)
 
     @pytest.mark.parametrize("cell_type", ["border", "mixed"])
-    def test_border_cells_default_to_a_physical_width(
+    def test_border_cells_differ_and_fire_along_their_preferred_wall(
         self, connected_arena_env, cell_type
     ):
-        """Without distance_tolerance, border cells use the 9.8 cm default."""
+        """Each border cell has its own wall direction and distance.
+
+        The firing-weighted direction from the field to its nearest wall is the
+        cell's preferred direction, and every cell is a border cell for the
+        package's border score (Solstad et al. 2008 cutoff 0.5) on its true map.
+        """
+        from neurospatial.encoding import border_score
+        from neurospatial.ops import nearest_boundary
+
+        env = connected_arena_env
         session = simulate_session(
-            connected_arena_env,
+            env,
             duration=1.0,
-            n_cells=5,
+            n_cells=20,
             cell_type=cell_type,
             show_progress=False,
             seed=0,
         )
-        tolerances = [
-            m.distance_tolerance
-            for m in session.models
-            if hasattr(m, "distance_tolerance")
+        border = [
+            (int(label), model)
+            for label, model in zip(session.unit_ids, session.models, strict=True)
+            if isinstance(model, BoundaryVectorCellModel)
         ]
-        assert tolerances and all(t == pytest.approx(9.8) for t in tolerances)
+        assert len(border) == (20 if cell_type == "border" else 4)
+        tunings = {(m.preferred_direction, m.preferred_distance) for _, m in border}
+        assert len(tunings) == len(border)
+
+        _, wall_direction = nearest_boundary(env, env.bin_centers)
+        for label, model in border:
+            truth = session.ground_truth[label]
+            assert truth["cell_type"] == "boundary_vector"
+            assert truth["preferred_direction"] == model.preferred_direction
+            assert 0.0 <= truth["preferred_distance"] <= 8.0
+            rate = model.firing_rate(np.zeros(env.n_bins), env.bin_centers)
+            field = rate >= 0.3 * rate.max()
+            mean_direction = np.angle(
+                np.sum(rate[field] * np.exp(1j * wall_direction[field]))
+            )
+            error = np.angle(np.exp(1j * (mean_direction - model.preferred_direction)))
+            assert abs(error) < np.deg2rad(15)
+            assert border_score(env, rate) >= 0.5
+
+    def test_border_field_centers_match_mouse_border_cells(self, connected_arena_env):
+        """Preferred distances 0-8 cm put field centers 6-14 cm from the wall.
+
+        Høydal et al. (2019) report border-field centers (field above 20% of
+        peak) 6-14 cm from the wall, mean 8.8 cm.
+        """
+        env = connected_arena_env
+        depth = np.linspace(0.0, 50.0, 5001)
+        line = np.column_stack([np.full_like(depth, 50.0), 100.0 - depth])
+        centers = []
+        for distance in (0.0, 8.0):
+            model = BoundaryVectorCellModel(
+                env, preferred_distance=distance, preferred_direction=np.pi / 2
+            )
+            rate = model.firing_rate(np.zeros(len(line)), line)
+            inside = depth[rate >= 0.2 * np.nanmax(rate)]
+            centers.append((inside.min() + inside.max()) / 2)
+        assert 6.0 <= centers[0] < centers[1] <= 14.0
+        assert np.mean(centers) == pytest.approx(8.8, abs=0.5)
 
     def test_simulate_session_grid_cells(self, simple_2d_env):
         """simulate_session() with cell_type='grid' should create grid cells."""
@@ -332,7 +378,7 @@ class TestSimulateSession:
 
         # Count cell types
         n_place = sum(isinstance(m, PlaceCellModel) for m in session.models)
-        n_border = sum(isinstance(m, BorderCellModel) for m in session.models)
+        n_border = sum(isinstance(m, BoundaryVectorCellModel) for m in session.models)
         n_grid = sum(isinstance(m, GridCellModel) for m in session.models)
 
         # Check proportions (with tolerance for rounding)
@@ -488,7 +534,7 @@ class TestSimulateSession:
         )
 
         from neurospatial.simulation.models import (
-            BorderCellModel,
+            BoundaryVectorCellModel,
             GridCellModel,
             PlaceCellModel,
         )
@@ -499,7 +545,7 @@ class TestSimulateSession:
                 f"{type(model).__name__} did not receive shared max_rate; "
                 f"got {model.max_rate}"
             )
-            saw_border |= isinstance(model, BorderCellModel)
+            saw_border |= isinstance(model, BoundaryVectorCellModel)
             saw_grid |= isinstance(model, GridCellModel)
             saw_place |= isinstance(model, PlaceCellModel)
 

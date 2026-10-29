@@ -269,13 +269,70 @@ class SimulationSession:
 _MODEL_PARAMETERS: dict[str, frozenset[str]] = {
     "place": frozenset({"width", "metric", "condition"}),
     "border": frozenset(
-        {"distance_tolerance", "preferred_distance", "boundary_source"}
+        {
+            "preferred_distance",
+            "preferred_direction",
+            "distance_tolerance",
+            "direction_tolerance",
+            "boundary_source",
+        }
     ),
     "grid": frozenset({"grid_spacing", "grid_orientation"}),
 }
 
 #: Rate parameters every cell model takes.
 _RATE_PARAMETERS = ("max_rate", "baseline_rate")
+
+
+#: Largest preferred wall distance, in centimeters, drawn for a simulated
+#: border cell. Border cells are boundary vector cells with short preferred
+#: distances (see ``simulate_session``). With the default distance tolerance
+#: of ``BoundaryVectorCellModel``, the field above 20% of the peak, measured
+#: square to the preferred wall, spans 0 to 13.1 cm at a preferred distance of
+#: 0 and 0 to 21.8 cm at 8 cm, so its center lies 6.5 to 10.9 cm from the wall
+#: (about ``6.5 + 0.55 d`` cm). Preferred distances drawn uniformly from
+#: [0, 8] cm therefore give field centers 6.5-10.9 cm from the wall with a
+#: mean of 8.7 cm: within the 6-14 cm range, and at the 8.8 cm mean, of the
+#: mouse border fields of Høydal et al. (2019).
+BORDER_MAX_PREFERRED_DISTANCE_CM = 8.0
+
+
+def _border_cells(
+    env: Environment,
+    n_cells: int,
+    rng: np.random.Generator,
+    params: Mapping[str, Any],
+) -> list[NeuralModel]:
+    """``n_cells`` border cells, each with its own wall direction and distance.
+
+    Each cell is a ``BoundaryVectorCellModel`` whose preferred allocentric
+    direction is drawn uniformly from [-pi, pi) and whose preferred distance
+    is drawn uniformly from [0, 8] cm in ``env.units``, unless ``params``
+    fixes them; ``params`` holds the other model parameters.
+    """
+    from neurospatial._units import default_length
+    from neurospatial.simulation.models import BoundaryVectorCellModel
+
+    directions = rng.uniform(-np.pi, np.pi, n_cells)
+    distances = rng.uniform(0.0, 1.0, n_cells)
+    if "preferred_distance" not in params and n_cells:
+        distances = distances * default_length(
+            env,
+            BORDER_MAX_PREFERRED_DISTANCE_CM,
+            name="preferred_distance",
+            call="simulate_session(cell_type='border')",
+        )
+    return [
+        BoundaryVectorCellModel(
+            env,
+            **{
+                "preferred_distance": float(distance),
+                "preferred_direction": float(direction),
+                **params,
+            },
+        )
+        for distance, direction in zip(distances, directions, strict=True)
+    ]
 
 
 def _stream_seeds(seed: int | None, n_streams: int) -> list[int]:
@@ -415,8 +472,8 @@ def simulate_session(
     cell_type : {'place', 'border', 'grid', 'mixed'}, optional
         Type of neurons to create (default: 'place').
         - 'place': All place cells
-        - 'border': All border cells (``BorderCellModel``; needs an
-          environment with declared walls)
+        - 'border': All border cells (needs an environment with declared
+          walls; see Notes)
         - 'grid': All grid cells (requires 2D environment)
         - 'mixed': 60% place, 20% border, 20% grid
     trajectory_method : {'ou', 'sinusoidal', 'laps'}, optional
@@ -482,9 +539,11 @@ def simulate_session(
         'mixed'): ``width`` (default 11.1 cm in ``env.units``), ``metric``
         ({'euclidean', 'geodesic'}) and ``condition``.
 
-        **Border cell parameters** (``BorderCellModel``; cell_type='border'
-        or 'mixed'): ``distance_tolerance`` (default 9.8 cm in
-        ``env.units``), ``preferred_distance`` and ``boundary_source``.
+        **Border cell parameters** (``BoundaryVectorCellModel``;
+        cell_type='border' or 'mixed'): ``preferred_distance`` and
+        ``preferred_direction`` (drawn per cell when omitted; see Notes),
+        ``distance_tolerance`` (default ``preferred_distance / 12 + 8 cm``),
+        ``direction_tolerance`` (default pi/6) and ``boundary_source``.
 
         **Grid cell parameters** (``GridCellModel``; cell_type='grid' or
         'mixed'): ``grid_spacing`` (default 41 cm in ``env.units``) and
@@ -551,7 +610,7 @@ def simulate_session(
     ...     show_progress=False,
     ... )
     >>> sorted({truth["cell_type"] for truth in session.ground_truth.values()})
-    ['border', 'grid', 'place']
+    ['boundary_vector', 'grid', 'place']
 
     >>> # Place cells with increased firing rate (useful for faster tests)
     >>> session = simulate_session(
@@ -578,15 +637,39 @@ def simulate_session(
     --------
     simulate_trajectory_ou : Low-level trajectory simulation
     PlaceCellModel : Individual place cell model
+    BoundaryVectorCellModel : The border cells' model
     generate_population_spikes : Low-level spike generation
     validate_simulation : Validate simulation results
+
+    Notes
+    -----
+    **Border cells** fire along one or a few walls of the arena (Solstad et
+    al. 2008), and are modelled as boundary vector cells with short preferred
+    distances (Barry et al. 2006; Lever et al. 2009): each is a
+    ``BoundaryVectorCellModel`` that fires where a wall lies close by in its
+    preferred allocentric direction. Every cell has its own tuning, drawn
+    from the field-parameter stream: a preferred direction uniform on
+    [-pi, pi), as no wall direction is favored, and a preferred distance
+    uniform on [0, 8] cm, which puts the field centers 6.5-10.9 cm from the
+    wall (mean 8.7 cm), matching the 6-14 cm range and 8.8 cm mean of mouse
+    border fields (Høydal et al. 2019; derivation at
+    ``BORDER_MAX_PREFERRED_DISTANCE_CM``). A direction toward a corner gives
+    a cell that fires along both walls of the corner. Each unit's
+    ``ground_truth`` is its model's, with ``cell_type='boundary_vector'``.
+
+    References
+    ----------
+    Barry, C., et al. (2006). The boundary vector cell model of place cell
+        firing and spatial memory. Reviews in the Neurosciences, 17, 71-97.
+    Høydal, Ø. A., et al. (2019). Object-vector coding in the medial
+        entorhinal cortex. Nature, 568, 400-404.
+    Lever, C., et al. (2009). Boundary vector cells in the subiculum of the
+        hippocampal formation. Journal of Neuroscience, 29, 9771-9777.
+    Solstad, T., et al. (2008). Representation of geometric borders in the
+        entorhinal cortex. Science, 322, 1865-1868.
     """
     # Import functions here to avoid circular imports
-    from neurospatial.simulation.models import (
-        BorderCellModel,
-        GridCellModel,
-        PlaceCellModel,
-    )
+    from neurospatial.simulation.models import GridCellModel, PlaceCellModel
     from neurospatial.simulation.spikes import generate_population_spikes
     from neurospatial.simulation.trajectory import (
         _simulate_trajectory_laps,
@@ -712,8 +795,7 @@ def simulate_session(
         for center in field_centers:
             models.append(PlaceCellModel(env, center=center, **place_cell_params))
     elif cell_type == "border":
-        for _ in range(n_cells):
-            models.append(BorderCellModel(env, **border_cell_params))
+        models.extend(_border_cells(env, n_border, rng, border_cell_params))
     elif cell_type == "grid":
         for center in field_centers:
             # Use center for phase offset
@@ -724,8 +806,7 @@ def simulate_session(
             models.append(PlaceCellModel(env, center=center, **place_cell_params))
 
         # Create border cells
-        for _ in range(n_border):
-            models.append(BorderCellModel(env, **border_cell_params))
+        models.extend(_border_cells(env, n_border, rng, border_cell_params))
 
         # Create grid cells
         for center in field_centers[n_place : n_place + n_grid]:

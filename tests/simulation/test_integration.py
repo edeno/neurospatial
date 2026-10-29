@@ -100,13 +100,13 @@ class TestSimulateSessionIntegration:
 
         # Should have 6 place (60%), 2 border (20%), 2 grid (20%)
         from neurospatial.simulation.models import (
-            BorderCellModel,
+            BoundaryVectorCellModel,
             GridCellModel,
             PlaceCellModel,
         )
 
         n_place = sum(isinstance(m, PlaceCellModel) for m in session.models)
-        n_border = sum(isinstance(m, BorderCellModel) for m in session.models)
+        n_border = sum(isinstance(m, BoundaryVectorCellModel) for m in session.models)
         n_grid = sum(isinstance(m, GridCellModel) for m in session.models)
 
         assert n_place == 6
@@ -215,7 +215,7 @@ class TestPreConfiguredExamplesIntegration:
     def test_border_cell_session_runs_without_errors(self):
         """Test border_cell_session() completes successfully."""
         session = border_cell_session(
-            border_width=5.0, duration=10.0, n_border_cells=3, n_place_cells=2, seed=42
+            duration=10.0, n_border_cells=3, n_place_cells=2, seed=42
         )
 
         assert session is not None
