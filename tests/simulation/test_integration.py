@@ -1,6 +1,8 @@
 """Integration tests for simulation subpackage.
 
-Tests that verify end-to-end workflows combining multiple simulation components.
+End-to-end workflows: simulate a session, estimate rate maps, and check that
+the known place fields are recovered. Structure and counts of the sessions are
+tested in ``test_session.py`` and ``test_examples.py``.
 """
 
 from __future__ import annotations
@@ -8,408 +10,116 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rate
 from neurospatial.simulation import (
-    border_cell_session,
-    grid_cell_session,
-    linear_track_session,
+    PlaceCellModel,
+    generate_poisson_spikes,
     open_field_session,
     simulate_session,
-    tmaze_alternation_session,
+    simulate_trajectory_ou,
     validate_simulation,
 )
 
 
-class TestSimulateSessionIntegration:
-    """Integration tests for simulate_session() with all cell types."""
+def test_validate_simulation_recovers_every_place_field(connected_arena_env):
+    """Three minutes over 12 cm fields: every cell is evaluated and recovered.
 
-    def test_simulate_session_place_cells_end_to_end(self, simple_2d_env):
-        """Test complete place cell simulation workflow."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        # Create session
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=10,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
-
-        # Verify structure
-        assert session.env is simple_2d_env
-        assert len(session.models) == 10
-        assert len(session.spike_times) == 10
-        assert len(session.ground_truth) == 10
-        assert len(session.positions) > 0
-        assert len(session.times) > 0
-
-        # Verify spikes were generated
-        total_spikes = sum(len(st) for st in session.spike_times)
-        assert total_spikes > 0
-
-    @pytest.mark.slow
-    def test_simulate_session_border_cells_end_to_end(self, connected_arena_env):
-        """Test complete border cell simulation workflow."""
-
-        session = simulate_session(
-            connected_arena_env,
-            duration=10.0,
-            n_cells=10,
-            cell_type="border",
-            distance_tolerance=5.0,
-            seed=42,
-            show_progress=False,
-        )
-
-        assert len(session.models) == 10
-        assert len(session.spike_times) == 10
-        assert len(session.ground_truth) == 10
-
-    def test_simulate_session_grid_cells_end_to_end(self, simple_2d_env):
-        """Test complete grid cell simulation workflow."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=10,
-            cell_type="grid",
-            seed=42,
-            show_progress=False,
-        )
-
-        assert len(session.models) == 10
-        assert len(session.spike_times) == 10
-        assert len(session.ground_truth) == 10
-
-    def test_simulate_session_mixed_cells_end_to_end(self, connected_arena_env):
-        """Test complete mixed cell simulation workflow."""
-
-        session = simulate_session(
-            connected_arena_env,
-            duration=30.0,
-            n_cells=10,
-            cell_type="mixed",
-            distance_tolerance=5.0,
-            seed=42,
-            show_progress=False,
-        )
-
-        # Should have 6 place (60%), 2 border (20%), 2 grid (20%)
-        from neurospatial.simulation.models import (
-            BoundaryVectorCellModel,
-            GridCellModel,
-            PlaceCellModel,
-        )
-
-        n_place = sum(isinstance(m, PlaceCellModel) for m in session.models)
-        n_border = sum(isinstance(m, BoundaryVectorCellModel) for m in session.models)
-        n_grid = sum(isinstance(m, GridCellModel) for m in session.models)
-
-        assert n_place == 6
-        assert n_border == 2
-        assert n_grid == 2
+    The default limits (1.5 field widths, correlation 0.9) pass about 95% of
+    correctly simulated cells (see ``validate_simulation``), so this seeded
+    session is one in which all five pass, not a guarantee for every seed.
+    """
+    session = simulate_session(
+        connected_arena_env,
+        duration=180.0,
+        n_cells=5,
+        cell_type="place",
+        width=12.0,
+        max_rate=20.0,
+        seed=1,
+        show_progress=False,
+    )
+    result = validate_simulation(session)
+    assert result.n_evaluated == 5
+    assert np.all(result.center_errors <= 1.5 * 12.0)
+    assert np.all(result.correlations >= 0.9)
+    assert result.passed
 
 
-class TestValidateSimulationIntegration:
-    """Integration tests for validate_simulation() with place field detection."""
+@pytest.mark.slow
+def test_place_field_detection_accuracy():
+    """Detected place-field peaks recover every true center of an open field.
 
-    def test_validate_simulation_detects_place_fields_correctly(self, simple_2d_env):
-        """Test that validate_simulation() detects place fields with good accuracy."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        # Create session with place cells
-        # speed_mean=10.0 with speed_units="cm" ensures good spatial coverage
-        session = simulate_session(
-            simple_2d_env,
-            duration=60.0,  # Longer duration for better place field detection
-            n_cells=5,
-            cell_type="place",
-            seed=42,
-            speed_mean=10.0,
-            speed_units="cm",
-            show_progress=False,
-        )
-
-        # Validate
-        result = validate_simulation(session)
-
-        # Should have results for all cells
-        assert len(result.center_errors) == 5
-        assert len(result.correlations) == 5
-
-        # Check that at least some cells pass validation
-        # (not all will pass due to randomness, but most should)
-        valid_errors = result.center_errors[~np.isnan(result.center_errors)]
-        if len(valid_errors) > 0:
-            # Mean error should be reasonable (< 35 bin side lengths)
-            # Note: bin_sizes contains bin areas for 2D, so take sqrt for side length
-            mean_bin_area = np.mean(simple_2d_env.bin_sizes)
-            mean_bin_side_length = np.sqrt(mean_bin_area)
-            # Relaxed threshold: 35 bin widths (~70 cm for 2cm bins) accounts for
-            # stochastic trajectory sampling, smoothing in diffusion_kde, and
-            # variability in place field detection with limited spike data
-            assert np.mean(valid_errors) < 35 * mean_bin_side_length
-
-    @pytest.mark.slow
-    def test_validate_simulation_with_custom_thresholds(self, simple_2d_env):
-        """Test validate_simulation() with custom validation thresholds."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=10.0,
-            n_cells=3,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
-
-        # Use strict thresholds
-        result = validate_simulation(
-            session,
-            max_center_error=5.0,  # cm
-            min_correlation=0.8,
-        )
-
-        # Should have validation results
-        assert isinstance(result.passed, bool)
+    Five minutes at 50 Hz peak rate: each cell fires hundreds of spikes, and
+    each rate-map peak lies within one field width (11.1 cm) of its center.
+    """
+    session = open_field_session(
+        duration=300.0, n_place_cells=5, seed=42, max_rate=50.0
+    )
+    env = session.env
+    errors = []
+    for model, spike_times in zip(session.models, session.spike_times, strict=True):
+        assert len(spike_times) > 100
+        rate_map = compute_spatial_rate(
+            env, spike_times, session.times, session.positions
+        ).firing_rate
+        peak = env.bin_centers[np.nanargmax(rate_map)]
+        errors.append(np.linalg.norm(peak - model.center))
+    assert np.max(errors) <= 11.1, errors
+    assert np.mean(errors) <= 11.1 / 2, errors
 
 
-class TestPreConfiguredExamplesIntegration:
-    """Integration tests verifying all pre-configured examples run without errors."""
+def test_place_field_detection_with_longer_duration(connected_arena_env):
+    """Three minutes locate a field better than 30 s, in the median over repetitions.
 
-    def test_open_field_session_runs_without_errors(self):
-        """Test open_field_session() completes successfully."""
-        session = open_field_session(duration=10.0, n_place_cells=5, seed=42)
+    Each repetition draws its trajectory and its spikes from separate streams.
+    The peak is taken over the bins the rate map resolves (``nanargmax``):
+    unvisited bins are NaN.
+    """
+    env = connected_arena_env
+    model = PlaceCellModel(
+        env, center=np.array([51.0, 51.0]), width=15.0, max_rate=30.0
+    )
 
-        assert session is not None
-        assert len(session.models) == 5
-        assert len(session.spike_times) == 5
-
-    def test_linear_track_session_runs_without_errors(self):
-        """Test linear_track_session() completes successfully."""
-        session = linear_track_session(
-            duration=10.0, track_length=100.0, n_place_cells=5, n_laps=3, seed=42
-        )
-
-        assert session is not None
-        assert len(session.models) == 5
-        assert len(session.spike_times) == 5
-
-    def test_tmaze_alternation_session_runs_without_errors(self):
-        """Test tmaze_alternation_session() completes successfully."""
-        session = tmaze_alternation_session(
-            duration=30.0, n_trials=4, n_place_cells=5, seed=42
-        )
-
-        assert session is not None
-        assert len(session.models) == 5
-        assert len(session.spike_times) == 5
-        assert "trial_choices" in session.metadata
-
-    def test_border_cell_session_runs_without_errors(self):
-        """Test border_cell_session() completes successfully."""
-        session = border_cell_session(
-            duration=10.0, n_border_cells=3, n_place_cells=2, seed=42
-        )
-
-        assert session is not None
-        assert len(session.models) == 5  # 3 border + 2 place
-        assert len(session.spike_times) == 5
-
-    def test_grid_cell_session_runs_without_errors(self):
-        """Test grid_cell_session() completes successfully."""
-        session = grid_cell_session(duration=10.0, n_grid_cells=5, seed=42)
-
-        assert session is not None
-        assert len(session.models) == 5
-        assert len(session.spike_times) == 5
-
-
-class TestPlaceFieldDetectionAccuracy:
-    """Tests for place field detection accuracy."""
-
-    @pytest.mark.slow
-    def test_place_field_detection_accuracy(self):
-        """Detected place-field peaks recover the well-sampled true centers."""
-        # Use pre-configured session for reliable test. With the default
-        # 3-bin-spacing (6 cm) fields a 120 s walk crosses every field; at 40 s
-        # two of the five cells fire only once.
-        session = open_field_session(
-            duration=120.0, n_place_cells=5, seed=42, max_rate=50.0
-        )
-
-        # Test that we can detect place fields from simulated data
-        env = session.env
-        positions = session.positions
-        times = session.times
-        spike_trains = session.spike_times
-        ground_truth = session.ground_truth
-        bin_size = env.bin_spacing
-
-        true_centers = np.array(
-            [ground_truth[i]["center"] for i in range(len(spike_trains))],
-            dtype=float,
-        )
-
-        # Try to detect place fields for all cells
-        detected_fields = []
-        for spike_times in spike_trains:
-            # Threshold of 5 spikes ensures reliable detection
-            if len(spike_times) > 5:
-                # Compute spatial firing-rate map
-                rate_map = compute_spatial_rate(
-                    env, spike_times, times, positions, method="diffusion_kde"
-                ).firing_rate
-
-                # Find peak (detected center)
-                peak_bin = np.nanargmax(rate_map)
-                detected_center = env.bin_centers[peak_bin]
-                detected_fields.append(detected_center)
-
-        detected_fields = np.array(detected_fields)
-
-        # Ground-truth recovery: for each true center, find the nearest detected
-        # peak and count how many land within 2 bin sizes.
-        #
-        # NOTE: 4 of 5 match in this 120 s session (errors 0, 2.0, 0, 0 and
-        # 4.47 cm); the least-visited cell's peak is just over 2 bins off.
-        # Asserting >= 2 pins genuine recovery of the well-sampled cells -- a
-        # regression that broke detection would drop below 2 -- without
-        # flaking on cells the short Ornstein-Uhlenbeck walk under-samples.
-        match_tolerance = 2.0 * bin_size
-        matched = 0
-        for true_center in true_centers:
-            nearest = np.linalg.norm(detected_fields - true_center, axis=1).min()
-            if nearest < match_tolerance:
-                matched += 1
-
-        assert matched >= 2, (
-            f"Only {matched} of {len(true_centers)} true centers matched within "
-            f"{match_tolerance:.1f} cm. Spike counts: {[len(st) for st in spike_trains]}."
-        )
-
-        # Verify detected centers are within environment bounds
-        for detected_center in detected_fields:
-            # All coordinates should be within [0, arena_size]
-            assert all(0 <= coord <= 110 for coord in detected_center), (
-                f"Detected center {detected_center} outside environment bounds"
+    def peak_errors(duration):
+        errors = []
+        for repetition in range(6):
+            trajectory_stream, spike_stream = np.random.SeedSequence(
+                [repetition, int(duration)]
+            ).spawn(2)
+            positions, times = simulate_trajectory_ou(
+                env,
+                duration=duration,
+                speed_units="cm",
+                seed=int(trajectory_stream.generate_state(1)[0]),
             )
+            spikes = generate_poisson_spikes(
+                model.firing_rate(times, positions),
+                times,
+                seed=int(spike_stream.generate_state(1)[0]),
+            )
+            rate_map = compute_spatial_rate(env, spikes, times, positions).firing_rate
+            peak = env.bin_centers[np.nanargmax(rate_map)]
+            errors.append(np.linalg.norm(peak - model.center))
+        return np.array(errors)
 
-    def test_place_field_detection_with_longer_duration(self):
-        """Test that longer recordings improve detection accuracy."""
-        rng = np.random.default_rng(42)
-        bin_size = 2.0
-        data = rng.uniform(0, 100, (1000, 2))
-        env = Environment.from_samples(data, bin_size=bin_size)
-        env = env.with_metadata(units="cm")
-
-        from neurospatial.simulation.models import PlaceCellModel
-        from neurospatial.simulation.spikes import generate_poisson_spikes
-        from neurospatial.simulation.trajectory import simulate_trajectory_ou
-
-        # Create known place cell
-        center = env.bin_centers[len(env.bin_centers) // 2]
-        model = PlaceCellModel(env, center=center, width=15.0, max_rate=30.0)
-
-        # Short duration
-        positions_short, times_short = simulate_trajectory_ou(
-            env,
-            duration=30.0,
-            seed=42,
-            speed_units="cm",
-        )
-        rates_short = model.firing_rate(times_short, positions_short)
-        spikes_short = generate_poisson_spikes(rates_short, times_short, seed=42)
-
-        # Long duration
-        positions_long, times_long = simulate_trajectory_ou(
-            env,
-            duration=180.0,
-            seed=42,
-            speed_units="cm",
-        )
-        rates_long = model.firing_rate(times_long, positions_long)
-        spikes_long = generate_poisson_spikes(rates_long, times_long, seed=42)
-
-        # Detect centers
-        if len(spikes_short) > 0:
-            rate_map_short = compute_spatial_rate(
-                env,
-                spikes_short,
-                times_short,
-                positions_short,
-                method="diffusion_kde",
-            ).firing_rate
-            detected_short = env.bin_centers[np.argmax(rate_map_short)]
-            error_short = np.linalg.norm(center - detected_short)
-        else:
-            error_short = np.inf
-
-        if len(spikes_long) > 0:
-            rate_map_long = compute_spatial_rate(
-                env,
-                spikes_long,
-                times_long,
-                positions_long,
-                method="diffusion_kde",
-            ).firing_rate
-            detected_long = env.bin_centers[np.argmax(rate_map_long)]
-            error_long = np.linalg.norm(center - detected_long)
-        else:
-            error_long = np.inf
-
-        # Longer duration should have lower error (or at least not worse)
-        # Allow some tolerance due to randomness
-        assert error_long <= error_short + bin_size
+    short, long = peak_errors(30.0), peak_errors(180.0)
+    assert np.median(long) < np.median(short) / 2, (short, long)
+    assert np.max(long) <= model.width / 2, long
 
 
-class TestSimulationReproducibility:
-    """Integration tests for reproducibility across simulation pipeline."""
+def test_full_pipeline_reproducibility(connected_arena_env):
+    """The same seed reproduces the trajectory, the spikes and the ground truth."""
+    kwargs = {"duration": 30.0, "n_cells": 5, "cell_type": "mixed", "seed": 42}
+    first = simulate_session(connected_arena_env, show_progress=False, **kwargs)
+    second = simulate_session(connected_arena_env, show_progress=False, **kwargs)
 
-    def test_full_pipeline_reproducibility(self, simple_2d_env):
-        """Test that entire simulation pipeline is reproducible with same seed."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        seed = 42
-
-        # Run twice with same seed
-        session1 = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=5,
-            cell_type="place",
-            seed=seed,
-            show_progress=False,
-        )
-
-        session2 = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=5,
-            cell_type="place",
-            seed=seed,
-            show_progress=False,
-        )
-
-        # Trajectories should be identical
-        np.testing.assert_array_equal(session1.positions, session2.positions)
-        np.testing.assert_array_equal(session1.times, session2.times)
-
-        # Spike trains should be identical
-        for st1, st2 in zip(session1.spike_times, session2.spike_times, strict=True):
-            np.testing.assert_array_equal(st1, st2)
-
-        # Ground truth should be identical
-        for key in session1.ground_truth:
-            for param_key in session1.ground_truth[key]:
-                val1 = session1.ground_truth[key][param_key]
-                val2 = session2.ground_truth[key][param_key]
-                if isinstance(val1, np.ndarray):
-                    np.testing.assert_array_equal(val1, val2)
-                else:
-                    assert val1 == val2
+    np.testing.assert_array_equal(first.positions, second.positions)
+    np.testing.assert_array_equal(first.times, second.times)
+    for a, b in zip(first.spike_times, second.spike_times, strict=True):
+        np.testing.assert_array_equal(a, b)
+    assert sum(len(train) for train in first.spike_times) > 0
+    for label in first.unit_ids:
+        truth, again = first.ground_truth[int(label)], second.ground_truth[int(label)]
+        assert truth.keys() == again.keys()
+        for key, value in truth.items():
+            np.testing.assert_array_equal(value, again[key])
