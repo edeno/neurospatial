@@ -300,6 +300,67 @@ def test_detected_center_ignores_unresolved_bins():
     assert result.center_errors[0] == 0.0
 
 
+def test_true_field_is_the_simulated_field(hairpin_track_env):
+    """Geodesic place cells are compared with their own geodesic fields.
+
+    On a hairpin, a Euclidean field centered on one arm also covers the other
+    arm 1 cm away, which the simulated geodesic cell never fires on.
+    """
+    from scipy.stats import pearsonr
+
+    from neurospatial.encoding import compute_spatial_rate
+
+    env = hairpin_track_env
+    session = simulate_session(
+        env,
+        duration=120.0,
+        n_cells=3,
+        trajectory_method="laps",
+        n_laps=12,
+        metric="geodesic",
+        width=15.0,
+        max_rate=30.0,
+        seed=0,
+        show_progress=False,
+    )
+    report = validate_simulation(session)
+    assert report.n_evaluated == 3
+    for row, model in enumerate(session.models):
+        detected = compute_spatial_rate(
+            env, session.spike_times[row], session.times, session.positions
+        ).firing_rate
+        truth = model.firing_rate(np.zeros(env.n_bins), env.bin_centers)
+        both = np.isfinite(detected) & np.isfinite(truth)
+        expected = pearsonr(detected[both], truth[both])[0]
+        assert report.correlations[row] == pytest.approx(expected, rel=1e-12)
+
+
+def test_mixed_sessions_validate_their_place_cells(connected_arena_env):
+    """Border and grid units are not evaluable; place units are evaluated."""
+    session = simulate_session(
+        connected_arena_env,
+        duration=120.0,
+        n_cells=5,
+        cell_type="mixed",
+        width=15.0,
+        max_rate=30.0,
+        seed=0,
+        show_progress=False,
+    )
+    cell_types = [session.ground_truth[int(u)]["cell_type"] for u in session.unit_ids]
+    with pytest.warns(UserWarning, match="not place fields"):
+        report = validate_simulation(session)
+    for cell_type, status, reason in zip(
+        cell_types, report.unit_status, report.skip_reasons, strict=True
+    ):
+        if cell_type == "place":
+            assert status in {"passed", "failed"} and reason is None
+        else:
+            assert (status, reason) == ("not_evaluable", "not_a_place_field")
+    assert report.n_evaluated == cell_types.count("place") == 3
+    assert not report.passed
+
+
 def test_default_center_error_threshold_on_hairpin(hairpin_track_env):
     """On a track the default limit is also 1.5 true field widths."""
     times = np.arange(0, 20, 0.01)

@@ -329,14 +329,14 @@ def validate_simulation(
     ------
     ValueError
         If unit_ids contains unknown labels.
-    ValueError
-        If a selected unit's ground truth has no ``'center'``.
 
     Warns
     -----
     UserWarning
-        If no selected unit could be evaluated, or a unit's ground truth has
-        no place field width to correlate with.
+        If no selected unit could be evaluated, if a selected unit is not a
+        place cell (its ground truth ``cell_type`` is not ``'place'``; marked
+        ``'not_a_place_field'``), or if a place unit's ground truth has no
+        ``'center'`` or ``'width'`` (``'unsupported_ground_truth'``).
 
     Examples
     --------
@@ -369,10 +369,17 @@ def validate_simulation(
     -----
     **Validation Workflow**:
 
-    1. For each cell, compute place field from spike data using specified method
+    1. For each place cell, compute place field from spike data using
+       specified method. Units whose ground truth ``cell_type`` is not
+       ``'place'`` (border, grid and other cells of mixed sessions) are not
+       evaluable.
     2. Detect field center as peak of computed rate map
     3. Compare detected center to ground truth center (Euclidean distance)
-    4. Compute correlation between detected and true rate maps
+    4. Compute correlation between detected and true rate maps. The true map
+       is rebuilt from the ground truth's ``center``, ``width`` and
+       ``metric``, so a geodesic cell is compared with its geodesic field. A
+       firing ``condition`` is not applied: its effect on the map depends on
+       the trajectory.
     5. Aggregate statistics and determine pass/fail based on thresholds
 
     **Default Thresholds**:
@@ -408,6 +415,7 @@ def validate_simulation(
     """
     # Import here to avoid circular dependency
     from neurospatial.encoding import compute_spatial_rate
+    from neurospatial.simulation.models import PlaceCellModel
 
     cell_indices = _select_unit_indices(session, unit_ids)
     env = session.env
@@ -442,7 +450,21 @@ def validate_simulation(
     skip_reasons: list[str | None] = [None] * len(cell_indices)
 
     # Validate each cell
+    not_place: dict[int, str] = {}
+    unsupported: list[int] = []
     for i, cell_idx in enumerate(cell_indices):
+        cell_key = int(session.unit_ids[cell_idx])
+        gt = ground_truth[cell_key]
+        cell_type = gt.get("cell_type", "place")
+        if cell_type != "place":
+            not_place[cell_key] = str(cell_type)
+            skip_reasons[i] = "not_a_place_field"
+            continue
+        if "center" not in gt or "width" not in gt:
+            unsupported.append(cell_key)
+            skip_reasons[i] = "unsupported_ground_truth"
+            continue
+
         train = spike_times[cell_idx]
 
         # Skip cells with no spikes (cannot compute place field)
@@ -473,55 +495,23 @@ def validate_simulation(
         )
         detected_center = env.bin_centers[peak_bin]
 
-        cell_key = int(session.unit_ids[cell_idx])
-        gt = ground_truth[cell_key]
-        if "center" not in gt:
-            raise ValueError(
-                f"Ground truth for {cell_key} missing 'center' field. "
-                f"Available fields: {list(gt.keys())}"
-            )
-
-        true_center = np.asarray(gt["center"])
-
         # Compute center error (Euclidean distance)
-        center_error = float(np.linalg.norm(detected_center - true_center))
+        center_error = float(np.linalg.norm(detected_center - np.asarray(gt["center"])))
         center_errors[i] = center_error
         if not np.isfinite(center_error):
             skip_reasons[i] = "nonfinite_center_error"
             continue
 
-        # The true field's shape at each bin. Pearson correlation ignores a
-        # field's offset and positive scale, so the shape needs only the
-        # center and width: a unit Gaussian on a zero baseline.
-        if "width" in gt:
-            from neurospatial.simulation.models import PlaceCellModel
-
-            true_field = PlaceCellModel(
-                env,
-                center=true_center,
-                width=gt["width"],
-                max_rate=1.0,
-                baseline_rate=0.0,
-            ).firing_rate(np.zeros(env.n_bins), env.bin_centers)
-        else:
-            # Field-correlation validation is only implemented for place cells
-            # (it reconstructs the ground-truth field from a Gaussian place
-            # model). Cells whose ground truth lacks the place field 'width'
-            # are skipped with a NaN correlation; warn so the skip is visible
-            # rather than silent.
-            import warnings
-
-            warnings.warn(
-                f"{cell_key}: skipping field-correlation validation because its "
-                f"ground truth lacks the place field 'width'; correlation set "
-                f"to NaN. Field correlation is only "
-                f"implemented for place cells. Available ground-truth fields: "
-                f"{sorted(gt.keys())}.",
-                UserWarning,
-                stacklevel=2,
-            )
-            skip_reasons[i] = "unsupported_ground_truth"
-            continue
+        # The true field's shape at each bin, rebuilt with the simulated
+        # cell's own distance metric. Pearson correlation ignores a field's
+        # offset and positive scale, so a unit field on a zero baseline has
+        # the same correlation as the cell's own rates.
+        true_field = PlaceCellModel(
+            env,
+            **{key: gt[key] for key in ("center", "width", "metric") if key in gt},
+            max_rate=1.0,
+            baseline_rate=0.0,
+        ).firing_rate(np.zeros(env.n_bins), env.bin_centers)
 
         # Compute correlation between detected and true fields
         # Correlation needs at least three jointly finite, nonconstant bins.
@@ -542,6 +532,26 @@ def validate_simulation(
             if not np.isfinite(corr):
                 skip_reasons[i] = "undefined_correlation"
 
+    import warnings
+
+    if not_place:
+        warnings.warn(
+            f"Units {sorted(not_place)} are not place fields (cell types "
+            f"{sorted(set(not_place.values()))}); validate_simulation compares "
+            "place fields only, so they are marked not evaluable "
+            "('not_a_place_field').",
+            UserWarning,
+            stacklevel=2,
+        )
+    if unsupported:
+        warnings.warn(
+            f"Units {unsupported}: ground truth has no place field 'center' and "
+            "'width' to compare with, so they are marked not evaluable "
+            "('unsupported_ground_truth').",
+            UserWarning,
+            stacklevel=2,
+        )
+
     evaluated = np.isfinite(center_errors) & np.isfinite(correlations)
     meets_thresholds = (center_errors <= center_error_limits) & (
         correlations >= min_correlation
@@ -551,8 +561,6 @@ def validate_simulation(
         for complete, meets in zip(evaluated, meets_thresholds, strict=True)
     )
     if not evaluated.any():
-        import warnings
-
         warnings.warn(
             f"No cells could be fully validated ({len(cell_indices)} selected). "
             "Inspect skip_reasons and spike_counts for unavailable metrics.",

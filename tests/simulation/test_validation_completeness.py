@@ -70,7 +70,9 @@ def test_partial_report_preserves_requested_labels_and_spike_counts():
             19: {"center": session.env.bin_centers[0]},
         },
     )
-    with pytest.warns(UserWarning, match="19: skipping field-correlation"):
+    with pytest.warns(
+        UserWarning, match=r"Units \[19\]: ground truth has no place field"
+    ):
         result = validate_simulation(
             session,
             unit_ids=[19, 7, 11],
