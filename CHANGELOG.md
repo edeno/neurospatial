@@ -2,6 +2,149 @@
 
 ## [Unreleased]
 
+### Simulations produce what they say and refuse what they cannot simulate
+
+A review of `neurospatial.simulation` found sessions whose ground truth
+did not match the spikes they produced:
+
+- Sinusoidal sessions fed linear distance to 2-D place cells, so most cells
+  stayed silent.
+- `border_cell_session` put every place field on the wall, and every border
+  cell in a session was the same cell.
+- `validate_simulation` compared geodesic cells against a Euclidean field and
+  crashed on mixed sessions.
+- Laps on a track not aligned with x stood still.
+- Negative rates became silence.
+- `add_modulation` halved the rate at any depth and put spikes at the wrong
+  phase.
+
+These now behave as documented or raise with a message saying what to fix.
+Every model shares one call signature and is immutable. Seeded simulations
+give different numbers than before: OU headings, per-unit seeds and the
+default lap route all changed.
+
+**Breaking changes**
+
+- Every neural model takes `firing_rate(times, positions, *, headings=None)`
+  and has a `requires_headings` property. Head-direction cells used to take
+  headings first, and spatial-view and object-vector cells took `positions`
+  first. `generate_population_spikes` no longer special-cases model types.
+  When a model needs headings and none are passed, it uses the movement
+  direction, held through stops. A custom model written to the
+  `NeuralModel` protocol can now receive headings.
+- Models are frozen dataclasses with read-only arrays. Assigning `center`
+  or `preferred_direction` after construction used to leave the rates
+  unchanged while `ground_truth` reported the new value; build a new model
+  with `dataclasses.replace` instead. `ground_truth` always includes
+  `cell_type` and every parameter needed to rebuild the model (for example
+  place `metric`).
+- Object-vector cells: `distance_width` is now `distance_tolerance` and
+  `direction_kappa` is now `direction_concentration`, the names used by
+  boundary-vector and head-direction cells.
+- `simulate_session` takes model parameter names (`grid_spacing`,
+  `grid_orientation`, `distance_tolerance`, `preferred_distance`, ...)
+  instead of `spacing`, `orientation`, `border_width` and `distance`. It
+  refuses a parameter for a cell type the session does not simulate, which
+  it used to drop silently. In `border_cell_session`, `border_width` is
+  replaced by `distance_tolerance`.
+- `validate_simulation` returns a `SimulationValidationResult` with
+  `summary()`, `summary_table()`, `report()` and `plot(ax=None)`, instead of
+  a dict; `show_plots` is removed.
+- `SimulationSession` holds read-only arrays, tuples of spike trains and
+  models, and read-only mappings. It refuses positions that do not match
+  the environment's dimensions, times that do not increase, spike times
+  outside the session and non-integer unit ids.
+- Maze dimension names say what they measure:
+  - `corridor_width` replaces `width` in the T, Y, plus, linear, repeated-T
+    and repeated-Y mazes, and `arm_width` in the radial maze;
+  - the W-maze's `width`/`height` are now `outer_arm_spacing`/`arm_length`;
+  - Hampton Court's `width`/`height` are now `frame_width`/`frame_depth`.
+
+  `port_type` names the reward hardware on every port. Sungod's
+  home/center/arm labels moved to `location`, and its track end nodes are
+  named after their ports (`arm_port_k`). `make_star_graph` is removed.
+
+**Sessions and validation**
+
+- Sinusoidal trajectories return positions in environment coordinates,
+  shape `(n_time, env.n_dims)`. They pause exactly at the track ends for
+  `pause_duration`; the old pauses began short of the ends and lasted
+  2–5 s regardless of `pause_duration`.
+- Each border cell fires along its own wall. Border cells are short-range
+  boundary-vector cells with a preferred direction drawn per cell and a
+  preferred distance of 0–8 cm. That range puts field centres at the
+  8.8 cm mean that Høydal et al. (2019) report.
+- Uniform field centres cover every axis with exactly `n_cells` centres. The
+  old layout left the last column empty, and mixed sessions put every place
+  cell at low x. `linear_track_session` spreads fields over the whole
+  track, not just 40–160 cm of 200 cm.
+- `grid_cell_session` draws the trajectory, the grid phases and the spikes
+  from separate seed streams. It used one seed for all three, which
+  correlated unit 0's spikes with the path.
+- `validate_simulation` builds each cell's true field with the cell's own
+  metric. A geodesic cell that was recovered correctly scored r = 0.79
+  against a Euclidean field and failed. Units that are not place cells are
+  reported as not evaluable instead of raising.
+
+**Cell models and spikes**
+
+- Model parameters are validated when the model is built. NaN, negative
+  rates, `baseline_rate > max_rate`, a field centre or width of the wrong
+  dimension and unknown metrics are refused. `firing_rate` refuses
+  positions whose width differs from the environment's.
+  `generate_poisson_spikes` raises on negative rates; it used to clip them
+  to 0.
+- Spatial view cells give NaN, not baseline, where position or heading is
+  missing or the animal is outside the walls. `fov=` now requires the
+  preferred location to be inside the field of view, with or without
+  `require_visibility`; before, it had no effect without
+  `require_visibility`. Visibility with `boundary_source="analysis"` is
+  about 70 times faster.
+- `add_modulation` keeps a spike with probability
+  `(1 + d cos(2πft − φ)) / (1 + d)`:
+  - spikes concentrate at phase `modulation_phase`, where they used to sit
+    at −`modulation_phase`;
+  - the rate at the preferred phase equals the input rate;
+  - the kept fraction, 1/(1+d), goes smoothly to 1 as the depth goes to 0.
+
+  To keep the mean rate, modulate the rate before `generate_poisson_spikes`.
+- Head-direction `mean_vector_length` includes the baseline rate (κ = 2,
+  20 Hz peak, 5 Hz baseline: 0.335, not 0.698). `tuning_width` is NaN when
+  the curve never falls to half its peak, instead of π.
+- Grid cells refuse polar environments. Geodesic object-vector cells refuse
+  an object outside the environment; it used to be moved silently to the
+  nearest bin.
+- Each unit draws its spikes from its own `SeedSequence` child. Runs with
+  `seed=0` and `seed=1` used to share spike trains shifted by one unit.
+
+**Trajectories**
+
+- Default laps run between the two bins farthest apart, so a north–south
+  track works.
+- Lap pause samples have `lap_id = -1` and `direction = "pause"`, and lap
+  boundaries no longer repeat a sample.
+- OU headings use the exact integral of the turning rate. At `dt = 0.1` s
+  the old update overstated heading variance by 17%.
+- Default speeds are 8 cm/s (OU) and 10 cm/s (sinusoidal), expressed in
+  `env.units`.
+- Unknown `boundary_mode` values, `periodic` on non-rectangular bins,
+  durations shorter than one sample and non-finite or non-integer lap
+  settings raise.
+- A fast walker no longer stalls in sharp wall corners.
+
+**Mazes**
+
+- Every maze's dimensions are checked when built: negative, NaN or
+  overlapping sizes raise with the limit they break. Before, a negative
+  side length built a normal box, and a short T-maze arm swapped the wells.
+- `make_watermaze` refuses a platform that does not fit in the pool.
+- The square maze's NE/NW/SE/SW regions are quadrants, as in the watermaze;
+  they were single points.
+- Mazes warn when the bin size splits the maze into pieces or leaves a
+  reward region without a bin.
+- `MazeEnvironments` is frozen.
+- Estimated sizes are marked as estimates in the maze guide.
+
 ### Spatial information of very small rates
 
 - Skaggs spatial information (`spatial_information`,
