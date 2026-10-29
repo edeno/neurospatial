@@ -209,7 +209,7 @@ class DecodingResult(ResultMixin):
     >>>
     >>> # Create result
     >>> result = DecodingResult(posterior=posterior, env=env)
-    >>> print(f"MAP estimate shape: {result.map_estimate.shape}")
+    >>> print(f"MAP estimate shape: {result.map_bin.shape}")
     MAP estimate shape: (100,)
     >>> print(f"Mean entropy: {result.posterior_entropy.mean():.2f} bits")
     Mean entropy: ... bits
@@ -353,7 +353,7 @@ class DecodingResult(ResultMixin):
         return int(self.posterior.shape[0])
 
     @cached_property
-    def map_estimate(self) -> NDArray[np.int64]:
+    def map_bin(self) -> NDArray[np.int64]:
         """Maximum a posteriori bin index for each time bin.
 
         Returns the index of the bin with highest posterior density at each
@@ -386,7 +386,7 @@ class DecodingResult(ResultMixin):
         from neurospatial.decoding._support import relative_bin_measures
         from neurospatial.decoding.estimates import _density_mode
 
-        measures = relative_bin_measures(self.env, context="map_estimate")
+        measures = relative_bin_measures(self.env, context="map_bin")
         return _density_mode(self.posterior, measures)
 
     @cached_property
@@ -394,7 +394,7 @@ class DecodingResult(ResultMixin):
         """MAP position in environment coordinates.
 
         Returns the center of the bin with highest posterior density at each
-        time step (see :attr:`map_estimate`).
+        time step (see :attr:`map_bin`).
 
         Returns
         -------
@@ -403,10 +403,10 @@ class DecodingResult(ResultMixin):
 
         See Also
         --------
-        map_estimate : MAP bin index
+        map_bin : MAP bin index
         mean_position : Posterior mean position
         """
-        return self.env.bin_centers[self.map_estimate]
+        return self.env.bin_centers[self.map_bin]
 
     @cached_property
     def mean_position(self) -> NDArray[np.float64]:
@@ -466,7 +466,7 @@ class DecodingResult(ResultMixin):
 
         See Also
         --------
-        map_estimate : Point estimate with zero entropy consideration
+        map_bin : Point estimate with zero entropy consideration
         """
         p = np.clip(self.posterior, 0.0, 1.0)
         # Vectorized mask-based entropy: avoid log(0) by using np.where
@@ -712,7 +712,7 @@ class DecodingResult(ResultMixin):
 
         decodable = np.any(np.isfinite(self.posterior), axis=1)
         if show_map:
-            map_bins = np.asarray(self.map_estimate, dtype=np.float64)
+            map_bins = np.asarray(self.map_bin, dtype=np.float64)
             map_bins[~decodable] = np.nan
             ax.plot(
                 broken(x_coords),
@@ -842,7 +842,7 @@ class DecodingResult(ResultMixin):
             data["time"] = self.times
 
         # Add MAP bin index
-        data["map_bin"] = self.map_estimate
+        data["map_bin"] = self.map_bin
 
         # Add MAP positions
         dim_names = _coord_dim_names(self.env.n_dims)
@@ -980,7 +980,7 @@ class DecodingResult(ResultMixin):
         data_vars: dict[str, Any] = {
             "posterior": (("time", "bin"), np.asarray(self.posterior)),
             # map_bin is cheaply available (cached); expose the MAP bin index.
-            "map_bin": (("time",), np.asarray(self.map_estimate)),
+            "map_bin": (("time",), np.asarray(self.map_bin)),
         }
 
         attrs: dict[str, Any] = {
@@ -1243,21 +1243,6 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
             Length of the per-time reduction arrays.
         """
         return int(self.map_bin.shape[0])
-
-    @property
-    def map_estimate(self) -> NDArray[np.int64]:
-        """MAP bin index per time bin.
-
-        Alias of :attr:`map_bin` for parity with
-        :attr:`DecodingResult.map_estimate`, so user code ports between the
-        full and summary decoders without renaming.
-
-        Returns
-        -------
-        NDArray[np.int64]
-            MAP bin index per time bin, shape ``(n_time_bins,)``.
-        """
-        return self.map_bin
 
     def _dim_names(self) -> list[str]:
         """Coordinate column names matching ``DecodingResult.to_dataframe``."""

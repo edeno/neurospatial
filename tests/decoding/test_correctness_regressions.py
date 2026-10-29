@@ -86,10 +86,10 @@ def test_partial_missing_rate_likelihood_matches_poisson(tiny_env, decode, missi
             validate=not np.isinf(missing),
             time_chunk=1,
         )
-    np.testing.assert_array_equal(result.map_estimate, expected.argmax(axis=1))
+    np.testing.assert_array_equal(result.map_bin, expected.argmax(axis=1))
     # Four spikes at the finite 4 Hz model previously made bin 1 win, because
     # its omitted 4! factor was only present at that bin.
-    assert result.map_estimate[0] == 0
+    assert result.map_bin[0] == 0
     if isinstance(result, DecodingResult):
         np.testing.assert_allclose(result.posterior, expected)
     else:
@@ -159,7 +159,7 @@ def test_xarray_exports_are_independent_writable_arrays(tiny_env, summary):
         posterior = np.zeros((2, tiny_env.n_bins))
         posterior[np.arange(2), map_bin] = 1.0
         result = DecodingResult(posterior, tiny_env, times, spike_window=window)
-        original_arrays = [result.posterior, result.map_estimate]
+        original_arrays = [result.posterior, result.map_bin]
     original_arrays.extend([result.times, result.spike_window, tiny_env.bin_centers])
     snapshots = [array.copy() for array in original_arrays]
 

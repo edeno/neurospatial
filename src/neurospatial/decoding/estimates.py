@@ -7,7 +7,7 @@ without creating a DecodingResult container.
 
 Functions
 ---------
-posterior_mode : Bin index of the largest posterior probability
+map_bin : MAP bin index (highest posterior density)
 map_position : MAP position (highest posterior density) in environment coordinates
 mean_position : Posterior mean position (expected value)
 posterior_entropy : Posterior entropy in bits (entropy measure)
@@ -21,12 +21,11 @@ interchangeably.
 
 Examples
 --------
->>> from neurospatial.decoding.estimates import posterior_mode, posterior_entropy
+>>> from neurospatial.decoding.estimates import posterior_entropy
 >>> import numpy as np
 >>>
 >>> # Uniform posterior (maximum entropy)
 >>> posterior = np.ones((10, 100)) / 100
->>> bins = posterior_mode(posterior)
 >>> ent = posterior_entropy(posterior)
 >>> print(f"Entropy: {ent[0]:.2f} bits")  # log2(100) = 6.64 bits
 Entropy: 6.64 bits
@@ -103,18 +102,20 @@ def _density_mode(
     return result
 
 
-def posterior_mode(
+def map_bin(
+    env: Environment,
     posterior: NDArray[np.float64],
 ) -> NDArray[np.int64]:
-    """Bin index of the largest posterior probability for each time bin.
+    """Maximum a posteriori bin index for each time bin.
 
-    Returns the index of the bin with highest posterior probability mass
-    at each time step. This is the MAP bin when all bins have the same size;
-    on environments with unequal bins use :func:`map_position` or
-    ``DecodingResult.map_estimate``, which compare probability density.
+    Returns the index of the bin with highest posterior density at each
+    time step: the bin whose probability per unit length, area or volume,
+    ``posterior / env.bin_sizes``, is largest.
 
     Parameters
     ----------
+    env : Environment
+        Spatial environment providing bin sizes.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
         Posterior probability distribution over positions.
         Each row should sum to 1.0.
@@ -122,39 +123,38 @@ def posterior_mode(
     Returns
     -------
     NDArray[np.int64], shape (n_time_bins,)
-        Bin indices of maximum posterior probability.
+        MAP bin indices.
 
     Notes
     -----
-    Uses ``np.argmax(axis=1)`` which returns the first maximum
-    in case of ties.
+    The posterior holds a probability mass per bin. A bin twice as long
+    holds twice the mass at the same density, so comparing mass would favor
+    large bins; on equal bins the two orderings agree.
 
-    Without an environment this function cannot know bin sizes, so it
-    compares probability mass. A bin twice as long holds twice the mass at
-    the same density, so on a track or arena with unequal bins this index
-    favors large bins and is not the posterior mode in space.
-    ``DecodingResult.map_estimate`` gives the same index as this function
-    when bins are equal and the highest-density bin otherwise.
+    This function mirrors ``DecodingResult.map_bin``.
 
     See Also
     --------
     map_position : MAP position in environment coordinates
-    DecodingResult.map_estimate : Property version on result container
+    DecodingResult.map_bin : Property version on result container
 
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.estimates import posterior_mode
+    >>> from neurospatial import Environment
+    >>> from neurospatial.decoding.estimates import map_bin
     >>>
-    >>> # Delta posterior at bin 5
-    >>> posterior = np.zeros((1, 10))
-    >>> posterior[0, 5] = 1.0
-    >>> bins = posterior_mode(posterior)
-    >>> print(bool(bins[0] == 5))
-    True
+    >>> positions = np.column_stack([np.linspace(0, 10, 50), np.linspace(0, 10, 50)])
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> posterior = np.zeros((1, env.n_bins))
+    >>> posterior[0, 3] = 1.0
+    >>> map_bin(env, posterior).tolist()
+    [3]
     """
-    result: NDArray[np.int64] = np.argmax(posterior, axis=1).astype(np.int64)
-    return result
+    from neurospatial.decoding._support import relative_bin_measures
+
+    measures = relative_bin_measures(env, context="map_bin")
+    return _density_mode(posterior, measures)
 
 
 def map_position(
@@ -184,14 +184,13 @@ def map_position(
     -----
     The posterior holds a probability mass per bin. Its mode over space is
     the bin of highest density, mass divided by bin size; on equal bins this
-    is ``env.bin_centers[posterior_mode(posterior)]``. Ties go to the lowest
-    bin index.
+    is the highest-mass bin. Ties go to the lowest bin index.
 
     This function mirrors ``DecodingResult.map_position``.
 
     See Also
     --------
-    posterior_mode : MAP bin index
+    map_bin : MAP bin index
     mean_position : Posterior mean position
     DecodingResult.map_position : Property version on result container
 
@@ -211,10 +210,7 @@ def map_position(
     >>> pos.shape
     (1, 2)
     """
-    from neurospatial.decoding._support import relative_bin_measures
-
-    measures = relative_bin_measures(env, context="map_position")
-    return env.bin_centers[_density_mode(posterior, measures)]
+    return env.bin_centers[map_bin(env, posterior)]
 
 
 def mean_position(

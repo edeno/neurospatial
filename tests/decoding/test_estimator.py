@@ -141,7 +141,7 @@ class TestParity:
         assert isinstance(dec, DecodingResult)
         assert_array_equal(dec.posterior, ref.posterior)
 
-    def test_map_estimates_byte_equal(self, sim) -> None:
+    def test_map_bins_byte_equal(self, sim) -> None:
         """MAP position and MAP bin index match decode_session exactly."""
         env, spikes, times, positions = sim
 
@@ -153,7 +153,7 @@ class TestParity:
         ref = decode_session(env, spikes, times, positions, dt=0.5, bandwidth=5.0)
 
         assert_array_equal(dec.map_position, ref.map_position)
-        assert_array_equal(dec.map_estimate, ref.map_estimate)
+        assert_array_equal(dec.map_bin, ref.map_bin)
 
     def test_times_grid_matches(self, sim) -> None:
         """Decode time-bin centers match decode_session."""
@@ -178,7 +178,7 @@ def test_predict_summary_map_matches_predict(sim) -> None:
     dense = fit.predict(spikes, times)
 
     assert isinstance(summary, DecodingSummary)
-    assert_array_equal(summary.map_estimate, dense.map_estimate)
+    assert_array_equal(summary.map_bin, dense.map_bin)
     assert_array_equal(summary.map_position, dense.map_position)
 
 
@@ -262,7 +262,7 @@ def test_predict_forwards_max_gap_and_windows(two_epoch_recording):
     )
     assert len(predicted.times) == 3999
     np.testing.assert_array_equal(summary.times, predicted.times)
-    np.testing.assert_array_equal(summary.map_bin, predicted.map_estimate)
+    np.testing.assert_array_equal(summary.map_bin, predicted.map_bin)
     score = default.score(trains, r.times, r.positions, epochs=[(1100, 1200)])
     expected = np.nanmedian(predicted.error_against(r.times, r.positions))
     assert score == pytest.approx(expected)

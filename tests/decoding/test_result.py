@@ -26,8 +26,8 @@ class TestDecodingResultBasic:
 class TestMapEstimate:
     """Test MAP (maximum a posteriori) estimate computation."""
 
-    def test_map_estimate_shape(self, small_2d_env):
-        """map_estimate should return (n_time_bins,) array of bin indices."""
+    def test_map_bin_shape(self, small_2d_env):
+        """map_bin should return (n_time_bins,) array of bin indices."""
         from neurospatial.decoding import DecodingResult
 
         n_time_bins = 10
@@ -35,11 +35,11 @@ class TestMapEstimate:
 
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
-        assert result.map_estimate.shape == (n_time_bins,)
-        assert result.map_estimate.dtype in (np.int64, np.intp)
+        assert result.map_bin.shape == (n_time_bins,)
+        assert result.map_bin.dtype in (np.int64, np.intp)
 
-    def test_map_estimate_delta_posterior(self, small_2d_env):
-        """map_estimate should return correct bin for delta (one-hot) posterior."""
+    def test_map_bin_delta_posterior(self, small_2d_env):
+        """map_bin should return correct bin for delta (one-hot) posterior."""
         from neurospatial.decoding import DecodingResult
 
         n_time_bins = 5
@@ -52,10 +52,10 @@ class TestMapEstimate:
 
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
-        np.testing.assert_array_equal(result.map_estimate, expected_bins)
+        np.testing.assert_array_equal(result.map_bin, expected_bins)
 
-    def test_map_estimate_identity_posterior(self, small_2d_env):
-        """map_estimate on identity posterior should return diagonal indices."""
+    def test_map_bin_identity_posterior(self, small_2d_env):
+        """map_bin on identity posterior should return diagonal indices."""
         from neurospatial.decoding import DecodingResult
 
         # Use identity matrix (10x10) if env has enough bins
@@ -65,7 +65,7 @@ class TestMapEstimate:
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
         expected = np.arange(n_time_bins)
-        np.testing.assert_array_equal(result.map_estimate, expected)
+        np.testing.assert_array_equal(result.map_bin, expected)
 
 
 class TestMapPosition:
@@ -84,7 +84,7 @@ class TestMapPosition:
         assert result.map_position.dtype == np.float64
 
     def test_map_position_matches_bin_centers(self, small_2d_env):
-        """map_position should equal bin_centers[map_estimate]."""
+        """map_position should equal bin_centers[map_bin]."""
         from neurospatial.decoding import DecodingResult
 
         n_time_bins = 5
@@ -266,7 +266,7 @@ class TestEdgeCases:
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
         assert result.n_time_bins == 1
-        assert result.map_estimate.shape == (1,)
+        assert result.map_bin.shape == (1,)
         assert result.map_position.shape == (1, small_2d_env.n_dims)
         assert result.mean_position.shape == (1, small_2d_env.n_dims)
         assert result.posterior_entropy.shape == (1,)
@@ -289,7 +289,7 @@ class TestEdgeCases:
             result = DecodingResult(posterior=posterior, env=env)
 
             assert result.n_time_bins == n_time_bins
-            np.testing.assert_array_equal(result.map_estimate, np.zeros(n_time_bins))
+            np.testing.assert_array_equal(result.map_bin, np.zeros(n_time_bins))
             # Entropy of single bin is 0 (log2(1) = 0)
             np.testing.assert_array_almost_equal(
                 result.posterior_entropy, np.zeros(n_time_bins)
@@ -505,13 +505,13 @@ class TestResultOwnsData:
         src = np.array([[0.9, 0.1, 0.0, 0.0]])
         times = np.array([0.5])
         r = DecodingResult(posterior=src, env=env_4bin, times=times)
-        assert r.map_estimate.tolist() == [0]
+        assert r.map_bin.tolist() == [0]
 
         src[0] = [0.1, 0.9, 0.0, 0.0]
         times[0] = 99.0
 
         np.testing.assert_array_equal(r.posterior[0], [0.9, 0.1, 0.0, 0.0])
-        assert r.map_estimate.tolist() == r.posterior.argmax(axis=1).tolist() == [0]
+        assert r.map_bin.tolist() == r.posterior.argmax(axis=1).tolist() == [0]
         np.testing.assert_array_equal(r.times, [0.5])
 
         # A read-only view of a writeable array is copied, not shared.
@@ -541,12 +541,12 @@ class TestResultOwnsData:
         v = a[:]
         a.flags.writeable = False
         r = DecodingResult(posterior=a, env=env_4bin)
-        assert r.map_estimate.tolist() == [0]
+        assert r.map_bin.tolist() == [0]
 
         v[0] = [0.1, 0.9, 0.0, 0.0]  # the earlier view still writes into `a`
 
         np.testing.assert_array_equal(r.posterior[0], [0.9, 0.1, 0.0, 0.0])
-        assert r.map_estimate.tolist() == [0]
+        assert r.map_bin.tolist() == [0]
 
     def test_replace_rebuilds_cache(self, env_4bin):
         import dataclasses
@@ -554,11 +554,11 @@ class TestResultOwnsData:
         from neurospatial.decoding import DecodingResult
 
         r = DecodingResult(posterior=np.array([[0.9, 0.1, 0.0, 0.0]]), env=env_4bin)
-        assert r.map_estimate.tolist() == [0]
+        assert r.map_bin.tolist() == [0]
         new = np.array([[0.0, 0.0, 1.0, 0.0]])
         r2 = dataclasses.replace(r, posterior=new)
-        assert r2.map_estimate.tolist() == [2]
-        assert r.map_estimate.tolist() == [0]
+        assert r2.map_bin.tolist() == [2]
+        assert r.map_bin.tolist() == [0]
         assert not np.shares_memory(r2.posterior, new)
 
 
@@ -572,7 +572,7 @@ def test_copied_result_stays_read_only(env_4bin, how):
     r = DecodingResult(
         posterior=np.array([[0.9, 0.1, 0.0, 0.0]]), env=env_4bin, times=np.array([0.5])
     )
-    _ = r.map_estimate  # cached values travel with the copy
+    _ = r.map_bin  # cached values travel with the copy
     r2 = pickle.loads(pickle.dumps(r)) if how == "pickle" else copy.deepcopy(r)
     assert r2.posterior.flags.writeable is False
     assert r2.times.flags.writeable is False

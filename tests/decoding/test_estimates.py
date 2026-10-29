@@ -10,24 +10,24 @@ import pytest
 
 
 class TestMapEstimate:
-    """Test map_estimate function."""
+    """Test map_bin function."""
 
-    def test_map_estimate_shape(self, small_2d_env):
-        """map_estimate should return (n_time_bins,) array of bin indices."""
-        from neurospatial.decoding.estimates import posterior_mode
+    def test_map_bin_shape(self, small_2d_env):
+        """map_bin should return (n_time_bins,) array of bin indices."""
+        from neurospatial.decoding.estimates import map_bin
 
         n_time_bins = 10
         n_bins = small_2d_env.n_bins
         posterior = np.ones((n_time_bins, n_bins)) / n_bins
 
-        result = posterior_mode(posterior)
+        result = map_bin(small_2d_env, posterior)
 
         assert result.shape == (n_time_bins,)
         assert result.dtype in (np.int64, np.intp)
 
-    def test_map_estimate_delta_posterior(self, small_2d_env):
-        """map_estimate should return correct bin for delta posterior."""
-        from neurospatial.decoding.estimates import posterior_mode
+    def test_map_bin_delta_posterior(self, small_2d_env):
+        """map_bin should return correct bin for delta posterior."""
+        from neurospatial.decoding.estimates import map_bin
 
         n_time_bins = 5
         n_bins = small_2d_env.n_bins
@@ -37,18 +37,18 @@ class TestMapEstimate:
         for t, bin_idx in enumerate(expected_bins):
             posterior[t, bin_idx] = 1.0
 
-        result = posterior_mode(posterior)
+        result = map_bin(small_2d_env, posterior)
 
         np.testing.assert_array_equal(result, expected_bins)
 
-    def test_map_estimate_identity_posterior(self, small_2d_env):
-        """map_estimate on identity posterior should return diagonal indices."""
-        from neurospatial.decoding.estimates import posterior_mode
+    def test_map_bin_identity_posterior(self, small_2d_env):
+        """map_bin on identity posterior should return diagonal indices."""
+        from neurospatial.decoding.estimates import map_bin
 
         n_time_bins = min(10, small_2d_env.n_bins)
         posterior = np.eye(n_time_bins, small_2d_env.n_bins)
 
-        result = posterior_mode(posterior)
+        result = map_bin(small_2d_env, posterior)
 
         expected = np.arange(n_time_bins)
         np.testing.assert_array_equal(result, expected)
@@ -71,7 +71,7 @@ class TestMapPosition:
         assert result.dtype == np.float64
 
     def test_map_position_matches_bin_centers(self, small_2d_env):
-        """map_position should equal bin_centers[map_estimate]."""
+        """map_position should equal bin_centers[map_bin]."""
         from neurospatial.decoding.estimates import map_position
 
         n_time_bins = 5
@@ -362,16 +362,16 @@ class TestEdgeCases:
         """Functions should work with a single time bin."""
         from neurospatial.decoding.estimates import (
             credible_region,
+            map_bin,
             map_position,
             mean_position,
             posterior_entropy,
-            posterior_mode,
         )
 
         n_bins = small_2d_env.n_bins
         posterior = np.ones((1, n_bins)) / n_bins
 
-        assert posterior_mode(posterior).shape == (1,)
+        assert map_bin(small_2d_env, posterior).shape == (1,)
         assert map_position(small_2d_env, posterior).shape == (1, small_2d_env.n_dims)
         assert mean_position(small_2d_env, posterior).shape == (1, small_2d_env.n_dims)
         assert posterior_entropy(posterior).shape == (1,)
@@ -382,10 +382,10 @@ class TestEdgeCases:
         from neurospatial import Environment
         from neurospatial.decoding.estimates import (
             credible_region,
+            map_bin,
             map_position,
             mean_position,
             posterior_entropy,
-            posterior_mode,
         )
 
         # Create a minimal single-bin environment
@@ -399,7 +399,7 @@ class TestEdgeCases:
             posterior = np.ones((n_time_bins, 1))  # Only one bin, always prob=1
 
             np.testing.assert_array_equal(
-                posterior_mode(posterior), np.zeros(n_time_bins)
+                map_bin(env, posterior), np.zeros(n_time_bins)
             )
             assert map_position(env, posterior).shape == (n_time_bins, env.n_dims)
             assert mean_position(env, posterior).shape == (n_time_bins, env.n_dims)

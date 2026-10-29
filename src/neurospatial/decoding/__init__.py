@@ -25,8 +25,8 @@ DecodingResult : Container for decoding results
 
 Estimate Functions
 ------------------
-posterior_mode : Maximum a posteriori bin index
-    Bin index of highest posterior probability per time bin.
+map_bin : Maximum a posteriori bin index
+    Bin index of highest posterior density per time bin.
 
 map_position : MAP position in environment coordinates
     Coordinate position of the MAP bin.
@@ -174,10 +174,10 @@ from neurospatial.decoding.assemblies import (
 )
 from neurospatial.decoding.estimates import (
     credible_region,
+    map_bin,
     map_position,
     mean_position,
     posterior_entropy,
-    posterior_mode,
 )
 from neurospatial.decoding.estimator import BayesianDecoder
 from neurospatial.decoding.likelihood import log_poisson_likelihood
@@ -244,7 +244,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Likelihood
     "log_poisson_likelihood",
     # Estimates
-    "posterior_mode",
+    "map_bin",
     "posterior_entropy",
     "map_position",
     "marchenko_pastur_threshold",

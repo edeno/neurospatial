@@ -131,7 +131,7 @@ def test_decode_position_accepts_result_object() -> None:
     np.testing.assert_allclose(
         from_result.posterior, from_array.posterior, rtol=1e-12, atol=1e-12
     )
-    np.testing.assert_array_equal(from_result.map_estimate, from_array.map_estimate)
+    np.testing.assert_array_equal(from_result.map_bin, from_array.map_bin)
 
 
 @dataclass

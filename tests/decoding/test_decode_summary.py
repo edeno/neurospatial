@@ -66,7 +66,7 @@ class TestDtypeParam:
             times=times,
         )
         # All standard methods/properties run unchanged on a float32 posterior.
-        assert result.map_estimate.shape == (spike_counts.shape[0],)
+        assert result.map_bin.shape == (spike_counts.shape[0],)
         assert result.map_position.shape[0] == spike_counts.shape[0]
         assert result.mean_position.shape[0] == spike_counts.shape[0]
         assert result.posterior_entropy.shape == (spike_counts.shape[0],)
@@ -188,7 +188,7 @@ class TestTimeChunkParam:
         )
         # Tolerance-equal (BLAS shape-dependence), MAP identical, rows sum to 1.
         np.testing.assert_allclose(chunked.posterior, ref.posterior, rtol=0, atol=1e-12)
-        np.testing.assert_array_equal(chunked.map_estimate, ref.map_estimate)
+        np.testing.assert_array_equal(chunked.map_bin, ref.map_bin)
         np.testing.assert_allclose(
             np.asarray(chunked.posterior).sum(axis=1), 1.0, atol=1e-9
         )
@@ -210,7 +210,7 @@ class TestTimeChunkParam:
             time_chunk=13,
         )
         np.testing.assert_allclose(chunked.posterior, ref.posterior, rtol=0, atol=1e-12)
-        np.testing.assert_array_equal(chunked.map_estimate, ref.map_estimate)
+        np.testing.assert_array_equal(chunked.map_bin, ref.map_bin)
 
 
 class TestNormalizeDegenerateChunking:
@@ -261,7 +261,7 @@ class TestDecodePositionSummaryParity:
         summ = decode_position_summary(
             small_2d_env, spike_counts, encoding_models, dt=0.025
         )
-        np.testing.assert_array_equal(summ.map_bin, full.map_estimate)
+        np.testing.assert_array_equal(summ.map_bin, full.map_bin)
         np.testing.assert_array_equal(summ.map_position, full.map_position)
 
     def test_mean_and_entropy_parity(self, small_2d_env):
@@ -402,15 +402,15 @@ class TestDecodePositionSummaryTimeChunkGuard:
 class TestDecodingSummaryPortability:
     """DecodingSummary parity accessor + direct-construction shape guard."""
 
-    def test_map_estimate_aliases_map_bin(self, small_2d_env):
+    def test_map_bin_aliases_map_bin(self, small_2d_env):
         from neurospatial.decoding import decode_position_summary
 
         spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
         summ = decode_position_summary(
             small_2d_env, spike_counts, encoding_models, dt=0.025
         )
-        # map_estimate ports from DecodingResult: it is the MAP bin index.
-        np.testing.assert_array_equal(summ.map_estimate, summ.map_bin)
+        # map_bin ports from DecodingResult: it is the MAP bin index.
+        np.testing.assert_array_equal(summ.map_bin, summ.map_bin)
 
     def test_post_init_rejects_ragged_field(self, small_2d_env):
         from neurospatial.decoding._result import DecodingSummary
@@ -587,7 +587,7 @@ class TestDecodeSessionSummary:
             small_2d_env, spike_times, times, positions, dt=0.1
         )
         np.testing.assert_array_equal(summ.map_position, full.map_position)
-        np.testing.assert_array_equal(summ.map_bin, full.map_estimate)
+        np.testing.assert_array_equal(summ.map_bin, full.map_bin)
 
     def test_session_unchanged(self, small_2d_env):
         """decode_session must still return a DecodingResult with a real posterior."""
@@ -639,7 +639,7 @@ class TestDecodePositionSummaryPriorValidation:
         summ = decode_position_summary(
             small_2d_env, spike_counts, encoding_models, dt=0.025, prior=prior
         )
-        np.testing.assert_array_equal(summ.map_bin, full.map_estimate)
+        np.testing.assert_array_equal(summ.map_bin, full.map_bin)
         np.testing.assert_array_equal(summ.map_position, full.map_position)
 
     def test_overlong_2d_prior_raises(self, small_2d_env):
@@ -703,7 +703,7 @@ class TestDecodePositionSummaryPriorValidation:
         summ = decode_position_summary(
             small_2d_env, spike_counts, encoding_models, dt=0.025, prior=prior
         )
-        np.testing.assert_array_equal(summ.map_bin, full.map_estimate)
+        np.testing.assert_array_equal(summ.map_bin, full.map_bin)
         np.testing.assert_array_equal(summ.map_position, full.map_position)
 
     def test_3d_prior_raises(self, small_2d_env):

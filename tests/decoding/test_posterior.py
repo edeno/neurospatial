@@ -841,7 +841,7 @@ class TestDecodePosition:
         )
 
         # Verify all derived properties work
-        assert result.map_estimate.shape == (simple_spike_counts.shape[0],)
+        assert result.map_bin.shape == (simple_spike_counts.shape[0],)
         assert result.map_position.shape == (
             simple_spike_counts.shape[0],
             simple_env.n_dims,
@@ -956,7 +956,7 @@ class TestDecodePositionTimeChunkHybrid:
         post_chunked = np.asarray(chunked.posterior)
 
         assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12)
-        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_array_equal(chunked.map_bin, full.map_bin)
         assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
 
     @staticmethod
@@ -993,7 +993,7 @@ class TestDecodePositionTimeChunkHybrid:
         post_chunked = np.asarray(chunked.posterior)
 
         assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12)
-        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_array_equal(chunked.map_bin, full.map_bin)
         assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
 
     @pytest.mark.parametrize("k", [1, 7, 64, 40, 45])
@@ -1019,7 +1019,7 @@ class TestDecodePositionTimeChunkHybrid:
         post_chunked = np.asarray(chunked.posterior)
 
         assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12)
-        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_array_equal(chunked.map_bin, full.map_bin)
         assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
 
     @pytest.mark.parametrize("k", [1, 7, 64, 40, 45])
@@ -1064,7 +1064,7 @@ class TestDecodePositionTimeChunkHybrid:
         post_chunked = np.asarray(chunked.posterior)
 
         assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12, equal_nan=True)
-        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_array_equal(chunked.map_bin, full.map_bin)
         assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
 
     @pytest.mark.parametrize("k", [1, 7, 64, 40, 45])
@@ -1094,7 +1094,7 @@ class TestDecodePositionTimeChunkHybrid:
 
         assert post_chunked.dtype == np.float32
         assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-5)
-        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_array_equal(chunked.map_bin, full.map_bin)
         assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-5)
 
     @pytest.mark.parametrize("validate", [True, False])
@@ -1123,7 +1123,7 @@ class TestDecodePositionTimeChunkHybrid:
         post_chunked = np.asarray(chunked.posterior)
 
         assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12)
-        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_array_equal(chunked.map_bin, full.map_bin)
         assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
 
     def test_time_chunk_degenerate_all_neg_inf_rows(
@@ -1200,7 +1200,7 @@ class TestDecodePositionTimeChunkHybrid:
         assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12, equal_nan=True)
         # The all-NaN bin has zero posterior mass on both paths.
         assert np.allclose(post_chunked[:, 2], 0.0, atol=1e-12)
-        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_array_equal(chunked.map_bin, full.map_bin)
         assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
 
     @pytest.mark.parametrize("bad", [0, -1])
@@ -1391,13 +1391,13 @@ class TestConsistency:
 
         assert_allclose(result.posterior, posterior_manual, atol=1e-10)
 
-    def test_map_estimate_matches_posterior_argmax(
+    def test_map_bin_matches_posterior_argmax(
         self,
         simple_env: Environment,
         simple_spike_counts: np.ndarray,
         simple_encoding_models: np.ndarray,
     ) -> None:
-        """DecodingResult.map_estimate should match argmax of posterior."""
+        """DecodingResult.map_bin should match argmax of posterior."""
         from neurospatial.decoding.posterior import decode_position
 
         result = decode_position(
@@ -1405,7 +1405,7 @@ class TestConsistency:
         )
 
         expected_argmax = np.argmax(result.posterior, axis=1)
-        assert_array_equal(result.map_estimate, expected_argmax)
+        assert_array_equal(result.map_bin, expected_argmax)
 
 
 class TestPosteriorClosedForm:

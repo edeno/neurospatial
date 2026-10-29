@@ -755,7 +755,7 @@ def decode_position(
     >>> result = decode_position(env, spike_counts, encoding_models, dt=0.025)
     >>> result.posterior.shape
     (50, ...)
-    >>> result.map_estimate.shape
+    >>> result.map_bin.shape
     (50,)
 
     See Also
