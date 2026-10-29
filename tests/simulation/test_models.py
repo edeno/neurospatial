@@ -77,7 +77,10 @@ class TestPlaceCellModel:
         pc = PlaceCellModel(simple_2d_env, seed=42)
 
         # Center should be one of the bin centers
-        distances = np.linalg.norm(simple_2d_env.bin_centers - pc.center, axis=1)
+        assert pc.center is None
+        distances = np.linalg.norm(
+            simple_2d_env.bin_centers - pc.ground_truth["center"], axis=1
+        )
         min_dist = np.min(distances)
         assert min_dist < 1e-10  # Essentially zero
 
@@ -90,14 +93,15 @@ class TestPlaceCellModel:
             box(0, 0, 100, 100), bin_size=bin_size, units="cm"
         )
         pc = PlaceCellModel(env, center=[50.0, 50.0])
-        assert pc.width == pytest.approx(11.1)
+        assert pc.ground_truth["width"] == pytest.approx(11.1)
         assert pc.max_rate == 12.4
 
     def test_default_width_follows_the_length_unit(self):
         from shapely.geometry import box
 
         env = Environment.from_polygon(box(0, 0, 1, 1), bin_size=0.02, units="m")
-        assert PlaceCellModel(env, center=[0.5, 0.5]).width == pytest.approx(0.111)
+        pc = PlaceCellModel(env, center=[0.5, 0.5])
+        assert pc.ground_truth["width"] == pytest.approx(0.111)
 
     def test_default_width_needs_known_length_units(self):
         """Without metric units the cm default has no value; say how to fix it."""
@@ -331,7 +335,9 @@ class TestPlaceCellModel:
         pc1 = PlaceCellModel(simple_2d_env, seed=42)
         pc2 = PlaceCellModel(simple_2d_env, seed=42)
 
-        np.testing.assert_array_equal(pc1.center, pc2.center)
+        np.testing.assert_array_equal(
+            pc1.ground_truth["center"], pc2.ground_truth["center"]
+        )
 
     def test_numerical_stability_far_from_center(self, simple_2d_env):
         """Test numerical stability for positions far from center."""
@@ -392,9 +398,11 @@ class TestBorderCellModel:
 
         from neurospatial.simulation.models import BorderCellModel
 
-        assert BorderCellModel(walled_box).distance_tolerance == pytest.approx(9.8)
+        cell = BorderCellModel(walled_box)
+        assert cell.ground_truth["distance_tolerance"] == pytest.approx(9.8)
         metres = Environment.from_polygon(box(0, 0, 1, 1), bin_size=0.02, units="m")
-        assert BorderCellModel(metres).distance_tolerance == pytest.approx(0.098)
+        cell = BorderCellModel(metres)
+        assert cell.ground_truth["distance_tolerance"] == pytest.approx(0.098)
 
     def test_rate_follows_the_exact_distance_to_the_wall(self, walled_box):
         """No half-bin offset: the distance is measured to the wall itself."""
@@ -498,14 +506,14 @@ class TestBoundaryVectorCellModel:
         """17.5 cm, a tolerance growing with distance, and a seeded direction."""
         from neurospatial.simulation.models import BoundaryVectorCellModel
 
-        cell = BoundaryVectorCellModel(walled_box, seed=3)
-        assert cell.preferred_distance == pytest.approx(17.5)
-        assert cell.distance_tolerance == pytest.approx(17.5 / 12 + 8.0)
-        assert cell.direction_tolerance == pytest.approx(np.pi / 6)
-        again = BoundaryVectorCellModel(walled_box, seed=3)
-        assert again.preferred_direction == cell.preferred_direction
+        truth = BoundaryVectorCellModel(walled_box, seed=3).ground_truth
+        assert truth["preferred_distance"] == pytest.approx(17.5)
+        assert truth["distance_tolerance"] == pytest.approx(17.5 / 12 + 8.0)
+        assert truth["direction_tolerance"] == pytest.approx(np.pi / 6)
+        again = BoundaryVectorCellModel(walled_box, seed=3).ground_truth
+        assert again["preferred_direction"] == truth["preferred_direction"]
         near = BoundaryVectorCellModel(walled_box, preferred_distance=6.0, seed=3)
-        assert near.distance_tolerance == pytest.approx(6.0 / 12 + 8.0)
+        assert near.ground_truth["distance_tolerance"] == pytest.approx(6.0 / 12 + 8.0)
 
     @staticmethod
     def _west_cell(env, **kwargs):
@@ -853,7 +861,8 @@ class TestGridCellModel:
 
         gc = GridCellModel(simple_2d_env, grid_spacing=50.0)
 
-        np.testing.assert_array_equal(gc.phase_offset, np.array([0.0, 0.0]))
+        assert gc.phase_offset is None
+        np.testing.assert_array_equal(gc.ground_truth["phase_offset"], [0.0, 0.0])
 
     @pytest.mark.parametrize(("units", "expected"), [("cm", 41.0), ("m", 0.41)])
     def test_default_spacing_is_the_dorsal_module_in_physical_units(
@@ -867,7 +876,9 @@ class TestGridCellModel:
         env = Environment.from_polygon(
             box(0, 0, side, side), bin_size=side / 50, units=units
         )
-        assert GridCellModel(env).grid_spacing == pytest.approx(expected)
+        assert GridCellModel(env).ground_truth["grid_spacing"] == pytest.approx(
+            expected
+        )
         unitless = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0)
         with pytest.raises(ValueError, match="needs grid_spacing"):
             GridCellModel(unitless)

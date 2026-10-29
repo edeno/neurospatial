@@ -40,7 +40,7 @@ George, T. M., Rastogi, M., de Cothi, W., Clopath, C., Stachenfeld, K., &
 
 from __future__ import annotations
 
-from dataclasses import KW_ONLY, InitVar, dataclass, field
+from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -129,6 +129,14 @@ class BorderCellModel:
     boundary_source : {'physical', 'analysis'}, default='physical'
         The arena's declared walls, or the edges of the environment's bins.
 
+    Attributes
+    ----------
+    ground_truth : dict[str, Any]
+        The values the model fires with, including the default tolerance.
+        Every parameter is also an attribute holding the argument as passed,
+        so ``distance_tolerance`` reads None when left to its default.
+        ``dataclasses.replace`` builds a new model as the constructor would.
+
     Raises
     ------
     ValueError
@@ -176,6 +184,7 @@ class BorderCellModel:
     max_rate: float = 15.0
     baseline_rate: float = 0.01
     boundary_source: BoundarySource = "physical"
+    _distance_tolerance: float = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         tolerance = self.distance_tolerance
@@ -190,7 +199,9 @@ class BorderCellModel:
         _check_positive("preferred_distance", self.preferred_distance, allow_zero=True)
         _check_rates(self.max_rate, self.baseline_rate)
         _require_walls(self.env, self.boundary_source, "BorderCellModel()")
-        object.__setattr__(self, "distance_tolerance", float(tolerance))
+        if self.distance_tolerance is not None:
+            object.__setattr__(self, "distance_tolerance", float(tolerance))
+        object.__setattr__(self, "_distance_tolerance", float(tolerance))
         object.__setattr__(self, "preferred_distance", float(self.preferred_distance))
         object.__setattr__(self, "max_rate", float(self.max_rate))
         object.__setattr__(self, "baseline_rate", float(self.baseline_rate))
@@ -229,7 +240,6 @@ class BorderCellModel:
         ValueError
             If ``positions`` is not one row of 2 coordinates per time.
         """
-        assert self.distance_tolerance is not None
         _times, positions = _model_inputs(
             times, positions, 2, call="BorderCellModel.firing_rate()"
         )
@@ -238,7 +248,7 @@ class BorderCellModel:
         )
         tuning = np.exp(
             -0.5
-            * ((distances - self.preferred_distance) / self.distance_tolerance) ** 2
+            * ((distances - self.preferred_distance) / self._distance_tolerance) ** 2
         )
         rates: NDArray[np.float64] = (
             self.baseline_rate + (self.max_rate - self.baseline_rate) * tuning
@@ -259,7 +269,7 @@ class BorderCellModel:
         return {
             "cell_type": "border",
             "preferred_distance": self.preferred_distance,
-            "distance_tolerance": self.distance_tolerance,
+            "distance_tolerance": self._distance_tolerance,
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,
             "boundary_source": self.boundary_source,
@@ -321,6 +331,18 @@ class BoundaryVectorCellModel:
     seed : int or None, optional
         Seed for the random ``preferred_direction``.
 
+    Attributes
+    ----------
+    ground_truth : dict[str, Any]
+        The values the model fires with: the drawn direction, wrapped to
+        [-pi, pi], and the default distance and tolerance. Every parameter is
+        also an attribute holding the argument as passed, so
+        ``preferred_distance``, ``preferred_direction`` and
+        ``distance_tolerance`` read None when left to their defaults.
+        ``dataclasses.replace(model, preferred_distance=40.0)`` builds a new
+        model as the constructor would, so a default tolerance follows the
+        new distance.
+
     Raises
     ------
     ValueError
@@ -369,13 +391,16 @@ class BoundaryVectorCellModel:
     max_rate: float = 15.0
     baseline_rate: float = 0.01
     boundary_source: BoundarySource = "physical"
-    seed: InitVar[int | None] = None
+    seed: int | None = None
+    _preferred_distance: float = field(init=False, repr=False)
+    _preferred_direction: float = field(init=False, repr=False)
+    _distance_tolerance: float = field(init=False, repr=False)
     _walls: Walls = field(init=False, repr=False)
     _directions: NDArray[np.float64] = field(init=False, repr=False)
     _angular: NDArray[np.float64] = field(init=False, repr=False)
     _reference_drive: float = field(init=False, repr=False)
 
-    def __post_init__(self, seed: int | None) -> None:
+    def __post_init__(self) -> None:
         env = self.env
         call = "BoundaryVectorCellModel()"
         distance = self.preferred_distance
@@ -390,7 +415,7 @@ class BoundaryVectorCellModel:
             )
         direction = self.preferred_direction
         if direction is None:
-            direction = float(np.random.default_rng(seed).uniform(-np.pi, np.pi))
+            direction = float(np.random.default_rng(self.seed).uniform(-np.pi, np.pi))
         _check_positive("preferred_distance", distance, allow_zero=True)
         _check_positive("distance_tolerance", tolerance)
         _check_angle("preferred_direction", direction)
@@ -406,7 +431,7 @@ class BoundaryVectorCellModel:
             )
         _check_rates(self.max_rate, self.baseline_rate)
         _require_walls(env, self.boundary_source, call)
-        direction = float(np.angle(np.exp(1j * direction)))
+        wrapped = float(np.angle(np.exp(1j * direction)))
         walls = Walls.from_geometry(
             boundary_geometry(
                 env.binning, env.arena, self.boundary_source, blocking="movement"
@@ -415,13 +440,20 @@ class BoundaryVectorCellModel:
         directions = boundary_directions(n_directions=_N_RAYS)
         # von Mises concentration with half-maximum at direction_tolerance.
         kappa = np.log(2.0) / (1.0 - np.cos(half_width))
-        angular = np.exp(kappa * (np.cos(directions - direction) - 1.0))
+        angular = np.exp(kappa * (np.cos(directions - wrapped) - 1.0))
         directions.setflags(write=False)
         angular.setflags(write=False)
+        for name, argument in (
+            ("preferred_distance", self.preferred_distance),
+            ("preferred_direction", self.preferred_direction),
+            ("distance_tolerance", self.distance_tolerance),
+        ):
+            if argument is not None:
+                object.__setattr__(self, name, float(argument))
         for name, value in (
-            ("preferred_distance", float(distance)),
-            ("preferred_direction", direction),
-            ("distance_tolerance", float(tolerance)),
+            ("_preferred_distance", float(distance)),
+            ("_preferred_direction", wrapped),
+            ("_distance_tolerance", float(tolerance)),
             ("direction_tolerance", float(half_width)),
             ("max_rate", float(self.max_rate)),
             ("baseline_rate", float(self.baseline_rate)),
@@ -432,7 +464,7 @@ class BoundaryVectorCellModel:
             object.__setattr__(self, name, value)
         # A straight wall at the preferred distance, square to the preferred
         # direction, lies at r = d / cos(θ - φ) along every ray toward it.
-        facing = np.cos(directions - direction)
+        facing = np.cos(directions - wrapped)
         with np.errstate(divide="ignore"):
             reference = np.where(facing > 0, float(distance) / facing, np.inf)
         object.__setattr__(
@@ -441,11 +473,9 @@ class BoundaryVectorCellModel:
 
     def _drive_terms(self, distances: NDArray[np.float64]) -> NDArray[np.float64]:
         """Each ray's term ``g(r, θ)``, shape like ``distances`` (..., n_rays)."""
-        assert self.preferred_distance is not None
-        assert self.distance_tolerance is not None
         radial = np.exp(
             -0.5
-            * ((distances - self.preferred_distance) / self.distance_tolerance) ** 2
+            * ((distances - self._preferred_distance) / self._distance_tolerance) ** 2
         )
         terms: NDArray[np.float64] = radial * self._angular
         return terms
@@ -512,9 +542,9 @@ class BoundaryVectorCellModel:
         """
         return {
             "cell_type": "boundary_vector",
-            "preferred_distance": self.preferred_distance,
-            "preferred_direction": self.preferred_direction,
-            "distance_tolerance": self.distance_tolerance,
+            "preferred_distance": self._preferred_distance,
+            "preferred_direction": self._preferred_direction,
+            "distance_tolerance": self._distance_tolerance,
             "direction_tolerance": self.direction_tolerance,
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,

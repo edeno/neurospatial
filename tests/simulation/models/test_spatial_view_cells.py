@@ -45,7 +45,8 @@ class TestSpatialViewCellModelCreation:
 
         # Default view field width: 10 cm in the environment's units
         assert env.units == "cm"
-        assert model.view_field_width == pytest.approx(10.0)
+        assert model.view_field_width is None
+        assert model.ground_truth["view_field_width"] == pytest.approx(10.0)
 
         # Default rates
         assert model.max_rate > 0

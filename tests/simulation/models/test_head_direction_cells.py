@@ -46,29 +46,31 @@ class TestHeadDirectionCellModel:
 
     def test_random_direction_selection(self):
         """Test that direction is randomly chosen if not provided."""
-        hd1 = HeadDirectionCellModel(seed=42)
-        hd2 = HeadDirectionCellModel(seed=42)
-        hd3 = HeadDirectionCellModel(seed=123)
+        hd1 = HeadDirectionCellModel(seed=42).ground_truth["preferred_direction"]
+        hd2 = HeadDirectionCellModel(seed=42).ground_truth["preferred_direction"]
+        hd3 = HeadDirectionCellModel(seed=123).ground_truth["preferred_direction"]
 
         # Same seed should give same direction
-        assert hd1.preferred_direction == hd2.preferred_direction
+        assert hd1 == hd2
 
         # Different seeds should (almost certainly) give different directions
-        assert hd1.preferred_direction != hd3.preferred_direction
+        assert hd1 != hd3
 
         # Direction should be in valid range
-        assert -np.pi <= hd1.preferred_direction < np.pi
+        assert -np.pi <= hd1 < np.pi
 
     def test_direction_wrapping(self):
-        """Test that preferred direction is wrapped to [-pi, pi)."""
+        """The ground truth wraps the preferred direction to [-pi, pi)."""
         # Large positive angle
         hd1 = HeadDirectionCellModel(preferred_direction=3 * np.pi)
-        assert -np.pi <= hd1.preferred_direction < np.pi
-        assert hd1.preferred_direction == pytest.approx(np.pi, abs=1e-6)
+        assert hd1.preferred_direction == 3 * np.pi
+        wrapped = hd1.ground_truth["preferred_direction"]
+        assert -np.pi <= wrapped < np.pi
+        assert wrapped == pytest.approx(np.pi, abs=1e-6)
 
         # Large negative angle
         hd2 = HeadDirectionCellModel(preferred_direction=-3 * np.pi)
-        assert -np.pi <= hd2.preferred_direction < np.pi
+        assert -np.pi <= hd2.ground_truth["preferred_direction"] < np.pi
 
     def test_peak_firing_at_preferred_direction(self):
         """Test that firing rate peaks at preferred direction."""
@@ -344,7 +346,9 @@ class TestHeadDirectionCellModel:
             wrapped_dir = np.arctan2(
                 np.sin(preferred_dirs[i]), np.cos(preferred_dirs[i])
             )
-            assert cell.preferred_direction == pytest.approx(wrapped_dir, abs=1e-6)
+            assert cell.ground_truth["preferred_direction"] == pytest.approx(
+                wrapped_dir, abs=1e-6
+            )
 
         # Population response
         headings = np.linspace(-np.pi, np.pi, 360)

@@ -51,9 +51,11 @@ class TestObjectVectorCellModelCreation:
         )
 
         env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
-        model = ObjectVectorCellModel(env, object_positions=object_positions)
-        assert model.preferred_distance == pytest.approx(21.2)
-        assert model.distance_tolerance == pytest.approx(6.9)
+        truth = ObjectVectorCellModel(
+            env, object_positions=object_positions
+        ).ground_truth
+        assert truth["preferred_distance"] == pytest.approx(21.2)
+        assert truth["distance_tolerance"] == pytest.approx(6.9)
 
     def test_default_parameters(self, env, object_positions):
         """Model uses sensible defaults for optional parameters."""

@@ -163,6 +163,8 @@ the sorter's labels as `unit_ids=` so each result knows which cell each row
 is.
 
 ```python
+from dataclasses import replace
+
 from neurospatial.encoding import (
     field_overlap,
     population_vector_correlation,
@@ -178,11 +180,10 @@ spike_times = []
 for unit, cell in enumerate(session.models):
     rate = cell.firing_rate(times, positions)
     if moves[unit]:
-        # Move the field 80 cm, wrapping around within 20-180 cm.
-        new_center = 20.0 + (cell.center - 20.0 + 80.0) % 160.0
-        moved = PlaceCellModel(
-            env, center=new_center, width=cell.width, max_rate=cell.max_rate
-        )
+        # Move the field 80 cm, wrapping around within 20-180 cm; replace()
+        # keeps every other argument of the cell.
+        new_center = 20.0 + (cell.ground_truth["center"] - 20.0 + 80.0) % 160.0
+        moved = replace(cell, center=new_center)
         rate = np.where(times < change_time, rate, moved.firing_rate(times, positions))
     spike_times.append(generate_poisson_spikes(rate, times, seed=200 + unit))
 unit_ids = np.arange(len(spike_times))  # your sorter's unit labels

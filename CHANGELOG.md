@@ -34,10 +34,20 @@ default lap route all changed.
   `NeuralModel` protocol can now receive headings.
 - Models are frozen dataclasses with read-only arrays. Assigning `center`
   or `preferred_direction` after construction used to leave the rates
-  unchanged while `ground_truth` reported the new value; build a new model
-  with `dataclasses.replace` instead. `ground_truth` always includes
-  `cell_type` and every parameter needed to rebuild the model (for example
-  place `metric`).
+  unchanged while `ground_truth` reported the new value.
+- A model's attributes are its constructor arguments, and a parameter left
+  to its default reads None: `PlaceCellModel(env, seed=1).center` and
+  `.width` are None. `ground_truth` holds the values the model fires with,
+  such as the drawn center, the default width in `env.units` and a
+  boundary-vector cell's default tolerance; read them there. So
+  `dataclasses.replace` and pickling build exactly the model the
+  constructor builds: `replace(model, seed=2)` draws again,
+  `replace(model, env=env_in_metres, center=...)` expresses the default
+  width in metres, and a boundary-vector cell's default
+  `distance_tolerance` follows a replaced `preferred_distance`. These used
+  to keep the first model's resolved values. `seed` is now an attribute.
+  `ground_truth` always includes `cell_type` and every parameter needed to
+  rebuild the model (for example place `metric`).
 - Object-vector cells: `distance_width` is now `distance_tolerance` and
   `direction_kappa` is now `direction_concentration`, the names used by
   boundary-vector and head-direction cells.

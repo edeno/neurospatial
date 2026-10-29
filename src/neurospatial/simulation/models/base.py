@@ -33,7 +33,11 @@ class NeuralModel(Protocol):
     ``'border'``, ``'boundary_vector'``, ``'grid'``, ``'head_direction'``,
     ``'object_vector'`` and ``'spatial_view'``) and every constructor
     parameter needed to rebuild the model, after defaults and random draws
-    are resolved. Arrays in it are read-only. The other keys by cell type:
+    are resolved. Arrays in it are read-only. It is where to read the values
+    a model fires with: the package's models keep their constructor
+    arguments as attributes, with None for a parameter left to its default,
+    so ``dataclasses.replace`` and pickling rebuild a model exactly as the
+    constructor would. The other keys by cell type:
 
     **place**
 

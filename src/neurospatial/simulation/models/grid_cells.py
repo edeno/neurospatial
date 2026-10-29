@@ -66,8 +66,12 @@ class GridCellModel:
     Attributes
     ----------
     ground_truth : dict[str, Any]
-        Contains 'cell_type', 'grid_spacing', 'grid_orientation',
-        'phase_offset', 'max_rate', 'baseline_rate'.
+        The values the model fires with: 'cell_type', 'grid_spacing',
+        'grid_orientation', 'phase_offset', 'max_rate', 'baseline_rate'.
+        Every parameter is also an attribute holding the argument as passed
+        (``phase_offset`` as a read-only float array), so ``grid_spacing``
+        and ``phase_offset`` read None when left to their defaults.
+        ``dataclasses.replace`` builds a new model as the constructor would.
 
     Raises
     ------
@@ -170,6 +174,8 @@ class GridCellModel:
     phase_offset: NDArray[np.float64] | None = None
     max_rate: float = 20.0
     baseline_rate: float = 0.01
+    _grid_spacing: float = field(init=False, repr=False)
+    _phase_offset: NDArray[np.float64] = field(init=False, repr=False)
     _wave_vectors: NDArray[np.float64] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -210,10 +216,14 @@ class GridCellModel:
         angles += self.grid_orientation - np.pi / 6.0
         wave_vectors = k_magnitude * np.column_stack([np.cos(angles), np.sin(angles)])
         wave_vectors.setflags(write=False)
+        if self.grid_spacing is not None:
+            object.__setattr__(self, "grid_spacing", float(spacing))
+        if self.phase_offset is not None:
+            object.__setattr__(self, "phase_offset", phase)
         for name, value in (
-            ("grid_spacing", float(spacing)),
+            ("_grid_spacing", float(spacing)),
+            ("_phase_offset", phase),
             ("grid_orientation", float(self.grid_orientation)),
-            ("phase_offset", phase),
             ("max_rate", float(self.max_rate)),
             ("baseline_rate", float(self.baseline_rate)),
             ("_wave_vectors", wave_vectors),
@@ -300,8 +310,7 @@ class GridCellModel:
         )
         # The mean of three cosine gratings, g(x) = (1/3) Σ cos(k_i · x):
         # rel_pos @ wave_vectors.T has shape (n_time, 3), each phase k_i · x.
-        assert self.phase_offset is not None
-        rel_pos = positions - self.phase_offset
+        rel_pos = positions - self._phase_offset
         grid_pattern = np.cos(rel_pos @ self._wave_vectors.T).mean(axis=1)
 
         # Rectify: only positive parts contribute to firing
@@ -329,9 +338,9 @@ class GridCellModel:
         """
         return {
             "cell_type": "grid",
-            "grid_spacing": self.grid_spacing,
+            "grid_spacing": self._grid_spacing,
             "grid_orientation": self.grid_orientation,
-            "phase_offset": self.phase_offset,
+            "phase_offset": self._phase_offset,
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,
         }

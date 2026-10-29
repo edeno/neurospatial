@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import KW_ONLY, InitVar, dataclass, field
+from dataclasses import KW_ONLY, dataclass, field
 from typing import Any
 
 import numpy as np
@@ -48,8 +48,8 @@ class PlaceCellModel:
 
     A place field in an N-D environment, with Euclidean or geodesic
     distances to its center and an optional firing gate (direction-selective,
-    speed-gated, etc.). The model is immutable: build a new one to change a
-    parameter.
+    speed-gated, etc.). The model is immutable: ``dataclasses.replace(model,
+    width=5.0)`` builds a new one exactly as the constructor would.
 
     Parameters
     ----------
@@ -101,20 +101,12 @@ class PlaceCellModel:
 
     Attributes
     ----------
-    env : Environment
-        The spatial environment.
-    center : NDArray[np.float64], shape (n_dims,)
-        Place field center coordinates (read-only).
-    width : float | NDArray[np.float64]
-        Place field width(s); a per-dimension width is read-only.
-    max_rate : float
-        Peak firing rate in Hz.
-    baseline_rate : float
-        Baseline firing rate in Hz.
-    metric : str
-        Distance metric used ('euclidean' or 'geodesic').
-    condition : Callable | None
-        Condition function for gated firing.
+    ground_truth : dict[str, Any]
+        The values the model fires with: read the drawn ``center`` and the
+        default ``width`` here. Every parameter is also an attribute holding
+        the argument as passed (``center`` and a per-dimension ``width`` as
+        read-only float arrays), so ``center`` and ``width`` read None when
+        left to their defaults.
 
     Raises
     ------
@@ -244,22 +236,25 @@ class PlaceCellModel:
     condition: (
         Callable[[NDArray[np.float64], NDArray[np.float64]], NDArray[np.bool_]] | None
     ) = None
-    seed: InitVar[int | None] = None
+    seed: int | None = None
+    _center: NDArray[np.float64] = field(init=False, repr=False)
+    _width: float | NDArray[np.float64] = field(init=False, repr=False)
     _center_place: NDArray[np.float64] = field(init=False, repr=False)
     _distance_field: NDArray[np.float64] | None = field(init=False, repr=False)
 
-    def __post_init__(self, seed: int | None) -> None:
+    def __post_init__(self) -> None:
         env = self.env
         _check_rates(self.max_rate, self.baseline_rate)
         _check_metric(self.metric, "PlaceCellModel()")
         object.__setattr__(self, "max_rate", float(self.max_rate))
         object.__setattr__(self, "baseline_rate", float(self.baseline_rate))
         if self.center is None:
-            center_idx = np.random.default_rng(seed).integers(0, env.n_bins)
+            center_idx = np.random.default_rng(self.seed).integers(0, env.n_bins)
             center = _read_only(env.bin_centers[center_idx])
         else:
             center = _check_point("center", self.center, env.n_dims)
-        object.__setattr__(self, "center", center)
+            object.__setattr__(self, "center", center)
+        object.__setattr__(self, "_center", center)
 
         # A field's size belongs to the cell, not to the analysis bins.
         width_given = (
@@ -317,7 +312,9 @@ class PlaceCellModel:
                         fix="pass one width, or metric='euclidean'",
                     )
                 )
-        object.__setattr__(self, "width", width)
+        if self.width is not None:
+            object.__setattr__(self, "width", width)
+        object.__setattr__(self, "_width", width)
 
         # Distances are measured between places: on an egocentric polar
         # environment, (distance, angle) rows are placed in the animal's plane.
@@ -392,17 +389,17 @@ class PlaceCellModel:
         times, positions = _model_inputs(
             times, positions, self.env.n_dims, call="PlaceCellModel.firing_rate()"
         )
-        if isinstance(self.width, np.ndarray):
+        if isinstance(self._width, np.ndarray):
             # Anisotropic (Cartesian only, so the center is its own place): the
             # distance in standard-deviation units, sqrt(sum_i ((x_i - c_i) / w_i)^2).
             sigmas = np.linalg.norm(
-                (positions - self._center_place) / self.width, axis=1
+                (positions - self._center_place) / self._width, axis=1
             )
         elif self.metric == "euclidean":
             # Straight-line distance between places (in the animal's plane on
             # an egocentric polar environment).
             embedded = self.env.coordinate_system.cartesian_embedding(positions)
-            sigmas = np.linalg.norm(embedded - self._center_place, axis=1) / self.width
+            sigmas = np.linalg.norm(embedded - self._center_place, axis=1) / self._width
         else:
             assert self._distance_field is not None
             bin_indices = geodesic_lookup_bins(self.env, positions)
@@ -410,7 +407,7 @@ class PlaceCellModel:
             distances = np.where(
                 bin_indices >= 0, self._distance_field[bin_indices], np.nan
             )
-            sigmas = distances / self.width
+            sigmas = distances / self._width
 
         # Far from the field the exponential underflows to 0 (and an
         # unreachable geodesic distance, inf, gives exactly 0), so the rate
@@ -470,8 +467,8 @@ class PlaceCellModel:
         """
         return {
             "cell_type": "place",
-            "center": self.center,
-            "width": self.width,
+            "center": self._center,
+            "width": self._width,
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,
             "metric": self.metric,

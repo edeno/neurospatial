@@ -181,28 +181,13 @@ class ObjectVectorCellModel:
 
     Attributes
     ----------
-    env : Environment
-        The spatial environment.
-    object_positions : NDArray[np.float64]
-        Object positions (n_objects, 2).
-    preferred_distance : float
-        Preferred distance from object.
-    distance_tolerance : float
-        Distance tuning width.
-    preferred_direction : float | None
-        Preferred direction in the configured frame (radians) or None.
-    direction_concentration : float
-        Direction tuning concentration.
-    max_rate : float
-        Peak firing rate in Hz.
-    baseline_rate : float
-        Baseline firing rate in Hz.
-    object_selectivity : str
-        Object selectivity mode.
-    specific_object_index : int | None
-        The object a 'specific' cell responds to.
-    metric : str
-        Distance metric used.
+    ground_truth : dict[str, Any]
+        The values the model fires with, including the default distances.
+        Every parameter is also an attribute holding the argument as passed
+        (``object_positions`` as a read-only float array, shape
+        (n_objects, 2)), so ``preferred_distance`` and
+        ``distance_tolerance`` read None when left to their defaults.
+        ``dataclasses.replace`` builds a new model as the constructor would.
 
     Raises
     ------
@@ -302,6 +287,8 @@ class ObjectVectorCellModel:
     object_selectivity: Literal["any", "nearest", "specific"] = "any"
     specific_object_index: int | None = None
     metric: DistanceMetric = "euclidean"
+    _preferred_distance: float = field(init=False, repr=False)
+    _distance_tolerance: float = field(init=False, repr=False)
     _distance_fields: NDArray[np.float64] | None = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -425,10 +412,14 @@ class ObjectVectorCellModel:
                 axis=1,
             )
             fields.setflags(write=False)
+        if self.preferred_distance is not None:
+            object.__setattr__(self, "preferred_distance", float(distance))
+        if self.distance_tolerance is not None:
+            object.__setattr__(self, "distance_tolerance", float(tolerance))
         for name, value in (
             ("object_positions", objects),
-            ("preferred_distance", float(distance)),
-            ("distance_tolerance", float(tolerance)),
+            ("_preferred_distance", float(distance)),
+            ("_distance_tolerance", float(tolerance)),
             (
                 "preferred_direction",
                 None
@@ -504,8 +495,6 @@ class ObjectVectorCellModel:
                 alternative='; or configure direction_frame="allocentric" for '
                 "tuning to compass directions",
             )
-        assert self.preferred_distance is not None
-        assert self.distance_tolerance is not None
 
         # Distances from every position to every object, (n_time, n_objects).
         if self._distance_fields is None:
@@ -522,7 +511,7 @@ class ObjectVectorCellModel:
 
         distance_response = np.exp(
             -0.5
-            * ((distances - self.preferred_distance) / self.distance_tolerance) ** 2
+            * ((distances - self._preferred_distance) / self._distance_tolerance) ** 2
         )
 
         if self.preferred_direction is not None:
@@ -604,8 +593,8 @@ class ObjectVectorCellModel:
         return {
             "cell_type": "object_vector",
             "object_positions": self.object_positions,
-            "preferred_distance": self.preferred_distance,
-            "distance_tolerance": self.distance_tolerance,
+            "preferred_distance": self._preferred_distance,
+            "distance_tolerance": self._distance_tolerance,
             "preferred_direction": self.preferred_direction,
             "direction_frame": self.direction_frame,
             "direction_concentration": self.direction_concentration,

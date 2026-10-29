@@ -171,27 +171,12 @@ class SpatialViewCellModel:
 
     Attributes
     ----------
-    env : Environment
-        The spatial environment.
-    preferred_view_location : NDArray[np.float64]
-        Preferred viewed location (2,).
-    view_field_width : float
-        Gaussian tuning width.
-    view_distance : float or None
-        Gaze distance of the fixed_distance model in environment units; None
-        for ray casting.
-    gaze_model : str
-        Gaze computation model.
-    max_rate : float
-        Peak firing rate in Hz.
-    baseline_rate : float
-        Baseline firing rate in Hz.
-    require_visibility : bool
-        Whether visibility check is required.
-    fov : FieldOfView | None
-        Field of view constraint.
-    boundary_source : str
-        Walls that stop the gaze and the line of sight.
+    ground_truth : dict[str, Any]
+        The values the model fires with, including the default width. Every
+        parameter is also an attribute holding the argument as passed
+        (``preferred_view_location`` as a read-only float array, shape (2,)),
+        so ``view_field_width`` reads None when left to its default.
+        ``dataclasses.replace`` builds a new model as the constructor would.
 
     Raises
     ------
@@ -282,6 +267,7 @@ class SpatialViewCellModel:
     require_visibility: bool = False
     fov: FieldOfView | None = None
     boundary_source: BoundarySource = "physical"
+    _view_field_width: float = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         env = self.env
@@ -331,9 +317,11 @@ class SpatialViewCellModel:
                 UserWarning,
                 stacklevel=3,
             )
+        if self.view_field_width is not None:
+            object.__setattr__(self, "view_field_width", float(width))
         for name, value in (
             ("preferred_view_location", location),
-            ("view_field_width", float(width)),
+            ("_view_field_width", float(width)),
             ("view_distance", view_distance),
             ("max_rate", float(self.max_rate)),
             ("baseline_rate", float(self.baseline_rate)),
@@ -409,11 +397,10 @@ class SpatialViewCellModel:
             max_distance=None,
             boundary_source=self.boundary_source,
         )
-        assert self.view_field_width is not None
         distances = np.linalg.norm(
             viewed_locations - self.preferred_view_location, axis=1
         )
-        response = np.exp(-0.5 * (distances / self.view_field_width) ** 2)
+        response = np.exp(-0.5 * (distances / self._view_field_width) ** 2)
         # An observed gaze that reaches no wall views nothing near the cell's
         # location.
         response[observed & np.isnan(distances)] = 0.0
@@ -488,7 +475,7 @@ class SpatialViewCellModel:
         return {
             "cell_type": "spatial_view",
             "preferred_view_location": self.preferred_view_location,
-            "view_field_width": self.view_field_width,
+            "view_field_width": self._view_field_width,
             "view_distance": self.view_distance,
             "gaze_model": self.gaze_model,
             "boundary_source": self.boundary_source,

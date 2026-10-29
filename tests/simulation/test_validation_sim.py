@@ -128,7 +128,7 @@ class TestValidateSimulation:
             ).firing_rate
             peak = env.bin_centers[np.nanargmax(rate)]
             assert place_report.center_errors[row] == pytest.approx(
-                np.linalg.norm(peak - model.center)
+                np.linalg.norm(peak - model.ground_truth["center"])
             )
         # A recovered 12 cm field peaks within one field width of its center.
         assert np.all(place_report.center_errors <= 12.0)

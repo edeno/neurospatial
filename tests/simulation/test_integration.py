@@ -63,7 +63,7 @@ def test_place_field_detection_accuracy():
             env, spike_times, session.times, session.positions
         ).firing_rate
         peak = env.bin_centers[np.nanargmax(rate_map)]
-        errors.append(np.linalg.norm(peak - model.center))
+        errors.append(np.linalg.norm(peak - model.ground_truth["center"]))
     assert np.max(errors) <= 11.1, errors
     assert np.mean(errors) <= 11.1 / 2, errors
 
@@ -99,12 +99,12 @@ def test_place_field_detection_with_longer_duration(connected_arena_env):
             )
             rate_map = compute_spatial_rate(env, spikes, times, positions).firing_rate
             peak = env.bin_centers[np.nanargmax(rate_map)]
-            errors.append(np.linalg.norm(peak - model.center))
+            errors.append(np.linalg.norm(peak - model.ground_truth["center"]))
         return np.array(errors)
 
     short, long = peak_errors(30.0), peak_errors(180.0)
     assert np.median(long) < np.median(short) / 2, (short, long)
-    assert np.max(long) <= model.width / 2, long
+    assert np.max(long) <= model.ground_truth["width"] / 2, long
 
 
 def test_full_pipeline_reproducibility(connected_arena_env):

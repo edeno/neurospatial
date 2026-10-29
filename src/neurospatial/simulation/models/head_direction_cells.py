@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import KW_ONLY, InitVar, dataclass
+from dataclasses import KW_ONLY, dataclass, field
 from typing import Any
 
 import numpy as np
@@ -60,14 +60,12 @@ class HeadDirectionCellModel:
 
     Attributes
     ----------
-    preferred_direction : float
-        Preferred firing direction in radians, wrapped to [-π, π].
-    concentration : float
-        Von Mises concentration parameter.
-    max_rate : float
-        Peak firing rate in Hz.
-    baseline_rate : float
-        Baseline firing rate in Hz.
+    ground_truth : dict[str, Any]
+        The values the model fires with: read the drawn preferred direction,
+        wrapped to [-π, π], here. Every parameter is also an attribute
+        holding the argument as passed, so ``preferred_direction`` reads None
+        when it is drawn from ``seed``, and ``dataclasses.replace(model,
+        seed=2)`` draws again, as the constructor would.
 
     Raises
     ------
@@ -188,18 +186,21 @@ class HeadDirectionCellModel:
     concentration: float = 9.1
     max_rate: float = 35.0
     baseline_rate: float = 0.01
-    seed: InitVar[int | None] = None
+    seed: int | None = None
+    _preferred_direction: float = field(init=False, repr=False)
 
-    def __post_init__(self, seed: int | None) -> None:
+    def __post_init__(self) -> None:
         direction = self.preferred_direction
         if direction is None:
-            direction = float(np.random.default_rng(seed).uniform(-np.pi, np.pi))
+            direction = float(np.random.default_rng(self.seed).uniform(-np.pi, np.pi))
         _check_angle("preferred_direction", direction)
         _check_positive("concentration", self.concentration, units=None)
         _check_rates(self.max_rate, self.baseline_rate)
+        if self.preferred_direction is not None:
+            object.__setattr__(self, "preferred_direction", float(direction))
         for name, value in (
             (
-                "preferred_direction",
+                "_preferred_direction",
                 float(np.arctan2(np.sin(direction), np.cos(direction))),
             ),
             ("concentration", float(self.concentration)),
@@ -258,9 +259,8 @@ class HeadDirectionCellModel:
         call = "HeadDirectionCellModel.firing_rate()"
         times, _positions = _model_inputs(times, positions, None, call=call)
         headings = _model_headings(headings, len(times), call=call)
-        assert self.preferred_direction is not None
         tuning = np.exp(
-            self.concentration * (np.cos(headings - self.preferred_direction) - 1)
+            self.concentration * (np.cos(headings - self._preferred_direction) - 1)
         )
         rates: NDArray[np.float64] = (
             self.baseline_rate + (self.max_rate - self.baseline_rate) * tuning
@@ -313,7 +313,6 @@ class HeadDirectionCellModel:
         >>> hd.ground_truth["max_rate"]
         50.0
         """
-        assert self.preferred_direction is not None
         peak, baseline = self.max_rate, self.baseline_rate
         tuning_width = np.nan
         if baseline < peak / 2:
@@ -324,8 +323,8 @@ class HeadDirectionCellModel:
                 tuning_width = float(np.arccos(cos_half))
         return {
             "cell_type": "head_direction",
-            "preferred_direction": self.preferred_direction,
-            "preferred_direction_deg": float(np.degrees(self.preferred_direction)),
+            "preferred_direction": self._preferred_direction,
+            "preferred_direction_deg": float(np.degrees(self._preferred_direction)),
             "concentration": self.concentration,
             "tuning_width": tuning_width,
             "tuning_width_deg": float(np.degrees(tuning_width)),

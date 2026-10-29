@@ -250,21 +250,29 @@ class TestSimulateSession:
             if isinstance(model, BoundaryVectorCellModel)
         ]
         assert len(border) == (20 if cell_type == "border" else 4)
-        tunings = {(m.preferred_direction, m.preferred_distance) for _, m in border}
+        tunings = {
+            (
+                m.ground_truth["preferred_direction"],
+                m.ground_truth["preferred_distance"],
+            )
+            for _, m in border
+        }
         assert len(tunings) == len(border)
 
         _, wall_direction = nearest_boundary(env, env.bin_centers)
         for label, model in border:
             truth = session.ground_truth[label]
             assert truth["cell_type"] == "boundary_vector"
-            assert truth["preferred_direction"] == model.preferred_direction
+            np.testing.assert_equal(dict(truth), model.ground_truth)
             assert 0.0 <= truth["preferred_distance"] <= 8.0
             rate = model.firing_rate(np.zeros(env.n_bins), env.bin_centers)
             field = rate >= 0.3 * rate.max()
             mean_direction = np.angle(
                 np.sum(rate[field] * np.exp(1j * wall_direction[field]))
             )
-            error = np.angle(np.exp(1j * (mean_direction - model.preferred_direction)))
+            error = np.angle(
+                np.exp(1j * (mean_direction - truth["preferred_direction"]))
+            )
             assert abs(error) < np.deg2rad(15)
             assert border_score(env, rate) >= 0.5
 
