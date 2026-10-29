@@ -99,6 +99,15 @@ def _posterior_value_problems(posterior: NDArray[Any]) -> list[str]:
     ]
 
 
+def _owned_spike_window(spike_window: Any) -> NDArray[np.float64]:
+    """Sorted, merged, read-only ``(n_windows, 2)`` spike-recording windows."""
+    from neurospatial._intervals import as_intervals
+
+    window = as_intervals(spike_window, name="spike_window")
+    assert window is not None  # as_intervals returns None only for None
+    return _read_only(window)
+
+
 def _times_problems(times: NDArray[np.float64], n_time: int) -> list[str]:
     """Describe why ``times`` cannot label ``n_time`` decoded time bins."""
     if times.shape != (n_time,):
@@ -357,10 +366,9 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         if self.times is not None:
             object.__setattr__(self, "times", read_only_copy(self.times, np.float64))
         if self.spike_window is not None:
-            from neurospatial._intervals import as_intervals
-
-            window = as_intervals(self.spike_window, name="spike_window")
-            object.__setattr__(self, "spike_window", _read_only(window))
+            object.__setattr__(
+                self, "spike_window", _owned_spike_window(self.spike_window)
+            )
         problems = []
         if self.posterior.ndim != 2:
             problems.append(
@@ -1341,10 +1349,9 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
                 self, "times", own(self.times, np.float64, always_copy=True)
             )
         if self.spike_window is not None:
-            from neurospatial._intervals import as_intervals
-
-            window = as_intervals(self.spike_window, name="spike_window")
-            object.__setattr__(self, "spike_window", _read_only(window))
+            object.__setattr__(
+                self, "spike_window", _owned_spike_window(self.spike_window)
+            )
 
         n_time = self.map_bin.shape[0] if self.map_bin.ndim == 1 else -1
         n_dims = self.env.n_dims
