@@ -302,7 +302,7 @@ class TestTmazeAlternationSession:
 
         meta = session.metadata
         assert "trial_choices" in meta
-        assert isinstance(meta["trial_choices"], list)
+        assert isinstance(meta["trial_choices"], tuple)
 
     def test_tmaze_alternation_session_correct_number_of_trials(self):
         """tmaze_alternation_session() should have correct number of trials."""
@@ -577,7 +577,7 @@ class TestBorderCellSession:
 
             # All cells should have some ground truth parameters
             gt = session.ground_truth[key]
-            assert isinstance(gt, dict)
+            assert gt["cell_type"] in {"border", "place"}
             assert len(gt) > 0
 
     def test_border_cell_session_trajectory_within_bounds(self):

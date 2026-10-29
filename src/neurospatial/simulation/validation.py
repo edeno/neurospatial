@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -47,7 +48,7 @@ def _select_unit_indices(
     return [valid_ids.index(label) for label in unit_ids]
 
 
-def _field_width(truth: dict[str, Any]) -> float:
+def _field_width(truth: Mapping[str, Any]) -> float:
     """A ground truth's place field width (the largest axis), or NaN."""
     if "width" not in truth:
         return np.nan

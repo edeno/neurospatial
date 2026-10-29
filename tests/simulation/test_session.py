@@ -47,8 +47,8 @@ class TestSimulationSession:
 
     def test_simulation_session_has_required_fields(self, simple_2d_env):
         """SimulationSession should have all required fields."""
-        positions = np.array([[50.0, 50.0]])
-        times = np.array([0.0])
+        positions = np.array([[50.0, 50.0], [51.0, 51.0]])
+        times = np.array([0.0, 0.1])
         spike_trains = [np.array([0.05])]
         models = [PlaceCellModel(simple_2d_env, center=np.array([50.0, 50.0]))]
         ground_truth = {0: models[0].ground_truth}
@@ -69,10 +69,11 @@ class TestSimulationSession:
         assert session.env is simple_2d_env
         assert isinstance(session.positions, np.ndarray)
         assert isinstance(session.times, np.ndarray)
-        assert isinstance(session.spike_times, list)
-        assert isinstance(session.models, list)
-        assert isinstance(session.ground_truth, dict)
-        assert isinstance(session.metadata, dict)
+        assert isinstance(session.spike_times, tuple)
+        assert isinstance(session.models, tuple)
+        assert session.ground_truth[0].keys() == models[0].ground_truth.keys()
+        np.testing.assert_array_equal(session.ground_truth[0]["center"], [50.0, 50.0])
+        assert dict(session.metadata) == metadata
 
     def test_simulation_session_type_hints(self, simple_2d_env):
         """SimulationSession should have proper type hints."""
@@ -122,8 +123,8 @@ class TestSimulationSession:
         positions = np.array([[50.0, 50.0], [51.0, 51.0]])
         times = np.array([0.0, 0.1])
         spike_trains = [
-            np.array([0.05, 0.15]),
-            np.array([0.02, 0.12]),
+            np.array([0.05, 0.09]),
+            np.array([0.02, 0.07]),
             np.array([0.08]),
         ]
         models = [
@@ -151,8 +152,8 @@ class TestSimulationSession:
 
     def test_simulation_session_repr(self, simple_2d_env):
         """SimulationSession should have informative repr."""
-        positions = np.array([[50.0, 50.0]])
-        times = np.array([0.0])
+        positions = np.array([[50.0, 50.0], [51.0, 51.0]])
+        times = np.array([0.0, 0.1])
         spike_trains = [np.array([0.05])]
         models = [PlaceCellModel(simple_2d_env, center=np.array([50.0, 50.0]))]
         ground_truth = {0: models[0].ground_truth}
@@ -724,3 +725,88 @@ def test_session_rejects_duplicate_unit_ids(simple_2d_env):
             ground_truth={7: models[0].ground_truth},
             metadata={},
         )
+
+
+def _holder_fields(env):
+    model = PlaceCellModel(env, center=np.array([50.0, 50.0]))
+    return {
+        "env": env,
+        "positions": np.array([[50.0, 50.0], [51.0, 51.0], [52.0, 51.0]]),
+        "times": np.array([0.0, 0.1, 0.2]),
+        "spike_times": [np.array([0.05, 0.15])],
+        "unit_ids": np.array([0], dtype=np.int64),
+        "models": [model],
+        "ground_truth": {0: model.ground_truth},
+        "metadata": {"trial_choices": ["left", "right"]},
+    }
+
+
+class TestSessionOwnsItsData:
+    """A frozen session cannot be changed through its arrays or mappings."""
+
+    def test_arrays_are_read_only_copies(self, simple_2d_env):
+        fields = _holder_fields(simple_2d_env)
+        session = SimulationSession(**fields)
+        fields["positions"][0, 0] = -1.0
+        fields["spike_times"][0][0] = -1.0
+        assert session.positions[0, 0] == 50.0
+        assert session.spike_times[0][0] == 0.05
+        for array in (
+            session.positions,
+            session.times,
+            session.unit_ids,
+            session.spike_times[0],
+        ):
+            with pytest.raises(ValueError, match="read-only"):
+                array[0] = 0
+
+    def test_spike_times_and_models_cannot_grow(self, simple_2d_env):
+        session = SimulationSession(**_holder_fields(simple_2d_env))
+        assert isinstance(session.spike_times, tuple)
+        assert isinstance(session.models, tuple)
+        with pytest.raises(AttributeError):
+            session.spike_times.append(np.array([0.1]))  # type: ignore[attr-defined]
+
+    def test_mappings_are_read_only(self, simple_2d_env):
+        session = SimulationSession(**_holder_fields(simple_2d_env))
+        with pytest.raises(TypeError):
+            session.metadata["seed"] = 1  # type: ignore[index]
+        with pytest.raises(TypeError):
+            session.ground_truth[1] = {}  # type: ignore[index]
+        with pytest.raises(TypeError):
+            session.ground_truth[0]["width"] = 1.0  # type: ignore[index]
+        with pytest.raises(ValueError, match="read-only"):
+            session.ground_truth[0]["center"][0] = 0.0
+        assert session.metadata["trial_choices"] == ("left", "right")
+
+    def test_pickle_and_deepcopy_keep_the_contents_read_only(self, simple_2d_env):
+        import copy
+        import pickle
+
+        session = SimulationSession(**_holder_fields(simple_2d_env))
+        for restored in (pickle.loads(pickle.dumps(session)), copy.deepcopy(session)):
+            np.testing.assert_array_equal(restored.positions, session.positions)
+            np.testing.assert_array_equal(
+                restored.spike_times[0], session.spike_times[0]
+            )
+            assert restored.metadata["trial_choices"] == ("left", "right")
+            assert not restored.positions.flags.writeable
+            assert not restored.spike_times[0].flags.writeable
+            with pytest.raises(TypeError):
+                restored.ground_truth[0]["width"] = 1.0  # type: ignore[index]
+
+    @pytest.mark.parametrize(
+        ("change", "detail"),
+        [
+            ({"positions": np.zeros((3, 1))}, "positions"),
+            ({"times": np.array([0.0, 0.2, 0.1])}, "strictly increasing"),
+            ({"spike_times": [np.array([0.05, 0.25])]}, "spike"),
+            ({"spike_times": [np.array([-0.01])]}, "spike"),
+            ({"unit_ids": np.array([0.7])}, "integer"),
+        ],
+    )
+    def test_refuses_inconsistent_data(self, simple_2d_env, change, detail):
+        fields = {**_holder_fields(simple_2d_env), **change}
+        with pytest.raises(ValueError, match=detail) as raised:
+            SimulationSession(**fields)
+        assert "Fix:" in str(raised.value)

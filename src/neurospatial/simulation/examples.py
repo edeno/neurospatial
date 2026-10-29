@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -485,8 +486,8 @@ def tmaze_alternation_session(
 
     **Trial Metadata**:
 
-    The metadata['trial_choices'] field contains a list of strings
-    indicating the choice on each trial: ['left', 'right', 'left', ...].
+    The metadata["trial_choices"] field contains a tuple of strings
+    indicating the choice on each trial: ("left", "right", "left", ...).
     This allows analysis of choice-dependent neural activity.
 
     **Coverage**:
@@ -560,10 +561,9 @@ def tmaze_alternation_session(
         show_progress=False,  # Disable progress bar for convenience function
     )
 
-    # Add trial_choices to metadata
-    session.metadata["trial_choices"] = trial_choices
-
-    return session
+    return replace(
+        session, metadata={**session.metadata, "trial_choices": trial_choices}
+    )
 
 
 def border_cell_session(

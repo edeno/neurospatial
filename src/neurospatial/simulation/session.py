@@ -2,15 +2,43 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, fields
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+from neurospatial._results import read_only_copy
+
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.simulation.models import NeuralModel
+
+
+def _frozen(value: Any) -> Any:
+    """A read-only equivalent of ``value``: proxied mappings, tuples, read-only arrays."""
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _frozen(item) for key, item in value.items()})
+    if isinstance(value, list | tuple):
+        return tuple(_frozen(item) for item in value)
+    if isinstance(value, np.ndarray):
+        return read_only_copy(value)
+    return value
+
+
+def _thawed(value: Any) -> Any:
+    """Plain dictionaries in place of the read-only mappings of ``_frozen``."""
+    if isinstance(value, Mapping):
+        return {key: _thawed(item) for key, item in value.items()}
+    return value
+
+
+def _rebuild_session(state: dict[str, Any]) -> SimulationSession:
+    """Rebuild a pickled or copied session through its validating constructor."""
+    return SimulationSession(**state)
 
 
 @dataclass(frozen=True)
@@ -27,35 +55,53 @@ class SimulationSession:
     env : Environment
         The spatial environment in which the simulation occurred.
     positions : NDArray[np.float64], shape (n_time, n_dims)
-        Trajectory positions in continuous coordinates. Each row is a position
-        at a specific time point.
+        Trajectory positions in continuous coordinates, one row of
+        ``env.n_dims`` coordinates per time point (read-only).
     times : NDArray[np.float64], shape (n_time,)
-        Time points in seconds corresponding to each position.
-    spike_times : list[NDArray[np.float64]]
-        List of spike time arrays, one per neuron. Each array contains the
-        spike times (in seconds) for a single neuron.
-    models : list[NeuralModel]
+        Strictly increasing time points in seconds, one per position
+        (read-only).
+    spike_times : tuple[NDArray[np.float64], ...]
+        One read-only array of spike times in seconds per unit, each within
+        ``[times[0], times[-1]]``. Any sequence of arrays is accepted and
+        stored as a tuple.
+    models : tuple[NeuralModel, ...]
         Neural model instances used to generate the spikes. These implement
         the NeuralModel protocol and can be used to regenerate firing rates.
+        Any sequence is accepted and stored as a tuple.
     unit_ids : NDArray[np.int64], shape (n_units,)
-        Unit labels aligned one-to-one with spike_times and models. Simulators
-        generate np.arange(n_units).
-    ground_truth : dict[int, dict[str, Any]]
-        True parameters for each cell, keyed by integer unit label. This
-        typically contains ground truth from each model's `.ground_truth`
-        property, enabling validation of analysis methods.
-    metadata : dict[str, Any]
+        Unique integer unit labels aligned one-to-one with spike_times and
+        models (read-only). Simulators generate ``np.arange(n_units)``.
+    ground_truth : Mapping[int, Mapping[str, Any]]
+        True parameters for each cell, keyed by integer unit label. The
+        simulators store each model's ``.ground_truth``, enabling validation
+        of analysis methods. Stored read-only.
+    metadata : Mapping[str, Any]
         Session parameters and configuration. This can include simulation
         settings (duration, trajectory method, cell type), experimental
-        parameters, or any other relevant information.
+        parameters, or any other relevant information. Stored read-only.
+
+    Raises
+    ------
+    ValueError
+        If spike_times, unit_ids and models do not align one-to-one; if
+        unit_ids are not unique integers; if ground_truth is not keyed by the
+        unit labels; if positions are not one row of ``env.n_dims``
+        coordinates per time; if times are not strictly increasing; or if a
+        spike time is not finite or lies outside ``[times[0], times[-1]]``.
 
     Notes
     -----
-    This dataclass is frozen (immutable) to prevent accidental modification
-    of simulation results. To create a modified session, use dataclasses.replace():
+    The session is immutable: its fields cannot be reassigned, its arrays are
+    read-only copies, ``spike_times`` and ``models`` are tuples, and
+    ``ground_truth`` and ``metadata`` are read-only mappings whose lists
+    become tuples. Editing an array passed to the constructor does not change
+    the session. To create a modified session, use
+    ``dataclasses.replace()``, which validates the new fields:
 
-        >>> from dataclasses import replace
-        >>> new_session = replace(session, metadata={...})  # doctest: +SKIP
+    >>> from dataclasses import replace
+    >>> new_session = replace(
+    ...     session, metadata={"note": "relabelled"}
+    ... )  # doctest: +SKIP
 
     The separation of `models` and `ground_truth` allows flexible usage:
     - Use `models` to regenerate firing rates or extend simulations
@@ -63,66 +109,40 @@ class SimulationSession:
 
     Examples
     --------
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.simulation import (  # doctest: +SKIP
-    ...     simulate_trajectory_ou,
+    >>> import numpy as np
+    >>> from shapely.geometry import box
+    >>> from neurospatial import Environment
+    >>> from neurospatial.simulation import (
     ...     PlaceCellModel,
-    ...     generate_population_spikes,
     ...     SimulationSession,
+    ...     generate_population_spikes,
+    ...     simulate_trajectory_ou,
     ... )
-
-    >>> # Create environment
-    >>> env = Environment.from_samples(arena_data, bin_size=2.0)  # doctest: +SKIP
-    >>> env = env.with_metadata(units="cm")  # doctest: +SKIP
-
-    >>> # Generate trajectory
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
     >>> positions, times = simulate_trajectory_ou(
-    ...     env, duration=60.0, speed_units="cm"
-    ... )  # doctest: +SKIP
-
-    >>> # Create place cells
-    >>> models = [  # doctest: +SKIP
+    ...     env, duration=10.0, speed_units="cm", seed=0
+    ... )
+    >>> models = [
     ...     PlaceCellModel(env, center=[50.0, 50.0], width=10.0),
     ...     PlaceCellModel(env, center=[70.0, 60.0], width=8.0),
     ... ]
-
-    >>> # Generate spikes
     >>> spike_times = generate_population_spikes(
-    ...     models, times, positions
-    ... )  # doctest: +SKIP
-
-    >>> # Collect ground truth
-    >>> ground_truth = {  # doctest: +SKIP
-    ...     i: model.ground_truth for i, model in enumerate(models)
-    ... }
-
-    >>> # Create session
-    >>> session = SimulationSession(  # doctest: +SKIP
+    ...     models, times, positions, seed=1, show_progress=False
+    ... )
+    >>> session = SimulationSession(
     ...     env=env,
     ...     positions=positions,
     ...     times=times,
     ...     spike_times=spike_times,
-    ...     unit_ids=np.arange(len(spike_times), dtype=np.int64),
+    ...     unit_ids=np.arange(len(models)),
     ...     models=models,
-    ...     ground_truth=ground_truth,
-    ...     metadata={"duration": 60.0, "cell_type": "place"},
+    ...     ground_truth={i: model.ground_truth for i, model in enumerate(models)},
+    ...     metadata={"duration": 10.0, "cell_type": "place"},
     ... )
-
-    >>> from neurospatial import compute_spatial_rates  # doctest: +SKIP
-    >>> rates = compute_spatial_rates(  # doctest: +SKIP
-    ...     session.env,
-    ...     session.spike_times,
-    ...     session.times,
-    ...     session.positions,
-    ...     unit_ids=session.unit_ids,
-    ... )
-
-    >>> # Access fields with typed attributes
-    >>> print(f"Session duration: {session.times[-1]:.1f}s")  # doctest: +SKIP
-    >>> print(f"Number of cells: {len(session.spike_times)}")  # doctest: +SKIP
-    >>> print(
-    ...     f"Total spikes: {sum(len(st) for st in session.spike_times)}"
-    ... )  # doctest: +SKIP
+    >>> len(session.spike_times)
+    2
+    >>> session.positions.flags.writeable
+    False
 
     See Also
     --------
@@ -132,13 +152,13 @@ class SimulationSession:
     """
 
     env: Environment
-    spike_times: list[NDArray[np.float64]]
+    spike_times: Sequence[NDArray[np.float64]]
     unit_ids: NDArray[np.int64]
     times: NDArray[np.float64]
     positions: NDArray[np.float64]
-    models: list[NeuralModel]
-    ground_truth: dict[int, dict[str, Any]]
-    metadata: dict[str, Any]
+    models: Sequence[NeuralModel]
+    ground_truth: Mapping[int, Mapping[str, Any]]
+    metadata: Mapping[str, Any]
 
     def __post_init__(self) -> None:
         n = len(self.spike_times)
@@ -148,17 +168,24 @@ class SimulationSession:
                 f"{len(self.models)}; these must match one-to-one.\n"
                 "Fix: build unit_ids as np.arange(len(spike_times))."
             )
-        if len(self.times) != len(self.positions):
+        unit_ids = np.asarray(self.unit_ids)
+        if unit_ids.ndim != 1 or (
+            unit_ids.size and not np.issubdtype(unit_ids.dtype, np.integer)
+        ):
             raise ValueError(
-                f"times has {len(self.times)} samples but positions has "
-                f"{len(self.positions)}; they must match one-to-one.\n"
-                "Fix: pass one position row per timestamp."
+                _format_error(
+                    f"unit_ids must be a 1-D array of integer labels, got "
+                    f"{unit_ids.tolist()!r} (dtype {unit_ids.dtype}).",
+                    why="ground_truth is keyed by integer labels; a label such "
+                    "as 0.7 would silently select the ground truth of unit 0.",
+                    fix="pass integer labels, e.g. np.arange(len(spike_times))",
+                )
             )
-        labels = {int(label) for label in self.unit_ids}
-        if len(labels) != len(self.unit_ids):
+        labels = {int(label) for label in unit_ids}
+        if len(labels) != len(unit_ids):
             raise ValueError(
-                f"unit_ids {[int(label) for label in self.unit_ids]} are not "
-                f"unique; each unit needs its own label.\n"
+                f"unit_ids {unit_ids.tolist()} are not unique; each unit needs "
+                "its own label.\n"
                 "Fix: build unit_ids as np.arange(len(spike_times)), or give "
                 "every unit a distinct label."
             )
@@ -169,6 +196,72 @@ class SimulationSession:
                 "Fix: key ground_truth by each unit's label, "
                 "{label: model.ground_truth}."
             )
+
+        times = read_only_copy(self.times, np.float64)
+        positions = read_only_copy(self.positions, np.float64)
+        if times.ndim != 1 or len(times) != len(positions):
+            raise ValueError(
+                f"times has shape {times.shape} but positions has "
+                f"{len(positions)} samples; they must match one-to-one.\n"
+                "Fix: pass one position row per timestamp."
+            )
+        if positions.ndim != 2 or positions.shape[1] != self.env.n_dims:
+            raise ValueError(
+                _format_error(
+                    f"positions has shape {positions.shape}, but the "
+                    f"environment has {self.env.n_dims} dimensions.",
+                    why="each row is one position in the environment's coordinates.",
+                    fix=f"pass positions of shape (n_time, {self.env.n_dims})",
+                )
+            )
+        if len(times) and not (
+            np.all(np.isfinite(times)) and np.all(np.diff(times) > 0)
+        ):
+            raise ValueError(
+                _format_error(
+                    "times must be finite and strictly increasing.",
+                    why="each position sample needs its own time, in order.",
+                    fix="sort the samples by time and drop duplicate timestamps",
+                )
+            )
+
+        trains = tuple(read_only_copy(train, np.float64) for train in self.spike_times)
+        start = times[0] if len(times) else np.nan
+        stop = times[-1] if len(times) else np.nan
+        for label, train in zip(unit_ids, trains, strict=True):
+            if train.ndim != 1 or not np.all(
+                np.isfinite(train) & (train >= start) & (train <= stop)
+            ):
+                raise ValueError(
+                    _format_error(
+                        f"Unit {int(label)} has spike times outside the recording "
+                        f"[{start:g}, {stop:g}] s, or not finite, or not a 1-D "
+                        "array.",
+                        why="spikes can only be observed while the position is "
+                        "sampled.",
+                        fix="pass one 1-D array of spike times per unit, "
+                        "cropped to [times[0], times[-1]]",
+                    )
+                )
+
+        object.__setattr__(self, "unit_ids", read_only_copy(unit_ids, np.int64))
+        object.__setattr__(self, "times", times)
+        object.__setattr__(self, "positions", positions)
+        object.__setattr__(self, "spike_times", trains)
+        object.__setattr__(self, "models", tuple(self.models))
+        object.__setattr__(
+            self,
+            "ground_truth",
+            _frozen({int(label): truth for label, truth in self.ground_truth.items()}),
+        )
+        object.__setattr__(self, "metadata", _frozen(self.metadata))
+
+    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
+        """Pickle and copy through the constructor, which re-freezes the mappings."""
+        state = {
+            field.name: _thawed(getattr(self, field.name)) for field in fields(self)
+        }
+        return _rebuild_session, (state,)
 
 
 def simulate_session(
