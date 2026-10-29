@@ -146,7 +146,9 @@ Each maze keeps the bins whose centres lie on its floor. Bins wider than about
 half the narrowest corridor can leave a stretch of corridor without a bin and
 split the maze into pieces, and a region smaller than a bin can hold no bin
 centre. Either breaks paths, distances or visits, so the maze warns and names
-a bin size that works. The default 2 cm bins suit every maze.
+a bin size that works. The default 2 cm bins are fine enough for every maze.
+The rat hexmaze, about 9 × 5 m, still spans a grid of over 100,000 bins at
+2 cm, so building it also warns about the grid's memory use (about 120 MB).
 
 <!-- docs-test: run -->
 ```python
