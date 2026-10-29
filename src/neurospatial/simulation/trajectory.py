@@ -880,8 +880,9 @@ def simulate_trajectory_laps(
     Raises
     ------
     ValueError
-        If n_laps <= 0, speed_mean <= 0, speed_std < 0, pause_duration < 0,
-        or sampling_frequency <= 0.
+        If n_laps is not a positive integer, or speed_mean or
+        sampling_frequency is not finite and positive, or speed_std or
+        pause_duration is not finite and non-negative.
     ValueError
         If ``speed_mean`` is None and ``env.units`` is not a metric length.
     ValueError
@@ -1027,56 +1028,27 @@ def _simulate_trajectory_laps(
             )
     if speed_std is None:
         speed_std = 0.2 * speed_mean
-    if duration is not None:
-        for name, value, positive in [
-            ("duration", duration, True),
+    _require_finite(
+        [
+            *([] if duration is None else [("duration", duration, True)]),
             ("sampling_frequency", sampling_frequency, True),
             ("speed_mean", speed_mean, True),
             ("speed_std", speed_std, False),
             ("pause_duration", pause_duration, False),
-        ]:
-            if not np.isfinite(value) or (value <= 0 if positive else value < 0):
-                bound = "positive" if positive else "non-negative"
-                raise ValueError(
-                    _format_error(
-                        f"{name} must be finite and {bound}, got {value}.",
-                        why="Why: Lap session timing requires finite sample budgets and speeds.",
-                        fix=f"Set {name} to a finite {bound} value.",
-                    )
-                )
-        if (
-            not isinstance(n_laps, (int, np.integer))
-            or isinstance(n_laps, bool)
-            or n_laps <= 0
-        ):
-            raise ValueError(
-                _format_error(
-                    f"n_laps must be a positive integer, got {n_laps}.",
-                    why="Why: Each requested one-way traversal needs its own sample allocation.",
-                    fix="Set n_laps=2 for one out-and-back cycle.",
-                )
+        ]
+    )
+    if (
+        not isinstance(n_laps, (int, np.integer))
+        or isinstance(n_laps, bool)
+        or n_laps <= 0
+    ):
+        raise ValueError(
+            _format_error(
+                f"n_laps must be a positive integer, got {n_laps!r}.",
+                why="Why: n_laps counts one-way traversals of the route.",
+                fix="pass n_laps=2 for one out-and-back cycle",
             )
-
-    # Validate parameters
-    if n_laps <= 0:
-        msg = f"n_laps must be positive (got {n_laps})"
-        raise ValueError(msg)
-
-    if speed_mean <= 0:
-        msg = f"speed_mean must be positive (env units / s, got {speed_mean})"
-        raise ValueError(msg)
-
-    if speed_std < 0:
-        msg = f"speed_std must be non-negative (env units / s, got {speed_std})"
-        raise ValueError(msg)
-
-    if pause_duration < 0:
-        msg = f"pause_duration must be non-negative (seconds, got {pause_duration})"
-        raise ValueError(msg)
-
-    if sampling_frequency <= 0:
-        msg = f"sampling_frequency must be positive (Hz, got {sampling_frequency})"
-        raise ValueError(msg)
+        )
 
     # Initialize random number generator
     rng = np.random.default_rng(seed)

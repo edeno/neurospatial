@@ -172,6 +172,30 @@ def test_default_speed_needs_metric_units():
     assert np.all(env.bin_at(positions) >= 0)
 
 
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("speed_mean", np.nan),
+        ("speed_mean", 0.0),
+        ("speed_std", -1.0),
+        ("speed_std", np.inf),
+        ("sampling_frequency", np.inf),
+        ("sampling_frequency", 0.0),
+        ("pause_duration", np.nan),
+        ("pause_duration", -0.5),
+    ],
+)
+def test_invalid_lap_timing_is_refused(box_env, option, value):
+    with pytest.raises(ValueError, match=f"{option} must be finite"):
+        simulate_trajectory_laps(box_env, n_laps=2, **{option: value})
+
+
+@pytest.mark.parametrize("n_laps", [2.5, True, 0, -1, np.float64(2.0)])
+def test_n_laps_must_be_a_positive_integer(box_env, n_laps):
+    with pytest.raises(ValueError, match="n_laps must be a positive integer"):
+        simulate_trajectory_laps(box_env, n_laps=n_laps)
+
+
 def test_custom_path_must_be_chain_of_neighbors(box_env):
     assert not box_env.connectivity.has_edge(0, 2)
     with pytest.raises(ValueError, match="neighboring"):
