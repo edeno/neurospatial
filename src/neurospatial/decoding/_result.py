@@ -40,6 +40,85 @@ def _read_only(array: _ArrayT) -> _ArrayT:
     return array
 
 
+# Largest accepted |row sum - 1|. It matches the decoders' own output check
+# and is about ten times the float32 rounding of a normalized row (1.2e-7 at
+# 200,000 bins).
+_ROW_SUM_TOLERANCE = 1e-6
+
+# Rows per validation block, sized so temporaries stay near 2**22 elements.
+_VALIDATION_BLOCK_ELEMENTS = 2**22
+
+
+def _posterior_value_problems(posterior: NDArray[Any]) -> list[str]:
+    """Describe rows that are neither a probability mass nor entirely NaN.
+
+    Parameters
+    ----------
+    posterior : ndarray, shape (n_time_bins, n_bins)
+        Candidate posterior, checked in row blocks to bound temporary memory.
+
+    Returns
+    -------
+    list of str
+        One problem per kind of violation, naming the first offending row.
+    """
+    if posterior.dtype.kind not in "fiu":
+        return [f"posterior must hold real numbers, got dtype {posterior.dtype}"]
+    messages = {
+        "nan": "contain NaN but are not entirely NaN",
+        "inf": "contain Inf",
+        "negative": "contain negative probabilities",
+        "sum": f"do not sum to 1 within {_ROW_SUM_TOLERANCE:g}",
+    }
+    counts = dict.fromkeys(messages, 0)
+    first: dict[str, str] = {}
+    n_time, n_bins = posterior.shape
+    step = max(1, _VALIDATION_BLOCK_ELEMENTS // max(n_bins, 1))
+    for start in range(0, n_time, step):
+        block = posterior[start : start + step]
+        nan = np.isnan(block)
+        any_nan = nan.any(axis=1)
+        infinite = np.isinf(block).any(axis=1)
+        sums = block.sum(axis=1, dtype=np.float64)
+        rows = {
+            "nan": any_nan & ~nan.all(axis=1),
+            "inf": infinite,
+            "negative": (block < 0).any(axis=1),
+            "sum": ~(any_nan | infinite) & (np.abs(sums - 1.0) > _ROW_SUM_TOLERANCE),
+        }
+        for kind, mask in rows.items():
+            hits = np.flatnonzero(mask)
+            if hits.size and kind not in first:
+                detail = f" (sum {sums[hits[0]]:.6g})" if kind == "sum" else ""
+                first[kind] = f"first row {start + int(hits[0])}{detail}"
+            counts[kind] += hits.size
+    return [
+        f"{counts[kind]} posterior row(s) {messages[kind]}, {where}"
+        for kind, where in first.items()
+    ]
+
+
+def _times_problems(times: NDArray[np.float64], n_time: int) -> list[str]:
+    """Describe why ``times`` cannot label ``n_time`` decoded time bins."""
+    if times.shape != (n_time,):
+        return [
+            f"times has shape {times.shape}, expected ({n_time},) to match the "
+            "decoded time bins"
+        ]
+    if not np.all(np.isfinite(times)):
+        i = int(np.flatnonzero(~np.isfinite(times))[0])
+        return [f"times must be finite, but times[{i}] = {times[i]}"]
+    unordered = np.flatnonzero(np.diff(times) <= 0)
+    if unordered.size:
+        i = int(unordered[0])
+        return [
+            "times must be strictly increasing, but "
+            f"times[{i + 1}] = {times[i + 1]} does not follow "
+            f"times[{i}] = {times[i]}"
+        ]
+    return []
+
+
 def _recording_breaks(times: NDArray[np.float64] | None) -> NDArray[np.intp]:
     """Indices ``i`` where a pause separates ``times[i]`` and ``times[i + 1]``.
 
@@ -177,17 +256,21 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
     Parameters
     ----------
     posterior : NDArray[np.float64]
-        Posterior probability distribution over positions, shape
-        (n_time_bins, n_bins). Each row sums to 1.0.
+        Posterior probability mass per bin, shape (n_time_bins, n_bins). Each
+        row is non-negative and sums to 1 (within 1e-6), or is entirely NaN
+        for a time bin that could not be decoded.
     env : Environment
         Reference to the environment used for decoding. Provides
         bin_centers for coordinate transforms.
     times : NDArray[np.float64] | None, optional
-        Time bin centers in seconds. If provided, used for plotting
-        and DataFrame export. Default is None.
-    spike_window : NDArray[np.float64] | None, optional
-        Normalized spike-recording windows, copied read-only. ``None`` records
-        the assumption that spikes were observed wherever position was.
+        Time bin centers in seconds, finite and strictly increasing, one per
+        posterior row. If provided, used for plotting and DataFrame export.
+        Default is None.
+    spike_window : array-like, shape (n_windows, 2), or None, optional
+        Spike-recording ``[start, stop)`` windows in seconds, each with
+        ``start < stop``; stored sorted, merged and read-only. ``None``
+        records the assumption that spikes were observed wherever position
+        was.
 
     Attributes
     ----------
@@ -201,6 +284,15 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         Read-only spike-recording windows, or ``None`` for assumed coverage.
     spike_window_assumed : bool
         Whether spike-recording coverage was assumed.
+
+    Raises
+    ------
+    ValueError
+        If the posterior is not 2-D with one column per environment bin, if
+        a row is negative, contains Inf, is only partly NaN or does not sum
+        to 1, if ``times`` is not finite, strictly increasing and one per
+        row, or if ``spike_window`` has a row that is not a finite
+        ``start < stop`` pair.
 
     Examples
     --------
@@ -250,47 +342,58 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
     )
 
     def __post_init__(self) -> None:
-        """Take ownership of input arrays as read-only copies, checking shapes."""
+        """Take ownership of input arrays as read-only copies and validate them."""
         object.__setattr__(self, "posterior", read_only_copy(self.posterior))
+        self._own_and_validate(check_posterior_values=True)
+
+    def _own_and_validate(self, *, check_posterior_values: bool) -> None:
+        """Copy ``times`` and ``spike_window`` read-only and enforce invariants.
+
+        Shapes, times and spike windows are always checked. The posterior
+        values are checked unless ``check_posterior_values`` is False, which
+        only :meth:`_evolve` passes because it reuses a validated posterior.
+        """
         if self.times is not None:
             object.__setattr__(self, "times", read_only_copy(self.times, np.float64))
+        if self.spike_window is not None:
+            from neurospatial._intervals import as_intervals
+
+            window = as_intervals(self.spike_window, name="spike_window")
+            object.__setattr__(self, "spike_window", _read_only(window))
         problems = []
         if self.posterior.ndim != 2:
             problems.append(
                 f"posterior must be 2-D (n_time_bins, n_bins), got shape "
                 f"{self.posterior.shape}"
             )
-        elif self.posterior.shape[1] != self.env.n_bins:
-            problems.append(
-                f"posterior has {self.posterior.shape[1]} columns but env has "
-                f"n_bins={self.env.n_bins}"
-            )
-        if (
-            self.times is not None
-            and self.posterior.ndim == 2
-            and self.times.shape != (self.posterior.shape[0],)
-        ):
-            problems.append(
-                f"times has shape {self.times.shape}, expected "
-                f"({self.posterior.shape[0]},) to match the posterior's time bins"
-            )
+        else:
+            if self.posterior.shape[1] != self.env.n_bins:
+                problems.append(
+                    f"posterior has {self.posterior.shape[1]} columns but env has "
+                    f"n_bins={self.env.n_bins}"
+                )
+            elif check_posterior_values:
+                problems += _posterior_value_problems(self.posterior)
+            if self.times is not None:
+                problems += _times_problems(self.times, self.posterior.shape[0])
         if problems:
             raise ValueError(
                 _format_error(
                     "DecodingResult: " + "; ".join(problems) + ".",
                     why=(
-                        "Why: posterior column j is the probability of "
-                        "env.bin_centers[j], and row i belongs to times[i]."
+                        "Why: posterior column j is the probability mass in "
+                        "env.bin_centers[j], and row i, the decode at times[i], "
+                        "is a distribution over bins (non-negative, summing to "
+                        "1) or entirely NaN where the time bin could not be "
+                        "decoded."
                     ),
                     fix=(
-                        "pass the env the posterior was decoded on and one "
-                        "time per posterior row"
+                        "pass the env the posterior was decoded on, one "
+                        "increasing time per posterior row, and rows normalized "
+                        "with posterior / posterior.sum(axis=1, keepdims=True); "
+                        "set an undecodable row entirely to NaN"
                     ),
                 )
-            )
-        if self.spike_window is not None:
-            object.__setattr__(
-                self, "spike_window", read_only_copy(self.spike_window, np.float64)
             )
 
     @classmethod
@@ -301,26 +404,34 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
 
         Internal use only: the caller guarantees no other reference to
         ``posterior``, so it is marked read-only instead of copied. ``fields``
-        must name every other dataclass field.
+        must name every other dataclass field. Validation matches the public
+        constructor.
         """
         posterior.flags.writeable = False
+        return cls._assemble(posterior, fields, check_posterior_values=True)
+
+    @classmethod
+    def _assemble(
+        cls,
+        posterior: NDArray[Any],
+        fields: dict[str, Any],
+        *,
+        check_posterior_values: bool,
+    ) -> DecodingResult:
+        """Set a read-only ``posterior`` and ``fields`` without copying it."""
         obj = cls.__new__(cls)
         object.__setattr__(obj, "posterior", posterior)
         for name, value in fields.items():
             object.__setattr__(obj, name, value)
-        if obj.times is not None:
-            object.__setattr__(obj, "times", read_only_copy(obj.times, np.float64))
-        if obj.spike_window is not None:
-            object.__setattr__(
-                obj, "spike_window", read_only_copy(obj.spike_window, np.float64)
-            )
+        obj._own_and_validate(check_posterior_values=check_posterior_values)
         return obj
 
     def _evolve(self, **changes: Any) -> DecodingResult:
         """Return a copy with changes applied, sharing this result's posterior.
 
-        Internal use only. This result owns its read-only posterior, so sharing
-        it with the new result cannot create a writable alias.
+        Internal use only. This result owns its read-only, validated
+        posterior, so sharing it with the new result cannot create a writable
+        alias; the changed fields are validated as in the constructor.
         """
         if "posterior" in changes:
             raise ValueError(
@@ -332,7 +443,9 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
             if f.name != "posterior"
         }
         fields.update(changes)
-        return type(self)._from_owned_posterior(self.posterior, **fields)
+        return type(self)._assemble(
+            self.posterior, fields, check_posterior_values=False
+        )
 
     @property
     def spike_window_assumed(self) -> bool:
@@ -954,26 +1067,6 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
             # xarray indexes may retain their input even after a deep Dataset
             # copy, so give the index its own writable timestamp storage.
             time_coord: NDArray[Any] = np.array(self.times, copy=True)
-            if time_coord.ndim != 1:
-                raise ValueError(
-                    "DecodingResult.to_xarray(): times must be 1-D, but got "
-                    f"shape {time_coord.shape}.\n"
-                    "  WHY: the xarray 'time' coordinate labels one posterior "
-                    "row per decoded time bin.\n"
-                    "  Fix: pass a 1-D times array with length "
-                    "posterior.shape[0], or leave times=None to use integer "
-                    "time-bin indices."
-                )
-            if time_coord.shape[0] != n_time:
-                raise ValueError(
-                    "DecodingResult.to_xarray(): times length mismatch: got "
-                    f"{time_coord.shape[0]} time value(s), but posterior has "
-                    f"{n_time} time bin(s).\n"
-                    "  WHY: the xarray 'time' coordinate must align one-to-one "
-                    "with posterior rows.\n"
-                    "  Fix: pass times with length posterior.shape[0], or "
-                    "leave times=None to use integer time-bin indices."
-                )
         else:
             time_coord = np.arange(n_time)
 

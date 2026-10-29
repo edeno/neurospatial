@@ -321,20 +321,15 @@ class TestErrorAgainst:
         assert errors.shape == (3,)
         assert np.isfinite(errors).all()
 
-    def test_error_against_rejects_nan_self_times(self, small_2d_env):
-        """A NaN in self.times raises ValueError (not a silent NaN error)."""
+    def test_result_rejects_nan_self_times(self, small_2d_env):
+        """A NaN decode time is refused when the result is built."""
         posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
-        result = DecodingResult(
-            posterior=posterior,
-            env=small_2d_env,
-            times=np.array([0.0, np.nan, 1.0]),
-        )
-
-        true_times = np.array([0.0, 1.0])
-        true_positions = np.array([[0.0, 0.0], [10.0, 10.0]])
-
-        with pytest.raises(ValueError, match="times"):
-            result.error_against(true_times, true_positions)
+        with pytest.raises(ValueError, match="times must be finite"):
+            DecodingResult(
+                posterior=posterior,
+                env=small_2d_env,
+                times=np.array([0.0, np.nan, 1.0]),
+            )
 
     def test_error_against_rejects_nan_true_times(self, small_2d_env):
         """A NaN in true_times raises ValueError (not a silent NaN error)."""

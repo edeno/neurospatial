@@ -720,3 +720,92 @@ def test_copied_result_keeps_every_array_read_only(windowed_result, how):
         array = getattr(copied, name)
         assert array.flags.writeable is False, name
         np.testing.assert_array_equal(array, getattr(windowed_result, name))
+
+
+@pytest.mark.parametrize(
+    ("row", "detail"),
+    [
+        pytest.param([-7.0, 0.0, 0.0, 0.0], "negative", id="sums-to-minus-seven"),
+        pytest.param([0.5, 0.5, 0.5, 0.5], "sum", id="sums-to-two"),
+        pytest.param([1.2, -0.2, 0.0, 0.0], "negative", id="negative-entry"),
+        pytest.param([np.inf, 0.0, 0.0, 0.0], "Inf", id="infinite-entry"),
+        pytest.param([np.nan, 1.0, 0.0, 0.0], "NaN", id="partly-nan"),
+    ],
+)
+def test_constructor_rejects_invalid_posterior_rows(env_4bin, row, detail):
+    """Every row is a probability mass over bins, or entirely NaN."""
+    from neurospatial.decoding import DecodingResult
+
+    posterior = np.array([[0.25, 0.25, 0.25, 0.25], row])
+    with pytest.raises(ValueError, match=detail) as exc:
+        DecodingResult(posterior=posterior, env=env_4bin)
+    assert "row 1" in str(exc.value)
+    assert "Fix:" in str(exc.value)
+
+
+def test_constructor_accepts_undecodable_rows_and_float32_rounding():
+    """Entirely-NaN rows mark undecodable time bins; float32 sums are inexact."""
+    from neurospatial import Environment
+    from neurospatial.decoding import DecodingResult
+
+    n_bins = 20_000
+    env = Environment.from_grid_mask(
+        np.ones(n_bins, dtype=bool), grid_edges=(np.arange(n_bins + 1.0),)
+    )
+    posterior = np.random.default_rng(0).random((4, n_bins), dtype=np.float32)
+    posterior /= posterior.sum(axis=1, keepdims=True)
+    posterior[2] = np.nan
+    result = DecodingResult(posterior=posterior, env=env)
+    assert result.posterior.dtype == np.float32
+
+
+@pytest.mark.parametrize(
+    ("times", "detail"),
+    [
+        pytest.param([3.0, 2.0, 1.0, 0.0], "increasing", id="decreasing"),
+        pytest.param([0.0, 1.0, 1.0, 2.0], "increasing", id="duplicate"),
+        pytest.param([0.0, np.nan, 2.0, 3.0], "finite", id="nan"),
+    ],
+)
+def test_constructor_rejects_unordered_times(env_4bin, times, detail):
+    from neurospatial.decoding import DecodingResult
+
+    posterior = np.full((4, 4), 0.25)
+    with pytest.raises(ValueError, match=detail) as exc:
+        DecodingResult(posterior=posterior, env=env_4bin, times=np.array(times))
+    assert "Fix:" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "spike_window",
+    [
+        pytest.param(np.array([0.0, 1.0, 2.0]), id="shape-3"),
+        pytest.param(np.array([[2.0, 1.0]]), id="stop-before-start"),
+        pytest.param(np.array([[0.0, np.inf]]), id="infinite"),
+    ],
+)
+def test_constructor_rejects_invalid_spike_window(env_4bin, spike_window):
+    from neurospatial.decoding import DecodingResult
+
+    with pytest.raises(ValueError, match="spike_window"):
+        DecodingResult(
+            posterior=np.full((1, 4), 0.25), env=env_4bin, spike_window=spike_window
+        )
+
+
+def test_every_construction_path_enforces_invariants(env_4bin):
+    """The trusted constructors validate too, so no path skips the checks."""
+    from neurospatial.decoding import DecodingResult
+
+    with pytest.raises(ValueError, match="sum"):
+        DecodingResult._from_owned_posterior(
+            np.full((2, 4), 0.5), env=env_4bin, times=None, spike_window=None
+        )
+    result = DecodingResult(posterior=np.full((2, 4), 0.25), env=env_4bin)
+    with pytest.raises(ValueError, match="increasing"):
+        result._evolve(times=np.array([1.0, 0.0]))
+    with pytest.raises(ValueError, match="spike_window"):
+        result._evolve(spike_window=np.array([0.0, 1.0, 2.0]))
+    windowed = result._evolve(spike_window=(0.0, 2.0))
+    np.testing.assert_array_equal(windowed.spike_window, [[0.0, 2.0]])
+    assert windowed.spike_window.flags.writeable is False
