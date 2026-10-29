@@ -408,6 +408,19 @@ class TestPolarEuclideanError:
         error = decoding_error(surround, decoded, actual, metric="euclidean")
         np.testing.assert_allclose(error, [2 * 10.0 * np.sin(0.02)])
 
+    def test_mean_at_the_animal_is_measured_from_the_animal(self, surround):
+        """A centroid on the animal has no direction but a definite place."""
+        from neurospatial.decoding.estimates import mean_position
+        from neurospatial.decoding.metrics import decoding_error
+
+        ring = np.isclose(surround.bin_centers[:, 0], 25.0)
+        posterior = np.where(ring, 1.0 / ring.sum(), 0.0)[None, :]
+        centroid = mean_position(surround, posterior)
+        error = decoding_error(
+            surround, centroid, np.array([[20.0, 0.3]]), metric="euclidean"
+        )
+        np.testing.assert_allclose(error, [20.0])
+
     def test_error_is_the_chord_between_places(self, surround):
         from neurospatial.decoding.metrics import decoding_error
 

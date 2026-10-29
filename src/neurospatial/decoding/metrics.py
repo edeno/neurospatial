@@ -215,8 +215,14 @@ def decoding_error(
 
 
 def _egocentric_plane(positions: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Polar ``(distance, angle)`` rows as ``(x ahead, y to the left)``."""
+    """Polar ``(distance, angle)`` rows as ``(x ahead, y to the left)``.
+
+    Distance 0 is the animal's position whatever the angle; a centroid there
+    has a NaN angle (see ``estimates._finish_posterior_mean``).
+    """
     distance, angle = positions[:, 0], positions[:, 1]
+    at_animal = distance == 0
+    angle = np.where(at_animal, 0.0, angle)
     return np.column_stack([distance * np.cos(angle), distance * np.sin(angle)])
 
 

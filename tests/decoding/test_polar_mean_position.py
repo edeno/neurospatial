@@ -74,7 +74,7 @@ def test_mean_at_the_animal_has_no_direction(polar):
     ring = np.isclose(polar.bin_centers[:, 0], 7.5)
     posterior = np.where(ring, 1.0 / ring.sum(), 0.0)[None, :]
     distance, angle = mean_position(polar, posterior)[0]
-    assert distance == pytest.approx(0.0, abs=1e-12)
+    assert distance == 0.0
     assert np.isnan(angle)
 
 

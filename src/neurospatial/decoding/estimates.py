@@ -70,7 +70,8 @@ def _finish_posterior_mean(
 
     Polar centroids return as ``(distance, angle)`` with the angle in the
     environment's angular range. A centroid within the rounding error of the
-    animal's position, shape ``(n_time, 2)`` input, has no direction: NaN angle.
+    animal's position, shape ``(n_time, 2)`` input, is the animal's position:
+    distance 0 and no direction (NaN angle).
     """
     if not _is_polar(env):
         return weighted
@@ -83,8 +84,10 @@ def _finish_posterior_mean(
     # Each centroid sums n_bins terms bounded by the largest bin distance.
     max_distance = float(np.max(np.abs(env.bin_centers[:, 0])))
     rounding = env.n_bins * np.finfo(np.float64).eps * max_distance
-    angle = np.where(distance <= rounding, np.nan, angle)
-    return np.column_stack([distance, angle])
+    at_animal = distance <= rounding
+    return np.column_stack(
+        [np.where(at_animal, 0.0, distance), np.where(at_animal, np.nan, angle)]
+    )
 
 
 _UNDECODABLE_BIN = -1
