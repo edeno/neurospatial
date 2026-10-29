@@ -35,10 +35,158 @@ def spike_counts() -> np.ndarray:
     )
 
 
-@pytest.fixture
-def rng() -> np.random.Generator:
-    """Fixed random generator for reproducibility."""
-    return np.random.default_rng(42)
+# =============================================================================
+# Shared contract of every shuffle and surrogate generator
+# =============================================================================
+
+
+def _counts(n_time_bins: int, n_neurons: int) -> np.ndarray:
+    return (
+        np.random.default_rng(42)
+        .poisson(2.0, size=(n_time_bins, n_neurons))
+        .astype(np.int64)
+    )
+
+
+def _rows(n_rows: int, n_columns: int) -> np.ndarray:
+    """Rows of positive values that each sum to 1."""
+    raw = np.random.default_rng(42).random((n_rows, n_columns)) + 0.1
+    return raw / raw.sum(axis=1, keepdims=True)
+
+
+def _grid_env():
+    """A full 6 x 6 grid of 2 cm bins (no inactive bins)."""
+    from neurospatial import Environment
+
+    positions = np.random.default_rng(42).uniform(0, 10, (1000, 2))
+    return Environment.from_samples(positions, bin_size=2.0, infer_active_bins=False)
+
+
+def _draw(name: str, data: np.ndarray, rng, n: int = 5) -> list[np.ndarray]:
+    """``n`` shuffles of ``data`` from the generator ``name``."""
+    from neurospatial.stats import shuffle, surrogates
+
+    if name == "shuffle_cell_identity":
+        models = np.arange(data.shape[1] * 4, dtype=np.float64).reshape(-1, 4)
+        draws = shuffle.shuffle_cell_identity(data, models, n_shuffles=n, rng=rng)
+        return [counts for counts, _ in draws]
+    if name.startswith("generate_"):
+        return list(getattr(surrogates, name)(data, n_surrogates=n, rng=rng))
+    function = getattr(shuffle, name)
+    if name == "shuffle_place_fields_circular_2d":
+        return list(function(_grid_env(), data, n_shuffles=n, rng=rng))
+    if name in ("shuffle_time_bins", "shuffle_time_bins_coherent"):
+        return list(function(data, n_shuffles=n, rng=rng))
+    return list(function(track_for(data), data, n_shuffles=n, rng=rng))
+
+
+# Each generator with an input whose shuffles differ between seeds.
+GENERATOR_INPUTS = {
+    "shuffle_time_bins": _counts(10, 5),
+    "shuffle_time_bins_coherent": _counts(10, 5),
+    "shuffle_cell_identity": _counts(10, 5),
+    "shuffle_place_fields_circular": _rows(3, 8),
+    "shuffle_place_fields_circular_2d": _rows(3, 36),
+    "shuffle_posterior_circular": _rows(10, 20),
+    "shuffle_posterior_weighted_circular": _rows(10, 20),
+    "generate_poisson_surrogates": _counts(10, 5),
+    "generate_inhomogeneous_poisson_surrogates": _counts(10, 5),
+}
+
+# Degenerate inputs and what every shuffle of them must be: "unchanged"
+# (nothing to permute), "same_values" (each row keeps its values, as a
+# permutation or circular shift does) or "counts" (non-negative integers).
+DEGENERATE_INPUTS = [
+    ("shuffle_time_bins", "empty", np.zeros((0, 3), dtype=np.int64), "unchanged"),
+    ("shuffle_time_bins", "single_time_bin", _counts(1, 3), "unchanged"),
+    ("shuffle_time_bins", "single_neuron", _counts(5, 1), "same_values_by_column"),
+    ("shuffle_time_bins_coherent", "empty", np.zeros((0, 3), np.int64), "unchanged"),
+    ("shuffle_time_bins_coherent", "single_time_bin", _counts(1, 3), "unchanged"),
+    ("shuffle_cell_identity", "single_neuron", _counts(5, 1), "unchanged"),
+    ("shuffle_place_fields_circular", "single_bin", _rows(2, 1), "unchanged"),
+    ("shuffle_place_fields_circular", "single_neuron", _rows(1, 4), "same_values"),
+    ("shuffle_posterior_circular", "empty", np.zeros((0, 5)), "unchanged"),
+    ("shuffle_posterior_circular", "single_time_bin", _rows(1, 4), "same_values"),
+    ("shuffle_posterior_circular", "single_bin", _rows(3, 1), "unchanged"),
+    ("shuffle_posterior_weighted_circular", "empty", np.zeros((0, 5)), "unchanged"),
+    (
+        "shuffle_posterior_weighted_circular",
+        "single_time_bin",
+        _rows(1, 4),
+        "same_values",
+    ),
+    ("generate_poisson_surrogates", "empty", np.zeros((0, 3), np.int64), "counts"),
+    ("generate_poisson_surrogates", "single_time_bin", _counts(1, 3), "counts"),
+    ("generate_poisson_surrogates", "single_neuron", _counts(5, 1), "counts"),
+    (
+        "generate_inhomogeneous_poisson_surrogates",
+        "empty",
+        np.zeros((0, 3), np.int64),
+        "counts",
+    ),
+    (
+        "generate_inhomogeneous_poisson_surrogates",
+        "single_time_bin",
+        _counts(1, 3),
+        "counts",
+    ),
+    (
+        "generate_inhomogeneous_poisson_surrogates",
+        "single_neuron",
+        _counts(5, 1),
+        "counts",
+    ),
+]
+
+
+@pytest.mark.parametrize("name", list(GENERATOR_INPUTS))
+class TestGeneratorRngContract:
+    """Every generator takes an int seed, a Generator or None."""
+
+    def test_int_seed_and_generator_reproduce_the_draws(self, name: str) -> None:
+        data = GENERATOR_INPUTS[name]
+        first = _draw(name, data, 42)
+        for again in (
+            _draw(name, data, 42),
+            _draw(name, data, np.random.default_rng(42)),
+        ):
+            for a, b in zip(first, again, strict=True):
+                assert_array_equal(a, b)
+
+    def test_different_seeds_give_different_draws(self, name: str) -> None:
+        data = GENERATOR_INPUTS[name]
+        first, second = _draw(name, data, 42), _draw(name, data, 123)
+        assert any(not np.array_equal(a, b) for a, b in zip(first, second, strict=True))
+
+    def test_rng_none_draws_the_requested_number(self, name: str) -> None:
+        data = GENERATOR_INPUTS[name]
+        draws = _draw(name, data, None, n=4)
+        assert len(draws) == 4
+        assert all(draw.shape == data.shape for draw in draws)
+
+
+@pytest.mark.parametrize(
+    ("name", "data", "expect"),
+    [
+        pytest.param(name, data, expect, id=f"{name}-{case}")
+        for name, case, data, expect in DEGENERATE_INPUTS
+    ],
+)
+def test_degenerate_inputs(name: str, data: np.ndarray, expect: str) -> None:
+    """Empty, single-bin and single-neuron inputs give valid draws."""
+    draws = _draw(name, data, 42)
+    assert len(draws) == 5
+    for draw in draws:
+        assert draw.shape == data.shape
+        if expect == "unchanged":
+            assert_array_equal(draw, data)
+        elif expect == "same_values":
+            assert_array_equal(np.sort(draw, axis=1), np.sort(data, axis=1))
+        elif expect == "same_values_by_column":
+            assert_array_equal(np.sort(draw, axis=0), np.sort(data, axis=0))
+        else:
+            assert np.issubdtype(draw.dtype, np.integer)
+            assert np.all(draw >= 0)
 
 
 # =============================================================================
@@ -80,66 +228,6 @@ class TestShuffleTimeBins:
         original_rows = {tuple(row) for row in spike_counts}
         for shuffled in shuffle_time_bins(spike_counts, n_shuffles=10, rng=42):
             shuffled_rows = {tuple(row) for row in shuffled}
-            assert shuffled_rows == original_rows
-
-    def test_reproducibility_with_seed_int(self, spike_counts: np.ndarray) -> None:
-        """Same seed should produce same shuffles."""
-        shuffles1 = list(shuffle_time_bins(spike_counts, n_shuffles=5, rng=42))
-        shuffles2 = list(shuffle_time_bins(spike_counts, n_shuffles=5, rng=42))
-        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_reproducibility_with_generator(self, spike_counts: np.ndarray) -> None:
-        """Same generator state should produce same shuffles."""
-        rng1 = np.random.default_rng(42)
-        rng2 = np.random.default_rng(42)
-        shuffles1 = list(shuffle_time_bins(spike_counts, n_shuffles=5, rng=rng1))
-        shuffles2 = list(shuffle_time_bins(spike_counts, n_shuffles=5, rng=rng2))
-        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_different_seeds_produce_different_shuffles(
-        self, spike_counts: np.ndarray
-    ) -> None:
-        """Different seeds should produce different shuffles."""
-        shuffles1 = list(shuffle_time_bins(spike_counts, n_shuffles=5, rng=42))
-        shuffles2 = list(shuffle_time_bins(spike_counts, n_shuffles=5, rng=123))
-        # At least one shuffle should be different
-        any_different = any(
-            not np.array_equal(s1, s2)
-            for s1, s2 in zip(shuffles1, shuffles2, strict=True)
-        )
-        assert any_different
-
-    def test_none_rng_produces_shuffles(self, spike_counts: np.ndarray) -> None:
-        """rng=None should still produce valid shuffles."""
-        shuffles = list(shuffle_time_bins(spike_counts, n_shuffles=5, rng=None))
-        assert len(shuffles) == 5
-        for shuffled in shuffles:
-            assert shuffled.shape == spike_counts.shape
-
-    def test_empty_spike_counts(self) -> None:
-        """Should handle empty spike counts gracefully."""
-        empty = np.zeros((0, 3), dtype=np.int64)
-        shuffles = list(shuffle_time_bins(empty, n_shuffles=5, rng=42))
-        assert len(shuffles) == 5
-        for s in shuffles:
-            assert s.shape == (0, 3)
-
-    def test_single_time_bin(self) -> None:
-        """Should handle single time bin (trivial shuffle)."""
-        single = np.array([[1, 2, 3]], dtype=np.int64)
-        shuffles = list(shuffle_time_bins(single, n_shuffles=5, rng=42))
-        for s in shuffles:
-            assert_array_equal(s, single)
-
-    def test_single_neuron(self) -> None:
-        """Should work with single neuron."""
-        single_neuron = np.array([[1], [2], [3]], dtype=np.int64)
-        for shuffled in shuffle_time_bins(single_neuron, n_shuffles=5, rng=42):
-            # Rows should be permutation
-            original_rows = sorted(single_neuron[:, 0].tolist())
-            shuffled_rows = sorted(shuffled[:, 0].tolist())
             assert shuffled_rows == original_rows
 
 
@@ -202,64 +290,6 @@ class TestShuffleTimeBinsCoherent:
                 assert match_found, (
                     "Shuffled row should match some original row exactly"
                 )
-
-    def test_reproducibility_with_seed_int(self, spike_counts: np.ndarray) -> None:
-        """Same seed should produce same shuffles."""
-        shuffles1 = list(shuffle_time_bins_coherent(spike_counts, n_shuffles=5, rng=42))
-        shuffles2 = list(shuffle_time_bins_coherent(spike_counts, n_shuffles=5, rng=42))
-        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_reproducibility_with_generator(self, spike_counts: np.ndarray) -> None:
-        """Same generator state should produce same shuffles."""
-        rng1 = np.random.default_rng(42)
-        rng2 = np.random.default_rng(42)
-        shuffles1 = list(
-            shuffle_time_bins_coherent(spike_counts, n_shuffles=5, rng=rng1)
-        )
-        shuffles2 = list(
-            shuffle_time_bins_coherent(spike_counts, n_shuffles=5, rng=rng2)
-        )
-        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_different_seeds_produce_different_shuffles(
-        self, spike_counts: np.ndarray
-    ) -> None:
-        """Different seeds should produce different shuffles."""
-        shuffles1 = list(shuffle_time_bins_coherent(spike_counts, n_shuffles=5, rng=42))
-        shuffles2 = list(
-            shuffle_time_bins_coherent(spike_counts, n_shuffles=5, rng=123)
-        )
-        any_different = any(
-            not np.array_equal(s1, s2)
-            for s1, s2 in zip(shuffles1, shuffles2, strict=True)
-        )
-        assert any_different
-
-    def test_none_rng_produces_shuffles(self, spike_counts: np.ndarray) -> None:
-        """rng=None should still produce valid shuffles."""
-        shuffles = list(
-            shuffle_time_bins_coherent(spike_counts, n_shuffles=5, rng=None)
-        )
-        assert len(shuffles) == 5
-        for shuffled in shuffles:
-            assert shuffled.shape == spike_counts.shape
-
-    def test_empty_spike_counts(self) -> None:
-        """Should handle empty spike counts gracefully."""
-        empty = np.zeros((0, 3), dtype=np.int64)
-        shuffles = list(shuffle_time_bins_coherent(empty, n_shuffles=5, rng=42))
-        assert len(shuffles) == 5
-        for s in shuffles:
-            assert s.shape == (0, 3)
-
-    def test_single_time_bin(self) -> None:
-        """Should handle single time bin (trivial shuffle)."""
-        single = np.array([[1, 2, 3]], dtype=np.int64)
-        shuffles = list(shuffle_time_bins_coherent(single, n_shuffles=5, rng=42))
-        for s in shuffles:
-            assert_array_equal(s, single)
 
 
 # =============================================================================
@@ -419,80 +449,6 @@ class TestShuffleCellIdentity:
             }
             assert shuffled_cols == original_cols
 
-    def test_reproducibility_with_seed_int(
-        self, spike_counts: np.ndarray, encoding_models: np.ndarray
-    ) -> None:
-        """Same seed should produce same shuffles."""
-        from neurospatial.stats.shuffle import shuffle_cell_identity
-
-        shuffles1 = list(
-            shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=5, rng=42)
-        )
-        shuffles2 = list(
-            shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=5, rng=42)
-        )
-        for (s1, _), (s2, _) in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_reproducibility_with_generator(
-        self, spike_counts: np.ndarray, encoding_models: np.ndarray
-    ) -> None:
-        """Same generator state should produce same shuffles."""
-        from neurospatial.stats.shuffle import shuffle_cell_identity
-
-        rng1 = np.random.default_rng(42)
-        rng2 = np.random.default_rng(42)
-        shuffles1 = list(
-            shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=5, rng=rng1)
-        )
-        shuffles2 = list(
-            shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=5, rng=rng2)
-        )
-        for (s1, _), (s2, _) in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_different_seeds_produce_different_shuffles(
-        self, spike_counts: np.ndarray, encoding_models: np.ndarray
-    ) -> None:
-        """Different seeds should produce different shuffles."""
-        from neurospatial.stats.shuffle import shuffle_cell_identity
-
-        shuffles1 = list(
-            shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=5, rng=42)
-        )
-        shuffles2 = list(
-            shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=5, rng=123)
-        )
-        any_different = any(
-            not np.array_equal(s1, s2)
-            for (s1, _), (s2, _) in zip(shuffles1, shuffles2, strict=True)
-        )
-        assert any_different
-
-    def test_none_rng_produces_shuffles(
-        self, spike_counts: np.ndarray, encoding_models: np.ndarray
-    ) -> None:
-        """rng=None should still produce valid shuffles."""
-        from neurospatial.stats.shuffle import shuffle_cell_identity
-
-        shuffles = list(
-            shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=5, rng=None)
-        )
-        assert len(shuffles) == 5
-        for shuffled_counts, _ in shuffles:
-            assert shuffled_counts.shape == spike_counts.shape
-
-    def test_single_neuron(self, encoding_models: np.ndarray) -> None:
-        """Should handle single neuron (trivial shuffle)."""
-        from neurospatial.stats.shuffle import shuffle_cell_identity
-
-        single_neuron_counts = np.array([[1], [2], [3]], dtype=np.int64)
-        single_neuron_models = encoding_models[:1, :]
-        for shuffled_counts, _models in shuffle_cell_identity(
-            single_neuron_counts, single_neuron_models, n_shuffles=5, rng=42
-        ):
-            assert_array_equal(shuffled_counts, single_neuron_counts)
-
 
 # =============================================================================
 # Tests for shuffle_place_fields_circular
@@ -594,103 +550,6 @@ class TestShufflePlaceFieldsCircular:
                 break
         assert found_different, "Each neuron should be shifted independently"
 
-    def test_reproducibility_with_seed_int(self, encoding_models: np.ndarray) -> None:
-        """Same seed should produce same shuffles."""
-        from neurospatial.stats.shuffle import shuffle_place_fields_circular
-
-        shuffles1 = list(
-            shuffle_place_fields_circular(
-                track_for(encoding_models), encoding_models, n_shuffles=5, rng=42
-            )
-        )
-        shuffles2 = list(
-            shuffle_place_fields_circular(
-                track_for(encoding_models), encoding_models, n_shuffles=5, rng=42
-            )
-        )
-        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_reproducibility_with_generator(self, encoding_models: np.ndarray) -> None:
-        """Same generator state should produce same shuffles."""
-        from neurospatial.stats.shuffle import shuffle_place_fields_circular
-
-        rng1 = np.random.default_rng(42)
-        rng2 = np.random.default_rng(42)
-        shuffles1 = list(
-            shuffle_place_fields_circular(
-                track_for(encoding_models), encoding_models, n_shuffles=5, rng=rng1
-            )
-        )
-        shuffles2 = list(
-            shuffle_place_fields_circular(
-                track_for(encoding_models), encoding_models, n_shuffles=5, rng=rng2
-            )
-        )
-        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_different_seeds_produce_different_shuffles(
-        self, encoding_models: np.ndarray
-    ) -> None:
-        """Different seeds should produce different shuffles."""
-        from neurospatial.stats.shuffle import shuffle_place_fields_circular
-
-        shuffles1 = list(
-            shuffle_place_fields_circular(
-                track_for(encoding_models), encoding_models, n_shuffles=5, rng=42
-            )
-        )
-        shuffles2 = list(
-            shuffle_place_fields_circular(
-                track_for(encoding_models), encoding_models, n_shuffles=5, rng=123
-            )
-        )
-        any_different = any(
-            not np.array_equal(s1, s2)
-            for s1, s2 in zip(shuffles1, shuffles2, strict=True)
-        )
-        assert any_different
-
-    def test_none_rng_produces_shuffles(self, encoding_models: np.ndarray) -> None:
-        """rng=None should still produce valid shuffles."""
-        from neurospatial.stats.shuffle import shuffle_place_fields_circular
-
-        shuffles = list(
-            shuffle_place_fields_circular(
-                track_for(encoding_models), encoding_models, n_shuffles=5, rng=None
-            )
-        )
-        assert len(shuffles) == 5
-        for shuffled in shuffles:
-            assert shuffled.shape == encoding_models.shape
-
-    def test_single_bin(self) -> None:
-        """Should handle single bin (trivial shuffle)."""
-        from neurospatial.stats.shuffle import shuffle_place_fields_circular
-
-        single_bin = np.array([[5.0], [3.0]], dtype=np.float64)
-        for shuffled in shuffle_place_fields_circular(
-            track_for(single_bin), single_bin, n_shuffles=5, rng=42
-        ):
-            assert_array_equal(shuffled, single_bin)
-
-    def test_single_neuron(self) -> None:
-        """Should work with single neuron."""
-        from neurospatial.stats.shuffle import shuffle_place_fields_circular
-
-        single_neuron = np.array([[1.0, 2.0, 3.0, 4.0]], dtype=np.float64)
-        for shuffled in shuffle_place_fields_circular(
-            track_for(single_neuron), single_neuron, n_shuffles=5, rng=42
-        ):
-            assert shuffled.shape == single_neuron.shape
-            # Should be a circular shift
-            is_shift = any(
-                np.allclose(shuffled[0], np.roll(single_neuron[0], shift))
-                for shift in range(4)
-            )
-            assert is_shift
-
 
 # =============================================================================
 # Tests for shuffle_place_fields_circular_2d
@@ -749,83 +608,6 @@ class TestShufflePlaceFieldsCircular2D:
                 original_sorted = sorted(encoding_models_2d[i, :].tolist())
                 shuffled_sorted = sorted(shuffled[i, :].tolist())
                 assert shuffled_sorted == original_sorted
-
-    def test_reproducibility_with_seed_int(
-        self, encoding_models_2d: np.ndarray, env_2d
-    ) -> None:
-        """Same seed should produce same shuffles."""
-        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
-
-        shuffles1 = list(
-            shuffle_place_fields_circular_2d(
-                env_2d, encoding_models_2d, n_shuffles=5, rng=42
-            )
-        )
-        shuffles2 = list(
-            shuffle_place_fields_circular_2d(
-                env_2d, encoding_models_2d, n_shuffles=5, rng=42
-            )
-        )
-        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_reproducibility_with_generator(
-        self, encoding_models_2d: np.ndarray, env_2d
-    ) -> None:
-        """Same generator state should produce same shuffles."""
-        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
-
-        rng1 = np.random.default_rng(42)
-        rng2 = np.random.default_rng(42)
-        shuffles1 = list(
-            shuffle_place_fields_circular_2d(
-                env_2d, encoding_models_2d, n_shuffles=5, rng=rng1
-            )
-        )
-        shuffles2 = list(
-            shuffle_place_fields_circular_2d(
-                env_2d, encoding_models_2d, n_shuffles=5, rng=rng2
-            )
-        )
-        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_different_seeds_produce_different_shuffles(
-        self, encoding_models_2d: np.ndarray, env_2d
-    ) -> None:
-        """Different seeds should produce different shuffles."""
-        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
-
-        shuffles1 = list(
-            shuffle_place_fields_circular_2d(
-                env_2d, encoding_models_2d, n_shuffles=5, rng=42
-            )
-        )
-        shuffles2 = list(
-            shuffle_place_fields_circular_2d(
-                env_2d, encoding_models_2d, n_shuffles=5, rng=123
-            )
-        )
-        any_different = any(
-            not np.array_equal(s1, s2)
-            for s1, s2 in zip(shuffles1, shuffles2, strict=True)
-        )
-        assert any_different
-
-    def test_none_rng_produces_shuffles(
-        self, encoding_models_2d: np.ndarray, env_2d
-    ) -> None:
-        """rng=None should still produce valid shuffles."""
-        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
-
-        shuffles = list(
-            shuffle_place_fields_circular_2d(
-                env_2d, encoding_models_2d, n_shuffles=5, rng=None
-            )
-        )
-        assert len(shuffles) == 5
-        for shuffled in shuffles:
-            assert shuffled.shape == encoding_models_2d.shape
 
     def test_requires_2d_environment(self) -> None:
         """Should raise ValueError for non-2D environments."""
@@ -966,115 +748,6 @@ class TestShufflePosteriorCircular:
                 break
         assert found_different, "Each time bin should be shifted independently"
 
-    def test_reproducibility_with_seed_int(self, posterior: np.ndarray) -> None:
-        """Same seed should produce same shuffles."""
-        from neurospatial.stats.shuffle import shuffle_posterior_circular
-
-        shuffles1 = list(
-            shuffle_posterior_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=42
-            )
-        )
-        shuffles2 = list(
-            shuffle_posterior_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=42
-            )
-        )
-        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_reproducibility_with_generator(self, posterior: np.ndarray) -> None:
-        """Same generator state should produce same shuffles."""
-        from neurospatial.stats.shuffle import shuffle_posterior_circular
-
-        rng1 = np.random.default_rng(42)
-        rng2 = np.random.default_rng(42)
-        shuffles1 = list(
-            shuffle_posterior_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=rng1
-            )
-        )
-        shuffles2 = list(
-            shuffle_posterior_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=rng2
-            )
-        )
-        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_different_seeds_produce_different_shuffles(
-        self, posterior: np.ndarray
-    ) -> None:
-        """Different seeds should produce different shuffles."""
-        from neurospatial.stats.shuffle import shuffle_posterior_circular
-
-        shuffles1 = list(
-            shuffle_posterior_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=42
-            )
-        )
-        shuffles2 = list(
-            shuffle_posterior_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=123
-            )
-        )
-        any_different = any(
-            not np.array_equal(s1, s2)
-            for s1, s2 in zip(shuffles1, shuffles2, strict=True)
-        )
-        assert any_different
-
-    def test_none_rng_produces_shuffles(self, posterior: np.ndarray) -> None:
-        """rng=None should still produce valid shuffles."""
-        from neurospatial.stats.shuffle import shuffle_posterior_circular
-
-        shuffles = list(
-            shuffle_posterior_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=None
-            )
-        )
-        assert len(shuffles) == 5
-        for shuffled in shuffles:
-            assert shuffled.shape == posterior.shape
-
-    def test_empty_posterior(self) -> None:
-        """Should handle empty posterior gracefully."""
-        from neurospatial.stats.shuffle import shuffle_posterior_circular
-
-        empty = np.zeros((0, 5), dtype=np.float64)
-        shuffles = list(
-            shuffle_posterior_circular(track_for(empty), empty, n_shuffles=5, rng=42)
-        )
-        assert len(shuffles) == 5
-        for s in shuffles:
-            assert s.shape == (0, 5)
-
-    def test_single_time_bin(self) -> None:
-        """Should handle single time bin."""
-        from neurospatial.stats.shuffle import shuffle_posterior_circular
-
-        single = np.array([[0.1, 0.2, 0.3, 0.4]], dtype=np.float64)
-        for shuffled in shuffle_posterior_circular(
-            track_for(single), single, n_shuffles=5, rng=42
-        ):
-            assert shuffled.shape == single.shape
-            # Should be a circular shift (including identity)
-            is_shift = any(
-                np.allclose(shuffled[0], np.roll(single[0], shift))
-                for shift in range(4)
-            )
-            assert is_shift
-
-    def test_single_bin(self) -> None:
-        """Should handle single spatial bin (trivial shuffle)."""
-        from neurospatial.stats.shuffle import shuffle_posterior_circular
-
-        single_bin = np.array([[1.0], [1.0], [1.0]], dtype=np.float64)
-        for shuffled in shuffle_posterior_circular(
-            track_for(single_bin), single_bin, n_shuffles=5, rng=42
-        ):
-            assert_array_equal(shuffled, single_bin)
-
 
 # =============================================================================
 # Tests for shuffle_posterior_weighted_circular
@@ -1207,107 +880,6 @@ class TestShufflePosteriorWeightedCircular:
             assert shuffled.shape == posterior.shape
             assert np.allclose(shuffled.sum(axis=1), 1.0)
 
-    def test_reproducibility_with_seed_int(self, posterior: np.ndarray) -> None:
-        """Same seed should produce same shuffles."""
-        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
-
-        shuffles1 = list(
-            shuffle_posterior_weighted_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=42
-            )
-        )
-        shuffles2 = list(
-            shuffle_posterior_weighted_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=42
-            )
-        )
-        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_reproducibility_with_generator(self, posterior: np.ndarray) -> None:
-        """Same generator state should produce same shuffles."""
-        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
-
-        rng1 = np.random.default_rng(42)
-        rng2 = np.random.default_rng(42)
-        shuffles1 = list(
-            shuffle_posterior_weighted_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=rng1
-            )
-        )
-        shuffles2 = list(
-            shuffle_posterior_weighted_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=rng2
-            )
-        )
-        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_different_seeds_produce_different_shuffles(
-        self, posterior: np.ndarray
-    ) -> None:
-        """Different seeds should produce different shuffles."""
-        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
-
-        shuffles1 = list(
-            shuffle_posterior_weighted_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=42
-            )
-        )
-        shuffles2 = list(
-            shuffle_posterior_weighted_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=123
-            )
-        )
-        any_different = any(
-            not np.array_equal(s1, s2)
-            for s1, s2 in zip(shuffles1, shuffles2, strict=True)
-        )
-        assert any_different
-
-    def test_none_rng_produces_shuffles(self, posterior: np.ndarray) -> None:
-        """rng=None should still produce valid shuffles."""
-        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
-
-        shuffles = list(
-            shuffle_posterior_weighted_circular(
-                track_for(posterior), posterior, n_shuffles=5, rng=None
-            )
-        )
-        assert len(shuffles) == 5
-        for shuffled in shuffles:
-            assert shuffled.shape == posterior.shape
-
-    def test_empty_posterior(self) -> None:
-        """Should handle empty posterior gracefully."""
-        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
-
-        empty = np.zeros((0, 5), dtype=np.float64)
-        shuffles = list(
-            shuffle_posterior_weighted_circular(
-                track_for(empty), empty, n_shuffles=5, rng=42
-            )
-        )
-        assert len(shuffles) == 5
-        for s in shuffles:
-            assert s.shape == (0, 5)
-
-    def test_single_time_bin(self) -> None:
-        """Should handle single time bin."""
-        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
-
-        single = np.array([[0.1, 0.2, 0.3, 0.4]], dtype=np.float64)
-        for shuffled in shuffle_posterior_weighted_circular(
-            track_for(single), single, n_shuffles=5, rng=42
-        ):
-            assert shuffled.shape == single.shape
-            # Should be a circular shift (including identity)
-            is_shift = any(
-                np.allclose(shuffled[0], np.roll(single[0], shift))
-                for shift in range(4)
-            )
-            assert is_shift
-
     def test_edge_buffer_larger_than_half_bins(self) -> None:
         """Should handle edge_buffer larger than n_bins/2.
 
@@ -1406,93 +978,6 @@ class TestGeneratePoissonSurrogates:
             # Surrogates should be different from original in most cases
             # (exact match is extremely unlikely)
             assert not np.array_equal(surrogate, spike_counts)
-
-    def test_reproducibility_with_seed_int(self, spike_counts: np.ndarray) -> None:
-        """Same seed should produce same surrogates."""
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        surrogates1 = list(
-            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=42)
-        )
-        surrogates2 = list(
-            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=42)
-        )
-        for s1, s2 in zip(surrogates1, surrogates2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_reproducibility_with_generator(self, spike_counts: np.ndarray) -> None:
-        """Same generator state should produce same surrogates."""
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        rng1 = np.random.default_rng(42)
-        rng2 = np.random.default_rng(42)
-        surrogates1 = list(
-            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=rng1)
-        )
-        surrogates2 = list(
-            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=rng2)
-        )
-        for s1, s2 in zip(surrogates1, surrogates2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_different_seeds_produce_different_surrogates(
-        self, spike_counts: np.ndarray
-    ) -> None:
-        """Different seeds should produce different surrogates."""
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        surrogates1 = list(
-            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=42)
-        )
-        surrogates2 = list(
-            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=123)
-        )
-        any_different = any(
-            not np.array_equal(s1, s2)
-            for s1, s2 in zip(surrogates1, surrogates2, strict=True)
-        )
-        assert any_different
-
-    def test_none_rng_produces_surrogates(self, spike_counts: np.ndarray) -> None:
-        """rng=None should still produce valid surrogates."""
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        surrogates = list(
-            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=None)
-        )
-        assert len(surrogates) == 5
-        for surrogate in surrogates:
-            assert surrogate.shape == spike_counts.shape
-
-    def test_empty_spike_counts(self) -> None:
-        """Should handle empty spike counts gracefully."""
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        empty = np.zeros((0, 3), dtype=np.int64)
-        surrogates = list(generate_poisson_surrogates(empty, n_surrogates=5, rng=42))
-        assert len(surrogates) == 5
-        for s in surrogates:
-            assert s.shape == (0, 3)
-
-    def test_single_time_bin(self) -> None:
-        """Should handle single time bin."""
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        single = np.array([[5, 3, 2]], dtype=np.int64)
-        for surrogate in generate_poisson_surrogates(single, n_surrogates=5, rng=42):
-            assert surrogate.shape == single.shape
-            assert (surrogate >= 0).all()
-
-    def test_single_neuron(self) -> None:
-        """Should work with single neuron."""
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        single_neuron = np.array([[1], [2], [3], [4], [5]], dtype=np.int64)
-        for surrogate in generate_poisson_surrogates(
-            single_neuron, n_surrogates=5, rng=42
-        ):
-            assert surrogate.shape == single_neuron.shape
-            assert (surrogate >= 0).all()
 
     def test_zero_spike_counts(self) -> None:
         """Should handle all-zero spike counts (silent neurons)."""
@@ -1601,85 +1086,6 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         corr = np.corrcoef(avg_surrogate_rate, avg_original_smoothed)[0, 1]
         assert corr > 0.7, f"Temporal modulation not preserved: correlation={corr:.3f}"
 
-    def test_reproducibility_with_seed_int(self, spike_counts: np.ndarray) -> None:
-        """Same seed should produce same surrogates."""
-        from neurospatial.stats.surrogates import (
-            generate_inhomogeneous_poisson_surrogates,
-        )
-
-        surrogates1 = list(
-            generate_inhomogeneous_poisson_surrogates(
-                spike_counts, n_surrogates=5, rng=42
-            )
-        )
-        surrogates2 = list(
-            generate_inhomogeneous_poisson_surrogates(
-                spike_counts, n_surrogates=5, rng=42
-            )
-        )
-        for s1, s2 in zip(surrogates1, surrogates2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_reproducibility_with_generator(self, spike_counts: np.ndarray) -> None:
-        """Same generator state should produce same surrogates."""
-        from neurospatial.stats.surrogates import (
-            generate_inhomogeneous_poisson_surrogates,
-        )
-
-        rng1 = np.random.default_rng(42)
-        rng2 = np.random.default_rng(42)
-        surrogates1 = list(
-            generate_inhomogeneous_poisson_surrogates(
-                spike_counts, n_surrogates=5, rng=rng1
-            )
-        )
-        surrogates2 = list(
-            generate_inhomogeneous_poisson_surrogates(
-                spike_counts, n_surrogates=5, rng=rng2
-            )
-        )
-        for s1, s2 in zip(surrogates1, surrogates2, strict=True):
-            assert_array_equal(s1, s2)
-
-    def test_different_seeds_produce_different_surrogates(
-        self, spike_counts: np.ndarray
-    ) -> None:
-        """Different seeds should produce different surrogates."""
-        from neurospatial.stats.surrogates import (
-            generate_inhomogeneous_poisson_surrogates,
-        )
-
-        surrogates1 = list(
-            generate_inhomogeneous_poisson_surrogates(
-                spike_counts, n_surrogates=5, rng=42
-            )
-        )
-        surrogates2 = list(
-            generate_inhomogeneous_poisson_surrogates(
-                spike_counts, n_surrogates=5, rng=123
-            )
-        )
-        any_different = any(
-            not np.array_equal(s1, s2)
-            for s1, s2 in zip(surrogates1, surrogates2, strict=True)
-        )
-        assert any_different
-
-    def test_none_rng_produces_surrogates(self, spike_counts: np.ndarray) -> None:
-        """rng=None should still produce valid surrogates."""
-        from neurospatial.stats.surrogates import (
-            generate_inhomogeneous_poisson_surrogates,
-        )
-
-        surrogates = list(
-            generate_inhomogeneous_poisson_surrogates(
-                spike_counts, n_surrogates=5, rng=None
-            )
-        )
-        assert len(surrogates) == 5
-        for surrogate in surrogates:
-            assert surrogate.shape == spike_counts.shape
-
     def test_smoothing_window_parameter(self, spike_counts: np.ndarray) -> None:
         """Different smoothing windows should produce different rate estimates."""
         from neurospatial.stats.surrogates import (
@@ -1705,46 +1111,6 @@ class TestGenerateInhomogeneousPoissonSurrogates:
             for s1, s2 in zip(surrogates_small, surrogates_large, strict=True)
         )
         assert any_different
-
-    def test_empty_spike_counts(self) -> None:
-        """Should handle empty spike counts gracefully."""
-        from neurospatial.stats.surrogates import (
-            generate_inhomogeneous_poisson_surrogates,
-        )
-
-        empty = np.zeros((0, 3), dtype=np.int64)
-        surrogates = list(
-            generate_inhomogeneous_poisson_surrogates(empty, n_surrogates=5, rng=42)
-        )
-        assert len(surrogates) == 5
-        for s in surrogates:
-            assert s.shape == (0, 3)
-
-    def test_single_time_bin(self) -> None:
-        """Should handle single time bin (smoothing has no effect)."""
-        from neurospatial.stats.surrogates import (
-            generate_inhomogeneous_poisson_surrogates,
-        )
-
-        single = np.array([[5, 3, 2]], dtype=np.int64)
-        for surrogate in generate_inhomogeneous_poisson_surrogates(
-            single, n_surrogates=5, rng=42
-        ):
-            assert surrogate.shape == single.shape
-            assert (surrogate >= 0).all()
-
-    def test_single_neuron(self) -> None:
-        """Should work with single neuron."""
-        from neurospatial.stats.surrogates import (
-            generate_inhomogeneous_poisson_surrogates,
-        )
-
-        single_neuron = np.array([[1], [2], [3], [4], [5]], dtype=np.int64)
-        for surrogate in generate_inhomogeneous_poisson_surrogates(
-            single_neuron, n_surrogates=5, rng=42
-        ):
-            assert surrogate.shape == single_neuron.shape
-            assert (surrogate >= 0).all()
 
     def test_zero_spike_counts(self) -> None:
         """Should handle all-zero spike counts (silent neurons)."""
