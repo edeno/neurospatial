@@ -85,11 +85,13 @@ def test_minimum_sample_budget_keeps_pause_and_both_endpoints(short_track):
     assert_recording_clock(sim, 1.008, 500.0)
     start = short_track.bin_centers[:, 0].min()
     end = short_track.bin_centers[:, 0].max()
+    # Two samples per traversal plus the fixed pause: the outbound run's start
+    # and end, 500 pause samples held at the end, then the inbound run, which
+    # leaves the end without repeating it and returns through the middle.
+    assert len(sim.times) == 4 + 500
     assert sim.positions[0, 0] == sim.positions[-1, 0] == start
-    np.testing.assert_array_equal(sim.positions[1:-1, 0], end)
-    assert (
-        len(sim.times) == 4 + 500
-    )  # Two endpoints per traversal plus the fixed pause.
+    np.testing.assert_array_equal(sim.positions[1:-2, 0], end)
+    assert start < sim.positions[-2, 0] < end
 
 
 def test_duration_too_short_for_pauses_and_traversals_raises():
