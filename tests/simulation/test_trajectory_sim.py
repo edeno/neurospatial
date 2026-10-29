@@ -160,7 +160,7 @@ class TestSimulateTrajectoryOU:
         np.testing.assert_allclose(times, np.arange(n_samples) * dt)
 
     def test_duration_shorter_than_dt_is_refused(self, connected_arena_env):
-        with pytest.raises(ValueError, match="duration=0.005 s is shorter than"):
+        with pytest.raises(ValueError, match=r"duration=0\.005 s is shorter than"):
             simulate_trajectory_ou(
                 connected_arena_env, duration=0.005, dt=0.01, speed_units="cm"
             )

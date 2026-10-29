@@ -1,7 +1,8 @@
 """Trajectory simulation functions for generating movement patterns."""
 
+from collections.abc import Callable, Hashable
 from itertools import pairwise
-from typing import Literal
+from typing import Any, Literal, TypeVar
 
 import networkx as nx
 import numpy as np
@@ -728,7 +729,7 @@ def simulate_trajectory_sinusoidal(
     # Time setup
     dt = 1.0 / sampling_frequency
     n_steps = _sample_count(duration, dt, "1 / sampling_frequency", call)
-    times = np.arange(n_steps) * dt
+    times = np.arange(n_steps, dtype=np.float64) * dt
 
     # Each cycle runs there and back in ``period`` seconds and holds still
     # for ``hold`` seconds at each end: at the far end a quarter period in,
@@ -799,20 +800,27 @@ def _longest_bin_path(env: Environment, call: str) -> list[int]:
     return [int(b) for b in nx.shortest_path(graph, start, end)]
 
 
-def _farthest_node(graph: nx.Graph, source: object, weight: object) -> object:
+_Node = TypeVar("_Node", bound=Hashable)
+
+#: An edge weight: an edge attribute name, or a function of (u, v, data).
+_Weight = str | Callable[[Any, Any, Any], float]
+
+
+def _farthest_node(graph: nx.Graph, source: _Node, weight: _Weight) -> _Node:
     """The node farthest from ``source`` along ``graph``, first in node order on ties."""
     lengths = nx.single_source_dijkstra_path_length(graph, source, weight=weight)
     farthest = max(lengths.values())
-    return next(
+    found: _Node = next(
         node
         for node in graph.nodes
         if node in lengths and lengths[node] >= farthest * (1 - 1e-9)
     )
+    return found
 
 
 def _farthest_pair(
-    graph: nx.Graph, source: object, weight: object
-) -> tuple[object, object]:
+    graph: nx.Graph, source: _Node, weight: _Weight
+) -> tuple[_Node, _Node]:
     """Two nodes far apart along ``graph``, by two sweeps of shortest paths.
 
     The node farthest from ``source``, then the node farthest from that one.
