@@ -809,3 +809,92 @@ def test_every_construction_path_enforces_invariants(env_4bin):
     windowed = result._evolve(spike_window=(0.0, 2.0))
     np.testing.assert_array_equal(windowed.spike_window, [[0.0, 2.0]])
     assert windowed.spike_window.flags.writeable is False
+
+
+def _summary_fields(env, map_bin=(0, 3), **overrides):
+    """Consistent DecodingSummary arguments for ``map_bin`` on ``env``."""
+    map_bin = np.asarray(map_bin)
+    n_time = map_bin.size
+    fields = {
+        "times": np.arange(n_time, dtype=np.float64),
+        "mean_position": np.zeros((n_time, env.n_dims)),
+        "posterior_entropy": np.zeros(n_time),
+        "peak_probability": np.ones(n_time),
+        "env": env,
+        "map_bin": map_bin,
+    }
+    fields.update(overrides)
+    return fields
+
+
+class TestDecodingSummaryInvariants:
+    def test_map_position_is_the_map_bin_center(self, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        summary = DecodingSummary(**_summary_fields(env_4bin))
+        np.testing.assert_array_equal(
+            summary.map_position, env_4bin.bin_centers[[0, 3]]
+        )
+        assert summary.map_position.flags.writeable is False
+        with pytest.raises(TypeError, match="map_position"):
+            DecodingSummary(**_summary_fields(env_4bin), map_position=np.zeros((2, 1)))
+
+    @pytest.mark.parametrize(
+        ("map_bin", "detail"),
+        [
+            pytest.param([999, -4], "map_bin", id="out-of-range"),
+            pytest.param([0.0, 1.0], "integer", id="float"),
+        ],
+    )
+    def test_rejects_invalid_map_bin(self, env_4bin, map_bin, detail):
+        from neurospatial.decoding import DecodingSummary
+
+        with pytest.raises(ValueError, match=detail) as exc:
+            DecodingSummary(**_summary_fields(env_4bin, map_bin=map_bin))
+        assert "Fix:" in str(exc.value)
+
+    def test_rejects_probability_outside_unit_interval(self, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        with pytest.raises(ValueError, match="peak_probability") as exc:
+            DecodingSummary(
+                **_summary_fields(env_4bin, peak_probability=np.array([5.0, -1.0]))
+            )
+        assert "Fix:" in str(exc.value)
+
+    def test_rejects_unordered_times(self, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        with pytest.raises(ValueError, match="increasing"):
+            DecodingSummary(**_summary_fields(env_4bin, times=np.array([1.0, 0.0])))
+
+    def test_accepts_lists(self, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        summary = DecodingSummary(
+            times=[0.0, 1.0],
+            mean_position=[[0.5], [3.5]],
+            posterior_entropy=[0.0, 0.0],
+            peak_probability=[1.0, 1.0],
+            env=env_4bin,
+            map_bin=[0, 3],
+            spike_window=(0.0, 2.0),
+        )
+        assert summary.map_bin.dtype == np.int64
+        assert summary.posterior_entropy.dtype == np.float64
+        np.testing.assert_array_equal(summary.spike_window, [[0.0, 2.0]])
+        assert summary.summary()["mean_peak_probability"] == 1.0
+        assert "peak_probability" in summary.to_dataframe().columns
+
+    def test_owned_construction_validates_without_copying(self, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        fields = _summary_fields(env_4bin, spike_window=None)
+        summary = DecodingSummary._from_owned(**fields)
+        assert summary.mean_position is fields["mean_position"]
+        assert summary.mean_position.flags.writeable is False
+        assert not np.shares_memory(summary.times, fields["times"])
+        with pytest.raises(ValueError, match="map_bin"):
+            DecodingSummary._from_owned(
+                **_summary_fields(env_4bin, map_bin=[0, 9], spike_window=None)
+            )

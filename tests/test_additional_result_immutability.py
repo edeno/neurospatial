@@ -72,10 +72,9 @@ CASES = [
         DecodingSummary,
         {
             "times": np.array([0.0, 1.0]),
-            "map_position": np.ones((2, 2)),
             "mean_position": np.ones((2, 2)),
             "posterior_entropy": np.ones(2),
-            "peak_prob": np.ones(2),
+            "peak_probability": np.ones(2),
             "map_bin": np.array([0, 1]),
         },
     ),
@@ -427,7 +426,7 @@ def test_summary_xarray_export_is_editable_and_independent(env):
     dataset["map_bin"].values[:] = 3
     dataset["time"].values[:] = 9
     dataset.attrs["spike_window"][:] = 9
-    np.testing.assert_array_equal(result.map_position, 1.0)
+    np.testing.assert_array_equal(result.map_position, env.bin_centers[[0, 1]])
     np.testing.assert_array_equal(result.map_bin, [0, 1])
     np.testing.assert_array_equal(result.times, [0, 1])
     np.testing.assert_array_equal(result.spike_window, [[0, 2]])

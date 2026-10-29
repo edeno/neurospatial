@@ -93,7 +93,7 @@ def test_partial_missing_rate_likelihood_matches_poisson(tiny_env, decode, missi
     if isinstance(result, DecodingResult):
         np.testing.assert_allclose(result.posterior, expected)
     else:
-        np.testing.assert_allclose(result.peak_prob, expected.max(axis=1))
+        np.testing.assert_allclose(result.peak_probability, expected.max(axis=1))
 
 
 @pytest.mark.parametrize("training", ["short", "gapped", "epochs"])
@@ -140,10 +140,9 @@ def test_xarray_exports_are_independent_writable_arrays(tiny_env, summary):
     if summary:
         result = DecodingSummary(
             times=times,
-            map_position=tiny_env.bin_centers[map_bin].copy(),
             mean_position=tiny_env.bin_centers[map_bin].copy(),
             posterior_entropy=np.zeros(2),
-            peak_prob=np.ones(2),
+            peak_probability=np.ones(2),
             env=tiny_env,
             map_bin=map_bin,
             spike_window=window,
@@ -153,7 +152,7 @@ def test_xarray_exports_are_independent_writable_arrays(tiny_env, summary):
             result.map_position,
             result.mean_position,
             result.posterior_entropy,
-            result.peak_prob,
+            result.peak_probability,
         ]
     else:
         posterior = np.zeros((2, tiny_env.n_bins))

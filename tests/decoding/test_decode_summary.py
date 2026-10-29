@@ -279,7 +279,9 @@ class TestDecodePositionSummaryParity:
             summ.posterior_entropy, full.posterior_entropy, rtol=1e-9, atol=1e-9
         )
         expected_peak = full.posterior.max(axis=1)
-        np.testing.assert_allclose(summ.peak_prob, expected_peak, rtol=1e-9, atol=1e-9)
+        np.testing.assert_allclose(
+            summ.peak_probability, expected_peak, rtol=1e-9, atol=1e-9
+        )
 
     def test_times_carried(self, small_2d_env):
         from neurospatial.decoding import decode_position_summary
@@ -296,7 +298,7 @@ class TestDecodePositionSummaryParity:
 
         The summary path upcasts each block to float64 before reducing, so a
         float32 ``dtype=`` (smaller working posterior) must produce the SAME MAP
-        as float64 exactly, and entropy/peak_prob/mean within a tight tolerance
+        as float64 exactly, and entropy/peak_probability/mean within a tight tolerance
         -- it must NOT accumulate entropy/peak in float32 and lose precision.
         """
         from neurospatial.decoding import decode_position_summary
@@ -325,7 +327,7 @@ class TestDecodePositionSummaryParity:
             summ32.posterior_entropy, summ64.posterior_entropy, rtol=1e-5, atol=1e-5
         )
         np.testing.assert_allclose(
-            summ32.peak_prob, summ64.peak_prob, rtol=1e-5, atol=1e-6
+            summ32.peak_probability, summ64.peak_probability, rtol=1e-5, atol=1e-6
         )
         np.testing.assert_allclose(
             summ32.mean_position, summ64.mean_position, rtol=1e-5, atol=1e-5
@@ -395,7 +397,7 @@ class TestDecodePositionSummaryTimeChunkGuard:
             atol=1e-12,
         )
         np.testing.assert_allclose(
-            chunked.peak_prob, default.peak_prob, rtol=1e-12, atol=1e-12
+            chunked.peak_probability, default.peak_probability, rtol=1e-12, atol=1e-12
         )
 
 
@@ -422,10 +424,9 @@ class TestDecodingSummaryPortability:
         with pytest.raises(ValueError, match="mean_position"):
             DecodingSummary(
                 times=None,
-                map_position=np.zeros((n_time, n_dims)),
                 mean_position=np.zeros((n_time - 1, n_dims)),
                 posterior_entropy=np.zeros(n_time),
-                peak_prob=np.zeros(n_time),
+                peak_probability=np.zeros(n_time),
                 env=env,
                 map_bin=map_bin,
             )
@@ -438,10 +439,9 @@ class TestDecodingSummaryPortability:
         # A fully-consistent construction must not raise.
         DecodingSummary(
             times=np.arange(n_time, dtype=np.float64),
-            map_position=np.zeros((n_time, n_dims)),
             mean_position=np.zeros((n_time, n_dims)),
             posterior_entropy=np.zeros(n_time),
-            peak_prob=np.zeros(n_time),
+            peak_probability=np.zeros(n_time),
             env=env,
             map_bin=np.zeros(n_time, dtype=np.int64),
         )
@@ -471,7 +471,7 @@ class TestDecodingSummaryTerminalVerbs:
             "mean_x",
             "mean_y",
             "posterior_entropy",
-            "peak_prob",
+            "peak_probability",
         ]:
             assert col in df.columns, col
 
@@ -498,7 +498,7 @@ class TestDecodingSummaryTerminalVerbs:
             "n_bins",
             "mean_entropy",
             "max_entropy",
-            "mean_peak_prob",
+            "mean_peak_probability",
             "spike_window",
             "spike_window_assumed",
         }
@@ -510,7 +510,7 @@ class TestDecodingSummaryTerminalVerbs:
             "n_bins",
             "mean_entropy",
             "max_entropy",
-            "mean_peak_prob",
+            "mean_peak_probability",
         ):
             v = s[key]
             assert np.isscalar(v) or isinstance(v, (int, float))
@@ -548,7 +548,7 @@ class TestDecodingSummaryTerminalVerbs:
             "mean_x",
             "mean_y",
             "posterior_entropy",
-            "peak_prob",
+            "peak_probability",
         ]:
             assert var in ds.data_vars, var
         assert "software_version" in ds.attrs

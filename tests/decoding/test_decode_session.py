@@ -905,13 +905,15 @@ class TestDecodeSessionSummaryStreaming:
         if exact:
             np.testing.assert_array_equal(a.mean_position, b.mean_position)
             np.testing.assert_array_equal(a.posterior_entropy, b.posterior_entropy)
-            np.testing.assert_array_equal(a.peak_prob, b.peak_prob)
+            np.testing.assert_array_equal(a.peak_probability, b.peak_probability)
         else:
             assert_allclose(a.mean_position, b.mean_position, rtol=1e-12, atol=1e-12)
             assert_allclose(
                 a.posterior_entropy, b.posterior_entropy, rtol=1e-12, atol=1e-12
             )
-            assert_allclose(a.peak_prob, b.peak_prob, rtol=1e-12, atol=1e-12)
+            assert_allclose(
+                a.peak_probability, b.peak_probability, rtol=1e-12, atol=1e-12
+            )
 
     def test_parity_dt_divides_evenly(self) -> None:
         """dt evenly divides the session: streamed == materialize-then-stream."""
@@ -1005,7 +1007,7 @@ class TestDecodeSessionSummaryStreaming:
         )
         # exact=False: a different `time_chunk` changes the likelihood matmul's
         # block shape, so the continuous reductions (mean_position / entropy /
-        # peak_prob) can differ by a few ULPs across BLAS implementations
+        # peak_probability) can differ by a few ULPs across BLAS implementations
         # (byte-identical on some platforms, ~1e-15 off on others). The decoded
         # MAP (map_bin / map_position) is still asserted exactly. `time_chunk`
         # trades memory for the SAME per-time-bin decode; it does not promise

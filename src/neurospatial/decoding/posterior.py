@@ -1329,7 +1329,6 @@ def _decode_and_reduce_block(
     NDArray[np.float64],
     NDArray[np.float64],
     NDArray[np.float64],
-    NDArray[np.float64],
 ]:
     """Decode one time-block and reduce it to per-time vectors.
 
@@ -1371,8 +1370,6 @@ def _decode_and_reduce_block(
     -------
     map_bin : NDArray[np.int64], shape (n_block,)
         MAP bin index per time bin.
-    map_position : NDArray[np.float64], shape (n_block, n_dims)
-        MAP position per time bin (``bin_centers[map_bin]``).
     mean_position : NDArray[np.float64], shape (n_block, n_dims)
         Posterior-mean position per time bin.
     entropy : NDArray[np.float64], shape (n_block,)
@@ -1394,9 +1391,8 @@ def _decode_and_reduce_block(
     block_map_bin, block_mean, block_entropy, block_peak = _reduce_posterior_block(
         post_block, bin_centers if mean_basis is None else mean_basis, measures
     )
-    block_map_position = bin_centers[block_map_bin]
     # post_block goes out of scope and is reclaimed before the next block.
-    return block_map_bin, block_map_position, block_mean, block_entropy, block_peak
+    return block_map_bin, block_mean, block_entropy, block_peak
 
 
 def decode_position_summary(
@@ -1580,7 +1576,6 @@ def decode_position_summary(
     n_dims = bin_centers.shape[1]
 
     map_bin = np.empty(n_time, dtype=np.int64)
-    map_position = np.empty((n_time, n_dims), dtype=np.float64)
     mean_position = np.empty((n_time, n_dims), dtype=np.float64)
     posterior_entropy = np.empty(n_time, dtype=np.float64)
     peak_prob = np.empty(n_time, dtype=np.float64)
@@ -1605,7 +1600,6 @@ def decode_position_summary(
         # same helper backs decode_session_summary's streaming-binning loop.
         (
             block_map_bin,
-            block_map_position,
             block_mean,
             block_entropy,
             block_peak,
@@ -1622,19 +1616,18 @@ def decode_position_summary(
             measures=measures,
         )
         map_bin[start:stop] = block_map_bin
-        map_position[start:stop] = block_map_position
         mean_position[start:stop] = block_mean
         posterior_entropy[start:stop] = block_entropy
         peak_prob[start:stop] = block_peak
 
-    return DecodingSummary(
+    return DecodingSummary._from_owned(
         times=times_arr,
-        map_position=map_position,
         mean_position=_finish_posterior_mean(env, mean_position),
         posterior_entropy=posterior_entropy,
-        peak_prob=peak_prob,
+        peak_probability=peak_prob,
         map_bin=map_bin,
         env=env,
+        spike_window=None,
     )
 
 

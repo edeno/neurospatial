@@ -1239,32 +1239,46 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
     time and never materialize the full ``(n_time_bins, n_bins)`` posterior.
     This container therefore holds only the ``(n_time_bins, ...)`` reductions.
 
-    The accessor *names* deliberately match :class:`DecodingResult`
-    (``map_position``, ``mean_position``, ``posterior_entropy``, ``map_bin``)
-    so user code ports between the full and summary decoders with no renaming.
-    The key difference is that here they are **fields** holding the streamed
-    result rather than cached properties computed from a posterior.
+    ``map_bin``, ``map_position``, ``mean_position`` and ``posterior_entropy``
+    have the same names, shapes and meaning as on :class:`DecodingResult`, so
+    code ports between the full and summary decoders with no renaming. Here
+    they hold the streamed reductions instead of being computed from a
+    posterior; ``map_position`` is the center of ``map_bin``.
 
     Parameters
     ----------
-    times : NDArray[np.float64] | None
-        Time-bin centers in seconds, or ``None`` if not supplied.
-    map_position : NDArray[np.float64], shape (n_time_bins, n_dims)
-        MAP (maximum a posteriori) position per time bin.
-    mean_position : NDArray[np.float64], shape (n_time_bins, n_dims)
+    times : array-like, shape (n_time_bins,), or None
+        Time-bin centers in seconds, finite and strictly increasing, or
+        ``None`` if not supplied.
+    mean_position : array-like, shape (n_time_bins, n_dims)
         Posterior-mean position per time bin.
-    posterior_entropy : NDArray[np.float64], shape (n_time_bins,)
+    posterior_entropy : array-like, shape (n_time_bins,)
         Posterior entropy per time bin, in bits.
-    peak_prob : NDArray[np.float64], shape (n_time_bins,)
-        Largest posterior probability mass of any bin per time bin. On
-        unequal bins this need not be the mass at ``map_bin``.
+    peak_probability : array-like, shape (n_time_bins,)
+        Largest posterior probability mass of any bin per time bin, in
+        ``[0, 1]``. On unequal bins this need not be the mass at ``map_bin``.
     env : Environment
         Reference to the environment used for decoding.
-    map_bin : NDArray[np.int64], shape (n_time_bins,)
-        MAP bin index per time bin: the bin of highest posterior density.
-    spike_window : NDArray[np.float64] | None, optional
-        Normalized spike-recording windows, copied read-only. ``None`` records
-        the assumption that spikes were observed wherever position was.
+    map_bin : array-like of int, shape (n_time_bins,)
+        MAP bin index per time bin: the bin of highest posterior density, in
+        ``[0, env.n_bins)``.
+    spike_window : array-like, shape (n_windows, 2), or None, optional
+        Spike-recording ``[start, stop)`` windows in seconds, each with
+        ``start < stop``; stored sorted, merged and read-only. ``None``
+        records the assumption that spikes were observed wherever position
+        was.
+
+    Raises
+    ------
+    ValueError
+        If the per-time fields disagree in length, ``map_bin`` is not an
+        integer bin index of ``env``, ``peak_probability`` lies outside
+        ``[0, 1]``, ``times`` is not finite and strictly increasing, or
+        ``spike_window`` has a row that is not a finite ``start < stop`` pair.
+
+    Notes
+    -----
+    The arrays are read-only copies that the summary owns.
 
     See Also
     --------
@@ -1273,10 +1287,9 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
     """
 
     times: NDArray[np.float64] | None
-    map_position: NDArray[np.float64]
     mean_position: NDArray[np.float64]
     posterior_entropy: NDArray[np.float64]
-    peak_prob: NDArray[np.float64]
+    peak_probability: NDArray[np.float64]
     env: Environment
     map_bin: NDArray[np.int64]
     spike_window: NDArray[np.float64] | None = field(
@@ -1284,40 +1297,124 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
     )
 
     def __post_init__(self) -> None:
-        """Validate that all per-time arrays share a consistent shape.
+        """Take ownership of the inputs as read-only copies and validate them."""
+        self._own_and_validate(copy=True)
 
-        ``DecodingSummary`` is public/exported, so it may be constructed
-        directly. Catch ragged inputs here with a clear ``ValueError`` naming
-        the offending field rather than failing late and cryptically in a
-        reduction or export. ``n_time`` is derived from ``map_bin``; every other
-        per-time field must agree (``(n_time,)`` for scalars, ``(n_time,
-        n_dims)`` for position vectors, and ``times`` likewise when provided).
+    @classmethod
+    def _from_owned(cls, **fields: Any) -> DecodingSummary:
+        """Build from per-time arrays the caller just allocated (no aliases).
+
+        Internal use only: ``mean_position``, ``posterior_entropy``,
+        ``peak_probability`` and ``map_bin`` are marked read-only instead of
+        copied; ``times`` and ``spike_window`` are copied. ``fields`` must name
+        every dataclass field. Validation matches the public constructor.
         """
-        if self.spike_window is not None:
-            object.__setattr__(
-                self, "spike_window", np.asarray(self.spike_window, dtype=np.float64)
-            )
-        n_time = self.map_bin.shape[0]
-        n_dims = self.env.n_dims
-        checks: list[tuple[str, NDArray[Any] | None, tuple[int, ...]]] = [
-            ("map_position", self.map_position, (n_time, n_dims)),
-            ("mean_position", self.mean_position, (n_time, n_dims)),
-            ("posterior_entropy", self.posterior_entropy, (n_time,)),
-            ("peak_prob", self.peak_prob, (n_time,)),
-        ]
-        if self.times is not None:
-            checks.append(("times", self.times, (n_time,)))
-        for name, arr, expected in checks:
-            if arr is None:
-                continue
-            if arr.shape != expected:
-                raise ValueError(
-                    f"DecodingSummary.{name} has shape {arr.shape}, but expected "
-                    f"{expected} (n_time={n_time} from map_bin"
-                    + (f", n_dims={n_dims} from env" if len(expected) == 2 else "")
-                    + "). All per-time fields must share the same n_time."
+        obj = cls.__new__(cls)
+        for name, value in fields.items():
+            object.__setattr__(obj, name, value)
+        obj._own_and_validate(copy=False)
+        return obj
+
+    def _own_and_validate(self, *, copy: bool) -> None:
+        """Convert every field to a read-only array and enforce invariants.
+
+        ``n_time`` is taken from ``map_bin``; every other per-time field must
+        agree (``(n_time,)`` for scalars, ``(n_time, n_dims)`` for positions).
+        """
+
+        def own(value: Any, dtype: Any, *, always_copy: bool = False) -> Any:
+            if copy or always_copy:
+                return read_only_copy(value, dtype)
+            return _read_only(np.asarray(value, dtype=dtype))
+
+        map_bin = np.asarray(self.map_bin)
+        if map_bin.dtype.kind not in "iu":
+            raise ValueError(
+                _format_error(
+                    "DecodingSummary.map_bin must hold integer bin indices, got "
+                    f"dtype {map_bin.dtype}.",
+                    why="map_bin[i] indexes env.bin_centers.",
+                    fix="pass np.asarray(map_bin, dtype=np.int64)",
                 )
-        self._own_arrays()
+            )
+        object.__setattr__(self, "map_bin", own(map_bin, np.int64))
+        for name in ("mean_position", "posterior_entropy", "peak_probability"):
+            object.__setattr__(self, name, own(getattr(self, name), np.float64))
+        if self.times is not None:
+            object.__setattr__(
+                self, "times", own(self.times, np.float64, always_copy=True)
+            )
+        if self.spike_window is not None:
+            from neurospatial._intervals import as_intervals
+
+            window = as_intervals(self.spike_window, name="spike_window")
+            object.__setattr__(self, "spike_window", _read_only(window))
+
+        n_time = self.map_bin.shape[0] if self.map_bin.ndim == 1 else -1
+        n_dims = self.env.n_dims
+        problems = []
+        if self.map_bin.ndim != 1:
+            problems.append(
+                f"map_bin must be 1-D (n_time_bins,), got shape {self.map_bin.shape}"
+            )
+        for name, expected in (
+            ("mean_position", (n_time, n_dims)),
+            ("posterior_entropy", (n_time,)),
+            ("peak_probability", (n_time,)),
+        ):
+            shape = getattr(self, name).shape
+            if n_time >= 0 and shape != expected:
+                problems.append(
+                    f"{name} has shape {shape}, but expected {expected} "
+                    f"(n_time={n_time} from map_bin"
+                    + (f", n_dims={n_dims} from env" if len(expected) == 2 else "")
+                    + ")"
+                )
+        if n_time >= 0 and self.times is not None:
+            problems += _times_problems(self.times, n_time)
+        outside = np.flatnonzero((self.map_bin < 0) | (self.map_bin >= self.env.n_bins))
+        if outside.size:
+            i = int(outside[0])
+            problems.append(
+                f"{outside.size} map_bin value(s) are not bins of env (n_bins="
+                f"{self.env.n_bins}), first map_bin[{i}] = {self.map_bin.flat[i]}"
+            )
+        peak = self.peak_probability
+        invalid_peak = np.flatnonzero(~((peak >= 0.0) & (peak <= 1.0)))
+        if invalid_peak.size:
+            i = int(invalid_peak[0])
+            problems.append(
+                f"{invalid_peak.size} peak_probability value(s) are not "
+                f"probabilities in [0, 1], first peak_probability[{i}] = "
+                f"{peak.flat[i]}"
+            )
+        if problems:
+            raise ValueError(
+                _format_error(
+                    "DecodingSummary: " + "; ".join(problems) + ".",
+                    why=(
+                        "each field holds one value per decoded time bin: "
+                        "map_bin indexes env.bin_centers and peak_probability "
+                        "is the largest posterior mass of a bin."
+                    ),
+                    fix=(
+                        "pass the env the decode ran on and per-time arrays of "
+                        "one length, with times strictly increasing"
+                    ),
+                )
+            )
+
+    @cached_property
+    def map_position(self) -> NDArray[np.float64]:
+        """MAP position per time bin, the center of ``map_bin``.
+
+        Returns
+        -------
+        NDArray[np.float64]
+            Read-only positions of shape (n_time_bins, n_dims), in environment
+            coordinates.
+        """
+        return _read_only(self.env.bin_centers[self.map_bin])
 
     @property
     def spike_window_assumed(self) -> bool:
@@ -1357,7 +1454,7 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
             - ``map_x``, ``map_y``, ... : MAP position coordinates
             - ``mean_x``, ``mean_y``, ... : mean position coordinates
             - ``posterior_entropy`` : posterior entropy (bits)
-            - ``peak_prob`` : max posterior probability
+            - ``peak_probability`` : largest posterior probability mass of a bin
 
         Notes
         -----
@@ -1379,7 +1476,7 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
             data[f"mean_{name}"] = self.mean_position[:, i]
 
         data["posterior_entropy"] = self.posterior_entropy
-        data["peak_prob"] = self.peak_prob
+        data["peak_probability"] = self.peak_probability
 
         return pd.DataFrame(data)
 
@@ -1392,7 +1489,7 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
             Mapping with keys ``n_time_bins`` (int), ``n_bins`` (int, the
             environment's spatial bin count), ``mean_entropy`` (float, bits),
             ``max_entropy`` (float, bits = ``log2(n_bins)``), and
-            ``mean_peak_prob`` (float).
+            ``mean_peak_probability`` (float).
             Also includes ``spike_window_assumed`` (bool) and ``spike_window``
             (a list of interval pairs, or ``None``).
 
@@ -1411,8 +1508,8 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
             if self.posterior_entropy.size
             else 0.0,
             "max_entropy": float(np.log2(n_bins)) if n_bins > 0 else 0.0,
-            "mean_peak_prob": float(np.mean(self.peak_prob))
-            if self.peak_prob.size
+            "mean_peak_probability": float(np.mean(self.peak_probability))
+            if self.peak_probability.size
             else 0.0,
             "spike_window_assumed": self.spike_window_assumed,
             "spike_window": self.spike_window.tolist()
@@ -1500,7 +1597,7 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
         xarray.Dataset
             Dataset with data vars on ``("time",)``: ``map_bin``,
             ``map_x``/``map_y``/... , ``mean_x``/..., ``posterior_entropy``,
-            ``peak_prob``. The ``time`` index coordinate is :attr:`times` when
+            ``peak_probability``. The ``time`` index coordinate is :attr:`times` when
             set, else the integer index ``np.arange(n_time_bins)``. ``attrs``
             carry ``units`` (when set), an ``env`` fingerprint, and
             ``software_version``. All arrays, coordinates and array metadata
@@ -1532,12 +1629,6 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
             # Index arrays need independent storage before Dataset creation;
             # Dataset.copy(deep=True) can retain pandas-backed index buffers.
             time_coord: NDArray[Any] = np.array(self.times, copy=True)
-            if time_coord.ndim != 1 or time_coord.shape[0] != n_time:
-                raise ValueError(
-                    "DecodingSummary.to_xarray(): times must be 1-D with "
-                    f"length n_time_bins ({n_time}), got shape "
-                    f"{time_coord.shape}."
-                )
         else:
             time_coord = np.arange(n_time)
 
@@ -1548,7 +1639,7 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
                 ("time",),
                 np.asarray(self.posterior_entropy),
             ),
-            "peak_prob": (("time",), np.asarray(self.peak_prob)),
+            "peak_probability": (("time",), np.asarray(self.peak_probability)),
         }
         for i, name in enumerate(dim_names):
             data_vars[f"map_{name}"] = (("time",), self.map_position[:, i])

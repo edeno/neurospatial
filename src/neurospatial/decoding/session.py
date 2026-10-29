@@ -1124,7 +1124,6 @@ def _decode_with_models_summary(
     n_dims = bin_centers.shape[1]
 
     map_bin = np.empty(n_time, dtype=np.int64)
-    map_position = np.empty((n_time, n_dims), dtype=np.float64)
     mean_position = np.empty((n_time, n_dims), dtype=np.float64)
     posterior_entropy = np.empty(n_time, dtype=np.float64)
     peak_prob = np.empty(n_time, dtype=np.float64)
@@ -1147,7 +1146,6 @@ def _decode_with_models_summary(
 
         (
             block_map_bin,
-            block_map_position,
             block_mean,
             block_entropy,
             block_peak,
@@ -1163,18 +1161,16 @@ def _decode_with_models_summary(
             measures=measures,
         )
         map_bin[start:stop] = block_map_bin
-        map_position[start:stop] = block_map_position
         mean_position[start:stop] = block_mean
         posterior_entropy[start:stop] = block_entropy
         peak_prob[start:stop] = block_peak
         # counts_block / block posterior go out of scope before the next block.
 
-    return DecodingSummary(
+    return DecodingSummary._from_owned(
         times=bin_centers_time,
-        map_position=map_position,
         mean_position=mean_position,
         posterior_entropy=posterior_entropy,
-        peak_prob=peak_prob,
+        peak_probability=peak_prob,
         map_bin=map_bin,
         env=env,
         spike_window=resolved_spike_window,
