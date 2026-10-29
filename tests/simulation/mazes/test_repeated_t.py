@@ -212,13 +212,13 @@ def test_include_track_false_has_no_track():
 
 
 def test_long_arm_not_longer_than_arm_raises():
-    with pytest.raises(ValueError, match="makes alleys touch"):
-        make_repeated_t_maze(RepeatedTDims(long_arm_length=40.64))
+    with pytest.raises(ValueError, match="so the alleys touch"):
+        RepeatedTDims(long_arm_length=40.64)
 
 
 def test_food_box_longer_than_the_alley_raises():
     with pytest.raises(ValueError, match="does not fit"):
-        make_repeated_t_maze(RepeatedTDims(food_box_depth=50.0))
+        RepeatedTDims(food_box_depth=50.0)
 
 
 def test_bins_coarser_than_the_walls_warn():

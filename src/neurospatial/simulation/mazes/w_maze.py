@@ -42,7 +42,14 @@ from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_count,
+    check_lengths,
+    check_longer_than_wide,
+    refuse,
+)
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
@@ -102,6 +109,19 @@ class WMazeDims(MazeDims):
     arm_length: float = 72.5
     corridor_width: float = 7.0
     n_wells: int = 3
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "outer_arm_spacing", "arm_length", "corridor_width")
+        check_count(self, "n_wells", 2, "a W maze needs at least two arms")
+        check_longer_than_wide(self, "arm_length", "arm")
+        if self.outer_arm_spacing / (self.n_wells - 1) <= self.corridor_width:
+            refuse(
+                self,
+                ("outer_arm_spacing", "n_wells", "corridor_width"),
+                "puts neighbouring arms no farther apart than a corridor is "
+                "wide, so they merge into one",
+                "Use an outer_arm_spacing greater than (n_wells - 1) * corridor_width.",
+            )
 
 
 def make_w_maze(

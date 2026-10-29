@@ -222,7 +222,9 @@ class TestMakeRepeatedYMaze:
             make_repeated_y_maze,
         )
 
-        dims = RepeatedYDims(n_junctions=5, arm_length=30.0, corridor_width=12.0)
+        dims = RepeatedYDims(
+            n_junctions=5, arm_length=30.0, fork_length=15.0, corridor_width=12.0
+        )
         maze = make_repeated_y_maze(dims=dims)
 
         # Should have 5 junctions

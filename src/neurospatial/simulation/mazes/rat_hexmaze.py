@@ -56,7 +56,13 @@ from shapely.geometry import Polygon
 
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    check_longer_than_wide,
+    refuse,
+)
 from neurospatial.simulation.mazes._geometry import (
     make_buffered_line,
     single_floor,
@@ -126,6 +132,20 @@ class RatHexmazeDims(MazeDims):
     bridge_length: float = 62.4
     n_modules: int = 4
 
+    def __post_init__(self) -> None:
+        check_lengths(self, "node_spacing", "corridor_width", "bridge_length")
+        if self.n_modules not in (1, 2, 3, 4):
+            refuse(
+                self,
+                ("n_modules",),
+                "is not a HexMaze layout",
+                "Use n_modules 1, 2, 3 or 4: the rat HexMaze has four modules "
+                "(n_modules=4), and n_modules=1 builds a single mouse HexMaze "
+                "module.",
+            )
+        check_longer_than_wide(self, "node_spacing", "module corridor")
+        check_longer_than_wide(self, "bridge_length", "small bridge")
+
 
 def make_rat_hexmaze(
     dims: RatHexmazeDims | None = None,
@@ -158,11 +178,6 @@ def make_rat_hexmaze(
           ``corridor_width`` wide
         - env_track: 1D linearized track whose graph nodes are the maze's
           choice points (if include_track=True)
-
-    Raises
-    ------
-    ValueError
-        If ``dims.n_modules`` is not 1, 2, 3 or 4.
 
     Notes
     -----
@@ -243,12 +258,6 @@ def make_rat_hexmaze(
     """
     if dims is None:
         dims = RatHexmazeDims()
-    if dims.n_modules not in (1, 2, 3, 4):
-        raise ValueError(
-            f"n_modules must be 1, 2, 3 or 4, got {dims.n_modules}. The rat "
-            "HexMaze has four modules (n_modules=4); n_modules=1 builds a "
-            "single mouse HexMaze module."
-        )
 
     graph = _hexmaze_graph(dims)
     letters = _MODULE_LETTERS[: dims.n_modules]

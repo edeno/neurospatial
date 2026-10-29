@@ -35,7 +35,12 @@ from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    refuse,
+)
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
@@ -72,6 +77,17 @@ class LinearTrackDims(MazeDims):
 
     length: float = 150.0
     corridor_width: float = 10.0
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "length", "corridor_width")
+        if self.length <= self.corridor_width:
+            refuse(
+                self,
+                ("length", "corridor_width"),
+                "makes the track no longer than it is wide, so the wells, half a "
+                "corridor width in from each end, meet or pass each other",
+                "Use a length greater than corridor_width.",
+            )
 
 
 def make_linear_track(

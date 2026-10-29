@@ -64,7 +64,12 @@ from shapely.ops import unary_union
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    refuse,
+)
 from neurospatial.simulation.mazes._geometry import warn_if_bins_bridge_walls
 
 _Cell = tuple[int, int]
@@ -134,10 +139,16 @@ class HamptonCourtDims(MazeDims):
     corridor_width : float
         Width of every gallery in cm. Default is 10.16 (4 in, Small 1901).
 
+    Raises
+    ------
+    ValueError
+        If a length is not positive and finite, or the frame is too small to
+        hold 18 x 14 galleries of ``corridor_width``.
+
     Notes
     -----
     The walls sit on a grid of 18 x 14 galleries, so the frame must be wider
-    than 18 and taller than 14 galleries; partitions fill what is left.
+    than 18 and deeper than 14 galleries; partitions fill what is left.
 
     Examples
     --------
@@ -152,6 +163,21 @@ class HamptonCourtDims(MazeDims):
     frame_width: float = 243.84
     frame_depth: float = 182.88
     corridor_width: float = 10.16
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "frame_width", "frame_depth", "corridor_width")
+        if (
+            self.frame_width <= _N_COLUMNS * self.corridor_width
+            or self.frame_depth <= _N_ROWS * self.corridor_width
+        ):
+            refuse(
+                self,
+                ("frame_width", "frame_depth", "corridor_width"),
+                f"cannot hold {_N_COLUMNS} x {_N_ROWS} galleries with walls "
+                "between them",
+                f"Make the frame larger than {_N_COLUMNS} x {_N_ROWS} "
+                "corridor widths, or the galleries narrower.",
+            )
 
 
 def make_hampton_court_maze(
@@ -179,12 +205,6 @@ def make_hampton_court_maze(
         Contains:
         - env_2d: the walkable floor (galleries and central open space)
         - env_track: gallery centrelines as a track graph (if include_track)
-
-    Raises
-    ------
-    ValueError
-        If the frame is too small to hold 18 x 14 galleries of
-        ``corridor_width``.
 
     Notes
     -----
@@ -233,18 +253,6 @@ def make_hampton_court_maze(
     """
     if dims is None:
         dims = HamptonCourtDims()
-    if (
-        dims.frame_width <= _N_COLUMNS * dims.corridor_width
-        or dims.frame_depth <= _N_ROWS * dims.corridor_width
-    ):
-        raise ValueError(
-            f"HamptonCourtDims(frame_width={dims.frame_width}, "
-            f"frame_depth={dims.frame_depth}) cannot "
-            f"hold {_N_COLUMNS} x {_N_ROWS} galleries {dims.corridor_width} cm "
-            "wide with walls between them. Make the frame larger than "
-            f"{_N_COLUMNS * dims.corridor_width} x "
-            f"{_N_ROWS * dims.corridor_width} cm or the galleries narrower."
-        )
     pitch_x, pitch_y = _pitch(dims)
     warn_if_bins_bridge_walls(
         bin_size, min(pitch_x, pitch_y) - dims.corridor_width, "Hampton Court maze"

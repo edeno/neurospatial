@@ -53,7 +53,13 @@ from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_count,
+    check_lengths,
+    refuse,
+)
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_circular_arena,
@@ -121,6 +127,46 @@ class RadialArmDims(MazeDims):
     n_arms: int = 8
     food_cup_length: float = 7.5
     food_cup_width: float = 5.0
+
+    def __post_init__(self) -> None:
+        check_lengths(
+            self,
+            "center_radius",
+            "arm_length",
+            "corridor_width",
+            "food_cup_length",
+            "food_cup_width",
+        )
+        check_count(self, "n_arms", 2, "a radial maze needs at least two arms")
+        # Neighbouring arms' facing sides cross where they are half an arm
+        # width apart, corridor_width / 2 / sin(pi / n_arms) from the centre;
+        # the arms are separate where they leave the platform only if that
+        # point lies on the platform.
+        widest = 2.0 * self.center_radius * np.sin(np.pi / self.n_arms)
+        if self.corridor_width >= widest:
+            refuse(
+                self,
+                ("center_radius", "corridor_width", "n_arms"),
+                "makes neighbouring arms overlap where they leave the central "
+                "platform, so they merge into one",
+                f"Use a corridor_width below {widest:.4g} cm "
+                "(2 * center_radius * sin(pi / n_arms)), fewer arms or a "
+                "larger center_radius.",
+            )
+        if self.food_cup_length > self.arm_length:
+            refuse(
+                self,
+                ("food_cup_length", "arm_length"),
+                "makes the food cup longer than the arm it is fixed to",
+                "Use a food_cup_length no longer than arm_length.",
+            )
+        if self.food_cup_width > self.corridor_width:
+            refuse(
+                self,
+                ("food_cup_width", "corridor_width"),
+                "makes the food cup wider than the arm it sits in",
+                "Use a food_cup_width no wider than corridor_width.",
+            )
 
 
 def make_radial_arm_maze(

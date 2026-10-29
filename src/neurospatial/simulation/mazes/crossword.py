@@ -66,7 +66,12 @@ from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    refuse,
+)
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
@@ -131,6 +136,25 @@ class CrosswordDims(MazeDims):
     grid_spacing: float = 19.0
     corridor_width: float = 5.0
     box_size: float = 16.0
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "grid_spacing", "corridor_width", "box_size")
+        if self.corridor_width >= self.grid_spacing:
+            refuse(
+                self,
+                ("grid_spacing", "corridor_width"),
+                "makes parallel tracks touch, so they merge into one floor",
+                "Use a corridor_width below grid_spacing.",
+            )
+        # A box half box_size from its track's end must stay clear of the
+        # parallel track one grid_spacing away.
+        if self.box_size / 2.0 + self.corridor_width / 2.0 >= self.grid_spacing:
+            refuse(
+                self,
+                ("box_size", "corridor_width", "grid_spacing"),
+                "makes each start box reach the parallel track beside it",
+                "Use a box_size below 2 * grid_spacing - corridor_width.",
+            )
 
 
 def make_crossword_maze(

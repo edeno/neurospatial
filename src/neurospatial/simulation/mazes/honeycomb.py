@@ -73,7 +73,12 @@ from shapely.geometry import Polygon
 from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_count,
+    check_lengths,
+)
 
 
 @dataclass(frozen=True)
@@ -115,6 +120,17 @@ class HoneycombDims(MazeDims):
     platform_side: float = 11.5
     gap: float = 1.0
     n_rings: int = 3
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "platform_side")
+        check_lengths(self, "gap", allow_zero=True)
+        check_count(
+            self,
+            "n_rings",
+            1,
+            "the maze needs at least one ring of platforms around the centre "
+            "to step to",
+        )
 
     @property
     def spacing(self) -> float:

@@ -84,7 +84,13 @@ from shapely.geometry import box
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    check_longer_than_wide,
+    refuse,
+)
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
@@ -143,8 +149,8 @@ class RepeatedTDims(MazeDims):
     >>> dims.corridor_width, dims.arm_length, dims.long_arm_length
     (10.16, 40.64, 45.72)
 
-    >>> RepeatedTDims(arm_length=50.0).arm_length
-    50.0
+    >>> RepeatedTDims(arm_length=36.0).arm_length
+    36.0
     """
 
     corridor_width: float = 10.16
@@ -155,6 +161,45 @@ class RepeatedTDims(MazeDims):
     start_box_width: float = 19.05
     start_box_depth: float = 15.24
     food_box_depth: float = 13.97
+
+    def __post_init__(self) -> None:
+        check_lengths(
+            self,
+            "corridor_width",
+            "arm_length",
+            "long_arm_length",
+            "wall_thickness",
+            "start_stem_length",
+            "start_box_width",
+            "start_box_depth",
+            "food_box_depth",
+        )
+        check_longer_than_wide(self, "arm_length", "alley segment")
+        if self.long_arm_length <= self.arm_length:
+            refuse(
+                self,
+                ("long_arm_length", "arm_length"),
+                "leaves no wall between blind alley 6 and the alley to choice "
+                "point 3, so the alleys touch",
+                "Use a long_arm_length greater than arm_length.",
+            )
+        # Blind alley 4 runs back toward alley 1 and stops wall_thickness
+        # short of it, so it is arm_length - wall_thickness long.
+        if self.arm_length - self.wall_thickness <= self.corridor_width:
+            refuse(
+                self,
+                ("arm_length", "wall_thickness", "corridor_width"),
+                "leaves blind alley 4, arm_length - wall_thickness long, no "
+                "longer than it is wide",
+                "Use a wall_thickness below arm_length - corridor_width.",
+            )
+        if self.food_box_depth >= self.arm_length:
+            refuse(
+                self,
+                ("food_box_depth", "arm_length"),
+                "does not fit the food box in the last alley",
+                "Use a food_box_depth below arm_length.",
+            )
 
 
 def make_repeated_t_maze(
@@ -181,13 +226,6 @@ def make_repeated_t_maze(
         Contains:
         - env_2d: the alleys and the start and food boxes
         - env_track: alley centrelines as a track graph (if include_track)
-
-    Raises
-    ------
-    ValueError
-        If ``long_arm_length`` does not exceed ``arm_length`` or
-        ``wall_thickness`` is not positive, so that alleys would touch, or
-        if ``food_box_depth`` is not between 0 and ``arm_length``.
 
     Notes
     -----
@@ -230,19 +268,6 @@ def make_repeated_t_maze(
     if dims is None:
         dims = RepeatedTDims()
     thinnest_wall = min(dims.wall_thickness, dims.long_arm_length - dims.arm_length)
-    if thinnest_wall <= 0:
-        raise ValueError(
-            f"RepeatedTDims(long_arm_length={dims.long_arm_length}, "
-            f"arm_length={dims.arm_length}, wall_thickness={dims.wall_thickness}) "
-            "makes alleys touch. Use long_arm_length greater than arm_length "
-            "and a positive wall_thickness."
-        )
-    if not 0 < dims.food_box_depth < dims.arm_length:
-        raise ValueError(
-            f"RepeatedTDims(food_box_depth={dims.food_box_depth}) does not fit "
-            f"in the last alley, {dims.arm_length} cm long. Use a food_box_depth "
-            "between 0 and arm_length."
-        )
     warn_if_bins_bridge_walls(bin_size, thinnest_wall, "repeated T-maze")
 
     positions, edges = _layout(dims)

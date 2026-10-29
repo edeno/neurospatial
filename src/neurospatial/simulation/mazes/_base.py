@@ -18,8 +18,11 @@ MazeDims()
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+import math
+from collections.abc import Sequence
+from dataclasses import dataclass, fields
+from numbers import Integral, Real
+from typing import TYPE_CHECKING, NoReturn
 
 import numpy as np
 
@@ -81,9 +84,135 @@ class MazeDims:
     >>> dims = MazeDims()
     >>> dims  # doctest: +ELLIPSIS
     MazeDims()
+
+    Every subclass checks its dimensions when it is built and refuses a
+    length that is not positive and finite, a count too small to make the
+    apparatus, and dimensions that would merge or misplace its parts:
+
+    >>> from neurospatial.simulation.mazes import TMazeDims
+    >>> TMazeDims(arm_length=-50.0)  # doctest: +ELLIPSIS
+    Traceback (most recent call last):
+    ...
+    ValueError: TMazeDims(arm_length=-50.0) is not a length: ...
     """
 
     pass
+
+
+def check_lengths(dims: MazeDims, *names: str, allow_zero: bool = False) -> None:
+    """Refuse any of ``names`` that is not a finite, positive length in cm.
+
+    Parameters
+    ----------
+    dims : MazeDims
+        The dimensions to check.
+    *names : str
+        Attributes of ``dims`` that are lengths.
+    allow_zero : bool, default False
+        Accept a length of zero, for a gap that may close.
+
+    Raises
+    ------
+    ValueError
+        If a length is not a real number, not finite, or negative (or zero,
+        unless ``allow_zero``).
+    """
+    for name in names:
+        value = getattr(dims, name)
+        is_number = isinstance(value, Real) and not isinstance(value, bool)
+        if (
+            not is_number
+            or not math.isfinite(value)
+            or value < 0
+            or (value == 0 and not allow_zero)
+        ):
+            kind = "zero or more" if allow_zero else "positive"
+            raise ValueError(
+                f"{type(dims).__name__}({name}={value!r}) is not a length: {name} "
+                f"must be a finite number of cm, {kind}. Pass a value such as the "
+                f"default, {name}={_default(dims, name)!r}."
+            )
+
+
+def check_count(dims: MazeDims, name: str, minimum: int, why: str) -> None:
+    """Refuse a count that is not a whole number of at least ``minimum``.
+
+    Parameters
+    ----------
+    dims : MazeDims
+        The dimensions to check.
+    name : str
+        Attribute of ``dims`` that counts parts of the apparatus.
+    minimum : int
+        The smallest count that makes the apparatus.
+    why : str
+        Why the apparatus needs ``minimum``, for the message.
+
+    Raises
+    ------
+    ValueError
+        If the count is not an integer or is below ``minimum``.
+    """
+    value = getattr(dims, name)
+    if isinstance(value, bool) or not isinstance(value, Integral) or value < minimum:
+        raise ValueError(
+            f"{type(dims).__name__}({name}={value!r}) cannot be built: {why}. "
+            f"Use a whole number {name} of at least {minimum}."
+        )
+
+
+def check_longer_than_wide(dims: MazeDims, name: str, part: str) -> None:
+    """Refuse a corridor whose length ``name`` does not exceed its width.
+
+    A corridor no longer than ``dims.corridor_width`` does not reach past the
+    corridor it leaves, so a well or arm end half a width from its end lands
+    on the junction, or behind it.
+
+    Parameters
+    ----------
+    dims : MazeDims
+        The dimensions to check; they have a ``corridor_width``.
+    name : str
+        The attribute holding the corridor's length.
+    part : str
+        What the corridor is, for the message ("arm", "stem", ...).
+
+    Raises
+    ------
+    ValueError
+        If ``getattr(dims, name) <= dims.corridor_width``.
+    """
+    if getattr(dims, name) <= dims.corridor_width:  # type: ignore[attr-defined]
+        refuse(
+            dims,
+            (name, "corridor_width"),
+            f"makes each {part} no longer than it is wide, so its end overlaps "
+            "the junction it leaves",
+            f"Use {name} greater than corridor_width.",
+        )
+
+
+def refuse(dims: MazeDims, names: Sequence[str], problem: str, fix: str) -> NoReturn:
+    """Raise a ``ValueError`` naming the dimensions that conflict.
+
+    Parameters
+    ----------
+    dims : MazeDims
+        The dimensions being checked.
+    names : sequence of str
+        The attributes whose values conflict, shown in the message.
+    problem : str
+        What these values would do to the apparatus.
+    fix : str
+        How to choose values that build it.
+    """
+    values = ", ".join(f"{name}={getattr(dims, name)!r}" for name in names)
+    raise ValueError(f"{type(dims).__name__}({values}) {problem}. {fix}")
+
+
+def _default(dims: MazeDims, name: str) -> object:
+    """The default of field ``name`` of ``dims``'s class."""
+    return next(f.default for f in fields(dims) if f.name == name)
 
 
 @dataclass

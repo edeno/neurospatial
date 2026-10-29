@@ -32,7 +32,11 @@ from shapely.geometry import box
 
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+)
 
 
 @dataclass(frozen=True)
@@ -65,6 +69,9 @@ class SquareMazeDims(MazeDims):
     """
 
     side_length: float = 30.0
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "side_length")
 
 
 def make_square_maze(

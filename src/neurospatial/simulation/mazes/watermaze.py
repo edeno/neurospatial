@@ -58,7 +58,12 @@ from shapely.geometry import box
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    refuse,
+)
 from neurospatial.simulation.mazes._geometry import make_circular_arena
 
 
@@ -95,6 +100,16 @@ class WatermazeDims(MazeDims):
 
     pool_diameter: float = 150.0
     platform_radius: float = 7.5
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "pool_diameter", "platform_radius")
+        if 2.0 * self.platform_radius >= self.pool_diameter:
+            refuse(
+                self,
+                ("pool_diameter", "platform_radius"),
+                "makes the platform no smaller than the pool",
+                "Use a platform_radius below half the pool_diameter.",
+            )
 
 
 def make_watermaze(

@@ -72,7 +72,14 @@ from shapely.affinity import translate
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_count,
+    check_lengths,
+    check_longer_than_wide,
+    refuse,
+)
 from neurospatial.simulation.mazes._geometry import (
     make_buffered_line,
     single_floor,
@@ -130,6 +137,26 @@ class RepeatedYDims(MazeDims):
     arm_length: float = 25.0
     fork_length: float = 12.0
     corridor_width: float = 10.16
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "arm_length", "fork_length", "corridor_width")
+        check_count(self, "n_junctions", 1, "the maze needs at least one Y-junction")
+        check_longer_than_wide(self, "arm_length", "arm")
+        check_longer_than_wide(self, "fork_length", "fork arm")
+        # Junctions two apart point the same way, 4 arm_length cos(30 deg)
+        # apart, so their forks' facing tips, fork_length cos(30 deg) out from
+        # each terminal arm, touch unless that gap exceeds a corridor width.
+        if (
+            self.n_junctions >= 3
+            and self.fork_length
+            >= 2.0 * self.arm_length - self.corridor_width / np.sqrt(3.0)
+        ):
+            refuse(
+                self,
+                ("arm_length", "fork_length", "corridor_width"),
+                "makes the forks of junctions that point the same way touch",
+                "Use a fork_length below 2 * arm_length - corridor_width / sqrt(3).",
+            )
 
 
 def make_repeated_y_maze(

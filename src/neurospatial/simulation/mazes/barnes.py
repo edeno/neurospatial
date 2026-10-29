@@ -53,7 +53,13 @@ from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_count,
+    check_lengths,
+    refuse,
+)
 from neurospatial.simulation.mazes._geometry import make_circular_arena
 
 
@@ -102,6 +108,34 @@ class BarnesDims(MazeDims):
     n_holes: int = 18
     hole_radius: float = 4.75
     hole_inset: float = 12.0
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "diameter", "hole_radius", "hole_inset")
+        check_count(
+            self,
+            "n_holes",
+            2,
+            "a Barnes maze needs the escape hole and at least one other hole",
+        )
+        if self.hole_inset < self.hole_radius:
+            refuse(
+                self,
+                ("hole_inset", "hole_radius"),
+                "puts each hole's centre closer to the rim than the hole's "
+                "radius, so the holes run off the platform",
+                "Use a hole_inset of at least hole_radius.",
+            )
+        # Neighbouring holes on the ring are 2 r sin(pi / n_holes) apart.
+        ring_radius = self.diameter / 2.0 - self.hole_inset
+        if ring_radius * np.sin(np.pi / self.n_holes) <= self.hole_radius:
+            refuse(
+                self,
+                ("diameter", "n_holes", "hole_radius", "hole_inset"),
+                "puts the holes so close together on their ring, "
+                f"{ring_radius:.4g} cm from the centre, that neighbouring holes "
+                "overlap",
+                "Use fewer or smaller holes, or a smaller hole_inset.",
+            )
 
 
 def make_barnes_maze(

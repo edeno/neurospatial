@@ -47,7 +47,12 @@ from dataclasses import dataclass
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    check_longer_than_wide,
+)
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
@@ -97,6 +102,11 @@ class TMazeDims(MazeDims):
     stem_length: float = 100.0
     arm_length: float = 50.0
     corridor_width: float = 10.0
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "stem_length", "arm_length", "corridor_width")
+        check_longer_than_wide(self, "stem_length", "stem")
+        check_longer_than_wide(self, "arm_length", "arm")
 
 
 def make_t_maze(

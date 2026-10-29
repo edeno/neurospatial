@@ -48,7 +48,12 @@ import numpy as np
 
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    check_longer_than_wide,
+)
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
@@ -92,6 +97,10 @@ class YMazeDims(MazeDims):
 
     arm_length: float = 50.0
     corridor_width: float = 10.0
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "arm_length", "corridor_width")
+        check_longer_than_wide(self, "arm_length", "arm")
 
 
 def _arm_endpoints(dims: YMazeDims) -> list[tuple[float, float]]:

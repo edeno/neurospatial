@@ -154,6 +154,14 @@ class SungodDims(MazeDims):
 
     scale: float = 1.0
 
+    def __post_init__(self) -> None:
+        if not (np.isfinite(self.scale) and self.scale > 0):
+            raise ValueError(
+                f"SungodDims(scale={self.scale!r}) is not a scale factor: it must "
+                "be a positive, finite number. Use scale=1.0 for the traced "
+                "maze, about 1 m across, or a larger value to enlarge it."
+            )
+
 
 def make_sungod_maze(
     dims: SungodDims | None = None,
