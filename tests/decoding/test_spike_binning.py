@@ -271,3 +271,21 @@ def test_bin_spikes_span_smaller_than_dt_raises() -> None:
     spike_trains = [np.array([0.01])]
     with pytest.raises(ValueError, match="smaller than one"):
         bin_spikes_in_time(spike_trains, dt=0.1, t_start=0.0, t_stop=0.05)
+
+
+def test_t_start_after_every_spike_asks_for_t_stop() -> None:
+    """A defaulted t_stop before t_start names t_start, not dt."""
+    spike_trains = [np.array([0.1, 0.4]), np.array([0.3])]
+    with pytest.raises(ValueError, match=r"t_start .* is after the last spike") as err:
+        bin_spikes_in_time(spike_trains, dt=0.1, t_start=1.0)
+    message = str(err.value)
+    assert "pass t_stop" in message
+    assert "dt <=" not in message
+
+
+def test_defaulted_t_start_is_named_in_the_bounds_error() -> None:
+    """When t_start came from the earliest spike, the message says so."""
+    spike_trains = [np.array([2.0, 3.0])]
+    with pytest.raises(ValueError, match="earliest spike") as err:
+        bin_spikes_in_time(spike_trains, dt=0.1, t_stop=1.0)
+    assert "Fix:" in str(err.value)
