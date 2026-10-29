@@ -21,6 +21,7 @@ from neurospatial._observation import validate_break_before
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._time_bins import _count_spikes_in_time_bins
 from neurospatial.decoding._time_bins import validate_dt
+from neurospatial.encoding._spatial_counts import _clock_ratio_hint
 
 # Warn when more than this fraction of spikes fall outside the decode window.
 # Always < 1.0, so the 100%-dropped case (frac == 1.0) always warns.
@@ -38,31 +39,6 @@ if TYPE_CHECKING:
     from neurospatial.decoding._result import DecodingResult, DecodingSummary
     from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
-
-
-def _clock_ratio_hint(
-    spikes: NDArray[np.float64], t_start: float, t_stop: float
-) -> str:
-    """Name a milliseconds/seconds mix-up when the time spans differ ~1000x."""
-    spike_span = float(spikes.max() - spikes.min())
-    times_span = t_stop - t_start
-    if spike_span <= 0 or times_span <= 0:
-        return ""
-    # Within a factor of ~3 of 1000x either way.
-    log_ratio = np.log10(spike_span / times_span)
-    if abs(log_ratio - 3) < 0.5:
-        return (
-            f"The spike times span {spike_span:.6g}, about 1000 times the "
-            f"{times_span:.6g} s of times: spike_times are probably in "
-            "milliseconds; divide them by 1000. "
-        )
-    if abs(log_ratio + 3) < 0.5:
-        return (
-            f"The spike times span {spike_span:.6g}, about 1/1000 of the "
-            f"{times_span:.6g} span of times: times are probably in "
-            "milliseconds; divide them by 1000. "
-        )
-    return ""
 
 
 def _warn_if_spikes_out_of_window(

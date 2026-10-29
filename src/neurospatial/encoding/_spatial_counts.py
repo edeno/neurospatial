@@ -998,6 +998,31 @@ def _warn_if_population_silent(
     )
 
 
+def _clock_ratio_hint(
+    spikes: NDArray[np.float64], t_start: float, t_stop: float
+) -> str:
+    """Name a milliseconds/seconds mix-up when the time spans differ ~1000x."""
+    spike_span = float(spikes.max() - spikes.min())
+    times_span = t_stop - t_start
+    if spike_span <= 0 or times_span <= 0:
+        return ""
+    # Within a factor of ~3 of 1000x either way.
+    log_ratio = np.log10(spike_span / times_span)
+    if abs(log_ratio - 3) < 0.5:
+        return (
+            f"The spike times span {spike_span:.6g}, about 1000 times the "
+            f"{times_span:.6g} s of times: spike_times are probably in "
+            "milliseconds; divide them by 1000. "
+        )
+    if abs(log_ratio + 3) < 0.5:
+        return (
+            f"The spike times span {spike_span:.6g}, about 1/1000 of the "
+            f"{times_span:.6g} span of times: times are probably in "
+            "milliseconds; divide them by 1000. "
+        )
+    return ""
+
+
 def _emit_time_window_warning(
     n_time_dropped: int,
     n_total: int,
@@ -1036,6 +1061,7 @@ def _emit_time_window_warning(
         range_part = (
             f"spike_times.min()={all_spike_times.min():.6g} "
             f"spike_times.max()={all_spike_times.max():.6g}. "
+            f"{_clock_ratio_hint(all_spike_times, t_min, t_max)}"
         )
     else:
         range_part = ""

@@ -588,6 +588,17 @@ class TestSpikeClockMismatch:
         with pytest.warns(UserWarning, match=r"about 1000 times.*milliseconds"):
             decoder.predict(ms_spikes, times)
 
+    def test_millisecond_spikes_encoder_warning_names_the_unit_mismatch(self) -> None:
+        """decode_session's drop warning comes from encoding; it names ms too."""
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=10.0, seed=4
+        )
+        ms_spikes = [s * 1000.0 for s in spike_times]
+        with pytest.warns(UserWarning, match=r"position time window.*milliseconds"):
+            decode_session(env, ms_spikes, times, positions, dt=0.1)
+
     def test_short_epoch_with_whole_session_spikes_decodes(self) -> None:
         """Most spikes lie outside a short epoch; that is not a clock error."""
         from neurospatial.decoding import BayesianDecoder
