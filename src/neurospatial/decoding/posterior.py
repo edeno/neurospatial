@@ -515,11 +515,10 @@ def decode_position(
         If no bin has a finite rate for every neuron, a :class:`ValueError`
         is raised, even with ``validate=False``.
     dt : float
-        Time bin width in seconds. Typical values: 0.001-0.1s.
-        Note: For typical firing rates, lambda*dt should be in [0, 5].
+        Time bin width in seconds, the width used to bin ``spike_counts``.
     prior : NDArray[np.float64] | None, default=None
-        Prior probability **mass** per bin, normalized internally to sum to
-        1.0. Shape (n_bins,) for stationary prior, (n_time_bins, n_bins) for
+        Non-negative weight per bin, normalized internally to a probability
+        mass. Shape (n_bins,) for stationary prior, (n_time_bins, n_bins) for
         time-varying prior. Exact zeros exclude bins.
 
         If None, the prior is uniform over space: each bin's mass is
@@ -533,8 +532,7 @@ def decode_position(
         Rates are floored at 1e-10 Hz, so a spike from a neuron whose rate is
         zero in a bin makes that bin very unlikely, not impossible.
     method : {"poisson"}, default="poisson"
-        Likelihood model. Currently only Poisson supported.
-        Future: "gaussian", "clusterless".
+        Likelihood model. Only the Poisson model is available.
     times : NDArray[np.float64] | None, default=None
         Time bin centers (seconds). If provided, stored in DecodingResult.
     validate : bool, default=True
@@ -553,38 +551,11 @@ def decode_position(
         non-negative weights, positive total mass), as are negative rates,
         the bin count and the no-decodable-bin condition.
     dtype : np.float32 or np.float64, default=np.float64
-        Stored/working dtype of the posterior. ``np.float32`` halves the
-        stored and transient memory at the cost of single-precision rounding
-        (parity with float64 to ~1e-6 relative). The returned
-        :attr:`DecodingResult.posterior` is still a fully materialized
-        ``ndarray`` in this dtype, and every :class:`DecodingResult` method
-        works unchanged. Must be float32 or float64; any other value raises
-        ``ValueError``.
+        Dtype of the stored posterior; ``np.float32`` halves its memory. See
+        Notes.
     time_chunk : int or None, default=None
-        Hybrid memory knob. Two distinct paths:
-
-        - ``None`` (the default): the Poisson log-likelihood is computed once
-          over the whole window (a single full-size matmul) and the whole
-          posterior is normalized at once. This is the original full-matmul
-          path, reproduced **byte-for-byte** -- every existing caller gets
-          bit-identical output. Its in-flight transient peak is ~3x over the
-          returned posterior (the full-size log-likelihood, its working copy,
-          and the output coexist).
-        - an explicit positive int: the Poisson log-likelihood is computed and
-          normalized **one time-block of ``time_chunk`` rows at a time, directly
-          into the preallocated posterior**, so the full ``(n_time_bins,
-          n_bins)`` log-likelihood and its working copy are never materialized.
-          This cuts the transient peak to **~1x over the returned posterior**
-          (the posterior itself is unavoidably 1x -- this path is returned
-          fully materialized). It is **tolerance-equal, not byte-exact**, to the
-          ``None`` path: the per-block likelihood matmul is a different BLAS
-          shape than the full matmul, so it differs by ~1e-15 ULPs. MAP/argmax
-          is identical and every row sums to 1.0.
-
-        Either way the return type is unchanged: ``.posterior`` is the full
-        materialized ``(n_time_bins, n_bins)`` array. For a path that never
-        materializes even the full posterior, use
-        :func:`decode_position_summary`.
+        Number of time bins computed at once; ``None`` computes all of them
+        together. See Notes.
 
     Returns
     -------
@@ -604,32 +575,29 @@ def decode_position(
         If ``prior`` has the wrong shape, a negative or non-finite weight, or
         a row with zero total mass; checked even with ``validate=False``.
         If ``encoding_models`` bin count (axis 1) does not match
-        ``env.n_bins``. This is checked unconditionally, even with
-        ``validate=False``, because a wrong bin count yields a
-        well-formed posterior over the wrong positions.
-        If a rate result carries incompatible bin coordinates, coordinate
-        type, physical units or frame, even with ``validate=False``.
+        ``env.n_bins``, or a rate result's environment differs from ``env``
+        (see ``encoding_models``); checked even with ``validate=False``.
         If ``times`` is provided and its length does not match the number
         of posterior time bins.
 
     Notes
     -----
-    Memory usage: The posterior array is shape (n_time_bins, n_bins) and
-    stored as float64 by default. For long recordings (e.g., 1 hour at 25ms
-    bins = 144,000 time bins) with fine spatial resolution (e.g., 1000 bins),
-    this requires ~1.1 GB stored. The default ``time_chunk=None`` full-matmul
-    path has a ~3x transient peak (the full-size log-likelihood, its working
-    copy, and the output coexist), and is byte-for-byte the original behavior.
-    Two knobs cut the transient without changing the return contract:
-    ``dtype=np.float32`` halves the stored and transient memory, and an explicit
-    ``time_chunk=N`` computes the likelihood blockwise into the preallocated
-    posterior so the full-size log-likelihood and its copy are never
-    materialized -- dropping the transient peak to ~1x over the returned
-    posterior (tolerance-equal to the full path; ~1e-15; MAP identical). When
-    even the stored ``(n_time_bins, n_bins)`` array is too large to hold, use
-    :func:`decode_position_summary`, which streams over time -- computing the
-    likelihood per block so it never materializes the full log-likelihood -- and
-    keeps only ``(n_time_bins, ...)`` per-time reductions.
+    **Choosing dt.** Each time bin is decoded independently, so ``dt`` trades
+    time resolution against the number of spikes per bin: 20-50 ms suits
+    running behaviour with a few tens of place cells, shorter bins need more
+    cells for the same accuracy.
+
+    **Memory.** The posterior has shape ``(n_time_bins, n_bins)``: one hour at
+    25 ms (144,000 bins) over 1000 spatial bins is about 1.1 GB in float64.
+    With ``time_chunk=None`` the full log-likelihood and its temporaries exist
+    at once, a few times the stored posterior. ``time_chunk=N`` computes the
+    likelihood and posterior ``N`` time bins at a time into the stored
+    posterior, so the transient memory is a few ``(N, n_bins)`` blocks. The
+    two paths agree to floating-point rounding (about 1e-15 relative), so the
+    MAP bin differs only where two bins' densities tie to that precision.
+    ``dtype=np.float32`` halves the stored posterior and rounds it to about
+    1e-7 relative. When even the stored posterior is too large, use
+    :func:`decode_position_summary`, which keeps only per-time reductions.
 
     Examples
     --------
@@ -637,14 +605,14 @@ def decode_position(
     >>> from neurospatial.decoding.posterior import decode_position
     >>> import numpy as np
     >>>
-    >>> # Setup
-    >>> positions = np.random.uniform(0, 100, (1000, 2))
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=10.0)
     >>>
     >>> # Generate test data
     >>> n_time_bins, n_neurons = 50, 5
-    >>> spike_counts = np.random.poisson(2, (n_time_bins, n_neurons)).astype(np.int64)
-    >>> encoding_models = np.random.uniform(0.1, 10, (n_neurons, env.n_bins))
+    >>> spike_counts = rng.poisson(2, (n_time_bins, n_neurons))
+    >>> encoding_models = rng.uniform(0.1, 10, (n_neurons, env.n_bins))
     >>>
     >>> # Decode
     >>> result = decode_position(env, spike_counts, encoding_models, dt=0.025)
@@ -928,15 +896,7 @@ def _reduce_posterior_block(
     peak_prob : NDArray[np.float64], shape (n_block,)
         Max posterior probability per time bin.
     """
-    # Upcast the block once so all reductions accumulate in float64. The block
-    # is already the smallest array in play (one time-chunk), so this does not
-    # change the memory story, but it prevents float32 working-posterior dtypes
-    # from silently losing precision in the entropy/peak/mean reductions.
-    #
-    # NOTE: this summary path upcasts for precision, whereas the full-posterior
-    # path (DecodingResult.posterior_entropy) historically accumulates entropy
-    # in the stored dtype. The two are intentionally left consistent with each
-    # other for now; a future change that fixes one should align both.
+    # Reductions accumulate in float64 whatever the posterior dtype.
     pb = np.asarray(posterior_block, dtype=np.float64)
 
     from neurospatial.decoding.estimates import _density_mode
@@ -1063,10 +1023,6 @@ def decode_position_summary(
     posterior is too large to hold (e.g. a 1-hour session at 25 ms / 5000 bins
     is ~5.8 GB stored).
 
-    This is a SEPARATE function with its OWN return type by design: it does not
-    change :func:`decode_position`'s return contract, whose ``.posterior`` is a
-    real, fully-materialized ndarray everywhere.
-
     Parameters
     ----------
     env : Environment
@@ -1104,8 +1060,8 @@ def decode_position_summary(
     -------
     DecodingSummary
         Per-time reductions: ``map_position`` / ``map_bin`` / ``mean_position``
-        / ``posterior_entropy`` / ``peak_prob`` (all length ``n_time_bins``),
-        plus ``times`` and ``env``.
+        / ``posterior_entropy`` / ``peak_probability`` (all length
+        ``n_time_bins``), plus ``times`` and ``env``.
 
     Raises
     ------
@@ -1116,15 +1072,14 @@ def decode_position_summary(
 
     Notes
     -----
-    The per-time reductions are bit-for-bit identical to reducing the full
-    :class:`DecodingResult` posterior: ``map_position`` / ``map_bin`` match
-    exactly; ``mean_position`` / ``posterior_entropy`` / ``peak_prob`` match to
-    floating-point tolerance. See :func:`decode_position` for a path that keeps
-    the full posterior (with optional ``dtype`` / ``time_chunk`` memory knobs).
+    The reductions equal those of the full :class:`DecodingResult` posterior to
+    floating-point rounding; ``map_bin`` differs only where two bins'
+    densities tie to that precision. Peak memory is one ``(time_chunk,
+    n_bins)`` block plus the reductions; see :func:`decode_position` Notes.
 
     See Also
     --------
-    decode_position : Full-posterior decode (return contract unchanged).
+    decode_position : Decode and keep the full posterior.
     DecodingSummary : Streamed per-time reductions container.
     decode_session_summary : One-call encode->bin->summary-decode wrapper.
 
