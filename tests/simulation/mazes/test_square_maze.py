@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 
 class TestMakeSquareMaze:
@@ -108,35 +109,43 @@ class TestMakeSquareMaze:
         se = maze.env_2d.regions["SE"]
         sw = maze.env_2d.regions["SW"]
 
-        # All should be point regions
+        # The centre is a point at the origin
         assert center.kind == "point"
-        assert ne.kind == "point"
-        assert nw.kind == "point"
-        assert se.kind == "point"
-        assert sw.kind == "point"
+        np.testing.assert_allclose(center.data, [0.0, 0.0])
 
-        # Center should be at origin
-        assert np.isclose(center.data[0], 0.0, atol=1.0)
-        assert np.isclose(center.data[1], 0.0, atol=1.0)
+        # Each quadrant is the box's quarter on its side of both axes,
+        # as in the watermaze: NE is x >= 0, y >= 0.
+        half = dims.side_length / 2.0
+        expected = {
+            "NE": (0.0, 0.0, half, half),
+            "NW": (-half, 0.0, 0.0, half),
+            "SE": (0.0, -half, half, 0.0),
+            "SW": (-half, -half, 0.0, 0.0),
+        }
+        for region, bounds in zip((ne, nw, se, sw), expected.values(), strict=True):
+            assert region.kind == "polygon"
+            assert region.data.bounds == pytest.approx(bounds)
+            assert region.data.area == pytest.approx(half * half)
 
-        # Quarter position = side_length / 4
-        quarter = dims.side_length / 4.0
+    def test_quadrants_cover_every_bin_like_the_watermaze(self):
+        """Quadrants partition the box: every bin is in at least one, and a
+        quarter of the bins (more on the dividing lines) are in each."""
+        from neurospatial.simulation.mazes.square_maze import make_square_maze
+        from neurospatial.simulation.mazes.watermaze import make_watermaze
 
-        # NE should be at (+quarter, +quarter)
-        assert np.isclose(ne.data[0], quarter, atol=1.0)
-        assert np.isclose(ne.data[1], quarter, atol=1.0)
-
-        # NW should be at (-quarter, +quarter)
-        assert np.isclose(nw.data[0], -quarter, atol=1.0)
-        assert np.isclose(nw.data[1], quarter, atol=1.0)
-
-        # SE should be at (+quarter, -quarter)
-        assert np.isclose(se.data[0], quarter, atol=1.0)
-        assert np.isclose(se.data[1], -quarter, atol=1.0)
-
-        # SW should be at (-quarter, -quarter)
-        assert np.isclose(sw.data[0], -quarter, atol=1.0)
-        assert np.isclose(sw.data[1], -quarter, atol=1.0)
+        env = make_square_maze().env_2d
+        covered = np.zeros(env.n_bins, dtype=bool)
+        for name in ("NE", "NW", "SE", "SW"):
+            bins = env.bins_in_region(name)
+            assert len(bins) >= env.n_bins / 4
+            covered[bins] = True
+        assert covered.all()
+        # Same names, same meaning: the quadrant of the watermaze's pool.
+        pool = make_watermaze().env_2d.regions
+        for name in ("NE", "NW", "SE", "SW"):
+            square = env.regions[name].data.centroid.coords[0]
+            water = pool[name].data.centroid.coords[0]
+            assert np.sign(square) == pytest.approx(np.sign(water))
 
     def test_rest_box_has_no_landmarks(self):
         """A rest box holds no reward ports, boxes or cues."""

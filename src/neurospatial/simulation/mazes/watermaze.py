@@ -53,7 +53,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from shapely.geometry import box
 
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
@@ -64,7 +63,10 @@ from neurospatial.simulation.mazes._base import (
     check_lengths,
     refuse,
 )
-from neurospatial.simulation.mazes._geometry import make_circular_arena
+from neurospatial.simulation.mazes._geometry import (
+    compass_quadrants,
+    make_circular_arena,
+)
 
 
 @dataclass(frozen=True)
@@ -246,19 +248,8 @@ def make_watermaze(
     )
 
     # Each quadrant is the pool's quarter on one side of both axes
-    for name, (sign_x, sign_y) in {
-        "NE": (1, 1),
-        "NW": (-1, 1),
-        "SE": (1, -1),
-        "SW": (-1, -1),
-    }.items():
-        quarter = box(
-            min(0.0, sign_x * radius),
-            min(0.0, sign_y * radius),
-            max(0.0, sign_x * radius),
-            max(0.0, sign_y * radius),
-        )
-        region_builder.add(name, polygon=pool_polygon.intersection(quarter))
+    for name, quadrant in compass_quadrants(pool_polygon).items():
+        region_builder.add(name, polygon=quadrant)
 
     platform = Landmark(
         "platform", "point", platform_center, metadata={"role": "platform"}

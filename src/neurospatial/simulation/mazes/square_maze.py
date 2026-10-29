@@ -37,6 +37,7 @@ from neurospatial.simulation.mazes._base import (
     MazeEnvironments,
     check_lengths,
 )
+from neurospatial.simulation.mazes._geometry import compass_quadrants
 
 
 @dataclass(frozen=True)
@@ -104,17 +105,20 @@ def make_square_maze(
     - X range: -side_length/2 to +side_length/2
     - Y range: -side_length/2 to +side_length/2
 
-    Regions:
-    - center: Center of the arena at (0, 0)
-    - NE: Northeast corner region
-    - NW: Northwest corner region
-    - SE: Southeast corner region
-    - SW: Southwest corner region
+    North is +y and east is +x. Regions:
 
-    The corner regions are useful for:
-    - Analyzing thigmotaxis (wall-following behavior)
-    - Measuring time spent in corners vs center
-    - Studying spatial preferences
+    - center: a point at the centre of the box, (0, 0), covering the one
+      bin there.
+    - NE, NW, SE, SW: the box's quarters, bounded by the north-south and
+      east-west lines through its centre (NE is x > 0, y > 0), with the same
+      meaning as the watermaze's quadrants. Together they cover the box
+      without overlapping, for quadrant occupancy and spatial preference. A
+      bin whose centre lies exactly on a dividing line belongs to both
+      quadrants it touches.
+
+    For thigmotaxis (wall-following), measure how far the animal is from the
+    walls with :func:`neurospatial.behavior.distance_to_boundary` or
+    :func:`neurospatial.ops.nearest_boundary` rather than a region.
 
     Examples
     --------
@@ -139,8 +143,8 @@ def make_square_maze(
 
     >>> dims = SquareMazeDims(side_length=100.0)
     >>> maze = make_square_maze(dims=dims)
-    >>> "NE" in maze.env_2d.regions
-    True
+    >>> maze.env_2d.regions["NE"].data.bounds  # the north-east quarter, cm
+    (0.0, 0.0, 50.0, 50.0)
 
     See Also
     --------
@@ -170,12 +174,10 @@ def make_square_maze(
     region_builder = Regions()
     region_builder.add("center", point=(0.0, 0.0))
 
-    # Add corner regions at quarter positions (like watermaze quadrants)
-    quarter = half_side / 2.0
-    region_builder.add("NE", point=(quarter, quarter))
-    region_builder.add("NW", point=(-quarter, quarter))
-    region_builder.add("SE", point=(quarter, -quarter))
-    region_builder.add("SW", point=(-quarter, -quarter))
+    # Each quadrant is the box's quarter on one side of both axes, as in
+    # the watermaze
+    for name, quadrant in compass_quadrants(square_polygon).items():
+        region_builder.add(name, polygon=quadrant)
     env_2d = env_2d.with_regions(region_builder)
 
     # No track graph for open field

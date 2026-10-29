@@ -22,7 +22,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from shapely.geometry import LineString, MultiPolygon, Point, Polygon
+from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 from shapely.ops import unary_union
 
 if TYPE_CHECKING:
@@ -275,6 +275,49 @@ def single_floor(geometry: Polygon | MultiPolygon, dims: MazeDims) -> Polygon:
         "animal could not walk between them. Choose dimensions whose "
         "corridors, rooms and boxes meet."
     )
+
+
+def compass_quadrants(floor: Polygon) -> dict[str, Polygon]:
+    """Split an origin-centred floor into its NE, NW, SE and SW quarters.
+
+    Each quadrant is the part of ``floor`` on one side of both the
+    north-south and the east-west line through the origin, with north +y
+    and east +x (NE is x >= 0, y >= 0). Together they cover the floor
+    without overlapping.
+
+    Parameters
+    ----------
+    floor : Polygon
+        An open-field floor centred on the origin, in cm.
+
+    Returns
+    -------
+    dict of str to Polygon
+        ``{"NE": ..., "NW": ..., "SE": ..., "SW": ...}``.
+
+    Examples
+    --------
+    >>> from shapely.geometry import box
+    >>> quadrants = compass_quadrants(box(-15.0, -15.0, 15.0, 15.0))
+    >>> quadrants["NE"].bounds
+    (0.0, 0.0, 15.0, 15.0)
+    """
+    reach = float(np.max(np.abs(floor.bounds)))
+    quadrants = {}
+    for name, (sign_x, sign_y) in {
+        "NE": (1, 1),
+        "NW": (-1, 1),
+        "SE": (1, -1),
+        "SW": (-1, -1),
+    }.items():
+        quarter = box(
+            min(0.0, sign_x * reach),
+            min(0.0, sign_y * reach),
+            max(0.0, sign_x * reach),
+            max(0.0, sign_y * reach),
+        )
+        quadrants[name] = floor.intersection(quarter)
+    return quadrants
 
 
 def corridor_width(corridor: Polygon) -> float:
