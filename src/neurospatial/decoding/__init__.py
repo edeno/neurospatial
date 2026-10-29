@@ -3,13 +3,36 @@
 This subpackage provides tools for decoding spatial position from population
 neural activity using Bayesian methods.
 
-Core Functions
---------------
+Start Here
+----------
+decode_session : Encode, time-bin and decode one recording in a single call
+    Returns a :class:`DecodingResult` with the full posterior.
+
+BayesianDecoder : Fit encoding models on training data, decode new spikes
+    ``BayesianDecoder(env).fit(...)`` or ``BayesianDecoder.from_rates(rates)``,
+    then ``predict`` (a :class:`DecodingResult`) or ``predict_summary`` (a
+    :class:`DecodingSummary`); use it for held-out evaluation.
+
+decode_session_summary, decode_position_summary : Memory-safe decoding
+    Stream the decode in time chunks and return a :class:`DecodingSummary`,
+    never holding the full ``(n_time_bins, n_bins)`` posterior.
+
+Result Containers
+-----------------
+DecodingResult : Full posterior with derived estimates
+    ``map_bin``, ``map_position``, ``mean_position``, ``posterior_entropy``,
+    plus ``to_dataframe``, ``to_xarray``, ``plot`` and ``error_against``.
+
+DecodingSummary : Per-time reductions from the summary decoders
+    The same estimate names as :class:`DecodingResult`, without the posterior.
+
+Building Blocks
+---------------
 bin_spikes_in_time : Bin spike times into a count matrix on a regular time grid
     Turns per-neuron spike-time arrays into a ``(time, neuron)`` (or
     ``(neuron, time)``) count matrix, owning the time-grid construction.
 
-decode_position : Main entry point for Bayesian decoding
+decode_position : Decode precomputed spike counts with encoding models
     Decode position from spike counts using encoding models (place fields).
 
 log_poisson_likelihood : Compute log-likelihood under Poisson model
@@ -18,15 +41,10 @@ log_poisson_likelihood : Compute log-likelihood under Poisson model
 normalize_to_posterior : Convert log-likelihood to posterior
     Bayes' rule with configurable prior and degenerate handling.
 
-Result Containers
------------------
-DecodingResult : Container for decoding results
-    Stores posterior with lazy-computed derived properties (MAP, mean, entropy).
-
 Estimate Functions
 ------------------
-posterior_mode : Maximum a posteriori bin index
-    Bin index of highest posterior probability per time bin.
+map_bin : Maximum a posteriori bin index
+    Bin index of highest posterior density per time bin.
 
 map_position : MAP position in environment coordinates
     Coordinate position of the MAP bin.
@@ -35,10 +53,11 @@ mean_position : Posterior mean position
     Probability-weighted average position.
 
 posterior_entropy : Posterior entropy in bits
-    Uncertainty measure (0 = certain, log2(n_bins) = uniform).
+    Uncertainty measure over bins (0 = one bin; log2(n_bins) = equal mass in
+    every bin, which on equal bins is a posterior flat over space).
 
-credible_region : Highest posterior density region
-    Smallest set of bins containing specified probability mass.
+credible_region : Highest-density credible region
+    Bins added in order of density until they hold a given probability mass.
 
 Quality Metrics
 ---------------
@@ -62,8 +81,12 @@ fit_isotonic_trajectory : Monotonic trajectory fitting
 fit_linear_trajectory : Linear trajectory fitting
     Linear regression with optional Monte Carlo uncertainty.
 
-detect_trajectory_radon : Radon transform trajectory detection
-    Detect linear trajectories in posterior images.
+detect_trajectory_radon : Replay line fit (Davidson et al. 2009)
+    The constant-speed line holding the most posterior mass within a band.
+
+replay_trajectory_significance : Replay line significance
+    Test the replay score against column-cycle, unit-identity and
+    pseudo-event shuffles.
 
 Cell Assembly Detection
 -----------------------
@@ -71,7 +94,7 @@ detect_assemblies : Detect cell assemblies from population spike counts
     ICA/PCA/NMF-based detection of coordinated neural ensembles.
 
 assembly_activation : Compute activation strength of an assembly
-    Project spike counts onto assembly pattern.
+    Activation strength R(t): co-firing of the pattern's neurons per time bin.
 
 pairwise_correlations : Compute pairwise correlations between neurons
     Extract upper triangle of correlation matrix.
@@ -80,7 +103,7 @@ explained_variance_reactivation : Explained variance reactivation analysis
     Measure how template correlations predict match correlations.
 
 reactivation_strength : Compare assembly activation between periods
-    Simple reactivation measure based on mean activation.
+    Mean activation strength in a match period over a template period.
 
 marchenko_pastur_threshold : Random matrix theory significance threshold
     Upper bound of eigenvalue distribution for random correlations.
@@ -95,9 +118,8 @@ ExplainedVarianceResult : Results from explained variance analysis
     Contains EV, reversed EV, partial correlation, and n_pairs.
 
 Shuffle controls and Poisson surrogates live under :mod:`neurospatial.stats`
-(``neurospatial.stats.shuffle`` and ``neurospatial.stats.surrogates``). They
-are no longer re-exported here — import them directly from their canonical
-locations.
+(``neurospatial.stats.shuffle`` and ``neurospatial.stats.surrogates``); import
+them from there.
 
 Examples
 --------
@@ -148,15 +170,17 @@ neurospatial.Environment : Spatial discretization
 
 Notes
 -----
-This subpackage follows neurospatial's design patterns:
+Functions that need the environment's bins take it first, for example
+``decode_session(env, spike_times, times, positions)``, ``map_bin(env,
+posterior)`` and ``fit_linear_trajectory(env, posterior, ...)``. Functions that
+do not, such as :func:`posterior_entropy`, :func:`normalize_to_posterior` and
+:func:`detect_assemblies`, take no environment. :class:`BayesianDecoder` is an immutable estimator: ``fit`` returns a
+new fitted decoder. Result containers are frozen and their arrays read-only.
 
-- Stateless functions (not classes) for all operations
-- Environment as first argument for spatial context
-- NumPy docstrings with examples
-- Immutable result containers with lazy-computed properties
-
-The implementation is based on standard Bayesian methods for neural decoding,
-with numerical stability considerations for log-domain computation.
+A posterior holds a probability mass per bin. The MAP bin and credible
+regions rank bins by density, mass divided by bin size, so a large bin does
+not win only by holding more space. Likelihoods are combined in log space for
+numerical stability.
 """
 
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
@@ -174,10 +198,10 @@ from neurospatial.decoding.assemblies import (
 )
 from neurospatial.decoding.estimates import (
     credible_region,
+    map_bin,
     map_position,
     mean_position,
     posterior_entropy,
-    posterior_mode,
 )
 from neurospatial.decoding.estimator import BayesianDecoder
 from neurospatial.decoding.likelihood import log_poisson_likelihood
@@ -197,9 +221,11 @@ from neurospatial.decoding.trajectory import (
     IsotonicFitResult,
     LinearFitResult,
     RadonDetectionResult,
+    ReplaySignificanceResult,
     detect_trajectory_radon,
     fit_isotonic_trajectory,
     fit_linear_trajectory,
+    replay_trajectory_significance,
 )
 
 # =============================================================================
@@ -220,6 +246,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
+    "ReplaySignificanceResult",
     # Spike-time binning
     "bin_spikes_in_time",
     # Cell assembly detection
@@ -244,7 +271,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Likelihood
     "log_poisson_likelihood",
     # Estimates
-    "posterior_mode",
+    "map_bin",
     "posterior_entropy",
     "map_position",
     "marchenko_pastur_threshold",
@@ -253,4 +280,5 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "normalize_to_posterior",
     "pairwise_correlations",
     "reactivation_strength",
+    "replay_trajectory_significance",
 ]

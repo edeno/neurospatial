@@ -150,6 +150,9 @@ Bayesian decoding of position from spike counts.
 - `fit_isotonic_trajectory()`, `fit_linear_trajectory()`,
   `detect_trajectory_radon()`: Fit replay trajectories along a track; slopes
   are in environment units per second
+- `replay_trajectory_significance()`: Davidson et al. (2009) replay test,
+  the replay score against column-cycle, unit-identity and pseudo-event
+  shuffles
 
 **Key Classes:**
 
@@ -167,13 +170,14 @@ by position:
 
 - `detect_assemblies()`: Dimensions above the Marchenko-Pastur reference and
   fitted patterns; a selected dimension may have no thresholded core members
-- `assembly_activation()`: Standardized projection in a chosen period;
-  relative activity rather than a calibrated bin-level significance test
+- `assembly_activation()`: Activation strength (co-firing of the pattern's
+  cells) in each bin of a chosen period; descriptive rather than a
+  calibrated bin-level significance test
 - `pairwise_correlations()`: Upper-triangle neuron-pair correlations
 - `explained_variance_reactivation()`: EV and controlled REV effect sizes;
   pass an explicit baseline control and avoid treating EV > REV as a p-value
-- `reactivation_strength()`: Ratio of mean absolute projections on one shared
-  template-normalized scale; an effect size rather than a significance verdict
+- `reactivation_strength()`: Mean activation strength in the match period
+  over the template period; an effect size rather than a significance verdict
 
 See the [complete public workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).
 

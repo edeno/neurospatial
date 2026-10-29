@@ -68,7 +68,7 @@ def test_truth_and_map_share_image_centers_and_breaks(env, gapped, extent, origi
             )
         np.testing.assert_array_equal(positions, original)
         np.testing.assert_array_equal(result.times, times)
-        np.testing.assert_array_equal(result.map_estimate, bins)
+        np.testing.assert_array_equal(result.map_bin, bins)
     finally:
         plt.close(ax.figure)
 

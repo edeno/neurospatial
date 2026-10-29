@@ -6,6 +6,7 @@ from shapely.geometry import box
 
 from neurospatial import Environment, compute_spatial_rates
 from neurospatial.decoding import BayesianDecoder
+from neurospatial.encoding import SpikeTrains
 
 pynwb = pytest.importorskip("pynwb")
 
@@ -17,7 +18,7 @@ def test_linear_rates_file_preserves_support_and_decoder(empty_nwb, tmp_path):
         np.ones((2, 1), bool),
         grid_edges=(np.arange(3.0), np.array([0.0, 1.0])),
     ).clip(box(0.25, 0, 1.75, 1))
-    spikes = [np.array([1.0]), np.array([2.0])]
+    spikes = SpikeTrains([np.array([1.0]), np.array([2.0])], unit_ids=[9, 3])
     rates = compute_spatial_rates(
         env,
         spikes,
@@ -27,7 +28,6 @@ def test_linear_rates_file_preserves_support_and_decoder(empty_nwb, tmp_path):
         bandwidth=0,
         time_allocation="linear",
         max_gap=None,
-        unit_ids=[9, 3],
     )
     np.testing.assert_allclose(rates.occupancy, [0.75, 0.75])
     prediction_times = np.arange(0.0, 3.25, 0.25)

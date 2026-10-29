@@ -998,6 +998,38 @@ def _warn_if_population_silent(
     )
 
 
+def _clock_ratio_hint(
+    spikes: NDArray[np.float64], t_start: float, t_stop: float
+) -> str:
+    """Name a milliseconds/seconds mix-up when spans and magnitudes differ ~1000x.
+
+    A short decode window inside a long recording also has a much shorter span
+    than its spikes, but the spike times there are no larger in magnitude than
+    the window's, so both ratios must be about 1000 (within ~3x).
+    """
+    spike_span = float(spikes.max() - spikes.min())
+    times_span = t_stop - t_start
+    spike_scale = float(np.max(np.abs(spikes)))
+    times_scale = max(abs(t_start), abs(t_stop))
+    if min(spike_span, times_span, spike_scale, times_scale) <= 0:
+        return ""
+    log_span = np.log10(spike_span / times_span)
+    log_scale = np.log10(spike_scale / times_scale)
+    if abs(log_span - 3) < 0.5 and abs(log_scale - 3) < 0.5:
+        return (
+            f"The spike times span {spike_span:.6g} and reach {spike_scale:.6g}, "
+            f"about 1000 times the {times_span:.6g} s of times: if spike_times "
+            "are in milliseconds, divide them by 1000. "
+        )
+    if abs(log_span + 3) < 0.5 and abs(log_scale + 3) < 0.5:
+        return (
+            f"The spike times span {spike_span:.6g} and reach {spike_scale:.6g}, "
+            f"about 1/1000 of the {times_span:.6g} span of times: if times are "
+            "in milliseconds, divide them by 1000. "
+        )
+    return ""
+
+
 def _emit_time_window_warning(
     n_time_dropped: int,
     n_total: int,
@@ -1036,6 +1068,7 @@ def _emit_time_window_warning(
         range_part = (
             f"spike_times.min()={all_spike_times.min():.6g} "
             f"spike_times.max()={all_spike_times.max():.6g}. "
+            f"{_clock_ratio_hint(all_spike_times, t_min, t_max)}"
         )
     else:
         range_part = ""

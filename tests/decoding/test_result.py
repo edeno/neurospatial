@@ -5,6 +5,7 @@ and computes derived properties (MAP, mean, entropy) via cached properties.
 """
 
 import numpy as np
+import pandas as pd
 import pytest
 
 
@@ -26,8 +27,8 @@ class TestDecodingResultBasic:
 class TestMapEstimate:
     """Test MAP (maximum a posteriori) estimate computation."""
 
-    def test_map_estimate_shape(self, small_2d_env):
-        """map_estimate should return (n_time_bins,) array of bin indices."""
+    def test_map_bin_shape(self, small_2d_env):
+        """map_bin should return (n_time_bins,) array of bin indices."""
         from neurospatial.decoding import DecodingResult
 
         n_time_bins = 10
@@ -35,11 +36,11 @@ class TestMapEstimate:
 
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
-        assert result.map_estimate.shape == (n_time_bins,)
-        assert result.map_estimate.dtype in (np.int64, np.intp)
+        assert result.map_bin.shape == (n_time_bins,)
+        assert result.map_bin.dtype in (np.int64, np.intp)
 
-    def test_map_estimate_delta_posterior(self, small_2d_env):
-        """map_estimate should return correct bin for delta (one-hot) posterior."""
+    def test_map_bin_delta_posterior(self, small_2d_env):
+        """map_bin should return correct bin for delta (one-hot) posterior."""
         from neurospatial.decoding import DecodingResult
 
         n_time_bins = 5
@@ -52,10 +53,10 @@ class TestMapEstimate:
 
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
-        np.testing.assert_array_equal(result.map_estimate, expected_bins)
+        np.testing.assert_array_equal(result.map_bin, expected_bins)
 
-    def test_map_estimate_identity_posterior(self, small_2d_env):
-        """map_estimate on identity posterior should return diagonal indices."""
+    def test_map_bin_identity_posterior(self, small_2d_env):
+        """map_bin on identity posterior should return diagonal indices."""
         from neurospatial.decoding import DecodingResult
 
         # Use identity matrix (10x10) if env has enough bins
@@ -65,7 +66,7 @@ class TestMapEstimate:
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
         expected = np.arange(n_time_bins)
-        np.testing.assert_array_equal(result.map_estimate, expected)
+        np.testing.assert_array_equal(result.map_bin, expected)
 
 
 class TestMapPosition:
@@ -84,7 +85,7 @@ class TestMapPosition:
         assert result.map_position.dtype == np.float64
 
     def test_map_position_matches_bin_centers(self, small_2d_env):
-        """map_position should equal bin_centers[map_estimate]."""
+        """map_position should equal bin_centers[map_bin]."""
         from neurospatial.decoding import DecodingResult
 
         n_time_bins = 5
@@ -266,7 +267,7 @@ class TestEdgeCases:
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
         assert result.n_time_bins == 1
-        assert result.map_estimate.shape == (1,)
+        assert result.map_bin.shape == (1,)
         assert result.map_position.shape == (1, small_2d_env.n_dims)
         assert result.mean_position.shape == (1, small_2d_env.n_dims)
         assert result.posterior_entropy.shape == (1,)
@@ -276,26 +277,21 @@ class TestEdgeCases:
         from neurospatial import Environment
         from neurospatial.decoding import DecodingResult
 
-        # Create a minimal single-bin environment
-        env = Environment.from_samples(
-            np.array([[0.0, 0.0], [1.0, 1.0]]),
-            bin_size=10.0,  # Large bin size to get single bin
+        env = Environment.from_grid_mask(
+            np.ones(1, dtype=bool), grid_edges=(np.array([0.0, 10.0]),)
         )
+        assert env.n_bins == 1
+        n_time_bins = 5
+        posterior = np.ones((n_time_bins, 1))  # Only one bin, always prob=1
 
-        if env.n_bins == 1:
-            n_time_bins = 5
-            posterior = np.ones((n_time_bins, 1))  # Only one bin, always prob=1
+        result = DecodingResult(posterior=posterior, env=env)
 
-            result = DecodingResult(posterior=posterior, env=env)
-
-            assert result.n_time_bins == n_time_bins
-            np.testing.assert_array_equal(result.map_estimate, np.zeros(n_time_bins))
-            # Entropy of single bin is 0 (log2(1) = 0)
-            np.testing.assert_array_almost_equal(
-                result.posterior_entropy, np.zeros(n_time_bins)
-            )
-        else:
-            pytest.skip("Could not create single-bin environment")
+        assert result.n_time_bins == n_time_bins
+        np.testing.assert_array_equal(result.map_bin, np.zeros(n_time_bins))
+        np.testing.assert_array_equal(result.map_position, 5.0)
+        # Entropy of single bin is 0 (log2(1) = 0)
+        np.testing.assert_array_equal(result.posterior_entropy, 0.0)
+        assert result.summary()["max_entropy"] == 0.0
 
 
 class TestPlotMethod:
@@ -505,13 +501,13 @@ class TestResultOwnsData:
         src = np.array([[0.9, 0.1, 0.0, 0.0]])
         times = np.array([0.5])
         r = DecodingResult(posterior=src, env=env_4bin, times=times)
-        assert r.map_estimate.tolist() == [0]
+        assert r.map_bin.tolist() == [0]
 
         src[0] = [0.1, 0.9, 0.0, 0.0]
         times[0] = 99.0
 
         np.testing.assert_array_equal(r.posterior[0], [0.9, 0.1, 0.0, 0.0])
-        assert r.map_estimate.tolist() == r.posterior.argmax(axis=1).tolist() == [0]
+        assert r.map_bin.tolist() == r.posterior.argmax(axis=1).tolist() == [0]
         np.testing.assert_array_equal(r.times, [0.5])
 
         # A read-only view of a writeable array is copied, not shared.
@@ -541,12 +537,12 @@ class TestResultOwnsData:
         v = a[:]
         a.flags.writeable = False
         r = DecodingResult(posterior=a, env=env_4bin)
-        assert r.map_estimate.tolist() == [0]
+        assert r.map_bin.tolist() == [0]
 
         v[0] = [0.1, 0.9, 0.0, 0.0]  # the earlier view still writes into `a`
 
         np.testing.assert_array_equal(r.posterior[0], [0.9, 0.1, 0.0, 0.0])
-        assert r.map_estimate.tolist() == [0]
+        assert r.map_bin.tolist() == [0]
 
     def test_replace_rebuilds_cache(self, env_4bin):
         import dataclasses
@@ -554,11 +550,11 @@ class TestResultOwnsData:
         from neurospatial.decoding import DecodingResult
 
         r = DecodingResult(posterior=np.array([[0.9, 0.1, 0.0, 0.0]]), env=env_4bin)
-        assert r.map_estimate.tolist() == [0]
+        assert r.map_bin.tolist() == [0]
         new = np.array([[0.0, 0.0, 1.0, 0.0]])
         r2 = dataclasses.replace(r, posterior=new)
-        assert r2.map_estimate.tolist() == [2]
-        assert r.map_estimate.tolist() == [0]
+        assert r2.map_bin.tolist() == [2]
+        assert r.map_bin.tolist() == [0]
         assert not np.shares_memory(r2.posterior, new)
 
 
@@ -572,7 +568,7 @@ def test_copied_result_stays_read_only(env_4bin, how):
     r = DecodingResult(
         posterior=np.array([[0.9, 0.1, 0.0, 0.0]]), env=env_4bin, times=np.array([0.5])
     )
-    _ = r.map_estimate  # cached values travel with the copy
+    _ = r.map_bin  # cached values travel with the copy
     r2 = pickle.loads(pickle.dumps(r)) if how == "pickle" else copy.deepcopy(r)
     assert r2.posterior.flags.writeable is False
     assert r2.times.flags.writeable is False
@@ -653,3 +649,365 @@ def test_constructor_rejects_misaligned_shapes(posterior_shape, n_times, detail)
             posterior=np.ones(shape), env=env, times=np.arange(float(n_times))
         )
     assert "Fix:" in str(exc.value)
+
+
+def test_result_equality_is_identity(env_4bin):
+    """Comparing or hashing results never asks an array for a truth value."""
+    from neurospatial.decoding import DecodingResult
+
+    posterior = np.array([[0.9, 0.1, 0.0, 0.0]])
+    r = DecodingResult(posterior=posterior, env=env_4bin)
+    same_values = DecodingResult(posterior=posterior, env=env_4bin)
+    assert r == r
+    assert r != same_values
+    assert hash(r) != hash(same_values)
+    assert r in [same_values, r]
+
+
+_ARRAY_ATTRIBUTES = (
+    "posterior",
+    "times",
+    "spike_window",
+    "map_bin",
+    "map_position",
+    "mean_position",
+    "posterior_entropy",
+)
+
+
+@pytest.fixture
+def windowed_result(env_4bin):
+    from neurospatial.decoding import DecodingResult
+
+    return DecodingResult(
+        posterior=np.array([[0.9, 0.1, 0.0, 0.0], [0.0, 0.2, 0.8, 0.0]]),
+        env=env_4bin,
+        times=np.array([0.5, 1.5]),
+        spike_window=np.array([[0.0, 2.0]]),
+    )
+
+
+@pytest.mark.parametrize("name", _ARRAY_ATTRIBUTES)
+def test_every_result_array_is_read_only(windowed_result, name):
+    """Writing into a derived array would corrupt later exports."""
+    before = windowed_result.to_dataframe()
+    array = getattr(windowed_result, name)
+    assert array.flags.writeable is False
+    with pytest.raises(ValueError, match="read-only"):
+        array[...] = 3
+    pd.testing.assert_frame_equal(windowed_result.to_dataframe(), before)
+
+
+@pytest.mark.parametrize("how", ["pickle", "deepcopy"])
+def test_copied_result_keeps_every_array_read_only(windowed_result, how):
+    """Cached arrays and spike windows stay read-only across copies."""
+    import copy
+    import pickle
+
+    for name in _ARRAY_ATTRIBUTES:
+        getattr(windowed_result, name)  # populate the cached arrays
+    copied = (
+        pickle.loads(pickle.dumps(windowed_result))
+        if how == "pickle"
+        else copy.deepcopy(windowed_result)
+    )
+    for name in _ARRAY_ATTRIBUTES:
+        array = getattr(copied, name)
+        assert array.flags.writeable is False, name
+        np.testing.assert_array_equal(array, getattr(windowed_result, name))
+
+
+@pytest.mark.parametrize(
+    ("row", "detail"),
+    [
+        pytest.param([-7.0, 0.0, 0.0, 0.0], "negative", id="sums-to-minus-seven"),
+        pytest.param([0.5, 0.5, 0.5, 0.5], "sum", id="sums-to-two"),
+        pytest.param([1.2, -0.2, 0.0, 0.0], "negative", id="negative-entry"),
+        pytest.param([np.inf, 0.0, 0.0, 0.0], "Inf", id="infinite-entry"),
+        pytest.param([np.nan, 1.0, 0.0, 0.0], "NaN", id="partly-nan"),
+    ],
+)
+def test_constructor_rejects_invalid_posterior_rows(env_4bin, row, detail):
+    """Every row is a probability mass over bins, or entirely NaN."""
+    from neurospatial.decoding import DecodingResult
+
+    posterior = np.array([[0.25, 0.25, 0.25, 0.25], row])
+    with pytest.raises(ValueError, match=detail) as exc:
+        DecodingResult(posterior=posterior, env=env_4bin)
+    assert "row 1" in str(exc.value)
+    assert "Fix:" in str(exc.value)
+
+
+def test_constructor_accepts_undecodable_rows_and_float32_rounding():
+    """Entirely-NaN rows mark undecodable time bins; float32 sums are inexact."""
+    from neurospatial import Environment
+    from neurospatial.decoding import DecodingResult
+
+    n_bins = 20_000
+    env = Environment.from_grid_mask(
+        np.ones(n_bins, dtype=bool), grid_edges=(np.arange(n_bins + 1.0),)
+    )
+    posterior = np.random.default_rng(0).random((4, n_bins), dtype=np.float32)
+    posterior /= posterior.sum(axis=1, keepdims=True)
+    posterior[2] = np.nan
+    result = DecodingResult(posterior=posterior, env=env)
+    assert result.posterior.dtype == np.float32
+
+
+@pytest.mark.parametrize(
+    ("times", "detail"),
+    [
+        pytest.param([3.0, 2.0, 1.0, 0.0], "increasing", id="decreasing"),
+        pytest.param([0.0, 1.0, 1.0, 2.0], "increasing", id="duplicate"),
+        pytest.param([0.0, np.nan, 2.0, 3.0], "finite", id="nan"),
+    ],
+)
+def test_constructor_rejects_unordered_times(env_4bin, times, detail):
+    from neurospatial.decoding import DecodingResult
+
+    posterior = np.full((4, 4), 0.25)
+    with pytest.raises(ValueError, match=detail) as exc:
+        DecodingResult(posterior=posterior, env=env_4bin, times=np.array(times))
+    assert "Fix:" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "spike_window",
+    [
+        pytest.param(np.array([0.0, 1.0, 2.0]), id="shape-3"),
+        pytest.param(np.array([[2.0, 1.0]]), id="stop-before-start"),
+        pytest.param(np.array([[0.0, np.inf]]), id="infinite"),
+    ],
+)
+def test_constructor_rejects_invalid_spike_window(env_4bin, spike_window):
+    from neurospatial.decoding import DecodingResult
+
+    with pytest.raises(ValueError, match="spike_window"):
+        DecodingResult(
+            posterior=np.full((1, 4), 0.25), env=env_4bin, spike_window=spike_window
+        )
+
+
+def test_every_construction_path_enforces_invariants(env_4bin):
+    """The trusted constructors validate too, so no path skips the checks."""
+    from neurospatial.decoding import DecodingResult
+
+    with pytest.raises(ValueError, match="sum"):
+        DecodingResult._from_owned_posterior(
+            np.full((2, 4), 0.5), env=env_4bin, times=None, spike_window=None
+        )
+    result = DecodingResult(posterior=np.full((2, 4), 0.25), env=env_4bin)
+    with pytest.raises(ValueError, match="increasing"):
+        result._evolve(times=np.array([1.0, 0.0]))
+    with pytest.raises(ValueError, match="spike_window"):
+        result._evolve(spike_window=np.array([0.0, 1.0, 2.0]))
+    windowed = result._evolve(spike_window=(0.0, 2.0))
+    np.testing.assert_array_equal(windowed.spike_window, [[0.0, 2.0]])
+    assert windowed.spike_window.flags.writeable is False
+
+
+def _summary_fields(env, map_bin=(0, 3), **overrides):
+    """Consistent DecodingSummary arguments for ``map_bin`` on ``env``."""
+    map_bin = np.asarray(map_bin)
+    n_time = map_bin.size
+    fields = {
+        "times": np.arange(n_time, dtype=np.float64),
+        "mean_position": np.zeros((n_time, env.n_dims)),
+        "posterior_entropy": np.zeros(n_time),
+        "peak_probability": np.ones(n_time),
+        "env": env,
+        "map_bin": map_bin,
+    }
+    fields.update(overrides)
+    return fields
+
+
+class TestDecodingSummaryInvariants:
+    def test_map_position_is_the_map_bin_center(self, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        summary = DecodingSummary(**_summary_fields(env_4bin))
+        np.testing.assert_array_equal(
+            summary.map_position, env_4bin.bin_centers[[0, 3]]
+        )
+        assert summary.map_position.flags.writeable is False
+        with pytest.raises(TypeError, match="map_position"):
+            DecodingSummary(**_summary_fields(env_4bin), map_position=np.zeros((2, 1)))
+
+    @pytest.mark.parametrize(
+        ("map_bin", "detail"),
+        [
+            pytest.param([999, -4], "map_bin", id="out-of-range"),
+            pytest.param([0.0, 1.0], "integer", id="float"),
+        ],
+    )
+    def test_rejects_invalid_map_bin(self, env_4bin, map_bin, detail):
+        from neurospatial.decoding import DecodingSummary
+
+        with pytest.raises(ValueError, match=detail) as exc:
+            DecodingSummary(**_summary_fields(env_4bin, map_bin=map_bin))
+        assert "Fix:" in str(exc.value)
+
+    def test_rejects_probability_outside_unit_interval(self, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        with pytest.raises(ValueError, match="peak_probability") as exc:
+            DecodingSummary(
+                **_summary_fields(env_4bin, peak_probability=np.array([5.0, -1.0]))
+            )
+        assert "Fix:" in str(exc.value)
+
+    def test_rejects_unordered_times(self, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        with pytest.raises(ValueError, match="increasing"):
+            DecodingSummary(**_summary_fields(env_4bin, times=np.array([1.0, 0.0])))
+
+    def test_accepts_lists(self, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        summary = DecodingSummary(
+            times=[0.0, 1.0],
+            mean_position=[[0.5], [3.5]],
+            posterior_entropy=[0.0, 0.0],
+            peak_probability=[1.0, 1.0],
+            env=env_4bin,
+            map_bin=[0, 3],
+            spike_window=(0.0, 2.0),
+        )
+        assert summary.map_bin.dtype == np.int64
+        assert summary.posterior_entropy.dtype == np.float64
+        np.testing.assert_array_equal(summary.spike_window, [[0.0, 2.0]])
+        assert summary.summary()["mean_peak_probability"] == 1.0
+        assert "peak_probability" in summary.to_dataframe().columns
+
+    def test_owned_construction_validates_without_copying(self, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        fields = _summary_fields(env_4bin, spike_window=None)
+        summary = DecodingSummary._from_owned(**fields)
+        assert summary.mean_position is fields["mean_position"]
+        assert summary.mean_position.flags.writeable is False
+        assert not np.shares_memory(summary.times, fields["times"])
+        with pytest.raises(ValueError, match="map_bin"):
+            DecodingSummary._from_owned(
+                **_summary_fields(env_4bin, map_bin=[0, 9], spike_window=None)
+            )
+
+
+class TestUndecodableRows:
+    """An all-NaN posterior row has no MAP bin and no position."""
+
+    @pytest.fixture
+    def result(self, env_4bin):
+        from neurospatial.decoding import DecodingResult
+
+        posterior = np.array([[np.nan] * 4, [0.0, 0.0, 1.0, 0.0]])
+        return DecodingResult(
+            posterior=posterior, env=env_4bin, times=np.array([0, 1.0])
+        )
+
+    def test_map_bin_uses_the_outside_sentinel(self, result, env_4bin):
+        outside = env_4bin.bin_at(np.array([[100.0]]))[0]
+        assert outside == -1
+        np.testing.assert_array_equal(result.map_bin, [outside, 2])
+
+    def test_positions_and_entropy_are_nan(self, result, env_4bin):
+        np.testing.assert_array_equal(result.map_position[0], [np.nan])
+        np.testing.assert_array_equal(result.map_position[1], env_4bin.bin_centers[2])
+        np.testing.assert_array_equal(result.mean_position[0], [np.nan])
+        assert np.isnan(result.posterior_entropy[0])
+        assert result.posterior_entropy[1] == 0.0
+        df = result.to_dataframe()
+        assert df["map_bin"].tolist() == [-1, 2]
+        assert np.isnan(df.loc[0, "map_x"])
+        assert np.isnan(df.loc[0, "mean_x"])
+
+    def test_error_against_is_nan(self, result, env_4bin):
+        truth = env_4bin.bin_centers[[1, 2]]
+        errors = result.error_against(np.array([0.0, 1.0]), truth)
+        assert np.isnan(errors[0])
+        assert errors[1] == 0.0
+
+    def test_summary_metrics_average_the_decoded_rows(self, result, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        s = result.summary()
+        assert s["n_undecodable"] == 1
+        assert s["mean_entropy"] == 0.0
+        streamed = DecodingSummary(
+            **_summary_fields(
+                env_4bin,
+                map_bin=[-1, 2],
+                peak_probability=np.array([np.nan, 1.0]),
+                posterior_entropy=np.array([np.nan, 0.0]),
+            )
+        ).summary()
+        assert streamed["n_undecodable"] == 1
+        assert streamed["mean_entropy"] == 0.0
+        assert streamed["mean_peak_probability"] == 1.0
+
+    def test_summary_without_decoded_rows_is_nan(self, env_4bin):
+        from neurospatial.decoding import DecodingResult
+
+        s = DecodingResult(posterior=np.full((1, 4), np.nan), env=env_4bin).summary()
+        assert s["n_undecodable"] == 1
+        assert np.isnan(s["mean_entropy"])
+
+    def test_summary_accepts_sentinel_with_nan_peak(self, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        summary = DecodingSummary(
+            **_summary_fields(
+                env_4bin,
+                map_bin=[-1, 2],
+                peak_probability=np.array([np.nan, 1.0]),
+                posterior_entropy=np.array([np.nan, 0.0]),
+            )
+        )
+        np.testing.assert_array_equal(summary.map_position[0], [np.nan])
+        np.testing.assert_array_equal(summary.map_position[1], env_4bin.bin_centers[2])
+
+    @pytest.mark.parametrize(
+        ("map_bin", "peak"),
+        [
+            pytest.param([-1, 2], [1.0, 1.0], id="sentinel-with-peak"),
+            pytest.param([0, 2], [np.nan, 1.0], id="bin-without-peak"),
+        ],
+    )
+    def test_summary_rejects_inconsistent_sentinel(self, env_4bin, map_bin, peak):
+        from neurospatial.decoding import DecodingSummary
+
+        with pytest.raises(ValueError, match="peak_probability value") as exc:
+            DecodingSummary(
+                **_summary_fields(
+                    env_4bin, map_bin=map_bin, peak_probability=np.array(peak)
+                )
+            )
+        assert "map_bin value" not in str(exc.value)
+
+
+def test_posterior_entropy_is_float64_like_the_summary(env_4bin):
+    """A float32 decode reports float64 entropy on both decode paths."""
+    from neurospatial.decoding import decode_position, decode_position_summary
+
+    rng = np.random.default_rng(0)
+    counts = rng.poisson(1.0, size=(20, 3)).astype(np.int64)
+    models = rng.uniform(1.0, 10.0, size=(3, env_4bin.n_bins))
+    full = decode_position(env_4bin, counts, models, dt=0.1, dtype=np.float32)
+    summary = decode_position_summary(
+        env_4bin, counts, models, dt=0.1, dtype=np.float32
+    )
+    assert full.posterior.dtype == np.float32
+    assert full.posterior_entropy.dtype == np.float64
+    np.testing.assert_allclose(
+        full.posterior_entropy, summary.posterior_entropy, rtol=0, atol=1e-12
+    )
+
+
+def test_delta_posterior_entropy_is_positive_zero(env_4bin):
+    from neurospatial.decoding import DecodingResult
+
+    result = DecodingResult(posterior=np.eye(4), env=env_4bin)
+    assert not np.signbit(result.posterior_entropy).any()
+    np.testing.assert_array_equal(result.posterior_entropy, 0.0)

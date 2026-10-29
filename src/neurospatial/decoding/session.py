@@ -3,8 +3,8 @@
 Provides :func:`decode_session`, a convenience wrapper that glues together
 :func:`~neurospatial.encoding.compute_spatial_rates`,
 :func:`~neurospatial.decoding.bin_spikes_in_time`, and
-:func:`~neurospatial.decoding.decode_position` so a beginner can decode
-position from spikes in ≤10 lines.
+:func:`~neurospatial.decoding.decode_position` for the standard
+encode-then-decode workflow.
 """
 
 from __future__ import annotations
@@ -20,6 +20,8 @@ from neurospatial._intervals import DEFAULT_MAX_GAP, resolve_time_windows
 from neurospatial._observation import validate_break_before
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._time_bins import _count_spikes_in_time_bins
+from neurospatial.decoding._time_bins import validate_dt
+from neurospatial.encoding._spatial_counts import _clock_ratio_hint
 
 # Warn when more than this fraction of spikes fall outside the decode window.
 # Always < 1.0, so the 100%-dropped case (frac == 1.0) always warns.
@@ -47,14 +49,10 @@ def _warn_if_spikes_out_of_window(
     """Emit one UserWarning if most spikes fall outside the decode window.
 
     Aggregates across all spike trains. Warns (does not raise) when the
-    dropped fraction exceeds ``_DROP_WARN_THRESHOLD`` (which also covers the
-    all-dropped case, since ``1.0 > 0.5``). A genuinely empty session is
-    legitimate, so an empty input never warns.
-
-    The message mirrors the wording of the encoding-path warning
-    (``_emit_time_window_warning`` in ``neurospatial.encoding._spatial_counts``):
-    it names the dropped count and total, the percentage, the decode time
-    window, the spike range, the units hypothesis, and the escape hatch.
+    dropped fraction exceeds ``_DROP_WARN_THRESHOLD``. A genuinely empty
+    session is legitimate, so an empty input never warns. When the spike
+    times span about 1000 times (or 1/1000 of) the window, the message names
+    the likely millisecond/second mix-up.
 
     Parameters
     ----------
@@ -68,33 +66,61 @@ def _warn_if_spikes_out_of_window(
         return
 
     n_out = sum(int(np.count_nonzero((t < t_start) | (t > t_stop))) for t in trains)
-    if n_out == 0:
-        return
-
     frac = n_out / total
     if frac <= _DROP_WARN_THRESHOLD:
         return
 
-    nonempty = [t for t in trains if t.size > 0]
-    if nonempty:
-        all_spikes = np.concatenate(nonempty)
-        range_part = (
-            f"spike_times.min()={all_spikes.min():.6g} "
-            f"spike_times.max()={all_spikes.max():.6g}. "
-        )
-    else:
-        range_part = ""
-
+    all_spikes = np.concatenate([t for t in trains if t.size > 0])
     warnings.warn(
         f"{n_out}/{total} spike_times "
         f"({100 * frac:.0f}%) fell outside the decode time window "
         f"[{t_start:.6g}, {t_stop:.6g}]; "
-        f"{range_part}"
+        f"spike_times.min()={all_spikes.min():.6g} "
+        f"spike_times.max()={all_spikes.max():.6g}. "
+        f"{_clock_ratio_hint(all_spikes, t_start, t_stop)}"
         f"Check that spike_times and times share units (both seconds). "
         f"Dropped spikes do not contribute to the posterior. "
         f"Set warn_on_drop=False to suppress this warning.",
         UserWarning,
-        stacklevel=2,
+        stacklevel=_external_stacklevel(),
+    )
+
+
+def _refuse_spikes_on_another_clock(
+    trains: list[NDArray[np.float64]],
+    bin_left: NDArray[np.float64],
+    bin_right: NDArray[np.float64],
+    *,
+    context: str,
+) -> None:
+    """Raise when every spike lies before, or every spike after, the decode bins.
+
+    Spike trains that straddle the bins (a silent window inside a longer
+    recording) are legitimate and pass.
+    """
+    nonempty = [t for t in trains if t.size > 0]
+    if not nonempty:
+        return
+    first = min(float(t.min()) for t in nonempty)
+    last = max(float(t.max()) for t in nonempty)
+    start, stop = float(bin_left[0]), float(bin_right[-1])
+    if last >= start and first < stop:
+        return
+    side = "before" if last < start else "after"
+    total = sum(int(t.size) for t in nonempty)
+    hint = _clock_ratio_hint(np.array([first, last]), start, stop)
+    raise ValueError(
+        _format_error(
+            f"{context}: all {total} spike times lie {side} the decode time "
+            f"bins [{start:.6g}, {stop:.6g}) s (spike_times range "
+            f"{first:.6g} to {last:.6g}). {hint}",
+            why="spike_times and times are on different clocks or in different "
+            "units, so every decode bin would be empty and the posterior "
+            "would only repeat the prior.",
+            fix="express spike_times in seconds on the clock of times, for "
+            "example spike_times / 1000 for milliseconds, or subtract the "
+            "offset between the two clocks",
+        )
     )
 
 
@@ -167,9 +193,15 @@ def decode_session(
     Glues together :func:`~neurospatial.encoding.compute_spatial_rates`,
     :func:`~neurospatial.decoding.bin_spikes_in_time`, and
     :func:`~neurospatial.decoding.decode_position` into a single entry point
-    for the standard encode-then-decode workflow. Beginner-friendly: requires
-    only the four positional arguments and a ``dt`` keyword to get a full
+    for the standard encode-then-decode workflow. It requires only the four
+    positional arguments to return a full
     :class:`~neurospatial.decoding.DecodingResult`.
+
+    The rate maps are fitted on the same spikes and positions that are then
+    decoded, so the result is an in-sample decode: its error against the
+    tracked position is optimistic. To measure decoding accuracy, fit on
+    training epochs and predict on separate test epochs with
+    ``BayesianDecoder(env).fit(..., epochs=train).predict(..., epochs=test)``.
 
     Parameters
     ----------
@@ -223,7 +255,7 @@ def decode_session(
         encoding step so the decode golden path can speed-filter encoding. When
         set, low-speed periods are excluded from BOTH the spike numerator and
         the occupancy denominator of the encoding model via one shared gate.
-        When ``None`` (default) no speed filtering is applied (unchanged).
+        When ``None`` (default) no speed filtering is applied.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -245,8 +277,8 @@ def decode_session(
         counted.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
-        excluded from occupancy (and their spikes are not counted). ``None``
-        (default) assumes spikes were recorded whenever position was; this is an
+        excluded from the rate maps' occupancy and from decoding, and their
+        spikes are not counted. ``None`` (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
         started before, or continued after, the spike recording. The result
         records the window applied (``result.spike_window``) and whether it was
@@ -255,32 +287,22 @@ def decode_session(
         If ``True`` (the default), emit a single ``UserWarning`` when a large
         fraction (>50%, which includes the all-dropped case) of spikes fall
         outside the decode time window ``[times.min(), times.max()]`` and are
-        therefore silently excluded from the count matrix.  This guards the
-        common units footgun — ``spike_times`` in milliseconds while ``times``
-        is in seconds — which would otherwise produce an all-zero count matrix
-        and a plausible-but-wrong posterior.  The warning fires exactly once
-        per call, from the encoder. This also covers spikes mapped outside
-        the environment. It also warns when more than 10% of the observed
-        time falls in run remainders shorter than ``dt``, which are not
-        decoded. Set ``False`` to suppress the coverage diagnostics.
+        therefore excluded from the count matrix, for example
+        ``spike_times`` in milliseconds while ``times`` is in seconds. The
+        warning fires once per call, from the encoder, and also covers spikes
+        mapped outside the environment. It also warns when more than 10% of
+        the observed time falls in run remainders shorter than ``dt``, which
+        are not decoded. Set ``False`` to suppress these diagnostics. When
+        every spike lies before, or every spike after, the decode bins, the
+        call raises whatever ``warn_on_drop`` is.
     dtype : {np.float32, np.float64}, default=np.float64
-        "Decode in this dtype." Controls BOTH the encoding-model working set
-        AND the posterior dtype end-to-end. ``np.float32`` halves the
-        encoding-model + posterior working set on the beginner golden path;
-        values match the float64 default within float32 tolerance (the rate
-        computation itself is done in float64 and only the stored result is
-        cast, per :func:`~neurospatial.encoding.compute_spatial_rates`). Any
-        other dtype raises ``ValueError``. Default ``np.float64`` leaves every
-        existing caller byte-for-byte unchanged. Note: do not also pass
-        ``dtype`` via ``decode_kwargs`` — this explicit parameter is the single
-        source forwarded to :func:`~neurospatial.decoding.decode_position`, and
-        a duplicate would raise ``TypeError``.
+        Dtype of the stored rate maps and posterior; ``np.float32`` halves
+        their memory. Rates are computed in float64 and then cast. Any other
+        dtype raises ``ValueError``.
     **decode_kwargs
-        Additional keyword arguments forwarded verbatim to
-        :func:`~neurospatial.decoding.decode_position`.  Supported kwargs
-        include ``prior`` and ``validate``.  (``method`` now names the smoothing
-        estimator above, not a decode kwarg; pass ``dtype`` via the explicit
-        ``dtype`` parameter, not here.)
+        Forwarded to :func:`~neurospatial.decoding.decode_position`: ``prior``
+        and ``validate``. ``method`` above names the rate estimator, and
+        ``dtype`` is the explicit parameter above.
 
     Returns
     -------
@@ -291,14 +313,16 @@ def decode_session(
         - ``.posterior``, shape ``(n_time_bins, n_bins)`` — full posterior
         - ``.map_position``, shape ``(n_time_bins, n_dims)`` — MAP estimate
         - ``.times``, shape ``(n_time_bins,)`` — decoding bin centers
-        - ``.posterior_entropy`` — per-bin uncertainty in bits
+        - ``.posterior_entropy``, shape ``(n_time_bins,)`` — posterior
+          entropy in bits per time bin
 
     Raises
     ------
     ValueError
-        Propagated from the underlying helpers if inputs are invalid (e.g.
-        ``dt`` is not finite/positive, ``t_stop <= t_start``, or the
-        encoding model has no finite bins).
+        If ``dt`` is not finite and positive, if no decode time bin fits in
+        the observed runs, if every spike lies before or after the decode
+        bins (spike_times and times on different clocks or in different
+        units), or if the encoding model has no supported bin.
 
     Notes
     -----
@@ -308,10 +332,10 @@ def decode_session(
     counted. ``result.times`` may therefore be non-contiguous. A gap is the
     time between consecutive tracked samples: a NaN position is missing
     tracking, bridged like a deleted row, so a tracking loss longer than
-    ``max_gap`` is not decoded, as without ``spike_window`` spikes are assumed
-    recorded only while position was. To decode spans without tracking, fit
-    a :class:`~neurospatial.decoding.BayesianDecoder` and predict with
-    ``times=np.arange(t0, t1, dt)``.
+    ``max_gap`` is not decoded. Without ``spike_window``, spikes are assumed
+    recorded only while position was. To decode ``[t0, t1)`` without
+    tracking, fit a :class:`~neurospatial.decoding.BayesianDecoder` and
+    predict with ``times=np.arange(t0, t1 + dt / 2, dt)``.
 
     **Orientation contract**:
     :func:`~neurospatial.decoding.bin_spikes_in_time` returns a count
@@ -320,10 +344,14 @@ def decode_session(
     :func:`~neurospatial.decoding.decode_position` expects for its
     ``spike_counts`` argument.  No transposition is performed.
 
-    **Training spatial support**:
-    Unoccupied bins, bins below ``min_occupancy`` and non-finite model bins
-    are excluded from the posterior, even during silent decoding intervals.
-    An explicit ``prior`` is intersected with this support. Internal finite
+    **Prior and training support**:
+    The default prior is uniform over space restricted to the training
+    support: bin mass proportional to ``env.bin_sizes``, zero in unoccupied
+    bins, bins below ``min_occupancy`` and non-finite model bins, also during
+    silent decoding intervals. An explicit ``prior`` is intersected with this
+    support. Choose ``bandwidth`` smaller than the place fields and ``dt``
+    long enough that most bins hold a few spikes (20-50 ms for tens of place
+    cells during running). Internal finite
     placeholders in excluded bins do not represent measured zero activity.
     For precomputed maps use ``BayesianDecoder.from_rates(rates)``; an explicit
     array call must carry ``prior=rates.spatial_support * env.bin_sizes``.
@@ -392,12 +420,12 @@ def decode_session(
     ... )
     """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    trains, firing_rates, _, _, rates_result = _build_encoding_model(
+    validate_dt(dt)
+    trains, firing_rates, rates_result = _fit_encoding_model(
         env,
         spike_times,
         times,
         positions,
-        dt=dt,
         bandwidth=bandwidth,
         method=method,
         min_occupancy=min_occupancy,
@@ -494,7 +522,6 @@ def _prepare_session_decode(
     ``max_gap`` is not decoded.
     """
     from neurospatial._spikes import _as_spike_trains_with_ids
-    from neurospatial.decoding._time_bins import validate_dt
     from neurospatial.encoding import _validate_times
 
     # Validate dt up front, BEFORE the grid math below builds the decode time
@@ -555,6 +582,8 @@ def _prepare_session_decode(
     )
     runs = recording_support.runs
     bin_left, bin_right = _time_bins_in_windows(runs, dt)
+    if bin_left.size:
+        _refuse_spikes_on_another_clock(trains, bin_left, bin_right, context=context)
     if warn_partial_bins:
         _warn_if_bins_drop_observed_time(runs, bin_left, bin_right, dt, max_gap)
     if bin_left.size == 0:
@@ -675,77 +704,6 @@ def _fit_encoding_model(
     return trains, firing_rates, rates_result
 
 
-def _build_encoding_model(
-    env: Environment,
-    spike_times: Any,
-    times: ArrayLike,
-    positions: NDArray[np.float64],
-    *,
-    dt: float,
-    bandwidth: float | None,
-    method: str,
-    min_occupancy: float | None,
-    penalty: float | None = None,
-    rank: int | None = None,
-    speed: NDArray[np.float64] | None = None,
-    min_speed: float | None = None,
-    max_gap: float | None = DEFAULT_MAX_GAP,
-    epochs: NDArray[np.float64] | None = None,
-    break_before: ArrayLike | None = None,
-    spike_window: NDArray[np.float64] | None = None,
-    warn_on_drop: bool,
-    dtype: type[np.float32] | type[np.float64] = np.float64,
-    context: str = "decode_session",
-) -> tuple[
-    list[NDArray[np.float64]],
-    NDArray[np.float64],
-    NDArray[np.float64],
-    NDArray[np.float64],
-    SpatialRatesResult,
-]:
-    """Fit tracking data, then tile decode bins for a functional session."""
-    from neurospatial.decoding._time_bins import validate_dt
-
-    dt = validate_dt(dt)
-    trains, firing_rates, rates_result = _fit_encoding_model(
-        env,
-        spike_times,
-        times,
-        positions,
-        bandwidth=bandwidth,
-        method=method,
-        min_occupancy=min_occupancy,
-        penalty=penalty,
-        rank=rank,
-        speed=speed,
-        min_speed=min_speed,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=break_before,
-        spike_window=spike_window,
-        warn_on_drop=warn_on_drop,
-        dtype=dtype,
-        context=context,
-    )
-    prepared = _prepare_session_decode(
-        trains,
-        times,
-        firing_rates,
-        dt=dt,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=break_before,
-        spike_window=spike_window,
-        sample_valid=_tracked(times, positions),
-        warn_spikes_outside=False,
-        # The decode step tiles the same bins and owns this warning.
-        warn_partial_bins=False,
-        dtype=dtype,
-        context=context,
-    )
-    return (*prepared, rates_result)
-
-
 def _decode_with_models(
     env: Environment,
     spike_times: Any,
@@ -839,17 +797,14 @@ def decode_session_summary(
     this for long sessions where the dense count matrix and/or posterior would
     not fit in memory.
 
-    The encoding model (firing rates, shape ``(n_neurons, n_bins)``) is built
-    once over the whole session (it is small). Then time is processed in blocks
-    of ``time_chunk`` bins: each block bins ONLY that block's spikes (a
-    slice of the observed-run time grid) and decodes + reduces it via the
-    SAME shared inner-loop helper as
-    :func:`~neurospatial.decoding.decode_position_summary`. Peak memory is
-    therefore ``O(time_chunk * max(n_neurons, n_bins))`` plus the
-    ``(n_neurons, n_bins)`` encoding model, **independent of session length**.
-    The result is identical to running
-    :func:`~neurospatial.decoding.decode_position_summary` on the fully
-    materialized count matrix.
+    The rate maps are fitted once over the whole session. Time is then
+    processed in blocks of ``time_chunk`` bins: each block counts only its own
+    spikes and is decoded and reduced like
+    :func:`~neurospatial.decoding.decode_position_summary` would on the full
+    count matrix. The transient memory of a block is
+    ``O(time_chunk * max(n_neurons, n_bins))``; the stored per-time reductions
+    and the decode bin edges grow with session length. Like
+    :func:`decode_session`, this is an in-sample decode of the training data.
 
     Parameters
     ----------
@@ -858,11 +813,7 @@ min_occupancy, penalty, rank, speed, min_speed, max_gap, \
 warn_on_drop, dtype
         Same as :func:`decode_session` -- including ``method="glm"`` and its
         ``penalty`` / ``rank`` knobs, and the nullable ``bandwidth`` /
-        ``min_occupancy`` (``max_gap`` gates encoding and decoding). ``dtype``
-        ("decode in this dtype") controls BOTH the encoding-model working set
-        AND the streamed per-block posterior: ``np.float32`` halves both;
-        default ``np.float64`` is byte-for-byte unchanged. Pass it via this
-        explicit parameter, NOT via ``decode_kwargs``.
+        ``min_occupancy`` (``max_gap`` gates encoding and decoding).
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
@@ -877,20 +828,16 @@ warn_on_drop, dtype
         counted.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
-        excluded from occupancy (and their spikes are not counted). ``None``
-        (default) assumes spikes were recorded whenever position was; this is an
+        excluded from the rate maps' occupancy and from decoding, and their
+        spikes are not counted. ``None`` (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
         started before, or continued after, the spike recording. The result
         records the window applied (``result.spike_window``) and whether it was
         assumed (``result.spike_window_assumed``).
     **decode_kwargs
-        Forwarded to the per-block decode (same semantics as
-        :func:`~neurospatial.decoding.decode_position_summary`): ``prior``,
-        ``validate``, and ``time_chunk`` (the streaming
-        block size; a positive integer, defaults to 1024 — ``None`` is rejected
-        because it would materialize the full posterior; use
-        :func:`decode_session` for the full posterior). ``dtype`` is the
-        explicit parameter above, not a ``decode_kwargs`` entry. Unknown kwargs
+        ``prior``, ``validate`` and ``time_chunk`` (a positive block size,
+        default 1024), with the meaning they have in
+        :func:`~neurospatial.decoding.decode_position_summary`. Unknown kwargs
         raise ``TypeError``.
 
     Returns
@@ -915,10 +862,10 @@ warn_on_drop, dtype
     counted. ``result.times`` may therefore be non-contiguous. A gap is the
     time between consecutive tracked samples: a NaN position is missing
     tracking, bridged like a deleted row, so a tracking loss longer than
-    ``max_gap`` is not decoded, as without ``spike_window`` spikes are assumed
-    recorded only while position was. To decode spans without tracking, fit
-    a :class:`~neurospatial.decoding.BayesianDecoder` and predict with
-    ``times=np.arange(t0, t1, dt)``.
+    ``max_gap`` is not decoded. Without ``spike_window``, spikes are assumed
+    recorded only while position was. To decode ``[t0, t1)`` without
+    tracking, fit a :class:`~neurospatial.decoding.BayesianDecoder` and
+    predict with ``times=np.arange(t0, t1 + dt / 2, dt)``.
 
     See Also
     --------
@@ -952,12 +899,12 @@ warn_on_drop, dtype
     _validate_time_chunk(
         decode_kwargs.get("time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK), allow_none=False
     )
-    trains, firing_rates, _, _, rates_result = _build_encoding_model(
+    validate_dt(dt)
+    trains, firing_rates, rates_result = _fit_encoding_model(
         env,
         spike_times,
         times,
         positions,
-        dt=dt,
         bandwidth=bandwidth,
         method=method,
         min_occupancy=min_occupancy,
@@ -1032,9 +979,7 @@ def _decode_with_models_summary(
             f"{sorted(decode_kwargs)}. Supported decode kwargs are prior, "
             f"validate, time_chunk (dtype is an explicit parameter)."
         )
-    # The Poisson observation model is the only supported likelihood. It is fixed
-    # here rather than read from decode_kwargs because ``method`` now names the
-    # smoothing estimator (the explicit parameter forwarded to the encoder).
+    # ``method`` names the rate estimator; the likelihood is always Poisson.
     likelihood_method: Literal["poisson"] = "poisson"
 
     if time_chunk is None:
@@ -1068,75 +1013,51 @@ def _decode_with_models_summary(
     n_time = bin_left.size
     bin_centers_time = bin_left + dt / 2.0
 
-    # Validate the encoding model + resolve the non-finite mask ONCE (the same
-    # front-half decode_position_summary runs). spike_counts is faked with a
-    # zero-row block here only to satisfy the helper's interface; its actual
-    # per-block counts come from the streamed binning below. We pass a
-    # (1, n_neurons) row so the neuron-count agreement check still fires.
-    #
-    # NOTE: the real per-block counts produced by the streamed binning below are
-    # intentionally NOT routed through _validate_inputs. They come straight from
-    # _count_spikes_in_time_bins on float spike times, so they are non-negative int64 by
-    # construction (cannot be fractional, negative, or NaN) — the value checks
-    # _validate_inputs performs are already guaranteed, so the exemption is
-    # deliberate, not an oversight.
-    n_neurons = firing_rates.shape[0]
-    _dummy_counts = np.zeros((1, n_neurons), dtype=np.int64)
-    _checked_counts, firing_rates, nonfinite_mask = _prepare_decode_inputs(
+    # Validate the encoding model once against a single row of counts, so the
+    # neuron-count check runs. The streamed per-block counts come from
+    # _count_spikes_in_time_bins and are non-negative integers by construction.
+    _, firing_rates, prior = _prepare_decode_inputs(
         env,
-        _dummy_counts,
+        np.zeros((1, firing_rates.shape[0]), dtype=np.int64),
         firing_rates,
         prior=prior,
         method=likelihood_method,
         validate=validate,
-        context="decode_session_summary",
+        context=context,
+    )
+    prior_is_time_varying = prior is not None and np.ndim(prior) == 2
+
+    from neurospatial.decoding.estimates import (
+        _finish_posterior_mean,
+        _posterior_mean_basis,
     )
 
-    # Validate prior shape ONCE, up front, against the GLOBAL (n_time, n_bins)
-    # grid — mirrors decode_position_summary so an over-long 2-D prior raises
-    # here instead of being silently truncated by the block loop (R2).
-    n_bins = firing_rates.shape[1]
-    prior_is_time_varying = False
-    if prior is not None:
-        prior_arr = np.asarray(prior)
-        if prior_arr.ndim == 1:
-            if prior_arr.shape[0] != n_bins:
-                raise ValueError(
-                    f"1D prior must have shape ({n_bins},) to match the number "
-                    f"of position bins, got shape {prior_arr.shape}"
-                )
-        elif prior_arr.ndim == 2:
-            if prior_arr.shape != (n_time, n_bins):
-                raise ValueError(
-                    f"2D prior must have shape {(n_time, n_bins)} to match the "
-                    f"({n_time} time bins, {n_bins} position bins) being "
-                    f"decoded, got shape {prior_arr.shape}"
-                )
-            prior_is_time_varying = True
-        else:
-            raise ValueError(
-                f"prior must be 1D (stationary) or 2D (time-varying), "
-                f"got {prior_arr.ndim}D with shape {prior_arr.shape}"
-            )
-
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
+    mean_basis = _posterior_mean_basis(env)
     measures = relative_bin_measures(env, context=context)
     n_dims = bin_centers.shape[1]
 
     map_bin = np.empty(n_time, dtype=np.int64)
-    map_position = np.empty((n_time, n_dims), dtype=np.float64)
     mean_position = np.empty((n_time, n_dims), dtype=np.float64)
     posterior_entropy = np.empty(n_time, dtype=np.float64)
-    peak_prob = np.empty(n_time, dtype=np.float64)
+    peak_probability = np.empty(n_time, dtype=np.float64)
 
     # time_chunk is guaranteed a positive int by the up-front guard, so the
     # streamed-binning loop and the posterior reduction below both stay bounded
     # — the full (n_time, n_bins) posterior is never materialized in one shot.
+    # Sorted trains let each block take its spikes by binary search instead
+    # of a full-length mask per block.
+    trains = [
+        t if t.size < 2 or bool(np.all(t[1:] >= t[:-1])) else np.sort(t) for t in trains
+    ]
     block = time_chunk
     for start in range(0, n_time, block):
         stop = min(start + block, n_time)
         lo, hi = bin_left[start], bin_right[stop - 1]
-        block_trains = [s[(s >= lo) & (s < hi)] for s in trains]
+        block_trains = [
+            s[np.searchsorted(s, lo, side="left") : np.searchsorted(s, hi, side="left")]
+            for s in trains
+        ]
         counts_block = _count_spikes_in_time_bins(
             block_trains, bin_left[start:stop], bin_right[start:stop]
         )
@@ -1147,7 +1068,6 @@ def _decode_with_models_summary(
 
         (
             block_map_bin,
-            block_map_position,
             block_mean,
             block_entropy,
             block_peak,
@@ -1157,24 +1077,23 @@ def _decode_with_models_summary(
             dt,
             bin_centers,
             prior_block=block_prior,
-            nonfinite_mask=nonfinite_mask,
             validate=validate,
             dtype=dtype,
+            mean_basis=mean_basis,
             measures=measures,
         )
         map_bin[start:stop] = block_map_bin
-        map_position[start:stop] = block_map_position
         mean_position[start:stop] = block_mean
         posterior_entropy[start:stop] = block_entropy
-        peak_prob[start:stop] = block_peak
+        peak_probability[start:stop] = block_peak
         # counts_block / block posterior go out of scope before the next block.
 
-    return DecodingSummary(
+    mean_position = _finish_posterior_mean(env, mean_position)
+    return DecodingSummary._from_owned(
         times=bin_centers_time,
-        map_position=map_position,
         mean_position=mean_position,
         posterior_entropy=posterior_entropy,
-        peak_prob=peak_prob,
+        peak_probability=peak_probability,
         map_bin=map_bin,
         env=env,
         spike_window=resolved_spike_window,

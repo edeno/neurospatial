@@ -33,7 +33,7 @@ def validate_dt(dt: float) -> float:
 
     Shared guard for every decoding entry point that bins or divides by ``dt``
     (e.g. :func:`bin_spikes_in_time`, :func:`decode_position`, and
-    ``decode_session`` / ``decode_session_summary`` via ``_build_encoding_model``).
+    ``decode_session`` / ``decode_session_summary``).
     It rejects non-numeric inputs (including a numeric *string* like ``"0.1"``,
     which would otherwise leak a raw ``TypeError`` from ``"0.1" <= 0`` or be
     silently coerced) and ``bool`` (``dt=True`` would otherwise pass the numeric
@@ -131,10 +131,10 @@ def bin_spikes_in_time(
     ------
     ValueError
         If ``dt`` is not finite or not strictly positive, if an explicitly
-        passed ``t_stop`` is not strictly greater than ``t_start``, if the
+        passed ``t_stop`` is not strictly greater than ``t_start``, if
+        ``t_start`` is after the last spike and ``t_stop`` is omitted, if the
         windows contain no whole bin, if ``epochs`` is combined with explicit
-        bounds, or if
-        ``orient`` is not one of the allowed values.
+        bounds, or if ``orient`` is not one of the allowed values.
 
     Notes
     -----
@@ -191,12 +191,36 @@ def bin_spikes_in_time(
         windows = as_intervals(epochs, name="epochs")
         assert windows is not None
     else:
+        start_from_spikes = t_start is None
         if t_start is None:
             t_start = min((s.min() for s in trains if s.size), default=0.0)
         if t_stop is None:
-            t_stop = max((s.max() for s in trains if s.size), default=t_start) + dt
+            last = max((s.max() for s in trains if s.size), default=None)
+            if last is not None and last + dt <= t_start:
+                raise ValueError(
+                    _format_error(
+                        f"bin_spikes_in_time: t_start ({t_start}) is after the "
+                        f"last spike ({last}), so the default t_stop (last "
+                        "spike + dt) leaves no time to bin.",
+                        why="without t_stop the grid ends one bin after the "
+                        "last spike.",
+                        fix="pass t_stop for the end of the period to bin, or "
+                        "a t_start before the spikes",
+                    )
+                )
+            t_stop = (t_start if last is None else last) + dt
         elif t_stop <= t_start:
-            raise ValueError(f"t_stop ({t_stop}) must be > t_start ({t_start}).")
+            source = " (the earliest spike time)" if start_from_spikes else ""
+            raise ValueError(
+                _format_error(
+                    f"bin_spikes_in_time: t_stop ({t_stop}) must be > t_start "
+                    f"({t_start}{source}).",
+                    why="the time grid runs from t_start to t_stop.",
+                    fix="pass t_start explicitly, or a t_stop after it"
+                    if start_from_spikes
+                    else "pass t_stop > t_start",
+                )
+            )
         if not (np.isfinite(t_start) and np.isfinite(t_stop)):
             raise ValueError(
                 _format_error(

@@ -34,7 +34,7 @@ def test_continuous_image_columns_center_on_timestamps(plot_env, times):
     assert extent[1] - extent[0] == pytest.approx(len(times) * width)
     assert extent[2:] == [-0.5, plot_env.n_bins - 0.5]
     np.testing.assert_array_equal(ax.lines[0].get_xdata(), times)
-    np.testing.assert_array_equal(ax.lines[0].get_ydata(), result.map_estimate)
+    np.testing.assert_array_equal(ax.lines[0].get_ydata(), result.map_bin)
     np.testing.assert_array_equal(ax.images[0].get_array().T, posterior)
     plt.close(ax.figure)
 

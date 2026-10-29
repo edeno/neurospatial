@@ -10,24 +10,24 @@ import pytest
 
 
 class TestMapEstimate:
-    """Test map_estimate function."""
+    """Test map_bin function."""
 
-    def test_map_estimate_shape(self, small_2d_env):
-        """map_estimate should return (n_time_bins,) array of bin indices."""
-        from neurospatial.decoding.estimates import posterior_mode
+    def test_map_bin_shape(self, small_2d_env):
+        """map_bin should return (n_time_bins,) array of bin indices."""
+        from neurospatial.decoding.estimates import map_bin
 
         n_time_bins = 10
         n_bins = small_2d_env.n_bins
         posterior = np.ones((n_time_bins, n_bins)) / n_bins
 
-        result = posterior_mode(posterior)
+        result = map_bin(small_2d_env, posterior)
 
         assert result.shape == (n_time_bins,)
         assert result.dtype in (np.int64, np.intp)
 
-    def test_map_estimate_delta_posterior(self, small_2d_env):
-        """map_estimate should return correct bin for delta posterior."""
-        from neurospatial.decoding.estimates import posterior_mode
+    def test_map_bin_delta_posterior(self, small_2d_env):
+        """map_bin should return correct bin for delta posterior."""
+        from neurospatial.decoding.estimates import map_bin
 
         n_time_bins = 5
         n_bins = small_2d_env.n_bins
@@ -37,18 +37,18 @@ class TestMapEstimate:
         for t, bin_idx in enumerate(expected_bins):
             posterior[t, bin_idx] = 1.0
 
-        result = posterior_mode(posterior)
+        result = map_bin(small_2d_env, posterior)
 
         np.testing.assert_array_equal(result, expected_bins)
 
-    def test_map_estimate_identity_posterior(self, small_2d_env):
-        """map_estimate on identity posterior should return diagonal indices."""
-        from neurospatial.decoding.estimates import posterior_mode
+    def test_map_bin_identity_posterior(self, small_2d_env):
+        """map_bin on identity posterior should return diagonal indices."""
+        from neurospatial.decoding.estimates import map_bin
 
         n_time_bins = min(10, small_2d_env.n_bins)
         posterior = np.eye(n_time_bins, small_2d_env.n_bins)
 
-        result = posterior_mode(posterior)
+        result = map_bin(small_2d_env, posterior)
 
         expected = np.arange(n_time_bins)
         np.testing.assert_array_equal(result, expected)
@@ -71,7 +71,7 @@ class TestMapPosition:
         assert result.dtype == np.float64
 
     def test_map_position_matches_bin_centers(self, small_2d_env):
-        """map_position should equal bin_centers[map_estimate]."""
+        """map_position should equal bin_centers[map_bin]."""
         from neurospatial.decoding.estimates import map_position
 
         n_time_bins = 5
@@ -362,16 +362,16 @@ class TestEdgeCases:
         """Functions should work with a single time bin."""
         from neurospatial.decoding.estimates import (
             credible_region,
+            map_bin,
             map_position,
             mean_position,
             posterior_entropy,
-            posterior_mode,
         )
 
         n_bins = small_2d_env.n_bins
         posterior = np.ones((1, n_bins)) / n_bins
 
-        assert posterior_mode(posterior).shape == (1,)
+        assert map_bin(small_2d_env, posterior).shape == (1,)
         assert map_position(small_2d_env, posterior).shape == (1, small_2d_env.n_dims)
         assert mean_position(small_2d_env, posterior).shape == (1, small_2d_env.n_dims)
         assert posterior_entropy(posterior).shape == (1,)
@@ -382,36 +382,30 @@ class TestEdgeCases:
         from neurospatial import Environment
         from neurospatial.decoding.estimates import (
             credible_region,
+            map_bin,
             map_position,
             mean_position,
             posterior_entropy,
-            posterior_mode,
         )
 
-        # Create a minimal single-bin environment
-        env = Environment.from_samples(
-            np.array([[0.0, 0.0], [1.0, 1.0]]),
-            bin_size=10.0,  # Large bin size to get single bin
+        env = Environment.from_grid_mask(
+            np.ones(1, dtype=bool), grid_edges=(np.array([0.0, 10.0]),)
         )
+        assert env.n_bins == 1
+        n_time_bins = 5
+        posterior = np.ones((n_time_bins, 1))  # Only one bin, always prob=1
 
-        if env.n_bins == 1:
-            n_time_bins = 5
-            posterior = np.ones((n_time_bins, 1))  # Only one bin, always prob=1
-
-            np.testing.assert_array_equal(
-                posterior_mode(posterior), np.zeros(n_time_bins)
-            )
-            assert map_position(env, posterior).shape == (n_time_bins, env.n_dims)
-            assert mean_position(env, posterior).shape == (n_time_bins, env.n_dims)
-            # Entropy of single bin is 0 (log2(1) = 0)
-            np.testing.assert_array_almost_equal(
-                posterior_entropy(posterior), np.zeros(n_time_bins)
-            )
-            # Credible region with single bin
-            regions = credible_region(env, posterior, level=0.5)
-            assert all(len(r) == 1 for r in regions)
-        else:
-            pytest.skip("Could not create single-bin environment")
+        np.testing.assert_array_equal(map_bin(env, posterior), np.zeros(n_time_bins))
+        np.testing.assert_array_equal(
+            map_position(env, posterior), np.full((n_time_bins, 1), 5.0)
+        )
+        np.testing.assert_array_equal(
+            mean_position(env, posterior), np.full((n_time_bins, 1), 5.0)
+        )
+        # Entropy of single bin is 0 (log2(1) = 0)
+        np.testing.assert_array_equal(posterior_entropy(posterior), 0.0)
+        regions = credible_region(env, posterior, level=0.5)
+        assert [r.tolist() for r in regions] == [[0]] * n_time_bins
 
 
 class TestCredibleRegionNaN:
@@ -475,3 +469,94 @@ class TestCredibleRegionNaN:
         regions = credible_region(small_2d_env, posterior, level=0.95)
 
         assert len(regions[0]) == 0
+
+
+def test_undecodable_rows_have_no_map_bin_or_position(small_2d_env):
+    """An entirely non-finite row maps to the outside sentinel and NaN."""
+    from neurospatial.decoding.estimates import map_bin, map_position
+
+    posterior = np.full((3, small_2d_env.n_bins), np.nan)
+    posterior[1] = 0.0
+    posterior[1, 4] = 1.0
+    posterior[2] = np.inf
+    np.testing.assert_array_equal(map_bin(small_2d_env, posterior), [-1, 4, -1])
+    positions = map_position(small_2d_env, posterior)
+    assert np.all(np.isnan(positions[[0, 2]]))
+    np.testing.assert_array_equal(positions[1], small_2d_env.bin_centers[4])
+
+
+def test_map_bin_ties_go_to_lowest_index_despite_rounding():
+    """Densities equal up to rounding tie, so the lowest bin index wins."""
+    from neurospatial import Environment
+    from neurospatial.decoding import DecodingResult
+    from neurospatial.decoding.estimates import map_bin
+
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 30.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 6,
+    )
+    flat_over_space = env.bin_sizes / env.bin_sizes.sum()
+    density = flat_over_space / env.bin_sizes
+    assert np.argmax(density) != 0  # rounding alone separates the bins
+    assert map_bin(env, flat_over_space[None])[0] == 0
+    assert DecodingResult(flat_over_space[None], env).map_bin[0] == 0
+
+
+def test_map_bin_ignores_nonfinite_bins(small_2d_env):
+    """A NaN or Inf bin is never the MAP bin of a row with finite mass."""
+    from neurospatial.decoding.estimates import map_bin
+
+    posterior = np.zeros((2, small_2d_env.n_bins))
+    posterior[:, 5] = 1.0
+    posterior[0, 1] = np.nan
+    posterior[1, 2] = np.inf
+    np.testing.assert_array_equal(map_bin(small_2d_env, posterior), [5, 5])
+
+
+def test_credible_region_never_includes_zero_mass_bins(small_2d_env):
+    """A row whose mass never reaches ``level`` keeps only bins with mass."""
+    from neurospatial.decoding.estimates import credible_region
+
+    posterior = np.zeros((2, small_2d_env.n_bins))
+    posterior[0, :2] = np.nan
+    posterior[0, 2] = 0.3
+    posterior[0, 3] = 0.2
+    regions = credible_region(small_2d_env, posterior, level=0.95)
+    assert sorted(regions[0].tolist()) == [2, 3]
+    assert regions[1].size == 0
+
+
+def test_posterior_entropy_float64_and_nan_for_undecodable_rows():
+    from neurospatial.decoding.estimates import posterior_entropy
+
+    posterior = np.full((2, 8), 1 / 8, dtype=np.float32)
+    posterior[1] = np.nan
+    entropy = posterior_entropy(posterior)
+    assert entropy.dtype == np.float64
+    assert entropy[0] == pytest.approx(3.0, abs=1e-6)
+    assert np.isnan(entropy[1])
+
+
+def test_float32_map_bin_matches_float64_and_the_summary():
+    """Rounding ties do not shift float32 MAP bins toward low indices."""
+    from neurospatial import Environment
+    from neurospatial.decoding import decode_position, decode_position_summary
+
+    rng = np.random.default_rng(0)
+    env = Environment.from_samples(np.linspace(0, 200, 2001)[:, None], bin_size=1.0)
+    centers = env.bin_centers[:, 0]
+    fields = np.array([50.0, 100.0, 150.0])
+    rates = 0.5 + 5 * np.exp(-0.5 * ((centers - fields[:, None]) / 60) ** 2)
+    counts = rng.poisson(rates[:, rng.integers(0, env.n_bins, 2000)].T * 0.02)
+
+    full64 = decode_position(env, counts, rates, dt=0.02)
+    full32 = decode_position(env, counts, rates, dt=0.02, dtype=np.float32)
+    summary32 = decode_position_summary(env, counts, rates, dt=0.02, dtype=np.float32)
+
+    np.testing.assert_array_equal(summary32.map_bin, full32.map_bin)
+    # float32 rounding may move a near-tie, but not shift MAP bins systematically.
+    shifted = full32.map_bin != full64.map_bin
+    assert shifted.mean() < 0.01
+    assert abs(np.mean(full32.map_bin - full64.map_bin)) < 0.002

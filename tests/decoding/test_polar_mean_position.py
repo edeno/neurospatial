@@ -74,7 +74,7 @@ def test_mean_at_the_animal_has_no_direction(polar):
     ring = np.isclose(polar.bin_centers[:, 0], 7.5)
     posterior = np.where(ring, 1.0 / ring.sum(), 0.0)[None, :]
     distance, angle = mean_position(polar, posterior)[0]
-    assert distance == pytest.approx(0.0, abs=1e-12)
+    assert distance == 0.0
     assert np.isnan(angle)
 
 
@@ -113,3 +113,42 @@ def test_cartesian_mean_is_unchanged():
     np.testing.assert_array_equal(
         mean_position(env, posterior), posterior @ env.bin_centers
     )
+
+
+def _polar_counts(env: Environment) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(3)
+    rates = rng.uniform(0.5, 20.0, size=(5, env.n_bins))
+    return rng.poisson(rates[:, :1].T * 0.2, size=(6, 5)), rates
+
+
+_POLAR_COLUMNS = ["map_distance", "map_angle", "mean_distance", "mean_angle"]
+
+
+def test_full_decode_exports_name_polar_coordinates(polar):
+    counts, rates = _polar_counts(polar)
+    result = decode_position(polar, counts, rates, dt=0.2)
+    table = result.to_dataframe()
+    assert [c for c in table.columns if c.startswith(("map_", "mean_"))] == [
+        "map_bin",
+        *_POLAR_COLUMNS,
+    ]
+    np.testing.assert_array_equal(table["map_angle"], result.map_position[:, 1])
+    np.testing.assert_array_equal(table["mean_distance"], result.mean_position[:, 0])
+
+
+def test_summary_exports_name_polar_coordinates(polar):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    counts, rates = _polar_counts(polar)
+    summary = decode_position_summary(polar, counts, rates, dt=0.2)
+    table = summary.to_dataframe()
+    assert set(_POLAR_COLUMNS) <= set(table.columns)
+    assert not {"map_x", "map_y", "mean_x", "mean_y"} & set(table.columns)
+    np.testing.assert_array_equal(table["map_angle"], summary.map_position[:, 1])
+    labels = [line.get_label() for line in summary.plot(quantity="map").get_lines()]
+    assert labels == ["map_distance", "map_angle"]
+    xr = pytest.importorskip("xarray")
+    dataset = summary.to_xarray()
+    assert isinstance(dataset, xr.Dataset)
+    assert set(_POLAR_COLUMNS) <= set(dataset.data_vars)

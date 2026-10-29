@@ -164,9 +164,9 @@ def test_positional_activation_of_reordered_columns_is_wrong(
     wrong = assembly_activation(rest_counts[:, order], pattern)
     assert np.corrcoef(right, wrong)[0, 1] < 0.5
     # The bins where the members fire together stand out only when paired.
-    drive = rest_counts[:, MEMBERS].sum(axis=1)
-    assert np.corrcoef(right, drive)[0, 1] > 0.9
-    assert np.corrcoef(wrong, drive)[0, 1] < 0.5
+    together = (rest_counts[:, MEMBERS] >= 3).all(axis=1)
+    assert right[together].mean() > 2 * right[~together].mean() > 0
+    assert abs(wrong[together].mean()) < 0.5
 
 
 def test_label_free_activation_is_unchanged_by_labels_on_the_pattern(
@@ -392,7 +392,11 @@ def _ev(period_counts, orders=None, *, labelled=False, control=True):
 
 
 def _values(result) -> list[float]:
-    return [result.explained_variance, result.reversed_ev, result.partial_correlation]
+    return [
+        result.explained_variance,
+        result.reversed_explained_variance,
+        result.partial_correlation,
+    ]
 
 
 PERMUTED = {
@@ -405,7 +409,7 @@ PERMUTED = {
 @pytest.mark.parametrize("permuted", PERMUTED.values(), ids=PERMUTED.keys())
 def test_ev_is_invariant_to_unit_order_with_labels(period_counts, permuted) -> None:
     expected = _ev(period_counts)
-    assert expected.explained_variance > 0.5 > expected.reversed_ev
+    assert expected.explained_variance > 0.5 > expected.reversed_explained_variance
 
     result = _ev(period_counts, permuted, labelled=True)
 
@@ -438,10 +442,12 @@ def test_positional_control_of_reordered_units_fakes_reactivation(
         "control": _counts(seed=3, n_time=3000, drive=0.3),
     }
     right = _ev(already_correlated)
-    assert right.explained_variance < right.reversed_ev  # no evidence of replay
+    assert (
+        right.explained_variance < right.reversed_explained_variance
+    )  # no evidence of replay
 
     wrong = _ev(already_correlated, PERMUTED["control"])
-    assert wrong.explained_variance > 0.5 > 0.1 > wrong.reversed_ev
+    assert wrong.explained_variance > 0.5 > 0.1 > wrong.reversed_explained_variance
 
     labelled = _ev(already_correlated, PERMUTED["control"], labelled=True)
     np.testing.assert_allclose(_values(labelled), _values(right), **ROUNDING)

@@ -109,12 +109,12 @@ def test_splitting_a_bin_does_not_change_the_decoded_density():
     np.testing.assert_allclose(split.mean_position, coarse.mean_position)
 
     # The MAP bin lies in the same stretch of track and has the same density.
-    np.testing.assert_array_equal(coarse.map_estimate, 0)
-    assert set(split.map_estimate.tolist()) <= {0, 1}
+    np.testing.assert_array_equal(coarse.map_bin, 0)
+    assert set(split.map_bin.tolist()) <= {0, 1}
     rows = np.arange(len(counts))
     np.testing.assert_allclose(
-        split_density[rows, split.map_estimate],
-        coarse_density[rows, coarse.map_estimate],
+        split_density[rows, split.map_bin],
+        coarse_density[rows, coarse.map_bin],
     )
 
     # The credible region covers the same length of track.
@@ -173,7 +173,7 @@ def test_streamed_summary_reports_the_density_mode():
     full = decode_position(COARSE, counts, rates, dt=DT)
     summary = decode_position_summary(COARSE, counts, rates, dt=DT, time_chunk=2)
 
-    np.testing.assert_array_equal(summary.map_bin, full.map_estimate)
+    np.testing.assert_array_equal(summary.map_bin, full.map_bin)
     np.testing.assert_allclose(summary.map_position, full.map_position)
 
 
@@ -191,6 +191,16 @@ def test_mixed_measure_environment_needs_one_measure():
 
     with pytest.raises(ValueError, match=r"(?s)mixes bins.*env\.subset"):
         decode_position(env, np.array([[1]]), rates, dt=DT)
+
+    # An explicit prior decodes; density-free summaries still work.
+    result = decode_position(
+        env, np.array([[1]]), rates, dt=DT, prior=np.ones(env.n_bins)
+    )
+    summary = result.summary()
+    assert summary["n_undecodable"] == 0
+    assert summary["mean_entropy"] == pytest.approx(np.log2(env.n_bins))
+    with pytest.raises(ValueError, match="mixes bins"):
+        _ = result.map_bin
 
 
 def test_impossible_spikes_fall_back_to_the_prior_over_space():
@@ -213,4 +223,4 @@ def test_equal_bins_decode_exactly_as_a_flat_prior():
 
     expected = normalize_to_posterior(log_poisson_likelihood(counts, rates, dt=0.05))
     np.testing.assert_array_equal(result.posterior, expected)
-    np.testing.assert_array_equal(result.map_estimate, expected.argmax(axis=1))
+    np.testing.assert_array_equal(result.map_bin, expected.argmax(axis=1))

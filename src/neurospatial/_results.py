@@ -565,25 +565,34 @@ def env_fingerprint(env: Any) -> str:
     return repr(env)
 
 
-def _coord_dim_names(n_dims: int) -> list[str]:
+# Column names of polar egocentric bin centers, (distance, angle in radians).
+_POLAR_COORD_NAMES = ("distance", "angle")
+
+
+def _coord_dim_names(env: Any) -> list[str]:
     """Per-dimension coordinate column names for tidy decode dataframes.
 
-    Returns ``["x", "y", "z"][:n_dims]`` for ``n_dims <= 3`` and
+    Returns ``["distance", "angle"]`` for a polar egocentric environment,
+    ``["x", "y", "z"][:n_dims]`` for ``n_dims <= 3`` and
     ``["dim_0", "dim_1", ...]`` otherwise. Shared by
     :meth:`DecodingResult.to_dataframe` and
     :meth:`DecodingSummary.to_dataframe` so their coordinate column naming
-    (``map_x``/``mean_x``/... vs ``map_dim_0``/...) stays identical.
+    (``map_x``/``mean_x``/... vs ``map_dim_0``/...) stays identical. The polar
+    names match the ``bin_center_*`` coordinates of :func:`_bin_center_coords`.
 
     Parameters
     ----------
-    n_dims : int
-        Number of spatial dimensions.
+    env : Environment
+        Environment exposing ``n_dims`` and ``coordinate_kind``.
 
     Returns
     -------
     list[str]
         Coordinate names, one per dimension.
     """
+    if getattr(env, "coordinate_kind", "cartesian") == "polar":
+        return list(_POLAR_COORD_NAMES)
+    n_dims = env.n_dims
     if n_dims <= 3:
         return ["x", "y", "z"][:n_dims]
     return [f"dim_{i}" for i in range(n_dims)]
@@ -657,8 +666,8 @@ def _bin_center_coords(
 
     if getattr(env, "coordinate_kind", "cartesian") == "polar":
         return {
-            "bin_center_distance": ("bin", bin_centers[:, 0]),
-            "bin_center_angle": ("bin", bin_centers[:, 1]),
+            f"bin_center_{name}": ("bin", bin_centers[:, i])
+            for i, name in enumerate(_POLAR_COORD_NAMES)
         }
 
     # x, y, z; axes past the third are bin_center_dim_3, ...

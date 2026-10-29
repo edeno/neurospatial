@@ -2,6 +2,155 @@
 
 ## [Unreleased]
 
+### Decoding refuses missing data instead of decoding it, and follows the published methods
+
+A review of `neurospatial.decoding` found several paths that returned
+plausible but wrong numbers: missing rates pulled the posterior toward the
+bins where they were missing, NaN posterior rows became track position 0 in
+replay fits, a NaN spike count removed a neuron from assembly activation,
+and polar summaries averaged angles across the seam. These now raise or
+give NaN with a message saying what to fix. Assembly activation, replay
+line detection and the MAP bin now follow the cited methods. Posterior
+calibration is tested: across unequal-bin, polar, maze and holed-grid
+environments, how often the true bin falls inside a credible region
+matches the region's mass to within 0.0032.
+
+**Posterior and decoders**
+
+- A bin where any neuron's rate is NaN gets zero posterior probability, with a
+  warning naming how many bins were excluded. Dropping the masked neuron's
+  term gave that bin likelihood 1, so partially masked bins were favoured
+  (10 flat neurons with 9 masked at one bin put all mass there).
+- `log_poisson_likelihood` refuses NaN, infinite and negative rates; it
+  passed NaN through, and `normalize_to_posterior` then made every row
+  uniform. `normalize_to_posterior` raises on rows with NaN or +inf in every
+  `handle_degenerate` mode (only all −inf rows are degenerate), and its `axis`
+  parameter is removed.
+- Prior shape, weights and mass are checked even with `validate=False`; a
+  negative prior gave negative posterior mass.
+- `decode_session_summary` and `BayesianDecoder.predict_summary` report polar
+  `mean_position` in the animal's plane, like the full decode; they averaged
+  raw (distance, angle).
+- `BayesianDecoder.predict`, `predict_summary` and `score` raise when only one
+  of the fitted models and the prediction spikes carries unit labels; they
+  paired trains with models by position, which decoded with the wrong models
+  when the order differed. Label spikes once (`SpikeTrains(..., unit_ids=...)`
+  or a pynapple `TsGroup`) and pass the same object to both steps.
+- A fitted `BayesianDecoder` refuses `dataclasses.replace(decoder, env=...)`
+  with a different environment. `from_models` refuses negative rates, and
+  NaN or infinite rates inside `spatial_support`.
+- Session decoding raises when every spike lies before or after the decode
+  bins, also with `warn_on_drop=False`. The drop warnings from decoding and
+  encoding name a likely millisecond/second mix-up when the spike times span
+  about 1000 times the span of `times`.
+- `decode_position` and `decode_position_summary` take a rate array or a
+  `SpatialRatesResult`; other objects raise `TypeError`.
+- `bin_spikes_in_time` explains a `t_start` after the last spike instead of
+  suggesting `dt <= 0`.
+- The streamed session summary selects each block's spikes by binary search:
+  0.38 s instead of 0.51 s for 100 units, 1 h at 25 ms and 101 bins.
+
+**Decode results**
+
+- `DecodingResult.map_estimate` is renamed `map_bin`, and the summary's
+  `map_estimate` alias is removed. `posterior_mode(posterior)`, which ranked
+  bins by mass, is replaced by `map_bin(env, posterior)`, which ranks by
+  density like every other MAP.
+- Undecodable (all-NaN) rows report `map_bin == -1` and NaN positions; they
+  reported bin 0's centre. MAP ties within rounding go to the lowest bin, and
+  NaN or infinite bins are never the MAP bin.
+- `DecodingResult` and `DecodingSummary` refuse invalid posteriors (rows that
+  are negative, non-finite or do not sum to 1, except all-NaN rows), unordered
+  times, malformed spike windows, out-of-range MAP bins and peak
+  probabilities. `DecodingResult`'s derived arrays are read-only, and results
+  compare by identity (`==` raised).
+- `DecodingSummary.map_position` is derived from `map_bin` and is no longer a
+  constructor argument. `peak_prob` is renamed `peak_probability` (also the
+  data-frame column, xarray variable and `mean_peak_probability` key).
+- `summary()` on both results averages over decoded time bins and reports
+  `n_undecodable`; one undecodable row made `mean_entropy` NaN, and an empty
+  streamed summary reported 0 (a certain posterior). With nothing decoded
+  the means are NaN.
+- Exports on polar environments name columns `map_distance`, `map_angle`,
+  `mean_distance` and `mean_angle`; they were labelled `x` and `y`.
+- `posterior_entropy` is float64 on every path, and `credible_region` never
+  includes zero-mass bins.
+
+**Replay and decoding metrics**
+
+- `fit_linear_trajectory`, `fit_isotonic_trajectory` and
+  `detect_trajectory_radon` refuse posterior rows that are NaN, infinite,
+  negative or do not sum to 1, and mismatched, non-finite or identical times.
+  A NaN row was read as the track start: two NaN rows turned a forward sweep
+  into a −46° (reverse) Radon line. `fit_linear_trajectory` requires
+  `n_samples >= 2`.
+- `method="map"` in the trajectory fits uses the highest-density bin; on
+  unequal track bins it reported 120 cm/s for a stationary MAP.
+- `detect_trajectory_radon(env, posterior, times, *, band=None,
+  max_speed=None)` implements the replay line search of Davidson et al.
+  (2009): it searches speeds and start positions and scores each trajectory
+  by the mean over time bins of the posterior mass within `band` of it
+  (15 cm by default, their value), with the median of that mass over the
+  track for time bins where the trajectory leaves the track. It reports
+  `speed` (env units per second), `start_position` at `times[0]`, the replay
+  `score` (in [0, 1], equal for forward and reversed sweeps and independent
+  of the decode's bin size) and the sinogram over `sinogram_speeds` and
+  `sinogram_start_positions`. `theta_range`/`theta_step`, `angle_degrees`
+  and the pixel `offset` are removed: the angle and offset depended on bin
+  size, and the score was larger for one direction of the same event.
+- New `replay_trajectory_significance` tests the replay score against
+  Davidson et al.'s column-cycle, unit-identity and pseudo-event shuffles
+  (1500 each by default), refitting the trajectory to every shuffle, and
+  reports each p-value and the largest. Trajectories that enter the track
+  during the event are searched as well as those that leave it, and scores
+  equal up to rounding compare equal, so ties with the observed score count
+  against it. A 0.5 s event on a 2 m track takes about 7 s with all three
+  shuffles. Times that make the search implausibly large (for example times
+  in milliseconds) are refused.
+- A stationary decode has `r_squared = NaN` (it was 1, which passed replay
+  screens) and an isotonic `direction` of `None`.
+- `decoding_error(metric="euclidean")` on polar environments returns the
+  distance in the animal's plane; it mixed cm and radians. Infinite positions
+  raise. Geodesic positions more than one bin spacing outside the
+  environment's bounding box give NaN with a warning instead of a snapped
+  finite error; positions inside the box are measured from their nearest
+  bin.
+- `decoding_correlation(env, decoded, actual, weights=None)` takes `env`,
+  correlates along-track position on tracks, leaves out (with a warning)
+  dimensions that do not vary instead of returning NaN, refuses polar
+  environments and refuses negative or non-finite weights.
+
+**Assemblies and reactivation**
+
+- Assembly analyses raise on NaN, infinite or negative spike counts, naming
+  the neuron columns and the number of gap bins.
+- `assembly_activation`, `AssemblyDetectionResult.activations` and
+  `reactivation_strength` use the projector activation strength R(t) with
+  the diagonal removed (Lopes-dos-Santos et al. 2013; Peyrache et al. 2010),
+  so a burst of one member is not co-activation; the linear projection
+  scored one member bursting alone above its own 2 SD cutoff.
+  `reactivation_strength` is mean R(match) /
+  mean R(template): about 0 without co-activation and 1 for identical
+  periods. It is NaN when undefined, and neurons constant in a period are
+  excluded with a warning.
+- `AssemblyDetectionResult.activations` is time-first,
+  `(n_time_bins, n_assemblies)`.
+- `detect_assemblies(algorithm=)` is renamed `method=`. With
+  `n_components="auto"`, it returns no patterns (with a warning) when no
+  eigenvalue exceeds the Marchenko–Pastur bound; it returned one. Constant
+  neurons are excluded for every method, components without variance are
+  dropped, and patterns are unit length and sorted by explained variance.
+  NMF `explained_variance_ratio` is the variance along the pattern,
+  wᵀSw / tr(S).
+- `pairwise_correlations` returns NaN for pairs with a constant neuron (they
+  were 0, which lowered EV from 0.94 to 0.30 when one member was silent), and
+  its `z_score_input` argument is removed. `explained_variance_reactivation`
+  returns NaN statistics when undefined.
+  `ExplainedVarianceResult.reversed_ev` is renamed
+  `reversed_explained_variance` and is NaN without a control period.
+- `AssemblyDetectionResult.patterns` is a tuple, and pattern and result
+  fields are validated (member indices, explained-variance ratio, unit IDs).
+
 ### Regions cleanup and faster membership
 
 Region membership and region bin masks test raw coordinates against a

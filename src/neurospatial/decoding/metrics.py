@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import _geodesic_pair_distances
 
@@ -60,12 +61,21 @@ def decoding_error(
 
         - "geodesic": Shortest-path distance between the positions' bins
           along the environment's connectivity graph (along the track on a
-          linearized track). A position outside every bin, such as a
-          posterior mean between two arms, is measured from its nearest bin.
-          Bins in disconnected components are ``inf`` apart. On an open grid
-          the graph path can exceed the straight line by up to about 8%
+          linearized track), measured between bin centers: the error is
+          quantized to the bins, and two positions in one bin are 0 apart.
+          A position outside every bin but within one ``env.bin_spacing``
+          of the environment's extent (its bounding box), such as tracking
+          jitter at an edge or a posterior mean between two arms, is
+          measured from its nearest bin. A position farther out is not in
+          the environment: its error is NaN, with a warning. Bins in
+          disconnected components are ``inf`` apart. On an open grid the
+          graph path can exceed the straight line by up to about 8%
           (8-connected neighbors).
-        - "euclidean": Straight-line distance between the positions.
+        - "euclidean": Straight-line distance between the positions. On an
+          egocentric polar environment, the distance between the two
+          places in the animal's plane (the chord
+          ``sqrt(r1**2 + r2**2 - 2 * r1 * r2 * cos(angle1 - angle2))``), so
+          angles a turn apart coincide.
 
     Returns
     -------
@@ -77,15 +87,23 @@ def decoding_error(
     ------
     ValueError
         If the position arrays differ in shape or do not have ``env.n_dims``
-        columns, or if ``metric`` is not "euclidean" or "geodesic".
+        columns, if either contains Inf, or if ``metric`` is not
+        "euclidean" or "geodesic".
     CartesianOnlyError
         If ``metric="geodesic"`` on an egocentric polar environment.
 
+    Warns
+    -----
+    UserWarning
+        If ``metric="geodesic"`` and a position lies outside the
+        environment (see ``metric``); its error is NaN.
+
     Notes
     -----
-    NaN values in either input propagate to NaN in output. This allows
-    downstream functions (like ``median_decoding_error``) to use
-    ``np.nanmedian`` for robust statistics.
+    NaN values in either input propagate to NaN in output: a missing
+    position has no error. This allows downstream functions (like
+    ``median_decoding_error``) to use ``np.nanmedian`` for robust
+    statistics.
 
     Examples
     --------
@@ -126,13 +144,36 @@ def decoding_error(
             "Pass (n_time_bins, n_dims) positions in the environment's coordinates."
         )
 
-    if metric == "euclidean":
-        diff = decoded_positions - actual_positions
-        return cast("NDArray[np.float64]", np.linalg.norm(diff, axis=1))
-    if metric != "geodesic":
+    if metric not in ("euclidean", "geodesic"):
         raise ValueError(
             f"Invalid metric '{metric}'. Must be 'euclidean' or 'geodesic'."
         )
+    for name, positions in (
+        ("decoded_positions", decoded_positions),
+        ("actual_positions", actual_positions),
+    ):
+        infinite = np.isinf(positions).any(axis=1)
+        if np.any(infinite):
+            raise ValueError(
+                _format_error(
+                    f"decoding_error(): {name} contains Inf in "
+                    f"{int(np.sum(infinite))} of {len(positions)} time bins.",
+                    why="an infinite position is not a place, so it has no "
+                    "distance to another position",
+                    fix="mark missing or invalid positions as NaN (their error "
+                    "is NaN), e.g. positions[np.isinf(positions).any(axis=1)] "
+                    "= np.nan",
+                )
+            )
+
+    if metric == "euclidean":
+        if env.coordinate_kind == "polar":
+            # (distance, angle) rows: measure between places in the animal's
+            # plane, so angles a turn apart coincide.
+            decoded_positions = _egocentric_plane(decoded_positions)
+            actual_positions = _egocentric_plane(actual_positions)
+        diff = decoded_positions - actual_positions
+        return cast("NDArray[np.float64]", np.linalg.norm(diff, axis=1))
 
     require_cartesian(
         env.coordinate_system,
@@ -147,26 +188,69 @@ def decoding_error(
         np.any(np.isnan(decoded_positions), axis=1)
         | np.any(np.isnan(actual_positions), axis=1)
     )
-    if np.any(valid):
-        errors[valid] = _geodesic_pair_distances(
+    decoded_bins = np.full(len(errors), -1, dtype=np.intp)
+    actual_bins = np.full(len(errors), -1, dtype=np.intp)
+    decoded_bins[valid] = _bins_or_nearest(env, decoded_positions[valid])
+    actual_bins[valid] = _bins_or_nearest(env, actual_positions[valid])
+    far = valid & ((decoded_bins < 0) | (actual_bins < 0))
+    if np.any(far):
+        warnings.warn(
+            f"decoding_error(): {int(np.sum(far))} of {len(errors)} time bins "
+            "have a decoded or actual position outside the environment, more "
+            "than one bin spacing beyond its extent, so their geodesic error "
+            "is NaN. Check those positions for tracking glitches or a "
+            "different coordinate frame, or use metric='euclidean'.",
+            UserWarning,
+            stacklevel=2,
+        )
+    measured = valid & ~far
+    if np.any(measured):
+        errors[measured] = _geodesic_pair_distances(
             env.connectivity,
-            _bins_or_nearest(env, decoded_positions[valid]),
-            _bins_or_nearest(env, actual_positions[valid]),
+            decoded_bins[measured],
+            actual_bins[measured],
             operation="decoding_error()",
         )
     return errors
 
 
+def _egocentric_plane(positions: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Polar ``(distance, angle)`` rows as ``(x ahead, y to the left)``.
+
+    Distance 0 is the animal's position whatever the angle; a centroid there
+    has a NaN angle (see ``estimates._finish_posterior_mean``).
+    """
+    distance, angle = positions[:, 0], positions[:, 1]
+    at_animal = distance == 0
+    angle = np.where(at_animal, 0.0, angle)
+    return np.column_stack([distance * np.cos(angle), distance * np.sin(angle)])
+
+
 def _bins_or_nearest(
     env: Environment, positions: NDArray[np.float64]
 ) -> NDArray[np.intp]:
-    """Bin of each finite position, or its nearest bin when outside every bin."""
+    """Bin of each finite position, its nearest bin when just outside, else -1.
+
+    A position outside every bin is measured from its nearest bin when it
+    lies within one ``env.bin_spacing`` of the environment's extent (its
+    domain's bounding box, or the bin centers' when the domain is unknown):
+    tracking jitter at an edge, or a posterior mean between two arms of a
+    maze. A position farther out is not in the environment and gets -1.
+    """
     bins = np.asarray(env.bin_at(positions), dtype=np.intp)
-    outside = bins < 0
-    if np.any(outside):
-        # Every position is measured from its own nearest bin, however far
-        # off the tracking glitch or decode lies.
-        bins[outside] = env.nearest_bin(positions[outside])
+    outside = np.flatnonzero(bins < 0)
+    if outside.size:
+        bounds = env.arena.domain_bounds()
+        if bounds is None:
+            centers = env.bin_centers
+            bounds = np.stack([centers.min(axis=0), centers.max(axis=0)])
+        margin = env.bin_spacing
+        near = np.all(
+            (positions[outside] >= bounds[0] - margin)
+            & (positions[outside] <= bounds[1] + margin),
+            axis=1,
+        )
+        bins[outside[near]] = env.nearest_bin(positions[outside[near]])
     return bins
 
 
@@ -257,9 +341,10 @@ def confusion_matrix(
     -------
     cm : NDArray[np.float64], shape (n_bins, n_bins)
         Confusion matrix. Rows are actual bins, columns are decoded bins.
-        For ``method="map"``, the matrix sums to n_time_bins.
-        For ``method="expected"``, each row sums to the count of that bin's
-        occurrences in actual_bins.
+        For ``method="map"``, the matrix sums to the number of time bins
+        with a finite posterior row (n_time_bins when none is dropped; see
+        Notes). For ``method="expected"``, each row sums to the count of
+        that bin's occurrences in actual_bins among those time bins.
 
     Raises
     ------
@@ -337,11 +422,12 @@ def confusion_matrix(
     # Initialize confusion matrix
     cm = np.zeros((n_bins, n_bins), dtype=np.float64)
 
-    # Rows with any non-finite posterior entry are undecodable (e.g. a
-    # time bin with no spikes against a masked environment). argmax over
-    # a NaN row returns bin 0, and accumulating a NaN row into the
-    # "expected" matrix poisons that actual-bin's entire row. Drop such
-    # rows from both summaries and surface how many were excluded.
+    # Rows with any non-finite posterior entry are undecodable (e.g. the
+    # all-NaN rows that normalize_to_posterior(handle_degenerate="nan")
+    # gives where the likelihood is zero in every bin). argmax over a NaN
+    # row returns bin 0, and accumulating a NaN row into the "expected"
+    # matrix poisons that actual-bin's entire row. Drop such rows from both
+    # summaries and surface how many were excluded.
     finite_rows = np.isfinite(posterior).all(axis=1)
     n_dropped = int(np.sum(~finite_rows))
     if n_dropped > 0:
@@ -371,99 +457,102 @@ def confusion_matrix(
 
 
 def decoding_correlation(
+    env: Environment,
     decoded_positions: NDArray[np.float64],
     actual_positions: NDArray[np.float64],
     weights: NDArray[np.float64] | None = None,
 ) -> float:
     """Weighted Pearson correlation between decoded and actual positions.
 
-    Computes a (possibly weighted) Pearson correlation coefficient between
-    decoded position estimates and ground truth positions. For multi-dimensional
-    positions, returns the mean correlation across all dimensions.
+    On a track the correlation is between the decoded and actual positions
+    along the track. In an open arena it is the mean, over spatial
+    dimensions, of the per-dimension correlation.
 
     Parameters
     ----------
+    env : Environment
+        Environment the positions are in. On a linearized track the
+        positions are first projected onto the track
+        (:meth:`Environment.to_linear`); its ``n_dims`` is the number of
+        position columns.
     decoded_positions : NDArray[np.float64], shape (n_time_bins, n_dims)
         Decoded position estimates (e.g., MAP or mean positions).
     actual_positions : NDArray[np.float64], shape (n_time_bins, n_dims)
         Ground truth positions.
     weights : NDArray[np.float64], shape (n_time_bins,), optional
-        Per-time-bin weights. If None, uniform weights (standard correlation).
-        Typical use: weight by posterior certainty (1 - normalized_entropy) to
+        Non-negative, finite per-time-bin weights; a time bin of weight
+        ``k`` counts as ``k`` copies of it and a zero weight leaves it out.
+        If None, uniform weights (standard correlation). Typical use:
+        weight by posterior certainty (1 - normalized_entropy) to
         down-weight uncertain time bins.
 
     Returns
     -------
     r : float
-        Weighted Pearson correlation coefficient.
-        For ``n_dims > 1``, returns mean correlation across dimensions.
-        Returns NaN if:
+        Weighted Pearson correlation coefficient, in [-1, 1]:
 
-        - Fewer than 2 valid (non-NaN, non-zero-weight) time bins remain
-        - Either decoded or actual positions has zero variance in the
-          valid samples (constant values after excluding NaN/zero-weight bins)
-        - All weights are zero or weight sum overflows
+        - On a linearized track or a 1-D environment, the correlation of
+          the position along the track.
+        - Otherwise, the mean of the per-dimension correlations over the
+          dimensions in which both the decoded and actual positions vary.
+          A dimension that does not vary (e.g. a horizontal track built as
+          a 2-D arena) has no correlation; it is left out with a warning.
+
+        NaN, with a warning when the positions do not vary, if fewer than 2
+        time bins have finite positions and a positive weight, or if no
+        dimension varies.
 
     Raises
     ------
     ValueError
-        If ``decoded_positions`` and ``actual_positions`` have different shapes.
-        If ``weights`` shape doesn't match ``(n_time_bins,)``.
+        If the position arrays differ in shape or do not have ``env.n_dims``
+        columns, or if ``weights`` does not have shape ``(n_time_bins,)`` or
+        holds negative, NaN or Inf values.
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment: averaging a
+        distance correlation with a linear correlation of angles has no
+        meaning.
 
     Notes
     -----
-    Time bins with NaN in positions or zero weight are excluded from the
-    computation. This allows robust correlation even with missing data.
+    Time bins with NaN in either position or zero weight are excluded from
+    the computation, so missing positions do not count as zero.
 
-    The implementation uses a numerically stable centered formula to minimize
-    catastrophic cancellation, especially important for long time series with
-    large weights:
+    With weights ``w`` normalized to sum to 1 and weighted means
+    ``mean_x = sum(w * x)``, the correlation of one dimension is
 
     .. code-block:: python
 
-        # Normalize weights
-        w = weights / weights.sum()
+        cov_xy = np.sum(w * (x - mean_x) * (y - mean_y))
+        var_x = np.sum(w * (x - mean_x) ** 2)
+        var_y = np.sum(w * (y - mean_y) ** 2)
+        r = cov_xy / np.sqrt(var_x * var_y)
 
-        # Weighted means (stable via np.average)
-        mean_x = np.average(x, weights=w)
-        mean_y = np.average(y, weights=w)
-
-        # Center the data (reduces cancellation)
-        x_centered = x - mean_x
-        y_centered = y - mean_y
-
-        # Weighted covariance and variances
-        cov_xy = np.sum(w * x_centered * y_centered)
-        var_x = np.sum(w * x_centered**2)
-        var_y = np.sum(w * y_centered**2)
-
-        # Correlation with zero-variance check
-        denom = np.sqrt(var_x * var_y)
-        r = cov_xy / denom if denom > 0 else np.nan
-
-    This approach is more stable than the direct formula
-    ``(sum(wx*y) - n*mean_x*mean_y) / ...`` which can suffer from
-    cancellation when sums are large.
+    Centering before multiplying avoids the cancellation of the direct
+    formula ``(sum(w * x * y) - mean_x * mean_y) / ...`` when sums are large.
 
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.decoding.metrics import decoding_correlation
+    >>> env = Environment.linear_track(
+    ...     endpoints=[(0.0, 0.0), (10.0, 0.0)], bin_size=1.0, track_width=2.0
+    ... )
 
-    Perfect correlation (same positions):
+    Perfect correlation along the track:
 
-    >>> decoded = np.array([[0.0], [1.0], [2.0], [3.0]])
-    >>> actual = np.array([[0.0], [1.0], [2.0], [3.0]])
-    >>> r = decoding_correlation(decoded, actual)
+    >>> actual = np.array([[0.5, 0.0], [2.5, 0.0], [4.5, 0.0], [6.5, 0.0]])
+    >>> r = decoding_correlation(env, actual, actual)
     >>> bool(abs(r - 1.0) < 1e-10)
     True
 
     Weighted correlation (down-weight uncertain bins):
 
-    >>> decoded = np.array([[0.0], [1.0], [2.0], [100.0]])  # Outlier
-    >>> actual = np.array([[0.0], [1.0], [2.0], [3.0]])
-    >>> weights = np.array([1.0, 1.0, 1.0, 0.0])  # Zero-weight outlier
-    >>> r = decoding_correlation(decoded, actual, weights=weights)
+    >>> decoded = actual.copy()
+    >>> decoded[3, 0] = 0.5  # an outlier
+    >>> weights = np.array([1.0, 1.0, 1.0, 0.0])  # zero-weight outlier
+    >>> r = decoding_correlation(env, decoded, actual, weights=weights)
     >>> bool(abs(r - 1.0) < 1e-10)
     True
 
@@ -472,6 +561,14 @@ def decoding_correlation(
     decoding_error : Per-time-bin position error.
     median_decoding_error : Median error summary statistic.
     """
+    require_cartesian(
+        env.coordinate_system,
+        "decoding_correlation()",
+        why="averaging a correlation of distances with a linear correlation "
+        "of angles has no meaning, and angles a turn apart are one direction",
+        fix="correlate the distance column with np.corrcoef and the angle "
+        "column with neurospatial.stats.circular_circular_correlation",
+    )
     decoded_positions = np.asarray(decoded_positions, dtype=np.float64)
     actual_positions = np.asarray(actual_positions, dtype=np.float64)
 
@@ -481,15 +578,15 @@ def decoding_correlation(
             f"Shape mismatch: decoded_positions has shape {decoded_positions.shape}, "
             f"but actual_positions has shape {actual_positions.shape}"
         )
-
+    if decoded_positions.ndim != 2 or decoded_positions.shape[1] != env.n_dims:
+        raise ValueError(
+            f"decoding_correlation() needs positions with {env.n_dims} columns, "
+            f"one per dimension of the environment; got shape "
+            f"{decoded_positions.shape}. Pass (n_time_bins, n_dims) positions in "
+            "the environment's coordinates."
+        )
     n_time_bins = decoded_positions.shape[0]
 
-    # Handle 1D case: reshape to (n_time_bins, 1)
-    if decoded_positions.ndim == 1:
-        decoded_positions = decoded_positions.reshape(-1, 1)
-        actual_positions = actual_positions.reshape(-1, 1)
-
-    # Setup weights
     if weights is None:
         weights = np.ones(n_time_bins, dtype=np.float64)
     else:
@@ -498,52 +595,62 @@ def decoding_correlation(
             raise ValueError(
                 f"weights must have shape ({n_time_bins},), got {weights.shape}"
             )
+        invalid = ~np.isfinite(weights) | (weights < 0)
+        if np.any(invalid):
+            raise ValueError(
+                _format_error(
+                    f"decoding_correlation(): weights has {int(np.sum(invalid))} "
+                    f"negative, NaN or Inf values of {n_time_bins}.",
+                    why="a weight is how many times a time bin counts, so it "
+                    "must be a finite number of at least 0",
+                    fix="give undecodable or excluded time bins weight 0, e.g. "
+                    "weights = np.nan_to_num(weights, nan=0.0), and check how "
+                    "negative weights arose",
+                )
+            )
 
-    # Create valid mask: exclude NaN in any dimension and zero weights
-    valid_mask = np.ones(n_time_bins, dtype=bool)
-    valid_mask &= ~np.any(np.isnan(decoded_positions), axis=1)
-    valid_mask &= ~np.any(np.isnan(actual_positions), axis=1)
-    valid_mask &= weights > 0
-
-    n_valid = valid_mask.sum()
-
-    # Need at least 2 valid samples for correlation
-    if n_valid < 2:
+    # Exclude NaN positions and zero weights.
+    valid = (
+        ~np.any(np.isnan(decoded_positions), axis=1)
+        & ~np.any(np.isnan(actual_positions), axis=1)
+        & (weights > 0)
+    )
+    if np.sum(valid) < 2:
         return float(np.nan)
+    decoded_valid = decoded_positions[valid]
+    actual_valid = actual_positions[valid]
+    if env.is_linearized_track:
+        decoded_valid = env.to_linear(decoded_valid)[:, np.newaxis]
+        actual_valid = env.to_linear(actual_valid)[:, np.newaxis]
+    w = weights[valid] / weights[valid].sum()
 
-    # Filter to valid samples
-    decoded_valid = decoded_positions[valid_mask]
-    actual_valid = actual_positions[valid_mask]
-    weights_valid = weights[valid_mask]
+    varies = (np.ptp(decoded_valid, axis=0) > 0) & (np.ptp(actual_valid, axis=0) > 0)
+    if not np.all(varies):
+        constant = np.flatnonzero(~varies).tolist()
+        where = (
+            "along the track"
+            if env.is_linearized_track
+            else f"in dimension(s) {constant} of {env.n_dims}"
+        )
+        warnings.warn(
+            f"decoding_correlation(): the decoded or actual positions do not "
+            f"vary {where}, so they have no correlation there"
+            + (
+                "; it is left out of the mean."
+                if np.any(varies)
+                else ", and the result is NaN."
+            ),
+            UserWarning,
+            stacklevel=2,
+        )
+        if not np.any(varies):
+            return float(np.nan)
+    decoded_centered = decoded_valid[:, varies] - w @ decoded_valid[:, varies]
+    actual_centered = actual_valid[:, varies] - w @ actual_valid[:, varies]
 
-    # Normalize weights to sum to 1 (with overflow check)
-    weight_sum = weights_valid.sum()
-    if weight_sum == 0 or not np.isfinite(weight_sum):
-        return float(np.nan)
-    w = weights_valid / weight_sum
-
-    # Compute correlation for each dimension, then average (vectorized)
-    # Weighted means for all dimensions at once: shape (n_dims,)
-    mean_decoded = np.average(decoded_valid, axis=0, weights=w)
-    mean_actual = np.average(actual_valid, axis=0, weights=w)
-
-    # Center the data: shape (n_valid, n_dims)
-    decoded_centered = decoded_valid - mean_decoded
-    actual_centered = actual_valid - mean_actual
-
-    # Weighted covariance and variances for all dims: shape (n_dims,)
-    # w has shape (n_valid,), so we broadcast: w[:, None] has shape (n_valid, 1)
-    cov_xy = np.sum(w[:, np.newaxis] * decoded_centered * actual_centered, axis=0)
-    var_decoded = np.sum(w[:, np.newaxis] * decoded_centered**2, axis=0)
-    var_actual = np.sum(w[:, np.newaxis] * actual_centered**2, axis=0)
-
-    # Correlation with zero-variance check (vectorized)
-    denom = np.sqrt(var_decoded * var_actual)
-    correlations = np.where(denom > 0, cov_xy / denom, np.nan)
-
-    # Return mean correlation across dimensions
-    # If any dimension is NaN, result is NaN
-    if np.any(np.isnan(correlations)):
-        return float(np.nan)
-
-    return float(np.mean(correlations))
+    # Weighted covariance and variances per dimension: shape (n_varying,)
+    cov_xy = w @ (decoded_centered * actual_centered)
+    var_decoded = w @ decoded_centered**2
+    var_actual = w @ actual_centered**2
+    correlations = cov_xy / np.sqrt(var_decoded * var_actual)
+    return float(np.clip(np.mean(correlations), -1.0, 1.0))

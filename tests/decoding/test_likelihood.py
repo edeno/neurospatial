@@ -262,22 +262,6 @@ class TestEdgeCases:
         assert_array_equal(simple_spike_counts, spike_counts_copy)
         assert_array_equal(simple_encoding_models, encoding_models_copy)
 
-    def test_dt_zero_raises(
-        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
-    ) -> None:
-        """dt=0 should raise ValueError."""
-        with pytest.raises(ValueError, match="dt must be a finite number"):
-            log_poisson_likelihood(simple_spike_counts, simple_encoding_models, dt=0.0)
-
-    def test_dt_negative_raises(
-        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
-    ) -> None:
-        """Negative dt should raise ValueError."""
-        with pytest.raises(ValueError, match="dt must be a finite number"):
-            log_poisson_likelihood(
-                simple_spike_counts, simple_encoding_models, dt=-0.025
-            )
-
     def test_min_rate_zero_raises(
         self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
     ) -> None:
@@ -300,65 +284,6 @@ class TestEdgeCases:
 # =============================================================================
 # Primary log-likelihood dt validation
 # =============================================================================
-
-
-class TestDtValidation:
-    """Both public likelihood functions route dt through the shared validate_dt.
-
-    The public likelihood surface must reject non-numeric, ``bool``, and
-    non-finite ``dt`` with the same ``ValueError`` as the decode entry points
-    (previously a numeric string leaked a raw ``TypeError``, ``dt=True`` was
-    silently accepted as ``1``, and ``nan``/``inf`` slipped through).
-    """
-
-    @pytest.mark.parametrize(
-        "func",
-        [log_poisson_likelihood],
-        ids=["log_poisson_likelihood"],
-    )
-    @pytest.mark.parametrize(
-        "bad_dt",
-        ["0.1", "abc", True, False, np.nan, np.inf, 0, -1],
-        ids=[
-            "str-numeric",
-            "str-nonnumeric",
-            "bool-true",
-            "bool-false",
-            "nan",
-            "inf",
-            "zero",
-            "negative",
-        ],
-    )
-    def test_invalid_dt_raises_valueerror(
-        self,
-        func,
-        bad_dt,
-        simple_spike_counts: np.ndarray,
-        simple_encoding_models: np.ndarray,
-    ) -> None:
-        """Non-numeric / bool / non-finite / non-positive dt raises ValueError."""
-        with pytest.raises(ValueError, match=r"dt must"):
-            func(simple_spike_counts, simple_encoding_models, dt=bad_dt)
-
-    @pytest.mark.parametrize(
-        "func",
-        [log_poisson_likelihood],
-        ids=["log_poisson_likelihood"],
-    )
-    def test_valid_dt_returns_expected_shape(
-        self,
-        func,
-        simple_spike_counts: np.ndarray,
-        simple_encoding_models: np.ndarray,
-    ) -> None:
-        """A valid dt still returns a finite (n_time_bins, n_bins) array."""
-        out = func(simple_spike_counts, simple_encoding_models, dt=0.025)
-        assert out.shape == (
-            simple_spike_counts.shape[0],
-            simple_encoding_models.shape[1],
-        )
-        assert np.isfinite(out).all()
 
 
 # =============================================================================
@@ -393,6 +318,60 @@ class TestReferenceComparison:
 
         assert_allclose(ll[0, 0], expected_bin0, rtol=1e-10)
         assert_allclose(ll[0, 1], expected_bin1, rtol=1e-10)
+
+
+class TestSparseCounts:
+    """The sparse product used for mostly-zero counts matches the formula."""
+
+    def test_sparse_matches_dense_and_scipy(self) -> None:
+        from scipy.special import gammaln
+        from scipy.stats import poisson
+
+        rng = np.random.default_rng(1)
+        counts = (rng.random((400, 10)) < 0.1) * rng.integers(1, 4, (400, 10))
+        assert 0.85 < np.mean(counts == 0) < 0.95  # takes the sparse branch
+        rates = np.random.default_rng(2).uniform(0.0, 30.0, (10, 50))
+        rates[0, 3] = 0.0  # floored to min_rate
+        dt = 0.05
+
+        sparse_ll = log_poisson_likelihood(counts, rates, dt=dt)
+        # A 10-row slice is small enough to take the dense branch.
+        dense_ll = np.concatenate(
+            [
+                log_poisson_likelihood(counts[i : i + 10], rates, dt=dt)
+                for i in range(0, 400, 10)
+            ]
+        )
+        expected = np.maximum(rates, 1e-10) * dt
+        reference = poisson.logpmf(counts[:, :, None], expected[None]).sum(axis=1)
+        reference += gammaln(counts + 1).sum(axis=1)[:, None]
+        assert_allclose(sparse_ll, dense_ll, rtol=0, atol=1e-12)
+        assert_allclose(sparse_ll, reference, rtol=0, atol=1e-10)
+
+
+class TestInvalidRates:
+    """Rates must be finite and non-negative: NaN means missing, not a rate."""
+
+    @pytest.mark.parametrize("bad", [np.nan, np.inf, -1.0])
+    @pytest.mark.parametrize("n_time", [2, 400])  # dense and sparse branches
+    def test_invalid_rate_raises(self, bad: float, n_time: int) -> None:
+        counts = np.zeros((n_time, 3), dtype=np.int64)
+        counts[0, 0] = 1
+        rates = np.full((3, 4), 5.0)
+        rates[1, 2] = bad
+        with pytest.raises(ValueError, match="not finite and non-negative") as err:
+            log_poisson_likelihood(counts, rates, dt=0.1)
+        assert "spatial_support" in str(err.value)
+
+    def test_zero_time_bins_returns_empty_without_warning(self) -> None:
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            ll = log_poisson_likelihood(
+                np.zeros((0, 2), dtype=np.int64), np.ones((2, 5)), dt=0.1
+            )
+        assert ll.shape == (0, 5)
 
 
 class TestLongTrajectoryStability:

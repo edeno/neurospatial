@@ -65,10 +65,11 @@ actual = np.interp(result.times, times, positions[:, 0]).reshape(-1, 1)
 print(f"array-first median error: "
       f"{np.nanmedian(decoding_error(env, result.map_position, actual)):.1f} cm")
 
-# --- BayesianDecoder: optional wrapper, byte-exact vs decode_session -------
+# --- BayesianDecoder: the same decode as an object ------------------------
 decoder = BayesianDecoder(env, dt=0.1).fit(spike_times, times, positions)
 prediction = decoder.predict(spike_times, times)
-assert np.array_equal(prediction.posterior, result.posterior)  # byte-for-byte
+# Equal here because no position is missing (see the BayesianDecoder section).
+assert np.array_equal(prediction.posterior, result.posterior)
 error = decoder.score(spike_times, times, positions, metric="median_error")
 print(f"BayesianDecoder.score median error: {error:.1f} cm")
 ```
@@ -356,15 +357,17 @@ error = fitted.score(spike_times, times, positions,
 fitted = decoder.fit(spike_times, times, positions, epochs=(0.0, 60.0))
 ```
 
-The functional `decode_session` remains the primary path — `predict` reproduces
-it **byte-for-byte** on the same inputs and parameters, so the object wrapper is
-purely for callers who prefer a `fit` / `predict` / `score` object.
+On a recording without missing tracking, `fit(...).predict(...)` on the same
+inputs and parameters equals `decode_session` exactly. With NaN positions they
+differ: `decode_session` does not decode tracking losses longer than `max_gap`,
+while `predict`, which takes no positions, decodes them. `decode_session` fits
+and decodes the same data, an in-sample decode; fit and predict on separate
+epochs to measure accuracy on held-out data.
 
 Because decoding runs through the `Environment`, `BayesianDecoder` decodes
 **linearized tracks**, masked open fields, and graph-based layouts — not just a
 rectangular grid — and `score(..., distance="geodesic")` measures error along the
-environment's connectivity graph. That is a differentiator over pynapple's
-`decode_1d` / `decode_2d`.
+environment's connectivity graph.
 
 ## pynapple interop
 
@@ -475,6 +478,7 @@ from pynwb import NWBHDF5IO
 
 from neurospatial import Environment, compute_spatial_rates
 from neurospatial.decoding import BayesianDecoder
+from neurospatial.encoding import SpikeTrains
 from neurospatial.io.nwb import read_intervals, read_position, read_units
 
 with NWBHDF5IO("session.nwb", "r") as io:
@@ -490,17 +494,18 @@ position_units = pos.units
 if position_units is None:
     raise ValueError("Choose position_units explicitly from the experiment's physical units.")
 env = Environment.from_samples(pos.positions, bin_size=5.0, units=position_units)
+cells = SpikeTrains(units.spike_times, unit_ids=units.unit_ids)
 rates = compute_spatial_rates(
-    env, units.spike_times, pos.times, pos.positions, unit_ids=units.unit_ids,
+    env, cells, pos.times, pos.positions,
     epochs=epochs, spike_window=units.spike_window,
 )
 rate_table = rates.summary_table()
 print(rate_table)
 
-# Reuse the maps and their unit labels; train order is retained for these arrays.
+# Reuse the maps; the labelled trains meet their own cells' maps.
 decoder = BayesianDecoder.from_rates(rates, dt=0.2)
 result = decoder.predict(
-    units.spike_times, pos.times, epochs=epochs, spike_window=units.spike_window,
+    cells, pos.times, epochs=epochs, spike_window=units.spike_window,
 )
 print(result.summary())
 

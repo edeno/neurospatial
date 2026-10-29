@@ -1,32 +1,34 @@
 """Estimate functions for Bayesian decoding results.
 
 This module provides standalone functions for computing derived quantities
-from posterior distributions. These functions mirror the corresponding
-properties on DecodingResult but operate on raw arrays, enabling use
+from posterior distributions. They compute the same quantities as the
+corresponding DecodingResult properties, but from a raw posterior array,
 without creating a DecodingResult container.
 
 Functions
 ---------
-posterior_mode : Bin index of the largest posterior probability
+map_bin : MAP bin index (highest posterior density)
 map_position : MAP position (highest posterior density) in environment coordinates
 mean_position : Posterior mean position (expected value)
 posterior_entropy : Posterior entropy in bits (entropy measure)
-credible_region : Highest posterior density region
+credible_region : Highest-density credible region
 
 Notes
 -----
-Function names mirror DecodingResult property names for consistency.
-Users can use either the result properties or these standalone functions
-interchangeably.
+Function names mirror DecodingResult property names. A DecodingResult
+validates its posterior when it is built (each row a probability mass, or
+entirely NaN where undecodable); these functions do not, so check a raw
+posterior yourself or wrap it in a DecodingResult. On a raw array,
+map_bin, map_position and credible_region skip NaN and Inf bins, while
+mean_position and posterior_entropy are NaN for a row that contains NaN.
 
 Examples
 --------
->>> from neurospatial.decoding.estimates import posterior_mode, posterior_entropy
+>>> from neurospatial.decoding.estimates import posterior_entropy
 >>> import numpy as np
 >>>
 >>> # Uniform posterior (maximum entropy)
 >>> posterior = np.ones((10, 100)) / 100
->>> bins = posterior_mode(posterior)
 >>> ent = posterior_entropy(posterior)
 >>> print(f"Entropy: {ent[0]:.2f} bits")  # log2(100) = 6.64 bits
 Entropy: 6.64 bits
@@ -34,7 +36,7 @@ Entropy: 6.64 bits
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -68,7 +70,8 @@ def _finish_posterior_mean(
 
     Polar centroids return as ``(distance, angle)`` with the angle in the
     environment's angular range. A centroid within the rounding error of the
-    animal's position, shape ``(n_time, 2)`` input, has no direction: NaN angle.
+    animal's position, shape ``(n_time, 2)`` input, is the animal's position:
+    distance 0 and no direction (NaN angle).
     """
     if not _is_polar(env):
         return weighted
@@ -81,40 +84,89 @@ def _finish_posterior_mean(
     # Each centroid sums n_bins terms bounded by the largest bin distance.
     max_distance = float(np.max(np.abs(env.bin_centers[:, 0])))
     rounding = env.n_bins * np.finfo(np.float64).eps * max_distance
-    angle = np.where(distance <= rounding, np.nan, angle)
-    return np.column_stack([distance, angle])
+    at_animal = distance <= rounding
+    return np.column_stack(
+        [np.where(at_animal, 0.0, distance), np.where(at_animal, np.nan, angle)]
+    )
+
+
+_UNDECODABLE_BIN = -1
+"""MAP bin of a posterior row with no finite entry, as ``env.bin_at`` outside."""
+
+
+def _tie_tolerance(dtype: np.dtype[Any] | type) -> float:
+    """Relative density difference counted as a tie: ``16 * eps`` of ``dtype``.
+
+    Normalizing a posterior and dividing it by bin sizes rounds each density a
+    few times, so densities that are equal in exact arithmetic differ by a few
+    ``eps``. Real differences between neighbouring bins, even near a broad
+    peak, are orders of magnitude larger.
+    """
+    return float(16 * np.finfo(np.result_type(dtype, np.float32)).eps)
+
+
+# Rows per block in _density_mode, sized so temporaries stay near 2**22 elements.
+_BLOCK_ELEMENTS = 2**22
 
 
 def _density_mode(
-    posterior: NDArray[np.float64], measures: NDArray[np.float64] | None
+    posterior: NDArray[np.float64],
+    measures: NDArray[np.float64] | None,
+    *,
+    rounding_dtype: np.dtype[Any] | type | None = None,
 ) -> NDArray[np.int64]:
     """Bin of highest posterior density per row, shape ``(n_time_bins,)``.
 
     ``measures`` are bin measures relative to the largest bin (``None`` for
     equal bins). The density ``posterior / measures`` is proportional to
     probability per unit length or area, so a large bin does not win only by
-    holding more space.
+    holding more space. Densities within :func:`_tie_tolerance` of the row's
+    largest count as tied and the lowest bin index wins. NaN and Inf bins are
+    skipped; a row with no finite entry gets ``_UNDECODABLE_BIN``.
+
+    Densities are compared in float64 with the tolerance of ``rounding_dtype``
+    (default: the posterior's dtype), so a float32 posterior and its float64
+    copy give the same bins when ``rounding_dtype`` names the float32 source.
     """
-    if measures is None:
-        density = posterior
-    else:
-        density = posterior / measures.astype(posterior.dtype, copy=False)
-    result: NDArray[np.int64] = np.argmax(density, axis=1).astype(np.int64)
+    posterior = np.asarray(posterior)
+    rtol = _tie_tolerance(posterior.dtype if rounding_dtype is None else rounding_dtype)
+    result = np.empty(posterior.shape[0], dtype=np.int64)
+    step = max(1, _BLOCK_ELEMENTS // max(posterior.shape[1], 1))
+    for start in range(0, posterior.shape[0], step):
+        block = np.asarray(posterior[start : start + step], dtype=np.float64)
+        if measures is not None:
+            block = block / measures
+        finite = np.isfinite(block)
+        density = np.where(finite, block, -np.inf)
+        peak = density.max(axis=1, keepdims=True, initial=-np.inf)
+        modes = np.argmax(density >= peak - rtol * np.abs(peak), axis=1)
+        modes[~finite.any(axis=1)] = _UNDECODABLE_BIN
+        result[start : start + step] = modes
     return result
 
 
-def posterior_mode(
+def _bin_positions(env: Environment, bins: NDArray[np.int64]) -> NDArray[np.float64]:
+    """Centers of ``bins``, shape ``(n, n_dims)``, NaN for ``_UNDECODABLE_BIN``."""
+    positions = np.full((bins.shape[0], env.n_dims), np.nan)
+    decoded = bins != _UNDECODABLE_BIN
+    positions[decoded] = env.bin_centers[bins[decoded]]
+    return positions
+
+
+def map_bin(
+    env: Environment,
     posterior: NDArray[np.float64],
 ) -> NDArray[np.int64]:
-    """Bin index of the largest posterior probability for each time bin.
+    """Maximum a posteriori bin index for each time bin.
 
-    Returns the index of the bin with highest posterior probability mass
-    at each time step. This is the MAP bin when all bins have the same size;
-    on environments with unequal bins use :func:`map_position` or
-    ``DecodingResult.map_estimate``, which compare probability density.
+    Returns the index of the bin with highest posterior density at each
+    time step: the bin whose probability per unit length, area or volume,
+    ``posterior / env.bin_sizes``, is largest.
 
     Parameters
     ----------
+    env : Environment
+        Spatial environment providing bin sizes.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
         Posterior probability distribution over positions.
         Each row should sum to 1.0.
@@ -122,39 +174,41 @@ def posterior_mode(
     Returns
     -------
     NDArray[np.int64], shape (n_time_bins,)
-        Bin indices of maximum posterior probability.
+        MAP bin indices; -1 (as :meth:`Environment.bin_at` reports a point
+        outside the environment) for an undecodable row with no finite entry.
 
     Notes
     -----
-    Uses ``np.argmax(axis=1)`` which returns the first maximum
-    in case of ties.
+    The posterior holds a probability mass per bin. A bin twice as long
+    holds twice the mass at the same density, so comparing mass would favor
+    large bins; on equal bins the two orderings agree. Densities that agree
+    to within ``16 * eps`` of the posterior dtype, relative, count as tied,
+    and ties go to the lowest bin index. NaN and Inf bins are skipped.
 
-    Without an environment this function cannot know bin sizes, so it
-    compares probability mass. A bin twice as long holds twice the mass at
-    the same density, so on a track or arena with unequal bins this index
-    favors large bins and is not the posterior mode in space.
-    ``DecodingResult.map_estimate`` gives the same index as this function
-    when bins are equal and the highest-density bin otherwise.
+    This function mirrors ``DecodingResult.map_bin``.
 
     See Also
     --------
     map_position : MAP position in environment coordinates
-    DecodingResult.map_estimate : Property version on result container
+    DecodingResult.map_bin : Property version on result container
 
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.estimates import posterior_mode
+    >>> from neurospatial import Environment
+    >>> from neurospatial.decoding.estimates import map_bin
     >>>
-    >>> # Delta posterior at bin 5
-    >>> posterior = np.zeros((1, 10))
-    >>> posterior[0, 5] = 1.0
-    >>> bins = posterior_mode(posterior)
-    >>> print(bool(bins[0] == 5))
-    True
+    >>> positions = np.column_stack([np.linspace(0, 10, 50), np.linspace(0, 10, 50)])
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> posterior = np.zeros((1, env.n_bins))
+    >>> posterior[0, 3] = 1.0
+    >>> map_bin(env, posterior).tolist()
+    [3]
     """
-    result: NDArray[np.int64] = np.argmax(posterior, axis=1).astype(np.int64)
-    return result
+    from neurospatial.decoding._support import relative_bin_measures
+
+    measures = relative_bin_measures(env, context="map_bin")
+    return _density_mode(posterior, measures)
 
 
 def map_position(
@@ -178,20 +232,21 @@ def map_position(
     Returns
     -------
     NDArray[np.float64], shape (n_time_bins, n_dims)
-        MAP positions in environment coordinates.
+        MAP positions in environment coordinates; NaN for an undecodable row
+        with no finite entry.
 
     Notes
     -----
     The posterior holds a probability mass per bin. Its mode over space is
     the bin of highest density, mass divided by bin size; on equal bins this
-    is ``env.bin_centers[posterior_mode(posterior)]``. Ties go to the lowest
-    bin index.
+    is the highest-mass bin. Ties, within rounding, go to the lowest bin
+    index (see :func:`map_bin`).
 
     This function mirrors ``DecodingResult.map_position``.
 
     See Also
     --------
-    posterior_mode : MAP bin index
+    map_bin : MAP bin index
     mean_position : Posterior mean position
     DecodingResult.map_position : Property version on result container
 
@@ -211,10 +266,7 @@ def map_position(
     >>> pos.shape
     (1, 2)
     """
-    from neurospatial.decoding._support import relative_bin_measures
-
-    measures = relative_bin_measures(env, context="map_position")
-    return env.bin_centers[_density_mode(posterior, measures)]
+    return _bin_positions(env, map_bin(env, posterior))
 
 
 def mean_position(
@@ -240,7 +292,11 @@ def mean_position(
 
     Notes
     -----
-    On Cartesian environments this is ``posterior @ env.bin_centers``.
+    On Cartesian environments this is ``posterior @ env.bin_centers``. On a
+    track graph or linearized track the bin centers are 2-D points along the
+    track, so the mean of mass on two arms (or around a bend) can lie off the
+    track; use :func:`map_position` when the estimate must be a track
+    position.
 
     On egocentric polar environments the mean is the probability-weighted
     centroid in the animal's egocentric plane (x ahead, y left), returned as
@@ -300,16 +356,16 @@ def posterior_entropy(
 
     Notes
     -----
-    Uses mask-based computation to avoid bias from exact zeros:
+    Bins with zero probability contribute nothing:
 
     .. math::
 
         H = -\\sum_{i: p_i > 0} p_i \\log_2(p_i)
 
-    This is more accurate than global clipping to ``[1e-10, 1]`` which
-    can slightly bias entropy upward when many exact zeros occur.
+    The sum accumulates in float64 for any posterior dtype. An undecodable
+    (entirely NaN) row has NaN entropy.
 
-    Maximum entropy (uniform distribution) is ``log2(n_bins)``.
+    Maximum entropy (uniform distribution over bins) is ``log2(n_bins)``.
     Minimum entropy (delta distribution) is 0.
 
     This is the entropy of the discrete distribution over bins: it counts
@@ -317,8 +373,7 @@ def posterior_entropy(
     posterior that is flat over space puts more mass in larger bins, so its
     entropy is below ``log2(n_bins)``.
 
-    This function mirrors ``DecodingResult.posterior_entropy`` (named ``entropy``
-    here to be precise about the statistic being computed).
+    This function mirrors ``DecodingResult.posterior_entropy``.
 
     See Also
     --------
@@ -342,13 +397,17 @@ def posterior_entropy(
     >>> bool(abs(ent[0]) < 0.01)  # Should be 0 bits (within numerical precision)
     True
     """
-    p = np.clip(posterior, 0.0, 1.0)
-    # Vectorized mask-based entropy: avoid log(0) by using np.where
-    with np.errstate(divide="ignore", invalid="ignore"):
-        log_p = np.where(p > 0, np.log2(p), 0.0)
-    result: NDArray[np.float64] = cast(
-        "NDArray[np.float64]", -np.sum(p * log_p, axis=1)
-    )
+    posterior = np.asarray(posterior)
+    result = np.empty(posterior.shape[0], dtype=np.float64)
+    step = max(1, _BLOCK_ELEMENTS // max(posterior.shape[1], 1))
+    for start in range(0, posterior.shape[0], step):
+        # Accumulate in float64 whatever the posterior dtype.
+        p = np.clip(posterior[start : start + step], 0.0, 1.0, dtype=np.float64)
+        # A zero bin contributes 0 and a NaN bin keeps the row NaN.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            terms = np.where(p > 0, p * np.log2(p), p)
+        # 0.0 - sum keeps a zero entropy +0.0 rather than -0.0.
+        result[start : start + step] = 0.0 - np.sum(terms, axis=1)
     return result
 
 
@@ -358,11 +417,10 @@ def credible_region(
     *,
     level: float = 0.95,
 ) -> list[NDArray[np.int64]]:
-    """Highest posterior density region containing specified probability mass.
+    """Highest-density credible region containing a given probability mass.
 
-    Returns the smallest region, by length, area or volume, that contains at
-    least the specified probability mass: bins are added in order of
-    decreasing probability density until their mass reaches ``level``.
+    Bins are added in order of decreasing probability density (mass per
+    unit length, area or volume) until their mass reaches ``level``.
 
     Parameters
     ----------
@@ -373,14 +431,14 @@ def credible_region(
         Each row should sum to 1.0.
     level : float, default=0.95
         Probability mass to include. Must be in (0, 1).
-        Common values: 0.5 (median region), 0.9, 0.95, 0.99.
+        Common values: 0.5 (50% region), 0.9, 0.95, 0.99.
 
     Returns
     -------
     list[NDArray[np.int64]]
         List of arrays, one per time bin. Each array contains the bin
-        indices in the HPD region, sorted by density (highest first) and by
-        bin index within tied densities.
+        indices in the credible region, sorted by density (highest first) and
+        by bin index within tied densities.
 
     Raises
     ------
@@ -390,16 +448,20 @@ def credible_region(
 
     Notes
     -----
-    The Highest Posterior Density (HPD) region is the smallest region
-    containing the specified probability mass. The posterior holds a
-    probability mass per bin, so each bin's density is its mass divided by
-    its size (``env.bin_sizes``). Bins enter in order of decreasing density
-    until the cumulative mass reaches ``level``; ranking by mass instead
-    would favor large bins and give a larger region.
+    This is a highest posterior density (HPD) region built greedily by
+    density. The posterior holds a probability mass per bin, so each bin's
+    density is its mass divided by its size (``env.bin_sizes``). Bins enter
+    in order of decreasing density until the cumulative mass reaches
+    ``level``; ranking by mass instead would favor large bins. On equal
+    bins the region has the fewest bins that reach ``level``, apart from
+    the tied bins described below. On unequal bins it can be
+    slightly larger in length or area than the smallest region holding
+    ``level``, because the last bin needed may overshoot: a smaller bin
+    further down the ranking could reach ``level`` with less space.
 
     Bins tied in density with the last bin needed all enter the region, so
     the region does not depend on bin numbering. Densities that agree to
-    within ``sqrt(eps)`` of the posterior dtype, relative, count as tied,
+    within ``16 * eps`` of the posterior dtype, relative, count as tied,
     which absorbs rounding in the posterior. A tie can make the region hold
     more than ``level``: for a posterior that is uniform over space, the
     region is every bin.
@@ -407,9 +469,10 @@ def credible_region(
     For a unimodal posterior, the HPD region is a contiguous set of bins
     around the mode.
 
-    NaN/Inf posterior bins (e.g. masked or off-track positions) are
-    excluded from the HPD region: they are never reported as members,
-    including as the leading (highest-density) member.
+    NaN/Inf posterior bins (e.g. masked or off-track positions) and bins
+    with zero mass are never members. A row whose finite mass is below
+    ``level`` keeps every bin with mass, and an undecodable (entirely NaN)
+    row has an empty region.
 
     See Also
     --------
@@ -453,14 +516,15 @@ def credible_region(
     # Position of the bin that brings the mass to `level`.
     last = np.argmax(reached, axis=1)
     threshold = sorted_density[np.arange(len(posterior)), last]
-    rtol = np.sqrt(np.finfo(np.result_type(posterior, np.float32)).eps)
+    rtol = _tie_tolerance(posterior.dtype)
     in_region = sorted_density >= (threshold * (1.0 - rtol))[:, np.newaxis]
     n_bins_needed = in_region.sum(axis=1)
 
     # A row whose finite mass never reaches `level` (e.g. off-track/NaN rows)
-    # keeps every finite bin and never the NaN/Inf ones.
+    # keeps every bin with mass and never a NaN/Inf or zero-mass one; an
+    # undecodable row gets an empty region.
     never_reached = ~reached.any(axis=1)
-    n_bins_needed[never_reached] = finite.sum(axis=1)[never_reached]
+    n_bins_needed[never_reached] = (mass > 0).sum(axis=1)[never_reached]
 
     # Build result list (variable-length arrays require Python loop)
     return [

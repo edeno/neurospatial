@@ -72,10 +72,11 @@ class TestSpatialRatesRoundTrip:
             unit_ids=np.arange(2) if explicit_ids else None,
             spike_window=None if spike_window is None else np.array(spike_window),
         )
-        # The same numeric IDs must retain positional or label pairing as supplied.
-        spikes = SpikeTrains(
-            [np.array([0.05, 0.75, 1.05]), np.array([])], unit_ids=[1, 0]
-        )
+        # Explicit IDs pair labelled spikes by label; generated IDs pair a plain
+        # list by position and refuse labelled spikes, before and after a file.
+        trains = [np.array([0.05, 0.75, 1.05]), np.array([])]
+        labelled = SpikeTrains(trains, unit_ids=[1, 0])
+        spikes = labelled if explicit_ids else trains[::-1]
         times = np.arange(21) / 10
         expected = BayesianDecoder.from_rates(rates, dt=0.1).predict(
             spikes, times, spike_window=rates.spike_window
@@ -95,9 +96,15 @@ class TestSpatialRatesRoundTrip:
             assert not restored.spike_window.flags.writeable
             np.testing.assert_array_equal(restored[0].spike_window, rates.spike_window)
 
-        actual = BayesianDecoder.from_rates(restored, dt=0.1).predict(
+        restored_decoder = BayesianDecoder.from_rates(restored, dt=0.1)
+        actual = restored_decoder.predict(
             spikes, times, spike_window=restored.spike_window
         )
+        if not explicit_ids:
+            with pytest.raises(ValueError, match="unit labels"):
+                restored_decoder.predict(
+                    labelled, times, spike_window=restored.spike_window
+                )
         np.testing.assert_array_equal(actual.times, expected.times)
         np.testing.assert_allclose(actual.posterior, expected.posterior)
 

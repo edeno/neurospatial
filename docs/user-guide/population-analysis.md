@@ -398,9 +398,12 @@ print({name: matrix.shape for name, matrix in counts.items()})
 
 Each count matrix is `(n_time_bins, n_units)`, with the same unit order in
 every period; `unit_ids` labels the columns. The bin size sets the time scale
-of "together": 25-100 ms bins are typical for assemblies; shorter bins catch
-tighter synchrony but give noisier correlations. Use enough bins: at least 5-10 times more time bins than
-units.
+of "together". Published assembly analyses use 25 ms bins (van de Ven et al.,
+2016) up to 100 ms (Peyrache et al., 2010); shorter bins catch tighter
+synchrony but hold fewer spikes and give noisier correlations. The
+Marchenko-Pastur threshold below is exact only for long recordings, so with
+few time bins per unit check the number of selected dimensions on counts
+shuffled in time.
 
 ### Which cells fire together during running?
 
@@ -467,26 +470,35 @@ assemblies, and each pattern's core members are the four cells of one planted
 assembly. The threshold selects dimensions; it is not a p-value for a pattern
 or a cell. In real data, cells with overlapping place fields form patterns
 too, because they fire together during running. A pattern can also have no
-core members at the default cutoff even when its dimension passes. Pass
+core members at the default cutoff even when its dimension passes: with `k`
+equally weighted members among `n` units their z-score is sqrt((n - k) / k),
+so 4 members of 28 units reach 2.4, but 3 members of 9 units only 1.4. Pass
 `rng=` so ICA gives the same patterns on every run.
 
 ### Do the patterns return during rest?
 
-`assembly_activation` projects counts from any period onto a pattern and
-returns one value per time bin, standardized within that period (mean 0,
-standard deviation 1). With `unit_ids=`, the columns are matched to the
+`assembly_activation` measures, in each time bin, how strongly the cells of
+a pattern fire together. It z-scores each unit's counts within the period you
+pass and computes the activation strength
+R(t) = sum over pairs i != j of w_i w_j z_i(t) z_j(t), where w are the
+pattern's weights and z(t) the z-scored counts (Lopes-dos-Santos et al., 2013;
+Peyrache et al., 2010). Only pairs of cells contribute, so a burst of one
+cell alone adds nothing; R(t) is large only when several cells with large
+weights fire above their means in the same bin, and it averages 0 for cells
+that fire independently. With `unit_ids=`, the columns are matched to the
 pattern's weights by label, so counts binned from a differently ordered unit
 list still give the right answer, and a unit missing from either side raises
 instead of shifting every weight onto the wrong cell. ICA determines a
-pattern only up to its sign, so `detect_assemblies` orients each pattern so
-the neurons with the largest positive weights are the members; the bins where
-those members fire together then have positive activation.
+pattern only up to its sign; R(t) does not depend on the sign, and
+`detect_assemblies` orients each pattern so the neurons with the largest
+positive weights are the members.
 
 ```python
 reactivated = []
 for k, pattern in enumerate(assemblies.patterns):
     assembly = assembly_of[pattern.member_indices[0]]
     activation = assembly_activation(counts["post_rest"], pattern, unit_ids=unit_ids)
+    activation_pre = assembly_activation(counts["pre_rest"], pattern, unit_ids=unit_ids)
     # In this simulation we know when each assembly burst together.
     starts = 180.0 + replay_starts[assembly]
     centers = bin_times["post_rest"][:, None]
@@ -500,20 +512,19 @@ for k, pattern in enumerate(assemblies.patterns):
         template_unit_ids=unit_ids, match_unit_ids=unit_ids,
     )
     print(f"Pattern {k}: activation {activation[in_event].mean():.1f} during "
-          f"its events vs {activation[~in_event].mean():.1f} otherwise; "
+          f"its events vs {activation[~in_event].mean():.2f} otherwise; "
+          f"bins above 5: pre {np.mean(activation_pre > 5):.1%}, "
+          f"post {np.mean(activation > 5):.1%}; "
           f"strength pre {strength_pre:.2f}, post {strength_post:.2f}")
     reactivated.append((activation[in_event].mean(), activation[~in_event].mean(),
                         strength_pre, strength_post))
 in_events, otherwise, pre, post = np.array(reactivated).T
 print(f"Mean strength over patterns: pre {pre.mean():.2f}, post {post.mean():.2f}")
-assert post.mean() > pre.mean() + 0.02  # higher after the task, on average
+assert post.min() > 1.0 > 0.1 > np.abs(pre).max()  # co-firing only after the task
 # Reproducibility pins for this seed:
-assert 3.39 <= in_events.min() <= in_events.max() <= 3.71
-assert np.allclose(otherwise, -0.2, atol=0.06)
-assert 1.044 <= pre.min() <= pre.max() <= 1.066
-assert 1.054 <= post.min() <= post.max() <= 1.136
-assert np.isclose(pre.mean(), 1.06, atol=0.006)
-assert np.isclose(post.mean(), 1.10, atol=0.006)
+assert 19.9 <= in_events.min() <= in_events.max() <= 23.9
+assert np.allclose(otherwise, 0.09, atol=0.02)
+assert 1.54 <= post.min() <= post.max() <= 1.70
 
 # The columns of rest counts in another order give the same activation.
 order = np.random.default_rng(3).permutation(n_units)
@@ -525,28 +536,35 @@ in_order = assembly_activation(counts["post_rest"], pattern, unit_ids=unit_ids)
 assert np.allclose(reordered, in_order)
 ```
 
-In post-task rest, each pattern's activation averages about 3.5 standard
-deviations above its mean in the bins where that assembly burst together, and
-0.2 below the mean otherwise. With real data you do not know the replay times;
-align the activation to sharp-wave ripples or to rest epochs instead, and
-compare with pre-task rest. Activation is a linear projection, so a burst of a
-single member also raises it, and a value above 2 is a descriptive cutoff, not
-a p < 0.05 test.
+In post-task rest, each pattern's activation strength averages 20 to 24 in
+the bins where that assembly burst together and about 0.1 otherwise. Bins
+above 5, the cutoff van de Ven et al. (2016) used to call assembly
+activations, make up about 4% of post-task rest and under 1% of pre-task
+rest. With real data you do not know the replay times; align the activation
+to sharp-wave ripples or to rest epochs instead, and compare with pre-task
+rest. For independent cells R(t) averages 0 with a standard deviation of at
+most about 1.4, but spike counts give heavier tails, so the cutoff of 5 is
+descriptive, not a p-value; build a null for your recording, such as
+activation strengths after shuffling each unit's counts in time.
 
-`reactivation_strength` puts both periods on the running period's scale
-(each unit's running mean and standard deviation) and returns the ratio of
-mean absolute activation, rest period over running. Averaged over the three
-patterns, it is higher after the task (1.10) than before (1.06), because the
-members burst together; for some patterns the difference is only slight
-(pattern 0: 1.06 before and after). It stays close to 1 in both rest periods
-because the cells fire at the same rates in both. The ratio measures how
-strongly the pattern is expressed, not whether its cells fire together, so a
-change in overall rate between rest and running also changes it. Whether the
-cells fire together is what explained variance, below, measures. Each period's
-column labels go to
-their own argument, `template_unit_ids=` for running and `match_unit_ids=` for
-rest; here both periods were binned from one list of spike trains, so they get
-the same labels. Pass both or neither: labels for only one period raise.
+`reactivation_strength` returns a pattern's mean activation strength in the
+rest period divided by its mean during running (Peyrache et al., 2009), with
+each period z-scored on its own. A period's mean activation strength is the
+pattern's co-firing beyond independent firing, so the ratio is about 0 when
+the cells fire independently and 1 when they co-fire as much as during
+running. Before the task it stays within 0.1 of 0 (the bursts were
+independent). After the task it is 1.5 to 1.7: the synchronized bursts make
+the members co-fire more than running did, when they shared only a place
+field. With no co-firing the ratio is 0 up to noise of about
+sqrt(2 / n_rest_bins) divided by the running mean activation strength,
+about 0.06 here. Because each period is standardized on its own, a change of
+gain does not change the ratio, but independent spikes added to the members
+dilute their correlation and lower it, so compare post-task rest with
+pre-task rest rather than reading one value alone. Each period's column
+labels go to their own argument, `template_unit_ids=` for running and
+`match_unit_ids=` for rest; here both periods were binned from one list of
+spike trains, so they get the same labels. Pass both or neither: labels for
+only one period raise.
 
 The explained-variance measure asks whether the whole correlation structure of
 running returns during rest. It correlates the pairwise correlations of
@@ -576,9 +594,9 @@ reactivation = explained_variance_reactivation(
     control_unit_ids=unit_ids,
 )
 print(f"EV = {reactivation.explained_variance:.2f}, "
-      f"REV = {reactivation.reversed_ev:.3f}, over {reactivation.n_pairs} pairs")
+      f"REV = {reactivation.reversed_explained_variance:.3f}, over {reactivation.n_pairs} pairs")
 assert np.isclose(reactivation.explained_variance, 0.74, atol=0.006)
-assert np.isclose(reactivation.reversed_ev, 0.011, atol=0.0006)
+assert np.isclose(reactivation.reversed_explained_variance, 0.011, atol=0.0006)
 
 # Post-task rest with its units in another order gives the same EV.
 reordered = explained_variance_reactivation(
@@ -597,8 +615,9 @@ reappears after the task and was absent before it, which is what we planted.
 EV and REV are effect sizes. To claim reactivation in a real recording, compare against a
 null built for your data (for example, EV computed after shuffling unit
 identities or using other rest epochs) and report the control period, the bin
-size and the unit selection. Without `control_correlations`, EV equals REV by
-construction and the comparison says nothing about direction.
+size and the unit selection. Without `control_correlations` there is no
+period to swap, so `reversed_explained_variance` is NaN and EV alone says
+nothing about direction.
 
 ## What position does the population encode?
 
@@ -675,7 +694,7 @@ print(f"{spatial.sum()} of {len(my_unit_ids)} units pass the information screen;
       f"they cover {my_coverage.coverage_fraction:.0%} of the track")
 print(f"{my_assemblies.n_significant} assembly dimensions; "
       f"EV {my_reactivation.explained_variance:.2f}, "
-      f"REV {my_reactivation.reversed_ev:.3f}")
+      f"REV {my_reactivation.reversed_explained_variance:.3f}")
 ```
 
 Checks before you interpret the numbers:
@@ -696,7 +715,7 @@ Checks before you interpret the numbers:
   are matched by label. Without labels these calls pair cells by column
   position, so every count matrix must share one column order.
 - **Screens, not verdicts.** The information cutoff, the Marchenko-Pastur
-  threshold, the membership cutoff, activation above 2, and EV versus REV are
+  threshold, the membership cutoff, activation strength above 5, and EV versus REV are
   descriptive. Use `spatial_cell_type_significance` labels or
   `is_place_cell(..., criterion="shuffle")` for cell-type decisions and a
   null built for your recording for reactivation claims.

@@ -171,52 +171,33 @@ def test_decode_warns_on_nan_model(
     np.testing.assert_allclose(result.posterior.sum(axis=1), 1.0, atol=1e-6)
 
 
-def test_decode_partial_nan_bin_excluded_not_penalized() -> None:
-    """A partial-NaN bin decodes from its observing neuron(s), not penalized.
+def test_decode_partial_nan_bin_gets_zero_posterior() -> None:
+    """A bin missing a rate for any neuron is excluded, not decoded from the rest.
 
-    Refined contract (partial- vs all-NaN):
-
-    - **Partial-NaN bin** (NaN for *some* neurons but observed by >=1 other):
-      the NaN neurons' ``(neuron, bin)`` terms are *excluded* from the Poisson
-      sum at that bin, and the bin still decodes from the observing neurons.
-      "Excluded, not penalized" means: relative to a literal zero-fill, a spike
-      from the masked neuron must not crush the bin's posterior the way a true
-      zero rate clipped to the likelihood floor would.
-    - **All-NaN bin** (NaN for *every* neuron) -> zero posterior; tested
-      separately in :func:`test_decode_all_nan_bin_gets_zero_posterior`.
-
-    This test exercises the partial-NaN case: two neurons, with the target bin
-    NaN for one neuron but observed by the other.
+    Leaving out only the masked neuron would favour the bin (each observed
+    Poisson term is at most 1); a zero fill would treat a missing estimate
+    as silence. The bin gets zero mass and the remaining bins keep the
+    posterior of the complete model restricted to them.
     """
     positions = np.linspace(0.0, 10.0, 200).reshape(-1, 1)
     env = Environment.from_samples(positions, bin_size=2.0)
     n_bins = env.n_bins
 
-    # Two neurons, flat 5 Hz everywhere. Neuron 0 is masked (NaN) at bin 0,
-    # but neuron 1 still observes bin 0 -> bin 0 is a *partial*-NaN bin.
-    rates_nan = np.full((2, n_bins), 5.0)
+    rng = np.random.default_rng(0)
+    rates = rng.uniform(1.0, 10.0, (2, n_bins))
+    rates_nan = rates.copy()
     rates_nan[0, 0] = np.nan
-    # Both neurons fire in this time bin.
-    spike_counts = np.array([[3, 3]], dtype=np.int64)
+    spike_counts = np.array([[3, 3], [0, 0]], dtype=np.int64)
     dt = 0.1
 
-    with pytest.warns(UserWarning):
+    with pytest.warns(UserWarning, match="1 of"):
         post_nan = decode_position(env, spike_counts, rates_nan, dt=dt).posterior
 
-    # Well-formed posterior; bin 0 still decodes from neuron 1, so it is not
-    # spuriously killed: it retains real, non-negligible mass.
-    assert np.isfinite(post_nan).all()
-    np.testing.assert_allclose(post_nan.sum(axis=1), 1.0, atol=1e-6)
-    assert post_nan[0, 0] > 0.0
-
-    # Contrast: a literal zero rate at bin 0 for neuron 0 (clipped to the
-    # likelihood floor) makes neuron 0's 3 spikes there astronomically
-    # unlikely, crushing bin 0's posterior. Excluding the NaN term must leave
-    # bin 0 with vastly more mass than the zero-fill penalty would.
-    rates_zero = rates_nan.copy()
-    rates_zero[0, 0] = 0.0
-    post_zero = decode_position(env, spike_counts, rates_zero, dt=dt).posterior
-    assert post_nan[0, 0] > post_zero[0, 0] * 1e3
+    np.testing.assert_array_equal(post_nan[:, 0], 0.0)
+    prior = np.ones(n_bins)
+    prior[0] = 0.0
+    expected = decode_position(env, spike_counts, rates, dt=dt, prior=prior).posterior
+    np.testing.assert_allclose(post_nan, expected, rtol=1e-12)
 
 
 def test_decode_all_nan_bin_gets_zero_posterior() -> None:
@@ -272,7 +253,7 @@ def test_decode_model_with_no_finite_bins_raises() -> None:
     encoding_models = np.full((1, n_bins), np.nan)
     spike_counts = np.array([[0]], dtype=np.int64)
 
-    with pytest.raises(ValueError, match="no finite bins"):
+    with pytest.raises(ValueError, match="no bin where every neuron"):
         decode_position(env, spike_counts, encoding_models, dt=1.0)
 
 
@@ -290,7 +271,7 @@ def test_decode_no_finite_bins_raises_multineuron_all_columns_nan() -> None:
     encoding_models = np.full((3, n_bins), np.nan)
     spike_counts = np.array([[0, 1, 2]], dtype=np.int64)
 
-    with pytest.raises(ValueError, match="no finite bins"):
+    with pytest.raises(ValueError, match="no bin where every neuron"):
         decode_position(env, spike_counts, encoding_models, dt=1.0)
 
 
@@ -339,7 +320,7 @@ def test_decode_all_inf_model_validate_false_raises() -> None:
     encoding_models = np.full((1, n_bins), np.inf)
     spike_counts = np.array([[0]], dtype=np.int64)
 
-    with pytest.raises(ValueError, match="no finite bins"):
+    with pytest.raises(ValueError, match="no bin where every neuron"):
         decode_position(env, spike_counts, encoding_models, dt=1.0, validate=False)
 
 
@@ -359,7 +340,7 @@ def test_decode_no_finite_bins_mixed_nan_inf_raises() -> None:
     encoding_models[0, n_bins // 2 :] = np.inf  # other half all-Inf
     spike_counts = np.array([[0]], dtype=np.int64)
 
-    with pytest.raises(ValueError, match="no finite bins"):
+    with pytest.raises(ValueError, match="no bin where every neuron"):
         decode_position(env, spike_counts, encoding_models, dt=1.0, validate=False)
 
 
@@ -436,3 +417,89 @@ def test_decode_no_spike_valid_model_yields_uniform_posterior() -> None:
     np.testing.assert_allclose(post.sum(axis=1), 1.0, atol=1e-6)
     # Flat likelihood -> uniform posterior.
     np.testing.assert_allclose(post[0], 1.0 / n_bins, atol=1e-9)
+
+
+@pytest.fixture
+def supported_rates():
+    """Binned rates on a 1-D track where the animal never visited 80-100 cm."""
+    from neurospatial.encoding import compute_spatial_rates
+
+    env = Environment.from_samples(np.linspace(0.0, 100.0, 200)[:, None], bin_size=10.0)
+    times = np.arange(0.0, 60.0, 0.05)
+    x = 40.0 + 39.0 * np.sin(2 * np.pi * times / 15.0)  # stays below 80 cm
+    positions = x[:, None]
+    spike_rng = np.random.default_rng(1)
+    spikes = [np.sort(spike_rng.uniform(0.0, 60.0, n)) for n in (200, 300)]
+    rates = compute_spatial_rates(
+        env, spikes, times, positions, method="binned", bandwidth=0.0
+    )
+    assert not rates.spatial_support.all()
+    return env, rates
+
+
+def test_rate_result_with_user_prior_is_bayes_on_the_support(supported_rates):
+    """Prior p with a rate result equals Bayes with prior p * spatial_support."""
+    from scipy.stats import poisson
+
+    env, rates = supported_rates
+    support = rates.spatial_support
+    prior = np.linspace(1.0, 2.0, env.n_bins)
+    counts = np.array([[0, 1], [2, 0], [1, 3]])
+    dt = 0.25
+    result = decode_position(env, counts, rates, dt=dt, prior=prior)
+
+    filled = np.where(support, np.asarray(rates.firing_rates), 0.0)
+    likelihood = poisson.pmf(counts[:, :, None], filled[None] * dt).prod(axis=1)
+    unnormalized = likelihood * prior * support
+    expected = unnormalized / unnormalized.sum(axis=1, keepdims=True)
+    np.testing.assert_array_equal(result.posterior[:, ~support], 0.0)
+    np.testing.assert_allclose(result.posterior, expected, rtol=1e-10)
+
+
+@pytest.mark.parametrize(
+    ("support", "match"),
+    [
+        ("short", r"shape \(11,\), got dtype bool with shape \(3,\)"),
+        ("integer", r"got dtype int64"),
+        ("none_supported", "No spatial bin has supported training data"),
+    ],
+)
+def test_invalid_spatial_support_is_named(support, match):
+    """A support mask must be boolean, one entry per bin, with a supported bin."""
+    from neurospatial.decoding import BayesianDecoder
+
+    env = Environment.from_samples(np.linspace(0.0, 100.0, 200)[:, None], bin_size=10.0)
+    assert env.n_bins == 11
+    mask = {
+        "short": np.ones(3, dtype=bool),
+        "integer": np.ones(env.n_bins, dtype=np.int64),
+        "none_supported": np.zeros(env.n_bins, dtype=bool),
+    }[support]
+    with pytest.raises(ValueError, match=match) as err:
+        BayesianDecoder.from_models(
+            env, np.full((1, env.n_bins), 5.0), spatial_support=mask
+        )
+    assert "Fix:" in str(err.value)
+
+
+@pytest.mark.parametrize(
+    ("prior", "match"),
+    [
+        ("negative", "negative or non-finite"),
+        ("nan", "negative or non-finite"),
+        ("off_support", "no probability to supported training bins"),
+        ("wrong_shape", "prior has shape"),
+    ],
+)
+def test_invalid_prior_with_rate_result(supported_rates, prior, match):
+    env, rates = supported_rates
+    support = rates.spatial_support
+    values = {
+        "negative": np.where(np.arange(env.n_bins) == 0, -1.0, 1.0),
+        "nan": np.where(np.arange(env.n_bins) == 0, np.nan, 1.0),
+        "off_support": (~support).astype(float),
+        "wrong_shape": np.ones(env.n_bins + 1),
+    }[prior]
+    with pytest.raises(ValueError, match=match) as err:
+        decode_position(env, np.array([[0, 1]]), rates, dt=0.25, prior=values)
+    assert "Fix:" in str(err.value)

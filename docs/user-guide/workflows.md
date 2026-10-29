@@ -230,22 +230,26 @@ outbound runs. On inbound runs it should do worse if some cells change their
 fields with direction. Number the laps from 0, train on the even-numbered
 laps and test on the odd-numbered laps, so that training and test data never come from the same lap.
 `labels_to_epochs` with `epochs=` splits each direction's windows into the
-two folds.
+two folds. Label the spike trains once with `SpikeTrains`, and pass the same
+labelled trains to `fit` and `predict`: each train then meets its own cell's
+map, whatever order the units are listed in.
 
 <!-- docs-test: run setup=workflows_outbound_inbound -->
 ```python
 from neurospatial.decoding import BayesianDecoder
+from neurospatial.encoding import SpikeTrains
 
 lap = (times // 10).astype(int)
 fold = np.where(lap % 2 == 0, "train", "test")
 out_folds = labels_to_epochs(times, fold, valid=valid, epochs=conditions["outbound"])
 in_folds = labels_to_epochs(times, fold, valid=valid, epochs=conditions["inbound"])
 
+cells = SpikeTrains(spike_times, unit_ids=unit_ids)
 decoder = BayesianDecoder(env, dt=0.25, bandwidth=5.0).fit(
-    spike_times, times, positions, unit_ids=unit_ids, epochs=out_folds["train"],
+    cells, times, positions, epochs=out_folds["train"],
 )
-within = decoder.predict(spike_times, times, epochs=out_folds["test"])
-transfer = decoder.predict(spike_times, times, epochs=in_folds["test"])
+within = decoder.predict(cells, times, epochs=out_folds["test"])
+transfer = decoder.predict(cells, times, epochs=in_folds["test"])
 within_error = within.error_against(times, positions)  # cm, one per time bin
 transfer_error = transfer.error_against(times, positions)
 assert np.isfinite(within_error).all() and np.isfinite(transfer_error).all()
@@ -619,10 +623,11 @@ edges. Posterior values, MAP positions and timestamps are unchanged.
 On a continuous decoder clock, the plot's x-axis uses seconds. Across recording
 gaps it uses time-bin indices and marks the breaks with dashed lines. The MAP
 and actual overlays follow the same display coordinates and break at gaps.
-Plotting and `error_against` share gap-aware truth alignment: `max_gap` is in
-seconds, missing positions break observation runs, and truth is unavailable
-outside observed intervals. Neither interpolation across dropouts nor endpoint
-extrapolation creates observations.
+Plotting and `error_against` share gap-aware truth alignment, with `max_gap`
+in seconds. A NaN position sample is skipped as if deleted: the finite samples
+around it are interpolated when they are no more than `max_gap` apart. Longer
+gaps and times outside the tracked span stay NaN, and nothing is extrapolated
+past the first or last sample.
 
 This exact four-row posterior uses 5 cm bins. It represents perfect decoding
 for both clocks below, so the actual and MAP overlays must coincide. The
@@ -710,6 +715,7 @@ timestamps, so the 10–20 s pause is never represented by a decode bin.
 import numpy as np
 from neurospatial import Environment, compute_spatial_rates, decode_position
 from neurospatial.decoding import BayesianDecoder, bin_spikes_in_time
+from neurospatial.encoding import SpikeTrains
 
 times = np.r_[np.arange(300) / 30, 20 + np.arange(300) / 30]
 phase = np.arange(600) / 30
@@ -720,13 +726,13 @@ recording_windows = np.array([[0.0, 10.0], [20.0, 30.0]])
 train, test = (0.0, 10.0), (20.0, 30.0)
 dt = 0.1
 
+cells = SpikeTrains(spike_times, unit_ids=[101, 202])
 rates = compute_spatial_rates(
-    env, spike_times, times, positions, epochs=train,
-    spike_window=recording_windows, unit_ids=[101, 202],
+    env, cells, times, positions, epochs=train, spike_window=recording_windows,
 )
 decoder = BayesianDecoder.from_rates(rates, dt=dt)
 result = decoder.predict(
-    spike_times, times, epochs=test, spike_window=recording_windows,
+    cells, times, epochs=test, spike_window=recording_windows,
 )
 
 # Clip the analysis epoch to the observed run, then bin that epoch alone.
@@ -743,8 +749,11 @@ print("Decode bins:", len(result.times), "unit order:", rates.unit_ids.tolist())
 
 Use `BayesianDecoder(env).fit(spike_times, times, positions, unit_ids=...)` when
 the decoder should build the maps. A labelled spike group and explicit `unit_ids`
-must agree in order and value. Prediction matches labels only when both inputs
-carry caller-supplied identity; generated row numbers retain positional pairing.
+must agree in order and value. A decoder whose maps carry unit labels
+(`unit_ids=`, a `SpikeTrains` or a `TsGroup`) needs labelled spike trains in
+`predict`, matched by label; unlabelled maps need plain lists in the same
+order. Labels on only one side raise, because positional pairing would decode
+a reordered group with the wrong maps.
 The training spike window carried on the decoder is provenance. Supply the
 prediction recording's observation windows explicitly to `predict`.
 
@@ -1107,7 +1116,7 @@ cells; covariance patterns can reflect their shared spatial drive.
 | Branch | Inputs | Output |
 | --- | --- | --- |
 | Position decoding | Template rate maps and match spike counts, in the same unit order | Posterior over spatial bins |
-| Population statistics | Control, template and match count matrices, in the same unit order | Patterns, standardized activations and EV/controlled REV effect sizes |
+| Population statistics | Control, template and match count matrices, in the same unit order | Patterns, activation strengths and EV/controlled REV effect sizes |
 
 A posterior is not an input to assembly or EV analysis. Remove constant units
 once across all periods, then apply the same mask to spike trains, map rows,
@@ -1200,7 +1209,7 @@ assert decoded.posterior.shape == (len(centers_by_period["match"]), env.n_bins)
 np.testing.assert_allclose(decoded.posterior.sum(axis=1), 1.0)
 # Branch 2: counts, not the decoded posterior.
 assemblies = detect_assemblies(
-    counts["template"], algorithm="pca", unit_ids=selected_ids, rng=0
+    counts["template"], method="pca", unit_ids=selected_ids, rng=0
 )
 print("Retained unit IDs:", selected_ids.tolist())
 print("Dimensions above Marchenko-Pastur reference:", assemblies.n_significant)
@@ -1215,8 +1224,8 @@ for pattern in assemblies.patterns:
         template_unit_ids=selected_ids,
         match_unit_ids=selected_ids,
     )
-    print("Standardized activation mean/SD:", activation.mean(), activation.std())
-    print("Activation magnitude ratio (effect size):", strength)
+    print("Mean activation strength in the match period:", activation.mean())
+    print("Match-over-template mean activation strength (effect size):", strength)
 correlations = {
     period: pairwise_correlations(matrix) for period, matrix in counts.items()
 }
@@ -1231,31 +1240,39 @@ reactivation = explained_variance_reactivation(
 print(
     "EV, controlled REV (effect sizes):",
     reactivation.explained_variance,
-    reactivation.reversed_ev,
+    reactivation.reversed_explained_variance,
 )
 assert np.isfinite(reactivation.explained_variance) and np.isfinite(
-    reactivation.reversed_ev
+    reactivation.reversed_explained_variance
 )
 ```
 
 `n_significant` counts dimensions above a random-matrix reference, not neurons
-with calibrated p-values. If no dimension passes, the algorithm may still
-return an exploratory pattern. Pattern `member_indices` are positions in the
+with calibrated p-values. If no dimension passes, the result has no patterns
+and a warning says so. Pattern `member_indices` are positions in the
 selected unit order; `member_unit_ids` gives the original labels, and passing
 `unit_ids=` to `assembly_activation`, or `template_unit_ids=` and
 `match_unit_ids=` to `reactivation_strength`, matches the count columns to the
 pattern's weights by label. The same per-period labels given to
 `explained_variance_reactivation` match each pair correlation to the same two
 cells in every period. A pattern can have no core members at the default absolute-weight
-z-score cutoff, even when its dimension passes the reference.
+z-score cutoff, even when its dimension passes the reference: with `k`
+equally weighted members among `n` units, the members' z-score is
+sqrt((n - k) / k), only 1.4 for 3 members of the 9 units here. Pass a lower
+`z_threshold=` for small recordings. PCA also mixes assemblies of similar
+strength within one pattern; use the default `method="ica"` to separate
+them.
 
-`assembly_activation` standardizes the projection within each period,
-removing absolute projection scale; its output does not give a tail
-probability. In contrast, `reactivation_strength` normalizes both count
-matrices with the template's neuron means/standard deviations and projects
-onto the same pattern without separate projection standardization. Its ratio
-preserves relative magnitude on that shared template scale, but remains an
-effect size rather than a calibrated tail probability.
+`assembly_activation` z-scores each unit within the period and returns the
+activation strength R(t), the pattern-weighted sum of products of pairs of
+z-scored counts: about 0 when the cells fire independently, large when cells
+with large weights fire together. A single cell's burst alone does not raise
+it, and its values are not tail probabilities. `reactivation_strength`
+divides the pattern's mean activation strength in the match period by its
+mean in the template period, each period z-scored on its own: about 0 for
+independent firing in the match period, 1 for the template's level of
+co-firing. It is an effect size; compare it with a control period or a
+shuffle null rather than with 1.
 
 Controlled EV is `r(template, match | control)^2`, while controlled REV
 is `r(template, control | match)^2`, swapping the pre- and post-behavior

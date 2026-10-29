@@ -14,7 +14,7 @@ Tests
 5. Unfitted predict/predict_summary/score raise a clear RuntimeError.
 6. Immutability: fit returns a new object; original stays unfitted; frozen.
 7. SpikeTrains (a spike group) input yields the plain-list posterior.
-8. Linearized-track smoke: fit + predict runs on a 1-D track env.
+8. Held-out accuracy in an open field and, geodesically, on a W-maze.
 """
 
 from __future__ import annotations
@@ -141,7 +141,7 @@ class TestParity:
         assert isinstance(dec, DecodingResult)
         assert_array_equal(dec.posterior, ref.posterior)
 
-    def test_map_estimates_byte_equal(self, sim) -> None:
+    def test_map_bins_byte_equal(self, sim) -> None:
         """MAP position and MAP bin index match decode_session exactly."""
         env, spikes, times, positions = sim
 
@@ -153,7 +153,7 @@ class TestParity:
         ref = decode_session(env, spikes, times, positions, dt=0.5, bandwidth=5.0)
 
         assert_array_equal(dec.map_position, ref.map_position)
-        assert_array_equal(dec.map_estimate, ref.map_estimate)
+        assert_array_equal(dec.map_bin, ref.map_bin)
 
     def test_times_grid_matches(self, sim) -> None:
         """Decode time-bin centers match decode_session."""
@@ -178,7 +178,7 @@ def test_predict_summary_map_matches_predict(sim) -> None:
     dense = fit.predict(spikes, times)
 
     assert isinstance(summary, DecodingSummary)
-    assert_array_equal(summary.map_estimate, dense.map_estimate)
+    assert_array_equal(summary.map_bin, dense.map_bin)
     assert_array_equal(summary.map_position, dense.map_position)
 
 
@@ -262,7 +262,7 @@ def test_predict_forwards_max_gap_and_windows(two_epoch_recording):
     )
     assert len(predicted.times) == 3999
     np.testing.assert_array_equal(summary.times, predicted.times)
-    np.testing.assert_array_equal(summary.map_bin, predicted.map_estimate)
+    np.testing.assert_array_equal(summary.map_bin, predicted.map_bin)
     score = default.score(trains, r.times, r.positions, epochs=[(1100, 1200)])
     expected = np.nanmedian(predicted.error_against(r.times, r.positions))
     assert score == pytest.approx(expected)
@@ -467,21 +467,74 @@ def test_plain_list_unit_ids_default_to_arange(sim) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 8. Linearized-track differentiator (smoke)
+# 8. Held-out accuracy
 # ---------------------------------------------------------------------------
 
 
-def test_linearized_track_smoke() -> None:
-    """fit + predict runs on a 1-D linearized track env (env-based decode)."""
-    env, spikes, times, positions = _make_linear_sim()
+def _chance_error(env, result, times, positions, metric):
+    """Median error after permuting the MAP positions in time."""
+    from neurospatial.decoding import decoding_error
+
+    actual = np.column_stack(
+        [np.interp(result.times, times, positions[:, d]) for d in range(2)]
+    )
+    shuffled = np.random.default_rng(3).permutation(result.map_position)
+    return float(np.nanmedian(decoding_error(env, shuffled, actual, metric=metric)))
+
+
+def test_held_out_open_field_accuracy() -> None:
+    """Fit on the first half, decode the second: error well below chance."""
+    env, spikes, times, positions = _make_sim(n_neurons=12, duration=120.0)
+    half = times[len(times) // 2]
+    test = (half, times[-1] + 1e-9)
+    decoder = BayesianDecoder(env, dt=0.5).fit(
+        spikes, times, positions, epochs=(times[0], half)
+    )
+    result = decoder.predict(spikes, times, epochs=test)
+    error = float(
+        np.nanmedian(result.error_against(times, positions, metric="euclidean"))
+    )
+    chance = _chance_error(env, result, times, positions, "euclidean")
+    assert error < 10.0, error
+    assert error < 0.4 * chance, (error, chance)
+
+
+def test_held_out_maze_geodesic_accuracy() -> None:
+    """On a W-maze track, held-out geodesic error is about one bin."""
+    from neurospatial.simulation import (
+        PlaceCellModel,
+        generate_poisson_spikes,
+        simulate_trajectory_ou,
+    )
+    from neurospatial.simulation.mazes import make_w_maze
+
+    env = make_w_maze(bin_size=4.0).env_track
     assert env.is_linearized_track
-
-    fit = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
-    result = fit.predict(spikes, times)
-
-    assert isinstance(result, DecodingResult)
-    assert result.posterior.shape[1] == env.n_bins
-    assert result.posterior.shape[0] == result.times.shape[0]
+    positions, times = simulate_trajectory_ou(
+        env, duration=300.0, seed=0, speed_units="cm"
+    )
+    centers = env.bin_centers[np.linspace(0, env.n_bins - 1, 30).astype(int)]
+    spikes = [
+        generate_poisson_spikes(
+            PlaceCellModel(env, center=c, width=8.0, max_rate=25.0, seed=i).firing_rate(
+                positions, times
+            ),
+            times,
+            seed=100 + i,
+        )
+        for i, c in enumerate(centers)
+    ]
+    half = times[len(times) // 2]
+    test = (half, times[-1] + 1e-9)
+    decoder = BayesianDecoder(env, dt=0.25).fit(
+        spikes, times, positions, epochs=(times[0], half)
+    )
+    error = decoder.score(spikes, times, positions, epochs=test, distance="geodesic")
+    result = decoder.predict(spikes, times, epochs=test)
+    chance = _chance_error(env, result, times, positions, "geodesic")
+    bin_size = float(np.median(env.bin_sizes))
+    assert error <= 2 * bin_size, error
+    assert error < 0.2 * chance, (error, chance)
 
 
 # ---------------------------------------------------------------------------
@@ -609,6 +662,25 @@ class TestConstructionValidation:
         with pytest.raises(ValueError, match="dtype"):
             BayesianDecoder(env, dtype=np.float16)  # type: ignore[arg-type]
 
+    @pytest.mark.parametrize("bad", [np.nan, np.inf, -1.0])
+    def test_from_models_refuses_invalid_rates_on_support(self, bad):
+        """Every allowed bin needs a finite, non-negative rate for every unit."""
+        env = _small_env()
+        models = np.full((2, env.n_bins), 5.0)
+        models[1, 0] = bad
+        with pytest.raises(ValueError, match="spatial_support") as err:
+            BayesianDecoder.from_models(env, models)
+        assert "Fix:" in str(err.value)
+        support = np.ones(env.n_bins, dtype=bool)
+        support[0] = False
+        if np.isnan(bad) or np.isinf(bad):
+            # Outside the supported bins a missing rate is allowed.
+            decoder = BayesianDecoder.from_models(env, models, spatial_support=support)
+            assert decoder.is_fitted
+        else:
+            with pytest.raises(ValueError, match="negative"):
+                BayesianDecoder.from_models(env, models, spatial_support=support)
+
     def test_encoding_models_wrong_nbins_raises(self):
         env = _small_env()
         bad = np.zeros((3, env.n_bins + 1))  # wrong bin axis
@@ -678,7 +750,6 @@ class TestConstructionValidation:
         rebuilt = BayesianDecoder.from_models(
             env,
             fitted.encoding_models,
-            unit_ids=fitted.unit_ids,
             spatial_support=fitted.spatial_support,
             dt=0.5,
         )
@@ -788,27 +859,6 @@ class TestUnitAlignment:
         assert "unexpected: [18]" in message
         assert "\nFix:" in message
 
-    def test_unlabelled_fit_pairs_labelled_input_by_position(
-        self, sim, make_spike_group
-    ) -> None:
-        env, spikes, times, positions = sim
-        decoder = BayesianDecoder(env, dt=0.5).fit(spikes[:3], times, positions)
-        from_list = decoder.predict(spikes[:3], times)
-        from_group = decoder.predict(make_spike_group(spikes[:3], [3, 7, 9]), times)
-        np.testing.assert_allclose(
-            from_group.posterior, from_list.posterior, atol=1e-12
-        )
-
-    def test_labelled_fit_pairs_plain_input_by_position(
-        self, labelled_fit, make_spike_group
-    ) -> None:
-        decoder, spikes, times = labelled_fit
-        from_group = decoder.predict(make_spike_group(spikes, _FIT_IDS), times)
-        from_list = decoder.predict(list(spikes), times)
-        np.testing.assert_allclose(
-            from_list.posterior, from_group.posterior, atol=1e-12
-        )
-
     def test_constructor_labels_are_caller_supplied(
         self, sim, make_spike_group
     ) -> None:
@@ -816,15 +866,13 @@ class TestUnitAlignment:
         a, b = spikes[0], spikes[1]
         fitted = BayesianDecoder(env, dt=0.5).fit([a, b], times, positions)
         assert fitted._unit_ids_generated is True
-        # Unlabelled fit: a labelled predict input is still paired by position.
-        np.testing.assert_allclose(
-            fitted.predict(make_spike_group([a, b], [3, 7]), times).posterior,
-            fitted.predict([a, b], times).posterior,
-            atol=1e-12,
-        )
 
         decoder = BayesianDecoder.from_models(
-            env, fitted.encoding_models, unit_ids=[10, 20], dt=0.5
+            env,
+            fitted.encoding_models,
+            unit_ids=[10, 20],
+            spatial_support=fitted.spatial_support,
+            dt=0.5,
         )
         assert decoder._unit_ids_generated is False
         assert dataclasses.replace(decoder, dt=0.05)._unit_ids_generated is False
@@ -854,7 +902,11 @@ class TestUnitAlignment:
         fitted = BayesianDecoder(env, dt=0.5).fit(spikes[:2], times, positions)
         with pytest.raises(ValueError, match=r"unique.*\[10\]"):
             BayesianDecoder.from_models(
-                env, fitted.encoding_models, unit_ids=[10, 10], dt=0.5
+                env,
+                fitted.encoding_models,
+                unit_ids=[10, 10],
+                spatial_support=fitted.spatial_support,
+                dt=0.5,
             )
         with pytest.raises(ValueError, match=r"unique.*\[10\]"):
             BayesianDecoder(env, dt=0.5).fit(
@@ -882,20 +934,6 @@ class TestUnitAlignment:
             spatial_support=decoder.spatial_support,
         )
         assert_array_equal(decoder.predict(spikes, times).posterior, ref.posterior)
-
-    def test_unlabelled_spike_trains_fit_pairs_by_position(
-        self, sim, make_spike_group
-    ) -> None:
-        env, spikes, times, positions = sim
-        decoder = BayesianDecoder(env, dt=0.5).fit(
-            SpikeTrains(spikes[:3]), times, positions
-        )
-        assert decoder._unit_ids_generated is True
-        np.testing.assert_allclose(
-            decoder.predict(make_spike_group(spikes[:3], [3, 7, 9]), times).posterior,
-            decoder.predict(spikes[:3], times).posterior,
-            atol=1e-12,
-        )
 
 
 def test_positions_required_where_used(sim):
@@ -954,12 +992,36 @@ def test_fit_unit_ids_enable_label_alignment(sim, make_spike_group):
     reordered = make_spike_group(trains[::-1], index=[12, 11, 10])
     np.testing.assert_array_equal(
         decoder.predict(reordered, times).posterior,
-        decoder.predict(trains, times).posterior,
+        decoder.predict(make_spike_group(trains, index=[10, 11, 12]), times).posterior,
     )
     with pytest.raises(ValueError) as caught:
         decoder.predict(make_spike_group(trains, index=[10, 11, 13]), times)
     assert "missing: [12]" in str(caught.value)
     assert "unexpected: [13]" in str(caught.value)
+
+
+@pytest.mark.parametrize("labelled_side", ["fit", "predict"])
+@pytest.mark.parametrize("method", ["predict", "predict_summary", "score"])
+def test_one_sided_unit_labels_raise(sim, make_spike_group, labelled_side, method):
+    """Labels on only one side cannot pair trains with models.
+
+    Positional pairing of a labelled group listed in another order would
+    decode with the wrong models, silently.
+    """
+    env, spikes, times, positions = sim
+    trains = spikes[:3]
+    labels = [10, 11, 12]
+    decoder = BayesianDecoder(env, dt=0.5)
+    if labelled_side == "fit":
+        decoder = decoder.fit(make_spike_group(trains, index=labels), times, positions)
+        test_input = trains[::-1]
+    else:
+        decoder = decoder.fit(trains, times, positions)
+        test_input = make_spike_group(trains[::-1], index=labels[::-1])
+    args = (test_input, times, positions) if method == "score" else (test_input, times)
+    with pytest.raises(ValueError, match="unit labels") as caught:
+        getattr(decoder, method)(*args)
+    assert "Fix:" in str(caught.value)
 
 
 def test_fit_unit_ids_must_match_group_labels(sim, make_spike_group):
@@ -1011,10 +1073,8 @@ def test_from_rates_label_alignment(sim, make_spike_group):
     trains = spikes[:3]
     rates = compute_spatial_rates(env, trains, times, positions)
     decoder = BayesianDecoder.from_rates(rates, dt=0.5)
-    np.testing.assert_array_equal(
-        decoder.predict(make_spike_group(trains, index=[3, 7, 9]), times).posterior,
-        decoder.predict(trains, times).posterior,
-    )
+    with pytest.raises(ValueError, match="unit labels"):
+        decoder.predict(make_spike_group(trains, index=[3, 7, 9]), times)
     labelled = compute_spatial_rates(
         env,
         make_spike_group(trains, index=[10, 11, 12]),
@@ -1057,10 +1117,8 @@ def test_from_rates_constructor_labels(sim, make_spike_group):
     assert generated[0]._unit_ids_generated
     assert dataclasses.replace(generated)._unit_ids_generated
     decoder = BayesianDecoder.from_rates(generated, dt=0.5)
-    np.testing.assert_array_equal(
-        decoder.predict(a, times).posterior,
-        decoder.predict(spikes[:2], times).posterior,
-    )
+    with pytest.raises(ValueError, match="unit labels"):
+        decoder.predict(a, times)
 
 
 @pytest.mark.parametrize(
@@ -1143,3 +1201,23 @@ def test_min_occupancy_masking_every_bin_raises(sim) -> None:
         BayesianDecoder(env, dt=0.5, bandwidth=7.0, min_occupancy=1e6).fit(
             spike_times, times, positions
         )
+
+
+def test_fitted_decoder_refuses_a_different_environment(sim):
+    """Equal bin counts do not make the fitted maps valid on another arena."""
+    from neurospatial import IncompatibleEnvironmentError
+
+    env, spikes, times, positions = sim
+    fitted = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
+    shifted = Environment.from_samples(
+        env.bin_centers + 1000.0, bin_size=5.0
+    ).with_metadata(units="cm")
+    assert shifted.n_bins == env.n_bins
+    with pytest.raises(IncompatibleEnvironmentError, match="env cannot change") as err:
+        dataclasses.replace(fitted, env=shifted)
+    assert "from_models" in str(err.value)
+    # An equivalent copy of the training environment is accepted.
+    copy = dataclasses.replace(fitted, env=env.with_metadata())
+    assert_array_equal(
+        copy.predict(spikes, times).posterior, fitted.predict(spikes, times).posterior
+    )
