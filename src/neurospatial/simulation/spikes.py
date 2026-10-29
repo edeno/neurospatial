@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from tqdm.auto import tqdm
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._validation import validate_finite
 from neurospatial.simulation.models.base import NeuralModel
@@ -25,13 +26,13 @@ def generate_poisson_spikes(
     """Generate Poisson spike train from firing rate time series.
 
     Implements an inhomogeneous Poisson process with absolute refractory period.
-    Generalizes existing spike generation to handle time-varying rates.
 
     Parameters
     ----------
     firing_rate : NDArray[np.float64], shape (n_time,)
-        Firing rate in Hz, held constant on each following sampling interval.
-        The final sample has no following interval and contributes no spikes.
+        Non-negative firing rate in Hz, held constant on each following
+        sampling interval. The final sample has no following interval and
+        contributes no spikes.
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds. Must be strictly increasing. Non-uniform
         spacing is supported: each interval contributes its own width to
@@ -53,8 +54,9 @@ def generate_poisson_spikes(
     ValueError
         If ``firing_rate`` and ``times`` do not have the same length.
     ValueError
-        If ``firing_rate`` contains non-finite values (NaN or inf), or if
-        ``times`` contains non-finite values (NaN or inf).
+        If ``firing_rate`` contains non-finite values (NaN or inf) or
+        negative values, or if ``times`` contains non-finite values (NaN or
+        inf).
     ValueError
         If ``times`` is not strictly increasing (i.e. any interval has
         zero or negative width).
@@ -86,11 +88,12 @@ def generate_poisson_spikes(
     matching biological absolute refractory period dynamics.
 
     With ``refractory_period=0``, this is an exact piecewise-constant Poisson
-    process. A positive refractory period removes candidates and therefore
-    lowers the realized firing rate relative to the supplied candidate rate.
+    process. A positive refractory period ``τ`` removes candidates and
+    therefore lowers the realized firing rate: for a constant rate ``r`` it
+    is ``r / (1 + r τ)``, as each kept spike is followed by a dead time ``τ``
+    and then an exponential wait of mean ``1 / r``.
 
-    **Performance**: O(n + k log k) for n time points and k candidate spikes. For typical
-    simulations (60s @ 100 Hz = 6000 points), runs in <50ms.
+    The cost is O(n + k log k) for n time points and k candidate spikes.
 
     Examples
     --------
@@ -165,6 +168,21 @@ def generate_poisson_spikes(
         )
 
     firing_rate = validate_finite(firing_rate, name="firing_rate")
+    negative = np.flatnonzero(firing_rate < 0)
+    if len(negative):
+        first = int(negative[0])
+        raise ValueError(
+            _format_error(
+                f"firing_rate must be non-negative, got {len(negative)} negative "
+                f"value(s); the first is {float(firing_rate[first])!r} Hz at index {first}.",
+                why="a Poisson rate is an expected number of spikes per second, "
+                "which cannot be below zero.",
+                fix="check how the rate was computed (for example a baseline "
+                "above the peak, or a modulation deeper than the rate); clip it "
+                "with np.clip(rate, 0, None) only if the negative values are "
+                "rounding noise",
+            )
+        )
 
     if not np.all(np.isfinite(times)):
         n_bad = int(np.sum(~np.isfinite(times)))
@@ -190,7 +208,7 @@ def generate_poisson_spikes(
     # Counts, rather than Bernoulli occupancy, retain Poisson multiplicities.
     # Uniform conditional event times give the exact process for the specified
     # piecewise-constant rate, including nonuniform sampling intervals.
-    counts = rng.poisson(np.maximum(firing_rate[:-1], 0.0) * bin_dt)
+    counts = rng.poisson(firing_rate[:-1] * bin_dt)
     interval_ids = np.repeat(np.arange(len(bin_dt)), counts)
     candidate_spikes = (
         times[interval_ids] + rng.random(len(interval_ids)) * bin_dt[interval_ids]

@@ -262,15 +262,40 @@ class TestGeneratePoissonSpikes:
         with pytest.raises(ValueError, match="firing_rate"):
             generate_poisson_spikes(firing_rate, times, seed=42)
 
-    def test_finite_rate_negative_still_floored(self):
-        """A finite negative rate does not raise and produces zero spikes there."""
-        # All-negative finite rates: valid input, floored at 0 -> no spikes.
-        firing_rate = np.full(1000, -5.0)
+    def test_negative_rate_raises(self):
+        """A negative rate is a bug in the rate, not zero activity."""
+        firing_rate = np.full(1000, 2.0)
+        firing_rate[300] = -5.0
         times = np.linspace(0, 1, 1000)
 
-        spikes = generate_poisson_spikes(firing_rate, times, seed=42)
+        with pytest.raises(ValueError, match="non-negative") as caught:
+            generate_poisson_spikes(firing_rate, times, seed=42)
+        assert "index 300" in str(caught.value)
 
-        assert len(spikes) == 0
+    def test_interspike_intervals_are_exponential(self):
+        """Without a refractory period, a constant rate is a Poisson process."""
+        from scipy import stats
+
+        rate = 20.0
+        times = np.linspace(0.0, 500.0, 50_001)
+        spikes = generate_poisson_spikes(
+            np.full(times.shape, rate), times, refractory_period=0.0, seed=1
+        )
+        assert len(spikes) / 500.0 == pytest.approx(rate, rel=0.03)
+        isis = np.diff(spikes)
+        assert stats.kstest(isis, "expon", args=(0.0, 1.0 / rate)).pvalue > 0.01
+
+    @pytest.mark.parametrize("rate", [50.0, 200.0])
+    def test_refractory_rate_is_dead_time_corrected(self, rate):
+        """Each kept spike is followed by a dead time τ: rate r / (1 + r τ)."""
+        tau = 0.002
+        times = np.linspace(0.0, 200.0, 200_001)
+        spikes = generate_poisson_spikes(
+            np.full(times.shape, rate), times, refractory_period=tau, seed=2
+        )
+        realized = len(spikes) / 200.0
+        assert realized == pytest.approx(rate / (1 + rate * tau), rel=0.03)
+        assert realized < 0.97 * rate or rate * tau < 0.03
 
 
 class TestGeneratePopulationSpikes:
