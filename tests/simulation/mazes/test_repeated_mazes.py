@@ -12,7 +12,6 @@ from shapely.ops import nearest_points
 
 from neurospatial.simulation.mazes import (
     HamptonCourtDims,
-    MazeEnvironments,
     RepeatedTDims,
     RepeatedYDims,
     make_hampton_court_maze,
@@ -28,39 +27,8 @@ REPEATED_MAZES = [
 ]
 
 
-class TestRepeatedMazesCommonInterface:
-    """Test that all repeated mazes share a consistent interface."""
-
-    @pytest.mark.parametrize("name,factory,dims_cls", REPEATED_MAZES)
-    def test_returns_maze_environments(self, name, factory, dims_cls):
-        """All factories return MazeEnvironments."""
-        maze = factory()
-        assert isinstance(maze, MazeEnvironments)
-
-    @pytest.mark.parametrize("name,factory,dims_cls", REPEATED_MAZES)
-    def test_env_2d_has_units_cm(self, name, factory, dims_cls):
-        """All 2D environments have units='cm'."""
-        maze = factory()
-        assert maze.env_2d.units == "cm"
-
-    @pytest.mark.parametrize("name,factory,dims_cls", REPEATED_MAZES)
-    def test_env_2d_has_bins(self, name, factory, dims_cls):
-        """All 2D environments have bins."""
-        maze = factory()
-        assert maze.env_2d.n_bins > 0
-
-    @pytest.mark.parametrize("name,factory,dims_cls", REPEATED_MAZES)
-    def test_env_track_exists(self, name, factory, dims_cls):
-        """All repeated mazes have track graphs."""
-        maze = factory()
-        assert maze.env_track is not None
-
-    @pytest.mark.parametrize("name,factory,dims_cls", REPEATED_MAZES)
-    def test_track_graph_is_connected(self, name, factory, dims_cls):
-        """All track graphs are connected."""
-        maze = factory()
-        graph = maze.env_track.connectivity
-        assert nx.is_connected(graph)
+class TestRepeatedMazesStart:
+    """Each repeated maze names where the animal enters."""
 
     @pytest.mark.parametrize("name,factory,dims_cls", REPEATED_MAZES)
     def test_has_start_region(self, name, factory, dims_cls):
@@ -72,13 +40,6 @@ class TestRepeatedMazesCommonInterface:
         }[name]
         maze = factory()
         assert start in maze.env_2d.regions
-
-    @pytest.mark.parametrize("name,factory,dims_cls", REPEATED_MAZES)
-    def test_dims_is_frozen_dataclass(self, name, factory, dims_cls):
-        """All Dims classes are frozen dataclasses."""
-        import dataclasses
-
-        assert dataclasses.is_dataclass(dims_cls)
 
 
 class TestRepeatedMazesSpecificBehavior:

@@ -9,20 +9,12 @@ import numpy as np
 import pytest
 import shapely
 
-import neurospatial.simulation.mazes as mazes
 from neurospatial.simulation.mazes import MAZE_LANDMARK_ROLES
 
-MAKERS = sorted(
-    name
-    for name in dir(mazes)
-    if name.startswith("make_")
-    and (name.endswith("maze") or name == "make_linear_track")
-)
 
-
-@pytest.fixture(scope="module", params=MAKERS)
-def maze(request):
-    return getattr(mazes, request.param)()
+@pytest.fixture
+def maze(default_maze):
+    return default_maze
 
 
 def test_landmark_roles_are_known(maze):

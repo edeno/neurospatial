@@ -43,8 +43,11 @@ def test_every_dims_class_is_checked():
 
 
 @pytest.mark.parametrize("cls", DIMS_CLASSES, ids=lambda cls: cls.__name__)
-def test_defaults_build(cls):
-    cls()
+def test_defaults_build_and_are_frozen(cls):
+    dims = cls()
+    field = dataclasses.fields(cls)[0].name
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        setattr(dims, field, getattr(dims, field))
 
 
 @pytest.mark.parametrize("cls", DIMS_CLASSES, ids=lambda cls: cls.__name__)

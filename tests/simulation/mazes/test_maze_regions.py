@@ -7,19 +7,10 @@ both its 2-D and its linearized track environment.
 
 import pytest
 
-import neurospatial.simulation.mazes as mazes
 
-MAKERS = sorted(
-    name
-    for name in dir(mazes)
-    if name.startswith("make_")
-    and (name.endswith("maze") or name == "make_linear_track")
-)
-
-
-@pytest.fixture(scope="module", params=MAKERS)
-def maze(request):
-    return getattr(mazes, request.param)()
+@pytest.fixture
+def maze(default_maze):
+    return default_maze
 
 
 def test_2d_regions_cover_bins(maze):
