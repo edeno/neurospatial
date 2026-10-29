@@ -967,6 +967,9 @@ def detect_trajectory_radon(
     column wide, a spread-out posterior scores higher on wider columns;
     compare scores between events decoded on the same bins, or against a
     shuffle of the same event (:func:`neurospatial.stats.shuffle_posterior_circular`).
+    Davidson et al. sum the posterior within a fixed physical distance of the
+    line instead, so these scores are not directly comparable to published
+    values.
 
     **Candidate lines.** At each searched angle the candidates are the
     lines through each column center at the middle time bin,

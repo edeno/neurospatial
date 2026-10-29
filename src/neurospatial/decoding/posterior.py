@@ -578,7 +578,7 @@ def decode_position(
         ``env.n_bins``, or a rate result's environment differs from ``env``
         (see ``encoding_models``); checked even with ``validate=False``.
         If ``times`` is provided and its length does not match the number
-        of posterior time bins.
+        of posterior time bins, or it is not finite and strictly increasing.
 
     Notes
     -----
@@ -1052,7 +1052,7 @@ def decode_position_summary(
     ValueError
         If ``time_chunk`` is ``None`` or not a positive integer. Plus the same
         conditions as :func:`decode_position` (invalid method, no finite bins,
-        bin-count mismatch, bad ``times`` length, validation failures).
+        bin-count mismatch, bad ``times``, validation failures).
 
     Notes
     -----

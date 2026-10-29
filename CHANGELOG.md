@@ -99,8 +99,10 @@ matches the region's mass to within 0.0032.
   screens) and an isotonic `direction` of `None`.
 - `decoding_error(metric="euclidean")` on polar environments returns the
   distance in the animal's plane; it mixed cm and radians. Infinite positions
-  raise. Geodesic positions more than one bin outside the environment give
-  NaN with a warning instead of a snapped finite error.
+  raise. Geodesic positions more than one bin spacing outside the
+  environment's bounding box give NaN with a warning instead of a snapped
+  finite error; positions inside the box are measured from their nearest
+  bin.
 - `decoding_correlation(env, decoded, actual, weights=None)` takes `env`,
   correlates along-track position on tracks, leaves out (with a warning)
   dimensions that do not vary instead of returning NaN, refuses polar
