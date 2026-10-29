@@ -201,6 +201,11 @@ def _spatial_information_kernel(
     valid = jnp.isfinite(firing_rate) & jnp.isfinite(occupancy)
     firing_rate_clean = jnp.where(valid, firing_rate, 0.0)
     occupancy_clean = jnp.where(valid, occupancy, 0.0)
+    # Information depends only on rate / mean rate. Dividing by the map's peak
+    # keeps the mean from underflowing to 0 for tiny (subnormal) rates, which
+    # would report a firing map as silent.
+    peak = jnp.max(jnp.abs(firing_rate_clean), initial=0.0)
+    firing_rate_clean = firing_rate_clean / jnp.where(peak > 0, peak, 1.0)
 
     occ_sum = jnp.sum(occupancy_clean)
     occupancy_prob = jnp.where(
