@@ -69,7 +69,7 @@ class TestDecodeSessionGlm:
         """decode_session_summary(method="glm") shares decode_session's encoding.
 
         The streamed summary and the full path build the same glm encoding model
-        (both route through _build_encoding_model), so their MAP estimates agree.
+        (both route through _fit_encoding_model), so their MAP estimates agree.
         """
         from neurospatial.decoding import decode_session, decode_session_summary
 

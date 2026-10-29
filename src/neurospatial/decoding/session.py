@@ -20,6 +20,7 @@ from neurospatial._intervals import DEFAULT_MAX_GAP, resolve_time_windows
 from neurospatial._observation import validate_break_before
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._time_bins import _count_spikes_in_time_bins
+from neurospatial.decoding._time_bins import validate_dt
 
 # Warn when more than this fraction of spikes fall outside the decode window.
 # Always < 1.0, so the 100%-dropped case (frac == 1.0) always warns.
@@ -442,12 +443,12 @@ def decode_session(
     ... )
     """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    trains, firing_rates, _, _, rates_result = _build_encoding_model(
+    validate_dt(dt)
+    trains, firing_rates, rates_result = _fit_encoding_model(
         env,
         spike_times,
         times,
         positions,
-        dt=dt,
         bandwidth=bandwidth,
         method=method,
         min_occupancy=min_occupancy,
@@ -544,7 +545,6 @@ def _prepare_session_decode(
     ``max_gap`` is not decoded.
     """
     from neurospatial._spikes import _as_spike_trains_with_ids
-    from neurospatial.decoding._time_bins import validate_dt
     from neurospatial.encoding import _validate_times
 
     # Validate dt up front, BEFORE the grid math below builds the decode time
@@ -725,77 +725,6 @@ def _fit_encoding_model(
             )
         )
     return trains, firing_rates, rates_result
-
-
-def _build_encoding_model(
-    env: Environment,
-    spike_times: Any,
-    times: ArrayLike,
-    positions: NDArray[np.float64],
-    *,
-    dt: float,
-    bandwidth: float | None,
-    method: str,
-    min_occupancy: float | None,
-    penalty: float | None = None,
-    rank: int | None = None,
-    speed: NDArray[np.float64] | None = None,
-    min_speed: float | None = None,
-    max_gap: float | None = DEFAULT_MAX_GAP,
-    epochs: NDArray[np.float64] | None = None,
-    break_before: ArrayLike | None = None,
-    spike_window: NDArray[np.float64] | None = None,
-    warn_on_drop: bool,
-    dtype: type[np.float32] | type[np.float64] = np.float64,
-    context: str = "decode_session",
-) -> tuple[
-    list[NDArray[np.float64]],
-    NDArray[np.float64],
-    NDArray[np.float64],
-    NDArray[np.float64],
-    SpatialRatesResult,
-]:
-    """Fit tracking data, then tile decode bins for a functional session."""
-    from neurospatial.decoding._time_bins import validate_dt
-
-    dt = validate_dt(dt)
-    trains, firing_rates, rates_result = _fit_encoding_model(
-        env,
-        spike_times,
-        times,
-        positions,
-        bandwidth=bandwidth,
-        method=method,
-        min_occupancy=min_occupancy,
-        penalty=penalty,
-        rank=rank,
-        speed=speed,
-        min_speed=min_speed,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=break_before,
-        spike_window=spike_window,
-        warn_on_drop=warn_on_drop,
-        dtype=dtype,
-        context=context,
-    )
-    prepared = _prepare_session_decode(
-        trains,
-        times,
-        firing_rates,
-        dt=dt,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=break_before,
-        spike_window=spike_window,
-        sample_valid=_tracked(times, positions),
-        warn_spikes_outside=False,
-        # The decode step tiles the same bins and owns this warning.
-        warn_partial_bins=False,
-        dtype=dtype,
-        context=context,
-    )
-    return (*prepared, rates_result)
 
 
 def _decode_with_models(
@@ -1004,12 +933,12 @@ warn_on_drop, dtype
     _validate_time_chunk(
         decode_kwargs.get("time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK), allow_none=False
     )
-    trains, firing_rates, _, _, rates_result = _build_encoding_model(
+    validate_dt(dt)
+    trains, firing_rates, rates_result = _fit_encoding_model(
         env,
         spike_times,
         times,
         positions,
-        dt=dt,
         bandwidth=bandwidth,
         method=method,
         min_occupancy=min_occupancy,

@@ -1426,7 +1426,7 @@ class TestDecodeSessionSummaryTimeChunkValidation:
 class TestDecodeSessionDtValidation:
     """decode_session / decode_session_summary validate dt up front.
 
-    Both route through ``_build_encoding_model``, which computes the decode
+    Both build the decode
     time grid directly (bypassing ``bin_spikes_in_time``'s dt guard). Without an
     explicit up-front check, invalid ``dt`` leaks cryptic errors:
     ``dt=0`` → ``ZeroDivisionError``; ``dt=nan`` → "cannot convert float NaN to

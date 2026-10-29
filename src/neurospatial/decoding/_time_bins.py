@@ -33,7 +33,7 @@ def validate_dt(dt: float) -> float:
 
     Shared guard for every decoding entry point that bins or divides by ``dt``
     (e.g. :func:`bin_spikes_in_time`, :func:`decode_position`, and
-    ``decode_session`` / ``decode_session_summary`` via ``_build_encoding_model``).
+    ``decode_session`` / ``decode_session_summary``).
     It rejects non-numeric inputs (including a numeric *string* like ``"0.1"``,
     which would otherwise leak a raw ``TypeError`` from ``"0.1" <= 0`` or be
     silently coerced) and ``bool`` (``dt=True`` would otherwise pass the numeric
