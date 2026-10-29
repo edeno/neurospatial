@@ -192,7 +192,8 @@ def make_crossword_maze(
       an estimate.
     - cap_west, cap_east, cap_north, cap_south_left, cap_south_right: the
       plastic caps at the ends of the five protruding tracks, one of which
-      holds the day's reward (role ``"reward_port"``). Each region is a point
+      holds the day's reward (role ``"reward_port"``, port_type
+      ``"plastic_cap"``). Each region is a point
       half a track width back from the track's end; the cap size is not
       published.
 
@@ -258,7 +259,11 @@ def make_crossword_maze(
         landmarks.append(Landmark(name, "point", center, {"role": "start_box"}))
     for name, site in _cap_sites(dims).items():
         region_builder.add(name, point=site)
-        landmarks.append(Landmark(name, "point", site, {"role": "reward_port"}))
+        landmarks.append(
+            Landmark(
+                name, "point", site, {"role": "reward_port", "port_type": "plastic_cap"}
+            )
+        )
     env_2d = env_2d.with_regions(region_builder).with_landmarks(Landmarks(landmarks))
 
     env_track = None

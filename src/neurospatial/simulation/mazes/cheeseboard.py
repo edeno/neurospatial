@@ -159,7 +159,8 @@ def make_cheeseboard_maze(
     from the rim get a well.
 
     Every food well is a landmark in ``env_2d.landmarks`` with role
-    ``"reward_port"`` and a point region of the same name at its centre:
+    ``"reward_port"`` and ``port_type`` ``"food_well"``, and a point region
+    of the same name at its centre:
 
     - well_i_j: the well in lattice column i and row j, counted from 0 at the
       lowest x and y. With the defaults ``well_7_7`` is the centre well.
@@ -245,6 +246,7 @@ def make_cheeseboard_maze(
                         center,
                         metadata={
                             "role": "reward_port",
+                            "port_type": "food_well",
                             "diameter": 2.0 * dims.reward_radius,
                         },
                     )

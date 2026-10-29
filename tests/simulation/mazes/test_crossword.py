@@ -160,6 +160,9 @@ class TestLandmarks:
         assert roles == dict.fromkeys(BOXES, "start_box") | dict.fromkeys(
             CAPS, "reward_port"
         )
+        assert {landmarks[name].metadata["port_type"] for name in CAPS} == {
+            "plastic_cap"
+        }
 
     def test_start_box_landmarks_at_the_box_centres(self, maze):
         expected = {

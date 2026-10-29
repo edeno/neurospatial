@@ -217,8 +217,9 @@ def make_sungod_maze(
     them. The small plastic wall that kept the rat from walking over the
     center ports is not declared, because the paper does not place it.
 
-    Landmarks, each a point with ``metadata["role"] == "reward_port"`` and
-    ``metadata["port_type"]`` ``"home"``, ``"center"`` or ``"arm"``:
+    Landmarks, each a point with ``metadata["role"] == "reward_port"``,
+    ``metadata["port_type"] == "liquid_port"`` (the ports dispense milk) and
+    ``metadata["location"]`` ``"home"``, ``"center"`` or ``"arm"``:
 
     - home_port
     - center_port_left, center_port_right (``metadata["side"]``)
@@ -236,18 +237,19 @@ def make_sungod_maze(
       ports, to the centroid of the box
     - box_center -> arm_k_start: across the box to the middle of arm k's end
       at the box
-    - arm_k_start -> arm_k_end: along the middle of arm k to its far end,
-      for arms 1-8
+    - arm_k_start -> arm_port_k: along the middle of arm k to its far end,
+      for arms 1-8; the end node is named like the port there, as the
+      linear, W and radial-arm mazes name theirs
 
     Examples
     --------
     Create a default Sungod maze:
 
     >>> maze = make_sungod_maze()
-    >>> maze.env_2d.landmarks["home_port"].metadata["port_type"]
+    >>> maze.env_2d.landmarks["home_port"].metadata["location"]
     'home'
     >>> dict(maze.env_2d.landmarks["arm_port_1"].metadata)
-    {'role': 'reward_port', 'port_type': 'arm', 'arm': 1}
+    {'role': 'reward_port', 'port_type': 'liquid_port', 'location': 'arm', 'arm': 1}
 
     Create with custom scale:
 
@@ -311,11 +313,11 @@ def make_sungod_maze(
         **{f"arm_port_{k}": xy for k, xy in enumerate(_ARM_PORTS_PX, start=1)},
     }
     metadata: dict[str, dict[str, str | int]] = {
-        "home_port": {"port_type": "home"},
-        "center_port_left": {"port_type": "center", "side": "left"},
-        "center_port_right": {"port_type": "center", "side": "right"},
+        "home_port": {"location": "home"},
+        "center_port_left": {"location": "center", "side": "left"},
+        "center_port_right": {"location": "center", "side": "right"},
         **{
-            f"arm_port_{k}": {"port_type": "arm", "arm": k}
+            f"arm_port_{k}": {"location": "arm", "arm": k}
             for k in range(1, len(_ARM_PORTS_PX) + 1)
         },
     }
@@ -363,7 +365,12 @@ def make_sungod_maze(
     region_builder.add("box", polygon=box_polygon)
     env_2d = env_2d.with_regions(region_builder).with_landmarks(
         Landmarks(
-            Landmark(name, "point", pos, {"role": "reward_port", **metadata[name]})
+            Landmark(
+                name,
+                "point",
+                pos,
+                {"role": "reward_port", "port_type": "liquid_port", **metadata[name]},
+            )
             for name, pos in port_positions.items()
         )
     )
@@ -512,8 +519,11 @@ def _create_sungod_track_graph(
     for k, arm in enumerate(arm_polygons, start=1):
         start, end = _arm_centerline(arm, center)
         graph.add_node(f"arm_{k}_start", pos=start)
-        graph.add_node(f"arm_{k}_end", pos=end)
-        edges += [("box_center", f"arm_{k}_start"), (f"arm_{k}_start", f"arm_{k}_end")]
+        graph.add_node(f"arm_port_{k}", pos=end)
+        edges += [
+            ("box_center", f"arm_{k}_start"),
+            (f"arm_{k}_start", f"arm_port_{k}"),
+        ]
     for u, v in edges:
         graph.add_edge(
             u,

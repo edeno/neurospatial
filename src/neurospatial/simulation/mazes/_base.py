@@ -41,7 +41,14 @@ MAZE_LANDMARK_ROLES = frozenset(
         "cue",  # a cue whose placement the source publishes
     }
 )
-"""Values of ``metadata["role"]`` on a built-in maze's landmarks."""
+"""Values of ``metadata["role"]`` on a built-in maze's landmarks.
+
+Every ``"reward_port"`` landmark also records the hardware in
+``metadata["port_type"]``: ``"food_well"``, ``"food_cup"``,
+``"plastic_cap"`` (a cap the reward is placed on) or ``"liquid_port"`` (a
+port that dispenses liquid reward). Where a port sits in the maze is a
+separate key, such as the Sungod maze's ``metadata["location"]``.
+"""
 
 
 @dataclass(frozen=True)

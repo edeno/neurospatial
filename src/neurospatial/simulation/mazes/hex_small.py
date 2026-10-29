@@ -347,7 +347,8 @@ def make_small_hex_maze(
     - port_B: hex 2, bottom left corner
     - port_C: hex 3, bottom right corner
 
-    Each landmark's metadata also names its ``port`` letter and ``hex``.
+    Each landmark's metadata also gives its ``port_type``,
+    ``"liquid_port"``, and names its ``port`` letter and ``hex``.
 
     Examples
     --------
@@ -355,7 +356,7 @@ def make_small_hex_maze(
     >>> maze.env_2d.landmarks["port_A"].data.round(1)  # top corner
     array([ 0. , 78.8])
     >>> dict(maze.env_2d.landmarks["port_A"].metadata)
-    {'role': 'reward_port', 'port': 'A', 'hex': 1}
+    {'role': 'reward_port', 'port_type': 'liquid_port', 'port': 'A', 'hex': 1}
     >>> maze.env_2d.regions["port_A"].kind  # the port hex
     'polygon'
 
@@ -429,7 +430,12 @@ def make_small_hex_maze(
                 name,
                 "point",
                 center + apothem * center / np.linalg.norm(center),
-                {"role": "reward_port", "port": name[-1], "hex": hex_id},
+                {
+                    "role": "reward_port",
+                    "port_type": "liquid_port",
+                    "port": name[-1],
+                    "hex": hex_id,
+                },
             )
         )
     env_2d = env_2d.with_regions(regions).with_landmarks(Landmarks(landmarks))

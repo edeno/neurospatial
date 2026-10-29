@@ -30,6 +30,16 @@ def test_landmark_roles_are_known(maze):
     assert roles <= MAZE_LANDMARK_ROLES
 
 
+# The reward hardware a port landmark's ``port_type`` may name.
+PORT_TYPES = {"food_well", "food_cup", "plastic_cap", "liquid_port"}
+
+
+def test_every_reward_port_names_its_hardware(maze):
+    for name, lm in maze.env_2d.landmarks.items():
+        if lm.metadata["role"] == "reward_port":
+            assert lm.metadata["port_type"] in PORT_TYPES, name
+
+
 def test_each_apparatus_landmark_has_a_region_around_it(maze):
     env = maze.env_2d
     for name, lm in env.landmarks.items():
