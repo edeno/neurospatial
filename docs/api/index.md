@@ -150,6 +150,9 @@ Bayesian decoding of position from spike counts.
 - `fit_isotonic_trajectory()`, `fit_linear_trajectory()`,
   `detect_trajectory_radon()`: Fit replay trajectories along a track; slopes
   are in environment units per second
+- `replay_trajectory_significance()`: Davidson et al. (2009) replay test,
+  the replay score against column-cycle, unit-identity and pseudo-event
+  shuffles
 
 **Key Classes:**
 

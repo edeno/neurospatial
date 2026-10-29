@@ -86,15 +86,23 @@ matches the region's mass to within 0.0032.
   `n_samples >= 2`.
 - `method="map"` in the trajectory fits uses the highest-density bin; on
   unequal track bins it reported 120 cm/s for a stationary MAP.
-- `detect_trajectory_radon(env, posterior, times)` reports `speed` (env units
-  per second), `start_position`, `angle` (radians) and a `score` equal to the
-  mean posterior mass on the line per time bin (Davidson et al. 2009), in
-  [0, 1] and equal for forward and reversed sweeps. It returns the sinogram
-  with `sinogram_angles`, `sinogram_positions`, `time_bin_size` and
-  `column_width`. `theta_range`/`theta_step` (degrees) become
-  `angle_range`/`angle_step` (radians); `angle_degrees` and the pixel
-  `offset` are removed. The angle and offset depended on bin size, and the
-  score was larger for one direction of the same event.
+- `detect_trajectory_radon(env, posterior, times, *, band=None,
+  max_speed=None)` implements the replay line search of Davidson et al.
+  (2009): it searches speeds and start positions and scores each trajectory
+  by the mean over time bins of the posterior mass within `band` of it
+  (15 cm by default, their value), with the median of that mass over the
+  track for time bins where the trajectory leaves the track. It reports
+  `speed` (env units per second), `start_position` at `times[0]`, the replay
+  `score` (in [0, 1], equal for forward and reversed sweeps and independent
+  of the decode's bin size) and the sinogram over `sinogram_speeds` and
+  `sinogram_start_positions`. `theta_range`/`theta_step`, `angle_degrees`
+  and the pixel `offset` are removed: the angle and offset depended on bin
+  size, and the score was larger for one direction of the same event.
+- New `replay_trajectory_significance` tests the replay score against
+  Davidson et al.'s column-cycle, unit-identity and pseudo-event shuffles
+  (1500 each by default), refitting the trajectory to every shuffle, and
+  reports each p-value and the largest. A 0.5 s event on a 2 m track takes
+  about 3 s with all three shuffles.
 - A stationary decode has `r_squared = NaN` (it was 1, which passed replay
   screens) and an isotonic `direction` of `None`.
 - `decoding_error(metric="euclidean")` on polar environments returns the

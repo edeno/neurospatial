@@ -81,8 +81,12 @@ fit_isotonic_trajectory : Monotonic trajectory fitting
 fit_linear_trajectory : Linear trajectory fitting
     Linear regression with optional Monte Carlo uncertainty.
 
-detect_trajectory_radon : Radon transform trajectory detection
-    Detect linear trajectories in posterior images.
+detect_trajectory_radon : Replay line fit (Davidson et al. 2009)
+    The constant-speed line holding the most posterior mass within a band.
+
+replay_trajectory_significance : Replay line significance
+    Test the replay score against column-cycle, unit-identity and
+    pseudo-event shuffles.
 
 Cell Assembly Detection
 -----------------------
@@ -217,9 +221,11 @@ from neurospatial.decoding.trajectory import (
     IsotonicFitResult,
     LinearFitResult,
     RadonDetectionResult,
+    ReplaySignificanceResult,
     detect_trajectory_radon,
     fit_isotonic_trajectory,
     fit_linear_trajectory,
+    replay_trajectory_significance,
 )
 
 # =============================================================================
@@ -240,6 +246,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
+    "ReplaySignificanceResult",
     # Spike-time binning
     "bin_spikes_in_time",
     # Cell assembly detection
@@ -273,4 +280,5 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "normalize_to_posterior",
     "pairwise_correlations",
     "reactivation_strength",
+    "replay_trajectory_significance",
 ]

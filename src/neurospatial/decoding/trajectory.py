@@ -44,7 +44,10 @@ fit_isotonic_trajectory
 fit_linear_trajectory
     Fit linear trajectory with optional Monte Carlo uncertainty.
 detect_trajectory_radon
-    Detect the line holding the most posterior mass (a discrete Radon transform).
+    Fit the replay line holding the most posterior mass (Davidson et al. 2009).
+replay_trajectory_significance
+    Test a replay line's score against column-cycle, unit-identity and
+    pseudo-event shuffles.
 
 Result Dataclasses
 ------------------
@@ -54,6 +57,8 @@ LinearFitResult
     Container for linear regression results.
 RadonDetectionResult
     Container for Radon transform detection results.
+ReplaySignificanceResult
+    Container for a replay line and its shuffle tests.
 """
 
 from __future__ import annotations
@@ -67,9 +72,13 @@ from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
+
     from numpy.typing import NDArray
 
+    from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
+    from neurospatial.stats.shuffle import ShuffleTestResult
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -197,54 +206,46 @@ class LinearFitResult(ResultMixin):
 
 @dataclass(frozen=True, repr=False, eq=False)
 class RadonDetectionResult(ReadOnlyArraysMixin, ResultMixin):
-    """The line through a decoded event that holds the most posterior mass.
+    """The constant-speed line through a decoded event with the best replay score.
 
-    :func:`detect_trajectory_radon` treats the posterior as an image, one row
-    per time bin and one column per equal length of track, and scores every
-    candidate line by the posterior mass it passes through.
+    :func:`detect_trajectory_radon` scores every candidate line, a speed and
+    a start position, by the posterior mass within ``band`` of it (the replay
+    score of Davidson et al. 2009) and keeps the best.
 
     Attributes
     ----------
     speed : float
-        Slope of the detected line: replay speed along the track in
-        environment units per second (cm/s for a track in cm). Positive when
-        position increases along the track with time. Equal to
-        ``tan(angle) * column_width / time_bin_size``, so it does not depend
-        on the bin size or time bin of the decode.
+        Replay speed along the track, in environment units per second (cm/s
+        for a track in cm). Positive when position increases along the track
+        with time.
     start_position : float
-        Position along the track, in environment units, of the detected line
-        at the event's first time bin, ``times[0]``. It can lie off the track
-        when the line enters the track after the event starts.
+        Position along the track, in environment units, of the line at the
+        event's first time bin, ``times[0]``.
     score : float
-        Mean over time bins of the posterior mass on the detected line, in
-        [0, 1]: 1 when every time bin puts all its mass on the line, and
-        ``column_width`` divided by the track length for a uniform
-        posterior. A time bin contributes the mass in a window one column
-        wide centered on the line, which is zero where the line lies off the
-        track.
-    angle : float
-        Angle of the detected line in the image, in radians: 0 is a constant
-        position, positive angles a position that increases with time. It
-        depends on ``time_bin_size`` and ``column_width``; compare ``speed``
-        across decodes instead.
-    sinogram : NDArray[np.float64], shape (n_angles, n_positions)
-        Score of every candidate line: row ``i`` holds the lines at angle
-        ``sinogram_angles[i]``, column ``j`` the line through
-        ``sinogram_positions[j]`` at the event's middle time bin.
-    sinogram_angles : NDArray[np.float64], shape (n_angles,)
-        Angle of each sinogram row, in radians, in the image.
-    sinogram_positions : NDArray[np.float64], shape (n_positions,)
-        Position along the track, in environment units, of each sinogram
-        column's lines at the middle time bin, ``times[(n_time_bins - 1) //
-        2]``: the centers of the image columns.
-    time_bin_size : float
-        Seconds per image row: the median spacing of ``times``.
-    column_width : float
-        Environment units per image column.
+        Replay score of Davidson et al. (2009), the best over the searched
+        trajectories: the mean over time bins of the posterior mass within
+        ``band`` of the trajectory, in [0, 1]. The reported trajectory scores
+        within 0.001 of it (see :func:`detect_trajectory_radon`). It is 1 when
+        every time bin puts all its mass within ``band`` of the line, and
+        about ``2 * band`` divided by the track length for a uniform posterior.
+        A time bin where the line lies beyond the ends of the track contributes
+        the median of that mass over positions on the track.
+    band : float
+        Half-width of the band around a line, in environment units.
+    sinogram : NDArray[np.float64], shape (n_speeds, n_start_positions)
+        Replay score of every candidate line: entry ``(i, j)`` is the line of
+        speed ``sinogram_speeds[i]`` through ``sinogram_start_positions[j]``
+        at ``times[0]``.
+    sinogram_speeds : NDArray[np.float64], shape (n_speeds,)
+        Searched speeds, in environment units per second, evenly spaced.
+    sinogram_start_positions : NDArray[np.float64], shape (n_start_positions,)
+        Searched start positions along the track, in environment units,
+        evenly spaced at most ``band / 5`` apart.
 
     See Also
     --------
     detect_trajectory_radon : Function that produces this result.
+    replay_trajectory_significance : Test the score against shuffles.
     fit_linear_trajectory : Line fit to the decoded positions.
 
     Examples
@@ -259,12 +260,10 @@ class RadonDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     speed: float
     start_position: float
     score: float
-    angle: float
+    band: float
     sinogram: NDArray[np.float64]
-    sinogram_angles: NDArray[np.float64]
-    sinogram_positions: NDArray[np.float64]
-    time_bin_size: float
-    column_width: float
+    sinogram_speeds: NDArray[np.float64]
+    sinogram_start_positions: NDArray[np.float64]
 
     def __post_init__(self) -> None:
         """Own read-only copies of the sinogram and its axes."""
@@ -276,7 +275,51 @@ class RadonDetectionResult(ReadOnlyArraysMixin, ResultMixin):
             "speed": self.speed,
             "start_position": self.start_position,
             "score": self.score,
-            "angle": self.angle,
+            "band": self.band,
+        }
+
+
+@dataclass(frozen=True, repr=False, eq=False)
+class ReplaySignificanceResult(ResultMixin):
+    """A replay line and its replay score tested against shuffles.
+
+    :func:`replay_trajectory_significance` fits the replay line of Davidson,
+    Kloosterman and Wilson (2009) and compares its replay score with the best
+    score found in each of up to three kinds of shuffled data.
+
+    Attributes
+    ----------
+    trajectory : RadonDetectionResult
+        The best line through the event: speed, start position and replay
+        score.
+    shuffles : Mapping[str, ShuffleTestResult]
+        One shuffle test per null that was run, keyed ``"column_cycle"``,
+        ``"unit_identity"`` and ``"pseudo_event"``. Each holds the observed
+        score, the best score of every shuffle and the Monte Carlo p-value
+        ``(k + 1) / (n + 1)``.
+    p_value : float
+        The largest p-value among ``shuffles``. Davidson et al. call an event
+        significant replay when this is below 0.01, with all three shuffles
+        run.
+
+    See Also
+    --------
+    replay_trajectory_significance : Function that produces this result.
+    detect_trajectory_radon : The line fit alone.
+    """
+
+    trajectory: RadonDetectionResult
+    shuffles: Mapping[str, ShuffleTestResult]
+    p_value: float
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "speed": self.trajectory.speed,
+            "start_position": self.trajectory.start_position,
+            "score": self.trajectory.score,
+            "p_value": self.p_value,
+            **{f"{name}_p_value": test.p_value for name, test in self.shuffles.items()},
         }
 
 
@@ -841,51 +884,33 @@ def _fit_lines(
     return slope, intercept
 
 
-def _posterior_image(
-    posterior: NDArray[np.float64],
-    starts: NDArray[np.float64],
-    stops: NDArray[np.float64],
-) -> tuple[NDArray[np.float64], float]:
-    """Posterior mass on equally spaced columns along the track.
+_DAVIDSON_BAND_CM = 15.0
+"""Default half-width ``d`` of the replay band, 15 cm.
 
-    Parameters
-    ----------
-    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
-        Posterior mass per bin, bins in track order.
-    starts, stops : NDArray[np.float64], shape (n_bins,)
-        Where each bin starts and ends along the track, in track order.
+Davidson, Kloosterman and Wilson (2009, Supplemental Experimental Procedures)
+"empirically set [d] to 15 cm to allow for detection of replays with small
+local variations in velocity".
+"""
 
-    Returns
-    -------
-    image : NDArray[np.float64], shape (n_time_bins, n_columns)
-        Posterior mass per column; the first column starts at ``starts[0]``.
-        Contiguous bins of one length are the columns themselves. Otherwise
-        columns are as long as the shortest bin, shortened so that whole
-        columns span the track, and each holds the mass of the overlapping
-        bins in proportion to the overlap: the posterior density (mass per
-        unit length) is constant within a bin, and a gap between bins holds
-        no mass.
-    column_width : float
-        Length of each column along the track, in environment units.
-    """
-    lengths = stops - starts
-    shortest = float(lengths.min())
-    tolerance = 1e-9 * shortest
-    if np.all(np.abs(lengths - shortest) <= tolerance) and np.all(
-        np.abs(starts[1:] - stops[:-1]) <= tolerance
-    ):
-        return posterior, shortest
-    span = float(stops[-1] - starts[0])
-    n_columns = int(np.ceil(span / shortest - 1e-9))
-    edges = np.linspace(starts[0], stops[-1], n_columns + 1)
-    overlap = np.clip(
-        np.minimum(stops[:, None], edges[None, 1:])
-        - np.maximum(starts[:, None], edges[None, :-1]),
-        0.0,
-        None,
-    )  # (n_bins, n_columns)
-    image: NDArray[np.float64] = posterior @ (overlap / lengths[:, None])
-    return image, span / n_columns
+_DEFAULT_MAX_SPEED_CM = 3000.0
+"""Default largest replay speed searched, 30 m/s, in cm/s.
+
+Davidson et al. (2009, Figure 3E) found replay speeds up to about 20 m/s
+(median 8.1 m/s); the search extends half as far again beyond that.
+"""
+
+_LINES_PER_BAND = 5
+"""Candidate start positions per band half-width.
+
+Start positions are at most ``band / 5`` apart and neighboring speeds end at
+most that far apart, so every line is within ``band / 5`` of a searched one,
+well inside the band, and the score does not depend on the bin size of the
+decode.
+"""
+
+_SCORE_TIE = 1e-3
+"""Replay scores within this of the best (a tenth of a percent of probability)
+count as equally good when choosing the reported trajectory."""
 
 
 def detect_trajectory_radon(
@@ -893,23 +918,24 @@ def detect_trajectory_radon(
     posterior: NDArray[np.float64],
     times: NDArray[np.float64],
     *,
-    angle_range: tuple[float, float] = (-np.pi / 2, np.pi / 2),
-    angle_step: float = np.pi / 180,
+    band: float | None = None,
+    max_speed: float | None = None,
 ) -> RadonDetectionResult:
-    """Detect the line through a decoded event that holds the most posterior mass.
+    """Detect the constant-speed replay trajectory in a decoded event.
 
-    Treats the posterior as an image, one row per time bin and one column
-    per equal length of track, and scores every candidate line by the mean,
-    over time bins, of the posterior mass on the line: a discrete Radon
-    transform with one sample per time bin. The best line gives the replay
-    speed and start position without first reducing each time bin to one
-    decoded position, so it uses the whole posterior.
+    Implements the replay line search of Davidson, Kloosterman and Wilson
+    (2009): every candidate trajectory, a speed and a start position, is
+    scored by the mean over time bins of the posterior probability that the
+    position lies within ``band`` of it, and the best trajectory gives the
+    replay speed, start position and replay score. The search uses the whole
+    posterior rather than one decoded position per time bin. Test the score
+    against shuffles with :func:`replay_trajectory_significance`.
 
     Parameters
     ----------
     env : Environment
         The environment the posterior was decoded on: a 1-D environment or a
-        linearized track. Image columns run along the track, so the result
+        linearized track. Positions are read along the track, so the result
         does not depend on how bins are numbered.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
         Posterior probability mass over spatial bins for each time bin. Each
@@ -918,25 +944,21 @@ def detect_trajectory_radon(
         Center time of each posterior row, in seconds, strictly increasing.
         Times need not be evenly spaced, so time bins dropped as undecodable
         can be left out together with their posterior rows.
-    angle_range : tuple of float, default=(-pi/2, pi/2)
-        Smallest and largest line angle to search, in radians, within
-        [-pi/2, pi/2]. Angle 0 is a constant position and positive angles a
-        position that increases with time. A line at exactly +/-pi/2 has no
-        position in each time bin (an infinite speed) and is not searched.
-        The default searches every direction.
-    angle_step : float, default=pi/180
-        Spacing of the searched angles, in radians, at most the width of
-        ``angle_range``. Angles are ``angle_range[0] + k * angle_step`` up to
-        ``angle_range[1]``. A step of one degree resolves the speed of a line
-        at angle ``a`` to ``angle_step / (sin(a) * cos(a))`` of its value,
-        3.5% at 45 degrees; the resolution is coarser for steep lines, where
-        a smaller step or :func:`fit_linear_trajectory` gives a finer speed.
+    band : float or None, default=None
+        Half-width ``d`` of the band around a trajectory, in environment
+        units. None means 15 cm, the value of Davidson et al., in the
+        environment's units, which requires metric ``env.units``. A wider
+        band tolerates small changes of speed within an event.
+    max_speed : float or None, default=None
+        Largest speed searched, in environment units per second, in either
+        direction. None means 30 m/s in the environment's units: Davidson et
+        al. found replay speeds up to about 20 m/s (median 8.1 m/s).
 
     Returns
     -------
     RadonDetectionResult
-        The speed, start position, score and angle of the best line, and the
-        score of every candidate line (the sinogram) with its axes.
+        The speed, start position and replay score of the best trajectory,
+        and the score of every candidate (the sinogram) with its axes.
 
     Raises
     ------
@@ -944,49 +966,59 @@ def detect_trajectory_radon(
         If ``env`` is neither 1-D nor a linearized track, if ``posterior``
         does not have one column per bin or a row is not a probability mass
         (NaN or Inf, negative, or not summing to 1), if ``times`` does not
-        have one finite, strictly increasing entry per row, or if
-        ``angle_range`` or ``angle_step`` leaves no angle to search.
+        have one finite, strictly increasing entry per row, or if ``band`` or
+        ``max_speed`` is not positive (or is None on an environment without
+        metric units).
 
     See Also
     --------
-    RadonDetectionResult : Container for Radon detection results.
+    RadonDetectionResult : Container for the detected trajectory.
+    replay_trajectory_significance : Test the replay score against shuffles.
     fit_linear_trajectory : For parametric linear fits.
     fit_isotonic_trajectory : For monotonic trajectory fits.
 
     Notes
     -----
-    **Score.** Following the line-fitting replay score of Davidson,
-    Kloosterman and Wilson (2009), each time bin contributes the posterior
-    mass near the line at its center time, and the score is the mean over
-    time bins. "Near" is a window one image column wide centered on the
-    line: the posterior interpolated linearly between column centers. A
-    line therefore scores the same whatever its slope, a position reversed
-    along the track scores the same as the original, and the score is
-    comparable across events of different durations. A time bin where the
-    line lies off the track contributes no mass. Because the window is one
-    column wide, a spread-out posterior scores higher on wider columns;
-    compare scores between events decoded on the same bins, or against a
-    shuffle of the same event (:func:`neurospatial.stats.shuffle_posterior_circular`).
-    Davidson et al. sum the posterior within a fixed physical distance of the
-    line instead, so these scores are not directly comparable to published
-    values.
+    **Score.** The replay score of Davidson et al. (2009, equation 5),
 
-    **Candidate lines.** At each searched angle the candidates are the
-    lines through each column center at the middle time bin,
-    ``times[(n_time_bins - 1) // 2]``, so every candidate lies on the track
-    at mid-event; a line on the track for less than half the event is not
-    considered. Ties go to the first line in sinogram order.
+    .. math:: R(V, \\rho) = \\frac{1}{n} \\sum_{k=0}^{n-1}
+              \\Pr\\left(|x - (\\rho + V (t_k - t_0))| \\le d\\right),
 
-    **Image.** Rows are time bins, one ``time_bin_size`` (the median spacing
-    of ``times``) apart. A line in the image is a constant speed only if the
-    columns are equally spaced along the track. When the bins are
-    contiguous and of one length, each bin is a column, in track order.
-    Otherwise the posterior is resampled onto columns as long as the
-    shortest bin (shortened slightly so that whole columns span the track):
-    each column receives the mass of the bins it overlaps, in proportion to
-    the overlap, which treats the posterior density as constant within a
-    bin. Gaps between bins, such as ``edge_spacing`` between the segments of
-    a track, are columns with no mass.
+    the mean over the ``n`` time bins of the posterior mass within
+    ``d = band`` of the trajectory of speed ``V`` starting at ``rho`` at the
+    first time bin. Mass within a bin is spread evenly along it, so the mass
+    within the band is exact for any bin sizes. For a time bin where the
+    trajectory lies beyond the ends of the track, it specifies "any
+    location" and the time bin contributes the median, over the searched
+    start positions that lie on a bin, of the mass within ``band`` of that
+    position, as in Davidson et al. The score is in [0, 1] and equal for a
+    sweep reversed in position or time. Davidson et al. used evenly spaced
+    20 ms time bins; ``times`` here may be uneven, and ``t_k`` is the time
+    of each row.
+
+    **Search.** Davidson et al. "densely sampled" speed and start position.
+    Start positions run along the whole track at most ``band / 5`` apart
+    (3 cm for the default band), and speeds from ``-max_speed`` to
+    ``max_speed`` are spaced so that neighboring trajectories end at most one
+    start spacing apart. Every trajectory is therefore within ``band / 5`` of
+    a searched one at every time bin, well inside the band, and the score
+    does not depend on the bin size of the decode. When the posterior is
+    sharp, every trajectory within ``band`` of the decoded positions holds
+    all of their mass and several share the best score. ``score`` is the
+    best score (Davidson et al.'s :math:`R_{max}`); the reported speed and
+    start position are those of the trajectory, among those scoring within
+    0.001 of the best, whose speed is closest to the least-squares line
+    through the posterior mean positions, and then whose start is closest
+    to that line's start, so a stationary event has speed 0. Davidson et al.
+    do not say how they chose among equally good trajectories. The reported speed is resolved to the speed spacing, at most
+    ``band / (5 * (times[-1] - times[0]))``, and the start position to the
+    start spacing, at most ``band / 5``.
+
+    **Track geometry.** Positions are read along the track (the linear
+    position of a linearized track). Gaps between bins, such as
+    ``edge_spacing`` between the segments of a maze, count as track for the
+    band but are not positions for the off-track median. Davidson et al.
+    used a single linear track.
 
     References
     ----------
@@ -1010,149 +1042,646 @@ def detect_trajectory_radon(
     >>> result = detect_trajectory_radon(env, posterior, times)
     >>> print(
     ...     f"{result.speed:.0f} cm/s from {result.start_position:.0f} cm, "
-    ...     f"score {result.score:.2f}"
+    ...     f"score {result.score:.2f} within {result.band:g} cm"
     ... )
-    200 cm/s from 1 cm, score 1.00
+    198 cm/s from 1 cm, score 1.00 within 15 cm
     """
-    angles = _search_angles(angle_range, angle_step)
-    posterior, starts, stops = _track_positions(
-        env, posterior, "detect_trajectory_radon()"
+    lines, posterior = _prepare_replay_lines(
+        env,
+        posterior,
+        times,
+        band=band,
+        max_speed=max_speed,
+        operation="detect_trajectory_radon()",
     )
-    times = _require_times(times, len(posterior), "detect_trajectory_radon()")
+    return _best_line(lines, posterior)
+
+
+def _prepare_replay_lines(
+    env: Environment,
+    posterior: NDArray[np.float64],
+    times: NDArray[np.float64],
+    *,
+    band: float | None,
+    max_speed: float | None,
+    operation: str,
+) -> tuple[_ReplayLines, NDArray[np.float64]]:
+    """Validate a replay line search and build its scorer.
+
+    Returns
+    -------
+    lines : _ReplayLines
+        Scorer for the event's geometry.
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        The validated posterior in bin numbering.
+    """
+    from neurospatial._units import default_length
+    from neurospatial.environment._queries import require_track_extents
+
+    # Validates the environment and the posterior rows.
+    _, starts, stops = _track_positions(env, posterior, operation)
+    posterior = np.asarray(posterior, dtype=np.float64)
+    times = _require_times(times, len(posterior), operation)
     if np.any(np.diff(times) <= 0):
         raise ValueError(
             _format_error(
-                "detect_trajectory_radon() needs strictly increasing times.",
-                why="each posterior row is one row of the time-by-position "
-                "image, in time order",
+                f"{operation} needs strictly increasing times.",
+                why="a trajectory's position at each time bin depends on the "
+                "time since the first",
                 fix="sort the posterior rows and their times together by time, "
                 "and drop rows with duplicate times",
             )
         )
-    image, column_width = _posterior_image(posterior, starts, stops)
-    time_bin_size = float(np.median(np.diff(times)))
-    middle = (len(times) - 1) // 2
-    sinogram = _line_scores(image, (times - times[middle]) / time_bin_size, angles)
+    if band is None:
+        band = default_length(env, _DAVIDSON_BAND_CM, name="band", call=operation)
+    if max_speed is None:
+        max_speed = default_length(
+            env, _DEFAULT_MAX_SPEED_CM, name="max_speed", call=operation
+        )
+    for name, value, example in (
+        ("band", band, "band=15.0 for 15 cm on a track in cm"),
+        ("max_speed", max_speed, "max_speed=3000.0 for 30 m/s on a track in cm"),
+    ):
+        if not (np.isfinite(value) and value > 0):
+            raise ValueError(
+                _format_error(
+                    f"{operation} needs {name} > 0 in the environment's units, "
+                    f"got {value:g}.",
+                    why="band is the half-width of the band around a trajectory "
+                    "and max_speed the largest speed searched",
+                    fix=f"pass a positive value, e.g. {example}",
+                )
+            )
+    bin_starts, _ = require_track_extents(
+        env, operation, alternative=_TRACK_ALTERNATIVE
+    )
+    order = np.argsort(bin_starts, kind="stable")  # as in _track_positions
+    lines = _ReplayLines(
+        starts, stops, order, times - times[0], float(band), float(max_speed)
+    )
+    return lines, posterior
 
-    angle_index, column = np.unravel_index(np.argmax(sinogram), sinogram.shape)
-    speed = float(np.tan(angles[angle_index]) * column_width / time_bin_size)
-    positions = starts[0] + (np.arange(image.shape[1]) + 0.5) * column_width
+
+def _best_line(
+    lines: _ReplayLines, posterior: NDArray[np.float64]
+) -> RadonDetectionResult:
+    """The best-scoring trajectory of one event, ties broken by a line fit."""
+    cumulative = lines.cumulative_mass(posterior[None])
+    off_track = lines.off_track_mass(cumulative)
+    sinogram = lines.sinograms(cumulative, off_track, best_only=False)[0]
+    # Trajectories scoring within _SCORE_TIE of the best are equally good.
+    # Among them, report the speed closest to the least-squares line through
+    # the posterior mean positions, then the start closest to that line's
+    # start. The score reported is the best one, as for the shuffles.
+    speed_indices, start_indices = np.nonzero(sinogram >= sinogram.max() - _SCORE_TIE)
+    mean_position = posterior[:, lines.order] @ lines.bin_centers
+    fit_speed, fit_start = _fit_lines(lines.elapsed, mean_position)
+    closest = np.lexsort(
+        (
+            np.abs(lines.start_positions[start_indices] - fit_start),
+            np.abs(lines.speeds[speed_indices] - fit_speed),
+        )
+    )[0]
+    speed_index, start_index = speed_indices[closest], start_indices[closest]
     return RadonDetectionResult(
-        speed=speed,
-        start_position=float(positions[column] + speed * (times[0] - times[middle])),
-        score=float(sinogram[angle_index, column]),
-        angle=float(angles[angle_index]),
+        speed=float(lines.speeds[speed_index]),
+        start_position=float(lines.start_positions[start_index]),
+        score=float(sinogram.max()),
+        band=lines.band,
         sinogram=sinogram,
-        sinogram_angles=angles,
-        sinogram_positions=positions,
-        time_bin_size=time_bin_size,
-        column_width=column_width,
+        sinogram_speeds=lines.speeds,
+        sinogram_start_positions=lines.start_positions,
     )
 
 
-def _search_angles(
-    angle_range: tuple[float, float], angle_step: float
-) -> NDArray[np.float64]:
-    """Line angles ``low + k * step`` up to ``high``, strictly inside +/-pi/2.
+def replay_trajectory_significance(
+    env: Environment,
+    posterior: NDArray[np.float64],
+    times: NDArray[np.float64],
+    *,
+    band: float | None = None,
+    max_speed: float | None = None,
+    spike_counts: NDArray[np.int64] | None = None,
+    encoding_models: NDArray[np.float64] | SpatialRatesResult | None = None,
+    dt: float | None = None,
+    prior: NDArray[np.float64] | None = None,
+    pseudo_event_pool: NDArray[np.float64] | None = None,
+    n_shuffles: int = 1500,
+    rng: np.random.Generator | int | None = None,
+) -> ReplaySignificanceResult:
+    """Test whether a decoded event replays a constant-speed trajectory.
+
+    Implements the replay test of Davidson, Kloosterman and Wilson (2009):
+    the replay score of the best trajectory (:func:`detect_trajectory_radon`)
+    is compared with the best score found, by the same search, in each of
+    ``n_shuffles`` shuffled versions of the event. Davidson et al. used three
+    shuffles, each controlling for a different way a high score can arise
+    without replay:
+
+    - ``"column_cycle"`` (always run): each time bin's posterior is shifted
+      circularly along the track by a random distance, which keeps each
+      decoded distribution but breaks the alignment of positions along a
+      trajectory.
+    - ``"unit_identity"`` (run when ``spike_counts``, ``encoding_models`` and
+      ``dt`` are given): spike trains are reassigned to randomly permuted
+      units' rate maps and decoded again, which keeps the spiking dynamics
+      (bursts, sequential firing) but breaks the place code.
+    - ``"pseudo_event"`` (run when ``pseudo_event_pool`` is given): each time
+      bin's posterior is replaced by one drawn at random from other candidate
+      events, which keeps the decoder's bias toward particular locations.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment the posterior was decoded on: a 1-D environment or a
+        linearized track.
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior probability mass over spatial bins for each time bin of the
+        event. Each row must sum to 1.
+    times : NDArray[np.float64], shape (n_time_bins,)
+        Center time of each posterior row, in seconds, strictly increasing.
+    band, max_speed : float or None, default=None
+        Half-width of the band around a trajectory and largest speed
+        searched, in environment units (per second); None means 15 cm and
+        30 m/s. See :func:`detect_trajectory_radon`.
+    spike_counts : NDArray[np.int64] or None, shape (n_time_bins, n_neurons)
+        Spike counts of the event, one row per posterior row. With
+        ``encoding_models`` and ``dt``, runs the unit-identity shuffle.
+    encoding_models : array of shape (n_neurons, n_bins), SpatialRatesResult, or None
+        The rate maps ``posterior`` was decoded with, as passed to
+        :func:`~neurospatial.decoding.decode_position`.
+    dt : float or None
+        Time-bin duration in seconds that ``posterior`` was decoded with.
+    prior : NDArray[np.float64] or None
+        The prior ``posterior`` was decoded with, if not the default.
+    pseudo_event_pool : NDArray[np.float64] or None, shape (n_pool, n_bins)
+        Posterior rows of the session's other candidate events, stacked. Runs
+        the pseudo-event shuffle: each pseudo-event draws its time bins at
+        random, with replacement, from these rows. Leave out the tested
+        event's own rows.
+    n_shuffles : int, default=1500
+        Shuffles per null, the number of Davidson et al. A p-value is at least
+        ``1 / (n_shuffles + 1)``.
+    rng : np.random.Generator, int, or None, default=None
+        Random number generator or seed; the nulls draw from it in the order
+        listed above. Pass a seed for a reproducible result.
+
+    Returns
+    -------
+    ReplaySignificanceResult
+        The detected trajectory, one shuffle test per null run, and the
+        largest of their p-values.
 
     Raises
     ------
     ValueError
-        If ``angle_range`` is not an increasing pair within [-pi/2, pi/2], if
-        ``angle_step`` is not positive or exceeds the range, or if no angle
-        remains strictly inside (-pi/2, pi/2).
+        For the inputs :func:`detect_trajectory_radon` refuses; if only some
+        of ``spike_counts``, ``encoding_models`` and ``dt`` are given; if
+        decoding ``spike_counts`` with ``encoding_models``, ``dt`` and
+        ``prior`` does not reproduce ``posterior``; if ``pseudo_event_pool``
+        does not hold probability rows with one column per bin; or if
+        ``n_shuffles`` is not a positive integer.
+
+    See Also
+    --------
+    detect_trajectory_radon : The trajectory search alone.
+    neurospatial.stats.shuffle_posterior_circular : The column-cycle shuffle.
+    neurospatial.stats.shuffle_cell_identity : The unit-identity shuffle.
+
+    Notes
+    -----
+    Every shuffle is searched over the same trajectories as the observed
+    event, so the test accounts for the search. The p-values are
+    ``(k + 1) / (n + 1)``, where ``k`` counts shuffles scoring at least the
+    observed score (a Monte Carlo p-value; Davison and Hinkley 1997).
+    Davidson et al. performed 1500 of each shuffle, called an event
+    significant replay when all three p-values were below 0.01, and reported
+    the largest; ``p_value`` is the largest among the nulls run here. The
+    column-cycle shift is a whole number of bins along the track. The
+    unit-identity null decodes the shuffled counts the way ``posterior`` was
+    decoded, which is checked by decoding the unshuffled counts first. The
+    cost grows with ``n_shuffles``, the number of time bins, the track
+    length divided by ``band`` and ``max_speed`` times the event duration
+    divided by ``band``.
+
+    References
+    ----------
+    Davidson, T. J., Kloosterman, F., & Wilson, M. A. (2009). Hippocampal
+    replay of extended experience. *Neuron*, 63(4), 497-507.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.decoding import replay_trajectory_significance
+    >>>
+    >>> env = Environment.linear_track(
+    ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
+    ... )
+    >>> times = np.arange(25) * 0.02
+    >>> posterior = np.zeros((25, env.n_bins))
+    >>> posterior[np.arange(25), 2 * np.arange(25)] = 1.0  # 4 cm per 20 ms
+    >>> result = replay_trajectory_significance(
+    ...     env, posterior, times, n_shuffles=199, rng=0
+    ... )
+    >>> print(f"{result.trajectory.speed:.0f} cm/s, p = {result.p_value:.3f}")
+    202 cm/s, p = 0.005
     """
-    low, high = (float(value) for value in angle_range)
-    step = float(angle_step)
-    half_turn = np.pi / 2 + 1e-12
-    if not (-half_turn <= low < high <= half_turn):
+    from types import MappingProxyType
+
+    from neurospatial.stats import _ensure_rng
+    from neurospatial.stats.shuffle import (
+        ShuffleTestResult,
+        compute_shuffle_pvalue,
+        compute_shuffle_zscore,
+        shuffle_cell_identity,
+        shuffle_posterior_circular,
+    )
+
+    operation = "replay_trajectory_significance()"
+    if (
+        isinstance(n_shuffles, bool)
+        or not isinstance(n_shuffles, (int, np.integer))
+        or n_shuffles < 1
+    ):
+        raise ValueError(
+            f"{operation} needs n_shuffles to be a positive integer, got "
+            f"{n_shuffles!r}. Davidson et al. used 1500 per null."
+        )
+    lines, posterior = _prepare_replay_lines(
+        env,
+        posterior,
+        times,
+        band=band,
+        max_speed=max_speed,
+        operation=operation,
+    )
+    unit_inputs = {
+        "spike_counts": spike_counts,
+        "encoding_models": encoding_models,
+        "dt": dt,
+    }
+    missing = [name for name, value in unit_inputs.items() if value is None]
+    if 0 < len(missing) < len(unit_inputs):
         raise ValueError(
             _format_error(
-                f"detect_trajectory_radon() needs angle_range = (low, high) "
-                f"with -pi/2 <= low < high <= pi/2 radians, got ({low:g}, "
-                f"{high:g}).",
-                why="a line's angle a and a + pi describe the same line, so "
-                "every line has one angle in [-pi/2, pi/2]",
-                fix="pass the range in radians, e.g. angle_range=(0.0, "
-                "np.pi / 2) for lines whose position increases with time",
+                f"{operation}: the unit-identity shuffle needs spike_counts, "
+                f"encoding_models and dt, but {', '.join(missing)} "
+                f"{'is' if len(missing) == 1 else 'are'} missing.",
+                why="the shuffle decodes the event's spike counts again with "
+                "permuted rate maps, as the posterior was decoded",
+                fix="pass all three (and prior if the decode used one), or none "
+                "to skip this shuffle",
             )
         )
-    if not (np.isfinite(step) and 0 < step <= high - low):
-        raise ValueError(
-            _format_error(
-                f"detect_trajectory_radon() needs 0 < angle_step <= "
-                f"{high - low:g} (the width of angle_range), got {step:g}.",
-                why="the search takes angles angle_step apart across "
-                "angle_range, so a larger step leaves at most one angle",
-                fix="pass the step in radians, e.g. angle_step=np.pi / 180 "
-                "for one degree",
+    if pseudo_event_pool is not None:
+        pool = np.asarray(pseudo_event_pool, dtype=np.float64)
+        if pool.ndim != 2 or pool.shape[1] != env.n_bins or len(pool) == 0:
+            raise ValueError(
+                _format_error(
+                    f"{operation}: pseudo_event_pool has shape {pool.shape}, "
+                    f"but needs (n_pool, {env.n_bins}): posterior rows of other "
+                    "candidate events on this environment.",
+                    why="each pseudo-event draws its time bins from these rows",
+                    fix="stack the posteriors of the session's other candidate "
+                    "events, e.g. np.vstack([r.posterior for r in others])",
+                )
+            )
+        pool = _require_probability_rows(pool, operation)
+
+    trajectory = _best_line(lines, posterior)
+    observed = trajectory.score
+    generator = _ensure_rng(rng)
+    nulls: dict[str, NDArray[np.float64]] = {}
+
+    shifted = shuffle_posterior_circular(
+        env, posterior, n_shuffles=n_shuffles, rng=generator
+    )
+    nulls["column_cycle"] = lines.best_scores_of(shifted, n_shuffles)
+
+    if spike_counts is not None and encoding_models is not None and dt is not None:
+        from neurospatial.decoding.posterior import decode_position
+
+        counts = np.asarray(spike_counts)
+        decoded = decode_position(
+            env, counts, encoding_models, dt=dt, prior=prior
+        ).posterior
+        if decoded.shape != posterior.shape or not np.allclose(
+            decoded, posterior, rtol=1e-5, atol=1e-7
+        ):
+            raise ValueError(
+                _format_error(
+                    f"{operation}: decoding spike_counts with encoding_models, "
+                    "dt and prior does not reproduce posterior.",
+                    why="the unit-identity null decodes permuted counts; it is "
+                    "a valid null only if it decodes them the way the posterior "
+                    "was decoded",
+                    fix="pass the counts, rate maps (or rate result), dt and "
+                    "prior that produced posterior",
+                )
+            )
+        models = getattr(encoding_models, "firing_rates", encoding_models)
+        permuted = (
+            decode_position(
+                env, shuffled, encoding_models, dt=dt, prior=prior
+            ).posterior
+            for shuffled, _ in shuffle_cell_identity(
+                counts, np.asarray(models), n_shuffles=n_shuffles, rng=generator
             )
         )
-    n_angles = int(np.floor((high - low) / step + 1e-9)) + 1
-    angles = low + step * np.arange(n_angles, dtype=np.float64)
-    angles = angles[np.abs(angles) < np.pi / 2 - 1e-12]
-    if angles.size == 0:
-        raise ValueError(
-            _format_error(
-                f"detect_trajectory_radon(): angle_range ({low:g}, {high:g}) "
-                f"with angle_step {step:g} searches only +/-pi/2.",
-                why="a line at +/-pi/2 has no position in each time bin (an "
-                "infinite speed), so it is not searched",
-                fix="use a smaller angle_step, e.g. np.pi / 180",
-            )
+        nulls["unit_identity"] = lines.best_scores_of(permuted, n_shuffles)
+
+    if pseudo_event_pool is not None:
+        draws = generator.integers(len(pool), size=(n_shuffles, len(posterior)))
+        nulls["pseudo_event"] = lines.best_scores_of(
+            (pool[rows] for rows in draws), n_shuffles
         )
-    return angles
+
+    shuffles = {
+        name: ShuffleTestResult(
+            observed_score=observed,
+            null_scores=scores,
+            p_value=compute_shuffle_pvalue(observed, scores, tail="greater"),
+            z_score=compute_shuffle_zscore(observed, scores),
+            shuffle_type=name,
+            n_shuffles=n_shuffles,
+        )
+        for name, scores in nulls.items()
+    }
+    return ReplaySignificanceResult(
+        trajectory=trajectory,
+        shuffles=MappingProxyType(shuffles),
+        p_value=max(test.p_value for test in shuffles.values()),
+    )
 
 
-def _line_scores(
-    image: NDArray[np.float64],
-    rows: NDArray[np.float64],
-    angles: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """Mean posterior mass on every candidate line, the sinogram.
+class _ReplayLines:
+    """Score candidate replay trajectories through decoded events on one track.
+
+    Built once for an event's geometry (bins, times, band, speeds) and applied
+    to the event's posterior and to its shuffles. A trajectory's score is
+    Davidson et al.'s (2009) replay score: the mean over time bins of the
+    posterior mass within ``band`` of it, with the median of that mass over
+    the track for a time bin where it lies beyond the ends of the track. The
+    mass within a band is exact for posterior density that is constant within
+    each bin.
 
     Parameters
     ----------
-    image : NDArray[np.float64], shape (n_rows, n_columns)
-        Posterior mass per column, one row per time bin.
-    rows : NDArray[np.float64], shape (n_rows,)
-        Time of each row relative to the middle row, in rows.
-    angles : NDArray[np.float64], shape (n_angles,)
-        Line angles in the image, in radians, strictly inside +/-pi/2.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_angles, n_columns)
-        Entry ``(i, j)`` is the mean over rows of the mass in a window one
-        column wide centered on the line at ``angles[i]`` through column
-        ``j``'s center at the middle row: the image interpolated linearly
-        between column centers, and zero off the track.
+    starts, stops : NDArray[np.float64], shape (n_bins,)
+        Where each bin starts and ends along the track, in track order.
+    order : NDArray[np.intp], shape (n_bins,)
+        Bin numbers in track order.
+    elapsed : NDArray[np.float64], shape (n_time_bins,)
+        Time of each time bin since the first, in seconds.
+    band : float
+        Half-width of the band around a trajectory, in environment units.
+    max_speed : float
+        Largest speed searched, in environment units per second.
     """
-    n_rows, n_columns = image.shape
-    # One empty column on each side: a line off the track holds no mass.
-    padded = np.pad(image, ((0, 0), (1, 1)))
-    row_index = np.arange(n_rows)
-    columns = np.arange(n_columns, dtype=np.float64)[:, None]
-    sinogram = np.empty((len(angles), n_columns))
-    # One angle at a time keeps memory at n_columns * n_rows.
-    for i, slope in enumerate(np.tan(angles)):
-        position = columns + slope * rows  # (n_columns, n_rows), in columns
-        left = np.floor(position)
-        weight = position - left
-        left_column = np.clip(left + 1, 0, n_columns + 1).astype(np.intp)
-        right_column = np.clip(left + 2, 0, n_columns + 1).astype(np.intp)
-        mass = (1.0 - weight) * padded[row_index, left_column] + weight * padded[
-            row_index, right_column
-        ]
-        sinogram[i] = mass.mean(axis=1)
-    return sinogram
+
+    # Memory budgets, in array elements of 8 bytes: the nonzeros of one
+    # sparse block of trajectories (building it takes several arrays of this
+    # size), and the cumulative masses of the shuffles scored together and the
+    # scores of one block for them (about 32 MB each).
+    _BLOCK_NONZEROS = 1_000_000
+    _BATCH_VALUES = 4_000_000
+    _BLOCK_SCORES = 4_000_000
+
+    def __init__(
+        self,
+        starts: NDArray[np.float64],
+        stops: NDArray[np.float64],
+        order: NDArray[np.intp],
+        elapsed: NDArray[np.float64],
+        band: float,
+        max_speed: float,
+    ) -> None:
+        self.order = order
+        self.elapsed = elapsed
+        self.band = band
+        self.track_start, self.track_end = float(starts[0]), float(stops[-1])
+        length = self.track_end - self.track_start
+        n_starts = int(np.ceil(length * _LINES_PER_BAND / band - 1e-9))
+        spacing = length / n_starts
+        self.start_positions: NDArray[np.float64] = (
+            self.track_start + (np.arange(n_starts, dtype=np.float64) + 0.5) * spacing
+        )
+        # Neighboring speeds end one start spacing apart at the last time bin.
+        speed_step = spacing / elapsed[-1]
+        n_speeds = int(np.floor(max_speed / speed_step + 1e-9))
+        self.speeds = speed_step * np.arange(-n_speeds, n_speeds + 1, dtype=np.float64)
+        # The cumulative mass is known at each bin's start and stop and grows
+        # linearly within a bin; it stays flat across a gap between bins.
+        self.knots = np.column_stack([starts, stops]).ravel()
+        self.bin_centers = (starts + stops) / 2
+        # The off-track median is over the start positions that lie on a bin.
+        within = np.searchsorted(stops, self.start_positions, side="left")
+        on_bin = (within < len(starts)) & (
+            self.start_positions >= starts[np.minimum(within, len(starts) - 1)]
+        )
+        self.on_bin_positions = self.start_positions[on_bin]
+
+    def cumulative_mass(self, posteriors: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Posterior mass from the track start to each bin's start and stop.
+
+        Parameters
+        ----------
+        posteriors : NDArray[np.float64], shape (n_events, n_time_bins, n_bins)
+            Posteriors in bin numbering.
+
+        Returns
+        -------
+        NDArray[np.float64], shape (n_events, n_time_bins, 2 * n_bins)
+            Mass before each of ``self.knots``.
+        """
+        mass = posteriors[..., self.order]
+        after = np.cumsum(mass, axis=-1)
+        cumulative: NDArray[np.float64] = np.stack([after - mass, after], axis=-1)
+        return cumulative.reshape(*mass.shape[:-1], -1)
+
+    def _locate(
+        self, positions: NDArray[np.float64]
+    ) -> tuple[NDArray[np.intp], NDArray[np.float64]]:
+        """Knot interval and fraction along it of each position, held to the track."""
+        positions = np.clip(positions, self.track_start, self.track_end)
+        left = np.clip(
+            np.searchsorted(self.knots, positions, side="right") - 1,
+            0,
+            len(self.knots) - 2,
+        )
+        span = self.knots[left + 1] - self.knots[left]
+        fraction = np.divide(
+            positions - self.knots[left],
+            span,
+            out=np.zeros_like(positions),
+            where=span > 0,
+        )
+        return left, fraction
+
+    def off_track_mass(self, cumulative: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Median over the track of the mass within ``band`` of a position.
+
+        Davidson et al. give a time bin where a trajectory leaves the track the
+        median probability over all locations on the track.
+
+        Returns
+        -------
+        NDArray[np.float64], shape (n_events, n_time_bins)
+        """
+        mass = np.zeros((*cumulative.shape[:-1], len(self.on_bin_positions)))
+        for sign in (1.0, -1.0):
+            left, fraction = self._locate(self.on_bin_positions + sign * self.band)
+            mass += sign * (
+                (1.0 - fraction) * cumulative[..., left]
+                + fraction * cumulative[..., left + 1]
+            )
+        median: NDArray[np.float64] = np.median(mass, axis=-1)
+        return median
+
+    def sinograms(
+        self,
+        cumulative: NDArray[np.float64],
+        off_track: NDArray[np.float64],
+        *,
+        best_only: bool,
+    ) -> NDArray[np.float64]:
+        """Score every candidate trajectory in every event.
+
+        Parameters
+        ----------
+        cumulative : NDArray[np.float64], shape (n_events, n_time_bins, 2 * n_bins)
+            From :meth:`cumulative_mass`.
+        off_track : NDArray[np.float64], shape (n_events, n_time_bins)
+            Mass given to a time bin where a trajectory lies off the track.
+        best_only : bool
+            Return each event's best score instead of every trajectory's.
+
+        Returns
+        -------
+        NDArray[np.float64]
+            Shape ``(n_events, n_speeds, n_start_positions)``, or
+            ``(n_events,)`` when ``best_only``.
+        """
+        n_events, n_time = off_track.shape
+        # One column per event, laid out for the sparse product.
+        values = np.empty((cumulative[0].size + n_time, n_events))
+        values[:-n_time] = cumulative.reshape(n_events, -1).T
+        values[-n_time:] = off_track.T
+        n_starts = len(self.start_positions)
+        best = np.full(n_events, -np.inf)
+        scores = None if best_only else np.empty((n_events, len(self.speeds), n_starts))
+        for speeds, operator in self._operator_blocks(n_events):
+            block_scores = (operator @ values).T
+            if scores is None:
+                np.maximum(best, block_scores.max(axis=1), out=best)
+            else:
+                scores[:, speeds] = block_scores.reshape(n_events, -1, n_starts)
+        return best if scores is None else scores
+
+    def _operator_blocks(self, n_events: int) -> Iterator[tuple[slice, Any]]:
+        """Sparse operators for successive blocks of speeds, built on demand.
+
+        Blocks are small enough that their nonzeros, and their scores for
+        ``n_events`` events, stay within the memory budgets.
+        """
+        n_starts = len(self.start_positions)
+        step = max(
+            1,
+            min(
+                self._BLOCK_NONZEROS // (n_starts * len(self.elapsed) * 5),
+                self._BLOCK_SCORES // (n_starts * n_events),
+            ),
+        )
+        for first in range(0, len(self.speeds), step):
+            block = slice(first, first + step)
+            yield block, self._operator(self.speeds[block])
+
+    def _operator(self, speeds: NDArray[np.float64]) -> Any:
+        """Sparse map from cumulative masses and off-track masses to scores.
+
+        Row ``i * n_start_positions + j`` averages, over time bins, the mass
+        within ``band`` of the trajectory of speed ``speeds[i]`` from
+        ``start_positions[j]``: the cumulative mass at the band's upper end
+        minus that at its lower end, each interpolated between bin edges and
+        held flat beyond the track. Where the trajectory lies off the track,
+        the time bin's off-track mass is used instead.
+        """
+        from scipy import sparse
+
+        n_starts, n_time = len(self.start_positions), len(self.elapsed)
+        n_knots = len(self.knots)
+        rows = np.arange(len(speeds) * n_starts).reshape(len(speeds), n_starts)
+        # Position of every trajectory at every time bin, in environment units.
+        position = (
+            self.start_positions[None, :, None]
+            + speeds[:, None, None] * self.elapsed[None, None, :]
+        )  # (n_speeds, n_start_positions, n_time)
+        on_track = (position >= self.track_start) & (position <= self.track_end)
+        row = np.broadcast_to(rows[:, :, None], position.shape)
+        time = np.broadcast_to(np.arange(n_time), position.shape)
+        row_parts, column_parts, weight_parts = [], [], []
+        for sign in (1.0, -1.0):
+            left, fraction = self._locate(position[on_track] + sign * self.band)
+            base = time[on_track] * n_knots + left
+            for offset, weight in ((0, 1.0 - fraction), (1, fraction)):
+                row_parts.append(row[on_track])
+                column_parts.append(base + offset)
+                weight_parts.append(sign * weight / n_time)
+        off = ~on_track
+        row_parts.append(row[off])
+        column_parts.append(n_time * n_knots + time[off])
+        weight_parts.append(np.full(int(np.sum(off)), 1.0 / n_time))
+        return sparse.csr_matrix(
+            (
+                np.concatenate(weight_parts),
+                (np.concatenate(row_parts), np.concatenate(column_parts)),
+            ),
+            shape=(rows.size, n_time * n_knots + n_time),
+        )
+
+    def best_scores_of(self, posteriors: Any, n_shuffles: int) -> NDArray[np.float64]:
+        """Best replay score of each of ``n_shuffles`` posteriors from an iterable.
+
+        Parameters
+        ----------
+        posteriors : iterable of NDArray[np.float64], each (n_time_bins, n_bins)
+            Shuffled posteriors in bin numbering.
+        n_shuffles : int
+            Number of posteriors the iterable yields.
+
+        Returns
+        -------
+        NDArray[np.float64], shape (n_shuffles,)
+        """
+        values_per_event = len(self.elapsed) * (len(self.knots) + 1)
+        batch = min(n_shuffles, max(1, self._BATCH_VALUES // values_per_event))
+        scores = np.empty(n_shuffles)
+        pending = np.empty((batch, len(self.elapsed), len(self.order)))
+        filled = 0
+        for index, shuffled in enumerate(posteriors):
+            pending[index - filled] = shuffled
+            if index + 1 - filled == batch:
+                scores[filled : index + 1] = self._best(pending)
+                filled = index + 1
+        if filled < n_shuffles:
+            scores[filled:] = self._best(pending[: n_shuffles - filled])
+        return scores
+
+    def _best(self, posteriors: NDArray[np.float64]) -> NDArray[np.float64]:
+        cumulative = self.cumulative_mass(posteriors)
+        return self.sinograms(
+            cumulative, self.off_track_mass(cumulative), best_only=True
+        )
 
 
 __all__ = [
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
+    "ReplaySignificanceResult",
     "detect_trajectory_radon",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",
+    "replay_trajectory_significance",
 ]
