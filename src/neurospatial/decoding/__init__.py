@@ -90,7 +90,7 @@ detect_assemblies : Detect cell assemblies from population spike counts
     ICA/PCA/NMF-based detection of coordinated neural ensembles.
 
 assembly_activation : Compute activation strength of an assembly
-    Project spike counts onto assembly pattern.
+    Activation strength R(t): co-firing of the pattern's neurons per time bin.
 
 pairwise_correlations : Compute pairwise correlations between neurons
     Extract upper triangle of correlation matrix.
@@ -99,7 +99,7 @@ explained_variance_reactivation : Explained variance reactivation analysis
     Measure how template correlations predict match correlations.
 
 reactivation_strength : Compare assembly activation between periods
-    Simple reactivation measure based on mean activation.
+    Mean activation strength in a match period over a template period.
 
 marchenko_pastur_threshold : Random matrix theory significance threshold
     Upper bound of eigenvalue distribution for random correlations.
