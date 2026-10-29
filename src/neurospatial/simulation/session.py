@@ -264,6 +264,76 @@ class SimulationSession:
         return _rebuild_session, (state,)
 
 
+def _field_centers(
+    env: Environment,
+    n_cells: int,
+    coverage: Literal["uniform", "random"],
+    rng: np.random.Generator,
+) -> NDArray[np.float64]:
+    """Field centers (or grid phases) for ``n_cells`` cells, shape (n_cells, n_dims).
+
+    ``'uniform'`` spaces the centers evenly along a track (a linearized or
+    1-D environment), from one end to the other. In an arena it lays a grid
+    of ``ceil(n_cells ** (1 / n_dims))`` targets per axis, inset 20% from
+    each side of the bounding box, keeps ``n_cells`` of them evenly spaced
+    through the whole grid so that every row and column keeps targets, and
+    snaps each to the nearest bin center. The inset keeps fields in the
+    interior that an exploring animal samples well. ``'random'`` draws bin
+    centers with replacement, ``rng.choice(len(env.bin_centers), n_cells)``.
+    """
+    if coverage == "random":
+        indices = rng.choice(len(env.bin_centers), size=n_cells, replace=True)
+        random_centers: NDArray[np.float64] = env.bin_centers[indices]
+        return random_centers
+
+    ranges = env.dimension_ranges
+    if env.binning.linearization is not None or env.n_dims == 1:
+        # Tracks: space centers evenly along the track, so every arm gets
+        # fields. A bounding-box grid snapped to a thin track would pile the
+        # centers onto the few bins nearest its targets.
+        linear = (
+            env.bin_centers[:, 0]
+            if env.binning.linearization is None
+            else env.to_linear(env.bin_centers)
+        )
+        targets = np.linspace(linear.min(), linear.max(), n_cells)
+        nearest = np.abs(linear[None, :] - targets[:, None]).argmin(axis=1)
+        field_centers: NDArray[np.float64] = env.bin_centers[nearest]
+    elif ranges is None:
+        # Layouts without an axis-aligned bounding box: stride through the
+        # bin centers.
+        step = max(1, len(env.bin_centers) // n_cells)
+        field_centers = env.bin_centers[::step][:n_cells]
+    else:
+        n_dims = len(ranges)
+        margin = 0.2
+        per_axis = int(np.ceil(n_cells ** (1.0 / n_dims)))
+        axis_targets = [
+            np.linspace(lo + margin * (hi - lo), hi - margin * (hi - lo), per_axis)
+            for (lo, hi) in ranges
+        ]
+        grid = np.array(np.meshgrid(*axis_targets, indexing="ij")).reshape(n_dims, -1).T
+        kept = np.round(np.linspace(0, len(grid) - 1, n_cells)).astype(int)
+        distances = np.linalg.norm(
+            env.bin_centers[None, :, :] - grid[kept, None, :], axis=2
+        )
+        field_centers = env.bin_centers[np.argmin(distances, axis=1)]
+
+    n_unique = len(np.unique(field_centers, axis=0))
+    if n_unique < n_cells:
+        import warnings
+
+        warnings.warn(
+            f"Requested n_cells={n_cells} but only {n_unique} distinct "
+            f"interior bin centers were available for uniform coverage "
+            f"(env has {len(env.bin_centers)} bins). Some cells share a "
+            f"center. Consider coverage='random' or a finer bin_size.",
+            UserWarning,
+            stacklevel=3,
+        )
+    return field_centers
+
+
 def simulate_session(
     env: Environment,
     *,
@@ -582,70 +652,22 @@ def simulate_session(
     # Initialize RNG for field center selection using its own independent seed.
     rng = np.random.default_rng(field_center_seed)
 
-    # Generate field centers based on coverage
-    if coverage == "uniform":
-        # Place centers on an evenly-spaced grid inset from the environment
-        # boundary, then snap each to the nearest active bin. Insetting biases
-        # centers toward the well-sampled interior: boundary bins are visited
-        # far less by exploratory trajectories (e.g. the OU walk), so cells
-        # placed there recover poorly. (Striding through ``bin_centers`` from
-        # index 0, the previous approach, put the first/last centers on the
-        # arena edge.) On thin or concave layouts the nearest active bin to an
-        # inset target can still be a boundary bin; the inset only reduces, not
-        # eliminates, boundary placement.
-        ranges = env.dimension_ranges
-        if env.binning.linearization is not None:
-            # Tracks: space centers evenly along the track, so every arm gets
-            # fields. A bounding-box grid snapped to a thin track would pile
-            # the centers onto the few bins nearest its inset targets.
-            linear = env.to_linear(env.bin_centers)
-            targets = np.linspace(linear.min(), linear.max(), n_cells)
-            nearest = np.abs(linear[None, :] - targets[:, None]).argmin(axis=1)
-            field_centers = env.bin_centers[nearest]
-        elif ranges is None:
-            # Layouts without an axis-aligned bounding box (e.g. graph tracks):
-            # fall back to evenly striding through the bin centers.
-            step = max(1, len(env.bin_centers) // n_cells)
-            field_centers = env.bin_centers[::step][:n_cells]
-        else:
-            n_dims = len(ranges)
-            margin = 0.2  # inset 20% of each axis span from the boundary
-            per_axis = int(np.ceil(n_cells ** (1.0 / n_dims)))
-            axis_targets = [
-                np.linspace(lo + margin * (hi - lo), hi - margin * (hi - lo), per_axis)
-                for (lo, hi) in ranges
-            ]
-            grid = (
-                np.array(np.meshgrid(*axis_targets, indexing="ij"))
-                .reshape(n_dims, -1)
-                .T[:n_cells]
-            )
-            # Snap each target to the nearest active bin center.
-            bin_centers = env.bin_centers
-            distances = np.linalg.norm(
-                bin_centers[None, :, :] - grid[:, None, :], axis=2
-            )
-            field_centers = bin_centers[np.argmin(distances, axis=1)]
-
-        # Warn if we cannot supply n_cells distinct centers.
-        n_unique = len(np.unique(field_centers, axis=0))
-        if n_unique < n_cells:
-            import warnings
-
-            warnings.warn(
-                f"Requested n_cells={n_cells} but only {n_unique} distinct "
-                f"interior bin centers were available for uniform coverage "
-                f"(env has {len(env.bin_centers)} bins). Some cells share a "
-                f"center. Consider coverage='random' or a finer bin_size.",
-                UserWarning,
-                stacklevel=2,
-            )
-    elif coverage == "random":
-        # Randomly sample centers (with replacement if needed)
-        indices = rng.choice(len(env.bin_centers), size=n_cells, replace=True)
-        field_centers = env.bin_centers[indices]
+    # Cell counts: mixed sessions are 60% place, 20% border, 20% grid.
+    if cell_type == "mixed":
+        n_place = int(0.6 * n_cells)
+        n_border = int(0.2 * n_cells)
+        n_grid = n_cells - n_place - n_border
     else:
-        raise ValueError(f"Unknown coverage: {coverage}")
+        n_place = n_cells if cell_type == "place" else 0
+        n_border = n_cells if cell_type == "border" else 0
+        n_grid = n_cells if cell_type == "grid" else 0
+
+    # Place centers and grid phases share one even layout; in mixed sessions
+    # a seeded permutation assigns them to the two types, so neither type
+    # covers only part of the environment.
+    field_centers = _field_centers(env, n_place + n_grid, coverage, rng)
+    if cell_type == "mixed":
+        field_centers = field_centers[rng.permutation(len(field_centers))]
 
     # Create models based on cell_type
     models: list[NeuralModel] = []
@@ -660,11 +682,6 @@ def simulate_session(
             # Use center for phase offset
             models.append(GridCellModel(env, phase_offset=center, **grid_cell_params))
     elif cell_type == "mixed":
-        # 60% place, 20% border, 20% grid
-        n_place = int(0.6 * n_cells)
-        n_border = int(0.2 * n_cells)
-        n_grid = n_cells - n_place - n_border  # Remainder goes to grid
-
         # Create place cells
         for center in field_centers[:n_place]:
             models.append(PlaceCellModel(env, center=center, **place_cell_params))

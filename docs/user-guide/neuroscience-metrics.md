@@ -370,11 +370,11 @@ pv = population_vector_correlation(first_half, second_half)  # (n_bins,)
 defined = np.isfinite(pv)
 print(f"median {np.median(pv[defined]):.2f}, "
       f"{(~defined).sum()} of {pv.size} locations undefined")
-assert np.isclose(np.median(pv[defined]), 0.98, atol=0.006)
+assert np.isclose(np.median(pv[defined]), 0.99, atol=0.006)
 ```
 
 The simulated place fields do not move, so the two halves have a median
-correlation near 1 (0.98). A location is NaN, not 0, where either condition
+correlation near 1 (0.99). A location is NaN, not 0, where either condition
 lacks occupancy or has a NaN rate there, or where every cell has the same rate. Units recorded in only one
 condition are left out (`unit_selection="exact"` refuses them instead), and
 maps estimated on different environments need an explicit `bin_mapping=`, such

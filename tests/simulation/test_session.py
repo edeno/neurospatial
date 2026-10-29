@@ -300,50 +300,80 @@ class TestSimulateSession:
         # All positions should be in environment
         assert session.positions.shape[0] > 0
 
-    def test_simulate_session_coverage_uniform(self, simple_2d_env):
-        """simulate_session() with coverage='uniform' should evenly space field centers."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
+    @pytest.mark.parametrize("n_cells", [5, 9, 50])
+    def test_simulate_session_coverage_uniform(self, connected_arena_env, n_cells):
+        """Uniform centers are distinct and fill every column and row of the inset grid."""
         session = simulate_session(
-            simple_2d_env,
+            connected_arena_env,
             duration=1.0,
-            n_cells=5,
+            n_cells=n_cells,
             cell_type="place",
             coverage="uniform",
             seed=42,
             show_progress=False,
         )
+        centers = np.array([truth["center"] for truth in session.ground_truth.values()])
+        assert len(np.unique(centers, axis=0)) == n_cells
+        per_axis = int(np.ceil(np.sqrt(n_cells)))
+        for axis in range(2):
+            columns = np.unique(centers[:, axis])
+            # Every grid line along this axis has a center, from 20% to 80%
+            # of the 100 cm arena (snapped to 2 cm bins).
+            assert len(columns) == per_axis
+            assert columns.min() == pytest.approx(20.0, abs=1.0)
+            assert columns.max() == pytest.approx(80.0, abs=1.0)
 
-        # Extract field centers from ground truth
-        centers = [
-            session.ground_truth[i]["center"] for i in range(len(session.models))
-        ]
-
-        # With uniform coverage, centers should be well-distributed
-        # Check that centers are not all the same
-        unique_centers = np.unique(np.array(centers), axis=0)
-        assert len(unique_centers) > 1  # Should have multiple unique centers
-
-    def test_simulate_session_coverage_random(self, simple_2d_env):
-        """simulate_session() with coverage='random' should randomly sample field centers."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
+    def test_mixed_place_and_grid_centers_both_cover_the_arena(
+        self, connected_arena_env
+    ):
+        """In mixed mode neither cell type is confined to part of the arena."""
         session = simulate_session(
-            simple_2d_env,
+            connected_arena_env,
             duration=1.0,
-            n_cells=5,
-            cell_type="place",
-            coverage="random",
-            seed=42,
+            n_cells=50,
+            cell_type="mixed",
+            seed=3,
             show_progress=False,
         )
+        place = np.array(
+            [
+                t["center"]
+                for t in session.ground_truth.values()
+                if t["cell_type"] == "place"
+            ]
+        )
+        grid = np.array(
+            [
+                t["phase_offset"]
+                for t in session.ground_truth.values()
+                if t["cell_type"] == "grid"
+            ]
+        )
+        for centers in (place, grid):
+            for axis in range(2):
+                assert centers[:, axis].min() < 35.0
+                assert centers[:, axis].max() > 65.0
 
-        # Extract field centers
-        centers = [
-            session.ground_truth[i]["center"] for i in range(len(session.models))
-        ]
+    def test_simulate_session_coverage_random(self, simple_2d_env):
+        """Random centers are seeded draws of bin centers."""
 
-        # Should have multiple unique centers
-        unique_centers = np.unique(np.array(centers), axis=0)
-        assert len(unique_centers) >= 1
+        def centers(seed):
+            session = simulate_session(
+                simple_2d_env,
+                duration=1.0,
+                n_cells=20,
+                cell_type="place",
+                coverage="random",
+                seed=seed,
+                show_progress=False,
+            )
+            return np.array([t["center"] for t in session.ground_truth.values()])
+
+        first, again, other = centers(42), centers(42), centers(43)
+        bins = simple_2d_env.bin_at(first)
+        np.testing.assert_array_equal(first, simple_2d_env.bin_centers[bins])
+        np.testing.assert_array_equal(first, again)
+        assert not np.array_equal(first, other)
 
     def test_simulate_session_seed_reproducibility(self, simple_2d_env):
         """simulate_session() with same seed should produce identical results."""

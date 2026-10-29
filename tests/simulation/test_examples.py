@@ -144,6 +144,18 @@ class TestOpenFieldSession:
 class TestLinearTrackSession:
     """Tests for linear_track_session() convenience function."""
 
+    def test_field_centers_cover_the_whole_track(self):
+        """Centers are evenly spaced from one end of the track to the other."""
+        session = linear_track_session(
+            duration=10.0, track_length=200.0, n_place_cells=40, n_laps=2, seed=0
+        )
+        centers = np.sort([t["center"][0] for t in session.ground_truth.values()])
+        ends = session.env.bin_centers[:, 0].min(), session.env.bin_centers[:, 0].max()
+        assert centers[0] == ends[0] and centers[-1] == ends[1]
+        np.testing.assert_allclose(
+            np.diff(centers), (ends[1] - ends[0]) / 39, atol=1.0
+        )  # 1 cm bins
+
     def test_default_place_fields_are_linear_track_fields(self):
         """Track helpers use the CA1 linear-track field of Mizuseki 2012."""
         from neurospatial.simulation import tmaze_alternation_session
