@@ -312,7 +312,7 @@ def _round_down(value: float) -> float:
     return math.floor(value * 10.0) / 10.0
 
 
-@dataclass
+@dataclass(frozen=True)
 class MazeEnvironments:
     """Container for 2D and track-graph maze environments.
 
@@ -337,9 +337,18 @@ class MazeEnvironments:
     platform, a start or goal box, or a published cue, is a landmark in
     ``env_2d.landmarks`` whose ``metadata["role"]`` is one of
     ``MAZE_LANDMARK_ROLES``. Encoding functions take its name as an object
-    position. Every landmark except a cue also has a region of the same name
-    and its real size, for visits and occupancy. The track carries the same
-    landmarks as the 2-D maze.
+    position. Every landmark except a cue also has a region of the same
+    name, for visits and occupancy. The region is the thing's own extent
+    where its source gives the size (Barnes holes, radial food cups, the
+    watermaze platform, the crossword, Hamlet and repeated T boxes, Hampton
+    Court's central enclosure), the hex the rat reaches a small hex port
+    from, and a point where the size is not published (linear, T, W and
+    cheeseboard wells, crossword caps, Sungod ports, the Barnes start box and
+    the repeated Y boxes). The track carries the same landmarks and regions
+    as the 2-D maze, each point region moved onto the track.
+
+    The container is frozen, and a track must be a linearized track in the
+    2-D maze's units.
 
     Each maze declares what its edges are, as its source describes the
     apparatus: ``env_2d.arena.outline`` is ``"wall"`` for a walled maze and
@@ -368,15 +377,29 @@ class MazeEnvironments:
     env_track: Environment | None = None
 
     def __post_init__(self) -> None:
+        track = self.env_track
+        if track is None:
+            return
+        if not track.is_linearized_track:
+            raise ValueError(
+                f"env_track must be a linearized track, got a {track.n_dims}-D "
+                f"environment {track.name!r}. Build the track with "
+                "Environment.from_graph, or pass env_track=None for an open field."
+            )
+        if track.units != self.env_2d.units:
+            raise ValueError(
+                f"env_track is in {track.units!r} but env_2d is in "
+                f"{self.env_2d.units!r}, so positions would not match between "
+                "them. Build both in the same units."
+            )
         # The track names the same wells, arm ends and goals as the 2-D maze,
         # each point placed at the nearest location on the track.
-        if self.env_track is not None and not self.env_track.regions:
-            self.env_track = self.env_track.with_regions(
-                _regions_on_track(self.env_2d.regions, self.env_track)
-            )
+        if not track.regions:
+            track = track.with_regions(_regions_on_track(self.env_2d.regions, track))
         # Landmarks are not bins, so they keep their 2-D positions.
-        if self.env_track is not None and not self.env_track.landmarks:
-            self.env_track = self.env_track.with_landmarks(self.env_2d.landmarks)
+        if not track.landmarks:
+            track = track.with_landmarks(self.env_2d.landmarks)
+        object.__setattr__(self, "env_track", track)
 
 
 def _regions_on_track(regions: Mapping[str, Region], track: Environment) -> Regions:
