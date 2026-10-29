@@ -31,3 +31,11 @@ def test_mismatched_lengths_raise(sim, field):
 def test_holder_is_frozen(sim):
     with pytest.raises(FrozenInstanceError):
         sim.times = np.array([0.0])
+
+
+def test_holder_compares_and_hashes_by_identity(sim):
+    """Sessions holding arrays compare by identity, as the package's results do."""
+    copy = replace(sim)
+    assert sim == sim
+    assert sim != copy
+    assert len({sim, copy, sim}) == 2

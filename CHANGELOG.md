@@ -95,6 +95,9 @@ default lap route all changed.
   metric. A geodesic cell that was recovered correctly scored r = 0.79
   against a Euclidean field and failed. Units that are not place cells are
   reported as not evaluable instead of raising.
+- `SimulationSession` compares and hashes by identity, like the models.
+  `==` between two sessions used to raise, because it compared their arrays
+  element by element.
 
 **Cell models and spikes**
 

@@ -41,7 +41,7 @@ def _rebuild_session(state: dict[str, Any]) -> SimulationSession:
     return SimulationSession(**state)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class SimulationSession:
     """Complete simulation session result.
 
@@ -102,6 +102,9 @@ class SimulationSession:
     >>> new_session = replace(
     ...     session, metadata={"note": "relabelled"}
     ... )  # doctest: +SKIP
+
+    Sessions compare and hash by identity, like the models they hold: a
+    copy with the same data is a different session.
 
     The separation of `models` and `ground_truth` allows flexible usage:
     - Use `models` to regenerate firing rates or extend simulations
