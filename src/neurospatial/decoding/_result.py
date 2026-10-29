@@ -502,7 +502,7 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         The posterior holds a probability mass per bin. On equal bins the
         highest-density bin is the highest-mass bin; on unequal bins a large
         bin would otherwise win only by holding more space. Densities that
-        agree to within ``sqrt(eps)`` of the posterior dtype, relative, count
+        agree to within ``16 * eps`` of the posterior dtype, relative, count
         as tied, which absorbs rounding in the posterior; ties go to the
         lowest bin index. An environment that mixes bins measured by length
         and by area has no common density unit and raises ``ValueError``.

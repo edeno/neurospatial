@@ -36,7 +36,7 @@ Entropy: 6.64 bits
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -91,13 +91,15 @@ _UNDECODABLE_BIN = -1
 """MAP bin of a posterior row with no finite entry, as ``env.bin_at`` outside."""
 
 
-def _tie_tolerance(posterior: NDArray[np.floating]) -> float:
-    """Relative density difference counted as a tie: ``sqrt(eps)`` of the dtype.
+def _tie_tolerance(dtype: np.dtype[Any] | type) -> float:
+    """Relative density difference counted as a tie: ``16 * eps`` of ``dtype``.
 
-    Rounding in a normalized posterior separates densities that are equal in
-    exact arithmetic by far less than this, so such bins count as tied.
+    Normalizing a posterior and dividing it by bin sizes rounds each density a
+    few times, so densities that are equal in exact arithmetic differ by a few
+    ``eps``. Real differences between neighbouring bins, even near a broad
+    peak, are orders of magnitude larger.
     """
-    return float(np.sqrt(np.finfo(np.result_type(posterior, np.float32)).eps))
+    return float(16 * np.finfo(np.result_type(dtype, np.float32)).eps)
 
 
 # Rows per block in _density_mode, sized so temporaries stay near 2**22 elements.
@@ -105,7 +107,10 @@ _BLOCK_ELEMENTS = 2**22
 
 
 def _density_mode(
-    posterior: NDArray[np.float64], measures: NDArray[np.float64] | None
+    posterior: NDArray[np.float64],
+    measures: NDArray[np.float64] | None,
+    *,
+    rounding_dtype: np.dtype[Any] | type | None = None,
 ) -> NDArray[np.int64]:
     """Bin of highest posterior density per row, shape ``(n_time_bins,)``.
 
@@ -115,15 +120,19 @@ def _density_mode(
     holding more space. Densities within :func:`_tie_tolerance` of the row's
     largest count as tied and the lowest bin index wins. NaN and Inf bins are
     skipped; a row with no finite entry gets ``_UNDECODABLE_BIN``.
+
+    Densities are compared in float64 with the tolerance of ``rounding_dtype``
+    (default: the posterior's dtype), so a float32 posterior and its float64
+    copy give the same bins when ``rounding_dtype`` names the float32 source.
     """
     posterior = np.asarray(posterior)
-    rtol = _tie_tolerance(posterior)
+    rtol = _tie_tolerance(posterior.dtype if rounding_dtype is None else rounding_dtype)
     result = np.empty(posterior.shape[0], dtype=np.int64)
     step = max(1, _BLOCK_ELEMENTS // max(posterior.shape[1], 1))
     for start in range(0, posterior.shape[0], step):
-        block = posterior[start : start + step]
+        block = np.asarray(posterior[start : start + step], dtype=np.float64)
         if measures is not None:
-            block = block / measures.astype(block.dtype, copy=False)
+            block = block / measures
         finite = np.isfinite(block)
         density = np.where(finite, block, -np.inf)
         peak = density.max(axis=1, keepdims=True, initial=-np.inf)
@@ -170,7 +179,7 @@ def map_bin(
     The posterior holds a probability mass per bin. A bin twice as long
     holds twice the mass at the same density, so comparing mass would favor
     large bins; on equal bins the two orderings agree. Densities that agree
-    to within ``sqrt(eps)`` of the posterior dtype, relative, count as tied,
+    to within ``16 * eps`` of the posterior dtype, relative, count as tied,
     and ties go to the lowest bin index. NaN and Inf bins are skipped.
 
     This function mirrors ``DecodingResult.map_bin``.
@@ -449,7 +458,7 @@ def credible_region(
 
     Bins tied in density with the last bin needed all enter the region, so
     the region does not depend on bin numbering. Densities that agree to
-    within ``sqrt(eps)`` of the posterior dtype, relative, count as tied,
+    within ``16 * eps`` of the posterior dtype, relative, count as tied,
     which absorbs rounding in the posterior. A tie can make the region hold
     more than ``level``: for a posterior that is uniform over space, the
     region is every bin.
@@ -504,7 +513,7 @@ def credible_region(
     # Position of the bin that brings the mass to `level`.
     last = np.argmax(reached, axis=1)
     threshold = sorted_density[np.arange(len(posterior)), last]
-    rtol = _tie_tolerance(posterior)
+    rtol = _tie_tolerance(posterior.dtype)
     in_region = sorted_density >= (threshold * (1.0 - rtol))[:, np.newaxis]
     n_bins_needed = in_region.sum(axis=1)
 

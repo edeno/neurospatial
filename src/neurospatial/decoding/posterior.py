@@ -890,7 +890,7 @@ def _reduce_posterior_block(
 
     from neurospatial.decoding.estimates import _density_mode, posterior_entropy
 
-    map_bin = _density_mode(pb, measures)
+    map_bin = _density_mode(pb, measures, rounding_dtype=posterior_block.dtype)
     mean_position = pb @ bin_centers
     peak_probability = pb.max(axis=1)
 

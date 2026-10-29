@@ -537,3 +537,26 @@ def test_posterior_entropy_float64_and_nan_for_undecodable_rows():
     assert entropy.dtype == np.float64
     assert entropy[0] == pytest.approx(3.0, abs=1e-6)
     assert np.isnan(entropy[1])
+
+
+def test_float32_map_bin_matches_float64_and_the_summary():
+    """Rounding ties do not shift float32 MAP bins toward low indices."""
+    from neurospatial import Environment
+    from neurospatial.decoding import decode_position, decode_position_summary
+
+    rng = np.random.default_rng(0)
+    env = Environment.from_samples(np.linspace(0, 200, 2001)[:, None], bin_size=1.0)
+    centers = env.bin_centers[:, 0]
+    fields = np.array([50.0, 100.0, 150.0])
+    rates = 0.5 + 5 * np.exp(-0.5 * ((centers - fields[:, None]) / 60) ** 2)
+    counts = rng.poisson(rates[:, rng.integers(0, env.n_bins, 2000)].T * 0.02)
+
+    full64 = decode_position(env, counts, rates, dt=0.02)
+    full32 = decode_position(env, counts, rates, dt=0.02, dtype=np.float32)
+    summary32 = decode_position_summary(env, counts, rates, dt=0.02, dtype=np.float32)
+
+    np.testing.assert_array_equal(summary32.map_bin, full32.map_bin)
+    # float32 rounding may move a near-tie, but not shift MAP bins systematically.
+    shifted = full32.map_bin != full64.map_bin
+    assert shifted.mean() < 0.01
+    assert abs(np.mean(full32.map_bin - full64.map_bin)) < 0.002
