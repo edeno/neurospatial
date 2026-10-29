@@ -470,7 +470,8 @@ def tmaze_alternation_session(
     The track of ``make_t_maze()``: a 100 cm stem from ``start`` to the
     ``junction`` and two perpendicular 50 cm arms ending at ``well_left`` and
     ``well_right``, with 10 cm corridors and 2 cm bins (200 cm of track).
-    ``session.env`` carries those regions.
+    These sizes are estimates read from a published figure, not a measured
+    apparatus (see ``TMazeDims``). ``session.env`` carries those regions.
 
     **Trajectory**:
 
@@ -512,7 +513,8 @@ def tmaze_alternation_session(
         msg = f"n_place_cells must be positive, got {n_place_cells}"
         raise ValueError(msg)
 
-    # The published T-maze track: a 100 cm stem and two 50 cm arms.
+    # The default T-maze track (sizes estimated from a figure; see TMazeDims):
+    # a 100 cm stem and two 50 cm arms.
     dims = TMazeDims()
     env = make_t_maze(dims, bin_size=2.0).env_track
     assert env is not None
