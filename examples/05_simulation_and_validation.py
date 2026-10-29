@@ -223,19 +223,19 @@ report = validate_simulation(
 def print_unit_report(validation):
     """Show each unit's recovery measurements, including unavailable results."""
     print("Unit  Spikes  Peak error (cm)  Correlation  Status          Reason")
-    for row, label in enumerate(validation["unit_ids"]):
+    for row, label in enumerate(validation.unit_ids):
         print(
-            f"{label:4d}  {validation['spike_counts'][row]:6d}  "
-            f"{validation['center_errors'][row]:15.2f}  "
-            f"{validation['correlations'][row]:11.3f}  "
-            f"{validation['unit_status'][row]:14s}  "
-            f"{validation['skip_reasons'][row] or '-'}"
+            f"{label:4d}  {validation.spike_counts[row]:6d}  "
+            f"{validation.center_errors[row]:15.2f}  "
+            f"{validation.correlations[row]:11.3f}  "
+            f"{validation.unit_status[row]:14s}  "
+            f"{validation.skip_reasons[row] or '-'}"
         )
     print(
         f"Units with both measurements: "
-        f"{validation['n_evaluated']} / {validation['n_selected']}"
+        f"{validation.n_evaluated} / {validation.n_selected}"
     )
-    print(f"Every selected unit passed both criteria: {validation['passed']}")
+    print(f"Every selected unit passed both criteria: {validation.passed}")
 
 
 print_unit_report(report)

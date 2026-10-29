@@ -84,6 +84,7 @@ from neurospatial.simulation.trajectory import (
     simulate_trajectory_sinusoidal,
 )
 from neurospatial.simulation.validation import (
+    SimulationValidationResult,
     plot_session_summary,
     validate_simulation,
 )
@@ -107,6 +108,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "ObjectVectorCellModel",
     "PlaceCellModel",
     "SimulationSession",
+    "SimulationValidationResult",
     "SpatialViewCellModel",
     # Spike generation
     "add_modulation",

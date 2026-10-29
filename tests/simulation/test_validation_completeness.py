@@ -41,19 +41,18 @@ def _session(n_bins=4):
 def test_missing_correlation_cannot_pass_and_can_be_plotted():
     """A two-bin map has a peak but insufficient bins for field correlation."""
     with pytest.warns(UserWarning, match="No cells could be fully validated"):
-        result = validate_simulation(
-            _session(2), method="binned", bandwidth=0.0, show_plots=True
-        )
+        result = validate_simulation(_session(2), method="binned", bandwidth=0.0)
+    assert result.center_errors[0] == 0.0
+    assert np.isnan(result.correlations[0])
+    assert result.passed is False
+    assert result.unit_status == ("not_evaluable",)
+    assert result.skip_reasons == ("insufficient_finite_bins",)
+    assert result.n_evaluated == 0
+    ax = result.plot()
     try:
-        assert result["center_errors"][0] == 0.0
-        assert np.isnan(result["correlations"][0])
-        assert result["passed"] is False
-        assert result["unit_status"] == ("not_evaluable",)
-        assert result["skip_reasons"] == ("insufficient_finite_bins",)
-        assert result["n_evaluated"] == 0
-        assert result["plots"].axes[2].collections[0].get_offsets().shape == (0, 2)
+        assert ax.collections[0].get_offsets().shape == (0, 2)
     finally:
-        plt.close(result["plots"])
+        plt.close(ax.figure)
 
 
 def test_partial_report_preserves_requested_labels_and_spike_counts():
@@ -77,26 +76,24 @@ def test_partial_report_preserves_requested_labels_and_spike_counts():
             unit_ids=[19, 7, 11],
             method="binned",
             bandwidth=0.0,
-            show_plots=True,
         )
+    np.testing.assert_array_equal(result.unit_ids, [19, 7, 11])
+    np.testing.assert_array_equal(result.spike_counts, [len(train), 0, len(train)])
+    assert result.unit_status == ("not_evaluable", "not_evaluable", "passed")
+    assert result.skip_reasons == ("unsupported_ground_truth", "no_spikes", None)
+    assert result.n_selected == 3
+    assert result.n_evaluated == 1
+    assert result.passed is False
+    assert "Cells selected: 3 (of 3 total)" in result.report()
+    assert "Cells fully evaluated: 1" in result.report()
+    ax = result.plot()
     try:
-        np.testing.assert_array_equal(result["unit_ids"], [19, 7, 11])
-        np.testing.assert_array_equal(
-            result["spike_counts"], [len(train), 0, len(train)]
-        )
-        assert result["unit_status"] == ("not_evaluable", "not_evaluable", "passed")
-        assert result["skip_reasons"] == ("unsupported_ground_truth", "no_spikes", None)
-        assert result["n_selected"] == 3
-        assert result["n_evaluated"] == 1
-        assert result["passed"] is False
-        assert "Cells selected: 3 (of 3 total)" in result["summary"]
-        assert "Cells fully evaluated: 1" in result["summary"]
         np.testing.assert_allclose(
-            result["plots"].axes[2].collections[0].get_offsets(),
-            [[result["center_errors"][2], result["correlations"][2]]],
+            ax.collections[0].get_offsets(),
+            [[result.center_errors[2], result.correlations[2]]],
         )
     finally:
-        plt.close(result["plots"])
+        plt.close(ax.figure)
 
 
 @pytest.mark.parametrize(
@@ -115,31 +112,31 @@ def test_degenerate_rate_maps_are_not_evaluable(monkeypatch, field, reason):
     )
     with pytest.warns(UserWarning, match="No cells could be fully validated"):
         result = validate_simulation(_session())
-    assert result["passed"] is False
-    assert result["unit_status"] == ("not_evaluable",)
-    assert result["skip_reasons"] == (reason,)
+    assert result.passed is False
+    assert result.unit_status == ("not_evaluable",)
+    assert result.skip_reasons == (reason,)
 
 
 def test_complete_report_can_pass_or_fail_recovery_thresholds():
     session = _session()
     passed = validate_simulation(session, method="binned", bandwidth=0.0)
-    assert passed["passed"] is True
-    assert passed["unit_status"] == ("passed",)
-    assert passed["n_evaluated"] == passed["n_selected"] == 1
-    assert passed["skip_reasons"] == (None,)
+    assert passed.passed is True
+    assert passed.unit_status == ("passed",)
+    assert passed.n_evaluated == passed.n_selected == 1
+    assert passed.skip_reasons == (None,)
 
     failed = validate_simulation(
         session, method="binned", bandwidth=0.0, min_correlation=0.999
     )
-    assert failed["passed"] is False
-    assert failed["unit_status"] == ("failed",)
-    assert failed["skip_reasons"] == (None,)
-    assert failed["n_evaluated"] == 1
+    assert failed.passed is False
+    assert failed.unit_status == ("failed",)
+    assert failed.skip_reasons == (None,)
+    assert failed.n_evaluated == 1
 
 
 def test_empty_selection_cannot_pass():
     with pytest.warns(UserWarning, match="0 selected"):
         result = validate_simulation(_session(), unit_ids=[])
-    assert result["passed"] is False
-    assert result["n_selected"] == result["n_evaluated"] == 0
-    assert result["unit_status"] == result["skip_reasons"] == ()
+    assert result.passed is False
+    assert result.n_selected == result.n_evaluated == 0
+    assert result.unit_status == result.skip_reasons == ()

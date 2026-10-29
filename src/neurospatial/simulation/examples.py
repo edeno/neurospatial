@@ -82,15 +82,16 @@ def open_field_session(
     >>> len(spike_times)
     3
 
-    Validate neurospatial's place field detection:
+    Validate neurospatial's place field detection. Three minutes cross every
+    field often enough to recover it (5 cm bins keep the example fast):
 
     >>> from neurospatial.simulation import open_field_session, validate_simulation
     >>> session = open_field_session(
-    ...     duration=5.0, n_place_cells=3, seed=42
-    ... )  # doctest: +SKIP
-    >>> report = validate_simulation(session)  # doctest: +SKIP
-    >>> "passed" in report and "center_errors" in report  # doctest: +SKIP
-    True
+    ...     duration=180.0, bin_size=5.0, n_place_cells=3, seed=0
+    ... )
+    >>> report = validate_simulation(session)
+    >>> report.unit_status
+    ('passed', 'passed', 'passed')
 
     Visualize session summary:
 
@@ -267,7 +268,7 @@ def linear_track_session(
     ...     duration=60.0, n_place_cells=3, n_laps=6, seed=42
     ... )
     >>> report = validate_simulation(session)
-    >>> print(f"Validation: {report['passed']}")
+    >>> print(f"Validation: {report.passed}")
     Validation: True
 
     See Also

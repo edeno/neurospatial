@@ -138,12 +138,12 @@ class TestValidateSimulationIntegration:
         result = validate_simulation(session)
 
         # Should have results for all cells
-        assert len(result["center_errors"]) == 5
-        assert len(result["correlations"]) == 5
+        assert len(result.center_errors) == 5
+        assert len(result.correlations) == 5
 
         # Check that at least some cells pass validation
         # (not all will pass due to randomness, but most should)
-        valid_errors = result["center_errors"][~np.isnan(result["center_errors"])]
+        valid_errors = result.center_errors[~np.isnan(result.center_errors)]
         if len(valid_errors) > 0:
             # Mean error should be reasonable (< 35 bin side lengths)
             # Note: bin_sizes contains bin areas for 2D, so take sqrt for side length
@@ -176,8 +176,7 @@ class TestValidateSimulationIntegration:
         )
 
         # Should have validation results
-        assert "passed" in result
-        assert isinstance(result["passed"], bool)
+        assert isinstance(result.passed, bool)
 
 
 class TestPreConfiguredExamplesIntegration:
