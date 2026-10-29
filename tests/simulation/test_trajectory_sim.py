@@ -672,6 +672,94 @@ class TestSimulateTrajectorysinusoidal:
         second = positions[n_per_period : 2 * n_per_period, 0]
         np.testing.assert_allclose(first, second, atol=1e-6)
 
+    def test_runs_the_whole_length_of_a_bent_track_in_its_coordinates(self):
+        """On a 120 + 80 cm L-shaped track the animal runs all 200 cm in (x, y).
+
+        Positions are environment coordinates on the centerline, the same
+        coordinates place cells and rate maps use.
+        """
+        from neurospatial import Environment
+
+        track = Environment.linear_track(
+            node_positions=[(0.0, 0.0), (120.0, 0.0), (120.0, 80.0)],
+            bin_size=2.0,
+            track_width=10.0,
+            units="cm",
+        )
+        positions, _ = simulate_trajectory_sinusoidal(
+            track,
+            duration=8.0,
+            sampling_frequency=100.0,
+            speed=20.0,
+            period=8.0,
+            pause_at_peaks=False,
+        )
+        assert positions.shape == (800, 2)
+        assert np.all(track.bin_at(positions) >= 0)
+        np.testing.assert_allclose(
+            track.linear_to_nd(track.to_linear(positions)), positions, atol=1e-9
+        )
+        linear = track.to_linear(positions)
+        assert linear.min() == pytest.approx(0.0, abs=1e-3)
+        assert linear.max() == pytest.approx(200.0, abs=1e-3)
+        # The default period runs the track there and back at the speed.
+        positions, times = simulate_trajectory_sinusoidal(
+            track, duration=1.0, speed=20.0
+        )
+        np.testing.assert_allclose(
+            track.to_linear(positions),
+            100.0 + 100.0 * np.sin(2 * np.pi * times / 20.0),
+            atol=1e-9,
+        )
+
+    def test_runs_between_the_far_ends_of_a_branched_track(self):
+        """On a T-maze it runs stem to arm continuously, never through a gap.
+
+        The linear coordinates of a T-maze jump between arms and leave gaps
+        between segments; the animal moves on the track instead.
+        """
+        import networkx as nx
+
+        from neurospatial import Environment
+
+        graph = nx.Graph()
+        graph.add_node(0, pos=(0.0, 0.0))
+        graph.add_node(1, pos=(0.0, 40.0))
+        graph.add_node(2, pos=(-30.0, 40.0))
+        graph.add_node(3, pos=(30.0, 40.0))
+        graph.add_edges_from([(0, 1), (1, 2), (1, 3)])
+        track = Environment.from_graph(
+            graph,
+            edge_order=[(0, 1), (1, 2), (1, 3)],
+            edge_spacing=10.0,
+            bin_size=2.0,
+            track_width=4.0,
+            units="cm",
+        )
+        sampling_frequency, speed = 100.0, 20.0
+        positions, _ = simulate_trajectory_sinusoidal(
+            track, duration=10.0, sampling_frequency=sampling_frequency, speed=speed
+        )
+        assert np.all(np.isfinite(positions))
+        assert np.all(track.bin_at(positions) >= 0)
+        # The fastest a sinusoid with mean speed v moves is pi / 2 * v.
+        steps = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+        assert steps.max() <= np.pi / 2 * speed / sampling_frequency * (1 + 1e-6)
+        # It reaches the stem's foot and the end of one arm, 70 cm apart
+        # along the track: the farthest apart two points of the maze are.
+        assert positions[:, 1].min() == pytest.approx(0.0, abs=1e-6)
+        assert np.abs(positions[:, 0]).max() == pytest.approx(30.0, abs=1e-6)
+
+    def test_without_pauses_the_ends_are_not_held(self, linear_track_env):
+        positions, _ = simulate_trajectory_sinusoidal(
+            linear_track_env,
+            duration=30.0,
+            sampling_frequency=100.0,
+            pause_duration=0.5,
+            pause_at_peaks=False,
+        )
+        assert np.all(np.diff(positions[:, 0]) != 0)
+
     def test_default_speed_follows_environment_units(self, linear_track_env):
         """10 cm/s by default: a track in meters takes as long as one in cm."""
         import networkx as nx

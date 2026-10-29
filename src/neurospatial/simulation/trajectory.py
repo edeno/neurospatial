@@ -598,7 +598,7 @@ def simulate_trajectory_sinusoidal(
     pause_at_peaks: bool = True,
     seed: int | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Simulate sinusoidal trajectory along a 1D track.
+    """Simulate sinusoidal back-and-forth running along a track.
 
     Generates simple back-and-forth motion with optional pauses at track ends.
     Useful for testing place field detection on linear tracks.
@@ -631,9 +631,9 @@ def simulate_trajectory_sinusoidal(
 
     Returns
     -------
-    positions : NDArray[np.float64], shape (n_time, 1)
-        Linear positions along the track (``env.to_linear`` coordinates),
-        oscillating between the two ends of the binned track.
+    positions : NDArray[np.float64], shape (n_time, n_dims)
+        Positions in the environment's coordinates (``env.n_dims`` of them),
+        on the track's centerline, oscillating between its two far ends.
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds.
 
@@ -648,26 +648,38 @@ def simulate_trajectory_sinusoidal(
     ValueError
         If ``speed`` is None and ``env.units`` is not a metric length.
 
+    Notes
+    -----
+    The animal runs between the two ends of the track that are farthest
+    apart along it: the two ends of a linear or bent track, or, on a
+    branched track such as a T-maze, the stem's foot and the end of the
+    farther arm. It never visits the other arms; use
+    :func:`simulate_trajectory_laps` with ``outbound_path`` to choose the
+    route.
+
     Examples
     --------
-    Requires 1D environment created with Environment.from_graph():
+    Run an L-shaped track of 120 + 80 cm at 20 cm/s for two minutes:
 
-    .. code-block:: python
-
-        # Note: This example requires GraphLayout (1D track) which needs
-        # track-linearization package. See Environment.from_graph() documentation.
-        from neurospatial import Environment
-        from neurospatial.simulation import simulate_trajectory_sinusoidal
-
-        # Create 1D track using from_graph()
-        env_1d = Environment.from_graph(...)  # See from_graph() docs
-        env_1d = env_1d.with_metadata(units="cm")
-
-        # Generate sinusoidal motion
-        positions, times = simulate_trajectory_sinusoidal(
-            env_1d, duration=120.0, speed=20.0
-        )
-        print(positions.shape)  # (60000, 1) for 120s at 500Hz
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.simulation import simulate_trajectory_sinusoidal
+    >>> track = Environment.linear_track(
+    ...     node_positions=[(0, 0), (120, 0), (120, 80)],
+    ...     bin_size=2.0,
+    ...     track_width=10.0,
+    ...     units="cm",
+    ... )
+    >>> positions, times = simulate_trajectory_sinusoidal(
+    ...     track, duration=120.0, speed=20.0
+    ... )
+    >>> positions.shape  # (x, y) at 500 Hz
+    (60000, 2)
+    >>> bool(np.all(track.bin_at(positions) >= 0))
+    True
+    >>> linear = track.to_linear(positions)
+    >>> print(f"{linear.min():.0f} to {linear.max():.0f} cm along the track")
+    0 to 200 cm along the track
 
     See Also
     --------
@@ -697,14 +709,13 @@ def simulate_trajectory_sinusoidal(
         ]
     )
 
-    # The motion runs along the track, in linear position: from the start of
-    # the first bin to the end of the last one.
-    linearization = env.binning.linearization
-    assert linearization is not None  # is_linearized_track
-    edges = np.asarray(linearization.grid_edges[0])
-    active = np.flatnonzero(linearization.active_mask)
-    range_min, range_max = float(edges[active[0]]), float(edges[active[-1] + 1])
-    track_length = range_max - range_min
+    # The motion runs along the track between its two far ends, in the
+    # environment's coordinates.
+    waypoints = _track_end_to_end(env)
+    waypoint_distances = np.concatenate(
+        [[0.0], np.cumsum(np.linalg.norm(np.diff(waypoints, axis=0), axis=1))]
+    )
+    track_length = float(waypoint_distances[-1])
 
     # Compute period if not provided
     if period is None:
@@ -715,14 +726,9 @@ def simulate_trajectory_sinusoidal(
     n_steps = _sample_count(duration, dt, "1 / sampling_frequency", call)
     times = np.arange(n_steps) * dt
 
-    # Generate sinusoidal position
-    # Position oscillates between range_min and range_max
-    center = (range_max + range_min) / 2
-    amplitude = (range_max - range_min) / 2
-
-    # Sinusoidal motion: x(t) = center + amplitude * sin(2π t / period)
+    # Distance along the track: d(t) = L/2 + L/2 sin(2π t / period)
     angular_freq = 2 * np.pi / period
-    positions = center + amplitude * np.sin(angular_freq * times)
+    distance = track_length / 2 * (1 + np.sin(angular_freq * times))
 
     # Handle pauses at peaks if requested
     if pause_at_peaks and pause_duration > 0:
@@ -743,17 +749,68 @@ def simulate_trajectory_sinusoidal(
             paused[start:end] = True
 
         # Hold position constant during pauses
-        last_valid_pos = positions[0]
+        last_valid = distance[0]
         for i in range(n_steps):
             if paused[i]:
-                positions[i] = last_valid_pos
+                distance[i] = last_valid
             else:
-                last_valid_pos = positions[i]
+                last_valid = distance[i]
 
-    # Reshape to (n_time, 1) for consistency with N-D trajectories
-    positions = positions.reshape(-1, 1)
+    positions = np.column_stack(
+        [
+            np.interp(distance, waypoint_distances, waypoints[:, dim])
+            for dim in range(env.n_dims)
+        ]
+    )
+    return positions, times
 
-    return positions, times  # type: ignore[return-value]
+
+def _farthest_node(graph: nx.Graph, source: object, weight: object) -> object:
+    """The node farthest from ``source`` along ``graph``, first in node order on ties."""
+    lengths = nx.single_source_dijkstra_path_length(graph, source, weight=weight)
+    farthest = max(lengths.values())
+    return next(
+        node
+        for node in graph.nodes
+        if node in lengths and lengths[node] >= farthest * (1 - 1e-9)
+    )
+
+
+def _farthest_pair(
+    graph: nx.Graph, source: object, weight: object
+) -> tuple[object, object]:
+    """Two nodes far apart along ``graph``, by two sweeps of shortest paths.
+
+    The node farthest from ``source``, then the node farthest from that one.
+    On a graph without loops (a track) they are the two ends of its longest
+    path; elsewhere they are close to it.
+    """
+    first = _farthest_node(graph, source, weight)
+    return first, _farthest_node(graph, first, weight)
+
+
+def _track_end_to_end(env: Environment) -> NDArray[np.float64]:
+    """The track nodes on the longest route along a track, shape (n, n_dims).
+
+    The route starts at the end with the smaller linear position.
+    """
+    linearization = env.binning.linearization
+    assert linearization is not None
+    graph = linearization.graph.edge_subgraph(linearization.edge_order)
+    node_positions = {
+        node: np.asarray(position, dtype=np.float64)
+        for node, position in graph.nodes(data="pos")
+    }
+
+    def length(u: object, v: object, _data: object) -> float:
+        return float(np.linalg.norm(node_positions[u] - node_positions[v]))
+
+    start, end = _farthest_pair(graph, next(iter(graph.nodes)), length)
+    route = nx.shortest_path(graph, start, end, weight=length)
+    waypoints = np.array([node_positions[node] for node in route])
+    if env.to_linear(waypoints[[0]])[0] > env.to_linear(waypoints[[-1]])[0]:
+        waypoints = waypoints[::-1]
+    return waypoints
 
 
 #: Default lap running speed, in centimeters per second.
