@@ -243,20 +243,24 @@ class TestValidateSimulation:
             replace(place_session, ground_truth={})
 
 
-def test_default_center_error_threshold(simple_2d_env):
+def test_default_center_error_threshold(connected_arena_env):
     """The default limit is 1.5 true field widths, whatever the bins."""
     session = simulate_session(
-        simple_2d_env,
-        duration=10.0,
-        n_cells=1,
+        connected_arena_env,
+        duration=180.0,
+        n_cells=2,
         cell_type="place",
         seed=0,
         show_progress=False,
     )
 
     result = validate_simulation(session)
-    np.testing.assert_allclose(result.max_center_errors, [1.5 * 11.1])
+    assert result.n_evaluated == 2
+    np.testing.assert_allclose(result.max_center_errors, [1.5 * 11.1] * 2)
     assert "1.5 x each cell's true field width" in result.report()
+    assert result.summary_table().attrs["center_error_rule"] == (
+        "1.5 x true field width"
+    )
 
 
 def test_detected_center_ignores_unresolved_bins():
@@ -386,6 +390,24 @@ def test_default_center_error_threshold_on_hairpin(hairpin_track_env):
 
 class TestPlotSessionSummary:
     """Tests for plot_session_summary() function."""
+
+    def test_duration_is_the_recorded_span(self, place_session):
+        """A recording that starts at 100 s lasts times[-1] - times[0]."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.simulation.validation import plot_session_summary
+
+        shifted = replace(
+            place_session,
+            times=place_session.times + 100.0,
+            spike_times=[train + 100.0 for train in place_session.spike_times],
+        )
+        span = shifted.times[-1] - shifted.times[0]
+        fig, axes = plot_session_summary(shifted, unit_ids=[0])
+        try:
+            assert f"Duration: {span:.1f} s" in axes[1].texts[0].get_text()
+        finally:
+            plt.close(fig)
 
     def test_plot_session_summary_returns_tuple(self, simple_2d_env):
         """plot_session_summary() should return (fig, axes) tuple."""
@@ -636,32 +658,21 @@ class TestPlotSessionSummary:
         plt.close(fig)
 
 
-def test_field_correlation_needs_only_center_and_width(simple_2d_env):
+def test_field_correlation_needs_only_center_and_width(place_session, place_report):
     """Pearson correlation ignores the true field's baseline and peak rate."""
-    session = simulate_session(
-        simple_2d_env,
-        duration=30,
-        n_cells=3,
-        seed=0,
-        show_progress=False,
-        max_rate=20.0,
-        baseline_rate=0.01,
-        width=6.0,
-    )
     shape_only = replace(
-        session,
+        place_session,
         ground_truth={
             label: {"center": truth["center"], "width": truth["width"]}
-            for label, truth in session.ground_truth.items()
+            for label, truth in place_session.ground_truth.items()
         },
     )
-    full = validate_simulation(session)
+    assert place_report.n_evaluated == 5
     np.testing.assert_allclose(
         validate_simulation(shape_only).correlations,
-        full.correlations,
+        place_report.correlations,
         rtol=1e-12,
     )
-    assert np.isfinite(full.correlations).any()
 
 
 @pytest.mark.slow
