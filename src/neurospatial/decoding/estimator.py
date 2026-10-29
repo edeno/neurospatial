@@ -52,7 +52,7 @@ class _FittedState:
     Holds read-only copies, so editing the arrays a decoder was built from
     cannot change it. Built by :meth:`BayesianDecoder.fit`,
     :meth:`BayesianDecoder.from_rates` and :meth:`BayesianDecoder.from_models`;
-    the decoder checks it against its environment.
+    the decoder refuses an environment whose bins differ from ``env``.
     """
 
     encoding_models: NDArray[np.float64]
@@ -60,6 +60,8 @@ class _FittedState:
     # True when ``arange`` labels were generated for an unlabelled input; such
     # labels never drive label-based pairing.
     unit_ids_generated: bool
+    # Environment the models are defined on; a fitted decoder keeps it.
+    env: Environment
     spatial_support: NDArray[np.bool_] | None = None
     spike_window: NDArray[np.float64] | None = None
     analysis_settings: dict[str, Any] | None = None
@@ -183,9 +185,10 @@ class BayesianDecoder:
 warn_on_drop
         The configuration passed at construction (immutable).
         On a fitted decoder, ``method``, ``bandwidth``, ``min_occupancy``,
-        ``penalty`` and ``rank`` cannot change via ``dataclasses.replace``.
-        Construct a new unfitted decoder to fit with different encoding
-        settings. Prediction defaults (``dt``, ``max_gap``, ``dtype`` and
+        ``penalty`` and ``rank`` cannot change via ``dataclasses.replace``,
+        and ``env`` can only be replaced by an equivalent copy. Construct a
+        new unfitted decoder to fit with different encoding settings or on
+        another environment. Prediction defaults (``dt``, ``max_gap``, ``dtype`` and
         ``warn_on_drop``) can change; training provenance stays unchanged.
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins), or None
         The fitted firing-rate maps (a read-only copy), or ``None`` when
@@ -220,6 +223,9 @@ warn_on_drop
         ``method="glm"`` or a glm param with a ratio method; an out-of-domain
         ``penalty`` / ``rank``) -- these mirror ``compute_spatial_rate``.
         Also if encoding settings change on a fitted decoder via ``replace``.
+    IncompatibleEnvironmentError
+        If ``env`` is replaced on a fitted decoder by an environment whose
+        bins or connectivity differ from the training environment.
     RuntimeError
         From :meth:`predict` / :meth:`predict_summary` / :meth:`score` if the
         decoder is unfitted.
@@ -312,6 +318,7 @@ warn_on_drop
 
         # The models' bin axis must match the environment they decode over.
         if self._fit is not None:
+            self._check_fitted_environment()
             n_model_bins = self._fit.encoding_models.shape[1]
             if n_model_bins != self.env.n_bins:
                 raise ValueError(
@@ -323,6 +330,27 @@ warn_on_drop
 
             if self._fit.spatial_support is not None:
                 validate_support(self._fit.spatial_support, self.env.n_bins)
+
+    def _check_fitted_environment(self) -> None:
+        """Refuse an environment whose bins differ from the fitted one."""
+        assert self._fit is not None
+        if self.env is self._fit.env:
+            return
+        from neurospatial._exceptions import IncompatibleEnvironmentError
+        from neurospatial.environment import _environment_differences
+
+        bins, topology = _environment_differences(self._fit.env, self.env)
+        mismatch = bins or topology
+        if mismatch is not None:
+            raise IncompatibleEnvironmentError(
+                "env cannot change on a fitted decoder: the encoding models "
+                f"were fitted on an environment that differs in {mismatch}.",
+                fix="fit a new BayesianDecoder(new_env, ...) on the training "
+                "data, or use BayesianDecoder.from_models(new_env, models) for "
+                "rate maps defined on new_env.",
+                first=self._fit.env,
+                second=self.env,
+            )
 
     def _encoding_config(self) -> _EncodingConfig:
         """Snapshot requested encoding settings, before defaults are resolved."""
@@ -468,6 +496,7 @@ warn_on_drop
                 models,
                 rates.unit_ids,
                 unit_ids_generated=rates._unit_ids_generated,
+                env=rates.env,
                 spatial_support=rates.spatial_support,
                 spike_window=rates.spike_window,
                 analysis_settings=rates.analysis_settings,
@@ -543,6 +572,7 @@ warn_on_drop
                 models.astype(dtype, copy=False),
                 unit_ids,
                 unit_ids_generated=unit_ids is None,
+                env=env,
                 spatial_support=(
                     None if spatial_support is None else np.asarray(spatial_support)
                 ),
@@ -712,6 +742,7 @@ warn_on_drop
                 firing_rates,
                 resolved_ids,
                 unit_ids_generated=not labels_supplied,
+                env=self.env,
                 spatial_support=rates_result.spatial_support,
                 spike_window=resolved_spike_window,
                 analysis_settings=rates_result.analysis_settings,

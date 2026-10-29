@@ -1121,3 +1121,23 @@ def test_min_occupancy_masking_every_bin_raises(sim) -> None:
         BayesianDecoder(env, dt=0.5, bandwidth=7.0, min_occupancy=1e6).fit(
             spike_times, times, positions
         )
+
+
+def test_fitted_decoder_refuses_a_different_environment(sim):
+    """Equal bin counts do not make the fitted maps valid on another arena."""
+    from neurospatial import IncompatibleEnvironmentError
+
+    env, spikes, times, positions = sim
+    fitted = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
+    shifted = Environment.from_samples(
+        env.bin_centers + 1000.0, bin_size=5.0
+    ).with_metadata(units="cm")
+    assert shifted.n_bins == env.n_bins
+    with pytest.raises(IncompatibleEnvironmentError, match="env cannot change") as err:
+        dataclasses.replace(fitted, env=shifted)
+    assert "from_models" in str(err.value)
+    # An equivalent copy of the training environment is accepted.
+    copy = dataclasses.replace(fitted, env=env.with_metadata())
+    assert_array_equal(
+        copy.predict(spikes, times).posterior, fitted.predict(spikes, times).posterior
+    )
