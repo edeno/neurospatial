@@ -677,6 +677,47 @@ class TestSkaggsInformation:
         assert info >= 0  # Non-negative
         assert_allclose(info, 0.5, rtol=0.1)
 
+    @pytest.mark.parametrize("scale", [5e-324, 1e-300, 1.0, 1e300])
+    @pytest.mark.parametrize("backend", ["numpy", "jax"])
+    def test_skaggs_information_does_not_depend_on_rate_scale(self, scale, backend):
+        """Information depends only on rate / mean rate, even for extreme rates.
+
+        A map of subnormal rates (5e-324 Hz) fires everywhere, so it is not
+        silent: its mean rate underflowed to 0 and it was reported as NaN.
+        """
+        from neurospatial.encoding._metrics import (
+            batch_spatial_information,
+            spatial_information,
+        )
+
+        if backend == "jax":
+            jnp = pytest.importorskip("jax.numpy")
+            if scale < np.finfo(np.float64).tiny:
+                pytest.skip("XLA flushes subnormal inputs to zero: a silent map")
+            to_array = jnp.asarray
+        else:
+            to_array = np.asarray
+        occupancy = np.ones(10)
+        uniform = np.full(10, scale)
+        peak = np.zeros(10)
+        peak[3] = scale
+
+        assert float(spatial_information(to_array(uniform), to_array(occupancy))) == (
+            pytest.approx(0.0, abs=1e-12)
+        )
+        assert float(spatial_information(to_array(peak), to_array(occupancy))) == (
+            pytest.approx(np.log2(10))
+        )
+        np.testing.assert_allclose(
+            np.asarray(
+                batch_spatial_information(
+                    to_array(np.vstack([uniform, peak])), to_array(occupancy)
+                )
+            ),
+            [0.0, np.log2(10)],
+            atol=1e-9,
+        )
+
     def test_skaggs_information_uniform(self, medium_2d_env):
         """Test that uniform firing gives zero information."""
         env = medium_2d_env

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Spatial information of very small rates
+
+- Skaggs spatial information (`spatial_information`,
+  `batch_spatial_information` and the rate results' information) is
+  computed on each map divided by its peak rate, which it does not depend
+  on. A map of subnormal rates (5e-324 Hz) fires everywhere but its mean
+  rate underflowed to 0, so it was reported as silent (NaN); it now gets
+  0 bits per spike for uniform firing and log2(n) for one active bin of n.
+  The JAX backend flushes subnormal inputs to zero, so there such a map is
+  silent.
+
 ### Decoding refuses missing data instead of decoding it, and follows the published methods
 
 A review of `neurospatial.decoding` found several paths that returned

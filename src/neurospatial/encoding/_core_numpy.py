@@ -172,6 +172,11 @@ def spatial_information_batch(
     valid = np.isfinite(firing_rates) & np.isfinite(occupancy)
     firing_rates_clean = np.where(valid, firing_rates, 0.0)
     occupancy_clean = np.where(valid, occupancy, 0.0)
+    # Information depends only on rate / mean rate. Dividing by each map's
+    # peak keeps the mean from underflowing to 0 for tiny (subnormal) rates,
+    # which would report a firing map as silent.
+    peak = np.abs(firing_rates_clean).max(axis=1, keepdims=True, initial=0.0)
+    firing_rates_clean = firing_rates_clean / np.where(peak > 0, peak, 1.0)
 
     occ_sum = occupancy_clean.sum(axis=1, keepdims=True)
     occ_prob = occupancy_clean / np.where(occ_sum > 0, occ_sum, 1.0)
