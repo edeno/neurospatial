@@ -757,22 +757,38 @@ class TestSimulateSession:
         assert len(session.positions) > 0
         assert len(session.times) == len(session.positions)
 
-    @pytest.mark.skip(reason="Requires proper 1D environment with GraphLayout")
-    def test_simulate_session_trajectory_sinusoidal(self, simple_1d_env):
-        """simulate_session() with trajectory_method='sinusoidal' should work for 1D."""
-        simple_1d_env = simple_1d_env.with_metadata(units="cm")
+    def test_simulate_session_trajectory_sinusoidal(self):
+        """Sinusoidal runs cover the whole track, so every place cell fires.
+
+        The sinusoid is in the track's own coordinates: fields centered at 1,
+        33, 67 and 99 cm along a 100 cm track are all crossed on every run.
+        """
+        import networkx as nx
+
+        graph = nx.Graph()
+        graph.add_node(0, pos=(0.0, 0.0))
+        graph.add_node(1, pos=(100.0, 0.0))
+        graph.add_edge(0, 1, distance=100.0)
+        track = Environment.from_graph(
+            graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0, track_width=2.0
+        ).with_metadata(units="cm")
         session = simulate_session(
-            simple_1d_env,
-            duration=2.0,
-            n_cells=3,
+            track,
+            duration=60.0,
+            n_cells=4,
             trajectory_method="sinusoidal",
             seed=42,
             show_progress=False,
         )
-
-        # Check that positions were generated
-        assert len(session.positions) > 0
-        assert len(session.times) == len(session.positions)
+        assert session.positions.shape == (len(session.times), 2)
+        np.testing.assert_allclose(session.positions[:, 1], 0.0)
+        assert session.positions[:, 0].min() == pytest.approx(0.0, abs=1.0)
+        assert session.positions[:, 0].max() == pytest.approx(100.0, abs=1.0)
+        centers = [truth["center"][0] for truth in session.ground_truth.values()]
+        np.testing.assert_allclose(centers, [1.0, 33.0, 67.0, 99.0], atol=1.0)
+        # At 10 cm/s each field is crossed six times a minute, and a crossing
+        # of a 12.4 Hz, 11.1 cm field gives tens of spikes.
+        assert all(len(train) > 50 for train in session.spike_times)
 
     def test_simulate_session_zero_cells(self, simple_2d_env):
         """simulate_session() with n_cells=0 should raise ValueError."""
