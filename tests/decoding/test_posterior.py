@@ -262,37 +262,31 @@ class TestNormalizeToPosterior:
         with pytest.raises(ValueError):
             normalize_to_posterior(simple_log_likelihood, handle_degenerate="invalid")
 
-    def test_raise_distinguishes_nan_from_neg_inf(self) -> None:
-        """raise message must distinguish NaN (corruption) from -inf (zero-rate).
+    @pytest.mark.parametrize("handle_degenerate", ["uniform", "nan", "raise"])
+    @pytest.mark.parametrize("bad", [np.nan, np.inf], ids=["nan", "posinf"])
+    def test_nan_or_posinf_row_raises_in_every_mode(
+        self, handle_degenerate: str, bad: float
+    ) -> None:
+        """A NaN or +inf log-likelihood is corruption, never a degenerate row.
 
-        An all -inf row is a legitimate zero-rate degenerate row; a NaN row
-        signals upstream corruption. The raise path must call out the NaN
-        rows so the user knows the input is corrupted, not merely flat.
+        Only all -inf rows (no likelihood mass where the prior allows) are
+        degenerate; a NaN row must not become a confident uniform posterior.
         """
         from neurospatial.decoding.posterior import normalize_to_posterior
 
-        # Only a -inf row: message must NOT claim NaN corruption.
-        ll_neg_inf = np.array(
-            [
-                [-1.0, -2.0, -3.0],
-                [-np.inf, -np.inf, -np.inf],
-            ],
-            dtype=np.float64,
-        )
-        with pytest.raises(ValueError) as exc_neg_inf:
-            normalize_to_posterior(ll_neg_inf, handle_degenerate="raise")
-        assert "NaN" not in str(exc_neg_inf.value)
+        ll = np.array([[-1.0, -2.0, -3.0], [bad, -1.0, -0.5]])
+        with pytest.raises(ValueError, match=r"NaN or \+inf") as caught:
+            normalize_to_posterior(ll, handle_degenerate=handle_degenerate)
+        assert "Fix:" in str(caught.value)
 
-        # A NaN row: message MUST mention NaN/corruption.
-        ll_nan = np.array(
-            [
-                [-1.0, -2.0, -3.0],
-                [np.nan, -1.0, -0.5],
-            ],
-            dtype=np.float64,
-        )
-        with pytest.raises(ValueError, match="NaN"):
-            normalize_to_posterior(ll_nan, handle_degenerate="raise")
+    def test_all_neg_inf_raise_message_names_the_prior(self) -> None:
+        """The degenerate-row error does not blame NaN corruption."""
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        ll = np.array([[-1.0, -2.0, -3.0], [-np.inf, -np.inf, -np.inf]])
+        with pytest.raises(ValueError, match="prior allows") as caught:
+            normalize_to_posterior(ll, handle_degenerate="raise")
+        assert "NaN" not in str(caught.value)
 
     def test_nan_degenerate_posterior_validates_without_spurious_error(self) -> None:
         """A nan-degenerate posterior must pass _validate_output cleanly.
@@ -320,52 +314,34 @@ class TestNormalizeToPosterior:
         # Should not raise despite the NaN row.
         _validate_output(posterior)
 
-    # -------------------------------------------------------------------------
-    # Axis parameter tests
-    # -------------------------------------------------------------------------
-
-    def test_axis_explicit(self, simple_log_likelihood: np.ndarray) -> None:
-        """Explicit axis=1 should normalize over second axis."""
+    def test_log_likelihood_must_be_2d(self) -> None:
+        """Normalization runs over the bin axis of a (n_time, n_bins) array."""
         from neurospatial.decoding.posterior import normalize_to_posterior
 
-        posterior = normalize_to_posterior(simple_log_likelihood, axis=1)
-        assert_allclose(posterior.sum(axis=1), 1.0, atol=1e-10)
+        with pytest.raises(ValueError, match="must be 2-D"):
+            normalize_to_posterior(np.zeros(4))
 
-    def test_axis_not_last_raises(self, simple_log_likelihood: np.ndarray) -> None:
-        """axis=0 should raise ValueError (degeneracy handling only supports last axis)."""
-        from neurospatial.decoding.posterior import normalize_to_posterior
-
-        with pytest.raises(ValueError, match="axis must be the last dimension"):
-            normalize_to_posterior(simple_log_likelihood, axis=0)
-
-    def test_prior_wrong_1d_shape_raises(
-        self, simple_log_likelihood: np.ndarray
+    @pytest.mark.parametrize("shape", [(3,), (2, 4), (3, 4, 2)])
+    def test_prior_wrong_shape_raises(
+        self, simple_log_likelihood: np.ndarray, shape: tuple[int, ...]
     ) -> None:
-        """1D prior with wrong number of bins should raise ValueError."""
+        """A prior must be (n_bins,) or (n_time_bins, n_bins)."""
         from neurospatial.decoding.posterior import normalize_to_posterior
 
-        # simple_log_likelihood has 4 bins, prior has 3
-        prior = np.array([0.5, 0.3, 0.2])
-        with pytest.raises(ValueError, match="1D prior must have shape"):
-            normalize_to_posterior(simple_log_likelihood, prior=prior)
+        with pytest.raises(
+            ValueError, match=r"prior must have shape \(4,\) or \(3, 4\)"
+        ):
+            normalize_to_posterior(simple_log_likelihood, prior=np.ones(shape))
 
-    def test_prior_wrong_2d_shape_raises(
-        self, simple_log_likelihood: np.ndarray
+    @pytest.mark.parametrize("bad", [-0.1, np.nan, np.inf])
+    def test_prior_invalid_weight_raises(
+        self, simple_log_likelihood: np.ndarray, bad: float
     ) -> None:
-        """2D prior with wrong shape should raise ValueError."""
+        """Prior weights must be finite and non-negative."""
         from neurospatial.decoding.posterior import normalize_to_posterior
 
-        # simple_log_likelihood is (3, 4), prior is (2, 4)
-        prior = np.ones((2, 4)) / 4
-        with pytest.raises(ValueError, match="2D prior must have shape"):
-            normalize_to_posterior(simple_log_likelihood, prior=prior)
-
-    def test_prior_3d_raises(self, simple_log_likelihood: np.ndarray) -> None:
-        """3D prior should raise ValueError."""
-        from neurospatial.decoding.posterior import normalize_to_posterior
-
-        prior = np.ones((3, 4, 2)) / 4
-        with pytest.raises(ValueError, match=r"prior must be 1D .* or 2D"):
+        prior = np.array([0.5, 0.3, 0.2, bad])
+        with pytest.raises(ValueError, match="negative or non-finite"):
             normalize_to_posterior(simple_log_likelihood, prior=prior)
 
 
@@ -530,35 +506,29 @@ class TestDecodePosition:
         simple_env: Environment,
         simple_encoding_models: np.ndarray,
     ) -> None:
-        """validate=False is an explicit opt-out for hot loops.
+        """validate=False skips the count checks but never hides corruption.
 
-        Users running decode_position inside a tight loop and confident
-        their inputs are clean can skip the per-call validation overhead.
-        The contract is that the call doesn't raise on bad input —
-        even though ``validate=True`` would catch it. The matching
-        positive assertion is that the clean rows still produce a
-        well-formed row-stochastic posterior, so we know the call did
-        more than "return a stub".
+        Fractional counts decode (the per-call check is skipped), and the
+        decode matches the Poisson formula evaluated on those counts; NaN
+        counts still raise rather than turning into a uniform posterior.
         """
         from neurospatial.decoding.posterior import decode_position
 
-        spike_counts_nan = np.array([[0, np.nan], [1, 0], [0, 1]])
+        fractional = np.array([[0.5, 0.0], [1.0, 0.0], [0.0, 1.0]])
         result = decode_position(
-            simple_env,
-            spike_counts_nan,
-            simple_encoding_models,
-            dt=0.025,
-            validate=False,
+            simple_env, fractional, simple_encoding_models, dt=0.025, validate=False
         )
-        posterior = np.asarray(result.posterior)
-        # No exception was raised (validate=False skipped the check).
-        # The clean rows (1 and 2) must still produce well-formed
-        # probability distributions — proves the call actually ran the
-        # decoder, not just bailed out.
-        np.testing.assert_allclose(posterior[1].sum(), 1.0, atol=1e-9)
-        np.testing.assert_allclose(posterior[2].sum(), 1.0, atol=1e-9)
-        assert np.all(np.isfinite(posterior[1]))
-        assert np.all(np.isfinite(posterior[2]))
+        expected_counts = simple_encoding_models * 0.025
+        log_ll = fractional @ np.log(expected_counts) - expected_counts.sum(axis=0)
+        expected = np.exp(log_ll - log_ll.max(axis=1, keepdims=True))
+        expected /= expected.sum(axis=1, keepdims=True)
+        np.testing.assert_allclose(result.posterior, expected, rtol=1e-12)
+
+        nan_counts = np.array([[0, np.nan], [1, 0], [0, 1]])
+        with pytest.raises(ValueError, match="NaN"):
+            decode_position(
+                simple_env, nan_counts, simple_encoding_models, dt=0.025, validate=False
+            )
 
     def test_validate_catches_nan_input(
         self,
@@ -706,48 +676,43 @@ class TestDecodePosition:
         assert np.all(np.isfinite(posterior_float))
         np.testing.assert_allclose(posterior_float.sum(axis=-1), 1.0, atol=1e-9)
 
-    def test_validate_catches_negative_prior(
+    @pytest.mark.parametrize("validate", [True, False])
+    @pytest.mark.parametrize("bad", [-1.0, np.nan, np.inf])
+    def test_validate_catches_invalid_prior_weight(
         self,
         simple_env: Environment,
         simple_spike_counts: np.ndarray,
         simple_encoding_models: np.ndarray,
+        validate: bool,
+        bad: float,
     ) -> None:
-        """validate=True rejects priors with negative entries.
+        """Negative or non-finite prior weights raise, even with validate=False.
 
-        Regression for review follow-up: the prior was checked for
-        finite values but not for non-negativity, despite the error
-        message claiming "Prior must be finite non-negative values".
-        Internal normalization divides by the row sum, so a negative
-        entry could yield a finite-looking posterior that no longer
-        represents a probability distribution.
+        A negative weight would otherwise give negative posterior mass.
         """
         from neurospatial.decoding.posterior import decode_position
 
         prior = np.full(simple_env.n_bins, 1.0)
-        prior[0] = -1.0
-        with pytest.raises(ValueError, match=r"negative entr"):
+        prior[0] = bad
+        with pytest.raises(ValueError, match=r"negative or non-finite entr"):
             decode_position(
                 simple_env,
                 simple_spike_counts,
                 simple_encoding_models,
                 dt=0.025,
                 prior=prior,
+                validate=validate,
             )
 
+    @pytest.mark.parametrize("validate", [True, False])
     def test_validate_catches_zero_mass_prior(
         self,
         simple_env: Environment,
         simple_spike_counts: np.ndarray,
         simple_encoding_models: np.ndarray,
+        validate: bool,
     ) -> None:
-        """validate=True rejects priors whose total mass is zero.
-
-        Regression for review follow-up: an all-zero prior was silently
-        rebuilt as a uniform prior by normalize_to_posterior's 1e-10
-        clip, producing a finite-looking posterior that did not reflect
-        the user's stated prior. The validator now rejects at the
-        boundary so the failure is visible.
-        """
+        """A prior with zero total mass raises with either validate setting."""
         from neurospatial.decoding.posterior import decode_position
 
         with pytest.raises(ValueError, match=r"zero total mass"):
@@ -757,15 +722,18 @@ class TestDecodePosition:
                 simple_encoding_models,
                 dt=0.025,
                 prior=np.zeros(simple_env.n_bins),
+                validate=validate,
             )
 
+    @pytest.mark.parametrize("validate", [True, False])
     def test_validate_catches_time_varying_prior_with_zero_row(
         self,
         simple_env: Environment,
         simple_spike_counts: np.ndarray,
         simple_encoding_models: np.ndarray,
+        validate: bool,
     ) -> None:
-        """validate=True rejects time-varying priors with any zero-mass row."""
+        """A time-varying prior with a zero-mass row raises."""
         from neurospatial.decoding.posterior import decode_position
 
         n_time = simple_spike_counts.shape[0]
@@ -778,6 +746,7 @@ class TestDecodePosition:
                 simple_encoding_models,
                 dt=0.025,
                 prior=prior,
+                validate=validate,
             )
 
     def test_validate_accepts_array_like_prior(
@@ -1026,10 +995,9 @@ class TestDecodePositionTimeChunkHybrid:
     def test_time_chunk_parity_nan_safe_encoding(
         self, medium_2d_env: Environment, k: int
     ) -> None:
-        """Parity for the NaN-safe encoding-model path (some NaN bins).
+        """Parity when some (neuron, bin) rates are missing (NaN).
 
-        validate=False so NaN encoding bins are absorbed as zero-rate; the
-        block loop must route through the NaN-safe likelihood identically.
+        Bins with a missing rate are excluded on both paths.
         """
         from neurospatial.decoding.posterior import decode_position
 
@@ -1043,7 +1011,7 @@ class TestDecodePositionTimeChunkHybrid:
         encoding_models[2, 3] = np.nan
         encoding_models[1, 5] = np.nan
 
-        with pytest.warns(UserWarning, match="non-finite"):
+        with pytest.warns(UserWarning, match="NaN or Inf rate"):
             full = decode_position(
                 env,
                 spike_counts,
@@ -1051,7 +1019,7 @@ class TestDecodePositionTimeChunkHybrid:
                 dt=0.025,
                 validate=False,
             )
-        with pytest.warns(UserWarning, match="non-finite"):
+        with pytest.warns(UserWarning, match="NaN or Inf rate"):
             chunked = decode_position(
                 env,
                 spike_counts,
@@ -1063,9 +1031,10 @@ class TestDecodePositionTimeChunkHybrid:
         post_full = np.asarray(full.posterior)
         post_chunked = np.asarray(chunked.posterior)
 
-        assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12, equal_nan=True)
+        assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12)
         assert_array_equal(chunked.map_bin, full.map_bin)
         assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
+        assert_array_equal(post_full[:, [1, 3, 5]], 0.0)
 
     @pytest.mark.parametrize("k", [1, 7, 64, 40, 45])
     def test_time_chunk_parity_float32(
@@ -1162,13 +1131,7 @@ class TestDecodePositionTimeChunkHybrid:
     def test_time_chunk_degenerate_nan_injected_rows(
         self, medium_2d_env: Environment
     ) -> None:
-        """NaN-injected degenerate handling matches across a block boundary.
-
-        handle_degenerate is 'uniform' by default; an all-NaN bin (NaN across
-        every neuron) becomes -inf in the likelihood, which combined with a
-        zero-spike row can be exercised. We instead inject a fully-degenerate
-        encoding (all-NaN bin) and check the chunked/full paths agree.
-        """
+        """An all-NaN bin is excluded identically across a block boundary."""
         from neurospatial.decoding.posterior import decode_position
 
         env = medium_2d_env
@@ -1176,16 +1139,14 @@ class TestDecodePositionTimeChunkHybrid:
         n_neurons = 4
         rng = np.random.default_rng(9)
         encoding_models = rng.uniform(0.5, 12.0, (n_neurons, env.n_bins))
-        # Make one bin all-NaN (NaN for every neuron): it becomes -inf in the
-        # likelihood (zero posterior mass) on both paths.
         encoding_models[:, 2] = np.nan
         spike_counts = rng.poisson(1.5, (n_time, n_neurons)).astype(np.int64)
 
-        with pytest.warns(UserWarning, match="non-finite"):
+        with pytest.warns(UserWarning, match="NaN or Inf rate"):
             full = decode_position(
                 env, spike_counts, encoding_models, dt=0.025, validate=False
             )
-        with pytest.warns(UserWarning, match="non-finite"):
+        with pytest.warns(UserWarning, match="NaN or Inf rate"):
             chunked = decode_position(
                 env,
                 spike_counts,
@@ -1197,7 +1158,7 @@ class TestDecodePositionTimeChunkHybrid:
         post_full = np.asarray(full.posterior)
         post_chunked = np.asarray(chunked.posterior)
 
-        assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12, equal_nan=True)
+        assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12)
         # The all-NaN bin has zero posterior mass on both paths.
         assert np.allclose(post_chunked[:, 2], 0.0, atol=1e-12)
         assert_array_equal(chunked.map_bin, full.map_bin)
@@ -1226,15 +1187,11 @@ class TestDecodePositionTimeChunkHybrid:
     @pytest.mark.parametrize(
         ("prior_shape", "match"),
         [
-            # Wrong 1-D prior length -> caught by the up-front _validate_prior_shape.
-            (("n_bins+5",), "1D prior must have shape"),
-            # Short 2-D prior: the silent-truncation footgun the up-front check
-            # closes. The block loop only slices n_time rows, so without the
-            # up-front check a too-short prior would be caught (if at all) only at
-            # the final block -- here it must raise before any block is decoded.
-            (("n_time-1", "n_bins"), "2D prior must have shape"),
-            # Over-long 2-D prior also raises up front.
-            (("n_time+3", "n_bins"), "2D prior must have shape"),
+            (("n_bins+5",), "prior has shape"),
+            # The block loop slices n_time rows, so a short or long 2-D prior
+            # must raise before any block is decoded rather than be truncated.
+            (("n_time-1", "n_bins"), "prior has shape"),
+            (("n_time+3", "n_bins"), "prior has shape"),
         ],
     )
     def test_time_chunk_prior_shape_validation(
@@ -1243,15 +1200,7 @@ class TestDecodePositionTimeChunkHybrid:
         prior_shape: tuple,
         match: str,
     ) -> None:
-        """Blockwise time_chunk path validates prior shape up front.
-
-        ``_decode_blockwise`` calls ``_validate_prior_shape`` before the
-        time-block loop, so a wrong-length 1-D prior or a wrong-length 2-D prior
-        raises a clear ``ValueError`` immediately rather than being silently
-        truncated/looped into a per-block slice. Exercises the ``time_chunk=N``
-        branch (not ``normalize_to_posterior``'s own check) -- a short 2-D prior
-        is the silent-truncation case the up-front check closes.
-        """
+        """The blockwise time_chunk path validates prior shape up front."""
         from neurospatial.decoding.posterior import decode_position
 
         env = medium_2d_env
@@ -1717,3 +1666,25 @@ class TestTimeChunkValidation:
                 dt=0.025,
                 time_chunk=None,
             )
+
+
+@pytest.mark.parametrize("time_chunk", [None, 4])
+def test_zero_time_bins_return_empty_result_without_warnings(
+    simple_env: Environment, time_chunk: int | None
+) -> None:
+    """An empty count matrix decodes to an empty result, quietly."""
+    import warnings
+
+    from neurospatial.decoding import decode_position, decode_position_summary
+
+    models = np.full((2, simple_env.n_bins), 5.0)
+    counts = np.zeros((0, 2), dtype=np.int64)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = decode_position(
+            simple_env, counts, models, dt=0.1, times=np.zeros(0), time_chunk=time_chunk
+        )
+        summary = decode_position_summary(simple_env, counts, models, dt=0.1)
+    assert result.posterior.shape == (0, simple_env.n_bins)
+    assert result.map_position.shape == (0, simple_env.n_dims)
+    assert summary.map_bin.shape == (0,)

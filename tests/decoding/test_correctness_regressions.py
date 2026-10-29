@@ -61,39 +61,44 @@ def test_rate_result_equivalent_environment_copy_decodes(tiny_env, decode):
 
 @pytest.mark.parametrize("decode", [decode_position, decode_position_summary])
 @pytest.mark.parametrize("missing", [np.nan, np.inf], ids=["nan", "inf"])
-def test_partial_missing_rate_likelihood_matches_poisson(tiny_env, decode, missing):
-    """Masked units drop their entire Poisson term, including the factorial."""
-    models = np.full((2, tiny_env.n_bins), missing)
-    models[:, :2] = [[missing, 4.0], [1.0, 1.0]]
-    counts = np.array([[4, 0], [0, 2], [3, 1]])
-    observed = np.isfinite(models)
-    # Evaluate complete Poisson probabilities independently, with each missing
-    # observation contributing the multiplicative identity. All-missing bins
-    # remain excluded rather than being assigned neutral likelihood.
-    probabilities = poisson.pmf(
-        counts[:, :, None], np.where(observed, models, 0.0)[None]
-    )
-    likelihood = np.prod(np.where(observed[None], probabilities, 1.0), axis=1)
-    likelihood[:, ~observed.any(axis=0)] = 0.0
-    expected = likelihood / likelihood.sum(axis=1, keepdims=True)
+def test_partial_missing_rate_bins_are_excluded(decode, missing):
+    """Bins missing any neuron's rate get zero mass; the rest follow Poisson.
 
-    with pytest.warns(UserWarning, match="non-finite"):
+    Ten neurons with flat rates carry no position information, so the
+    posterior must be uniform over the fully observed bins whatever the
+    counts. Dropping only the masked neurons' terms instead made the bin
+    where nine of ten neurons were masked win with posterior 0.9.
+    """
+    env = Environment.from_samples(np.linspace(0, 100, 500)[:, None], bin_size=10.0)
+    n_bins = env.n_bins
+    rng = np.random.default_rng(3)
+    models = rng.uniform(2.0, 20.0, (10, n_bins))
+    models[:, 2:] = 5.0  # flat on the fully observed bins 2..n
+    models[:9, 0] = missing  # nine of ten neurons masked at bin 0
+    models[4, 1] = missing  # one neuron masked at bin 1
+    counts = np.array([np.zeros(10), np.full(10, 2), np.arange(10) % 3], dtype=int)
+
+    observed = np.isfinite(models).all(axis=0)
+    log_pmf = poisson.logpmf(counts[:, :, None], np.where(observed, models, 1.0)[None])
+    log_likelihood = np.where(observed, log_pmf.sum(axis=1), -np.inf)
+    expected = np.exp(log_likelihood - log_likelihood.max(axis=1, keepdims=True))
+    expected /= expected.sum(axis=1, keepdims=True)
+    np.testing.assert_allclose(expected[:, observed], 1.0 / observed.sum())
+
+    with pytest.warns(UserWarning, match="2 of 11 bins"):
         result = decode(
-            tiny_env,
+            env,
             counts,
             models,
             dt=1.0,
             validate=not np.isinf(missing),
             time_chunk=1,
         )
-    np.testing.assert_array_equal(result.map_bin, expected.argmax(axis=1))
-    # Four spikes at the finite 4 Hz model previously made bin 1 win, because
-    # its omitted 4! factor was only present at that bin.
-    assert result.map_bin[0] == 0
     if isinstance(result, DecodingResult):
-        np.testing.assert_allclose(result.posterior, expected)
+        np.testing.assert_allclose(result.posterior, expected, rtol=1e-12)
     else:
         np.testing.assert_allclose(result.peak_probability, expected.max(axis=1))
+        assert np.all(result.map_bin >= 2)
 
 
 @pytest.mark.parametrize("training", ["short", "gapped", "epochs"])

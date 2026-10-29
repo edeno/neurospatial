@@ -232,19 +232,18 @@ class TestNormalizeDegenerateChunking:
         # All-(-inf) row becomes uniform.
         np.testing.assert_allclose(chunked[1], np.full(3, 1 / 3))
 
-    def test_nan_rows_chunked_nan_mode(self):
+    def test_neg_inf_rows_chunked_nan_mode(self):
         from neurospatial.decoding.posterior import normalize_to_posterior
 
         ll = np.array(
             [
                 [-1.0, -2.0, -0.5],
-                [np.nan, -0.3, -0.1],  # NaN -> degenerate
+                [-np.inf, -np.inf, -np.inf],
                 [-0.2, -0.3, -0.1],
             ]
         )
         ref = normalize_to_posterior(ll, handle_degenerate="nan")
         chunked = normalize_to_posterior(ll, handle_degenerate="nan", time_chunk=2)
-        # Row 1 is NaN in both.
         assert np.isnan(chunked[1]).all()
         np.testing.assert_array_equal(np.isnan(chunked), np.isnan(ref))
         np.testing.assert_allclose(chunked[[0, 2]], ref[[0, 2]], rtol=0, atol=0)

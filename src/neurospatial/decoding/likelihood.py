@@ -44,18 +44,16 @@ def log_poisson_likelihood(
     dt: float,
     min_rate: float = 1e-10,
 ) -> NDArray[np.float64]:
-    """Compute log Poisson likelihood (numerically stable).
+    """Compute the Poisson log-likelihood of spike counts at every bin.
 
-    This is the **primary likelihood function** and should be used for all
-    decoding pipelines.
+    Computes the log-likelihood up to an additive constant per time bin:
 
-    Computes the log-likelihood up to an additive constant:
-
-        log P(spikes | position) proportional to
-            sum_i [n_i * log(lambda_i * dt) - lambda_i * dt]
+        log P(spikes | position) = sum_i [n_i * log(lambda_i * dt) - lambda_i * dt]
+                                   - sum_i log(n_i!)
 
     where i indexes neurons, n_i is the spike count for neuron i, and
-    lambda_i is the firing rate of neuron i at each spatial bin.
+    lambda_i is the firing rate of neuron i at each spatial bin. The
+    ``log(n_i!)`` term does not depend on position and is omitted.
 
     Parameters
     ----------
@@ -64,13 +62,13 @@ def log_poisson_likelihood(
         shape ``(n_neurons,)`` is rejected (it would silently collapse the
         time axis); for a single time bin pass ``spike_counts[np.newaxis, :]``.
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
-        Firing rate maps (place fields) in Hz. Typical values: 0-50 Hz.
-        Values are clipped to [min_rate, inf) internally.
+        Firing rate maps in Hz. Every rate must be finite and non-negative;
+        rates below ``min_rate`` are raised to ``min_rate``.
     dt : float
-        Time bin width in seconds. Typical values: 0.001-0.1s.
-        Note: lambda*dt should typically be in [0, 5] for numerical stability.
+        Time bin width in seconds.
     min_rate : float, default=1e-10
-        Minimum firing rate floor to avoid log(0).
+        Rate floor in Hz, so a zero rate gives a large finite penalty instead
+        of ``log(0)``.
 
     Returns
     -------
@@ -86,20 +84,19 @@ def log_poisson_likelihood(
         ``encoding_models`` is not 2-D ``(n_neurons, n_bins)``.
         If the neuron axis of ``spike_counts`` (axis 1) does not match the
         neuron axis of ``encoding_models`` (axis 0).
+        If ``encoding_models`` contains a NaN, infinite or negative rate.
 
     Notes
     -----
-    The -log(n_i!) term is **omitted** because it is constant across positions
-    for each time bin. Since we normalize to posterior via softmax, this constant
-    cancels out and omitting it saves O(n_neurons) log-gamma evaluations per
-    time bin. This optimization is especially beneficial for large populations.
+    The returned values differ from the full Poisson log-probability by a
+    constant per time bin, which cancels in :func:`normalize_to_posterior`.
+    They cannot be compared across different spike patterns.
 
-    The returned values are log-likelihoods up to an additive constant per time
-    bin. They are suitable for `normalize_to_posterior()` but NOT for model
-    comparison across different spike patterns.
-
-    For extremely high firing rates (lambda*dt >> 10), consider increasing dt
-    or normalizing encoding_models to avoid large exponents.
+    Rate maps with unsupported bins stored as NaN cannot be passed here. Pass
+    the rate result itself to
+    :func:`~neurospatial.decoding.decode_position`, which excludes those bins,
+    or zero-fill the array and pass
+    ``prior=rates.spatial_support * env.bin_sizes``.
 
     Examples
     --------
@@ -115,26 +112,17 @@ def log_poisson_likelihood(
     --------
     normalize_to_posterior : Convert log-likelihood to posterior
     """
-    # Validate dt and min_rate parameters. Route dt through the shared
-    # validate_dt so the public likelihood surface reports dt errors
-    # identically to the decode entry points (rejecting non-numeric, bool,
-    # and non-finite dt), not just dt <= 0.
     dt = validate_dt(dt)
     if min_rate <= 0:
         raise ValueError(
             f"min_rate must be positive, got {min_rate}. "
             f"This floor prevents log(0) in likelihood computation."
         )
-
-    # Ensure inputs are proper arrays
     spike_counts = np.asarray(spike_counts)
     encoding_models = np.asarray(encoding_models)
 
-    # spike_counts must be 2-D (n_time_bins, n_neurons). A 1-D array of
-    # shape (n_neurons,) would matmul against the (n_neurons, n_bins)
-    # encoding models to give (n_bins,), silently collapsing the time
-    # axis and yielding a "likelihood" that downstream code mistakes for
-    # a single time bin. Require an explicit time axis instead.
+    # A 1-D (n_neurons,) array would matmul to (n_bins,), silently dropping
+    # the time axis.
     if spike_counts.ndim != 2:
         raise ValueError(
             f"spike_counts must be 2-D with shape (n_time_bins, n_neurons), "
@@ -155,63 +143,37 @@ def log_poisson_likelihood(
                 why="Why: the neuron axis must align counts with the corresponding firing-rate model.",
             )
         )
+    invalid = ~np.isfinite(encoding_models) | (encoding_models < 0)
+    if invalid.any():
+        n_nan = int(np.isnan(encoding_models).sum())
+        raise ValueError(
+            _format_error(
+                f"encoding_models has {int(invalid.sum())} rate(s) that are not "
+                f"finite and non-negative ({n_nan} NaN).",
+                why="the Poisson likelihood needs a rate estimate for every "
+                "neuron in every bin; NaN usually marks a bin without training "
+                "data, which must be excluded from the posterior, not scored.",
+                fix="decode with decode_position(env, counts, rates, dt=dt), "
+                "passing the rate result itself so unsupported bins are "
+                "excluded, or zero-fill the array and pass "
+                "prior=rates.spatial_support * env.bin_sizes.",
+            )
+        )
 
-    # Clip rates to avoid log(0)
-    # Shape: (n_neurons, n_bins)
-    clipped_rates = np.maximum(encoding_models, min_rate)
-
-    # Compute expected spike count (lambda * dt) for each neuron at each bin
-    # Shape: (n_neurons, n_bins)
-    expected_counts = clipped_rates * dt
-
-    # Log of expected counts for the spike count term
-    # Shape: (n_neurons, n_bins)
+    expected_counts = np.maximum(encoding_models, min_rate) * dt
     log_expected = np.log(expected_counts)
 
-    # Compute log-likelihood:
-    # sum_i [n_i * log(lambda_i * dt) - lambda_i * dt]
-    #
-    # For spike_counts shape (n_time_bins, n_neurons) and
-    # log_expected shape (n_neurons, n_bins), we need:
-    # - spike_counts @ log_expected -> (n_time_bins, n_bins) [spike count term]
-    # - sum over neurons of expected_counts -> (n_bins,) [rate penalty term]
-
-    # Spike count term: n_i * log(lambda_i * dt)
-    # Matrix multiplication: (n_time_bins, n_neurons) @ (n_neurons, n_bins)
-    # Result: (n_time_bins, n_bins)
-    #
-    # Optimize for sparse spike counts (common in neural data: >80% zeros).
-    #
-    # The dense matmul spends its time on the zero entries of spike_counts,
-    # which contribute nothing to the sum n_i * log(lambda_i * dt). A sparse
-    # CSR matmul skips those, but sparse construction/dispatch has fixed
-    # overhead, so it only pays off when there are both enough zeros to skip
-    # and enough total work to amortize the overhead. The two thresholds:
-    #
-    # - sparsity > 0.8 (>80% zeros): below this the sparse and dense paths
-    #   touch a similar number of nonzeros and dense wins on constant factors.
-    #   80% is the typical floor for binned spike counts in fine time bins.
-    # - size > 1000 elements: below this the matrix is small enough that the
-    #   sparse-construction overhead dominates any saving regardless of
-    #   sparsity, so the dense path is faster.
-    #
-    # Both are heuristic crossover points, not exact; they only affect speed,
-    # not the result (the two branches are numerically identical).
-    sparsity = 1.0 - np.count_nonzero(spike_counts) / spike_counts.size
-    if sparsity > 0.8 and spike_counts.size > 1000:
-        # Convert to sparse CSR format for efficient row-wise operations
-        spike_counts_sparse = sparse.csr_matrix(spike_counts.astype(np.float64))
-        spike_term = spike_counts_sparse @ log_expected
+    # A sparse CSR product skips the zero counts, which dominate binned spike
+    # trains; its construction overhead pays off only for mostly-zero
+    # matrices that are not tiny. Both products give the same values up to
+    # floating-point summation order.
+    n_entries = spike_counts.size
+    if n_entries > 1000 and np.count_nonzero(spike_counts) < 0.2 * n_entries:
+        spike_term = np.asarray(
+            sparse.csr_matrix(spike_counts.astype(np.float64)) @ log_expected
+        )
     else:
-        spike_term = spike_counts @ log_expected
+        spike_term = spike_counts.astype(np.float64) @ log_expected
 
-    # Rate penalty term: -sum_i lambda_i * dt
-    # Sum over neurons for each bin, broadcast across time bins
-    # Shape: (n_bins,)
-    rate_penalty = -np.sum(expected_counts, axis=0)
-
-    # Total log-likelihood: spike_term + rate_penalty (broadcast)
-    # Shape: (n_time_bins, n_bins)
-    log_likelihood = spike_term + rate_penalty
-
+    log_likelihood = spike_term - expected_counts.sum(axis=0)
     return cast("NDArray[np.float64]", log_likelihood)

@@ -395,6 +395,60 @@ class TestReferenceComparison:
         assert_allclose(ll[0, 1], expected_bin1, rtol=1e-10)
 
 
+class TestSparseCounts:
+    """The sparse product used for mostly-zero counts matches the formula."""
+
+    def test_sparse_matches_dense_and_scipy(self) -> None:
+        from scipy.special import gammaln
+        from scipy.stats import poisson
+
+        rng = np.random.default_rng(1)
+        counts = (rng.random((400, 10)) < 0.1) * rng.integers(1, 4, (400, 10))
+        assert 0.85 < np.mean(counts == 0) < 0.95  # takes the sparse branch
+        rates = np.random.default_rng(2).uniform(0.0, 30.0, (10, 50))
+        rates[0, 3] = 0.0  # floored to min_rate
+        dt = 0.05
+
+        sparse_ll = log_poisson_likelihood(counts, rates, dt=dt)
+        # A 10-row slice is small enough to take the dense branch.
+        dense_ll = np.concatenate(
+            [
+                log_poisson_likelihood(counts[i : i + 10], rates, dt=dt)
+                for i in range(0, 400, 10)
+            ]
+        )
+        expected = np.maximum(rates, 1e-10) * dt
+        reference = poisson.logpmf(counts[:, :, None], expected[None]).sum(axis=1)
+        reference += gammaln(counts + 1).sum(axis=1)[:, None]
+        assert_allclose(sparse_ll, dense_ll, rtol=0, atol=1e-12)
+        assert_allclose(sparse_ll, reference, rtol=0, atol=1e-10)
+
+
+class TestInvalidRates:
+    """Rates must be finite and non-negative: NaN means missing, not a rate."""
+
+    @pytest.mark.parametrize("bad", [np.nan, np.inf, -1.0])
+    @pytest.mark.parametrize("n_time", [2, 400])  # dense and sparse branches
+    def test_invalid_rate_raises(self, bad: float, n_time: int) -> None:
+        counts = np.zeros((n_time, 3), dtype=np.int64)
+        counts[0, 0] = 1
+        rates = np.full((3, 4), 5.0)
+        rates[1, 2] = bad
+        with pytest.raises(ValueError, match="not finite and non-negative") as err:
+            log_poisson_likelihood(counts, rates, dt=0.1)
+        assert "spatial_support" in str(err.value)
+
+    def test_zero_time_bins_returns_empty_without_warning(self) -> None:
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            ll = log_poisson_likelihood(
+                np.zeros((0, 2), dtype=np.int64), np.ones((2, 5)), dt=0.1
+            )
+        assert ll.shape == (0, 5)
+
+
 class TestLongTrajectoryStability:
     """log_poisson_likelihood must stay finite on long inputs and extreme rates."""
 

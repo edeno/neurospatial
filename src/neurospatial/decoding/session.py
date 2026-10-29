@@ -1068,56 +1068,19 @@ def _decode_with_models_summary(
     n_time = bin_left.size
     bin_centers_time = bin_left + dt / 2.0
 
-    # Validate the encoding model + resolve the non-finite mask ONCE (the same
-    # front-half decode_position_summary runs). spike_counts is faked with a
-    # zero-row block here only to satisfy the helper's interface; its actual
-    # per-block counts come from the streamed binning below. We pass a
-    # (1, n_neurons) row so the neuron-count agreement check still fires.
-    #
-    # NOTE: the real per-block counts produced by the streamed binning below are
-    # intentionally NOT routed through _validate_inputs. They come straight from
-    # _count_spikes_in_time_bins on float spike times, so they are non-negative int64 by
-    # construction (cannot be fractional, negative, or NaN) — the value checks
-    # _validate_inputs performs are already guaranteed, so the exemption is
-    # deliberate, not an oversight.
-    n_neurons = firing_rates.shape[0]
-    _dummy_counts = np.zeros((1, n_neurons), dtype=np.int64)
-    _checked_counts, firing_rates, nonfinite_mask = _prepare_decode_inputs(
+    # Validate the encoding model once against a single row of counts, so the
+    # neuron-count check runs. The streamed per-block counts come from
+    # _count_spikes_in_time_bins and are non-negative integers by construction.
+    _, firing_rates, prior = _prepare_decode_inputs(
         env,
-        _dummy_counts,
+        np.zeros((1, firing_rates.shape[0]), dtype=np.int64),
         firing_rates,
         prior=prior,
         method=likelihood_method,
         validate=validate,
-        context="decode_session_summary",
+        context=context,
     )
-
-    # Validate prior shape ONCE, up front, against the GLOBAL (n_time, n_bins)
-    # grid — mirrors decode_position_summary so an over-long 2-D prior raises
-    # here instead of being silently truncated by the block loop (R2).
-    n_bins = firing_rates.shape[1]
-    prior_is_time_varying = False
-    if prior is not None:
-        prior_arr = np.asarray(prior)
-        if prior_arr.ndim == 1:
-            if prior_arr.shape[0] != n_bins:
-                raise ValueError(
-                    f"1D prior must have shape ({n_bins},) to match the number "
-                    f"of position bins, got shape {prior_arr.shape}"
-                )
-        elif prior_arr.ndim == 2:
-            if prior_arr.shape != (n_time, n_bins):
-                raise ValueError(
-                    f"2D prior must have shape {(n_time, n_bins)} to match the "
-                    f"({n_time} time bins, {n_bins} position bins) being "
-                    f"decoded, got shape {prior_arr.shape}"
-                )
-            prior_is_time_varying = True
-        else:
-            raise ValueError(
-                f"prior must be 1D (stationary) or 2D (time-varying), "
-                f"got {prior_arr.ndim}D with shape {prior_arr.shape}"
-            )
+    prior_is_time_varying = prior is not None and np.ndim(prior) == 2
 
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
     measures = relative_bin_measures(env, context=context)
@@ -1155,7 +1118,6 @@ def _decode_with_models_summary(
             dt,
             bin_centers,
             prior_block=block_prior,
-            nonfinite_mask=nonfinite_mask,
             validate=validate,
             dtype=dtype,
             measures=measures,
