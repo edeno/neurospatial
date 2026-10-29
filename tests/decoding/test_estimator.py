@@ -609,6 +609,25 @@ class TestConstructionValidation:
         with pytest.raises(ValueError, match="dtype"):
             BayesianDecoder(env, dtype=np.float16)  # type: ignore[arg-type]
 
+    @pytest.mark.parametrize("bad", [np.nan, np.inf, -1.0])
+    def test_from_models_refuses_invalid_rates_on_support(self, bad):
+        """Every allowed bin needs a finite, non-negative rate for every unit."""
+        env = _small_env()
+        models = np.full((2, env.n_bins), 5.0)
+        models[1, 0] = bad
+        with pytest.raises(ValueError, match="spatial_support") as err:
+            BayesianDecoder.from_models(env, models)
+        assert "Fix:" in str(err.value)
+        support = np.ones(env.n_bins, dtype=bool)
+        support[0] = False
+        if np.isnan(bad) or np.isinf(bad):
+            # Outside the supported bins a missing rate is allowed.
+            decoder = BayesianDecoder.from_models(env, models, spatial_support=support)
+            assert decoder.is_fitted
+        else:
+            with pytest.raises(ValueError, match="negative"):
+                BayesianDecoder.from_models(env, models, spatial_support=support)
+
     def test_encoding_models_wrong_nbins_raises(self):
         env = _small_env()
         bad = np.zeros((3, env.n_bins + 1))  # wrong bin axis
@@ -796,7 +815,11 @@ class TestUnitAlignment:
         assert fitted._unit_ids_generated is True
 
         decoder = BayesianDecoder.from_models(
-            env, fitted.encoding_models, unit_ids=[10, 20], dt=0.5
+            env,
+            fitted.encoding_models,
+            unit_ids=[10, 20],
+            spatial_support=fitted.spatial_support,
+            dt=0.5,
         )
         assert decoder._unit_ids_generated is False
         assert dataclasses.replace(decoder, dt=0.05)._unit_ids_generated is False
@@ -826,7 +849,11 @@ class TestUnitAlignment:
         fitted = BayesianDecoder(env, dt=0.5).fit(spikes[:2], times, positions)
         with pytest.raises(ValueError, match=r"unique.*\[10\]"):
             BayesianDecoder.from_models(
-                env, fitted.encoding_models, unit_ids=[10, 10], dt=0.5
+                env,
+                fitted.encoding_models,
+                unit_ids=[10, 10],
+                spatial_support=fitted.spatial_support,
+                dt=0.5,
             )
         with pytest.raises(ValueError, match=r"unique.*\[10\]"):
             BayesianDecoder(env, dt=0.5).fit(

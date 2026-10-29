@@ -93,10 +93,10 @@ def test_immobility_still_decoded(gap_population):
 
 def test_decode_bounds_do_not_restrict_observed_runs(gap_population):
     r, trains = gap_population
-    model = compute_spatial_rates(
-        r.env, trains, r.times, r.positions, method="binned"
-    ).firing_rates
-    result = BayesianDecoder.from_models(r.env, model).predict(trains, r.times)
+    rates = compute_spatial_rates(r.env, trains, r.times, r.positions, method="binned")
+    result = BayesianDecoder.from_models(
+        r.env, rates.firing_rates, spatial_support=rates.spatial_support
+    ).predict(trains, r.times)
     assert len(result.times) == 7998
 
 

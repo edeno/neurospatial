@@ -533,8 +533,9 @@ warn_on_drop
             labelled spike group, matched by label; without them, prediction
             needs plain trains, paired by position.
         spatial_support : ndarray of bool, shape (n_bins,), optional
-            Bins allowed in the posterior. ``None`` allows every bin, so every
-            bin must hold a finite rate.
+            Bins allowed in the posterior. Every unit needs a finite rate in
+            every allowed bin; bins outside the support may hold NaN.
+            ``None`` allows every bin.
         dt : float, default=0.025
             Decode bin width in seconds.
 
@@ -547,7 +548,8 @@ warn_on_drop
         ------
         ValueError
             If the models are not 2-D or their bin axis does not match ``env``,
-            if ``unit_ids`` has the wrong length or repeats a label, or if
+            if a rate is negative, or NaN or infinite in a supported bin, if
+            ``unit_ids`` has the wrong length or repeats a label, or if
             ``spatial_support`` is not a boolean ``(n_bins,)`` mask with at
             least one supported bin.
 
@@ -562,8 +564,43 @@ warn_on_drop
         >>> decoder.is_fitted, decoder.unit_ids.tolist()
         (True, [3, 8])
         """
+        from neurospatial._exceptions import _format_error
+
         models = np.asarray(encoding_models)
         dtype = np.float32 if models.dtype == np.float32 else np.float64
+        if models.ndim == 2 and np.issubdtype(models.dtype, np.number):
+            n_negative = int(np.sum(models < 0))
+            if n_negative:
+                raise ValueError(
+                    _format_error(
+                        f"BayesianDecoder.from_models: encoding_models has "
+                        f"{n_negative} negative rate(s).",
+                        why="a firing rate cannot be negative.",
+                        fix="fix the rate maps; mark bins without an estimate "
+                        "with NaN and exclude them with spatial_support.",
+                    )
+                )
+            support = (
+                np.ones(models.shape[1], dtype=bool)
+                if spatial_support is None
+                else np.asarray(spatial_support)
+            )
+            if support.shape == (models.shape[1],) and support.dtype == np.bool_:
+                n_missing = int(np.sum(~np.isfinite(models[:, support])))
+                if n_missing:
+                    raise ValueError(
+                        _format_error(
+                            f"BayesianDecoder.from_models: encoding_models has "
+                            f"{n_missing} NaN or Inf rate(s) in bins allowed by "
+                            f"spatial_support"
+                            f"{' (None allows every bin)' if spatial_support is None else ''}.",
+                            why="every bin in the posterior needs a rate "
+                            "estimate for every unit.",
+                            fix="pass spatial_support=np.isfinite(models).all(axis=0) "
+                            "to exclude bins without estimates, or recompute the "
+                            "maps there.",
+                        )
+                    )
         return cls(
             env,
             dt=dt,
