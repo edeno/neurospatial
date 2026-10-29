@@ -92,11 +92,14 @@ class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
         increasing or decreasing.
     r_squared : float
         Coefficient of determination (R²) measuring goodness of fit.
-        Range [0, 1] where 1 indicates perfect fit.
-    direction : {"increasing", "decreasing"}
-        Direction of the fitted monotonic trajectory.
-        "increasing" means position increases with time (forward replay).
-        "decreasing" means position decreases with time (reverse replay).
+        Range [0, 1] where 1 indicates perfect fit. NaN when the decoded
+        position never changes (a stationary decode), which has no variance
+        to explain.
+    direction : {"increasing", "decreasing"} or None
+        Monotonic constraint of the reported fit. "increasing" means
+        position along the track does not decrease with time, "decreasing"
+        that it does not increase. None when the decoded position never
+        changes, so the decode has no direction.
     residuals : NDArray[np.float64]
         Residuals (observed - fitted) for each time bin, in environment
         units, shape (n_time_bins,). Useful for diagnostics and outlier
@@ -120,7 +123,7 @@ class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
 
     fitted_positions: NDArray[np.float64]
     r_squared: float
-    direction: Literal["increasing", "decreasing"]
+    direction: Literal["increasing", "decreasing"] | None
     residuals: NDArray[np.float64]
 
     def __post_init__(self) -> None:
@@ -152,8 +155,10 @@ class LinearFitResult(ResultMixin):
         values passed in, so shift ``times`` to the event start to read the
         intercept as the start position.
     r_squared : float
-        Coefficient of determination (R²) measuring goodness of fit.
-        Range [0, 1] where 1 indicates perfect linear relationship.
+        Coefficient of determination (R²) measuring goodness of fit, at
+        most 1 (a perfect linear relationship). NaN when the decoded
+        position never changes (a stationary decode), which has no variance
+        to explain.
     slope_std : float | None
         Standard deviation of slope estimates from Monte Carlo sampling.
         Measures the spread of sampled slopes across different draws from
@@ -476,7 +481,8 @@ def fit_isotonic_trajectory(
         R^2 = 1 - \\frac{SS_{res}}{SS_{tot}}
 
     where :math:`SS_{res}` is the sum of squared residuals and :math:`SS_{tot}`
-    is the total sum of squares.
+    is the total sum of squares. If the decoded position never changes,
+    :math:`SS_{tot} = 0`: R² is NaN and ``direction`` is None.
 
     Examples
     --------
@@ -508,71 +514,50 @@ def fit_isotonic_trajectory(
     )
     positions = _decoded_positions(posterior, starts, stops, method)
 
-    # If direction is specified, fit once
-    if increasing is not None:
-        iso_reg = IsotonicRegression(increasing=increasing)
-        fitted = iso_reg.fit_transform(times, positions)
-        direction: Literal["increasing", "decreasing"] = (
-            "increasing" if increasing else "decreasing"
-        )
-        residuals = positions - fitted
-        r_squared = _compute_r_squared(positions, fitted)
-
-        return IsotonicFitResult(
-            fitted_positions=fitted,
-            r_squared=float(r_squared),
-            direction=direction,
-            residuals=residuals,
-        )
-
-    # Try both directions and return the one with better R²
-    iso_inc = IsotonicRegression(increasing=True)
-    fitted_inc = iso_inc.fit_transform(times, positions)
-    r2_inc = _compute_r_squared(positions, fitted_inc)
-
-    iso_dec = IsotonicRegression(increasing=False)
-    fitted_dec = iso_dec.fit_transform(times, positions)
-    r2_dec = _compute_r_squared(positions, fitted_dec)
-
-    if r2_inc >= r2_dec:
-        return IsotonicFitResult(
-            fitted_positions=fitted_inc,
-            r_squared=float(r2_inc),
-            direction="increasing",
-            residuals=positions - fitted_inc,
-        )
-    else:
-        return IsotonicFitResult(
-            fitted_positions=fitted_dec,
-            r_squared=float(r2_dec),
-            direction="decreasing",
-            residuals=positions - fitted_dec,
-        )
+    # Fit the requested direction, or both and keep the better fit.
+    directions = [True, False] if increasing is None else [increasing]
+    fits = [
+        IsotonicRegression(increasing=direction).fit_transform(times, positions)
+        for direction in directions
+    ]
+    r_squared = [_compute_r_squared(positions, fitted) for fitted in fits]
+    best = 1 if len(fits) == 2 and r_squared[1] > r_squared[0] else 0
+    # A decoded position that never changes has no direction.
+    direction: Literal["increasing", "decreasing"] | None = None
+    if np.ptp(positions) > 0:
+        direction = "increasing" if directions[best] else "decreasing"
+    return IsotonicFitResult(
+        fitted_positions=fits[best],
+        r_squared=r_squared[best],
+        direction=direction,
+        residuals=positions - fits[best],
+    )
 
 
 def _compute_r_squared(
     observed: NDArray[np.float64], predicted: NDArray[np.float64]
 ) -> float:
-    """Compute R² (coefficient of determination).
+    """Compute R² (coefficient of determination), ``1 - SS_res / SS_tot``.
 
     Parameters
     ----------
-    observed : NDArray[np.float64]
+    observed : NDArray[np.float64], shape (n_time_bins,)
         Observed values.
-    predicted : NDArray[np.float64]
+    predicted : NDArray[np.float64], shape (n_time_bins,)
         Predicted (fitted) values.
 
     Returns
     -------
     float
-        R² value in [0, 1]. Returns 0 if total variance is zero.
+        At most 1, and in [0, 1] when ``predicted`` is the least-squares fit
+        of a model that includes constants. NaN when ``observed`` never
+        changes: with no variance to explain, R² is undefined, and a
+        stationary decode must not pass a replay screen as a perfect fit.
     """
+    if np.ptp(observed) == 0:
+        return float("nan")
     ss_res = np.sum((observed - predicted) ** 2)
     ss_tot = np.sum((observed - np.mean(observed)) ** 2)
-
-    if ss_tot == 0:
-        return 1.0 if ss_res == 0 else 0.0
-
     return float(1.0 - ss_res / ss_tot)
 
 
@@ -656,12 +641,8 @@ def fit_linear_trajectory(
     center. A line is fit to each sampled sequence; the result averages the
     coefficients and ``slope_std`` is the spread of the sampled slopes.
 
-    **Edge cases**:
-
-    - **Constant positions**: If all decoded positions are identical, R² = 1.0
-      (perfect fit to horizontal line). Check if slope ≈ 0 to detect this case.
-    - **Constant times**: If all time values are identical, slope is undefined
-      and set to 0.0 with intercept = mean position.
+    **Stationary decodes**: If the decoded position never changes, the slope
+    is 0 and R² is NaN, so a stationary decode does not pass an R² screen.
 
     Examples
     --------
@@ -772,8 +753,14 @@ def _fit_line(x: NDArray[np.float64], y: NDArray[np.float64]) -> tuple[float, fl
     denominator = np.sum((x - x_mean) ** 2)
 
     if denominator == 0:
-        # All x values are the same - slope is undefined
-        return 0.0, float(y_mean)
+        raise ValueError(
+            _format_error(
+                "fit_linear_trajectory() needs at least two distinct times, "
+                "but every time bin has the same time.",
+                why="a line through identical times has no slope",
+                fix="pass the center time of each posterior row, in seconds",
+            )
+        )
 
     slope = numerator / denominator
     intercept = y_mean - slope * x_mean

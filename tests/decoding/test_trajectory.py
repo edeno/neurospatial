@@ -950,3 +950,48 @@ class TestPosteriorRowsAreValidated:
         assert not np.all(posterior.sum(axis=1) == 1.0)
         result = fit_linear_trajectory(env, posterior, times, rng=1)
         assert np.isfinite(result.slope)
+
+
+# =============================================================================
+# Stationary decodes and degenerate times
+# =============================================================================
+
+
+class TestStationaryDecode:
+    """A decode that never moves has no fit quality and no direction."""
+
+    @pytest.fixture
+    def stationary(self):
+        posterior = np.zeros((20, 50))
+        posterior[:, 10] = 1.0
+        return _track_for(posterior), posterior, np.arange(20) * 0.01
+
+    @pytest.mark.parametrize("method", ["map", "sample"])
+    def test_linear_fit_r_squared_is_undefined(self, stationary, method):
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        env, posterior, times = stationary
+        result = fit_linear_trajectory(env, posterior, times, method=method, rng=0)
+
+        assert result.slope == pytest.approx(0.0)
+        assert np.isnan(result.r_squared)
+
+    @pytest.mark.parametrize("increasing", [None, True, False])
+    def test_isotonic_fit_has_no_direction(self, stationary, increasing):
+        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+
+        env, posterior, times = stationary
+        result = fit_isotonic_trajectory(env, posterior, times, increasing=increasing)
+
+        assert result.direction is None
+        assert np.isnan(result.r_squared)
+        np.testing.assert_allclose(result.fitted_positions, 10.5)
+
+    def test_identical_times_are_refused(self):
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        posterior = np.eye(5, 10)
+        with pytest.raises(ValueError, match="identical"):
+            fit_linear_trajectory(
+                _track_for(posterior), posterior, np.zeros(5), method="map"
+            )
