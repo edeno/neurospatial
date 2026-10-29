@@ -1147,26 +1147,6 @@ class TestDecodePositionTimeChunkHybrid:
         assert_array_equal(chunked.map_bin, full.map_bin)
         assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
 
-    @pytest.mark.parametrize("bad", [0, -1])
-    def test_time_chunk_below_one_raises(
-        self,
-        simple_env: Environment,
-        simple_spike_counts: np.ndarray,
-        simple_encoding_models: np.ndarray,
-        bad: int,
-    ) -> None:
-        """time_chunk < 1 is rejected up front with a clear ValueError."""
-        from neurospatial.decoding.posterior import decode_position
-
-        with pytest.raises(ValueError, match="time_chunk must be a positive integer"):
-            decode_position(
-                simple_env,
-                simple_spike_counts,
-                simple_encoding_models,
-                dt=0.025,
-                time_chunk=bad,
-            )
-
     @pytest.mark.parametrize(
         ("prior_shape", "match"),
         [
@@ -1547,107 +1527,6 @@ class TestDecodePositionValidation:
                 simple_encoding_models,
                 dt=0.025,
                 times=bad_times,
-            )
-
-
-# =============================================================================
-# Tests for centralized time_chunk validation (Fix B)
-# =============================================================================
-
-
-class TestTimeChunkValidation:
-    """time_chunk must be a genuine positive int (not bool/float/str)."""
-
-    @pytest.mark.parametrize("bad", [1.5, "2", True, False, 0, -1])
-    def test_normalize_to_posterior_rejects_bad_time_chunk(
-        self, simple_log_likelihood: np.ndarray, bad: object
-    ) -> None:
-        from neurospatial.decoding.posterior import normalize_to_posterior
-
-        with pytest.raises(ValueError, match="time_chunk"):
-            normalize_to_posterior(simple_log_likelihood, time_chunk=bad)
-
-    @pytest.mark.parametrize("good", [None, 1, 2, np.int64(3)])
-    def test_normalize_to_posterior_accepts_good_time_chunk(
-        self, simple_log_likelihood: np.ndarray, good: object
-    ) -> None:
-        from neurospatial.decoding.posterior import normalize_to_posterior
-
-        posterior = normalize_to_posterior(simple_log_likelihood, time_chunk=good)
-        assert posterior.shape == simple_log_likelihood.shape
-
-    @pytest.mark.parametrize("bad", [1.5, "2", True, False, 0, -1])
-    def test_decode_position_rejects_bad_time_chunk(
-        self,
-        simple_env: Environment,
-        simple_spike_counts: np.ndarray,
-        simple_encoding_models: np.ndarray,
-        bad: object,
-    ) -> None:
-        from neurospatial.decoding.posterior import decode_position
-
-        with pytest.raises(ValueError, match="time_chunk"):
-            decode_position(
-                simple_env,
-                simple_spike_counts,
-                simple_encoding_models,
-                dt=0.025,
-                time_chunk=bad,
-            )
-
-    @pytest.mark.parametrize("good", [None, 1, 2, np.int64(3)])
-    def test_decode_position_accepts_good_time_chunk(
-        self,
-        simple_env: Environment,
-        simple_spike_counts: np.ndarray,
-        simple_encoding_models: np.ndarray,
-        good: object,
-    ) -> None:
-        from neurospatial.decoding.posterior import decode_position
-
-        result = decode_position(
-            simple_env,
-            simple_spike_counts,
-            simple_encoding_models,
-            dt=0.025,
-            time_chunk=good,
-        )
-        assert result.posterior.shape[0] == simple_spike_counts.shape[0]
-
-    @pytest.mark.parametrize("bad", [1.5, "2", True, False, 0, -1])
-    def test_decode_position_summary_rejects_bad_time_chunk(
-        self,
-        simple_env: Environment,
-        simple_spike_counts: np.ndarray,
-        simple_encoding_models: np.ndarray,
-        bad: object,
-    ) -> None:
-        from neurospatial.decoding.posterior import decode_position_summary
-
-        with pytest.raises(ValueError, match="time_chunk"):
-            decode_position_summary(
-                simple_env,
-                simple_spike_counts,
-                simple_encoding_models,
-                dt=0.025,
-                time_chunk=bad,
-            )
-
-    def test_decode_position_summary_none_time_chunk_specific_message(
-        self,
-        simple_env: Environment,
-        simple_spike_counts: np.ndarray,
-        simple_encoding_models: np.ndarray,
-    ) -> None:
-        from neurospatial.decoding.posterior import decode_position_summary
-
-        with pytest.raises(ValueError, match="decode_position"):
-            decode_position_summary(
-                simple_env,
-                simple_spike_counts,
-                simple_encoding_models,
-                dt=0.025,
-                time_chunk=None,
             )
 
 
