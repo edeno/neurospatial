@@ -23,6 +23,7 @@ from neurospatial._results import (
     _coord_dim_names,
     read_only_copy,
 )
+from neurospatial.decoding.estimates import _UNDECODABLE_BIN
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -479,7 +480,7 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         NDArray[np.int64]
-            Bin indices of shape (n_time_bins,).
+            Bin indices of shape (n_time_bins,); -1 for an undecodable row.
 
         Notes
         -----
@@ -489,11 +490,8 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         lowest bin index. An environment that mixes bins measured by length
         and by area has no common density unit and raises ``ValueError``.
 
-        A row whose posterior is entirely non-finite (all-NaN / all-Inf)
-        is undecodable; ``np.argmax`` returns bin 0 for such a row, so the
-        MAP index there is not meaningful. Callers that care about decode
-        failures (e.g. :meth:`error_against`) detect all-non-finite rows
-        separately and treat them as undefined (NaN).
+        An undecodable (entirely NaN) row has no MAP bin and reports -1, as
+        :meth:`Environment.bin_at` does for a point outside the environment.
 
         See Also
         --------
@@ -515,14 +513,17 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         NDArray[np.float64]
-            Positions of shape (n_time_bins, n_dims).
+            Positions of shape (n_time_bins, n_dims); NaN for an undecodable
+            row.
 
         See Also
         --------
         map_bin : MAP bin index
         mean_position : Posterior mean position
         """
-        return _read_only(self.env.bin_centers[self.map_bin])
+        from neurospatial.decoding.estimates import _bin_positions
+
+        return _read_only(_bin_positions(self.env, self.map_bin))
 
     @cached_property
     def mean_position(self) -> NDArray[np.float64]:
@@ -828,8 +829,7 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
 
         decodable = np.any(np.isfinite(self.posterior), axis=1)
         if show_map:
-            map_bins = np.asarray(self.map_bin, dtype=np.float64)
-            map_bins[~decodable] = np.nan
+            map_bins = np.where(self.map_bin >= 0, self.map_bin, np.nan)
             ax.plot(
                 broken(x_coords),
                 broken(display_rows(map_bins)),
@@ -1142,9 +1142,8 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         errors : NDArray[np.float64], shape (n_time_bins,)
             Distance between the decoded (MAP) position and the time-aligned
             ground-truth position at each decode time bin. Units match the
-            environment (e.g. cm). Decode times whose posterior row is entirely
-            non-finite (all-NaN / all-Inf) are undecodable and reported as
-            ``nan`` rather than a spurious finite error from bin 0.
+            environment (e.g. cm). Undecodable (entirely NaN) posterior rows
+            have no MAP position and give NaN.
 
         Raises
         ------
@@ -1216,17 +1215,8 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
             call="DecodingResult.error_against",
         )
 
-        errors = decoding_error(self.env, self.map_position, aligned, metric=metric)
-
-        # Undecodable rows: a posterior row that is entirely non-finite
-        # (all-NaN / all-Inf) carries no position information. np.argmax would
-        # otherwise pick bin 0 and produce a finite, wrong error. Mark these
-        # rows NaN so they are clearly flagged as decode failures.
-        undecodable = ~np.any(np.isfinite(self.posterior), axis=1)
-        if np.any(undecodable):
-            errors = np.asarray(errors, dtype=np.float64).copy()
-            errors[undecodable] = np.nan
-        return errors
+        # An undecodable row has a NaN MAP position and so a NaN error.
+        return decoding_error(self.env, self.map_position, aligned, metric=metric)
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -1256,12 +1246,14 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
         Posterior entropy per time bin, in bits.
     peak_probability : array-like, shape (n_time_bins,)
         Largest posterior probability mass of any bin per time bin, in
-        ``[0, 1]``. On unequal bins this need not be the mass at ``map_bin``.
+        ``[0, 1]``, or NaN for an undecodable time bin. On unequal bins this
+        need not be the mass at ``map_bin``.
     env : Environment
         Reference to the environment used for decoding.
     map_bin : array-like of int, shape (n_time_bins,)
         MAP bin index per time bin: the bin of highest posterior density, in
-        ``[0, env.n_bins)``.
+        ``[0, env.n_bins)``, or -1 for an undecodable time bin (as
+        :meth:`Environment.bin_at` reports a point outside the environment).
     spike_window : array-like, shape (n_windows, 2), or None, optional
         Spike-recording ``[start, stop)`` windows in seconds, each with
         ``start < stop``; stored sorted, merged and read-only. ``None``
@@ -1272,8 +1264,9 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
     ------
     ValueError
         If the per-time fields disagree in length, ``map_bin`` is not an
-        integer bin index of ``env``, ``peak_probability`` lies outside
-        ``[0, 1]``, ``times`` is not finite and strictly increasing, or
+        integer bin index of ``env`` or -1, ``peak_probability`` is not in
+        ``[0, 1]`` for a decoded bin or not NaN where ``map_bin`` is -1,
+        ``times`` is not finite and strictly increasing, or
         ``spike_window`` has a row that is not a finite ``start < stop`` pair.
 
     Notes
@@ -1372,22 +1365,32 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
                 )
         if n_time >= 0 and self.times is not None:
             problems += _times_problems(self.times, n_time)
-        outside = np.flatnonzero((self.map_bin < 0) | (self.map_bin >= self.env.n_bins))
+        undecodable = self.map_bin == _UNDECODABLE_BIN
+        outside = np.flatnonzero(
+            ~undecodable & ((self.map_bin < 0) | (self.map_bin >= self.env.n_bins))
+        )
         if outside.size:
             i = int(outside[0])
             problems.append(
-                f"{outside.size} map_bin value(s) are not bins of env (n_bins="
-                f"{self.env.n_bins}), first map_bin[{i}] = {self.map_bin.flat[i]}"
+                f"{outside.size} map_bin value(s) are neither bins of env (n_bins="
+                f"{self.env.n_bins}) nor -1 for an undecodable time bin, first "
+                f"map_bin[{i}] = {self.map_bin.flat[i]}"
             )
         peak = self.peak_probability
-        invalid_peak = np.flatnonzero(~((peak >= 0.0) & (peak <= 1.0)))
-        if invalid_peak.size:
-            i = int(invalid_peak[0])
-            problems.append(
-                f"{invalid_peak.size} peak_probability value(s) are not "
-                f"probabilities in [0, 1], first peak_probability[{i}] = "
-                f"{peak.flat[i]}"
+        if peak.shape == undecodable.shape:
+            probability = (peak >= 0.0) & (peak <= 1.0)
+            invalid_peak = np.flatnonzero(
+                np.where(undecodable, ~np.isnan(peak), ~probability)
             )
+            if invalid_peak.size:
+                i = int(invalid_peak[0])
+                problems.append(
+                    f"{invalid_peak.size} peak_probability value(s) are neither "
+                    "a probability in [0, 1] for a decoded time bin nor NaN "
+                    "where map_bin is -1, first "
+                    f"peak_probability[{i}] = {peak.flat[i]} with "
+                    f"map_bin[{i}] = {self.map_bin.flat[i]}"
+                )
         if problems:
             raise ValueError(
                 _format_error(
@@ -1412,9 +1415,11 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
         -------
         NDArray[np.float64]
             Read-only positions of shape (n_time_bins, n_dims), in environment
-            coordinates.
+            coordinates; NaN where ``map_bin`` is -1.
         """
-        return _read_only(self.env.bin_centers[self.map_bin])
+        from neurospatial.decoding.estimates import _bin_positions
+
+        return _read_only(_bin_positions(self.env, self.map_bin))
 
     @property
     def spike_window_assumed(self) -> bool:

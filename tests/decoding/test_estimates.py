@@ -475,3 +475,17 @@ class TestCredibleRegionNaN:
         regions = credible_region(small_2d_env, posterior, level=0.95)
 
         assert len(regions[0]) == 0
+
+
+def test_undecodable_rows_have_no_map_bin_or_position(small_2d_env):
+    """An entirely non-finite row maps to the outside sentinel and NaN."""
+    from neurospatial.decoding.estimates import map_bin, map_position
+
+    posterior = np.full((3, small_2d_env.n_bins), np.nan)
+    posterior[1] = 0.0
+    posterior[1, 4] = 1.0
+    posterior[2] = np.inf
+    np.testing.assert_array_equal(map_bin(small_2d_env, posterior), [-1, 4, -1])
+    positions = map_position(small_2d_env, posterior)
+    assert np.all(np.isnan(positions[[0, 2]]))
+    np.testing.assert_array_equal(positions[1], small_2d_env.bin_centers[4])

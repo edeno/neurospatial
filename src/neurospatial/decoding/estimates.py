@@ -84,6 +84,10 @@ def _finish_posterior_mean(
     return np.column_stack([distance, angle])
 
 
+_UNDECODABLE_BIN = -1
+"""MAP bin of a posterior row with no finite entry, as ``env.bin_at`` outside."""
+
+
 def _density_mode(
     posterior: NDArray[np.float64], measures: NDArray[np.float64] | None
 ) -> NDArray[np.int64]:
@@ -92,14 +96,23 @@ def _density_mode(
     ``measures`` are bin measures relative to the largest bin (``None`` for
     equal bins). The density ``posterior / measures`` is proportional to
     probability per unit length or area, so a large bin does not win only by
-    holding more space.
+    holding more space. A row with no finite entry gets ``_UNDECODABLE_BIN``.
     """
     if measures is None:
         density = posterior
     else:
         density = posterior / measures.astype(posterior.dtype, copy=False)
     result: NDArray[np.int64] = np.argmax(density, axis=1).astype(np.int64)
+    result[~np.isfinite(posterior).any(axis=1)] = _UNDECODABLE_BIN
     return result
+
+
+def _bin_positions(env: Environment, bins: NDArray[np.int64]) -> NDArray[np.float64]:
+    """Centers of ``bins``, shape ``(n, n_dims)``, NaN for ``_UNDECODABLE_BIN``."""
+    positions = np.full((bins.shape[0], env.n_dims), np.nan)
+    decoded = bins != _UNDECODABLE_BIN
+    positions[decoded] = env.bin_centers[bins[decoded]]
+    return positions
 
 
 def map_bin(
@@ -123,7 +136,8 @@ def map_bin(
     Returns
     -------
     NDArray[np.int64], shape (n_time_bins,)
-        MAP bin indices.
+        MAP bin indices; -1 (as :meth:`Environment.bin_at` reports a point
+        outside the environment) for an undecodable row with no finite entry.
 
     Notes
     -----
@@ -178,7 +192,8 @@ def map_position(
     Returns
     -------
     NDArray[np.float64], shape (n_time_bins, n_dims)
-        MAP positions in environment coordinates.
+        MAP positions in environment coordinates; NaN for an undecodable row
+        with no finite entry.
 
     Notes
     -----
@@ -210,7 +225,7 @@ def map_position(
     >>> pos.shape
     (1, 2)
     """
-    return env.bin_centers[map_bin(env, posterior)]
+    return _bin_positions(env, map_bin(env, posterior))
 
 
 def mean_position(

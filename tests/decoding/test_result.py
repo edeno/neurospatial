@@ -898,3 +898,70 @@ class TestDecodingSummaryInvariants:
             DecodingSummary._from_owned(
                 **_summary_fields(env_4bin, map_bin=[0, 9], spike_window=None)
             )
+
+
+class TestUndecodableRows:
+    """An all-NaN posterior row has no MAP bin and no position."""
+
+    @pytest.fixture
+    def result(self, env_4bin):
+        from neurospatial.decoding import DecodingResult
+
+        posterior = np.array([[np.nan] * 4, [0.0, 0.0, 1.0, 0.0]])
+        return DecodingResult(
+            posterior=posterior, env=env_4bin, times=np.array([0, 1.0])
+        )
+
+    def test_map_bin_uses_the_outside_sentinel(self, result, env_4bin):
+        outside = env_4bin.bin_at(np.array([[100.0]]))[0]
+        assert outside == -1
+        np.testing.assert_array_equal(result.map_bin, [outside, 2])
+
+    def test_positions_and_entropy_are_nan(self, result, env_4bin):
+        np.testing.assert_array_equal(result.map_position[0], [np.nan])
+        np.testing.assert_array_equal(result.map_position[1], env_4bin.bin_centers[2])
+        np.testing.assert_array_equal(result.mean_position[0], [np.nan])
+        assert np.isnan(result.posterior_entropy[0])
+        assert result.posterior_entropy[1] == 0.0
+        df = result.to_dataframe()
+        assert df["map_bin"].tolist() == [-1, 2]
+        assert np.isnan(df.loc[0, "map_x"])
+        assert np.isnan(df.loc[0, "mean_x"])
+
+    def test_error_against_is_nan(self, result, env_4bin):
+        truth = env_4bin.bin_centers[[1, 2]]
+        errors = result.error_against(np.array([0.0, 1.0]), truth)
+        assert np.isnan(errors[0])
+        assert errors[1] == 0.0
+
+    def test_summary_accepts_sentinel_with_nan_peak(self, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        summary = DecodingSummary(
+            **_summary_fields(
+                env_4bin,
+                map_bin=[-1, 2],
+                peak_probability=np.array([np.nan, 1.0]),
+                posterior_entropy=np.array([np.nan, 0.0]),
+            )
+        )
+        np.testing.assert_array_equal(summary.map_position[0], [np.nan])
+        np.testing.assert_array_equal(summary.map_position[1], env_4bin.bin_centers[2])
+
+    @pytest.mark.parametrize(
+        ("map_bin", "peak"),
+        [
+            pytest.param([-1, 2], [1.0, 1.0], id="sentinel-with-peak"),
+            pytest.param([0, 2], [np.nan, 1.0], id="bin-without-peak"),
+        ],
+    )
+    def test_summary_rejects_inconsistent_sentinel(self, env_4bin, map_bin, peak):
+        from neurospatial.decoding import DecodingSummary
+
+        with pytest.raises(ValueError, match="peak_probability value") as exc:
+            DecodingSummary(
+                **_summary_fields(
+                    env_4bin, map_bin=map_bin, peak_probability=np.array(peak)
+                )
+            )
+        assert "map_bin value" not in str(exc.value)
