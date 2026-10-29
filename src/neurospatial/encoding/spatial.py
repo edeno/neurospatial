@@ -1487,7 +1487,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         ... )
         >>> env = Environment.from_samples(positions, bin_size=4.0)
         >>> cell = GridCellModel(env, grid_spacing=40.0, max_rate=20.0)
-        >>> rate = cell.firing_rate(positions)
+        >>> rate = cell.firing_rate(times, positions)
         >>> spike_times = generate_poisson_spikes(rate, times, seed=1)
         >>> result = compute_spatial_rate(
         ...     env, spike_times, times, positions, bandwidth=5.0
@@ -1566,7 +1566,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         ... )
         >>> env = Environment.from_samples(positions, bin_size=4.0)
         >>> cell = GridCellModel(env, grid_spacing=40.0, max_rate=20.0)
-        >>> rate = cell.firing_rate(positions)
+        >>> rate = cell.firing_rate(times, positions)
         >>> spike_times = generate_poisson_spikes(rate, times, seed=1)
         >>> result = compute_spatial_rate(
         ...     env, spike_times, times, positions, bandwidth=5.0

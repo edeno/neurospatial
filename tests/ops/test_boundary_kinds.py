@@ -132,7 +132,7 @@ def test_boundary_vector_map_on_an_elevated_platform_peaks_at_the_drop_edge():
     )
     times = np.arange(0.0, 600.0, 1 / 30)
     positions = np.random.default_rng(1).uniform(1.0, 99.0, (len(times), 2))
-    rates = cell.firing_rate(positions)
+    rates = cell.firing_rate(times, positions)
     assert np.isfinite(rates).all()
     spike_times = generate_poisson_spikes(rates, times, seed=2)
 

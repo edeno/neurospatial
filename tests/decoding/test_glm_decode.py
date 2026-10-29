@@ -106,7 +106,7 @@ class TestBayesianDecoderGlm:
             generate_poisson_spikes(
                 PlaceCellModel(
                     env, center=c, width=8.0, max_rate=25.0, seed=i
-                ).firing_rate(positions, times),
+                ).firing_rate(times, positions),
                 times,
                 seed=50 + i,
             )

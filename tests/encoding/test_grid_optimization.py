@@ -22,7 +22,7 @@ def grid_cell_setup():
     grid_cell = GridCellModel(env, grid_spacing=20.0, max_rate=20.0)
 
     # Get rate map directly from firing rates at bin centers
-    rate_map = grid_cell.firing_rate(env.bin_centers)
+    rate_map = grid_cell.firing_rate(np.zeros(len(env.bin_centers)), env.bin_centers)
 
     return env, rate_map
 

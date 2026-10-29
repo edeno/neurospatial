@@ -2,7 +2,6 @@
 
 import logging
 import warnings
-from typing import Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -118,7 +117,7 @@ def generate_poisson_spikes(
     >>> positions, times = simulate_trajectory_ou(
     ...     env, duration=60.0, seed=42, speed_units="cm"
     ... )
-    >>> rates = pc.firing_rate(positions)
+    >>> rates = pc.firing_rate(times, positions)
     >>>
     >>> # Generate spikes
     >>> spike_times = generate_poisson_spikes(rates, times, seed=42)
@@ -252,8 +251,9 @@ def generate_population_spikes(
 ) -> list[NDArray[np.float64]]:
     """Generate spike trains for population of neurons.
 
-    Processes multiple neural models in parallel with progress tracking.
-    Each neuron gets an independent spike train based on its firing rate model.
+    Each model's rate is computed along the trajectory and turned into an
+    independent Poisson spike train, one model after another, with optional
+    progress tracking.
 
     Parameters
     ----------
@@ -261,21 +261,23 @@ def generate_population_spikes(
         List of neural models (PlaceCellModel, BorderCellModel, GridCellModel, etc.).
         Each model must implement the NeuralModel protocol.
     times : NDArray[np.float64], shape (n_time,)
-        Time points in seconds (must be uniformly spaced).
+        Strictly increasing time points in seconds; the spacing may vary.
     positions : NDArray[np.float64], shape (n_time, n_dims)
         Position trajectory in continuous coordinates.
     headings : NDArray[np.float64], shape (n_time,), optional
-        Head direction in radians. Required for spatial-view models and
-        directional object-vector models. For head-direction models, headings
-        are used when provided; otherwise they are the direction of the
-        smoothed velocity, held at the last direction of movement through
-        stops (samples before the first movement take the first direction).
-        A trajectory that never moves then raises ``ValueError``.
+        Head direction in radians (0 = East, +pi/2 = North), passed to every
+        model. When None and a model needs headings (``requires_headings``:
+        head-direction and spatial-view cells, egocentric object-vector
+        cells), the head is assumed to point where the animal moves: the
+        heading is the direction of the smoothed velocity, held at the last
+        direction of movement through stops (samples before the first
+        movement take the first direction). A trajectory that never moves
+        then raises ``ValueError``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
-        time. Entry 0 is ignored. Used only to derive head-direction models'
-        headings, so the velocity is never smoothed across a break; the held
+        time. Entry 0 is ignored. Used only to derive the headings of models
+        that need them, so the velocity is never smoothed across a break; the held
         direction never carries over a break: each recording starts with its
         own first direction of movement. Not allowed together with
         ``headings``.
@@ -297,8 +299,11 @@ def generate_population_spikes(
     Raises
     ------
     ValueError
-        If a head-direction model has no ``headings`` and the trajectory never
+        If a model needs headings, none are given and the trajectory never
         moves, so no movement direction can be derived.
+    ValueError
+        If a model's rate is not finite at some sample: the message names
+        the model and whether positions or headings are missing there.
     ValueError
         If ``break_before`` is not a Boolean array with one entry per sample,
         or is passed together with ``headings``.
@@ -399,24 +404,20 @@ def generate_population_spikes(
     - Number of spikes generated for current cell
     - Mean firing rate for current cell
 
-    **Reproducibility**: Each model gets a derived seed (seed + i) to ensure:
+    **Reproducibility**: Each model gets a derived seed (seed + i), so the
+    same ``seed`` reproduces the trains.
 
-    - Independent spike trains across neurons
-    - Reproducible results with same seed
-    - Consistent behavior across runs
-
-    **Performance**: For 50 cells × 6000 time points, runs in ~5 seconds.
-    Use ``show_progress=False`` in tight loops or tests to avoid overhead.
+    **Headings**: without ``headings``, models that need one see the
+    direction of movement, which assumes the animal faces where it goes.
+    Pass measured head directions to simulate a head that turns
+    independently of the path.
     """
-    # Initialize random seed handling
+    from neurospatial._observation import validate_break_before
     from neurospatial._validation import validate_times_positions
 
     times, positions = validate_times_positions(
         times, positions, call="generate_population_spikes"
     )
-    from neurospatial._exceptions import _format_error
-    from neurospatial._observation import validate_break_before
-
     breaks = validate_break_before(
         break_before, len(times), call="generate_population_spikes"
     )
@@ -430,101 +431,111 @@ def generate_population_spikes(
                 fix="pass headings, or break_before to derive them, not both.",
             )
         )
-    base_seed = seed
+    if len(times) < 2:
+        # No sampling interval, so no spike can occur.
+        return [np.array([], dtype=np.float64) for _ in models]
+    derived = headings is None and any(model.requires_headings for model in models)
+    if derived:
+        headings = _held_movement_heading(times, positions, break_before=breaks)
 
-    # Pre-allocate spike trains list
+    duration = float(times[-1] - times[0])
     spike_trains = []
-
-    # Create progress bar
     iterator = tqdm(
         enumerate(models),
         total=len(models),
         desc="Generating spikes",
         disable=not show_progress,
     )
-
-    # Generate spikes for each model
     for i, model in iterator:
-        # Compute firing rates for this model
-        rates = _compute_model_firing_rate(
-            model, positions, times, headings, break_before=breaks
+        rates = np.asarray(
+            model.firing_rate(times, positions, headings=headings), dtype=np.float64
         )
-
-        # Generate spikes with derived seed for reproducibility
-        model_seed = None if base_seed is None else base_seed + i
+        _check_model_rates(
+            rates, i, model, times, positions, headings, derived_headings=derived
+        )
         spikes = generate_poisson_spikes(
-            rates, times, refractory_period=refractory_period, seed=model_seed
+            rates,
+            times,
+            refractory_period=refractory_period,
+            seed=None if seed is None else seed + i,
         )
-
         spike_trains.append(spikes)
-
-        # Update progress bar with cell-specific stats
-        mean_rate = len(spikes) / times[-1] if len(times) > 0 else 0.0
         iterator.set_postfix(
-            {
-                "n_spikes": len(spikes),
-                "rate": f"{mean_rate:.1f} Hz",
-            }
+            {"n_spikes": len(spikes), "rate": f"{len(spikes) / duration:.1f} Hz"}
         )
 
-    # Print summary after completion
-    if show_progress:
+    if show_progress and models:
         total_spikes = sum(len(st) for st in spike_trains)
-        avg_spikes_per_cell = total_spikes / len(models) if len(models) > 0 else 0.0
-        duration = times[-1] if len(times) > 0 else 1.0
-        mean_rate = total_spikes / (len(models) * duration) if len(models) > 0 else 0.0
-
         logger.info(
             "Generated %d cells, %d total spikes "
             "(avg %.0f spikes/cell), mean rate %.1f Hz",
             len(models),
             total_spikes,
-            avg_spikes_per_cell,
-            mean_rate,
+            total_spikes / len(models),
+            total_spikes / (len(models) * duration),
         )
 
     return spike_trains
 
 
-def _compute_model_firing_rate(
+def _check_model_rates(
+    rates: NDArray[np.float64],
+    index: int,
     model: NeuralModel,
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
     *,
-    break_before: NDArray[np.bool_] | None = None,
-) -> NDArray[np.float64]:
-    """Compute firing rates for models with different input conventions."""
-    from neurospatial.simulation.models.head_direction_cells import (
-        HeadDirectionCellModel,
-    )
-    from neurospatial.simulation.models.object_vector_cells import (
-        ObjectVectorCellModel,
-    )
-    from neurospatial.simulation.models.spatial_view_cells import SpatialViewCellModel
+    derived_headings: bool,
+) -> None:
+    """Refuse a model's rates that are not one finite rate per sample.
 
-    model_any: Any = model
-
-    if isinstance(model_any, HeadDirectionCellModel):
-        if headings is None:
-            if len(times) < 2:
-                return np.zeros(len(times), dtype=np.float64)
-            headings = _held_movement_heading(
-                times, positions, break_before=break_before
-            )
-        rates = model_any.firing_rate(headings, positions=positions, times=times)
-    elif isinstance(model_any, SpatialViewCellModel | ObjectVectorCellModel):
-        rates = model_any.firing_rate(positions, times, headings=headings)
-    else:
-        rates = model_any.firing_rate(positions, times)
-
-    rates = np.asarray(rates, dtype=np.float64)
-    if len(rates) != len(times):
+    The error names the model and says which input is missing where the rate
+    is undefined.
+    """
+    name = f"Model {index} ({type(model).__name__})"
+    if rates.shape != times.shape:
         raise ValueError(
-            f"Model {type(model).__name__}.firing_rate returned {len(rates)} rates "
-            f"for {len(times)} time points."
+            _format_error(
+                f"{name}.firing_rate returned shape {rates.shape} for "
+                f"{len(times)} time points.",
+                fix="return one rate in Hz per sample, shape (n_time,)",
+            )
         )
-    return rates
+    undefined = ~np.isfinite(rates)
+    if not undefined.any():
+        return
+    first = int(np.flatnonzero(undefined)[0])
+    no_position = undefined & ~np.all(np.isfinite(positions), axis=1)
+    no_heading = np.zeros_like(undefined)
+    if headings is not None and model.requires_headings:
+        no_heading = undefined & ~np.isfinite(headings) & ~no_position
+    other = undefined & ~no_position & ~no_heading
+    causes = []
+    if no_position.any():
+        causes.append(f"{int(no_position.sum())} have a missing (NaN) position")
+    if no_heading.any():
+        source = "derived from the velocity" if derived_headings else "given"
+        causes.append(f"{int(no_heading.sum())} have a missing heading ({source})")
+    if other.any():
+        causes.append(
+            f"{int(other.sum())} have a position where the model has no "
+            "defined input, such as outside the walls of a wall-driven cell"
+        )
+    raise ValueError(
+        _format_error(
+            f"{name} has no defined firing rate at {int(undefined.sum())} of "
+            f"{len(times)} samples (first at t = {times[first]:g} s): "
+            + "; ".join(causes)
+            + ".",
+            why="a missing input is not zero activity, so no spikes can be "
+            "drawn there without inventing a rate.",
+            fix="simulate only samples with a finite position (and heading, "
+            "for a model that needs one) inside the environment, for example "
+            "by interpolating short tracking gaps or splitting the recording "
+            "at long ones",
+        )
+    )
 
 
 def _held_movement_heading(
@@ -535,7 +546,7 @@ def _held_movement_heading(
 ) -> NDArray[np.float64]:
     """Movement direction at every sample, held through stops.
 
-    A simulated head-direction cell needs a heading at every sample, including
+    A simulated cell that needs headings needs one at every sample, including
     where the animal is still and its movement direction is not defined. The
     last defined direction is held forward through each stop, and samples
     before a recording's first movement take that recording's first defined
@@ -580,7 +591,6 @@ def _held_movement_heading(
     >>> print(f"{held[9]:.3f} {held[20]:.3f}")
     0.000 1.571
     """
-    from neurospatial._exceptions import _format_error
     from neurospatial.behavior import heading_from_velocity
 
     with warnings.catch_warnings():
@@ -612,7 +622,7 @@ def _held_movement_heading(
         first_t, last_t = times[starts[r]], times[ends[r] - 1]
         raise ValueError(
             _format_error(
-                "Cannot derive head direction for HeadDirectionCellModel: no "
+                "Cannot derive headings for the models that need them: no "
                 f"movement direction is defined in recording {r + 1} (samples "
                 f"{starts[r]} to {ends[r] - 1}, {first_t:g} to {last_t:g} s), "
                 "because it never moves or no interval between its samples is "
@@ -731,7 +741,7 @@ def add_modulation(
     >>> positions, times = simulate_trajectory_ou(
     ...     env, duration=60.0, seed=42, speed_units="cm"
     ... )
-    >>> rates = pc.firing_rate(positions)
+    >>> rates = pc.firing_rate(times, positions)
     >>> spike_times = generate_poisson_spikes(rates, times, seed=7)
     >>>
     >>> # Add theta modulation (8 Hz, preferred phase at the theta trough)

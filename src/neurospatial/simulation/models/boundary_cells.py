@@ -40,6 +40,7 @@ George, T. M., Rastogi, M., de Cothi, W., Clopath, C., Stachenfeld, K., &
 
 from __future__ import annotations
 
+from dataclasses import KW_ONLY, InitVar, dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -50,11 +51,16 @@ from neurospatial._units import default_length
 from neurospatial.geometry import (
     boundary_geometry,
     require_cartesian,
-    require_position_columns,
     valid_observers,
 )
 from neurospatial.ops.boundary_vectors import boundary_directions, nearest_boundary
 from neurospatial.simulation._walls import Walls
+from neurospatial.simulation.models.base import (
+    _check_angle,
+    _check_positive,
+    _check_rates,
+    _model_inputs,
+)
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -72,31 +78,8 @@ BVC_PREFERRED_DISTANCE_CM = 17.5
 
 # Rays per turn summed by BoundaryVectorCellModel: one every 2 degrees, the
 # angular resolution (``dtheta``) RatInABox's BoundaryVectorCells integrate
-# over (George et al. 2023).
+# over (George et al. 2024).
 _N_RAYS = 180
-
-
-def _check_rates(max_rate: float, baseline_rate: float) -> None:
-    if not (np.isfinite(max_rate) and max_rate > 0):
-        raise ValueError(f"max_rate must be positive (got {max_rate})")
-    if not (np.isfinite(baseline_rate) and baseline_rate >= 0):
-        raise ValueError(f"baseline_rate must be non-negative (got {baseline_rate})")
-    if baseline_rate >= max_rate:
-        raise ValueError(
-            f"baseline_rate ({baseline_rate}) must be less than max_rate ({max_rate})"
-        )
-
-
-def _check_positive(name: str, value: float, *, allow_zero: bool = False) -> None:
-    ok = np.isfinite(value) and (value >= 0 if allow_zero else value > 0)
-    if not ok:
-        bound = "non-negative" if allow_zero else "positive"
-        raise ValueError(
-            _format_error(
-                f"{name} must be finite and {bound}, got {value!r}.",
-                fix=f"pass a finite {bound} {name} in the environment's units",
-            )
-        )
 
 
 def _require_walls(
@@ -113,6 +96,7 @@ def _require_walls(
     boundary_geometry(env.binning, env.arena, boundary_source, blocking="movement")
 
 
+@dataclass(frozen=True, eq=False)
 class BorderCellModel:
     """Firing as a function of the distance to the nearest wall.
 
@@ -148,7 +132,11 @@ class BorderCellModel:
     Raises
     ------
     ValueError
-        If a distance or rate is not finite, or ``baseline_rate >= max_rate``.
+        If a distance or rate is not finite, a rate is negative,
+        ``baseline_rate > max_rate``, or ``distance_tolerance`` is None and
+        ``env.units`` is not a metric length unit.
+    CartesianOnlyError
+        If the environment holds egocentric polar coordinates.
     NotImplementedError
         If the arena declares no physical boundary and
         ``boundary_source='physical'`` (bins inferred from positions).
@@ -175,58 +163,76 @@ class BorderCellModel:
     >>> from neurospatial.simulation import BorderCellModel
     >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
     >>> cell = BorderCellModel(env, distance_tolerance=4.0, baseline_rate=0.0)
-    >>> cell.firing_rate(np.array([[0.5, 50.0], [4.0, 50.0], [50.0, 50.0]])).round(2)
+    >>> positions = np.array([[0.5, 50.0], [4.0, 50.0], [50.0, 50.0]])
+    >>> times = np.array([0.0, 0.1, 0.2])
+    >>> cell.firing_rate(times, positions).round(2)
     array([14.88,  9.1 ,  0.  ])
     """
 
-    def __init__(
-        self,
-        env: Environment,
-        *,
-        distance_tolerance: float | None = None,
-        preferred_distance: float = 0.0,
-        max_rate: float = 15.0,
-        baseline_rate: float = 0.01,
-        boundary_source: BoundarySource = "physical",
-    ) -> None:
-        if distance_tolerance is None:
-            distance_tolerance = default_length(
-                env,
+    env: Environment = field(repr=False)
+    _: KW_ONLY
+    distance_tolerance: float | None = None
+    preferred_distance: float = 0.0
+    max_rate: float = 15.0
+    baseline_rate: float = 0.01
+    boundary_source: BoundarySource = "physical"
+
+    def __post_init__(self) -> None:
+        tolerance = self.distance_tolerance
+        if tolerance is None:
+            tolerance = default_length(
+                self.env,
                 BORDER_DISTANCE_TOLERANCE_CM,
                 name="distance_tolerance",
                 call="BorderCellModel()",
             )
-        _check_positive("distance_tolerance", distance_tolerance)
-        _check_positive("preferred_distance", preferred_distance, allow_zero=True)
-        _check_rates(max_rate, baseline_rate)
-        _require_walls(env, boundary_source, "BorderCellModel()")
-        self.env = env
-        self.preferred_distance = float(preferred_distance)
-        self.distance_tolerance = float(distance_tolerance)
-        self.max_rate = float(max_rate)
-        self.baseline_rate = float(baseline_rate)
-        self.boundary_source = boundary_source
+        _check_positive("distance_tolerance", tolerance)
+        _check_positive("preferred_distance", self.preferred_distance, allow_zero=True)
+        _check_rates(self.max_rate, self.baseline_rate)
+        _require_walls(self.env, self.boundary_source, "BorderCellModel()")
+        object.__setattr__(self, "distance_tolerance", float(tolerance))
+        object.__setattr__(self, "preferred_distance", float(self.preferred_distance))
+        object.__setattr__(self, "max_rate", float(self.max_rate))
+        object.__setattr__(self, "baseline_rate", float(self.baseline_rate))
+
+    @property
+    def requires_headings(self) -> bool:
+        """False: the rate depends on position only."""
+        return False
 
     def firing_rate(
         self,
+        times: NDArray[np.float64],
         positions: NDArray[np.float64],
-        times: NDArray[np.float64] | None = None,
+        *,
+        headings: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
         """Firing rate at each position.
 
         Parameters
         ----------
+        times : NDArray[np.float64], shape (n_time,)
+            Sample times in seconds; the rate does not depend on them.
         positions : NDArray[np.float64], shape (n_time, 2)
             Positions in the environment's coordinates.
-        times : NDArray[np.float64], shape (n_time,), optional
-            Unused; accepted for the ``NeuralModel`` protocol.
+        headings : NDArray[np.float64], shape (n_time,), optional
+            Unused; accepted for the ``NeuralModel`` interface.
 
         Returns
         -------
         NDArray[np.float64], shape (n_time,)
-            Rate in Hz; NaN for a position outside the walls, where the cell
-            has no defined input.
+            Rate in Hz; NaN for a missing position or one outside the walls,
+            where the cell has no defined input.
+
+        Raises
+        ------
+        ValueError
+            If ``positions`` is not one row of 2 coordinates per time.
         """
+        assert self.distance_tolerance is not None
+        _times, positions = _model_inputs(
+            times, positions, 2, call="BorderCellModel.firing_rate()"
+        )
         distances, _directions = nearest_boundary(
             self.env, positions, boundary_source=self.boundary_source
         )
@@ -246,17 +252,21 @@ class BorderCellModel:
         Returns
         -------
         dict
-            ``preferred_distance``, ``distance_tolerance``, ``max_rate`` and
-            ``baseline_rate``.
+            ``cell_type`` (``'border'``), ``preferred_distance``,
+            ``distance_tolerance``, ``max_rate``, ``baseline_rate`` and
+            ``boundary_source``.
         """
         return {
+            "cell_type": "border",
             "preferred_distance": self.preferred_distance,
             "distance_tolerance": self.distance_tolerance,
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,
+            "boundary_source": self.boundary_source,
         }
 
 
+@dataclass(frozen=True, eq=False)
 class BoundaryVectorCellModel:
     """Boundary vector cell: walls at a preferred distance and direction.
 
@@ -314,9 +324,11 @@ class BoundaryVectorCellModel:
     Raises
     ------
     ValueError
-        If a distance, angle or rate is not finite, or
-        ``baseline_rate >= max_rate``, or a length default is needed and
+        If a distance, angle or rate is not finite, a rate is negative,
+        ``baseline_rate > max_rate``, or a length default is needed and
         the environment has no metric length units.
+    CartesianOnlyError
+        If the environment holds egocentric polar coordinates.
     NotImplementedError
         If the arena declares no physical boundary and
         ``boundary_source='physical'``.
@@ -343,82 +355,94 @@ class BoundaryVectorCellModel:
     ...     direction_tolerance=np.pi / 6,
     ...     baseline_rate=0.0,
     ... )
-    >>> cell.firing_rate(np.array([[10.0, 50.0], [90.0, 50.0]])).round(1)
+    >>> positions = np.array([[10.0, 50.0], [90.0, 50.0]])
+    >>> cell.firing_rate(np.array([0.0, 0.1]), positions).round(1)
     array([15.,  0.])
     """
 
-    def __init__(
-        self,
-        env: Environment,
-        *,
-        preferred_distance: float | None = None,
-        preferred_direction: float | None = None,
-        distance_tolerance: float | None = None,
-        direction_tolerance: float = np.pi / 6,
-        max_rate: float = 15.0,
-        baseline_rate: float = 0.01,
-        boundary_source: BoundarySource = "physical",
-        seed: int | None = None,
-    ) -> None:
+    env: Environment = field(repr=False)
+    _: KW_ONLY
+    preferred_distance: float | None = None
+    preferred_direction: float | None = None
+    distance_tolerance: float | None = None
+    direction_tolerance: float = np.pi / 6
+    max_rate: float = 15.0
+    baseline_rate: float = 0.01
+    boundary_source: BoundarySource = "physical"
+    seed: InitVar[int | None] = None
+    _walls: Walls = field(init=False, repr=False)
+    _directions: NDArray[np.float64] = field(init=False, repr=False)
+    _angular: NDArray[np.float64] = field(init=False, repr=False)
+    _reference_drive: float = field(init=False, repr=False)
+
+    def __post_init__(self, seed: int | None) -> None:
+        env = self.env
         call = "BoundaryVectorCellModel()"
-        if preferred_distance is None:
-            preferred_distance = default_length(
+        distance = self.preferred_distance
+        if distance is None:
+            distance = default_length(
                 env, BVC_PREFERRED_DISTANCE_CM, name="preferred_distance", call=call
             )
-        if distance_tolerance is None:
-            distance_tolerance = preferred_distance / 12.0 + default_length(
+        tolerance = self.distance_tolerance
+        if tolerance is None:
+            tolerance = distance / 12.0 + default_length(
                 env, 8.0, name="distance_tolerance", call=call
             )
-        if preferred_direction is None:
-            preferred_direction = float(
-                np.random.default_rng(seed).uniform(-np.pi, np.pi)
-            )
-        _check_positive("preferred_distance", preferred_distance, allow_zero=True)
-        _check_positive("distance_tolerance", distance_tolerance)
-        if not np.isfinite(preferred_direction):
-            raise ValueError(
-                f"preferred_direction must be a finite angle in radians, got "
-                f"{preferred_direction!r}."
-            )
-        if not (np.isfinite(direction_tolerance) and 0 < direction_tolerance <= np.pi):
+        direction = self.preferred_direction
+        if direction is None:
+            direction = float(np.random.default_rng(seed).uniform(-np.pi, np.pi))
+        _check_positive("preferred_distance", distance, allow_zero=True)
+        _check_positive("distance_tolerance", tolerance)
+        _check_angle("preferred_direction", direction)
+        half_width = self.direction_tolerance
+        if not (np.isfinite(half_width) and 0 < half_width <= np.pi):
             raise ValueError(
                 _format_error(
                     "direction_tolerance must be a half-width in (0, pi] radians, "
-                    f"got {direction_tolerance!r}.",
+                    f"got {half_width!r}.",
                     fix="pass the angle at which the tuning falls to half, e.g. "
                     "np.pi / 6 for 30 degrees",
                 )
             )
-        _check_rates(max_rate, baseline_rate)
-        _require_walls(env, boundary_source, "BoundaryVectorCellModel()")
-        self.env = env
-        self.preferred_distance = float(preferred_distance)
-        self.preferred_direction = float(np.angle(np.exp(1j * preferred_direction)))
-        self.distance_tolerance = float(distance_tolerance)
-        self.direction_tolerance = float(direction_tolerance)
-        self.max_rate = float(max_rate)
-        self.baseline_rate = float(baseline_rate)
-        self.boundary_source = boundary_source
-        self._walls = Walls.from_geometry(
+        _check_rates(self.max_rate, self.baseline_rate)
+        _require_walls(env, self.boundary_source, call)
+        direction = float(np.angle(np.exp(1j * direction)))
+        walls = Walls.from_geometry(
             boundary_geometry(
-                env.binning, env.arena, boundary_source, blocking="movement"
+                env.binning, env.arena, self.boundary_source, blocking="movement"
             )
         )
-        self._directions = boundary_directions(n_directions=_N_RAYS)
+        directions = boundary_directions(n_directions=_N_RAYS)
         # von Mises concentration with half-maximum at direction_tolerance.
-        kappa = np.log(2.0) / (1.0 - np.cos(self.direction_tolerance))
-        self._angular = np.exp(
-            kappa * (np.cos(self._directions - self.preferred_direction) - 1.0)
-        )
+        kappa = np.log(2.0) / (1.0 - np.cos(half_width))
+        angular = np.exp(kappa * (np.cos(directions - direction) - 1.0))
+        directions.setflags(write=False)
+        angular.setflags(write=False)
+        for name, value in (
+            ("preferred_distance", float(distance)),
+            ("preferred_direction", direction),
+            ("distance_tolerance", float(tolerance)),
+            ("direction_tolerance", float(half_width)),
+            ("max_rate", float(self.max_rate)),
+            ("baseline_rate", float(self.baseline_rate)),
+            ("_walls", walls),
+            ("_directions", directions),
+            ("_angular", angular),
+        ):
+            object.__setattr__(self, name, value)
         # A straight wall at the preferred distance, square to the preferred
         # direction, lies at r = d / cos(θ - φ) along every ray toward it.
-        facing = np.cos(self._directions - self.preferred_direction)
+        facing = np.cos(directions - direction)
         with np.errstate(divide="ignore"):
-            reference = np.where(facing > 0, self.preferred_distance / facing, np.inf)
-        self._reference_drive = float(np.sum(self._drive_terms(reference)))
+            reference = np.where(facing > 0, float(distance) / facing, np.inf)
+        object.__setattr__(
+            self, "_reference_drive", float(np.sum(self._drive_terms(reference)))
+        )
 
     def _drive_terms(self, distances: NDArray[np.float64]) -> NDArray[np.float64]:
         """Each ray's term ``g(r, θ)``, shape like ``distances`` (..., n_rays)."""
+        assert self.preferred_distance is not None
+        assert self.distance_tolerance is not None
         radial = np.exp(
             -0.5
             * ((distances - self.preferred_distance) / self.distance_tolerance) ** 2
@@ -426,28 +450,41 @@ class BoundaryVectorCellModel:
         terms: NDArray[np.float64] = radial * self._angular
         return terms
 
+    @property
+    def requires_headings(self) -> bool:
+        """False: the drive is summed over allocentric directions."""
+        return False
+
     def firing_rate(
         self,
+        times: NDArray[np.float64],
         positions: NDArray[np.float64],
-        times: NDArray[np.float64] | None = None,
+        *,
+        headings: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
         """Firing rate at each position.
 
         Parameters
         ----------
+        times : NDArray[np.float64], shape (n_time,)
+            Sample times in seconds; the rate does not depend on them.
         positions : NDArray[np.float64], shape (n_time, 2)
             Positions in the environment's coordinates.
-        times : NDArray[np.float64], shape (n_time,), optional
-            Unused; accepted for the ``NeuralModel`` protocol.
+        headings : NDArray[np.float64], shape (n_time,), optional
+            Unused; accepted for the ``NeuralModel`` interface.
 
         Returns
         -------
         NDArray[np.float64], shape (n_time,)
-            Rate in Hz; NaN for a position outside the walls.
+            Rate in Hz; NaN for a missing position or one outside the walls.
+
+        Raises
+        ------
+        ValueError
+            If ``positions`` is not one row of 2 coordinates per time.
         """
-        positions = np.asarray(positions, dtype=np.float64)
-        require_position_columns(
-            positions, 2, call="BoundaryVectorCellModel.firing_rate"
+        _times, positions = _model_inputs(
+            times, positions, 2, call="BoundaryVectorCellModel.firing_rate()"
         )
         observed = valid_observers(
             self.env.binning, self.env.arena, positions, self.boundary_source
@@ -468,15 +505,18 @@ class BoundaryVectorCellModel:
         Returns
         -------
         dict
-            ``preferred_distance``, ``preferred_direction`` (radians),
-            ``distance_tolerance``, ``direction_tolerance`` (radians),
-            ``max_rate`` and ``baseline_rate``.
+            ``cell_type`` (``'boundary_vector'``), ``preferred_distance``,
+            ``preferred_direction`` (radians), ``distance_tolerance``,
+            ``direction_tolerance`` (radians), ``max_rate``,
+            ``baseline_rate`` and ``boundary_source``.
         """
         return {
+            "cell_type": "boundary_vector",
             "preferred_distance": self.preferred_distance,
             "preferred_direction": self.preferred_direction,
             "distance_tolerance": self.distance_tolerance,
             "direction_tolerance": self.direction_tolerance,
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,
+            "boundary_source": self.boundary_source,
         }

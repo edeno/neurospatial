@@ -32,7 +32,7 @@ Low-level API for custom simulations:
 >>> # Create place cell at environment center with high rate
 >>> center = env.bin_centers[len(env.bin_centers) // 2]
 >>> place_cell = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, seed=42)
->>> rates = place_cell.firing_rate(positions, times)
+>>> rates = place_cell.firing_rate(times, positions)
 >>> spikes = generate_poisson_spikes(rates, times, seed=42)
 >>> isinstance(spikes, np.ndarray)  # Returns array of spike times
 True

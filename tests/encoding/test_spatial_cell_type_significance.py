@@ -237,7 +237,7 @@ def test_grid_cell_with_background_firing_is_grid(box_session):
     env, times, positions = box_session(100, 10, seed=1)
     grid = GridCellModel(
         env, grid_spacing=45.0, max_rate=10.0, baseline_rate=1.0
-    ).firing_rate(positions)
+    ).firing_rate(times, positions)
     trains = [generate_poisson_spikes(grid, times, seed=21)]
     result = spatial_cell_type_significance(
         env,
@@ -347,7 +347,7 @@ def test_radial_arm_place_cells_are_not_border_cells():
                 max_rate=15,
                 baseline_rate=0.2,
                 metric="geodesic",
-            ).firing_rate(positions),
+            ).firing_rate(times, positions),
             times,
             seed=500 + i,
         )

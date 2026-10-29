@@ -298,6 +298,23 @@ class TestGeneratePoissonSpikes:
         assert realized < 0.97 * rate or rate * tau < 0.03
 
 
+class _HeadingRecorder:
+    """A model whose rate is constant and which keeps the headings it is given."""
+
+    requires_headings = True
+
+    def __init__(self):
+        self.headings = None
+
+    def firing_rate(self, times, positions, *, headings=None):
+        self.headings = headings
+        return np.full(len(times), 5.0)
+
+    @property
+    def ground_truth(self):
+        return {"cell_type": "recorder"}
+
+
 class TestGeneratePopulationSpikes:
     """Tests for population spike generation."""
 
@@ -316,7 +333,7 @@ class TestGeneratePopulationSpikes:
 
         # Generate spikes (no progress bar for tests)
         spike_trains = generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
+            place_cells, times, positions, seed=7, show_progress=False
         )
 
         # Should return list of spike arrays
@@ -335,41 +352,27 @@ class TestGeneratePopulationSpikes:
         )
 
         spike_trains = generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
+            place_cells, times, positions, seed=7, show_progress=False
         )
 
         assert len(spike_trains) == n_cells
 
-    def test_spike_trains_are_independent(self, simple_2d_env):
-        """Test that different cells produce different spike trains."""
-        n_cells = 5
-        # Use higher firing rates to ensure spikes are generated
-        place_cells = [
-            PlaceCellModel(simple_2d_env, width=20.0, max_rate=30.0, seed=i)
-            for i in range(n_cells)
-        ]
+    def test_identical_cells_fire_independently(self):
+        """Identical rates give uncorrelated trains: each unit has its own stream."""
+        times = np.linspace(0.0, 200.0, 20_001)
+        positions = np.zeros((len(times), 2))
+        models = [_ConstantModel(20.0) for _ in range(4)]
 
-        positions, times = simulate_trajectory_ou(
-            simple_2d_env,
-            duration=30.0,
-            seed=42,  # Longer duration,
-            speed_units="cm",
+        trains = generate_population_spikes(
+            models, times, positions, seed=0, show_progress=False
         )
 
-        spike_trains = generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
-        )
-
-        # Check that at least some cells generate spikes
-        total_spikes = sum(len(st) for st in spike_trains)
-        assert total_spikes > 0, "No spikes generated"
-
-        # Check that not all spike trains have the same count
-        # (very unlikely with different place field centers)
-        spike_counts = [len(st) for st in spike_trains]
-        unique_counts = set(spike_counts)
-        # At least some variation (or at least some cells fired)
-        assert len(unique_counts) > 1 or max(spike_counts) > 0
+        edges = np.arange(0.0, 200.0 + 0.5, 0.5)
+        counts = np.array([np.histogram(t, edges)[0] for t in trains])
+        n_bins = counts.shape[1]
+        correlation = np.corrcoef(counts)[np.triu_indices(len(models), k=1)]
+        # Null standard deviation of a correlation is ~1/sqrt(n_bins).
+        assert np.all(np.abs(correlation) < 4 / np.sqrt(n_bins))
 
     def test_reproducibility_with_seed(self, simple_2d_env):
         """Test that same seed produces same spike trains."""
@@ -383,10 +386,10 @@ class TestGeneratePopulationSpikes:
         )
 
         spike_trains1 = generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
+            place_cells, times, positions, seed=7, show_progress=False
         )
         spike_trains2 = generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
+            place_cells, times, positions, seed=7, show_progress=False
         )
 
         # Check that all spike trains are identical
@@ -404,7 +407,7 @@ class TestGeneratePopulationSpikes:
         )
 
         spike_trains = generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
+            place_cells, times, positions, seed=7, show_progress=False
         )
 
         # Check all spikes are within [times[0], times[-1]]
@@ -425,7 +428,7 @@ class TestGeneratePopulationSpikes:
 
         # Generate without progress bar
         generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
+            place_cells, times, positions, seed=7, show_progress=False
         )
 
         # Check no progress bar output (this is approximate test)
@@ -450,7 +453,7 @@ class TestGeneratePopulationSpikes:
             times,
             positions,
             refractory_period=refractory_period,
-            seed=42,
+            seed=7,
             show_progress=False,
         )
 
@@ -460,26 +463,33 @@ class TestGeneratePopulationSpikes:
                 isis = np.diff(spike_times)
                 assert np.all(isis >= refractory_period - 1e-10)
 
-    def test_head_direction_model_derives_headings(self):
-        """HeadDirectionCellModel should work without explicit headings."""
-        model = HeadDirectionCellModel(
-            preferred_direction=0.0,
-            max_rate=50.0,
-            baseline_rate=5.0,
-        )
+    def test_derived_heading_of_a_northward_path_is_north(self):
+        """Without headings, a model that needs them sees the movement direction."""
+        recorder = _HeadingRecorder()
         times = np.linspace(0.0, 1.0, 101)
-        positions = np.column_stack([times, np.zeros_like(times)])
+        positions = np.column_stack([np.zeros_like(times), 10.0 * times])
 
-        spike_trains = generate_population_spikes(
-            [model],
-            times,
-            positions,
-            seed=42,
-            show_progress=False,
+        generate_population_spikes(
+            [recorder], times, positions, seed=7, show_progress=False
         )
 
-        assert len(spike_trains) == 1
-        assert isinstance(spike_trains[0], np.ndarray)
+        np.testing.assert_allclose(recorder.headings, np.pi / 2, atol=1e-9)
+
+    def test_head_direction_cell_fires_for_the_movement_direction(self):
+        """A North cell fires on a northward path, a South cell does not."""
+        times = np.linspace(0.0, 2.0, 201)
+        positions = np.column_stack([np.zeros_like(times), 10.0 * times])
+        north, south = (
+            HeadDirectionCellModel(preferred_direction=d, max_rate=50.0)
+            for d in (np.pi / 2, -np.pi / 2)
+        )
+
+        trains = generate_population_spikes(
+            [north, south], times, positions, seed=7, show_progress=False
+        )
+
+        assert len(trains[0]) > 60  # ~100 expected at 50 Hz for 2 s
+        assert len(trains[1]) < 3
 
     def test_head_direction_model_holds_heading_through_stops(self):
         """Derived headings carry the last movement direction through a stop.
@@ -487,29 +497,23 @@ class TestGeneratePopulationSpikes:
         The path stands still for 1 s, runs East for 1 s, stands still for 1 s
         and runs North for 1 s (100 Hz). The smoothed speed is exactly zero in
         the middle of each stop, where heading_from_velocity has no heading.
-        The simulated cell instead fires with the last direction of movement
-        (East), and the leading stop takes the first one (East).
+        The simulated cell instead sees the last direction of movement (East),
+        and the leading stop takes the first one (East).
         """
-        from neurospatial.simulation.spikes import _compute_model_firing_rate
-
-        model = HeadDirectionCellModel(
-            preferred_direction=np.pi / 2, max_rate=50.0, baseline_rate=5.0
-        )
+        recorder = _HeadingRecorder()
         times = np.arange(400) / 100  # s
         x = 10.0 * np.clip(times - 1.0, 0.0, 1.0)  # cm
         y = 10.0 * np.clip(times - 3.0, 0.0, 1.0)  # cm
         positions = np.column_stack([x, y])
 
-        rates = _compute_model_firing_rate(model, positions, times, None)
-
-        assert np.isfinite(rates).all()
-        east_rate = model.firing_rate(np.array([0.0]))[0]
-        np.testing.assert_allclose(rates[:50], east_rate, rtol=1e-12)  # leading stop
-        np.testing.assert_allclose(rates[245:255], east_rate, rtol=1e-12)  # mid-stop
-        spike_trains = generate_population_spikes(
-            [model], times, positions, seed=42, show_progress=False
+        generate_population_spikes(
+            [recorder], times, positions, seed=7, show_progress=False
         )
-        assert len(spike_trains) == 1
+
+        assert np.isfinite(recorder.headings).all()
+        np.testing.assert_allclose(recorder.headings[:50], 0.0, atol=1e-12)
+        np.testing.assert_allclose(recorder.headings[245:255], 0.0, atol=1e-12)
+        np.testing.assert_allclose(recorder.headings[-10:], np.pi / 2, atol=1e-9)
 
     def test_head_direction_model_still_path_needs_headings(self):
         """A path that never moves has no movement direction to derive."""
@@ -536,28 +540,105 @@ class TestGeneratePopulationSpikes:
         assert "never moves" in str(caught.value)
         assert "headings=" in str(caught.value)
 
-    def test_head_direction_model_uses_explicit_headings(self):
-        """Explicit headings should be passed to HeadDirectionCellModel."""
-        model = HeadDirectionCellModel(
-            preferred_direction=np.pi / 2,
-            max_rate=50.0,
-            baseline_rate=5.0,
-        )
-        times = np.linspace(0.0, 1.0, 101)
-        positions = np.column_stack([times, np.zeros_like(times)])
+    def test_explicit_headings_override_the_movement_direction(self):
+        """The path runs East but the head points North: the North cell fires."""
+        times = np.linspace(0.0, 2.0, 201)
+        positions = np.column_stack([10.0 * times, np.zeros_like(times)])
         headings = np.full(len(times), np.pi / 2)
+        north, east = (
+            HeadDirectionCellModel(preferred_direction=d, max_rate=50.0)
+            for d in (np.pi / 2, 0.0)
+        )
 
-        spike_trains = generate_population_spikes(
-            [model],
+        trains = generate_population_spikes(
+            [north, east],
             times,
             positions,
             headings=headings,
-            seed=42,
+            seed=7,
             show_progress=False,
         )
 
-        assert len(spike_trains) == 1
-        assert isinstance(spike_trains[0], np.ndarray)
+        assert len(trains[0]) > 60
+        assert len(trains[1]) < 3
+
+    def test_spatial_view_cell_without_headings_uses_movement(self):
+        """A spatial view cell needs headings; the population supplies them."""
+        from shapely.geometry import box
+
+        from neurospatial import Environment
+        from neurospatial.simulation.models import SpatialViewCellModel
+
+        env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
+        times = np.linspace(0.0, 2.0, 201)
+        positions = np.column_stack([20.0 + 10.0 * times, np.full_like(times, 50.0)])
+        east_wall = SpatialViewCellModel(
+            env, preferred_view_location=[100.0, 50.0], max_rate=40.0
+        )
+
+        derived = generate_population_spikes(
+            [east_wall], times, positions, seed=7, show_progress=False
+        )
+        given = generate_population_spikes(
+            [east_wall],
+            times,
+            positions,
+            headings=np.zeros(len(times)),
+            seed=7,
+            show_progress=False,
+        )
+
+        np.testing.assert_array_equal(derived[0], given[0])
+        assert len(derived[0]) > 40
+
+    def test_missing_position_names_the_model_and_input(self, simple_2d_env):
+        """A NaN rate names the unit and the missing input, not firing_rate."""
+        times = np.linspace(0.0, 1.0, 11)
+        positions = np.full((11, 2), 50.0)
+        positions[4] = np.nan
+        models = [
+            _ConstantModel(1.0),
+            PlaceCellModel(simple_2d_env, center=[50.0, 50.0], width=10.0),
+        ]
+
+        with pytest.raises(ValueError, match=r"Model 1 \(PlaceCellModel\)") as caught:
+            generate_population_spikes(
+                models, times, positions, seed=7, show_progress=False
+            )
+        assert "1 have a missing (NaN) position" in str(caught.value)
+        assert "t = 0.4 s" in str(caught.value)
+
+    def test_missing_heading_names_the_input(self):
+        times = np.linspace(0.0, 1.0, 11)
+        positions = np.zeros((11, 2))
+        headings = np.zeros(11)
+        headings[[2, 3]] = np.nan
+
+        with pytest.raises(ValueError, match="2 have a missing heading"):
+            generate_population_spikes(
+                [HeadDirectionCellModel(preferred_direction=0.0)],
+                times,
+                positions,
+                headings=headings,
+                seed=7,
+                show_progress=False,
+            )
+
+
+class _ConstantModel:
+    """A cell firing at the same rate everywhere."""
+
+    requires_headings = False
+
+    def __init__(self, rate):
+        self.rate = rate
+
+    def firing_rate(self, times, positions, *, headings=None):
+        return np.full(len(times), self.rate)
+
+    @property
+    def ground_truth(self):
+        return {"cell_type": "constant", "max_rate": self.rate}
 
 
 def _circular_mean(angles):

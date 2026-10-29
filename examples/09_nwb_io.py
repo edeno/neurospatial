@@ -102,7 +102,9 @@ for center, seed in [([40.0, 50.0], 142), ([60.0, 50.0], 143)]:
     model = PlaceCellModel(
         sim_env, center=center, width=12.0, max_rate=25.0, baseline_rate=0.5
     )
-    spikes = generate_poisson_spikes(model.firing_rate(positions), times, seed=seed)
+    spikes = generate_poisson_spikes(
+        model.firing_rate(times, positions), times, seed=seed
+    )
     observed = np.zeros(spikes.size, dtype=bool)
     for start, stop in coverage:
         observed |= (spikes >= start) & (spikes < stop)

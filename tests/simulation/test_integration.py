@@ -324,7 +324,7 @@ class TestPlaceFieldDetectionAccuracy:
             seed=42,
             speed_units="cm",
         )
-        rates_short = model.firing_rate(positions_short, times_short)
+        rates_short = model.firing_rate(times_short, positions_short)
         spikes_short = generate_poisson_spikes(rates_short, times_short, seed=42)
 
         # Long duration
@@ -334,7 +334,7 @@ class TestPlaceFieldDetectionAccuracy:
             seed=42,
             speed_units="cm",
         )
-        rates_long = model.firing_rate(positions_long, times_long)
+        rates_long = model.firing_rate(times_long, positions_long)
         spikes_long = generate_poisson_spikes(rates_long, times_long, seed=42)
 
         # Detect centers

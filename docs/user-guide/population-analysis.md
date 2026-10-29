@@ -175,14 +175,14 @@ change_time = 120.0
 moves = np.arange(16) % 2 == 1  # odd-numbered units remap
 spike_times = []
 for unit, cell in enumerate(session.models):
-    rate = cell.firing_rate(positions)
+    rate = cell.firing_rate(times, positions)
     if moves[unit]:
         # Move the field 80 cm, wrapping around within 20-180 cm.
         new_center = 20.0 + (cell.center - 20.0 + 80.0) % 160.0
         moved = PlaceCellModel(
             env, center=new_center, width=cell.width, max_rate=cell.max_rate
         )
-        rate = np.where(times < change_time, rate, moved.firing_rate(positions))
+        rate = np.where(times < change_time, rate, moved.firing_rate(times, positions))
     spike_times.append(generate_poisson_spikes(rate, times, seed=200 + unit))
 unit_ids = np.arange(len(spike_times))  # your sorter's unit labels
 
@@ -378,7 +378,7 @@ for unit, assembly in enumerate(assembly_of):
             env, center=field_centers[[assembly]], width=8.0,
             max_rate=15.0, baseline_rate=0.5,
         )
-        run_rate = cell.firing_rate(positions)
+        run_rate = cell.firing_rate(times, positions)
     else:
         run_rate = np.ones(len(times))
     spike_times.append(np.concatenate([

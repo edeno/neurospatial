@@ -177,7 +177,7 @@ fig, axes = plt.subplots(2, 3, figsize=(12, 6), sharex=True, sharey=True)
 for row, (model, label, ax) in enumerate(zip(models, unit_ids, axes.flat, strict=True)):
     ax.plot(
         env.bin_centers[:, 0],
-        model.firing_rate(env.bin_centers),
+        model.firing_rate(np.zeros(len(env.bin_centers)), env.bin_centers),
         color=OKABE_ITO[1],
         ls="--",
         label="Known rate",

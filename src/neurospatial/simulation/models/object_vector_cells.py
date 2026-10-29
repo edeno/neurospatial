@@ -34,8 +34,8 @@ Create a simple object-vector cell:
 >>> from neurospatial.simulation.models.object_vector_cells import ObjectVectorCellModel
 >>>
 >>> # Create environment
->>> samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
->>> env = Environment.from_samples(samples, bin_size=2.0)
+>>> from shapely.geometry import box
+>>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0)
 >>>
 >>> # Define object positions
 >>> objects = np.array([[25.0, 50.0], [75.0, 50.0]])
@@ -45,7 +45,7 @@ Create a simple object-vector cell:
 ...     env=env,
 ...     object_positions=objects,
 ...     preferred_distance=10.0,
-...     distance_width=5.0,
+...     distance_tolerance=5.0,
 ... )
 
 Create a directionally-tuned allocentric OVC (fires when the object is East):
@@ -54,9 +54,9 @@ Create a directionally-tuned allocentric OVC (fires when the object is East):
 ...     env=env,
 ...     object_positions=objects,
 ...     preferred_distance=10.0,
-...     distance_width=5.0,
+...     distance_tolerance=5.0,
 ...     preferred_direction=0.0,  # Object East of the animal
-...     direction_kappa=4.0,  # ~30° half-width
+...     direction_concentration=4.0,  # ~34° half-width
 ... )
 
 References
@@ -83,6 +83,7 @@ BoundaryVectorCellModel : Wall-distance and direction tuned cells
 from __future__ import annotations
 
 import warnings
+from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -93,7 +94,16 @@ from neurospatial._units import default_length
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import distance_field
 from neurospatial.ops.egocentric import compute_egocentric_bearing
-from neurospatial.simulation.models.base import geodesic_lookup_bins
+from neurospatial.simulation.models.base import (
+    _check_angle,
+    _check_metric,
+    _check_positive,
+    _check_rates,
+    _model_headings,
+    _model_inputs,
+    _read_only,
+    geodesic_lookup_bins,
+)
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -107,9 +117,10 @@ OVC_PREFERRED_DISTANCE_CM = 21.2
 
 #: Default distance tuning width in centimeters, derived from the same
 #: paper's field extents; see ``ObjectVectorCellModel`` Notes.
-OVC_DISTANCE_WIDTH_CM = 6.9
+OVC_DISTANCE_TOLERANCE_CM = 6.9
 
 
+@dataclass(frozen=True, eq=False)
 class ObjectVectorCellModel:
     """Distance and direction tuned firing model for objects.
 
@@ -126,7 +137,7 @@ class ObjectVectorCellModel:
         Preferred distance from object in environment units. If None,
         21.2 cm expressed in ``env.units``: the mean distance between object
         and field centers of the object-vector cells of Høydal et al. (2019).
-    distance_width : float, optional
+    distance_tolerance : float, optional
         Distance tuning width (standard deviation of Gaussian) in
         environment units. If None, 6.9 cm expressed in ``env.units`` (see
         Notes). An environment without metric length units needs explicit
@@ -140,7 +151,7 @@ class ObjectVectorCellModel:
         Egocentric: 0 = ahead, +pi/2 = left; directional tuning requires
         headings in ``firing_rate()``. The reverse object-to-animal vector
         has preferred direction plus pi, wrapped to [-pi, pi].
-    direction_kappa : float, optional
+    direction_concentration : float, optional
         Direction tuning concentration parameter (default: 4.0, a 34°
         half-width at half-maximum, ``arccos(1 - ln(2)/κ)``). Higher values =
         sharper tuning. An illustrative value; it is not taken from a
@@ -176,11 +187,11 @@ class ObjectVectorCellModel:
         Object positions (n_objects, 2).
     preferred_distance : float
         Preferred distance from object.
-    distance_width : float
+    distance_tolerance : float
         Distance tuning width.
     preferred_direction : float | None
         Preferred direction in the configured frame (radians) or None.
-    direction_kappa : float
+    direction_concentration : float
         Direction tuning concentration.
     max_rate : float
         Peak firing rate in Hz.
@@ -188,8 +199,30 @@ class ObjectVectorCellModel:
         Baseline firing rate in Hz.
     object_selectivity : str
         Object selectivity mode.
+    specific_object_index : int | None
+        The object a 'specific' cell responds to.
     metric : str
         Distance metric used.
+
+    Raises
+    ------
+    ValueError
+        If ``object_positions`` is not one finite ``(x, y)`` row per object;
+        a distance, the direction, the concentration or a rate is not finite
+        or is negative, or ``baseline_rate`` exceeds ``max_rate``;
+        ``direction_frame``, ``object_selectivity`` or ``metric`` is unknown;
+        ``object_selectivity='specific'`` lacks a valid
+        ``specific_object_index``; an object lies outside the environment
+        with ``metric='geodesic'``; or a length default is needed and
+        ``env.units`` is not a metric length unit.
+    CartesianOnlyError
+        If the environment holds egocentric polar coordinates.
+
+    Warns
+    -----
+    UserWarning
+        If an object lies outside the environment with
+        ``metric='euclidean'``.
 
     Examples
     --------
@@ -200,20 +233,21 @@ class ObjectVectorCellModel:
     ... )
     >>>
     >>> # Create environment
-    >>> samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-    >>> env = Environment.from_samples(samples, bin_size=2.0)
+    >>> from shapely.geometry import box
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0)
     >>>
     >>> # Create OVC
     >>> ovc = ObjectVectorCellModel(
     ...     env=env,
     ...     object_positions=np.array([[50.0, 50.0]]),
     ...     preferred_distance=10.0,
-    ...     distance_width=5.0,
+    ...     distance_tolerance=5.0,
     ... )
     >>>
     >>> # Compute firing rates along a trajectory
     >>> positions = np.random.default_rng(42).uniform(0, 100, (100, 2))
-    >>> rates = ovc.firing_rate(positions)
+    >>> times = np.arange(100) / 30.0  # s
+    >>> rates = ovc.firing_rate(times, positions)
     >>> rates.shape
     (100,)
 
@@ -255,193 +289,200 @@ class ObjectVectorCellModel:
     compute_egocentric_bearing : Compute bearing to targets
     """
 
-    def __init__(
-        self,
-        env: Environment,
-        *,
-        object_positions: NDArray[np.float64],
-        preferred_distance: float | None = None,
-        distance_width: float | None = None,
-        preferred_direction: float | None = None,
-        direction_frame: Literal["allocentric", "egocentric"] = "allocentric",
-        direction_kappa: float = 4.0,
-        max_rate: float = 20.0,
-        baseline_rate: float = 0.01,
-        object_selectivity: Literal["any", "nearest", "specific"] = "any",
-        specific_object_index: int | None = None,
-        metric: DistanceMetric = "euclidean",
-    ) -> None:
+    env: Environment = field(repr=False)
+    _: KW_ONLY
+    object_positions: NDArray[np.float64]
+    preferred_distance: float | None = None
+    distance_tolerance: float | None = None
+    preferred_direction: float | None = None
+    direction_frame: Literal["allocentric", "egocentric"] = "allocentric"
+    direction_concentration: float = 4.0
+    max_rate: float = 20.0
+    baseline_rate: float = 0.01
+    object_selectivity: Literal["any", "nearest", "specific"] = "any"
+    specific_object_index: int | None = None
+    metric: DistanceMetric = "euclidean"
+    _distance_fields: NDArray[np.float64] | None = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        env = self.env
+        call = "ObjectVectorCellModel()"
         require_cartesian(
             env.coordinate_system,
-            "ObjectVectorCellModel()",
+            call,
             why=(
                 "It models firing from the distance and direction to objects, "
                 "from the animal's allocentric Cartesian position."
             ),
             fix="simulate on the allocentric environment the animal moves in",
         )
-        if direction_frame not in ("allocentric", "egocentric"):
+        if self.direction_frame not in ("allocentric", "egocentric"):
             raise ValueError(
                 _format_error(
-                    f"Unknown direction_frame={direction_frame!r}.",
+                    f"Unknown direction_frame={self.direction_frame!r}.",
                     why="Why: direction tuning needs an allocentric or egocentric reference frame",
                     fix='pass direction_frame="allocentric" or direction_frame="egocentric"',
                 )
             )
-        # Convert and validate object_positions
-        object_positions = np.asarray(object_positions, dtype=np.float64)
-        if object_positions.ndim != 2:
-            msg = (
-                f"object_positions must be 2D with shape (n_objects, 2), "
-                f"got shape {object_positions.shape}"
+        objects = _read_only(self.object_positions)
+        if objects.ndim != 2 or objects.shape[1] != 2 or len(objects) == 0:
+            raise ValueError(
+                _format_error(
+                    "object_positions must have shape (n_objects, 2), got shape "
+                    f"{objects.shape}.",
+                    fix="pass one (x, y) row per object, e.g. "
+                    "np.array([[25.0, 50.0]]) for one object",
+                )
             )
-            raise ValueError(msg)
-
-        if object_positions.shape[1] != 2:
-            msg = (
-                f"object_positions must have 2 columns (x, y coordinates), "
-                f"got {object_positions.shape[1]} columns"
+        if not np.all(np.isfinite(objects)):
+            missing = np.flatnonzero(~np.isfinite(objects).all(axis=1))
+            raise ValueError(
+                _format_error(
+                    f"object_positions has non-finite coordinates in row(s) "
+                    f"{missing.tolist()}.",
+                    why="an object-vector cell fires at a distance from each "
+                    "object, so every object needs a position.",
+                    fix="pass finite (x, y) coordinates for every object, or "
+                    "leave out the objects whose position is unknown",
+                )
             )
-            raise ValueError(msg)
 
-        call = "ObjectVectorCellModel()"
-        if preferred_distance is None:
-            preferred_distance = default_length(
+        distance = self.preferred_distance
+        if distance is None:
+            distance = default_length(
                 env, OVC_PREFERRED_DISTANCE_CM, name="preferred_distance", call=call
             )
-        if distance_width is None:
-            distance_width = default_length(
-                env, OVC_DISTANCE_WIDTH_CM, name="distance_width", call=call
+        tolerance = self.distance_tolerance
+        if tolerance is None:
+            tolerance = default_length(
+                env, OVC_DISTANCE_TOLERANCE_CM, name="distance_tolerance", call=call
             )
+        _check_positive("preferred_distance", distance, allow_zero=True)
+        _check_positive("distance_tolerance", tolerance)
+        if self.preferred_direction is not None:
+            _check_angle("preferred_direction", self.preferred_direction)
+        _check_positive(
+            "direction_concentration", self.direction_concentration, units=None
+        )
+        _check_rates(self.max_rate, self.baseline_rate)
+        _check_metric(self.metric, call)
 
-        # Validate preferred_distance
-        if preferred_distance < 0:
-            msg = (
-                "preferred_distance must be non-negative (cm), "
-                f"got {preferred_distance}"
-            )
-            raise ValueError(msg)
-
-        # Validate distance_width
-        if distance_width <= 0:
-            msg = f"distance_width must be positive (cm), got {distance_width}"
-            raise ValueError(msg)
-
-        # Validate max_rate
-        if max_rate <= 0:
-            msg = f"max_rate must be positive (Hz), got {max_rate}"
-            raise ValueError(msg)
-
-        # Validate baseline_rate
-        if baseline_rate < 0:
-            msg = f"baseline_rate must be non-negative (Hz), got {baseline_rate}"
-            raise ValueError(msg)
-
-        if baseline_rate >= max_rate:
-            msg = (
-                f"baseline_rate ({baseline_rate}) must be less than "
-                f"max_rate ({max_rate})"
-            )
-            raise ValueError(msg)
-
-        # Validate direction_kappa (only if direction tuning is enabled)
-        if preferred_direction is not None and direction_kappa <= 0:
-            msg = f"direction_kappa must be positive, got {direction_kappa}"
-            raise ValueError(msg)
-
-        # Validate object_selectivity
         valid_selectivities = ("any", "nearest", "specific")
-        if object_selectivity not in valid_selectivities:
-            msg = (
-                f"object_selectivity must be one of {valid_selectivities}, "
-                f"got '{object_selectivity}'"
-            )
-            raise ValueError(msg)
-
-        # Validate specific_object_index
-        if object_selectivity == "specific":
-            if specific_object_index is None:
-                msg = "specific_object_index is required when object_selectivity='specific'"
-                raise ValueError(msg)
-            if not (0 <= specific_object_index < len(object_positions)):
-                msg = (
-                    f"specific_object_index ({specific_object_index}) must be in range "
-                    f"[0, {len(object_positions)})"
+        if self.object_selectivity not in valid_selectivities:
+            raise ValueError(
+                _format_error(
+                    f"object_selectivity must be one of {valid_selectivities}, "
+                    f"got {self.object_selectivity!r}.",
+                    fix="pass 'any' for a field at every object, 'nearest' for "
+                    "the closest object, or 'specific' with specific_object_index",
                 )
-                raise ValueError(msg)
-
-        # Validate metric
-        valid_metrics = ("euclidean", "geodesic")
-        if metric not in valid_metrics:
-            msg = f"metric must be one of {valid_metrics}, got '{metric}'"
-            raise ValueError(msg)
-
-        # Check if objects are outside environment bounds
-        contains_mask = env.contains(object_positions)
-        if not np.all(contains_mask):
-            n_outside = np.sum(~contains_mask)
-            warnings.warn(
-                f"{n_outside} object(s) are outside the environment bounds. "
-                f"Their distances may be computed from the nearest bin.",
-                UserWarning,
-                stacklevel=2,
+            )
+        index = self.specific_object_index
+        if self.object_selectivity == "specific" and (
+            index is None or not (0 <= index < len(objects))
+        ):
+            raise ValueError(
+                _format_error(
+                    f"object_selectivity='specific' needs specific_object_index "
+                    f"in [0, {len(objects)}), got {index!r}.",
+                    fix="pass the row of object_positions the cell responds to",
+                )
             )
 
-        # Store parameters
-        self.env = env
-        self.object_positions = object_positions
-        self.preferred_distance = preferred_distance
-        self.distance_width = distance_width
-        self.preferred_direction = preferred_direction
-        self.direction_frame = direction_frame
-        self.direction_kappa = direction_kappa
-        self.max_rate = max_rate
-        self.baseline_rate = baseline_rate
-        self.object_selectivity = object_selectivity
-        self.specific_object_index = specific_object_index
-        self.metric = metric
+        outside = ~env.contains(objects)
+        if outside.any() and self.metric == "geodesic":
+            raise ValueError(
+                _format_error(
+                    f"{call} got {int(outside.sum())} object(s) outside the "
+                    f"environment with metric='geodesic': "
+                    f"{objects[outside].tolist()}.",
+                    why="a geodesic distance is a path through the "
+                    "environment's bins, and an object outside them has no "
+                    "path to the animal.",
+                    fix="check the objects' coordinates and units, or use "
+                    "metric='euclidean' for an object beyond the arena",
+                )
+            )
+        if outside.any():
+            warnings.warn(
+                f"{int(outside.sum())} object(s) lie outside the environment: "
+                f"{objects[outside].tolist()}. Euclidean distances are measured "
+                "to the objects themselves, so their fields may fall partly or "
+                "wholly outside the arena. If the objects should be inside, "
+                "check their coordinates and units.",
+                UserWarning,
+                stacklevel=3,
+            )
 
-        # Precompute distance fields for geodesic metric
-        self._distance_fields: list[NDArray[np.float64]] | None
-        if metric == "geodesic":
-            self._distance_fields = []
-            for obj_pos in object_positions:
-                obj_bin = int(geodesic_lookup_bins(env, obj_pos[None, :])[0])
+        fields: NDArray[np.float64] | None = None
+        if self.metric == "geodesic":
+            object_bins = geodesic_lookup_bins(env, objects)
+            fields = np.stack(
+                [
+                    distance_field(env.connectivity, sources=[int(b)])
+                    for b in object_bins
+                ],
+                axis=1,
+            )
+            fields.setflags(write=False)
+        for name, value in (
+            ("object_positions", objects),
+            ("preferred_distance", float(distance)),
+            ("distance_tolerance", float(tolerance)),
+            (
+                "preferred_direction",
+                None
+                if self.preferred_direction is None
+                else float(self.preferred_direction),
+            ),
+            ("direction_concentration", float(self.direction_concentration)),
+            ("max_rate", float(self.max_rate)),
+            ("baseline_rate", float(self.baseline_rate)),
+            ("_distance_fields", fields),
+        ):
+            object.__setattr__(self, name, value)
 
-                # Compute distance field from this object's bin
-                dist_field = distance_field(env.connectivity, sources=[obj_bin])
-                self._distance_fields.append(dist_field)
-        else:
-            self._distance_fields = None
+    @property
+    def requires_headings(self) -> bool:
+        """True for egocentric direction tuning, which is relative to the heading."""
+        return (
+            self.direction_frame == "egocentric"
+            and self.preferred_direction is not None
+        )
 
     def firing_rate(
         self,
+        times: NDArray[np.float64],
         positions: NDArray[np.float64],
-        times: NDArray[np.float64] | None = None,
+        *,
         headings: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
         """Compute object-vector cell firing rate.
 
         Parameters
         ----------
+        times : NDArray[np.float64], shape (n_time,)
+            Sample times in seconds; the rate does not depend on them.
         positions : NDArray[np.float64], shape (n_time, 2)
             Animal positions in allocentric coordinates.
-        times : NDArray[np.float64], shape (n_time,), optional
-            Time points in seconds (not used, for API compatibility).
         headings : NDArray[np.float64], shape (n_time,), optional
             Animal heading in radians (allocentric convention: 0=East).
-            Required only for ``direction_frame="egocentric"`` when
-            ``preferred_direction`` is set. Allocentric models ignore headings.
+            Required only when ``requires_headings`` is True
+            (``direction_frame="egocentric"`` with ``preferred_direction``
+            set). Other models ignore headings.
 
         Returns
         -------
         firing_rate : NDArray[np.float64], shape (n_time,)
-            Firing rate in Hz at each position.
+            Firing rate in Hz at each position; NaN for a missing position
+            or heading.
 
         Raises
         ------
         ValueError
-            If egocentric directional tuning needs headings and none are supplied.
+            If ``positions`` is not one row of 2 coordinates per time, or
+            egocentric directional tuning needs headings and none (or not one
+            per time) are supplied.
 
         Notes
         -----
@@ -453,56 +494,39 @@ class ObjectVectorCellModel:
         4. Aggregate by object selectivity mode
         5. Scale by max_rate and add baseline
         """
-        positions = np.asarray(positions, dtype=np.float64)
-        n_time = len(positions)
-        n_objects = len(self.object_positions)
-
-        # Validate headings if directional tuning is enabled
-        if (
-            self.direction_frame == "egocentric"
-            and self.preferred_direction is not None
-            and headings is None
-        ):
-            raise ValueError(
-                _format_error(
-                    "headings is required for egocentric directional tuning.",
-                    why="Why: animal-relative bearing needs the heading at each sample",
-                    fix='pass headings to firing_rate(), or configure direction_frame="allocentric"',
-                )
+        call = "ObjectVectorCellModel.firing_rate()"
+        times, positions = _model_inputs(times, positions, 2, call=call)
+        if self.requires_headings:
+            headings = _model_headings(
+                headings,
+                len(times),
+                call=call,
+                alternative='; or configure direction_frame="allocentric" for '
+                "tuning to compass directions",
             )
+        assert self.preferred_distance is not None
+        assert self.distance_tolerance is not None
 
-        # Compute distances from positions to all objects
-        # Shape: (n_time, n_objects)
-        if self.metric == "euclidean":
-            # Euclidean distance
-            # positions: (n_time, 2)
-            # object_positions: (n_objects, 2)
+        # Distances from every position to every object, (n_time, n_objects).
+        if self._distance_fields is None:
             distances = np.linalg.norm(
                 positions[:, np.newaxis, :] - self.object_positions[np.newaxis, :, :],
                 axis=2,
             )
         else:
-            # Geodesic distance
-            assert self._distance_fields is not None
-
             bin_indices = geodesic_lookup_bins(self.env, positions)
-
-            # Lookup distances from precomputed fields; a missing position has
-            # no distance, so its rate stays NaN.
-            distances = np.full((n_time, n_objects), np.nan)
+            # A missing position has no distance, so its rate stays NaN.
+            distances = np.full((len(times), len(self.object_positions)), np.nan)
             observed = bin_indices >= 0
-            for i, dist_field in enumerate(self._distance_fields):
-                distances[observed, i] = dist_field[bin_indices[observed]]
+            distances[observed] = self._distance_fields[bin_indices[observed]]
 
-        # Apply Gaussian distance tuning
-        # distance_response: (n_time, n_objects)
-        distance_diff = distances - self.preferred_distance
-        distance_response = np.exp(-0.5 * (distance_diff / self.distance_width) ** 2)
+        distance_response = np.exp(
+            -0.5
+            * ((distances - self.preferred_distance) / self.distance_tolerance) ** 2
+        )
 
-        # Apply directional tuning if specified
         if self.preferred_direction is not None:
-            # Compute bearing to each object
-            # Shape: (n_time, n_objects)
+            # Animal-to-object direction of each object, (n_time, n_objects).
             if self.direction_frame == "allocentric":
                 delta = self.object_positions[None, :, :] - positions[:, None, :]
                 bearings = np.arctan2(delta[:, :, 1], delta[:, :, 0])
@@ -511,37 +535,29 @@ class ObjectVectorCellModel:
                 bearings = compute_egocentric_bearing(
                     positions, headings, self.object_positions
                 )
-
-            # Apply von Mises directional tuning, peak 1 at θ_pref:
-            # exp(κ (cos(θ - θ_pref) - 1)), which equals exp(κ cos(θ - θ_pref))
-            # / exp(κ) without overflowing exp(κ) for a sharp cell.
-            angle_diff = bearings - self.preferred_direction
+            # von Mises tuning with peak 1 at θ_pref, exp(κ (cos(θ - θ_pref) - 1)),
+            # which equals exp(κ cos(θ - θ_pref)) / exp(κ) without overflowing
+            # exp(κ) for a sharp cell.
             direction_response = np.exp(
-                self.direction_kappa * (np.cos(angle_diff) - 1.0)
+                self.direction_concentration
+                * (np.cos(bearings - self.preferred_direction) - 1.0)
             )
-
-            # Combine distance and direction tuning
             combined_response = distance_response * direction_response
         else:
             combined_response = distance_response
 
-        # Aggregate by object selectivity
         if self.object_selectivity == "any":
-            # Maximum response across all objects
             response = np.max(combined_response, axis=1)
         elif self.object_selectivity == "nearest":
-            # Response to nearest object only
             nearest_obj = np.argmin(distances, axis=1)
-            response = combined_response[np.arange(n_time), nearest_obj]
-        else:  # specific
+            response = combined_response[np.arange(len(times)), nearest_obj]
+        else:
             assert self.specific_object_index is not None
             response = combined_response[:, self.specific_object_index]
 
-        # Scale by max_rate and add baseline
         rates: NDArray[np.float64] = (
             self.baseline_rate + (self.max_rate - self.baseline_rate) * response
         )
-
         return rates
 
     @property
@@ -553,15 +569,19 @@ class ObjectVectorCellModel:
         parameters : dict[str, Any]
             Dictionary with keys:
 
-            - 'object_positions': NDArray - positions of objects
+            - 'cell_type': 'object_vector'
+            - 'object_positions': NDArray - positions of objects (read-only)
             - 'preferred_distance': float - preferred distance from object
-            - 'distance_width': float - distance tuning width
+            - 'distance_tolerance': float - distance tuning width
             - 'preferred_direction': float | None - preferred direction (radians)
             - 'direction_frame': str - allocentric or egocentric direction
-            - 'direction_kappa': float - direction tuning concentration
+            - 'direction_concentration': float - direction tuning concentration
             - 'max_rate': float - peak firing rate in Hz
             - 'baseline_rate': float - baseline firing rate in Hz
             - 'object_selectivity': str - object selectivity mode
+            - 'specific_object_index': int | None - the object of a
+              'specific' cell
+            - 'metric': str - distance metric
 
         Examples
         --------
@@ -570,25 +590,28 @@ class ObjectVectorCellModel:
         >>> from neurospatial.simulation.models.object_vector_cells import (
         ...     ObjectVectorCellModel,
         ... )
-        >>> samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        >>> env = Environment.from_samples(samples, bin_size=2.0)
+        >>> from shapely.geometry import box
+        >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0)
         >>> ovc = ObjectVectorCellModel(
         ...     env=env,
         ...     object_positions=np.array([[50.0, 50.0]]),
         ...     preferred_distance=10.0,
-        ...     distance_width=5.0,
+        ...     distance_tolerance=5.0,
         ... )
         >>> ovc.ground_truth["preferred_distance"]
         10.0
         """
         return {
-            "object_positions": self.object_positions.copy(),
+            "cell_type": "object_vector",
+            "object_positions": self.object_positions,
             "preferred_distance": self.preferred_distance,
-            "distance_width": self.distance_width,
+            "distance_tolerance": self.distance_tolerance,
             "preferred_direction": self.preferred_direction,
             "direction_frame": self.direction_frame,
-            "direction_kappa": self.direction_kappa,
+            "direction_concentration": self.direction_concentration,
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,
             "object_selectivity": self.object_selectivity,
+            "specific_object_index": self.specific_object_index,
+            "metric": self.metric,
         }

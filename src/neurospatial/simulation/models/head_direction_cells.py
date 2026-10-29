@@ -1,11 +1,23 @@
 """Head direction cell models for simulating directional firing patterns."""
 
+from __future__ import annotations
+
+from dataclasses import KW_ONLY, InitVar, dataclass
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.simulation.models.base import (
+    _check_angle,
+    _check_positive,
+    _check_rates,
+    _model_headings,
+    _model_inputs,
+)
 
+
+@dataclass(frozen=True, eq=False)
 class HeadDirectionCellModel:
     """Von Mises head direction cell model.
 
@@ -15,9 +27,10 @@ class HeadDirectionCellModel:
 
     Parameters
     ----------
-    preferred_direction : float
+    preferred_direction : float, optional
         Preferred firing direction in radians. Convention: 0 = East, π/2 = North,
-        π = West, -π/2 = South (standard mathematical convention).
+        π = West, -π/2 = South (standard mathematical convention). If None
+        (the default), drawn uniformly from [-π, π) with ``seed``.
     concentration : float, optional
         Von Mises concentration parameter (κ). Higher values = sharper tuning.
         Default is 9.1, a 22.5° half-width at half-maximum: Taube et al.
@@ -26,7 +39,7 @@ class HeadDirectionCellModel:
         the preferred direction, and a triangle 90° wide at its base is half
         its height 22.5° from the peak, so ``κ = ln 2 / (1 - cos 22.5°)``.
 
-        The half-width at half-maximum of the rate above baseline solves
+        With a zero baseline the rate falls to half its peak where
         ``exp(κ (cos Δ - 1)) = 1/2``, so ``HWHM = arccos(1 - ln(2)/κ)``
         (defined for κ ≥ ln(2)/2):
 
@@ -48,13 +61,20 @@ class HeadDirectionCellModel:
     Attributes
     ----------
     preferred_direction : float
-        Preferred firing direction in radians.
+        Preferred firing direction in radians, wrapped to [-π, π].
     concentration : float
         Von Mises concentration parameter.
     max_rate : float
         Peak firing rate in Hz.
     baseline_rate : float
         Baseline firing rate in Hz.
+
+    Raises
+    ------
+    ValueError
+        If ``preferred_direction`` is not finite, ``concentration`` is not
+        finite and positive, a rate is not finite or is negative, or
+        ``baseline_rate`` exceeds ``max_rate``.
 
     Examples
     --------
@@ -70,9 +90,11 @@ class HeadDirectionCellModel:
     ...     max_rate=50.0,
     ... )
     >>>
-    >>> # Generate head directions (full rotation)
+    >>> # A full turn on the spot, 100 samples over 1 s
     >>> headings = np.linspace(-np.pi, np.pi, 100)
-    >>> rates = hd_cell.firing_rate(headings)
+    >>> times = np.linspace(0.0, 1.0, 100)
+    >>> positions = np.zeros((100, 2))
+    >>> rates = hd_cell.firing_rate(times, positions, headings=headings)
     >>>
     >>> # Peak should be near π/2
     >>> peak_idx = np.argmax(rates)
@@ -89,12 +111,11 @@ class HeadDirectionCellModel:
     ... ]
     >>>
     >>> # Compute population response
-    >>> headings = np.random.uniform(-np.pi, np.pi, 1000)
     >>> population_rates = np.column_stack(
-    ...     [cell.firing_rate(headings) for cell in hd_cells]
+    ...     [cell.firing_rate(times, positions, headings=headings) for cell in hd_cells]
     ... )
     >>> population_rates.shape
-    (1000, 8)
+    (100, 8)
 
     Using with trajectory simulation:
 
@@ -118,7 +139,7 @@ class HeadDirectionCellModel:
     >>>
     >>> # Compute HD cell firing
     >>> hd_cell = HeadDirectionCellModel(preferred_direction=0.0)
-    >>> rates = hd_cell.firing_rate(headings)
+    >>> rates = hd_cell.firing_rate(times, positions, headings=headings)
     >>> bool(np.isfinite(rates).all())
     True
 
@@ -137,12 +158,14 @@ class HeadDirectionCellModel:
     This is normalized so peak rate equals max_rate when θ = θ_pref.
 
     **Angle Convention**: Uses standard mathematical convention where 0 = East,
-    angles increase counterclockwise. This differs from some HD literature that
-    uses 0 = North. Convert with: north_convention = (east_convention + π/2) % 2π
+    angles increase counterclockwise. Some HD literature reports compass
+    bearings instead (0 = North, increasing clockwise); convert with
+    ``bearing = (π/2 - θ) mod 2π``.
 
     **Biological Realism**: Real HD cells show:
 
-    - Anticipatory firing (~25ms lead of actual head direction)
+    - Anticipatory firing: anterior thalamic HD cells fire best for the
+      direction the head will face about 25 ms later (Blair & Sharp 1995)
     - Speed modulation in some cells
     - Context-dependent remapping
 
@@ -154,84 +177,72 @@ class HeadDirectionCellModel:
         recorded from the postsubiculum in freely moving rats. I. Description
         and quantitative analysis. Journal of Neuroscience, 10(2), 420-435.
 
-    Sargolini, F. et al. (2006). Conjunctive representation of position,
-        direction, and velocity in entorhinal cortex. Science, 312, 758-762.
+    Blair, H.T., & Sharp, P.E. (1995). Anticipatory head direction signals
+        in anterior thalamus: evidence for a thalamocortical circuit that
+        integrates angular head motion to compute head direction. Journal of
+        Neuroscience, 15(9), 6260-6270.
     """
 
-    def __init__(
-        self,
-        *,
-        preferred_direction: float | None = None,
-        concentration: float = 9.1,
-        max_rate: float = 35.0,
-        baseline_rate: float = 0.01,
-        seed: int | None = None,
-    ) -> None:
-        # Initialize random number generator
-        rng = np.random.default_rng(seed)
+    _: KW_ONLY
+    preferred_direction: float | None = None
+    concentration: float = 9.1
+    max_rate: float = 35.0
+    baseline_rate: float = 0.01
+    seed: InitVar[int | None] = None
 
-        # Set preferred direction
-        if preferred_direction is None:
-            # Random direction in [-π, π)
-            self.preferred_direction = rng.uniform(-np.pi, np.pi)
-        else:
-            # Wrap to [-π, π)
-            self.preferred_direction = float(
-                np.arctan2(
-                    np.sin(preferred_direction),
-                    np.cos(preferred_direction),
-                )
-            )
+    def __post_init__(self, seed: int | None) -> None:
+        direction = self.preferred_direction
+        if direction is None:
+            direction = float(np.random.default_rng(seed).uniform(-np.pi, np.pi))
+        _check_angle("preferred_direction", direction)
+        _check_positive("concentration", self.concentration, units=None)
+        _check_rates(self.max_rate, self.baseline_rate)
+        for name, value in (
+            (
+                "preferred_direction",
+                float(np.arctan2(np.sin(direction), np.cos(direction))),
+            ),
+            ("concentration", float(self.concentration)),
+            ("max_rate", float(self.max_rate)),
+            ("baseline_rate", float(self.baseline_rate)),
+        ):
+            object.__setattr__(self, name, value)
 
-        # Validate concentration
-        if concentration <= 0:
-            raise ValueError(
-                f"concentration must be positive, got {concentration}. "
-                "Typical values: 1.0 (broad), 2.0 (moderate), 5.0 (sharp)."
-            )
-        self.concentration = float(concentration)
-
-        # Validate rates
-        if max_rate < 0:
-            raise ValueError(f"max_rate must be non-negative (Hz), got {max_rate}.")
-        if baseline_rate < 0:
-            raise ValueError(
-                f"baseline_rate must be non-negative (Hz), got {baseline_rate}."
-            )
-        if baseline_rate > max_rate:
-            raise ValueError(
-                f"baseline_rate ({baseline_rate} Hz) cannot exceed "
-                f"max_rate ({max_rate} Hz)."
-            )
-
-        self.max_rate = float(max_rate)
-        self.baseline_rate = float(baseline_rate)
+    @property
+    def requires_headings(self) -> bool:
+        """True: the rate depends on head direction only."""
+        return True
 
     def firing_rate(
         self,
-        headings: NDArray[np.float64],
-        positions: NDArray[np.float64] | None = None,
-        times: NDArray[np.float64] | None = None,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        headings: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
         """Compute von Mises head direction firing rate.
 
         Parameters
         ----------
+        times : NDArray[np.float64], shape (n_time,)
+            Sample times in seconds; the rate does not depend on them.
+        positions : NDArray[np.float64], shape (n_time, n_dims)
+            Positions; only their number is checked, as position does not
+            change a head-direction cell's rate.
         headings : NDArray[np.float64], shape (n_time,)
-            Head direction in radians at each time point.
-            **Required for all HeadDirectionCellModel computations.**
-            Convention: 0 = East, π/2 = North (counterclockwise positive).
-        positions : NDArray[np.float64], shape (n_time, n_dims), optional
-            Position coordinates. Not used for HD cells but accepted for
-            compatibility. Kept for optional validation or extension.
-        times : NDArray[np.float64], shape (n_time,), optional
-            Time points in seconds. Not used for HD cells but accepted for
-            compatibility.
+            Head direction in radians at each time point (0 = East, π/2 =
+            North, counterclockwise positive). Required.
 
         Returns
         -------
         firing_rate : NDArray[np.float64], shape (n_time,)
-            Firing rate in Hz at each time point.
+            Firing rate in Hz at each time point; NaN for a missing heading.
+
+        Raises
+        ------
+        ValueError
+            If ``headings`` is None or not one angle per time, or
+            ``positions`` does not have one row per time.
 
         Notes
         -----
@@ -243,24 +254,17 @@ class HeadDirectionCellModel:
 
         - rate = max_rate when θ = θ_pref (since cos(0) - 1 = 0)
         - rate → baseline as θ moves away from θ_pref
-
-        **Semantics**: Head direction cells require heading information to compute
-        firing rates. Position is irrelevant for HD cells - they respond purely
-        to directional information. This makes ``headings`` a required first parameter,
-        unlike place cells where ``positions`` is required.
         """
-        headings = np.asarray(headings, dtype=np.float64).ravel()
-
-        # Compute angular difference (handles circular wraparound)
-        angle_diff = headings - self.preferred_direction
-
-        # Von Mises tuning: exp(κ * (cos(θ - θ_pref) - 1))
-        # The -1 normalizes so peak = 1 when θ = θ_pref
-        tuning = np.exp(self.concentration * (np.cos(angle_diff) - 1))
-
-        # Scale to firing rate range
-        rates = self.baseline_rate + (self.max_rate - self.baseline_rate) * tuning
-
+        call = "HeadDirectionCellModel.firing_rate()"
+        times, _positions = _model_inputs(times, positions, None, call=call)
+        headings = _model_headings(headings, len(times), call=call)
+        assert self.preferred_direction is not None
+        tuning = np.exp(
+            self.concentration * (np.cos(headings - self.preferred_direction) - 1)
+        )
+        rates: NDArray[np.float64] = (
+            self.baseline_rate + (self.max_rate - self.baseline_rate) * tuning
+        )
         return rates
 
     @property
@@ -272,14 +276,26 @@ class HeadDirectionCellModel:
         parameters : dict[str, Any]
             Dictionary with keys:
 
+            - 'cell_type': 'head_direction'
             - 'preferred_direction': float - preferred direction in radians
             - 'preferred_direction_deg': float - preferred direction in degrees
             - 'concentration': float - von Mises concentration (κ)
-            - 'tuning_width': float - half-width at half-maximum of the rate
-              above baseline, in radians (π when the rate never halves)
+            - 'tuning_width': float - half-width at half-maximum in radians:
+              the angle from the preferred direction at which the rate falls
+              to ``max_rate / 2``, as ``DirectionalRateResult.tuning_width``
+              measures it. NaN when the rate never falls that low.
             - 'tuning_width_deg': float - the same half-width in degrees
             - 'max_rate': float - peak firing rate in Hz
             - 'baseline_rate': float - baseline firing rate in Hz
+
+        Notes
+        -----
+        The rate is ``b + (m - b) exp(κ (cos Δ - 1))``, so it equals ``m / 2``
+        where ``exp(κ (cos Δ - 1)) = q`` with ``q = (m/2 - b) / (m - b)``,
+        that is at ``Δ = arccos(1 + ln(q) / κ)``. The rate never falls to
+        half the peak when ``b ≥ m / 2`` (``q ≤ 0``) or when even the minimum,
+        at ``Δ = π``, is above it (``1 + ln(q) / κ < -1``). With ``b = 0``,
+        ``q = 1/2`` and the half-width is ``arccos(1 - ln(2) / κ)``.
 
         Examples
         --------
@@ -297,19 +313,21 @@ class HeadDirectionCellModel:
         >>> hd.ground_truth["max_rate"]
         50.0
         """
-        # Half-width at half-maximum (HWHM) of the rate above baseline
-        # From von Mises: at half-max, cos(θ) = 1 - ln(2)/κ
-        # So HWHM = arccos(1 - ln(2)/κ)
-        cos_half = 1 - np.log(2) / self.concentration
-        # Clamp to valid range for arccos
-        cos_half = np.clip(cos_half, -1, 1)
-        tuning_width = np.arccos(cos_half)
-
+        assert self.preferred_direction is not None
+        peak, baseline = self.max_rate, self.baseline_rate
+        tuning_width = np.nan
+        if baseline < peak / 2:
+            cos_half = 1 + np.log((peak / 2 - baseline) / (peak - baseline)) / (
+                self.concentration
+            )
+            if cos_half >= -1:
+                tuning_width = float(np.arccos(cos_half))
         return {
+            "cell_type": "head_direction",
             "preferred_direction": self.preferred_direction,
             "preferred_direction_deg": float(np.degrees(self.preferred_direction)),
             "concentration": self.concentration,
-            "tuning_width": float(tuning_width),
+            "tuning_width": tuning_width,
             "tuning_width_deg": float(np.degrees(tuning_width)),
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,
@@ -317,20 +335,28 @@ class HeadDirectionCellModel:
 
     @property
     def mean_vector_length(self) -> float:
-        """Theoretical mean vector length for this concentration.
+        """Mean vector length of this cell's tuning curve.
 
         Returns
         -------
         float
-            Expected Rayleigh vector length (0-1) for ideal tuning curve.
+            The rate-weighted mean resultant length of the tuning curve over
+            a uniform sampling of headings, between 0 and 1.
 
         Notes
         -----
-        For von Mises distribution with concentration κ:
-            MVL = I₁(κ) / I₀(κ)
+        The tuning curve is ``r(θ) = b + (m - b) exp(κ (cos(θ - μ) - 1))``.
+        Its mean resultant length is ``|∫ r(θ) e^{iθ} dθ| / ∫ r(θ) dθ``; with
+        ``∫ e^{κ cos θ} cos θ dθ = 2π I₁(κ)`` and ``∫ e^{κ cos θ} dθ = 2π I₀(κ)``,
 
-        where I₀ and I₁ are modified Bessel functions of the first kind.
+            MVL = (m - b) e^{-κ} I₁(κ) / (b + (m - b) e^{-κ} I₀(κ))
+
+        where I₀ and I₁ are modified Bessel functions of the first kind. The
+        baseline adds firing in every direction, so it lowers the length;
+        with ``b = 0`` it is the von Mises value ``I₁(κ) / I₀(κ)``.
         """
-        from scipy.special import i0, i1
+        from scipy.special import i0e, i1e
 
-        return float(i1(self.concentration) / i0(self.concentration))
+        tuned = self.max_rate - self.baseline_rate
+        kappa = self.concentration
+        return float(tuned * i1e(kappa) / (self.baseline_rate + tuned * i0e(kappa)))

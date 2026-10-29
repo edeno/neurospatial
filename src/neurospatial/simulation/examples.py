@@ -770,7 +770,7 @@ def border_cell_session(
         ground_truth[cell_idx] = {
             "cell_type": "place",
             "center": center.tolist(),
-            "width": float(place_model.width),
+            "width": float(place_model.ground_truth["width"]),
             "max_rate": float(place_model.max_rate),
             "baseline_rate": float(place_model.baseline_rate),
         }

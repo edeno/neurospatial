@@ -335,7 +335,7 @@ def validate_simulation(
                 width=gt["width"],
                 max_rate=1.0,
                 baseline_rate=0.0,
-            ).firing_rate(env.bin_centers)
+            ).firing_rate(np.zeros(env.n_bins), env.bin_centers)
         else:
             # Field-correlation validation is only implemented for place cells
             # (it reconstructs the ground-truth field from a Gaussian place

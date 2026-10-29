@@ -45,7 +45,7 @@ positions, times = simulate_trajectory_ou(
 place_cell = PlaceCellModel(
     env, center=np.array([50.0, 50.0]), width=15.0, max_rate=30.0, seed=1
 )
-firing_rate_hz = place_cell.firing_rate(positions, times)
+firing_rate_hz = place_cell.firing_rate(times, positions)
 spike_times = generate_poisson_spikes(firing_rate_hz, times, seed=1)
 
 # 3. Estimate the place field: a boundary-aware, smoothed firing-rate map.

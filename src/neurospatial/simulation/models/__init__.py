@@ -8,9 +8,10 @@ This module provides implementations of various spatially tuned neural models:
 - ObjectVectorCellModel: Object-distance and direction tuned cells
 - SpatialViewCellModel: Gaze-based spatial view cells
 - HeadDirectionCellModel: Von Mises directional tuning
-- SpeedCellModel: Speed-modulated firing (planned)
 
-All models implement the NeuralModel protocol.
+All models implement the NeuralModel protocol:
+``firing_rate(times, positions, *, headings=None)``, ``requires_headings``
+and ``ground_truth``.
 """
 
 # Base protocol
@@ -36,9 +37,6 @@ from neurospatial.simulation.models.place_cells import PlaceCellModel
 
 # Spatial view cells
 from neurospatial.simulation.models.spatial_view_cells import SpatialViewCellModel
-
-# Planned: Additional cell types
-# from neurospatial.simulation.models.speed_cells import SpeedCellModel
 
 __all__ = [
     "BorderCellModel",

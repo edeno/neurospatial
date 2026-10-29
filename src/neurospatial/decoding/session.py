@@ -390,7 +390,7 @@ def decode_session(
     >>> n_neurons = 10
     >>> spike_times = [
     ...     generate_poisson_spikes(
-    ...         PlaceCellModel(env, width=15.0, seed=i).firing_rate(positions, times),
+    ...         PlaceCellModel(env, width=15.0, seed=i).firing_rate(times, positions),
     ...         times,
     ...         seed=i,
     ...     )

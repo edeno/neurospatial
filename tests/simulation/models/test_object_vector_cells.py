@@ -7,39 +7,16 @@ from numpy.testing import assert_allclose
 from neurospatial import Environment
 
 
-class TestModuleSetup:
-    """Test module imports and structure."""
+@pytest.fixture(scope="module")
+def env():
+    """A walled 100 x 100 cm box with 2 cm bins."""
+    from shapely.geometry import box
 
-    def test_import_module(self):
-        """Module can be imported."""
-        from neurospatial.simulation.models import object_vector_cells
-
-        assert object_vector_cells is not None
-
-    def test_import_class(self):
-        """ObjectVectorCellModel can be imported."""
-        from neurospatial.simulation.models.object_vector_cells import (
-            ObjectVectorCellModel,
-        )
-
-        assert ObjectVectorCellModel is not None
-
-    def test_module_docstring_exists(self):
-        """Module has a docstring."""
-        from neurospatial.simulation.models import object_vector_cells
-
-        assert object_vector_cells.__doc__ is not None
-        assert len(object_vector_cells.__doc__) > 50
+    return Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
 
 class TestObjectVectorCellModelCreation:
     """Test ObjectVectorCellModel dataclass creation."""
-
-    @pytest.fixture
-    def env(self):
-        """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
 
     @pytest.fixture
     def object_positions(self):
@@ -57,13 +34,13 @@ class TestObjectVectorCellModelCreation:
             env=env,
             object_positions=object_positions,
             preferred_distance=10.0,
-            distance_width=5.0,
+            distance_tolerance=5.0,
         )
 
         assert model.env is env
         assert_allclose(model.object_positions, object_positions)
         assert model.preferred_distance == 10.0
-        assert model.distance_width == 5.0
+        assert model.distance_tolerance == 5.0
 
     def test_default_distances_are_physical(self, object_positions):
         """21.2 cm preferred distance and 6.9 cm width, in the env's units."""
@@ -76,7 +53,7 @@ class TestObjectVectorCellModelCreation:
         env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
         model = ObjectVectorCellModel(env, object_positions=object_positions)
         assert model.preferred_distance == pytest.approx(21.2)
-        assert model.distance_width == pytest.approx(6.9)
+        assert model.distance_tolerance == pytest.approx(6.9)
 
     def test_default_parameters(self, env, object_positions):
         """Model uses sensible defaults for optional parameters."""
@@ -89,7 +66,7 @@ class TestObjectVectorCellModelCreation:
             env=env,
             object_positions=object_positions,
             preferred_distance=10.0,
-            distance_width=5.0,
+            distance_tolerance=5.0,
         )
 
         # Default direction tuning (None = omnidirectional)
@@ -112,13 +89,13 @@ class TestObjectVectorCellModelCreation:
             env=env,
             object_positions=object_positions,
             preferred_distance=10.0,
-            distance_width=5.0,
+            distance_tolerance=5.0,
             preferred_direction=np.pi / 4,  # 45 degrees
-            direction_kappa=4.0,  # ~30 degree half-width
+            direction_concentration=4.0,  # ~30 degree half-width
         )
 
         assert model.preferred_direction == pytest.approx(np.pi / 4)
-        assert model.direction_kappa == 4.0
+        assert model.direction_concentration == 4.0
 
     def test_single_object(self, env):
         """Model works with a single object."""
@@ -133,7 +110,7 @@ class TestObjectVectorCellModelCreation:
             env=env,
             object_positions=single_object,
             preferred_distance=10.0,
-            distance_width=5.0,
+            distance_tolerance=5.0,
         )
 
         assert model.object_positions.shape == (1, 2)
@@ -141,12 +118,6 @@ class TestObjectVectorCellModelCreation:
 
 class TestParameterValidation:
     """Test parameter validation in __post_init__."""
-
-    @pytest.fixture
-    def env(self):
-        """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
 
     @pytest.fixture
     def object_positions(self):
@@ -165,31 +136,31 @@ class TestParameterValidation:
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=-5.0,
-                distance_width=5.0,
+                distance_tolerance=5.0,
             )
 
-    def test_non_positive_distance_width_raises(self, env, object_positions):
-        """Non-positive distance_width raises ValueError."""
+    def test_non_positive_distance_tolerance_raises(self, env, object_positions):
+        """Non-positive distance_tolerance raises ValueError."""
         from neurospatial.simulation.models.object_vector_cells import (
             ObjectVectorCellModel,
         )
 
-        with pytest.raises(ValueError, match=r"distance_width.*positive"):
+        with pytest.raises(ValueError, match=r"distance_tolerance.*positive"):
             ObjectVectorCellModel(
                 direction_frame="egocentric",
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
-                distance_width=0.0,
+                distance_tolerance=0.0,
             )
 
-        with pytest.raises(ValueError, match=r"distance_width.*positive"):
+        with pytest.raises(ValueError, match=r"distance_tolerance.*positive"):
             ObjectVectorCellModel(
                 direction_frame="egocentric",
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
-                distance_width=-1.0,
+                distance_tolerance=-1.0,
             )
 
     def test_non_positive_max_rate_raises(self, env, object_positions):
@@ -204,7 +175,7 @@ class TestParameterValidation:
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
-                distance_width=5.0,
+                distance_tolerance=5.0,
                 max_rate=0.0,
             )
 
@@ -220,42 +191,42 @@ class TestParameterValidation:
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
-                distance_width=5.0,
+                distance_tolerance=5.0,
                 baseline_rate=-1.0,
             )
 
     def test_baseline_rate_exceeds_max_rate_raises(self, env, object_positions):
-        """baseline_rate >= max_rate raises ValueError."""
+        """A baseline above the peak raises ValueError."""
         from neurospatial.simulation.models.object_vector_cells import (
             ObjectVectorCellModel,
         )
 
-        with pytest.raises(ValueError, match=r"baseline_rate.*less than.*max_rate"):
+        with pytest.raises(ValueError, match=r"baseline_rate .* is above max_rate"):
             ObjectVectorCellModel(
                 direction_frame="egocentric",
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
-                distance_width=5.0,
+                distance_tolerance=5.0,
                 max_rate=10.0,
                 baseline_rate=15.0,
             )
 
-    def test_non_positive_direction_kappa_raises(self, env, object_positions):
-        """Non-positive direction_kappa raises ValueError."""
+    def test_non_positive_direction_concentration_raises(self, env, object_positions):
+        """Non-positive direction_concentration raises ValueError."""
         from neurospatial.simulation.models.object_vector_cells import (
             ObjectVectorCellModel,
         )
 
-        with pytest.raises(ValueError, match=r"direction_kappa.*positive"):
+        with pytest.raises(ValueError, match=r"direction_concentration.*positive"):
             ObjectVectorCellModel(
                 direction_frame="egocentric",
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
-                distance_width=5.0,
+                distance_tolerance=5.0,
                 preferred_direction=0.0,
-                direction_kappa=0.0,
+                direction_concentration=0.0,
             )
 
     def test_invalid_object_selectivity_raises(self, env, object_positions):
@@ -272,7 +243,7 @@ class TestParameterValidation:
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
-                distance_width=5.0,
+                distance_tolerance=5.0,
                 object_selectivity="invalid",
             )
 
@@ -288,7 +259,7 @@ class TestParameterValidation:
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
-                distance_width=5.0,
+                distance_tolerance=5.0,
                 metric="invalid",
             )
 
@@ -298,17 +269,17 @@ class TestParameterValidation:
             ObjectVectorCellModel,
         )
 
-        with pytest.raises(ValueError, match=r"object_positions.*2D"):
+        with pytest.raises(ValueError, match=r"object_positions must have shape"):
             ObjectVectorCellModel(
                 direction_frame="egocentric",
                 env=env,
                 object_positions=np.array([25.0, 25.0]),  # 1D, not 2D
                 preferred_distance=10.0,
-                distance_width=5.0,
+                distance_tolerance=5.0,
             )
 
     def test_objects_outside_environment_warns(self, env):
-        """Objects outside environment bounds emit warning."""
+        """A Euclidean object outside the environment is allowed, with a warning."""
         from neurospatial.simulation.models.object_vector_cells import (
             ObjectVectorCellModel,
         )
@@ -321,56 +292,12 @@ class TestParameterValidation:
                 env=env,
                 object_positions=outside_objects,
                 preferred_distance=10.0,
-                distance_width=5.0,
+                distance_tolerance=5.0,
             )
 
 
 class TestFiringRateDistanceTuning:
     """Test firing_rate() method with distance tuning only."""
-
-    @pytest.fixture
-    def env(self):
-        """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
-
-    def test_firing_rate_shape(self, env):
-        """Firing rate has correct shape."""
-        from neurospatial.simulation.models.object_vector_cells import (
-            ObjectVectorCellModel,
-        )
-
-        model = ObjectVectorCellModel(
-            direction_frame="egocentric",
-            env=env,
-            object_positions=np.array([[50.0, 50.0]]),
-            preferred_distance=10.0,
-            distance_width=5.0,
-        )
-
-        positions = np.random.default_rng(42).uniform(0, 100, (100, 2))
-        rates = model.firing_rate(positions)
-
-        assert rates.shape == (100,)
-
-    def test_firing_rate_non_negative(self, env):
-        """Firing rates are always non-negative."""
-        from neurospatial.simulation.models.object_vector_cells import (
-            ObjectVectorCellModel,
-        )
-
-        model = ObjectVectorCellModel(
-            direction_frame="egocentric",
-            env=env,
-            object_positions=np.array([[50.0, 50.0]]),
-            preferred_distance=10.0,
-            distance_width=5.0,
-        )
-
-        positions = np.random.default_rng(42).uniform(0, 100, (1000, 2))
-        rates = model.firing_rate(positions)
-
-        assert np.all(rates >= 0)
 
     def test_firing_rate_peaks_at_preferred_distance(self, env):
         """Firing rate is highest at preferred distance from object."""
@@ -386,7 +313,7 @@ class TestFiringRateDistanceTuning:
             env=env,
             object_positions=object_pos,
             preferred_distance=preferred_distance,
-            distance_width=5.0,
+            distance_tolerance=5.0,
             max_rate=20.0,
             baseline_rate=0.1,
         )
@@ -398,9 +325,9 @@ class TestFiringRateDistanceTuning:
         # Position too far
         too_far = np.array([[50.0 + 25.0, 50.0]])
 
-        rate_preferred = model.firing_rate(at_preferred)[0]
-        rate_close = model.firing_rate(too_close)[0]
-        rate_far = model.firing_rate(too_far)[0]
+        rate_preferred = model.firing_rate(np.zeros(len(at_preferred)), at_preferred)[0]
+        rate_close = model.firing_rate(np.zeros(len(too_close)), too_close)[0]
+        rate_far = model.firing_rate(np.zeros(len(too_far)), too_far)[0]
 
         # Rate at preferred distance should be highest
         assert rate_preferred > rate_close
@@ -417,14 +344,14 @@ class TestFiringRateDistanceTuning:
 
         object_pos = np.array([[50.0, 50.0]])
         preferred_distance = 15.0
-        distance_width = 5.0
+        distance_tolerance = 5.0
 
         model = ObjectVectorCellModel(
             direction_frame="egocentric",
             env=env,
             object_positions=object_pos,
             preferred_distance=preferred_distance,
-            distance_width=distance_width,
+            distance_tolerance=distance_tolerance,
             max_rate=20.0,
             baseline_rate=0.0,
         )
@@ -438,11 +365,11 @@ class TestFiringRateDistanceTuning:
             ]
         )
 
-        rates = model.firing_rate(positions)
+        rates = model.firing_rate(np.zeros(len(positions)), positions)
 
         # Expected Gaussian response
         expected_gaussian = np.exp(
-            -0.5 * ((distances - preferred_distance) / distance_width) ** 2
+            -0.5 * ((distances - preferred_distance) / distance_tolerance) ** 2
         )
         expected_rates = (
             model.baseline_rate
@@ -454,12 +381,6 @@ class TestFiringRateDistanceTuning:
 
 class TestFiringRateDirectionTuning:
     """Test firing_rate() method with direction tuning."""
-
-    @pytest.fixture
-    def env(self):
-        """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
 
     def test_directional_tuning_preferred_direction(self, env):
         """Firing rate is highest when object is in preferred direction."""
@@ -476,9 +397,9 @@ class TestFiringRateDirectionTuning:
             env=env,
             object_positions=object_pos,
             preferred_distance=preferred_distance,
-            distance_width=5.0,
+            distance_tolerance=5.0,
             preferred_direction=preferred_direction,
-            direction_kappa=4.0,
+            direction_concentration=4.0,
             max_rate=20.0,
             baseline_rate=0.0,
         )
@@ -492,8 +413,12 @@ class TestFiringRateDirectionTuning:
         position_behind = np.array([[60.0, 50.0]])  # 10 units East of object
         heading_behind = np.array([np.pi])  # Facing West (toward object)
 
-        rate_ahead = model.firing_rate(position_ahead, headings=heading_ahead)[0]
-        rate_behind = model.firing_rate(position_behind, headings=heading_behind)[0]
+        rate_ahead = model.firing_rate(
+            np.zeros(len(position_ahead)), position_ahead, headings=heading_ahead
+        )[0]
+        rate_behind = model.firing_rate(
+            np.zeros(len(position_behind)), position_behind, headings=heading_behind
+        )[0]
 
         # Both positions should have similar rates since object is ahead in egocentric frame
         # (both cases: object is in preferred direction relative to heading)
@@ -508,16 +433,16 @@ class TestFiringRateDirectionTuning:
 
         object_pos = np.array([[50.0, 50.0]])
         preferred_direction = 0.0  # Object ahead
-        direction_kappa = 4.0  # ~30 degree half-width
+        direction_concentration = 4.0  # ~30 degree half-width
 
         model = ObjectVectorCellModel(
             direction_frame="egocentric",
             env=env,
             object_positions=object_pos,
             preferred_distance=10.0,
-            distance_width=100.0,  # Wide distance tuning to isolate direction effect
+            distance_tolerance=100.0,  # Wide distance tuning to isolate direction effect
             preferred_direction=preferred_direction,
-            direction_kappa=direction_kappa,
+            direction_concentration=direction_concentration,
             max_rate=20.0,
             baseline_rate=0.0,
         )
@@ -535,7 +460,9 @@ class TestFiringRateDirectionTuning:
 
         rates = []
         for h in headings:
-            r = model.firing_rate(position, headings=np.array([h]))[0]
+            r = model.firing_rate(
+                np.zeros(len(position)), position, headings=np.array([h])
+            )[0]
             rates.append(r)
 
         rates = np.array(rates)
@@ -562,9 +489,9 @@ class TestFiringRateDirectionTuning:
             env=env,
             object_positions=object_pos,
             preferred_distance=10.0,
-            distance_width=100.0,  # wide to isolate the direction term
+            distance_tolerance=100.0,  # wide to isolate the direction term
             preferred_direction=0.0,  # fires when object is straight ahead
-            direction_kappa=4.0,
+            direction_concentration=4.0,
             max_rate=20.0,
             baseline_rate=0.0,
         )
@@ -574,8 +501,12 @@ class TestFiringRateDirectionTuning:
         # swaps the egocentric bearing sign (left <-> right), so a tuning curve
         # centered on 0 must respond identically at +pi/4 and -pi/4.
         position = np.array([[40.0, 50.0]])
-        rate_left = model.firing_rate(position, headings=np.array([np.pi / 4]))[0]
-        rate_right = model.firing_rate(position, headings=np.array([-np.pi / 4]))[0]
+        rate_left = model.firing_rate(
+            np.zeros(len(position)), position, headings=np.array([np.pi / 4])
+        )[0]
+        rate_right = model.firing_rate(
+            np.zeros(len(position)), position, headings=np.array([-np.pi / 4])
+        )[0]
         assert np.isclose(rate_left, rate_right, rtol=1e-6)
 
     @pytest.mark.parametrize("preferred_direction", [0.0, np.pi / 2, np.pi, -np.pi / 2])
@@ -600,9 +531,9 @@ class TestFiringRateDirectionTuning:
             env=env,
             object_positions=object_pos,
             preferred_distance=10.0,
-            distance_width=100.0,  # wide to isolate the direction term
+            distance_tolerance=100.0,  # wide to isolate the direction term
             preferred_direction=preferred_direction,
-            direction_kappa=4.0,
+            direction_concentration=4.0,
             max_rate=20.0,
             baseline_rate=0.0,
         )
@@ -616,8 +547,12 @@ class TestFiringRateDirectionTuning:
         delta = np.pi / 4
         heading_plus = -(preferred_direction + delta)
         heading_minus = -(preferred_direction - delta)
-        rate_plus = model.firing_rate(position, headings=np.array([heading_plus]))[0]
-        rate_minus = model.firing_rate(position, headings=np.array([heading_minus]))[0]
+        rate_plus = model.firing_rate(
+            np.zeros(len(position)), position, headings=np.array([heading_plus])
+        )[0]
+        rate_minus = model.firing_rate(
+            np.zeros(len(position)), position, headings=np.array([heading_minus])
+        )[0]
 
         # Symmetric and non-trivial (the tuning is active, not a flat 0).
         assert np.isclose(rate_plus, rate_minus, rtol=1e-6)
@@ -626,12 +561,6 @@ class TestFiringRateDirectionTuning:
 
 class TestObjectSelectivity:
     """Test different object selectivity modes."""
-
-    @pytest.fixture
-    def env(self):
-        """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
 
     @pytest.fixture
     def two_objects(self):
@@ -648,14 +577,14 @@ class TestObjectSelectivity:
             env,
             object_positions=np.array([[40.0, 50.0], [60.0, 50.0]]),
             preferred_distance=15.0,
-            distance_width=3.0,
+            distance_tolerance=3.0,
             preferred_direction=0.0,  # the object is East of the animal
             baseline_rate=0.0,
         )
         # 15 cm West of the first object, 15 cm West of the second (whose
         # nearest object is the first, 5 cm away), and far from both fields.
         positions = np.array([[25.0, 50.0], [45.0, 50.0], [50.0, 90.0]])
-        rates = model.firing_rate(positions)
+        rates = model.firing_rate(np.zeros(len(positions)), positions)
         np.testing.assert_allclose(rates[:2], model.max_rate)
         assert rates[2] < 1e-6
 
@@ -670,7 +599,7 @@ class TestObjectSelectivity:
             env=env,
             object_positions=two_objects,
             preferred_distance=10.0,
-            distance_width=5.0,
+            distance_tolerance=5.0,
             object_selectivity="nearest",
         )
 
@@ -683,8 +612,10 @@ class TestObjectSelectivity:
             [[75.0 + 10.0, 50.0]]
         )  # At preferred distance from obj 1
 
-        rate_first = model.firing_rate(pos_near_first)[0]
-        rate_second = model.firing_rate(pos_near_second)[0]
+        rate_first = model.firing_rate(np.zeros(len(pos_near_first)), pos_near_first)[0]
+        rate_second = model.firing_rate(
+            np.zeros(len(pos_near_second)), pos_near_second
+        )[0]
 
         # Both should have high rates (responding to their nearest object)
         assert rate_first > 0.5 * model.max_rate
@@ -701,7 +632,7 @@ class TestObjectSelectivity:
             env=env,
             object_positions=two_objects,
             preferred_distance=10.0,
-            distance_width=5.0,
+            distance_tolerance=5.0,
             object_selectivity="any",
         )
 
@@ -710,7 +641,7 @@ class TestObjectSelectivity:
         # For preferred_distance=10, we need to be 10 units from at least one object
         pos_near_first = np.array([[25.0 + 10.0, 50.0]])
 
-        rate = model.firing_rate(pos_near_first)[0]
+        rate = model.firing_rate(np.zeros(len(pos_near_first)), pos_near_first)[0]
 
         # Should have high rate
         assert rate > 0.5 * model.max_rate
@@ -727,7 +658,7 @@ class TestObjectSelectivity:
             env=env,
             object_positions=two_objects,
             preferred_distance=10.0,
-            distance_width=5.0,
+            distance_tolerance=5.0,
             object_selectivity="specific",
             specific_object_index=1,
         )
@@ -737,8 +668,10 @@ class TestObjectSelectivity:
         # Position at preferred distance from object 1
         pos_near_second = np.array([[75.0 + 10.0, 50.0]])
 
-        rate_first = model.firing_rate(pos_near_first)[0]
-        rate_second = model.firing_rate(pos_near_second)[0]
+        rate_first = model.firing_rate(np.zeros(len(pos_near_first)), pos_near_first)[0]
+        rate_second = model.firing_rate(
+            np.zeros(len(pos_near_second)), pos_near_second
+        )[0]
 
         # Rate near object 1 should be high
         assert rate_second > 0.5 * model.max_rate
@@ -749,12 +682,6 @@ class TestObjectSelectivity:
 
 class TestGeodesicDistance:
     """Test geodesic vs Euclidean distance modes."""
-
-    @pytest.fixture
-    def env(self):
-        """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
 
     def test_euclidean_distance_used_by_default(self, env):
         """Euclidean distance is used when metric='euclidean'."""
@@ -767,7 +694,7 @@ class TestGeodesicDistance:
             env=env,
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
-            distance_width=5.0,
+            distance_tolerance=5.0,
             metric="euclidean",
         )
 
@@ -775,7 +702,7 @@ class TestGeodesicDistance:
 
         # Should run without errors
         positions = np.array([[60.0, 50.0], [70.0, 50.0]])
-        rates = model.firing_rate(positions)
+        rates = model.firing_rate(np.zeros(len(positions)), positions)
         assert len(rates) == 2
 
     def test_geodesic_distance_precomputes_fields(self, env):
@@ -789,7 +716,7 @@ class TestGeodesicDistance:
             env=env,
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
-            distance_width=5.0,
+            distance_tolerance=5.0,
             metric="geodesic",
         )
 
@@ -812,9 +739,9 @@ class TestGeodesicDistance:
                 env=env,
                 object_positions=np.array([[50.0, 50.0]]),
                 preferred_distance=10.0,
-                distance_width=5.0,
+                distance_tolerance=5.0,
                 metric=metric,
-            ).firing_rate(positions)
+            ).firing_rate(np.zeros(len(positions)), positions)
             for metric in ("euclidean", "geodesic")
         }
 
@@ -827,12 +754,6 @@ class TestGeodesicDistance:
 class TestGroundTruth:
     """Test ground_truth property."""
 
-    @pytest.fixture
-    def env(self):
-        """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
-
     def test_ground_truth_contains_all_parameters(self, env):
         """ground_truth contains all model parameters."""
         from neurospatial.simulation.models.object_vector_cells import (
@@ -844,9 +765,9 @@ class TestGroundTruth:
             env=env,
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
-            distance_width=5.0,
+            distance_tolerance=5.0,
             preferred_direction=np.pi / 4,
-            direction_kappa=4.0,
+            direction_concentration=4.0,
             max_rate=25.0,
             baseline_rate=0.5,
             object_selectivity="nearest",
@@ -857,9 +778,9 @@ class TestGroundTruth:
         # Check all expected keys
         assert "object_positions" in gt
         assert "preferred_distance" in gt
-        assert "distance_width" in gt
+        assert "distance_tolerance" in gt
         assert "preferred_direction" in gt
-        assert "direction_kappa" in gt
+        assert "direction_concentration" in gt
         assert "max_rate" in gt
         assert "baseline_rate" in gt
         assert "object_selectivity" in gt
@@ -867,9 +788,9 @@ class TestGroundTruth:
         # Check values
         assert_allclose(gt["object_positions"], np.array([[50.0, 50.0]]))
         assert gt["preferred_distance"] == 10.0
-        assert gt["distance_width"] == 5.0
+        assert gt["distance_tolerance"] == 5.0
         assert gt["preferred_direction"] == pytest.approx(np.pi / 4)
-        assert gt["direction_kappa"] == 4.0
+        assert gt["direction_concentration"] == 4.0
         assert gt["max_rate"] == 25.0
         assert gt["baseline_rate"] == 0.5
         assert gt["object_selectivity"] == "nearest"
@@ -885,7 +806,7 @@ class TestGroundTruth:
             env=env,
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
-            distance_width=5.0,
+            distance_tolerance=5.0,
         )
 
         gt = model.ground_truth
@@ -900,12 +821,6 @@ class TestGroundTruth:
 class TestProtocolCompliance:
     """Test compliance with NeuralModel protocol."""
 
-    @pytest.fixture
-    def env(self):
-        """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
-
     def test_implements_neural_model_protocol(self, env):
         """ObjectVectorCellModel implements NeuralModel protocol."""
         from neurospatial.simulation.models.base import NeuralModel
@@ -918,35 +833,10 @@ class TestProtocolCompliance:
             env=env,
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
-            distance_width=5.0,
+            distance_tolerance=5.0,
         )
 
         assert isinstance(model, NeuralModel)
-
-    def test_firing_rate_signature(self, env):
-        """firing_rate() has correct signature."""
-        from neurospatial.simulation.models.object_vector_cells import (
-            ObjectVectorCellModel,
-        )
-
-        model = ObjectVectorCellModel(
-            direction_frame="egocentric",
-            env=env,
-            object_positions=np.array([[50.0, 50.0]]),
-            preferred_distance=10.0,
-            distance_width=5.0,
-        )
-
-        positions = np.array([[60.0, 50.0]])
-
-        # With positions only
-        rates = model.firing_rate(positions)
-        assert isinstance(rates, np.ndarray)
-
-        # With positions and times
-        times = np.array([0.0])
-        rates = model.firing_rate(positions, times)
-        assert isinstance(rates, np.ndarray)
 
 
 def test_allocentric_model_needs_no_headings():
@@ -958,16 +848,19 @@ def test_allocentric_model_needs_no_headings():
         env,
         object_positions=np.array([[50, 50]]),
         preferred_distance=20,
-        distance_width=5,
+        distance_tolerance=5,
         preferred_direction=np.pi,
     )
     positions = np.array([[70, 50], [30, 50]])
-    rates = model.firing_rate(positions)
+    rates = model.firing_rate(np.zeros(len(positions)), positions)
     assert rates[0] == pytest.approx(model.max_rate)
     assert rates[0] > rates[1]
     assert model.ground_truth["direction_frame"] == "allocentric"
     np.testing.assert_array_equal(
-        rates, model.firing_rate(positions, headings=np.array([1, 2]))
+        rates,
+        model.firing_rate(
+            np.zeros(len(positions)), positions, headings=np.array([1, 2])
+        ),
     )
 
 
@@ -980,15 +873,15 @@ def test_egocentric_model_requires_headings():
         env,
         object_positions=np.array([[50, 50]]),
         preferred_distance=20,
-        distance_width=5,
+        distance_tolerance=5,
         preferred_direction=0,
         direction_frame="egocentric",
     )
     with pytest.raises(ValueError) as caught:
-        model.firing_rate(np.array([[30, 50]]))
+        model.firing_rate(np.zeros(1), np.array([[30, 50]]))
     assert 'direction_frame="allocentric"' in str(caught.value)
     assert "Why:" in str(caught.value) and "Fix:" in str(caught.value)
-    assert model.firing_rate(np.array([[30, 50]]), headings=np.array([0]))[
+    assert model.firing_rate(np.zeros(1), np.array([[30, 50]]), headings=np.array([0]))[
         0
     ] == pytest.approx(model.max_rate)
 
@@ -1004,14 +897,133 @@ def test_sharp_direction_tuning_peaks_at_max_rate(kappa):
         env,
         object_positions=np.array([[50.0, 50.0]]),
         preferred_distance=20.0,
-        distance_width=5.0,
+        distance_tolerance=5.0,
         preferred_direction=0.0,  # the object is East of the animal
-        direction_kappa=kappa,
+        direction_concentration=kappa,
         max_rate=20.0,
         baseline_rate=0.0,
     )
     angle = np.pi / 2
-    rates = model.firing_rate(np.array([[30.0, 50.0], [50.0, 30.0]]))
+    rates = model.firing_rate(np.zeros(2), np.array([[30.0, 50.0], [50.0, 30.0]]))
     np.testing.assert_allclose(
         rates, [20.0, 20.0 * np.exp(kappa * (np.cos(angle) - 1.0))], atol=1e-12
     )
+
+
+class TestEgocentricHandedness:
+    """Egocentric bearings: 0 = ahead, +pi/2 = left, -pi/2 = right."""
+
+    @staticmethod
+    def _cell(env, preferred_direction):
+        from neurospatial.simulation import ObjectVectorCellModel
+
+        return ObjectVectorCellModel(
+            env,
+            object_positions=np.array([[50.0, 50.0]]),
+            preferred_distance=10.0,
+            distance_tolerance=5.0,
+            preferred_direction=preferred_direction,
+            direction_frame="egocentric",
+            direction_concentration=4.0,
+            max_rate=20.0,
+            baseline_rate=0.0,
+        )
+
+    def test_object_east_of_a_north_facing_animal_is_on_the_right(self, env):
+        """Animal at (40, 50) facing North; the object 10 cm East is to its right."""
+        positions = np.array([[40.0, 50.0]])
+        north = np.array([np.pi / 2])
+        right = self._cell(env, -np.pi / 2).firing_rate(
+            np.zeros(1), positions, headings=north
+        )
+        left = self._cell(env, np.pi / 2).firing_rate(
+            np.zeros(1), positions, headings=north
+        )
+        assert right[0] == pytest.approx(20.0, rel=1e-12)
+        assert left[0] == pytest.approx(20.0 * np.exp(-8.0), rel=1e-9)
+
+    def test_turning_the_head_moves_the_object_around_the_animal(self, env):
+        """Facing East the object is ahead, facing West it is behind."""
+        positions = np.array([[40.0, 50.0], [40.0, 50.0]])
+        headings = np.array([0.0, np.pi])
+        ahead = self._cell(env, 0.0).firing_rate(
+            np.zeros(2), positions, headings=headings
+        )
+        np.testing.assert_allclose(ahead, [20.0, 20.0 * np.exp(-8.0)], rtol=1e-9)
+
+
+class TestObjectRefusals:
+    @pytest.mark.parametrize(
+        "objects", [np.array([[150.0, 150.0]]), np.array([[500.0, 500.0]])]
+    )
+    def test_geodesic_object_outside_the_environment_raises(self, env, objects):
+        """It used to snap to the nearest bin: an object at (500, 500) fired at (99, 99)."""
+        from neurospatial.simulation import ObjectVectorCellModel
+
+        with pytest.raises(ValueError, match="outside the environment") as caught:
+            ObjectVectorCellModel(env, object_positions=objects, metric="geodesic")
+        assert "metric='euclidean'" in str(caught.value)
+
+    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+    def test_nan_object_raises(self, env, metric):
+        from neurospatial.simulation import ObjectVectorCellModel
+
+        objects = np.array([[25.0, 25.0], [np.nan, 50.0]])
+        with pytest.raises(
+            ValueError, match=r"non-finite coordinates in row\(s\) \[1\]"
+        ):
+            ObjectVectorCellModel(env, object_positions=objects, metric=metric)
+
+    def test_euclidean_outside_object_warning_says_what_happens(self, env):
+        from neurospatial.simulation import ObjectVectorCellModel
+
+        with pytest.warns(UserWarning, match=r"\[\[150.0, 150.0\]\]") as caught:
+            ObjectVectorCellModel(env, object_positions=np.array([[150.0, 150.0]]))
+        message = str(caught[0].message)
+        assert "nearest bin" not in message
+        assert "measured to the objects themselves" in message
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"preferred_distance": np.nan}, "preferred_distance must be finite"),
+            ({"distance_tolerance": np.nan}, "distance_tolerance must be finite"),
+            ({"preferred_direction": np.nan}, "preferred_direction must be a finite"),
+            (
+                {"direction_concentration": np.nan},
+                "direction_concentration must be finite",
+            ),
+            ({"metric": "manhattan"}, "metric='manhattan'"),
+        ],
+    )
+    def test_nan_and_unknown_parameters_raise(self, env, kwargs, match):
+        """NaN passed every old `<= 0` check and gave all-NaN rates."""
+        from neurospatial.simulation import ObjectVectorCellModel
+
+        with pytest.raises(ValueError, match=match):
+            ObjectVectorCellModel(
+                env, object_positions=np.array([[50.0, 50.0]]), **kwargs
+            )
+
+
+@pytest.mark.parametrize(
+    ("frame", "direction", "needs"),
+    [
+        ("allocentric", None, False),
+        ("allocentric", 0.0, False),
+        ("egocentric", None, False),
+        ("egocentric", 0.0, True),
+    ],
+)
+def test_requires_headings_only_for_egocentric_direction_tuning(
+    env, frame, direction, needs
+):
+    from neurospatial.simulation import ObjectVectorCellModel
+
+    model = ObjectVectorCellModel(
+        env,
+        object_positions=np.array([[50.0, 50.0]]),
+        preferred_direction=direction,
+        direction_frame=frame,
+    )
+    assert model.requires_headings is needs

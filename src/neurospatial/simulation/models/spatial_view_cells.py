@@ -11,7 +11,7 @@ Key Features
 - **Gaze models**: the first wall along the gaze (ray casting), or a point a
   fixed distance ahead that stops at a nearer wall; the same gaze the view
   analysis (``compute_view_rate``) uses
-- **Field of view**: Optional FOV constraints matching species-specific vision
+- **Field of view**: Optional FOV that must hold the preferred location
 - **Visibility**: Optional line-of-sight requirements
 
 Coordinate Conventions
@@ -43,7 +43,9 @@ Create a simple spatial view cell:
 ...     preferred_view_location=np.array([100.0, 50.0]),
 ...     view_field_width=10.0,  # Gaussian tuning width
 ... )
->>> svc.firing_rate(np.array([[50.0, 50.0]]), headings=np.array([0.0])).round(1)
+>>> svc.firing_rate(
+...     np.array([0.0]), np.array([[50.0, 50.0]]), headings=np.array([0.0])
+... ).round(1)
 array([20.])
 
 Create a spatial view cell with visibility requirements:
@@ -82,18 +84,24 @@ ObjectVectorCellModel : Object-distance tuned cells
 from __future__ import annotations
 
 import warnings
+from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._units import default_length
-from neurospatial.geometry import (
-    CallIndexes,
-    line_of_sight_clear,
-    require_cartesian,
+from neurospatial.geometry import CallIndexes, require_cartesian, valid_observers
+from neurospatial.ops.egocentric import compute_egocentric_bearing
+from neurospatial.ops.visibility import FieldOfView, _sight_lines, gaze_points
+from neurospatial.simulation.models.base import (
+    _check_point,
+    _check_positive,
+    _check_rates,
+    _model_headings,
+    _model_inputs,
 )
-from neurospatial.ops.visibility import FieldOfView, gaze_points
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -102,6 +110,7 @@ if TYPE_CHECKING:
 __all__ = ["SpatialViewCellModel"]
 
 
+@dataclass(frozen=True, eq=False)
 class SpatialViewCellModel:
     """Gaze-based firing model for spatial view cells.
 
@@ -122,8 +131,9 @@ class SpatialViewCellModel:
         metric length units needs an explicit ``view_field_width``.
     view_distance : float or None, optional
         Gaze distance for ``gaze_model='fixed_distance'``, in environment
-        units. None (the default) uses 10 cm, as ``compute_view_rate`` does,
-        and needs ``env.units`` to be a length unit. Must be None with
+        units. Required with ``fixed_distance``: how far ahead an animal
+        looks depends on the species, task and arena, so there is no default
+        (``compute_view_rate`` has the same rule). Must be None with
         ``ray_cast``.
     gaze_model : {'ray_cast', 'fixed_distance'}, optional
         How the viewed location is found (default: 'ray_cast', as in
@@ -146,9 +156,18 @@ class SpatialViewCellModel:
         Firing rate when the preferred location is not viewed, in Hz
         (default: 0.01). An illustrative value.
     require_visibility : bool, optional
-        If True, returns baseline rate when view is blocked (default: False).
+        If True, the cell fires above baseline only when a straight line from
+        the animal to ``preferred_view_location`` crosses no opaque wall
+        (default: False).
     fov : FieldOfView | None, optional
-        Field of view constraint. If None, uses full 360 degrees (default: None).
+        The animal's field of view (default: None, the full circle). The cell
+        fires above baseline only when ``preferred_view_location`` lies
+        inside it, that is when its egocentric bearing from the animal is
+        within the field of view: the meaning ``fov`` has in
+        :func:`neurospatial.ops.visibility.compute_viewshed` and
+        ``visible_cues``. The gaze runs straight ahead, so a gaze that lands
+        near the location usually has it in view; ``fov`` matters when the
+        animal is close to the location and looks past it.
 
     Attributes
     ----------
@@ -171,6 +190,26 @@ class SpatialViewCellModel:
         Whether visibility check is required.
     fov : FieldOfView | None
         Field of view constraint.
+    boundary_source : str
+        Walls that stop the gaze and the line of sight.
+
+    Raises
+    ------
+    ValueError
+        If ``preferred_view_location`` is not two finite coordinates;
+        ``view_field_width`` or a rate is not finite or is negative, or
+        ``baseline_rate`` exceeds ``max_rate``; ``gaze_model`` or
+        ``boundary_source`` is unknown; ``view_distance`` is missing with
+        ``fixed_distance`` or given with ``ray_cast``; or
+        ``view_field_width`` is None and ``env.units`` is not a metric length
+        unit.
+    CartesianOnlyError
+        If the environment holds egocentric polar coordinates.
+
+    Warns
+    -----
+    UserWarning
+        If ``preferred_view_location`` is outside the environment's bins.
 
     Examples
     --------
@@ -193,7 +232,8 @@ class SpatialViewCellModel:
     >>> # Compute firing rates along a trajectory
     >>> positions = np.random.default_rng(42).uniform(0, 100, (100, 2))
     >>> headings = np.random.default_rng(42).uniform(-np.pi, np.pi, 100)
-    >>> rates = svc.firing_rate(positions, headings=headings)
+    >>> times = np.arange(100) / 30.0  # s
+    >>> rates = svc.firing_rate(times, positions, headings=headings)
     >>> rates.shape
     (100,)
 
@@ -220,8 +260,9 @@ class SpatialViewCellModel:
     - ``fixed_distance``: the point ``view_distance`` ahead, or the first
       wall when one is nearer.
 
-    Where the observer is outside the walls the viewed location is undefined
-    and the cell fires at its baseline rate.
+    Where the position or heading is missing, or the animal is outside the
+    walls, nothing defines what it sees and the rate is NaN, as for the
+    other models.
 
     See Also
     --------
@@ -230,63 +271,46 @@ class SpatialViewCellModel:
     compute_viewed_location : Gaze computation function
     """
 
-    def __init__(
-        self,
-        env: Environment,
-        *,
-        preferred_view_location: NDArray[np.float64],
-        view_field_width: float | None = None,
-        view_distance: float | None = None,
-        gaze_model: Literal["ray_cast", "fixed_distance"] = "ray_cast",
-        max_rate: float = 20.0,
-        baseline_rate: float = 0.01,
-        require_visibility: bool = False,
-        fov: FieldOfView | None = None,
-        boundary_source: BoundarySource = "physical",
-    ) -> None:
+    env: Environment = field(repr=False)
+    _: KW_ONLY
+    preferred_view_location: NDArray[np.float64]
+    view_field_width: float | None = None
+    view_distance: float | None = None
+    gaze_model: Literal["ray_cast", "fixed_distance"] = "ray_cast"
+    max_rate: float = 20.0
+    baseline_rate: float = 0.01
+    require_visibility: bool = False
+    fov: FieldOfView | None = None
+    boundary_source: BoundarySource = "physical"
+
+    def __post_init__(self) -> None:
+        env = self.env
+        call = "SpatialViewCellModel()"
         require_cartesian(
             env.coordinate_system,
-            "SpatialViewCellModel()",
+            call,
             why=(
                 "It models firing from the allocentric Cartesian location the "
                 "animal looks at."
             ),
             fix="simulate on the allocentric environment the animal moves in",
         )
-        # Convert and validate preferred_view_location
-        preferred_view_location = np.asarray(preferred_view_location, dtype=np.float64)
-        if preferred_view_location.shape != (2,):
-            msg = (
-                f"preferred_view_location must have shape (2,), "
-                f"got shape {preferred_view_location.shape}"
+        location = _check_point(
+            "preferred_view_location", self.preferred_view_location, 2
+        )
+        width = self.view_field_width
+        if width is None:
+            width = default_length(env, 10.0, name="view_field_width", call=call)
+        _check_positive("view_field_width", width)
+        _check_rates(self.max_rate, self.baseline_rate)
+        if self.boundary_source not in ("physical", "analysis"):
+            raise ValueError(
+                _format_error(
+                    f"{call} got boundary_source={self.boundary_source!r}.",
+                    fix="pass boundary_source='physical' for the arena's declared "
+                    "walls, or 'analysis' for the edges of the bins",
+                )
             )
-            raise ValueError(msg)
-
-        if view_field_width is None:
-            view_field_width = default_length(
-                env, 10.0, name="view_field_width", call="SpatialViewCellModel()"
-            )
-        # Validate view_field_width
-        if view_field_width <= 0:
-            msg = f"view_field_width must be positive, got {view_field_width}"
-            raise ValueError(msg)
-
-        # Validate max_rate
-        if max_rate <= 0:
-            msg = f"max_rate must be positive, got {max_rate}"
-            raise ValueError(msg)
-
-        # Validate baseline_rate
-        if baseline_rate < 0:
-            msg = f"baseline_rate must be non-negative, got {baseline_rate}"
-            raise ValueError(msg)
-
-        if baseline_rate >= max_rate:
-            msg = (
-                f"baseline_rate ({baseline_rate}) must be less than "
-                f"max_rate ({max_rate})"
-            )
-            raise ValueError(msg)
 
         # The view analysis's own gaze models, gaze-distance rule and default.
         from neurospatial.encoding.view import (
@@ -294,48 +318,48 @@ class SpatialViewCellModel:
             _validate_gaze_model,
         )
 
-        _validate_gaze_model(gaze_model)
+        _validate_gaze_model(self.gaze_model)
         view_distance = _resolve_view_distance(
-            env, gaze_model, view_distance, context="SpatialViewCellModel()"
+            env, self.gaze_model, self.view_distance, context=call
         )
 
-        # Check if preferred_view_location is outside environment bounds
-        if not env.contains(preferred_view_location[None, :])[0]:
+        if not env.contains(location[None, :])[0]:
             warnings.warn(
-                f"preferred_view_location {preferred_view_location} is outside "
-                f"the environment bounds. Model may not behave as expected.",
+                f"preferred_view_location {location.tolist()} is outside the "
+                "environment's bins. A gaze stops at the walls, so the cell "
+                "fires most where the gaze lands nearest that location.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=3,
             )
+        for name, value in (
+            ("preferred_view_location", location),
+            ("view_field_width", float(width)),
+            ("view_distance", view_distance),
+            ("max_rate", float(self.max_rate)),
+            ("baseline_rate", float(self.baseline_rate)),
+        ):
+            object.__setattr__(self, name, value)
 
-        # Store parameters
-        self.env = env
-        self.preferred_view_location = preferred_view_location
-        self.view_field_width = view_field_width
-        self.view_distance = view_distance
-        self.gaze_model = gaze_model
-        if boundary_source not in ("physical", "analysis"):
-            raise ValueError("boundary_source must be 'physical' or 'analysis'.")
-        self.boundary_source = boundary_source
-        self.max_rate = max_rate
-        self.baseline_rate = baseline_rate
-        self.require_visibility = require_visibility
-        self.fov = fov
+    @property
+    def requires_headings(self) -> bool:
+        """True: the gaze is along the heading."""
+        return True
 
     def firing_rate(
         self,
+        times: NDArray[np.float64],
         positions: NDArray[np.float64],
-        times: NDArray[np.float64] | None = None,
+        *,
         headings: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
         """Compute spatial view cell firing rate.
 
         Parameters
         ----------
+        times : NDArray[np.float64], shape (n_time,)
+            Sample times in seconds; the rate does not depend on them.
         positions : NDArray[np.float64], shape (n_time, 2)
             Animal positions in allocentric coordinates.
-        times : NDArray[np.float64], shape (n_time,), optional
-            Time points in seconds (not used, for API compatibility).
         headings : NDArray[np.float64], shape (n_time,)
             Animal heading in radians (allocentric convention: 0=East).
             **Required for all SpatialViewCellModel computations.**
@@ -343,12 +367,15 @@ class SpatialViewCellModel:
         Returns
         -------
         firing_rate : NDArray[np.float64], shape (n_time,)
-            Firing rate in Hz at each position/heading.
+            Firing rate in Hz at each position/heading. NaN where the
+            position or heading is missing, or the animal is outside the
+            walls, so nothing defines what it sees.
 
         Raises
         ------
         ValueError
-            If ``headings`` is not provided.
+            If ``headings`` is not provided or not one angle per time, or
+            ``positions`` is not one row of 2 coordinates per time.
 
         Notes
         -----
@@ -357,18 +384,19 @@ class SpatialViewCellModel:
         1. Compute viewed location from position and heading
         2. Compute distance from viewed location to preferred
         3. Apply Gaussian tuning
-        4. Optionally check visibility
+        4. With ``fov``, keep only samples whose field of view holds the
+           preferred location; with ``require_visibility``, also those with
+           a clear line of sight to it
         5. Scale by max_rate and add baseline
         """
-        positions = np.asarray(positions, dtype=np.float64)
-        n_time = len(positions)
-
-        # Validate headings
-        if headings is None:
-            msg = "headings is required for SpatialViewCellModel"
-            raise ValueError(msg)
-
-        headings = np.asarray(headings, dtype=np.float64)
+        call = "SpatialViewCellModel.firing_rate()"
+        times, positions = _model_inputs(times, positions, 2, call=call)
+        headings = _model_headings(headings, len(times), call=call)
+        binning, arena = self.env.binning, self.env.arena
+        indexes = CallIndexes()
+        observed = np.isfinite(headings) & valid_observers(
+            binning, arena, positions, self.boundary_source, indexes
+        )
 
         # The gaze the view analysis uses: it stops at the first wall.
         viewed_locations, _at_wall = gaze_points(
@@ -381,80 +409,41 @@ class SpatialViewCellModel:
             max_distance=None,
             boundary_source=self.boundary_source,
         )
-        if self.require_visibility:
-            # One binning copy and one store of its lookup structures for
-            # every timestep's line of sight.
-            binning, arena = self.env.binning, self.env.arena
-            indexes = CallIndexes()
-
-        # Compute distance from viewed location to preferred
-        # Shape: (n_time,)
+        assert self.view_field_width is not None
         distances = np.linalg.norm(
             viewed_locations - self.preferred_view_location, axis=1
         )
-
-        # Apply Gaussian tuning
         response = np.exp(-0.5 * (distances / self.view_field_width) ** 2)
+        # An observed gaze that reaches no wall views nothing near the cell's
+        # location.
+        response[observed & np.isnan(distances)] = 0.0
 
-        # Handle NaN viewed locations (viewing outside environment)
-        nan_mask = np.isnan(distances)
-        response[nan_mask] = 0.0
+        if self.fov is not None:
+            # As in compute_viewshed: the location is in view when its
+            # egocentric bearing lies inside the field of view; a location at
+            # the observer's own position is inside every field of view.
+            offsets = self.preferred_view_location - positions
+            bearings = compute_egocentric_bearing(
+                positions, headings, self.preferred_view_location[None, :]
+            )[:, 0]
+            in_fov = np.asarray(self.fov.contains_angle(bearings), dtype=bool)
+            in_fov |= np.all(offsets == 0, axis=1)
+            response[observed & ~in_fov] = 0.0
 
         if self.require_visibility:
-            # Visibility path: a timestep fires only if the *preferred* location
-            # is within the FOV (when an FOV is set) and there is a clear line of
-            # sight to it. Compute the FOV mask for all timesteps at once, then
-            # run the inherently scalar line-of-sight check only on the surviving
-            # candidates.
-            from neurospatial.ops.egocentric import compute_egocentric_bearing
-
-            if self.fov is not None:
-                # Bearing to the fixed preferred location at every timestep.
-                bearings = compute_egocentric_bearing(
-                    positions,
-                    headings,
-                    self.preferred_view_location[None, :],
-                )[:, 0]
-                in_fov = np.asarray(self.fov.contains_angle(bearings))
-                response[~in_fov] = 0.0
-            else:
-                in_fov = np.ones(n_time, dtype=bool)
-
-            # Line-of-sight check (scalar per call) for the remaining candidates:
-            # not NaN, in FOV, and still responding above zero.
-            candidates = np.flatnonzero(~nan_mask & in_fov & (response > 0.0))
-            for i in candidates:
-                if not line_of_sight_clear(
-                    binning,
-                    arena,
-                    positions[i],
-                    self.preferred_view_location,
-                    boundary_source=self.boundary_source,
-                    indexes=indexes,
-                ):
+            # A clear straight line from the animal to the location; the walls
+            # are built once for every sample.
+            clear = _sight_lines(binning, arena, self.boundary_source, indexes)
+            target = self.preferred_view_location[None, :]
+            for i in np.flatnonzero(observed & (response > 0.0)):
+                if not clear(positions[i], target)[0]:
                     response[i] = 0.0
 
-        elif self.fov is not None:
-            # FOV-only path (no visibility requirement): a timestep fires only if
-            # the *viewed* location is within the FOV. The viewed location varies
-            # per timestep, so pass per-time targets shaped (n_time, 1, 2).
-            from neurospatial.ops.egocentric import compute_egocentric_bearing
-
-            bearings = compute_egocentric_bearing(
-                positions,
-                headings,
-                viewed_locations[:, None, :],
-            )[:, 0]
-            in_fov = np.asarray(self.fov.contains_angle(bearings))
-            # NaN viewed locations already have response 0; restrict only the
-            # valid ones that fall outside the FOV.
-            response[~nan_mask & ~in_fov] = 0.0
-
-        # Scale by max_rate and add baseline
-        rates: NDArray[np.float64] = (
-            self.baseline_rate + (self.max_rate - self.baseline_rate) * response
+        rates: NDArray[np.float64] = np.where(
+            observed,
+            self.baseline_rate + (self.max_rate - self.baseline_rate) * response,
+            np.nan,
         )
-
         return rates
 
     @property
@@ -466,11 +455,14 @@ class SpatialViewCellModel:
         parameters : dict[str, Any]
             Dictionary with keys:
 
+            - 'cell_type': 'spatial_view'
             - 'preferred_view_location': NDArray - preferred viewed location
+              (read-only)
             - 'view_field_width': float - Gaussian tuning width
             - 'view_distance': float or None - gaze distance of the
               fixed_distance model, None for ray casting
             - 'gaze_model': str - gaze computation model
+            - 'boundary_source': str - walls that stop the gaze
             - 'max_rate': float - peak firing rate in Hz
             - 'baseline_rate': float - baseline firing rate in Hz
             - 'require_visibility': bool - visibility requirement
@@ -494,7 +486,8 @@ class SpatialViewCellModel:
         15.0
         """
         return {
-            "preferred_view_location": self.preferred_view_location.copy(),
+            "cell_type": "spatial_view",
+            "preferred_view_location": self.preferred_view_location,
             "view_field_width": self.view_field_width,
             "view_distance": self.view_distance,
             "gaze_model": self.gaze_model,
