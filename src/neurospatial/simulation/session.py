@@ -264,6 +264,28 @@ class SimulationSession:
         return _rebuild_session, (state,)
 
 
+#: Model parameters ``simulate_session`` passes to each cell type, by the
+#: models' own names.
+_MODEL_PARAMETERS: dict[str, frozenset[str]] = {
+    "place": frozenset({"width", "metric", "condition"}),
+    "border": frozenset(
+        {"distance_tolerance", "preferred_distance", "boundary_source"}
+    ),
+    "grid": frozenset({"grid_spacing", "grid_orientation"}),
+}
+
+#: Rate parameters every cell model takes.
+_RATE_PARAMETERS = ("max_rate", "baseline_rate")
+
+
+def _stream_seeds(seed: int | None, n_streams: int) -> list[int]:
+    """Seeds of ``n_streams`` independent streams spawned from ``seed``."""
+    return [
+        int(child.generate_state(1)[0])
+        for child in np.random.SeedSequence(seed).spawn(n_streams)
+    ]
+
+
 def _field_centers(
     env: Environment,
     n_cells: int,
@@ -371,71 +393,72 @@ def simulate_session(
     trajectory_method : {'ou', 'sinusoidal', 'laps'}, optional
         Trajectory generation method (default: 'ou').
     coverage : {'uniform', 'random'}, optional
-        Spatial distribution of field centers (default: 'uniform').
+        Spatial distribution of place field centers and grid phases
+        (default: 'uniform').
+
         - 'uniform': Evenly space field centers across the environment. On a
-          track, centers are evenly spaced along the linearized track; in an
-          arena, they form a grid inset 20% from each edge, snapped to the
-          nearest bin.
-        - 'random': Randomly sample field centers from env.bin_centers
-          using np.random.choice(env.bin_centers, size=n_cells).
-          May result in clustering or gaps in coverage.
+          track (a linearized or 1-D environment), centers are evenly spaced
+          from one end to the other. In an arena, they are taken evenly from
+          a grid of ``ceil(n ** (1 / n_dims))`` targets per axis, inset 20%
+          from each side of the bounding box so that fields lie where an
+          exploring animal samples well, and snapped to the nearest bin.
+        - 'random': Bin centers drawn with replacement from the seeded
+          field-parameter stream, ``rng.choice(len(env.bin_centers),
+          size=n)``. May result in clustering or gaps in coverage.
     show_progress : bool, optional
         Show progress bars during generation (default: True).
     seed : int | None, optional
-        Random seed for reproducibility. Independent sub-streams for the
-        trajectory, field-center selection, and spike generation are spawned
-        from a single ``np.random.SeedSequence(seed)`` so the three sources of
-        randomness are statistically independent (the trajectory and spike
-        streams are not correlated). ``None`` leaves each stream
+        Random seed for reproducibility. Independent streams for the
+        trajectory, the field parameters (centers, grid phases) and the spikes
+        are spawned from one ``np.random.SeedSequence(seed)``, so spike draws
+        are not correlated with the movement. ``None`` leaves each stream
         nondeterministic but still mutually independent.
     **kwargs : Any
-        Additional parameters passed to trajectory and model functions.
+        Trajectory and cell-model parameters, by the names of the functions
+        and models that take them. Each goes only where it applies: a model
+        parameter of a cell type the session does not simulate is refused,
+        and an unknown name raises ``TypeError`` from the trajectory
+        function.
 
-        **Trajectory parameters** (all trajectory methods):
+        **Trajectory parameters**, by ``trajectory_method``:
 
-        - speed_mean : float - Mean speed for OU process (default varies by method)
-        - coherence_time : float - Temporal coherence for OU process
-        - n_laps : int - Number of one-way traversals for 'laps' (default: 10),
-          alternating outbound/inbound starting outbound
-        - sampling_frequency : float - Lap samples per second (default: 500)
-        - pause_duration : float - Pause between traversals (default: 0.5 s),
-          rounded down to whole samples
-        - speed_mean, speed_std : float - For laps, speed draws (default mean
-          1.0 and standard deviation ``0.2 * speed_mean``, clipped below at
-          ``0.1 * speed_mean``) determine relative traversal times, so their
-          scale does not matter and no units are needed.
-          Absolute speeds are determined by duration, path lengths and n_laps.
-          Every traversal retains at least two samples; fixed pauses are
-          reserved first, then remaining samples are allocated in proportion
-          to path length divided by the sampled speed.
+        - 'ou' (``simulate_trajectory_ou``): ``speed_mean`` and
+          ``speed_std`` (default 8 and 4 cm/s in ``env.units``),
+          ``speed_units`` (default ``env.units``), ``coherence_time``,
+          ``dt``, ``start_position``, ``rotational_velocity_std``,
+          ``rotational_velocity_coherence_time`` and ``boundary_mode``.
+        - 'sinusoidal' (``simulate_trajectory_sinusoidal``): ``speed``
+          (default 10 cm/s in ``env.units``), ``period``,
+          ``sampling_frequency``, ``pause_duration`` and ``pause_at_peaks``.
+        - 'laps' (``simulate_trajectory_laps``): ``n_laps`` (default 10
+          one-way traversals, alternating outbound and inbound starting
+          outbound), ``sampling_frequency`` (default 500 Hz),
+          ``pause_duration`` (default 0.5 s between traversals, rounded down
+          to whole samples), ``outbound_path`` and ``inbound_path``, and
+          ``speed_mean`` and ``speed_std``. For laps the speed draws only set
+          the relative traversal times (default mean 1.0 and standard
+          deviation ``0.2 * speed_mean``, clipped below at
+          ``0.1 * speed_mean``), so their scale does not matter and no units
+          are needed: absolute speeds follow from ``duration``, the path
+          lengths and ``n_laps``. Every traversal keeps at least two
+          samples; the pauses are reserved first, then the remaining samples
+          are shared in proportion to path length divided by the sampled
+          speed.
 
-        **Place cell parameters** (cell_type='place' or 'mixed'):
+        **Rate parameters** of every cell type: ``max_rate`` (Hz) and
+        ``baseline_rate`` (Hz), each model's default when omitted.
 
-        - max_rate : float - Peak firing rate in Hz (default: 12.4, see
-          ``PlaceCellModel``)
-        - width : float | NDArray - Field width in environment units (default:
-          11.1 cm in ``env.units``, see ``PlaceCellModel``)
-        - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
-        - metric : {'euclidean', 'geodesic'} - Distance computation method
-        - condition : Callable - Optional conditional firing function
+        **Place cell parameters** (``PlaceCellModel``; cell_type='place' or
+        'mixed'): ``width`` (default 11.1 cm in ``env.units``), ``metric``
+        ({'euclidean', 'geodesic'}) and ``condition``.
 
-        **Border cell parameters** (cell_type='border' or 'mixed'):
+        **Border cell parameters** (``BorderCellModel``; cell_type='border'
+        or 'mixed'): ``distance_tolerance`` (default 9.8 cm in
+        ``env.units``), ``preferred_distance`` and ``boundary_source``.
 
-        - border_width : float - Standard deviation of the distance tuning in
-          environment units (``distance_tolerance``; default 9.8 cm in
-          ``env.units``, see ``BorderCellModel``)
-        - distance : float - Preferred distance from the nearest wall
-          (``preferred_distance``, default 0: firing along the walls)
-        - max_rate : float - Peak firing rate in Hz (default: 15.0)
-        - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
-
-        **Grid cell parameters** (cell_type='grid' or 'mixed'):
-
-        - spacing : float - Grid spacing in environment units (maps to
-          grid_spacing; default 41 cm in ``env.units``, see ``GridCellModel``)
-        - orientation : float - Field lattice angle in radians from +x, modulo pi/3 (maps to grid_orientation)
-        - max_rate : float - Peak firing rate in Hz (default: 20.0)
-        - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
+        **Grid cell parameters** (``GridCellModel``; cell_type='grid' or
+        'mixed'): ``grid_spacing`` (default 41 cm in ``env.units``) and
+        ``grid_orientation`` (radians from +x, modulo pi/3).
 
     Returns
     -------
@@ -444,11 +467,11 @@ def simulate_session(
         - env: Environment instance
         - positions: NDArray, shape (n_time, n_dims) - trajectory
         - times: NDArray, shape (n_time,) - time points
-        - spike_times: list[NDArray] - spike times per unit
+        - spike_times: tuple[NDArray] - spike times per unit
         - unit_ids: NDArray[np.int64] - integer unit labels
-        - models: list[NeuralModel] - neural model instances
-        - ground_truth: dict - true parameters for each cell
-        - metadata: dict - session parameters
+        - models: tuple[NeuralModel] - neural model instances
+        - ground_truth: Mapping - each model's ``ground_truth``, by unit label
+        - metadata: Mapping - session parameters
 
     Raises
     ------
@@ -460,6 +483,15 @@ def simulate_session(
         If coverage is not one of: 'uniform', 'random'.
     ValueError
         If grid cells requested but environment is not 2D.
+    ValueError
+        If ``n_cells`` or ``duration`` is not positive.
+    ValueError
+        If a model parameter applies only to a cell type the session does
+        not simulate (for example ``grid_spacing`` with
+        ``cell_type='place'``).
+    TypeError
+        If a parameter is neither a model parameter nor a parameter of the
+        chosen trajectory function.
     ValueError
         If lap duration is non-finite or too short for fixed pauses and two
         samples per traversal, or lap timing parameters are invalid.
@@ -476,18 +508,20 @@ def simulate_session(
     >>> spike_times = session.spike_times  # IDE autocomplete
     >>> ground_truth = session.ground_truth  # Discoverable
 
-    >>> # Mixed cell types with custom trajectory parameters
+    >>> # Mixed cell types with custom model and trajectory parameters
     >>> session = simulate_session(
     ...     env,
     ...     duration=2.0,
     ...     n_cells=10,
     ...     cell_type="mixed",
-    ...     border_width=5.0,  # border cells' distance tuning, cm
+    ...     grid_spacing=50.0,  # grid cells, cm
     ...     trajectory_method="ou",
-    ...     speed_mean=0.1,
+    ...     speed_mean=15.0,  # cm/s
     ...     coherence_time=0.8,
     ...     show_progress=False,
     ... )
+    >>> sorted({truth["cell_type"] for truth in session.ground_truth.values()})
+    ['border', 'grid', 'place']
 
     >>> # Place cells with increased firing rate (useful for faster tests)
     >>> session = simulate_session(
@@ -500,10 +534,15 @@ def simulate_session(
     ...     show_progress=False,
     ... )
 
-    >>> # Validate detected vs true place fields
-    >>> from neurospatial.simulation import validate_simulation  # doctest: +SKIP
-    >>> report = validate_simulation(session)  # doctest: +SKIP
-    >>> print(report["summary"])  # doctest: +SKIP
+    >>> # A parameter of a cell type the session does not simulate is refused
+    >>> simulate_session(
+    ...     env, duration=2.0, n_cells=3, grid_spacing=50.0, show_progress=False
+    ... )
+    Traceback (most recent call last):
+        ...
+    ValueError: grid_spacing applies only to cell_type='grid' or 'mixed', but this session simulates cell_type='place'.
+    Why: grid_spacing is a parameter of the grid cell model, and no cell in this session would use it.
+    Fix: remove grid_spacing, or simulate cell_type='grid'
 
     See Also
     --------
@@ -556,66 +595,35 @@ def simulate_session(
     if duration <= 0:
         raise ValueError(f"duration must be positive (seconds), got {duration}")
 
-    # Extract model-specific parameters from kwargs BEFORE trajectory generation.
-    #
-    # Shared rate parameters (``max_rate``, ``baseline_rate``, ``metric``) are
-    # accepted by more than one cell type, so they must be *read* (not consumed)
-    # by every applicable model type before being removed from ``kwargs``. The
-    # earlier implementation popped them into ``place_cell_params`` first, which
-    # silently starved the border/grid loops of any caller-supplied rate in
-    # mixed mode. We peek the shared params, distribute them per cell type
-    # (respecting which constructor accepts which), then pop them once at the
-    # end so they don't leak into the trajectory kwargs or session metadata.
-    #
-    # Note: ``metric`` is accepted only by PlaceCellModel.
-    place_cell_params: dict[str, Any] = {}
-    border_cell_params: dict[str, Any] = {}
-    grid_cell_params: dict[str, Any] = {}
+    # Model parameters go to the cell types that take them; the rest are
+    # trajectory parameters.
+    present = {"place", "border", "grid"} if cell_type == "mixed" else {cell_type}
+    model_params: dict[str, dict[str, Any]] = {kind: {} for kind in _MODEL_PARAMETERS}
+    for kind, names in _MODEL_PARAMETERS.items():
+        for name in sorted(names.intersection(kwargs)):
+            if kind not in present:
+                raise ValueError(
+                    _format_error(
+                        f"{name} applies only to cell_type='{kind}' or 'mixed', "
+                        f"but this session simulates cell_type='{cell_type}'.",
+                        why=f"{name} is a parameter of the {kind} cell model, "
+                        "and no cell in this session would use it.",
+                        fix=f"remove {name}, or simulate cell_type='{kind}'",
+                    )
+                )
+            model_params[kind][name] = kwargs.pop(name)
+    for name in _RATE_PARAMETERS:
+        if name in kwargs:
+            value = kwargs.pop(name)
+            for params in model_params.values():
+                params[name] = value
+    place_cell_params = model_params["place"]
+    border_cell_params = model_params["border"]
+    grid_cell_params = model_params["grid"]
 
-    # Shared rate parameters (read without consuming; popped below).
-    for param in ["max_rate", "baseline_rate"]:
-        if param in kwargs:
-            place_cell_params[param] = kwargs[param]
-            border_cell_params[param] = kwargs[param]
-            grid_cell_params[param] = kwargs[param]
-    if "metric" in kwargs:
-        place_cell_params["metric"] = kwargs["metric"]
-
-    # Remove shared params now that all applicable cell types have read them.
-    for param in ["max_rate", "baseline_rate", "metric"]:
-        kwargs.pop(param, None)
-
-    # PlaceCellModel-only parameters.
-    for param in ["width", "condition"]:
-        if param in kwargs:
-            place_cell_params[param] = kwargs.pop(param)
-
-    # BorderCellModel-only parameters - remap convenience names to actual names.
-    if "distance" in kwargs:
-        border_cell_params["preferred_distance"] = kwargs.pop("distance")
-    if "border_width" in kwargs:
-        border_cell_params["distance_tolerance"] = kwargs.pop("border_width")
-
-    # GridCellModel-only parameters - remap convenience names to actual names.
-    # Remapped parameters: spacing -> grid_spacing, orientation -> grid_orientation
-    if "spacing" in kwargs:
-        grid_cell_params["grid_spacing"] = kwargs.pop("spacing")
-    if "orientation" in kwargs:
-        grid_cell_params["grid_orientation"] = kwargs.pop("orientation")
-
-    # Derive INDEPENDENT seeds for the trajectory, field-center, and spike RNG
-    # streams from a single SeedSequence. Spawning guarantees the three streams
-    # are statistically independent and non-overlapping, so the trajectory and
-    # spike draws no longer share (and correlate) an RNG stream. Passing
-    # ``seed=None`` keeps each stream nondeterministic but still mutually
-    # independent.
-    if seed is None:
-        trajectory_seed = field_center_seed = spike_seed = None
-    else:
-        traj_ss, field_ss, spike_ss = np.random.SeedSequence(seed).spawn(3)
-        trajectory_seed = int(traj_ss.generate_state(1)[0])
-        field_center_seed = int(field_ss.generate_state(1)[0])
-        spike_seed = int(spike_ss.generate_state(1)[0])
+    # Independent streams for the trajectory, the field parameters and the
+    # spikes, so that spike draws are not correlated with the movement.
+    trajectory_seed, field_center_seed, spike_seed = _stream_seeds(seed, 3)
 
     # Generate trajectory using its own independent seed.
     if trajectory_method == "ou":
@@ -649,7 +657,6 @@ def simulate_session(
     else:
         raise ValueError(f"Unknown trajectory method: {trajectory_method}")
 
-    # Initialize RNG for field center selection using its own independent seed.
     rng = np.random.default_rng(field_center_seed)
 
     # Cell counts: mixed sessions are 60% place, 20% border, 20% grid.

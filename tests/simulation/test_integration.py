@@ -59,7 +59,7 @@ class TestSimulateSessionIntegration:
             duration=10.0,
             n_cells=10,
             cell_type="border",
-            border_width=5.0,
+            distance_tolerance=5.0,
             seed=42,
             show_progress=False,
         )
@@ -93,7 +93,7 @@ class TestSimulateSessionIntegration:
             duration=30.0,
             n_cells=10,
             cell_type="mixed",
-            border_width=5.0,
+            distance_tolerance=5.0,
             seed=42,
             show_progress=False,
         )

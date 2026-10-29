@@ -213,7 +213,7 @@ class TestSimulateSession:
             duration=2.0,
             n_cells=5,
             cell_type="border",
-            border_width=5.0,
+            distance_tolerance=5.0,
             seed=42,
             show_progress=False,
         )
@@ -226,7 +226,7 @@ class TestSimulateSession:
     def test_border_cells_default_to_a_physical_width(
         self, connected_arena_env, cell_type
     ):
-        """Without border_width, border cells use the 9.8 cm default."""
+        """Without distance_tolerance, border cells use the 9.8 cm default."""
         session = simulate_session(
             connected_arena_env,
             duration=1.0,
@@ -257,6 +257,66 @@ class TestSimulateSession:
         assert len(session.models) == 5
         assert all(isinstance(m, GridCellModel) for m in session.models)
 
+    def test_model_parameters_use_the_models_names(self, connected_arena_env):
+        """grid_spacing, grid_orientation and width reach the models unrenamed."""
+        session = simulate_session(
+            connected_arena_env,
+            duration=1.0,
+            n_cells=10,
+            cell_type="mixed",
+            grid_spacing=30.0,
+            grid_orientation=0.2,
+            width=7.0,
+            seed=0,
+            show_progress=False,
+        )
+        truths = list(session.ground_truth.values())
+        grids = [t for t in truths if t["cell_type"] == "grid"]
+        places = [t for t in truths if t["cell_type"] == "place"]
+        assert grids and places
+        assert all(t["grid_spacing"] == 30.0 for t in grids)
+        assert all(t["grid_orientation"] == pytest.approx(0.2) for t in grids)
+        assert all(t["width"] == 7.0 for t in places)
+
+    @pytest.mark.parametrize(
+        ("cell_type", "parameter", "owner"),
+        [
+            ("place", {"grid_spacing": 30.0}, "grid"),
+            ("place", {"grid_orientation": 0.1}, "grid"),
+            ("place", {"distance_tolerance": 5.0}, "border"),
+            ("grid", {"width": 5.0}, "place"),
+            ("border", {"metric": "geodesic"}, "place"),
+        ],
+    )
+    def test_parameters_of_absent_cell_types_are_refused(
+        self, connected_arena_env, cell_type, parameter, owner
+    ):
+        name = next(iter(parameter))
+        with pytest.raises(
+            ValueError, match=f"{name} applies only to cell_type='{owner}'"
+        ) as raised:
+            simulate_session(
+                connected_arena_env,
+                duration=1.0,
+                n_cells=2,
+                cell_type=cell_type,
+                show_progress=False,
+                **parameter,
+            )
+        assert "Fix:" in str(raised.value)
+
+    @pytest.mark.parametrize("old_name", ["spacing", "orientation", "border_width"])
+    def test_renamed_parameters_are_not_accepted(self, connected_arena_env, old_name):
+        with pytest.raises(TypeError, match=old_name):
+            simulate_session(
+                connected_arena_env,
+                duration=1.0,
+                n_cells=2,
+                cell_type="mixed",
+                show_progress=False,
+                **{old_name: 1.0},
+            )
+
     def test_simulate_session_mixed_cells(self, connected_arena_env):
         """simulate_session() with cell_type='mixed' should create 60% place, 20% border, 20% grid."""
         n_cells = 10
@@ -265,7 +325,7 @@ class TestSimulateSession:
             duration=2.0,
             n_cells=n_cells,
             cell_type="mixed",
-            border_width=5.0,
+            distance_tolerance=5.0,
             seed=42,
             show_progress=False,
         )
@@ -420,7 +480,7 @@ class TestSimulateSession:
             duration=1.0,
             n_cells=10,  # 6 place, 2 border, 2 grid
             cell_type="mixed",
-            border_width=5.0,
+            distance_tolerance=5.0,
             max_rate=custom_max_rate,
             seed=42,
             show_progress=False,
