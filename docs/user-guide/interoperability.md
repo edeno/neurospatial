@@ -475,6 +475,7 @@ from pynwb import NWBHDF5IO
 
 from neurospatial import Environment, compute_spatial_rates
 from neurospatial.decoding import BayesianDecoder
+from neurospatial.encoding import SpikeTrains
 from neurospatial.io.nwb import read_intervals, read_position, read_units
 
 with NWBHDF5IO("session.nwb", "r") as io:
@@ -490,17 +491,18 @@ position_units = pos.units
 if position_units is None:
     raise ValueError("Choose position_units explicitly from the experiment's physical units.")
 env = Environment.from_samples(pos.positions, bin_size=5.0, units=position_units)
+cells = SpikeTrains(units.spike_times, unit_ids=units.unit_ids)
 rates = compute_spatial_rates(
-    env, units.spike_times, pos.times, pos.positions, unit_ids=units.unit_ids,
+    env, cells, pos.times, pos.positions,
     epochs=epochs, spike_window=units.spike_window,
 )
 rate_table = rates.summary_table()
 print(rate_table)
 
-# Reuse the maps and their unit labels; train order is retained for these arrays.
+# Reuse the maps; the labelled trains meet their own cells' maps.
 decoder = BayesianDecoder.from_rates(rates, dt=0.2)
 result = decoder.predict(
-    units.spike_times, pos.times, epochs=epochs, spike_window=units.spike_window,
+    cells, pos.times, epochs=epochs, spike_window=units.spike_window,
 )
 print(result.summary())
 

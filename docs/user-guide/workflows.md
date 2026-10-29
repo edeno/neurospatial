@@ -230,22 +230,26 @@ outbound runs. On inbound runs it should do worse if some cells change their
 fields with direction. Number the laps from 0, train on the even-numbered
 laps and test on the odd-numbered laps, so that training and test data never come from the same lap.
 `labels_to_epochs` with `epochs=` splits each direction's windows into the
-two folds.
+two folds. Label the spike trains once with `SpikeTrains`, and pass the same
+labelled trains to `fit` and `predict`: each train then meets its own cell's
+map, whatever order the units are listed in.
 
 <!-- docs-test: run setup=workflows_outbound_inbound -->
 ```python
 from neurospatial.decoding import BayesianDecoder
+from neurospatial.encoding import SpikeTrains
 
 lap = (times // 10).astype(int)
 fold = np.where(lap % 2 == 0, "train", "test")
 out_folds = labels_to_epochs(times, fold, valid=valid, epochs=conditions["outbound"])
 in_folds = labels_to_epochs(times, fold, valid=valid, epochs=conditions["inbound"])
 
+cells = SpikeTrains(spike_times, unit_ids=unit_ids)
 decoder = BayesianDecoder(env, dt=0.25, bandwidth=5.0).fit(
-    spike_times, times, positions, unit_ids=unit_ids, epochs=out_folds["train"],
+    cells, times, positions, epochs=out_folds["train"],
 )
-within = decoder.predict(spike_times, times, epochs=out_folds["test"])
-transfer = decoder.predict(spike_times, times, epochs=in_folds["test"])
+within = decoder.predict(cells, times, epochs=out_folds["test"])
+transfer = decoder.predict(cells, times, epochs=in_folds["test"])
 within_error = within.error_against(times, positions)  # cm, one per time bin
 transfer_error = transfer.error_against(times, positions)
 assert np.isfinite(within_error).all() and np.isfinite(transfer_error).all()
@@ -711,6 +715,7 @@ timestamps, so the 10–20 s pause is never represented by a decode bin.
 import numpy as np
 from neurospatial import Environment, compute_spatial_rates, decode_position
 from neurospatial.decoding import BayesianDecoder, bin_spikes_in_time
+from neurospatial.encoding import SpikeTrains
 
 times = np.r_[np.arange(300) / 30, 20 + np.arange(300) / 30]
 phase = np.arange(600) / 30
@@ -721,13 +726,13 @@ recording_windows = np.array([[0.0, 10.0], [20.0, 30.0]])
 train, test = (0.0, 10.0), (20.0, 30.0)
 dt = 0.1
 
+cells = SpikeTrains(spike_times, unit_ids=[101, 202])
 rates = compute_spatial_rates(
-    env, spike_times, times, positions, epochs=train,
-    spike_window=recording_windows, unit_ids=[101, 202],
+    env, cells, times, positions, epochs=train, spike_window=recording_windows,
 )
 decoder = BayesianDecoder.from_rates(rates, dt=dt)
 result = decoder.predict(
-    spike_times, times, epochs=test, spike_window=recording_windows,
+    cells, times, epochs=test, spike_window=recording_windows,
 )
 
 # Clip the analysis epoch to the observed run, then bin that epoch alone.
@@ -744,8 +749,11 @@ print("Decode bins:", len(result.times), "unit order:", rates.unit_ids.tolist())
 
 Use `BayesianDecoder(env).fit(spike_times, times, positions, unit_ids=...)` when
 the decoder should build the maps. A labelled spike group and explicit `unit_ids`
-must agree in order and value. Prediction matches labels only when both inputs
-carry caller-supplied identity; generated row numbers retain positional pairing.
+must agree in order and value. A decoder whose maps carry unit labels
+(`unit_ids=`, a `SpikeTrains` or a `TsGroup`) needs labelled spike trains in
+`predict`, matched by label; unlabelled maps need plain lists in the same
+order. Labels on only one side raise, because positional pairing would decode
+a reordered group with the wrong maps.
 The training spike window carried on the decoder is provenance. Supply the
 prediction recording's observation windows explicitly to `predict`.
 

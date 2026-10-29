@@ -195,11 +195,10 @@ warn_on_drop
         Identity label per encoding model (read-only), or ``None`` when
         unfitted. :meth:`fit` takes them from a labelled spike input such as a
         pynapple ``TsGroup`` (its index) or from ``fit(unit_ids=...)``, and
-        generates ``arange(n_neurons)`` otherwise. When both these labels and
-        the spike input given to :meth:`predict` / :meth:`predict_summary` /
-        :meth:`score` are caller-supplied, trains are matched to models by
-        label. In every other case (including generated labels) trains are
-        paired by position, one per fitted unit, in fit order.
+        generates ``arange(n_neurons)`` otherwise. Caller-supplied labels
+        require a labelled spike input in :meth:`predict` /
+        :meth:`predict_summary` / :meth:`score`, matched by label; generated
+        labels require plain trains, paired by position in fit order.
     spatial_support : ndarray of bool or None
         Training bins allowed in the posterior, from observed occupancy and the
         occupancy threshold. ``None`` when unfitted, and for
@@ -409,8 +408,8 @@ warn_on_drop
 
         Notes
         -----
-        Caller-supplied labels align labelled prediction inputs by identity.
-        Generated row numbers retain positional pairing. The spike window is
+        Caller-supplied labels require labelled prediction inputs, matched by
+        identity; generated row numbers require plain trains in the same order. The spike window is
         training provenance; pass the prediction recording's ``spike_window``
         explicitly when decoding. Observed occupancy, the recorded occupancy
         threshold and finite rates determine ``spatial_support``. Unsupported
@@ -501,9 +500,9 @@ warn_on_drop
         encoding_models : array-like, shape (n_neurons, n_bins)
             Expected firing rate (Hz) of each unit in each bin. Copied.
         unit_ids : ndarray or sequence, optional
-            One distinct label per model. With labels, labelled prediction
-            inputs are paired with models by label; without them, spike trains
-            are paired by position.
+            One distinct label per model. With labels, prediction needs a
+            labelled spike group, matched by label; without them, prediction
+            needs plain trains, paired by position.
         spatial_support : ndarray of bool, shape (n_bins,), optional
             Bins allowed in the posterior. ``None`` allows every bin, so every
             bin must hold a finite rate.
@@ -601,10 +600,10 @@ warn_on_drop
         spike_times : SpikeTrainsLike
             Spike times for one or more units. Accepts the canonical array forms,
             a :class:`~neurospatial.encoding.SpikeTrains` container, or a pynapple
-            ``TsGroup``-like group. A group's index becomes ``unit_ids`` and is
-            later used to match predict-time spike trains to these models by
-            label; an unlabelled input gets ``arange(n_units)``, and later inputs
-            are then paired by position.
+            ``TsGroup``-like group. A group's index becomes ``unit_ids`` and
+            prediction then needs a labelled group, matched by label; an
+            unlabelled input gets ``arange(n_units)`` and prediction then needs
+            plain trains in the same order.
         times : array-like, shape (n_frames,)
             Timestamp array in seconds. Decode bins tile each run whose gaps
             are no longer than ``max_gap``. For spans without tracking, pass
@@ -613,9 +612,8 @@ warn_on_drop
             Required sample-aligned coordinates. For pynapple, pass ``tsd.values``.
         unit_ids : ndarray or sequence, optional
             One distinct label per spike train. If the spike group carries labels,
-            these must match exactly in the same order. Caller-supplied labels
-            enable label alignment for labelled prediction inputs; generated
-            ``arange`` labels pair by position.
+            these must match exactly in the same order. Prediction then needs
+            a labelled spike group, matched by label.
         speed : NDArray[np.float64], shape (n_frames,), optional
             Precomputed speed, forwarded to the encoder. Only used when
             ``min_speed`` is set; auto-derived when ``None``.
@@ -726,47 +724,67 @@ warn_on_drop
     ) -> list[NDArray[np.float64]]:
         """Pair each spike train with its encoding model.
 
-        By label when both ``fit`` and this input carried caller-supplied labels;
-        otherwise by position, which requires one train per fitted unit.
+        By label when both the fitted models and this input carry
+        caller-supplied labels; by position, one train per fitted unit, when
+        neither does. Labels on only one side raise.
         """
+        from neurospatial._exceptions import _format_error
         from neurospatial._results import resolve_unit_ids
         from neurospatial._spikes import _as_spike_trains_with_ids
 
         trains, input_ids = _as_spike_trains_with_ids(spike_times)
         n_models = self._check_fitted().shape[0]
-        if input_ids is not None:
-            labels = resolve_unit_ids(
-                None,
-                len(trains),
-                input_ids=input_ids,
-                context=f"BayesianDecoder.{caller}",
-            ).tolist()
-            if self.unit_ids is not None and not self._unit_ids_generated:
-                fitted = np.asarray(self.unit_ids).tolist()
-                row = {u: i for i, u in enumerate(labels)}
-                fitted_set = set(fitted)
-                missing = [u for u in fitted if u not in row]
-                unexpected = [u for u in labels if u not in fitted_set]
-                if missing or unexpected:
-                    raise ValueError(
-                        "Spike input unit labels do not match the decoder's fitted "
-                        f"unit_ids (missing: {missing}, unexpected: {unexpected}).\n"
-                        "Decoding would pair spike trains with the wrong encoding "
-                        "models.\n"
-                        "Fix: pass spikes for exactly the fitted units (pynapple: "
-                        "group[list(decoder.unit_ids)]), or refit on this input."
-                    )
-                return [trains[row[u]] for u in fitted]
-        if len(trains) != n_models:
-            raise ValueError(
-                f"Got {len(trains)} spike trains but the decoder was fitted with "
-                f"{n_models} units. Without caller-supplied labels on both the fit "
-                "and the predict input, trains are paired with encoding models by "
-                "position.\n"
-                "Fix: pass one spike train per fitted unit in the order used for "
-                "fit, or fit and predict with the same labelled TsGroup."
+        fit_labelled = not self._unit_ids_generated
+        if fit_labelled != (input_ids is not None):
+            given, missing = (
+                ("the fitted models", f"the {caller} input")
+                if fit_labelled
+                else (f"the {caller} input", "the fitted models")
             )
-        return trains
+            raise ValueError(
+                _format_error(
+                    f"BayesianDecoder.{caller}: {given} carry unit labels but "
+                    f"{missing} do not.",
+                    why="Why: the spike trains would be paired with encoding "
+                    "models by position, so a group whose units are listed in "
+                    "another order would silently decode with the wrong models.",
+                    fix="label both (fit and predict with labelled groups such "
+                    "as a TsGroup, or fit(unit_ids=...) / from_models(unit_ids=...) "
+                    "with a labelled prediction group), or pass plain lists of "
+                    "spike trains in the same order to both",
+                )
+            )
+        if input_ids is None:
+            if len(trains) != n_models:
+                raise ValueError(
+                    f"Got {len(trains)} spike trains but the decoder was fitted "
+                    f"with {n_models} units. Unlabelled trains are paired with "
+                    "encoding models by position.\n"
+                    "Fix: pass one spike train per fitted unit in the order used "
+                    "for fit."
+                )
+            return trains
+        labels = resolve_unit_ids(
+            None,
+            len(trains),
+            input_ids=input_ids,
+            context=f"BayesianDecoder.{caller}",
+        ).tolist()
+        fitted = np.asarray(self.unit_ids).tolist()
+        row = {u: i for i, u in enumerate(labels)}
+        fitted_set = set(fitted)
+        missing_ids = [u for u in fitted if u not in row]
+        unexpected = [u for u in labels if u not in fitted_set]
+        if missing_ids or unexpected:
+            raise ValueError(
+                "Spike input unit labels do not match the decoder's fitted "
+                f"unit_ids (missing: {missing_ids}, unexpected: {unexpected}).\n"
+                "Decoding would pair spike trains with the wrong encoding "
+                "models.\n"
+                "Fix: pass spikes for exactly the fitted units (pynapple: "
+                "group[list(decoder.unit_ids)]), or refit on this input."
+            )
+        return [trains[row[u]] for u in fitted]
 
     def predict(
         self,
@@ -785,11 +803,12 @@ warn_on_drop
         Parameters
         ----------
         spike_times : SpikeTrainsLike
-            Spike times to decode. Same accepted forms as :meth:`fit`. When both
-            this input and the fit carried caller-supplied labels (a labelled
-            group, or ``unit_ids`` given at construction), trains are matched
-            to encoding models by label, in any order. Otherwise they are paired
-            by position: one train per fitted unit, in fit order.
+            Spike times to decode. Same accepted forms as :meth:`fit`. When the
+            fitted models carry caller-supplied labels (from a labelled group
+            or ``unit_ids=`` in :meth:`fit` or :meth:`from_models`), pass a
+            labelled group: trains are matched to models by label, in any
+            order. When they do not, pass one plain train per fitted unit, in
+            fit order. Labels on only one side raise ``ValueError``.
         times : array-like, shape (n_frames,)
             Timestamp array in seconds. Decode bins tile each run whose gaps
             are no longer than ``max_gap``. For spans without tracking, pass
@@ -825,10 +844,11 @@ warn_on_drop
         RuntimeError
             If the decoder is unfitted.
         ValueError
-            If the spike input repeats a unit label; if label matching applies
-            and the input's labels differ from ``unit_ids`` (the message lists
-            the missing and unexpected labels); or if trains are paired by
-            position and their number differs from the number of fitted units.
+            If only one of the fit input and this input carried unit labels;
+            if the input repeats a unit label; if its labels differ from
+            ``unit_ids`` (the message lists the missing and unexpected labels);
+            or if plain trains are paired by position and their number differs
+            from the number of fitted units.
 
         Notes
         -----
@@ -876,11 +896,12 @@ warn_on_drop
         Parameters
         ----------
         spike_times : SpikeTrainsLike
-            Spike times to decode. Same accepted forms as :meth:`fit`. When both
-            this input and the fit carried caller-supplied labels (a labelled
-            group, or ``unit_ids`` given at construction), trains are matched
-            to encoding models by label, in any order. Otherwise they are paired
-            by position: one train per fitted unit, in fit order.
+            Spike times to decode. Same accepted forms as :meth:`fit`. When the
+            fitted models carry caller-supplied labels (from a labelled group
+            or ``unit_ids=`` in :meth:`fit` or :meth:`from_models`), pass a
+            labelled group: trains are matched to models by label, in any
+            order. When they do not, pass one plain train per fitted unit, in
+            fit order. Labels on only one side raise ``ValueError``.
         times : array-like, shape (n_frames,)
             Timestamp array in seconds. Decode bins tile each run whose gaps
             are no longer than ``max_gap``. For spans without tracking, pass
@@ -920,10 +941,11 @@ warn_on_drop
         RuntimeError
             If the decoder is unfitted.
         ValueError
-            If the spike input repeats a unit label; if label matching applies
-            and the input's labels differ from ``unit_ids`` (the message lists
-            the missing and unexpected labels); or if trains are paired by
-            position and their number differs from the number of fitted units.
+            If only one of the fit input and this input carried unit labels;
+            if the input repeats a unit label; if its labels differ from
+            ``unit_ids`` (the message lists the missing and unexpected labels);
+            or if plain trains are paired by position and their number differs
+            from the number of fitted units.
 
         Notes
         -----
@@ -985,11 +1007,12 @@ warn_on_drop
         Parameters
         ----------
         spike_times : SpikeTrainsLike
-            Spike times to decode. Same accepted forms as :meth:`fit`. When both
-            this input and the fit carried caller-supplied labels (a labelled
-            group, or ``unit_ids`` given at construction), trains are matched
-            to encoding models by label, in any order. Otherwise they are paired
-            by position: one train per fitted unit, in fit order.
+            Spike times to decode. Same accepted forms as :meth:`fit`. When the
+            fitted models carry caller-supplied labels (from a labelled group
+            or ``unit_ids=`` in :meth:`fit` or :meth:`from_models`), pass a
+            labelled group: trains are matched to models by label, in any
+            order. When they do not, pass one plain train per fitted unit, in
+            fit order. Labels on only one side raise ``ValueError``.
         times : array-like, shape (n_frames,)
             Timestamp array in seconds. Decode bins tile each run whose gaps
             are no longer than ``max_gap``. For spans without tracking, pass

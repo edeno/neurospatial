@@ -678,7 +678,6 @@ class TestConstructionValidation:
         rebuilt = BayesianDecoder.from_models(
             env,
             fitted.encoding_models,
-            unit_ids=fitted.unit_ids,
             spatial_support=fitted.spatial_support,
             dt=0.5,
         )
@@ -788,27 +787,6 @@ class TestUnitAlignment:
         assert "unexpected: [18]" in message
         assert "\nFix:" in message
 
-    def test_unlabelled_fit_pairs_labelled_input_by_position(
-        self, sim, make_spike_group
-    ) -> None:
-        env, spikes, times, positions = sim
-        decoder = BayesianDecoder(env, dt=0.5).fit(spikes[:3], times, positions)
-        from_list = decoder.predict(spikes[:3], times)
-        from_group = decoder.predict(make_spike_group(spikes[:3], [3, 7, 9]), times)
-        np.testing.assert_allclose(
-            from_group.posterior, from_list.posterior, atol=1e-12
-        )
-
-    def test_labelled_fit_pairs_plain_input_by_position(
-        self, labelled_fit, make_spike_group
-    ) -> None:
-        decoder, spikes, times = labelled_fit
-        from_group = decoder.predict(make_spike_group(spikes, _FIT_IDS), times)
-        from_list = decoder.predict(list(spikes), times)
-        np.testing.assert_allclose(
-            from_list.posterior, from_group.posterior, atol=1e-12
-        )
-
     def test_constructor_labels_are_caller_supplied(
         self, sim, make_spike_group
     ) -> None:
@@ -816,12 +794,6 @@ class TestUnitAlignment:
         a, b = spikes[0], spikes[1]
         fitted = BayesianDecoder(env, dt=0.5).fit([a, b], times, positions)
         assert fitted._unit_ids_generated is True
-        # Unlabelled fit: a labelled predict input is still paired by position.
-        np.testing.assert_allclose(
-            fitted.predict(make_spike_group([a, b], [3, 7]), times).posterior,
-            fitted.predict([a, b], times).posterior,
-            atol=1e-12,
-        )
 
         decoder = BayesianDecoder.from_models(
             env, fitted.encoding_models, unit_ids=[10, 20], dt=0.5
@@ -883,20 +855,6 @@ class TestUnitAlignment:
         )
         assert_array_equal(decoder.predict(spikes, times).posterior, ref.posterior)
 
-    def test_unlabelled_spike_trains_fit_pairs_by_position(
-        self, sim, make_spike_group
-    ) -> None:
-        env, spikes, times, positions = sim
-        decoder = BayesianDecoder(env, dt=0.5).fit(
-            SpikeTrains(spikes[:3]), times, positions
-        )
-        assert decoder._unit_ids_generated is True
-        np.testing.assert_allclose(
-            decoder.predict(make_spike_group(spikes[:3], [3, 7, 9]), times).posterior,
-            decoder.predict(spikes[:3], times).posterior,
-            atol=1e-12,
-        )
-
 
 def test_positions_required_where_used(sim):
     from neurospatial.decoding import decode_session_summary
@@ -954,12 +912,36 @@ def test_fit_unit_ids_enable_label_alignment(sim, make_spike_group):
     reordered = make_spike_group(trains[::-1], index=[12, 11, 10])
     np.testing.assert_array_equal(
         decoder.predict(reordered, times).posterior,
-        decoder.predict(trains, times).posterior,
+        decoder.predict(make_spike_group(trains, index=[10, 11, 12]), times).posterior,
     )
     with pytest.raises(ValueError) as caught:
         decoder.predict(make_spike_group(trains, index=[10, 11, 13]), times)
     assert "missing: [12]" in str(caught.value)
     assert "unexpected: [13]" in str(caught.value)
+
+
+@pytest.mark.parametrize("labelled_side", ["fit", "predict"])
+@pytest.mark.parametrize("method", ["predict", "predict_summary", "score"])
+def test_one_sided_unit_labels_raise(sim, make_spike_group, labelled_side, method):
+    """Labels on only one side cannot pair trains with models.
+
+    Positional pairing of a labelled group listed in another order would
+    decode with the wrong models, silently.
+    """
+    env, spikes, times, positions = sim
+    trains = spikes[:3]
+    labels = [10, 11, 12]
+    decoder = BayesianDecoder(env, dt=0.5)
+    if labelled_side == "fit":
+        decoder = decoder.fit(make_spike_group(trains, index=labels), times, positions)
+        test_input = trains[::-1]
+    else:
+        decoder = decoder.fit(trains, times, positions)
+        test_input = make_spike_group(trains[::-1], index=labels[::-1])
+    args = (test_input, times, positions) if method == "score" else (test_input, times)
+    with pytest.raises(ValueError, match="unit labels") as caught:
+        getattr(decoder, method)(*args)
+    assert "Fix:" in str(caught.value)
 
 
 def test_fit_unit_ids_must_match_group_labels(sim, make_spike_group):
@@ -1011,10 +993,8 @@ def test_from_rates_label_alignment(sim, make_spike_group):
     trains = spikes[:3]
     rates = compute_spatial_rates(env, trains, times, positions)
     decoder = BayesianDecoder.from_rates(rates, dt=0.5)
-    np.testing.assert_array_equal(
-        decoder.predict(make_spike_group(trains, index=[3, 7, 9]), times).posterior,
-        decoder.predict(trains, times).posterior,
-    )
+    with pytest.raises(ValueError, match="unit labels"):
+        decoder.predict(make_spike_group(trains, index=[3, 7, 9]), times)
     labelled = compute_spatial_rates(
         env,
         make_spike_group(trains, index=[10, 11, 12]),
@@ -1057,10 +1037,8 @@ def test_from_rates_constructor_labels(sim, make_spike_group):
     assert generated[0]._unit_ids_generated
     assert dataclasses.replace(generated)._unit_ids_generated
     decoder = BayesianDecoder.from_rates(generated, dt=0.5)
-    np.testing.assert_array_equal(
-        decoder.predict(a, times).posterior,
-        decoder.predict(spikes[:2], times).posterior,
-    )
+    with pytest.raises(ValueError, match="unit labels"):
+        decoder.predict(a, times)
 
 
 @pytest.mark.parametrize(

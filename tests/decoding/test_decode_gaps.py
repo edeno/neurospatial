@@ -96,9 +96,7 @@ def test_decode_bounds_do_not_restrict_observed_runs(gap_population):
     model = compute_spatial_rates(
         r.env, trains, r.times, r.positions, method="binned"
     ).firing_rates
-    result = BayesianDecoder.from_models(
-        r.env, model, unit_ids=np.arange(len(trains))
-    ).predict(trains, r.times)
+    result = BayesianDecoder.from_models(r.env, model).predict(trains, r.times)
     assert len(result.times) == 7998
 
 
