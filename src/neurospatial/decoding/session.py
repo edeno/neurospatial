@@ -1081,11 +1081,19 @@ def _decode_with_models_summary(
     # time_chunk is guaranteed a positive int by the up-front guard, so the
     # streamed-binning loop and the posterior reduction below both stay bounded
     # — the full (n_time, n_bins) posterior is never materialized in one shot.
+    # Sorted trains let each block take its spikes by binary search instead
+    # of a full-length mask per block.
+    trains = [
+        t if t.size < 2 or bool(np.all(t[1:] >= t[:-1])) else np.sort(t) for t in trains
+    ]
     block = time_chunk
     for start in range(0, n_time, block):
         stop = min(start + block, n_time)
         lo, hi = bin_left[start], bin_right[stop - 1]
-        block_trains = [s[(s >= lo) & (s < hi)] for s in trains]
+        block_trains = [
+            s[np.searchsorted(s, lo, side="left") : np.searchsorted(s, hi, side="left")]
+            for s in trains
+        ]
         counts_block = _count_spikes_in_time_bins(
             block_trains, bin_left[start:stop], bin_right[start:stop]
         )

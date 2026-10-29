@@ -915,3 +915,25 @@ def test_polar_summary_mean_matches_full_posterior_mean():
 
     np.testing.assert_allclose(summary.mean_position, full.mean_position, atol=1e-9)
     np.testing.assert_array_equal(summary.map_bin, full.map_bin)
+
+
+def test_streamed_summary_counts_unsorted_trains_like_sorted():
+    """Block spike selection does not depend on the order of spike times."""
+    from neurospatial import Environment
+    from neurospatial.decoding import BayesianDecoder
+
+    env = Environment.from_samples(np.linspace(0, 100, 200)[:, None], bin_size=10.0)
+    models = np.random.default_rng(0).uniform(1.0, 20.0, (3, env.n_bins))
+    decoder = BayesianDecoder.from_models(env, models, dt=0.1)
+    times = np.arange(0.0, 30.0, 0.05)
+    spike_rng = np.random.default_rng(1)
+    trains = [np.sort(spike_rng.uniform(0.0, 30.0, 200)) for _ in range(3)]
+    shuffled = [spike_rng.permutation(t) for t in trains]
+    full = decoder.predict(trains, times)
+    sorted_summary = decoder.predict_summary(trains, times, time_chunk=16)
+    shuffled_summary = decoder.predict_summary(shuffled, times, time_chunk=16)
+    np.testing.assert_array_equal(shuffled_summary.map_bin, sorted_summary.map_bin)
+    np.testing.assert_array_equal(sorted_summary.map_bin, full.map_bin)
+    np.testing.assert_allclose(
+        shuffled_summary.posterior_entropy, full.posterior_entropy, rtol=1e-12
+    )
