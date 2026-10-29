@@ -253,51 +253,6 @@ def simple_env():
 class TestFitLinearTrajectory:
     """Test fit_linear_trajectory function."""
 
-    def test_fit_linear_trajectory_method_map(self, simple_env):
-        """method='map' should use argmax positions for fitting."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
-
-        n_time_bins = 20
-        n_bins = simple_env.n_bins
-        times = np.linspace(0, 1, n_time_bins)
-
-        # Create posterior with clear MAP positions
-        posterior = np.zeros((n_time_bins, n_bins))
-        map_positions = np.linspace(5, n_bins - 5, n_time_bins).astype(int)
-        map_positions = np.clip(map_positions, 0, n_bins - 1)
-        for t, pos in enumerate(map_positions):
-            posterior[t, pos] = 1.0
-
-        result = fit_linear_trajectory(simple_env, posterior, times, method="map")
-
-        assert result.slope_std is None  # No posterior_entropy for method="map"
-        assert result.slope > 0  # Increasing positions
-
-    def test_fit_linear_trajectory_method_sample(self, simple_env):
-        """method='sample' should provide posterior_entropy via Monte Carlo."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
-
-        n_time_bins = 20
-        n_bins = simple_env.n_bins
-        times = np.linspace(0, 1, n_time_bins)
-
-        # Create posterior with some posterior_entropy
-        posterior = np.zeros((n_time_bins, n_bins))
-        base_positions = np.linspace(5, n_bins - 5, n_time_bins)
-        for t, pos in enumerate(base_positions):
-            pos = int(pos)
-            pos = np.clip(pos, 1, n_bins - 2)
-            posterior[t, pos] = 0.7
-            posterior[t, pos - 1] = 0.15
-            posterior[t, pos + 1] = 0.15
-
-        result = fit_linear_trajectory(
-            simple_env, posterior, times, method="sample", rng=42
-        )
-
-        assert result.slope_std is not None  # Should have posterior_entropy
-        assert result.slope_std >= 0  # Non-negative std
-
     def test_fit_linear_trajectory_reproducible_with_rng_int(self, simple_env):
         """Results should be reproducible with integer rng seed."""
         from neurospatial.decoding.trajectory import fit_linear_trajectory
@@ -397,25 +352,6 @@ class TestFitLinearTrajectory:
 
         assert result.r_squared > 0.99
 
-    def test_fit_linear_trajectory_negative_slope(self, simple_env):
-        """Decreasing positions should yield negative slope."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
-
-        n_time_bins = 20
-        n_bins = simple_env.n_bins
-        times = np.linspace(0, 1, n_time_bins)
-
-        # Create posterior with decreasing positions
-        posterior = np.zeros((n_time_bins, n_bins))
-        map_positions = np.linspace(n_bins - 5, 5, n_time_bins).astype(int)
-        map_positions = np.clip(map_positions, 0, n_bins - 1)
-        for t, pos in enumerate(map_positions):
-            posterior[t, pos] = 1.0
-
-        result = fit_linear_trajectory(simple_env, posterior, times, method="map")
-
-        assert result.slope < 0
-
     def test_fit_linear_trajectory_non_uniform_times(self, simple_env):
         """Should work with non-uniformly spaced time bins."""
         from neurospatial.decoding.trajectory import fit_linear_trajectory
@@ -439,34 +375,56 @@ class TestFitLinearTrajectory:
         assert np.isfinite(result.slope)
         assert np.isfinite(result.intercept)
 
-    def test_fit_linear_trajectory_n_samples_affects_std(self, simple_env):
-        """More samples should generally yield more stable estimates."""
+    def test_sampled_fit_of_certain_posterior_has_no_spread(self, simple_env):
+        """One-hot rows: every sample is the MAP sequence."""
         from neurospatial.decoding.trajectory import fit_linear_trajectory
 
         n_time_bins = 20
-        n_bins = simple_env.n_bins
         times = np.linspace(0, 1, n_time_bins)
+        rng = np.random.default_rng(7)
+        posterior = np.zeros((n_time_bins, simple_env.n_bins))
+        posterior[np.arange(n_time_bins), rng.integers(0, 50, n_time_bins)] = 1.0
 
-        # Create posterior with some posterior_entropy
-        rng = np.random.default_rng(42)
-        posterior = rng.random((n_time_bins, n_bins))
+        sampled = fit_linear_trajectory(
+            simple_env, posterior, times, method="sample", n_samples=50, rng=0
+        )
+        map_fit = fit_linear_trajectory(simple_env, posterior, times, method="map")
+
+        assert sampled.slope_std == pytest.approx(0.0, abs=1e-9)
+        assert sampled.slope == pytest.approx(map_fit.slope)
+        assert sampled.intercept == pytest.approx(map_fit.intercept)
+
+    def test_sampled_slope_spread_matches_posterior_width(self):
+        """slope_std is the standard error of a line through noisy positions.
+
+        Each row is a Gaussian of width sigma on 1 cm bins, so a sampled
+        sequence is the true line plus independent noise of variance
+        sigma**2 + 1/12 (the bin width), and the least-squares slope has
+        standard deviation sqrt(sigma**2 + 1/12) / sqrt(sum((t - mean(t))**2)).
+        """
+        from scipy.stats import norm
+
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        sigma = 8.0
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [400.0, 0.0]], bin_size=1.0, units="cm"
+        )
+        edges = np.arange(0.0, 401.0)
+        times = np.arange(20) * 0.01
+        center = 100.0 + 500.0 * times
+        posterior = np.diff(norm.cdf((edges - center[:, None]) / sigma), axis=1)
         posterior /= posterior.sum(axis=1, keepdims=True)
 
-        result_100 = fit_linear_trajectory(
-            simple_env, posterior, times, method="sample", n_samples=100, rng=42
-        )
-        result_1000 = fit_linear_trajectory(
-            simple_env,
-            posterior,
-            times,
-            method="sample",
-            n_samples=1000,
-            rng=43,
+        result = fit_linear_trajectory(
+            env, posterior, times, method="sample", n_samples=2000, rng=11
         )
 
-        # Both should have posterior_entropy estimates
-        assert result_100.slope_std is not None
-        assert result_1000.slope_std is not None
+        expected = np.sqrt(sigma**2 + 1 / 12) / np.sqrt(
+            np.sum((times - times.mean()) ** 2)
+        )
+        assert result.slope_std == pytest.approx(expected, rel=0.15)
+        assert result.slope == pytest.approx(500.0, abs=3 * expected / np.sqrt(2000))
 
     def test_fit_linear_trajectory_invalid_method_raises(self, simple_env):
         """Invalid method should raise ValueError."""
@@ -704,10 +662,17 @@ class TestFitsReadPositionAlongTrack:
             shuffled_env, shuffled, times, method=method, rng=0
         )
 
+        reverse = fit_linear_trajectory(
+            env, posterior[:, ::-1], times, method=method, rng=0
+        )
+
         assert original.slope == pytest.approx(500.0)  # cm/s
         assert original.intercept == pytest.approx(2.5)  # first bin center
+        assert reverse.slope == pytest.approx(-500.0)
+        assert reverse.intercept == pytest.approx(97.5)  # last bin center
         assert renumbered.slope == pytest.approx(original.slope)
         assert renumbered.r_squared == pytest.approx(original.r_squared)
+        assert (original.slope_std is None) == (method == "map")
 
     @pytest.mark.parametrize("method", ["map", "expected"])
     def test_isotonic_fit_ignores_bin_numbering(self, sweep, method):
