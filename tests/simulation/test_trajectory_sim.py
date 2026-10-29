@@ -30,6 +30,16 @@ def linear_track_env():
     return env
 
 
+@pytest.fixture(scope="module")
+def large_arena():
+    """A 4 x 4 m arena, where walls rarely interrupt a walk."""
+    from shapely.geometry import box
+
+    from neurospatial import Environment
+
+    return Environment.from_polygon(box(0, 0, 400, 400), bin_size=10.0, units="cm")
+
+
 class TestSimulateTrajectoryOU:
     """Tests for Ornstein-Uhlenbeck trajectory simulation."""
 
@@ -62,26 +72,101 @@ class TestSimulateTrajectoryOU:
         for pos in positions:
             assert simple_2d_env.contains(pos), f"Position {pos} outside environment"
 
-    def test_velocity_autocorrelation_is_correlated_and_decays(self, simple_2d_env):
-        """OU velocity is temporally correlated: 0 < acf(coherence_time) < acf(0)."""
-        coherence_time = 0.5
-        positions, times = simulate_trajectory_ou(
-            simple_2d_env,
-            duration=200.0,
-            dt=0.01,
+    def test_speed_decorrelates_over_the_coherence_time(self, large_arena):
+        """The speed's normal scores have autocorrelation exp(-lag / coherence_time)."""
+        from scipy.stats import gamma, norm
+
+        coherence_time, dt = 0.5, 0.01
+        positions, _times = simulate_trajectory_ou(
+            large_arena,
+            duration=2000.0,
+            dt=dt,
+            speed_mean=8.0,
+            speed_std=4.0,
             coherence_time=coherence_time,
             seed=42,
             speed_units="cm",
         )
-        dt = times[1] - times[0]
-        vx = np.diff(positions, axis=0)[:, 0]
-        vx = vx - vx.mean()
-        acf0 = np.mean(vx**2)
-        lag = int(coherence_time / dt)
-        acf_lag = np.mean(vx[:-lag] * vx[lag:])
-        # White noise -> ~0; a constant -> ~acf0. A real OU process sits strictly
-        # between, confirming coherence_time produces decaying-but-nonzero memory.
-        assert 0.0 < acf_lag < acf0
+        speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / dt
+        # Speed is a gamma quantile of a standard-normal OU process; undoing
+        # the quantile recovers that process.
+        z = norm.ppf(gamma.cdf(speed, 4.0, scale=2.0))
+        z = z[np.isfinite(z)]
+        for lag_s in (0.25, 0.5, 1.0):
+            lag = round(lag_s / dt)
+            acf = np.corrcoef(z[:-lag], z[lag:])[0, 1]
+            # About 2000 independent stretches: the standard error is ~0.02.
+            assert acf == pytest.approx(np.exp(-lag_s / coherence_time), abs=0.05)
+
+    def test_default_speed_is_rat_scale_in_the_environment_units(self):
+        """8 cm/s by default, expressed in env.units."""
+        from shapely.geometry import box
+
+        from neurospatial import Environment
+
+        env_m = Environment.from_polygon(box(0, 0, 4, 4), bin_size=0.1, units="m")
+        positions, _times = simulate_trajectory_ou(
+            env_m, duration=600.0, dt=0.05, speed_units="m", seed=0
+        )
+        speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / 0.05
+        assert speed.mean() == pytest.approx(0.08, rel=0.1)
+        assert speed.std() == pytest.approx(0.04, rel=0.15)
+
+    def test_default_speed_needs_metric_units(self):
+        from shapely.geometry import box
+
+        from neurospatial import Environment
+
+        env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="px")
+        with pytest.raises(ValueError, match="needs speed_mean"):
+            simulate_trajectory_ou(env, duration=1.0, speed_units="px")
+        positions, _times = simulate_trajectory_ou(
+            env, duration=1.0, speed_mean=8.0, speed_units="px", seed=0
+        )
+        assert env.contains(positions).all()
+
+    @pytest.mark.parametrize(
+        ("duration", "dt", "n_samples"),
+        [(0.3, 0.1, 3), (0.29, 0.01, 29), (1.0, 0.01, 100), (0.1, 0.1, 1)],
+    )
+    def test_sample_count_is_duration_over_dt(
+        self, connected_arena_env, duration, dt, n_samples
+    ):
+        """Rounding error in duration / dt does not drop a sample."""
+        positions, times = simulate_trajectory_ou(
+            connected_arena_env, duration=duration, dt=dt, speed_units="cm", seed=0
+        )
+        assert len(times) == len(positions) == n_samples
+        np.testing.assert_allclose(times, np.arange(n_samples) * dt)
+
+    def test_duration_shorter_than_dt_is_refused(self, connected_arena_env):
+        with pytest.raises(ValueError, match="duration=0.005 s is shorter than"):
+            simulate_trajectory_ou(
+                connected_arena_env, duration=0.005, dt=0.01, speed_units="cm"
+            )
+
+    def test_unknown_boundary_mode_is_refused(self, connected_arena_env):
+        with pytest.raises(ValueError, match="boundary_mode must be one of"):
+            simulate_trajectory_ou(
+                connected_arena_env,
+                duration=1.0,
+                speed_units="cm",
+                boundary_mode="bounce",  # type: ignore[arg-type]
+            )
+
+    def test_periodic_is_refused_where_the_bins_do_not_fill_the_box(self):
+        """Wrapping across a circle's bounding box would leave the circle."""
+        from shapely.geometry import Point
+
+        from neurospatial import Environment
+
+        env = Environment.from_polygon(
+            Point(50, 50).buffer(50), bin_size=2.0, units="cm"
+        )
+        with pytest.raises(ValueError, match="do not fill"):
+            simulate_trajectory_ou(
+                env, duration=1.0, speed_units="cm", boundary_mode="periodic"
+            )
 
     def test_boundary_mode_reflect(self, simple_2d_env):
         """Test reflect boundary mode."""
@@ -97,22 +182,32 @@ class TestSimulateTrajectoryOU:
         for pos in positions:
             assert simple_2d_env.contains(pos)
 
-    def test_boundary_mode_periodic(self, simple_2d_env):
-        """Test periodic boundary mode."""
+    def test_boundary_mode_periodic_wraps_across_opposite_sides(
+        self, connected_arena_env
+    ):
+        """Leaving one side re-enters from the opposite side, at full speed."""
+        env = connected_arena_env
+        dt = 0.01
         positions, _times = simulate_trajectory_ou(
-            simple_2d_env,
-            duration=5.0,
+            env,
+            duration=120.0,
+            dt=dt,
+            speed_mean=30.0,
+            speed_std=0.0,
             boundary_mode="periodic",
             seed=42,
             speed_units="cm",
         )
-
-        # Positions should wrap around
-        # Check that positions are within dimension ranges
-        for dim in range(simple_2d_env.n_dims):
-            range_min, range_max = simple_2d_env.dimension_ranges[dim]
-            assert np.all(positions[:, dim] >= range_min)
-            assert np.all(positions[:, dim] <= range_max)
+        assert env.contains(positions).all()
+        span = np.ptp(np.asarray(env.dimension_ranges), axis=1)
+        steps = np.diff(positions, axis=0)
+        wrapped = np.abs(steps) > span / 2
+        assert wrapped.any()
+        # The shortest displacement on the torus is the step taken.
+        torus_steps = steps - span * np.round(steps / span)
+        np.testing.assert_allclose(
+            np.linalg.norm(torus_steps, axis=1), 30.0 * dt, rtol=1e-9
+        )
 
     def test_boundary_mode_stop(self, simple_2d_env):
         """Test stop boundary mode."""

@@ -63,6 +63,80 @@ def _get_conversion_factor(from_unit: str, to_unit: str) -> float:
     return from_factor / to_factor
 
 
+#: Default exploration speed, in centimeters per second: the RatInABox
+#: default (0.08 m/s; George et al. 2023).
+_DEFAULT_OU_SPEED_CM_PER_S = 8.0
+
+# Relative rounding allowed in ``duration / dt`` before a sample is dropped.
+_SAMPLE_COUNT_RTOL = 1e-9
+
+
+def _require_finite(
+    checks: list[tuple[str, float, bool]], why: str | None = None
+) -> None:
+    """Refuse a value that is not finite, or not positive (or non-negative).
+
+    ``checks`` holds ``(name, value, positive)``; ``positive`` False allows 0.
+    """
+    for name, value, positive in checks:
+        if not np.isfinite(value) or (value <= 0 if positive else value < 0):
+            bound = "positive" if positive else "non-negative"
+            raise ValueError(
+                _format_error(
+                    f"{name} must be finite and {bound}, got {value}.",
+                    why=why,
+                    fix=f"pass a finite {bound} {name}",
+                )
+            )
+
+
+def _sample_count(duration: float, step: float, step_name: str, call: str) -> int:
+    """Number of samples ``0, step, 2 step, ...`` before ``duration``.
+
+    ``duration / step`` is rounded up when it is within
+    :data:`_SAMPLE_COUNT_RTOL` of an integer, so ``0.3 / 0.1``
+    (2.9999999999999996) gives 3 samples.
+    """
+    n_samples = int(np.floor(duration / step * (1 + _SAMPLE_COUNT_RTOL)))
+    if n_samples < 1:
+        raise ValueError(
+            _format_error(
+                f"{call}: duration={duration} s is shorter than one sample "
+                f"({step_name}={step} s).",
+                why="Why: the trajectory is sampled every "
+                f"{step_name} seconds from time 0, so it needs at least one "
+                "sample.",
+                fix=f"pass a duration of at least {step} s, or a shorter "
+                f"{step_name}",
+            )
+        )
+    return n_samples
+
+
+def _require_bins_fill_ranges(env: Environment) -> None:
+    """Refuse periodic wrapping unless the bins fill ``env.dimension_ranges``."""
+    ranges = env.dimension_ranges
+    box_measure = (
+        None if ranges is None else float(np.prod(np.ptp(np.asarray(ranges), axis=1)))
+    )
+    if box_measure is None or not np.isclose(
+        float(np.sum(env.bin_sizes)), box_measure, rtol=1e-9
+    ):
+        raise ValueError(
+            _format_error(
+                "boundary_mode='periodic' needs bins that fill "
+                "env.dimension_ranges, and these bins do not fill them.",
+                why="Why: periodic mode joins opposite sides of "
+                "env.dimension_ranges into a torus; where the bins leave part "
+                "of that box empty (a circular arena, an irregular outline), "
+                "wrapped positions land outside the environment.",
+                fix="use boundary_mode='reflect', or build the environment as "
+                "a full rectangular grid such as Environment.from_polygon("
+                "box(...))",
+            )
+        )
+
+
 def simulate_trajectory_ou(
     env: Environment,
     *,
@@ -70,8 +144,8 @@ def simulate_trajectory_ou(
     speed_units: str,
     dt: float = 0.01,
     start_position: NDArray[np.float64] | None = None,
-    speed_mean: float = 8.0,
-    speed_std: float = 4.0,
+    speed_mean: float | None = None,
+    speed_std: float | None = None,
     coherence_time: float = 0.7,
     rotational_velocity_std: float = 120 * (np.pi / 180),  # 120 deg/s in radians
     rotational_velocity_coherence_time: float = 0.08,
@@ -92,18 +166,22 @@ def simulate_trajectory_ou(
         Simulation duration in seconds.
     speed_units : str
         Units of ``speed_mean`` and ``speed_std``. Must equal ``env.units``;
-        speeds are not converted between units.
+        speeds you pass are not converted between units.
     dt : float, optional
         Time step in seconds (default: 0.01 = 10ms).
     start_position : NDArray[np.float64], shape (n_dims,), optional
         Starting position, inside the environment: ``env.contains`` is True
         for it, or it lies on the outline within rounding. If None, randomly
         chosen from bin centers.
-    speed_mean : float, optional
-        Mean running speed in ``speed_units`` per second (default: 8.0).
-    speed_std : float, optional
-        Standard deviation of the running speed in ``speed_units`` per second
-        (default: 4.0). 0 gives a constant speed.
+    speed_mean : float or None, optional
+        Mean running speed in ``speed_units`` per second. None (default) uses
+        8 cm/s, the RatInABox default for a foraging rat, expressed in
+        ``env.units`` (0.08 for meters); environments without metric units
+        need an explicit value.
+    speed_std : float or None, optional
+        Standard deviation of the running speed in ``speed_units`` per second.
+        None (default) uses ``speed_mean / 2`` (4 cm/s with the default mean).
+        0 gives a constant speed.
     coherence_time : float, optional
         Autocorrelation time of the speed in seconds (default: 0.7 s, the
         RatInABox default): how gradually the animal speeds up and slows down.
@@ -121,7 +199,9 @@ def simulate_trajectory_ou(
           component along the wall and reversing the component into it, and
           the animal takes the step in the mirrored direction.
         - 'periodic': opposite sides of ``env.dimension_ranges`` are joined
-          (a torus) and walls are ignored. Not biologically realistic.
+          (a torus) and walls are ignored. Not biologically realistic. The
+          bins must fill ``env.dimension_ranges`` (a full rectangular grid),
+          so that every wrapped position is inside the environment.
         - 'stop': the animal waits in place until its heading turns away
           from the wall. In 1-D, where the heading turns only at a wall, it
           reverses there as with 'reflect'.
@@ -141,7 +221,13 @@ def simulate_trajectory_ou(
         If env.units is not set. Pass units="cm" when constructing the environment.
     ValueError
         If speed_units differs from env.units, or a speed or time constant is
-        not finite and positive (``speed_std`` may be 0).
+        not finite and positive (``speed_std`` may be 0), or ``duration`` is
+        shorter than ``dt``.
+    ValueError
+        If ``speed_mean`` is None and ``env.units`` is not a metric length.
+    ValueError
+        If ``boundary_mode`` is not one of the three modes, or is
+        ``'periodic'`` and the bins do not fill ``env.dimension_ranges``.
     ValueError
         If ``start_position`` is not one point of ``env.n_dims`` coordinates
         inside the environment.
@@ -254,38 +340,47 @@ def simulate_trajectory_ou(
                 f"speed_units={env.units!r}",
             )
         )
-    for name, value, positive in [
-        ("duration", duration, True),
-        ("dt", dt, True),
-        ("speed_mean", speed_mean, True),
-        ("speed_std", speed_std, False),
-        ("coherence_time", coherence_time, True),
-        ("rotational_velocity_std", rotational_velocity_std, False),
-        (
-            "rotational_velocity_coherence_time",
-            rotational_velocity_coherence_time,
-            True,
-        ),
-    ]:
-        if not np.isfinite(value) or (value <= 0 if positive else value < 0):
-            bound = "positive" if positive else "non-negative"
-            raise ValueError(
-                _format_error(
-                    f"{name} must be finite and {bound}, got {value}.",
-                    fix=f"pass a finite {bound} {name}",
-                )
-            )
-    if boundary_mode == "periodic" and env.dimension_ranges is None:
-        msg = (
-            "Environment dimension_ranges must be set for periodic boundary mode. "
-            "The periodic mode wraps positions across boundaries using dimension_ranges. "
-            "Either set env.dimension_ranges or use boundary_mode='reflect'."
+    if speed_mean is None:
+        speed_mean = default_speed(
+            env.units,
+            _DEFAULT_OU_SPEED_CM_PER_S,
+            name="speed_mean",
+            call="simulate_trajectory_ou()",
+            problem="not a metric length unit, so the default 8 cm/s",
+            placeholder="running speed",
         )
-        raise ValueError(msg)
-
+    if speed_std is None:
+        speed_std = speed_mean / 2
+    _require_finite(
+        [
+            ("duration", duration, True),
+            ("dt", dt, True),
+            ("speed_mean", speed_mean, True),
+            ("speed_std", speed_std, False),
+            ("coherence_time", coherence_time, True),
+            ("rotational_velocity_std", rotational_velocity_std, False),
+            (
+                "rotational_velocity_coherence_time",
+                rotational_velocity_coherence_time,
+                True,
+            ),
+        ]
+    )
+    modes = ("reflect", "periodic", "stop")
+    if boundary_mode not in modes:
+        raise ValueError(
+            _format_error(
+                f"boundary_mode must be one of {modes}, got {boundary_mode!r}.",
+                why="Why: each mode is a different rule for what the animal "
+                "does at a wall.",
+                fix="pass boundary_mode='reflect' to bounce off walls",
+            )
+        )
+    if boundary_mode == "periodic":
+        _require_bins_fill_ranges(env)
+    n_steps = _sample_count(duration, dt, "dt", "simulate_trajectory_ou()")
     rng = np.random.default_rng(seed)
     n_dims = env.n_dims
-    n_steps = int(duration / dt)
     times = np.arange(n_steps, dtype=np.float64) * dt
 
     if start_position is None:
