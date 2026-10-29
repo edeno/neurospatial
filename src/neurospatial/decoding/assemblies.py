@@ -147,14 +147,21 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
     ----------
     weights : NDArray[np.float64], shape (n_neurons,)
         Weight of each neuron in this assembly. Higher absolute values
-        indicate stronger participation. :func:`detect_assemblies` orients
-        each pattern so its largest-magnitude weight is positive.
+        indicate stronger participation. :func:`detect_assemblies` scales
+        each pattern to unit length and orients it so its largest-magnitude
+        weight is positive.
     member_indices : NDArray[np.int64]
         Column positions of neurons whose absolute-weight z-scores exceed
         z_threshold. These are the "core" members of the assembly.
     explained_variance_ratio : float
-        Fraction of total variance explained by this assembly pattern.
-        Higher values indicate more prominent assemblies.
+        Fraction of the population's variance this pattern accounts for, in
+        [0, 1]. Higher values indicate more prominent assemblies. For PCA it
+        is the pattern's eigenvalue over the number of varying neurons; for
+        ICA, the variance of the z-scored counts reconstructed from the
+        pattern's source; for NMF, the variance over time of the pattern's
+        rank-1 reconstruction of the raw counts, as a fraction of their
+        summed variance. NMF components can overlap in time, so their
+        fractions need not add up to the variance the fit explains.
     unit_ids : ndarray, shape (n_neurons,)
         Label of the unit each weight belongs to (read-only): the
         ``unit_ids=`` given to :func:`detect_assemblies`, else
@@ -245,7 +252,8 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     Attributes
     ----------
     patterns : list[AssemblyPattern]
-        Detected assembly patterns, ordered by explained variance (highest first).
+        Detected assembly patterns, ordered by ``explained_variance_ratio``
+        (highest first) for every method.
     activations : NDArray[np.float64], shape (n_assemblies, n_time_bins)
         Activation strength of each assembly over time.
     method : str
@@ -867,6 +875,15 @@ def detect_assemblies(
             stacklevel=2,
         )
 
+    # Order patterns by explained variance, highest first. PCA eigenvectors
+    # already are; ICA sources and NMF components come in arbitrary order.
+    order = np.argsort(-explained_var, kind="stable")
+    patterns, activations, explained_var = (
+        patterns[order],
+        activations[order],
+        explained_var[order],
+    )
+
     # ICA and eigenvector signs are arbitrary. Orient each pattern so its
     # largest-magnitude weight is positive, and flip its activation with it so
     # weights @ z-scored counts == activations still holds. An assembly's
@@ -983,9 +1000,13 @@ def _detect_ica(
     activations = ica.fit_transform(activations_pca.T).T
 
     # components_ includes the whitening transform as well as the ICA
-    # rotation. Compose it with the projection to preserve neuron-space
-    # weights @ z-scored counts == activations.
+    # rotation; composed with the projection it maps z-scored counts to the
+    # sources. Scale each pattern to unit length (Lopes-dos-Santos et al.,
+    # 2013), like the PCA eigenvectors, so weights are comparable across
+    # methods, and keep weights @ z-scored counts == activations.
     patterns = ica.components_ @ patterns_pca
+    patterns /= np.linalg.norm(patterns, axis=1, keepdims=True)
+    activations = patterns @ spike_counts_z
 
     # Unit-variance, uncorrelated sources contribute the squared norm of
     # their neuron-space mixing column to the reconstructed variance.
@@ -1041,15 +1062,22 @@ def _detect_nmf(
     live = (np.abs(patterns).sum(axis=1) > 0) & (np.abs(activations).sum(axis=1) > 0)
     patterns, activations = patterns[live], activations[live]
 
-    # Compute explained variance
-    reconstruction = patterns.T @ activations
-    total_var = np.var(spike_counts)
-    residual_var = np.var(spike_counts - reconstruction)
-    total_explained = 1 - residual_var / total_var
+    # W @ H is unchanged when a pattern is scaled by c and its activation by
+    # 1 / c. Give every pattern unit length, as for PCA and ICA.
+    norms = np.linalg.norm(patterns, axis=1, keepdims=True)
+    patterns, activations = patterns / norms, activations * norms
 
-    # Approximate per-component variance (proportional to pattern norm)
-    pattern_norms = np.linalg.norm(patterns, axis=1)
-    explained_var = pattern_norms / np.sum(pattern_norms) * total_explained
+    # Explained variance of component k: the variance over time of its rank-1
+    # reconstruction outer(w_k, h_k), summed over neurons, as a fraction of
+    # the summed variance of the counts. Unlike a share of the total fit
+    # split by pattern norm, this does not depend on the W/H scaling.
+    # Components can overlap in time, so the fractions need not add up to the
+    # variance the whole factorization explains.
+    explained_var = (
+        np.sum(patterns**2, axis=1)
+        * np.var(activations, axis=1)
+        / np.sum(np.var(spike_counts, axis=1))
+    )
 
     return patterns, activations, explained_var
 

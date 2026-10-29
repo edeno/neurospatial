@@ -125,37 +125,75 @@ class TestMarchenkoPasturThreshold:
 class TestDetectAssemblies:
     """Tests for detect_assemblies function."""
 
+    @pytest.mark.parametrize("algorithm", ["ica", "nmf"])
     def test_detects_known_assemblies(
+        self, spike_counts_with_assemblies: np.ndarray, algorithm: str
+    ) -> None:
+        """Each planted assembly is one pattern whose members are exactly its cells.
+
+        Matching neuron ids pins the (n_time_bins, n_neurons) orientation: a
+        wrong axis would recover garbage ids.
+        """
+        result = detect_assemblies(
+            spike_counts_with_assemblies, algorithm=algorithm, rng=42
+        )
+
+        assert result.n_significant == 3
+        recovered = sorted(
+            pattern.member_indices.tolist() for pattern in result.patterns
+        )
+        assert recovered == [
+            list(range(0, 5)),
+            list(range(10, 15)),
+            list(range(20, 25)),
+        ]
+
+    def test_pca_patterns_span_the_planted_assemblies(
         self, spike_counts_with_assemblies: np.ndarray
     ) -> None:
-        """Should detect embedded assemblies."""
+        """Equally strong assemblies mix in PCA, but their span is recovered.
+
+        The three planted eigenvalues are nearly equal, so each eigenvector
+        mixes the assemblies and a pattern can have no core member. The
+        subspace they span still holds each assembly's indicator vector, up
+        to the sampling perturbation of the eigenvectors, about
+        sqrt(n_neurons / n_time_bins) * sqrt(lambda) / (lambda - 1) = 0.13 for
+        eigenvalue lambda = 3 with 50 neurons and 2000 bins.
+        """
+        result = detect_assemblies(spike_counts_with_assemblies, algorithm="pca")
+        weights = np.array([pattern.weights for pattern in result.patterns])
+        assert weights.shape == (3, 50)
+        for cells in (range(0, 5), range(10, 15), range(20, 25)):
+            indicator = np.zeros(50)
+            indicator[list(cells)] = 1 / np.sqrt(5)
+            residual = indicator - weights.T @ (weights @ indicator)
+            assert np.linalg.norm(residual) < 0.2
+
+    @pytest.fixture
+    def assemblies_of_unequal_strength(self) -> np.ndarray:
+        """Three 5-cell assemblies whose shared drive is 2, 4 and 6 spikes."""
+        rng = np.random.default_rng(3)
+        counts = rng.poisson(5, (3000, 40)).astype(np.float64)
+        for start, drive in ((0, 2), (10, 4), (20, 6)):
+            counts[:, start : start + 5] += rng.poisson(drive, (3000, 1))
+        return counts
+
+    @pytest.mark.parametrize("algorithm", ["pca", "ica", "nmf"])
+    def test_patterns_are_unit_length_and_ordered_by_explained_variance(
+        self, assemblies_of_unequal_strength: np.ndarray, algorithm: str
+    ) -> None:
         result = detect_assemblies(
-            spike_counts_with_assemblies, algorithm="ica", rng=42
+            assemblies_of_unequal_strength, algorithm=algorithm, rng=0
         )
 
-        # Should detect 2-5 assemblies (depends on threshold)
-        assert result.n_significant >= 2
-        assert result.n_significant <= 5
-
-        # The detected members are the INJECTED neurons, not just the right
-        # count -- this is what pins the (n_time_bins, n_neurons) orientation's
-        # scientific correctness (a wrong axis would recover garbage neuron ids).
-        # The fixture co-activates neurons {0-4}, {10-14}, {20-24}; each injected
-        # assembly should be recovered by some detected pattern whose members
-        # cover a majority (>= 3 of 5) of that set. Require >= 2 of the 3 to be
-        # recovered (robust to the weakest being dropped under the MP threshold).
-        injected = [set(range(0, 5)), set(range(10, 15)), set(range(20, 25))]
-        detected_members = [
-            {int(m) for m in pattern.member_indices} for pattern in result.patterns
-        ]
-        recovered = sum(
-            any(len(members & inj) >= 3 for members in detected_members)
-            for inj in injected
-        )
-        assert recovered >= 2, (
-            f"injected assemblies not recovered by neuron id; detected members: "
-            f"{[sorted(m) for m in detected_members]}"
-        )
+        ratios = [pattern.explained_variance_ratio for pattern in result.patterns]
+        assert ratios == sorted(ratios, reverse=True)
+        assert all(0.0 < ratio < 1.0 for ratio in ratios)
+        weights = np.array([pattern.weights for pattern in result.patterns])
+        assert_allclose(np.linalg.norm(weights, axis=1), 1.0, atol=1e-12)
+        # The strongest assembly (cells 20-24) comes first, then cells 10-14.
+        assert result.patterns[0].member_indices.tolist() == list(range(20, 25))
+        assert result.patterns[1].member_indices.tolist() == list(range(10, 15))
 
     @pytest.mark.parametrize("seed", range(5))
     def test_independent_neurons_have_no_significant_dimension(self, seed: int) -> None:
@@ -233,26 +271,25 @@ class TestDetectAssemblies:
         assert len(result.patterns) == 0
         assert result.activations.shape == (0, random_spike_counts.shape[0])
 
-    def test_z_threshold_affects_membership(
-        self, spike_counts_with_assemblies: np.ndarray
-    ) -> None:
-        """Higher z_threshold should yield fewer assembly members."""
-        result_low = detect_assemblies(
-            spike_counts_with_assemblies,
-            z_threshold=1.5,
-            rng=42,
-        )
-        result_high = detect_assemblies(
-            spike_counts_with_assemblies,
-            z_threshold=2.5,
-            rng=42,
-        )
+    def test_z_threshold_affects_membership(self) -> None:
+        """Weak participants are members at a low cutoff only; core cells at both."""
+        rng = np.random.default_rng(1)
+        counts = rng.poisson(1.0, (4000, 60)).astype(np.float64)
+        for k, start in enumerate((0, 10, 20)):
+            events = rng.choice(4000, 200, replace=False)
+            counts[np.ix_(events, range(start, start + 4))] += rng.poisson(
+                4.0, (200, 4)
+            )
+            if k == 0:  # cells 30 and 31 join assembly 0 weakly
+                counts[np.ix_(events, [30, 31])] += rng.poisson(1.0, (200, 2))
 
-        # Lower threshold = more members on average
-        avg_low = np.mean([len(p.member_indices) for p in result_low.patterns])
-        avg_high = np.mean([len(p.member_indices) for p in result_high.patterns])
+        def members(z_threshold: float) -> list[list[int]]:
+            result = detect_assemblies(counts, z_threshold=z_threshold, rng=0)
+            return sorted(p.member_indices.tolist() for p in result.patterns)
 
-        assert avg_low >= avg_high
+        core = [[0, 1, 2, 3], [10, 11, 12, 13], [20, 21, 22, 23]]
+        assert members(2.5) == core
+        assert members(1.0) == [[0, 1, 2, 3, 30, 31], *core[1:]]
 
     def test_reproducibility_with_random_state(
         self, spike_counts_with_assemblies: np.ndarray
@@ -995,14 +1032,15 @@ def test_ica_whitens_scores_and_recovers_independent_sources(n_components):
         result = detect_assemblies(
             counts, algorithm="ica", n_components=n_components, rng=0
         )
-    recovered = result.activations[:2]
-    assert_allclose(np.cov(recovered, bias=True), np.eye(2), atol=1e-10)
-    recovery_correlations = np.abs(np.corrcoef(sources.T, recovered)[:2, 2:])
-    assert np.all(recovery_correlations.max(axis=1) > 0.98)
-
     standardized = zscore(counts, axis=0)
     weights = np.array([pattern.weights for pattern in result.patterns])
-    assert_allclose(weights @ standardized.T, result.activations, atol=1e-12)
+    # Unit-length patterns (Lopes-dos-Santos et al., 2013), like PCA's.
+    assert_allclose(np.linalg.norm(weights, axis=1), 1.0, atol=1e-12)
+    # Projected onto the patterns, the counts give uncorrelated sources.
+    recovered = weights @ standardized.T
+    assert_allclose(np.corrcoef(recovered), np.eye(2), atol=1e-10)
+    recovery_correlations = np.abs(np.corrcoef(sources.T, recovered)[:2, 2:])
+    assert np.all(recovery_correlations.max(axis=1) > 0.98)
 
     # Fit the reconstruction independently, then measure the variance each
     # recovered source contributes in neuron space.
