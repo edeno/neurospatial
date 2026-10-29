@@ -668,14 +668,12 @@ class TestDetectTrajectoryRadon:
         assert result.sinogram.ndim == 2
 
     def test_detect_trajectory_radon_empty_posterior(self):
-        """Should handle all-zero posterior gracefully."""
+        """An all-zero posterior holds no probability and is refused."""
         from neurospatial.decoding.trajectory import detect_trajectory_radon
 
         posterior = np.zeros((50, 50))
-        result = detect_trajectory_radon(_track_for(posterior), posterior)
-
-        assert np.isfinite(result.angle_degrees)
-        assert result.score >= 0
+        with pytest.raises(ValueError, match=r"50 of 50 rows.*sums to 0"):
+            detect_trajectory_radon(_track_for(posterior), posterior)
 
 
 class TestRadonAngleRecovery:
@@ -855,3 +853,72 @@ class TestFitsReadPositionAlongTrack:
         )
         with pytest.raises(ValueError, match="needs a position along a track"):
             getattr(trajectory, fit)(*args)
+
+
+# =============================================================================
+# Posterior rows must be probability masses
+# =============================================================================
+
+
+class TestPosteriorRowsAreValidated:
+    """NaN, negative or unnormalized rows are refused, not read as bin 0."""
+
+    @pytest.fixture
+    def sweep(self):
+        """A forward sweep, one bin per 10 ms on a 50 cm track of 1 cm bins."""
+        posterior = np.eye(50)
+        return _track_for(posterior), posterior, np.arange(50) * 0.01
+
+    @staticmethod
+    def _call(fit, env, posterior, times):
+        import neurospatial.decoding.trajectory as trajectory
+
+        args = (env, posterior)
+        if fit != "detect_trajectory_radon":
+            args += (times,)
+        return getattr(trajectory, fit)(*args)
+
+    @pytest.mark.parametrize(
+        "fit",
+        ["fit_linear_trajectory", "fit_isotonic_trajectory", "detect_trajectory_radon"],
+    )
+    def test_nan_rows_are_refused(self, sweep, fit):
+        env, posterior, times = sweep
+        posterior = posterior.copy()
+        posterior[[10, 20]] = np.nan
+        with pytest.raises(ValueError, match=r"2 of 50 rows.*NaN") as excinfo:
+            self._call(fit, env, posterior, times)
+        message = str(excinfo.value)
+        assert "track start" in message  # why
+        assert "together with their times" in message  # fix
+
+    @pytest.mark.parametrize(
+        "fit",
+        ["fit_linear_trajectory", "fit_isotonic_trajectory", "detect_trajectory_radon"],
+    )
+    def test_rows_missing_mass_are_refused(self, sweep, fit):
+        env, posterior, times = sweep
+        with pytest.raises(ValueError, match=r"50 of 50 rows.*0\.7") as excinfo:
+            self._call(fit, env, 0.7 * posterior, times)
+        assert "renormalize" in str(excinfo.value)
+
+    def test_negative_rows_are_refused(self, sweep):
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        env, posterior, times = sweep
+        posterior = posterior.copy()
+        posterior[3, 0] = -0.5
+        posterior[3, 1] += 0.5
+        with pytest.raises(ValueError, match=r"1 of 50 rows.*negative"):
+            fit_linear_trajectory(env, posterior, times)
+
+    def test_rounding_error_in_row_sums_is_accepted(self, sweep):
+        """A float32 posterior sums to 1 only to single precision."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        env, _, times = sweep
+        rng = np.random.default_rng(0)
+        posterior = rng.dirichlet(np.ones(50), size=50).astype(np.float32)
+        assert not np.all(posterior.sum(axis=1) == 1.0)
+        result = fit_linear_trajectory(env, posterior, times, rng=1)
+        assert np.isfinite(result.slope)

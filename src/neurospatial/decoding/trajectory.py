@@ -56,6 +56,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
+from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 
 if TYPE_CHECKING:
@@ -284,14 +285,15 @@ def _track_positions(
     ------
     ValueError
         If ``env`` is neither 1-D nor a linearized track, if ``posterior`` is
-        not 2-D, or if it does not have one column per bin.
+        not 2-D, if it does not have one column per bin, or if a row is not a
+        probability mass (see :func:`_require_probability_rows`).
     """
     from neurospatial.environment._queries import require_track_extents
 
     starts, stops = require_track_extents(
         env, operation, alternative=_TRACK_ALTERNATIVE
     )
-    posterior = np.asarray(posterior, dtype=np.float64)
+    posterior = np.asarray(posterior)
     if posterior.ndim != 2:
         raise ValueError(f"posterior must be 2D, got shape {posterior.shape}")
     if posterior.shape[1] != env.n_bins:
@@ -300,10 +302,72 @@ def _track_positions(
             f"has {env.n_bins} bins. Pass the posterior decoded on this "
             "environment, with one column per bin."
         )
+    posterior = _require_probability_rows(posterior, operation)
     # A stable sort keeps bins that are already in track order in place, so
     # sampling below draws the same bins as it would in bin numbering.
     order = np.argsort(starts, kind="stable")
     return posterior[:, order], starts[order], stops[order]
+
+
+def _require_probability_rows(
+    posterior: NDArray[Any], operation: str
+) -> NDArray[np.float64]:
+    """Refuse rows that are not a probability mass over the bins.
+
+    Parameters
+    ----------
+    posterior : NDArray, shape (n_time_bins, n_bins)
+        Posterior mass per bin.
+    operation : str
+        The calling function, for the refusal message.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_time_bins, n_bins)
+        The posterior as float64.
+
+    Raises
+    ------
+    ValueError
+        If a row holds NaN or Inf, a negative entry, or does not sum to 1
+        within the rounding error of the posterior's precision (the square
+        root of its machine epsilon, as for the credible region).
+    """
+    tolerance = float(np.sqrt(np.finfo(np.result_type(posterior, np.float32)).eps))
+    posterior = np.asarray(posterior, dtype=np.float64)
+    finite = np.isfinite(posterior).all(axis=1)
+    negative = finite & (posterior < 0).any(axis=1)
+    sums = posterior.sum(axis=1)
+    unnormalized = finite & ~negative & (np.abs(sums - 1.0) > tolerance)
+    bad = ~finite | negative | unnormalized
+    if not np.any(bad):
+        return posterior
+    problems = []
+    if np.any(~finite):
+        problems.append(f"{int(np.sum(~finite))} contain NaN or Inf")
+    if np.any(negative):
+        problems.append(f"{int(np.sum(negative))} have negative entries")
+    if np.any(unnormalized):
+        worst = sums[unnormalized][np.argmax(np.abs(sums[unnormalized] - 1.0))]
+        problems.append(
+            f"{int(np.sum(unnormalized))} do not sum to 1 (worst row sums to "
+            f"{worst:.6g})"
+        )
+    raise ValueError(
+        _format_error(
+            f"{operation} needs each posterior row to be a probability mass "
+            f"over the bins, but {int(np.sum(bad))} of {len(posterior)} rows "
+            f"are not: {'; '.join(problems)}.",
+            why="a row with NaN has no decoded position but would be read as "
+            "the track start (bin 0), and a row that does not sum to 1 weighs "
+            "its time bin more or less than the others (a sampled fit draws "
+            "the missing mass at the track start)",
+            fix="drop undecodable time bins together with their times, "
+            "keep = np.isfinite(posterior).all(axis=1); posterior, times = "
+            "posterior[keep], times[keep]; renormalize rows that only lack "
+            "mass with posterior / posterior.sum(axis=1, keepdims=True)",
+        )
+    )
 
 
 def _decoded_positions(
