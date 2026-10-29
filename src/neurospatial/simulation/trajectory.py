@@ -644,6 +644,8 @@ def simulate_trajectory_sinusoidal(
         non-negative, or ``duration`` is shorter than one sample.
     ValueError
         If ``speed`` is None and ``env.units`` is not a metric length.
+    ValueError
+        If the track has a loop and is not a single circular loop.
 
     Notes
     -----
@@ -653,6 +655,14 @@ def simulate_trajectory_sinusoidal(
     farther arm. It never visits the other arms; use
     :func:`simulate_trajectory_laps` with ``outbound_path`` to choose the
     route.
+
+    On a circular track (one loop and no arms) it runs once around the
+    loop, turns, and runs back, so every part of the loop is visited in
+    both directions. It turns where the loop's linear position starts: the
+    first node of the first edge of the track's ``edge_order``. Its first
+    pass runs in edge order. A track with more than one loop, or a loop
+    with arms (the Hamlet or crossword maze), has no such route and is
+    refused.
 
     Examples
     --------
@@ -708,7 +718,7 @@ def simulate_trajectory_sinusoidal(
 
     # The motion runs along the track between its two far ends, in the
     # environment's coordinates.
-    waypoints = _track_end_to_end(env)
+    waypoints = _track_end_to_end(env, call)
     waypoint_distances = np.concatenate(
         [[0.0], np.cumsum(np.linalg.norm(np.diff(waypoints, axis=0), axis=1))]
     )
@@ -823,10 +833,12 @@ def _farthest_pair(
     return first, _farthest_node(graph, first, weight)
 
 
-def _track_end_to_end(env: Environment) -> NDArray[np.float64]:
-    """The track nodes on the longest route along a track, shape (n, n_dims).
+def _track_end_to_end(env: Environment, call: str) -> NDArray[np.float64]:
+    """The track nodes on the route a back-and-forth run follows, shape (n, n_dims).
 
-    The route starts at the end with the smaller linear position.
+    On a track without loops, the longest route, starting at the end with
+    the smaller linear position. On a single loop, the whole loop from the
+    first node of ``edge_order`` back to it, in edge order.
     """
     linearization = env.binning.linearization
     assert linearization is not None
@@ -835,6 +847,31 @@ def _track_end_to_end(env: Environment) -> NDArray[np.float64]:
         node: np.asarray(position, dtype=np.float64)
         for node, position in graph.nodes(data="pos")
     }
+
+    if not nx.is_forest(graph):
+        if not (
+            nx.is_connected(graph) and all(degree == 2 for _, degree in graph.degree)
+        ):
+            n_loops = len(nx.cycle_basis(graph))
+            shape = "a loop with arms" if n_loops == 1 else f"{n_loops} joined loops"
+            raise ValueError(
+                _format_error(
+                    f"{call} cannot run back and forth on this track: it has {shape}.",
+                    why="Why: the animal runs back and forth along one route; "
+                    "a straight, bent or branched track is run between its two "
+                    "far ends and a circular track around its loop and back, "
+                    "but no such route covers a maze of joined loops such as "
+                    "the Hamlet or crossword maze.",
+                    fix="choose the route with simulate_trajectory_laps(env, "
+                    "n_laps=..., outbound_path=[...]) as a chain of neighboring "
+                    "bins, or explore the maze with simulate_trajectory_ou",
+                )
+            )
+        first, second = linearization.edge_order[0][:2]
+        route = [first, second]
+        while route[-1] != first:
+            route.append(next(node for node in graph[route[-1]] if node != route[-2]))
+        return np.array([node_positions[node] for node in route])
 
     def length(u: object, v: object, _data: object) -> float:
         return float(np.linalg.norm(node_positions[u] - node_positions[v]))

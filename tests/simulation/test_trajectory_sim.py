@@ -763,6 +763,64 @@ class TestSimulateTrajectorysinusoidal:
         assert positions[:, 1].min() == pytest.approx(0.0, abs=1e-6)
         assert np.abs(positions[:, 0]).max() == pytest.approx(30.0, abs=1e-6)
 
+    def test_runs_the_whole_loop_of_a_circular_track(self):
+        """On a 12-sided loop of radius 50 cm it runs all 311 cm and back.
+
+        The loop is cut where its linear position starts; the animal runs
+        once around it, turns, and runs back, visiting every bin.
+        """
+        import networkx as nx
+
+        from neurospatial import Environment
+
+        n_nodes, radius = 12, 50.0
+        angles = 2 * np.pi * np.arange(n_nodes) / n_nodes
+        graph = nx.cycle_graph(n_nodes)
+        for node, angle in enumerate(angles):
+            graph.nodes[node]["pos"] = (radius * np.cos(angle), radius * np.sin(angle))
+        track = Environment.from_graph(
+            graph,
+            edge_order=[(i, (i + 1) % n_nodes) for i in range(n_nodes)],
+            edge_spacing=0.0,
+            bin_size=2.0,
+            track_width=5.0,
+            units="cm",
+        )
+        loop_length = n_nodes * 2 * radius * np.sin(np.pi / n_nodes)
+        speed = 20.0
+        positions, times = simulate_trajectory_sinusoidal(
+            track, duration=2 * loop_length / speed, speed=speed, pause_at_peaks=False
+        )
+        assert np.all(track.bin_at(positions) >= 0)
+        assert np.unique(track.bin_at(positions)).size == track.n_bins
+        # Distance along the loop from the cut at (50, 0), counted in edge
+        # order, follows the sinusoid over the whole loop length.
+        period = 2 * loop_length / speed
+        distance = loop_length / 2 * (1 + np.sin(2 * np.pi * times / period))
+        away_from_cut = (distance > 1.0) & (distance < loop_length - 1.0)
+        np.testing.assert_allclose(
+            track.to_linear(positions[away_from_cut]),
+            distance[away_from_cut],
+            atol=1e-6,
+        )
+        # It turns at the cut: a quarter and three quarters of a period in.
+        for turn in (period / 4, 3 * period / 4):
+            index = np.argmin(np.abs(times - turn))
+            np.testing.assert_allclose(positions[index], [radius, 0.0], atol=1e-3)
+
+    @pytest.mark.parametrize("maze", ["hamlet", "crossword"])
+    def test_a_track_with_several_loops_is_refused(self, maze):
+        """No back-and-forth route covers a maze of several loops."""
+        from neurospatial.simulation.mazes import (
+            make_crossword_maze,
+            make_hamlet_maze,
+        )
+
+        make = {"hamlet": make_hamlet_maze, "crossword": make_crossword_maze}[maze]
+        track = make().env_track
+        with pytest.raises(ValueError, match=r"outbound_path="):
+            simulate_trajectory_sinusoidal(track, duration=1.0)
+
     def test_pauses_hold_at_each_end_for_pause_duration(self, linear_track_env):
         """The animal reaches both ends of a 100 cm track and waits 0.5 s at each."""
         sampling_frequency, pause_duration = 100.0, 0.5

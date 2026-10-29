@@ -127,6 +127,11 @@ default lap route all changed.
   the old update overstated heading variance by 17%.
 - Default speeds are 8 cm/s (OU) and 10 cm/s (sinusoidal), expressed in
   `env.units`.
+- Sinusoidal trajectories on a circular track run once around the loop and
+  back. A track with several joined loops or a loop with arms (Hamlet,
+  crossword, honeycomb, Hampton Court, rat hexmaze) raises and points to
+  `simulate_trajectory_laps(outbound_path=...)`; it used to cover a quarter
+  of the track.
 - Periodic OU walks wrap at the sides of the region the environment
   covers, inside both its arena and its bins. With 3 cm bins on a 100 cm
   box they wrapped at the grid's ±1 cm overhang and left 5% of samples
