@@ -532,3 +532,14 @@ def test_credible_region_never_includes_zero_mass_bins(small_2d_env):
     regions = credible_region(small_2d_env, posterior, level=0.95)
     assert sorted(regions[0].tolist()) == [2, 3]
     assert regions[1].size == 0
+
+
+def test_posterior_entropy_float64_and_nan_for_undecodable_rows():
+    from neurospatial.decoding.estimates import posterior_entropy
+
+    posterior = np.full((2, 8), 1 / 8, dtype=np.float32)
+    posterior[1] = np.nan
+    entropy = posterior_entropy(posterior)
+    assert entropy.dtype == np.float64
+    assert entropy[0] == pytest.approx(3.0, abs=1e-6)
+    assert np.isnan(entropy[1])

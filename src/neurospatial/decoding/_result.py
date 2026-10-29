@@ -9,7 +9,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -566,35 +566,34 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         NDArray[np.float64]
-            Entropy values of shape (n_time_bins,).
+            Entropy values of shape (n_time_bins,), float64 for any posterior
+            dtype; NaN for an undecodable row.
             Range: [0, log2(n_bins)].
 
         Notes
         -----
-        Uses mask-based computation to avoid bias from exact zeros:
-
         .. math::
 
             H = -\\sum_{i: p_i > 0} p_i \\log_2(p_i)
 
-        This is more accurate than global clipping to ``[1e-10, 1]`` which
-        can slightly bias entropy upward when many exact zeros occur.
-
-        Maximum entropy (uniform distribution) is ``log2(n_bins)``.
+        Maximum entropy (uniform distribution over bins) is ``log2(n_bins)``.
         Minimum entropy (delta distribution) is 0.
+
+        This is the entropy of the discrete distribution over bins: it counts
+        bins, not length or area. On an environment with unequal bins, a
+        posterior that is flat over space puts more mass in larger bins, so
+        its entropy is below ``log2(n_bins)``.
 
         See Also
         --------
-        map_bin : Point estimate with zero entropy consideration
+        neurospatial.decoding.estimates.posterior_entropy : Same statistic on
+            a raw posterior array.
+        neurospatial.decoding.estimates.credible_region : Spread as the bins
+            holding a given probability mass.
         """
-        p = np.clip(self.posterior, 0.0, 1.0)
-        # Vectorized mask-based entropy: avoid log(0) by using np.where
-        with np.errstate(divide="ignore", invalid="ignore"):
-            log_p = np.where(p > 0, np.log2(p), 0.0)
-        entropy: NDArray[np.float64] = cast(
-            "NDArray[np.float64]", -np.sum(p * log_p, axis=1)
-        )
-        return _read_only(entropy)
+        from neurospatial.decoding.estimates import posterior_entropy
+
+        return _read_only(posterior_entropy(self.posterior))
 
     def plot(
         self,

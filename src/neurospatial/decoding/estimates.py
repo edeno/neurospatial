@@ -33,7 +33,7 @@ Entropy: 6.64 bits
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
@@ -337,16 +337,16 @@ def posterior_entropy(
 
     Notes
     -----
-    Uses mask-based computation to avoid bias from exact zeros:
+    Bins with zero probability contribute nothing:
 
     .. math::
 
         H = -\\sum_{i: p_i > 0} p_i \\log_2(p_i)
 
-    This is more accurate than global clipping to ``[1e-10, 1]`` which
-    can slightly bias entropy upward when many exact zeros occur.
+    The sum accumulates in float64 for any posterior dtype. An undecodable
+    (entirely NaN) row has NaN entropy.
 
-    Maximum entropy (uniform distribution) is ``log2(n_bins)``.
+    Maximum entropy (uniform distribution over bins) is ``log2(n_bins)``.
     Minimum entropy (delta distribution) is 0.
 
     This is the entropy of the discrete distribution over bins: it counts
@@ -354,8 +354,7 @@ def posterior_entropy(
     posterior that is flat over space puts more mass in larger bins, so its
     entropy is below ``log2(n_bins)``.
 
-    This function mirrors ``DecodingResult.posterior_entropy`` (named ``entropy``
-    here to be precise about the statistic being computed).
+    This function mirrors ``DecodingResult.posterior_entropy``.
 
     See Also
     --------
@@ -379,13 +378,17 @@ def posterior_entropy(
     >>> bool(abs(ent[0]) < 0.01)  # Should be 0 bits (within numerical precision)
     True
     """
-    p = np.clip(posterior, 0.0, 1.0)
-    # Vectorized mask-based entropy: avoid log(0) by using np.where
-    with np.errstate(divide="ignore", invalid="ignore"):
-        log_p = np.where(p > 0, np.log2(p), 0.0)
-    result: NDArray[np.float64] = cast(
-        "NDArray[np.float64]", -np.sum(p * log_p, axis=1)
-    )
+    posterior = np.asarray(posterior)
+    result = np.empty(posterior.shape[0], dtype=np.float64)
+    step = max(1, _BLOCK_ELEMENTS // max(posterior.shape[1], 1))
+    for start in range(0, posterior.shape[0], step):
+        # Accumulate in float64 whatever the posterior dtype.
+        p = np.clip(posterior[start : start + step], 0.0, 1.0, dtype=np.float64)
+        # A zero bin contributes 0 and a NaN bin keeps the row NaN.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            terms = np.where(p > 0, p * np.log2(p), p)
+        # 0.0 - sum keeps a zero entropy +0.0 rather than -0.0.
+        result[start : start + step] = 0.0 - np.sum(terms, axis=1)
     return result
 
 

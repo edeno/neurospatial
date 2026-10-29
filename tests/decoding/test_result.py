@@ -965,3 +965,29 @@ class TestUndecodableRows:
                 )
             )
         assert "map_bin value" not in str(exc.value)
+
+
+def test_posterior_entropy_is_float64_like_the_summary(env_4bin):
+    """A float32 decode reports float64 entropy on both decode paths."""
+    from neurospatial.decoding import decode_position, decode_position_summary
+
+    rng = np.random.default_rng(0)
+    counts = rng.poisson(1.0, size=(20, 3)).astype(np.int64)
+    models = rng.uniform(1.0, 10.0, size=(3, env_4bin.n_bins))
+    full = decode_position(env_4bin, counts, models, dt=0.1, dtype=np.float32)
+    summary = decode_position_summary(
+        env_4bin, counts, models, dt=0.1, dtype=np.float32
+    )
+    assert full.posterior.dtype == np.float32
+    assert full.posterior_entropy.dtype == np.float64
+    np.testing.assert_allclose(
+        full.posterior_entropy, summary.posterior_entropy, rtol=0, atol=1e-12
+    )
+
+
+def test_delta_posterior_entropy_is_positive_zero(env_4bin):
+    from neurospatial.decoding import DecodingResult
+
+    result = DecodingResult(posterior=np.eye(4), env=env_4bin)
+    assert not np.signbit(result.posterior_entropy).any()
+    np.testing.assert_array_equal(result.posterior_entropy, 0.0)
