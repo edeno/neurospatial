@@ -513,13 +513,7 @@ class TestSimulateSession:
     def test_simulate_session_mixed_shared_max_rate_reaches_all_cell_types(
         self, connected_arena_env
     ):
-        """A non-default ``max_rate`` in mixed mode must reach every cell type.
-
-        Previously the place-cell parameter pop consumed shared rate kwargs
-        (``max_rate``/``baseline_rate``/``metric``) before the border and grid
-        loops read them, so border/grid cells silently fell back to their
-        defaults. The shared kwargs must now reach all three model types.
-        """
+        """A non-default ``max_rate`` in mixed mode reaches every cell type."""
         custom_max_rate = 37.0  # not equal to any model's default
 
         session = simulate_session(
@@ -556,19 +550,11 @@ class TestSimulateSession:
     def test_simulate_session_spike_stream_independent_of_trajectory(
         self, simple_2d_env
     ):
-        """Spike RNG stream must be decoupled from the trajectory RNG stream.
+        """The spike stream is not the stream started by the bare seed.
 
-        Previously ``simulate_session`` passed the same ``seed`` to both
-        ``simulate_trajectory_ou`` and ``generate_population_spikes``, so the
-        trajectory and the spikes shared a correlated RNG stream (and neuron 0
-        drew from the exact same seed the trajectory consumed). After the fix,
-        trajectory / field-center / spike seeds are spawned independently from a
-        single ``SeedSequence(seed)``.
-
-        We verify decoupling behaviorally: regenerating spikes for the session's
-        own models and positions while reusing the *trajectory* seed must NOT
-        reproduce the session spike trains, because the session no longer uses
-        the trajectory seed for spikes.
+        Regenerating spikes for the session's own models and positions with
+        ``seed`` must not reproduce the session's spike trains: the trajectory,
+        field and spike streams are spawned from ``SeedSequence(seed)``.
         """
         from neurospatial.simulation.spikes import generate_population_spikes
 
@@ -586,8 +572,8 @@ class TestSimulateSession:
             show_progress=False,
         )
 
-        # Reproduce spikes using the trajectory seed (the old collision path).
-        collision_spikes = generate_population_spikes(
+        # Spikes drawn from the bare seed.
+        bare_seed_spikes = generate_population_spikes(
             session.models,
             session.times,
             session.positions,
@@ -603,11 +589,11 @@ class TestSimulateSession:
 
         differs = any(
             not np.array_equal(a, b)
-            for a, b in zip(session.spike_times, collision_spikes, strict=True)
+            for a, b in zip(session.spike_times, bare_seed_spikes, strict=True)
         )
         assert differs, (
-            "session spike trains reproduced exactly using the trajectory seed, "
-            "indicating the spike RNG stream is still coupled to the trajectory seed"
+            "session spike trains reproduced exactly from the bare seed, "
+            "so the spike stream is not separate from the trajectory stream"
         )
 
     def test_simulate_session_ground_truth_structure(self, simple_2d_env):

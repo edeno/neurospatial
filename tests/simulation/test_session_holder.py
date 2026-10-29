@@ -11,14 +11,14 @@ from neurospatial.simulation import open_field_session
 
 @pytest.fixture(scope="module")
 def sim():
-    return open_field_session(duration=60, seed=0)
+    return open_field_session(duration=10, bin_size=10.0, n_place_cells=3, seed=0)
 
 
 def test_attributes_feed_analysis(sim):
     rates = compute_spatial_rates(
         sim.env, sim.spike_times, sim.times, sim.positions, unit_ids=sim.unit_ids
     )
-    np.testing.assert_array_equal(rates.unit_ids, np.arange(len(sim.spike_times)))
+    np.testing.assert_array_equal(rates.unit_ids, [0, 1, 2])
     assert set(sim.ground_truth) == set(sim.unit_ids)
 
 
