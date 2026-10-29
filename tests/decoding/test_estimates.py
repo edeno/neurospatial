@@ -489,3 +489,33 @@ def test_undecodable_rows_have_no_map_bin_or_position(small_2d_env):
     positions = map_position(small_2d_env, posterior)
     assert np.all(np.isnan(positions[[0, 2]]))
     np.testing.assert_array_equal(positions[1], small_2d_env.bin_centers[4])
+
+
+def test_map_bin_ties_go_to_lowest_index_despite_rounding():
+    """Densities equal up to rounding tie, so the lowest bin index wins."""
+    from neurospatial import Environment
+    from neurospatial.decoding import DecodingResult
+    from neurospatial.decoding.estimates import map_bin
+
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 30.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 6,
+    )
+    flat_over_space = env.bin_sizes / env.bin_sizes.sum()
+    density = flat_over_space / env.bin_sizes
+    assert np.argmax(density) != 0  # rounding alone separates the bins
+    assert map_bin(env, flat_over_space[None])[0] == 0
+    assert DecodingResult(flat_over_space[None], env).map_bin[0] == 0
+
+
+def test_map_bin_ignores_nonfinite_bins(small_2d_env):
+    """A NaN or Inf bin is never the MAP bin of a row with finite mass."""
+    from neurospatial.decoding.estimates import map_bin
+
+    posterior = np.zeros((2, small_2d_env.n_bins))
+    posterior[:, 5] = 1.0
+    posterior[0, 1] = np.nan
+    posterior[1, 2] = np.inf
+    np.testing.assert_array_equal(map_bin(small_2d_env, posterior), [5, 5])

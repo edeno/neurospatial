@@ -88,6 +88,19 @@ _UNDECODABLE_BIN = -1
 """MAP bin of a posterior row with no finite entry, as ``env.bin_at`` outside."""
 
 
+def _tie_tolerance(posterior: NDArray[np.floating]) -> float:
+    """Relative density difference counted as a tie: ``sqrt(eps)`` of the dtype.
+
+    Rounding in a normalized posterior separates densities that are equal in
+    exact arithmetic by far less than this, so such bins count as tied.
+    """
+    return float(np.sqrt(np.finfo(np.result_type(posterior, np.float32)).eps))
+
+
+# Rows per block in _density_mode, sized so temporaries stay near 2**22 elements.
+_BLOCK_ELEMENTS = 2**22
+
+
 def _density_mode(
     posterior: NDArray[np.float64], measures: NDArray[np.float64] | None
 ) -> NDArray[np.int64]:
@@ -96,14 +109,24 @@ def _density_mode(
     ``measures`` are bin measures relative to the largest bin (``None`` for
     equal bins). The density ``posterior / measures`` is proportional to
     probability per unit length or area, so a large bin does not win only by
-    holding more space. A row with no finite entry gets ``_UNDECODABLE_BIN``.
+    holding more space. Densities within :func:`_tie_tolerance` of the row's
+    largest count as tied and the lowest bin index wins. NaN and Inf bins are
+    skipped; a row with no finite entry gets ``_UNDECODABLE_BIN``.
     """
-    if measures is None:
-        density = posterior
-    else:
-        density = posterior / measures.astype(posterior.dtype, copy=False)
-    result: NDArray[np.int64] = np.argmax(density, axis=1).astype(np.int64)
-    result[~np.isfinite(posterior).any(axis=1)] = _UNDECODABLE_BIN
+    posterior = np.asarray(posterior)
+    rtol = _tie_tolerance(posterior)
+    result = np.empty(posterior.shape[0], dtype=np.int64)
+    step = max(1, _BLOCK_ELEMENTS // max(posterior.shape[1], 1))
+    for start in range(0, posterior.shape[0], step):
+        block = posterior[start : start + step]
+        if measures is not None:
+            block = block / measures.astype(block.dtype, copy=False)
+        finite = np.isfinite(block)
+        density = np.where(finite, block, -np.inf)
+        peak = density.max(axis=1, keepdims=True, initial=-np.inf)
+        modes = np.argmax(density >= peak - rtol * np.abs(peak), axis=1)
+        modes[~finite.any(axis=1)] = _UNDECODABLE_BIN
+        result[start : start + step] = modes
     return result
 
 
@@ -143,7 +166,9 @@ def map_bin(
     -----
     The posterior holds a probability mass per bin. A bin twice as long
     holds twice the mass at the same density, so comparing mass would favor
-    large bins; on equal bins the two orderings agree.
+    large bins; on equal bins the two orderings agree. Densities that agree
+    to within ``sqrt(eps)`` of the posterior dtype, relative, count as tied,
+    and ties go to the lowest bin index. NaN and Inf bins are skipped.
 
     This function mirrors ``DecodingResult.map_bin``.
 
@@ -199,7 +224,8 @@ def map_position(
     -----
     The posterior holds a probability mass per bin. Its mode over space is
     the bin of highest density, mass divided by bin size; on equal bins this
-    is the highest-mass bin. Ties go to the lowest bin index.
+    is the highest-mass bin. Ties, within rounding, go to the lowest bin
+    index (see :func:`map_bin`).
 
     This function mirrors ``DecodingResult.map_position``.
 
@@ -464,7 +490,7 @@ def credible_region(
     # Position of the bin that brings the mass to `level`.
     last = np.argmax(reached, axis=1)
     threshold = sorted_density[np.arange(len(posterior)), last]
-    rtol = np.sqrt(np.finfo(np.result_type(posterior, np.float32)).eps)
+    rtol = _tie_tolerance(posterior)
     in_region = sorted_density >= (threshold * (1.0 - rtol))[:, np.newaxis]
     n_bins_needed = in_region.sum(axis=1)
 
