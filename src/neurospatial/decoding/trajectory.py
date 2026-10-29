@@ -358,15 +358,16 @@ def _require_probability_rows(
     ------
     ValueError
         If a row holds NaN or Inf, a negative entry, or does not sum to 1
-        within the rounding error of the posterior's precision (the square
-        root of its machine epsilon, as for the credible region).
+        within the tolerance a ``DecodingResult`` accepts (``1e-6``, which
+        covers float32 rounding).
     """
-    tolerance = float(np.sqrt(np.finfo(np.result_type(posterior, np.float32)).eps))
+    from neurospatial.decoding._result import _ROW_SUM_TOLERANCE
+
     posterior = np.asarray(posterior, dtype=np.float64)
     finite = np.isfinite(posterior).all(axis=1)
     negative = finite & (posterior < 0).any(axis=1)
     sums = posterior.sum(axis=1)
-    unnormalized = finite & ~negative & (np.abs(sums - 1.0) > tolerance)
+    unnormalized = finite & ~negative & (np.abs(sums - 1.0) > _ROW_SUM_TOLERANCE)
     bad = ~finite | negative | unnormalized
     if not np.any(bad):
         return posterior
@@ -379,7 +380,7 @@ def _require_probability_rows(
         worst = sums[unnormalized][np.argmax(np.abs(sums[unnormalized] - 1.0))]
         problems.append(
             f"{int(np.sum(unnormalized))} do not sum to 1 (worst row sums to "
-            f"{worst:.6g})"
+            f"{worst:.6g}, |row sum - 1| = {abs(worst - 1.0):.2g})"
         )
     raise ValueError(
         _format_error(

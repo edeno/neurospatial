@@ -808,6 +808,28 @@ class TestPosteriorRowsAreValidated:
         "fit",
         ["fit_linear_trajectory", "fit_isotonic_trajectory", "detect_trajectory_radon"],
     )
+    def test_float32_rounding_cast_to_float64_is_accepted(self, sweep, fit):
+        """Rows a DecodingResult accepts (within 1e-6 of 1) are accepted here."""
+        env, _, times = sweep
+        smooth = np.exp(-0.5 * ((np.arange(50) - np.arange(50)[:, None]) / 3.0) ** 2)
+        rounded = (smooth / smooth.sum(axis=1, keepdims=True)).astype(np.float32)
+        assert np.abs(rounded.astype(np.float64).sum(axis=1) - 1).max() > 1e-8
+        self._call(fit, env, rounded.astype(np.float64), times)
+
+    @pytest.mark.parametrize(
+        "fit",
+        ["fit_linear_trajectory", "fit_isotonic_trajectory", "detect_trajectory_radon"],
+    )
+    def test_unnormalized_rows_report_the_deviation(self, sweep, fit):
+        env, posterior, times = sweep
+        posterior = posterior * (1 + 2e-5)
+        with pytest.raises(ValueError, match=r"\|row sum - 1\| = 2e-05"):
+            self._call(fit, env, posterior, times)
+
+    @pytest.mark.parametrize(
+        "fit",
+        ["fit_linear_trajectory", "fit_isotonic_trajectory", "detect_trajectory_radon"],
+    )
     def test_nan_rows_are_refused(self, sweep, fit):
         env, posterior, times = sweep
         posterior = posterior.copy()
