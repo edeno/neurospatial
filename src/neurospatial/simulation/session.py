@@ -286,6 +286,38 @@ def _stream_seeds(seed: int | None, n_streams: int) -> list[int]:
     ]
 
 
+def _even_layout(
+    n_points: int, ranges: Sequence[tuple[float, float]]
+) -> NDArray[np.float64]:
+    """Exactly ``n_points`` points spread evenly over a box, shape (n_points, n_dims).
+
+    The box is cut into evenly spaced slabs along its first axis, as many as
+    the first side holds at the spacing ``(volume / n_points) ** (1 / n_dims)``;
+    the points are shared among the slabs as evenly as possible and laid out
+    the same way within each slab over the remaining axes. Every slab spans
+    the remaining axes from end to end, so no row or column is left empty.
+    """
+
+    def spaced(lo: float, hi: float, count: int) -> NDArray[np.float64]:
+        return (
+            np.linspace(lo, hi, count) if count > 1 else np.full(count, (lo + hi) / 2)
+        )
+
+    (lo, hi), rest = ranges[0], ranges[1:]
+    if not rest:
+        return spaced(lo, hi, n_points)[:, None]
+    sides = np.array([upper - lower for lower, upper in ranges])
+    spacing = (np.prod(sides) / n_points) ** (1.0 / len(ranges))
+    n_slabs = int(np.clip(np.round(sides[0] / spacing), 1, n_points))
+    counts = np.diff(np.round(np.linspace(0, n_points, n_slabs + 1)).astype(int))
+    return np.vstack(
+        [
+            np.column_stack([np.full(count, x), _even_layout(count, rest)])
+            for x, count in zip(spaced(lo, hi, n_slabs), counts, strict=True)
+        ]
+    )
+
+
 def _field_centers(
     env: Environment,
     n_cells: int,
@@ -295,14 +327,15 @@ def _field_centers(
     """Field centers (or grid phases) for ``n_cells`` cells, shape (n_cells, n_dims).
 
     ``'uniform'`` spaces the centers evenly along a track (a linearized or
-    1-D environment), from one end to the other. In an arena it lays a grid
-    of ``ceil(n_cells ** (1 / n_dims))`` targets per axis, inset 20% from
-    each side of the bounding box, keeps ``n_cells`` of them evenly spaced
-    through the whole grid so that every row and column keeps targets, and
-    snaps each to the nearest bin center. The inset keeps fields in the
-    interior that an exploring animal samples well. ``'random'`` draws bin
+    1-D environment), from one end to the other. In an arena it spreads
+    exactly ``n_cells`` targets evenly over the bounding box inset 20% from
+    each side (``_even_layout``: rows that each span the box) and snaps each
+    to the nearest bin center. The inset keeps fields in the interior that
+    an exploring animal samples well. ``'random'`` draws bin
     centers with replacement, ``rng.choice(len(env.bin_centers), n_cells)``.
     """
+    if n_cells == 0:
+        return np.empty((0, env.n_dims))
     if coverage == "random":
         indices = rng.choice(len(env.bin_centers), size=n_cells, replace=True)
         random_centers: NDArray[np.float64] = env.bin_centers[indices]
@@ -327,17 +360,13 @@ def _field_centers(
         step = max(1, len(env.bin_centers) // n_cells)
         field_centers = env.bin_centers[::step][:n_cells]
     else:
-        n_dims = len(ranges)
         margin = 0.2
-        per_axis = int(np.ceil(n_cells ** (1.0 / n_dims)))
-        axis_targets = [
-            np.linspace(lo + margin * (hi - lo), hi - margin * (hi - lo), per_axis)
-            for (lo, hi) in ranges
+        inset = [
+            (lo + margin * (hi - lo), hi - margin * (hi - lo)) for lo, hi in ranges
         ]
-        grid = np.array(np.meshgrid(*axis_targets, indexing="ij")).reshape(n_dims, -1).T
-        kept = np.round(np.linspace(0, len(grid) - 1, n_cells)).astype(int)
+        targets = _even_layout(n_cells, inset)
         distances = np.linalg.norm(
-            env.bin_centers[None, :, :] - grid[kept, None, :], axis=2
+            env.bin_centers[None, :, :] - targets[:, None, :], axis=2
         )
         field_centers = env.bin_centers[np.argmin(distances, axis=1)]
 
@@ -398,10 +427,11 @@ def simulate_session(
 
         - 'uniform': Evenly space field centers across the environment. On a
           track (a linearized or 1-D environment), centers are evenly spaced
-          from one end to the other. In an arena, they are taken evenly from
-          a grid of ``ceil(n ** (1 / n_dims))`` targets per axis, inset 20%
-          from each side of the bounding box so that fields lie where an
-          exploring animal samples well, and snapped to the nearest bin.
+          from one end to the other. In an arena, they are spread evenly over
+          the bounding box inset 20% from each side, so that fields lie where
+          an exploring animal samples well: evenly spaced rows that each span
+          the box, with the cells shared evenly among them, snapped to the
+          nearest bin.
         - 'random': Bin centers drawn with replacement from the seeded
           field-parameter stream, ``rng.choice(len(env.bin_centers),
           size=n)``. May result in clustering or gaps in coverage.

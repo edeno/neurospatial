@@ -360,9 +360,9 @@ class TestSimulateSession:
         # All positions should be in environment
         assert session.positions.shape[0] > 0
 
-    @pytest.mark.parametrize("n_cells", [5, 9, 50])
+    @pytest.mark.parametrize("n_cells", [5, 9, 20, 50])
     def test_simulate_session_coverage_uniform(self, connected_arena_env, n_cells):
-        """Uniform centers are distinct and fill every column and row of the inset grid."""
+        """Uniform centers are distinct and spread over both axes of the inset box."""
         session = simulate_session(
             connected_arena_env,
             duration=1.0,
@@ -374,14 +374,15 @@ class TestSimulateSession:
         )
         centers = np.array([truth["center"] for truth in session.ground_truth.values()])
         assert len(np.unique(centers, axis=0)) == n_cells
-        per_axis = int(np.ceil(np.sqrt(n_cells)))
+        # About sqrt(n) evenly spaced rows of cells on each axis, from 20% to
+        # 80% of the 100 cm arena (snapped to 2 cm bins): no stretch of either
+        # axis is left without centers.
+        spacing = 60.0 / (round(np.sqrt(n_cells)) - 1)
         for axis in range(2):
             columns = np.unique(centers[:, axis])
-            # Every grid line along this axis has a center, from 20% to 80%
-            # of the 100 cm arena (snapped to 2 cm bins).
-            assert len(columns) == per_axis
             assert columns.min() == pytest.approx(20.0, abs=1.0)
             assert columns.max() == pytest.approx(80.0, abs=1.0)
+            assert np.diff(columns).max() <= spacing + 2.0
 
     def test_mixed_place_and_grid_centers_both_cover_the_arena(
         self, connected_arena_env
