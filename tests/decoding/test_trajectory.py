@@ -69,14 +69,19 @@ class TestRadonDetectionResult:
         from neurospatial.decoding.trajectory import RadonDetectionResult
 
         result = RadonDetectionResult(
-            angle_degrees=30.0,
+            speed=100.0,
+            start_position=2.0,
             score=0.7,
-            offset=10.0,
+            angle=0.5,
             sinogram=np.zeros((10, 10)),
+            sinogram_angles=np.zeros(10),
+            sinogram_positions=np.zeros(10),
+            time_bin_size=0.01,
+            column_width=1.0,
         )
 
         with pytest.raises((AttributeError, TypeError)):
-            result.angle_degrees = 60.0
+            result.speed = 60.0
 
 
 class TestFitIsotonicTrajectory:
@@ -489,240 +494,187 @@ class TestFitLinearTrajectory:
             fit_linear_trajectory(simple_env, posterior_1d, times)
 
 
-class TestDetectTrajectoryRadon:
-    """Test detect_trajectory_radon function (requires scikit-image)."""
+def _gaussian_sweep(bin_size, *, speed=200.0, start=20.0, sigma=3.0, n_time_bins=25):
+    """A Gaussian posterior moving at ``speed`` cm/s on a 100 cm track.
 
-    def test_detect_trajectory_radon_angle_range(self):
-        """Detected angle should be in the specified theta_range."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
-
-        n_time_bins = 50
-        n_bins = 50
-
-        # Create a diagonal pattern
-        posterior = np.zeros((n_time_bins, n_bins))
-        for t in range(n_time_bins):
-            pos = t % n_bins
-            posterior[t, pos] = 1.0
-
-        result = detect_trajectory_radon(
-            _track_for(posterior), posterior, theta_range=(-90, 90)
-        )
-
-        assert -90 <= result.angle_degrees <= 90
-
-    def test_detect_trajectory_radon_sinogram_shape(self):
-        """Sinogram should have shape (n_angles, n_offsets)."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
-
-        n_time_bins = 50
-        n_bins = 40
-
-        rng = np.random.default_rng(42)
-        posterior = rng.random((n_time_bins, n_bins))
-        posterior /= posterior.sum(axis=1, keepdims=True)
-
-        result = detect_trajectory_radon(
-            _track_for(posterior), posterior, theta_range=(-45, 45), theta_step=1.0
-        )
-
-        # Sinogram should be 2D
-        assert result.sinogram.ndim == 2
-        # Number of angles should match (45 - (-45)) / 1.0 = 90
-        assert result.sinogram.shape[0] == 90
-
-    def test_detect_trajectory_radon_diagonal_forward(self):
-        """Should detect ~45° angle for forward diagonal trajectory."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
-
-        n_time_bins = 100
-        n_bins = 100
-
-        # Create perfect diagonal (45° in image coordinates)
-        posterior = np.zeros((n_time_bins, n_bins))
-        for t in range(n_time_bins):
-            pos = t
-            if pos < n_bins:
-                posterior[t, pos] = 1.0
-
-        result = detect_trajectory_radon(
-            _track_for(posterior), posterior, theta_step=0.5
-        )
-
-        # For a 45° diagonal line in image space, Radon angle depends on orientation
-        # The detected angle should indicate a diagonal pattern
-        assert result.score > 0  # Should have non-zero score
-
-    def test_detect_trajectory_radon_diagonal_reverse(self):
-        """Should detect reverse diagonal trajectory."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
-
-        n_time_bins = 100
-        n_bins = 100
-
-        # Create reverse diagonal (negative slope)
-        posterior = np.zeros((n_time_bins, n_bins))
-        for t in range(n_time_bins):
-            pos = n_bins - 1 - t
-            if 0 <= pos < n_bins:
-                posterior[t, pos] = 1.0
-
-        result = detect_trajectory_radon(
-            _track_for(posterior), posterior, theta_step=0.5
-        )
-
-        # Should have opposite angle from forward diagonal
-        assert result.score > 0
-
-    def test_detect_trajectory_radon_horizontal_line(self):
-        """Horizontal line (constant position) should detect ~0° angle."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
-
-        n_time_bins = 100
-        n_bins = 50
-
-        # Create horizontal line (constant position at middle)
-        posterior = np.zeros((n_time_bins, n_bins))
-        constant_pos = n_bins // 2
-        for t in range(n_time_bins):
-            posterior[t, constant_pos] = 1.0
-
-        result = detect_trajectory_radon(
-            _track_for(posterior), posterior, theta_step=1.0
-        )
-
-        # Horizontal line should be near 0° or 90° depending on Radon convention
-        # The key is that it should be detected consistently
-        assert np.isfinite(result.angle_degrees)
-        assert result.score > 0
-
-    def test_detect_trajectory_radon_theta_step_affects_resolution(self):
-        """Smaller theta_step should give more angle resolution."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
-
-        n_time_bins = 50
-        n_bins = 50
-
-        posterior = np.zeros((n_time_bins, n_bins))
-        for t in range(n_time_bins):
-            posterior[t, t % n_bins] = 1.0
-
-        result_coarse = detect_trajectory_radon(
-            _track_for(posterior), posterior, theta_step=5.0
-        )
-        result_fine = detect_trajectory_radon(
-            _track_for(posterior), posterior, theta_step=0.5
-        )
-
-        # Finer step should give more angles
-        assert result_fine.sinogram.shape[0] > result_coarse.sinogram.shape[0]
-
-    def test_detect_trajectory_radon_custom_theta_range(self):
-        """Custom theta_range should limit detected angles."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
-
-        n_time_bins = 50
-        n_bins = 50
-
-        posterior = np.zeros((n_time_bins, n_bins))
-        for t in range(n_time_bins):
-            posterior[t, t % n_bins] = 1.0
-
-        # Narrow angle range
-        result = detect_trajectory_radon(
-            _track_for(posterior), posterior, theta_range=(30, 60), theta_step=1.0
-        )
-
-        # Angle should be within range
-        assert 30 <= result.angle_degrees <= 60
-
-    def test_detect_trajectory_radon_non_square_posterior(self):
-        """Should work with non-square posteriors."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
-
-        n_time_bins = 100
-        n_bins = 40
-
-        rng = np.random.default_rng(42)
-        posterior = rng.random((n_time_bins, n_bins))
-        posterior /= posterior.sum(axis=1, keepdims=True)
-
-        result = detect_trajectory_radon(_track_for(posterior), posterior)
-
-        assert isinstance(result.angle_degrees, float)
-        assert result.sinogram.ndim == 2
-
-    def test_detect_trajectory_radon_empty_posterior(self):
-        """An all-zero posterior holds no probability and is refused."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
-
-        posterior = np.zeros((50, 50))
-        with pytest.raises(ValueError, match=r"50 of 50 rows.*sums to 0"):
-            detect_trajectory_radon(_track_for(posterior), posterior)
-
-
-class TestRadonAngleRecovery:
-    """Radon detection recovers the trajectory ANGLE, not merely score > 0.
-
-    The existing diagonal tests assert only ``score > 0``, which is true for any
-    non-negative posterior. These assert the recovered angle matches the known
-    geometry (convention from the docstring: +45 forward, -45 reverse, 0 for a
-    constant position) and that a uniform posterior yields a far lower score than
-    a concentrated trajectory.
+    Each row is the mass of a Gaussian of width ``sigma`` cm in each bin, so
+    every bin size decodes the same physical posterior.
     """
+    from scipy.stats import norm
+
+    env = Environment.linear_track(
+        endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=bin_size, units="cm"
+    )
+    edges = np.arange(0.0, 100.0 + bin_size / 2, bin_size)
+    times = np.arange(n_time_bins) * 0.01
+    center = start + speed * times
+    posterior = np.diff(norm.cdf((edges - center[:, None]) / sigma), axis=1)
+    posterior /= posterior.sum(axis=1, keepdims=True)
+    return env, posterior, times
+
+
+class TestDetectTrajectoryRadon:
+    """The detected line is a physical speed and start position."""
 
     N = 50
 
-    def _forward_diagonal(self) -> np.ndarray:
+    @pytest.fixture
+    def forward(self):
+        """One 1 cm bin per 10 ms time bin: 100 cm/s from the 0.5 cm center."""
+        posterior = np.eye(self.N)
+        return _track_for(posterior), posterior, np.arange(self.N) * 0.01
+
+    def test_forward_sweep_speed_and_start(self, forward):
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        result = detect_trajectory_radon(*forward)
+
+        assert result.speed == pytest.approx(100.0)
+        assert result.start_position == pytest.approx(0.5)
+        assert result.angle == pytest.approx(np.pi / 4)
+        assert result.score == pytest.approx(1.0)
+        assert result.time_bin_size == pytest.approx(0.01)
+        assert result.column_width == pytest.approx(1.0)
+
+    def test_constant_position_has_zero_speed(self, forward):
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        env, _, times = forward
         posterior = np.zeros((self.N, self.N))
-        for t in range(self.N):
-            posterior[t, t] = 1.0
-        return posterior
+        posterior[:, 20] = 1.0
+        result = detect_trajectory_radon(env, posterior, times)
 
-    def test_forward_diagonal_recovers_plus_45(self) -> None:
+        assert result.speed == 0.0
+        assert result.start_position == pytest.approx(20.5)
+        assert result.score == pytest.approx(1.0)
+
+    def test_mirrored_sweep_has_mirrored_speed_and_equal_score(self):
+        """Reversing the posterior along the track flips only the direction."""
         from neurospatial.decoding.trajectory import detect_trajectory_radon
 
-        result = detect_trajectory_radon(
-            _track_for(self._forward_diagonal()),
-            self._forward_diagonal(),
-            theta_step=0.5,
+        env, posterior, times = _gaussian_sweep(2.0, speed=150.0)
+        forward = detect_trajectory_radon(env, posterior, times)
+        reverse = detect_trajectory_radon(env, posterior[:, ::-1], times)
+
+        assert forward.speed == pytest.approx(150.0, rel=0.04)
+        assert reverse.speed == pytest.approx(-forward.speed)
+        assert reverse.start_position == pytest.approx(100.0 - forward.start_position)
+        assert reverse.score == pytest.approx(forward.score, abs=1e-12)
+
+    def test_time_reversed_sweep_scores_the_same(self, forward):
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        env, posterior, times = forward
+        reverse = detect_trajectory_radon(env, posterior[::-1], times)
+
+        assert reverse.speed == pytest.approx(-100.0)
+        assert reverse.score == pytest.approx(1.0)
+
+    @pytest.mark.parametrize("bin_size", [1.0, 2.0, 4.0])
+    def test_speed_does_not_depend_on_bin_size(self, bin_size):
+        """A 200 cm/s replay is 200 cm/s on 1, 2 and 4 cm bins."""
+        from neurospatial.decoding.trajectory import (
+            detect_trajectory_radon,
+            fit_linear_trajectory,
         )
-        assert abs(result.angle_degrees - 45.0) < 5.0
 
-    def test_reverse_diagonal_recovers_minus_45(self) -> None:
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
-
-        posterior = np.zeros((self.N, self.N))
-        for t in range(self.N):
-            posterior[t, self.N - 1 - t] = 1.0  # position decreases with time
-        result = detect_trajectory_radon(
-            _track_for(posterior), posterior, theta_step=0.5
+        env, posterior, times = _gaussian_sweep(bin_size)
+        radon = detect_trajectory_radon(
+            env, posterior, times, angle_range=(0.0, 1.5), angle_step=np.pi / 720
         )
-        assert abs(result.angle_degrees - (-45.0)) < 5.0
+        linear = fit_linear_trajectory(env, posterior, times, method="map")
 
-    def test_constant_position_recovers_zero(self) -> None:
+        assert radon.speed == pytest.approx(200.0, rel=0.01)
+        assert radon.speed == pytest.approx(linear.slope, rel=0.01)
+        assert radon.start_position == pytest.approx(20.0, abs=bin_size / 2)
+
+    def test_uniform_posterior_scores_below_a_sharp_sweep(self, forward):
         from neurospatial.decoding.trajectory import detect_trajectory_radon
 
-        posterior = np.zeros((self.N, self.N))
-        posterior[:, self.N // 2] = 1.0  # same bin for all time -> horizontal
-        result = detect_trajectory_radon(
-            _track_for(posterior), posterior, theta_step=1.0
-        )
-        assert abs(result.angle_degrees) < 5.0
-
-    def test_uniform_posterior_scores_far_below_trajectory(self) -> None:
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
-
-        # The Radon score is integrated probability mass along a line, so its
-        # scale depends on the image; an absolute threshold is meaningless. The
-        # meaningful claim is that a uniform posterior (no trajectory) integrates
-        # to far less mass than a concentrated diagonal.
+        env, posterior, times = forward
         uniform = np.full((self.N, self.N), 1.0 / self.N)
-        uniform_score = detect_trajectory_radon(_track_for(uniform), uniform).score
-        diagonal_score = detect_trajectory_radon(
-            _track_for(self._forward_diagonal()), self._forward_diagonal()
-        ).score
-        assert uniform_score < 0.2 * diagonal_score
+
+        assert detect_trajectory_radon(env, uniform, times).score == pytest.approx(
+            1.0 / self.N
+        )
+        assert detect_trajectory_radon(env, posterior, times).score == pytest.approx(
+            1.0
+        )
+
+    def test_dropped_time_bins_keep_the_speed(self, forward):
+        """Undecodable time bins can be left out with their times."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        env, posterior, times = forward
+        keep = np.ones(self.N, dtype=bool)
+        keep[[5, 17, 30]] = False
+        result = detect_trajectory_radon(env, posterior[keep], times[keep])
+
+        assert result.speed == pytest.approx(100.0)
+        assert result.start_position == pytest.approx(0.5)
+        assert result.score == pytest.approx(1.0)
+
+    def test_angle_grid_honours_the_step(self, forward):
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        step = np.deg2rad(0.7)
+        result = detect_trajectory_radon(
+            *forward, angle_range=(-np.pi / 4, np.pi / 4), angle_step=step
+        )
+
+        np.testing.assert_allclose(np.diff(result.sinogram_angles), step)
+        assert result.sinogram_angles[0] == pytest.approx(-np.pi / 4)
+        assert result.sinogram_angles[-1] <= np.pi / 4
+        assert result.sinogram.shape == (len(result.sinogram_angles), self.N)
+        assert result.sinogram_positions == pytest.approx(np.arange(self.N) + 0.5)
+
+    def test_default_grid_leaves_out_vertical_lines(self, forward):
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        angles = detect_trajectory_radon(*forward).sinogram_angles
+
+        assert len(angles) == 179  # every degree from -89 to 89
+        np.testing.assert_allclose(np.rad2deg(angles[[0, -1]]), [-89.0, 89.0])
+
+    def test_angle_range_limits_the_detected_angle(self, forward):
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        result = detect_trajectory_radon(*forward, angle_range=(1.0, 1.2))
+
+        assert 1.0 <= result.angle <= 1.2
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"angle_step": 4.0}, r"angle_step <= 3\.14159"),
+            ({"angle_step": 0.0}, "0 < angle_step"),
+            ({"angle_range": (0.5, 0.2)}, "low < high"),
+            ({"angle_range": (-90.0, 90.0)}, "in radians"),
+            ({"angle_step": np.pi}, r"only \+/-pi/2"),
+        ],
+    )
+    def test_angles_that_leave_nothing_to_search_are_refused(
+        self, forward, kwargs, match
+    ):
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        with pytest.raises(ValueError, match=match):
+            detect_trajectory_radon(*forward, **kwargs)
+
+    def test_times_must_increase(self, forward):
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        env, posterior, times = forward
+        with pytest.raises(ValueError, match="strictly increasing"):
+            detect_trajectory_radon(env, posterior, times[::-1])
+
+    def test_detect_trajectory_radon_empty_posterior(self, forward):
+        """An all-zero posterior holds no probability and is refused."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        env, posterior, times = forward
+        with pytest.raises(ValueError, match=r"50 of 50 rows.*sums to 0"):
+            detect_trajectory_radon(env, np.zeros_like(posterior), times)
 
 
 # =============================================================================
@@ -776,11 +728,12 @@ class TestFitsReadPositionAlongTrack:
     def test_radon_ignores_bin_numbering(self, sweep):
         from neurospatial.decoding.trajectory import detect_trajectory_radon
 
-        env, shuffled_env, posterior, shuffled, _ = sweep
-        original = detect_trajectory_radon(env, posterior)
-        renumbered = detect_trajectory_radon(shuffled_env, shuffled)
+        env, shuffled_env, posterior, shuffled, times = sweep
+        original = detect_trajectory_radon(env, posterior, times)
+        renumbered = detect_trajectory_radon(shuffled_env, shuffled, times)
 
-        assert original.angle_degrees == pytest.approx(45.0)
+        assert original.speed == pytest.approx(500.0)  # cm/s
+        assert original.start_position == pytest.approx(2.5)
         np.testing.assert_allclose(renumbered.sinogram, original.sinogram)
 
     def test_constant_speed_over_unequal_bins_is_a_straight_line(self):
@@ -844,9 +797,10 @@ class TestFitsReadPositionAlongTrack:
             ]
         )
 
+        times = np.arange(10) * 0.01
         np.testing.assert_allclose(
-            detect_trajectory_radon(coarse, posterior).sinogram,
-            detect_trajectory_radon(fine, split).sinogram,
+            detect_trajectory_radon(coarse, posterior, times).sinogram,
+            detect_trajectory_radon(fine, split, times).sinogram,
             atol=1e-12,
         )
 
@@ -861,11 +815,8 @@ class TestFitsReadPositionAlongTrack:
             np.random.default_rng(0).uniform(0, 20, (500, 2)), bin_size=5.0
         )
         posterior = np.full((5, arena.n_bins), 1.0 / arena.n_bins)
-        args = (arena, posterior) + (
-            () if fit == "detect_trajectory_radon" else (np.arange(5.0),)
-        )
         with pytest.raises(ValueError, match="needs a position along a track"):
-            getattr(trajectory, fit)(*args)
+            getattr(trajectory, fit)(arena, posterior, np.arange(5.0))
 
 
 # =============================================================================
@@ -886,10 +837,7 @@ class TestPosteriorRowsAreValidated:
     def _call(fit, env, posterior, times):
         import neurospatial.decoding.trajectory as trajectory
 
-        args = (env, posterior)
-        if fit != "detect_trajectory_radon":
-            args += (times,)
-        return getattr(trajectory, fit)(*args)
+        return getattr(trajectory, fit)(env, posterior, times)
 
     @pytest.mark.parametrize(
         "fit",

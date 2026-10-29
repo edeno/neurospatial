@@ -174,10 +174,15 @@ CASES = [
     (
         RadonDetectionResult,
         {
-            "angle_degrees": 0.0,
+            "speed": 0.0,
+            "start_position": 0.0,
             "score": 1.0,
-            "offset": 0.0,
+            "angle": 0.0,
             "sinogram": np.ones((2, 2)),
+            "sinogram_angles": np.zeros(2),
+            "sinogram_positions": np.zeros(2),
+            "time_bin_size": 0.01,
+            "column_width": 1.0,
         },
     ),
     (

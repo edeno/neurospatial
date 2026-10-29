@@ -64,16 +64,6 @@ if TYPE_CHECKING:
 
     from neurospatial.environment import Environment
 
-# Check for optional scikit-image dependency
-_SKIMAGE_AVAILABLE = False
-radon: Any
-try:
-    from skimage.transform import radon
-
-    _SKIMAGE_AVAILABLE = True
-except ImportError:
-    radon = None
-
 
 @dataclass(frozen=True, repr=False, eq=False)
 class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
@@ -197,63 +187,86 @@ class LinearFitResult(ResultMixin):
 
 @dataclass(frozen=True, repr=False, eq=False)
 class RadonDetectionResult(ReadOnlyArraysMixin, ResultMixin):
-    """Container for Radon transform trajectory detection results.
+    """The line through a decoded event that holds the most posterior mass.
 
-    The Radon transform treats the posterior as a 2D image (time × position)
-    and finds the line with maximum integrated probability mass. This is
-    particularly effective for detecting diagonal stripe patterns in replay
-    posteriors.
+    :func:`detect_trajectory_radon` treats the posterior as an image, one row
+    per time bin and one column per equal length of track, and scores every
+    candidate line by the posterior mass it passes through.
 
     Attributes
     ----------
-    angle_degrees : float
-        Detected trajectory angle in degrees.
-        0° = horizontal (constant position, no movement).
-        90° = vertical (instantaneous teleportation).
-        Positive angles indicate forward replay, negative indicate reverse.
+    speed : float
+        Slope of the detected line: replay speed along the track in
+        environment units per second (cm/s for a track in cm). Positive when
+        position increases along the track with time. Equal to
+        ``tan(angle) * column_width / time_bin_size``, so it does not depend
+        on the bin size or time bin of the decode.
+    start_position : float
+        Position along the track, in environment units, of the detected line
+        at the event's first time bin, ``times[0]``. It can lie off the track
+        when the line enters the track after the event starts.
     score : float
-        Radon transform value at the detected peak.
-        Higher values indicate stronger linear structure in the posterior.
-        Useful for comparing replay "quality" across events.
-    offset : float
-        Perpendicular offset from origin in the Radon parameterization.
-        Combined with angle, uniquely identifies the detected line.
-    sinogram : NDArray[np.float64]
-        Full Radon transform (sinogram) array, shape (n_angles, n_offsets).
-        Useful for visualization and secondary peak detection.
+        Mean over time bins of the posterior mass on the detected line, in
+        [0, 1]: 1 when every time bin puts all its mass on the line, and
+        ``column_width`` divided by the track length for a uniform
+        posterior. A time bin contributes the mass in a window one column
+        wide centered on the line, which is zero where the line lies off the
+        track.
+    angle : float
+        Angle of the detected line in the image, in radians: 0 is a constant
+        position, positive angles a position that increases with time. It
+        depends on ``time_bin_size`` and ``column_width``; compare ``speed``
+        across decodes instead.
+    sinogram : NDArray[np.float64], shape (n_angles, n_positions)
+        Score of every candidate line: row ``i`` holds the lines at angle
+        ``sinogram_angles[i]``, column ``j`` the line through
+        ``sinogram_positions[j]`` at the event's middle time bin.
+    sinogram_angles : NDArray[np.float64], shape (n_angles,)
+        Angle of each sinogram row, in radians, in the image.
+    sinogram_positions : NDArray[np.float64], shape (n_positions,)
+        Position along the track, in environment units, of each sinogram
+        column's lines at the middle time bin, ``times[(n_time_bins - 1) //
+        2]``: the centers of the image columns.
+    time_bin_size : float
+        Seconds per image row: the median spacing of ``times``.
+    column_width : float
+        Environment units per image column.
 
     See Also
     --------
     detect_trajectory_radon : Function that produces this result.
-
-    Notes
-    -----
-    The Radon transform uses ``scikit-image``, which ships as a core
-    neurospatial dependency (always installed).
+    fit_linear_trajectory : Line fit to the decoded positions.
 
     Examples
     --------
-    >>> result = detect_trajectory_radon(env, posterior)  # doctest: +SKIP
+    >>> result = detect_trajectory_radon(env, posterior, times)  # doctest: +SKIP
     >>> print(
-    ...     f"Detected angle: {result.angle_degrees:.1f}°, score: {result.score:.3f}"
+    ...     f"{result.speed:.0f} cm/s from {result.start_position:.0f} cm, "
+    ...     f"score {result.score:.2f}"
     ... )  # doctest: +SKIP
     """
 
-    angle_degrees: float
+    speed: float
+    start_position: float
     score: float
-    offset: float
+    angle: float
     sinogram: NDArray[np.float64]
+    sinogram_angles: NDArray[np.float64]
+    sinogram_positions: NDArray[np.float64]
+    time_bin_size: float
+    column_width: float
 
     def __post_init__(self) -> None:
-        """Own a read-only copy of the Radon sinogram."""
+        """Own read-only copies of the sinogram and its axes."""
         self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
-            "angle_degrees": self.angle_degrees,
+            "speed": self.speed,
+            "start_position": self.start_position,
             "score": self.score,
-            "offset": self.offset,
+            "angle": self.angle,
         }
 
 
@@ -821,7 +834,7 @@ def _posterior_image(
     posterior: NDArray[np.float64],
     starts: NDArray[np.float64],
     stops: NDArray[np.float64],
-) -> NDArray[np.float64]:
+) -> tuple[NDArray[np.float64], float]:
     """Posterior mass on equally spaced columns along the track.
 
     Parameters
@@ -833,13 +846,16 @@ def _posterior_image(
 
     Returns
     -------
-    NDArray[np.float64], shape (n_time_bins, n_columns)
-        Posterior mass per column. Contiguous bins of one length are the
-        columns themselves. Otherwise columns are as long as the shortest
-        bin, shortened so that whole columns span the track, and each holds
-        the mass of the overlapping bins in proportion to the overlap: the
-        posterior density (mass per unit length) is constant within a bin,
-        and a gap between bins holds no mass.
+    image : NDArray[np.float64], shape (n_time_bins, n_columns)
+        Posterior mass per column; the first column starts at ``starts[0]``.
+        Contiguous bins of one length are the columns themselves. Otherwise
+        columns are as long as the shortest bin, shortened so that whole
+        columns span the track, and each holds the mass of the overlapping
+        bins in proportion to the overlap: the posterior density (mass per
+        unit length) is constant within a bin, and a gap between bins holds
+        no mass.
+    column_width : float
+        Length of each column along the track, in environment units.
     """
     lengths = stops - starts
     shortest = float(lengths.min())
@@ -847,7 +863,7 @@ def _posterior_image(
     if np.all(np.abs(lengths - shortest) <= tolerance) and np.all(
         np.abs(starts[1:] - stops[:-1]) <= tolerance
     ):
-        return posterior
+        return posterior, shortest
     span = float(stops[-1] - starts[0])
     n_columns = int(np.ceil(span / shortest - 1e-9))
     edges = np.linspace(starts[0], stops[-1], n_columns + 1)
@@ -858,22 +874,25 @@ def _posterior_image(
         None,
     )  # (n_bins, n_columns)
     image: NDArray[np.float64] = posterior @ (overlap / lengths[:, None])
-    return image
+    return image, span / n_columns
 
 
 def detect_trajectory_radon(
     env: Environment,
     posterior: NDArray[np.float64],
+    times: NDArray[np.float64],
     *,
-    theta_range: tuple[float, float] = (-90, 90),
-    theta_step: float = 1.0,
+    angle_range: tuple[float, float] = (-np.pi / 2, np.pi / 2),
+    angle_step: float = np.pi / 180,
 ) -> RadonDetectionResult:
-    """Detect linear trajectory using Radon transform.
+    """Detect the line through a decoded event that holds the most posterior mass.
 
-    Treats the posterior as a 2D image (time × position along the track) and
-    finds the line with maximum integrated probability mass. This is
-    particularly useful for detecting diagonal stripe patterns in replay
-    posteriors.
+    Treats the posterior as an image, one row per time bin and one column
+    per equal length of track, and scores every candidate line by the mean,
+    over time bins, of the posterior mass on the line: a discrete Radon
+    transform with one sample per time bin. The best line gives the replay
+    speed and start position without first reducing each time bin to one
+    decoded position, so it uses the whole posterior.
 
     Parameters
     ----------
@@ -882,32 +901,40 @@ def detect_trajectory_radon(
         linearized track. Image columns run along the track, so the result
         does not depend on how bins are numbered.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
-        Posterior probability distribution over spatial bins for each time bin.
-        Treated as a 2D image where rows are time bins and columns are
-        equally spaced positions along the track.
-    theta_range : tuple[float, float], optional
-        Range of angles to search in degrees. Default is (-90, 90).
-        - 0° corresponds to a horizontal line (constant position).
-        - 90° corresponds to a vertical line (instantaneous jump).
-        - Positive angles indicate forward replay.
-        - Negative angles indicate reverse replay.
-    theta_step : float, optional
-        Angular resolution in degrees. Default is 1.0.
-        Smaller values give finer angle resolution but take longer to compute.
+        Posterior probability mass over spatial bins for each time bin. Each
+        row must sum to 1.
+    times : NDArray[np.float64], shape (n_time_bins,)
+        Center time of each posterior row, in seconds, strictly increasing.
+        Times need not be evenly spaced, so time bins dropped as undecodable
+        can be left out together with their posterior rows.
+    angle_range : tuple of float, default=(-pi/2, pi/2)
+        Smallest and largest line angle to search, in radians, within
+        [-pi/2, pi/2]. Angle 0 is a constant position and positive angles a
+        position that increases with time. A line at exactly +/-pi/2 has no
+        position in each time bin (an infinite speed) and is not searched.
+        The default searches every direction.
+    angle_step : float, default=pi/180
+        Spacing of the searched angles, in radians, at most the width of
+        ``angle_range``. Angles are ``angle_range[0] + k * angle_step`` up to
+        ``angle_range[1]``. A step of one degree resolves the speed of a line
+        at angle ``a`` to ``angle_step / (sin(a) * cos(a))`` of its value,
+        3.5% at 45 degrees; the resolution is coarser for steep lines, where
+        a smaller step or :func:`fit_linear_trajectory` gives a finer speed.
 
     Returns
     -------
     RadonDetectionResult
-        Container with angle_degrees, score, offset, and sinogram.
+        The speed, start position, score and angle of the best line, and the
+        score of every candidate line (the sinogram) with its axes.
 
     Raises
     ------
-    ImportError
-        If ``scikit-image`` is unavailable. It ships as a core dependency, so
-        this indicates a broken install; repair with ``pip install scikit-image``.
     ValueError
-        If ``env`` is neither 1-D nor a linearized track, or if ``posterior``
-        does not have one column per bin.
+        If ``env`` is neither 1-D nor a linearized track, if ``posterior``
+        does not have one column per bin or a row is not a probability mass
+        (NaN or Inf, negative, or not summing to 1), if ``times`` does not
+        have one finite, strictly increasing entry per row, or if
+        ``angle_range`` or ``angle_step`` leaves no angle to search.
 
     See Also
     --------
@@ -917,39 +944,40 @@ def detect_trajectory_radon(
 
     Notes
     -----
-    The Radon transform computes line integrals of the posterior at all
-    specified angles. The angle with the highest integrated mass indicates
-    the dominant trajectory direction.
+    **Score.** Following the line-fitting replay score of Davidson,
+    Kloosterman and Wilson (2009), each time bin contributes the posterior
+    mass near the line at its center time, and the score is the mean over
+    time bins. "Near" is a window one image column wide centered on the
+    line: the posterior interpolated linearly between column centers. A
+    line therefore scores the same whatever its slope, a position reversed
+    along the track scores the same as the original, and the score is
+    comparable across events of different durations. A time bin where the
+    line lies off the track contributes no mass. Because the window is one
+    column wide, a spread-out posterior scores higher on wider columns;
+    compare scores between events decoded on the same bins, or against a
+    shuffle of the same event (:func:`neurospatial.stats.shuffle_posterior_circular`).
 
-    **Interpretation of angles:**
+    **Candidate lines.** At each searched angle the candidates are the
+    lines through each column center at the middle time bin,
+    ``times[(n_time_bins - 1) // 2]``, so every candidate lies on the track
+    at mid-event; a line on the track for less than half the event is not
+    considered. Ties go to the first line in sinogram order.
 
-    The detected angle is in Radon space, where:
+    **Image.** Rows are time bins, one ``time_bin_size`` (the median spacing
+    of ``times``) apart. A line in the image is a constant speed only if the
+    columns are equally spaced along the track. When the bins are
+    contiguous and of one length, each bin is a column, in track order.
+    Otherwise the posterior is resampled onto columns as long as the
+    shortest bin (shortened slightly so that whole columns span the track):
+    each column receives the mass of the bins it overlaps, in proportion to
+    the overlap, which treats the posterior density as constant within a
+    bin. Gaps between bins, such as ``edge_spacing`` between the segments of
+    a track, are columns with no mass.
 
-    - θ = 0° means the line is perpendicular to the first axis (time axis),
-      i.e., a horizontal line in the posterior (constant position).
-    - θ = 90° means the line is perpendicular to the second axis (position axis),
-      i.e., a vertical line (instantaneous position change).
-    - θ ≈ 45° typically indicates forward replay (position increases with time).
-    - θ ≈ -45° typically indicates reverse replay (position decreases with time).
-
-    **Position axis:**
-
-    A line in the image is a constant speed only if the columns are equally
-    spaced along the track. When the bins are contiguous and of one length,
-    each bin is a column, in track order. Otherwise the posterior is
-    resampled onto columns as long as the shortest bin (shortened slightly
-    so that whole columns span the track): each column receives the mass of
-    the bins it overlaps, in proportion to the overlap, which treats the
-    posterior density as constant within a bin. The shortest bin sets the
-    spacing so that no bin is merged with its neighbor. Gaps between bins,
-    such as ``edge_spacing`` between the segments of a track, are columns
-    with no mass.
-
-    **Time uniformity assumption:**
-
-    Time bins are assumed to be uniformly spaced for image interpretation.
-    For non-uniform times, consider interpolating the posterior to a uniform
-    time grid first.
+    References
+    ----------
+    Davidson, T. J., Kloosterman, F., & Wilson, M. A. (2009). Hippocampal
+    replay of extended experience. *Neuron*, 63(4), 497-507.
 
     Examples
     --------
@@ -957,68 +985,153 @@ def detect_trajectory_radon(
     >>> from neurospatial import Environment
     >>> from neurospatial.decoding.trajectory import detect_trajectory_radon
     >>>
-    >>> # A 100 cm track in 2 cm bins and a posterior that sweeps along it
+    >>> # A 100 cm track in 2 cm bins and a posterior that sweeps along it,
+    >>> # one bin per 10 ms time bin
     >>> env = Environment.linear_track(
     ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
     ... )
-    >>> posterior = np.eye(env.n_bins)  # one bin per time bin: a diagonal
+    >>> posterior = np.eye(env.n_bins)
+    >>> times = np.arange(env.n_bins) * 0.01
     >>>
-    >>> result = detect_trajectory_radon(env, posterior)
-    >>> print(f"Detected angle: {result.angle_degrees:.1f}°")  # doctest: +SKIP
-    Detected angle: 45.0°
+    >>> result = detect_trajectory_radon(env, posterior, times)
+    >>> print(
+    ...     f"{result.speed:.0f} cm/s from {result.start_position:.0f} cm, "
+    ...     f"score {result.score:.2f}"
+    ... )
+    200 cm/s from 1 cm, score 1.00
     """
-    if not _SKIMAGE_AVAILABLE:
-        raise ImportError(
-            "scikit-image is required for Radon transform trajectory detection. "
-            "It ships as a core neurospatial dependency, so this usually means a "
-            "broken install; repair with: pip install scikit-image"
-        )
-
+    angles = _search_angles(angle_range, angle_step)
     posterior, starts, stops = _track_positions(
         env, posterior, "detect_trajectory_radon()"
     )
-    image = _posterior_image(posterior, starts, stops)
+    times = _require_times(times, len(posterior), "detect_trajectory_radon()")
+    if np.any(np.diff(times) <= 0):
+        raise ValueError(
+            _format_error(
+                "detect_trajectory_radon() needs strictly increasing times.",
+                why="each posterior row is one row of the time-by-position "
+                "image, in time order",
+                fix="sort the posterior rows and their times together by time, "
+                "and drop rows with duplicate times",
+            )
+        )
+    image, column_width = _posterior_image(posterior, starts, stops)
+    time_bin_size = float(np.median(np.diff(times)))
+    middle = (len(times) - 1) // 2
+    sinogram = _line_scores(image, (times - times[middle]) / time_bin_size, angles)
 
-    # Generate angle array
-    theta_start, theta_end = theta_range
-    # Use endpoint=False to get consistent behavior with theta_step
-    n_angles = int((theta_end - theta_start) / theta_step)
-    theta = np.linspace(theta_start, theta_end, n_angles, endpoint=False)
-
-    # Compute Radon transform
-    # The posterior is treated as an image with:
-    # - rows = time bins (vertical axis in image)
-    # - columns = positions along the track (horizontal axis in image)
-    sinogram = radon(image, theta=theta, circle=False)
-
-    # Find the peak in the sinogram
-    # sinogram has shape (n_offsets, n_angles)
-    peak_idx = np.unravel_index(np.argmax(sinogram), sinogram.shape)
-    offset_idx, angle_idx = peak_idx
-
-    # Get the detected angle
-    angle_degrees = float(theta[angle_idx])
-
-    # Get the score (peak value)
-    score = float(sinogram[offset_idx, angle_idx])
-
-    # Compute offset in the original coordinate system
-    # The offset index corresponds to the distance from the center
-    n_offsets = sinogram.shape[0]
-    # Center offset (Radon transform centers the projection)
-    center_offset = (n_offsets - 1) / 2
-    offset = float(offset_idx - center_offset)
-
-    # Transpose sinogram to match (n_angles, n_offsets) convention
-    # (scikit-image's radon() returns (n_offsets, n_angles))
-    sinogram_transposed = sinogram.T
-
+    angle_index, column = np.unravel_index(np.argmax(sinogram), sinogram.shape)
+    speed = float(np.tan(angles[angle_index]) * column_width / time_bin_size)
+    positions = starts[0] + (np.arange(image.shape[1]) + 0.5) * column_width
     return RadonDetectionResult(
-        angle_degrees=angle_degrees,
-        score=score,
-        offset=offset,
-        sinogram=sinogram_transposed,
+        speed=speed,
+        start_position=float(positions[column] + speed * (times[0] - times[middle])),
+        score=float(sinogram[angle_index, column]),
+        angle=float(angles[angle_index]),
+        sinogram=sinogram,
+        sinogram_angles=angles,
+        sinogram_positions=positions,
+        time_bin_size=time_bin_size,
+        column_width=column_width,
     )
+
+
+def _search_angles(
+    angle_range: tuple[float, float], angle_step: float
+) -> NDArray[np.float64]:
+    """Line angles ``low + k * step`` up to ``high``, strictly inside +/-pi/2.
+
+    Raises
+    ------
+    ValueError
+        If ``angle_range`` is not an increasing pair within [-pi/2, pi/2], if
+        ``angle_step`` is not positive or exceeds the range, or if no angle
+        remains strictly inside (-pi/2, pi/2).
+    """
+    low, high = (float(value) for value in angle_range)
+    step = float(angle_step)
+    half_turn = np.pi / 2 + 1e-12
+    if not (-half_turn <= low < high <= half_turn):
+        raise ValueError(
+            _format_error(
+                f"detect_trajectory_radon() needs angle_range = (low, high) "
+                f"with -pi/2 <= low < high <= pi/2 radians, got ({low:g}, "
+                f"{high:g}).",
+                why="a line's angle a and a + pi describe the same line, so "
+                "every line has one angle in [-pi/2, pi/2]",
+                fix="pass the range in radians, e.g. angle_range=(0.0, "
+                "np.pi / 2) for lines whose position increases with time",
+            )
+        )
+    if not (np.isfinite(step) and 0 < step <= high - low):
+        raise ValueError(
+            _format_error(
+                f"detect_trajectory_radon() needs 0 < angle_step <= "
+                f"{high - low:g} (the width of angle_range), got {step:g}.",
+                why="the search takes angles angle_step apart across "
+                "angle_range, so a larger step leaves at most one angle",
+                fix="pass the step in radians, e.g. angle_step=np.pi / 180 "
+                "for one degree",
+            )
+        )
+    n_angles = int(np.floor((high - low) / step + 1e-9)) + 1
+    angles = low + step * np.arange(n_angles, dtype=np.float64)
+    angles = angles[np.abs(angles) < np.pi / 2 - 1e-12]
+    if angles.size == 0:
+        raise ValueError(
+            _format_error(
+                f"detect_trajectory_radon(): angle_range ({low:g}, {high:g}) "
+                f"with angle_step {step:g} searches only +/-pi/2.",
+                why="a line at +/-pi/2 has no position in each time bin (an "
+                "infinite speed), so it is not searched",
+                fix="use a smaller angle_step, e.g. np.pi / 180",
+            )
+        )
+    return angles
+
+
+def _line_scores(
+    image: NDArray[np.float64],
+    rows: NDArray[np.float64],
+    angles: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Mean posterior mass on every candidate line, the sinogram.
+
+    Parameters
+    ----------
+    image : NDArray[np.float64], shape (n_rows, n_columns)
+        Posterior mass per column, one row per time bin.
+    rows : NDArray[np.float64], shape (n_rows,)
+        Time of each row relative to the middle row, in rows.
+    angles : NDArray[np.float64], shape (n_angles,)
+        Line angles in the image, in radians, strictly inside +/-pi/2.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_angles, n_columns)
+        Entry ``(i, j)`` is the mean over rows of the mass in a window one
+        column wide centered on the line at ``angles[i]`` through column
+        ``j``'s center at the middle row: the image interpolated linearly
+        between column centers, and zero off the track.
+    """
+    n_rows, n_columns = image.shape
+    # One empty column on each side: a line off the track holds no mass.
+    padded = np.pad(image, ((0, 0), (1, 1)))
+    row_index = np.arange(n_rows)
+    columns = np.arange(n_columns, dtype=np.float64)[:, None]
+    sinogram = np.empty((len(angles), n_columns))
+    # One angle at a time keeps memory at n_columns * n_rows.
+    for i, slope in enumerate(np.tan(angles)):
+        position = columns + slope * rows  # (n_columns, n_rows), in columns
+        left = np.floor(position)
+        weight = position - left
+        left_column = np.clip(left + 1, 0, n_columns + 1).astype(np.intp)
+        right_column = np.clip(left + 2, 0, n_columns + 1).astype(np.intp)
+        mass = (1.0 - weight) * padded[row_index, left_column] + weight * padded[
+            row_index, right_column
+        ]
+        sinogram[i] = mass.mean(axis=1)
+    return sinogram
 
 
 __all__ = [
