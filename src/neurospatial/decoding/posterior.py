@@ -23,7 +23,7 @@ exponentiating log-likelihoods.
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -35,20 +35,8 @@ from neurospatial.decoding._time_bins import validate_dt
 from neurospatial.decoding.likelihood import log_poisson_likelihood
 
 if TYPE_CHECKING:
+    from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
-
-
-class SpatialRatesLike(Protocol):
-    """Duck-typed protocol for population rate result objects.
-
-    Any object exposing a ``firing_rates`` attribute of shape
-    ``(n_neurons, n_bins)`` -- e.g.
-    :class:`~neurospatial.encoding.spatial.SpatialRatesResult` -- can be passed
-    directly to :func:`decode_position` in place of a raw NumPy array.
-    """
-
-    @property
-    def firing_rates(self) -> NDArray[np.float64]: ...
 
 
 def _validate_encoding_environment(
@@ -76,6 +64,46 @@ def _validate_encoding_environment(
             first=source,
             second=env,
         )
+
+
+def _rates_and_prior(
+    env: Environment,
+    encoding_models: NDArray[np.float64] | SpatialRatesResult,
+    prior: Any,
+    n_time: int,
+    *,
+    context: str,
+) -> tuple[Any, Any]:
+    """Return the rate array and the prior restricted to training support.
+
+    A :class:`~neurospatial.encoding.spatial.SpatialRatesResult` contributes
+    its ``spatial_support``: unsupported bins get a finite placeholder rate and
+    zero prior mass. Other objects with ``firing_rates`` are refused, because
+    only spatial rate results carry the support and environment the decode
+    needs.
+    """
+    from neurospatial.decoding._support import models_on_support, resolve_prior
+    from neurospatial.encoding.spatial import SpatialRatesResult
+
+    _validate_encoding_environment(env, encoding_models, context=context)
+    if isinstance(encoding_models, SpatialRatesResult):
+        support = encoding_models.spatial_support
+        return (
+            models_on_support(np.asarray(encoding_models.firing_rates), support),
+            resolve_prior(env, prior, support, n_time, context=context),
+        )
+    if hasattr(encoding_models, "firing_rates"):
+        raise TypeError(
+            _format_error(
+                f"{context} expects a rate array or a SpatialRatesResult, got "
+                f"{type(encoding_models).__name__}.",
+                why="position decoding needs spatial rate maps with their "
+                "training support and environment.",
+                fix="pass compute_spatial_rates(env, spike_times, times, "
+                "positions), or an (n_neurons, n_bins) array of rates on env",
+            )
+        )
+    return encoding_models, resolve_prior(env, prior, None, n_time, context=context)
 
 
 def _validate_posterior_dtype(dtype: Any) -> np.dtype:
@@ -439,7 +467,7 @@ def _normalize_to_posterior(
 def decode_position(
     env: Environment,
     spike_counts: NDArray[np.int64],
-    encoding_models: NDArray[np.float64] | SpatialRatesLike,
+    encoding_models: NDArray[np.float64] | SpatialRatesResult,
     *,
     dt: float,
     prior: NDArray[np.float64] | None = None,
@@ -461,25 +489,18 @@ def decode_position(
     spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
         Spike counts per neuron per time bin.
     encoding_models : NDArray[np.float64] or SpatialRatesResult, shape (n_neurons, n_bins)
-        Firing rate maps (place fields) for each neuron.
-        Expected units: Hz (spikes/second). Typical values: 0-50 Hz.
-        Very high rates (>100 Hz) may cause numerical issues.
+        Firing rate maps (place fields) for each neuron, in Hz.
 
-        A population rate result object (anything exposing a ``firing_rates``
-        attribute, e.g.
-        :class:`~neurospatial.encoding.spatial.SpatialRatesResult`) may be
-        passed directly. Its ``spatial_support`` excludes unobserved,
-        below-threshold or non-finite training bins, intersecting any supplied
-        prior. This mask is retained even when stored rates were zero-filled.
-        A carried environment must match the decoding environment's ordered
-        bin coordinates, coordinate type, units and frame; equivalent copies
-        are accepted.
-        When passing raw arrays, provide a prior that excludes unsupported bins,
+        A :class:`~neurospatial.encoding.spatial.SpatialRatesResult` from
+        :func:`~neurospatial.compute_spatial_rates` may be passed directly.
+        Its ``spatial_support`` excludes unobserved, below-threshold or
+        non-finite training bins and is intersected with any supplied prior.
+        Its environment must match the decoding environment's ordered bin
+        coordinates, measures, coordinate system, units, frame and weighted
+        connectivity; equivalent copies are accepted, also with
+        ``validate=False``. Other result objects raise ``TypeError``. When
+        passing a raw array, provide a prior that excludes unsupported bins,
         such as ``prior=rates.spatial_support * env.bin_sizes``.
-        A result's environment must match the decoding environment's ordered
-        bin coordinates, measures, coordinate system, units, frame and weighted
-        connectivity. Equivalent copies are accepted, including with
-        ``validate=False``.
 
         NaN entries mark missing rate estimates (for example bins below an
         encoder's ``min_occupancy``). A bin where any neuron's rate is NaN
@@ -572,6 +593,9 @@ def decode_position(
 
     Raises
     ------
+    TypeError
+        If ``encoding_models`` is a result object other than a
+        ``SpatialRatesResult``.
     ValueError
         If method is not "poisson".
         If validate=True and validation checks fail.
@@ -638,21 +662,13 @@ def decode_position(
     dt = validate_dt(dt)
     time_chunk = _validate_time_chunk(time_chunk, allow_none=True)
 
-    from neurospatial.decoding._support import models_on_support, resolve_prior
-
-    _validate_encoding_environment(env, encoding_models, context="decode_position")
-    support = getattr(encoding_models, "spatial_support", None)
-    prior = resolve_prior(
-        env, prior, support, len(spike_counts), context="decode_position"
+    models, prior = _rates_and_prior(
+        env, encoding_models, prior, len(spike_counts), context="decode_position"
     )
-    if support is not None:
-        encoding_models = models_on_support(
-            cast("SpatialRatesLike", encoding_models).firing_rates, support
-        )
     spike_counts, encoding_models, prior = _prepare_decode_inputs(
         env,
         spike_counts,
-        encoding_models,
+        models,
         prior=prior,
         method=method,
         validate=validate,
@@ -757,7 +773,7 @@ def _decode_blockwise(
 def _prepare_decode_inputs(
     env: Environment,
     spike_counts: NDArray[np.int64],
-    encoding_models: NDArray[np.float64] | SpatialRatesLike,
+    encoding_models: NDArray[np.float64],
     *,
     prior: NDArray[np.float64] | None,
     method: Literal["poisson"],
@@ -766,9 +782,9 @@ def _prepare_decode_inputs(
 ) -> tuple[NDArray[np.int64], NDArray[np.float64], NDArray[np.float64] | None]:
     """Validate inputs and exclude bins without a finite rate for every neuron.
 
-    Shared front half of :func:`decode_position` and
-    :func:`decode_position_summary`: resolves a rate result's
-    ``firing_rates``, runs the unconditional guards (bin-count agreement, at
+    Shared front half of :func:`decode_position`,
+    :func:`decode_position_summary` and the session decoders: runs the
+    unconditional guards (bin-count agreement, at
     least one decodable bin) and the optional ``validate=True`` checks.
 
     A bin where any neuron's rate is non-finite (NaN, or Inf with
@@ -783,9 +799,8 @@ def _prepare_decode_inputs(
         Spatial environment defining the discretization.
     spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
         Spike counts per neuron per time bin.
-    encoding_models : NDArray[np.float64] or SpatialRatesLike
-        Firing-rate maps, or a population rate result exposing
-        ``firing_rates``.
+    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Firing-rate maps.
     prior : NDArray[np.float64] | None
         Prior resolved by :func:`~neurospatial.decoding._support.resolve_prior`.
     method : {"poisson"}
@@ -815,60 +830,6 @@ def _prepare_decode_inputs(
             f"Unknown method '{method}'. Currently only 'poisson' is supported."
         )
 
-    # Accept a population rate result object (duck-typed): if it exposes a
-    # ``firing_rates`` attribute, use that array directly. This removes the
-    # np.stack([r.firing_rate ...]) glue between encode and decode.
-    if hasattr(encoding_models, "firing_rates"):
-        provenance = type(encoding_models).__name__
-        firing_rates = encoding_models.firing_rates
-        # The `.firing_rates` attribute is only a usable encoding model when it
-        # is a 2-D (n_neurons, n_bins) numeric array. Some result objects expose
-        # a `.firing_rates` that is None or a Mapping (e.g.
-        # DirectionalPlaceFields.firing_rates is a dict keyed by direction);
-        # passing those straight to np.asarray below yields an obscure
-        # NumPy-internal TypeError. Reject them here with a clear message.
-        if firing_rates is None:
-            raise ValueError(
-                f"{context}: the encoding result's `.firing_rates` must "
-                f"be a 2-D (n_neurons, n_bins) array, got None "
-                f"(from {provenance}.firing_rates)."
-            )
-        # Convert WITHOUT forcing a dtype so a float32 `.firing_rates` stays
-        # float32 (matching the raw-array path, which never re-casts) -- forcing
-        # dtype=float here would silently promote float32 to float64 and erase
-        # part of the dtype=np.float32 memory win.
-        try:
-            firing_rates_arr = np.asarray(firing_rates)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"{context}: the encoding result's `.firing_rates` must "
-                f"be a 2-D (n_neurons, n_bins) array, got "
-                f"{type(firing_rates).__name__} (from {provenance}.firing_rates)."
-            ) from exc
-        # Validate it became a usable numeric float array. A Mapping/dict
-        # produces a 0-d object-dtype array (not floating); an integer rate map
-        # is unusual but should still work, so promote it to float64.
-        if not np.issubdtype(firing_rates_arr.dtype, np.floating):
-            if np.issubdtype(firing_rates_arr.dtype, np.integer):
-                firing_rates_arr = firing_rates_arr.astype(np.float64)
-            else:
-                # object/non-numeric (e.g. a dict that became a 0-d object
-                # array) -- reject with the same clear message.
-                raise ValueError(
-                    f"{context}: the encoding result's `.firing_rates` must "
-                    f"be a 2-D (n_neurons, n_bins) array, got "
-                    f"{type(firing_rates).__name__} "
-                    f"(from {provenance}.firing_rates)."
-                )
-        if firing_rates_arr.ndim != 2:
-            raise ValueError(
-                f"{context}: the encoding result's `.firing_rates` must "
-                f"be a 2-D (n_neurons, n_bins) array, got a "
-                f"{firing_rates_arr.ndim}-D array with shape "
-                f"{firing_rates_arr.shape} (from {provenance}.firing_rates)."
-            )
-        encoding_models = firing_rates_arr
-
     spike_counts = np.asarray(spike_counts)
     encoding_models = np.asarray(encoding_models)
     if encoding_models.ndim != 2:
@@ -888,7 +849,7 @@ def _prepare_decode_inputs(
         _validate_inputs(spike_counts, encoding_models)
 
     if encoding_models.dtype.kind == "f" and not np.isfinite(encoding_models).all():
-        excluded = ~np.isfinite(encoding_models).all(axis=0)
+        excluded = np.asarray(~np.isfinite(encoding_models).all(axis=0))
         n_bins = encoding_models.shape[1]
         if excluded.all():
             raise ValueError(
@@ -1081,7 +1042,7 @@ def _decode_and_reduce_block(
 def decode_position_summary(
     env: Environment,
     spike_counts: NDArray[np.int64],
-    encoding_models: NDArray[np.float64] | SpatialRatesLike,
+    encoding_models: NDArray[np.float64] | SpatialRatesResult,
     *,
     dt: float,
     prior: NDArray[np.float64] | None = None,
@@ -1113,12 +1074,10 @@ def decode_position_summary(
     spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
         Spike counts per neuron per time bin.
     encoding_models : NDArray[np.float64] or SpatialRatesResult, shape (n_neurons, n_bins)
-        Firing-rate maps (place fields) for each neuron, or a population rate
-        result object exposing ``firing_rates``. Rate results also carry
-        ``spatial_support``, which excludes unsupported training bins and
-        intersects any supplied prior. Same semantics (NaN/Inf handling,
-        no-finite-bins guard and environment compatibility) as
-        :func:`decode_position`.
+        Firing-rate maps (place fields) for each neuron, or a
+        ``SpatialRatesResult`` whose ``spatial_support`` excludes unsupported
+        training bins. Same semantics (missing rates, environment
+        compatibility) as :func:`decode_position`.
     dt : float
         Time-bin width in seconds.
     prior : NDArray[np.float64] | None, default=None
@@ -1198,23 +1157,17 @@ def decode_position_summary(
     # raw TypeError (dt="0.1") or silently accepting dt=True as 1.
     dt = validate_dt(dt)
 
-    from neurospatial.decoding._support import models_on_support, resolve_prior
-
-    _validate_encoding_environment(
-        env, encoding_models, context="decode_position_summary"
+    models, prior = _rates_and_prior(
+        env,
+        encoding_models,
+        prior,
+        len(spike_counts),
+        context="decode_position_summary",
     )
-    support = getattr(encoding_models, "spatial_support", None)
-    prior = resolve_prior(
-        env, prior, support, len(spike_counts), context="decode_position_summary"
-    )
-    if support is not None:
-        encoding_models = models_on_support(
-            cast("SpatialRatesLike", encoding_models).firing_rates, support
-        )
     spike_counts, encoding_models, prior = _prepare_decode_inputs(
         env,
         spike_counts,
-        encoding_models,
+        models,
         prior=prior,
         method=method,
         validate=validate,

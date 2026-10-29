@@ -1,8 +1,7 @@
 """decode_position accepts a SpatialRatesResult directly.
 
-Passing a population rate result object (anything exposing ``firing_rates``)
-should be equivalent to passing its ``firing_rates`` array, removing the
-``np.stack([r.firing_rate ...])`` glue between encode and decode.
+Passing the rate result decodes its ``firing_rates`` with its
+``spatial_support``; other result objects are refused.
 """
 
 from __future__ import annotations
@@ -135,31 +134,20 @@ def test_decode_position_accepts_result_object() -> None:
 
 
 @dataclass
-class _BadRates:
+class _OtherRates:
     firing_rates: Any
 
 
-def test_decode_position_none_firing_rates_clear_error() -> None:
-    """A result whose .firing_rates is None raises a clear ValueError (I2)."""
+@pytest.mark.parametrize("decode", [decode_position, decode_position_summary])
+@pytest.mark.parametrize(
+    "firing_rates", [None, {"north": np.zeros(5)}, np.zeros(5), np.ones((3, 1))]
+)
+def test_other_rate_objects_raise_type_error(decode, firing_rates) -> None:
+    """Only SpatialRatesResult carries the support and env a decode needs."""
     env, spike_counts, _rates_result, dt = _setup()
-    with pytest.raises(ValueError, match=r"\.firing_rates.*2-D.*None"):
-        decode_position(env, spike_counts, _BadRates(firing_rates=None), dt=dt)
-
-
-def test_decode_position_dict_firing_rates_clear_error() -> None:
-    """A result whose .firing_rates is a dict raises a clear ValueError (I2)."""
-    env, spike_counts, _rates_result, dt = _setup()
-    bad = _BadRates(firing_rates={"north": np.zeros(5), "south": np.zeros(5)})
-    with pytest.raises(ValueError, match=r"\.firing_rates.*2-D"):
-        decode_position(env, spike_counts, bad, dt=dt)
-
-
-def test_decode_position_1d_firing_rates_clear_error() -> None:
-    """A result whose .firing_rates is 1-D raises a clear ValueError."""
-    env, spike_counts, _rates_result, dt = _setup()
-    bad = _BadRates(firing_rates=np.zeros(5))
-    with pytest.raises(ValueError, match=r"\.firing_rates.*2-D"):
-        decode_position(env, spike_counts, bad, dt=dt)
+    with pytest.raises(TypeError, match="SpatialRatesResult") as err:
+        decode(env, spike_counts, _OtherRates(firing_rates=firing_rates), dt=dt)
+    assert "Fix:" in str(err.value)
 
 
 def _capture_model_dtype(env, spike_counts, encoding_models, dt):
@@ -171,9 +159,9 @@ def _capture_model_dtype(env, spike_counts, encoding_models, dt):
     real = posterior_mod._prepare_decode_inputs
 
     def spy(env_, counts_, models_, *args, **kwargs):
-        sc, em, mask = real(env_, counts_, models_, *args, **kwargs)
+        sc, em, prior = real(env_, counts_, models_, *args, **kwargs)
         captured["dtype"] = em.dtype
-        return sc, em, mask
+        return sc, em, prior
 
     posterior_mod._prepare_decode_inputs = spy  # type: ignore[assignment]
     try:
@@ -223,10 +211,10 @@ def test_decode_position_result_object_preserves_float64() -> None:
     )
 
 
-def test_decode_position_integer_firing_rates_cast_to_float64() -> None:
-    """An integer .firing_rates array still works, cast to float64."""
+def test_decode_position_integer_rate_array_matches_float() -> None:
+    """An integer rate array decodes exactly like the same rates as floats."""
     env, spike_counts, _rates_result, dt = _setup()
-    n_bins = env.n_bins
-    int_rates = np.ones((3, n_bins), dtype=np.int64)
-    bad = _BadRates(firing_rates=int_rates)
-    assert _capture_model_dtype(env, spike_counts, bad, dt) == np.dtype(np.float64)
+    int_rates = np.arange(3 * env.n_bins).reshape(3, env.n_bins) % 7 + 1
+    as_int = decode_position(env, spike_counts, int_rates, dt=dt)
+    as_float = decode_position(env, spike_counts, int_rates.astype(float), dt=dt)
+    np.testing.assert_array_equal(as_int.posterior, as_float.posterior)
