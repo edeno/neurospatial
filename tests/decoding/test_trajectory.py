@@ -813,6 +813,34 @@ class TestFitsReadPositionAlongTrack:
         assert result.slope == pytest.approx(1000.0)
         assert result.r_squared == pytest.approx(1.0)
 
+    def test_map_is_the_bin_of_highest_density(self):
+        """A 4 cm bin holding the most mass is not the MAP over 1 cm bins.
+
+        Each row puts 0.4 in the 4 cm bin (density 0.1 per cm) and 0.3 in a
+        1 cm bin that moves 1 cm per 10 ms (density 0.3 per cm), so the MAP
+        moves at 100 cm/s although the largest mass never moves.
+        """
+        from neurospatial.decoding.estimates import map_bin
+        from neurospatial.decoding.trajectory import (
+            fit_isotonic_trajectory,
+            fit_linear_trajectory,
+        )
+
+        env = strips_1d(np.array([0.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]))
+        n_time_bins = 5
+        posterior = np.zeros((n_time_bins, env.n_bins))
+        posterior[:, 0] = 0.4
+        posterior[:, 1:] = 0.3 / 4
+        posterior[np.arange(n_time_bins), 1 + np.arange(n_time_bins)] = 0.3
+        times = np.arange(n_time_bins) * 0.01
+        map_positions = env.bin_centers[map_bin(env, posterior), 0]
+
+        linear = fit_linear_trajectory(env, posterior, times, method="map")
+        isotonic = fit_isotonic_trajectory(env, posterior, times, method="map")
+
+        assert linear.slope == pytest.approx(100.0)
+        np.testing.assert_allclose(isotonic.fitted_positions, map_positions)
+
     def test_radon_unchanged_when_a_bin_is_split_into_equal_halves(self):
         """Splitting an 8 cm bin, mass shared by length, leaves the image as is."""
         from neurospatial.decoding.trajectory import detect_trajectory_radon

@@ -372,12 +372,37 @@ def _require_probability_rows(
 
 def _decoded_positions(
     posterior: NDArray[np.float64],
-    centers: NDArray[np.float64],
+    starts: NDArray[np.float64],
+    stops: NDArray[np.float64],
     method: str,
 ) -> NDArray[np.float64]:
-    """Position along the track per time bin: MAP bin center or posterior mean."""
+    """Position along the track per time bin: MAP bin center or posterior mean.
+
+    Parameters
+    ----------
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior mass per bin, bins in track order.
+    starts, stops : NDArray[np.float64], shape (n_bins,)
+        Where each bin starts and ends along the track, in track order.
+    method : {"map", "expected"}
+        ``"map"`` takes the center of the bin of highest density (mass per
+        unit length along the track), as :func:`~neurospatial.decoding.map_bin`
+        does, so a long bin does not win only by holding more track.
+        ``"expected"`` takes the posterior mean position.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_time_bins,)
+        Position along the track, in environment units.
+    """
+    from neurospatial.decoding.estimates import _density_mode
+
+    centers = (starts + stops) / 2
     if method == "map":
-        positions: NDArray[np.float64] = centers[np.argmax(posterior, axis=1)]
+        lengths = stops - starts
+        positions: NDArray[np.float64] = centers[
+            _density_mode(posterior, lengths / lengths.max())
+        ]
         return positions
     # The posterior is a probability mass per bin, so its mean position is
     # the mass-weighted mean of the bin centers.
@@ -419,7 +444,8 @@ def fit_isotonic_trajectory(
         - None (default): Try both directions and return the one with higher R²
     method : {"map", "expected"}, optional
         How to extract position from the posterior for fitting:
-        - "map": Use the center of the most probable bin
+        - "map": Use the center of the MAP bin, the bin of highest posterior
+          density (mass per unit length along the track)
         - "expected" (default): Use the posterior mean position
 
     Returns
@@ -480,7 +506,7 @@ def fit_isotonic_trajectory(
     posterior, starts, stops = _track_positions(
         env, posterior, "fit_isotonic_trajectory()"
     )
-    positions = _decoded_positions(posterior, (starts + stops) / 2, method)
+    positions = _decoded_positions(posterior, starts, stops, method)
 
     # If direction is specified, fit once
     if increasing is not None:
@@ -584,7 +610,8 @@ def fit_linear_trajectory(
         estimation (only used when method="sample"). Default is 1000.
     method : {"map", "sample"}, optional
         How to fit the linear trajectory:
-        - "map": Use the center of the most probable bin. Fast but ignores
+        - "map": Use the center of the MAP bin, the bin of highest posterior
+          density (mass per unit length along the track). Fast but ignores
           uncertainty.
         - "sample" (default): Sample from posterior, fit to each sample,
           average coefficients. Provides uncertainty estimate via slope_std.
@@ -671,7 +698,7 @@ def fit_linear_trajectory(
         )
 
     if method == "map":
-        positions = _decoded_positions(posterior, centers, "map")
+        positions = _decoded_positions(posterior, starts, stops, "map")
 
         # Simple linear regression
         slope, intercept = _fit_line(times, positions)
@@ -710,7 +737,7 @@ def fit_linear_trajectory(
     slope_std = np.std(slopes, ddof=1)
 
     # Compute R² using mean coefficients on the posterior mean positions
-    expected_positions = _decoded_positions(posterior, centers, "expected")
+    expected_positions = _decoded_positions(posterior, starts, stops, "expected")
     predicted = mean_slope * times + mean_intercept
     r_squared = _compute_r_squared(expected_positions, predicted)
 
