@@ -192,6 +192,16 @@ def test_mixed_measure_environment_needs_one_measure():
     with pytest.raises(ValueError, match=r"(?s)mixes bins.*env\.subset"):
         decode_position(env, np.array([[1]]), rates, dt=DT)
 
+    # An explicit prior decodes; density-free summaries still work.
+    result = decode_position(
+        env, np.array([[1]]), rates, dt=DT, prior=np.ones(env.n_bins)
+    )
+    summary = result.summary()
+    assert summary["n_undecodable"] == 0
+    assert summary["mean_entropy"] == pytest.approx(np.log2(env.n_bins))
+    with pytest.raises(ValueError, match="mixes bins"):
+        _ = result.map_bin
+
 
 def test_impossible_spikes_fall_back_to_the_prior_over_space():
     """A time bin no position can explain keeps the uniform-over-space prior."""

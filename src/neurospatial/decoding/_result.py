@@ -923,7 +923,7 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         ['max_entropy', 'mean_entropy', 'n_bins', 'n_time_bins', 'n_undecodable', 'spike_window', 'spike_window_assumed']
         """
         n_bins = int(self.posterior.shape[1])
-        decoded = self.map_bin >= 0
+        decoded = np.isfinite(self.posterior).any(axis=1)
         return {
             "n_time_bins": self.n_time_bins,
             "n_undecodable": int(np.count_nonzero(~decoded)),
