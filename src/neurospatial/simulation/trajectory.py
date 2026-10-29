@@ -15,57 +15,8 @@ from neurospatial.geometry import require_cartesian
 from neurospatial.simulation._lap_routes import LapRouter
 from neurospatial.simulation._walls import Walls
 
-
-def _get_conversion_factor(from_unit: str, to_unit: str) -> float:
-    """Get conversion factor between spatial units.
-
-    Parameters
-    ----------
-    from_unit : str
-        Source unit ('m', 'cm', 'mm', 'pixels').
-    to_unit : str
-        Target unit ('m', 'cm', 'mm', 'pixels').
-
-    Returns
-    -------
-    factor : float
-        Multiplication factor to convert from_unit to to_unit.
-
-    Raises
-    ------
-    ValueError
-        If units are incompatible or unknown.
-    """
-    # Define conversion to meters as base unit
-    to_meters: dict[str, float | None] = {
-        "m": 1.0,
-        "cm": 0.01,
-        "mm": 0.001,
-        "pixels": None,  # Cannot convert without calibration
-    }
-
-    if from_unit not in to_meters:
-        msg = f"Unknown unit '{from_unit}'. Supported: {list(to_meters.keys())}"
-        raise ValueError(msg)
-
-    if to_unit not in to_meters:
-        msg = f"Unknown unit '{to_unit}'. Supported: {list(to_meters.keys())}"
-        raise ValueError(msg)
-
-    if from_unit == "pixels" or to_unit == "pixels":
-        msg = "Cannot convert to/from 'pixels' without calibration"
-        raise ValueError(msg)
-
-    # Convert: from_unit → meters → to_unit
-    # After the checks above, we know both values are not None
-    from_factor = to_meters[from_unit]
-    to_factor = to_meters[to_unit]
-    assert from_factor is not None and to_factor is not None
-    return from_factor / to_factor
-
-
 #: Default exploration speed, in centimeters per second: the RatInABox
-#: default (0.08 m/s; George et al. 2023).
+#: default (0.08 m/s; George et al. 2024).
 _DEFAULT_OU_SPEED_CM_PER_S = 8.0
 
 # Relative rounding allowed in ``duration / dt`` before a sample is dropped.
@@ -155,7 +106,7 @@ def simulate_trajectory_ou(
     """Simulate random exploration with smoothly varying speed and heading.
 
     The animal's speed and turning rate are Ornstein-Uhlenbeck processes, as
-    in RatInABox (George et al. 2023). It never crosses the arena's outline or
+    in RatInABox (George et al. 2024). It never crosses the arena's outline or
     an internal wall: it bounces off them like a billiard ball.
 
     Parameters
@@ -276,9 +227,9 @@ def simulate_trajectory_ou(
 
     References
     ----------
-    George, T. M., de Cothi, W., Stachenfeld, K. L., & Barry, C. (2023).
-    RatInABox, a toolkit for modelling locomotion and neuronal activity in
-    continuous environments. eLife, 12, e85274.
+    George, T. M., Rastogi, M., de Cothi, W., Clopath, C., Stachenfeld, K., &
+    Barry, C. (2024). RatInABox, a toolkit for modelling locomotion and
+    neuronal activity in continuous environments. eLife, 13, e85274.
 
     Gillespie, D. T. (1996). Exact numerical simulation of the
     Ornstein-Uhlenbeck process and its integral. Physical Review E, 54(2),
