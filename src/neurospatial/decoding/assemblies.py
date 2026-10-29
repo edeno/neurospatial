@@ -82,25 +82,39 @@ Typical Workflows
 
 Notes
 -----
-**Bin Size Guidelines**:
+**Bin size**:
 
-Bin sizes of 25-100ms are typical for assembly detection. Smaller bins
-(< 25ms) increase noise; larger bins (> 100ms) may miss fast assembly
-dynamics.
+The bin size sets the time scale of "firing together". Published analyses
+use 25 ms bins (van de Ven et al., 2016, following the assembly time scale
+of Harris et al., 2003) up to 100 ms (Peyrache et al., 2010). Shorter bins
+hold fewer spikes and give noisier correlations; longer bins merge activity
+that is not simultaneous.
 
-**Data Requirements**:
+**Data requirements**:
 
-- Need 5-10× more time bins than neurons for reliable results
-- Low firing rate neurons (< 0.1 Hz) may not form detectable assemblies
-- Works best with functionally related neural populations
+The Marchenko-Pastur bound is an asymptotic edge for independent neurons
+(see :func:`marchenko_pastur_threshold`); in a short recording an
+eigenvalue can pass it by chance. Check the number of dimensions on counts
+shuffled in time for your recording size. Neurons that fire in few bins
+give noisy correlations, and neurons with the same count in every bin are
+excluded.
 
 References
 ----------
-Lopes-dos-Santos V, Ribeiro S, Bhattacharyya A (2013). Detecting cell assemblies
+Lopes-dos-Santos V, Ribeiro S, Tort ABL (2013). Detecting cell assemblies
     in large neuronal populations. J Neurosci Methods 220(2):149-166.
 Peyrache A, Khamassi M, Benchenane K, Wiener SI, Battaglia FP (2009).
     Replay of rule-learning related neural patterns in the prefrontal cortex
     during sleep. Nat Neurosci 12(7):919-926.
+Peyrache A, Benchenane K, Khamassi M, Wiener SI, Battaglia FP (2010).
+    Principal component analysis of ensemble recordings reveals cell
+    assemblies at high temporal resolution. J Comput Neurosci
+    29(1-2):309-325.
+Harris KD, Csicsvari J, Hirase H, Dragoi G, Buzsaki G (2003). Organization
+    of cell assemblies in the hippocampus. Nature 424(6948):552-556.
+van de Ven GM, Trouche S, McNamara CG, Allen K, Dupret D (2016).
+    Hippocampal offline reactivation consolidates recently formed cell
+    assembly patterns during sharp wave-ripples. Neuron 92(5):968-974.
 Kudrimoti HS, Barnes CA, McNaughton BL (1999). Reactivation of hippocampal
     cell assemblies: effects of behavioral state, experience, and EEG dynamics.
     J Neurosci 19(10):4090-4101.
@@ -202,7 +216,11 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
     This is a heuristic weight cutoff,
     not a calibrated per-neuron significance test. A detected pattern can have
     no core members even when its underlying dimension exceeds the
-    Marchenko-Pastur threshold.
+    Marchenko-Pastur threshold. With ``k`` equal weights among ``n``
+    neurons and the rest 0, the members' z-score is
+    :math:`\\sqrt{(n - k) / k}`: 3 members of 9 neurons reach only 1.41,
+    below the default cutoff, so small recordings or large assemblies need a
+    lower ``z_threshold``.
 
     Examples
     --------
@@ -600,8 +618,12 @@ def marchenko_pastur_threshold(
 
     **Requirements**:
 
-    For reliable threshold estimation, n_time_bins should be significantly
-    larger than n_neurons (typically > 5× larger).
+    The bound is the asymptotic edge as both sizes grow at a fixed ratio.
+    For a finite recording of independent neurons the largest eigenvalue
+    fluctuates around it on a scale of order :math:`n^{-2/3}` (Tracy-Widom;
+    Peyrache et al., 2010), so an eigenvalue just above the threshold can
+    arise by chance. When it matters, compare with eigenvalues of counts
+    shuffled in time.
 
     Examples
     --------
@@ -620,8 +642,13 @@ def marchenko_pastur_threshold(
     ----------
     Marchenko VA, Pastur LA (1967). Distribution of eigenvalues for some sets
         of random matrices. Mat Sb 114(4):507-536.
-    Lopes-dos-Santos V et al. (2013). Detecting cell assemblies in large
-        neuronal populations. J Neurosci Methods 220(2):149-166.
+    Lopes-dos-Santos V, Ribeiro S, Tort ABL (2013). Detecting cell
+        assemblies in large neuronal populations. J Neurosci Methods
+        220(2):149-166.
+    Peyrache A, Benchenane K, Khamassi M, Wiener SI, Battaglia FP (2010).
+        Principal component analysis of ensemble recordings reveals cell
+        assemblies at high temporal resolution. J Comput Neurosci
+        29(1-2):309-325.
     """
     if n_neurons <= 0:
         raise ValueError(f"n_neurons must be positive, got {n_neurons}")
@@ -674,12 +701,16 @@ def detect_assemblies(
     method : {'ica', 'pca', 'nmf'}, default='ica'
         Detection method:
 
-        - 'ica': Independent Component Analysis (FastICA). Best for
-          separating statistically independent assemblies. Default choice.
-        - 'pca': Principal Component Analysis. Finds orthogonal patterns
-          ordered by variance. Faster but patterns may be mixed.
-        - 'nmf': Non-negative Matrix Factorization. Constrains weights
-          to be non-negative. Good when assemblies don't overlap.
+        - 'ica': Independent Component Analysis (FastICA) in the selected
+          principal subspace (Lopes-dos-Santos et al., 2013). Separates
+          assemblies whose activations are statistically independent and
+          non-Gaussian. Default choice.
+        - 'pca': Principal Component Analysis (Peyrache et al., 2010). Finds
+          orthogonal patterns ordered by variance. Faster, but assemblies of
+          similar strength mix within one pattern.
+        - 'nmf': Non-negative Matrix Factorization of the raw counts.
+          Constrains weights to be non-negative, so a neuron cannot
+          participate by firing less.
 
     n_components : int or 'auto', default='auto'
         Number of assemblies to detect:
@@ -696,7 +727,9 @@ def detect_assemblies(
         - 1.5: Select more core members
 
         These cutoffs do not supply per-neuron p-values. A selected dimension
-        may yield a pattern with no weights above the chosen cutoff.
+        may yield a pattern with no weights above the chosen cutoff; with
+        ``k`` equally weighted members among ``n`` neurons and the other
+        weights 0, the members' z-score is ``sqrt((n - k) / k)``.
 
     rng : int or np.random.Generator, optional
         Random seed or generator for reproducibility. Affects ICA and NMF
@@ -755,19 +788,27 @@ def detect_assemblies(
 
     **Choosing a Method**:
 
-    - **ICA**: Best for most cases. Assumes assemblies are statistically
-      independent, which is often true for distinct memory representations.
-    - **PCA**: Use when you want orthogonal patterns or fast computation.
-      Good for exploratory analysis.
+    - **ICA**: The default. It assumes the assemblies' activations are
+      statistically independent and non-Gaussian; Lopes-dos-Santos et al.
+      (2013) show it separates assemblies that PCA mixes, including
+      assemblies that share neurons. Activations driven by nearly Gaussian
+      fluctuations separate less cleanly.
+    - **PCA**: Use for orthogonal patterns or fast exploratory analysis.
+      When several assemblies are about equally strong their eigenvalues are
+      close, and each eigenvector mixes them: a pattern can then have core
+      members from two assemblies, or none, although the patterns together
+      still span the assemblies.
     - **NMF**: Use when assemblies should have non-negative membership
-      (no inhibitory participation).
+      (no participation by firing less). It factorizes raw counts, so
+      high-rate neurons weigh more than in the z-scored PCA and ICA.
 
     **Preprocessing**:
 
-    Input spike counts are automatically z-scored. For best results:
-    - Use bin sizes of 25-100ms
-    - Ensure sufficient time bins (> 5× n_neurons)
-    - Remove neurons with very low firing rates
+    Input spike counts are z-scored internally for PCA and ICA. Choose the
+    bin size for the time scale of co-firing you study (25 to 100 ms in the
+    publications cited in the module notes), and check the number of
+    selected dimensions on time-shuffled counts when the recording is short
+    relative to the number of neurons.
 
     Examples
     --------
@@ -809,8 +850,13 @@ def detect_assemblies(
 
     References
     ----------
-    Lopes-dos-Santos V, Ribeiro S, Bhattacharyya A (2013). Detecting cell
-        assemblies in large neuronal populations. J Neurosci Methods.
+    Lopes-dos-Santos V, Ribeiro S, Tort ABL (2013). Detecting cell
+        assemblies in large neuronal populations. J Neurosci Methods
+        220(2):149-166.
+    Peyrache A, Benchenane K, Khamassi M, Wiener SI, Battaglia FP (2010).
+        Principal component analysis of ensemble recordings reveals cell
+        assemblies at high temporal resolution. J Comput Neurosci
+        29(1-2):309-325.
     """
     spike_counts = _validated_counts(spike_counts, call="detect_assemblies()")
     n_time_bins, n_neurons = spike_counts.shape

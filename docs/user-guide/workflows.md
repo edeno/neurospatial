@@ -1248,7 +1248,12 @@ selected unit order; `member_unit_ids` gives the original labels, and passing
 pattern's weights by label. The same per-period labels given to
 `explained_variance_reactivation` match each pair correlation to the same two
 cells in every period. A pattern can have no core members at the default absolute-weight
-z-score cutoff, even when its dimension passes the reference.
+z-score cutoff, even when its dimension passes the reference: with `k`
+equally weighted members among `n` units, the members' z-score is
+sqrt((n - k) / k), only 1.4 for 3 members of the 9 units here. Pass a lower
+`z_threshold=` for small recordings. PCA also mixes assemblies of similar
+strength within one pattern; use the default `method="ica"` to separate
+them.
 
 `assembly_activation` z-scores each unit within the period and returns the
 activation strength R(t), the pattern-weighted sum of products of pairs of

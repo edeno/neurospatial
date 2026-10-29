@@ -398,9 +398,12 @@ print({name: matrix.shape for name, matrix in counts.items()})
 
 Each count matrix is `(n_time_bins, n_units)`, with the same unit order in
 every period; `unit_ids` labels the columns. The bin size sets the time scale
-of "together": 25-100 ms bins are typical for assemblies; shorter bins catch
-tighter synchrony but give noisier correlations. Use enough bins: at least 5-10 times more time bins than
-units.
+of "together". Published assembly analyses use 25 ms bins (van de Ven et al.,
+2016) up to 100 ms (Peyrache et al., 2010); shorter bins catch tighter
+synchrony but hold fewer spikes and give noisier correlations. The
+Marchenko-Pastur threshold below is exact only for long recordings, so with
+few time bins per unit check the number of selected dimensions on counts
+shuffled in time.
 
 ### Which cells fire together during running?
 
@@ -467,7 +470,9 @@ assemblies, and each pattern's core members are the four cells of one planted
 assembly. The threshold selects dimensions; it is not a p-value for a pattern
 or a cell. In real data, cells with overlapping place fields form patterns
 too, because they fire together during running. A pattern can also have no
-core members at the default cutoff even when its dimension passes. Pass
+core members at the default cutoff even when its dimension passes: with `k`
+equally weighted members among `n` units their z-score is sqrt((n - k) / k),
+so 4 members of 28 units reach 2.4, but 3 members of 9 units only 1.4. Pass
 `rng=` so ICA gives the same patterns on every run.
 
 ### Do the patterns return during rest?
