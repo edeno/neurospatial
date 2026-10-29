@@ -1001,24 +1001,31 @@ def _warn_if_population_silent(
 def _clock_ratio_hint(
     spikes: NDArray[np.float64], t_start: float, t_stop: float
 ) -> str:
-    """Name a milliseconds/seconds mix-up when the time spans differ ~1000x."""
+    """Name a milliseconds/seconds mix-up when spans and magnitudes differ ~1000x.
+
+    A short decode window inside a long recording also has a much shorter span
+    than its spikes, but the spike times there are no larger in magnitude than
+    the window's, so both ratios must be about 1000 (within ~3x).
+    """
     spike_span = float(spikes.max() - spikes.min())
     times_span = t_stop - t_start
-    if spike_span <= 0 or times_span <= 0:
+    spike_scale = float(np.max(np.abs(spikes)))
+    times_scale = max(abs(t_start), abs(t_stop))
+    if min(spike_span, times_span, spike_scale, times_scale) <= 0:
         return ""
-    # Within a factor of ~3 of 1000x either way.
-    log_ratio = np.log10(spike_span / times_span)
-    if abs(log_ratio - 3) < 0.5:
+    log_span = np.log10(spike_span / times_span)
+    log_scale = np.log10(spike_scale / times_scale)
+    if abs(log_span - 3) < 0.5 and abs(log_scale - 3) < 0.5:
         return (
-            f"The spike times span {spike_span:.6g}, about 1000 times the "
-            f"{times_span:.6g} s of times: spike_times are probably in "
-            "milliseconds; divide them by 1000. "
+            f"The spike times span {spike_span:.6g} and reach {spike_scale:.6g}, "
+            f"about 1000 times the {times_span:.6g} s of times: if spike_times "
+            "are in milliseconds, divide them by 1000. "
         )
-    if abs(log_ratio + 3) < 0.5:
+    if abs(log_span + 3) < 0.5 and abs(log_scale + 3) < 0.5:
         return (
-            f"The spike times span {spike_span:.6g}, about 1/1000 of the "
-            f"{times_span:.6g} span of times: times are probably in "
-            "milliseconds; divide them by 1000. "
+            f"The spike times span {spike_span:.6g} and reach {spike_scale:.6g}, "
+            f"about 1/1000 of the {times_span:.6g} span of times: if times are "
+            "in milliseconds, divide them by 1000. "
         )
     return ""
 

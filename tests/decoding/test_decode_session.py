@@ -617,6 +617,20 @@ class TestSpikeClockMismatch:
         assert len(quiet.times) > 0
         assert not any("milliseconds" in str(w.message) for w in caught)
 
+    def test_one_event_window_is_not_called_milliseconds(self) -> None:
+        """A 0.5 s event inside 10 min of spikes spans 1000x less, at seconds scale."""
+        from neurospatial.decoding import BayesianDecoder
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=600.0, seed=7
+        )
+        decoder = BayesianDecoder(env, dt=0.02).fit(spike_times, times, positions)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            decoder.predict(spike_times, np.arange(300.0, 300.51, 0.02))
+        assert any("outside the decode time window" in str(w.message) for w in caught)
+        assert not any("milliseconds" in str(w.message) for w in caught)
+
 
 class TestDecodeSessionDtype:
     """The `dtype` knob honors float32 end-to-end (R8).
