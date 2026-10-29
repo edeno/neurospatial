@@ -589,9 +589,9 @@ reactivation = explained_variance_reactivation(
     control_unit_ids=unit_ids,
 )
 print(f"EV = {reactivation.explained_variance:.2f}, "
-      f"REV = {reactivation.reversed_ev:.3f}, over {reactivation.n_pairs} pairs")
+      f"REV = {reactivation.reversed_explained_variance:.3f}, over {reactivation.n_pairs} pairs")
 assert np.isclose(reactivation.explained_variance, 0.74, atol=0.006)
-assert np.isclose(reactivation.reversed_ev, 0.011, atol=0.0006)
+assert np.isclose(reactivation.reversed_explained_variance, 0.011, atol=0.0006)
 
 # Post-task rest with its units in another order gives the same EV.
 reordered = explained_variance_reactivation(
@@ -610,8 +610,9 @@ reappears after the task and was absent before it, which is what we planted.
 EV and REV are effect sizes. To claim reactivation in a real recording, compare against a
 null built for your data (for example, EV computed after shuffling unit
 identities or using other rest epochs) and report the control period, the bin
-size and the unit selection. Without `control_correlations`, EV equals REV by
-construction and the comparison says nothing about direction.
+size and the unit selection. Without `control_correlations` there is no
+period to swap, so `reversed_explained_variance` is NaN and EV alone says
+nothing about direction.
 
 ## What position does the population encode?
 
@@ -688,7 +689,7 @@ print(f"{spatial.sum()} of {len(my_unit_ids)} units pass the information screen;
       f"they cover {my_coverage.coverage_fraction:.0%} of the track")
 print(f"{my_assemblies.n_significant} assembly dimensions; "
       f"EV {my_reactivation.explained_variance:.2f}, "
-      f"REV {my_reactivation.reversed_ev:.3f}")
+      f"REV {my_reactivation.reversed_explained_variance:.3f}")
 ```
 
 Checks before you interpret the numbers:

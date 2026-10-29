@@ -44,7 +44,7 @@ Typical Workflows
 2. Detect assemblies:
 
    >>> result = detect_assemblies(
-   ...     spike_counts, algorithm="ica", unit_ids=sorter_labels
+   ...     spike_counts, method="ica", unit_ids=sorter_labels
    ... )  # doctest: +SKIP
    >>> print(
    ...     f"Found {result.n_significant} dimensions above threshold"
@@ -428,13 +428,14 @@ class ExplainedVarianceResult(ResultMixin):
     explained_variance : float
         Squared correlation between template and match correlation vectors,
         partialled for the baseline control when one is supplied. Range [0, 1].
-    reversed_ev : float
-        With a baseline control, the squared partial correlation between
-        template and control vectors, partialled for the match. Without a
-        control, equals explained_variance by construction.
+    reversed_explained_variance : float
+        REV: with a baseline control, the squared partial correlation between
+        template and control vectors, partialled for the match. NaN without
+        a control: REV swaps the control and match periods, so it is not
+        defined without one.
     partial_correlation : float
         Partial correlation between template and match, controlling for
-        baseline correlations (if control provided).
+        baseline correlations; without a control, their plain correlation.
     n_pairs : int
         Number of neuron pairs used in analysis.
 
@@ -444,7 +445,7 @@ class ExplainedVarianceResult(ResultMixin):
 
     With a baseline control, EV > REV describes more template-related
     correlation structure after behavior than before behavior. Without that
-    control, EV == REV, so the comparison provides no directional evidence.
+    control, REV is NaN and EV alone provides no directional evidence.
     These are effect sizes, not p-values: a fixed cutoff such as EV > 0.1 or
     EV > 0.3 does not establish statistical significance. Statistical inference
     needs a suitable null/control analysis for the recording and question.
@@ -456,14 +457,16 @@ class ExplainedVarianceResult(ResultMixin):
     >>> result = explained_variance_reactivation(
     ...     corr_behavior, corr_sleep, control_correlations=corr_pre_behavior
     ... )  # doctest: +SKIP
-    >>> if result.explained_variance > result.reversed_ev:  # doctest: +SKIP
+    >>> if (
+    ...     result.explained_variance > result.reversed_explained_variance
+    ... ):  # doctest: +SKIP
     ...     print(
     ...         "Template-related effect exceeds the baseline-related effect"
     ...     )  # doctest: +SKIP
     """
 
     explained_variance: float
-    reversed_ev: float
+    reversed_explained_variance: float
     partial_correlation: float
     n_pairs: int
 
@@ -471,7 +474,7 @@ class ExplainedVarianceResult(ResultMixin):
         """Flat dict of scalar headline metrics for this result."""
         return {
             "explained_variance": self.explained_variance,
-            "reversed_ev": self.reversed_ev,
+            "reversed_explained_variance": self.reversed_explained_variance,
             "partial_correlation": self.partial_correlation,
             "n_pairs": self.n_pairs,
         }
@@ -651,7 +654,7 @@ def marchenko_pastur_threshold(
 def detect_assemblies(
     spike_counts: NDArray[np.float64],
     *,
-    algorithm: Literal["ica", "pca", "nmf"] = "ica",
+    method: AssemblyMethod = "ica",
     n_components: int | Literal["auto"] = "auto",
     z_threshold: float = 2.0,
     rng: int | np.random.Generator | None = None,
@@ -668,8 +671,8 @@ def detect_assemblies(
     spike_counts : NDArray[np.float64], shape (n_time_bins, n_neurons)
         Binned spike counts for population. Will be z-scored internally.
         Typical bin size: 25-100ms for assembly detection.
-    algorithm : {'ica', 'pca', 'nmf'}, default='ica'
-        Detection algorithm:
+    method : {'ica', 'pca', 'nmf'}, default='ica'
+        Detection method:
 
         - 'ica': Independent Component Analysis (FastICA). Best for
           separating statistically independent assemblies. Default choice.
@@ -793,7 +796,7 @@ def detect_assemblies(
     >>> result = detect_assemblies(spike_counts, n_components=5)  # doctest: +SKIP
 
     >>> # Using PCA for faster computation
-    >>> result = detect_assemblies(spike_counts, algorithm="pca")  # doctest: +SKIP
+    >>> result = detect_assemblies(spike_counts, method="pca")  # doctest: +SKIP
 
     >>> # Access assembly patterns
     >>> for i, pattern in enumerate(result.patterns):  # doctest: +SKIP
@@ -811,8 +814,8 @@ def detect_assemblies(
     """
     spike_counts = _validated_counts(spike_counts, call="detect_assemblies()")
     n_time_bins, n_neurons = spike_counts.shape
-    if algorithm not in ("ica", "pca", "nmf"):
-        raise ValueError(f"Unknown algorithm: {algorithm}. Use 'ica', 'pca', or 'nmf'.")
+    if method not in _METHODS:
+        raise ValueError(f"Unknown method: {method!r}. Use 'ica', 'pca', or 'nmf'.")
 
     if n_neurons < 3:
         raise ValueError(
@@ -927,9 +930,9 @@ def detect_assemblies(
     # Perform dimensionality reduction
     if n_comp == 0:
         patterns, explained_var = np.zeros((0, n_retained)), np.zeros(0)
-    elif algorithm == "pca":
+    elif method == "pca":
         patterns, explained_var = _detect_pca(spike_counts_z, n_comp)
-    elif algorithm == "ica":
+    elif method == "ica":
         patterns, explained_var = _detect_ica(spike_counts_z, n_comp, seed)
     else:
         # NMF needs non-negative input, so it factorizes the raw counts.
@@ -980,7 +983,7 @@ def detect_assemblies(
     return AssemblyDetectionResult(
         patterns=assembly_patterns,
         activations=activations,
-        method=algorithm,
+        method=method,
         n_significant=n_significant,
         eigenvalues=eigenvalues,
         threshold=mp_threshold,
@@ -1910,8 +1913,9 @@ def explained_variance_reactivation(
 
     **Reversed EV (REV)**:
 
-    REV (Pennartz et al. 2004) swaps the pre- and post-behavior periods:
-    the template's correlation with the control, partialled for the match:
+    REV, the time-reversed control used by Pennartz et al. (2004) and
+    Lansink et al. (2009), swaps the pre- and post-behavior periods: the
+    template's correlation with the control, partialled for the match:
 
     .. math::
 
@@ -1919,9 +1923,9 @@ def explained_variance_reactivation(
 
     With a control, EV exceeding REV indicates a larger template-related
     effect after behavior than before behavior; it is not a
-    calibrated significance test. Without a control there is no asymmetry to
-    break, so ``EV == REV`` by construction. Neither a fixed EV cutoff nor
-    EV > REV alone establishes significant reactivation.
+    calibrated significance test. Without a control there is nothing to swap,
+    so REV is NaN. Neither a fixed EV cutoff nor EV > REV alone establishes
+    significant reactivation.
 
     **Partial Correlation**:
 
@@ -1971,15 +1975,19 @@ def explained_variance_reactivation(
     ...     control_unit_ids=pre_labels,
     ... )
     >>> print(f"EV = {result.explained_variance:.3f}")  # doctest: +SKIP
-    >>> print(f"REV = {result.reversed_ev:.3f}")  # doctest: +SKIP
+    >>> print(f"REV = {result.reversed_explained_variance:.3f}")  # doctest: +SKIP
 
     References
     ----------
     Kudrimoti HS, Barnes CA, McNaughton BL (1999). Reactivation of
         hippocampal cell assemblies. J Neurosci 19(10):4090-4101.
-    Pennartz CMA et al. (2004). The ventral striatum in off-line processing:
-        ensemble reactivation during sleep and modulation by hippocampal
-        ripples. J Neurosci 24(29):6446-6456.
+    Pennartz CMA, Lee E, Verheul J, Lipa P, Barnes CA, McNaughton BL (2004).
+        The ventral striatum in off-line processing: ensemble reactivation
+        during sleep and modulation by hippocampal ripples. J Neurosci
+        24(29):6446-6456.
+    Lansink CS, Goltstein PM, Lankelma JV, McNaughton BL, Pennartz CMA
+        (2009). Hippocampus leads ventral striatum in replay of place-reward
+        information. PLoS Biol 7(8):e1000173.
     """
     labels = {
         "template_unit_ids": template_unit_ids,
@@ -2040,7 +2048,7 @@ def explained_variance_reactivation(
         # as undefined.
         return ExplainedVarianceResult(
             explained_variance=np.nan,
-            reversed_ev=np.nan,
+            reversed_explained_variance=np.nan,
             partial_correlation=np.nan,
             n_pairs=len(template_valid),
         )
@@ -2063,12 +2071,11 @@ def explained_variance_reactivation(
         # r_partial(template, control | match).
         rev = _partial_correlation(r_tc, r_tm, r_mc) ** 2
     else:
-        # No control: EV is the plain squared correlation. REV reduces to
-        # the same value because there is no asymmetry to break; the
-        # control is what makes EV != REV meaningful.
+        # No control: EV is the plain squared correlation. REV swaps the
+        # control and match periods, so it has no value without a control.
         partial_corr = r_tm
         ev = r_tm**2
-        rev = r_tm**2
+        rev = np.nan
 
     if np.isnan(ev):
         warnings.warn(
@@ -2084,7 +2091,7 @@ def explained_variance_reactivation(
 
     return ExplainedVarianceResult(
         explained_variance=float(ev),
-        reversed_ev=float(rev),
+        reversed_explained_variance=float(rev),
         partial_correlation=float(partial_corr),
         n_pairs=int(np.sum(valid_mask)),
     )

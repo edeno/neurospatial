@@ -1201,7 +1201,7 @@ assert decoded.posterior.shape == (len(centers_by_period["match"]), env.n_bins)
 np.testing.assert_allclose(decoded.posterior.sum(axis=1), 1.0)
 # Branch 2: counts, not the decoded posterior.
 assemblies = detect_assemblies(
-    counts["template"], algorithm="pca", unit_ids=selected_ids, rng=0
+    counts["template"], method="pca", unit_ids=selected_ids, rng=0
 )
 print("Retained unit IDs:", selected_ids.tolist())
 print("Dimensions above Marchenko-Pastur reference:", assemblies.n_significant)
@@ -1232,10 +1232,10 @@ reactivation = explained_variance_reactivation(
 print(
     "EV, controlled REV (effect sizes):",
     reactivation.explained_variance,
-    reactivation.reversed_ev,
+    reactivation.reversed_explained_variance,
 )
 assert np.isfinite(reactivation.explained_variance) and np.isfinite(
-    reactivation.reversed_ev
+    reactivation.reversed_explained_variance
 )
 ```
 

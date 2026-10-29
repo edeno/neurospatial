@@ -126,18 +126,16 @@ class TestMarchenkoPasturThreshold:
 class TestDetectAssemblies:
     """Tests for detect_assemblies function."""
 
-    @pytest.mark.parametrize("algorithm", ["ica", "nmf"])
+    @pytest.mark.parametrize("method", ["ica", "nmf"])
     def test_detects_known_assemblies(
-        self, spike_counts_with_assemblies: np.ndarray, algorithm: str
+        self, spike_counts_with_assemblies: np.ndarray, method: str
     ) -> None:
         """Each planted assembly is one pattern whose members are exactly its cells.
 
         Matching neuron ids pins the (n_time_bins, n_neurons) orientation: a
         wrong axis would recover garbage ids.
         """
-        result = detect_assemblies(
-            spike_counts_with_assemblies, algorithm=algorithm, rng=42
-        )
+        result = detect_assemblies(spike_counts_with_assemblies, method=method, rng=42)
 
         assert result.n_significant == 3
         recovered = sorted(
@@ -161,7 +159,7 @@ class TestDetectAssemblies:
         sqrt(n_neurons / n_time_bins) * sqrt(lambda) / (lambda - 1) = 0.13 for
         eigenvalue lambda = 3 with 50 neurons and 2000 bins.
         """
-        result = detect_assemblies(spike_counts_with_assemblies, algorithm="pca")
+        result = detect_assemblies(spike_counts_with_assemblies, method="pca")
         weights = np.array([pattern.weights for pattern in result.patterns])
         assert weights.shape == (3, 50)
         for cells in (range(0, 5), range(10, 15), range(20, 25)):
@@ -179,7 +177,7 @@ class TestDetectAssemblies:
         counts[:, :4] += rng.poisson(3, (shape[0], 1))
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            result = detect_assemblies(counts, algorithm="nmf", n_components=3, rng=0)
+            result = detect_assemblies(counts, method="nmf", n_components=3, rng=0)
         covariance = np.cov(counts, rowvar=False)
         for pattern in result.patterns:
             weights = pattern.weights
@@ -196,13 +194,11 @@ class TestDetectAssemblies:
             counts[:, start : start + 5] += rng.poisson(drive, (3000, 1))
         return counts
 
-    @pytest.mark.parametrize("algorithm", ["pca", "ica", "nmf"])
+    @pytest.mark.parametrize("method", ["pca", "ica", "nmf"])
     def test_patterns_are_unit_length_and_ordered_by_explained_variance(
-        self, assemblies_of_unequal_strength: np.ndarray, algorithm: str
+        self, assemblies_of_unequal_strength: np.ndarray, method: str
     ) -> None:
-        result = detect_assemblies(
-            assemblies_of_unequal_strength, algorithm=algorithm, rng=0
-        )
+        result = detect_assemblies(assemblies_of_unequal_strength, method=method, rng=0)
 
         ratios = [pattern.explained_variance_ratio for pattern in result.patterns]
         assert ratios == sorted(ratios, reverse=True)
@@ -223,15 +219,13 @@ class TestDetectAssemblies:
         assert result.n_significant == 0
         assert result.patterns == ()
 
-    @pytest.mark.parametrize("algorithm", ["pca", "ica", "nmf"])
+    @pytest.mark.parametrize("method", ["pca", "ica", "nmf"])
     def test_method_is_recorded(
-        self, spike_counts_with_assemblies: np.ndarray, algorithm: str
+        self, spike_counts_with_assemblies: np.ndarray, method: str
     ) -> None:
-        result = detect_assemblies(
-            spike_counts_with_assemblies, algorithm=algorithm, rng=42
-        )
+        result = detect_assemblies(spike_counts_with_assemblies, method=method, rng=42)
 
-        assert result.method == algorithm
+        assert result.method == method
         assert len(result.patterns) == 3
         assert result.activations.shape == (len(spike_counts_with_assemblies), 3)
 
@@ -278,13 +272,13 @@ class TestDetectAssemblies:
 
         assert len(result.patterns) == result.n_significant == 3
 
-    @pytest.mark.parametrize("algorithm", ["pca", "ica", "nmf"])
+    @pytest.mark.parametrize("method", ["pca", "ica", "nmf"])
     def test_no_dimension_above_bound_gives_no_patterns(
-        self, random_spike_counts: np.ndarray, algorithm: str
+        self, random_spike_counts: np.ndarray, method: str
     ) -> None:
         """Without correlation structure there is no pattern, not an exploratory one."""
         with pytest.warns(UserWarning, match="Marchenko-Pastur bound"):
-            result = detect_assemblies(random_spike_counts, algorithm=algorithm, rng=42)
+            result = detect_assemblies(random_spike_counts, method=method, rng=42)
         assert result.n_significant == 0
         assert len(result.patterns) == 0
         assert result.activations.shape == (random_spike_counts.shape[0], 0)
@@ -334,8 +328,10 @@ class TestDetectAssemblies:
 
     def test_invalid_method(self, small_spike_counts: np.ndarray) -> None:
         """Should raise ValueError for unknown method."""
-        with pytest.raises(ValueError, match="Unknown algorithm"):
-            detect_assemblies(small_spike_counts, algorithm="unknown")  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="Unknown method"):
+            detect_assemblies(small_spike_counts, method="unknown")  # type: ignore[arg-type]
+        with pytest.raises(TypeError):
+            detect_assemblies(small_spike_counts, algorithm="pca")  # type: ignore[call-arg]
 
     def test_invalid_n_components(self, small_spike_counts: np.ndarray) -> None:
         """Should raise ValueError for invalid n_components."""
@@ -359,9 +355,9 @@ class TestDetectAssemblies:
         msg = str(record[0].message).lower()
         assert "transpos" in msg or "time-first" in msg
 
-    @pytest.mark.parametrize("algorithm", ["pca", "ica", "nmf"])
+    @pytest.mark.parametrize("method", ["pca", "ica", "nmf"])
     def test_constant_neurons_are_excluded(
-        self, spike_counts_with_assemblies: np.ndarray, algorithm: str
+        self, spike_counts_with_assemblies: np.ndarray, method: str
     ) -> None:
         """A constant neuron gets weight 0 and does not change the detection."""
         counts = spike_counts_with_assemblies.copy()
@@ -370,8 +366,8 @@ class TestDetectAssemblies:
         with pytest.warns(
             UserWarning, match=r"same count in every time bin \(units \[7\]\)"
         ):
-            result = detect_assemblies(counts, algorithm=algorithm, rng=42)
-        without = detect_assemblies(counts[:, keep], algorithm=algorithm, rng=42)
+            result = detect_assemblies(counts, method=method, rng=42)
+        without = detect_assemblies(counts[:, keep], method=method, rng=42)
 
         assert result.n_significant == without.n_significant == 3
         # The threshold uses the 49 varying neurons, not all 50.
@@ -418,14 +414,14 @@ class TestPatternSign:
             )
         return counts, members, events
 
-    @pytest.mark.parametrize("algorithm", ["ica", "pca"])
+    @pytest.mark.parametrize("method", ["ica", "pca"])
     def test_largest_weight_positive_and_events_activate(
         self,
         planted_events: tuple[np.ndarray, list[np.ndarray], np.ndarray],
-        algorithm: str,
+        method: str,
     ) -> None:
         counts, members, events = planted_events
-        result = detect_assemblies(counts, algorithm=algorithm, rng=0)
+        result = detect_assemblies(counts, method=method, rng=0)
         assert result.n_significant == 3
 
         for k, pattern in enumerate(result.patterns):
@@ -445,21 +441,21 @@ class TestPatternSign:
         self, planted_events: tuple[np.ndarray, list[np.ndarray], np.ndarray]
     ) -> None:
         counts, members, _ = planted_events
-        result = detect_assemblies(counts, algorithm="ica", rng=0)
+        result = detect_assemblies(counts, method="ica", rng=0)
         recovered = sorted(p.member_indices.tolist() for p in result.patterns)
         assert recovered == [cells.tolist() for cells in members]
         for pattern in result.patterns:
             assert np.all(pattern.weights[pattern.member_indices] > 0)
 
-    @pytest.mark.parametrize("algorithm", ["ica", "pca", "nmf"])
+    @pytest.mark.parametrize("method", ["ica", "pca", "nmf"])
     def test_result_activations_match_assembly_activation(
         self,
         planted_events: tuple[np.ndarray, list[np.ndarray], np.ndarray],
-        algorithm: str,
+        method: str,
     ) -> None:
         """Every method reports the same activation strength as assembly_activation."""
         counts, _, _ = planted_events
-        result = detect_assemblies(counts, algorithm=algorithm, rng=0)
+        result = detect_assemblies(counts, method=method, rng=0)
         for k, pattern in enumerate(result.patterns):
             assert_allclose(
                 result.activations[:, k],
@@ -784,10 +780,13 @@ class TestExplainedVarianceReactivation:
         corr1 = rng.uniform(-1, 1, 50)
         corr2 = rng.uniform(-1, 1, 50)
 
-        result = explained_variance_reactivation(corr1, corr2)
+        control = rng.uniform(-1, 1, 50)
+        result = explained_variance_reactivation(
+            corr1, corr2, control_correlations=control
+        )
 
         assert 0 <= result.explained_variance <= 1
-        assert 0 <= result.reversed_ev <= 1
+        assert 0 <= result.reversed_explained_variance <= 1
 
     def test_mismatched_lengths_raises_error(self) -> None:
         """Should raise ValueError for mismatched correlation lengths."""
@@ -859,7 +858,7 @@ class TestExplainedVarianceReactivation:
             result = explained_variance_reactivation(corr1, corr2)
 
         assert np.isnan(result.explained_variance)
-        assert np.isnan(result.reversed_ev)
+        assert np.isnan(result.reversed_explained_variance)
         assert np.isnan(result.partial_correlation)
         # n_pairs reflects the actual count of valid pairs.
         assert result.n_pairs == 1
@@ -1090,7 +1089,7 @@ class TestEdgeCases:
         result = explained_variance_reactivation(corr, corr)
 
         assert_allclose(result.explained_variance, 1.0)
-        assert_allclose(result.reversed_ev, 1.0)
+        assert np.isnan(result.reversed_explained_variance)  # no control
 
 
 # =============================================================================
@@ -1115,12 +1114,16 @@ class TestExplainedVarianceControlAndREV:
         reversed_result = explained_variance_reactivation(
             template, pre, control_correlations=post
         )
-        assert_allclose(result.reversed_ev, expected, atol=1e-12)
+        assert_allclose(result.reversed_explained_variance, expected, atol=1e-12)
         assert_allclose(
-            result.reversed_ev, reversed_result.explained_variance, atol=1e-12
+            result.reversed_explained_variance,
+            reversed_result.explained_variance,
+            atol=1e-12,
         )
         assert_allclose(
-            result.explained_variance, reversed_result.reversed_ev, atol=1e-12
+            result.explained_variance,
+            reversed_result.reversed_explained_variance,
+            atol=1e-12,
         )
 
     def test_explained_variance_rev_differs_from_ev_with_control(
@@ -1139,8 +1142,8 @@ class TestExplainedVarianceControlAndREV:
             template, match, control_correlations=control
         )
 
-        assert result.reversed_ev != result.explained_variance
-        assert result.explained_variance > result.reversed_ev
+        assert result.reversed_explained_variance != result.explained_variance
+        assert result.explained_variance > result.reversed_explained_variance
 
     def test_explained_variance_uses_control(
         self,
@@ -1158,8 +1161,8 @@ class TestExplainedVarianceControlAndREV:
         # that is itself correlated with match strictly reduces EV.
         assert with_control.explained_variance < no_control.explained_variance
 
-    def test_explained_variance_no_control_ev_equals_rev(self) -> None:
-        """Without a control, EV == REV == r_tm**2 (symmetric fallback)."""
+    def test_explained_variance_without_control_has_no_rev(self) -> None:
+        """Without a control, EV is r_tm**2 and REV is undefined (NaN)."""
         rng = np.random.default_rng(11)
         template = rng.standard_normal(80)
         match = 0.7 * template + 0.7 * rng.standard_normal(80)
@@ -1168,8 +1171,8 @@ class TestExplainedVarianceControlAndREV:
 
         r_tm = np.corrcoef(template, match)[0, 1]
         assert_allclose(result.explained_variance, r_tm**2)
-        assert_allclose(result.reversed_ev, r_tm**2)
-        assert_allclose(result.explained_variance, result.reversed_ev)
+        assert_allclose(result.partial_correlation, r_tm)
+        assert np.isnan(result.reversed_explained_variance)
 
 
 class TestReactivationStrengthNoCoactivation:
@@ -1196,9 +1199,9 @@ class TestReactivationStrengthNoCoactivation:
 
 
 class TestDetectAssembliesShortRecording:
-    @pytest.mark.parametrize("algorithm", ["pca", "ica", "nmf"])
+    @pytest.mark.parametrize("method", ["pca", "ica", "nmf"])
     def test_n_time_bins_below_n_components_does_not_crash(
-        self, rng: np.random.Generator, algorithm: str
+        self, rng: np.random.Generator, method: str
     ) -> None:
         """n_time_bins < n_components <= n_neurons must clamp, not IndexError."""
         # 8 neurons, 3 time bins, request 5 components: (n_time_bins, n_neurons).
@@ -1206,7 +1209,7 @@ class TestDetectAssembliesShortRecording:
         with pytest.warns(UserWarning, match="achievable rank"):
             result = detect_assemblies(
                 spike_counts,
-                algorithm=algorithm,
+                method=method,
                 n_components=5,
                 rng=0,
             )
@@ -1226,7 +1229,7 @@ def test_ica_whitens_scores_and_recovers_independent_sources(n_components):
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", "1 of the 3 requested components")
         result = detect_assemblies(
-            counts, algorithm="ica", n_components=n_components, rng=0
+            counts, method="ica", n_components=n_components, rng=0
         )
     standardized = zscore(counts, axis=0)
     weights = np.array([pattern.weights for pattern in result.patterns])
