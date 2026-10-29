@@ -929,6 +929,31 @@ class TestUndecodableRows:
         assert np.isnan(errors[0])
         assert errors[1] == 0.0
 
+    def test_summary_metrics_average_the_decoded_rows(self, result, env_4bin):
+        from neurospatial.decoding import DecodingSummary
+
+        s = result.summary()
+        assert s["n_undecodable"] == 1
+        assert s["mean_entropy"] == 0.0
+        streamed = DecodingSummary(
+            **_summary_fields(
+                env_4bin,
+                map_bin=[-1, 2],
+                peak_probability=np.array([np.nan, 1.0]),
+                posterior_entropy=np.array([np.nan, 0.0]),
+            )
+        ).summary()
+        assert streamed["n_undecodable"] == 1
+        assert streamed["mean_entropy"] == 0.0
+        assert streamed["mean_peak_probability"] == 1.0
+
+    def test_summary_without_decoded_rows_is_nan(self, env_4bin):
+        from neurospatial.decoding import DecodingResult
+
+        s = DecodingResult(posterior=np.full((1, 4), np.nan), env=env_4bin).summary()
+        assert s["n_undecodable"] == 1
+        assert np.isnan(s["mean_entropy"])
+
     def test_summary_accepts_sentinel_with_nan_peak(self, env_4bin):
         from neurospatial.decoding import DecodingSummary
 

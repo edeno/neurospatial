@@ -380,6 +380,7 @@ class TestDecodingSummaryTerminalVerbs:
         assert "max_entropy" in s
         assert set(s) == {
             "n_time_bins",
+            "n_undecodable",
             "n_bins",
             "mean_entropy",
             "max_entropy",

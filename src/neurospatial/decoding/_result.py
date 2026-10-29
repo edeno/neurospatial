@@ -129,6 +129,13 @@ def _times_problems(times: NDArray[np.float64], n_time: int) -> list[str]:
     return []
 
 
+def _mean_over(values: NDArray[np.floating], rows: NDArray[np.bool_]) -> float:
+    """Mean of ``values`` over the selected time bins; NaN when none is selected."""
+    if not rows.any():
+        return float("nan")
+    return float(np.mean(values[rows], dtype=np.float64))
+
+
 def _recording_breaks(times: NDArray[np.float64] | None) -> NDArray[np.intp]:
     """Indices ``i`` where a pause separates ``times[i]`` and ``times[i + 1]``.
 
@@ -894,10 +901,12 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         dict
-            Mapping with keys ``n_time_bins`` (int), ``n_bins`` (int, spatial
-            bins), ``mean_entropy`` (float, bits), and ``max_entropy`` (float,
-            bits) -- the latter being ``log2(n_bins)``, the entropy of a
-            uniform posterior.
+            Mapping with keys ``n_time_bins`` (int), ``n_undecodable`` (int,
+            time bins with an all-NaN posterior), ``n_bins`` (int, spatial
+            bins), ``mean_entropy`` (float, bits, over the decoded time bins;
+            NaN when none was decoded), and ``max_entropy`` (float, bits) --
+            the latter being ``log2(n_bins)``, the entropy of a uniform
+            posterior on equal bins.
             Also includes ``spike_window_assumed`` (bool) and ``spike_window``
             (a list of interval pairs, or ``None``).
 
@@ -911,13 +920,15 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         >>> posterior = np.ones((10, env.n_bins)) / env.n_bins
         >>> result = DecodingResult(posterior=posterior, env=env)
         >>> sorted(result.summary())
-        ['max_entropy', 'mean_entropy', 'n_bins', 'n_time_bins', 'spike_window', 'spike_window_assumed']
+        ['max_entropy', 'mean_entropy', 'n_bins', 'n_time_bins', 'n_undecodable', 'spike_window', 'spike_window_assumed']
         """
         n_bins = int(self.posterior.shape[1])
+        decoded = self.map_bin >= 0
         return {
             "n_time_bins": self.n_time_bins,
+            "n_undecodable": int(np.count_nonzero(~decoded)),
             "n_bins": n_bins,
-            "mean_entropy": float(np.mean(self.posterior_entropy)),
+            "mean_entropy": _mean_over(self.posterior_entropy, decoded),
             "max_entropy": float(np.log2(n_bins)) if n_bins > 0 else 0.0,
             "spike_window_assumed": self.spike_window_assumed,
             "spike_window": self.spike_window.tolist()
@@ -1507,31 +1518,31 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         dict
-            Mapping with keys ``n_time_bins`` (int), ``n_bins`` (int, the
+            Mapping with keys ``n_time_bins`` (int), ``n_undecodable`` (int,
+            time bins without a posterior), ``n_bins`` (int, the
             environment's spatial bin count), ``mean_entropy`` (float, bits),
             ``max_entropy`` (float, bits = ``log2(n_bins)``), and
-            ``mean_peak_probability`` (float).
+            ``mean_peak_probability`` (float). Means are over the decoded time
+            bins and NaN when none was decoded.
             Also includes ``spike_window_assumed`` (bool) and ``spike_window``
             (a list of interval pairs, or ``None``).
 
         Notes
         -----
         ``n_bins`` is read from ``env.n_bins`` here (there is no posterior to
-        read a shape from). The shared keys (``n_time_bins``, ``n_bins``,
-        ``mean_entropy``, ``max_entropy``) match
+        read a shape from). The shared keys (``n_time_bins``,
+        ``n_undecodable``, ``n_bins``, ``mean_entropy``, ``max_entropy``) match
         :meth:`DecodingResult.summary`.
         """
         n_bins = int(self.env.n_bins)
+        decoded = self.map_bin >= 0
         return {
             "n_time_bins": self.n_time_bins,
+            "n_undecodable": int(np.count_nonzero(~decoded)),
             "n_bins": n_bins,
-            "mean_entropy": float(np.mean(self.posterior_entropy))
-            if self.posterior_entropy.size
-            else 0.0,
+            "mean_entropy": _mean_over(self.posterior_entropy, decoded),
             "max_entropy": float(np.log2(n_bins)) if n_bins > 0 else 0.0,
-            "mean_peak_probability": float(np.mean(self.peak_probability))
-            if self.peak_probability.size
-            else 0.0,
+            "mean_peak_probability": _mean_over(self.peak_probability, decoded),
             "spike_window_assumed": self.spike_window_assumed,
             "spike_window": self.spike_window.tolist()
             if self.spike_window is not None
