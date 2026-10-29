@@ -98,6 +98,26 @@ class TestSimulateTrajectoryOU:
             # About 2000 independent stretches: the standard error is ~0.02.
             assert acf == pytest.approx(np.exp(-lag_s / coherence_time), abs=0.05)
 
+    def test_statistics_do_not_depend_on_the_time_step(self, large_arena):
+        """Speed and velocity autocorrelation are the same at any dt."""
+        results = []
+        for dt in (0.005, 0.02, 0.1):
+            positions, _times = simulate_trajectory_ou(
+                large_arena, duration=1000.0, dt=dt, speed_units="cm", seed=3
+            )
+            velocity = np.diff(positions, axis=0) / dt
+            speed = np.linalg.norm(velocity, axis=1)
+            acf = [
+                np.mean(np.sum(velocity[:-lag] * velocity[lag:], axis=1))
+                / np.mean(speed**2)
+                for lag in (round(0.5 / dt), round(1.0 / dt))
+            ]
+            results.append([speed.mean(), speed.std(), *acf])
+        results = np.array(results)
+        # The default speed is 8 +/- 4 cm/s.
+        np.testing.assert_allclose(results[:, :2], [[8.0, 4.0]] * 3, atol=0.5)
+        np.testing.assert_allclose(results[:, 2:], results[[0] * 3, 2:], atol=0.05)
+
     def test_default_speed_is_rat_scale_in_the_environment_units(self):
         """8 cm/s by default, expressed in env.units."""
         from shapely.geometry import box

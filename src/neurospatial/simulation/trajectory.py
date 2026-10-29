@@ -248,8 +248,11 @@ def simulate_trajectory_ou(
 
     **Heading.** In 2-D the turning rate ``ω`` is an OU process with
     standard deviation ``rotational_velocity_std`` and time constant
-    ``rotational_velocity_coherence_time``, and the heading advances by
-    ``ω dt`` each step (RatInABox). In 1-D the animal keeps its direction
+    ``rotational_velocity_coherence_time``, as in RatInABox, and the heading
+    advances each step by the integral of ``ω`` over the step, drawn jointly
+    with ``ω`` from their exact Gaussian distribution (Gillespie 1996), so
+    the heading decorrelates at the same rate at any ``dt``, including steps
+    longer than the coherence time. In 1-D the animal keeps its direction
     until a wall reverses it. In three or more dimensions the heading diffuses
     on the sphere, decorrelating as ``exp(-t / τ)`` with
     ``τ = rotational_velocity_coherence_time``.
@@ -276,6 +279,10 @@ def simulate_trajectory_ou(
     George, T. M., de Cothi, W., Stachenfeld, K. L., & Barry, C. (2023).
     RatInABox, a toolkit for modelling locomotion and neuronal activity in
     continuous environments. eLife, 12, e85274.
+
+    Gillespie, D. T. (1996). Exact numerical simulation of the
+    Ornstein-Uhlenbeck process and its integral. Physical Review E, 54(2),
+    2084-2091.
 
     Examples
     --------
@@ -413,7 +420,7 @@ def simulate_trajectory_ou(
 
     speeds = _ou_speeds(n_steps, dt, speed_mean, speed_std, coherence_time, rng)
     if n_dims == 2:
-        turning = _ou_series(
+        turns = _ou_step_integrals(
             n_steps,
             dt,
             rotational_velocity_std,
@@ -438,7 +445,7 @@ def simulate_trajectory_ou(
     positions[0] = position
     for i in range(1, n_steps):
         if n_dims == 2:
-            angle = turning[i] * dt
+            angle = turns[i]
             cos, sin = np.cos(angle), np.sin(angle)
             unit = np.array(
                 [cos * unit[0] - sin * unit[1], sin * unit[0] + cos * unit[1]]
@@ -482,6 +489,49 @@ def _ou_series(
     noise[1:] *= std * np.sqrt(1.0 - decay**2)
     series: NDArray[np.float64] = lfilter([1.0], [1.0, -decay], noise)
     return series
+
+
+def _ou_step_integrals(
+    n_steps: int,
+    dt: float,
+    std: float,
+    coherence_time: float,
+    rng: np.random.Generator,
+) -> NDArray[np.float64]:
+    """Integral of a stationary OU process over each step, shape (n_steps,).
+
+    Entry ``i`` is the integral of ``x`` from ``(i - 1) dt`` to ``i dt``;
+    entry 0 is 0. Each step draws ``x`` and its integral jointly from their
+    exact Gaussian distribution (Gillespie 1996): given ``x(t)``, the
+    integral has mean ``τ (1 - a) x(t)`` with ``a = exp(-dt / τ)``, and its
+    noise is correlated with the noise that advances ``x``.
+    """
+    from scipy.signal import lfilter
+
+    h = dt / coherence_time
+    decay = np.exp(-h)
+    one_minus_decay = -np.expm1(-h)  # 1 - a
+    one_minus_decay2 = -np.expm1(-2 * h)  # 1 - a²
+    innovations = rng.standard_normal(n_steps)
+    innovations[0] *= std
+    innovations[1:] *= std * np.sqrt(one_minus_decay2)
+    values = lfilter([1.0], [1.0, -decay], innovations)
+    # Regression of the integral's noise on x's innovation, and what is left.
+    slope = coherence_time * one_minus_decay**2 / one_minus_decay2
+    residual_variance = (std * coherence_time) ** 2 * max(
+        2 * h
+        - 4 * one_minus_decay
+        + one_minus_decay2
+        - one_minus_decay**4 / one_minus_decay2,
+        0.0,
+    )
+    integrals = np.zeros(n_steps)
+    integrals[1:] = (
+        coherence_time * one_minus_decay * values[:-1]
+        + slope * innovations[1:]
+        + np.sqrt(residual_variance) * rng.standard_normal(n_steps - 1)
+    )
+    return integrals
 
 
 def _ou_speeds(
