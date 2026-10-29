@@ -37,7 +37,7 @@ class TestMakeTMaze:
         """env_2d should have a T-shaped spatial extent."""
         from neurospatial.simulation.mazes.t_maze import TMazeDims, make_t_maze
 
-        dims = TMazeDims(stem_length=100.0, arm_length=50.0, width=10.0)
+        dims = TMazeDims(stem_length=100.0, arm_length=50.0, corridor_width=10.0)
         maze = make_t_maze(dims=dims)
 
         # Get spatial extent from bin_centers
@@ -104,7 +104,7 @@ class TestMakeTMaze:
 
         # Start and arm ends are centred in their corridor's end square.
         half_stem = dims.stem_length / 2
-        inset = dims.width / 2
+        inset = dims.corridor_width / 2
         np.testing.assert_allclose(start.data, [0.0, -half_stem + inset])
         np.testing.assert_allclose(junction.data, [0.0, half_stem])
         np.testing.assert_allclose(left_end.data, [-dims.arm_length + inset, half_stem])
@@ -214,7 +214,7 @@ class TestMakeTMaze:
         """Custom dimensions should be respected."""
         from neurospatial.simulation.mazes.t_maze import TMazeDims, make_t_maze
 
-        dims = TMazeDims(stem_length=150.0, arm_length=80.0, width=15.0)
+        dims = TMazeDims(stem_length=150.0, arm_length=80.0, corridor_width=15.0)
         maze = make_t_maze(dims=dims)
 
         # Check that bin_centers span approximately the expected range

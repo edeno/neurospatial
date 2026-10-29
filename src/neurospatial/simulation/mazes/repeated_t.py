@@ -105,7 +105,7 @@ class RepeatedTDims(MazeDims):
 
     Attributes
     ----------
-    width : float
+    corridor_width : float
         Width of every alley in cm. Default is 10.16 (4 in, from the figure).
     arm_length : float
         Length of each alley segment in cm. Default is 40.64 (16 in, from the
@@ -135,14 +135,14 @@ class RepeatedTDims(MazeDims):
     Examples
     --------
     >>> dims = RepeatedTDims()
-    >>> dims.width, dims.arm_length, dims.long_arm_length
+    >>> dims.corridor_width, dims.arm_length, dims.long_arm_length
     (10.16, 40.64, 45.72)
 
     >>> RepeatedTDims(arm_length=50.0).arm_length
     50.0
     """
 
-    width: float = 10.16
+    corridor_width: float = 10.16
     arm_length: float = 40.64
     long_arm_length: float = 45.72
     wall_thickness: float = 2.1
@@ -242,9 +242,12 @@ def make_repeated_t_maze(
 
     positions, edges = _layout(dims)
     alleys = [
-        make_corridor_polygon(positions[u], positions[v], dims.width) for u, v in edges
+        make_corridor_polygon(positions[u], positions[v], dims.corridor_width)
+        for u, v in edges
     ]
-    stem_end = positions["choice_1"][0] - dims.width / 2.0 - dims.start_stem_length
+    stem_end = (
+        positions["choice_1"][0] - dims.corridor_width / 2.0 - dims.start_stem_length
+    )
     start_box = box(
         stem_end - dims.start_box_depth,
         -dims.start_box_width / 2.0,
@@ -272,7 +275,7 @@ def make_repeated_t_maze(
 
     # The food box is the end of the last alley, which runs in +x.
     end_x, end_y = positions["food_box"]
-    half = dims.width / 2.0
+    half = dims.corridor_width / 2.0
     boxes = {
         "start_box": translate(start_box, -offset[0], -offset[1]),
         "food_box": box(end_x - dims.food_box_depth, end_y - half, end_x, end_y + half),
@@ -284,7 +287,7 @@ def make_repeated_t_maze(
         regions.add(f"choice_{k}", point=positions[f"choice_{k}"])
     for k in range(1, _N_CHOICES + 1):
         end = corridor_end_point(
-            positions[f"choice_{k}"], positions[f"blind_{k}"], dims.width
+            positions[f"choice_{k}"], positions[f"blind_{k}"], dims.corridor_width
         )
         regions.add(f"blind_{k}", point=end)
     regions.add("food_box", polygon=boxes["food_box"])
@@ -309,7 +312,7 @@ def _layout(
     dims: RepeatedTDims,
 ) -> tuple[dict[str, tuple[float, float]], list[tuple[str, str]]]:
     """Track nodes (choice point 1 at the origin) and edges in running order."""
-    w, half = dims.width, dims.width / 2.0
+    w, half = dims.corridor_width, dims.corridor_width / 2.0
     arm, long_arm = dims.arm_length, dims.long_arm_length
     near = arm + w  # centre-to-centre distance across one 16-in segment
     far = long_arm + w  # ... across one 18-in segment
@@ -386,7 +389,7 @@ def _create_repeated_t_maze_track_graph(
         edge_order=edges,
         edge_spacing=0.0,
         bin_size=bin_size,
-        track_width=dims.width,
+        track_width=dims.corridor_width,
         name="repeated_t_maze_1d",
     )
     return env_track.with_metadata(units="cm")

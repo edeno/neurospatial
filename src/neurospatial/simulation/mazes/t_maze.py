@@ -74,7 +74,7 @@ class TMazeDims(MazeDims):
     arm_length : float
         Length of each arm's centreline in cm, from the stem's centreline to
         the arm's far end. Default is 50.0.
-    width : float
+    corridor_width : float
         Width of all corridors in cm. Default is 10.0.
 
     Examples
@@ -84,17 +84,17 @@ class TMazeDims(MazeDims):
     100.0
     >>> dims.arm_length
     50.0
-    >>> dims.width
+    >>> dims.corridor_width
     10.0
 
-    >>> custom = TMazeDims(stem_length=150.0, arm_length=75.0, width=15.0)
+    >>> custom = TMazeDims(stem_length=150.0, arm_length=75.0, corridor_width=15.0)
     >>> custom.stem_length
     150.0
     """
 
     stem_length: float = 100.0
     arm_length: float = 50.0
-    width: float = 10.0
+    corridor_width: float = 10.0
 
 
 def make_t_maze(
@@ -136,11 +136,11 @@ def make_t_maze(
     Regions (the start and arm-end points are centred in the end square of
     their corridor, half a corridor width back from its far end):
 
-    - start: Point at stem base (0, -stem_length/2 + width/2)
+    - start: Point at stem base (0, -stem_length/2 + corridor_width/2)
     - junction: Point at T-junction (0, +stem_length/2)
-    - well_left: Food well at the left arm end (-arm_length + width/2,
+    - well_left: Food well at the left arm end (-arm_length + corridor_width/2,
       +stem_length/2), also a reward-port landmark
-    - well_right: Food well at the right arm end (+arm_length - width/2,
+    - well_right: Food well at the right arm end (+arm_length - corridor_width/2,
       +stem_length/2), also a reward-port landmark
 
     Track Graph Topology:
@@ -194,21 +194,21 @@ def make_t_maze(
     stem_polygon = make_corridor_polygon(
         start=start_pos,
         end=junction_pos,
-        width=dims.width,
+        width=dims.corridor_width,
     )
 
     # Left arm: horizontal corridor from junction to left end
     left_arm_polygon = make_corridor_polygon(
         start=junction_pos,
         end=left_end_pos,
-        width=dims.width,
+        width=dims.corridor_width,
     )
 
     # Right arm: horizontal corridor from junction to right end
     right_arm_polygon = make_corridor_polygon(
         start=junction_pos,
         end=right_end_pos,
-        width=dims.width,
+        width=dims.corridor_width,
     )
 
     # Union all corridors into single polygon
@@ -228,12 +228,16 @@ def make_t_maze(
     # Add regions for key locations
     region_builder = Regions()
     region_builder.add(
-        "start", point=corridor_end_point(junction_pos, start_pos, dims.width)
+        "start", point=corridor_end_point(junction_pos, start_pos, dims.corridor_width)
     )
     region_builder.add("junction", point=junction_pos)
     wells = {
-        "well_left": corridor_end_point(junction_pos, left_end_pos, dims.width),
-        "well_right": corridor_end_point(junction_pos, right_end_pos, dims.width),
+        "well_left": corridor_end_point(
+            junction_pos, left_end_pos, dims.corridor_width
+        ),
+        "well_right": corridor_end_point(
+            junction_pos, right_end_pos, dims.corridor_width
+        ),
     }
     for name, point in wells.items():
         region_builder.add(name, point=point)
@@ -295,7 +299,7 @@ def _create_t_maze_track_graph(
             "well_right": (dims.arm_length, half_stem),
         },
         bin_size=bin_size,
-        track_width=dims.width,
+        track_width=dims.corridor_width,
         edge_spacing=0.0,
         name="t_maze_1d",
         units="cm",

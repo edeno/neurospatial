@@ -71,7 +71,7 @@ class PlusMazeDims(MazeDims):
     arm_length : float
         Length of each arm in cm, from the centre to the arm's far end wall.
         Default is 45.0.
-    width : float
+    corridor_width : float
         Width of all corridors in cm. Default is 10.0.
 
     Notes
@@ -84,16 +84,16 @@ class PlusMazeDims(MazeDims):
     >>> dims = PlusMazeDims()
     >>> dims.arm_length
     45.0
-    >>> dims.width
+    >>> dims.corridor_width
     10.0
 
-    >>> custom = PlusMazeDims(arm_length=60.0, width=15.0)
+    >>> custom = PlusMazeDims(arm_length=60.0, corridor_width=15.0)
     >>> custom.arm_length
     60.0
     """
 
     arm_length: float = 45.0
-    width: float = 10.0
+    corridor_width: float = 10.0
 
 
 def make_plus_maze(
@@ -135,7 +135,7 @@ def make_plus_maze(
     - West arm: x = 0 to x = -arm_length
 
     Regions (arm ends are centred in the end square of each arm, half a
-    corridor width back from its far end, with ``d = arm_length - width/2``):
+    corridor width back from its far end, with ``d = arm_length - corridor_width/2``):
 
     - center: Central junction at (0, 0)
     - north_end: North arm end (0, +d)
@@ -161,7 +161,7 @@ def make_plus_maze(
 
     Create with custom dimensions:
 
-    >>> dims = PlusMazeDims(arm_length=60.0, width=15.0)
+    >>> dims = PlusMazeDims(arm_length=60.0, corridor_width=15.0)
     >>> maze = make_plus_maze(dims=dims, bin_size=4.0)
     >>> "center" in maze.env_2d.regions
     True
@@ -192,28 +192,28 @@ def make_plus_maze(
     north_polygon = make_corridor_polygon(
         start=center_pos,
         end=north_end_pos,
-        width=dims.width,
+        width=dims.corridor_width,
     )
 
     # South arm: center to south
     south_polygon = make_corridor_polygon(
         start=center_pos,
         end=south_end_pos,
-        width=dims.width,
+        width=dims.corridor_width,
     )
 
     # East arm: center to east
     east_polygon = make_corridor_polygon(
         start=center_pos,
         end=east_end_pos,
-        width=dims.width,
+        width=dims.corridor_width,
     )
 
     # West arm: center to west
     west_polygon = make_corridor_polygon(
         start=center_pos,
         end=west_end_pos,
-        width=dims.width,
+        width=dims.corridor_width,
     )
 
     # Union all corridors into single plus-shaped polygon
@@ -242,7 +242,7 @@ def make_plus_maze(
         ("west_end", west_end_pos),
     ):
         region_builder.add(
-            name, point=corridor_end_point(center_pos, end_pos, dims.width)
+            name, point=corridor_end_point(center_pos, end_pos, dims.corridor_width)
         )
     env_2d = env_2d.with_regions(region_builder)
 
@@ -291,7 +291,7 @@ def _create_plus_maze_track_graph(
             "west_end": (-dims.arm_length, 0.0),
         },
         bin_size=bin_size,
-        track_width=dims.width,
+        track_width=dims.corridor_width,
         edge_spacing=0.0,
         name="plus_maze_1d",
         units="cm",

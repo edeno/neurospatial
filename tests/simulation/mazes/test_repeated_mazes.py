@@ -92,7 +92,7 @@ class TestRepeatedMazesSpecificBehavior:
     def test_repeated_t_has_default_dimensions(self):
         """Repeated T-maze uses Tolman & Nyswander's (1927) Fig. 5 numbers."""
         dims = RepeatedTDims()
-        assert dims.width == pytest.approx(10.16)
+        assert dims.corridor_width == pytest.approx(10.16)
         assert dims.arm_length == pytest.approx(40.64)
         assert dims.long_arm_length == pytest.approx(45.72)
 

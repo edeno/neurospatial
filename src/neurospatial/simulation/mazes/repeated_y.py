@@ -97,7 +97,7 @@ class RepeatedYDims(MazeDims):
         Length of each arm in the Y-junction in cm. Default is 25.0.
     fork_length : float
         Length of the small fork arms at each terminal in cm. Default is 12.0.
-    width : float
+    corridor_width : float
         Width of all corridors in cm. Default is 10.16 (4 in; an estimate,
         since Warden's alley width is not reproduced here).
 
@@ -110,10 +110,10 @@ class RepeatedYDims(MazeDims):
     25.0
     >>> dims.fork_length
     12.0
-    >>> dims.width
+    >>> dims.corridor_width
     10.16
 
-    >>> custom = RepeatedYDims(n_junctions=6, arm_length=30.0, width=10.0)
+    >>> custom = RepeatedYDims(n_junctions=6, arm_length=30.0, corridor_width=10.0)
     >>> custom.n_junctions
     6
     """
@@ -121,7 +121,7 @@ class RepeatedYDims(MazeDims):
     n_junctions: int = 4
     arm_length: float = 25.0
     fork_length: float = 12.0
-    width: float = 10.16
+    corridor_width: float = 10.16
 
 
 def make_repeated_y_maze(
@@ -251,7 +251,7 @@ def make_repeated_y_maze(
                 make_buffered_line(
                     start=tuple(junction_pos),
                     end=tuple(arm_end),
-                    width=dims.width,
+                    width=dims.corridor_width,
                 )
             )
 
@@ -276,14 +276,14 @@ def make_repeated_y_maze(
             make_buffered_line(
                 start=tuple(terminal_tip),
                 end=tuple(fork_left_end),
-                width=dims.width,
+                width=dims.corridor_width,
             )
         )
         polygons.append(
             make_buffered_line(
                 start=tuple(terminal_tip),
                 end=tuple(fork_right_end),
-                width=dims.width,
+                width=dims.corridor_width,
             )
         )
 
@@ -470,7 +470,7 @@ def _create_repeated_y_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,
         bin_size=bin_size,
-        track_width=dims.width,
+        track_width=dims.corridor_width,
         name="repeated_y_maze_1d",
     )
     env_track = env_track.with_metadata(units="cm")

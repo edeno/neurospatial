@@ -40,7 +40,7 @@ class TestMakeLinearTrack:
             make_linear_track,
         )
 
-        dims = LinearTrackDims(length=150.0, width=10.0)
+        dims = LinearTrackDims(length=150.0, corridor_width=10.0)
         maze = make_linear_track(dims=dims)
 
         # Get spatial extent from bin_centers
@@ -53,7 +53,9 @@ class TestMakeLinearTrack:
         assert x_max - x_min > dims.length * 0.8  # At least 80% of length covered
 
         # Y extent should roughly match width
-        assert y_max - y_min < dims.width * 2  # Not too much wider than corridor
+        assert (
+            y_max - y_min < dims.corridor_width * 2
+        )  # Not too much wider than corridor
 
     def test_a_food_well_at_each_end_is_a_reward_port(self):
         """Kim & Frank (2009): food wells at the two ends of the track."""
@@ -80,7 +82,7 @@ class TestMakeLinearTrack:
         dims = LinearTrackDims(length=150.0)
         maze = make_linear_track(dims=dims)
 
-        inset = dims.length / 2 - dims.width / 2
+        inset = dims.length / 2 - dims.corridor_width / 2
         polygon = maze.env_2d.arena.polygon
         for name, x in (("well_left", -inset), ("well_right", inset)):
             well = maze.env_2d.landmarks[name]
@@ -91,7 +93,9 @@ class TestMakeLinearTrack:
             np.testing.assert_allclose(region.data, well.data)
             point = Point(well.data)
             assert polygon.contains(point)
-            assert polygon.boundary.distance(point) == pytest.approx(dims.width / 2)
+            assert polygon.boundary.distance(point) == pytest.approx(
+                dims.corridor_width / 2
+            )
 
     def test_track_carries_the_wells_and_ends_at_them(self):
         """The track's landmarks are the 2-D wells; its end nodes share their names."""
@@ -118,7 +122,7 @@ class TestMakeLinearTrack:
         assert dims.length == 150.0
         x_min, y_min, x_max, y_max = make_linear_track().env_2d.arena.polygon.bounds
         assert x_max - x_min == pytest.approx(150.0)
-        assert y_max - y_min == pytest.approx(dims.width)
+        assert y_max - y_min == pytest.approx(dims.corridor_width)
 
     def test_track_wells_stay_where_they_are_in_2d(self):
         """Each well region on the linearized track lies where it does in 2-D."""
@@ -179,7 +183,7 @@ class TestMakeLinearTrack:
             make_linear_track,
         )
 
-        dims = LinearTrackDims(length=150.0, width=10.0)
+        dims = LinearTrackDims(length=150.0, corridor_width=10.0)
 
         maze_fine = make_linear_track(dims=dims, bin_size=1.0)
         maze_coarse = make_linear_track(dims=dims, bin_size=5.0)
@@ -194,7 +198,7 @@ class TestMakeLinearTrack:
             make_linear_track,
         )
 
-        dims = LinearTrackDims(length=200.0, width=20.0)
+        dims = LinearTrackDims(length=200.0, corridor_width=20.0)
         maze = make_linear_track(dims=dims)
 
         # Check that bin_centers span approximately the expected range

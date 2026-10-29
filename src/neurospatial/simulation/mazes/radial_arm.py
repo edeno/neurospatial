@@ -82,7 +82,7 @@ class RadialArmDims(MazeDims):
     arm_length : float
         Length of each arm from the edge of the central platform to the arm's
         far end in cm. Default is 76.0.
-    arm_width : float
+    corridor_width : float
         Width of each arm corridor in cm. Default is 9.0.
     n_arms : int
         Number of arms radiating from the center. Default is 8 (standard
@@ -100,7 +100,7 @@ class RadialArmDims(MazeDims):
     35.5
     >>> dims.arm_length
     76.0
-    >>> dims.arm_width
+    >>> dims.corridor_width
     9.0
     >>> dims.n_arms
     8
@@ -114,7 +114,7 @@ class RadialArmDims(MazeDims):
 
     center_radius: float = 17.75
     arm_length: float = 76.0
-    arm_width: float = 9.0
+    corridor_width: float = 9.0
     n_arms: int = 8
     food_cup_length: float = 7.5
     food_cup_width: float = 5.0
@@ -243,7 +243,7 @@ def make_radial_arm_maze(
         arm_polygon = make_corridor_polygon(
             start=start_pos,
             end=end_pos,
-            width=dims.arm_width,
+            width=dims.corridor_width,
         )
         arm_polygons.append(arm_polygon)
 
@@ -340,7 +340,7 @@ def _create_radial_arm_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,  # No spacing between edges
         bin_size=bin_size,
-        track_width=dims.arm_width,
+        track_width=dims.corridor_width,
         name="radial_arm_maze_1d",
     )
     env_track = env_track.with_metadata(units="cm")

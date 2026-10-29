@@ -73,7 +73,7 @@ class YMazeDims(MazeDims):
     arm_length : float
         Length of each arm in cm, from the junction centre to the arm's far
         end wall. Default is 50.0.
-    width : float
+    corridor_width : float
         Width of all corridors in cm. Default is 10.0.
 
     Examples
@@ -81,16 +81,16 @@ class YMazeDims(MazeDims):
     >>> dims = YMazeDims()
     >>> dims.arm_length
     50.0
-    >>> dims.width
+    >>> dims.corridor_width
     10.0
 
-    >>> custom = YMazeDims(arm_length=75.0, width=15.0)
+    >>> custom = YMazeDims(arm_length=75.0, corridor_width=15.0)
     >>> custom.arm_length
     75.0
     """
 
     arm_length: float = 50.0
-    width: float = 10.0
+    corridor_width: float = 10.0
 
 
 def _arm_endpoints(dims: YMazeDims) -> list[tuple[float, float]]:
@@ -163,7 +163,7 @@ def make_y_maze(
 
     Create with custom dimensions:
 
-    >>> dims = YMazeDims(arm_length=80.0, width=15.0)
+    >>> dims = YMazeDims(arm_length=80.0, corridor_width=15.0)
     >>> maze = make_y_maze(dims=dims, bin_size=4.0)
     >>> "center" in maze.env_2d.regions
     True
@@ -186,7 +186,7 @@ def make_y_maze(
 
     # Square-ended corridors, so each arm ends exactly arm_length from centre
     arm_polygons = [
-        make_corridor_polygon(start=center_pos, end=endpoint, width=dims.width)
+        make_corridor_polygon(start=center_pos, end=endpoint, width=dims.corridor_width)
         for endpoint in arm_endpoints
     ]
 
@@ -207,7 +207,8 @@ def make_y_maze(
     region_builder.add("center", point=center_pos)
     for i, endpoint in enumerate(arm_endpoints, start=1):
         region_builder.add(
-            f"arm{i}_end", point=corridor_end_point(center_pos, endpoint, dims.width)
+            f"arm{i}_end",
+            point=corridor_end_point(center_pos, endpoint, dims.corridor_width),
         )
     env_2d = env_2d.with_regions(region_builder)
 
@@ -255,7 +256,7 @@ def _create_y_maze_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,  # No spacing between edges
         bin_size=bin_size,
-        track_width=dims.width,
+        track_width=dims.corridor_width,
         name="y_maze_1d",
     )
     env_track = env_track.with_metadata(units="cm")
