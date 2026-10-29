@@ -137,6 +137,9 @@ __all__ = [
 # Data Classes
 # =============================================================================
 
+AssemblyMethod = Literal["ica", "pca", "nmf"]
+_METHODS = ("ica", "pca", "nmf")
+
 
 @dataclass(frozen=True, repr=False, eq=False)
 class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
@@ -150,9 +153,10 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
         indicate stronger participation. :func:`detect_assemblies` scales
         each pattern to unit length and orients it so its largest-magnitude
         weight is positive.
-    member_indices : NDArray[np.int64]
+    member_indices : NDArray[np.int64], shape (n_members,)
         Column positions of neurons whose absolute-weight z-scores exceed
-        z_threshold. These are the "core" members of the assembly.
+        z_threshold, the "core" members of the assembly: unique integers in
+        ``[0, n_neurons)``, in increasing order.
     explained_variance_ratio : float
         Fraction of the population's variance this pattern accounts for, in
         [0, 1]. Higher values indicate more prominent assemblies. For PCA it
@@ -223,12 +227,52 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
     )
 
     def __post_init__(self) -> None:
-        """Resolve unit labels and own read-only copies of the arrays."""
+        """Validate the fields, resolve labels and own read-only copies."""
+        weights = np.asarray(self.weights, dtype=np.float64)
+        if weights.ndim != 1 or not np.all(np.isfinite(weights)):
+            raise ValueError(
+                "AssemblyPattern: weights must be a finite 1-D array with one "
+                f"weight per neuron, got shape {weights.shape}."
+            )
+        n_neurons = weights.size
+        members = np.asarray(self.member_indices)
+        if members.size == 0:
+            members = members.astype(np.int64)
+        if members.ndim != 1 or not np.issubdtype(members.dtype, np.integer):
+            raise ValueError(
+                _format_error(
+                    "AssemblyPattern: member_indices must be a 1-D array of "
+                    f"integer column positions, got dtype {members.dtype} and "
+                    f"shape {members.shape}.",
+                    fix="pass np.flatnonzero(mask) for a boolean mask of members",
+                )
+            )
+        if members.size and (
+            members[0] < 0 or members[-1] >= n_neurons or np.any(np.diff(members) <= 0)
+        ):
+            raise ValueError(
+                _format_error(
+                    "AssemblyPattern: member_indices must be unique column "
+                    f"positions in [0, {n_neurons}) in increasing order, got "
+                    f"{members.tolist()}.",
+                    why="Why: each member is one of the pattern's weights; a "
+                    "negative index would silently name the last units, and a "
+                    "repeated one would count a neuron twice.",
+                    fix="pass np.unique(member_indices) of valid column positions",
+                )
+            )
+        ratio = float(self.explained_variance_ratio)
+        if not 0.0 <= ratio <= 1.0:
+            raise ValueError(
+                "AssemblyPattern: explained_variance_ratio is a fraction of "
+                f"the population's variance and must lie in [0, 1], got {ratio}."
+            )
+        object.__setattr__(self, "weights", weights)
+        object.__setattr__(self, "member_indices", members.astype(np.int64))
+        object.__setattr__(self, "explained_variance_ratio", ratio)
         if self.unit_ids is None:
             object.__setattr__(self, "_unit_ids_generated", True)
-        labels = resolve_unit_ids(
-            self.unit_ids, len(self.weights), context="AssemblyPattern"
-        )
+        labels = resolve_unit_ids(self.unit_ids, n_neurons, context="AssemblyPattern")
         object.__setattr__(self, "unit_ids", labels)
         self._own_arrays()
 
@@ -252,15 +296,16 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
 
     Attributes
     ----------
-    patterns : list[AssemblyPattern]
+    patterns : tuple of AssemblyPattern
         Detected assembly patterns, ordered by ``explained_variance_ratio``
-        (highest first) for every method.
+        (highest first) for every method. Every pattern carries the result's
+        ``unit_ids``.
     activations : NDArray[np.float64], shape (n_time_bins, n_assemblies)
         Activation strength R(t) of each pattern in each time bin of the
         detection counts, time first like the counts; column ``k`` equals
         ``assembly_activation(spike_counts, patterns[k])``.
-    method : str
-        Detection method used ('ica', 'pca', or 'nmf').
+    method : {'ica', 'pca', 'nmf'}
+        Detection method used.
     n_significant : int
         Number of PCA eigenvalues above the Marchenko-Pastur reference
         threshold. This counts retained dimensions, not assemblies with
@@ -315,9 +360,9 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     >>> plt.ylabel("Activation strength")  # doctest: +SKIP
     """
 
-    patterns: list[AssemblyPattern]
+    patterns: tuple[AssemblyPattern, ...]
     activations: NDArray[np.float64]
-    method: str
+    method: AssemblyMethod
     n_significant: int
     eigenvalues: NDArray[np.float64]
     threshold: float
@@ -327,13 +372,39 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     )
 
     def __post_init__(self) -> None:
-        """Resolve unit labels and own read-only copies of the arrays."""
+        """Validate the fields, resolve labels and own read-only copies."""
+        patterns = tuple(self.patterns)
+        if not all(isinstance(pattern, AssemblyPattern) for pattern in patterns):
+            raise TypeError(
+                "AssemblyDetectionResult: patterns must hold AssemblyPattern objects."
+            )
+        if self.method not in _METHODS:
+            raise ValueError(
+                f"AssemblyDetectionResult: method must be one of {_METHODS}, "
+                f"got {self.method!r}."
+            )
+        activations = np.asarray(self.activations, dtype=np.float64)
+        if activations.ndim != 2 or activations.shape[1] != len(patterns):
+            raise ValueError(
+                "AssemblyDetectionResult: activations must have shape "
+                f"(n_time_bins, n_assemblies) with n_assemblies == "
+                f"len(patterns) == {len(patterns)}, got shape {activations.shape}."
+            )
         if self.unit_ids is None:
             object.__setattr__(self, "_unit_ids_generated", True)
         # One eigenvalue per neuron, from the neurons' correlation matrix.
         labels = resolve_unit_ids(
             self.unit_ids, len(self.eigenvalues), context="AssemblyDetectionResult"
         )
+        for pattern in patterns:
+            if not np.array_equal(np.asarray(pattern.unit_ids), labels):
+                raise ValueError(
+                    "AssemblyDetectionResult: every pattern must carry the "
+                    "result's unit_ids, the labels of the detection counts' "
+                    "columns."
+                )
+        object.__setattr__(self, "patterns", patterns)
+        object.__setattr__(self, "activations", activations)
         object.__setattr__(self, "unit_ids", labels)
         self._own_arrays()
 
@@ -895,7 +966,7 @@ def detect_assemblies(
     full_patterns = np.zeros((n_found, n_neurons))
     full_patterns[:, retained] = patterns
 
-    assembly_patterns = [
+    assembly_patterns = tuple(
         AssemblyPattern(
             weights=full_patterns[i],
             member_indices=retained[member_masks[i]].astype(np.int64),
@@ -904,7 +975,7 @@ def detect_assemblies(
             _unit_ids_generated=unit_ids_generated,
         )
         for i in range(n_found)
-    ]
+    )
 
     return AssemblyDetectionResult(
         patterns=assembly_patterns,

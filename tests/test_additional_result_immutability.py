@@ -153,8 +153,12 @@ CASES = [
     (
         AssemblyDetectionResult,
         {
-            "patterns": [],
-            "activations": np.ones((2, 2)),
+            "patterns": [
+                AssemblyPattern(
+                    np.ones(2), np.array([0, 1]), 1.0, unit_ids=np.array([5, 9])
+                )
+            ],
+            "activations": np.ones((2, 1)),
             "method": "pca",
             "n_significant": 2,
             "eigenvalues": np.ones(2),

@@ -12,6 +12,7 @@ import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial.decoding.assemblies import (
+    AssemblyDetectionResult,
     AssemblyPattern,
     ExplainedVarianceResult,
     assembly_activation,
@@ -220,7 +221,7 @@ class TestDetectAssemblies:
             result = detect_assemblies(counts, rng=42)
 
         assert result.n_significant == 0
-        assert len(result.patterns) == 0
+        assert result.patterns == ()
 
     @pytest.mark.parametrize("algorithm", ["pca", "ica", "nmf"])
     def test_method_is_recorded(
@@ -974,6 +975,75 @@ class TestAssemblyWorkflow:
 
         with pytest.raises(AttributeError):
             result.n_significant = 100  # type: ignore[misc]
+
+
+class TestResultInvariants:
+    """Results refuse field values that would misdescribe the assemblies."""
+
+    def test_patterns_are_an_immutable_tuple(
+        self, spike_counts_with_assemblies: np.ndarray
+    ) -> None:
+        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
+        assert isinstance(result.patterns, tuple)
+        with pytest.raises(AttributeError):
+            result.patterns.append(result.patterns[0])  # type: ignore[attr-defined]
+
+    @pytest.fixture
+    def fields(self) -> dict:
+        pattern = AssemblyPattern(np.ones(3) / np.sqrt(3), np.arange(3), 0.5)
+        return {
+            "patterns": (pattern,),
+            "activations": np.zeros((10, 1)),
+            "method": "ica",
+            "n_significant": 1,
+            "eigenvalues": np.array([2.0, 0.5, 0.5]),
+            "threshold": 1.5,
+        }
+
+    @pytest.mark.parametrize(
+        ("override", "error", "match"),
+        [
+            ({"activations": np.zeros((10, 2))}, ValueError, "n_assemblies"),
+            ({"activations": np.zeros((1, 10))}, ValueError, "n_assemblies"),
+            ({"method": "kmeans"}, ValueError, "method must be one of"),
+            ({"unit_ids": np.array([4, 5, 6])}, ValueError, "carry the result's"),
+            ({"patterns": ("pattern",)}, TypeError, "AssemblyPattern objects"),
+        ],
+        ids=["n-assemblies", "neuron-first", "method", "unit-ids", "type"],
+    )
+    def test_detection_result_refuses_inconsistent_fields(
+        self, fields: dict, override: dict, error: type, match: str
+    ) -> None:
+        with pytest.raises(error, match=match):
+            AssemblyDetectionResult(**{**fields, **override})
+
+    @pytest.mark.parametrize(
+        ("members", "match"),
+        [
+            (np.array([-1, 0]), "in increasing order"),
+            (np.array([0, 0]), "in increasing order"),
+            (np.array([1, 0]), "in increasing order"),
+            (np.array([0, 3]), r"in \[0, 3\)"),
+            (np.array([0.0, 1.0]), "integer column positions"),
+            (np.array([True, False, True]), "integer column positions"),
+        ],
+        ids=["negative", "duplicate", "unsorted", "out-of-range", "float", "mask"],
+    )
+    def test_pattern_refuses_invalid_member_indices(
+        self, members: np.ndarray, match: str
+    ) -> None:
+        with pytest.raises(ValueError, match=match):
+            AssemblyPattern(np.ones(3), members, 0.5)
+
+    @pytest.mark.parametrize("ratio", [7.0, -0.1, np.nan])
+    def test_pattern_refuses_ratio_outside_unit_interval(self, ratio: float) -> None:
+        with pytest.raises(ValueError, match=r"must lie in \[0, 1\]"):
+            AssemblyPattern(np.ones(3), np.array([0]), ratio)
+
+    def test_pattern_accepts_no_members(self) -> None:
+        pattern = AssemblyPattern(np.ones(3), np.array([]), 0.0)
+        assert pattern.member_indices.dtype == np.int64
+        assert pattern.member_unit_ids.size == 0
 
 
 # =============================================================================
