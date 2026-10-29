@@ -653,3 +653,16 @@ def test_constructor_rejects_misaligned_shapes(posterior_shape, n_times, detail)
             posterior=np.ones(shape), env=env, times=np.arange(float(n_times))
         )
     assert "Fix:" in str(exc.value)
+
+
+def test_result_equality_is_identity(env_4bin):
+    """Comparing or hashing results never asks an array for a truth value."""
+    from neurospatial.decoding import DecodingResult
+
+    posterior = np.array([[0.9, 0.1, 0.0, 0.0]])
+    r = DecodingResult(posterior=posterior, env=env_4bin)
+    same_values = DecodingResult(posterior=posterior, env=env_4bin)
+    assert r == r
+    assert r != same_values
+    assert hash(r) != hash(same_values)
+    assert r in [same_values, r]

@@ -156,7 +156,7 @@ def _align_true_positions(
     return aligned, run_ids
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class DecodingResult(ResultMixin):
     """Container for Bayesian decoding results.
 
@@ -219,7 +219,8 @@ class DecodingResult(ResultMixin):
     The result is frozen, and its array fields are read-only copies
     that the result owns: the constructor always copies them, so later edits to
     the arrays (or views of them) that the caller passed in cannot change the
-    result or leave its cached properties stale. To get a modified result, use
+    result or leave its cached properties stale. Results compare equal only
+    to themselves. To get a modified result, use
     ``dataclasses.replace(result, posterior=new)``, which copies ``new``.
 
     Memory usage is dominated by the posterior array:
