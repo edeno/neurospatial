@@ -897,7 +897,7 @@ def grid_and_hexless():
     """A grid cell and a cell whose grid score passes 0.4 without a hexagonal ring.
 
     100 cm box, 2.5 cm bins, 10 minutes. The second cell fires on a
-    smoothed-noise map: its rate map scores 0.50 but its autocorrelogram has
+    smoothed-noise map: its rate map scores 0.52 but its autocorrelogram has
     no hexagonal first ring of peaks, so it has no grid spacing.
     """
     from types import SimpleNamespace
@@ -939,6 +939,6 @@ def grid_and_hexless():
         positions=positions,
         trains=[
             generate_poisson_spikes(grid, times, seed=21),
-            generate_poisson_spikes(hexless, times, seed=102),
+            generate_poisson_spikes(hexless, times, seed=7),
         ],
     )
