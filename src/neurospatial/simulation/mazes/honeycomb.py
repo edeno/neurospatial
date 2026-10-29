@@ -428,22 +428,8 @@ def _create_honeycomb_track_graph(
                     distance=distance,
                 )
 
-    # Create edge order for linearization
-    # We'll use a breadth-first traversal starting from the center
-    edge_order = []
-    visited_edges = set()
-
-    def add_edges_from_node(node: str) -> None:
-        """Add all unvisited edges from a node to edge_order."""
-        for neighbor in graph.neighbors(node):
-            edge = tuple(sorted([node, neighbor]))
-            if edge not in visited_edges:
-                visited_edges.add(edge)
-                edge_order.append(edge)
-                add_edges_from_node(neighbor)
-
-    # Start from center platform
-    add_edges_from_node("platform_0")
+    # Linearize breadth-first outward from the central platform.
+    edge_order = list(nx.edge_bfs(graph, "platform_0"))
 
     # The platforms are the walkable surface, so the track is as wide as a
     # platform corner to corner: every point of a platform lies within one
