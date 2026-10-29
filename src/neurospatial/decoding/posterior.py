@@ -661,17 +661,6 @@ def decode_position(
             time_chunk=time_chunk,
         )
 
-    # Handle times
-    if times is not None:
-        times = np.asarray(times, dtype=np.float64)
-        n_time_bins = posterior.shape[0]
-        if times.ndim != 1 or len(times) != n_time_bins:
-            raise ValueError(
-                f"Length mismatch: times has {times.shape} but posterior has "
-                f"{n_time_bins} time bins. `times` must be a 1-D array of bin "
-                f"centers, one per row of spike_counts."
-            )
-
     # The posterior was allocated above and nothing else references it, so the
     # result takes it without a copy.
     return DecodingResult._from_owned_posterior(
@@ -893,30 +882,25 @@ def _reduce_posterior_block(
         Posterior-mean position per time bin (``posterior @ bin_centers``).
     entropy : NDArray[np.float64], shape (n_block,)
         Posterior entropy in bits.
-    peak_prob : NDArray[np.float64], shape (n_block,)
+    peak_probability : NDArray[np.float64], shape (n_block,)
         Max posterior probability per time bin.
     """
     # Reductions accumulate in float64 whatever the posterior dtype.
     pb = np.asarray(posterior_block, dtype=np.float64)
 
-    from neurospatial.decoding.estimates import _density_mode
+    from neurospatial.decoding.estimates import _density_mode, posterior_entropy
 
     map_bin = _density_mode(pb, measures)
     mean_position = pb @ bin_centers
-    peak_prob = pb.max(axis=1)
+    peak_probability = pb.max(axis=1)
 
-    # Entropy (bits), mask-based to avoid log(0) bias -- identical to
-    # DecodingResult.posterior_entropy.
-    p = np.clip(pb, 0.0, 1.0)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        log_p = np.where(p > 0, np.log2(p), 0.0)
-    entropy = -np.sum(p * log_p, axis=1)
+    entropy = posterior_entropy(pb)
 
     return (
         map_bin,
         np.asarray(mean_position, dtype=np.float64),
         np.asarray(entropy, dtype=np.float64),
-        np.asarray(peak_prob, dtype=np.float64),
+        np.asarray(peak_probability, dtype=np.float64),
     )
 
 
@@ -981,7 +965,7 @@ def _decode_and_reduce_block(
         Posterior-weighted mean of ``mean_basis`` per time bin.
     entropy : NDArray[np.float64], shape (n_block,)
         Posterior entropy (bits) per time bin.
-    peak_prob : NDArray[np.float64], shape (n_block,)
+    peak_probability : NDArray[np.float64], shape (n_block,)
         Max posterior probability per time bin.
     """
     post_block = _normalize_to_posterior(
@@ -1156,7 +1140,7 @@ def decode_position_summary(
     map_bin = np.empty(n_time, dtype=np.int64)
     mean_position = np.empty((n_time, n_dims), dtype=np.float64)
     posterior_entropy = np.empty(n_time, dtype=np.float64)
-    peak_prob = np.empty(n_time, dtype=np.float64)
+    peak_probability = np.empty(n_time, dtype=np.float64)
 
     # A time-varying (2-D) prior must be sliced to each block so its shape
     # matches the block log-likelihood; a stationary (1-D) prior is reused.
@@ -1195,13 +1179,13 @@ def decode_position_summary(
         map_bin[start:stop] = block_map_bin
         mean_position[start:stop] = block_mean
         posterior_entropy[start:stop] = block_entropy
-        peak_prob[start:stop] = block_peak
+        peak_probability[start:stop] = block_peak
 
     return DecodingSummary._from_owned(
         times=times_arr,
         mean_position=_finish_posterior_mean(env, mean_position),
         posterior_entropy=posterior_entropy,
-        peak_probability=peak_prob,
+        peak_probability=peak_probability,
         map_bin=map_bin,
         env=env,
         spike_window=None,

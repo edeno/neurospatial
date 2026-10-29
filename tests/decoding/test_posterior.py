@@ -1551,13 +1551,13 @@ class TestDecodePositionValidation:
         simple_spike_counts: np.ndarray,
         simple_encoding_models: np.ndarray,
     ) -> None:
-        """times of the wrong length raises a 'Length mismatch' ValueError."""
+        """times of the wrong length raises, naming the expected shape."""
         from neurospatial.decoding.posterior import decode_position
 
         n_time_bins = simple_spike_counts.shape[0]
         bad_times = np.arange(n_time_bins + 2, dtype=np.float64)
 
-        with pytest.raises(ValueError, match="Length mismatch"):
+        with pytest.raises(ValueError, match=rf"expected \({n_time_bins},\)"):
             decode_position(
                 simple_env,
                 simple_spike_counts,
