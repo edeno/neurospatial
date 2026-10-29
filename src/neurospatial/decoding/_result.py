@@ -311,7 +311,7 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
     >>> import numpy as np
     >>>
     >>> # Create environment
-    >>> positions = np.random.uniform(0, 50, (1000, 2))
+    >>> positions = np.random.default_rng(0).uniform(0, 50, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>>
     >>> # Create uniform posterior (for demonstration)
@@ -551,7 +551,9 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         On Cartesian environments this is ``posterior @ bin_centers``. On
         egocentric polar environments it is the centroid in the animal's
         egocentric plane, returned as ``(distance, angle)``; see
-        :func:`~neurospatial.decoding.estimates.mean_position`.
+        :func:`~neurospatial.decoding.estimates.mean_position`. On a track
+        graph or linearized track the bin centers are 2-D points along the
+        track, so the mean of mass on two arms can lie off the track.
 
         For unimodal posteriors, this is similar to the MAP position.
         For multimodal posteriors, this may fall between modes.
@@ -712,8 +714,9 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         width centered on that timestamp; this width is a plotting convention.
         An explicit ``extent=`` overrides these default edges.
 
-        The MAP trajectory (``show_map=True``) shows the bin with highest
-        posterior probability at each time step as a white line. Actual
+        The MAP trajectory (``show_map=True``) shows the bin of highest
+        posterior density (:attr:`map_bin`) at each time step as a white
+        line. Actual
         positions are shown in cyan when ``true_times`` and ``true_positions``
         are supplied; a result without decode times cannot align this overlay.
         Both lines break at recording gaps and undecodable posterior rows.
@@ -1004,13 +1007,14 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
 
             - data var ``posterior``, dims ``("time", "bin")`` (equals
               :attr:`posterior`).
-            - data var ``map_position`` per dimension is *not* added; the MAP
-              bin index is exposed via the ``map_bin`` data var on ``time``.
+            - data var ``map_bin`` on ``time`` (equals :attr:`map_bin`).
             - index coord ``time`` (= :attr:`times`, or the integer-index
               fallback, see Notes).
             - non-index ``bin_center_*`` coords on ``bin``.
-            - ``attrs``: ``units``, ``env`` fingerprint, and
-              ``software_version``.
+            - ``attrs``: ``units`` (when set), ``env`` fingerprint,
+              ``software_version``, ``spike_window_assumed`` (0 or 1) and,
+              when windows were recorded, ``spike_window`` (the
+              ``(n_windows, 2)`` windows flattened row by row).
 
         Raises
         ------
@@ -1045,6 +1049,7 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         >>> posterior = np.ones((10, env.n_bins)) / env.n_bins
         >>> times = np.linspace(0.0, 1.0, 10)
         >>> result = DecodingResult(posterior=posterior, env=env, times=times)
+        >>> # Skipped in the doctest run: xarray is an optional dependency.
         >>> ds = result.to_xarray()  # doctest: +SKIP
         >>> ds["posterior"].dims  # doctest: +SKIP
         ('time', 'bin')
@@ -1116,8 +1121,6 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
 
         Aligns this decode's time grid to a separately sampled ground-truth
         position track and returns the position error at each decode time bin.
-        This removes the hand-rolled ``searchsorted`` alignment that callers
-        otherwise write between decode times and behavioral position samples.
 
         Parameters
         ----------
@@ -1160,24 +1163,25 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         ------
         ValueError
             If :attr:`times` is ``None`` (decode times are required to align),
-            if ``true_times`` is not 1D, if ``true_times`` is not strictly
-            increasing (duplicates are rejected because :func:`numpy.interp`
-            resolves duplicate x-values arbitrarily), if ``true_positions``
-            does not have shape ``(len(true_times), n_dims)``, or if :attr:`times`,
-            ``true_times`` contain NaN or Inf, if ``true_positions`` contains
-            Inf, if ``max_gap`` is not finite and positive (or None), or if
-            ``break_before`` is not a Boolean array with one entry per
-            ``true_times`` sample.
+            if ``true_times`` is not 1D, contains NaN or Inf, or is not
+            strictly increasing (a repeated timestamp gives two positions for
+            one instant, so the position at that time is ambiguous), if
+            ``true_positions`` does not have shape ``(len(true_times),
+            n_dims)`` or contains Inf, if ``max_gap`` is not finite and
+            positive (or None), or if ``break_before`` is not a Boolean array
+            with one entry per ``true_times`` sample.
 
         Notes
         -----
-        Alignment interpolates each ground-truth coordinate only between finite
-        samples separated by at most ``max_gap`` and not by a declared
-        ``break_before``. It does not interpolate over
-        missing tracking or extrapolate outside the tracked span. Exact finite
-        source samples remain available even beside a gap. The decoded position is the MAP estimate
-        (:attr:`map_position`); the aligned ground truth is compared against it
-        with :func:`neurospatial.decoding.metrics.decoding_error`.
+        Alignment interpolates each ground-truth coordinate linearly between
+        finite samples. A NaN sample is skipped as if deleted: the finite
+        samples around it are interpolated when they are no more than
+        ``max_gap`` apart and not separated by a declared ``break_before``;
+        longer gaps and times outside the tracked span stay NaN. Exact finite
+        samples remain available even beside a gap. The decoded position is
+        the MAP estimate (:attr:`map_position`); the aligned ground truth is
+        compared against it with
+        :func:`neurospatial.decoding.metrics.decoding_error`.
 
         Linear interpolation of position assumes the ground-truth samples are
         dense enough that no linearization-segment boundary / track junction
@@ -1617,9 +1621,11 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
             ``map_angle``/... on polar environments), ``posterior_entropy``,
             ``peak_probability``. The ``time`` index coordinate is :attr:`times` when
             set, else the integer index ``np.arange(n_time_bins)``. ``attrs``
-            carry ``units`` (when set), an ``env`` fingerprint, and
-            ``software_version``. All arrays, coordinates and array metadata
-            are independent writable copies.
+            carry ``units`` (when set), an ``env`` fingerprint,
+            ``software_version``, ``spike_window_assumed`` (0 or 1) and, when
+            windows were recorded, ``spike_window`` (the ``(n_windows, 2)``
+            windows flattened row by row). All arrays, coordinates and array
+            metadata are independent writable copies.
 
         Raises
         ------

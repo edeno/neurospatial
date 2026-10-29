@@ -1,8 +1,8 @@
 """Estimate functions for Bayesian decoding results.
 
 This module provides standalone functions for computing derived quantities
-from posterior distributions. These functions mirror the corresponding
-properties on DecodingResult but operate on raw arrays, enabling use
+from posterior distributions. They compute the same quantities as the
+corresponding DecodingResult properties, but from a raw posterior array,
 without creating a DecodingResult container.
 
 Functions
@@ -15,9 +15,12 @@ credible_region : Highest-density credible region
 
 Notes
 -----
-Function names mirror DecodingResult property names for consistency.
-Users can use either the result properties or these standalone functions
-interchangeably.
+Function names mirror DecodingResult property names. A DecodingResult
+validates its posterior when it is built (each row a probability mass, or
+entirely NaN where undecodable); these functions do not, so check a raw
+posterior yourself or wrap it in a DecodingResult. On a raw array,
+map_bin, map_position and credible_region skip NaN and Inf bins, while
+mean_position and posterior_entropy are NaN for a row that contains NaN.
 
 Examples
 --------
@@ -277,7 +280,11 @@ def mean_position(
 
     Notes
     -----
-    On Cartesian environments this is ``posterior @ env.bin_centers``.
+    On Cartesian environments this is ``posterior @ env.bin_centers``. On a
+    track graph or linearized track the bin centers are 2-D points along the
+    track, so the mean of mass on two arms (or around a bend) can lie off the
+    track; use :func:`map_position` when the estimate must be a track
+    position.
 
     On egocentric polar environments the mean is the probability-weighted
     centroid in the animal's egocentric plane (x ahead, y left), returned as

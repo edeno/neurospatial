@@ -619,10 +619,11 @@ edges. Posterior values, MAP positions and timestamps are unchanged.
 On a continuous decoder clock, the plot's x-axis uses seconds. Across recording
 gaps it uses time-bin indices and marks the breaks with dashed lines. The MAP
 and actual overlays follow the same display coordinates and break at gaps.
-Plotting and `error_against` share gap-aware truth alignment: `max_gap` is in
-seconds, missing positions break observation runs, and truth is unavailable
-outside observed intervals. Neither interpolation across dropouts nor endpoint
-extrapolation creates observations.
+Plotting and `error_against` share gap-aware truth alignment, with `max_gap`
+in seconds. A NaN position sample is skipped as if deleted: the finite samples
+around it are interpolated when they are no more than `max_gap` apart. Longer
+gaps and times outside the tracked span stay NaN, and nothing is extrapolated
+past the first or last sample.
 
 This exact four-row posterior uses 5 cm bins. It represents perfect decoding
 for both clocks below, so the actual and MAP overlays must coincide. The
