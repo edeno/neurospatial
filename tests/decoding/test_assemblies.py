@@ -185,6 +185,19 @@ class TestDetectAssemblies:
             assert_allclose(pattern.explained_variance_ratio, expected, rtol=1e-10)
             assert 0.0 <= pattern.explained_variance_ratio <= 1.0
 
+    @pytest.mark.parametrize("method", ["pca", "ica", "nmf"])
+    def test_one_component_explaining_everything_is_at_most_one(
+        self, rng: np.random.Generator, method: str
+    ) -> None:
+        """Three copies of one neuron: one pattern explains all the variance."""
+        source = rng.poisson(3, (500, 1)).astype(np.float64)
+        counts = np.hstack([source, 2 * source, 3 * source + 1])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            result = detect_assemblies(counts, method=method, n_components=1, rng=0)
+        (pattern,) = result.patterns
+        assert 0.99 < pattern.explained_variance_ratio <= 1.0
+
     @pytest.fixture
     def assemblies_of_unequal_strength(self) -> np.ndarray:
         """Three 5-cell assemblies whose shared drive is 2, 4 and 6 spikes."""

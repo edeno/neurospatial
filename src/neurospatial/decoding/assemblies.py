@@ -997,6 +997,9 @@ def detect_assemblies(
     # already are; ICA sources and NMF components come in arbitrary order.
     order = np.argsort(-explained_var, kind="stable")
     patterns, explained_var = patterns[order], explained_var[order]
+    # Every definition is a fraction of the total variance; remove rounding
+    # above 1 (1 + 7e-16 for ICA) for a component that explains all of it.
+    explained_var = np.minimum(explained_var, 1.0)
 
     # ICA and eigenvector signs are arbitrary. Orient each pattern so its
     # largest-magnitude weight is positive: its members are then the neurons
