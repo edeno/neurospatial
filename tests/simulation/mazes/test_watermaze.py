@@ -157,6 +157,32 @@ class TestMakeWatermaze:
         centroid = maze.env_2d.regions["platform"].data.centroid
         np.testing.assert_allclose(centroid.coords[0], custom_position, atol=1e-9)
 
+    @pytest.mark.parametrize(
+        "position", [(100.0, 0.0), (70.0, 0.0), (0.0, -68.0), (np.nan, 0.0)]
+    )
+    def test_platform_outside_the_pool_is_refused(self, position):
+        """A platform that does not fit in the 75 cm pool would put the
+        landmark off the floor and leave the region with no bins."""
+        from neurospatial.simulation.mazes.watermaze import make_watermaze
+
+        with pytest.raises(ValueError, match="platform_position"):
+            make_watermaze(platform_position=position)
+
+    def test_platform_touching_the_wall_from_inside_is_accepted(self):
+        from neurospatial.simulation.mazes.watermaze import make_watermaze
+
+        maze = make_watermaze(platform_position=(67.5, 0.0))
+        assert len(maze.env_2d.bins_in_region("platform")) > 0
+
+    def test_platform_too_large_for_the_default_position_is_refused(self):
+        from neurospatial.simulation.mazes.watermaze import (
+            WatermazeDims,
+            make_watermaze,
+        )
+
+        with pytest.raises(ValueError, match="does not fit in the pool"):
+            make_watermaze(WatermazeDims(platform_radius=40.0))
+
     def test_env_2d_has_quadrant_regions(self):
         """env_2d should have NE, NW, SE, SW quadrant regions."""
         from neurospatial.simulation.mazes.watermaze import make_watermaze

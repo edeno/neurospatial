@@ -134,7 +134,8 @@ def make_watermaze(
         Position (x, y) of the platform center in cm. If None, defaults to
         the centre of the NE quadrant, halfway between the pool centre and the
         wall along the NE diagonal: ``(R / (2 * sqrt(2)), R / (2 * sqrt(2)))``
-        with ``R = pool_diameter / 2``.
+        with ``R = pool_diameter / 2``. The whole platform must lie in the
+        pool: its centre at most ``R - platform_radius`` from the pool centre.
 
     Returns
     -------
@@ -142,6 +143,11 @@ def make_watermaze(
         Contains:
         - env_2d: 2D circular environment
         - env_track: None (open field has no track topology)
+
+    Raises
+    ------
+    ValueError
+        If the platform does not fit in the pool at ``platform_position``.
 
     Notes
     -----
@@ -204,6 +210,16 @@ def make_watermaze(
     # Default platform position: centre of the NE quadrant
     if platform_position is None:
         platform_position = (c, c)
+    platform_x, platform_y = (float(v) for v in platform_position)
+    distance = np.hypot(platform_x, platform_y)
+    if not np.isfinite(distance) or distance + dims.platform_radius > radius:
+        raise ValueError(
+            f"platform_position={platform_position!r} puts the "
+            f"{dims.platform_radius} cm-radius platform where it does not fit in "
+            f"the pool, {radius} cm in radius around (0, 0): its centre must be at "
+            f"most {radius - dims.platform_radius:.4g} cm from the pool centre. "
+            "Move the platform toward the centre or use a smaller platform_radius."
+        )
 
     # Create circular pool polygon
     pool_polygon = make_circular_arena(
@@ -220,7 +236,7 @@ def make_watermaze(
     )
     env_2d = env_2d.with_metadata(units="cm")
 
-    platform_center = (float(platform_position[0]), float(platform_position[1]))
+    platform_center = (platform_x, platform_y)
     region_builder = Regions()
     region_builder.add(
         "platform",
