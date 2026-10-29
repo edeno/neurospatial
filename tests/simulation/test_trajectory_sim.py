@@ -174,16 +174,19 @@ class TestSimulateTrajectoryOU:
                 boundary_mode="bounce",  # type: ignore[arg-type]
             )
 
-    def test_periodic_is_refused_where_the_bins_do_not_fill_the_box(self):
-        """Wrapping across a circle's bounding box would leave the circle."""
-        from shapely.geometry import Point
+    @pytest.mark.parametrize("shape", ["circle", "L"])
+    def test_periodic_is_refused_where_the_environment_is_not_a_box(self, shape):
+        """Wrapping across a circle's or an L's bounding box would leave it."""
+        from shapely.geometry import Point, Polygon
 
         from neurospatial import Environment
 
-        env = Environment.from_polygon(
-            Point(50, 50).buffer(50), bin_size=2.0, units="cm"
-        )
-        with pytest.raises(ValueError, match="do not fill"):
+        outline = {
+            "circle": Point(50, 50).buffer(50),
+            "L": Polygon([(0, 0), (100, 0), (100, 40), (40, 40), (40, 100), (0, 100)]),
+        }[shape]
+        env = Environment.from_polygon(outline, bin_size=2.0, units="cm")
+        with pytest.raises(ValueError, match="not a rectangular box"):
             simulate_trajectory_ou(
                 env, duration=1.0, speed_units="cm", boundary_mode="periodic"
             )
@@ -202,11 +205,20 @@ class TestSimulateTrajectoryOU:
         for pos in positions:
             assert simple_2d_env.contains(pos)
 
-    def test_boundary_mode_periodic_wraps_across_opposite_sides(
-        self, connected_arena_env
-    ):
-        """Leaving one side re-enters from the opposite side, at full speed."""
-        env = connected_arena_env
+    @pytest.mark.parametrize("bin_size", [2.0, 3.0])
+    def test_boundary_mode_periodic_wraps_across_opposite_sides(self, bin_size):
+        """Leaving one side of the box re-enters from the opposite side.
+
+        With 3 cm bins the grid overhangs the 100 cm box by 1 cm on each
+        side; the walk wraps at the box's sides, not the grid's.
+        """
+        from shapely.geometry import box
+
+        from neurospatial import Environment
+
+        env = Environment.from_polygon(
+            box(0, 0, 100, 100), bin_size=bin_size, units="cm"
+        )
         dt = 0.01
         positions, _times = simulate_trajectory_ou(
             env,
@@ -219,7 +231,8 @@ class TestSimulateTrajectoryOU:
             speed_units="cm",
         )
         assert env.contains(positions).all()
-        span = np.ptp(np.asarray(env.dimension_ranges), axis=1)
+        assert (env.bin_at(positions) >= 0).all()
+        span = np.array([100.0, 100.0])
         steps = np.diff(positions, axis=0)
         wrapped = np.abs(steps) > span / 2
         assert wrapped.any()

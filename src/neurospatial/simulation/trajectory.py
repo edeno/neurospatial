@@ -64,28 +64,67 @@ def _sample_count(duration: float, step: float, step_name: str, call: str) -> in
     return n_samples
 
 
-def _require_bins_fill_ranges(env: Environment) -> None:
-    """Refuse periodic wrapping unless the bins fill ``env.dimension_ranges``."""
-    ranges = env.dimension_ranges
-    box_measure = (
-        None if ranges is None else float(np.prod(np.ptp(np.asarray(ranges), axis=1)))
-    )
-    if box_measure is None or not np.isclose(
-        float(np.sum(env.bin_sizes)), box_measure, rtol=1e-9
-    ):
+def _periodic_box(env: Environment) -> NDArray[np.float64]:
+    """The box that periodic wrapping joins into a torus, shape (2, n_dims).
+
+    Rows are the lower and upper corners of the region where
+    ``env.contains`` is True. That region must be the whole box, or wrapped
+    positions would land outside the environment.
+    """
+    region_box: NDArray[np.float64] | None = None
+    bins = env.binning.bins
+    if env.n_dims == 2 and bins.has_measure_dim(2):
+        # The environment holds a point inside both its arena and a cell.
+        # Cells do not overlap, so their clipped areas add up to the area of
+        # the region they cover.
+        import shapely
+
+        from neurospatial.geometry import materialize_cells
+
+        cells = np.asarray(list(materialize_cells(env.binning)), dtype=object)
+        arena = env.arena
+        domain = arena.polygonal_domain() if arena.domain_known else None
+        if domain is not None:
+            cells = shapely.intersection(cells, domain)
+        cells = cells[~shapely.is_empty(cells)]
+        if len(cells):
+            cell_bounds = shapely.bounds(cells)
+            low = cell_bounds[:, :2].min(axis=0)
+            high = cell_bounds[:, 2:].max(axis=0)
+            if np.isclose(
+                float(np.sum(shapely.area(cells))),
+                float(np.prod(high - low)),
+                rtol=1e-9,
+            ):
+                region_box = np.stack([low, high])
+    elif env.n_dims != 2 and env.dimension_ranges is not None:
+        ranges = np.asarray(env.dimension_ranges, dtype=np.float64).T
+        corners = np.array(
+            np.meshgrid(*ranges.T, indexing="ij"), dtype=np.float64
+        ).reshape(env.n_dims, -1)
+        if (
+            np.isclose(
+                float(np.sum(env.bin_sizes)),
+                float(np.prod(np.ptp(ranges, axis=0))),
+                rtol=1e-9,
+            )
+            and env.contains(corners.T).all()
+        ):
+            region_box = ranges
+    if region_box is None:
         raise ValueError(
             _format_error(
-                "boundary_mode='periodic' needs bins that fill "
-                "env.dimension_ranges, and these bins do not fill them.",
-                why="Why: periodic mode joins opposite sides of "
-                "env.dimension_ranges into a torus; where the bins leave part "
-                "of that box empty (a circular arena, an irregular outline), "
-                "wrapped positions land outside the environment.",
+                "boundary_mode='periodic' needs an environment that is a "
+                "rectangular box, and this one is not a rectangular box.",
+                why="Why: periodic mode joins opposite sides of the box into a "
+                "torus; where the environment leaves part of its bounding box "
+                "empty (a circular arena, an L-shaped or irregular outline), "
+                "wrapped positions land outside it.",
                 fix="use boundary_mode='reflect', or build the environment as "
-                "a full rectangular grid such as Environment.from_polygon("
-                "box(...))",
+                "a rectangle such as Environment.from_polygon(box(...))",
             )
         )
+    return region_box
 
 
 def simulate_trajectory_ou(
@@ -149,10 +188,11 @@ def simulate_trajectory_ou(
         - 'reflect': the velocity is mirrored about the wall, keeping its
           component along the wall and reversing the component into it, and
           the animal takes the step in the mirrored direction.
-        - 'periodic': opposite sides of ``env.dimension_ranges`` are joined
+        - 'periodic': opposite sides of the environment's box are joined
           (a torus) and walls are ignored. Not biologically realistic. The
-          bins must fill ``env.dimension_ranges`` (a full rectangular grid),
-          so that every wrapped position is inside the environment.
+          environment must be a rectangular box: the region inside both its
+          arena and its bins, such as ``Environment.from_polygon(box(...))``
+          at any bin size, so that every wrapped position is inside it.
         - 'stop': the animal waits in place until its heading turns away
           from the wall. In 1-D, where the heading turns only at a wall, it
           reverses there as with 'reflect'.
@@ -178,7 +218,7 @@ def simulate_trajectory_ou(
         If ``speed_mean`` is None and ``env.units`` is not a metric length.
     ValueError
         If ``boundary_mode`` is not one of the three modes, or is
-        ``'periodic'`` and the bins do not fill ``env.dimension_ranges``.
+        ``'periodic'`` and the environment is not a rectangular box.
     ValueError
         If ``start_position`` is not one point of ``env.n_dims`` coordinates
         inside the environment.
@@ -335,7 +375,7 @@ def simulate_trajectory_ou(
             )
         )
     if boundary_mode == "periodic":
-        _require_bins_fill_ranges(env)
+        periodic_box = _periodic_box(env)
     n_steps = _sample_count(duration, dt, "dt", "simulate_trajectory_ou()")
     rng = np.random.default_rng(seed)
     n_dims = env.n_dims
@@ -407,10 +447,11 @@ def simulate_trajectory_ou(
         step = speeds[i] * dt * unit
 
         if boundary_mode == "periodic":
-            position = position + step
-            for dim in range(n_dims):
-                low, high = env.dimension_ranges[dim]  # type: ignore[index]
-                position[dim] = low + (position[dim] - low) % (high - low)
+            low, high = periodic_box
+            # Rounding in ``low + remainder`` can land a hair past ``high``.
+            position = np.clip(
+                low + np.mod(position + step - low, high - low), low, high
+            )
         elif walls is not None:
             position, unit = walls.move(position, step, unit, boundary_mode)
         else:

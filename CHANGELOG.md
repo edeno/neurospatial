@@ -127,9 +127,13 @@ default lap route all changed.
   the old update overstated heading variance by 17%.
 - Default speeds are 8 cm/s (OU) and 10 cm/s (sinusoidal), expressed in
   `env.units`.
-- Unknown `boundary_mode` values, `periodic` on non-rectangular bins,
-  durations shorter than one sample and non-finite or non-integer lap
-  settings raise.
+- Periodic OU walks wrap at the sides of the region the environment
+  covers, inside both its arena and its bins. With 3 cm bins on a 100 cm
+  box they wrapped at the grid's ±1 cm overhang and left 5% of samples
+  outside the arena.
+- Unknown `boundary_mode` values, `periodic` on an environment that is not a
+  rectangular box, durations shorter than one sample and non-finite or
+  non-integer lap settings raise.
 - A fast walker no longer stalls in sharp wall corners.
 
 **Mazes**
