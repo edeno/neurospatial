@@ -120,7 +120,9 @@ default lap route all changed.
 **Trajectories**
 
 - Default laps run between the two bins farthest apart, so a north–south
-  track works.
+  track works, along the shortest route by distance. A route of fewest
+  steps zigzagged across a circular arena: 133 cm against 108 cm across a
+  100 cm diameter.
 - Lap pause samples have `lap_id = -1` and `direction = "pause"`, and lap
   boundaries no longer repeat a sample.
 - OU headings use the exact integral of the turning rate. At `dt = 0.1` s

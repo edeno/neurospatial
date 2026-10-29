@@ -220,6 +220,23 @@ def test_default_laps_run_stem_to_arm_on_a_t_maze():
     assert abs(positions[-1, 0]) == pytest.approx(np.abs(env.bin_centers[:, 0]).max())
 
 
+def test_default_route_across_a_circular_arena_is_nearly_straight():
+    """The default lap is the shortest distance across the arena, not fewest steps.
+
+    On a grid whose bins neighbor diagonally, a route of fewest steps can
+    zigzag; the shortest by distance runs within the 8% that an octile path
+    can exceed the straight line.
+    """
+    env = Environment.from_polygon(
+        shapely.Point(0, 0).buffer(50, quad_segs=64), bin_size=2, units="cm"
+    )
+    positions, _times = simulate_trajectory_laps(env, n_laps=1, seed=1)
+    run = np.sum(np.linalg.norm(np.diff(positions, axis=0), axis=1))
+    straight = np.linalg.norm(positions[-1] - positions[0])
+    assert straight > 95.0  # across the arena
+    assert run <= (np.sqrt(4 - 2 * np.sqrt(2))) * straight * (1 + 1e-9)
+
+
 def test_an_environment_of_one_bin_has_no_default_route():
     env = Environment.from_polygon(box(0, 0, 2, 2), bin_size=2, units="cm")
     assert env.n_bins == 1

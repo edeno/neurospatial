@@ -757,12 +757,15 @@ def simulate_trajectory_sinusoidal(
 
 
 def _longest_bin_path(env: Environment, call: str) -> list[int]:
-    """A path of fewest steps between the two bins farthest apart along ``env``.
+    """The shortest path between the two bins farthest apart along ``env``.
 
     Distances run along neighboring bins (``env.connectivity`` edge
-    ``distance``), and the two sweeps start from bin 0. The path starts at
-    the end with the smaller linear position on a track, else at the end
-    whose center comes first in coordinate order (smaller x, then y, ...).
+    ``distance``), and the two sweeps start from bin 0. Each edge weighs its
+    distance relative to the median edge, rounded to 9 decimals: equal edges
+    tie exactly, so the endpoints and path do not change with the units of
+    the coordinates. The path starts at the end with the smaller linear
+    position on a track, else at the end whose center comes first in
+    coordinate order (smaller x, then y, ...).
     """
     graph = env.connectivity
     n_components = nx.number_connected_components(graph)
@@ -778,7 +781,12 @@ def _longest_bin_path(env: Environment, call: str) -> list[int]:
                 "one group",
             )
         )
-    start, end = _farthest_pair(graph, 0, "distance")
+    scale = float(np.median([d for _, _, d in graph.edges(data="distance")] or [1]))
+
+    def weight(_u: object, _v: object, data: dict[str, float]) -> float:
+        return round(data["distance"] / scale, 9)
+
+    start, end = _farthest_pair(graph, 0, weight)
     if start == end:
         raise ValueError(
             _format_error(
@@ -797,9 +805,7 @@ def _longest_bin_path(env: Environment, call: str) -> list[int]:
         reverse = tuple(ends[0]) > tuple(ends[1])
     if reverse:
         start, end = end, start
-    # Fewest steps: unlike summed distances, step counts tie exactly, so the
-    # path does not change with the units of the coordinates.
-    return [int(b) for b in nx.shortest_path(graph, start, end)]
+    return [int(b) for b in nx.shortest_path(graph, start, end, weight=weight)]
 
 
 _Node = TypeVar("_Node", bound=Hashable)
@@ -929,10 +935,11 @@ def simulate_trajectory_laps(
         Bin indices for the outbound traversal, a chain of neighboring bins:
         every consecutive pair must be connected in ``env.connectivity`` or
         repeat the same bin (a step of zero length). A single bin is also
-        valid. If None, uses the shortest path between the two bins farthest
-        apart along the environment's neighboring bins: the two ends of a
-        track or strip in any orientation, the stem's foot and an arm's end
-        of a T-maze, opposite corners of an open box.
+        valid. If None, uses the shortest path, by distance, between the two
+        bins farthest apart along the environment's neighboring bins: the two
+        ends of a track or strip in any orientation, the stem's foot and an
+        arm's end of a T-maze, opposite corners of an open box, opposite
+        sides of a circular arena.
     inbound_path : list[int] | None, optional
         Bin indices for the inbound traversal, with the same rule as
         ``outbound_path``. If None, reverses outbound_path.
