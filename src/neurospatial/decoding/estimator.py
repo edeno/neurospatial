@@ -177,7 +177,8 @@ class BayesianDecoder:
         run remainders shorter than ``dt``, which are not decoded.
         Set ``False`` to silence those warnings on a genuinely sparse session;
         a single knob covers both the fit and predict passes (the default would
-        otherwise warn once per pass).
+        otherwise warn once per pass). Prediction raises, whatever this
+        setting, when every spike lies before or after the decode bins.
 
     Attributes
     ----------
@@ -916,7 +917,8 @@ warn_on_drop
             if the input repeats a unit label; if its labels differ from
             ``unit_ids`` (the message lists the missing and unexpected labels);
             or if plain trains are paired by position and their number differs
-            from the number of fitted units.
+            from the number of fitted units. Also if every spike lies before,
+            or every spike after, the decode bins (another clock or unit).
 
         Notes
         -----
@@ -1013,7 +1015,8 @@ warn_on_drop
             if the input repeats a unit label; if its labels differ from
             ``unit_ids`` (the message lists the missing and unexpected labels);
             or if plain trains are paired by position and their number differs
-            from the number of fitted units.
+            from the number of fitted units. Also if every spike lies before,
+            or every spike after, the decode bins (another clock or unit).
 
         Notes
         -----

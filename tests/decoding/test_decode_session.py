@@ -11,6 +11,8 @@ Tests
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -479,8 +481,13 @@ class TestDecodeSessionOutOfWindowWarning:
         )
         ms_spikes = [s * 1000.0 for s in spike_times]
 
-        with warnings.catch_warnings(record=True) as caught:
+        with (
+            warnings.catch_warnings(record=True) as caught,
+            pytest.raises(ValueError, match="milliseconds"),
+        ):
             warnings.simplefilter("always")
+            # Every millisecond spike lies after the 10 s window, so the
+            # decode step refuses after the encoder's single warning.
             decode_session(env, ms_spikes, times, positions, dt=0.1)
 
         # Either phrasing ("position time window" from the encoder, or "decode
@@ -542,6 +549,70 @@ class TestDecodeSessionOutOfWindowWarning:
             f"warn_on_drop=False should silence all drop warnings, got: "
             f"{[str(w.message) for w in matching]}"
         )
+
+
+class TestSpikeClockMismatch:
+    """Spike times on another clock or in other units than ``times``."""
+
+    @pytest.mark.parametrize("warn_on_drop", [True, False])
+    @pytest.mark.parametrize("side", ["after", "before"])
+    def test_no_spike_in_any_decode_bin_raises(self, warn_on_drop, side) -> None:
+        """All spikes before or after the decode bins: refuse, also when quiet."""
+        from neurospatial.decoding import BayesianDecoder, decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=10.0, seed=3
+        )
+        decoder = BayesianDecoder(env, dt=0.1, warn_on_drop=warn_on_drop).fit(
+            spike_times, times, positions
+        )
+        if side == "after":
+            spike_times = [s + 1e4 for s in spike_times]
+        else:
+            times = times + 1e4
+        with pytest.raises(ValueError, match=f"lie {side} the decode") as err:
+            decoder.predict(spike_times, times)
+        assert "different clocks" in str(err.value)
+        assert "Fix:" in str(err.value)
+        with pytest.raises(ValueError, match="different clocks"):
+            decoder.predict_summary(spike_times, times)
+        with (
+            warnings.catch_warnings(),
+            pytest.raises(ValueError, match="different clocks"),
+        ):
+            warnings.simplefilter("ignore")
+            decode_session(
+                env, spike_times, times, positions, dt=0.1, warn_on_drop=warn_on_drop
+            )
+
+    def test_millisecond_spikes_warning_names_the_unit_mismatch(self) -> None:
+        from neurospatial.decoding import BayesianDecoder
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=10.0, seed=4
+        )
+        decoder = BayesianDecoder(env, dt=0.1).fit(spike_times, times, positions)
+        ms_spikes = [s * 1000.0 for s in spike_times]
+        with pytest.warns(UserWarning, match=r"about 1000 times.*milliseconds"):
+            decoder.predict(ms_spikes, times)
+
+    def test_short_epoch_with_whole_session_spikes_decodes(self) -> None:
+        """Most spikes lie outside a short epoch; that is not a clock error."""
+        from neurospatial.decoding import BayesianDecoder
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=30.0, seed=6
+        )
+        decoder = BayesianDecoder(env, dt=0.1).fit(spike_times, times, positions)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            short = decoder.predict(spike_times, times, epochs=(10.0, 12.0))
+            # A silent window inside the recording keeps the prior; no raise.
+            silent = [s[(s < 10.0) | (s >= 12.0)] for s in spike_times]
+            quiet = decoder.predict(silent, times[(times >= 10.0) & (times < 12.0)])
+        assert len(short.times) == 20
+        assert len(quiet.times) > 0
+        assert not any("milliseconds" in str(w.message) for w in caught)
 
 
 class TestDecodeSessionDtype:

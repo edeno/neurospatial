@@ -39,6 +39,31 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 
+def _clock_ratio_hint(
+    spikes: NDArray[np.float64], t_start: float, t_stop: float
+) -> str:
+    """Name a milliseconds/seconds mix-up when the time spans differ ~1000x."""
+    spike_span = float(spikes.max() - spikes.min())
+    times_span = t_stop - t_start
+    if spike_span <= 0 or times_span <= 0:
+        return ""
+    # Within a factor of ~3 of 1000x either way.
+    log_ratio = np.log10(spike_span / times_span)
+    if abs(log_ratio - 3) < 0.5:
+        return (
+            f"The spike times span {spike_span:.6g}, about 1000 times the "
+            f"{times_span:.6g} s of times: spike_times are probably in "
+            "milliseconds; divide them by 1000. "
+        )
+    if abs(log_ratio + 3) < 0.5:
+        return (
+            f"The spike times span {spike_span:.6g}, about 1/1000 of the "
+            f"{times_span:.6g} span of times: times are probably in "
+            "milliseconds; divide them by 1000. "
+        )
+    return ""
+
+
 def _warn_if_spikes_out_of_window(
     trains: list[NDArray[np.float64]],
     t_start: float,
@@ -47,14 +72,10 @@ def _warn_if_spikes_out_of_window(
     """Emit one UserWarning if most spikes fall outside the decode window.
 
     Aggregates across all spike trains. Warns (does not raise) when the
-    dropped fraction exceeds ``_DROP_WARN_THRESHOLD`` (which also covers the
-    all-dropped case, since ``1.0 > 0.5``). A genuinely empty session is
-    legitimate, so an empty input never warns.
-
-    The message mirrors the wording of the encoding-path warning
-    (``_emit_time_window_warning`` in ``neurospatial.encoding._spatial_counts``):
-    it names the dropped count and total, the percentage, the decode time
-    window, the spike range, the units hypothesis, and the escape hatch.
+    dropped fraction exceeds ``_DROP_WARN_THRESHOLD``. A genuinely empty
+    session is legitimate, so an empty input never warns. When the spike
+    times span about 1000 times (or 1/1000 of) the window, the message names
+    the likely millisecond/second mix-up.
 
     Parameters
     ----------
@@ -68,33 +89,61 @@ def _warn_if_spikes_out_of_window(
         return
 
     n_out = sum(int(np.count_nonzero((t < t_start) | (t > t_stop))) for t in trains)
-    if n_out == 0:
-        return
-
     frac = n_out / total
     if frac <= _DROP_WARN_THRESHOLD:
         return
 
-    nonempty = [t for t in trains if t.size > 0]
-    if nonempty:
-        all_spikes = np.concatenate(nonempty)
-        range_part = (
-            f"spike_times.min()={all_spikes.min():.6g} "
-            f"spike_times.max()={all_spikes.max():.6g}. "
-        )
-    else:
-        range_part = ""
-
+    all_spikes = np.concatenate([t for t in trains if t.size > 0])
     warnings.warn(
         f"{n_out}/{total} spike_times "
         f"({100 * frac:.0f}%) fell outside the decode time window "
         f"[{t_start:.6g}, {t_stop:.6g}]; "
-        f"{range_part}"
+        f"spike_times.min()={all_spikes.min():.6g} "
+        f"spike_times.max()={all_spikes.max():.6g}. "
+        f"{_clock_ratio_hint(all_spikes, t_start, t_stop)}"
         f"Check that spike_times and times share units (both seconds). "
         f"Dropped spikes do not contribute to the posterior. "
         f"Set warn_on_drop=False to suppress this warning.",
         UserWarning,
-        stacklevel=2,
+        stacklevel=_external_stacklevel(),
+    )
+
+
+def _refuse_spikes_on_another_clock(
+    trains: list[NDArray[np.float64]],
+    bin_left: NDArray[np.float64],
+    bin_right: NDArray[np.float64],
+    *,
+    context: str,
+) -> None:
+    """Raise when every spike lies before, or every spike after, the decode bins.
+
+    Spike trains that straddle the bins (a silent window inside a longer
+    recording) are legitimate and pass.
+    """
+    nonempty = [t for t in trains if t.size > 0]
+    if not nonempty:
+        return
+    first = min(float(t.min()) for t in nonempty)
+    last = max(float(t.max()) for t in nonempty)
+    start, stop = float(bin_left[0]), float(bin_right[-1])
+    if last >= start and first < stop:
+        return
+    side = "before" if last < start else "after"
+    total = sum(int(t.size) for t in nonempty)
+    hint = _clock_ratio_hint(np.array([first, last]), start, stop)
+    raise ValueError(
+        _format_error(
+            f"{context}: all {total} spike times lie {side} the decode time "
+            f"bins [{start:.6g}, {stop:.6g}) s (spike_times range "
+            f"{first:.6g} to {last:.6g}). {hint}",
+            why="spike_times and times are on different clocks or in different "
+            "units, so every decode bin would be empty and the posterior "
+            "would only repeat the prior.",
+            fix="express spike_times in seconds on the clock of times, for "
+            "example spike_times / 1000 for milliseconds, or subtract the "
+            "offset between the two clocks",
+        )
     )
 
 
@@ -255,14 +304,14 @@ def decode_session(
         If ``True`` (the default), emit a single ``UserWarning`` when a large
         fraction (>50%, which includes the all-dropped case) of spikes fall
         outside the decode time window ``[times.min(), times.max()]`` and are
-        therefore silently excluded from the count matrix.  This guards the
-        common units footgun — ``spike_times`` in milliseconds while ``times``
-        is in seconds — which would otherwise produce an all-zero count matrix
-        and a plausible-but-wrong posterior.  The warning fires exactly once
-        per call, from the encoder. This also covers spikes mapped outside
-        the environment. It also warns when more than 10% of the observed
-        time falls in run remainders shorter than ``dt``, which are not
-        decoded. Set ``False`` to suppress the coverage diagnostics.
+        therefore excluded from the count matrix, for example
+        ``spike_times`` in milliseconds while ``times`` is in seconds. The
+        warning fires once per call, from the encoder, and also covers spikes
+        mapped outside the environment. It also warns when more than 10% of
+        the observed time falls in run remainders shorter than ``dt``, which
+        are not decoded. Set ``False`` to suppress these diagnostics. When
+        every spike lies before, or every spike after, the decode bins, the
+        call raises whatever ``warn_on_drop`` is.
     dtype : {np.float32, np.float64}, default=np.float64
         "Decode in this dtype." Controls BOTH the encoding-model working set
         AND the posterior dtype end-to-end. ``np.float32`` halves the
@@ -296,9 +345,10 @@ def decode_session(
     Raises
     ------
     ValueError
-        Propagated from the underlying helpers if inputs are invalid (e.g.
-        ``dt`` is not finite/positive, ``t_stop <= t_start``, or the
-        encoding model has no finite bins).
+        If ``dt`` is not finite and positive, if no decode time bin fits in
+        the observed runs, if every spike lies before or after the decode
+        bins (spike_times and times on different clocks or in different
+        units), or if the encoding model has no supported bin.
 
     Notes
     -----
@@ -555,6 +605,8 @@ def _prepare_session_decode(
     )
     runs = recording_support.runs
     bin_left, bin_right = _time_bins_in_windows(runs, dt)
+    if bin_left.size:
+        _refuse_spikes_on_another_clock(trains, bin_left, bin_right, context=context)
     if warn_partial_bins:
         _warn_if_bins_drop_observed_time(runs, bin_left, bin_right, dt, max_gap)
     if bin_left.size == 0:
