@@ -1108,7 +1108,7 @@ cells; covariance patterns can reflect their shared spatial drive.
 | Branch | Inputs | Output |
 | --- | --- | --- |
 | Position decoding | Template rate maps and match spike counts, in the same unit order | Posterior over spatial bins |
-| Population statistics | Control, template and match count matrices, in the same unit order | Patterns, standardized activations and EV/controlled REV effect sizes |
+| Population statistics | Control, template and match count matrices, in the same unit order | Patterns, activation strengths and EV/controlled REV effect sizes |
 
 A posterior is not an input to assembly or EV analysis. Remove constant units
 once across all periods, then apply the same mask to spike trains, map rows,
@@ -1216,8 +1216,8 @@ for pattern in assemblies.patterns:
         template_unit_ids=selected_ids,
         match_unit_ids=selected_ids,
     )
-    print("Standardized activation mean/SD:", activation.mean(), activation.std())
-    print("Activation magnitude ratio (effect size):", strength)
+    print("Mean activation strength in the match period:", activation.mean())
+    print("Match-over-template mean activation strength (effect size):", strength)
 correlations = {
     period: pairwise_correlations(matrix) for period, matrix in counts.items()
 }
@@ -1250,13 +1250,16 @@ pattern's weights by label. The same per-period labels given to
 cells in every period. A pattern can have no core members at the default absolute-weight
 z-score cutoff, even when its dimension passes the reference.
 
-`assembly_activation` standardizes the projection within each period,
-removing absolute projection scale; its output does not give a tail
-probability. In contrast, `reactivation_strength` normalizes both count
-matrices with the template's neuron means/standard deviations and projects
-onto the same pattern without separate projection standardization. Its ratio
-preserves relative magnitude on that shared template scale, but remains an
-effect size rather than a calibrated tail probability.
+`assembly_activation` z-scores each unit within the period and returns the
+activation strength R(t), the pattern-weighted sum of products of pairs of
+z-scored counts: about 0 when the cells fire independently, large when cells
+with large weights fire together. A single cell's burst alone does not raise
+it, and its values are not tail probabilities. `reactivation_strength`
+divides the pattern's mean activation strength in the match period by its
+mean in the template period, each period z-scored on its own: about 0 for
+independent firing in the match period, 1 for the template's level of
+co-firing. It is an effect size; compare it with a control period or a
+shuffle null rather than with 1.
 
 Controlled EV is `r(template, match | control)^2`, while controlled REV
 is `r(template, control | match)^2`, swapping the pre- and post-behavior

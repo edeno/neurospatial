@@ -215,7 +215,7 @@ class TestDetectAssemblies:
 
         assert result.method == algorithm
         assert len(result.patterns) == 3
-        assert result.activations.shape[0] == len(result.patterns)
+        assert result.activations.shape == (len(spike_counts_with_assemblies), 3)
 
     def test_patterns_have_correct_shape(self, small_spike_counts: np.ndarray) -> None:
         """Pattern weights should have n_neurons elements."""
@@ -228,11 +228,11 @@ class TestDetectAssemblies:
     def test_activations_have_correct_shape(
         self, small_spike_counts: np.ndarray
     ) -> None:
-        """Activations should have shape (n_assemblies, n_time_bins)."""
+        """Activations are time-first, (n_time_bins, n_assemblies), like the counts."""
         n_time = small_spike_counts.shape[0]  # (n_time_bins, n_neurons)
         result = detect_assemblies(small_spike_counts, n_components=2, rng=42)
 
-        assert result.activations.shape == (len(result.patterns), n_time)
+        assert result.activations.shape == (n_time, len(result.patterns))
 
     def test_eigenvalues_descending(
         self, spike_counts_with_assemblies: np.ndarray
@@ -250,7 +250,7 @@ class TestDetectAssemblies:
         result = detect_assemblies(small_spike_counts, n_components=n_comp, rng=42)
 
         assert len(result.patterns) == n_comp
-        assert result.activations.shape[0] == n_comp
+        assert result.activations.shape[1] == n_comp
 
     def test_n_components_auto(self, spike_counts_with_assemblies: np.ndarray) -> None:
         """Auto n_components keeps the dimensions above the Marchenko-Pastur bound."""
@@ -269,7 +269,7 @@ class TestDetectAssemblies:
             result = detect_assemblies(random_spike_counts, algorithm=algorithm, rng=42)
         assert result.n_significant == 0
         assert len(result.patterns) == 0
-        assert result.activations.shape == (0, random_spike_counts.shape[0])
+        assert result.activations.shape == (random_spike_counts.shape[0], 0)
 
     def test_z_threshold_affects_membership(self) -> None:
         """Weak participants are members at a low cutoff only; core cells at both."""
@@ -413,12 +413,15 @@ class TestPatternSign:
         for k, pattern in enumerate(result.patterns):
             largest = int(np.argmax(np.abs(pattern.weights)))
             assert pattern.weights[largest] > 0
-            # The assembly holding the largest weight is active in its events.
+            # The assembly holding the largest weight is active in its events,
+            # above the activation-event cutoff of 5 (van de Ven et al., 2016),
+            # and near 0 otherwise.
             (assembly,) = [a for a, cells in enumerate(members) if largest in cells]
             in_event = events[assembly]
             activation = assembly_activation(counts, pattern)
-            assert activation[in_event].mean() > 2.0
-            assert result.activations[k][in_event].mean() > 0.0
+            assert activation[in_event].mean() > 5.0
+            assert abs(activation[~in_event].mean()) < 1.0
+            assert result.activations[in_event, k].mean() > 5.0
 
     def test_ica_members_have_positive_weights(
         self, planted_events: tuple[np.ndarray, list[np.ndarray], np.ndarray]
@@ -430,19 +433,22 @@ class TestPatternSign:
         for pattern in result.patterns:
             assert np.all(pattern.weights[pattern.member_indices] > 0)
 
-    @pytest.mark.parametrize("algorithm", ["ica", "pca"])
-    def test_flip_keeps_activations_consistent(
+    @pytest.mark.parametrize("algorithm", ["ica", "pca", "nmf"])
+    def test_result_activations_match_assembly_activation(
         self,
         planted_events: tuple[np.ndarray, list[np.ndarray], np.ndarray],
         algorithm: str,
     ) -> None:
-        """Flipping a pattern flips its activation: weights @ z == activations."""
-        from scipy.stats import zscore
-
+        """Every method reports the same activation strength as assembly_activation."""
         counts, _, _ = planted_events
         result = detect_assemblies(counts, algorithm=algorithm, rng=0)
-        weights = np.array([pattern.weights for pattern in result.patterns])
-        assert_allclose(weights @ zscore(counts, axis=0).T, result.activations)
+        for k, pattern in enumerate(result.patterns):
+            assert_allclose(
+                result.activations[:, k],
+                assembly_activation(counts, pattern),
+                rtol=1e-10,
+                atol=1e-9,
+            )
 
 
 # =============================================================================
@@ -464,18 +470,91 @@ class TestAssemblyActivation:
 
         assert activation.shape == (spike_counts_with_assemblies.shape[0],)
 
-    def test_returns_zscored_activation(
+    @pytest.fixture
+    def coactivation_counts(self) -> tuple[np.ndarray, AssemblyPattern]:
+        """Five members with weight 1/sqrt(5) among 30 neurons, and planted bins.
+
+        Bins 100-119 hold a burst of member 0 alone; bins 200-219 hold the
+        same burst in all five members together.
+        """
+        rng = np.random.default_rng(4)
+        counts = rng.poisson(1.0, (2000, 30)).astype(np.float64)
+        counts[100:120, 0] += 6
+        counts[200:220, :5] += 6
+        weights = np.r_[np.full(5, 1 / np.sqrt(5)), np.zeros(25)]
+        return counts, AssemblyPattern(weights, np.arange(5), 0.2)
+
+    def test_lone_member_burst_is_not_coactivation(self, coactivation_counts) -> None:
+        """Only members firing together raise the projector activation strength.
+
+        A linear projection w . z(t) scores a burst of one member as a strong
+        assembly event; with the diagonal of the projector removed, that bin
+        scores near 0 and the joint burst scores far above it.
+        """
+        counts, pattern = coactivation_counts
+        activation = assembly_activation(counts, pattern)
+        lone, together = activation[100:120].mean(), activation[200:220].mean()
+        baseline = np.delete(activation, np.r_[100:120, 200:220])
+        # The lone burst averages 0 up to noise (about 1 for 20 bins).
+        assert abs(lone) < 2.5
+        assert together > 50.0
+        assert together > baseline.mean() + 20 * baseline.std()
+
+    def test_activation_is_higher_in_planted_coactivation_bins(
         self, spike_counts_with_assemblies: np.ndarray
     ) -> None:
-        """Activation should be z-scored (mean ≈ 0, std ≈ 1)."""
+        """A pattern's activation tracks the shared drive of its own members."""
         result = detect_assemblies(spike_counts_with_assemblies, rng=42)
-        pattern = result.patterns[0]
+        for pattern in result.patterns:
+            activation = assembly_activation(spike_counts_with_assemblies, pattern)
+            members = pattern.member_indices
+            drive = spike_counts_with_assemblies[:, members].mean(axis=1)
+            high = drive > np.quantile(drive, 0.9)
+            assert activation[high].mean() > 3 * activation[~high].mean() > 0
 
-        activation = assembly_activation(spike_counts_with_assemblies, pattern)
+    def test_sign_flip_gives_identical_activation(self, coactivation_counts) -> None:
+        counts, pattern = coactivation_counts
+        flipped = AssemblyPattern(-pattern.weights, pattern.member_indices, 0.2)
+        assert_allclose(
+            assembly_activation(counts, flipped),
+            assembly_activation(counts, pattern),
+            rtol=0,
+            atol=0,
+        )
 
-        # Z-scored values should have mean ≈ 0, std ≈ 1
-        assert_allclose(np.mean(activation), 0.0, atol=0.1)
-        assert_allclose(np.std(activation), 1.0, atol=0.1)
+    def test_weights_are_used_at_unit_length(self, coactivation_counts) -> None:
+        counts, pattern = coactivation_counts
+        scaled = AssemblyPattern(3 * pattern.weights, pattern.member_indices, 0.2)
+        assert_allclose(
+            assembly_activation(counts, scaled), assembly_activation(counts, pattern)
+        )
+
+    def test_independent_neurons_average_zero(self, rng: np.random.Generator) -> None:
+        """Mean R(t) is w'Cw - 1, about 0 for independent neurons."""
+        counts = rng.poisson(2.0, (5000, 10)).astype(np.float64)
+        weights = rng.standard_normal(10)
+        pattern = AssemblyPattern(weights, np.array([0]), 0.1)
+        activation = assembly_activation(counts, pattern)
+        unit = weights / np.linalg.norm(weights)
+        expected = unit @ np.corrcoef(counts, rowvar=False) @ unit - 1
+        assert_allclose(activation.mean(), expected, atol=1e-12)
+        assert abs(activation.mean()) < 4 * np.sqrt(2 / 5000)
+
+    def test_constant_member_warns_and_contributes_nothing(
+        self, coactivation_counts
+    ) -> None:
+        counts, pattern = coactivation_counts
+        silent = counts.copy()
+        silent[:, 2] = 0.0
+        with pytest.warns(UserWarning, match=r"units \[2\] have nonzero weight"):
+            activation = assembly_activation(silent, pattern)
+        assert np.all(np.isfinite(activation))
+
+    def test_all_zero_weights_raise(self, coactivation_counts) -> None:
+        counts, _ = coactivation_counts
+        empty = AssemblyPattern(np.zeros(30), np.array([], dtype=np.int64), 0.0)
+        with pytest.raises(ValueError, match="weights are all 0"):
+            assembly_activation(counts, empty)
 
     def test_mismatched_neurons_raises_error(
         self, spike_counts_with_assemblies: np.ndarray, rng: np.random.Generator
@@ -505,15 +584,20 @@ class TestAssemblyActivation:
         result = detect_assemblies(spike_counts_with_assemblies, rng=42)
         pattern = result.patterns[0]
 
+        from scipy.stats import zscore
+
         act_zscore = assembly_activation(
             spike_counts_with_assemblies, pattern, z_score_input=True
         )
         act_raw = assembly_activation(
             spike_counts_with_assemblies, pattern, z_score_input=False
         )
+        prenormalized = assembly_activation(
+            zscore(spike_counts_with_assemblies, axis=0), pattern, z_score_input=False
+        )
 
-        # Results should differ
         assert not np.allclose(act_zscore, act_raw)
+        assert_allclose(prenormalized, act_zscore, atol=1e-10)
 
 
 # =============================================================================
@@ -573,38 +657,81 @@ class TestPairwiseCorrelations:
 
 
 class TestReactivationStrength:
-    """Tests for reactivation_strength function."""
+    """Mean activation strength in the match period over the template period."""
 
-    def test_strength_non_negative(
-        self, spike_counts_with_assemblies: np.ndarray
-    ) -> None:
-        """Reactivation strength should be non-negative (ratio of magnitudes)."""
-        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
-        pattern = result.patterns[0]
+    @staticmethod
+    def _period(seed: int, n_time: int, drive: float) -> np.ndarray:
+        """Members 0-4 share a drive of ``drive`` spikes on top of 1 Hz noise."""
+        rng = np.random.default_rng(seed)
+        counts = rng.poisson(1.0, (n_time, 20)).astype(np.float64)
+        counts[:, :5] += 2 * rng.poisson(drive, (n_time, 1))
+        return counts
 
-        n_time = spike_counts_with_assemblies.shape[0]  # (n_time_bins, n_neurons)
-        template = spike_counts_with_assemblies[: n_time // 2, :]
-        match = spike_counts_with_assemblies[n_time // 2 :, :]
-
-        strength = reactivation_strength(template, match, pattern)
-
-        # Ratio of activation magnitudes should be non-negative
-        assert strength >= 0
-
-    def test_strength_similar_data(
-        self, spike_counts_with_assemblies: np.ndarray
-    ) -> None:
-        """Same data should give strength ≈ 1."""
-        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
-        pattern = result.patterns[0]
-
-        # Use same data for template and match
-        strength = reactivation_strength(
-            spike_counts_with_assemblies, spike_counts_with_assemblies, pattern
+    @pytest.fixture
+    def pattern(self) -> AssemblyPattern:
+        return AssemblyPattern(
+            np.r_[np.full(5, 1 / np.sqrt(5)), np.zeros(15)], np.arange(5), 0.2
         )
 
-        # Same data should have ratio ≈ 1
-        assert_allclose(strength, 1.0, rtol=0.1)
+    def test_identical_periods_give_one(
+        self, spike_counts_with_assemblies: np.ndarray
+    ) -> None:
+        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
+        for pattern in result.patterns:
+            strength = reactivation_strength(
+                spike_counts_with_assemblies, spike_counts_with_assemblies, pattern
+            )
+            assert_allclose(strength, 1.0, rtol=1e-12)
+
+    def test_equals_ratio_of_mean_assembly_activation(self, pattern) -> None:
+        template, match = self._period(0, 2000, 0.5), self._period(1, 1500, 0.3)
+        expected = (
+            assembly_activation(match, pattern).mean()
+            / assembly_activation(template, pattern).mean()
+        )
+        assert_allclose(
+            reactivation_strength(template, match, pattern), expected, rtol=1e-12
+        )
+
+    def test_coactivation_after_but_not_before(self, pattern) -> None:
+        """Members firing together only after the task: strength pre ~0, post ~1."""
+        run = self._period(0, 3000, 0.5)
+        pre = self._period(1, 3000, 0.0)
+        post = self._period(2, 3000, 0.5)
+        strength_pre = reactivation_strength(run, pre, pattern)
+        strength_post = reactivation_strength(run, post, pattern)
+        mean_run = assembly_activation(run, pattern).mean()
+        noise_floor = np.sqrt(2 / 3000) / mean_run
+        assert abs(strength_pre) < 4 * noise_floor
+        assert abs(strength_post - 1.0) < 0.1
+
+    def test_scaling_counts_leaves_strength_unchanged(
+        self, template_counts: np.ndarray, assembly_pattern: AssemblyPattern
+    ) -> None:
+        """Each period is z-scored on its own, so a gain change is not reactivation."""
+        strength = reactivation_strength(
+            template_counts, 3.0 * template_counts, assembly_pattern
+        )
+        assert_allclose(strength, 1.0, rtol=1e-12)
+
+    def test_no_template_coactivation_is_nan(self, pattern) -> None:
+        anti = self._period(4, 2000, 0.0)
+        anti[:, 1] = anti[:, 0].max() - anti[:, 0]  # members 0 and 1 in opposition
+        with pytest.warns(UserWarning, match="ratio is undefined"):
+            strength = reactivation_strength(anti, self._period(5, 2000, 0.5), pattern)
+        assert np.isnan(strength)
+
+    def test_neuron_constant_in_one_period_is_excluded(self, pattern) -> None:
+        template, match = self._period(0, 2000, 0.5), self._period(1, 2000, 0.5)
+        template[:, 3] = 0.0  # member 3 silent in the template period
+        with pytest.warns(
+            UserWarning, match=r"units \[3\] .* template_counts.* excluded"
+        ):
+            strength = reactivation_strength(template, match, pattern)
+        keep = np.arange(20) != 3
+        reduced = AssemblyPattern(pattern.weights[keep], np.arange(4), 0.2)
+        expected = reactivation_strength(template[:, keep], match[:, keep], reduced)
+        assert_allclose(strength, expected, rtol=1e-12)
 
 
 # =============================================================================
@@ -958,34 +1085,14 @@ class TestExplainedVarianceControlAndREV:
         assert_allclose(result.explained_variance, result.reversed_ev)
 
 
-class TestReactivationStrengthMagnitude:
-    """reactivation_strength must be sensitive to activation magnitude."""
+class TestReactivationStrengthNoCoactivation:
+    """A match period without co-activation reports about 0, not a ratio near 1."""
 
-    def test_reactivation_strength_detects_magnitude(
+    def test_match_without_shared_drive_is_near_zero(
         self,
         template_counts: np.ndarray,
         assembly_pattern: AssemblyPattern,
     ) -> None:
-        """A 3x stronger match period yields strength well above 1."""
-        match_counts = 3.0 * template_counts
-
-        strength = reactivation_strength(
-            template_counts, match_counts, assembly_pattern
-        )
-
-        assert strength > 1.5
-
-    def test_reactivation_strength_weak_match_below_one(
-        self,
-        template_counts: np.ndarray,
-        assembly_pattern: AssemblyPattern,
-    ) -> None:
-        """A match period with no assembly co-activation yields strength < 1.
-
-        The member neurons hold near their template baseline (no shared
-        drive), so the pattern projection stays small and the metric
-        reports much weaker match-period activation.
-        """
         rng = np.random.default_rng(3)
         # Per-neuron baseline over time (axis 0 = time in (n_time_bins, n_neurons)).
         baseline = template_counts.mean(axis=0, keepdims=True)
@@ -996,7 +1103,9 @@ class TestReactivationStrengthMagnitude:
             template_counts, match_counts, assembly_pattern
         )
 
-        assert strength < 1.0
+        mean_template = assembly_activation(template_counts, assembly_pattern).mean()
+        noise_floor = np.sqrt(2 / template_counts.shape[0]) / mean_template
+        assert abs(strength) < 4 * noise_floor
 
 
 class TestDetectAssembliesShortRecording:
@@ -1016,7 +1125,7 @@ class TestDetectAssembliesShortRecording:
             )
         # Clamped to min(n_neurons, n_time_bins) == 3 patterns; no crash.
         assert len(result.patterns) <= 3
-        assert result.activations.shape[1] == 3  # n_time_bins preserved
+        assert result.activations.shape[0] == 3  # n_time_bins preserved
 
 
 @pytest.mark.parametrize("n_components", [2, 3])

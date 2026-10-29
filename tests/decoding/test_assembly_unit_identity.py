@@ -164,9 +164,9 @@ def test_positional_activation_of_reordered_columns_is_wrong(
     wrong = assembly_activation(rest_counts[:, order], pattern)
     assert np.corrcoef(right, wrong)[0, 1] < 0.5
     # The bins where the members fire together stand out only when paired.
-    drive = rest_counts[:, MEMBERS].sum(axis=1)
-    assert np.corrcoef(right, drive)[0, 1] > 0.9
-    assert np.corrcoef(wrong, drive)[0, 1] < 0.5
+    together = (rest_counts[:, MEMBERS] >= 3).all(axis=1)
+    assert right[together].mean() > 2 * right[~together].mean() > 0
+    assert abs(wrong[together].mean()) < 0.5
 
 
 def test_label_free_activation_is_unchanged_by_labels_on_the_pattern(

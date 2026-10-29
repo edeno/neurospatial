@@ -254,8 +254,10 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     patterns : list[AssemblyPattern]
         Detected assembly patterns, ordered by ``explained_variance_ratio``
         (highest first) for every method.
-    activations : NDArray[np.float64], shape (n_assemblies, n_time_bins)
-        Activation strength of each assembly over time.
+    activations : NDArray[np.float64], shape (n_time_bins, n_assemblies)
+        Activation strength R(t) of each pattern in each time bin of the
+        detection counts, time first like the counts; column ``k`` equals
+        ``assembly_activation(spike_counts, patterns[k])``.
     method : str
         Detection method used ('ica', 'pca', or 'nmf').
     n_significant : int
@@ -292,11 +294,11 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
 
     **Activation Interpretation**:
 
-    ``activations`` carries the detection algorithm's projection scale, which
-    differs between PCA, ICA and NMF. Use :func:`assembly_activation` to obtain
-    a standardized projection for a chosen pattern and period. Standardized
-    values describe relative activity; they do not by themselves establish
-    significance or biological assembly identity.
+    ``activations`` holds the projector activation strength of
+    :func:`assembly_activation` for every method: in units of squared
+    z-scores, about 0 when the pattern's neurons fire independently, and
+    large when they fire together. It describes co-activation; it does not by
+    itself establish significance or biological assembly identity.
 
     Examples
     --------
@@ -308,8 +310,8 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     >>>
     >>> # Plot activation of first assembly
     >>> import matplotlib.pyplot as plt  # doctest: +SKIP
-    >>> plt.plot(result.activations[0])  # doctest: +SKIP
-    >>> plt.ylabel("Activation (algorithm projection scale)")  # doctest: +SKIP
+    >>> plt.plot(result.activations[:, 0])  # doctest: +SKIP
+    >>> plt.ylabel("Activation strength")  # doctest: +SKIP
     """
 
     patterns: list[AssemblyPattern]
@@ -658,7 +660,8 @@ def detect_assemblies(
     4. Project onto significant PCs (and whiten their scores for ICA)
     5. Apply ICA/PCA/NMF to extract assembly patterns
     6. Threshold weights to identify core members
-    7. Compute activation time series
+    7. Compute the activation strength R(t) of each pattern (see
+       :func:`assembly_activation`)
 
     **Excluded neurons and components**: A neuron with the same count in
     every time bin has no correlation with any other neuron. It is excluded
@@ -670,11 +673,10 @@ def detect_assemblies(
     warning, so a result can hold fewer patterns than ``n_components``.
 
     **Sign convention**: ICA and PCA determine a pattern only up to its sign.
-    Each pattern is flipped so that its largest-magnitude weight is positive,
-    and its activation is flipped with it. Bins where the neurons with the
-    largest positive weights fire together then have positive activation in
-    ``result.activations`` and in :func:`assembly_activation`. NMF patterns
-    are non-negative and are unchanged.
+    Each pattern is scaled to unit length and flipped so that its
+    largest-magnitude weight is positive; its members are then the neurons
+    with the largest positive weights. The activation strength does not
+    depend on the sign. NMF patterns are non-negative.
 
     **Choosing a Method**:
 
@@ -852,19 +854,14 @@ def detect_assemblies(
 
     # Perform dimensionality reduction
     if n_comp == 0:
-        patterns = np.zeros((0, n_retained))
-        activations = np.zeros((0, n_time_bins))
-        explained_var = np.zeros(0)
+        patterns, explained_var = np.zeros((0, n_retained)), np.zeros(0)
     elif algorithm == "pca":
-        patterns, activations, explained_var = _detect_pca(spike_counts_z, n_comp)
+        patterns, explained_var = _detect_pca(spike_counts_z, n_comp)
     elif algorithm == "ica":
-        patterns, activations, explained_var = _detect_ica(spike_counts_z, n_comp, seed)
+        patterns, explained_var = _detect_ica(spike_counts_z, n_comp, seed)
     else:
-        patterns, activations, explained_var = _detect_nmf(
-            retained_counts,
-            n_comp,
-            seed,  # NMF uses original counts
-        )
+        # NMF needs non-negative input, so it factorizes the raw counts.
+        patterns, explained_var = _detect_nmf(retained_counts, n_comp, seed)
     n_found = patterns.shape[0]
     if n_found < n_comp:
         warnings.warn(
@@ -878,20 +875,18 @@ def detect_assemblies(
     # Order patterns by explained variance, highest first. PCA eigenvectors
     # already are; ICA sources and NMF components come in arbitrary order.
     order = np.argsort(-explained_var, kind="stable")
-    patterns, activations, explained_var = (
-        patterns[order],
-        activations[order],
-        explained_var[order],
-    )
+    patterns, explained_var = patterns[order], explained_var[order]
 
     # ICA and eigenvector signs are arbitrary. Orient each pattern so its
-    # largest-magnitude weight is positive, and flip its activation with it so
-    # weights @ z-scored counts == activations still holds. An assembly's
-    # events then raise its activation instead of lowering it.
+    # largest-magnitude weight is positive: its members are then the neurons
+    # with the largest positive weights. The activation strength does not
+    # depend on the sign.
     largest = patterns[np.arange(n_found), np.argmax(np.abs(patterns), axis=1)]
-    signs = np.where(largest < 0, -1.0, 1.0)
-    patterns = patterns * signs[:, None]
-    activations = activations * signs[:, None]
+    patterns = patterns * np.where(largest < 0, -1.0, 1.0)[:, None]
+
+    # Activation strength of every pattern in every detection bin,
+    # shape (n_time_bins, n_found); excluded neurons have weight 0.
+    activations = _activation_strength(spike_counts_z.T, patterns)
 
     # Members: absolute weights z-scored across the retained neurons, then
     # thresholded; shape (n_found, n_retained).
@@ -925,7 +920,7 @@ def detect_assemblies(
 def _detect_pca(
     spike_counts_z: NDArray[np.float64],
     n_components: int,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """
     Detect assemblies using PCA via scipy SVD on the correlation matrix.
 
@@ -939,7 +934,6 @@ def _detect_pca(
         Eigenvectors of the ``n_live <= n_components`` leading components
         with nonzero variance; components beyond the numerical rank are
         dropped.
-    activations : array, shape (n_live, n_time_bins)
     explained_variance_ratio : array, shape (n_live,)
     """
     # SVD: Z = U @ S @ Vh where Z is (n_neurons, n_time_bins). The correlation
@@ -953,20 +947,17 @@ def _detect_pca(
     # Each column of u is a pattern; transpose to (n_live, n_neurons).
     patterns = u[:, :n_live].T
 
-    # activation[i, t] = sum_j patterns[i, j] * spike_counts_z[j, t]
-    activations = patterns @ spike_counts_z  # (n_live, n_time_bins)
-
     # Eigenvalues of C are s^2 / T, and they sum to the total variance.
     explained_var = (s[:n_live] ** 2) / np.sum(s**2)
 
-    return patterns, activations, explained_var
+    return patterns, explained_var
 
 
 def _detect_ica(
     spike_counts_z: NDArray[np.float64],
     n_components: int,
     random_state: int | None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """
     Detect assemblies using ICA via sklearn FastICA.
 
@@ -979,7 +970,6 @@ def _detect_ica(
     patterns : array, shape (n_live, n_neurons)
         One pattern per principal component with nonzero variance,
         ``n_live <= n_components``.
-    activations : array, shape (n_live, n_time_bins)
     explained_variance_ratio : array, shape (n_live,)
     """
     from sklearn.decomposition import FastICA
@@ -988,8 +978,9 @@ def _detect_ica(
     # leaves their variances equal to the eigenvalues; FastICA must whiten
     # these scores before its rotation. _detect_pca drops null PCs, so
     # whitening cannot amplify numerical noise or divide by zero.
-    patterns_pca, activations_pca, _ = _detect_pca(spike_counts_z, n_components)
+    patterns_pca, _ = _detect_pca(spike_counts_z, n_components)
     n_live = patterns_pca.shape[0]
+    scores_pca = patterns_pca @ spike_counts_z  # (n_live, n_time_bins)
 
     ica = FastICA(
         n_components=n_live,
@@ -997,16 +988,15 @@ def _detect_ica(
         max_iter=1000,
         whiten="unit-variance",
     )
-    activations = ica.fit_transform(activations_pca.T).T
+    ica.fit(scores_pca.T)
 
     # components_ includes the whitening transform as well as the ICA
     # rotation; composed with the projection it maps z-scored counts to the
     # sources. Scale each pattern to unit length (Lopes-dos-Santos et al.,
     # 2013), like the PCA eigenvectors, so weights are comparable across
-    # methods, and keep weights @ z-scored counts == activations.
+    # methods; the pattern @ z-scored counts is then a scaled source.
     patterns = ica.components_ @ patterns_pca
     patterns /= np.linalg.norm(patterns, axis=1, keepdims=True)
-    activations = patterns @ spike_counts_z
 
     # Unit-variance, uncorrelated sources contribute the squared norm of
     # their neuron-space mixing column to the reconstructed variance.
@@ -1015,14 +1005,14 @@ def _detect_ica(
     total_var = np.sum(spike_counts_z**2) / spike_counts_z.shape[1]
     explained_var = np.sum(loadings**2, axis=0) / total_var
 
-    return patterns, activations, explained_var
+    return patterns, explained_var
 
 
 def _detect_nmf(
     spike_counts: NDArray[np.float64],
     n_components: int,
     random_state: int | None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """
     Detect assemblies using NMF via sklearn.
 
@@ -1037,9 +1027,8 @@ def _detect_nmf(
     Returns
     -------
     patterns : array, shape (n_live, n_neurons)
-        Components with nonzero weights and activations,
-        ``n_live <= n_components``.
-    activations : array, shape (n_live, n_time_bins)
+        Unit-length weights of the components with nonzero weights and
+        activations, ``n_live <= n_components``.
     explained_variance_ratio : array, shape (n_live,)
     """
     from sklearn.decomposition import NMF
@@ -1079,7 +1068,56 @@ def _detect_nmf(
         / np.sum(np.var(spike_counts, axis=1))
     )
 
-    return patterns, activations, explained_var
+    return patterns, explained_var
+
+
+def _z_scores(
+    spike_counts: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Z-score each neuron over time, with 0 for constant neurons.
+
+    Parameters
+    ----------
+    spike_counts : ndarray, shape (n_time_bins, n_neurons)
+        Finite counts of one period.
+
+    Returns
+    -------
+    z : ndarray, shape (n_time_bins, n_neurons)
+        Each column minus its mean, divided by its standard deviation, both
+        over this period. A constant column has no deviation and is 0.
+    constant : ndarray of bool, shape (n_neurons,)
+        Columns with the same value in every time bin.
+    """
+    constant = np.ptp(spike_counts, axis=0) == 0
+    std = np.where(constant, 1.0, spike_counts.std(axis=0))
+    z = (spike_counts - spike_counts.mean(axis=0)) / std
+    z[:, constant] = 0.0
+    return z, constant
+
+
+def _activation_strength(
+    spike_counts_z: NDArray[np.float64], weights: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Projector activation strength of each pattern in each time bin.
+
+    Parameters
+    ----------
+    spike_counts_z : ndarray, shape (n_time_bins, n_neurons)
+        Z-scored counts.
+    weights : ndarray, shape (n_patterns, n_neurons)
+        Pattern weights.
+
+    Returns
+    -------
+    ndarray, shape (n_time_bins, n_patterns)
+        ``R[t, k] = z(t)^T P_k z(t)`` with ``P_k = w_k w_k^T`` and its
+        diagonal set to 0, computed as
+        ``(w_k . z(t))^2 - sum_i w_ki^2 z_i(t)^2``.
+    """
+    projection = spike_counts_z @ weights.T
+    activation: NDArray[np.float64] = projection**2 - spike_counts_z**2 @ (weights**2).T
+    return activation
 
 
 # =============================================================================
@@ -1097,18 +1135,22 @@ def assembly_activation(
     """
     Compute activation strength of an assembly over time.
 
-    Projects new spike count data onto an assembly pattern to measure
-    activation strength at each time bin.
+    Measures, in each time bin, how strongly the pattern's neurons fire
+    together: the projector activation strength of Lopes-dos-Santos et al.
+    (2013) and Peyrache et al. (2009, 2010).
 
     Parameters
     ----------
     spike_counts : NDArray[np.float64], shape (n_time_bins, n_neurons)
-        Population activity of the pattern's units.
+        Population activity of the pattern's units, finite. Raw counts must
+        be non-negative.
     pattern : AssemblyPattern
         Assembly pattern with neuron weights.
     z_score_input : bool, default=True
-        If True, z-score spike counts before projection.
-        Set to False if data is already normalized.
+        If True, z-score each neuron's counts with this period's own mean and
+        standard deviation, as in the published method. Set to False if
+        ``spike_counts`` is already z-scored, for example against another
+        period's mean and standard deviation.
     unit_ids : array-like, shape (n_neurons,), optional
         Label of the unit in each column of ``spike_counts``. The columns are
         then matched to the pattern's weights by label, in any order, and
@@ -1119,58 +1161,73 @@ def assembly_activation(
     Returns
     -------
     activation : NDArray[np.float64], shape (n_time_bins,)
-        Projection standardized to zero mean and unit standard deviation
-        within this period (all zeros for a constant projection). Large
-        magnitudes indicate unusual activity relative to that period's mean;
-        they do not supply calibrated tail probabilities.
+        Activation strength R(t) in each time bin, in units of squared
+        z-scores. Large positive values mark bins in which neurons with
+        same-sign weights fire together above their means.
 
     Raises
     ------
     ValueError
-        If spike_counts has wrong number of neurons, or with ``unit_ids``,
-        if the pattern's labels were generated or the labels of the two sides
-        differ.
+        If spike_counts has the wrong number of neurons, holds NaN or
+        infinite values (or negative raw counts), the pattern has no nonzero
+        weight, or with ``unit_ids``, if the pattern's labels were generated
+        or the labels of the two sides differ.
+
+    Warns
+    -----
+    UserWarning
+        If a neuron with nonzero weight has the same count in every bin of
+        this period. Its z-score is undefined; it contributes 0, so it
+        cannot take part in co-activation.
 
     Notes
     -----
-    **Activation Computation**:
+    **Activation strength**:
 
-    Activation is computed as the dot product between pattern weights
-    and normalized spike counts:
+    With the pattern's weights :math:`w` scaled to unit length and the
+    z-scored counts :math:`z(t)`,
 
     .. math::
 
-        a(t) = \\sum_i w_i \\cdot z_i(t)
+        R(t) = z(t)^T P z(t) = \\sum_{i \\neq j} w_i w_j z_i(t) z_j(t),
+        \\qquad P = w w^T \\text{ with } P_{ii} = 0.
 
-    where :math:`w_i` are pattern weights and :math:`z_i(t)` are
-    z-scored spike counts when ``z_score_input=True``. The projected series
-    is then standardized again within the supplied period, even when
-    ``z_score_input=False``. Use :func:`reactivation_strength` to compare
-    magnitudes between periods against a shared template baseline.
+    Removing the diagonal removes each neuron's own squared deviation, so a
+    burst of one member alone adds nothing; only pairs of neurons that
+    deviate together raise R(t) (Peyrache et al., 2010). Flipping the sign of
+    every weight leaves R(t) unchanged. Averaged over the period, R(t) is
+    :math:`w^T C w - 1`, where :math:`C` is the period's correlation matrix:
+    the pattern's co-activation beyond what independent neurons give.
 
     **Interpretation**:
 
-    - activation > 2: more than two standard deviations above this period's mean
-    - activation < -2: more than two standard deviations below this period's mean
-    - activation ≈ 0: near this period's mean projection
+    For independent neurons R(t) has mean 0 and, for Gaussian z-scores,
+    standard deviation :math:`\\sqrt{2(1 - \\sum_i w_i^4)} \\le \\sqrt{2}`.
+    Spike counts are skewed, so the tails are heavier than that. Published
+    analyses call bins with R(t) above 5 assembly activations (van de Ven et
+    al., 2016); this is a descriptive cutoff, not a p-value. Assess
+    significance against a null built for your recording, for example
+    activation strengths of patterns detected on time-shuffled counts.
 
-    Standardization does not make an arbitrary activity distribution normal.
-    A threshold of 2 is a descriptive activity cutoff, not an automatic
-    p < 0.05 test. Assess significance using a suitable null/control analysis.
+    Each period is z-scored with its own mean and standard deviation, so a
+    change in firing rate between periods does not by itself change R(t).
+    Use :func:`reactivation_strength` to compare a pattern's mean activation
+    between periods.
 
     Examples
     --------
-    A sparse one-neuron projection has 10% of bins above 2 despite unit variance:
+    Units 0 and 1 form an assembly. A burst of unit 0 alone barely registers;
+    the two firing together does:
 
     >>> import numpy as np
     >>> from neurospatial.decoding import AssemblyPattern, assembly_activation
-    >>> counts = np.concatenate([np.zeros(90), np.ones(10)])[:, None]
-    >>> pattern = AssemblyPattern(np.array([1.0]), np.array([0]), 1.0)
+    >>> counts = np.random.default_rng(0).poisson(1.0, (200, 3)).astype(float)
+    >>> counts[10, 0] += 6  # unit 0 alone
+    >>> counts[20, :2] += 6  # units 0 and 1 together
+    >>> pattern = AssemblyPattern(np.array([0.7, 0.7, 0.1]), np.array([0, 1]), 0.5)
     >>> activation = assembly_activation(counts, pattern)
-    >>> np.allclose([activation.mean(), activation.std()], [0.0, 1.0])
-    True
-    >>> float(np.mean(activation > 2.0))
-    0.1
+    >>> print(f"alone {activation[10]:.1f}, together {activation[20]:.1f}")
+    alone -0.3, together 33.5
 
     With labels, the columns of new counts can be in any order:
 
@@ -1194,13 +1251,23 @@ def assembly_activation(
     --------
     detect_assemblies : Detect assembly patterns
     reactivation_strength : Compare activations between periods
+
+    References
+    ----------
+    Lopes-dos-Santos V, Ribeiro S, Tort ABL (2013). Detecting cell
+        assemblies in large neuronal populations. J Neurosci Methods
+        220(2):149-166.
+    Peyrache A, Benchenane K, Khamassi M, Wiener SI, Battaglia FP (2010).
+        Principal component analysis of ensemble recordings reveals cell
+        assemblies at high temporal resolution. J Comput Neurosci
+        29(1-2):309-325.
+    van de Ven GM, Trouche S, McNamara CG, Allen K, Dupret D (2016).
+        Hippocampal offline reactivation consolidates recently formed cell
+        assembly patterns during sharp wave-ripples. Neuron 92(5):968-974.
     """
-    spike_counts = _validated_counts(
-        spike_counts, call="assembly_activation()", nonnegative=z_score_input
-    )
-    spike_counts = _columns_by_label(
-        spike_counts, unit_ids, pattern, call="assembly_activation()"
-    )
+    call = "assembly_activation()"
+    spike_counts = _validated_counts(spike_counts, call=call, nonnegative=z_score_input)
+    spike_counts = _columns_by_label(spike_counts, unit_ids, pattern, call=call)
     _n_time_bins, n_neurons = spike_counts.shape
 
     if n_neurons != len(pattern.weights):
@@ -1208,26 +1275,54 @@ def assembly_activation(
             f"spike_counts has {n_neurons} neurons but pattern has "
             f"{len(pattern.weights)} weights. Must match."
         )
+    weights = _unit_weights(pattern.weights, call=call)
 
-    # Work internally in (n_neurons, n_time_bins).
-    spike_counts = spike_counts.T
-
-    # Z-score if requested
     if z_score_input:
-        spike_counts_z = stats.zscore(spike_counts, axis=1)
-        # Handle zero variance
-        spike_counts_z = np.nan_to_num(spike_counts_z, nan=0.0)
+        spike_counts_z, constant = _z_scores(spike_counts)
+        silent_members = constant & (weights != 0)
+        if np.any(silent_members):
+            warnings.warn(
+                f"{call}: units {np.asarray(pattern.unit_ids)[silent_members].tolist()} "
+                "have nonzero weight but the same count in every time bin of "
+                "spike_counts, so they contribute 0 to the activation strength.",
+                UserWarning,
+                stacklevel=2,
+            )
     else:
         spike_counts_z = spike_counts
 
-    # Project onto pattern
-    activation = pattern.weights @ spike_counts_z  # (n_time_bins,)
+    return _activation_strength(spike_counts_z, weights[None, :])[:, 0]
 
-    # Z-score activation
-    activation_z = stats.zscore(activation)
-    activation_z = np.nan_to_num(activation_z, nan=0.0)
 
-    return np.asarray(activation_z, dtype=np.float64)
+def _unit_weights(weights: NDArray[np.float64], *, call: str) -> NDArray[np.float64]:
+    """Return the pattern's weights scaled to unit length.
+
+    Parameters
+    ----------
+    weights : ndarray, shape (n_neurons,)
+        Pattern weights.
+    call : str
+        Function name for the error message.
+
+    Returns
+    -------
+    ndarray, shape (n_neurons,)
+        ``weights / np.linalg.norm(weights)``.
+    """
+    norm = np.linalg.norm(weights)
+    if norm == 0:
+        raise ValueError(
+            _format_error(
+                f"{call}: the pattern's weights are all 0.",
+                why="Why: the activation strength measures co-activation of the "
+                "pattern's weighted neurons, and a pattern without weights has "
+                "none.",
+                fix="pass a pattern from detect_assemblies(), or an "
+                "AssemblyPattern with at least one nonzero weight",
+            )
+        )
+    unit: NDArray[np.float64] = weights / norm
+    return unit
 
 
 def _label_order(
@@ -1449,18 +1544,21 @@ def reactivation_strength(
     match_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> float:
     """
-    Compare assembly activation magnitude between template and match periods.
+    Compare a pattern's mean activation strength between two periods.
 
-    Computes the ratio of mean activation strength in the match period
-    relative to the template period. Values > 1 indicate stronger activation
-    during match (potential reactivation).
+    Returns the mean activation strength R(t) of the pattern in the match
+    period divided by its mean in the template period (Peyrache et al., 2009,
+    2010). Values > 1 mean the pattern's neurons fire together more in the
+    match period than in the template period.
 
     Parameters
     ----------
     template_counts : NDArray[np.float64], shape (n_template_bins, n_neurons)
-        Spike counts during template period (e.g., behavior).
+        Spike counts during template period (e.g., behavior), finite and
+        non-negative.
     match_counts : NDArray[np.float64], shape (n_match_bins, n_neurons)
-        Spike counts during match period (e.g., sleep).
+        Spike counts during match period (e.g., sleep), finite and
+        non-negative.
     pattern : AssemblyPattern
         Assembly pattern to measure.
     template_unit_ids : array-like, shape (n_neurons,), optional
@@ -1480,37 +1578,58 @@ def reactivation_strength(
     Returns
     -------
     float
-        Ratio of mean absolute activation in match vs template period.
-        Values > 1 indicate stronger activation during match period.
-        Returns 0 if template activation is zero.
+        Mean activation strength in the match period over its mean in the
+        template period. 1 when both periods are the same counts, about 0
+        when the pattern's neurons fire independently in the match period,
+        and negative when they fire in opposition. NaN when the pattern shows
+        no co-activation in the template period (mean activation strength
+        <= 0) or every neuron with nonzero weight is constant in a period,
+        so the ratio is undefined.
 
     Raises
     ------
     ValueError
-        If the counts and the pattern have different numbers of neurons, or
-        with labels, if only one of ``template_unit_ids`` and
-        ``match_unit_ids`` is given, the pattern's labels were generated, or
-        a period's labels differ from the pattern's.
+        If the counts and the pattern have different numbers of neurons,
+        either period holds NaN, infinite or negative values, the pattern
+        has no nonzero weight, or with labels, if only one of
+        ``template_unit_ids`` and ``match_unit_ids`` is given, the pattern's
+        labels were generated, or a period's labels differ from the
+        pattern's.
+
+    Warns
+    -----
+    UserWarning
+        If neurons with nonzero weight have the same count in every bin of
+        either period (they are excluded from both periods, named in the
+        warning), or the ratio is undefined.
 
     Notes
     -----
-    This is a simple measure of reactivation based on comparing mean
-    activation magnitudes. For more sophisticated analysis of correlation
-    structure preservation, use `explained_variance_reactivation` with
-    pairwise correlations.
+    Each period is z-scored with its own per-neuron mean and standard
+    deviation, as in the published method. The mean of R(t) over a period is
+    then :math:`w^T C w - 1` for unit-length weights :math:`w` and the
+    period's correlation matrix :math:`C`, the pattern's co-activation
+    beyond independent firing, so the ratio compares how strongly the
+    pattern's correlation structure is expressed in the two periods.
 
-    **Normalization**: Both periods are normalized against a *single*
-    baseline — the template period's per-neuron mean and standard
-    deviation — and projected directly onto the assembly pattern. Neither
-    period is z-scored independently, so absolute magnitude survives: a
-    match period with larger projected activity yields ``strength > 1``.
+    A neuron with the same count in every bin of a period has no z-score
+    there. It is excluded from both periods, so both means use the same
+    neurons, and the remaining weights are rescaled to unit length.
 
-    **Interpretation**:
+    **Rate and noise floor**: Because each period is standardized on its
+    own, scaling a period's counts leaves the ratio unchanged. Firing-rate
+    changes still matter when they change the correlations: independent
+    spikes added to the members dilute their correlation and lower the
+    ratio. With no co-activation in the match period the mean activation
+    strength is 0 up to sampling noise of standard deviation about
+    :math:`\\sqrt{2 / n_{match}}` (independent Gaussian z-scores), so the ratio
+    has a noise floor of about :math:`\\sqrt{2 / n_{match}}` divided by the
+    template mean. Compare against a control period (such as pre-task rest)
+    or a shuffle null rather than against 1 or 0.
 
-    - strength > 1: Assembly is more active during match period
-    - strength ≈ 1: Similar activity levels in both periods
-    - strength < 1: Assembly is less active during match period
-    - strength = 0: No activation in template period
+    For the correlation structure of the whole population rather than one
+    pattern, use :func:`explained_variance_reactivation` with pairwise
+    correlations.
 
     Examples
     --------
@@ -1532,17 +1651,17 @@ def reactivation_strength(
     ... )
     >>> bool(strength > 1.0)
     True
+
+    References
+    ----------
+    Peyrache A, Khamassi M, Benchenane K, Wiener SI, Battaglia FP (2009).
+        Replay of rule-learning related neural patterns in the prefrontal
+        cortex during sleep. Nat Neurosci 12(7):919-926.
+    Peyrache A, Benchenane K, Khamassi M, Wiener SI, Battaglia FP (2010).
+        Principal component analysis of ensemble recordings reveals cell
+        assemblies at high temporal resolution. J Comput Neurosci
+        29(1-2):309-325.
     """
-    # Compute activations WITHOUT any per-period standardization, so the
-    # absolute magnitude of each period's activity survives. The default
-    # assembly_activation path standardizes each period independently (an
-    # inner input z-score AND an outer z-score of the projection), which
-    # erases the very magnitude difference this metric is meant to detect
-    # (strength would sit at ~1 no matter how much stronger the match
-    # activity is). Instead normalize both periods against a *single*
-    # baseline (the template mean/std) and project directly onto the
-    # pattern, so a larger match-period projection produces strength > 1.
-    # Inputs are (n_time_bins, n_neurons); work internally in (n_neurons, n_time).
     call = "reactivation_strength()"
     if (template_unit_ids is None) != (match_unit_ids is None):
         given, missing = (
@@ -1590,25 +1709,58 @@ def reactivation_strength(
             f"{n_weights} weights. All must match."
         )
 
-    mean = template_counts.mean(axis=1, keepdims=True)
-    std = template_counts.std(axis=1, keepdims=True)
-    std = np.where(std > 1e-10, std, 1.0)
+    weights = _unit_weights(pattern.weights, call=call)
+    template_z, template_constant = _z_scores(template_counts.T)
+    match_z, match_constant = _z_scores(match_counts.T)
 
-    template_norm = (template_counts - mean) / std
-    match_norm = (match_counts - mean) / std
+    # A neuron constant in either period has no z-score there; drop it from
+    # both so the two means use the same neurons.
+    excluded = (template_constant | match_constant) & (weights != 0)
+    if np.any(excluded):
+        names = np.asarray(pattern.unit_ids)
+        warnings.warn(
+            f"{call}: units {names[excluded].tolist()} have nonzero weight but "
+            "the same count in every time bin of "
+            + " and ".join(
+                period
+                for period, constant in (
+                    ("template_counts", template_constant & excluded),
+                    ("match_counts", match_constant & excluded),
+                )
+                if constant.any()
+            )
+            + ", so they have no z-score there. They are excluded from both "
+            "periods.",
+            UserWarning,
+            stacklevel=2,
+        )
+        weights = np.where(excluded, 0.0, weights)
+        norm = np.linalg.norm(weights)
+        if norm == 0:
+            warnings.warn(
+                f"{call}: every unit with nonzero weight is excluded, so the "
+                "strength is undefined (NaN).",
+                UserWarning,
+                stacklevel=2,
+            )
+            return np.nan
+        weights = weights / norm
 
-    # Project onto the assembly pattern on the shared (template) scale.
-    act_template = pattern.weights @ template_norm
-    act_match = pattern.weights @ match_norm
+    mean_template = float(np.mean(_activation_strength(template_z, weights[None])))
+    mean_match = float(np.mean(_activation_strength(match_z, weights[None])))
 
-    # Compare mean absolute activation magnitudes on the shared scale.
-    mean_template = np.mean(np.abs(act_template))
-    mean_match = np.mean(np.abs(act_match))
-
-    if mean_template > 1e-10:
-        return float(mean_match / mean_template)
-    else:
-        return 0.0
+    if not mean_template > 0:
+        warnings.warn(
+            f"{call}: the pattern's mean activation strength in the template "
+            f"period is {mean_template:.3g}, so its neurons do not fire together "
+            "there and the ratio is undefined (NaN). Measure a pattern detected "
+            "in template_counts, or compare mean assembly_activation() values "
+            "directly.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return np.nan
+    return mean_match / mean_template
 
 
 def explained_variance_reactivation(
