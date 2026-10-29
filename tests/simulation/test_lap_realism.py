@@ -173,6 +173,53 @@ def test_default_speed_needs_metric_units():
 
 
 @pytest.mark.parametrize(
+    "build",
+    [
+        lambda: Environment.from_polygon(box(0, 0, 2, 100), bin_size=2, units="cm"),
+        lambda: Environment.from_polygon(box(0, 0, 100, 2), bin_size=2, units="cm"),
+        lambda: Environment.from_polygon(
+            shapely.affinity.rotate(box(0, 0, 100, 4), 45, origin=(0, 0)),
+            bin_size=2,
+            units="cm",
+        ),
+    ],
+    ids=["north_south", "east_west", "diagonal"],
+)
+def test_default_laps_run_the_length_of_a_strip_in_any_direction(build):
+    """The default route joins the two bins farthest apart, whatever the axis."""
+    env = build()
+    positions, _times = simulate_trajectory_laps(env, n_laps=2, seed=1)
+    assert np.all(env.bin_at(positions) >= 0)
+    # Bin centers 1 cm in from each end of the 100 cm strip.
+    length = np.linalg.norm(positions - positions[0], axis=1).max()
+    assert length == pytest.approx(98.0, abs=4.0)
+    np.testing.assert_allclose(positions[-1], positions[0])
+
+
+def test_default_laps_run_stem_to_arm_on_a_t_maze():
+    """The default route on a T-maze is the longest: the stem's foot to an arm."""
+    env = _t_maze_track()
+    positions, _times = simulate_trajectory_laps(env, n_laps=1, seed=1)
+    linear = env.to_linear(positions)
+    assert np.all(np.diff(linear) >= 0) or np.all(np.diff(linear) <= 0)
+    assert positions[0, 1] == pytest.approx(env.bin_centers[:, 1].min())
+    assert abs(positions[-1, 0]) == pytest.approx(np.abs(env.bin_centers[:, 0]).max())
+
+
+def test_an_environment_of_one_bin_has_no_default_route():
+    env = Environment.from_polygon(box(0, 0, 2, 2), bin_size=2, units="cm")
+    assert env.n_bins == 1
+    with pytest.raises(ValueError, match="one bin") as error:
+        simulate_trajectory_laps(env, n_laps=2)
+    assert "outbound_path" in str(error.value)
+
+
+def test_routes_that_never_move_are_refused(box_env):
+    with pytest.raises(ValueError, match="never move"):
+        simulate_trajectory_laps(box_env, n_laps=2, outbound_path=[3, 3])
+
+
+@pytest.mark.parametrize(
     ("option", "value"),
     [
         ("speed_mean", np.nan),

@@ -753,6 +753,52 @@ def simulate_trajectory_sinusoidal(
     return positions, times
 
 
+def _longest_bin_path(env: Environment, call: str) -> list[int]:
+    """A path of fewest steps between the two bins farthest apart along ``env``.
+
+    Distances run along neighboring bins (``env.connectivity`` edge
+    ``distance``), and the two sweeps start from bin 0. The path starts at
+    the end with the smaller linear position on a track, else at the end
+    whose center comes first in coordinate order (smaller x, then y, ...).
+    """
+    graph = env.connectivity
+    n_components = nx.number_connected_components(graph)
+    if n_components > 1:
+        raise ValueError(
+            _format_error(
+                f"{call} found no connected path through the environment: its "
+                f"bins form {n_components} separate groups.",
+                why="Why: the default lap runs between the two bins farthest "
+                "apart along neighboring bins, and no chain of neighboring "
+                "bins joins the groups.",
+                fix="pass outbound_path= as a chain of neighboring bins within "
+                "one group",
+            )
+        )
+    start, end = _farthest_pair(graph, 0, "distance")
+    if start == end:
+        raise ValueError(
+            _format_error(
+                f"{call} cannot choose a default lap route: the environment "
+                "has only one bin.",
+                why="Why: the default lap runs between the two bins farthest "
+                "apart, and a single bin has no route to run.",
+                fix="use an environment with more bins (a smaller bin_size), "
+                "or pass outbound_path= explicitly",
+            )
+        )
+    ends = env.bin_centers[[start, end]]
+    if env.binning.linearization is not None:
+        reverse = env.to_linear(ends)[0] > env.to_linear(ends)[1]
+    else:
+        reverse = tuple(ends[0]) > tuple(ends[1])
+    if reverse:
+        start, end = end, start
+    # Fewest steps: unlike summed distances, step counts tie exactly, so the
+    # path does not change with the units of the coordinates.
+    return [int(b) for b in nx.shortest_path(graph, start, end)]
+
+
 def _farthest_node(graph: nx.Graph, source: object, weight: object) -> object:
     """The node farthest from ``source`` along ``graph``, first in node order on ties."""
     lengths = nx.single_source_dijkstra_path_length(graph, source, weight=weight)
@@ -846,8 +892,10 @@ def simulate_trajectory_laps(
         Bin indices for the outbound traversal, a chain of neighboring bins:
         every consecutive pair must be connected in ``env.connectivity`` or
         repeat the same bin (a step of zero length). A single bin is also
-        valid. If None, uses the shortest path between the bins with the
-        smallest and largest first coordinate.
+        valid. If None, uses the shortest path between the two bins farthest
+        apart along the environment's neighboring bins: the two ends of a
+        track or strip in any orientation, the stem's foot and an arm's end
+        of a T-maze, opposite corners of an open box.
     inbound_path : list[int] | None, optional
         Bin indices for the inbound traversal, with the same rule as
         ``outbound_path``. If None, reverses outbound_path.
@@ -887,8 +935,10 @@ def simulate_trajectory_laps(
         If ``speed_mean`` is None and ``env.units`` is not a metric length.
     ValueError
         If custom paths are empty, contain invalid bin indices or are not
-        chains of neighboring bins, or if no connected path joins the bins
-        with the smallest and largest first coordinate.
+        chains of neighboring bins, or if both paths stay in one bin.
+    ValueError
+        If ``outbound_path`` is None and the bins do not form one connected
+        group, or the environment has a single bin.
     ValueError
         If a path steps between neighboring bins whose cells do not touch
         inside the environment, such as a bridge between two rooms of an
@@ -946,7 +996,7 @@ def simulate_trajectory_laps(
     ...     track, n_laps=3, seed=1, return_metadata=True
     ... )
     >>> print(f"{times[-1]:.1f} s")
-    14.4 s
+    15.4 s
     >>> moving = (metadata["lap_ids"][1:] == metadata["lap_ids"][:-1]) & np.any(
     ...     np.diff(positions, axis=0) != 0, axis=1
     ... )
@@ -1057,32 +1107,12 @@ def _simulate_trajectory_laps(
     path_names = (
         "outbound_path"
         if outbound_path is not None
-        else "the path between the bins at the smallest and largest x",
+        else "the path between the two bins farthest apart",
         "inbound_path" if inbound_path is not None else "the reversed outbound path",
     )
 
-    # Compute paths if not provided
     if outbound_path is None:
-        # Use shortest path between environment extrema
-        # Find bins at minimum and maximum positions in first dimension
-        bin_positions = env.bin_centers
-        first_dim_positions = bin_positions[:, 0]
-        start_bin = int(np.argmin(first_dim_positions))
-        end_bin = int(np.argmax(first_dim_positions))
-
-        try:
-            outbound_path = nx.shortest_path(env.connectivity, start_bin, end_bin)
-        except nx.NetworkXNoPath:
-            raise ValueError(
-                _format_error(
-                    f"{call} found no connected path between "
-                    f"the bins at the smallest and largest x ({start_bin} and "
-                    f"{end_bin}).",
-                    why="Why: the animal runs along neighboring bins, and these "
-                    "bins lie in disconnected parts of the environment.",
-                    fix="pass outbound_path= as a chain of neighboring bins",
-                )
-            ) from None
+        outbound_path = _longest_bin_path(env, call)
 
     if inbound_path is None:
         # Reverse outbound path
@@ -1138,6 +1168,17 @@ def _simulate_trajectory_laps(
         )
         for route in routes
     ]
+    if all(distances[-1] == 0 for distances in route_distances):
+        raise ValueError(
+            _format_error(
+                f"{call}: {path_names[0]} and {path_names[1]} stay in one bin, "
+                "so the animal would never move.",
+                why="Why: a lap runs from the first bin of its path to the "
+                "last, and every bin of these paths is the same.",
+                fix="pass outbound_path= as a chain of at least two different "
+                "neighboring bins",
+            )
+        )
 
     # Time step
     dt = 1.0 / sampling_frequency
