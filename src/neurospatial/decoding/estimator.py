@@ -357,12 +357,6 @@ warn_on_drop
         """Snapshot requested encoding settings, before defaults are resolved."""
         return self.method, self.bandwidth, self.min_occupancy, self.penalty, self.rank
 
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore fitted configuration snapshots, including legacy pickles."""
-        self.__dict__.update(state)
-        if self._fit is not None and "encoding_config" not in vars(self._fit):
-            object.__setattr__(self._fit, "encoding_config", self._encoding_config())
-
     @property
     def encoding_models(self) -> NDArray[np.float64] | None:
         """Fitted ``(n_neurons, n_bins)`` rate maps, or ``None`` when unfitted."""

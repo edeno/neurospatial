@@ -63,17 +63,14 @@ def test_replace_accepts_prediction_settings(fitted, method):
     assert replace(fitted).encoding_models is fitted.encoding_models
 
 
-@pytest.mark.parametrize("how", ["pickle", "deepcopy", "legacy_pickle"])
+@pytest.mark.parametrize("how", ["pickle", "deepcopy"])
 @pytest.mark.parametrize("method", ["binned", "glm"])
 def test_restored_decoder_keeps_encoding_guard(fitted, how, method):
     fitted = fitted[method]
     if how == "deepcopy":
         restored = copy.deepcopy(fitted)
     else:
-        source = copy.deepcopy(fitted)
-        if how == "legacy_pickle":
-            vars(source._fit).pop("encoding_config", None)
-        restored = pickle.loads(pickle.dumps(source))
+        restored = pickle.loads(pickle.dumps(fitted))
     assert replace(restored, dt=0.1).encoding_models is restored.encoding_models
     name = "bandwidth" if restored.method == "binned" else "penalty"
     with pytest.raises(ValueError, match=rf"{name}.*fitted"):
