@@ -940,6 +940,8 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         - For 2D environments: uses ``x``, ``y``
         - For 3D environments: uses ``x``, ``y``, ``z``
         - For higher dimensions: uses ``dim_0``, ``dim_1``, etc.
+        - For polar egocentric environments: uses ``distance``, ``angle``
+          (radians), as the ``bin_center_*`` coordinates of :meth:`to_xarray`
 
         Examples
         --------
@@ -963,7 +965,7 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         data["map_bin"] = self.map_bin
 
         # Add MAP positions
-        dim_names = _coord_dim_names(self.env.n_dims)
+        dim_names = _coord_dim_names(self.env)
         for i, name in enumerate(dim_names):
             data[f"map_{name}"] = self.map_position[:, i]
 
@@ -1446,7 +1448,7 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
 
     def _dim_names(self) -> list[str]:
         """Coordinate column names matching ``DecodingResult.to_dataframe``."""
-        return _coord_dim_names(self.env.n_dims)
+        return _coord_dim_names(self.env)
 
     def to_dataframe(self) -> pd.DataFrame:
         """Convert to a tidy DataFrame, one row per time bin.
@@ -1458,7 +1460,8 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
 
             - ``time`` : time-bin center in seconds (only if ``times`` set)
             - ``map_bin`` : MAP bin index
-            - ``map_x``, ``map_y``, ... : MAP position coordinates
+            - ``map_x``, ``map_y``, ... : MAP position coordinates (named as
+              in Notes)
             - ``mean_x``, ``mean_y``, ... : mean position coordinates
             - ``posterior_entropy`` : posterior entropy (bits)
             - ``peak_probability`` : largest posterior probability mass of a bin
@@ -1467,7 +1470,8 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
         -----
         Coordinate column naming matches
         :meth:`DecodingResult.to_dataframe` exactly (``x``/``y``/``z`` for
-        <=3-D, ``dim_i`` otherwise).
+        <=3-D, ``dim_i`` otherwise, ``distance``/``angle`` for polar
+        egocentric environments).
         """
         data: dict[str, Any] = {}
 
@@ -1603,7 +1607,8 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
         -------
         xarray.Dataset
             Dataset with data vars on ``("time",)``: ``map_bin``,
-            ``map_x``/``map_y``/... , ``mean_x``/..., ``posterior_entropy``,
+            ``map_x``/``map_y``/... , ``mean_x``/... (``map_distance``/
+            ``map_angle``/... on polar environments), ``posterior_entropy``,
             ``peak_probability``. The ``time`` index coordinate is :attr:`times` when
             set, else the integer index ``np.arange(n_time_bins)``. ``attrs``
             carry ``units`` (when set), an ``env`` fingerprint, and
