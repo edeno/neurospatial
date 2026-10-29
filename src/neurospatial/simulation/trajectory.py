@@ -176,8 +176,9 @@ def simulate_trajectory_ou(
     when the arena has no known outline) and the arena's internal walls, so
     the animal never steps through a divider. A step that would cross a wall
     is mirrored about the first wall it meets, using that wall's normal; if
-    the mirrored step crosses a wall too (a corner), it is mirrored again,
-    and an animal still blocked after that waits one step. An animal that
+    the mirrored step crosses a wall too (a corner), it is mirrored again
+    about that wall, up to 32 times, which turns it out of corners as sharp
+    as about 6 degrees; an animal still blocked waits one step. An animal that
     starts on the outline (to within rounding) leaves it only toward the
     inside; one that starts on an internal wall may leave it to either side
     and does not cross it afterward. Elsewhere the

@@ -23,6 +23,10 @@ if TYPE_CHECKING:
 # of one chunk of ray distances to about 4 million elements each.
 _INTERSECTIONS_PER_CHUNK = 4_000_000
 
+# Mirrors of one step before a blocked walker waits: 32 turn a step out of a
+# corner as sharp as 180 / 32, about 6 degrees.
+_MAX_BOUNCES = 32
+
 
 class Walls:
     """Straight wall segments.
@@ -223,21 +227,25 @@ class Walls:
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Take one step without crossing a wall; return position and heading.
 
-        A step that would cross a wall is mirrored about it, up to twice (a
-        corner); a walker still blocked, or one in ``"stop"`` mode, stays put.
-        A walker starting on a wall leaves it toward an open side.
+        A step that would cross a wall is mirrored about it, and again about
+        each wall the mirrored step meets, up to :data:`_MAX_BOUNCES` times:
+        in a corner of angle ``a`` the mirrors alternate between its two
+        sides and turn the step by ``2 a`` per pair, so a step heading into
+        a corner as sharp as about 6 degrees turns out of it. A walker still
+        blocked, or one in ``"stop"`` mode, stays put. A walker starting on a
+        wall leaves it toward an open side.
         """
         length = float(np.linalg.norm(step))
         if length < self.clearance:
             self.clearance -= length
             return position + step, unit
-        for _bounce in range(3):
+        for bounce in range(_MAX_BOUNCES + 1):
             wall = self.first_hit(position, step)
             if wall is None:
                 moved = position + step
                 self._set_clearance(moved)
                 return moved, unit
-            if boundary_mode == "stop":
+            if boundary_mode == "stop" or bounce == _MAX_BOUNCES:
                 break
             # Mirror about the wall: keep the component along it, reverse the
             # component into it.
