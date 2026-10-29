@@ -874,7 +874,7 @@ class TestDecodingCorrelation:
         actual = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
         decoded = actual + 5.0  # Same pattern, shifted
 
-        result = decoding_correlation(decoded, actual)
+        result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         assert result == pytest.approx(1.0)
 
@@ -885,7 +885,7 @@ class TestDecodingCorrelation:
         actual = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
         decoded = -actual + 10.0  # Negative slope
 
-        result = decoding_correlation(decoded, actual)
+        result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         assert result == pytest.approx(-1.0)
 
@@ -902,7 +902,7 @@ class TestDecodingCorrelation:
         actual = rng.uniform(0, 100, (n, 2))
         decoded = rng.uniform(0, 100, (n, 2))
 
-        result = decoding_correlation(decoded, actual)
+        result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         # With random data, correlation should be near zero (not exact)
         assert -0.2 < result < 0.2
@@ -919,7 +919,7 @@ class TestDecodingCorrelation:
             decoded = rng.uniform(-100, 100, (n, n_dims))
             actual = rng.uniform(-100, 100, (n, n_dims))
 
-            result = decoding_correlation(decoded, actual)
+            result = decoding_correlation(_space_for(decoded), decoded, actual)
 
             assert -1 <= result <= 1 or np.isnan(result)
 
@@ -931,8 +931,8 @@ class TestDecodingCorrelation:
         decoded = rng.uniform(0, 100, (50, 2))
         actual = rng.uniform(0, 100, (50, 2))
 
-        r_ab = decoding_correlation(decoded, actual)
-        r_ba = decoding_correlation(actual, decoded)
+        r_ab = decoding_correlation(_space_for(decoded), decoded, actual)
+        r_ba = decoding_correlation(_space_for(actual), actual, decoded)
 
         assert r_ab == pytest.approx(r_ba)
 
@@ -944,7 +944,7 @@ class TestDecodingCorrelation:
         actual = np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [2.0, 2.0, 2.0]])
         decoded = actual + 1.0  # Perfect correlation in each dim
 
-        result = decoding_correlation(decoded, actual)
+        result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         # Mean of perfect correlations should be 1.0
         assert result == pytest.approx(1.0)
@@ -964,7 +964,7 @@ class TestDecodingCorrelation:
         decoded = np.column_stack([decoded_dim0, decoded_dim1])
         actual = np.column_stack([actual_dim0, actual_dim1])
 
-        result = decoding_correlation(decoded, actual)
+        result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         # Average of 1.0 and -1.0 should be 0.0
         assert result == pytest.approx(0.0, abs=0.01)
@@ -981,26 +981,46 @@ class TestDecodingCorrelationWeighted:
         decoded = rng.uniform(0, 100, (50, 2))
         actual = rng.uniform(0, 100, (50, 2))
 
-        r_unweighted = decoding_correlation(decoded, actual)
-        r_weighted = decoding_correlation(decoded, actual, weights=np.ones(50))
+        r_unweighted = decoding_correlation(_space_for(decoded), decoded, actual)
+        r_weighted = decoding_correlation(
+            _space_for(decoded), decoded, actual, weights=np.ones(50)
+        )
 
         assert r_unweighted == pytest.approx(r_weighted)
 
-    def test_decoding_correlation_weights_change_result(self):
-        """Non-uniform weights should change the correlation."""
+    def test_integer_weights_count_time_bins(self):
+        """A weight of k counts a time bin as k copies of it."""
         from neurospatial.decoding.metrics import decoding_correlation
 
         rng = np.random.default_rng(42)
-        decoded = rng.uniform(0, 100, (50, 2))
-        actual = rng.uniform(0, 100, (50, 2))
+        actual = rng.uniform(0, 100, (30, 2))
+        decoded = actual + rng.normal(0, 30, (30, 2))
+        weights = rng.integers(0, 4, 30).astype(float)
+        repeat = weights.astype(int)
 
-        # Create non-uniform weights
-        weights = np.linspace(0.1, 2.0, 50)
+        weighted = decoding_correlation(
+            _space_for(decoded), decoded, actual, weights=weights
+        )
+        duplicated = decoding_correlation(
+            _space_for(decoded),
+            np.repeat(decoded, repeat, axis=0),
+            np.repeat(actual, repeat, axis=0),
+        )
 
-        r_weighted = decoding_correlation(decoded, actual, weights=weights)
+        assert weighted == pytest.approx(duplicated, rel=1e-12)
+        assert weighted != pytest.approx(
+            decoding_correlation(_space_for(decoded), decoded, actual)
+        )
 
-        # Check that result is valid (weights can change the result)
-        assert -1 <= r_weighted <= 1
+    @pytest.mark.parametrize("bad", [-1.0, np.nan, np.inf])
+    def test_negative_or_non_finite_weights_are_refused(self, bad):
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        positions = np.arange(10.0).reshape(5, 2)
+        weights = np.ones(5)
+        weights[2] = bad
+        with pytest.raises(ValueError, match=r"weights has 1 negative, NaN or Inf"):
+            decoding_correlation(_space_for(positions), positions, positions, weights)
 
     def test_decoding_correlation_zero_weight_excludes(self):
         """Zero weights should effectively exclude those time bins."""
@@ -1011,11 +1031,13 @@ class TestDecodingCorrelationWeighted:
         decoded = np.array([[0.0], [1.0], [2.0], [3.0], [0.0]])  # Breaks pattern
 
         # With uniform weights, correlation is lowered by outlier
-        r_uniform = decoding_correlation(decoded, actual)
+        r_uniform = decoding_correlation(_space_for(decoded), decoded, actual)
 
         # With zero weight on outlier, correlation should be perfect
         weights = np.array([1.0, 1.0, 1.0, 1.0, 0.0])
-        r_weighted = decoding_correlation(decoded, actual, weights=weights)
+        r_weighted = decoding_correlation(
+            _space_for(decoded), decoded, actual, weights=weights
+        )
 
         # Weighted (excluding outlier) should have higher/perfect correlation
         assert r_weighted > r_uniform
@@ -1029,7 +1051,9 @@ class TestDecodingCorrelationWeighted:
         actual = np.array([[1.0], [2.0], [3.0]])
         weights = np.array([0.0, 0.0, 0.0])
 
-        result = decoding_correlation(decoded, actual, weights=weights)
+        result = decoding_correlation(
+            _space_for(decoded), decoded, actual, weights=weights
+        )
 
         assert np.isnan(result)
 
@@ -1045,7 +1069,7 @@ class TestDecodingCorrelationNaNHandling:
         actual = np.array([[0.0], [1.0], [np.nan], [3.0], [4.0]])
         decoded = np.array([[0.0], [1.0], [999.0], [3.0], [4.0]])
 
-        result = decoding_correlation(decoded, actual)
+        result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         # Should ignore NaN row, remaining data has r=1
         assert result == pytest.approx(1.0)
@@ -1057,7 +1081,7 @@ class TestDecodingCorrelationNaNHandling:
         actual = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, np.nan], [3.0, 3.0]])
         decoded = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
 
-        result = decoding_correlation(decoded, actual)
+        result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         # Should ignore row 2 (has NaN), remaining data has r=1
         assert result == pytest.approx(1.0)
@@ -1069,7 +1093,7 @@ class TestDecodingCorrelationNaNHandling:
         decoded = np.full((5, 2), np.nan)
         actual = np.full((5, 2), np.nan)
 
-        result = decoding_correlation(decoded, actual)
+        result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         assert np.isnan(result)
 
@@ -1080,7 +1104,7 @@ class TestDecodingCorrelationNaNHandling:
         actual = np.array([[0.0], [np.nan], [np.nan]])
         decoded = np.array([[1.0], [2.0], [3.0]])
 
-        result = decoding_correlation(decoded, actual)
+        result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         # Only 1 valid pair, need at least 2 for correlation
         assert np.isnan(result)
@@ -1090,29 +1114,28 @@ class TestDecodingCorrelationEdgeCases:
     """Test edge cases in decoding_correlation."""
 
     def test_decoding_correlation_constant_values_returns_nan(self):
-        """Constant values (zero variance) should return NaN."""
+        """Constant values (zero variance) have no correlation: NaN, warned."""
         from neurospatial.decoding.metrics import decoding_correlation
 
-        # Both decoded and actual are constant
         decoded = np.full((5, 2), 3.0)
         actual = np.full((5, 2), 5.0)
 
-        result = decoding_correlation(decoded, actual)
+        with pytest.warns(UserWarning, match=r"do not vary.*result is NaN"):
+            result = decoding_correlation(_space_for(decoded), decoded, actual)
 
-        # Zero variance means correlation is undefined
         assert np.isnan(result)
 
-    def test_decoding_correlation_one_constant_returns_nan(self):
-        """One constant variable (zero variance) should return NaN."""
+    def test_decoding_correlation_one_constant_dimension_is_left_out(self):
+        """A dimension that does not vary is excluded from the mean, warned."""
         from neurospatial.decoding.metrics import decoding_correlation
 
-        decoded = np.array([[1.0], [2.0], [3.0], [4.0]])
-        actual = np.full((4, 1), 5.0)  # Constant
+        actual = np.column_stack([np.arange(5.0), np.full(5, 5.0)])  # y constant
+        decoded = np.column_stack([np.arange(5.0) ** 2, np.arange(5.0)])
 
-        result = decoding_correlation(decoded, actual)
+        with pytest.warns(UserWarning, match=r"dimension\(s\) \[1\] of 2"):
+            result = decoding_correlation(_space_for(decoded), decoded, actual)
 
-        # Zero variance in actual means correlation is undefined
-        assert np.isnan(result)
+        assert result == pytest.approx(np.corrcoef(decoded[:, 0], actual[:, 0])[0, 1])
 
     def test_decoding_correlation_two_points(self):
         """Correlation with exactly two points should work."""
@@ -1121,7 +1144,7 @@ class TestDecodingCorrelationEdgeCases:
         decoded = np.array([[0.0], [1.0]])
         actual = np.array([[0.0], [1.0]])
 
-        result = decoding_correlation(decoded, actual)
+        result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         # With exactly 2 points and same values, r=1
         assert result == pytest.approx(1.0)
@@ -1134,7 +1157,7 @@ class TestDecodingCorrelationEdgeCases:
         decoded = np.array([[1e6], [2e6], [3e6], [4e6], [5e6]])
         actual = np.array([[1e6], [2e6], [3e6], [4e6], [5e6]])
 
-        result = decoding_correlation(decoded, actual)
+        result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         assert result == pytest.approx(1.0)
 
@@ -1146,9 +1169,63 @@ class TestDecodingCorrelationEdgeCases:
         decoded = np.array([[1e-10], [2e-10], [3e-10], [4e-10], [5e-10]])
         actual = np.array([[1e-10], [2e-10], [3e-10], [4e-10], [5e-10]])
 
-        result = decoding_correlation(decoded, actual)
+        result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         assert result == pytest.approx(1.0)
+
+
+class TestDecodingCorrelationOnTracksAndPolar:
+    """On a track the correlation is along the track; polar is refused."""
+
+    def test_horizontal_track_correlates_along_the_track(self):
+        """A 2-D track whose y never varies still has a correlation."""
+        import warnings
+
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        env = Environment.linear_track(
+            endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0, track_width=4.0
+        )
+        rng = np.random.default_rng(0)
+        x = rng.uniform(0, 100, 40)
+        actual = np.column_stack([x, np.zeros(40)])
+        decoded_x = np.clip(x + rng.normal(0, 10, 40), 0, 100)
+        decoded = np.column_stack([decoded_x, np.zeros(40)])
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = decoding_correlation(env, decoded, actual)
+
+        assert result == pytest.approx(np.corrcoef(decoded_x, x)[0, 1])
+
+    def test_l_track_correlates_linear_position(self):
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        env = Environment.linear_track(
+            node_positions=[(0, 0), (50, 0), (50, 50)], bin_size=1.0, track_width=4.0
+        )
+        rng = np.random.default_rng(1)
+        along = rng.uniform(0, 100, 30)
+        actual = env.linear_to_nd(along)
+        decoded = env.linear_to_nd(np.clip(along + rng.normal(0, 15, 30), 0, 100))
+
+        result = decoding_correlation(env, decoded, actual)
+
+        expected = np.corrcoef(env.to_linear(decoded), env.to_linear(actual))[0, 1]
+        assert result == pytest.approx(expected)
+
+    def test_polar_environment_is_refused(self):
+        from neurospatial import CartesianOnlyError
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        surround = Environment.from_polar_egocentric(
+            distance_range=(0.0, 40.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 4,
+        )
+        positions = surround.bin_centers[:5]
+        with pytest.raises(CartesianOnlyError, match="circular_circular_correlation"):
+            decoding_correlation(surround, positions, positions)
 
 
 class TestDecodingCorrelationSuccessCriteria:
