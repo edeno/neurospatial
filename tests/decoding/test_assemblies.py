@@ -485,14 +485,18 @@ class TestPairwiseCorrelations:
         with pytest.raises(ValueError, match="must be 2D"):
             pairwise_correlations(np.array([1, 2, 3]))
 
-    def test_z_score_input_option(self, small_spike_counts: np.ndarray) -> None:
-        """z_score_input option should affect results."""
-        corr_zscore = pairwise_correlations(small_spike_counts, z_score_input=True)
-        corr_raw = pairwise_correlations(small_spike_counts, z_score_input=False)
-
-        # Results should be very similar since corrcoef also normalizes
-        # but process may differ slightly
-        assert_allclose(corr_zscore, corr_raw, rtol=0.1)
+    def test_silent_neuron_pairs_are_nan(self, small_spike_counts: np.ndarray) -> None:
+        """A neuron with one count in every bin has no correlation, not r = 0."""
+        counts = small_spike_counts.copy()
+        counts[:, 3] = 0.0
+        with pytest.warns(UserWarning, match=r"neuron columns \[3\]"):
+            corr = pairwise_correlations(counts)
+        first, second = np.triu_indices(counts.shape[1], k=1)
+        involves = (first == 3) | (second == 3)
+        assert np.all(np.isnan(corr[involves]))
+        assert np.all(np.isfinite(corr[~involves]))
+        keep = np.arange(counts.shape[1]) != 3
+        assert_allclose(corr[~involves], pairwise_correlations(counts[:, keep]))
 
 
 # =============================================================================
@@ -646,6 +650,65 @@ class TestExplainedVarianceReactivation:
         assert np.isnan(result.partial_correlation)
         # n_pairs reflects the actual count of valid pairs.
         assert result.n_pairs == 1
+
+
+class TestExplainedVarianceUndefined:
+    """Undefined correlation terms give NaN, never a confident EV of 0."""
+
+    @pytest.fixture
+    def periods(self) -> dict[str, np.ndarray]:
+        rng = np.random.default_rng(8)
+        n_time, n_neurons = 3000, 20
+        out = {}
+        for name, drive in (("template", 0.4), ("match", 0.4)):
+            counts = rng.poisson(1.0, (n_time, n_neurons)).astype(np.float64)
+            counts[:, :6] += 2 * rng.poisson(drive, (n_time, 1))
+            counts[:, 10:14] += 2 * rng.poisson(drive, (n_time, 1))
+            out[name] = counts
+        return out
+
+    def test_silent_member_drops_its_pairs(self, periods) -> None:
+        """A member silent in the match period leaves the other pairs' EV intact."""
+        match = periods["match"].copy()
+        match[:, 2] = 0.0
+        with pytest.warns(UserWarning, match="undefined"):
+            match_correlations = pairwise_correlations(match)
+        result = explained_variance_reactivation(
+            pairwise_correlations(periods["template"]), match_correlations
+        )
+        keep = np.arange(20) != 2
+        without = explained_variance_reactivation(
+            pairwise_correlations(periods["template"][:, keep]),
+            pairwise_correlations(match[:, keep]),
+        )
+        assert result.n_pairs == 19 * 18 // 2
+        assert_allclose(result.explained_variance, without.explained_variance)
+        assert result.explained_variance > 0.8
+
+    def test_constant_correlation_vector_is_nan(self) -> None:
+        template = np.linspace(-0.5, 0.5, 10)
+        with pytest.warns(UserWarning, match="EV is undefined"):
+            result = explained_variance_reactivation(template, np.full(10, 0.2))
+        assert np.isnan(result.explained_variance)
+        assert np.isnan(result.partial_correlation)
+
+    def test_control_equal_to_template_is_nan(self) -> None:
+        rng = np.random.default_rng(2)
+        template = rng.uniform(-0.5, 0.5, 30)
+        match = template + 0.1 * rng.standard_normal(30)
+        with pytest.warns(UserWarning, match="EV is undefined"):
+            result = explained_variance_reactivation(
+                template, match, control_correlations=template
+            )
+        assert np.isnan(result.explained_variance)
+        assert np.isnan(result.partial_correlation)
+
+    def test_infinite_correlations_raise(self) -> None:
+        corr = np.linspace(-0.5, 0.5, 10)
+        broken = corr.copy()
+        broken[4] = np.inf
+        with pytest.raises(ValueError, match="infinite values"):
+            explained_variance_reactivation(corr, broken)
 
 
 # =============================================================================

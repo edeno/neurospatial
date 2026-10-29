@@ -1283,8 +1283,6 @@ def _columns_by_label(
 
 def pairwise_correlations(
     spike_counts: NDArray[np.float64],
-    *,
-    z_score_input: bool = True,
 ) -> NDArray[np.float64]:
     """
     Compute pairwise correlations between neurons.
@@ -1292,15 +1290,27 @@ def pairwise_correlations(
     Parameters
     ----------
     spike_counts : NDArray[np.float64], shape (n_time_bins, n_neurons)
-        Binned spike counts.
-    z_score_input : bool, default=True
-        If True, z-score spike counts before computing correlations.
+        Binned spike counts, finite and non-negative.
 
     Returns
     -------
     correlations : NDArray[np.float64], shape (n_pairs,)
-        Upper triangle of correlation matrix, flattened.
-        n_pairs = n_neurons * (n_neurons - 1) / 2
+        Pearson correlation of each pair of neurons over time bins, the upper
+        triangle of the correlation matrix, flattened.
+        n_pairs = n_neurons * (n_neurons - 1) / 2. A pair with a neuron
+        whose count is constant over the period (for example silent) has no
+        correlation and is NaN.
+
+    Raises
+    ------
+    ValueError
+        If ``spike_counts`` is not 2-D or holds NaN, infinite or negative
+        values.
+
+    Warns
+    -----
+    UserWarning
+        If some neurons are constant over the period, naming their columns.
 
     Notes
     -----
@@ -1315,6 +1325,12 @@ def pairwise_correlations(
     each period's column labels to :func:`explained_variance_reactivation`
     (``template_unit_ids=``, ``match_unit_ids=``, ``control_unit_ids=``),
     which pairs the correlations by cell.
+
+    A constant neuron's pairs stay NaN rather than 0: a correlation of 0
+    would claim the neuron fires independently of the others, while a
+    neuron that never changes its count gives no evidence either way.
+    :func:`explained_variance_reactivation` drops NaN pairs and reports the
+    number of pairs it used.
 
     Examples
     --------
@@ -1339,25 +1355,28 @@ def pairwise_correlations(
     ... )
     """
     spike_counts = _validated_counts(spike_counts, call="pairwise_correlations()")
+    n_neurons = spike_counts.shape[1]
 
-    # Work internally in (n_neurons, n_time_bins).
-    spike_counts = spike_counts.T
-    n_neurons = spike_counts.shape[0]
-
-    if z_score_input:
-        spike_counts_z = stats.zscore(spike_counts, axis=1)
-        spike_counts_z = np.nan_to_num(spike_counts_z, nan=0.0)
-    else:
-        spike_counts_z = spike_counts
-
-    # Compute correlation matrix using numpy
-    corr_matrix = np.corrcoef(spike_counts_z)
-    corr_matrix = np.nan_to_num(corr_matrix, nan=0.0)
+    constant = np.ptp(spike_counts, axis=0) == 0
+    if np.any(constant):
+        warnings.warn(
+            f"pairwise_correlations(): neuron columns "
+            f"{np.flatnonzero(constant).tolist()} have the same count in every "
+            "time bin, so their correlations are undefined and returned as NaN. "
+            "explained_variance_reactivation() drops those pairs; to keep the "
+            "same pairs in every period, select units that fire in all periods.",
+            UserWarning,
+            stacklevel=2,
+        )
+    corr_matrix = np.full((n_neurons, n_neurons), np.nan)
+    varying = np.flatnonzero(~constant)
+    if varying.size >= 2:
+        corr_matrix[np.ix_(varying, varying)] = np.corrcoef(
+            spike_counts[:, varying], rowvar=False
+        )
 
     # Extract upper triangle (excluding diagonal)
-    triu_indices = np.triu_indices(n_neurons, k=1)
-    correlations = corr_matrix[triu_indices]
-
+    correlations: NDArray[np.float64] = corr_matrix[np.triu_indices(n_neurons, k=1)]
     return correlations
 
 
@@ -1705,6 +1724,8 @@ def explained_variance_reactivation(
         )
 
     n_pairs = len(template_correlations)
+    _check_correlation_values(template_correlations, "template_correlations")
+    _check_correlation_values(match_correlations, "match_correlations")
 
     if n_pairs < 3:
         raise ValueError(f"Need at least 3 pairs for EV calculation, got {n_pairs}")
@@ -1718,6 +1739,7 @@ def explained_variance_reactivation(
                 f"control correlations must have same length as template/match. "
                 f"Got {len(control_correlations)}, expected {n_pairs}."
             )
+        _check_correlation_values(control_correlations, "control_correlations")
         valid_mask &= np.isfinite(control_correlations)
 
     template_valid = template_correlations[valid_mask]
@@ -1742,33 +1764,41 @@ def explained_variance_reactivation(
         )
 
     # Pairwise correlation between template and match correlation vectors.
-    r_tm = np.nan_to_num(np.corrcoef(template_valid, match_valid)[0, 1], nan=0.0)
+    r_tm = _pearson(template_valid, match_valid)
 
     if control_correlations is not None:
         control_valid = control_correlations[valid_mask]
-        r_tc = np.nan_to_num(np.corrcoef(template_valid, control_valid)[0, 1], nan=0.0)
-        r_mc = np.nan_to_num(np.corrcoef(match_valid, control_valid)[0, 1], nan=0.0)
+        r_tc = _pearson(template_valid, control_valid)
+        r_mc = _pearson(match_valid, control_valid)
 
         # EV: variance of match correlations explained by template, after
         # partialling out the control (pre-behavior) baseline.
         #   r_partial(template, match | control)
-        denom_ev = np.sqrt((1.0 - r_tc**2) * (1.0 - r_mc**2))
-        partial_corr = (r_tm - r_tc * r_mc) / denom_ev if denom_ev > 1e-10 else 0.0
+        partial_corr = _partial_correlation(r_tm, r_tc, r_mc)
         ev = partial_corr**2
 
         # Reverse time by swapping pre (control) and post (match):
         # r_partial(template, control | match).
-        denom_rev = np.sqrt((1.0 - r_tm**2) * (1.0 - r_mc**2))
-        rev_partial = (r_tc - r_tm * r_mc) / denom_rev if denom_rev > 1e-10 else 0.0
-        rev = rev_partial**2
+        rev = _partial_correlation(r_tc, r_tm, r_mc) ** 2
     else:
         # No control: EV is the plain squared correlation. REV reduces to
-        # the same value because there is no asymmetry to break — the
-        # control is what makes EV != REV meaningful. This is intentional,
-        # not the old hardcoded `rev = ev` shortcut.
+        # the same value because there is no asymmetry to break; the
+        # control is what makes EV != REV meaningful.
         partial_corr = r_tm
         ev = r_tm**2
         rev = r_tm**2
+
+    if np.isnan(ev):
+        warnings.warn(
+            "explained_variance_reactivation(): EV is undefined (NaN). A "
+            "correlation vector is the same for every valid pair, or the "
+            "control correlations are a perfect linear function of the "
+            "template or match correlations, so the partial correlation has "
+            "no value. Check that each period's correlations come from "
+            "pairwise_correlations() on that period's own counts.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     return ExplainedVarianceResult(
         explained_variance=float(ev),
@@ -1776,6 +1806,67 @@ def explained_variance_reactivation(
         partial_correlation=float(partial_corr),
         n_pairs=int(np.sum(valid_mask)),
     )
+
+
+def _check_correlation_values(correlations: NDArray[np.float64], argument: str) -> None:
+    """Refuse infinite values; NaN marks an undefined pair and is allowed.
+
+    Parameters
+    ----------
+    correlations : ndarray, shape (n_pairs,)
+        One period's pair correlations.
+    argument : str
+        Argument name for the error message.
+    """
+    if np.any(np.isinf(correlations)):
+        raise ValueError(
+            _format_error(
+                f"explained_variance_reactivation(): {argument} holds infinite values.",
+                why="Why: each entry must be the correlation of one pair of "
+                "neurons; NaN marks a pair whose correlation is undefined.",
+                fix="pass the output of pairwise_correlations() for each period",
+            )
+        )
+
+
+def _pearson(first: NDArray[np.float64], second: NDArray[np.float64]) -> float:
+    """Pearson correlation of two vectors, NaN when either is constant.
+
+    Parameters
+    ----------
+    first, second : ndarray, shape (n_pairs,)
+        Finite values.
+
+    Returns
+    -------
+    float
+        Their correlation, or NaN when a vector has no variance.
+    """
+    if np.ptp(first) == 0 or np.ptp(second) == 0:
+        return np.nan
+    return float(np.corrcoef(first, second)[0, 1])
+
+
+def _partial_correlation(r_xy: float, r_xz: float, r_yz: float) -> float:
+    """Correlation of x and y controlling for z, NaN when undefined.
+
+    Parameters
+    ----------
+    r_xy, r_xz, r_yz : float
+        Pairwise correlations; NaN propagates.
+
+    Returns
+    -------
+    float
+        The partial correlation, or NaN when z explains x or y perfectly
+        (within rounding), which leaves no residual to correlate.
+    """
+    unexplained_x, unexplained_y = 1.0 - r_xz**2, 1.0 - r_yz**2
+    # |r| within rounding of 1 (np.corrcoef of identical vectors can return
+    # 1 - 2e-16) leaves a residual of pure rounding error.
+    if not (unexplained_x > 1e-12 and unexplained_y > 1e-12):
+        return np.nan
+    return float((r_xy - r_xz * r_yz) / np.sqrt(unexplained_x * unexplained_y))
 
 
 def _pairs_in_template_order(
