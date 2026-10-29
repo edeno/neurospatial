@@ -1,21 +1,14 @@
 """Immutable ``BayesianDecoder`` fit/predict wrapper over the decode core.
 
-Provides :class:`BayesianDecoder`, a thin **frozen** convenience layer over the
-existing functional decoders (:func:`~neurospatial.decoding.decode_session`,
-:func:`~neurospatial.decoding.decode_session_summary`). The wrapper does **not**
-re-implement decoding: ``fit`` reuses the same internal encoder
-(``decode_session``'s ``_fit_encoding_model``) that ``decode_session`` runs
-internally, and ``predict``/``predict_summary`` delegate straight to the
-functional core with the fitted encoding models. Reusing that internal encoder
-is what guarantees the encoding step is byte-identical to ``decode_session``'s
-(same ``max_gap`` masking, dtype, KDE parameters), so a
-fitted decoder's posterior is byte-for-byte equal to ``decode_session`` on the
-same inputs.
-
-Unlike pynapple's ``decode_1d`` / ``decode_2d``, decoding runs through an
-:class:`~neurospatial.environment.Environment`, so geodesic / linearized-track /
-graph-based decoding works: the same fit/predict flow decodes a 1-D linearized
-track or a masked open field, not just a rectangular grid.
+Provides :class:`BayesianDecoder`, a thin frozen layer over the functional
+decoders (:func:`~neurospatial.decoding.decode_session`,
+:func:`~neurospatial.decoding.decode_session_summary`). ``fit`` runs the same
+encoder as ``decode_session``, and ``predict`` / ``predict_summary`` run the same
+binning and posterior calculation with the fitted models. On a recording
+without missing tracking, ``fit(...).predict(...)`` therefore equals
+``decode_session`` on the same inputs exactly. With NaN positions they differ:
+``decode_session`` does not decode tracking losses longer than ``max_gap``,
+while ``predict``, which takes no positions, decodes them.
 """
 
 from __future__ import annotations
@@ -118,15 +111,22 @@ class BayesianDecoder:
     against those models; :meth:`score` reports decode error against ground
     truth. The class is frozen, so "fitting" never mutates the original decoder.
 
-    The wrapper delegates to the functional core rather than re-implementing it:
-    a fitted decoder's :meth:`predict` reproduces
-    :func:`~neurospatial.decoding.decode_session` byte-for-byte on the same
-    inputs and parameters.
+    Fit on training epochs and predict on separate test epochs to measure
+    decoding accuracy on held-out data. On a recording without missing
+    tracking, ``fit(...).predict(...)`` with the same inputs equals
+    :func:`~neurospatial.decoding.decode_session` exactly; with NaN positions,
+    ``predict`` also decodes tracking losses longer than ``max_gap``, which
+    ``decode_session`` skips.
 
-    Because decoding runs through the ``Environment``, geodesic / linearized /
-    graph-based decoding works (unlike pynapple ``decode_1d`` / ``decode_2d``):
-    the same fit/predict flow handles a 1-D linearized track or a masked open
-    field, not only a rectangular grid.
+    The prior is uniform over space restricted to the training support: each
+    supported bin's prior mass is proportional to its length, area or volume,
+    and bins without training support get zero mass. Choose ``dt`` and
+    ``bandwidth`` on training and validation epochs, not the test epochs:
+    ``dt`` trades time resolution against spikes per bin, and ``bandwidth``
+    should be smaller than the place fields being decoded.
+
+    Because decoding runs through the ``Environment``, the same fit/predict
+    flow decodes a linearized track, a maze graph or a masked open field.
 
     Parameters
     ----------
@@ -164,8 +164,7 @@ class BayesianDecoder:
         low-confidence frames and shorter than real tracking losses or pickups.
     dtype : {np.float32, np.float64}, default=np.float64
         Working dtype for the encoding models and the posterior. ``np.float32``
-        halves the working set; ``np.float64`` (default) is byte-for-byte the
-        reference decode.
+        halves the working set.
         Replacing this on a fitted decoder changes prediction precision;
         the stored encoding models retain their fitted precision.
     warn_on_drop : bool, default=True
@@ -233,18 +232,23 @@ warn_on_drop
 
     Examples
     --------
+    Fit on the first 10 s and decode the next 10 s:
+
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> from neurospatial.decoding import BayesianDecoder
-    >>> rng = np.random.default_rng(0)
-    >>> positions = rng.uniform(0, 50, (500, 2))  # doctest: +SKIP
-    >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
-    >>> decoder = BayesianDecoder(env, dt=0.1).fit(  # doctest: +SKIP
-    ...     spike_times, times, positions
+    >>> times = np.arange(600) / 30.0
+    >>> positions = np.c_[10 + 5 * np.sin(times), 10 + 5 * np.cos(times)]
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> spikes = [times[::10], times[::15]]
+    >>> decoder = BayesianDecoder(env, dt=0.1).fit(
+    ...     spikes, times, positions, epochs=(0.0, 10.0)
     ... )
-    >>> result = decoder.predict(spike_times, times)  # doctest: +SKIP
-    >>> result.map_position.shape  # doctest: +SKIP
-    (n_time_bins, 2)
+    >>> result = decoder.predict(spikes, times, epochs=(10.0, 19.9))
+    >>> result.map_position.shape[1]
+    2
+    >>> bool(np.all(result.times >= 10.0))
+    True
 
     See Also
     --------
@@ -650,10 +654,9 @@ warn_on_drop
     ) -> BayesianDecoder:
         """Build encoding models from training data; return a new fitted decoder.
 
-        Encodes the population's spatial rate maps using the same internal
-        encoder :func:`~neurospatial.decoding.decode_session` runs
-        (``_fit_encoding_model``), so the models are byte-identical to
-        ``decode_session``'s internal encode step. Does **not** mutate ``self``:
+        Encodes the population's spatial rate maps with the encoder
+        :func:`~neurospatial.decoding.decode_session` runs, so the models equal
+        ``decode_session``'s. Does **not** mutate ``self``:
         the original decoder stays unfitted and a new frozen decoder carrying the
         fitted ``encoding_models`` + ``unit_ids`` is returned.
 
@@ -667,9 +670,7 @@ warn_on_drop
             unlabelled input gets ``arange(n_units)`` and prediction then needs
             plain trains in the same order.
         times : array-like, shape (n_frames,)
-            Timestamp array in seconds. Decode bins tile each run whose gaps
-            are no longer than ``max_gap``. For spans without tracking, pass
-            ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
+            Tracking timestamps in seconds. For pynapple, pass ``tsd.t``.
         positions : NDArray[np.float64], shape (n_frames, n_dims)
             Required sample-aligned coordinates. For pynapple, pass ``tsd.values``.
         unit_ids : ndarray or sequence, optional
@@ -730,9 +731,17 @@ warn_on_drop
 
         Examples
         --------
-        >>> decoder = BayesianDecoder(env).fit(  # doctest: +SKIP
-        ...     spike_times, times, positions, epochs=(0.0, 60.0)
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> times = np.arange(600) / 30.0
+        >>> positions = np.c_[10 + 5 * np.sin(times), 10 + 5 * np.cos(times)]
+        >>> env = Environment.from_samples(positions, bin_size=2.0)
+        >>> spikes = [times[::10], times[::15]]
+        >>> decoder = BayesianDecoder(env).fit(
+        ...     spikes, times, positions, epochs=(0.0, 10.0)
         ... )
+        >>> decoder.encoding_models.shape == (2, env.n_bins)
+        True
         """
         from neurospatial._intervals import resolve_time_windows
         from neurospatial._spikes import as_labelled_spike_trains
@@ -874,8 +883,11 @@ warn_on_drop
             fit order. Labels on only one side raise ``ValueError``.
         times : array-like, shape (n_frames,)
             Timestamp array in seconds. Decode bins tile each run whose gaps
-            are no longer than ``max_gap``. For spans without tracking, pass
-            ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
+            are no longer than ``max_gap``, from ``times[0]`` to ``times[-1]``.
+            To decode ``[t0, t1)`` without tracking, pass
+            ``times=np.arange(t0, t1 + dt / 2, dt)``, which ends at ``t1``;
+            ``np.arange(t0, t1, dt)`` ends one ``dt`` early and loses the last
+            bin. For pynapple, pass ``tsd.t``.
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). The interval between two consecutive samples
@@ -889,10 +901,11 @@ warn_on_drop
             decode time bin spans it and spikes inside it are not counted.
         spike_window : same forms as ``epochs``, or None
             When the electrophysiology was recording. Intervals outside it are
-            excluded from occupancy (and their spikes are not counted). ``None``
-            (default) assumes spikes were recorded whenever position was; this is an
-            assumption, not something the function checks. Pass it when tracking
-            started before, or continued after, the spike recording. The result
+            not decoded: no decode time bin covers them and their spikes are
+            not counted. ``None`` (default) assumes spikes were recorded
+            whenever position was; this is an assumption, not something the
+            function checks. Pass it when tracking started before, or
+            continued after, the spike recording. The result
             records the window applied (``result.spike_window``) and whether it was
             assumed (``result.spike_window_assumed``).
 
@@ -968,8 +981,11 @@ warn_on_drop
             fit order. Labels on only one side raise ``ValueError``.
         times : array-like, shape (n_frames,)
             Timestamp array in seconds. Decode bins tile each run whose gaps
-            are no longer than ``max_gap``. For spans without tracking, pass
-            ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
+            are no longer than ``max_gap``, from ``times[0]`` to ``times[-1]``.
+            To decode ``[t0, t1)`` without tracking, pass
+            ``times=np.arange(t0, t1 + dt / 2, dt)``, which ends at ``t1``;
+            ``np.arange(t0, t1, dt)`` ends one ``dt`` early and loses the last
+            bin. For pynapple, pass ``tsd.t``.
         time_chunk : int, default=1024
             Streaming block size (number of time bins per block). Must be a
             positive integer.
@@ -987,10 +1003,11 @@ warn_on_drop
             decode time bin spans it and spikes inside it are not counted.
         spike_window : same forms as ``epochs``, or None
             When the electrophysiology was recording. Intervals outside it are
-            excluded from occupancy (and their spikes are not counted). ``None``
-            (default) assumes spikes were recorded whenever position was; this is an
-            assumption, not something the function checks. Pass it when tracking
-            started before, or continued after, the spike recording. The result
+            not decoded: no decode time bin covers them and their spikes are
+            not counted. ``None`` (default) assumes spikes were recorded
+            whenever position was; this is an assumption, not something the
+            function checks. Pass it when tracking started before, or
+            continued after, the spike recording. The result
             records the window applied (``result.spike_window``) and whether it was
             assumed (``result.spike_window_assumed``).
 
@@ -1079,9 +1096,7 @@ warn_on_drop
             order. When they do not, pass one plain train per fitted unit, in
             fit order. Labels on only one side raise ``ValueError``.
         times : array-like, shape (n_frames,)
-            Timestamp array in seconds. Decode bins tile each run whose gaps
-            are no longer than ``max_gap``. For spans without tracking, pass
-            ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
+            Tracking timestamps in seconds. For pynapple, pass ``tsd.t``.
         positions : NDArray[np.float64], shape (n_frames, n_dims)
             Required sample-aligned coordinates. For pynapple, pass ``tsd.values``.
             NaN marks missing tracking. Ground-truth alignment respects this
@@ -1109,10 +1124,11 @@ warn_on_drop
             truth is never interpolated across a break.
         spike_window : same forms as ``epochs``, or None
             When the electrophysiology was recording. Intervals outside it are
-            excluded from occupancy (and their spikes are not counted). ``None``
-            (default) assumes spikes were recorded whenever position was; this is an
-            assumption, not something the function checks. Pass it when tracking
-            started before, or continued after, the spike recording. The result
+            not decoded: no decode time bin covers them and their spikes are
+            not counted. ``None`` (default) assumes spikes were recorded
+            whenever position was; this is an assumption, not something the
+            function checks. Pass it when tracking started before, or
+            continued after, the spike recording. The result
             records the window applied (``result.spike_window``) and whether it was
             assumed (``result.spike_window_assumed``).
 

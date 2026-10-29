@@ -3,8 +3,8 @@
 Provides :func:`decode_session`, a convenience wrapper that glues together
 :func:`~neurospatial.encoding.compute_spatial_rates`,
 :func:`~neurospatial.decoding.bin_spikes_in_time`, and
-:func:`~neurospatial.decoding.decode_position` so a beginner can decode
-position from spikes in ≤10 lines.
+:func:`~neurospatial.decoding.decode_position` for the standard
+encode-then-decode workflow.
 """
 
 from __future__ import annotations
@@ -217,9 +217,15 @@ def decode_session(
     Glues together :func:`~neurospatial.encoding.compute_spatial_rates`,
     :func:`~neurospatial.decoding.bin_spikes_in_time`, and
     :func:`~neurospatial.decoding.decode_position` into a single entry point
-    for the standard encode-then-decode workflow. Beginner-friendly: requires
-    only the four positional arguments and a ``dt`` keyword to get a full
+    for the standard encode-then-decode workflow. It requires only the four
+    positional arguments to return a full
     :class:`~neurospatial.decoding.DecodingResult`.
+
+    The rate maps are fitted on the same spikes and positions that are then
+    decoded, so the result is an in-sample decode: its error against the
+    tracked position is optimistic. To measure decoding accuracy, fit on
+    training epochs and predict on separate test epochs with
+    ``BayesianDecoder(env).fit(..., epochs=train).predict(..., epochs=test)``.
 
     Parameters
     ----------
@@ -273,7 +279,7 @@ def decode_session(
         encoding step so the decode golden path can speed-filter encoding. When
         set, low-speed periods are excluded from BOTH the spike numerator and
         the occupancy denominator of the encoding model via one shared gate.
-        When ``None`` (default) no speed filtering is applied (unchanged).
+        When ``None`` (default) no speed filtering is applied.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -295,8 +301,8 @@ def decode_session(
         counted.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
-        excluded from occupancy (and their spikes are not counted). ``None``
-        (default) assumes spikes were recorded whenever position was; this is an
+        excluded from the rate maps' occupancy and from decoding, and their
+        spikes are not counted. ``None`` (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
         started before, or continued after, the spike recording. The result
         records the window applied (``result.spike_window``) and whether it was
@@ -314,23 +320,13 @@ def decode_session(
         every spike lies before, or every spike after, the decode bins, the
         call raises whatever ``warn_on_drop`` is.
     dtype : {np.float32, np.float64}, default=np.float64
-        "Decode in this dtype." Controls BOTH the encoding-model working set
-        AND the posterior dtype end-to-end. ``np.float32`` halves the
-        encoding-model + posterior working set on the beginner golden path;
-        values match the float64 default within float32 tolerance (the rate
-        computation itself is done in float64 and only the stored result is
-        cast, per :func:`~neurospatial.encoding.compute_spatial_rates`). Any
-        other dtype raises ``ValueError``. Default ``np.float64`` leaves every
-        existing caller byte-for-byte unchanged. Note: do not also pass
-        ``dtype`` via ``decode_kwargs`` — this explicit parameter is the single
-        source forwarded to :func:`~neurospatial.decoding.decode_position`, and
-        a duplicate would raise ``TypeError``.
+        Dtype of the stored rate maps and posterior; ``np.float32`` halves
+        their memory. Rates are computed in float64 and then cast. Any other
+        dtype raises ``ValueError``.
     **decode_kwargs
-        Additional keyword arguments forwarded verbatim to
-        :func:`~neurospatial.decoding.decode_position`.  Supported kwargs
-        include ``prior`` and ``validate``.  (``method`` now names the smoothing
-        estimator above, not a decode kwarg; pass ``dtype`` via the explicit
-        ``dtype`` parameter, not here.)
+        Forwarded to :func:`~neurospatial.decoding.decode_position`: ``prior``
+        and ``validate``. ``method`` above names the rate estimator, and
+        ``dtype`` is the explicit parameter above.
 
     Returns
     -------
@@ -341,7 +337,8 @@ def decode_session(
         - ``.posterior``, shape ``(n_time_bins, n_bins)`` — full posterior
         - ``.map_position``, shape ``(n_time_bins, n_dims)`` — MAP estimate
         - ``.times``, shape ``(n_time_bins,)`` — decoding bin centers
-        - ``.posterior_entropy`` — per-bin uncertainty in bits
+        - ``.posterior_entropy``, shape ``(n_time_bins,)`` — posterior
+          entropy in bits per time bin
 
     Raises
     ------
@@ -359,10 +356,10 @@ def decode_session(
     counted. ``result.times`` may therefore be non-contiguous. A gap is the
     time between consecutive tracked samples: a NaN position is missing
     tracking, bridged like a deleted row, so a tracking loss longer than
-    ``max_gap`` is not decoded, as without ``spike_window`` spikes are assumed
-    recorded only while position was. To decode spans without tracking, fit
-    a :class:`~neurospatial.decoding.BayesianDecoder` and predict with
-    ``times=np.arange(t0, t1, dt)``.
+    ``max_gap`` is not decoded. Without ``spike_window``, spikes are assumed
+    recorded only while position was. To decode ``[t0, t1)`` without
+    tracking, fit a :class:`~neurospatial.decoding.BayesianDecoder` and
+    predict with ``times=np.arange(t0, t1 + dt / 2, dt)``.
 
     **Orientation contract**:
     :func:`~neurospatial.decoding.bin_spikes_in_time` returns a count
@@ -371,10 +368,14 @@ def decode_session(
     :func:`~neurospatial.decoding.decode_position` expects for its
     ``spike_counts`` argument.  No transposition is performed.
 
-    **Training spatial support**:
-    Unoccupied bins, bins below ``min_occupancy`` and non-finite model bins
-    are excluded from the posterior, even during silent decoding intervals.
-    An explicit ``prior`` is intersected with this support. Internal finite
+    **Prior and training support**:
+    The default prior is uniform over space restricted to the training
+    support: bin mass proportional to ``env.bin_sizes``, zero in unoccupied
+    bins, bins below ``min_occupancy`` and non-finite model bins, also during
+    silent decoding intervals. An explicit ``prior`` is intersected with this
+    support. Choose ``bandwidth`` smaller than the place fields and ``dt``
+    long enough that most bins hold a few spikes (20-50 ms for tens of place
+    cells during running). Internal finite
     placeholders in excluded bins do not represent measured zero activity.
     For precomputed maps use ``BayesianDecoder.from_rates(rates)``; an explicit
     array call must carry ``prior=rates.spatial_support * env.bin_sizes``.
@@ -820,17 +821,14 @@ def decode_session_summary(
     this for long sessions where the dense count matrix and/or posterior would
     not fit in memory.
 
-    The encoding model (firing rates, shape ``(n_neurons, n_bins)``) is built
-    once over the whole session (it is small). Then time is processed in blocks
-    of ``time_chunk`` bins: each block bins ONLY that block's spikes (a
-    slice of the observed-run time grid) and decodes + reduces it via the
-    SAME shared inner-loop helper as
-    :func:`~neurospatial.decoding.decode_position_summary`. Peak memory is
-    therefore ``O(time_chunk * max(n_neurons, n_bins))`` plus the
-    ``(n_neurons, n_bins)`` encoding model, **independent of session length**.
-    The result is identical to running
-    :func:`~neurospatial.decoding.decode_position_summary` on the fully
-    materialized count matrix.
+    The rate maps are fitted once over the whole session. Time is then
+    processed in blocks of ``time_chunk`` bins: each block counts only its own
+    spikes and is decoded and reduced like
+    :func:`~neurospatial.decoding.decode_position_summary` would on the full
+    count matrix. The transient memory of a block is
+    ``O(time_chunk * max(n_neurons, n_bins))``; the stored per-time reductions
+    and the decode bin edges grow with session length. Like
+    :func:`decode_session`, this is an in-sample decode of the training data.
 
     Parameters
     ----------
@@ -839,11 +837,7 @@ min_occupancy, penalty, rank, speed, min_speed, max_gap, \
 warn_on_drop, dtype
         Same as :func:`decode_session` -- including ``method="glm"`` and its
         ``penalty`` / ``rank`` knobs, and the nullable ``bandwidth`` /
-        ``min_occupancy`` (``max_gap`` gates encoding and decoding). ``dtype``
-        ("decode in this dtype") controls BOTH the encoding-model working set
-        AND the streamed per-block posterior: ``np.float32`` halves both;
-        default ``np.float64`` is byte-for-byte unchanged. Pass it via this
-        explicit parameter, NOT via ``decode_kwargs``.
+        ``min_occupancy`` (``max_gap`` gates encoding and decoding).
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
@@ -858,20 +852,16 @@ warn_on_drop, dtype
         counted.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
-        excluded from occupancy (and their spikes are not counted). ``None``
-        (default) assumes spikes were recorded whenever position was; this is an
+        excluded from the rate maps' occupancy and from decoding, and their
+        spikes are not counted. ``None`` (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
         started before, or continued after, the spike recording. The result
         records the window applied (``result.spike_window``) and whether it was
         assumed (``result.spike_window_assumed``).
     **decode_kwargs
-        Forwarded to the per-block decode (same semantics as
-        :func:`~neurospatial.decoding.decode_position_summary`): ``prior``,
-        ``validate``, and ``time_chunk`` (the streaming
-        block size; a positive integer, defaults to 1024 — ``None`` is rejected
-        because it would materialize the full posterior; use
-        :func:`decode_session` for the full posterior). ``dtype`` is the
-        explicit parameter above, not a ``decode_kwargs`` entry. Unknown kwargs
+        ``prior``, ``validate`` and ``time_chunk`` (a positive block size,
+        default 1024), with the meaning they have in
+        :func:`~neurospatial.decoding.decode_position_summary`. Unknown kwargs
         raise ``TypeError``.
 
     Returns
@@ -896,10 +886,10 @@ warn_on_drop, dtype
     counted. ``result.times`` may therefore be non-contiguous. A gap is the
     time between consecutive tracked samples: a NaN position is missing
     tracking, bridged like a deleted row, so a tracking loss longer than
-    ``max_gap`` is not decoded, as without ``spike_window`` spikes are assumed
-    recorded only while position was. To decode spans without tracking, fit
-    a :class:`~neurospatial.decoding.BayesianDecoder` and predict with
-    ``times=np.arange(t0, t1, dt)``.
+    ``max_gap`` is not decoded. Without ``spike_window``, spikes are assumed
+    recorded only while position was. To decode ``[t0, t1)`` without
+    tracking, fit a :class:`~neurospatial.decoding.BayesianDecoder` and
+    predict with ``times=np.arange(t0, t1 + dt / 2, dt)``.
 
     See Also
     --------
@@ -1013,9 +1003,7 @@ def _decode_with_models_summary(
             f"{sorted(decode_kwargs)}. Supported decode kwargs are prior, "
             f"validate, time_chunk (dtype is an explicit parameter)."
         )
-    # The Poisson observation model is the only supported likelihood. It is fixed
-    # here rather than read from decode_kwargs because ``method`` now names the
-    # smoothing estimator (the explicit parameter forwarded to the encoder).
+    # ``method`` names the rate estimator; the likelihood is always Poisson.
     likelihood_method: Literal["poisson"] = "poisson"
 
     if time_chunk is None:

@@ -65,10 +65,11 @@ actual = np.interp(result.times, times, positions[:, 0]).reshape(-1, 1)
 print(f"array-first median error: "
       f"{np.nanmedian(decoding_error(env, result.map_position, actual)):.1f} cm")
 
-# --- BayesianDecoder: optional wrapper, byte-exact vs decode_session -------
+# --- BayesianDecoder: the same decode as an object ------------------------
 decoder = BayesianDecoder(env, dt=0.1).fit(spike_times, times, positions)
 prediction = decoder.predict(spike_times, times)
-assert np.array_equal(prediction.posterior, result.posterior)  # byte-for-byte
+# Equal here because no position is missing (see the BayesianDecoder section).
+assert np.array_equal(prediction.posterior, result.posterior)
 error = decoder.score(spike_times, times, positions, metric="median_error")
 print(f"BayesianDecoder.score median error: {error:.1f} cm")
 ```
@@ -356,15 +357,17 @@ error = fitted.score(spike_times, times, positions,
 fitted = decoder.fit(spike_times, times, positions, epochs=(0.0, 60.0))
 ```
 
-The functional `decode_session` remains the primary path — `predict` reproduces
-it **byte-for-byte** on the same inputs and parameters, so the object wrapper is
-purely for callers who prefer a `fit` / `predict` / `score` object.
+On a recording without missing tracking, `fit(...).predict(...)` on the same
+inputs and parameters equals `decode_session` exactly. With NaN positions they
+differ: `decode_session` does not decode tracking losses longer than `max_gap`,
+while `predict`, which takes no positions, decodes them. `decode_session` fits
+and decodes the same data, an in-sample decode; fit and predict on separate
+epochs to measure accuracy on held-out data.
 
 Because decoding runs through the `Environment`, `BayesianDecoder` decodes
 **linearized tracks**, masked open fields, and graph-based layouts — not just a
 rectangular grid — and `score(..., distance="geodesic")` measures error along the
-environment's connectivity graph. That is a differentiator over pynapple's
-`decode_1d` / `decode_2d`.
+environment's connectivity graph.
 
 ## pynapple interop
 
