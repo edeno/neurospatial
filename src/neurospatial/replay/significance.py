@@ -49,13 +49,32 @@ _NULLS = (
     "spike_train_circular",
     "place_field_circular",
     "time_bin_permutation",
+    "spike_time_uniform",
+    "column_cycle_weighted",
 )
 # Run when nulls=None, if their inputs are given: Davidson et al. (2009).
 _DEFAULT_NULLS = ("column_cycle", "unit_identity", "pseudo_event")
 # Nulls after which a time bin no longer holds its own spikes.
-_ROW_MOVING_NULLS = ("pseudo_event", "spike_train_circular", "time_bin_permutation")
+_ROW_MOVING_NULLS = (
+    "pseudo_event",
+    "spike_train_circular",
+    "time_bin_permutation",
+    "spike_time_uniform",
+)
 # Nulls that decode shuffled spike counts again.
-_DECODING_NULLS = ("unit_identity", "spike_train_circular", "place_field_circular")
+_DECODING_NULLS = (
+    "unit_identity",
+    "spike_train_circular",
+    "place_field_circular",
+    "spike_time_uniform",
+)
+# Nulls that move each cell's spikes to other time bins of the event, so
+# the time bins without spikes differ from shuffle to shuffle.
+_COUNT_CHANGING_NULLS = ("spike_train_circular", "spike_time_uniform")
+# The options each null takes in null_options, with their defaults.
+_NULL_OPTIONS: Mapping[str, Mapping[str, Any]] = MappingProxyType(
+    {"column_cycle_weighted": MappingProxyType({"edge_exclusion": 0.0})}
+)
 _ALTERNATIVES = ("greater", "less", "two-sided")
 
 
@@ -162,6 +181,7 @@ def replay_significance(
     score: Callable[..., Any] = detect_trajectory_radon,
     score_options: Mapping[str, Any] | None = None,
     nulls: str | Sequence[str] | None = None,
+    null_options: Mapping[str, Mapping[str, Any]] | None = None,
     spike_counts: NDArray[np.int64] | None = None,
     encoding_models: NDArray[np.float64] | SpatialRatesResult | None = None,
     dt: float | None = None,
@@ -206,11 +226,29 @@ def replay_significance(
       excluded; smoothed maps are shifted as they are (Grosmark & Buzsáki
       shifted unsmoothed maps and smoothed them again).
     - ``"time_bin_permutation"``: the posterior's time bins are put in random
-      order (Karlsson & Frank 2009; Takigawa et al. 2024). Needs only the
-      posterior. The decoder treats time bins independently, so with a prior
-      that is the same in every time bin this equals permuting the spike
-      counts and decoding again; with a time-varying prior it also moves each
-      time bin's prior.
+      order (Karlsson & Frank 2009; Takigawa et al. 2024). This is the "time
+      swap" of Silva et al. (2015) and Maboudi et al. (2018) and the
+      "time-bin shuffle" of Grosmark & Buzsáki (2016) and Farooq et al.
+      (2019). Needs only the posterior. The decoder treats time bins
+      independently, so with a prior that is the same in every time bin this
+      equals permuting the spike counts and decoding again (Maboudi et al.'s
+      form); with a time-varying prior it also moves each time bin's prior.
+    - ``"spike_time_uniform"``: each cell's spikes in the event are placed
+      uniformly at random over the event window and the event decoded
+      again, the "spike jittering" of Stella et al. (2019). Each cell keeps
+      its count; all timing is broken: the order of cells, bursts and which
+      cells fire together. On equal time bins this spreads each cell's
+      count over the time bins as Multinomial(count, 1 / n_time_bins). Needs
+      the inputs of ``"unit_identity"``; ``times`` must be spaced at least
+      ``dt`` apart, since overlapping windows share spikes. Pass every time
+      bin of the event, including those without spikes.
+    - ``"column_cycle_weighted"``: as ``"column_cycle"``, but each time bin's
+      peak is moved to a position drawn from the session's mean posterior,
+      ``pseudo_event_pool.mean(axis=0)``, and the whole row is shifted
+      circularly to put it there (Farooq et al. 2019). Peaks never land
+      within ``edge_exclusion`` (see ``null_options``; default 0) of either
+      end of the track; Farooq et al. used 10 cm. Needs
+      ``pseudo_event_pool``.
 
     Tirole et al. (2022) call an event significant when it beats the
     ``"spike_train_circular"``, ``"place_field_circular"`` and
@@ -253,6 +291,13 @@ def replay_significance(
         Davidson et al. (2009) whose inputs are given: ``"column_cycle"``
         always, ``"unit_identity"`` with the decoding inputs and
         ``"pseudo_event"`` with a pool.
+    null_options : Mapping[str, Mapping[str, Any]] or None, default=None
+        Options of the nulls run, by null name. Only
+        ``"column_cycle_weighted"`` takes one: ``edge_exclusion``, the
+        distance in the environment's units within which no peak lands at
+        either end of the track, for example
+        ``{"column_cycle_weighted": {"edge_exclusion": 10.0}}`` (Farooq et
+        al. 2019, in cm).
     spike_counts : NDArray[np.int64] or None, shape (n_time_bins, n_neurons)
         Spike counts of the event, one row per posterior row, for the nulls
         that decode again.
@@ -277,7 +322,8 @@ def replay_significance(
         pseudo-event null. Each pseudo-event draws its time bins at random,
         with replacement, from these rows. Davidson et al. (2009) and Michon
         et al. (2019) drew from the complete set of candidate events,
-        including the tested one.
+        including the tested one. The weighted column cycle draws each peak
+        from the mean of these rows.
     alternative : {"greater", "less", "two-sided"}, default="greater"
         The side of the null distribution tested. ``"greater"`` asks whether
         the event scores higher than its shuffles.
@@ -293,7 +339,8 @@ def replay_significance(
         Bendor-lab analyses do (Tirole et al. 2022): for the nulls that decode
         again, the time bins without spikes are those of the shuffled counts,
         and for the column-cycle and time-bin nulls the zeroed rows move with
-        their rows. Needs ``spike_counts`` and a score that accepts rows
+        their rows (under the weighted column cycle a zeroed row stays
+        zero). Needs ``spike_counts`` and a score that accepts rows
         without mass, such as :func:`weighted_correlation`; pass the
         posterior as decoded, not zeroed. Not available with
         ``"pseudo_event"``, whose pool rows carry no spike counts.
@@ -315,7 +362,9 @@ def replay_significance(
     ------
     ValueError
         For inputs ``score`` refuses; if a null in ``nulls`` is unknown or
-        lacks its inputs; if only some of ``spike_counts``,
+        lacks its inputs; if ``null_options`` names a null that is not run or
+        an option the null does not take; if ``"spike_time_uniform"`` is run
+        on time bins less than ``dt`` apart; if only some of ``spike_counts``,
         ``encoding_models`` and ``dt`` are given; if decoding
         ``spike_counts`` with ``encoding_models``, ``dt`` and ``prior`` does
         not reproduce ``posterior``; if ``pseudo_event_pool`` does not hold
@@ -332,6 +381,10 @@ def replay_significance(
     weighted_correlation : Weighted correlation of time and position.
     neurospatial.replay.shuffle_posterior_circular : The column-cycle shuffle.
     neurospatial.replay.shuffle_cell_identity : The unit-identity shuffle.
+    neurospatial.replay.shuffle_spike_counts_uniform : The spike-time-uniform
+        shuffle.
+    neurospatial.replay.shuffle_posterior_weighted_circular : The weighted
+        column-cycle shuffle.
 
     Notes
     -----
@@ -362,6 +415,22 @@ def replay_significance(
     Grosmark, A. D., & Buzsáki, G. (2016). Diversity in neural firing
     dynamics supports both rigid and learned hippocampal sequences.
     *Science*, 351(6280), 1440-1443.
+
+    Silva, D., Feng, T., & Foster, D. J. (2015). Trajectory events across
+    hippocampal place cells require previous experience. *Nature
+    Neuroscience*, 18(12), 1772-1779.
+
+    Maboudi, K., Ackermann, E., de Jong, L. W., Pfeiffer, B. E., Foster, D.,
+    Diba, K., & Kemere, C. (2018). Uncovering temporal structure in
+    hippocampal output patterns. *eLife*, 7, e34467.
+
+    Farooq, U., Sibille, J., Liu, K., & Dragoi, G. (2019). Strengthened
+    temporal coordination within pre-existing sequential cell assemblies
+    supports trajectory replay. *Neuron*, 103(4), 719-733.
+
+    Stella, F., Baracskay, P., O'Neill, J., & Csicsvari, J. (2019).
+    Hippocampal reactivation of random trajectories resembling Brownian
+    diffusion. *Neuron*, 102(2), 450-461.
 
     Tirole, M., Huelin Gorriz, M., Takigawa, M., Kukovska, L., & Bendor, D.
     (2022). Experience-driven rate modulation is reinstated during
@@ -398,7 +467,9 @@ def replay_significance(
     from neurospatial.replay.nulls import (
         shuffle_cell_identity,
         shuffle_posterior_circular,
+        shuffle_posterior_weighted_circular,
         shuffle_spike_counts_circular,
+        shuffle_spike_counts_uniform,
     )
     from neurospatial.stats import _ensure_rng
     from neurospatial.stats.shuffle import (
@@ -478,6 +549,10 @@ def replay_significance(
         posterior = _conditional_rows(posterior)
     scorer = _scorer_for(score, track_env, posterior, times, options)
     run = _nulls_to_run(nulls, spike_counts, encoding_models, dt, pseudo_event_pool)
+    options_of = _checked_null_options(null_options, run, _OPERATION)
+    if "spike_time_uniform" in run:
+        assert dt is not None  # _nulls_to_run needs the decoding inputs.
+        _require_separate_time_bins(times, dt)
     moving = [name for name in run if name in _ROW_MOVING_NULLS]
     if "spike_counts" in options and moving:
         raise ValueError(
@@ -487,23 +562,25 @@ def replay_significance(
                 "time bins have spikes in each shuffle.",
                 why="score_options is passed unchanged to every shuffle, so "
                 "the spike counts would no longer match the shuffled rows",
-                fix="drop the time bins without spikes, with their times, "
-                "before testing, and leave spike_counts out of score_options",
+                fix="leave spike_counts out of score_options; to leave out "
+                "time bins without spikes, drop them with their times before "
+                "testing (except for "
+                f"{' and '.join(_COUNT_CHANGING_NULLS)}, which spread the "
+                "spikes over every time bin of the event)",
             )
         )
-    if "pseudo_event" in run:
-        if empty_time_bins == "zero":
-            raise ValueError(
-                _format_error(
-                    f"{_OPERATION}: empty_time_bins='zero' cannot be used with "
-                    "the pseudo_event null.",
-                    why="pseudo-events draw posterior rows from other events, "
-                    "whose spike counts are not given, so their empty time bins "
-                    "cannot be zeroed",
-                    fix="leave pseudo_event out of nulls, or use "
-                    "empty_time_bins='keep'",
-                )
+    if "pseudo_event" in run and empty_time_bins == "zero":
+        raise ValueError(
+            _format_error(
+                f"{_OPERATION}: empty_time_bins='zero' cannot be used with "
+                "the pseudo_event null.",
+                why="pseudo-events draw posterior rows from other events, "
+                "whose spike counts are not given, so their empty time bins "
+                "cannot be zeroed",
+                fix="leave pseudo_event out of nulls, or use empty_time_bins='keep'",
             )
+        )
+    if "pseudo_event" in run or "column_cycle_weighted" in run:
         pool = _validated_pool(pseudo_event_pool, track_env)
 
     observed_result = scorer.observe()
@@ -589,6 +666,25 @@ def replay_significance(
             ),
             n_shuffles,
         )
+
+    if "spike_time_uniform" in run:
+        spread_counts = shuffle_spike_counts_uniform(
+            counts, n_shuffles=n_shuffles, rng=generator
+        )
+        null_scores["spike_time_uniform"] = scorer.scores(
+            map(decode, spread_counts), n_shuffles
+        )
+
+    if "column_cycle_weighted" in run:
+        weighted = shuffle_posterior_weighted_circular(
+            track_env,
+            posterior,
+            pool.mean(axis=0),
+            **options_of["column_cycle_weighted"],
+            n_shuffles=n_shuffles,
+            rng=generator,
+        )
+        null_scores["column_cycle_weighted"] = scorer.scores(weighted, n_shuffles)
 
     shuffles = {}
     for name, scores in null_scores.items():
@@ -679,7 +775,7 @@ def _nulls_to_run(
         raise ValueError(
             _format_error(
                 f"{_OPERATION}: the nulls that decode the event again "
-                "(unit_identity, spike_train_circular, place_field_circular) "
+                f"({', '.join(_DECODING_NULLS)}) "
                 f"need spike_counts, encoding_models and dt, but "
                 f"{', '.join(missing)} {'is' if len(missing) == 1 else 'are'} "
                 "missing.",
@@ -696,6 +792,8 @@ def _nulls_to_run(
         "spike_train_circular": not missing,
         "place_field_circular": not missing,
         "time_bin_permutation": True,
+        "spike_time_uniform": not missing,
+        "column_cycle_weighted": pseudo_event_pool is not None,
     }
     if nulls is None:
         return tuple(name for name in _DEFAULT_NULLS if available[name])
@@ -714,6 +812,9 @@ def _nulls_to_run(
             "pseudo_event": "pseudo_event_pool",
             "spike_train_circular": decoding,
             "place_field_circular": decoding,
+            "spike_time_uniform": decoding,
+            "column_cycle_weighted": "pseudo_event_pool, whose mean row "
+            "weights the peaks",
         }
         raise ValueError(
             _format_error(
@@ -723,6 +824,100 @@ def _nulls_to_run(
             )
         )
     return tuple(name for name in _NULLS if name in requested)
+
+
+def _checked_null_options(
+    null_options: Mapping[str, Mapping[str, Any]] | None,
+    nulls: Sequence[str],
+    owner: str,
+) -> dict[str, dict[str, Any]]:
+    """Every option of ``nulls``, with defaults, after refusing unknown ones.
+
+    Parameters
+    ----------
+    null_options : Mapping[str, Mapping[str, Any]] or None
+        Options by null name, as given.
+    nulls : sequence of str
+        The nulls that are run.
+    owner : str
+        The function or method the options were given to, for errors.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        For each null in ``nulls`` that takes options, all of its options.
+
+    Raises
+    ------
+    ValueError
+        If ``null_options`` is not a mapping of mappings, names a null that
+        is not run or takes no options, or an option the null does not
+        take, or gives an option an invalid value.
+    """
+    given = {} if null_options is None else null_options
+    if not isinstance(given, Mapping) or not all(
+        isinstance(options, Mapping) for options in given.values()
+    ):
+        raise ValueError(
+            f"{owner}: null_options must map null names to mappings of "
+            "options, such as {'column_cycle_weighted': {'edge_exclusion': "
+            f"10.0}}}}, got {null_options!r}."
+        )
+    not_run = [name for name in given if name not in nulls]
+    if not_run:
+        raise ValueError(
+            _format_error(
+                f"{owner}: null_options names {not_run}, which "
+                f"{'is' if len(not_run) == 1 else 'are'} not among the nulls "
+                f"run, {list(nulls)}.",
+                why="options of a null that is not run would be ignored silently",
+                fix="add the null to nulls, or remove its options",
+            )
+        )
+    checked = {}
+    for name in nulls:
+        defaults = _NULL_OPTIONS.get(name, {})
+        options = dict(given.get(name, {}))
+        unknown = sorted(set(options) - set(defaults))
+        if unknown:
+            takes = (
+                f"it takes {sorted(defaults)}" if defaults else "it takes no options"
+            )
+            raise ValueError(f"{owner}: null_options gives {name} {unknown}; {takes}.")
+        if name in _NULL_OPTIONS:
+            checked[name] = {**defaults, **options}
+    edge = checked.get("column_cycle_weighted", {}).get("edge_exclusion", 0.0)
+    if (
+        isinstance(edge, bool)
+        or not isinstance(edge, (int, float, np.integer, np.floating))
+        or not np.isfinite(edge)
+        or edge < 0
+    ):
+        raise ValueError(
+            f"{owner}: the edge_exclusion of column_cycle_weighted must be a "
+            f"finite distance >= 0 in the environment's units, got {edge!r}."
+        )
+    return checked
+
+
+def _require_separate_time_bins(times: Any, dt: float) -> None:
+    """Refuse time bins closer than ``dt``: their counts share spikes."""
+    centers = np.sort(np.asarray(times, dtype=np.float64).ravel())
+    spacing = np.diff(centers)
+    # Allow round-off in times built as start + k * step.
+    if spacing.size and np.min(spacing) < dt * (1.0 - 1e-6):
+        raise ValueError(
+            _format_error(
+                f"{_OPERATION}: the spike_time_uniform null needs time bins that "
+                f"do not overlap, but times are as little as {np.min(spacing):g} s "
+                f"apart with dt={dt:g} s.",
+                why="overlapping windows count the same spikes, so their counts "
+                "cannot be spread over the event as separate spikes",
+                fix="decode the event in time bins that do not overlap (a time "
+                "step equal to dt) for this null, or make null events from the "
+                "spike times with null_events(kind='spike_time_uniform')",
+            )
+        )
 
 
 def _require_reproducible_decode(

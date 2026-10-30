@@ -20,6 +20,7 @@ DEFAULTS: dict[type, dict[str, Any]] = {
     ReplayMethod: {
         "score_options": {},
         "nulls": (),
+        "null_options": {},
         "n_shuffles": 1000,
         "alpha": 0.05,
         "alternative": "greater",
@@ -409,6 +410,8 @@ def _plain(name: str, value: Any) -> Any:
         }
     if name in ("score_options", "decoding"):
         return dict(value)
+    if name == "null_options":
+        return {null: dict(options) for null, options in value.items()}
     return value
 
 
