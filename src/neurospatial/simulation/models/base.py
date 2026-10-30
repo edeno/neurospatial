@@ -6,6 +6,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._results import read_only_copy
 from neurospatial.geometry import require_position_columns
 
 if TYPE_CHECKING:
@@ -251,13 +252,6 @@ def _draw_rng(model: Any) -> np.random.Generator:
     return np.random.default_rng(seed)
 
 
-def _read_only(values: ArrayLike) -> NDArray[np.float64]:
-    """A float64 copy of ``values`` that cannot be written."""
-    array = np.array(values, dtype=np.float64)
-    array.setflags(write=False)
-    return array
-
-
 def _check_rates(max_rate: float, baseline_rate: float) -> None:
     """Refuse a non-finite or negative rate, or a baseline above the peak."""
     if not (np.isfinite(max_rate) and max_rate > 0):
@@ -331,7 +325,7 @@ def _check_metric(metric: str, call: str) -> None:
 
 def _check_point(name: str, value: ArrayLike, n_dims: int) -> NDArray[np.float64]:
     """One finite point of ``n_dims`` coordinates, as a read-only array."""
-    point = _read_only(value)
+    point = read_only_copy(value, np.float64)
     if point.shape != (n_dims,) or not np.all(np.isfinite(point)):
         raise ValueError(
             _format_error(

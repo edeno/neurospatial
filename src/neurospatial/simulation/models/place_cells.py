@@ -10,6 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._results import read_only_copy
 from neurospatial._units import default_length
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
@@ -21,7 +22,6 @@ from neurospatial.simulation.models.base import (
     _check_rates,
     _draw_rng,
     _model_inputs,
-    _read_only,
     geodesic_lookup_bins,
 )
 
@@ -254,7 +254,7 @@ class PlaceCellModel:
         object.__setattr__(self, "baseline_rate", float(self.baseline_rate))
         if self.center is None:
             center_idx = _draw_rng(self).integers(0, env.n_bins)
-            center = _read_only(env.bin_centers[center_idx])
+            center = read_only_copy(env.bin_centers[center_idx], np.float64)
         else:
             center = _check_point("center", self.center, env.n_dims)
             object.__setattr__(self, "center", center)
@@ -293,7 +293,7 @@ class PlaceCellModel:
         if width_check.ndim == 0 or env.n_dims == 1:
             width = float(width_check.reshape(-1)[0])
         else:
-            width = _read_only(width_check)
+            width = read_only_copy(width_check, np.float64)
             if env.coordinate_kind == "polar":
                 require_cartesian(
                     env.coordinate_system,

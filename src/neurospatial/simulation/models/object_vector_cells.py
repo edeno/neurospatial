@@ -90,6 +90,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._results import read_only_copy
 from neurospatial._units import default_length
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import distance_field
@@ -101,7 +102,6 @@ from neurospatial.simulation.models.base import (
     _check_rates,
     _model_headings,
     _model_inputs,
-    _read_only,
     geodesic_lookup_bins,
 )
 
@@ -311,7 +311,7 @@ class ObjectVectorCellModel:
                     fix='pass direction_frame="allocentric" or direction_frame="egocentric"',
                 )
             )
-        objects = _read_only(self.object_positions)
+        objects = read_only_copy(self.object_positions, np.float64)
         if objects.ndim != 2 or objects.shape[1] != 2 or len(objects) == 0:
             raise ValueError(
                 _format_error(
