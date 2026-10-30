@@ -1585,6 +1585,23 @@ def _environment_mismatch(first: Environment, second: Environment) -> str | None
     return bins or topology
 
 
+def _check_decoded_environment(
+    env: Environment, decoded_env: Environment, index: int, operation: str
+) -> None:
+    """Refuse event ``index`` if it was decoded on an environment other than ``env``."""
+    mismatch = _environment_mismatch(env, decoded_env)
+    if mismatch is not None:
+        raise ValueError(
+            _format_error(
+                f"{operation}: event {index} was decoded on an environment that "
+                f"differs from env in {mismatch}.",
+                why="distances, jumps and positions would be read on bins the "
+                "event was not decoded on",
+                fix="pass the environment the events were decoded on",
+            )
+        )
+
+
 def detect_replay(
     env: Environment | Mapping[str, Environment],
     posterior: NDArray[np.float64]
@@ -3666,18 +3683,9 @@ def compare_replay_methods(
         else:
             decoded = [(expected, getattr(event, "env", None))]
         for expected_env, event_env in decoded:
-            if event_env is None:
-                continue
-            mismatch = _environment_mismatch(expected_env, event_env)
-            if mismatch is not None:
-                raise ValueError(
-                    _format_error(
-                        f"compare_replay_methods(): event {index} was decoded "
-                        f"on an environment that differs from env in {mismatch}.",
-                        why="distances, jumps and positions would be read on "
-                        "bins the event was not decoded on",
-                        fix="pass the environment the events were decoded on",
-                    )
+            if event_env is not None:
+                _check_decoded_environment(
+                    expected_env, event_env, index, "compare_replay_methods()"
                 )
         n_time_bins = len(np.asarray(times))
         if spike_counts is not None:

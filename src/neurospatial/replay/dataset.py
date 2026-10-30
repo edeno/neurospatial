@@ -64,7 +64,6 @@ from neurospatial.replay.methods import (
     GROSMARK_2016,
     SILVA_2015,
     RankOrderMethod,
-    ReplayCriterion,
     ReplayMethod,
 )
 from neurospatial.replay.rank_order import _spearman_rows
@@ -1002,8 +1001,8 @@ def _replay_values(
             f"{operation}: quantities {unknown} are not scalars of "
             f"TrajectoryMetrics; choose from {list(_TRAJECTORY_SCALARS)}."
         )
-    variant, labels = _measuring_method(method, quantities)
-    if counts is None and _counts_spikes(variant):
+    quantity_columns = _measured_quantities(method, quantities)
+    if counts is None and method._needs_spike_counts:
         raise ValueError(
             _format_error(
                 f"{operation}: method {method.name!r} needs spike_counts.",
@@ -1016,7 +1015,7 @@ def _replay_values(
         )
     options_of = _null_options_of(null, null_options, operation)
     track_length = _track_length_or_nan(env)
-    columns = list(dict.fromkeys(labels.values()))
+    columns = list(quantity_columns)
     if counts is not None and "n_active_cells" not in columns:
         columns.append("n_active_cells")
     rows: dict[str, list[NDArray[Any]]] = {
@@ -1042,8 +1041,8 @@ def _replay_values(
                 np.asarray(event.posterior),
                 np.asarray(event.times),
                 event_counts,
-                variant,
-                labels,
+                method,
+                quantity_columns,
                 _stream(entropy, _REAL_KEY, index),
             )
             add(index, np.zeros(1, dtype=np.intp), measured)
@@ -1063,7 +1062,7 @@ def _replay_values(
             entropy=entropy,
             operation=operation,
         )
-        use_tables = fast and _fast_path_applies(variant, null, labels)
+        use_tables = fast and _fast_path_applies(method, null, quantity_columns)
         datasets = np.arange(n_datasets, dtype=np.intp)
         for index, event in enumerate(decoded):
             event_counts = None if counts is None else counts[index]
@@ -1072,7 +1071,7 @@ def _replay_values(
             if use_tables and np.isfinite(posterior).all():
                 draws = context.rolls(index, posterior)
                 values = _MomentTables(context, posterior, times, event_counts).values(
-                    draws, variant, labels
+                    draws, method, quantity_columns
                 )
                 add(index, datasets, values)
                 continue
@@ -1087,7 +1086,13 @@ def _replay_values(
                     index, posterior, event_counts
                 ):
                     measured = _measure(
-                        env, shuffled, times, shuffled_counts, variant, labels, stream
+                        env,
+                        shuffled,
+                        times,
+                        shuffled_counts,
+                        method,
+                        quantity_columns,
+                        stream,
                     )
                     for name in measured_rows:
                         measured_rows[name].append(measured.get(name, np.nan))
@@ -1107,58 +1112,13 @@ def _replay_values(
     return table
 
 
-def _measuring_method(
-    method: ReplayMethod, quantities: Sequence[str]
-) -> tuple[ReplayMethod, dict[str, str]]:
-    """The method without its shuffle test, and each criterion's quantity.
+def _measured_quantities(method: ReplayMethod, quantities: Sequence[str]) -> list[str]:
+    """The quantities of the method's criteria, then the further ``quantities``.
 
-    The extra ``quantities`` become criteria every value meets, so that
-    :func:`detect_replay` measures them on the method's rows. Returns the
-    method and a mapping from criterion label to the quantity's column
-    (``"score"`` criteria are reported as the score).
+    Each is named once; the score has its own column.
     """
-    criteria = list(method.criteria)
-    present = {criterion.quantity for criterion in criteria}
-    for name in quantities:
-        if name not in present:
-            criteria.append(ReplayCriterion(name, "<=", float(np.finfo(float).max)))
-            present.add(name)
-    labels = {
-        criterion.label: criterion.quantity
-        for criterion in criteria
-        if criterion.quantity != "score"
-    }
-    if not criteria and method.segmentation is None:
-        # A criterion every event meets, so the method tests something.
-        criteria.append(ReplayCriterion("n_time_bins", ">=", 0))
-    variant = dataclasses.replace(
-        method,
-        nulls=(),
-        null_options={},
-        tested_quantities={},
-        template_choice=None
-        if method.template_choice in ("smallest_p", "max_score")
-        else method.template_choice,
-        criteria=tuple(criteria),
-    )
-    # Keep the first label of each quantity.
-    first: dict[str, str] = {}
-    for label, quantity in labels.items():
-        first.setdefault(quantity, label)
-    return variant, {label: quantity for quantity, label in first.items()}
-
-
-def _counts_spikes(method: ReplayMethod) -> bool:
-    """Whether ``detect_replay`` needs spike counts to apply ``method``."""
-    segmentation = method.segmentation
-    return (
-        method.empty_time_bins != "keep"
-        or any(criterion.quantity in _SPIKE_QUANTITIES for criterion in method.criteria)
-        or (
-            segmentation is not None
-            and segmentation.min_active_cells_per_time_bin is not None
-        )
-    )
+    names = [c.quantity for c in method.criteria if c.quantity != "score"]
+    return list(dict.fromkeys([*names, *quantities]))
 
 
 def _measure(
@@ -1166,33 +1126,48 @@ def _measure(
     posterior: NDArray[np.float64],
     times: NDArray[np.float64],
     counts: NDArray[np.int64] | None,
-    variant: ReplayMethod,
-    labels: Mapping[str, str],
+    method: ReplayMethod,
+    measured: Sequence[str],
     rng: np.random.Generator,
 ) -> dict[str, float]:
-    """One event's score and quantities, as compare_replay_methods measures it."""
-    from neurospatial.replay.methods import detect_replay
+    """One event's score and ``measured`` quantities, as compare_replay_methods measures it.
+
+    The event is measured as :func:`~neurospatial.replay.detect_replay`
+    measures it before its shuffle test. Without a segment, or with an
+    undefined score that the method thresholds, every value is NaN.
+    """
+    from neurospatial.replay.methods import (
+        ReplayDetectionResult,
+        _detection_event,
+        _event_quantities,
+        _measure_event,
+        _scorable_times,
+    )
 
     values: dict[str, float] = {}
     if counts is not None:
         values["n_active_cells"] = float(np.sum(np.asarray(counts).sum(axis=0) > 0))
-    usable = times
-    if variant.empty_time_bins != "keep" and counts is not None:
-        usable = times[np.asarray(counts).sum(axis=1) > 0]
-    if np.unique(usable).size < 2:
+    if not _scorable_times(method, times, counts):
         values.pop("n_active_cells", None)
         return values
-    result = detect_replay(
+    event = _detection_event(
         env,
         posterior,
         times,
-        replay_method=variant,
+        method,
         spike_counts=counts,
-        rng=rng,
+        encoding_models=None,
+        dt=None,
+        prior=None,
+        template=None,
+        pseudo_event_pool=None,
+        valid_time_bins=None,
     )
-    values["score"] = float(result.score)
-    for label, quantity in labels.items():
-        values[quantity] = float(result.values[label])
+    result = _measure_event(method, event, rng, test=False)
+    if isinstance(result, ReplayDetectionResult):
+        values.update(dict.fromkeys(["score", *measured], np.nan))
+    else:
+        values.update(_event_quantities(["score", *measured], result))
     return values
 
 
@@ -1216,7 +1191,7 @@ def _decoded_events(
     not compare it.
     """
     from neurospatial.decoding import DecodingResult
-    from neurospatial.replay.methods import _environment_mismatch
+    from neurospatial.replay.methods import _check_decoded_environment
 
     decoded = list(events)
     if not decoded:
@@ -1239,17 +1214,7 @@ def _decoded_events(
                 f"{operation}: event {index} has no times; decode with times=."
             )
         if not isinstance(env, Mapping):
-            mismatch = _environment_mismatch(env, event.env)
-            if mismatch is not None:
-                raise ValueError(
-                    _format_error(
-                        f"{operation}: event {index} was decoded on an "
-                        f"environment that differs from env in {mismatch}.",
-                        why="distances, jumps and positions would be read on "
-                        "bins the event was not decoded on",
-                        fix="pass the environment the events were decoded on",
-                    )
-                )
+            _check_decoded_environment(env, event.env, index, operation)
     return decoded
 
 
@@ -1572,20 +1537,20 @@ class _NullContext:
 
 
 def _fast_path_applies(
-    variant: ReplayMethod, null: str, labels: Mapping[str, str]
+    method: ReplayMethod, null: str, measured: Sequence[str]
 ) -> bool:
     """Whether every value of these shuffles follows from moment tables."""
-    options = dict(variant.score_options)
-    spec = None if variant.score is None else _score_specs().get(variant.score)
+    options = dict(method.score_options)
+    spec = None if method.score is None else _score_specs().get(method.score)
     tabulated = None if spec is None else spec.moment_tables
     return (
         _NULL_SPECS[null].rolls
         and tabulated is not None
         and set(options) <= set(tabulated)
         and all(options.get(name, value) == value for name, value in tabulated.items())
-        and variant.segmentation is None
-        and variant.empty_time_bins == "keep"
-        and all(quantity in _FAST_QUANTITIES for quantity in labels.values())
+        and method.segmentation is None
+        and method.empty_time_bins == "keep"
+        and all(quantity in _FAST_QUANTITIES for quantity in measured)
     )
 
 
@@ -1672,8 +1637,8 @@ class _MomentTables:
     def values(
         self,
         draws: tuple[NDArray[np.intp], NDArray[np.intp]],
-        variant: ReplayMethod,
-        labels: Mapping[str, str],
+        method: ReplayMethod,
+        measured: Sequence[str],
     ) -> dict[str, NDArray[np.float64]]:
         """The score and quantities of each null data set's shuffle of the event.
 
@@ -1687,7 +1652,7 @@ class _MomentTables:
         n_datasets, n_time = rows.shape
         if len(self.shifts) == 1:
             shifts = np.zeros_like(shifts)
-        needed = list(dict.fromkeys(labels.values()))
+        needed = list(measured)
         constant: dict[str, float] = {}
         if self.counts is not None:
             counts = np.asarray(self.counts)
@@ -1747,7 +1712,7 @@ class _MomentTables:
                     if along is None
                     else np.ptp(along[maps], axis=1)
                 )
-        if any(c.quantity == "score" for c in variant.criteria):
+        if any(c.quantity == "score" for c in method.criteria):
             # An undefined score gives no criterion values (detect_replay).
             undefined = ~np.isfinite(score)
             for quantity in needed:
