@@ -433,7 +433,12 @@ those α values, from the p-values already in the table, without running the
 shuffles again.
 
 Only methods that compare a p-value with α can be matched. `SILVA_2015` has
-no shuffles, so it is left out.
+no shuffles, so it is left out. A method whose tested segment or template
+depends on α cannot be matched from the table either: `WIDLOSKI_FOSTER_2025`
+reports the longest segment that is replay at its α, and a rank-order method
+with `template_choice` the most active template that is. The table holds
+only the reported one's p-value, so rerun these methods with
+`dataclasses.replace(method, alpha=...)` at each α.
 
 <!-- docs-test: run -->
 ```python

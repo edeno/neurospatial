@@ -873,7 +873,9 @@ def matched_alpha(
         ``groups`` columns that tell their events apart.
     replay_methods : sequence of ReplayMethod, RankOrderMethod, PairwiseOrderMethod or TemplateMatchMethod
         The methods the table was made with. Each must test a p-value
-        against its ``alpha``: a :class:`ReplayMethod` with ``nulls``, a
+        against its ``alpha``: a :class:`ReplayMethod` with ``nulls`` (but
+        not ``tested_quantities`` with a segmentation that has
+        ``choose="any"``, such as ``WIDLOSKI_FOSTER_2025``), a
         :class:`RankOrderMethod` with the ``"t_distribution"`` or
         ``"cell_order"`` test that tests one template, a
         :class:`~neurospatial.replay.PairwiseOrderMethod` (whose reported
@@ -907,8 +909,9 @@ def matched_alpha(
         ``method``, ``is_replay``, ``p_value`` or a method's ``passes[...]``
         columns, or repeats an (event, method) pair; if a method in the
         table is not in ``replay_methods``, does not test a p-value
-        against alpha, or is a rank-order method that chose among several
-        templates; or if the table's verdicts do not follow from its
+        against alpha, is a rank-order method that chose among several
+        templates, or is a method that chose among segments by their
+        tested quantities; or if the table's verdicts do not follow from its
         p-values and criteria at the method's own alpha (it was made with
         other settings).
 
@@ -956,8 +959,12 @@ def matched_alpha(
     Methods without a shuffle test, arm methods and the pooled-SSI test
     have no p-value to threshold; leave them out of the table. A
     rank-order method with ``template_choice`` picks the most active
-    template among those that are replay at its alpha, so its rows change
-    with alpha; rerun it at each alpha instead.
+    template among those that are replay at its alpha, and a
+    :class:`ReplayMethod` with ``tested_quantities`` and a segmentation
+    with ``choose="any"`` (``WIDLOSKI_FOSTER_2025``) reports the longest
+    segment that is replay at its alpha, so their rows change with alpha
+    and the table's one p-value cannot give the verdict at another; rerun
+    them at each alpha instead.
 
     Examples
     --------
@@ -1207,7 +1214,7 @@ def _alpha_methods(
             "compare_replay_methods()."
         )
     tested: dict[str, _TestedMethod] = {}
-    untested, choosing = [], []
+    untested, choosing, segment_choosing = [], [], []
     for name in names:
         method = by_name[name]
         if isinstance(method, RankOrderMethod) and method.template_choice:
@@ -1215,6 +1222,14 @@ def _alpha_methods(
             if "template" in data and data.loc[rows, "template"].notna().any():
                 choosing.append(name)
                 continue
+        if (
+            isinstance(method, ReplayMethod)
+            and method.tested_quantities
+            and method.segmentation is not None
+            and method.segmentation.choose == "any"
+        ):
+            segment_choosing.append(name)
+            continue
         # A template-matching method's choice of template (the largest
         # score) and a pairwise-order method's (the smallest p-value, with an
         # active-cell rule over every cell) do not depend on alpha.
@@ -1238,6 +1253,17 @@ def _alpha_methods(
                 fix="rerun compare_replay_methods with dataclasses.replace("
                 "method, alpha=...) at each alpha, or pass one template's rate "
                 "maps",
+            )
+        )
+    if segment_choosing:
+        raise ValueError(
+            _format_error(
+                f"{operation}: methods {segment_choosing} chose among segments.",
+                why="they test the segments from the longest down and report the "
+                "first that is replay at their alpha, so the reported segment "
+                "and its p-value change with alpha",
+                fix="rerun compare_replay_methods with dataclasses.replace("
+                "method, alpha=...) at each alpha",
             )
         )
     if untested:
