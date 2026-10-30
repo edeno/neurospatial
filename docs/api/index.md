@@ -142,6 +142,9 @@ Bayesian decoding of position from spike counts.
 - `decode_position()`: Single-step or sequential Bayesian decoder
 - `decode_session()`: End-to-end decode of a full session (encode +
   decode) returning a `DecodingResult`
+- `decode_jointly()`: Decode several sets of rate maps (running directions,
+  tracks) in one posterior; returns a `JointDecodingResult` with each set's
+  probability per time bin
 - `decode_position_summary()` / `decode_session_summary()`:
   Memory-safe, streaming decoders that return per-time summaries
   (MAP / mean / entropy / peak) without materializing the full
