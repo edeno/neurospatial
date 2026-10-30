@@ -1068,8 +1068,8 @@ class ReplayMethod:
 
     @property
     def _compare_needs(self) -> _CompareNeeds | None:
-        """No input beyond the decoded events (detect_replay checks the rest)."""
-        return None
+        """The events' pool for pool nulls; detect_replay checks the other inputs."""
+        return _POOL_NEEDS if any(name in _POOL_NULLS for name in self.nulls) else None
 
     def _passes_alpha(self, p_value: Any, alpha: float) -> Any:
         """Whether ``p_value`` (scalar or array) is below ``alpha``."""
@@ -3412,8 +3412,13 @@ class _CompareNeeds(NamedTuple):
     fix: str
     # Whether each event must be one decode on one environment.
     one_environment: bool = False
+    # Whether the methods draw from the pool of every event's posterior rows.
+    pool: bool = False
 
 
+# Methods with a pseudo-event or weighted column-cycle null; the pool is
+# built from the events themselves.
+_POOL_NEEDS = _CompareNeeds("pseudo-event", (), why="", fix="", pool=True)
 _SPIKE_ORDER_NEEDS = _CompareNeeds(
     "spike-order",
     ("spike_times", "encoding_models", "dt"),
@@ -3754,12 +3759,7 @@ def compare_replay_methods(
                 "separately decoded templates or a mapping of environments."
             )
     pool = None
-    if any(
-        name in method.nulls
-        for method in replay_methods
-        if isinstance(method, ReplayMethod)
-        for name in _POOL_NULLS
-    ):
+    if any(needs.pool for needs in by_needs):
         if any(isinstance(event, (JointDecodingResult, Mapping)) for event in events):
             raise ValueError(
                 _format_error(

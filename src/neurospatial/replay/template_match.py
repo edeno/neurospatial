@@ -1256,7 +1256,7 @@ def _frame_test(
             continue
         chosen = _assignments(scores, p_values)
         chosen_p = p_values[chosen, np.arange(n_shuffles + 1)]
-        passing = _passes(chosen_p, method.alpha, method.p_comparison)
+        passing = method._passes_alpha(chosen_p, method.alpha)
         assigned[index] = chosen[0]
         assigned_cells[index] = cells[chosen[0]]
         replaying[index] = bool(passing[0])
