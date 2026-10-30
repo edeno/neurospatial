@@ -8,6 +8,7 @@ pairwise-order test.
 from __future__ import annotations
 
 import dataclasses
+import warnings
 import zlib
 
 import numpy as np
@@ -19,14 +20,17 @@ from scipy import stats
 from neurospatial import Environment
 from neurospatial.decoding import bin_spikes_in_time, decode_position
 from neurospatial.replay import (
+    apply_alpha,
     compare_replay_methods,
     decode_intervals,
     detect_replay,
     detection_rates,
+    matched_alpha,
     null_events,
     replay_significance,
 )
-from neurospatial.replay.methods import SILVA_2015
+from neurospatial.replay.methods import GUPTA_2010, SILVA_2015
+from neurospatial.simulation import simulate_replay_event
 
 DT = 0.02
 
@@ -131,3 +135,57 @@ def test_compare_table_reports_values_and_z_scores(track, session):
     assert z.z_score == pytest.approx(
         (abs(tested.observed.score) - np.mean(z.null_scores)) / np.std(z.null_scores)
     )
+
+
+def test_matched_alpha_takes_a_pairwise_order_method(track):
+    """matched_alpha and apply_alpha handle Gupta et al.'s pairwise-order test."""
+    x = track.bin_centers[:, 0]
+    rates = 0.2 + 25.0 * np.exp(
+        -0.5 * ((x - np.linspace(0.0, 100.0, 12)[:, None]) / 6.0) ** 2
+    )
+    trains = [[] for _ in range(12)]
+    intervals = []
+    for index in range(10):
+        event = simulate_replay_event(
+            track, rates, kind="sweep", speed=400.0, rate_gain=4.0, seed=index
+        )
+        for cell, train in enumerate(event.spike_times):
+            trains[cell].append(np.asarray(train) + 2.0 * index)
+        intervals.append((2.0 * index, 2.0 * index + event.duration))
+    trains = [np.concatenate(parts) for parts in trains]
+    null = null_events(
+        trains, np.asarray(intervals), kind="cell_identity", n_copies=2, rng=0
+    )
+    method = dataclasses.replace(GUPTA_2010, n_shuffles=60)
+
+    def table_of(spikes, windows, methods):
+        events, _ = decode_intervals(track, spikes, windows, rates, dt=DT)
+        return compare_replay_methods(
+            track,
+            events,
+            replay_methods=methods,
+            spike_times=spikes,
+            encoding_models=rates,
+            dt=DT,
+            rng=0,
+        )
+
+    null_table = table_of(null.spike_times, null.intervals, [method])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        matched = matched_alpha(null_table, replay_methods=[method], target=0.1)
+    row = matched.iloc[0]
+    assert row["n_events"] == 20 and row["rate"] <= 0.1
+    passing = null_table["passes[n_active_cells >= 3]"].to_numpy(dtype=bool)
+    assert row["rate"] == np.mean(passing & (null_table["p_value"] < row["alpha"]))
+    # Rethresholding the table equals running the method at the new alpha.
+    alpha = 0.3
+    applied = apply_alpha(
+        null_table, alpha={method.name: alpha}, replay_methods=[method]
+    )
+    rerun = table_of(
+        null.spike_times, null.intervals, [dataclasses.replace(method, alpha=alpha)]
+    )
+    np.testing.assert_array_equal(applied["is_replay"], rerun["is_replay"])
+    np.testing.assert_array_equal(applied["p_value"], rerun["p_value"])
+    assert (applied["is_replay"] != null_table["is_replay"]).any()
