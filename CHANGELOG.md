@@ -98,12 +98,21 @@ recipes, `ReplayMethod`. Each records:
 The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
 `WU_2017`, `MICHON_2019` and `TIROLE_2022`.
 
-- `detect_replay(env, posterior, times, method=...)` applies one method to
-  one decoded event. It returns `ReplayDetectionResult`: the verdict, score,
-  largest p-value and each criterion.
-- `compare_replay_methods(env, events, methods=...)` applies several methods
-  to several decoded events and returns a table with one row per (event,
-  method). The pseudo-event null draws from the other events.
+- `detect_replay(env, posterior, times, replay_method=...)` applies one
+  method to one decoded event. It returns `ReplayDetectionResult`: the
+  verdict, score, largest p-value and each criterion.
+- `compare_replay_methods(env, events, replay_methods=...)` applies several
+  methods to several decoded events and returns a table with one row per
+  (event, method). The pseudo-event null draws from every candidate event, as
+  Davidson et al. (2009) and Michon et al. (2019) did. Each (event, method)
+  pair has its own random stream, so adding or reordering methods does not
+  change the other results. An event with fewer than two time bins to score
+  gets a row with an `error` and no verdict.
+- `replay_significance` and `detect_replay` test one template's share of a
+  joint decode: pass the share, `decode_jointly(...).joint(name)`, every
+  template's rate maps as `encoding_models` and `template=name`. Shuffled
+  counts and rate maps are then decoded jointly too, as Tirole et al. (2022)
+  normalized the posterior across both tracks.
 - Methods are compared on the same decoded posterior, so differences come from
   the replay test alone. Decoding settings are recorded, not enforced.
 - New `replay_significance(..., empty_time_bins="zero")` sets the posterior of
