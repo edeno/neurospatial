@@ -804,7 +804,7 @@ def recurring_sequences_significance(
         )
         counts[kind] = kind_counts
         p_values[kind] = compute_shuffle_pvalue(
-            observed.n_recurring, kind_counts, tail="greater"
+            observed.n_recurring, kind_counts.astype(np.float64), tail="greater"
         )
     p_value = max(p_values.values())
     return RecurringSequencesSignificanceResult(
