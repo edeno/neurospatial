@@ -467,8 +467,21 @@ warning says why.
   times=...)`) and pass the joint result as the event, with the mapping of
   rate maps as `encoding_models`. Recipes such as `MALLORY_2025` and
   `BERNERS_LEE_2022` choose or sum the templates as their papers did; for
-  other methods, pass `template=` to test one. A method with the
-  pseudo-event shuffle cannot draw from joint decodes. Davidson et al.
+  other methods, pass `template=` to test one, or give the method a
+  template choice with `dataclasses.replace(method,
+  template_choice="smallest_p")`, which tests every template and keeps the
+  one with the smallest p-value, as Tang et al. (2017) and Shin et al.
+  (2019) did for the four W-track trajectories. The p-value is not
+  corrected for the number of templates, as in those papers, so measure
+  the false-positive rate with all your templates. Muessig et al. (2019)
+  decoded each direction separately and took the largest score over the
+  directions, in the event and in every shuffle (`template_choice=
+  "max_score"`): decode each direction with `decode_position` and pass
+  `{"cw": cw_result, "ccw": ccw_result}` as the event, with
+  `encoding_models={"cw": ..., "ccw": ...}`. Taking the largest score of
+  the event but comparing it with one direction's shuffles would call too
+  many events replay. A method with the pseudo-event shuffle cannot draw
+  from joint or separately decoded templates. Davidson et al.
   (2009) decoded position and direction jointly and summed over direction,
   but `DAVIDSON_2009`'s cell-identity shuffle decodes the shuffled counts
   again and refuses a summed posterior. Either decode on one set of rate

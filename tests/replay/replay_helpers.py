@@ -12,3 +12,13 @@ def wrapped_bump(env, centers, sigma):
     distance = (position[None, :] - np.asarray(centers)[:, None] + length / 2) % length
     rows = np.exp(-0.5 * ((distance - length / 2) / sigma) ** 2)
     return rows / rows.sum(axis=1, keepdims=True)
+
+
+def template_stream(seed, name):
+    """The random stream one template draws from: the seed and its name."""
+    import zlib
+
+    entropy = np.random.SeedSequence(seed).entropy
+    return np.random.default_rng(
+        np.random.SeedSequence(entropy, spawn_key=(zlib.crc32(name.encode()),))
+    )

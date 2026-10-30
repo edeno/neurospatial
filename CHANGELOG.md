@@ -44,6 +44,90 @@
   (2015) and Maboudi et al. (2018) and the "time-bin shuffle" of Grosmark &
   Buzsáki (2016) and Farooq et al. (2019).
 
+### Template choices
+
+- `ReplayMethod(template_choice="smallest_p")` tests every template of an
+  event, as `detect_replay(..., template=name)` would, with the method's
+  score, nulls and criteria, and reports the template with the smallest
+  p-value and its verdict (Jadhav et al. 2016; Tang et al. 2017; Shin et
+  al. 2019: the replayed trajectory of the four W-track trajectories;
+  Ólafsdóttir et al. 2016: the running direction with the lower p). As in
+  those papers, the p-value is not corrected for the number of templates,
+  so with `k` templates an event without replay is called replay up to
+  `1 - (1 - alpha)**k` of the time. A tie goes to the first template in the
+  decode's order. The event can be a joint decode or the templates decoded
+  separately; the method needs nulls.
+- `ReplayMethod(template_choice="max_score")` follows Muessig et al.
+  (2019): for templates decoded separately (each with `decode_position` on
+  its own rate maps), the event's score is the largest over the templates,
+  and each shuffle's score is the largest over the templates' shuffles,
+  each template shuffled independently, not yoked to the template that
+  fits the event best (Silva et al. 2015). Comparing the event's largest
+  score with one template's shuffles instead calls about `1 - (1 -
+  alpha)**2` of random events replay with two templates; the maximum
+  inside every shuffle keeps the rate at `alpha`. The method needs a score
+  and nulls with `alternative="greater"`, and refuses a segmentation,
+  template criteria and the pseudo-event null.
+- Separately decoded templates are passed as a mapping of template name to
+  posterior to `detect_replay` and `replay_significance`, or to
+  `DecodingResult` in `compare_replay_methods`, with `encoding_models` (and
+  optionally `prior` or `env`) keyed alike. `replay_significance` then tests
+  the largest score over the templates, and its result's new `template`
+  attribute names the template with the largest score.
+- Each template tested by either choice draws from its own random stream,
+  derived from `rng` and the template's name, so results are reproducible
+  and do not depend on the order of the templates. `compare_replay_methods`
+  records the chosen template in its `template` column.
+
+### Line search options
+
+- `detect_trajectory_radon(..., wrap=True)` searches lines on a closed-loop
+  track, such as a circular or square track (Muessig et al. 2019): positions
+  are read along the track modulo the loop's length, so a line and its band
+  wrap across the seam where the end of the track meets its start, and a
+  sweep across the seam scores as it would anywhere else on the loop. The
+  track must be a loop built with `Environment.from_graph`, whose last
+  segment in `edge_order` ends at the node where the first starts; an open
+  track, a band of half the loop or more, and `line_ends="on_track"` are
+  refused.
+- `detect_trajectory_radon(..., line_ends="on_track")` searches only lines
+  that are on the track at the event's first and last time bins (Liu et al.
+  2023, after `FindReplayScore` of ayalab1/neurocode), so the speed is
+  bounded by the track's length over the event's duration; `max_speed=None`
+  then sets no further bound. Band beyond an end of the track holds the
+  time bin's median posterior density, and each time bin's band mass is
+  capped at 1. The default, `line_ends="any"`, is the search of Davidson et
+  al. (2009) and is unchanged.
+- `replay_significance` takes both options in `score_options` and scores
+  shuffles with the same line family.
+
+### Circular-track replay score
+
+- `fit_circular_sequence(env, posterior, times)` scores a decoded event on a
+  circular track as Wikenheiser & Redish (2013) did: the circular mean of
+  each time bin's posterior, the steps between successive time bins taken
+  the short way around the loop, and a line fit to their cumulative sum on
+  time. A sequence that runs through the point where the loop's linear
+  position starts again is scored whole; a line along the linear position
+  breaks there. `CircularSequenceResult` holds the R² (the score), the
+  replay speed around the loop in environment units per second (`slope`,
+  whose sign is the direction relative to the track's `edge_order`), the
+  slope in radians per second, and each time bin's decoded and cumulative
+  angle. A decode that never moves has R² NaN.
+- A circular track is a track whose `edge_order` runs once around a loop,
+  head to tail, with no `edge_spacing`: `Environment.from_graph` on a cycle
+  graph. Other environments are refused with how to build one.
+- The paper leaves several choices unstated; the docstring lists the
+  readings made here (steps wrapped to (−π, π], one fitted point per time
+  bin starting at 0, regression on time rather than bin number, R² as the
+  tested statistic).
+- `replay_significance` scores `fit_circular_sequence` shuffles in batches,
+  about 100 times faster than one call per shuffle (10,000 time-bin
+  permutations of a 15-bin event in under 0.1 s).
+- New `ReplayCriterion` quantity `"n_spikes"`: the event's total spike count
+  over all cells, for the "at least 5 spikes" candidate rule of Wikenheiser
+  & Redish. It accepts spike counts summed over cells.
+
 ### Replay scoring robustness
 
 - Rank-order field peaks and centers ignore bins outside a rate result's
