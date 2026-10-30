@@ -51,6 +51,8 @@ _NULLS = (
 )
 # Run when nulls=None, if their inputs are given: Davidson et al. (2009).
 _DEFAULT_NULLS = ("column_cycle", "unit_identity", "pseudo_event")
+# Nulls after which a time bin no longer holds its own spikes.
+_ROW_MOVING_NULLS = ("pseudo_event", "spike_train_circular", "time_bin_permutation")
 # Nulls that decode shuffled spike counts again.
 _DECODING_NULLS = ("unit_identity", "spike_train_circular", "place_field_circular")
 _ALTERNATIVES = ("greater", "less", "two-sided")
@@ -187,7 +189,8 @@ def replay_significance(
         :func:`fit_isotonic_trajectory` all qualify; the first two are
         scored in batches (also when wrapped in :func:`functools.partial`).
         A score that takes ``rng`` gets one derived from ``rng`` unless
-        ``score_options`` sets it, so sampled fits are reproducible too.
+        ``score_options`` sets it, so sampled fits are reproducible too; the
+        event and every shuffle then draw the same uniforms.
     score_options : Mapping[str, Any] or None, default=None
         Keyword arguments for ``score``, for example ``{"band": 10.0}`` for
         :func:`detect_trajectory_radon`.
@@ -348,6 +351,19 @@ def replay_significance(
         options["rng"] = int(generator.integers(2**63 - 1))
     scorer = _scorer_for(score, env, posterior, times, options)
     run = _nulls_to_run(nulls, spike_counts, encoding_models, dt, pseudo_event_pool)
+    moving = [name for name in run if name in _ROW_MOVING_NULLS]
+    if "spike_counts" in options and moving:
+        raise ValueError(
+            _format_error(
+                f"{_OPERATION}: score_options holds spike_counts, but the "
+                f"{moving} null{'s' if len(moving) > 1 else ''} change which "
+                "time bins have spikes in each shuffle.",
+                why="score_options is passed unchanged to every shuffle, so "
+                "the spike counts would no longer match the shuffled rows",
+                fix="drop the time bins without spikes, with their times, "
+                "before testing, and leave spike_counts out of score_options",
+            )
+        )
     if "pseudo_event" in run:
         pool = _validated_pool(pseudo_event_pool, env)
 

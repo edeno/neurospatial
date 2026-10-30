@@ -15,11 +15,13 @@ detect_trajectory_radon : Replay line fit (Davidson et al. 2009)
 weighted_correlation : Weighted correlation of time and position
     Pearson correlation over the posterior (Wu & Foster 2014).
 
-fit_linear_trajectory : Linear trajectory fitting
-    Linear regression with optional Monte Carlo uncertainty.
+fit_linear_trajectory : Line fit (Karlsson & Frank 2009; Wu et al. 2017)
+    R² of a line through positions sampled from the posterior, or through
+    the MAP positions.
 
-fit_isotonic_trajectory : Monotonic trajectory fitting
-    Isotonic regression on posterior sequence.
+fit_isotonic_trajectory : Monotonic fit (Michon et al. 2019)
+    Weighted isotonic fit of the MAP positions, scored by the mean MAP
+    probability times R².
 
 Rank Order
 ----------
