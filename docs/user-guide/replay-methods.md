@@ -451,8 +451,18 @@ warning says why.
   rate maps as `encoding_models`. Recipes such as `MALLORY_2025` and
   `BERNERS_LEE_2022` choose or sum the templates as their papers did; for
   other methods, pass `template=` to test one. A method with the
-  pseudo-event shuffle (`DAVIDSON_2009`) cannot draw from joint decodes:
-  pass it the summed posterior, as its recipe notes say.
+  pseudo-event shuffle cannot draw from joint decodes. Davidson et al.
+  (2009) decoded position and direction jointly and summed over direction,
+  but `DAVIDSON_2009`'s cell-identity shuffle decodes the shuffled counts
+  again and refuses a summed posterior. Either decode on one set of rate
+  maps and pass that posterior, or drop that shuffle with
+  `dataclasses.replace(DAVIDSON_2009, nulls=("column_cycle",
+  "pseudo_event"))` and pass the summed posterior,
+  `joint.joint("outbound") + joint.joint("inbound")`. `DIBA_BUZSAKI_2007`
+  given both directions' rate maps calls an event replay when either
+  template passes, so it calls more events without replay significant than
+  with one template: measure its false-positive rate with both templates,
+  as you run it on real events.
 - **Mazes with arms.** `ArmReplayMethod` recipes (`WU_FOSTER_2014`,
   `BERNERS_LEE_2021`) classify replay per arm: pass `arms=` to
   `compare_replay_methods`.
