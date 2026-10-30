@@ -35,6 +35,10 @@ bin_spikes_in_time : Bin spike times into a count matrix on a regular time grid
 decode_position : Decode precomputed spike counts with encoding models
     Decode position from spike counts using encoding models (place fields).
 
+decode_jointly : Decode several sets of rate maps in one posterior
+    For example both running directions, or two tracks; returns a
+    :class:`JointDecodingResult` with the probability of each set.
+
 log_poisson_likelihood : Compute log-likelihood under Poisson model
     Numerically stable log-likelihood computation.
 
@@ -150,6 +154,7 @@ from neurospatial.decoding.estimates import (
     posterior_entropy,
 )
 from neurospatial.decoding.estimator import BayesianDecoder
+from neurospatial.decoding.joint import JointDecodingResult, decode_jointly
 from neurospatial.decoding.likelihood import log_poisson_likelihood
 from neurospatial.decoding.metrics import (
     confusion_matrix,
@@ -176,6 +181,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Result containers
     "DecodingResult",
     "DecodingSummary",
+    "JointDecodingResult",
     # Spike-time binning
     "bin_spikes_in_time",
     # Metrics
@@ -187,6 +193,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Core decoding
     "decode_position",
     "decode_position_summary",
+    "decode_jointly",
     "decoding_correlation",
     "decoding_error",
     # Likelihood
