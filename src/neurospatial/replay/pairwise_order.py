@@ -143,7 +143,11 @@ class PairwiseOrderSignificanceResult(ResultMixin):
 
     observed: PairwiseOrderResult
     shuffles: Mapping[str, ShuffleTestResult]
-    p_value: float
+
+    @property
+    def p_value(self) -> float:
+        """The largest p-value among ``shuffles``."""
+        return max(test.p_value for test in self.shuffles.values())
 
     def __post_init__(self) -> None:
         """Freeze the mapping of shuffle tests."""
@@ -1162,5 +1166,4 @@ def _significance(
     return PairwiseOrderSignificanceResult(
         observed=observed,
         shuffles=tests,
-        p_value=max(test.p_value for test in tests.values()),
     )

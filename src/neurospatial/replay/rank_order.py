@@ -137,8 +137,12 @@ class RankOrderSignificanceResult(ResultMixin):
 
     observed: RankOrderResult
     shuffle: ShuffleTestResult
-    p_value: float
     alternative: str
+
+    @property
+    def p_value(self) -> float:
+        """The shuffle test's p-value."""
+        return self.shuffle.p_value
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
@@ -484,7 +488,6 @@ def rank_order_significance(
     return RankOrderSignificanceResult(
         observed=observed,
         shuffle=test,
-        p_value=test.p_value,
         alternative=alternative,
     )
 
