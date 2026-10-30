@@ -436,7 +436,6 @@ def rank_order_significance(
     rho = 1.00, p = 0.002
     """
     from neurospatial.stats import _ensure_rng
-    from neurospatial.stats.shuffle import ShuffleTestResult
 
     operation = "rank_order_significance()"
     if (
@@ -479,18 +478,8 @@ def rank_order_significance(
                 fix="skip this event, or lower min_active_cells (at least 3)",
             )
         )
-    generator = _ensure_rng(rng)
-    n_active = observed.n_active_cells
-    permutations = np.argsort(generator.random((n_shuffles, n_active)), axis=1)
-    null = _permuted_correlations(pairs, permutations)
-    test = ShuffleTestResult.from_null(
-        observed.score,
-        null,
-        shuffle_type="cell_order",
-        tail=alternative,
-        # Ties in rho differ by rounding between spearmanr and the matrix
-        # formula of the shuffles.
-        decimals=_SCORE_DECIMALS,
+    test = _cell_order_test(
+        pairs, observed.score, n_shuffles, alternative, _ensure_rng(rng)
     )
     return RankOrderSignificanceResult(
         observed=observed,
@@ -716,6 +705,29 @@ def _spearman_rows(
         rho = (x_dev @ v_dev) / np.sqrt((x_dev**2).sum(axis=1) * (v_dev**2).sum())
     varies = (np.ptp(x, axis=1) > 0) & (np.ptp(values) > 0)
     return np.where(varies, rho, np.nan)
+
+
+def _cell_order_test(
+    pairs: _EventPairs,
+    score: float,
+    n_shuffles: int,
+    alternative: Literal["greater", "less", "two-sided"],
+    rng: np.random.Generator,
+) -> ShuffleTestResult:
+    """Test an event's correlation against permutations of its fields among cells."""
+    from neurospatial.stats.shuffle import ShuffleTestResult
+
+    n_active = pairs.active_units.size
+    permutations = np.argsort(rng.random((n_shuffles, n_active)), axis=1)
+    return ShuffleTestResult.from_null(
+        score,
+        _permuted_correlations(pairs, permutations),
+        shuffle_type="cell_order",
+        tail=alternative,
+        # Ties in rho differ by rounding between spearmanr and the matrix
+        # formula of the shuffles.
+        decimals=_SCORE_DECIMALS,
+    )
 
 
 def _permuted_correlations(

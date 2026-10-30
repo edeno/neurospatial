@@ -71,7 +71,6 @@ from neurospatial.replay.template_match import (
     detect_template_match_replay,
 )
 from neurospatial.replay.trajectory import (
-    _SCORE_DECIMALS,
     detect_trajectory_radon,
     fit_isotonic_trajectory,
     fit_linear_trajectory,
@@ -2681,14 +2680,10 @@ def _rank_order_verdict(
     from scipy import stats
 
     from neurospatial.replay.rank_order import (
+        _cell_order_test,
         _event_pairs,
-        _permuted_correlations,
         _result,
         _template_fields,
-    )
-    from neurospatial.stats.shuffle import (
-        compute_shuffle_pvalue,
-        compute_shuffle_zscore,
     )
 
     operation = "detect_rank_order_replay()"
@@ -2719,21 +2714,12 @@ def _rank_order_verdict(
                 t = score * np.sqrt((n - 2) / (1.0 - score**2))
                 p_value = float(2.0 * stats.t.sf(abs(t), n - 2))
         else:
-            n_active = observed.n_active_cells
-            permutations = np.argsort(rng.random((method.n_shuffles, n_active)), axis=1)
-            null = _permuted_correlations(pairs, permutations)
-            n_shuffles_used = int(np.isfinite(null).sum())
-            # Ties in rho differ by rounding between the two formulas.
-            p_value = float(
-                compute_shuffle_pvalue(
-                    round(score, _SCORE_DECIMALS),
-                    np.round(null, _SCORE_DECIMALS),
-                    tail=method.alternative,
-                )
+            test = _cell_order_test(
+                pairs, score, method.n_shuffles, method.alternative, rng
             )
-            z_scores["cell_order"] = float(
-                compute_shuffle_zscore(score, null[np.isfinite(null)])
-            )
+            n_shuffles_used = int(np.isfinite(test.null_scores).sum())
+            p_value = test.p_value
+            z_scores["cell_order"] = test.z_score
     n_templates = int(np.isfinite(positions).sum())
     event_values = {
         "n_active_cells": float(observed.n_active_cells),
