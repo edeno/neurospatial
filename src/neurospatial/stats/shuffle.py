@@ -400,8 +400,8 @@ class ShuffleTestResult(ReadOnlyArraysMixin):
         n is the number of finite null scores (``n_shuffles`` unless some
         shuffles produced NaN).
     z_score : float
-        Standard score: (observed - mean(null)) / std(null). NaN if null
-        has zero variance.
+        Standard score: (observed - mean(null)) / std(null), over the finite
+        null scores. NaN if they have zero variance.
     shuffle_type : str
         Name of the shuffle method used (e.g., "time_bins", "cell_identity").
     n_shuffles : int
@@ -683,11 +683,15 @@ def compute_shuffle_zscore(
     Returns
     -------
     float
-        The z-score (standard score). NaN if null has zero variance or
-        contains only one value.
+        The z-score (standard score). NaN if the finite null scores have
+        zero variance, or fewer than two of them are finite.
 
     Notes
     -----
+    Non-finite null scores (NaN or Inf), such as shuffles whose score is
+    undefined, are left out of the mean and standard deviation, as
+    :func:`compute_shuffle_pvalue` leaves them out of the p-value.
+
     The z-score indicates how many standard deviations the observed value
     is from the mean of the null distribution. Positive values indicate
     the observed is above the null mean; negative values indicate below.
@@ -721,10 +725,14 @@ def compute_shuffle_zscore(
     compute_shuffle_pvalue : Compute Monte Carlo p-value from null distribution.
     ShuffleTestResult : Container for shuffle test results.
     """
+    null_scores = np.asarray(null_scores, dtype=np.float64).ravel()
+    null_scores = null_scores[np.isfinite(null_scores)]
+    if null_scores.size < 2:
+        return float("nan")
     mean_null = float(np.mean(null_scores))
     std_null = float(np.std(null_scores))
 
-    # Handle zero variance (all values equal) or single value
+    # Handle zero variance (all values equal)
     if std_null == 0.0:
         return float("nan")
 

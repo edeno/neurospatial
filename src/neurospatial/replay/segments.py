@@ -23,6 +23,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.replay.criteria import (
     _bin_distance_lookup,
+    _check_metric,
     _increasing_times,
     _trajectory_metrics,
 )
@@ -505,55 +506,30 @@ def replay_segments(
     >>> round(metrics.map_path_length, 6), round(metrics.duration, 3)
     (40.0, 0.08)
     """
-    if method not in _METHODS:
-        raise ValueError(
-            f"{_OPERATION}: method must be one of {_METHODS}, got {method!r}."
-        )
-    if jump_rule not in _JUMP_RULES:
-        raise ValueError(
-            _format_error(
-                f"{_OPERATION}: jump_rule must be one of {_JUMP_RULES}, got "
-                f"{jump_rule!r}.",
-                why="a jump either just separates two segments or also "
-                "rejects the time bin before it",
-                fix="use 'between' (Pfeiffer & Foster 2013; the Mallory et al. "
-                "2025 code) or 'drop_earlier' (the Widloski & Foster 2022 code)",
-            )
-        )
-    max_jump = _threshold("max_jump", max_jump, minimum="positive")
-    max_gap_bins = _count("max_gap_bins", max_gap_bins, minimum=0)
-    max_spread = _optional_threshold("max_spread", max_spread, minimum="positive")
-    min_peak_probability = _optional_threshold(
-        "min_peak_probability", min_peak_probability, minimum="zero"
+    checked = _checked_options(
+        _OPERATION,
+        max_jump=max_jump,
+        method=method,
+        jump_rule=jump_rule,
+        max_gap_bins=max_gap_bins,
+        max_spread=max_spread,
+        min_peak_probability=min_peak_probability,
+        merge_max_time_gap=merge_max_time_gap,
+        merge_max_distance=merge_max_distance,
+        min_duration=min_duration,
+        min_time_bins=min_time_bins,
+        min_dispersion=min_dispersion,
+        metric=metric,
     )
-    if min_peak_probability is not None and min_peak_probability >= 1:
-        raise ValueError(
-            f"{_OPERATION}: min_peak_probability must be below 1, got "
-            f"{min_peak_probability}; every time bin would be rejected."
-        )
-    if (merge_max_time_gap is None) != (merge_max_distance is None):
-        raise ValueError(
-            _format_error(
-                f"{_OPERATION}: merge_max_time_gap and merge_max_distance "
-                "must be given together.",
-                why="segments merge when both their time gap and their "
-                "distance are small",
-                fix="pass both, such as merge_max_time_gap=0.05, "
-                "merge_max_distance=20.0 (Widloski & Foster 2022), or neither",
-            )
-        )
-    merge_max_time_gap = _optional_threshold(
-        "merge_max_time_gap", merge_max_time_gap, minimum="positive"
-    )
-    merge_max_distance = _optional_threshold(
-        "merge_max_distance", merge_max_distance, minimum="positive"
-    )
-    min_duration = _optional_threshold("min_duration", min_duration, minimum="zero")
-    min_dispersion = _optional_threshold(
-        "min_dispersion", min_dispersion, minimum="zero"
-    )
-    if min_time_bins is not None:
-        min_time_bins = _count("min_time_bins", min_time_bins, minimum=1)
+    max_jump = checked["max_jump"]
+    max_gap_bins = checked["max_gap_bins"]
+    max_spread = checked["max_spread"]
+    min_peak_probability = checked["min_peak_probability"]
+    merge_max_time_gap = checked["merge_max_time_gap"]
+    merge_max_distance = checked["merge_max_distance"]
+    min_duration = checked["min_duration"]
+    min_time_bins = checked["min_time_bins"]
+    min_dispersion = checked["min_dispersion"]
 
     metrics = _trajectory_metrics(
         env,
@@ -770,30 +746,144 @@ def _at_least(values: NDArray[np.float64], threshold: float) -> NDArray[np.bool_
     return reached
 
 
-def _threshold(name: str, value: Any, *, minimum: Literal["positive", "zero"]) -> float:
+def _checked_options(
+    operation: str,
+    *,
+    max_jump: Any,
+    method: Any,
+    jump_rule: Any,
+    max_gap_bins: Any,
+    max_spread: Any,
+    min_peak_probability: Any,
+    merge_max_time_gap: Any,
+    merge_max_distance: Any,
+    min_duration: Any,
+    min_time_bins: Any,
+    min_dispersion: Any,
+    metric: Any,
+) -> dict[str, Any]:
+    """The scalar options of :func:`replay_segments`, checked.
+
+    Thresholds come back as floats and counts as ints; errors name
+    ``operation``.
+    """
+    if method not in _METHODS:
+        raise ValueError(
+            f"{operation}: method must be one of {_METHODS}, got {method!r}."
+        )
+    if jump_rule not in _JUMP_RULES:
+        raise ValueError(
+            _format_error(
+                f"{operation}: jump_rule must be one of {_JUMP_RULES}, got "
+                f"{jump_rule!r}.",
+                why="a jump either just separates two segments or also "
+                "rejects the time bin before it",
+                fix="use 'between' (Pfeiffer & Foster 2013; the Mallory et al. "
+                "2025 code) or 'drop_earlier' (the Widloski & Foster 2022 code)",
+            )
+        )
+    max_jump = _threshold("max_jump", max_jump, minimum="positive", operation=operation)
+    max_gap_bins = _count("max_gap_bins", max_gap_bins, minimum=0, operation=operation)
+    max_spread = _optional_threshold(
+        "max_spread", max_spread, minimum="positive", operation=operation
+    )
+    min_peak_probability = _optional_threshold(
+        "min_peak_probability",
+        min_peak_probability,
+        minimum="zero",
+        operation=operation,
+    )
+    if min_peak_probability is not None and min_peak_probability >= 1:
+        raise ValueError(
+            f"{operation}: min_peak_probability must be below 1, got "
+            f"{min_peak_probability}; every time bin would be rejected."
+        )
+    if (merge_max_time_gap is None) != (merge_max_distance is None):
+        raise ValueError(
+            _format_error(
+                f"{operation}: merge_max_time_gap and merge_max_distance "
+                "must be given together.",
+                why="segments merge when both their time gap and their "
+                "distance are small",
+                fix="pass both, such as merge_max_time_gap=0.05, "
+                "merge_max_distance=20.0 (Widloski & Foster 2022), or neither",
+            )
+        )
+    merge_max_time_gap = _optional_threshold(
+        "merge_max_time_gap",
+        merge_max_time_gap,
+        minimum="positive",
+        operation=operation,
+    )
+    merge_max_distance = _optional_threshold(
+        "merge_max_distance",
+        merge_max_distance,
+        minimum="positive",
+        operation=operation,
+    )
+    min_duration = _optional_threshold(
+        "min_duration", min_duration, minimum="zero", operation=operation
+    )
+    min_dispersion = _optional_threshold(
+        "min_dispersion", min_dispersion, minimum="zero", operation=operation
+    )
+    if min_time_bins is not None:
+        min_time_bins = _count(
+            "min_time_bins", min_time_bins, minimum=1, operation=operation
+        )
+    _check_metric(metric, operation)
+    return {
+        "max_jump": max_jump,
+        "method": method,
+        "jump_rule": jump_rule,
+        "max_gap_bins": max_gap_bins,
+        "max_spread": max_spread,
+        "min_peak_probability": min_peak_probability,
+        "merge_max_time_gap": merge_max_time_gap,
+        "merge_max_distance": merge_max_distance,
+        "min_duration": min_duration,
+        "min_time_bins": min_time_bins,
+        "min_dispersion": min_dispersion,
+        "metric": metric,
+    }
+
+
+def _threshold(
+    name: str,
+    value: Any,
+    *,
+    minimum: Literal["positive", "zero"],
+    operation: str,
+) -> float:
     """A finite threshold, positive or non-negative."""
     if isinstance(value, bool) or not isinstance(value, (int, float, np.number)):
         raise ValueError(
-            f"{_OPERATION}: {name} must be a number, got {type(value).__name__}."
+            f"{operation}: {name} must be a number, got {type(value).__name__}."
         )
     threshold = float(value)
     too_small = threshold <= 0 if minimum == "positive" else threshold < 0
     if not np.isfinite(threshold) or too_small:
         bound = "> 0" if minimum == "positive" else ">= 0"
         raise ValueError(
-            f"{_OPERATION}: {name} must be a finite number {bound}, got {value!r}."
+            f"{operation}: {name} must be a finite number {bound}, got {value!r}."
         )
     return threshold
 
 
 def _optional_threshold(
-    name: str, value: Any, *, minimum: Literal["positive", "zero"]
+    name: str,
+    value: Any,
+    *,
+    minimum: Literal["positive", "zero"],
+    operation: str,
 ) -> float | None:
     """None, or a checked threshold."""
-    return None if value is None else _threshold(name, value, minimum=minimum)
+    if value is None:
+        return None
+    return _threshold(name, value, minimum=minimum, operation=operation)
 
 
-def _count(name: str, value: Any, *, minimum: int) -> int:
+def _count(name: str, value: Any, *, minimum: int, operation: str) -> int:
     """An integer of at least ``minimum``."""
     if (
         isinstance(value, bool)
@@ -801,6 +891,6 @@ def _count(name: str, value: Any, *, minimum: int) -> int:
         or value < minimum
     ):
         raise ValueError(
-            f"{_OPERATION}: {name} must be an integer >= {minimum}, got {value!r}."
+            f"{operation}: {name} must be an integer >= {minimum}, got {value!r}."
         )
     return int(value)
