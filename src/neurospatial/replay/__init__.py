@@ -74,8 +74,10 @@ neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
 Significance
 ------------
 replay_significance : Test any replay score against shuffled events
-    Column-cycle, unit-identity and pseudo-event nulls; the event is
-    significant when every null rejects it.
+    Six nulls: column-cycle, unit-identity and pseudo-event (the default,
+    Davidson et al. 2009), spike-train and place-field circular shifts,
+    and time-bin permutation; the event is significant when every null
+    run rejects it.
 
 Shuffles
 --------

@@ -6,6 +6,8 @@ This subpackage provides tools for:
   head-direction, object-vector and spatial-view cells)
 - Spike train generation (Poisson process with refractory periods)
 - High-level session simulation with validation helpers
+- Replay events with a known path, such as sweeps, stationary and random
+  events, to test replay methods (``simulate_replay_event``)
 - Pre-built maze environments (via mazes submodule)
 
 Examples

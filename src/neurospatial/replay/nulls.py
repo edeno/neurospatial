@@ -288,7 +288,7 @@ def shuffle_place_fields_circular(
         "on a full rectangular 2-D grid use shuffle_place_fields_circular_2d; "
         "otherwise shift spike times with shuffle_spike_times_circular",
     )
-    # Bins without a rate for every cell (no training data) stay as they are;
+    # Bins where any cell's rate is NaN (no training data) stay as they are;
     # each field is shifted over the remaining bins, in track order.
     supported: NDArray[np.bool_] = np.asarray(
         np.isfinite(np.asarray(encoding_models)).all(axis=0)
@@ -644,7 +644,8 @@ def shuffle_posterior_weighted_circular(
     - More conservative than standard circular shuffle
     - Shifts are restricted near track ends to mitigate edge effects
     - When MAP position is within ``edge_buffer`` of an edge, shift is
-      constrained to avoid wrapping probability mass to the other end
+      constrained so the MAP bin does not wrap to the other end; the row is
+      still rolled circularly, so mass in the other bins can wrap
     - Preserves row normalization (each row still sums to 1.0)
 
     The edge restriction works as follows:
