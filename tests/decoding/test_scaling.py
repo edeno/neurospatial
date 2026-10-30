@@ -215,9 +215,11 @@ def test_time_chunk_reduces_transient_peak(medium_2d_env):
         f"chunked peak {peak_chunked} bytes is not ~1x over the "
         f"{output_bytes}-byte output"
     )
-    # ... and well below the full-matmul (time_chunk=None) path, which holds the
-    # full log-likelihood + its copy + ll_shifted alongside the output (~3-4x).
-    assert peak_chunked < 0.6 * peak_none, (
+    # ... and its transient overhead is well below that of the full-matmul
+    # (time_chunk=None) path, which holds the full log-likelihood alongside
+    # the output (~2x).
+    assert peak_chunked - output_bytes < 0.5 * (peak_none - output_bytes), (
         f"chunked peak {peak_chunked} bytes is not well below the "
-        f"time_chunk=None peak {peak_none} bytes"
+        f"time_chunk=None peak {peak_none} bytes over the {output_bytes}-byte "
+        "output"
     )

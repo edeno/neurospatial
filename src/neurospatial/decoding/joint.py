@@ -27,7 +27,6 @@ from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, read_only_copy
 from neurospatial.decoding._result import DecodingResult
 from neurospatial.decoding._time_bins import validate_dt
-from neurospatial.decoding.likelihood import log_poisson_likelihood
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -360,45 +359,48 @@ def decode_jointly(
         _require_comparable_measures(envs)
 
     from neurospatial.decoding.posterior import (
-        _normalize_to_posterior,
+        _posterior_blocks,
         _prepare_decode_inputs,
-        _rates_and_prior,
+        _validate_spike_counts,
     )
 
+    spike_counts = np.asarray(spike_counts)
+    if validate:
+        _validate_spike_counts(spike_counts)
     n_time = len(spike_counts)
     log_evidence = []
     conditional = {}
     for name in names:
         context = f"{_OPERATION} template {name!r}"
         weights = _bin_measures(envs[name], context) if priors is None else priors[name]
-        total = np.asarray(weights, dtype=np.float64).sum(axis=-1, keepdims=True)
-        models, weights = _rates_and_prior(
-            envs[name], encoding_models[name], weights, n_time, context=context
-        )
-        counts, models, weights = _prepare_decode_inputs(
+        total = np.asarray(weights, dtype=np.float64).sum(axis=-1)
+        rates, weights = _prepare_decode_inputs(
             envs[name],
-            spike_counts,
-            models,
-            prior=weights,
-            method="poisson",
+            encoding_models[name],
+            weights,
+            n_time,
+            dt=dt,
             validate=validate,
             context=context,
         )
-        log_likelihood = log_poisson_likelihood(counts, models, dt=dt)
-        # Excluded bins lose their weight; spread it over the template's
-        # other bins so its prior probability stays its full total.
-        weights = np.asarray(weights, dtype=np.float64)
-        weights = weights * (total / weights.sum(axis=-1, keepdims=True))
-        with np.errstate(divide="ignore"):
-            log_weights = np.log(weights)
-        log_evidence.append(logsumexp(log_likelihood + log_weights, axis=1))
+        posterior = np.empty((n_time, envs[name].n_bins))
+        # One block: the normalizer of the posterior under the template's
+        # normalized prior is its evidence relative to its total weight.
+        # Excluded bins lose their weight; normalizing spreads it over the
+        # template's other bins, so its prior probability stays its full
+        # total.
+        [(_, _, _, log_norm)] = _posterior_blocks(
+            lambda start, stop: spike_counts[start:stop],
+            n_time,
+            rates,
+            weights,
+            time_chunk=max(n_time, 1),
+            dtype=np.float64,
+            out=posterior,
+        )
+        log_evidence.append(log_norm + np.log(total))
         conditional[name] = DecodingResult._from_owned_posterior(
-            _normalize_to_posterior(
-                log_likelihood, prior=weights, fill_with_prior=True
-            ),
-            env=envs[name],
-            times=times,
-            spike_window=None,
+            posterior, env=envs[name], times=times, spike_window=None
         )
 
     log_evidence_array = np.column_stack(log_evidence)

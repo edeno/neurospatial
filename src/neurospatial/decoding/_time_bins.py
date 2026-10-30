@@ -26,45 +26,23 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
 from neurospatial._spikes import as_spike_trains
 from neurospatial._time_bins import _count_spikes_in_time_bins, _time_bins_in_windows
+from neurospatial._validation import validate_finite_scalar
 
 
 def validate_dt(dt: float) -> float:
     """Validate a decoding time-bin width and return it as a plain ``float``.
 
-    Shared guard for every decoding entry point that bins or divides by ``dt``
-    (e.g. :func:`bin_spikes_in_time`, :func:`decode_position`, and
-    ``decode_session`` / ``decode_session_summary``).
-    It rejects non-numeric inputs (including a numeric *string* like ``"0.1"``,
-    which would otherwise leak a raw ``TypeError`` from ``"0.1" <= 0`` or be
-    silently coerced) and ``bool`` (``dt=True`` would otherwise pass the numeric
-    guards and be used as a chunk size of ``1``), then coerces to ``float`` and
-    rejects non-finite / non-positive values.
-
-    Parameters
-    ----------
-    dt : float
-        Candidate bin width. Must be a finite, strictly-positive real number
-        (``int``/``float``/NumPy scalar; ``bool`` is rejected).
-
-    Returns
-    -------
-    float
-        The validated ``dt`` as a plain Python ``float``.
+    Shared guard for every decoding entry point that bins or divides by
+    ``dt``. Non-numeric values (including a numeric string like ``"0.1"``)
+    and booleans are rejected rather than coerced.
 
     Raises
     ------
     ValueError
-        If ``dt`` is non-numeric, a ``bool``, or not finite and strictly
-        positive.
+        If ``dt`` is not a finite, strictly positive real number.
     """
-    if not isinstance(dt, (int, float, np.integer, np.floating)) or isinstance(
-        dt, bool
-    ):
-        raise ValueError(f"dt must be a finite number > 0, got {dt!r}.")
-    dt = float(dt)
-    if dt <= 0 or not np.isfinite(dt):
-        raise ValueError(f"dt must be a finite number > 0, got {dt!r}.")
-    return dt
+    validate_finite_scalar(dt, name="dt", positive=True)
+    return float(dt)
 
 
 def bin_spikes_in_time(

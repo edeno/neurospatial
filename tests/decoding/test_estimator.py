@@ -562,6 +562,18 @@ def _result_with_nan_rows(
     return DecodingResult(posterior=posterior, env=env, times=decode_times)
 
 
+def _summary_of(result: DecodingResult) -> DecodingSummary:
+    """The streamed summary ``predict_summary`` returns for ``result``."""
+    return DecodingSummary(
+        times=result.times,
+        mean_position=result.mean_position,
+        posterior_entropy=result.posterior_entropy,
+        peak_probability=np.max(result.posterior, axis=1),
+        env=result.env,
+        map_bin=result.map_bin,
+    )
+
+
 class TestScoreUndecodable:
     _TRUE_TIMES = np.array([0.0, 1.0])
     _TRUE_POS = np.array([[0.0, 0.0], [10.0, 10.0]])
@@ -570,7 +582,9 @@ class TestScoreUndecodable:
         dec = _fitted_minimal()
         result = _result_with_nan_rows(dec.env, nan_rows=[1])
         monkeypatch.setattr(
-            BayesianDecoder, "predict", lambda self, s, t, **kwargs: result
+            BayesianDecoder,
+            "predict_summary",
+            lambda self, s, t, **kwargs: _summary_of(result),
         )
 
         with pytest.warns(UserWarning, match="undecodable"):
@@ -585,7 +599,9 @@ class TestScoreUndecodable:
         dec = _fitted_minimal()
         result = _result_with_nan_rows(dec.env, nan_rows=[0, 1, 2, 3])
         monkeypatch.setattr(
-            BayesianDecoder, "predict", lambda self, s, t, **kwargs: result
+            BayesianDecoder,
+            "predict_summary",
+            lambda self, s, t, **kwargs: _summary_of(result),
         )
 
         with pytest.raises(ValueError, match="could not decode any time bin"):

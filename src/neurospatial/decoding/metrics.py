@@ -25,6 +25,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_choice
+from neurospatial.decoding.estimates import _egocentric_plane
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import _geodesic_pair_distances
 
@@ -128,26 +130,12 @@ def decoding_error(
     median_decoding_error : Median error summary statistic.
     DecodingResult.error_against : Error against separately sampled tracking.
     """
-    decoded_positions = np.asarray(decoded_positions, dtype=np.float64)
-    actual_positions = np.asarray(actual_positions, dtype=np.float64)
-
-    # Validate shapes match
-    if decoded_positions.shape != actual_positions.shape:
-        raise ValueError(
-            f"Shape mismatch: decoded_positions has shape {decoded_positions.shape}, "
-            f"but actual_positions has shape {actual_positions.shape}"
-        )
-    if decoded_positions.ndim != 2 or decoded_positions.shape[1] != env.n_dims:
-        raise ValueError(
-            f"decoding_error() needs positions with {env.n_dims} columns, one per "
-            f"dimension of the environment; got shape {decoded_positions.shape}. "
-            "Pass (n_time_bins, n_dims) positions in the environment's coordinates."
-        )
-
-    if metric not in ("euclidean", "geodesic"):
-        raise ValueError(
-            f"Invalid metric '{metric}'. Must be 'euclidean' or 'geodesic'."
-        )
+    decoded_positions, actual_positions = _paired_positions(
+        env, decoded_positions, actual_positions, call="decoding_error()"
+    )
+    validate_choice(
+        metric, ("euclidean", "geodesic"), name="metric", owner="decoding_error()"
+    )
     for name, positions in (
         ("decoded_positions", decoded_positions),
         ("actual_positions", actual_positions),
@@ -214,16 +202,28 @@ def decoding_error(
     return errors
 
 
-def _egocentric_plane(positions: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Polar ``(distance, angle)`` rows as ``(x ahead, y to the left)``.
-
-    Distance 0 is the animal's position whatever the angle; a centroid there
-    has a NaN angle (see ``estimates._finish_posterior_mean``).
-    """
-    distance, angle = positions[:, 0], positions[:, 1]
-    at_animal = distance == 0
-    angle = np.where(at_animal, 0.0, angle)
-    return np.column_stack([distance * np.cos(angle), distance * np.sin(angle)])
+def _paired_positions(
+    env: Environment,
+    decoded_positions: NDArray[np.float64],
+    actual_positions: NDArray[np.float64],
+    *,
+    call: str,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Return both position arrays as float, refusing mismatched shapes."""
+    decoded_positions = np.asarray(decoded_positions, dtype=np.float64)
+    actual_positions = np.asarray(actual_positions, dtype=np.float64)
+    if decoded_positions.shape != actual_positions.shape:
+        raise ValueError(
+            f"Shape mismatch: decoded_positions has shape {decoded_positions.shape}, "
+            f"but actual_positions has shape {actual_positions.shape}"
+        )
+    if decoded_positions.ndim != 2 or decoded_positions.shape[1] != env.n_dims:
+        raise ValueError(
+            f"{call} needs positions with {env.n_dims} columns, one per "
+            f"dimension of the environment; got shape {decoded_positions.shape}. "
+            "Pass (n_time_bins, n_dims) positions in the environment's coordinates."
+        )
+    return decoded_positions, actual_positions
 
 
 def _bins_or_nearest(
@@ -391,9 +391,9 @@ def confusion_matrix(
     n_bins = env.n_bins
     n_time_bins = posterior.shape[0]
 
-    # Validate method
-    if method not in ("map", "expected"):
-        raise ValueError(f"Invalid method '{method}'. Must be 'map' or 'expected'.")
+    validate_choice(
+        method, ("map", "expected"), name="method", owner="confusion_matrix()"
+    )
 
     # Validate shapes
     if posterior.ndim != 2:
@@ -419,9 +419,6 @@ def confusion_matrix(
             f"Found range [{min_bin}, {max_bin}]."
         )
 
-    # Initialize confusion matrix
-    cm = np.zeros((n_bins, n_bins), dtype=np.float64)
-
     # Rows with any non-finite posterior entry are undecodable (e.g. the
     # all-NaN rows that normalize_to_posterior(handle_degenerate="nan")
     # gives where the likelihood is zero in every bin). argmax over a NaN
@@ -439,21 +436,28 @@ def confusion_matrix(
             stacklevel=2,
         )
 
+    if n_dropped:
+        posterior, actual_bins = posterior[finite_rows], actual_bins[finite_rows]
+
     if method == "map":
         # The decoded bin is the highest-density bin of each finite row.
         from neurospatial.decoding._support import relative_bin_measures
         from neurospatial.decoding.estimates import _density_mode
 
         measures = relative_bin_measures(env, context="confusion_matrix")
-        decoded_bins = _density_mode(posterior[finite_rows], measures)
-        # Vectorized counting using np.add.at.
-        np.add.at(cm, (actual_bins[finite_rows], decoded_bins), 1.0)
+        decoded_bins = _density_mode(posterior, measures)
+        counts = np.bincount(actual_bins * n_bins + decoded_bins, minlength=n_bins**2)
+        return counts.reshape(n_bins, n_bins).astype(np.float64)
 
-    else:  # method == "expected"
-        # Accumulate posterior mass only from finite rows.
-        np.add.at(cm, actual_bins[finite_rows], posterior[finite_rows])
+    # method == "expected": sum each actual bin's posterior rows with a
+    # one-hot (actual bin x time bin) product.
+    from scipy import sparse
 
-    return cm
+    rows_of_bin = sparse.csr_matrix(
+        (np.ones(len(actual_bins)), (actual_bins, np.arange(len(actual_bins)))),
+        shape=(n_bins, len(actual_bins)),
+    )
+    return np.asarray(rows_of_bin @ posterior, dtype=np.float64)
 
 
 def decoding_correlation(
@@ -569,22 +573,9 @@ def decoding_correlation(
         fix="correlate the distance column with np.corrcoef and the angle "
         "column with neurospatial.stats.circular_circular_correlation",
     )
-    decoded_positions = np.asarray(decoded_positions, dtype=np.float64)
-    actual_positions = np.asarray(actual_positions, dtype=np.float64)
-
-    # Validate shapes match
-    if decoded_positions.shape != actual_positions.shape:
-        raise ValueError(
-            f"Shape mismatch: decoded_positions has shape {decoded_positions.shape}, "
-            f"but actual_positions has shape {actual_positions.shape}"
-        )
-    if decoded_positions.ndim != 2 or decoded_positions.shape[1] != env.n_dims:
-        raise ValueError(
-            f"decoding_correlation() needs positions with {env.n_dims} columns, "
-            f"one per dimension of the environment; got shape "
-            f"{decoded_positions.shape}. Pass (n_time_bins, n_dims) positions in "
-            "the environment's coordinates."
-        )
+    decoded_positions, actual_positions = _paired_positions(
+        env, decoded_positions, actual_positions, call="decoding_correlation()"
+    )
     n_time_bins = decoded_positions.shape[0]
 
     if weights is None:

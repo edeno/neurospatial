@@ -285,15 +285,17 @@ warn_on_drop
         errors mirror ``compute_spatial_rate`` exactly (one validator, no
         duplicate allow-set).
         """
+        from neurospatial._validation import validate_float_dtype
         from neurospatial.decoding._time_bins import validate_dt
         from neurospatial.encoding import _validate_spatial_method_params
 
         # Config domain: dt (shared core validator) and dtype.
         validate_dt(self.dt)
-        if self.dtype not in (np.float32, np.float64):
-            raise ValueError(
-                f"dtype must be np.float32 or np.float64, got {self.dtype!r}."
-            )
+        object.__setattr__(
+            self,
+            "dtype",
+            validate_float_dtype(self.dtype, stored="rate maps and posteriors"),
+        )
 
         if self._fit is not None:
             for name, fitted_value, current_value in zip(
@@ -935,22 +937,17 @@ warn_on_drop
         """
         from neurospatial.decoding.session import _decode_with_models
 
-        encoding_models = self._check_fitted()
-        return _decode_with_models(
-            self.env,
-            self._align_to_fitted_units(spike_times, "predict"),
-            times,
-            encoding_models,
-            spatial_support=self.spatial_support,
-            dt=self.dt,
-            warn_spikes_outside=self.warn_on_drop,
-            warn_partial_bins=self.warn_on_drop,
-            dtype=self.dtype,
-            max_gap=self.max_gap,
-            epochs=epochs,
-            break_before=break_before,
-            spike_window=spike_window,
-            context="BayesianDecoder.predict",
+        return cast(
+            "DecodingResult",
+            self._decode(
+                _decode_with_models,
+                "predict",
+                spike_times,
+                times,
+                epochs=epochs,
+                break_before=break_before,
+                spike_window=spike_window,
+            ),
         )
 
     def predict_summary(
@@ -1035,12 +1032,41 @@ warn_on_drop
         ``spike_window``; no bin spans a pause, and spikes between runs are not
         counted. ``result.times`` may therefore be non-contiguous.
         """
+        from neurospatial.decoding.posterior import _summary_time_chunk
         from neurospatial.decoding.session import _decode_with_models_summary
 
+        time_chunk = _summary_time_chunk(
+            time_chunk,
+            caller="BayesianDecoder.predict_summary",
+            full_decoder="BayesianDecoder.predict",
+        )
+        return cast(
+            "DecodingSummary",
+            self._decode(
+                _decode_with_models_summary,
+                "predict_summary",
+                spike_times,
+                times,
+                epochs=epochs,
+                break_before=break_before,
+                spike_window=spike_window,
+                time_chunk=time_chunk,
+            ),
+        )
+
+    def _decode(
+        self,
+        decode: Any,
+        caller: str,
+        spike_times: SpikeTrainsLike,
+        times: ArrayLike,
+        **options: Any,
+    ) -> Any:
+        """Run a session decoder with the fitted models and this configuration."""
         encoding_models = self._check_fitted()
-        return _decode_with_models_summary(
+        return decode(
             self.env,
-            self._align_to_fitted_units(spike_times, "predict_summary"),
+            self._align_to_fitted_units(spike_times, caller),
             times,
             encoding_models,
             spatial_support=self.spatial_support,
@@ -1049,11 +1075,8 @@ warn_on_drop
             warn_partial_bins=self.warn_on_drop,
             dtype=self.dtype,
             max_gap=self.max_gap,
-            epochs=epochs,
-            break_before=break_before,
-            spike_window=spike_window,
-            context="BayesianDecoder.predict_summary",
-            time_chunk=time_chunk,
+            context=f"BayesianDecoder.{caller}",
+            **options,
         )
 
     def score(
@@ -1070,14 +1093,15 @@ warn_on_drop
     ) -> float:
         """Decode and report position error against ground truth (lower is better).
 
-        Decodes ``spike_times`` over ``times`` (via :meth:`predict`), aligns the
-        MAP estimate to the ground-truth track (``times``, ``positions``) with
-        :meth:`~neurospatial.decoding.DecodingResult.error_against`, and reduces
+        Decodes ``spike_times`` over ``times`` (via :meth:`predict_summary`),
+        aligns the MAP estimate to the ground-truth track (``times``,
+        ``positions``) as
+        :meth:`~neurospatial.decoding.DecodingResult.error_against` does, and reduces
         the per-time-bin errors to a single scalar. **Lower is better.**
 
         Undecodable decode time bins -- those whose posterior row is entirely
-        non-finite -- and bins without observed ground truth are stamped
-        ``nan`` by ``error_against`` and are
+        non-finite -- and bins without observed ground truth get a NaN error and
+        are
         **excluded** from the reduction. Because ``nanmedian`` / ``nanmean``
         silently ignore them, a decoder that decodes only part of the session
         could otherwise report a misleadingly good score; this method therefore
@@ -1104,7 +1128,7 @@ warn_on_drop
             Reduction over the per-time-bin errors. ``"median_error"`` ->
             ``nanmedian``; ``"mean_error"`` -> ``nanmean``. Lower is better.
         distance : {"geodesic", "euclidean"}, default="geodesic"
-            Distance metric forwarded to ``error_against`` for the per-time-bin
+            Distance metric for the per-time-bin
             error. ``"geodesic"`` measures along the environment's connectivity
             graph (along the track, around walls); ``"euclidean"`` gives the
             straight-line distance.
@@ -1159,21 +1183,20 @@ warn_on_drop
         counted. ``result.times`` may therefore be non-contiguous.
         """
         from neurospatial._observation import validate_break_before
-        from neurospatial._validation import validate_times_positions
+        from neurospatial._validation import validate_choice, validate_times_positions
+        from neurospatial.decoding._result import _align_true_positions
+        from neurospatial.decoding.metrics import decoding_error
 
         # Validate the reduction (`metric`) and error metric (`distance`) up
         # front, BEFORE any decode -- a typo should raise cheaply, not after a
         # full decode pass.
-        if metric not in ("median_error", "mean_error"):
-            raise ValueError(
-                f"Unknown metric {metric!r}; `metric` selects the reduction and "
-                f"must be one of 'median_error', 'mean_error'."
-            )
-        if distance not in ("euclidean", "geodesic"):
-            raise ValueError(
-                f"Unknown distance {distance!r}; `distance` selects the error "
-                f"metric and must be one of 'euclidean', 'geodesic'."
-            )
+        owner = "BayesianDecoder.score()"
+        validate_choice(
+            metric, ("median_error", "mean_error"), name="metric", owner=owner
+        )
+        validate_choice(
+            distance, ("euclidean", "geodesic"), name="distance", owner=owner
+        )
 
         self._check_fitted()
 
@@ -1184,24 +1207,35 @@ warn_on_drop
             break_before, times_arr.size, call="BayesianDecoder.score"
         )
 
-        result = self.predict(
+        # Only the MAP position is scored, so the posterior is streamed.
+        summary = self.predict_summary(
             spike_times,
             times_arr,
             epochs=epochs,
             break_before=breaks,
             spike_window=spike_window,
         )
-        # `distance` is validated above, so narrowing it to the Literal the
-        # DecodingResult expects is safe.
-        errors = result.error_against(
+        assert summary.times is not None  # session decoders record bin centers
+        aligned, _ = _align_true_positions(
+            summary.times,
             times_arr,
             positions_arr,
-            metric=cast("Literal['euclidean', 'geodesic']", distance),
+            n_dims=self.env.n_dims,
             max_gap=self.max_gap,
             break_before=breaks,
+            call="BayesianDecoder.score",
+        )
+        # `distance` is validated above, so narrowing it to the Literal
+        # decoding_error expects is safe. An undecodable row has a NaN MAP
+        # position and so a NaN error.
+        errors = decoding_error(
+            self.env,
+            summary.map_position,
+            aligned,
+            metric=cast("Literal['euclidean', 'geodesic']", distance),
         )
 
-        # Guard against silently reducing over dropped bins. error_against stamps
+        # Guard against silently reducing over dropped bins. The error is
         # nan for every undecodable decode time bin; nanmedian/nanmean would
         # ignore those without a trace, biasing model selection toward decoders
         # that decode fewer bins.

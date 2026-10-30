@@ -1039,6 +1039,7 @@ def _emit_time_window_warning(
     *,
     scope: str = "",
     suppress_hint: str = _WARN_ON_DROP_HINT,
+    window: str = "position",
 ) -> None:
     """Emit a UserWarning for time-window spike drops if the fraction exceeds threshold.
 
@@ -1058,6 +1059,8 @@ def _emit_time_window_warning(
     suppress_hint : str, optional
         Closing sentence naming how to silence the warning; empty for callers
         without a ``warn_on_drop`` parameter.
+    window : str, optional
+        Which time window the message names: ``"position"`` or ``"decode"``.
     """
     if n_total == 0 or n_time_dropped == 0:
         return
@@ -1075,7 +1078,7 @@ def _emit_time_window_warning(
     warnings.warn(
         (
             f"{n_time_dropped}/{n_total} spike_times "
-            f"({100 * frac:.0f}%) {scope}fell outside the position time "
+            f"({100 * frac:.0f}%) {scope}fell outside the {window} time "
             f"window [{t_min:.6g}, {t_max:.6g}]; "
             f"{range_part}"
             f"Check that spike_times and times share units (both seconds). "

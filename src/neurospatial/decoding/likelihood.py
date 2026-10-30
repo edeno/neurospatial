@@ -27,6 +27,7 @@ cancels during posterior normalization.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
@@ -78,7 +79,7 @@ def log_poisson_likelihood(
     Raises
     ------
     ValueError
-        If ``dt`` is not a finite number > 0 (non-numeric, ``bool``, ``NaN``,
+        If ``dt`` is not finite and positive (non-numeric, ``bool``, ``NaN``,
         ``Inf``, or ``<= 0`` all raise), or if ``min_rate`` is not positive.
         If ``spike_counts`` is not 2-D ``(n_time_bins, n_neurons)`` or
         ``encoding_models`` is not 2-D ``(n_neurons, n_bins)``.
@@ -118,30 +119,11 @@ def log_poisson_likelihood(
             f"min_rate must be positive, got {min_rate}. "
             f"This floor prevents log(0) in likelihood computation."
         )
-    spike_counts = np.asarray(spike_counts)
     encoding_models = np.asarray(encoding_models)
-
-    # A 1-D (n_neurons,) array would matmul to (n_bins,), silently dropping
-    # the time axis.
-    if spike_counts.ndim != 2:
-        raise ValueError(
-            f"spike_counts must be 2-D with shape (n_time_bins, n_neurons), "
-            f"got ndim={spike_counts.ndim} with shape {spike_counts.shape}. "
-            f"For a single time bin pass shape (1, n_neurons), e.g. "
-            f"`spike_counts[np.newaxis, :]`."
-        )
     if encoding_models.ndim != 2:
         raise ValueError(
             f"encoding_models must be 2-D with shape (n_neurons, n_bins), "
             f"got ndim={encoding_models.ndim} with shape {encoding_models.shape}."
-        )
-    if spike_counts.shape[1] != encoding_models.shape[0]:
-        raise ValueError(
-            _format_error(
-                f"Neuron-count mismatch: spike_counts has {spike_counts.shape[1]} neurons (axis 1) but encoding_models has {encoding_models.shape[0]} neurons (axis 0). These must agree for the Poisson likelihood.",
-                fix="build spike_counts and encoding_models from the same unit list, in the same order",
-                why="Why: the neuron axis must align counts with the corresponding firing-rate model.",
-            )
         )
     invalid = ~np.isfinite(encoding_models) | (encoding_models < 0)
     if invalid.any():
@@ -159,21 +141,65 @@ def log_poisson_likelihood(
                 "prior=rates.spatial_support * env.bin_sizes.",
             )
         )
+    return _PoissonRates.from_rates(
+        encoding_models, dt, min_rate=min_rate
+    ).log_likelihood(spike_counts)
 
-    expected_counts = np.maximum(encoding_models, min_rate) * dt
-    log_expected = np.log(expected_counts)
 
-    # A sparse CSR product skips the zero counts, which dominate binned spike
-    # trains; its construction overhead pays off only for mostly-zero
-    # matrices that are not tiny. Both products give the same values up to
-    # floating-point summation order.
-    n_entries = spike_counts.size
-    if n_entries > 1000 and np.count_nonzero(spike_counts) < 0.2 * n_entries:
-        spike_term = np.asarray(
-            sparse.csr_matrix(spike_counts.astype(np.float64)) @ log_expected
-        )
-    else:
-        spike_term = spike_counts.astype(np.float64) @ log_expected
+@dataclass(frozen=True)
+class _PoissonRates:
+    """Rate terms of the Poisson log-likelihood, computed once per decode.
 
-    log_likelihood = spike_term - expected_counts.sum(axis=0)
-    return cast("NDArray[np.float64]", log_likelihood)
+    Attributes
+    ----------
+    log_expected : NDArray[np.float64], shape (n_neurons, n_bins)
+        ``log(max(rate, min_rate) * dt)``.
+    expected_total : NDArray[np.float64], shape (n_bins,)
+        Expected spike count of the population in each bin.
+    """
+
+    log_expected: NDArray[np.float64]
+    expected_total: NDArray[np.float64]
+
+    @classmethod
+    def from_rates(
+        cls, encoding_models: NDArray[np.float64], dt: float, *, min_rate: float = 1e-10
+    ) -> _PoissonRates:
+        """Build from finite, non-negative ``(n_neurons, n_bins)`` rates in Hz."""
+        expected_counts = np.maximum(encoding_models, min_rate) * dt
+        return cls(np.log(expected_counts), expected_counts.sum(axis=0))
+
+    def log_likelihood(self, spike_counts: NDArray[np.int64]) -> NDArray[np.float64]:
+        """Log-likelihood of ``(n_time_bins, n_neurons)`` counts at every bin."""
+        spike_counts = np.asarray(spike_counts)
+        # A 1-D (n_neurons,) array would matmul to (n_bins,), silently dropping
+        # the time axis.
+        if spike_counts.ndim != 2:
+            raise ValueError(
+                f"spike_counts must be 2-D with shape (n_time_bins, n_neurons), "
+                f"got ndim={spike_counts.ndim} with shape {spike_counts.shape}. "
+                f"For a single time bin pass shape (1, n_neurons), e.g. "
+                f"`spike_counts[np.newaxis, :]`."
+            )
+        n_neurons = self.log_expected.shape[0]
+        if spike_counts.shape[1] != n_neurons:
+            raise ValueError(
+                _format_error(
+                    f"Neuron-count mismatch: spike_counts has {spike_counts.shape[1]} neurons (axis 1) but encoding_models has {n_neurons} neurons (axis 0). These must agree for the Poisson likelihood.",
+                    fix="build spike_counts and encoding_models from the same unit list, in the same order",
+                    why="Why: the neuron axis must align counts with the corresponding firing-rate model.",
+                )
+            )
+        # A sparse CSR product skips the zero counts, which dominate binned
+        # spike trains; its construction overhead pays off only for mostly-zero
+        # matrices that are not tiny. Both products give the same values up to
+        # floating-point summation order.
+        n_entries = spike_counts.size
+        if n_entries > 1000 and np.count_nonzero(spike_counts) < 0.2 * n_entries:
+            spike_term = np.asarray(
+                sparse.csr_matrix(spike_counts.astype(np.float64)) @ self.log_expected
+            )
+        else:
+            spike_term = spike_counts.astype(np.float64) @ self.log_expected
+        spike_term -= self.expected_total
+        return cast("NDArray[np.float64]", spike_term)

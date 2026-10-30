@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Decoding: faster, leaner decoders
+
+**Changed**
+
+- Every decoder (`decode_position`, `decode_position_summary`,
+  `decode_session`, `decode_session_summary`, `BayesianDecoder.predict`,
+  `predict_summary`, `score` and `decode_jointly`) runs one shared block
+  loop. The rate terms of the Poisson likelihood are computed once per
+  decode, not once per time block, and each block is normalized in place.
+  Results are unchanged (bit-identical on a fixed-seed battery; joint
+  template probabilities within 1.3e-15). On 20,000 time bins x 1,149
+  spatial bins, the unchunked decode peaks at 2.05x the posterior instead
+  of 3.1x (4.0x with a prior), `time_chunk=64` takes half the time, and
+  `decode_jointly` is 3x faster and peaks at 3x the posterior instead of 8x.
+- `BayesianDecoder.score` streams the posterior through `predict_summary`
+  instead of building it.
+- `credible_region` works in row blocks, and `confusion_matrix` counts
+  without `np.add.at`.
+- `decode_session` accepts `time_chunk=` and refuses an unknown keyword
+  before fitting the rate maps.
+- `BayesianDecoder(dtype=...)` accepts dtype names such as `"float32"`, like
+  the other decoders.
+- A non-positive `dt` now reports "dt must be finite and positive", and
+  choice errors in `score`, `decoding_error`, `confusion_matrix` and
+  `normalize_to_posterior` name the function and the allowed values.
+
 ### Replay calibration: review fixes
 
 **Fixed**

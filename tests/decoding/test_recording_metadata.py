@@ -53,19 +53,3 @@ def test_decode_session_allocates_one_posterior(continuous_recording, monkeypatc
     assert all(np.shares_memory(result.posterior, array) for array in seen)
     changed = dataclasses.replace(result, spike_window=None)
     assert not np.shares_memory(changed.posterior, result.posterior)
-
-
-def test_evolve_rejects_posterior_and_keeps_fields(continuous_recording):
-    env = continuous_recording.env
-    r = DecodingResult(np.full((3, env.n_bins), 1 / env.n_bins), env, np.arange(3.0))
-    with pytest.raises(ValueError, match="never replaces"):
-        r._evolve(posterior=r.posterior)
-    window = np.array([[0.0, 3.0]])
-    evolved = r._evolve(spike_window=window)
-    assert evolved.posterior is r.posterior
-    assert evolved.env is r.env
-    np.testing.assert_array_equal(evolved.times, r.times)
-    assert not np.shares_memory(evolved.spike_window, window)
-    assert not evolved.spike_window.flags.writeable
-    window[0, 0] = 1
-    np.testing.assert_array_equal(evolved.spike_window, [[0.0, 3.0]])
