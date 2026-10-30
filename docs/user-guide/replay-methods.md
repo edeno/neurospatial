@@ -985,7 +985,9 @@ visited get no mass), and decode the null events with the same prior.
   verdict.
 - **Several sessions.** Score each session's events in its own call, add a
   `session` column, and pass it as `groups=` to `detection_rates`,
-  `method_agreement` and `matched_alpha`.
+  `method_agreement` and `matched_alpha`. `score_agreement(table,
+  groups=["session"])` gives one correlation per session, which Tingley &
+  Peyrache averaged.
 
 ## References
 
