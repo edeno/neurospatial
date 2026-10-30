@@ -34,6 +34,12 @@ template_fractions : Share of a joint decode in each template
     Directional fraction of Ambrose et al. (2016), with optional masking of
     the track ends (Mallory et al. 2025).
 
+replay_segments : The part of an event that is a smooth trajectory
+    Split at jumps, reject blurred or weak time bins, bridge gaps, merge
+    and filter segments; parameters reproduce Pfeiffer & Foster (2013,
+    2015), Igata et al. (2021), Carey et al. (2019), Widloski & Foster
+    (2022) and Mallory et al. (2025).
+
 Rank Order
 ----------
 rank_order_correlation : Field order vs firing order (Foster & Wilson 2006)
@@ -71,6 +77,9 @@ RadonDetectionResult, LinearFitResult, IsotonicFitResult, WeightedCorrelationRes
     The fitted trajectory or correlation, and its ``score``.
 TrajectoryMetrics
     Per-time-bin arrays and per-event scalars of one event.
+ReplaySegmentsResult
+    The segments of one event, their durations and distances, and the
+    longest.
 ReplaySignificanceResult
     The event's score, one shuffle test per null, and the largest p-value.
 
@@ -109,6 +118,7 @@ from neurospatial.replay.rank_order import (
     rank_order_correlation,
     rank_order_significance,
 )
+from neurospatial.replay.segments import ReplaySegmentsResult, replay_segments
 from neurospatial.replay.significance import (
     ReplaySignificanceResult,
     replay_significance,
@@ -135,6 +145,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "RadonDetectionResult",
     "RankOrderResult",
     "RankOrderSignificanceResult",
+    "ReplaySegmentsResult",
     "ReplaySignificanceResult",
     "TrajectoryMetrics",
     "WeightedCorrelationResult",
@@ -146,6 +157,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Criteria metrics
     "template_fractions",
     "trajectory_metrics",
+    "replay_segments",
     # Significance
     "replay_significance",
     # Rank order
