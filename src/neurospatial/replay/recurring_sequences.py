@@ -27,10 +27,13 @@ from neurospatial._results import (
     read_only_copy,
     reduce_through_constructor,
 )
-from neurospatial._validation import validate_alpha
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_alpha,
+    validate_integer_at_least,
+)
 from neurospatial.replay.sequence_match import (
     _check_seconds,
-    _is_count,
     _onsets,
     _sorted_trains,
 )
@@ -446,7 +449,7 @@ def _check_search_options(
     burst_isi: Any,
     min_complexity: Any,
 ) -> None:
-    if not _is_count(reference_unit, 0, n_cells - 1):
+    if not (is_integer_at_least(reference_unit, 0) and reference_unit < n_cells):
         raise ValueError(
             f"{operation}: reference_unit must be the index of a cell, from 0 to "
             f"{n_cells - 1}, got {reference_unit!r}."
@@ -454,12 +457,13 @@ def _check_search_options(
     _check_seconds(window, "window", operation, allow_zero=False)
     _check_seconds(tolerance, "tolerance", operation, allow_zero=False)
     _check_seconds(burst_isi, "burst_isi", operation, allow_zero=True)
-    if not _is_count(min_complexity, 2):
-        raise ValueError(
-            f"{operation}: min_complexity must be an integer of at least 2, got "
-            f"{min_complexity!r}; a sequence holds the reference spike and at "
-            "least one more."
-        )
+    validate_integer_at_least(
+        min_complexity,
+        2,
+        name="min_complexity",
+        owner=operation,
+        hint="a sequence holds the reference spike and at least one more",
+    )
 
 
 def _search(
@@ -595,12 +599,9 @@ class RecurringSequenceMethod:
         _check_seconds(self.tolerance, "tolerance", prefix, allow_zero=False)
         _check_seconds(self.burst_isi, "burst_isi", prefix, allow_zero=True)
         for field_name, minimum in (("min_complexity", 2), ("n_surrogates", 1)):
-            value = getattr(self, field_name)
-            if not _is_count(value, minimum):
-                raise ValueError(
-                    f"{prefix}: {field_name} must be an integer of at least "
-                    f"{minimum}, got {value!r}."
-                )
+            validate_integer_at_least(
+                getattr(self, field_name), minimum, name=field_name, owner=prefix
+            )
         validate_alpha(self.alpha, owner=prefix)
 
 

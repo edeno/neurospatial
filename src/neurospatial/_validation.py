@@ -278,7 +278,7 @@ def is_integer_at_least(value: object, minimum: int) -> bool:
 
 
 def validate_integer_at_least(
-    value: object, minimum: int, *, name: str, owner: str
+    value: object, minimum: int, *, name: str, owner: str, hint: str = ""
 ) -> None:
     """Require an integer of at least ``minimum``, booleans excluded.
 
@@ -293,6 +293,9 @@ def validate_integer_at_least(
     owner : str
         What received the value, as the message names it, such as
         ``"shuffle_events()"`` or ``"ReplayMethod 'x'"``.
+    hint : str, default=""
+        Added to the message after the value, such as the value a paper
+        used (``"Davidson et al. used 1500"``) or why the minimum holds.
 
     Raises
     ------
@@ -305,7 +308,10 @@ def validate_integer_at_least(
             if minimum == 1
             else f"an integer of at least {minimum}"
         )
-        raise ValueError(f"{owner}: {name} must be {bound}, got {value!r}.")
+        raise ValueError(
+            f"{owner}: {name} must be {bound}, got {value!r}"
+            + (f"; {hint}." if hint else ".")
+        )
 
 
 def validate_alpha(alpha: object, *, owner: str) -> None:

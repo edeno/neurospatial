@@ -30,7 +30,11 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
-from neurospatial._validation import validate_alpha
+from neurospatial._validation import (
+    validate_alpha,
+    validate_choice,
+    validate_integer_at_least,
+)
 from neurospatial.replay.rank_order import (
     _BLOCK_VALUES,
     _pooled_spikes,
@@ -202,16 +206,13 @@ class BiasSequenceMethod:
         object.__setattr__(self, "notes", tuple(self.notes))
         _check_test(prefix, self.n_shuffles, self.alternative, self.use_absolute)
         validate_alpha(self.alpha, owner=prefix)
-        value = self.min_active_cells
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, np.integer))
-            or value < 2
-        ):
-            raise ValueError(
-                f"{prefix}: min_active_cells must be an integer of at least 2, "
-                f"got {value!r}; a bias compares the spikes of two cells."
-            )
+        validate_integer_at_least(
+            self.min_active_cells,
+            2,
+            name="min_active_cells",
+            owner=prefix,
+            hint="a bias compares the spikes of two cells",
+        )
 
     @property
     def criteria(self) -> tuple[ReplayCriterion, ...]:
@@ -714,20 +715,14 @@ def detect_bias_sequence_replay(
 def _check_test(
     prefix: str, n_shuffles: Any, alternative: Any, use_absolute: Any
 ) -> None:
-    if (
-        isinstance(n_shuffles, bool)
-        or not isinstance(n_shuffles, (int, np.integer))
-        or n_shuffles < 1
-    ):
-        raise ValueError(
-            f"{prefix}: n_shuffles must be a positive integer, got "
-            f"{n_shuffles!r}. Liu et al. (2023) used 100."
-        )
-    if alternative not in _ALTERNATIVES:
-        raise ValueError(
-            f"{prefix}: alternative must be one of {list(_ALTERNATIVES)}, got "
-            f"{alternative!r}."
-        )
+    validate_integer_at_least(
+        n_shuffles,
+        1,
+        name="n_shuffles",
+        owner=prefix,
+        hint="Liu et al. (2023) used 100",
+    )
+    validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=prefix)
     if not isinstance(use_absolute, (bool, np.bool_)):
         raise TypeError(f"{prefix}: use_absolute must be a bool, got {use_absolute!r}.")
     if use_absolute and alternative != "greater":

@@ -28,6 +28,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import is_integer_at_least, validate_integer_at_least
 from neurospatial.replay._compare import _tolerance
 
 if TYPE_CHECKING:
@@ -801,15 +802,6 @@ def _check_seconds(value: Any, name: str, operation: str, *, allow_zero: bool) -
         )
 
 
-def _is_count(value: Any, minimum: int, maximum: int | None = None) -> bool:
-    return bool(
-        not isinstance(value, bool)
-        and isinstance(value, (int, np.integer))
-        and value >= minimum
-        and (maximum is None or value <= maximum)
-    )
-
-
 def _check_match_options(
     operation: str,
     *,
@@ -834,27 +826,29 @@ def _check_match_options(
             f"{operation}: trial_probability must be in (0, 1), got "
             f"{trial_probability!r}; Lee & Wilson used 1/24."
         )
-    if not _is_count(exact_max_letters, 1, _MAX_EXACT_LETTERS):
+    if not (
+        is_integer_at_least(exact_max_letters, 1)
+        and exact_max_letters <= _MAX_EXACT_LETTERS
+    ):
         raise ValueError(
             f"{operation}: exact_max_letters must be an integer from 1 to "
             f"{_MAX_EXACT_LETTERS}, got {exact_max_letters!r}; enumerating the "
             f"orderings of more letters needs more than {_MAX_EXACT_LETTERS}! rows."
         )
-    if not _is_count(n_samples, 1):
-        raise ValueError(
-            f"{operation}: n_samples must be a positive integer, got {n_samples!r}."
-        )
+    validate_integer_at_least(n_samples, 1, name="n_samples", owner=operation)
 
 
 def _check_index_options(
     operation: str, *, bandwidth: Any, min_active_cells: Any
 ) -> None:
     _check_seconds(bandwidth, "bandwidth", operation, allow_zero=False)
-    if not _is_count(min_active_cells, 2):
-        raise ValueError(
-            f"{operation}: min_active_cells must be an integer of at least 2, got "
-            f"{min_active_cells!r}; a matching index needs a pair of cells."
-        )
+    validate_integer_at_least(
+        min_active_cells,
+        2,
+        name="min_active_cells",
+        owner=operation,
+        hint="a matching index needs a pair of cells",
+    )
 
 
 def _sorted_trains(trains: list[NDArray[np.float64]]) -> list[NDArray[np.float64]]:

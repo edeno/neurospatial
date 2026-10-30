@@ -19,6 +19,7 @@ from scipy import stats
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import validate_integer_at_least
 from neurospatial.replay.significance import _ALTERNATIVES
 from neurospatial.replay.trajectory import _SCORE_DECIMALS
 
@@ -442,16 +443,13 @@ def rank_order_significance(
     from neurospatial.stats import _ensure_rng
 
     operation = "rank_order_significance()"
-    if (
-        isinstance(n_shuffles, bool)
-        or not isinstance(n_shuffles, (int, np.integer))
-        or n_shuffles < 1
-    ):
-        raise ValueError(
-            f"{operation} needs n_shuffles to be a positive integer, got "
-            f"{n_shuffles!r}. Diba & Buzsáki used 500 permutations per event, "
-            "Silva et al. 5000."
-        )
+    validate_integer_at_least(
+        n_shuffles,
+        1,
+        name="n_shuffles",
+        owner=operation,
+        hint="Diba & Buzsáki used 500 permutations per event, Silva et al. 5000",
+    )
     if alternative not in _ALTERNATIVES:
         raise ValueError(
             f"{operation}: alternative must be one of {_ALTERNATIVES}, got "
@@ -533,16 +531,13 @@ def _event_pairs(
             f"{operation}: field_order must be one of {_FIELD_ORDERS}, got "
             f"{field_order!r}."
         )
-    if (
-        isinstance(min_active_cells, bool)
-        or not isinstance(min_active_cells, (int, np.integer))
-        or min_active_cells < 3
-    ):
-        raise ValueError(
-            f"{operation}: min_active_cells must be an integer of at least 3, got "
-            f"{min_active_cells!r}; a rank correlation of two cells is always "
-            "+1 or -1."
-        )
+    validate_integer_at_least(
+        min_active_cells,
+        3,
+        name="min_active_cells",
+        owner=operation,
+        hint="a rank correlation of two cells is always +1 or -1",
+    )
     start, stop = _validated_interval(interval, operation)
     positions = _field_positions(env, encoding_models, field_order, operation)
     excluded = _multi_field_units(

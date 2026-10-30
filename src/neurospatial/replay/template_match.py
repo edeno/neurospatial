@@ -22,7 +22,11 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial._validation import validate_alpha
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_alpha,
+    validate_integer_at_least,
+)
 from neurospatial.replay._inputs import _checked_intervals
 from neurospatial.replay.rank_order import (
     _require_same_cells,
@@ -41,7 +45,6 @@ from neurospatial.replay.sequence_match import (
     _firing_order,
     _index_test_size,
     _inversion_p_values,
-    _is_count,
     _KeyDistribution,
     _match_keys,
     _matching_index,
@@ -249,24 +252,21 @@ class TemplateMatchMethod:
                 )
         else:
             _check_seconds(self.bandwidth, "bandwidth", operation, allow_zero=False)
-        counts: tuple[tuple[str, int, int | None], ...] = (
-            ("min_active_cells", 2, None),
-            ("n_shuffles", 1, None),
-            ("n_samples", 1, None),
-            ("exact_max_letters", 1, _MAX_EXACT_LETTERS),
-        )
-        for field_name, minimum, maximum in counts:
-            value = getattr(self, field_name)
-            if not _is_count(value, minimum, maximum):
-                bound = (
-                    f"from {minimum} to {maximum}"
-                    if maximum
-                    else f"of at least {minimum}"
-                )
-                raise ValueError(
-                    f"{prefix}: {field_name} must be an integer {bound}, got {value!r}."
-                )
-        if self.min_template_cells is not None and not _is_count(
+        for field_name, minimum in (
+            ("min_active_cells", 2),
+            ("n_shuffles", 1),
+            ("n_samples", 1),
+        ):
+            validate_integer_at_least(
+                getattr(self, field_name), minimum, name=field_name, owner=prefix
+            )
+        letters = self.exact_max_letters
+        if not (is_integer_at_least(letters, 1) and letters <= _MAX_EXACT_LETTERS):
+            raise ValueError(
+                f"{prefix}: exact_max_letters must be an integer from 1 to "
+                f"{_MAX_EXACT_LETTERS}, got {letters!r}."
+            )
+        if self.min_template_cells is not None and not is_integer_at_least(
             self.min_template_cells, 2
         ):
             raise ValueError(

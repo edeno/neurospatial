@@ -29,7 +29,7 @@ from neurospatial._results import (
     ResultMixin,
     reduce_through_constructor,
 )
-from neurospatial._validation import validate_alpha
+from neurospatial._validation import validate_alpha, validate_integer_at_least
 from neurospatial.replay.rank_order import (
     _pooled_spikes,
     _require_same_cells,
@@ -261,16 +261,13 @@ class PairwiseOrderMethod:
                 )
         _check_n_shuffles(prefix, self.n_shuffles)
         validate_alpha(self.alpha, owner=prefix)
-        value = self.min_active_cells
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, np.integer))
-            or value < 2
-        ):
-            raise ValueError(
-                f"{prefix}: min_active_cells must be an integer of at least 2, "
-                f"got {value!r}; a score compares spikes of two cells."
-            )
+        validate_integer_at_least(
+            self.min_active_cells,
+            2,
+            name="min_active_cells",
+            owner=prefix,
+            hint="a score compares spikes of two cells",
+        )
 
     @property
     def criteria(self) -> tuple[ReplayCriterion, ...]:
@@ -850,15 +847,13 @@ def _check_direction(operation: str, direction: str) -> None:
 
 
 def _check_n_shuffles(prefix: str, n_shuffles: Any) -> None:
-    if (
-        isinstance(n_shuffles, bool)
-        or not isinstance(n_shuffles, (int, np.integer))
-        or n_shuffles < 1
-    ):
-        raise ValueError(
-            f"{prefix}: n_shuffles must be a positive integer, got "
-            f"{n_shuffles!r}. Gupta et al. (2010) used 300 per null."
-        )
+    validate_integer_at_least(
+        n_shuffles,
+        1,
+        name="n_shuffles",
+        owner=prefix,
+        hint="Gupta et al. (2010) used 300 per null",
+    )
 
 
 def _check_field_options(
@@ -880,14 +875,7 @@ def _check_field_options(
             f"{prefix}: field_threshold must be a fraction in (0, 1) of the "
             f"highest rate, got {field_threshold!r} (Gupta et al. 2010: 0.05)."
         )
-    if (
-        isinstance(merge_gap_bins, bool)
-        or not isinstance(merge_gap_bins, (int, np.integer))
-        or merge_gap_bins < 0
-    ):
-        raise ValueError(
-            f"{prefix}: merge_gap_bins must be an integer >= 0, got {merge_gap_bins!r}."
-        )
+    validate_integer_at_least(merge_gap_bins, 0, name="merge_gap_bins", owner=prefix)
     if field_center not in _FIELD_CENTERS:
         raise ValueError(
             f"{prefix}: field_center must be one of {list(_FIELD_CENTERS)}, got "
