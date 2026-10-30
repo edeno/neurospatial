@@ -12,7 +12,12 @@ from typing import Any
 
 import pytest
 
-from neurospatial.replay import ArmReplayMethod, RankOrderMethod, ReplayMethod
+from neurospatial.replay import (
+    ArmReplayMethod,
+    RankOrderMethod,
+    ReplayMethod,
+    TemplateMatchMethod,
+)
 from neurospatial.replay.methods import PUBLISHED_METHODS
 
 # Class defaults: a recipe's fields are these, updated by its entry in SPEC.
@@ -63,6 +68,23 @@ DEFAULTS: dict[type, dict[str, Any]] = {
         "arm_fallback": False,
         "decoding": {},
     },
+    TemplateMatchMethod: {
+        "field_order": "peak",
+        "min_peak_rate": None,
+        "min_template_cells": None,
+        "max_isi": None,
+        "max_gap": None,
+        "match_order": "interruptions_first",
+        "trial_probability": None,
+        "exact_max_letters": 10,
+        "n_samples": 100_000,
+        "bandwidth": None,
+        "min_active_cells": 2,
+        "alpha": 0.05,
+        "p_comparison": "<",
+        "template_choice": None,
+        "n_shuffles": 1000,
+    },
 }
 
 
@@ -84,6 +106,31 @@ def _segmentation(
 
 # Criteria are (quantity, comparison, threshold, relative_to, absolute).
 SPEC: dict[str, tuple[type, dict[str, Any]]] = {
+    # Lee & Wilson (2002): 50 ms bursts, 100 ms word gaps, p <= 1/24; the
+    # number of template shuffles (1000) is not stated in the paper.
+    "lee_wilson_2002": (
+        TemplateMatchMethod,
+        {
+            "statistic": "best_match",
+            "max_isi": 0.05,
+            "max_gap": 0.1,
+            "trial_probability": 1 / 24,
+            "alpha": 1 / 24,
+            "p_comparison": "<=",
+        },
+    ),
+    # Ji & Wilson (2007): sigma 180 ms (CA1), >= 4 active cells, templates of
+    # >= 5 cells, p < 0.05, the higher matching index wins, 1000 shuffles.
+    "ji_wilson_2007": (
+        TemplateMatchMethod,
+        {
+            "statistic": "matching_index",
+            "min_template_cells": 5,
+            "bandwidth": 0.18,
+            "min_active_cells": 4,
+            "template_choice": "largest_score",
+        },
+    ),
     "foster_wilson_2006": (
         RankOrderMethod,
         {
