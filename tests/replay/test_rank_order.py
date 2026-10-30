@@ -437,3 +437,26 @@ class TestSignificance:
                 alternative="above",  # type: ignore[arg-type]
                 n_shuffles=9,
             )
+
+
+def test_permutation_p_value_counts_tied_correlations():
+    """Six cells take few distinct correlations; ties must count as extreme.
+
+    The event's rho comes from scipy and the shuffles' from a matrix
+    formula, so equal correlations can differ by one ulp.
+    """
+    env = Environment.linear_track(
+        endpoints=[[0.0, 0.0], [120.0, 0.0]], bin_size=10.0, units="cm"
+    )
+    x = env.bin_centers[:, 0]
+    rates = 20.0 * np.exp(
+        -0.5 * ((x - np.linspace(10.0, 110.0, 6)[:, None]) / 8.0) ** 2
+    )
+    order = [4, 5, 2, 3, 0, 1]
+    spikes = [np.array([1.0 + 0.01 * order.index(cell)]) for cell in range(6)]
+    result = rank_order_significance(
+        env, spikes, (1.0, 1.1), rates, alternative="less", n_shuffles=999, rng=0
+    )
+    null = result.shuffle.null_scores
+    expected = (np.sum(null <= result.observed.score + 1e-9) + 1) / 1000
+    assert result.p_value == pytest.approx(expected)
