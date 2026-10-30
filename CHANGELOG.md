@@ -344,6 +344,16 @@ Several replay papers test a whole data set, not each event:
   the signed `"score"`. A recipe column the library's tables do not hold
   (`abs_score`, Grosmark's `quality`, Stella's `step`) is now made by an
   `assign` given in that recipe's notes; `abs_score` is always `|score|`.
+- `dataset_values` and `shuffle_events` draw the `"time_bin_permutation"`
+  and `"pseudo_event"` nulls on any environment, such as a 2-D open field.
+  They used to require a linearized track, which only the column-cycle
+  nulls and a score along the track (a weighted correlation) need; those
+  are still refused off a track.
+- `dataset_values` and `shuffle_events` refuse an event decoded on an
+  environment whose bins or connectivity differ from `env`, as
+  `compare_replay_methods` does. They used to read its posterior on `env`'s
+  bins: a decode on a 100 cm track passed with a 1,000 cm track of as many
+  bins reported jumps ten times too long.
 
 **Documentation**
 
