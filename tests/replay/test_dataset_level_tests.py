@@ -19,6 +19,7 @@ from neurospatial.replay import (
     dataset_test,
     dataset_values,
     distribution_test,
+    rank_order_significance,
     relative_rank_template,
     shuffle_events,
     shuffle_posterior_circular,
@@ -33,6 +34,7 @@ from neurospatial.replay.dataset import (
     _dataset_values,
 )
 from neurospatial.replay.methods import (
+    FAROOQ_2019,
     GROSMARK_2016,
     SILVA_2015,
 )
@@ -192,6 +194,40 @@ class TestDatasetTest:
         assert result.p_value == pytest.approx(25 / 1001)
         two_tailed = dataclasses.replace(recipe, p_value_rule="percentile_two_tailed")
         assert two_tailed.paper_p_value(result) == pytest.approx(2 * expected)
+
+    def test_refuses_an_undefined_null_statistic(self):
+        """Five null data sets whose events have no score: no mean to compare.
+
+        Leaving them out of both counts would give p = 1/2 where the four
+        defined data sets alone give 1.
+        """
+        observed = pd.DataFrame({"score": [0.3, 0.4, 0.5]})
+        null = pd.DataFrame(
+            {
+                "dataset": np.repeat(np.arange(9), 3),
+                "score": np.r_[np.full(15, np.nan), np.full(12, 0.9)],
+            }
+        )
+        with pytest.raises(ValueError, match="not finite for 5 of 9 null data sets"):
+            dataset_test(observed, null, statistic=lambda t: t["score"].mean())
+
+    @pytest.mark.parametrize("kind", ["criteria", "statistic"])
+    def test_refuses_missing_data_set_labels(self, kind):
+        """Rows without a data set would form an extra null data set."""
+        observed = pd.DataFrame({"score": [0.9, 0.1, 0.1]})
+        null = pd.DataFrame(
+            {
+                "dataset": [0, 0, 0, 1, 1, 1, np.nan, np.nan, np.nan],
+                "score": [0.9, 0.9, 0.1, 0.1, 0.1, 0.1, 0.9, 0.9, 0.9],
+            }
+        )
+        options = (
+            {"criteria": [CriterionGrid("score", ">", 0.5)]}
+            if kind == "criteria"
+            else {"statistic": lambda t: (t["score"] > 0.5).mean()}
+        )
+        with pytest.raises(ValueError, match="3 rows of null_table have no dataset"):
+            dataset_test(observed, null, **options)
 
     def test_statistic_and_criteria_are_exclusive(self):
         table = pd.DataFrame({"dataset": [0], "score": [1.0]})
@@ -387,6 +423,30 @@ class TestDatasetValues:
         slow = _private_values(env, events, SILVA_2015, fast=False, **options)
         np.testing.assert_allclose(fast, slow, rtol=0, atol=1e-9)
 
+    @pytest.mark.parametrize(
+        "null", ["column_cycle", "column_cycle_weighted", "time_bin_permutation"]
+    )
+    def test_fast_path_weighs_every_time_bin_alike(self, track, null):
+        """Rows summing to 1 within DecodingResult's tolerance, not exactly.
+
+        The weighted correlation normalizes each row, so every time bin
+        weighs the same; weighing by the row's own mass moved the score by
+        about 1e-7.
+        """
+        rng = np.random.default_rng(0)
+        events = []
+        for _ in range(4):
+            raw = rng.gamma(0.4, size=(8, track.n_bins))
+            raw /= raw.sum(axis=1, keepdims=True)
+            raw *= 1.0 + rng.uniform(-9e-7, 9e-7, size=(8, 1))
+            events.append(
+                DecodingResult(posterior=raw, env=track, times=np.arange(8) * DT)
+            )
+        options = {"null": null, "n_datasets": 25, "rng": 5}
+        fast = _private_values(track, events, SILVA_2015, fast=True, **options)
+        slow = _private_values(track, events, SILVA_2015, fast=False, **options)
+        np.testing.assert_allclose(fast["score"], slow["score"], rtol=0, atol=1e-11)
+
     def test_each_event_draws_its_own_stream(self, track, session):
         """An event's shuffles do not depend on the other events."""
         _, _, _, events, _ = session
@@ -495,6 +555,34 @@ class TestDatasetValues:
                 track, events, replay_method=SILVA_2015, quantities=("speed",)
             )
 
+    @pytest.mark.parametrize("null", [None, "time_bin_permutation", "column_cycle"])
+    def test_count_criteria_need_spike_counts(self, track, session, null):
+        """FAROOQ_2019 counts active cells: no counts is an error, not a MAP range.
+
+        With counts, every data set reports the event's active cells, on the
+        moment-table path and when each shuffle is measured alike.
+        """
+        _, _, _, events, counts = session
+        options = {} if null is None else {"null": null, "n_datasets": 3, "rng": 0}
+        with pytest.raises(ValueError, match="needs spike_counts"):
+            dataset_values(
+                track,
+                events,
+                replay_method=FAROOQ_2019,
+                quantities=("max_map_jump",),
+                **options,
+            )
+        table = dataset_values(
+            track,
+            events,
+            replay_method=FAROOQ_2019,
+            quantities=("max_map_jump",),
+            spike_counts=counts,
+            **options,
+        )
+        active = np.array([np.sum(c.sum(axis=0) > 0) for c in counts], dtype=float)
+        np.testing.assert_array_equal(table["n_active_cells"], active[table["event"]])
+
     def test_decoding_nulls_need_their_inputs(self, track, session):
         _, _, _, events, counts = session
         with pytest.raises(ValueError, match="needs \\['encoding_models', 'dt'\\]"):
@@ -540,7 +628,13 @@ class TestRankOrderValues:
     def test_cell_order_shuffles_are_rank_order_significance_draws(
         self, track, session
     ):
-        """Per event, the shuffled correlations are permutations of the fields."""
+        """Per event, the shuffled correlations are rank_order_significance's.
+
+        Each event's 4,000 null correlations and the 4,000 shuffles of
+        ``rank_order_significance`` (other seeds) are two samples of one
+        distribution: a two-sample KS test does not reject for any of four
+        events, a sweep among them.
+        """
         rates, trains, intervals, _, _ = session
         method = SILVA_2015_RANK_ORDER.method
         null = dataset_values(
@@ -548,11 +642,26 @@ class TestRankOrderValues:
             intervals,
             replay_method=method,
             null="cell_order",
-            n_datasets=300,
+            n_datasets=4000,
             spike_times=trains,
             encoding_models=rates,
             rng=0,
         )
+        for event in range(4):
+            significance = rank_order_significance(
+                track,
+                trains,
+                intervals[event],
+                rates,
+                spike_statistic=method.spike_statistic,
+                min_active_cells=method.min_active_cells,
+                n_shuffles=4000,
+                rng=1,
+            )
+            ours = null.loc[null["event"] == event, "score"].to_numpy()
+            theirs = np.asarray(significance.shuffle.null_scores)
+            assert np.isfinite(ours).all() and np.isfinite(theirs).all()
+            assert stats.ks_2samp(ours, theirs).pvalue > 0.01, event
         real = dataset_values(
             track,
             intervals,
@@ -732,6 +841,42 @@ class TestTemplateCorrelation:
         assert signed.statistic == pytest.approx(0.0)
         assert absolute.statistic == pytest.approx(1.0)
 
+    @pytest.mark.parametrize("constant", ["template", "reference"])
+    def test_refuses_an_undefined_correlation(self, constant):
+        """A template constant over the shared cells has no rank correlation."""
+        sleep = [np.full(6, 0.5), np.arange(8.0) / 7]
+        run = [np.arange(6.0), np.arange(8.0)]
+        if constant == "reference":
+            sleep[0], run[0] = run[0], np.full(6, 2.0)
+        with pytest.raises(
+            ValueError, match="template 0 with its reference is not defined"
+        ):
+            template_correlation_test(sleep, run, n_shuffles=99, rng=0)
+
+    def test_undefined_shuffles_count_as_at_least_as_extreme(self):
+        """A shuffle that puts tied reference values on every shared cell.
+
+        Three of the six cells have a sleep value, and three of the six
+        reference values are tied, so 1 in 20 shuffles gives the shared cells
+        one value and no correlation. Each such shuffle counts against the
+        observed correlation on both sides, so p never shrinks.
+        """
+        sleep = [np.array([0.1, 0.5, np.nan, 0.3, np.nan, np.nan])]
+        run = [np.array([1.0, 1.0, 1.0, 2.0, 3.0, 4.0])]
+        result = template_correlation_test(sleep, run, n_shuffles=2000, rng=0)
+        undefined = np.isnan(result.null_statistics)
+        assert 0.03 < undefined.mean() < 0.07
+        defined = result.null_statistics[~undefined]
+        for alternative, extreme in (
+            ("greater", defined >= result.statistic),
+            ("less", defined <= result.statistic),
+        ):
+            sided = template_correlation_test(
+                sleep, run, n_shuffles=2000, alternative=alternative, rng=0
+            )
+            assert sided.p_value == (1 + undefined.sum() + extreme.sum()) / 2001
+        assert result.percentile == 100 * np.sum(defined < result.statistic) / 2000
+
     def test_refuses_templates_without_three_shared_cells(self):
         with pytest.raises(ValueError, match="shares 2 cells"):
             template_correlation_test(
@@ -751,6 +896,51 @@ def test_recipes_hold_their_values():
     for recipe in DATASET_RECIPES:
         assert recipe.notes, recipe.name
     assert hash(SILVA_2015_MATRIX) == hash(dataclasses.replace(SILVA_2015_MATRIX))
+
+
+def test_recipe_columns_the_tables_lack_are_made_as_the_notes_say():
+    """Silva compared absolute correlations; derived columns have a recipe."""
+    assert SILVA_2015_RANK_ORDER.columns == ("abs_score",)
+    derived = {"abs_score", "quality", "step"}
+    for recipe in DATASET_RECIPES:
+        notes = " ".join(recipe.notes)
+        for column in derived.intersection(recipe.columns):
+            assert f"assign({column}=" in notes or f", {column}=" in notes, (
+                recipe.name,
+                column,
+            )
+
+
+def test_silva_pooled_tests_run_on_absolute_correlations(track, session):
+    """The rank-order recipe's documented pooled tests, on simulated events.
+
+    The sweeps beat shuffled cell orders in |r|: the one-tailed rank-sum
+    and KS tests reject.
+    """
+    rates, trains, intervals, _, _ = session
+    recipe = SILVA_2015_RANK_ORDER
+    common = {"spike_times": trains, "encoding_models": rates}
+    real = dataset_values(track, intervals, replay_method=recipe.method, **common)
+    null = dataset_values(
+        track,
+        intervals,
+        replay_method=recipe.method,
+        null=recipe.null,
+        shared=recipe.shared,
+        n_datasets=100,
+        rng=0,
+        **common,
+    )
+    (column,) = recipe.columns
+    for table in (real, null):
+        table[column] = table["score"].abs()
+    for test in recipe.distribution:
+        side = "two-sided" if test == "levene" else recipe.alternative
+        result = distribution_test(
+            real, null, column=column, test=test, alternative=side
+        )
+        if test != "levene":
+            assert result.p_value < 0.01, test
 
 
 @pytest.mark.parametrize("n_axes", [0, 1, 2])

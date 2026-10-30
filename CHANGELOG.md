@@ -264,6 +264,50 @@ Several replay papers test a whole data set, not each event:
 - `decode_intervals` bins disjoint intervals in one pass and decodes them
   together, about 70 times faster, with the same posteriors to round-off.
 
+**Fixes**
+
+- `dataset_values` refuses a method that counts spikes or active cells,
+  such as `FAROOQ_2019` (`n_active_cells >= 5`), when `spike_counts` is not
+  given. Null data sets measured on the moment tables used to fill
+  `n_active_cells` with the MAP range instead. The `FAROOQ_2019_*` notes
+  now pass `spike_counts`.
+- `template_correlation_test` refuses a template or reference that is
+  constant over the cells they share. Its correlation is undefined, and
+  the NaN statistic used to be reported with the smallest p. A shuffle
+  without a correlation (tied reference values on every shared cell) now
+  counts as at least as extreme, so it can no longer shrink p.
+- `dataset_test(statistic=...)` refuses a statistic that is not finite on
+  a null data set. Such data sets counted neither as at least as extreme
+  nor as less, which made p too small. `dataset_test` also refuses
+  `null_table` rows without a `dataset`. They formed an extra null data
+  set with `statistic=`, which could give p > 1, and a cryptic indexing
+  error with `criteria=`.
+- The moment-table path of `dataset_values` weighs every time bin alike,
+  as the per-time-bin weighted correlation does. It used to weigh each row
+  by its mass. With rows that sum to 1 only within `DecodingResult`'s
+  tolerance, the score could then differ from `detect_replay`'s by about
+  1e-7.
+- `SILVA_2015_RANK_ORDER` pooled tests compare absolute correlations, as
+  Silva et al.'s Online Methods state ("The absolute values of spike
+  correlations ... were compared"): `columns=("abs_score",)`, where it held
+  the signed `"score"`. A recipe column the library's tables do not hold
+  (`abs_score`, Grosmark's `quality`, Stella's `step`) is now made by an
+  `assign` given in that recipe's notes; `abs_score` is always `|score|`.
+
+**Documentation**
+
+- `FAROOQ_2019_POISSON` and `STELLA_2019_JITTER` notes make, decode and
+  measure one surrogate data set at a time. `decode_intervals` holds every
+  time bin's posterior and counts at once, and 500 copies of 38,820 frames
+  in one call would need about 270 GB. The Farooq runtime now includes
+  about 3 hours of `dataset_values`. The `decode_intervals` docstring and
+  the replay guide state the memory.
+- The `FAROOQ_2019_*` notes say to pass only frames with at least 5 active
+  cells: `dataset_test` does not apply `FAROOQ_2019`'s `n_active_cells`
+  criterion.
+- `shuffle_events` and `ShuffledDataset` state that `"pseudo_event"` keeps
+  each event's own counts next to rows drawn from the pool.
+
 ### Reactivation recipes
 
 **New**
