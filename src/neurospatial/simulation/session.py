@@ -886,7 +886,7 @@ def simulate_session(
         )
     elif trajectory_method == "sinusoidal":
         positions, times = simulate_trajectory_sinusoidal(
-            env, duration=duration, seed=trajectory_seed, **kwargs
+            env, duration=duration, **kwargs
         )
     else:
         # Ensure return_metadata is False for consistent return signature

@@ -711,7 +711,6 @@ class TestSimulateTrajectorysinusoidal:
             sampling_frequency=100.0,
             speed=20.0,
             period=4.0,
-            seed=1,
         )
         assert positions.shape == (1000, 1)  # 10s * 100Hz
         assert times.shape == (1000,)
@@ -1017,18 +1016,6 @@ class TestSimulateTrajectorysinusoidal:
             simulate_trajectory_sinusoidal(
                 linear_track_env, duration=0.001, sampling_frequency=100.0
             )
-
-    def test_seed_has_no_effect(self, linear_track_env):
-        """`seed` is a documented no-op: output is identical regardless of seed."""
-        kw = {
-            "duration": 5.0,
-            "sampling_frequency": 100.0,
-            "speed": 20.0,
-            "period": 4.0,
-        }
-        a, _ = simulate_trajectory_sinusoidal(linear_track_env, seed=1, **kw)
-        b, _ = simulate_trajectory_sinusoidal(linear_track_env, seed=999, **kw)
-        np.testing.assert_array_equal(a, b)
 
 
 class TestSimulateTrajectoryLaps:

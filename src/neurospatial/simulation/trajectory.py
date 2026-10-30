@@ -641,12 +641,13 @@ def simulate_trajectory_sinusoidal(
     period: float | None = None,
     pause_duration: float = 0.0,
     pause_at_peaks: bool = True,
-    seed: int | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Simulate sinusoidal back-and-forth running along a track.
 
     Generates simple back-and-forth motion with optional pauses at track ends.
-    Useful for testing place field detection on linear tracks.
+    Useful for testing place field detection on linear tracks. The trajectory
+    is deterministic (a closed-form sinusoid with fixed pauses), so it takes
+    no seed.
 
     Parameters
     ----------
@@ -671,12 +672,6 @@ def simulate_trajectory_sinusoidal(
     pause_at_peaks : bool, optional
         Whether to pause at the track ends (default: True). False ignores
         ``pause_duration``.
-    seed : int | None, optional
-        Accepted for a uniform trajectory API but has no effect: this trajectory
-        is fully deterministic (a closed-form sinusoid with deterministic
-        pauses), so the output is identical regardless of ``seed``. Provided so
-        callers (e.g. ``simulate_session``) can pass ``seed`` uniformly across
-        trajectory methods.
 
     Returns
     -------
