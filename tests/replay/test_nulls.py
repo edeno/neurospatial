@@ -653,3 +653,56 @@ class TestCircularShiftsRunAlongTrack:
 
         with pytest.raises(ValueError, match="needs a position along a track"):
             getattr(shuffle, name)(disc, values, n_shuffles=1, rng=0)
+
+
+class TestShuffleSpikeCountsCircular:
+    """Each cell's counts rotate in time, independently of the other cells."""
+
+    def test_each_cell_is_a_rotation_of_itself(self):
+        from neurospatial.replay import shuffle_spike_counts_circular
+
+        counts = np.random.default_rng(0).poisson(1.0, (12, 6))
+        for shuffled in shuffle_spike_counts_circular(counts, n_shuffles=20, rng=1):
+            assert shuffled.dtype == counts.dtype
+            for cell in range(counts.shape[1]):
+                rotations = [np.roll(counts[:, cell], k) for k in range(12)]
+                assert any(np.array_equal(shuffled[:, cell], r) for r in rotations)
+
+    def test_cells_shift_independently_and_uniformly(self):
+        """Shifts of 0..n-1 are equally likely, and differ between cells."""
+        from neurospatial.replay import shuffle_spike_counts_circular
+
+        n_time = 5
+        counts = np.zeros((n_time, 2), dtype=np.int64)
+        counts[0] = 1  # a single spike marks each cell's shift
+        shifts = np.array(
+            [
+                np.argmax(shuffled, axis=0)
+                for shuffled in shuffle_spike_counts_circular(
+                    counts, n_shuffles=5000, rng=2
+                )
+            ]
+        )
+        frequencies = np.bincount(shifts[:, 0], minlength=n_time) / len(shifts)
+        assert np.allclose(frequencies, 1 / n_time, atol=0.03)
+        assert np.mean(shifts[:, 0] == shifts[:, 1]) < 0.3  # ~1/5 if independent
+
+    def test_refuses_one_dimensional_counts(self):
+        from neurospatial.replay import shuffle_spike_counts_circular
+
+        with pytest.raises(ValueError, match="2-D"):
+            next(shuffle_spike_counts_circular(np.arange(5), n_shuffles=1))
+
+
+def test_place_field_shift_skips_bins_without_a_rate():
+    """NaN bins stay in place and fields move over the other bins only."""
+    from neurospatial.replay import shuffle_place_fields_circular
+
+    env = track_for(np.zeros((1, 10)))
+    field = np.arange(1.0, 11.0)[None].repeat(2, axis=0)
+    field[:, [0, 9]] = np.nan
+    for shuffled in shuffle_place_fields_circular(env, field, n_shuffles=20, rng=1):
+        assert np.all(np.isnan(shuffled[:, [0, 9]]))
+        for row in shuffled:
+            rotations = [np.roll(np.arange(2.0, 10.0), k) for k in range(8)]
+            assert any(np.array_equal(row[1:9], r) for r in rotations)

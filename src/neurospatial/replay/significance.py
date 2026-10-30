@@ -41,7 +41,18 @@ if TYPE_CHECKING:
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 _OPERATION = "replay_significance()"
-_NULLS = ("column_cycle", "unit_identity", "pseudo_event")
+_NULLS = (
+    "column_cycle",
+    "unit_identity",
+    "pseudo_event",
+    "spike_train_circular",
+    "place_field_circular",
+    "time_bin_permutation",
+)
+# Run when nulls=None, if their inputs are given: Davidson et al. (2009).
+_DEFAULT_NULLS = ("column_cycle", "unit_identity", "pseudo_event")
+# Nulls that decode shuffled spike counts again.
+_DECODING_NULLS = ("unit_identity", "spike_train_circular", "place_field_circular")
 _ALTERNATIVES = ("greater", "less", "two-sided")
 
 
@@ -130,6 +141,33 @@ def replay_significance(
     - ``"pseudo_event"``: each time bin's posterior is replaced by one drawn at
       random from other candidate events, which keeps the decoder's bias
       toward particular locations. Needs ``pseudo_event_pool``.
+    - ``"spike_train_circular"``: each cell's spike counts are shifted
+      circularly in time within the event and decoded again, which keeps each
+      cell's spikes but breaks the order in which cells fire (Tirole et al.
+      2022). Needs the inputs of ``"unit_identity"``.
+    - ``"place_field_circular"``: each cell's rate map is shifted circularly
+      along the track and the event decoded again, which keeps each cell's
+      firing but moves its field (Grosmark & Buzsáki 2016; Tirole et al.
+      2022). Needs the inputs of ``"unit_identity"``. Maps are shifted over
+      their supported bins only, so bins without training data stay
+      excluded; smoothed maps are shifted as they are (Grosmark & Buzsáki
+      shifted unsmoothed maps and smoothed them again).
+    - ``"time_bin_permutation"``: the posterior's time bins are put in random
+      order (Karlsson & Frank 2009; Takigawa et al. 2024). Needs only the
+      posterior. The decoder treats time bins independently, so with a prior
+      that is the same in every time bin this equals permuting the spike
+      counts and decoding again; with a time-varying prior it also moves each
+      time bin's prior.
+
+    Tirole et al. (2022) call an event significant when it beats the
+    ``"spike_train_circular"``, ``"place_field_circular"`` and
+    ``"column_cycle"`` nulls; Davidson et al. (2009) used ``"column_cycle"``,
+    ``"unit_identity"`` and ``"pseudo_event"``. Use the nulls together: on
+    events with no sequence, a single null that decodes again, or the
+    column cycle, rejects more often than its nominal rate, because a
+    shuffled decode is flatter than the event's own posterior. Requiring
+    every null to reject brings the rate back to about nominal (Takigawa et
+    al. 2024 measured the false-positive rates of these combinations).
 
     Parameters
     ----------
@@ -154,14 +192,15 @@ def replay_significance(
         Keyword arguments for ``score``, for example ``{"band": 10.0}`` for
         :func:`detect_trajectory_radon`.
     nulls : str, sequence of str, or None, default=None
-        The nulls to run, from ``"column_cycle"``, ``"unit_identity"`` and
-        ``"pseudo_event"``. ``None`` runs every null whose inputs are given
-        (always ``"column_cycle"``). For one template's share of a
+        The nulls to run, by the names above. ``None`` runs the nulls of
+        Davidson et al. (2009) whose inputs are given: ``"column_cycle"``
+        always, ``"unit_identity"`` with the decoding inputs and
+        ``"pseudo_event"`` with a pool. For one template's share of a
         :func:`~neurospatial.decoding.decode_jointly` posterior, whose rows
         sum to less than 1, only ``"column_cycle"`` applies.
     spike_counts : NDArray[np.int64] or None, shape (n_time_bins, n_neurons)
-        Spike counts of the event, one row per posterior row, for the
-        unit-identity null.
+        Spike counts of the event, one row per posterior row, for the nulls
+        that decode again.
     encoding_models : array of shape (n_neurons, n_bins), SpatialRatesResult, or None
         The rate maps ``posterior`` was decoded with, as passed to
         :func:`~neurospatial.decoding.decode_position`.
@@ -234,6 +273,9 @@ def replay_significance(
     Davidson, T. J., Kloosterman, F., & Wilson, M. A. (2009). Hippocampal
     replay of extended experience. *Neuron*, 63(4), 497-507.
 
+    Karlsson, M. P., & Frank, L. M. (2009). Awake replay of remote
+    experiences in the hippocampus. *Nature Neuroscience*, 12(7), 913-918.
+
     Grosmark, A. D., & Buzsáki, G. (2016). Diversity in neural firing
     dynamics supports both rigid and learned hippocampal sequences.
     *Science*, 351(6280), 1440-1443.
@@ -272,7 +314,9 @@ def replay_significance(
     """
     from neurospatial.replay.nulls import (
         shuffle_cell_identity,
+        shuffle_place_fields_circular,
         shuffle_posterior_circular,
+        shuffle_spike_counts_circular,
     )
     from neurospatial.stats import _ensure_rng
     from neurospatial.stats.shuffle import (
@@ -329,44 +373,66 @@ def replay_significance(
         )
         null_scores["column_cycle"] = scorer.scores(shifted, n_shuffles)
 
-    if "unit_identity" in run:
-        from neurospatial.decoding import decode_position
-
-        # _nulls_to_run runs this null only when all three inputs are given.
+    if any(name in run for name in _DECODING_NULLS):
+        # _nulls_to_run runs these nulls only when all three inputs are given.
         assert encoding_models is not None and dt is not None
         counts = np.asarray(spike_counts)
-        decoded = decode_position(
-            env, counts, encoding_models, dt=dt, prior=prior
-        ).posterior
-        if decoded.shape != posterior.shape or not np.allclose(
-            decoded, posterior, rtol=1e-5, atol=1e-7
-        ):
-            raise ValueError(
-                _format_error(
-                    f"{_OPERATION}: decoding spike_counts with encoding_models, "
-                    "dt and prior does not reproduce posterior.",
-                    why="the unit-identity null decodes permuted counts; it is "
-                    "a valid null only if it decodes them the way the posterior "
-                    "was decoded",
-                    fix="pass the counts, rate maps (or rate result), dt and "
-                    "prior that produced posterior",
-                )
-            )
-        models = getattr(encoding_models, "firing_rates", encoding_models)
-        permuted = (
-            decode_position(
-                env, shuffled, encoding_models, dt=dt, prior=prior
+        _require_reproducible_decode(env, counts, encoding_models, dt, prior, posterior)
+
+        from neurospatial.decoding import decode_position
+
+        def decode(
+            event_counts: Any, models: Any = encoding_models, event_prior: Any = prior
+        ) -> Any:
+            """Decode shuffled counts or rate maps as the posterior was decoded."""
+            return decode_position(
+                env, event_counts, models, dt=dt, prior=event_prior
             ).posterior
+
+    if "unit_identity" in run:
+        rates = np.asarray(getattr(encoding_models, "firing_rates", encoding_models))
+        permuted = (
+            shuffled
             for shuffled, _ in shuffle_cell_identity(
-                counts, np.asarray(models), n_shuffles=n_shuffles, rng=generator
+                counts, rates, n_shuffles=n_shuffles, rng=generator
             )
         )
-        null_scores["unit_identity"] = scorer.scores(permuted, n_shuffles)
+        null_scores["unit_identity"] = scorer.scores(map(decode, permuted), n_shuffles)
 
     if "pseudo_event" in run:
         draws = generator.integers(len(pool), size=(n_shuffles, len(posterior)))
         null_scores["pseudo_event"] = scorer.scores(
             (pool[rows] for rows in draws), n_shuffles
+        )
+
+    if "spike_train_circular" in run:
+        shifted_counts = shuffle_spike_counts_circular(
+            counts, n_shuffles=n_shuffles, rng=generator
+        )
+        null_scores["spike_train_circular"] = scorer.scores(
+            map(decode, shifted_counts), n_shuffles
+        )
+
+    if "place_field_circular" in run:
+        rates, support_prior = _supported_rates(env, encoding_models, prior)
+        shifted_maps = shuffle_place_fields_circular(
+            env, rates, n_shuffles=n_shuffles, rng=generator
+        )
+        null_scores["place_field_circular"] = scorer.scores(
+            (
+                decode(counts, np.nan_to_num(maps), support_prior)
+                for maps in shifted_maps
+            ),
+            n_shuffles,
+        )
+
+    if "time_bin_permutation" in run:
+        null_scores["time_bin_permutation"] = scorer.scores(
+            (
+                posterior[generator.permutation(len(posterior))]
+                for _ in range(n_shuffles)
+            ),
+            n_shuffles,
         )
 
     shuffles = {}
@@ -411,22 +477,27 @@ def _nulls_to_run(
     if 0 < len(missing) < len(unit_inputs):
         raise ValueError(
             _format_error(
-                f"{_OPERATION}: the unit-identity shuffle needs spike_counts, "
-                f"encoding_models and dt, but {', '.join(missing)} "
-                f"{'is' if len(missing) == 1 else 'are'} missing.",
-                why="the shuffle decodes the event's spike counts again with "
-                "permuted rate maps, as the posterior was decoded",
+                f"{_OPERATION}: the nulls that decode the event again "
+                "(unit_identity, spike_train_circular, place_field_circular) "
+                f"need spike_counts, encoding_models and dt, but "
+                f"{', '.join(missing)} {'is' if len(missing) == 1 else 'are'} "
+                "missing.",
+                why="these nulls decode shuffled spike counts or shifted rate "
+                "maps the way the posterior was decoded",
                 fix="pass all three (and prior if the decode used one), or none "
-                "to skip this shuffle",
+                "to run only the nulls that need the posterior alone",
             )
         )
     available = {
         "column_cycle": True,
         "unit_identity": not missing,
         "pseudo_event": pseudo_event_pool is not None,
+        "spike_train_circular": not missing,
+        "place_field_circular": not missing,
+        "time_bin_permutation": True,
     }
     if nulls is None:
-        return tuple(name for name in _NULLS if available[name])
+        return tuple(name for name in _DEFAULT_NULLS if available[name])
     requested = [nulls] if isinstance(nulls, str) else list(nulls)
     unknown = [name for name in requested if name not in _NULLS]
     if unknown or not requested:
@@ -436,9 +507,12 @@ def _nulls_to_run(
         )
     lacking = [name for name in requested if not available[name]]
     if lacking:
+        decoding = "spike_counts, encoding_models and dt"
         needs = {
-            "unit_identity": "spike_counts, encoding_models and dt",
+            "unit_identity": decoding,
             "pseudo_event": "pseudo_event_pool",
+            "spike_train_circular": decoding,
+            "place_field_circular": decoding,
         }
         raise ValueError(
             _format_error(
@@ -448,6 +522,57 @@ def _nulls_to_run(
             )
         )
     return tuple(name for name in _NULLS if name in requested)
+
+
+def _require_reproducible_decode(
+    env: Environment,
+    counts: NDArray[Any],
+    encoding_models: Any,
+    dt: float,
+    prior: Any,
+    posterior: NDArray[np.float64],
+) -> None:
+    """Refuse decoding inputs that do not give back the event's posterior."""
+    from neurospatial.decoding import decode_position
+
+    decoded = decode_position(
+        env, counts, encoding_models, dt=dt, prior=prior
+    ).posterior
+    if decoded.shape != posterior.shape or not np.allclose(
+        decoded, posterior, rtol=1e-5, atol=1e-7
+    ):
+        raise ValueError(
+            _format_error(
+                f"{_OPERATION}: decoding spike_counts with encoding_models, dt "
+                "and prior does not reproduce posterior.",
+                why="the nulls that decode shuffled counts or rate maps are "
+                "valid only if they decode them the way the posterior was "
+                "decoded",
+                fix="pass the counts, rate maps (or rate result), dt and prior "
+                "that produced posterior",
+            )
+        )
+
+
+def _supported_rates(
+    env: Environment, encoding_models: Any, prior: Any
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Rate maps with NaN outside training support, and the matching prior.
+
+    Decoding the zero-filled maps with this prior equals decoding
+    ``encoding_models`` with ``prior``: bins without training support get
+    no posterior mass.
+    """
+    rates = np.array(
+        getattr(encoding_models, "firing_rates", encoding_models), dtype=np.float64
+    )
+    support = np.isfinite(rates).all(axis=0)
+    spatial_support = getattr(encoding_models, "spatial_support", None)
+    if spatial_support is not None:
+        support &= np.asarray(spatial_support, dtype=bool)
+    rates[:, ~support] = np.nan
+    base = np.asarray(env.bin_sizes if prior is None else prior, dtype=np.float64)
+    return rates, base * support
 
 
 def _validated_pool(pool: Any, env: Environment) -> NDArray[np.float64]:
