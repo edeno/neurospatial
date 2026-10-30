@@ -113,7 +113,7 @@ class TemplateMatchMethod:
     max_isi : float or None
         ``"best_match"``: burst interval in seconds; a cell's spikes closer
         than this are one letter (Lee & Wilson: 0.05).
-    max_gap : float or None
+    word_gap : float or None
         ``"best_match"``: the gap in seconds above which Lee & Wilson ended
         a word (0.1). Not used to score an event, which is one word; pass
         it to :func:`~neurospatial.replay.spike_words` to cut the events.
@@ -161,7 +161,7 @@ class TemplateMatchMethod:
     min_peak_rate: float | None = None
     min_template_cells: int | None = None
     max_isi: float | None = None
-    max_gap: float | None = None
+    word_gap: float | None = None
     match_order: Literal["interruptions_first", "length_first"] = "interruptions_first"
     trial_probability: float | None = None
     exact_max_letters: int = 10
@@ -192,7 +192,7 @@ class TemplateMatchMethod:
                     f"{getattr(self, field_name)!r}."
                 )
         own = {
-            "best_match": ("max_isi", "max_gap", "trial_probability"),
+            "best_match": ("max_isi", "word_gap", "trial_probability"),
             "matching_index": ("bandwidth",),
         }
         needed = own[self.statistic]
@@ -215,12 +215,12 @@ class TemplateMatchMethod:
         operation = prefix
         if self.statistic == "best_match":
             _check_seconds(self.max_isi, "max_isi", operation, allow_zero=True)
-            _check_seconds(self.max_gap, "max_gap", operation, allow_zero=False)
-            assert self.max_isi is not None and self.max_gap is not None
-            if self.max_isi > self.max_gap:
+            _check_seconds(self.word_gap, "word_gap", operation, allow_zero=False)
+            assert self.max_isi is not None and self.word_gap is not None
+            if self.max_isi > self.word_gap:
                 raise ValueError(
                     f"{prefix}: max_isi ({self.max_isi:g} s) must be at most "
-                    f"max_gap ({self.max_gap:g} s), as in Lee & Wilson (2002)."
+                    f"word_gap ({self.word_gap:g} s), as in Lee & Wilson (2002)."
                 )
             probability = self.trial_probability
             if (
@@ -906,7 +906,7 @@ def _template_intervals(
                 f"{operation}: intervals must map each template {names} to its "
                 f"words, got {given}.",
                 why="Lee & Wilson cut each template's cells into words separately",
-                fix="pass {name: spike_words(spike_times, max_isi=..., max_gap=..., "
+                fix="pass {name: spike_words(spike_times, max_isi=..., word_gap=..., "
                 "cells=template_cells).intervals for each template}",
             )
         )
@@ -1338,7 +1338,7 @@ LEE_WILSON_2002 = TemplateMatchMethod(
     statistic="best_match",
     field_order="peak",
     max_isi=0.05,
-    max_gap=0.1,
+    word_gap=0.1,
     match_order="interruptions_first",
     trial_probability=1 / 24,
     exact_max_letters=10,
@@ -1358,7 +1358,7 @@ LEE_WILSON_2002 = TemplateMatchMethod(
         "Letters: a cell's spikes less than 50 ms apart are one letter at the "
         "first spike. Words: the letters of one template's cells, split where "
         "adjacent letters are more than 100 ms apart, within slow-wave sleep: "
-        "spike_words(max_isi=0.05, max_gap=0.1, cells=..., epochs=sws). A given "
+        "spike_words(max_isi=0.05, word_gap=0.1, cells=..., epochs=sws). A given "
         "interval is scored as one word; bursts are found on the whole trains.",
         "Best match: the best (x, y) on the list (K, 0) > (K, 1) > (K - 1, 0) > "
         "... > (2, 0); p is the share of the n! orderings of the word's letters "

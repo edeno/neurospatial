@@ -665,7 +665,7 @@ neurospatial.replay.shuffle_posterior_weighted_circular(env, posterior, peak_wei
 neurospatial.replay.shuffle_spike_counts_circular(spike_counts, *, n_shuffles=1000, rng=None)
 neurospatial.replay.shuffle_spike_counts_uniform(spike_counts, *, n_shuffles=1000, rng=None)
 neurospatial.replay.simulated_null_events(env, encoding_models, *, n_events, kind='random', duration=0.2, rate_gain=1.0, rng=None)
-neurospatial.replay.spike_words(spike_times, *, max_isi, max_gap, cells=None, epochs=None)
+neurospatial.replay.spike_words(spike_times, *, max_isi, word_gap, cells=None, epochs=None)
 neurospatial.replay.surrogate_spike_trains(spike_times, *, kind, max_jitter=0.05, theta_peak_times=None, rng=None)
 neurospatial.replay.template_correlation_test(templates, reference_templates, *, n_shuffles=1000, use_absolute=False, alternative='greater', rng=None)
 neurospatial.replay.template_fractions(result, *, exclude_end_distance=0.0)

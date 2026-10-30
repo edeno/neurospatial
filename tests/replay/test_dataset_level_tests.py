@@ -15,6 +15,8 @@ from neurospatial import Environment
 from neurospatial.decoding import DecodingResult
 from neurospatial.replay import (
     CriterionGrid,
+    ReplayCriterion,
+    ReplayMethod,
     compare_replay_methods,
     dataset_test,
     dataset_values,
@@ -593,6 +595,165 @@ class TestDatasetValues:
                 null="unit_identity",
                 spike_counts=counts,
             )
+
+
+class TestOpenArena:
+    """Nulls that need no order along a track work on a 2-D arena."""
+
+    # A method that measures the event's MAP path, which an arena has.
+    MAP_PATH = ReplayMethod(
+        name="open_field_path",
+        reference="test",
+        score=None,
+        criteria=(ReplayCriterion("start_to_end_map_distance", ">=", 40.0),),
+        units="cm",
+    )
+
+    @pytest.fixture(scope="class")
+    def arena(self):
+        positions = np.random.default_rng(0).uniform(0.0, 100.0, (2000, 2))
+        return Environment.from_samples(positions, bin_size=10.0, units="cm")
+
+    @pytest.fixture(scope="class")
+    def events(self, arena):
+        rng = np.random.default_rng(1)
+        events = []
+        for n_time in (6, 7, 9):
+            raw = rng.gamma(0.4, size=(n_time, arena.n_bins))
+            events.append(
+                DecodingResult(
+                    posterior=raw / raw.sum(axis=1, keepdims=True),
+                    env=arena,
+                    times=np.arange(n_time) * DT,
+                )
+            )
+        return events
+
+    @pytest.mark.parametrize("null", ["time_bin_permutation", "pseudo_event"])
+    def test_values_are_measured_on_the_shuffled_events(self, arena, events, null):
+        """Each value equals a MAP path measured directly on the shuffled rows.
+
+        MAP distances on an arena are Euclidean between bin centers; the
+        bins are equal, so the MAP bin is the largest entry of a row.
+        """
+        assert np.ptp(arena.bin_sizes) == 0
+        quantities = ("max_map_jump", "mean_peak_probability")
+        table = dataset_values(
+            arena,
+            events,
+            replay_method=self.MAP_PATH,
+            null=null,
+            n_datasets=4,
+            quantities=quantities,
+            rng=2,
+        )
+        shuffled = shuffle_events(arena, events, null=null, n_datasets=4, rng=2)
+        pool = np.vstack([event.posterior for event in events])
+        assert len(table) == 4 * len(events)
+        for row in table.itertuples():
+            event = events[row.event]
+            rows = shuffled[row.dataset].events[row.event].posterior
+            assert rows.shape == event.posterior.shape
+            # The rows the null draws from: the event's own rows, each once,
+            # or any rows of the pool (all rows differ, so each has one match).
+            source = event.posterior if null == "time_bin_permutation" else pool
+            matches = (rows[:, None, :] == source[None, :, :]).all(axis=2)
+            assert (matches.sum(axis=1) == 1).all()
+            if null == "time_bin_permutation":
+                drawn = np.argmax(matches, axis=1)
+                np.testing.assert_array_equal(np.sort(drawn), np.arange(len(rows)))
+            maps = arena.bin_centers[np.argmax(rows, axis=1)]
+            steps = np.linalg.norm(np.diff(maps, axis=0), axis=1)
+            assert row.start_to_end_map_distance == pytest.approx(
+                np.linalg.norm(maps[-1] - maps[0]), abs=1e-9
+            )
+            assert row.max_map_jump == pytest.approx(steps.max(), abs=1e-9)
+            assert row.mean_peak_probability == pytest.approx(
+                rows.max(axis=1).mean(), abs=1e-12
+            )
+        assert "track_length" not in table.columns
+
+    @pytest.mark.parametrize(
+        ("method", "null"),
+        [
+            # The column-cycle null rolls each row along the track.
+            (MAP_PATH, "column_cycle"),
+            # A weighted correlation is a slope of position along the track.
+            (SILVA_2015, "time_bin_permutation"),
+            (SILVA_2015, "pseudo_event"),
+        ],
+    )
+    def test_track_order_is_still_required_where_used(
+        self, arena, events, method, null
+    ):
+        with pytest.raises(ValueError, match="needs a position along a track"):
+            dataset_values(arena, events, replay_method=method, null=null, rng=0)
+
+    def test_shuffle_events_refuses_a_column_cycle_off_a_track(self, arena, events):
+        with pytest.raises(ValueError, match="needs a position along a track"):
+            shuffle_events(arena, events, null="column_cycle", rng=0)
+
+
+class TestEventEnvironment:
+    """Each event must have been decoded on the environment passed."""
+
+    @pytest.fixture(scope="class")
+    def longer(self):
+        """A track ten times as long, with the same number of bins."""
+        return Environment.linear_track(
+            endpoints=[[0.0, 0.0], [1000.0, 0.0]], bin_size=50.0, units="cm"
+        )
+
+    def test_dataset_values_refuses_another_environment(self, track, longer, session):
+        _, _, _, events, _ = session
+        assert longer.n_bins == track.n_bins
+        assert dataset_values(track, events, replay_method=SILVA_2015) is not None
+        with pytest.raises(ValueError, match="event 0 was decoded on an environment"):
+            dataset_values(longer, events, replay_method=SILVA_2015)
+        with pytest.raises(ValueError, match="event 0 was decoded on an environment"):
+            dataset_values(
+                longer,
+                events,
+                replay_method=SILVA_2015,
+                null="time_bin_permutation",
+                rng=0,
+            )
+
+    def test_rank_order_refuses_another_environment(self, track, longer, session):
+        """As compare_replay_methods refuses a rank-order method's events."""
+        rates, trains, _, events, _ = session
+        options = {
+            "replay_method": SILVA_2015_RANK_ORDER.method,
+            "spike_times": trains,
+            "encoding_models": rates,
+            "dt": DT,
+        }
+        with pytest.raises(ValueError, match="event 0 was decoded on an environment"):
+            dataset_values(longer, events, **options)
+        with pytest.raises(ValueError, match="event 0 was decoded on an environment"):
+            compare_replay_methods(
+                longer,
+                events,
+                replay_methods=[options.pop("replay_method")],
+                **options,
+            )
+
+    def test_shuffle_events_refuses_another_environment(self, track, longer, session):
+        _, _, _, events, _ = session
+        later = [*events[:2], dataclasses.replace(events[2], env=longer)]
+        with pytest.raises(ValueError, match="event 2 was decoded on an environment"):
+            shuffle_events(track, later, null="time_bin_permutation", rng=0)
+
+    def test_a_copy_of_the_environment_is_accepted(self, track, session):
+        _, _, _, events, _ = session
+        copy = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0, units="cm"
+        )
+        assert copy is not track
+        pd.testing.assert_frame_equal(
+            dataset_values(copy, events, replay_method=SILVA_2015),
+            dataset_values(track, events, replay_method=SILVA_2015),
+        )
 
 
 class TestRankOrderValues:

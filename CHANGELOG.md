@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Replay calibration: review fixes
+
+**Fixed**
+
+- `matched_alpha` and `apply_alpha` refuse a `ReplayMethod` with
+  `tested_quantities` and a segmentation with `choose="any"`, such as
+  `WIDLOSKI_FOSTER_2025`. It reports the longest segment that is replay at
+  its alpha, so at another alpha it can report another segment with another
+  p-value, and rethresholding the table's p-value gave wrong verdicts. Rerun
+  `compare_replay_methods` with `dataclasses.replace(method, alpha=...)`
+  instead.
+
 ### Reactivation recipes: review fixes
 
 **New**
@@ -36,6 +48,15 @@
   NaN rows.
 - `n_shuffles`, `n_rate_subsamples`, `min_events` and
   `ReactivationWindows.count` refuse floats such as `20.0`.
+- A match window that cannot be analysed (for example one without events)
+  is an error row of that window, with its `window`, `window_start`,
+  `window_stop` and `window_duration`; the method's other windows keep their
+  rows. Before, one failed window replaced all of the method's rows with a
+  single error row without window identity.
+- `compare_reactivation_methods` names pattern members by the IDs a spike
+  group carries (a dict, `SpikeTrains` or `TsGroup`); before, they were
+  renumbered by position. A `unit_ids` that differs from the group's IDs is
+  refused.
 
 ### Reactivation assembly fixes
 
@@ -119,7 +140,7 @@
   t-distribution p-value under random orders (1/3 with 3 cells, 1/12 with
   4 or 5, about 5.4% with 10) and the calibrated permutation and exact
   alternatives. The recipe still uses the paper's test.
-- [Comparing replay methods](docs/user-guide/replay-methods.md) gains
+- The "Comparing replay methods" guide gains
   executed sections: score agreement with and without signs; PRE and POST
   epochs tested against each epoch's own null rate, since excitability
   changes the false-positive rate; the same events decoded in 10, 20 and
@@ -332,6 +353,16 @@ Several replay papers test a whole data set, not each event:
   the signed `"score"`. A recipe column the library's tables do not hold
   (`abs_score`, Grosmark's `quality`, Stella's `step`) is now made by an
   `assign` given in that recipe's notes; `abs_score` is always `|score|`.
+- `dataset_values` and `shuffle_events` draw the `"time_bin_permutation"`
+  and `"pseudo_event"` nulls on any environment, such as a 2-D open field.
+  They used to require a linearized track, which only the column-cycle
+  nulls and a score along the track (a weighted correlation) need; those
+  are still refused off a track.
+- `dataset_values` and `shuffle_events` refuse an event decoded on an
+  environment whose bins or connectivity differ from `env`, as
+  `compare_replay_methods` does. They used to read its posterior on `env`'s
+  bins: a decode on a 100 cm track passed with a 1,000 cm track of as many
+  bins reported jumps ten times too long.
 
 **Documentation**
 
@@ -454,7 +485,7 @@ Several replay papers test a whole data set, not each event:
 
 **Documentation**
 
-- [Comparing reactivation methods](docs/user-guide/reactivation-methods.md)
+- The "Comparing reactivation methods" guide
   applies both of Tingley & Peyrache's rate controls to sessions with and
   without reactivation and a rate change. Equal rates bring the rate-change
   EV to the null level and keep real reactivation. Bins of 5 s also stop
@@ -560,8 +591,11 @@ fields, scored from spikes without decoding, as recipes that
   best (x, y) match to the field order is tested against every ordering of
   its letters (exact up to 10 letters, then 100,000 random orderings). It
   reproduces the paper's example (325789A: a (6, 0) match, p = 13/5040).
-  `burst_onset_times()` and `spike_words()` cut spike trains into letters
-  and words whose intervals can be scored as candidate events.
+  `burst_onset_times()` and `spike_words(spike_times, *, max_isi,
+  word_gap)` cut spike trains into letters and words whose intervals can
+  be scored as candidate events. The gap that ends a word is `word_gap`,
+  not `max_gap`, which elsewhere names the calibrated interval-gap
+  tolerance (default 1 s).
 - `sequence_matching_index()` scores an event as Ji & Wilson (2007) did:
   one firing time per active cell (the peak of its spikes smoothed with a
   180 ms Gaussian) and the matching index of their order, with an exact

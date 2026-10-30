@@ -259,6 +259,68 @@ def test_a_window_without_events_is_an_error_row(
     assert (other["error"] == "").all() and other["value"].notna().all()
 
 
+@pytest.mark.parametrize(
+    "method",
+    [
+        LIU_2023_EV,
+        dataclasses.replace(EL_GABY_2021, min_events=None),
+        LIU_2023_ASSEMBLY,
+    ],
+    ids=lambda method: method.name,
+)
+def test_a_failed_match_window_keeps_the_other_windows(
+    reactivated: EventSession, method: ReactivationMethod
+) -> None:
+    """A match window without events is an error row of that window; the
+    rows of the method's other windows are kept, as they are on their own."""
+    data = reactivated
+    halves = dataclasses.replace(
+        method,
+        control_windows=ReactivationWindows(),
+        match_windows=ReactivationWindows(length=300.0),
+    )
+    first_half = data.match_events[data.match_events[:, 0] < 1500.0]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        table = _compare(data, [halves], match_events=first_half)
+        alone = _compare(
+            dataclasses.replace(data, match=np.array([[1200.0, 1500.0]])),
+            [halves],
+            match_events=first_half,
+        )
+    assert table["window"].tolist()[0] == 0 and table["window"].tolist()[-1] == 1
+    kept = table[table["window"] == 0].reset_index(drop=True)
+    assert (kept["error"] == "").all() and kept["value"].notna().all()
+    # The error row's missing region turns the column's None into NaN.
+    pd.testing.assert_frame_equal(kept, alone, check_dtype=False)
+    failed = table[table["window"] == 1]
+    assert len(failed) == 1
+    row = failed.iloc[0]
+    assert "no match_events start inside the match window" in row["error"]
+    assert (row["window_start"], row["window_stop"]) == (1500.0, 1800.0)
+    assert row["window_duration"] == 300.0
+    assert np.isnan(row["value"]) and pd.isna(row["component"])
+
+
+def test_a_control_window_without_events_fails_the_whole_method(
+    reactivated: EventSession,
+) -> None:
+    """Every match window is compared with the control window, so a control
+    window without events is one error row of the method, not one per
+    match window."""
+    method = dataclasses.replace(
+        LIU_2023_ASSEMBLY,
+        control_windows=ReactivationWindows(),
+        match_windows=ReactivationWindows(length=300.0),
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        table = _compare(reactivated, [method], control_events=np.empty((0, 2)))
+    assert len(table) == 1
+    assert "no control_events start inside the control window" in table["error"][0]
+    assert pd.isna(table["window"][0])
+
+
 # ---------------------------------------------------------------------------
 # Member co-firing (El-Gaby et al. 2021)
 # ---------------------------------------------------------------------------

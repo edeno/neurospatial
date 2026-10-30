@@ -19,6 +19,8 @@ from neurospatial.decoding import (
 )
 from neurospatial.replay import (
     NullSpikeData,
+    ReplayMethod,
+    ReplaySegmentation,
     apply_alpha,
     compare_replay_methods,
     decode_intervals,
@@ -38,6 +40,7 @@ from neurospatial.replay.methods import (
     IGATA_2021,
     KARLSSON_FRANK_2009,
     SILVA_2015,
+    WIDLOSKI_FOSTER_2025,
     WU_2017,
     WU_FOSTER_2014,
 )
@@ -1166,6 +1169,78 @@ def test_apply_alpha_matches_running_the_method_at_that_alpha(track, sweeps_and_
     # Each method's verdicts change at its new alpha, so the check bites.
     changed = applied["is_replay"].to_numpy() != table["is_replay"].to_numpy()
     assert set(table.loc[changed, "method"]) == set(alphas)
+
+
+def _two_segment_method(choose):
+    """Tested quantities on segments under a 10 cm jump rule."""
+    return ReplayMethod(
+        name=f"two_segments_{choose}",
+        reference="test",
+        score=None,
+        nulls=("time_bin_permutation",),
+        n_shuffles=999,
+        tested_quantities={"mean_mean_jump": "less"},
+        segmentation=ReplaySegmentation({"max_jump": 10.0}, choose=choose),
+    )
+
+
+@pytest.fixture(scope="module")
+def two_segment_event():
+    """A jumpy 12-bin segment, then a smooth 10-bin one."""
+    env = Environment.linear_track(
+        endpoints=[[0.0, 0.0], [40.0, 0.0]], bin_size=1.0, units="cm"
+    )
+    path = [0, 1, 6, 8, 2, 3, 7, 9, 4, 5, 10, 11, *range(25, 35)]
+    event = DecodingResult(
+        posterior=np.eye(env.n_bins)[path], env=env, times=np.arange(len(path)) * DT
+    )
+    return env, event
+
+
+def test_alpha_recalibration_refuses_a_segment_chosen_by_its_p_value(
+    two_segment_event,
+):
+    """choose='any' with tested quantities reports a segment that alpha picks."""
+    env, event = two_segment_event
+    method = _two_segment_method("any")
+    table = compare_replay_methods(env, [event], replay_methods=[method], rng=0)
+    rerun = compare_replay_methods(
+        env,
+        [event],
+        replay_methods=[dataclasses.replace(method, alpha=0.01)],
+        rng=0,
+    )
+    # At 0.05 the longest segment is significant and reported; at 0.01 it
+    # is not, and the next segment is reported with a smaller p-value, so
+    # the table's single p-value cannot give the verdict at 0.01.
+    assert table["p_value"].iloc[0] > 0.01
+    assert rerun["is_replay"].iloc[0]
+    assert rerun["p_value"].iloc[0] < 0.01
+    assert rerun["segment_start_time"].iloc[0] > table["segment_start_time"].iloc[0]
+    with pytest.raises(ValueError, match="chose among segments"):
+        apply_alpha(table, alpha={method.name: 0.01}, replay_methods=[method])
+    with pytest.raises(ValueError, match="chose among segments"):
+        matched_alpha(table, replay_methods=[method])
+    published = table.assign(method=WIDLOSKI_FOSTER_2025.name)
+    with pytest.raises(ValueError, match="chose among segments"):
+        matched_alpha(published, replay_methods=[WIDLOSKI_FOSTER_2025])
+
+
+def test_apply_alpha_matches_a_rerun_on_the_longest_segment(two_segment_event):
+    """choose='longest' tests one segment whatever alpha is."""
+    env, event = two_segment_event
+    method = _two_segment_method("longest")
+    table = compare_replay_methods(env, [event], replay_methods=[method], rng=0)
+    rerun = compare_replay_methods(
+        env,
+        [event],
+        replay_methods=[dataclasses.replace(method, alpha=0.01)],
+        rng=0,
+    )
+    applied = apply_alpha(table, alpha={method.name: 0.01}, replay_methods=[method])
+    assert table["is_replay"].iloc[0] != applied["is_replay"].iloc[0]
+    np.testing.assert_array_equal(applied["is_replay"], rerun["is_replay"])
+    np.testing.assert_array_equal(applied["p_value"], rerun["p_value"])
 
 
 def test_matched_alpha_holds_the_false_positive_rate(track, sweeps_and_nulls):

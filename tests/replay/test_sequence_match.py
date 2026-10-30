@@ -122,10 +122,10 @@ class TestBursts:
 
 
 class TestSpikeWords:
-    def test_words_split_at_gaps_longer_than_max_gap(self):
+    def test_words_split_at_gaps_longer_than_word_gap(self):
         """Letters 100 ms apart stay in one word; 101 ms apart, they split."""
         spikes = [np.array([1.0, 1.201]), np.array([1.1])]
-        words = spike_words(spikes, max_isi=0.05, max_gap=0.1)
+        words = spike_words(spikes, max_isi=0.05, word_gap=0.1)
         table = words.words_table()
         assert table["n_letters"].tolist() == [2, 1]
         np.testing.assert_allclose(words.intervals, [[1.0, 1.15], [1.201, 1.251]])
@@ -133,7 +133,7 @@ class TestSpikeWords:
     def test_each_interval_holds_exactly_its_words_letters(self):
         rng = np.random.default_rng(3)
         spikes = [np.sort(rng.uniform(0, 20, 60)) for _ in range(6)]
-        words = spike_words(spikes, max_isi=0.05, max_gap=0.1)
+        words = spike_words(spikes, max_isi=0.05, word_gap=0.1)
         for index, (start, stop) in enumerate(words.intervals):
             inside = (words.letter_times >= start) & (words.letter_times < stop)
             np.testing.assert_array_equal(
@@ -146,7 +146,7 @@ class TestSpikeWords:
         words = spike_words(
             spikes,
             max_isi=0.0,
-            max_gap=0.1,
+            word_gap=0.1,
             cells=np.array([True, True, False]),
             epochs=np.array([[0.0, 1.03], [1.04, 6.0]]),
         )
@@ -155,15 +155,15 @@ class TestSpikeWords:
         assert words.words_table()["n_letters"].tolist() == [1, 1, 2]
         assert words.intervals[0, 1] == pytest.approx(1.03)
 
-    def test_max_isi_above_max_gap_is_refused(self):
-        with pytest.raises(ValueError, match="max_isi <= max_gap"):
-            spike_words([np.array([1.0])], max_isi=0.2, max_gap=0.1)
+    def test_max_isi_above_word_gap_is_refused(self):
+        with pytest.raises(ValueError, match="max_isi <= word_gap"):
+            spike_words([np.array([1.0])], max_isi=0.2, word_gap=0.1)
 
     def test_words_are_candidate_events_for_the_score(self, track):
         """Scoring each word's interval gives the word's letters back."""
         env, rates = track
         spikes = _letters([3, 1, 4, 6, 9, 2, 5], step=0.07)
-        words = spike_words(spikes, max_isi=0.05, max_gap=0.1)
+        words = spike_words(spikes, max_isi=0.05, word_gap=0.1)
         assert words.n_words == 1
         match = best_sequence_match(env, spikes, words.intervals[0], rates)
         np.testing.assert_array_equal(match.letter_units, words.letter_units)
