@@ -33,7 +33,12 @@ from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.replay.significance import _ALTERNATIVES
 
 if TYPE_CHECKING:
-    from neurospatial.replay.methods import ReplayCriterion, ReplayDetectionResult
+    from neurospatial.replay.methods import (
+        ReplayCriterion,
+        ReplayDetectionResult,
+        _CompareEvent,
+        _CompareNeeds,
+    )
 
 __all__ = [
     "BiasSequenceMethod",
@@ -212,6 +217,34 @@ class BiasSequenceMethod:
         from neurospatial.replay.methods import _active_cell_criteria
 
         return _active_cell_criteria(self.min_active_cells)
+
+    @property
+    def _compare_needs(self) -> _CompareNeeds:
+        """The spikes, decoding window and template matrix it scores events on."""
+        from neurospatial.replay.methods import _CompareNeeds
+
+        return _CompareNeeds(
+            "bias-sequence",
+            ("spike_times", "template_bias", "dt"),
+            why="they compare the order of each event's spikes, over the event's "
+            "decoding windows of width dt, with a template's skew-bias matrix",
+            fix="pass the session's spike_times, the template's matrix as "
+            "template_bias (e.g. mean_pairwise_bias(spike_times, theta_cycles)) "
+            "and the decoding window dt",
+        )
+
+    def _compare(
+        self, event: _CompareEvent, rng: np.random.Generator
+    ) -> ReplayDetectionResult:
+        """This method's verdict on one event of ``compare_replay_methods``."""
+        assert event.window is not None and event.template_bias is not None
+        return detect_bias_sequence_replay(
+            event.spike_times,
+            event.window,
+            event.template_bias,
+            bias_sequence_method=self,
+            rng=rng,
+        )
 
 
 def pairwise_bias_matrix(

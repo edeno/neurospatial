@@ -35,7 +35,7 @@ import warnings
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType, SimpleNamespace
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -43,18 +43,15 @@ from numpy.typing import NDArray
 from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, reduce_through_constructor
-from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
+from neurospatial.replay.arms import ArmReplayMethod
 from neurospatial.replay.circular import fit_circular_sequence
 from neurospatial.replay.correlation import weighted_correlation
 from neurospatial.replay.pairwise_order import (
     PairwiseOrderMethod,
-    _FieldSearchTooLargeError,
-    detect_pairwise_order_replay,
 )
 from neurospatial.replay.recurring_sequences import NADASDY_1999
 from neurospatial.replay.sequence_bias import (
     BiasSequenceMethod,
-    detect_bias_sequence_replay,
 )
 from neurospatial.replay.significance import (
     _ALTERNATIVES,
@@ -68,7 +65,6 @@ from neurospatial.replay.template_match import (
     JI_WILSON_2007,
     LEE_WILSON_2002,
     TemplateMatchMethod,
-    detect_template_match_replay,
 )
 from neurospatial.replay.trajectory import (
     _SCORE_DECIMALS,
@@ -1103,6 +1099,51 @@ class ReplayMethod:
         }
         return rebuild, (cls, state)
 
+    @property
+    def _compare_needs(self) -> _CompareNeeds | None:
+        """No input beyond the decoded events (detect_replay checks the rest)."""
+        return None
+
+    def _compare(
+        self, event: _CompareEvent, rng: np.random.Generator
+    ) -> ReplayDetectionResult:
+        """This method's verdict on one event of :func:`compare_replay_methods`."""
+        from neurospatial.decoding import JointDecodingResult
+
+        usable, counts = event.times, event.spike_counts
+        if self.empty_time_bins != "keep" and counts is not None:
+            usable = usable[(counts.sum(axis=1) if counts.ndim == 2 else counts) > 0]
+        if np.unique(usable).size < 2:
+            return _no_verdict(
+                self.name,
+                self.criteria,
+                "fewer than two time bins to score"
+                if self.empty_time_bins == "keep"
+                else "fewer than two time bins with spikes to score",
+            )
+        decoded = event.event
+        return detect_replay(
+            event.env,
+            decoded
+            if isinstance(decoded, JointDecodingResult)
+            else {name: result.posterior for name, result in decoded.items()}
+            if isinstance(decoded, Mapping)
+            else decoded.posterior,
+            event.times,
+            replay_method=self,
+            spike_counts=counts,
+            encoding_models=event.encoding_models,
+            dt=event.dt,
+            prior=event.prior,
+            template=event.template_for(
+                self.template_choice,
+                several=isinstance(decoded, (JointDecodingResult, Mapping)),
+            ),
+            pseudo_event_pool=event.pool,
+            valid_time_bins=event.valid_time_bins,
+            rng=rng,
+        )
+
 
 @dataclass(frozen=True)
 class RankOrderMethod:
@@ -1276,6 +1317,32 @@ class RankOrderMethod:
     def criteria(self) -> tuple[ReplayCriterion, ...]:
         """The active-cell thresholds, as criteria."""
         return _active_cell_criteria(self.min_active_cells, self.min_active_fraction)
+
+    @property
+    def _compare_needs(self) -> _CompareNeeds:
+        """The spikes, rate maps and decoding window it scores each event on."""
+        return _SPIKE_ORDER_NEEDS
+
+    def _compare(
+        self, event: _CompareEvent, rng: np.random.Generator
+    ) -> ReplayDetectionResult:
+        """This method's verdict on one event of :func:`compare_replay_methods`."""
+        if self.test == "pooled_ssi":
+            # Scored with the epoch's other events before any row.
+            return event.pooled[self.name]
+        assert event.window is not None
+        return detect_rank_order_replay(
+            event.env,
+            event.spike_times,
+            event.window,
+            event.encoding_models,
+            rank_order_method=self,
+            template=event.template_for(
+                self.template_choice,
+                several=isinstance(event.encoding_models, Mapping),
+            ),
+            rng=rng,
+        )
 
 
 # Every kind of replay method compare_replay_methods applies.
@@ -3019,6 +3086,62 @@ def _pooled_ssi_verdicts(
     return verdicts
 
 
+class _CompareNeeds(NamedTuple):
+    """Inputs :func:`compare_replay_methods` needs for a kind of method."""
+
+    kind: str
+    inputs: tuple[str, ...]
+    why: str
+    fix: str
+    # Whether each event must be one decode on one environment.
+    one_environment: bool = False
+
+
+_SPIKE_ORDER_NEEDS = _CompareNeeds(
+    "spike-order",
+    ("spike_times", "encoding_models", "dt"),
+    why="they score each cell's spikes in the event against its field, over "
+    "the event's decoding windows of width dt",
+    fix="pass the session's spike_times, the rate maps as encoding_models and "
+    "the decoding window dt",
+)
+
+
+@dataclass(frozen=True, eq=False)
+class _CompareEvent:
+    """One event and the session's inputs, as each method's ``_compare`` reads them.
+
+    ``window`` is the event's spike window (None without ``dt``) and
+    ``pooled`` its pooled-SSI verdicts by method name, scored on the whole
+    epoch.
+    """
+
+    env: Environment | Mapping[str, Environment]
+    event: DecodingResult | JointDecodingResult | Mapping[str, DecodingResult]
+    times: NDArray[np.float64]
+    window: tuple[float, float] | None
+    spike_counts: NDArray[np.int64] | None
+    valid_time_bins: NDArray[np.bool_] | None
+    spike_times: Any
+    encoding_models: Any
+    dt: float | None
+    prior: Any
+    template: str | None
+    arms: Mapping[str, NDArray[np.intp]] | None
+    template_bias: NDArray[np.float64] | None
+    pool: NDArray[np.float64] | None
+    pooled: Mapping[str, ReplayDetectionResult]
+
+    def template_for(self, template_choice: str | None, *, several: bool) -> str | None:
+        """``template``, or None for a method that chooses among ``several``."""
+        return None if several and template_choice is not None else self.template
+
+
+def _spike_window(times: NDArray[np.float64], dt: float) -> tuple[float, float]:
+    """The spikes of an event decoded at ``times`` with windows of width ``dt``."""
+    return float(times[0]) - dt / 2, float(times[-1]) + dt / 2
+
+
 def compare_replay_methods(
     env: Environment | Mapping[str, Environment],
     events: Sequence[
@@ -3173,8 +3296,10 @@ def compare_replay_methods(
         does not have one row per time bin of its event; if a method
         draws pseudo-events or weighted column cycles from joint decodes; or
         if a rank-order, pairwise-order or template-matching method is given without
-        ``spike_times``, ``encoding_models`` or ``dt``, or a bias-sequence
-        method without ``spike_times``, ``template_bias`` or ``dt``.
+        ``spike_times``, ``encoding_models`` or ``dt``, a bias-sequence
+        method without ``spike_times``, ``template_bias`` or ``dt``, or an
+        arm method without ``arms`` or with joint decodes, separately
+        decoded templates or a mapping of environments.
 
     Warns
     -----
@@ -3287,74 +3412,38 @@ def compare_replay_methods(
                 "dataclasses.replace(method, name='diba_alpha_0.05', alpha=0.05)",
             )
         )
-    if any(isinstance(m, ArmReplayMethod) for m in replay_methods):
-        if arms is None:
+    given = {
+        "spike_times": spike_times,
+        "encoding_models": encoding_models,
+        "dt": dt,
+        "arms": arms,
+        "template_bias": template_bias,
+    }
+    by_needs: dict[_CompareNeeds, list[str]] = {}
+    for method in replay_methods:
+        if method._compare_needs is not None:
+            by_needs.setdefault(method._compare_needs, []).append(method.name)
+    for needs, names in by_needs.items():
+        missing = [f"{name}=" for name in needs.inputs if given[name] is None]
+        if missing:
             raise ValueError(
                 _format_error(
-                    "compare_replay_methods(): arm methods need arms=.",
-                    why="they classify replay per arm and per pair of arms",
-                    fix="pass arms={'center': bins, 'left': bins, ...} with each "
-                    "arm's bins from the junction outward",
+                    f"compare_replay_methods(): {needs.kind} methods {names} "
+                    f"need {', '.join(missing)}.",
+                    why=needs.why,
+                    fix=needs.fix,
                 )
             )
-        if isinstance(env, Mapping) or any(
-            isinstance(event, (JointDecodingResult, Mapping)) for event in events
+        if needs.one_environment and (
+            isinstance(env, Mapping)
+            or any(
+                isinstance(event, (JointDecodingResult, Mapping)) for event in events
+            )
         ):
             raise ValueError(
-                "compare_replay_methods(): arm methods take events decoded on "
-                "one environment, not joint decodes, separately decoded "
-                "templates or a mapping of environments."
-            )
-    rank_methods = [m for m in replay_methods if isinstance(m, RankOrderMethod)]
-    spike_methods = [
-        m
-        for m in replay_methods
-        if isinstance(m, (RankOrderMethod, PairwiseOrderMethod, TemplateMatchMethod))
-    ]
-    if spike_methods:
-        missing = [
-            name
-            for name, value in (
-                ("spike_times", spike_times),
-                ("encoding_models", encoding_models),
-                ("dt", dt),
-            )
-            if value is None
-        ]
-        if missing:
-            raise ValueError(
-                _format_error(
-                    f"compare_replay_methods(): spike-order methods "
-                    f"{[m.name for m in spike_methods]} need {missing}.",
-                    why="they score each cell's spikes in the event against its "
-                    "field, over the event's decoding windows of width dt",
-                    fix="pass the session's spike_times, the rate maps as "
-                    "encoding_models and the decoding window dt",
-                )
-            )
-    bias_methods = [m for m in replay_methods if isinstance(m, BiasSequenceMethod)]
-    if bias_methods:
-        missing = [
-            name
-            for name, value in (
-                ("spike_times", spike_times),
-                ("template_bias", template_bias),
-                ("dt", dt),
-            )
-            if value is None
-        ]
-        if missing:
-            raise ValueError(
-                _format_error(
-                    f"compare_replay_methods(): bias-sequence methods "
-                    f"{[m.name for m in bias_methods]} need {missing}.",
-                    why="they compare the order of each event's spikes, over "
-                    "the event's decoding windows of width dt, with a "
-                    "template's skew-bias matrix",
-                    fix="pass the session's spike_times, the template's matrix "
-                    "as template_bias (e.g. mean_pairwise_bias(spike_times, "
-                    "theta_cycles)) and the decoding window dt",
-                )
+                f"compare_replay_methods(): {needs.kind} methods {names} take "
+                "events decoded on one environment, not joint decodes, "
+                "separately decoded templates or a mapping of environments."
             )
     pool = None
     if any(
@@ -3403,56 +3492,56 @@ def compare_replay_methods(
             )
         )
 
-    pooled_verdicts = {}
-    if dt is not None:
-        windows = [
-            (float(t[0]) - dt / 2, float(t[-1]) + dt / 2)
-            for t in (np.asarray(times, dtype=np.float64) for times in event_times)
-        ]
-        for rank_method in rank_methods:
-            if rank_method.test == "pooled_ssi":
-                pooled_verdicts[rank_method.name] = _pooled_ssi_verdicts(
-                    rank_method,
-                    env,
-                    spike_times,
-                    windows,
-                    encoding_models,
-                    template,
-                    [stream_for(index, rank_method) for index in range(len(events))],
-                )
+    windows = (
+        None
+        if dt is None
+        else [_spike_window(np.asarray(times), dt) for times in event_times]
+    )
+    # The pooled SSI test scores each event against the whole epoch's shuffles.
+    pooled: list[dict[str, ReplayDetectionResult]] = [{} for _ in events]
+    for method in replay_methods:
+        if isinstance(method, RankOrderMethod) and method.test == "pooled_ssi":
+            assert windows is not None
+            verdicts = _pooled_ssi_verdicts(
+                method,
+                env,
+                spike_times,
+                windows,
+                encoding_models,
+                template,
+                [stream_for(index, method) for index in range(len(events))],
+            )
+            for event_verdicts, verdict in zip(pooled, verdicts, strict=True):
+                event_verdicts[method.name] = verdict
     rows = []
     for index, event in enumerate(events):
+        compared = _CompareEvent(
+            env=env,
+            event=event,
+            times=np.asarray(event_times[index]),
+            window=None if windows is None else windows[index],
+            spike_counts=None
+            if spike_counts is None
+            else np.asarray(spike_counts[index]),
+            valid_time_bins=None if valid_time_bins is None else valid_time_bins[index],
+            spike_times=spike_times,
+            encoding_models=encoding_models,
+            dt=dt,
+            prior=prior,
+            template=template,
+            arms=arms,
+            template_bias=template_bias,
+            pool=pool,
+            pooled=pooled[index],
+        )
         for method in replay_methods:
             stream = stream_for(index, method)
             # A shuffle test's warning names the event and method it is about.
             with _warnings_with_context(
                 f"compare_replay_methods(): event {index}, method {method.name!r}"
             ):
-                row = _compare_row(
-                    env,
-                    event,
-                    np.asarray(event_times[index]),
-                    method,
-                    spike_counts=None
-                    if spike_counts is None
-                    else np.asarray(spike_counts[index]),
-                    encoding_models=encoding_models,
-                    dt=dt,
-                    prior=prior,
-                    template=template,
-                    valid_time_bins=None
-                    if valid_time_bins is None
-                    else valid_time_bins[index],
-                    spike_times=spike_times,
-                    arms=arms,
-                    template_bias=template_bias,
-                    pool=pool,
-                    pooled=pooled_verdicts[method.name][index]
-                    if method.name in pooled_verdicts
-                    else None,
-                    rng=stream,
-                )
-            rows.append({"event": index, **row})
+                result = method._compare(compared, stream)
+            rows.append({"event": index, **result.summary()})
     table = pd.DataFrame(rows)
     table.attrs["rng_entropy"] = entropy
     return table
@@ -3498,139 +3587,6 @@ def _warnings_with_context(context: str) -> Iterator[None]:
             caught_warning.category,
             stacklevel=4,
         )
-
-
-def _compare_row(
-    env: Environment | Mapping[str, Environment],
-    event: DecodingResult | JointDecodingResult | Mapping[str, DecodingResult],
-    times: NDArray[np.float64],
-    method: _AnyReplayMethod,
-    *,
-    spike_counts: NDArray[np.int64] | None,
-    encoding_models: Any,
-    dt: float | None,
-    prior: Any,
-    template: str | None,
-    valid_time_bins: NDArray[np.bool_] | None,
-    spike_times: Any,
-    arms: Mapping[str, NDArray[np.intp]] | None,
-    template_bias: NDArray[np.float64] | None,
-    pool: NDArray[np.float64] | None,
-    pooled: ReplayDetectionResult | None,
-    rng: np.random.Generator,
-) -> dict[str, Any]:
-    """One method's row of :func:`compare_replay_methods` for one event."""
-    from neurospatial.decoding import JointDecodingResult
-
-    if isinstance(method, ArmReplayMethod):
-        assert arms is not None and not isinstance(env, Mapping)
-        assert not isinstance(event, (JointDecodingResult, Mapping))
-        if np.unique(times).size < 2:
-            return _no_verdict(
-                method.name, (), "fewer than two time bins to score"
-            ).summary()
-        verdict = detect_arm_replay(
-            env, event.posterior, times, arms=arms, arm_replay_method=method
-        )
-        return verdict.summary()
-    if isinstance(method, TemplateMatchMethod):
-        assert dt is not None
-        centers = np.asarray(times, dtype=np.float64)
-        matched = detect_template_match_replay(
-            env,
-            spike_times,
-            (centers[0] - dt / 2, centers[-1] + dt / 2),
-            encoding_models,
-            template_match_method=method,
-            template=None
-            if isinstance(encoding_models, Mapping)
-            and method.template_choice is not None
-            else template,
-            rng=rng,
-        )
-        return matched.summary()
-    if isinstance(method, RankOrderMethod) and pooled is not None:
-        return pooled.summary()
-    if isinstance(method, RankOrderMethod):
-        assert dt is not None
-        centers = np.asarray(times, dtype=np.float64)
-        ranked = detect_rank_order_replay(
-            env,
-            spike_times,
-            (centers[0] - dt / 2, centers[-1] + dt / 2),
-            encoding_models,
-            rank_order_method=method,
-            template=None
-            if isinstance(encoding_models, Mapping)
-            and method.template_choice is not None
-            else template,
-            rng=rng,
-        )
-        return ranked.summary()
-    if isinstance(method, BiasSequenceMethod):
-        assert dt is not None and template_bias is not None
-        centers = np.asarray(times, dtype=np.float64)
-        biased = detect_bias_sequence_replay(
-            spike_times,
-            (centers[0] - dt / 2, centers[-1] + dt / 2),
-            template_bias,
-            bias_sequence_method=method,
-            rng=rng,
-        )
-        return biased.summary()
-    if isinstance(method, PairwiseOrderMethod):
-        assert dt is not None
-        centers = np.asarray(times, dtype=np.float64)
-        try:
-            ordered = detect_pairwise_order_replay(
-                env,
-                spike_times,
-                (centers[0] - dt / 2, centers[-1] + dt / 2),
-                encoding_models,
-                pairwise_order_method=method,
-                rng=rng,
-            )
-        except _FieldSearchTooLargeError:
-            return _no_verdict(
-                method.name,
-                method.criteria,
-                "too many combinations of multi-field cells' fields to search",
-            ).summary()
-        return ordered.summary()
-    usable = times
-    if method.empty_time_bins != "keep" and spike_counts is not None:
-        spiking = (
-            spike_counts.sum(axis=1) if spike_counts.ndim == 2 else spike_counts
-        ) > 0
-        usable = usable[spiking]
-    if np.unique(usable).size < 2:
-        return _no_verdict(
-            method.name,
-            method.criteria,
-            "fewer than two time bins to score"
-            if method.empty_time_bins == "keep"
-            else "fewer than two time bins with spikes to score",
-        ).summary()
-    several = isinstance(event, (JointDecodingResult, Mapping))
-    result = detect_replay(
-        env,
-        event
-        if isinstance(event, JointDecodingResult)
-        else {name: decoded.posterior for name, decoded in event.items()}
-        if isinstance(event, Mapping)
-        else event.posterior,
-        times,
-        replay_method=method,
-        spike_counts=spike_counts,
-        encoding_models=encoding_models,
-        dt=dt,
-        prior=prior,
-        template=None if several and method.template_choice is not None else template,
-        pseudo_event_pool=pool,
-        valid_time_bins=valid_time_bins,
-        rng=rng,
-    )
-    return result.summary()
 
 
 # --------------------------------------------------------------------------

@@ -34,7 +34,12 @@ from neurospatial.replay.rank_order import _supported_rates, _validated_interval
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
-    from neurospatial.replay.methods import ReplayCriterion, ReplayDetectionResult
+    from neurospatial.replay.methods import (
+        ReplayCriterion,
+        ReplayDetectionResult,
+        _CompareEvent,
+        _CompareNeeds,
+    )
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 __all__ = [
@@ -265,6 +270,37 @@ class PairwiseOrderMethod:
         from neurospatial.replay.methods import _active_cell_criteria
 
         return _active_cell_criteria(self.min_active_cells)
+
+    @property
+    def _compare_needs(self) -> _CompareNeeds:
+        """The spikes, rate maps and decoding window it scores each event on."""
+        from neurospatial.replay.methods import _SPIKE_ORDER_NEEDS
+
+        return _SPIKE_ORDER_NEEDS
+
+    def _compare(
+        self, event: _CompareEvent, rng: np.random.Generator
+    ) -> ReplayDetectionResult:
+        """This method's verdict on one event of ``compare_replay_methods``."""
+        from neurospatial.replay.methods import _no_verdict
+
+        assert event.window is not None
+        try:
+            return detect_pairwise_order_replay(
+                event.env,
+                event.spike_times,
+                event.window,
+                event.encoding_models,
+                pairwise_order_method=self,
+                rng=rng,
+            )
+        except _FieldSearchTooLargeError:
+            # A direct call refuses the event; a comparison gives it no verdict.
+            return _no_verdict(
+                self.name,
+                self.criteria,
+                "too many combinations of multi-field cells' fields to search",
+            )
 
 
 def pairwise_order_score(

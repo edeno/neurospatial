@@ -53,7 +53,12 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from neurospatial.environment import Environment
-    from neurospatial.replay.methods import ReplayCriterion, ReplayDetectionResult
+    from neurospatial.replay.methods import (
+        ReplayCriterion,
+        ReplayDetectionResult,
+        _CompareEvent,
+        _CompareNeeds,
+    )
 
 __all__ = [
     "JI_WILSON_2007",
@@ -278,6 +283,31 @@ class TemplateMatchMethod:
         from neurospatial.replay.methods import _active_cell_criteria
 
         return _active_cell_criteria(self.min_active_cells)
+
+    @property
+    def _compare_needs(self) -> _CompareNeeds:
+        """The spikes, rate maps and decoding window it scores each event on."""
+        from neurospatial.replay.methods import _SPIKE_ORDER_NEEDS
+
+        return _SPIKE_ORDER_NEEDS
+
+    def _compare(
+        self, event: _CompareEvent, rng: np.random.Generator
+    ) -> ReplayDetectionResult:
+        """This method's verdict on one event of ``compare_replay_methods``."""
+        assert event.window is not None
+        return detect_template_match_replay(
+            event.env,
+            event.spike_times,
+            event.window,
+            event.encoding_models,
+            template_match_method=self,
+            template=event.template_for(
+                self.template_choice,
+                several=isinstance(event.encoding_models, Mapping),
+            ),
+            rng=rng,
+        )
 
 
 def detect_template_match_replay(

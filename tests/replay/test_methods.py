@@ -1707,7 +1707,7 @@ class TestRankOrderMethods:
             rng=0,
         )
         assert table["score"].iloc[1] == pytest.approx(expected.score)
-        with pytest.raises(ValueError, match="need \\['spike_times'\\]"):
+        with pytest.raises(ValueError, match="need spike_times=\\."):
             compare_replay_methods(
                 env,
                 [decoded],
