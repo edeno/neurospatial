@@ -220,6 +220,45 @@ def test_min_events_gives_an_error_row(reactivated: EventSession) -> None:
     assert (table.loc[table["method"] == "enough", "error"] == "").all()
 
 
+@pytest.mark.parametrize(
+    "method",
+    [
+        LIU_2023_EV,
+        LIU_2023_PAIRWISE,
+        OLIVA_2020_EV,
+        ROBINSON_2026_PAIRWISE,
+        dataclasses.replace(EL_GABY_2021, min_events=None),
+        dataclasses.replace(LIU_2023_ASSEMBLY, **WHOLE),
+    ],
+    ids=lambda method: method.name,
+)
+@pytest.mark.parametrize("empty", ["outside", "none_given"])
+def test_a_window_without_events_is_an_error_row(
+    reactivated: EventSession, method: ReactivationMethod, empty: str
+) -> None:
+    """No match event in the window: the method's row says so, and the
+    other methods' rows are kept."""
+    data = reactivated
+    # Events of rest before only, none starting in rest after; or none at all.
+    match_events = data.control_events if empty == "outside" else np.empty((0, 2))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        table = _compare(
+            data,
+            [
+                dataclasses.replace(OLIVA_2020_EV, name="other", rest_bins="fixed"),
+                method,
+            ],
+            match_events=match_events,
+        )
+    failed = table[table["method"] == method.name]
+    assert len(failed) == 1
+    assert "no match_events start inside the match window" in failed["error"].iloc[0]
+    assert failed["value"].isna().all()
+    other = table[table["method"] == "other"]
+    assert (other["error"] == "").all() and other["value"].notna().all()
+
+
 # ---------------------------------------------------------------------------
 # Member co-firing (El-Gaby et al. 2021)
 # ---------------------------------------------------------------------------
@@ -504,6 +543,8 @@ def test_simulated_session_returns_its_bursts_as_events() -> None:
         (EL_GABY_2021, {"member_threshold": None}, "needs a finite member_threshold"),
         (HARVEY_2023_ASSEMBLY, {"member_threshold": 2.0}, "member_threshold=None"),
         (OLIVA_2020_ASSEMBLY, {"min_events": 10}, "min_events must be"),
+        (EL_GABY_2021, {"min_events": 200.0}, "min_events must be"),
+        (EL_GABY_2021, {"min_events": True}, "min_events must be"),
         (
             OLIVA_2020_ASSEMBLY,
             {"statistic": "event_response_difference"},
@@ -511,6 +552,27 @@ def test_simulated_session_returns_its_bursts_as_events() -> None:
         ),
         (LIU_2023_ASSEMBLY, {"test": "event_modulation"}, "baseline_window"),
         (CHANG_2025_ASSEMBLY, {"activation_step": 0.03}, "must divide bin_size"),
+        # R(t) every 250 ms: lags -0.5, -0.25, 0 and 0.25 s.
+        (
+            CHANG_2025_ASSEMBLY,
+            {
+                "bin_size": 0.25,
+                "activation_step": None,
+                "event_response": EventResponse(
+                    response_window=(0.05, 0.2), baseline_window=(-0.5, -0.1)
+                ),
+            },
+            r"response_window=\(0.05, 0.2\) holds no lag",
+        ),
+        (
+            CHANG_2025_ASSEMBLY,
+            {
+                "bin_size": 0.25,
+                "activation_step": None,
+                "event_response": EventResponse(baseline_window=(-0.2, -0.1)),
+            },
+            r"baseline_window=\(-0.2, -0.1\) holds no lag",
+        ),
         (OLIVA_2020_EV, {"zscore_over": "control_and_match"}, "do not apply"),
         (EL_GABY_2021, {"smoothing_bandwidth": 0.01}, "do not apply"),
         (OLIVA_2020_EV, {"statistic": "event_response_ratio"}, "does not fit measure"),
@@ -541,3 +603,47 @@ def test_needs_events_names_the_arguments() -> None:
 def test_regions_are_required_for_per_region_detection(reactivated) -> None:
     with pytest.raises(ValueError, match=r"unit_groups has no \['region'\]"):
         _compare(reactivated, [ROBINSON_2026_ASSEMBLY], unit_groups={})
+
+
+def test_a_region_too_small_to_detect_in_is_skipped(reactivated) -> None:
+    """Two units in one region: its patterns are left out with a warning,
+    and the other region's and the cross-region patterns are kept."""
+    regions = np.where(np.arange(len(reactivated.spike_times)) < 22, "CA1", "PFC")
+    with pytest.warns(UserWarning, match="units of PFC.*left out"):
+        table = _compare(
+            reactivated, [ROBINSON_2026_ASSEMBLY], unit_groups={"region": regions}
+        )
+    assert (table["error"] == "").all()
+    assert "CA1" in set(table["region"])
+    assert set(table["region"]) <= {"CA1", "cross_region"}
+    for members, region in zip(table["member_unit_ids"], table["region"], strict=True):
+        if region == "CA1":
+            assert max(members) < 22
+
+
+def test_every_region_too_small_is_an_error_row(reactivated) -> None:
+    regions = np.arange(len(reactivated.spike_times)) // 2
+    per_region = dataclasses.replace(
+        ROBINSON_2026_ASSEMBLY, name="per_region", detection_units="each_region"
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        table = _compare(reactivated, [per_region], unit_groups={"region": regions})
+    assert len(table) == 1
+    assert "detection failed in every region" in table["error"].iloc[0]
+
+
+@pytest.mark.parametrize(
+    "method", [HARVEY_2023_ASSEMBLY, LIU_2023_ASSEMBLY], ids=lambda m: m.name
+)
+def test_sleep_shorter_than_an_hour_is_used_whole(reactivated, method) -> None:
+    """Like the labs' code, the hour-long recipes use all of a shorter sleep."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        table = _compare(reactivated, [method])
+        whole = _compare(reactivated, [dataclasses.replace(method, **WHOLE)])
+    assert (table["error"] == "").all()
+    np.testing.assert_allclose(
+        table["window_duration"], np.diff(reactivated.match[0])[0]
+    )
+    pd.testing.assert_frame_equal(table, whole)

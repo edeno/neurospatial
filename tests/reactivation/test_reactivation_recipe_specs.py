@@ -140,13 +140,14 @@ SPEC: dict[str, dict[str, Any]] = {
         "rest_bins": "events",
         "statistic": "ev_minus_rev",
     },
-    # Oliva et al. (2020): 20 ms bins, Gaussian SD 10 ms, threshold 5, mean
-    # expression post - pre.
+    # Oliva et al. (2020): 20 ms bins z-scored over the whole session,
+    # Gaussian SD 10 ms, threshold 5, mean expression post - pre.
     "oliva_2020_assembly": {
         "measure": "assembly",
         "bin_size": 0.02,
         "detection": "ica",
         "smoothing_bandwidth": 0.01,
+        "zscore_over": "all_periods",
         "activation_threshold": 5.0,
         "statistic": "mean_activation_difference",
     },
@@ -168,8 +169,12 @@ SPEC: dict[str, dict[str, Any]] = {
     "harvey_2023_assembly": {
         "measure": "assembly",
         "bin_size": 0.025,
-        "control_windows": ReactivationWindows(length=3600.0, count=1, clock="wall"),
-        "match_windows": ReactivationWindows(length=3600.0, count=1, clock="wall"),
+        "control_windows": ReactivationWindows(
+            length=3600.0, count=1, clock="wall", allow_shorter=True
+        ),
+        "match_windows": ReactivationWindows(
+            length=3600.0, count=1, clock="wall", allow_shorter=True
+        ),
         "detection": "ica",
         "member_rule": "otsu",
         "member_threshold": None,
@@ -204,8 +209,12 @@ SPEC: dict[str, dict[str, Any]] = {
     "liu_2023_assembly": {
         "measure": "assembly",
         "bin_size": 0.025,
-        "control_windows": ReactivationWindows(length=3600.0, anchor="end", count=1),
-        "match_windows": ReactivationWindows(length=3600.0, count=1),
+        "control_windows": ReactivationWindows(
+            length=3600.0, anchor="end", count=1, allow_shorter=True
+        ),
+        "match_windows": ReactivationWindows(
+            length=3600.0, count=1, allow_shorter=True
+        ),
         "detection": "ica",
         "member_rule": "positive_z",
         "member_threshold": 2.0,

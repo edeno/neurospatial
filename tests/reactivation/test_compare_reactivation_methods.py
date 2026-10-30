@@ -128,14 +128,38 @@ class TestReactivationWindows:
         assert rule.split([[0.0, 500.0]]) == []
         assert len(ReactivationWindows(length=600.0, count=3).split([[0, 6000.0]])) == 3
 
+    @pytest.mark.parametrize("clock", ["concatenated", "wall"])
+    @pytest.mark.parametrize("anchor", ["start", "end"])
+    def test_allow_shorter_keeps_a_short_period_whole(
+        self, clock: str, anchor: str
+    ) -> None:
+        rule = ReactivationWindows(
+            length=3600.0, count=1, anchor=anchor, clock=clock, allow_shorter=True
+        )
+        # 800 s of epochs over 900 s of clock: shorter than the hour either way.
+        windows = rule.split(self.epochs)
+        assert len(windows) == 1
+        np.testing.assert_array_equal(windows[0], self.epochs)
+        # A long period still gives the whole first or last hour.
+        long = rule.split([[0.0, 5000.0]])
+        expected = [[0.0, 3600.0]] if anchor == "start" else [[1400.0, 5000.0]]
+        assert [w.tolist() for w in long] == [expected]
+        # Remainders after whole windows are still dropped.
+        blocks = ReactivationWindows(length=600.0, allow_shorter=True)
+        assert len(blocks.split([[0.0, 1700.0]])) == 2
+
     @pytest.mark.parametrize(
         ("options", "message"),
         [
             ({"length": -1.0}, "length must be a positive"),
             ({"step": 10.0}, "need length"),
+            ({"allow_shorter": True}, "need length"),
+            ({"length": 10.0, "allow_shorter": 1}, "allow_shorter must be"),
             ({"length": 10.0, "anchor": "middle"}, "anchor must be"),
             ({"length": 10.0, "clock": "sleep"}, "clock must be"),
             ({"length": 10.0, "count": 0}, "count must be a positive"),
+            ({"length": 10.0, "count": 2.0}, "count must be a positive"),
+            ({"length": 10.0, "count": True}, "count must be a positive"),
         ],
     )
     def test_invalid_options(self, options: dict, message: str) -> None:
@@ -157,6 +181,8 @@ class TestReactivationWindows:
         ({"test": "cell_identity_shuffle"}, "does not fit measure"),
         ({"percentile": 99.0}, "do not apply to explained_variance methods"),
         ({"n_shuffles": 0}, "n_shuffles must be a positive integer"),
+        ({"n_shuffles": 20.0}, "n_shuffles must be a positive integer"),
+        ({"n_shuffles": True}, "n_shuffles must be a positive integer"),
         ({"alpha": 1.0}, r"alpha must be in \(0, 1\)"),
     ],
 )
@@ -474,6 +500,24 @@ def test_a_period_shorter_than_a_window_is_an_error_row(reactivated) -> None:
     assert "shorter than one 600 s window" in kudrimoti["error"].iloc[0]
     assert np.isnan(kudrimoti["value"].iloc[0])
     assert (table.loc[table["method"] == "peyrache_2010", "error"] == "").all()
+
+
+def test_two_units_are_an_error_row_for_every_measure() -> None:
+    """Two units hold one pair: EV and pattern methods report it in rows."""
+    rng = np.random.default_rng(0)
+    trains = [np.sort(rng.uniform(0, 3600, 3000)) for _ in range(2)]
+    table = compare_reactivation_methods(
+        trains,
+        [[1200.0, 2400.0]],
+        [[2400.0, 3600.0]],
+        [[0.0, 1200.0]],
+        reactivation_methods=[PEYRACHE_FAST, PENNARTZ_2004],
+        rng=0,
+    )
+    errors = table.set_index("method")["error"]
+    assert "at least 3 pairs" in errors["pennartz_2004"]
+    assert "2 units hold 1 pair" in errors["pennartz_2004"]
+    assert "at least 3 neurons" in errors["peyrache_2010"]
 
 
 def test_input_errors(reactivated) -> None:
