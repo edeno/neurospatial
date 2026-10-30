@@ -49,9 +49,11 @@ class RankOrderResult(ReadOnlyArraysMixin, ResultMixin):
         Foster & Wilson (2006) above that. MATLAB's ``corr``, used in the
         Bendor-lab analyses, also uses the exact distribution for small
         samples. ``spike_statistic="all_spikes"`` breaks
-        the independence (a cell's spikes share one field position), and
-        Takigawa et al. (2024) found about 17% false positives with this
-        p-value there; use :func:`rank_order_significance` instead.
+        the independence (a cell's spikes share one field position):
+        Takigawa et al. (2024) found about 17% false positives with every
+        spike when spikes were permuted one by one, which, like this
+        p-value, treats them as independent. Use
+        :func:`rank_order_significance` instead.
     n_active_cells : int
         Cells with a place field that fired at least once in the event.
     active_units : NDArray[np.intp], shape (n_active_cells,)
@@ -161,8 +163,9 @@ def rank_order_correlation(
         - ``"mean"``: mean spike time (Chenani et al. 2019).
         - ``"all_spikes"``: every spike, each paired with its cell's field
           position (Silva et al. 2015). Takigawa et al. found a
-          false-positive rate near 17% with it when significance came from
-          the analytic p-value, which treats each spike as independent; the
+          false-positive rate near 17%
+          with it when spikes were permuted one by one, which, like the
+          analytic p-value, treats each spike as independent; the
           cell-order permutation test of :func:`rank_order_significance`
           keeps a cell's spikes together and holds its false-positive rate.
     field_order : {"peak", "center"}, default="peak"
@@ -396,7 +399,11 @@ def rank_order_significance(
     test = ShuffleTestResult(
         observed_score=observed.score,
         null_scores=null,
-        p_value=compute_shuffle_pvalue(observed.score, null, tail=alternative),
+        # Ties in rho differ by rounding between spearmanr and the matrix
+        # formula of the shuffles.
+        p_value=compute_shuffle_pvalue(
+            round(observed.score, 12), np.round(null, 12), tail=alternative
+        ),
         z_score=compute_shuffle_zscore(observed.score, null),
         shuffle_type="cell_order",
         n_shuffles=n_shuffles,

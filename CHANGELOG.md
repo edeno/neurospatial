@@ -127,25 +127,34 @@ New `RankOrderMethod` records a published rank-order test, and
 `detect_rank_order_replay(env, spike_times, interval, encoding_models,
 rank_order_method=...)` applies it to one event. Each method records:
 
-- which spike times count;
-- how fields are ordered;
-- the fewest active cells, as a count and as a fraction of the template
-  cells;
-- the analytic p-value or a number of cell-order permutations, with the
-  test's side and α.
+- which spike times count, and how fields are ordered;
+- which cells form the template, by peak rate (`min_peak_rate`);
+- the fewest active template cells, as a count and as a fraction;
+- the t-distribution test of rho, or a number of cell-order permutations,
+  with the test's side and α;
+- with one set of rate maps per running direction, how the tested template
+  is chosen (`template_choice`).
 
 The recipes are:
 
-- `FOSTER_WILSON_2006`: every spike against its cell's field peak, with the
-  analytic p-value, and a third of the probe cells active. Takigawa et al.
-  (2024) found about 17% false positives with this combination.
-- `DIBA_BUZSAKI_2007`: first spikes, 500 cell-order permutations, more
-  extreme than 95% of shuffles in either direction (a two-sided p below
-  0.10), and at least 5 cells and 30% of the place cells active.
+- `FOSTER_WILSON_2006`: every spike against its cell's field peak, with
+  Numerical Recipes' t-distribution p below 0.05, and a third of the
+  ≥ 5 Hz probe cells active. The paper does not say which spikes it used,
+  and the notes give the alternatives.
+- `DIBA_BUZSAKI_2007`: first spikes, 500 cell-order permutations, and a
+  correlation more extreme than 95% of the shuffles in either direction (a
+  two-sided p below 0.10). At least 5 and at least 30% of the ≥ 5 Hz
+  template cells must be active. With both directions' templates, the
+  template on which the event is replay with more active cells is reported.
 
 `compare_replay_methods(..., spike_times=)` puts rank-order and decoded
 methods in one table. A rank-order method scores each event's spikes from
 the first decoding window's start to the last window's end.
+
+`rank_order_significance` now counts shuffles whose correlation ties the
+event's as at least as extreme. The event's rho and the shuffles' rho are
+computed by different formulas and could differ by rounding, so ties were
+missed on events with few cells and p-values came out too small.
 
 ### Replay recipes on joint decodes; Mallory et al. (2025)
 
