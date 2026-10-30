@@ -231,6 +231,20 @@ def _measured(
 ) -> tuple[Environment, NDArray[np.float64], Any]:
     """The environment, posterior and times an event is measured on."""
     from neurospatial.decoding import JointDecodingResult
+    from neurospatial.replay.methods import _environment_mismatch
+
+    def checked(chosen: Environment, decoded: Environment) -> Environment:
+        mismatch = _environment_mismatch(chosen, decoded)
+        if mismatch is not None:
+            raise ValueError(
+                _format_error(
+                    f"{operation}: env differs from the environment event "
+                    f"{index} was decoded on in {mismatch}.",
+                    why="positions and distances would be read on other bins",
+                    fix="pass the environment the events were decoded on",
+                )
+            )
+        return chosen
 
     if not isinstance(event, JointDecodingResult):
         if isinstance(env, Mapping):
@@ -238,8 +252,8 @@ def _measured(
                 raise ValueError(
                     f"{operation}: a mapping of environments needs template=."
                 )
-            return env[template], event.posterior, event.times
-        return env, event.posterior, event.times
+            return checked(env[template], event.env), event.posterior, event.times
+        return checked(env, event.env), event.posterior, event.times
     names = event.template_names
     if template is not None:
         if template not in names:
@@ -248,17 +262,14 @@ def _measured(
                 f"in event {index}."
             )
         chosen = env[template] if isinstance(env, Mapping) else env
-        return chosen, event.joint(template), event.conditional[template].times
+        return (
+            checked(chosen, event.conditional[template].env),
+            event.joint(template),
+            event.conditional[template].times,
+        )
     envs = [event.conditional[name].env for name in names]
     first = envs[0]
-    shared = all(
-        other is first
-        or (
-            other.n_bins == first.n_bins
-            and np.allclose(other.bin_centers, first.bin_centers)
-        )
-        for other in envs[1:]
-    )
+    shared = all(_environment_mismatch(other, first) is None for other in envs[1:])
     if not shared or isinstance(env, Mapping):
         raise ValueError(
             _format_error(
@@ -269,7 +280,7 @@ def _measured(
             )
         )
     posterior = np.sum([event.joint(name) for name in names], axis=0)
-    return env, posterior, event.conditional[names[0]].times
+    return checked(env, first), posterior, event.conditional[names[0]].times
 
 
 def detection_rates(
