@@ -2257,9 +2257,13 @@ DAVIDSON_2009 = ReplayMethod(
         "Band of 15 cm and speeds up to 30 m/s, as in detect_trajectory_radon.",
         "Significant when the p-value of every null is below 0.01.",
         "The paper decoded position x direction jointly in 20 ms windows and "
-        "summed over direction; decode the same way and pass the summed "
-        "posterior. template_choice='sum' is not used because the unit-"
-        "identity null decodes again.",
+        "summed over direction. The unit-identity null decodes the shuffled "
+        "counts again, which reproduces only a posterior decoded on one set "
+        "of rate maps, so the summed posterior is refused with it (and "
+        "template_choice='sum' is not used). Either decode on one set of "
+        "rate maps and pass that posterior, or drop the null with "
+        "dataclasses.replace(DAVIDSON_2009, nulls=('column_cycle', "
+        "'pseudo_event')) and pass the summed posterior.",
         "Candidate events of at least 100 ms; event selection is not applied here.",
         "Pseudo-events draw from the complete set of candidate events.",
     ),
