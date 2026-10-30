@@ -31,6 +31,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
 from neurospatial.replay.rank_order import (
+    _BLOCK_VALUES,
     _pooled_spikes,
     _spikes_in,
     _validated_interval,
@@ -803,15 +804,27 @@ def _significance(
 
     n_units = len(template)
     bias, counts = _skew_bias(times, labels, n_units)
-    observed = float(_cosines(template, bias[np.newaxis])[0])
-    generator = _ensure_rng(rng)
-    shuffled = np.stack(
-        [
-            _skew_bias(times, generator.permutation(labels), n_units)[0]
-            for _ in range(n_shuffles)
-        ]
+    # A unit silent in the event has no defined pair, in the event or in any
+    # shuffle (permuting the labels keeps each unit's spike count), so the
+    # matrices are scored over the active units only.
+    active = np.flatnonzero(counts > 0)
+    active_labels = np.searchsorted(active, labels)
+    active_template = template[np.ix_(active, active)]
+    observed = float(
+        _cosines(active_template, bias[np.ix_(active, active)][np.newaxis])[0]
     )
-    null = _cosines(template, shuffled)
+    generator = _ensure_rng(rng)
+    null = np.empty(n_shuffles)
+    # Blocks of shuffles bound the memory of the stacked matrices.
+    block = max(1, _BLOCK_VALUES // max(active.size**2, 1))
+    for start in range(0, n_shuffles, block):
+        shuffled = np.stack(
+            [
+                _skew_bias(times, generator.permutation(active_labels), active.size)[0]
+                for _ in range(start, min(start + block, n_shuffles))
+            ]
+        )
+        null[start : start + block] = _cosines(active_template, shuffled)
     defined = null[np.isfinite(null)]
     if np.isfinite(observed) and defined.size:
         statistic = np.abs if use_absolute else np.asarray
