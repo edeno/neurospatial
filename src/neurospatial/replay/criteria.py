@@ -159,25 +159,73 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
     space_fractions: NDArray[np.float64]
     metric: str
     units: str | None
-    n_time_bins: int
     duration: float
     track_length: float
-    max_map_jump: float
-    max_mean_jump: float
-    mean_mean_jump: float
     map_range: float
     mean_range: float
     start_to_end_map_distance: float
-    start_to_end_mean_distance: float
-    map_path_length: float
-    dispersion: float
-    mean_spread: float
-    mean_peak_probability: float
-    empty_fraction: float
 
     def __post_init__(self) -> None:
         """Own read-only copies of the arrays."""
         self._own_arrays()
+
+    # The scalars below follow from the arrays; the others need the times,
+    # the track or the bin distances, which the result does not keep.
+
+    @property
+    def n_time_bins(self) -> int:
+        """Number of time bins in the event."""
+        return len(self.map_bins)
+
+    @property
+    def max_map_jump(self) -> float:
+        """Largest of ``map_jumps``; NaN with one time bin."""
+        return _max_or_nan(self.map_jumps)
+
+    @property
+    def max_mean_jump(self) -> float:
+        """Largest of ``mean_jumps``; NaN with one time bin."""
+        return _max_or_nan(self.mean_jumps)
+
+    @property
+    def mean_mean_jump(self) -> float:
+        """Mean of ``mean_jumps``; NaN with one time bin."""
+        jumps = self.mean_jumps
+        return float(np.mean(jumps)) if len(jumps) else np.nan
+
+    @property
+    def start_to_end_mean_distance(self) -> float:
+        """Euclidean distance between the first and last posterior means."""
+        means = self.mean_positions
+        return float(np.linalg.norm(means[-1] - means[0]))
+
+    @property
+    def map_path_length(self) -> float:
+        """Sum of ``map_jumps``."""
+        return float(np.sum(self.map_jumps))
+
+    @property
+    def dispersion(self) -> float:
+        """Root-mean-square distance of the posterior means from their average."""
+        deviations = self.mean_positions - self.mean_positions.mean(axis=0)
+        return float(np.sqrt(np.mean(np.sum(deviations**2, axis=1))))
+
+    @property
+    def mean_spread(self) -> float:
+        """Mean of ``spread`` over time bins."""
+        return float(np.mean(self.spread))
+
+    @property
+    def mean_peak_probability(self) -> float:
+        """Mean of ``peak_probability`` over time bins."""
+        return float(np.mean(self.peak_probability))
+
+    @property
+    def empty_fraction(self) -> float:
+        """Fraction of time bins without spikes; NaN without ``spike_counts``."""
+        if self.empty_time_bins is None:
+            return np.nan
+        return float(np.mean(self.empty_time_bins))
 
     def well_decoded_fraction(
         self, threshold: float = 5.0, *, chance_bins: int | None = None
@@ -530,7 +578,6 @@ def _trajectory_metrics(
             mean_range = float(np.ptp(posterior @ along))
 
     sizes = np.asarray(env.bin_sizes, dtype=np.float64)
-    deviations = means - means.mean(axis=0)
     metrics = TrajectoryMetrics(
         map_bins=bins,
         map_positions=centers[bins],
@@ -544,23 +591,11 @@ def _trajectory_metrics(
         space_fractions=sizes / sizes.sum(),
         metric=metric,
         units=env.units,
-        n_time_bins=len(raw),
         duration=float(times[-1] - times[0]),
         track_length=track_length,
-        max_map_jump=_max_or_nan(map_jumps),
-        max_mean_jump=_max_or_nan(mean_jumps),
-        mean_mean_jump=float(np.mean(mean_jumps)) if len(mean_jumps) else np.nan,
         map_range=map_range,
         mean_range=mean_range,
         start_to_end_map_distance=float(between[rows_of[0], rows_of[-1]]),
-        start_to_end_mean_distance=float(np.linalg.norm(means[-1] - means[0])),
-        map_path_length=float(np.sum(map_jumps)),
-        dispersion=float(np.sqrt(np.mean(np.sum(deviations**2, axis=1)))),
-        mean_spread=float(np.mean(spread)),
-        mean_peak_probability=float(np.mean(raw[rows, bins])),
-        empty_fraction=(
-            np.nan if empty_time_bins is None else float(np.mean(empty_time_bins))
-        ),
     )
     return metrics, (between, rows_of)
 
