@@ -107,7 +107,8 @@ class ReplayCriterion:
     quantity : str
         ``"score"`` (the method's score), ``"n_active_cells"`` (cells with a
         spike anywhere in the event, also for a method with a
-        segmentation), a scalar of
+        segmentation), ``"active_fraction"`` (``n_active_cells`` over the
+        columns of ``spike_counts``), a scalar of
         :class:`~neurospatial.replay.TrajectoryMetrics`, such as
         ``"max_map_jump"``, or, for a method with a
         :class:`ReplaySegmentation`, a value of the tested segment:
@@ -417,8 +418,10 @@ class ReplayMethod:
         the posterior summed over the templates, which must share one
         environment, such as the two running directions of a joint position
         x direction decode (Berners-Lee et al. 2022); the result has no
-        ``template``, and nulls that decode again cannot be used. None
-        needs ``template=``.
+        ``template``, and nulls that decode again cannot be used. An
+        explicit ``template=`` tests that template instead, and a posterior
+        given as an array is scored as it is, so pass the joint decode.
+        None needs ``template=``.
     exclude_end_distance : float
         Distance, in the method's ``units``, left out at each end of each
         template's track when the templates are compared: by
@@ -800,7 +803,8 @@ class ReplayDetectionResult(ResultMixin):
         its rows.
     template : str or None
         The tested template of a joint decode, chosen or given as
-        ``template=``; None for an event decoded on one set of rate maps.
+        ``template=``; None for an event decoded on one set of rate maps and
+        for a joint decode's summed posterior (``template_choice="sum"``).
     """
 
     method: str
@@ -930,7 +934,8 @@ def detect_replay(
         decoding inputs or a pseudo-event pool); if the method's
         ``units`` are not the environment's; if a joint decode is given
         without ``template=`` to a method without a ``template_choice``, or
-        a template criterion is used without a joint decode; if
+        a template criterion is used without a joint decode; if a summed
+        joint decode's templates are on different environments; if
         ``valid_time_bins`` is
         given with a segment-detection test whose nulls move time bins; or
         for inputs the score, the shuffles,
@@ -980,6 +985,7 @@ def detect_replay(
 
     joint = posterior if isinstance(posterior, JointDecodingResult) else None
     event_values: dict[str, float] = {}
+    summed = False
     if joint is not None:
         needs_fractions = replay_method.template_choice == "most_posterior" or any(
             c.quantity == "template_fraction" for c in replay_method.criteria
@@ -998,6 +1004,8 @@ def detect_replay(
                 other = joint.conditional[name].env
                 if other is not joint_env and (
                     other.n_bins != joint_env.n_bins
+                    or other.units != joint_env.units
+                    or other.bin_centers.shape != joint_env.bin_centers.shape
                     or not np.allclose(other.bin_centers, joint_env.bin_centers)
                 ):
                     raise ValueError(
@@ -1054,7 +1062,11 @@ def detect_replay(
                 )
             )
 
-    if isinstance(env, Mapping):
+    if isinstance(env, Mapping) and summed:
+        # The summed templates share one environment.
+        assert joint is not None
+        track_env = env[joint.template_names[0]]
+    elif isinstance(env, Mapping):
         if template is None:
             raise ValueError(
                 _format_error(
@@ -1108,10 +1120,16 @@ def detect_replay(
         )
     if counts is not None:
         event_values["n_active_cells"] = float(np.sum(counts.sum(axis=0) > 0))
+        event_values["active_fraction"] = event_values["n_active_cells"] / max(
+            counts.shape[1], 1
+        )
     segmentation = replay_method.segmentation
     needs_counts = (
         replay_method.empty_time_bins != "keep"
-        or any(c.quantity == "n_active_cells" for c in replay_method.criteria)
+        or any(
+            c.quantity in ("n_active_cells", "active_fraction")
+            for c in replay_method.criteria
+        )
         or (
             segmentation is not None
             and segmentation.min_active_cells_per_time_bin is not None
@@ -1206,7 +1224,7 @@ def detect_replay(
                 template=template,
             )
         rows = segments.rows(segment)
-        if joint is not None:
+        if joint is not None and not summed:
             on_trajectory = segments.trajectory_time_bins[rows]
             masses = {
                 name: float(np.sum(joint.joint(name)[rows][on_trajectory]))
@@ -1270,7 +1288,13 @@ def detect_replay(
 
     needs_metrics = any(
         c.quantity
-        not in ("score", "n_active_cells", *_SEGMENT_QUANTITIES, *_TEMPLATE_QUANTITIES)
+        not in (
+            "score",
+            "n_active_cells",
+            "active_fraction",
+            *_SEGMENT_QUANTITIES,
+            *_TEMPLATE_QUANTITIES,
+        )
         for c in replay_method.criteria
     )
     metrics = (
@@ -2175,7 +2199,9 @@ DAVIDSON_2009 = ReplayMethod(
         "Band of 15 cm and speeds up to 30 m/s, as in detect_trajectory_radon.",
         "Significant when the p-value of every null is below 0.01.",
         "The paper decoded position x direction jointly in 20 ms windows and "
-        "summed over direction; decode the same way to match it.",
+        "summed over direction; decode the same way and pass the summed "
+        "posterior. template_choice='sum' is not used because the unit-"
+        "identity null decodes again.",
         "Candidate events of at least 100 ms; event selection is not applied here.",
         "Pseudo-events draw from the complete set of candidate events.",
     ),
@@ -2326,7 +2352,10 @@ GROSMARK_2016 = ReplayMethod(
     n_shuffles=1000,
     alpha=0.05,
     use_absolute=True,
-    criteria=(ReplayCriterion("n_active_cells", ">=", 5),),
+    criteria=(
+        ReplayCriterion("n_active_cells", ">=", 5),
+        ReplayCriterion("active_fraction", ">=", 0.1),
+    ),
     decoding={"time_bin": 0.02, "position_bin": 2.0, "prior": "uniform"},
     notes=(
         "Weighted correlation of the posterior, its sign giving forward or "
@@ -2334,14 +2363,15 @@ GROSMARK_2016 = ReplayMethod(
         "shuffles, decoded again. The paper reports rZ, |r| z-scored "
         "against the shuffles, and the share of events with p < 0.05 (Fig. "
         "S5C); it states neither the p-value formula nor a per-event "
-        "threshold, so alpha = 0.05 is a reading.",
+        "threshold, so alpha = 0.05 and the test on |r| are readings.",
         "The paper shifted each cell's unsmoothed rate map and smoothed it "
         "again; here the given rate maps are shifted.",
         "Each running direction had its own decoder; an event's direction "
         "was the larger Pr(direction | spikes) from each direction's mean "
         "rates over the event (Eq. 6). Decode with that direction's maps.",
         "Events lasted at least 100 ms with at least max(10% of place "
-        "cells, 5) firing; the 5-cell rule is applied, the others are "
+        "cells, 5) firing; the cell rule is applied (pass the place cells' "
+        "spike counts, so the fraction counts place cells), the duration is "
         "event selection.",
         "Secondary nulls: 1,000 time-bin permutations; cell identity (Fig. S7).",
     ),
@@ -2355,10 +2385,6 @@ AMBROSE_2016 = ReplayMethod(
         "reward. Neuron, 91(5), 1124-1136."
     ),
     score=weighted_correlation,
-    nulls=("column_cycle",),
-    n_shuffles=1500,
-    alpha=0.05,
-    use_absolute=True,
     criteria=(ReplayCriterion("score", ">", 0.6, absolute=True),),
     decoding={
         "time_bin": 0.02,
@@ -2368,18 +2394,18 @@ AMBROSE_2016 = ReplayMethod(
     },
     notes=(
         "Candidate events whose posterior's weighted correlation exceeded "
-        "0.6 were replay events; the absolute value is used, since forward "
-        "and reverse replays both count. Decode with rate maps from both "
-        "running directions together.",
-        "Replays were confirmed against 1,500 shuffles of the posterior, "
-        "p = (k + 1) / 1501 < 0.05. The paper does not name the shuffle or "
-        "say whether k counts shuffles above 0.6 or above the event; here "
-        "column-cycle shuffles at least as correlated as the event.",
+        "0.6 were replay events; the absolute value is used, since replays "
+        "moving up and down the track both count. Decode with rate maps "
+        "from both running directions together; units with CSI > 5.",
+        "Two checks, not the definition, gave similar results (Tables S2 "
+        "and S3, not available here): a higher threshold, and a Monte Carlo "
+        "test on 1,500 shuffles of the posterior, p = (k + 1) / 1501 < "
+        "0.05, where k most naturally counts shuffles that pass the 0.6 "
+        "threshold; the shuffle is not named.",
         "Direction is a separate classification on a joint decode with "
         "directional rate maps: downward when more than 66.5% of the "
         "posterior is in the downward template, upward below 33.5%, and "
         "omitted otherwise (template_fractions on that decode).",
-        "Stricter thresholds in Tables S2 and S3 were not available.",
     ),
 )
 
@@ -2547,11 +2573,14 @@ BERNERS_LEE_2022 = ReplayMethod(
     notes=(
         "Replays have |weighted correlation| > 0.6 and a maximum jump "
         "between MAP positions below 0.4 of the track, on the whole event. "
-        "The code decodes position x direction jointly and sums the two "
-        "directions (D = Out + In, decode_spikedensity_events.m): pass the "
-        "joint decode.",
+        "The code decodes position x direction jointly "
+        "(decode_spikedensity_events.m) and sums the two directions (D = "
+        "OutMatrix' + InMatrix', shuffle_wc_replayscore.m): pass the joint "
+        "decode. The lap-by-lap analyses decode with fields from the two "
+        "most recent passes (decode_spikedensity_events_lapbylap.m).",
         "With 5 ms steps the jump is measured between windows 5 ms apart, "
-        "as in the code.",
+        "as in the code; the single-lap significance matrices of Fig. 1 "
+        "used non-overlapping 20 ms bins (shuffle_wc_nonoverlap.m).",
         "Significance was tested on the number of events passing, against "
         "5,000 datasets with time bins shuffled (p = (n + 1) / (r + 1)), "
         "not per event; it is not applied here.",
