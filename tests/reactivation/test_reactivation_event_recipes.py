@@ -616,7 +616,7 @@ def test_a_region_too_small_to_detect_in_is_skipped(reactivated) -> None:
     assert (table["error"] == "").all()
     assert "CA1" in set(table["region"])
     assert set(table["region"]) <= {"CA1", "cross_region"}
-    for members, region in zip(table["member_unit_ids"], table["region"]):
+    for members, region in zip(table["member_unit_ids"], table["region"], strict=True):
         if region == "CA1":
             assert max(members) < 22
 

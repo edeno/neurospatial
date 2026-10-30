@@ -295,7 +295,9 @@ def test_rate_subsampled_row_is_one_consistent_subsample() -> None:
         match = counts([[2400.0, 3000.0]]).astype(float)
         differences = []
         for _ in range(4):
-            new_control, new_match = equalize_firing_rates(control, match, rng=generator)
+            new_control, new_match = equalize_firing_rates(
+                control, match, rng=generator
+            )
             result = explained_variance_reactivation(
                 template,
                 pairwise_correlations(new_match),
