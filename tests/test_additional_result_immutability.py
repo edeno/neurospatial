@@ -21,8 +21,6 @@ from neurospatial.behavior.resampling import ResampledPathResult
 from neurospatial.behavior.segmentation import Run
 from neurospatial.behavior.trajectory import CumulativeDistanceResult, MSDResult
 from neurospatial.decoding import DecodingSummary
-from neurospatial.decoding.assemblies import AssemblyDetectionResult, AssemblyPattern
-from neurospatial.decoding.trajectory import IsotonicFitResult, RadonDetectionResult
 from neurospatial.encoding import RateComparisonResult
 from neurospatial.encoding._metrics import BatchScoresResult
 from neurospatial.encoding.population import PopulationCoverageResult
@@ -30,6 +28,11 @@ from neurospatial.encoding.spatial import DirectionalPlaceFields, PlaceFieldsRes
 from neurospatial.events import ContinuousEventResult
 from neurospatial.ops import SpatialFeatureResult
 from neurospatial.ops.visibility import ViewshedResult
+from neurospatial.reactivation.assemblies import (
+    AssemblyDetectionResult,
+    AssemblyPattern,
+)
+from neurospatial.replay.trajectory import IsotonicFitResult, RadonDetectionResult
 from neurospatial.stats.circular import CircularBasisResult
 from neurospatial.stats.shuffle import ShuffleTestResult
 

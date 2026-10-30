@@ -147,12 +147,6 @@ Bayesian decoding of position from spike counts.
   (MAP / mean / entropy / peak) without materializing the full
   `(n_time, n_bins)` posterior — for long sessions / thousands of units
 - `decoding_error()`, `median_decoding_error()`: Accuracy metrics
-- `fit_isotonic_trajectory()`, `fit_linear_trajectory()`,
-  `detect_trajectory_radon()`: Fit replay trajectories along a track; slopes
-  are in environment units per second
-- `replay_trajectory_significance()`: Davidson et al. (2009) replay test,
-  the replay score against column-cycle, unit-identity and pseudo-event
-  shuffles
 
 **Key Classes:**
 
@@ -160,7 +154,22 @@ Bayesian decoding of position from spike counts.
 - `DecodingSummary`: Per-time decode summary (MAP / mean / entropy /
   peak) from the memory-safe summary decoders
 
-### [neurospatial.decoding.assemblies](neurospatial/decoding/assemblies.md)
+### [neurospatial.replay](neurospatial/replay/index.md)
+
+Score decoded candidate replay events and test them against shuffles.
+Detecting the candidate events (ripples, population bursts) is not included.
+
+- `fit_isotonic_trajectory()`, `fit_linear_trajectory()`,
+  `detect_trajectory_radon()`: Fit replay trajectories along a track; slopes
+  are in environment units per second
+- `replay_trajectory_significance()`: Davidson et al. (2009) replay test,
+  the replay score against column-cycle, unit-identity and pseudo-event
+  shuffles
+- `shuffle_cell_identity()`, `shuffle_place_fields_circular()`,
+  `shuffle_place_fields_circular_2d()`, `shuffle_posterior_circular()`,
+  `shuffle_posterior_weighted_circular()`: Replay shuffles
+
+### [neurospatial.reactivation](neurospatial/reactivation/index.md)
 
 Population covariance and reactivation analyses take count matrices with the
 same units in the template, match and control periods. Pass each period's
@@ -280,8 +289,8 @@ Circular statistics, surrogates, and shuffle controls.
 
 - `stats.circular`: Rayleigh test, circular mean / variance / R,
   circular-circular and circular-linear correlations, circular basis
-- `stats.shuffle`: Position / cell / posterior shuffles with
-  reproducibility helpers
+- `stats.shuffle`: Temporal, trial and spike-train shuffles and Monte Carlo
+  p-values; replay shuffles are in `neurospatial.replay`
 - `stats.surrogates`: Poisson and inhomogeneous-Poisson surrogates,
   jittered-spike controls
 

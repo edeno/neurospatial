@@ -1,4 +1,4 @@
-"""Tests for trajectory analysis in neurospatial.decoding.trajectory.
+"""Tests for trajectory analysis in neurospatial.replay.trajectory.
 
 These tests verify trajectory fitting and detection functions for analyzing
 decoded position sequences, including isotonic regression, linear regression,
@@ -30,7 +30,7 @@ class TestIsotonicFitResult:
 
     def test_isotonic_fit_result_frozen(self):
         """IsotonicFitResult should be immutable (frozen dataclass)."""
-        from neurospatial.decoding.trajectory import IsotonicFitResult
+        from neurospatial.replay.trajectory import IsotonicFitResult
 
         result = IsotonicFitResult(
             fitted_positions=np.array([1.0, 2.0]),
@@ -48,7 +48,7 @@ class TestLinearFitResult:
 
     def test_linear_fit_result_frozen(self):
         """LinearFitResult should be immutable (frozen dataclass)."""
-        from neurospatial.decoding.trajectory import LinearFitResult
+        from neurospatial.replay.trajectory import LinearFitResult
 
         result = LinearFitResult(
             slope=1.0,
@@ -66,7 +66,7 @@ class TestRadonDetectionResult:
 
     def test_radon_detection_result_frozen(self):
         """RadonDetectionResult should be immutable (frozen dataclass)."""
-        from neurospatial.decoding.trajectory import RadonDetectionResult
+        from neurospatial.replay.trajectory import RadonDetectionResult
 
         result = RadonDetectionResult(
             speed=100.0,
@@ -87,7 +87,7 @@ class TestFitIsotonicTrajectory:
 
     def test_fit_isotonic_trajectory_fitted_positions_shape(self):
         """Fitted positions should have shape (n_time_bins,)."""
-        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+        from neurospatial.replay.trajectory import fit_isotonic_trajectory
 
         n_time_bins = 15
         n_bins = 30
@@ -103,7 +103,7 @@ class TestFitIsotonicTrajectory:
 
     def test_fit_isotonic_trajectory_residuals_shape(self):
         """Residuals should have shape (n_time_bins,)."""
-        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+        from neurospatial.replay.trajectory import fit_isotonic_trajectory
 
         n_time_bins = 15
         n_bins = 30
@@ -119,7 +119,7 @@ class TestFitIsotonicTrajectory:
 
     def test_fit_isotonic_trajectory_increasing_direction(self):
         """Should detect increasing direction for monotonically increasing data."""
-        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+        from neurospatial.replay.trajectory import fit_isotonic_trajectory
 
         n_time_bins = 20
         n_bins = 50
@@ -138,7 +138,7 @@ class TestFitIsotonicTrajectory:
 
     def test_fit_isotonic_trajectory_decreasing_direction(self):
         """Should detect decreasing direction for monotonically decreasing data."""
-        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+        from neurospatial.replay.trajectory import fit_isotonic_trajectory
 
         n_time_bins = 20
         n_bins = 50
@@ -157,7 +157,7 @@ class TestFitIsotonicTrajectory:
 
     def test_fit_isotonic_trajectory_force_increasing(self):
         """Should force increasing direction when specified."""
-        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+        from neurospatial.replay.trajectory import fit_isotonic_trajectory
 
         n_time_bins = 20
         n_bins = 50
@@ -177,7 +177,7 @@ class TestFitIsotonicTrajectory:
 
     def test_fit_isotonic_trajectory_force_decreasing(self):
         """Should force decreasing direction when specified."""
-        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+        from neurospatial.replay.trajectory import fit_isotonic_trajectory
 
         n_time_bins = 20
         n_bins = 50
@@ -197,7 +197,7 @@ class TestFitIsotonicTrajectory:
 
     def test_fit_isotonic_trajectory_fitted_is_monotonic(self):
         """Fitted positions should be monotonic."""
-        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+        from neurospatial.replay.trajectory import fit_isotonic_trajectory
 
         n_time_bins = 30
         n_bins = 50
@@ -223,7 +223,7 @@ class TestFitIsotonicTrajectory:
 
     def test_fit_isotonic_trajectory_invalid_method_raises(self):
         """Invalid method should raise ValueError."""
-        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+        from neurospatial.replay.trajectory import fit_isotonic_trajectory
 
         n_time_bins = 10
         n_bins = 20
@@ -253,7 +253,7 @@ class TestFitLinearTrajectory:
 
     def test_fit_linear_trajectory_reproducible_with_rng_int(self, simple_env):
         """Results should be reproducible with integer rng seed."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         n_time_bins = 20
         n_bins = simple_env.n_bins
@@ -281,7 +281,7 @@ class TestFitLinearTrajectory:
 
     def test_fit_linear_trajectory_reproducible_with_rng_generator(self, simple_env):
         """Results should be reproducible with Generator rng."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         n_time_bins = 20
         n_bins = simple_env.n_bins
@@ -312,7 +312,7 @@ class TestFitLinearTrajectory:
 
     def test_fit_linear_trajectory_r_squared_range(self, simple_env):
         """R² should be in [0, 1]."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         n_time_bins = 20
         n_bins = simple_env.n_bins
@@ -331,7 +331,7 @@ class TestFitLinearTrajectory:
 
     def test_fit_linear_trajectory_perfect_linear_high_r_squared(self, simple_env):
         """Perfect linear data should have R² ≈ 1."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         n_time_bins = 20
         n_bins = simple_env.n_bins
@@ -352,7 +352,7 @@ class TestFitLinearTrajectory:
 
     def test_fit_linear_trajectory_non_uniform_times(self, simple_env):
         """Should work with non-uniformly spaced time bins."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         n_time_bins = 20
         n_bins = simple_env.n_bins
@@ -375,7 +375,7 @@ class TestFitLinearTrajectory:
 
     def test_sampled_fit_of_certain_posterior_has_no_spread(self, simple_env):
         """One-hot rows: every sample is the MAP sequence."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         n_time_bins = 20
         times = np.linspace(0, 1, n_time_bins)
@@ -402,7 +402,7 @@ class TestFitLinearTrajectory:
         """
         from scipy.stats import norm
 
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         sigma = 8.0
         env = Environment.linear_track(
@@ -426,7 +426,7 @@ class TestFitLinearTrajectory:
 
     def test_fit_linear_trajectory_invalid_method_raises(self, simple_env):
         """Invalid method should raise ValueError."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         n_time_bins = 10
         n_bins = simple_env.n_bins
@@ -441,7 +441,7 @@ class TestFitLinearTrajectory:
 
     def test_fit_linear_trajectory_1d_posterior_raises(self, simple_env):
         """1D posterior should raise ValueError."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         times = np.linspace(0, 1, 10)
         posterior_1d = np.ones(10)  # 1D array - invalid
@@ -489,7 +489,7 @@ class TestDetectTrajectoryRadon:
         return _track_for(posterior), posterior, np.arange(self.N) * 0.01
 
     def test_forward_sweep_speed_and_start(self, forward):
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         result = detect_trajectory_radon(*forward)
 
@@ -500,7 +500,7 @@ class TestDetectTrajectoryRadon:
         assert result.score == pytest.approx(1.0)
 
     def test_constant_position_has_zero_speed(self, forward):
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env, _, times = forward
         posterior = np.zeros((self.N, self.N))
@@ -513,7 +513,7 @@ class TestDetectTrajectoryRadon:
 
     def test_mirrored_sweep_has_mirrored_speed_and_equal_score(self):
         """Reversing the posterior along the track flips only the direction."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env, posterior, times = _gaussian_sweep(2.0, speed=150.0)
         forward = detect_trajectory_radon(env, posterior, times)
@@ -525,7 +525,7 @@ class TestDetectTrajectoryRadon:
         assert reverse.score == pytest.approx(forward.score, abs=1e-12)
 
     def test_time_reversed_sweep_scores_the_same(self, forward):
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env, posterior, times = forward
         reverse = detect_trajectory_radon(env, posterior[::-1], times)
@@ -536,7 +536,7 @@ class TestDetectTrajectoryRadon:
     @pytest.mark.parametrize("bin_size", [1.0, 2.0, 4.0])
     def test_speed_does_not_depend_on_bin_size(self, bin_size):
         """A 200 cm/s replay is 200 cm/s on 1, 2 and 4 cm bins."""
-        from neurospatial.decoding.trajectory import (
+        from neurospatial.replay.trajectory import (
             detect_trajectory_radon,
             fit_linear_trajectory,
         )
@@ -556,7 +556,7 @@ class TestDetectTrajectoryRadon:
         Rows 0-5 sweep from 60 to 98 cm; the rest are spread out. Reversed in
         time, the best line enters the track partway through the event.
         """
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env = Environment.linear_track(
             endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
@@ -579,7 +579,7 @@ class TestDetectTrajectoryRadon:
 
     def test_uniform_posterior_scores_below_a_sharp_sweep(self, forward):
         """A uniform posterior puts 2 * band / track length within the band."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env, posterior, times = forward
         uniform = np.full((self.N, self.N), 1.0 / self.N)
@@ -593,7 +593,7 @@ class TestDetectTrajectoryRadon:
 
     def test_dropped_time_bins_keep_the_speed(self, forward):
         """Undecodable time bins can be left out with their times."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env, posterior, times = forward
         keep = np.ones(self.N, dtype=bool)
@@ -605,7 +605,7 @@ class TestDetectTrajectoryRadon:
 
     def test_search_grid_is_dense_and_symmetric(self, forward):
         """Starts at most band / 5 apart; speeds whose ends differ by one start step."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env, posterior, times = forward
         result = detect_trajectory_radon(env, posterior, times, max_speed=400.0)
@@ -629,7 +629,7 @@ class TestDetectTrajectoryRadon:
         assert result.sinogram.shape == (len(speeds), len(starts))
 
     def test_max_speed_limits_the_detected_speed(self, forward):
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         # The sweep covers 49 cm in 0.49 s; a 20 cm/s line strays beyond the
         # 15 cm band for part of it, while a 48 cm/s line would not.
@@ -639,7 +639,7 @@ class TestDetectTrajectoryRadon:
         assert result.score < 1.0
 
     def test_default_max_speed_is_30_m_per_s(self, forward):
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         speeds = detect_trajectory_radon(*forward).sinogram_speeds
         assert 3000.0 - np.diff(speeds)[0] < speeds[-1] <= 3000.0
@@ -653,21 +653,21 @@ class TestDetectTrajectoryRadon:
         ],
     )
     def test_search_settings_must_be_positive(self, forward, kwargs, match):
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         with pytest.raises(ValueError, match=match):
             detect_trajectory_radon(*forward, **kwargs)
 
     def test_times_in_milliseconds_are_refused(self, forward):
         """Times 1000x too large make a search far beyond any replay event."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env, posterior, times = forward
         with pytest.raises(ValueError, match=r"(?s)would score.*in seconds"):
             detect_trajectory_radon(env, posterior, times * 1000)
 
     def test_times_must_increase(self, forward):
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env, posterior, times = forward
         with pytest.raises(ValueError, match="strictly increasing"):
@@ -675,7 +675,7 @@ class TestDetectTrajectoryRadon:
 
     def test_detect_trajectory_radon_empty_posterior(self, forward):
         """An all-zero posterior holds no probability and is refused."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env, posterior, times = forward
         with pytest.raises(ValueError, match=r"50 of 50 rows.*sums to 0"):
@@ -701,7 +701,7 @@ class TestFitsReadPositionAlongTrack:
 
     @pytest.mark.parametrize("method", ["map", "sample"])
     def test_linear_fit_is_a_speed_that_ignores_bin_numbering(self, sweep, method):
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         env, shuffled_env, posterior, shuffled, times = sweep
         original = fit_linear_trajectory(env, posterior, times, method=method, rng=0)
@@ -723,7 +723,7 @@ class TestFitsReadPositionAlongTrack:
 
     @pytest.mark.parametrize("method", ["map", "expected"])
     def test_isotonic_fit_ignores_bin_numbering(self, sweep, method):
-        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+        from neurospatial.replay.trajectory import fit_isotonic_trajectory
 
         env, shuffled_env, posterior, shuffled, times = sweep
         original = fit_isotonic_trajectory(env, posterior, times, method=method)
@@ -738,7 +738,7 @@ class TestFitsReadPositionAlongTrack:
         assert renumbered.r_squared == pytest.approx(1.0)
 
     def test_radon_ignores_bin_numbering(self, sweep):
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env, shuffled_env, posterior, shuffled, times = sweep
         original = detect_trajectory_radon(env, posterior, times)
@@ -751,7 +751,7 @@ class TestFitsReadPositionAlongTrack:
 
     def test_constant_speed_over_unequal_bins_is_a_straight_line(self):
         """Bins of 2 cm then 8 cm: visiting each center at 1000 cm/s is linear."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         edges = np.r_[np.arange(0.0, 21.0, 2.0), 20.0 + 8.0 * np.arange(1, 11)]
         env = strips_1d(edges)
@@ -772,7 +772,7 @@ class TestFitsReadPositionAlongTrack:
         moves at 100 cm/s although the largest mass never moves.
         """
         from neurospatial.decoding.estimates import map_bin
-        from neurospatial.decoding.trajectory import (
+        from neurospatial.replay.trajectory import (
             fit_isotonic_trajectory,
             fit_linear_trajectory,
         )
@@ -794,7 +794,7 @@ class TestFitsReadPositionAlongTrack:
 
     def test_radon_unchanged_when_a_bin_is_split_into_equal_halves(self):
         """Splitting an 8 cm bin, mass shared by length, leaves the image as is."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         rng = np.random.default_rng(0)
         coarse = strips_1d(np.array([0.0, 2.0, 4.0, 12.0, 14.0]))
@@ -822,7 +822,7 @@ class TestFitsReadPositionAlongTrack:
         ["fit_linear_trajectory", "fit_isotonic_trajectory", "detect_trajectory_radon"],
     )
     def test_open_arena_is_refused(self, fit):
-        import neurospatial.decoding.trajectory as trajectory
+        import neurospatial.replay.trajectory as trajectory
 
         arena = Environment.from_samples(
             np.random.default_rng(0).uniform(0, 20, (500, 2)), bin_size=5.0
@@ -848,7 +848,7 @@ class TestPosteriorRowsAreValidated:
 
     @staticmethod
     def _call(fit, env, posterior, times):
-        import neurospatial.decoding.trajectory as trajectory
+        import neurospatial.replay.trajectory as trajectory
 
         return getattr(trajectory, fit)(env, posterior, times)
 
@@ -899,7 +899,7 @@ class TestPosteriorRowsAreValidated:
         assert "renormalize" in str(excinfo.value)
 
     def test_negative_rows_are_refused(self, sweep):
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         env, posterior, times = sweep
         posterior = posterior.copy()
@@ -910,7 +910,7 @@ class TestPosteriorRowsAreValidated:
 
     def test_rounding_error_in_row_sums_is_accepted(self, sweep):
         """A float32 posterior sums to 1 only to single precision."""
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         env, _, times = sweep
         rng = np.random.default_rng(0)
@@ -936,7 +936,7 @@ class TestStationaryDecode:
 
     @pytest.mark.parametrize("method", ["map", "sample"])
     def test_linear_fit_r_squared_is_undefined(self, stationary, method):
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         env, posterior, times = stationary
         result = fit_linear_trajectory(env, posterior, times, method=method, rng=0)
@@ -946,7 +946,7 @@ class TestStationaryDecode:
 
     @pytest.mark.parametrize("increasing", [None, True, False])
     def test_isotonic_fit_has_no_direction(self, stationary, increasing):
-        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+        from neurospatial.replay.trajectory import fit_isotonic_trajectory
 
         env, posterior, times = stationary
         result = fit_isotonic_trajectory(env, posterior, times, increasing=increasing)
@@ -956,7 +956,7 @@ class TestStationaryDecode:
         np.testing.assert_allclose(result.fitted_positions, 10.5)
 
     def test_identical_times_are_refused(self):
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         posterior = np.eye(5, 10)
         with pytest.raises(ValueError, match="identical"):
@@ -977,7 +977,7 @@ class TestArgumentChecks:
         "fit", ["fit_linear_trajectory", "fit_isotonic_trajectory"]
     )
     def test_times_must_match_posterior_rows(self, sweep, fit):
-        import neurospatial.decoding.trajectory as trajectory
+        import neurospatial.replay.trajectory as trajectory
 
         env, posterior, _ = sweep
         with pytest.raises(ValueError, match=r"times has 15 entries.*10 rows"):
@@ -987,7 +987,7 @@ class TestArgumentChecks:
         "fit", ["fit_linear_trajectory", "fit_isotonic_trajectory"]
     )
     def test_times_must_be_finite(self, sweep, fit):
-        import neurospatial.decoding.trajectory as trajectory
+        import neurospatial.replay.trajectory as trajectory
 
         env, posterior, times = sweep
         times = times.copy()
@@ -997,7 +997,7 @@ class TestArgumentChecks:
 
     @pytest.mark.parametrize("n_samples", [0, 1])
     def test_sampling_needs_two_samples(self, sweep, n_samples):
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
+        from neurospatial.replay.trajectory import fit_linear_trajectory
 
         env, posterior, times = sweep
         with pytest.raises(ValueError, match=r"n_samples.*at least 2"):
@@ -1036,11 +1036,9 @@ class TestReplayShuffleCalibration:
         return decode_position(env, counts, models, dt=self.DT).posterior
 
     def _p_value(self, env, posterior, *, n_shuffles, seed):
-        from neurospatial.decoding.trajectory import fit_linear_trajectory
-        from neurospatial.stats import (
-            compute_shuffle_pvalue,
-            shuffle_posterior_circular,
-        )
+        from neurospatial.replay.nulls import shuffle_posterior_circular
+        from neurospatial.replay.trajectory import fit_linear_trajectory
+        from neurospatial.stats import compute_shuffle_pvalue
 
         times = np.arange(self.N_TIME_BINS) * self.DT
 
@@ -1100,7 +1098,7 @@ class TestReplayScore:
 
     def test_sinogram_is_mean_band_mass_with_median_off_track(self):
         """Every line's score matches a direct evaluation on unequal bins."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         edges = np.r_[0.0, np.cumsum(np.random.default_rng(0).uniform(2, 6, 25))]
         env = strips_1d(edges)
@@ -1145,7 +1143,7 @@ class TestReplayScore:
 
     def test_score_does_not_depend_on_bin_size(self):
         """A spread-out posterior scores the same on 1, 2 and 4 cm bins."""
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         scores = [
             detect_trajectory_radon(*_gaussian_sweep(bin_size, sigma=8.0)).score
@@ -1156,7 +1154,7 @@ class TestReplayScore:
         assert 0.5 < scores[0] < 1.0
 
     def test_wider_band_holds_more_mass(self):
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env, posterior, times = _gaussian_sweep(1.0, sigma=8.0)
         narrow = detect_trajectory_radon(env, posterior, times, band=5.0)
@@ -1166,7 +1164,7 @@ class TestReplayScore:
         assert narrow.score < wide.score
 
     def test_default_band_is_15_cm_in_the_environment_units(self):
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env = Environment.linear_track(
             endpoints=[[0.0, 0.0], [1.0, 0.0]], bin_size=0.02, units="m"
@@ -1179,14 +1177,14 @@ class TestReplayScore:
         assert result.sinogram_speeds[-1] <= 30.0  # the 30 m/s default
 
     def test_band_must_be_a_positive_length(self):
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env, posterior, times = _gaussian_sweep(2.0)
         with pytest.raises(ValueError, match="band > 0"):
             detect_trajectory_radon(env, posterior, times, band=0.0)
 
     def test_default_band_needs_metric_units(self):
-        from neurospatial.decoding.trajectory import detect_trajectory_radon
+        from neurospatial.replay.trajectory import detect_trajectory_radon
 
         env = Environment.linear_track(
             endpoints=[[0.0, 0.0], [50.0, 0.0]], bin_size=1.0, units="px"
@@ -1222,10 +1220,8 @@ class TestReplaySignificance:
         return env, rates
 
     def test_planted_replay_is_significant_under_every_shuffle(self, place_code):
-        from neurospatial.decoding import (
-            decode_position,
-            replay_trajectory_significance,
-        )
+        from neurospatial.decoding import decode_position
+        from neurospatial.replay import replay_trajectory_significance
 
         env, rates = place_code
         dt = 0.02
@@ -1270,7 +1266,7 @@ class TestReplaySignificance:
         Each row is a bump at a random position, wrapped around the track ends,
         so a circular shift of a row is as likely as the row itself.
         """
-        from neurospatial.decoding import replay_trajectory_significance
+        from neurospatial.replay import replay_trajectory_significance
 
         env = Environment.linear_track(
             endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=4.0, units="cm"
@@ -1300,7 +1296,7 @@ class TestReplaySignificance:
         Every row is a delta within the band of a stationary line, so the
         observed score and many shuffles' scores are exactly 1.
         """
-        from neurospatial.decoding import replay_trajectory_significance
+        from neurospatial.replay import replay_trajectory_significance
 
         env = Environment.linear_track(
             endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0, units="cm"
@@ -1320,7 +1316,7 @@ class TestReplaySignificance:
         assert result.p_value == pytest.approx((tied + 1) / 201)
 
     def test_seeded_results_repeat(self, place_code):
-        from neurospatial.decoding import replay_trajectory_significance
+        from neurospatial.replay import replay_trajectory_significance
 
         env, _ = place_code
         posterior = _wrapped_bump(env, 20.0 + 10.0 * np.arange(10), 8.0)
@@ -1338,10 +1334,8 @@ class TestReplaySignificance:
         )
 
     def test_unit_identity_needs_the_decode_of_the_posterior(self, place_code):
-        from neurospatial.decoding import (
-            decode_position,
-            replay_trajectory_significance,
-        )
+        from neurospatial.decoding import decode_position
+        from neurospatial.replay import replay_trajectory_significance
 
         env, rates = place_code
         counts = np.random.default_rng(2).poisson(1.0, (10, rates.shape[0]))
@@ -1364,7 +1358,7 @@ class TestReplaySignificance:
             )
 
     def test_pseudo_event_pool_must_be_posterior_rows(self, place_code):
-        from neurospatial.decoding import replay_trajectory_significance
+        from neurospatial.replay import replay_trajectory_significance
 
         env, _ = place_code
         posterior = _wrapped_bump(env, 20.0 + 10.0 * np.arange(10), 8.0)
@@ -1385,7 +1379,7 @@ class TestReplaySignificance:
 
     @pytest.mark.parametrize("n_shuffles", [0, -5, 2.5, True])
     def test_n_shuffles_must_be_a_positive_integer(self, place_code, n_shuffles):
-        from neurospatial.decoding import replay_trajectory_significance
+        from neurospatial.replay import replay_trajectory_significance
 
         env, _ = place_code
         posterior = _wrapped_bump(env, 20.0 + 10.0 * np.arange(10), 8.0)

@@ -226,7 +226,7 @@ def test_nested_subset_3d_fractions_preserve_native_outside_stop_normalization(o
 
 
 def test_raster_shuffle_refuses_source_axes_as_world_axes():
-    from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
+    from neurospatial.replay.nulls import shuffle_place_fields_circular_2d
 
     env = grid().apply_transform(transform(MAPS[0]))
     with pytest.raises(ValueError, match="world-aligned 2-D grid"):

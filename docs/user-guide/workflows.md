@@ -1130,9 +1130,9 @@ import numpy as np
 from shapely.geometry import box
 
 from neurospatial import Environment, compute_spatial_rates, decode_position
-from neurospatial.decoding import (
+from neurospatial.decoding import bin_spikes_in_time
+from neurospatial.reactivation import (
     assembly_activation,
-    bin_spikes_in_time,
     detect_assemblies,
     explained_variance_reactivation,
     pairwise_correlations,

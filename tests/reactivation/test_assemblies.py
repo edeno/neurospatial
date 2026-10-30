@@ -1,4 +1,4 @@
-"""Tests for neurospatial.decoding.assemblies module.
+"""Tests for neurospatial.reactivation.assemblies module.
 
 Tests cover cell assembly detection, activation computation, and reactivation analysis.
 """
@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial.decoding.assemblies import (
+from neurospatial.reactivation.assemblies import (
     AssemblyDetectionResult,
     AssemblyPattern,
     ExplainedVarianceResult,
