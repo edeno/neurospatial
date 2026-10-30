@@ -106,8 +106,10 @@ that is not simultaneous.
 
 The Marchenko-Pastur bound is an asymptotic edge for independent neurons
 (see :func:`marchenko_pastur_threshold`); in a short recording an
-eigenvalue can pass it by chance. Check the number of dimensions on counts
-shuffled in time for your recording size. Neurons that fire in few bins
+eigenvalue can pass it by chance, and neurons whose rates drift slowly
+spread the eigenvalues further. ``detect_assemblies(component_threshold=...)``
+also takes surrogate thresholds from counts shuffled or rotated in time
+(Lopes-dos-Santos et al., 2013). Neurons that fire in few bins
 give noisy correlations, and neurons with the same count in every bin are
 excluded.
 
@@ -169,6 +171,22 @@ __all__ = [
 
 AssemblyMethod = Literal["ica", "pca", "nmf"]
 _METHODS = ("ica", "pca", "nmf")
+ComponentThreshold = Literal[
+    "marchenko_pastur", "tracy_widom", "bin_shuffle", "circular_shift"
+]
+_COMPONENT_THRESHOLDS = (
+    "marchenko_pastur",
+    "tracy_widom",
+    "bin_shuffle",
+    "circular_shift",
+)
+_SURROGATE_THRESHOLDS = ("bin_shuffle", "circular_shift")
+_THRESHOLD_NAMES = {
+    "marchenko_pastur": "Marchenko-Pastur bound",
+    "tracy_widom": "Marchenko-Pastur bound plus the Tracy-Widom term",
+    "bin_shuffle": "bin-shuffle threshold",
+    "circular_shift": "circular-shift threshold",
+}
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -341,22 +359,28 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     method : {'ica', 'pca', 'nmf'}
         Detection method used.
     n_significant : int
-        Number of PCA eigenvalues above the Marchenko-Pastur reference
-        threshold. This counts retained dimensions, not assemblies with
-        thresholded core members. It equals len(patterns) with
-        ``n_components="auto"`` (zero patterns when no eigenvalue exceeds the
-        threshold) and may differ when n_components was specified manually.
+        Number of PCA eigenvalues above ``threshold``. This counts retained
+        dimensions, not assemblies with thresholded core members. It equals
+        len(patterns) with ``n_components="auto"`` (zero patterns when no
+        eigenvalue exceeds the threshold) and may differ when n_components
+        was specified manually.
     eigenvalues : NDArray[np.float64], shape (n_neurons,)
         Eigenvalues of the correlation matrix of the neurons that vary over
         time, in descending order, useful for scree plots. Each excluded
         constant neuron adds an eigenvalue of 0 at the end.
     threshold : float
-        Marchenko-Pastur threshold for the number of varying neurons and
-        time bins.
+        Eigenvalue threshold of ``component_threshold`` for the number of
+        varying neurons and time bins.
     unit_ids : ndarray, shape (n_neurons,)
         Label of each column of the detection counts (read-only), the same
         labels every pattern carries: the ``unit_ids=`` given to
         :func:`detect_assemblies`, else ``np.arange(n_neurons)``.
+    component_threshold : {'marchenko_pastur', 'tracy_widom', 'bin_shuffle', 'circular_shift'}
+        Rule that set ``threshold`` (see :func:`detect_assemblies`).
+    surrogate_max_eigenvalues : ndarray, shape (n_shuffles,)
+        Largest eigenvalue of each surrogate count matrix for the
+        ``"bin_shuffle"`` and ``"circular_shift"`` thresholds, in the order
+        drawn; empty for the analytical thresholds.
 
     Other Parameters
     ----------------
@@ -367,8 +391,7 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     -----
     **Significance Determination**:
 
-    ``n_significant`` counts eigenvalues above the Marchenko-Pastur reference
-    threshold. This dimension-selection criterion does not assign a p-value
+    ``n_significant`` counts eigenvalues above ``threshold``. This dimension-selection criterion does not assign a p-value
     to a pattern, a neuron weight, or an activation time bin. A selected
     dimension can produce a pattern with an empty ``member_indices`` array.
 
@@ -401,12 +424,28 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     eigenvalues: NDArray[np.float64]
     threshold: float
     unit_ids: NDArray[Any] | None = field(default=None, kw_only=True, compare=False)
+    component_threshold: ComponentThreshold = field(
+        default="marchenko_pastur", kw_only=True
+    )
+    surrogate_max_eigenvalues: NDArray[np.float64] = field(
+        default_factory=lambda: np.zeros(0), kw_only=True, compare=False
+    )
     _unit_ids_generated: bool = field(
         default=False, repr=False, compare=False, kw_only=True
     )
 
     def __post_init__(self) -> None:
         """Validate the fields, resolve labels and own read-only copies."""
+        if self.component_threshold not in _COMPONENT_THRESHOLDS:
+            raise ValueError(
+                "AssemblyDetectionResult: component_threshold must be one of "
+                f"{_COMPONENT_THRESHOLDS}, got {self.component_threshold!r}."
+            )
+        object.__setattr__(
+            self,
+            "surrogate_max_eigenvalues",
+            np.asarray(self.surrogate_max_eigenvalues, dtype=np.float64),
+        )
         patterns = tuple(self.patterns)
         if not all(isinstance(pattern, AssemblyPattern) for pattern in patterns):
             raise TypeError(
@@ -448,6 +487,7 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
             "n_assemblies": len(self.patterns),
             "n_significant": self.n_significant,
             "method": self.method,
+            "component_threshold": self.component_threshold,
             "threshold": self.threshold,
         }
 
@@ -726,8 +766,8 @@ def marchenko_pastur_threshold(
     For a finite recording of independent neurons the largest eigenvalue
     fluctuates around it on a scale of order :math:`n^{-2/3}` (Tracy-Widom;
     Peyrache et al., 2010), so an eigenvalue just above the threshold can
-    arise by chance. When it matters, compare with eigenvalues of counts
-    shuffled in time.
+    arise by chance. When it matters, use a surrogate threshold
+    (``detect_assemblies(component_threshold="circular_shift", ...)``).
 
     Examples
     --------
@@ -787,6 +827,9 @@ def detect_assemblies(
     *,
     method: AssemblyMethod = "ica",
     n_components: int | Literal["auto"] = "auto",
+    component_threshold: ComponentThreshold = "marchenko_pastur",
+    percentile: float | None = None,
+    n_shuffles: int = 1000,
     z_threshold: float = 2.0,
     rng: int | np.random.Generator | None = None,
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
@@ -819,8 +862,45 @@ def detect_assemblies(
     n_components : int or 'auto', default='auto'
         Number of assemblies to detect:
 
-        - 'auto': Determined by Marchenko-Pastur threshold (recommended)
+        - 'auto': the number of eigenvalues above ``component_threshold``
+          (recommended)
         - int: Fixed number of components
+
+    component_threshold : {'marchenko_pastur', 'tracy_widom', 'bin_shuffle', 'circular_shift'}, default='marchenko_pastur'
+        Eigenvalue threshold that selects the number of components:
+
+        - 'marchenko_pastur': the analytical upper edge
+          :math:`(1 + \\sqrt{n / B})^2` for ``n`` varying neurons and ``B``
+          time bins (Lopes-dos-Santos et al., 2013; Peyrache et al., 2010).
+        - 'tracy_widom': that edge plus :math:`n^{-2/3}`, the scale of the
+          finite-sample fluctuation of the largest eigenvalue, which "lies
+          around λmax with a standard deviation of order N^−2/3" (Peyrache
+          et al., 2010). The Lopes-dos-Santos Python code adds the same term
+          with ``tracywidom=True``.
+        - 'bin_shuffle': the ``percentile``-th percentile of the largest
+          eigenvalue of ``n_shuffles`` surrogate matrices in which the time
+          bins of each neuron are shuffled independently, which keeps each
+          neuron's count distribution and removes its co-firing.
+        - 'circular_shift': the same with each neuron's counts rotated in
+          time by its own random offset, which also keeps each neuron's
+          autocorrelation (Lopes-dos-Santos et al., 2013).
+
+        For the surrogate thresholds, "each surrogate matrix contributes its
+        maximal eigenvalue to the chance distribution, which is a more
+        conservative approach than considering all surrogate eigenvalues"
+        (Lopes-dos-Santos et al., 2013, p. 5).
+    percentile : float, optional
+        Percentile of the surrogate maxima used as the threshold, in
+        (0, 100). Required for ``'bin_shuffle'`` and ``'circular_shift'``
+        and refused for the analytical thresholds. There is no single
+        published value: Lopes-dos-Santos et al. (2013) used "a certain
+        percentile (e.g., 95% or 99%)", and their MATLAB toolbox asks for
+        it. Their 95th percentile of circular shifts "matches very closely"
+        the Marchenko-Pastur edge, while that of bin shuffles was lower.
+    n_shuffles : int, default=1000
+        Number of surrogate matrices for the surrogate thresholds, the
+        default of the authors' Python code (``nshu=1000``). Ignored by
+        the analytical thresholds.
 
     z_threshold : float, default=2.0
         Z-score threshold for assembly membership. Neurons with absolute-weight
@@ -837,8 +917,8 @@ def detect_assemblies(
 
     rng : int or np.random.Generator, optional
         Random seed or generator for reproducibility. Affects ICA and NMF
-        initialization. Both ``int`` seeds and ``np.random.Generator``
-        instances are accepted.
+        initialization and the surrogate matrices. Both ``int`` seeds and
+        ``np.random.Generator`` instances are accepted.
     unit_ids : array-like, shape (n_neurons,), optional
         Label of the unit in each column of ``spike_counts``, for example the
         sorter's unit IDs. Stored on the result and on every pattern, so
@@ -859,8 +939,9 @@ def detect_assemblies(
     ValueError
         If spike_counts has wrong shape, holds NaN, infinite or negative
         values, has fewer than 3 neurons that vary over time, or has invalid
-        parameters, or ``unit_ids`` does not hold one distinct label per
-        column.
+        parameters (including a surrogate threshold without ``percentile``
+        or an analytical one with it), or ``unit_ids`` does not hold one
+        distinct label per column.
 
     Notes
     -----
@@ -868,7 +949,8 @@ def detect_assemblies(
 
     1. Z-score spike counts for each neuron
     2. Compute correlation matrix
-    3. Eigendecomposition to find significant dimensions (Marchenko-Pastur)
+    3. Eigendecomposition to find significant dimensions (eigenvalues
+       above ``component_threshold``)
     4. Project onto significant PCs (and whiten their scores for ICA)
     5. Apply ICA/PCA/NMF to extract assembly patterns
     6. Threshold weights to identify core members
@@ -878,7 +960,12 @@ def detect_assemblies(
     **Excluded neurons and components**: A neuron with the same count in
     every time bin has no correlation with any other neuron. It is excluded
     from every method (with a warning), gets weight 0 in every pattern, and
-    the Marchenko-Pastur threshold uses the number of varying neurons. With
+    the thresholds use the number of varying neurons. (The Lopes-dos-Santos
+    Python code counts silent neurons in the Marchenko-Pastur ratio; a
+    silent neuron only adds an eigenvalue of 0, so here it does not loosen
+    the bound.) Surrogate matrices shuffle the z-scored counts of the
+    varying neurons, so their correlation matrices are computed exactly like
+    the data's; the percentile uses NumPy's linear interpolation. With
     ``n_components="auto"`` and no eigenvalue above the threshold, the result
     has no patterns and a warning says so. Requested components beyond the
     numerical rank of the counts carry no variance and are dropped with a
@@ -910,9 +997,12 @@ def detect_assemblies(
 
     Input spike counts are z-scored internally for PCA and ICA. Choose the
     bin size for the time scale of co-firing you study (25 to 100 ms in the
-    publications cited in the module notes), and check the number of
-    selected dimensions on time-shuffled counts when the recording is short
-    relative to the number of neurons.
+    publications cited in the module notes). When the recording is short
+    relative to the number of neurons, or the neurons' rates drift slowly,
+    compare the number of selected dimensions with a surrogate threshold:
+    circular shifts keep each neuron's autocorrelation, so slow drifts that
+    spread the eigenvalues beyond the Marchenko-Pastur edge raise their
+    threshold too.
 
     Examples
     --------
@@ -930,6 +1020,19 @@ def detect_assemblies(
     1
     >>> result.patterns[0].member_unit_ids.tolist()
     [103, 110, 116]
+
+    The same counts with a circular-shift surrogate threshold, the 99th
+    percentile of the largest eigenvalue of 200 surrogate matrices:
+
+    >>> shifted = detect_assemblies(
+    ...     counts,
+    ...     component_threshold="circular_shift",
+    ...     percentile=99.0,
+    ...     n_shuffles=200,
+    ...     rng=0,
+    ... )
+    >>> shifted.n_significant
+    1
 
     >>> # Basic usage
     >>> result = detect_assemblies(spike_counts)  # doctest: +SKIP
@@ -973,6 +1076,7 @@ def detect_assemblies(
         )
     unit_ids_generated = unit_ids is None
     labels = resolve_unit_ids(unit_ids, n_neurons, context="detect_assemblies()")
+    _check_component_threshold(component_threshold, percentile, n_shuffles)
 
     if n_time_bins < n_neurons:
         warnings.warn(
@@ -1028,8 +1132,32 @@ def detect_assemblies(
         np.sort(linalg.eigvalsh(corr_matrix))[::-1], np.zeros(n_neurons - n_retained)
     ]
 
+    # Derive an integer seed for sklearn from the public ``rng`` argument.
+    # sklearn estimators accept an int seed (or RandomState), not a numpy
+    # Generator, so normalize a Generator to a reproducible integer seed.
+    if rng is None:
+        seed: int | None = None
+    elif isinstance(rng, np.random.Generator):
+        seed = int(rng.integers(0, 2**32 - 1))
+    else:
+        seed = int(rng)
+
     mp_threshold = marchenko_pastur_threshold(n_retained, n_time_bins)
-    n_significant = int(np.sum(eigenvalues > mp_threshold))
+    surrogate_max = np.zeros(0)
+    if component_threshold == "marchenko_pastur":
+        threshold = mp_threshold
+    elif component_threshold == "tracy_widom":
+        threshold = mp_threshold + n_retained ** (-2.0 / 3.0)
+    else:
+        surrogate_max = _surrogate_max_eigenvalues(
+            spike_counts_z,
+            component_threshold,
+            n_shuffles,
+            rng if isinstance(rng, np.random.Generator) else np.random.default_rng(rng),
+        )
+        assert percentile is not None  # checked by _check_component_threshold
+        threshold = float(np.percentile(surrogate_max, percentile))
+    n_significant = int(np.sum(eigenvalues > threshold))
 
     # Determine number of components
     if n_components == "auto":
@@ -1037,7 +1165,8 @@ def detect_assemblies(
         if n_comp == 0:
             warnings.warn(
                 f"detect_assemblies(): no eigenvalue of the correlation matrix "
-                f"exceeds the Marchenko-Pastur bound {mp_threshold:.3f} (largest "
+                f"exceeds the {_THRESHOLD_NAMES[component_threshold]} "
+                f"{threshold:.3f} (largest "
                 f"{eigenvalues[0]:.3f}), so the counts show no correlation "
                 "structure beyond what independent neurons would give. The "
                 "result has no patterns; pass n_components= to fit exploratory "
@@ -1066,16 +1195,6 @@ def detect_assemblies(
             stacklevel=2,
         )
         n_comp = max_rank
-
-    # Derive an integer seed for sklearn from the public ``rng`` argument.
-    # sklearn estimators accept an int seed (or RandomState), not a numpy
-    # Generator, so normalize a Generator to a reproducible integer seed.
-    if rng is None:
-        seed: int | None = None
-    elif isinstance(rng, np.random.Generator):
-        seed = int(rng.integers(0, 2**32 - 1))
-    else:
-        seed = int(rng)
 
     # Perform dimensionality reduction
     if n_comp == 0:
@@ -1139,10 +1258,110 @@ def detect_assemblies(
         method=method,
         n_significant=n_significant,
         eigenvalues=eigenvalues,
-        threshold=mp_threshold,
+        threshold=threshold,
         unit_ids=labels,
+        component_threshold=component_threshold,
+        surrogate_max_eigenvalues=surrogate_max,
         _unit_ids_generated=unit_ids_generated,
     )
+
+
+def _check_component_threshold(
+    component_threshold: str, percentile: float | None, n_shuffles: int
+) -> None:
+    """Refuse an unknown threshold rule or options that do not fit it.
+
+    Parameters
+    ----------
+    component_threshold : str
+        The threshold rule.
+    percentile : float or None
+        Percentile of the surrogate maxima; required for surrogates only.
+    n_shuffles : int
+        Number of surrogate matrices.
+    """
+    call = "detect_assemblies()"
+    if component_threshold not in _COMPONENT_THRESHOLDS:
+        raise ValueError(
+            f"{call}: component_threshold must be one of "
+            f"{_COMPONENT_THRESHOLDS}, got {component_threshold!r}."
+        )
+    surrogate = component_threshold in _SURROGATE_THRESHOLDS
+    if surrogate and percentile is None:
+        raise ValueError(
+            _format_error(
+                f"{call}: component_threshold={component_threshold!r} needs "
+                "percentile=.",
+                why="Why: the threshold is a percentile of the surrogates' "
+                "largest eigenvalues, and Lopes-dos-Santos et al. (2013) give "
+                "no single value (they used the 95th and the 99th; the 95th "
+                "of circular shifts is close to the Marchenko-Pastur edge).",
+                fix="pass percentile=95.0 or percentile=99.0",
+            )
+        )
+    if not surrogate and percentile is not None:
+        raise ValueError(
+            _format_error(
+                f"{call}: percentile= applies only to the surrogate "
+                f"thresholds, not component_threshold={component_threshold!r}.",
+                why="Why: the analytical thresholds have no surrogate "
+                "distribution, so the percentile would be ignored.",
+                fix="pass component_threshold='bin_shuffle' or "
+                "'circular_shift', or drop percentile=",
+            )
+        )
+    if percentile is not None and not 0.0 < float(percentile) < 100.0:
+        raise ValueError(f"{call}: percentile must be in (0, 100), got {percentile}.")
+    if isinstance(n_shuffles, bool) or int(n_shuffles) != n_shuffles or n_shuffles < 1:
+        raise ValueError(
+            f"{call}: n_shuffles must be a positive integer, got {n_shuffles!r}."
+        )
+
+
+def _surrogate_max_eigenvalues(
+    spike_counts_z: NDArray[np.float64],
+    kind: str,
+    n_shuffles: int,
+    generator: np.random.Generator,
+) -> NDArray[np.float64]:
+    """Largest correlation eigenvalue of each surrogate count matrix.
+
+    Parameters
+    ----------
+    spike_counts_z : ndarray, shape (n_neurons, n_time_bins)
+        Z-scored counts of the varying neurons.
+    kind : {"bin_shuffle", "circular_shift"}
+        Shuffle each neuron's time bins independently, or rotate each
+        neuron's counts by its own offset drawn uniformly from
+        ``0 .. n_time_bins - 1`` (as in the authors' MATLAB and Python code).
+    n_shuffles : int
+        Number of surrogate matrices.
+    generator : numpy.random.Generator
+        Source of the shuffles.
+
+    Returns
+    -------
+    ndarray, shape (n_shuffles,)
+        Largest eigenvalue of each surrogate's correlation matrix.
+    """
+    n_neurons, n_time_bins = spike_counts_z.shape
+    # Shuffling or rotating a z-scored row keeps its mean 0 and variance 1,
+    # so Z^T Z / B of the time-first surrogate is its correlation matrix.
+    time_first = np.ascontiguousarray(spike_counts_z.T)
+    columns = np.arange(n_neurons)
+    steps = np.arange(n_time_bins)[:, None]
+    maxima = np.empty(n_shuffles)
+    for index in range(n_shuffles):
+        if kind == "bin_shuffle":
+            surrogate = generator.permuted(time_first, axis=0)
+        else:
+            offsets = np.asarray(generator.integers(0, n_time_bins, size=n_neurons))
+            surrogate = time_first[(steps - offsets[None, :]) % n_time_bins, columns]
+        correlation = surrogate.T @ surrogate / n_time_bins
+        maxima[index] = linalg.eigvalsh(
+            correlation, subset_by_index=[n_neurons - 1, n_neurons - 1]
+        )[0]
+    return maxima
 
 
 def _detect_pca(

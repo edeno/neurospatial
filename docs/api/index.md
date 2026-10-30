@@ -270,8 +270,18 @@ by position:
   task minus before it (van de Ven et al., 2016) and the share of post-task
   bins above the pre-task 99th percentile (Peyrache et al., 2010); effect
   sizes rather than significance verdicts
+- `detect_assemblies(component_threshold=...)`: Marchenko-Pastur (default),
+  Tracy-Widom, bin-shuffle or circular-shift eigenvalue thresholds
+- `ReactivationMethod`, `ReactivationWindows`, `PUBLISHED_REACTIVATION_METHODS`
+  and `compare_reactivation_methods()`: published EV and assembly analyses
+  (Kudrimoti 1999 to Giri 2024) as recipes with their bin sizes, pair rules,
+  windows and tests, applied to one session's spike times
+- `null_reactivation_data()`, `simulated_reactivation_session()` and
+  `reactivation_detection_rates()`: data without reactivation, a simulated
+  session with a rate-change confound, and verdict rates with exact intervals
 
-See the [complete public workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).
+See [Comparing reactivation methods](../user-guide/reactivation-methods.md) and
+the [complete public workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).
 
 ### [neurospatial.behavior](neurospatial/behavior/index.md)
 

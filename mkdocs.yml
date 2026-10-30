@@ -181,6 +181,7 @@ nav:
       - Neuroscience Metrics: user-guide/neuroscience-metrics.md
       - Population Analysis: user-guide/population-analysis.md
       - Comparing Replay Methods: user-guide/replay-methods.md
+      - Comparing Reactivation Methods: user-guide/reactivation-methods.md
       - Trajectory & Behavioral Analysis: user-guide/trajectory-and-behavioral-analysis.md
       - Behavior Around Events: user-guide/behavior-around-events.md
       - RL Primitives: user-guide/rl-primitives.md
