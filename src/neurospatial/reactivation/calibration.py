@@ -80,8 +80,14 @@ def null_reactivation_data(
     kind : {"cell_identity", "circular_shift", "rate_poisson"}
         - ``"cell_identity"``: unit ``i`` gets the match-period spikes of
           unit ``π(i)`` for a random permutation ``π``. The match period
-          keeps its own co-firing, eigenvalues and rates, but which cells
-          fire together no longer matches the template.
+          keeps its own co-firing and eigenvalues, but which cells fire
+          together no longer matches the template. Rates move with the
+          spikes: unit ``i`` takes unit ``π(i)``'s match-period rate, so
+          only the set of rates across the population is kept, not each
+          unit's change in rate from the template. This null therefore
+          has neither reactivation nor a per-unit rate change; it does not
+          calibrate the rate confound (use
+          :func:`simulated_reactivation_session` with ``rate_change``).
         - ``"circular_shift"``: each unit's spikes in each match epoch are
           rotated in time by its own offset, drawn uniformly over the
           epoch, wrapping at the epoch's end. Each unit keeps its spike
