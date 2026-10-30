@@ -69,6 +69,15 @@
   method's share of rows called reactivated with a Clopper-Pearson interval,
   and the mean of its statistic for methods without a within-session test.
 
+**Documentation**
+
+- New guide, [Comparing reactivation methods](docs/user-guide/reactivation-methods.md):
+  the published recipes on one simulated session, what each reports, their
+  values on three kinds of null data and on a session without reactivation,
+  the rate-change confound that every published method calls reactivation,
+  the choice of assembly threshold, and how to run the recipes on your own
+  recording.
+
 ### Reactivation measures
 
 The pattern and pair-correlation reactivation measures now compute what the
