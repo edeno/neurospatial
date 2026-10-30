@@ -68,6 +68,7 @@ from neurospatial.replay.trajectory import (
     detect_trajectory_radon,
     fit_isotonic_trajectory,
     fit_linear_trajectory,
+    regression_line_score,
 )
 
 if TYPE_CHECKING:
@@ -83,6 +84,7 @@ __all__ = [
     "BERNERS_LEE_2022",
     "BUSH_2022",
     "CAREY_2019",
+    "CHANG_2025",
     "CHENANI_2019",
     "DAVIDSON_2009",
     "DIBA_BUZSAKI_2007",
@@ -91,6 +93,7 @@ __all__ = [
     "GROSMARK_2016",
     "GUPTA_2010",
     "HARVEY_2023",
+    "HARVEY_2023_LINE",
     "IGATA_2021",
     "JADHAV_2016",
     "JI_WILSON_2007",
@@ -110,6 +113,7 @@ __all__ = [
     "PUBLISHED_METHODS",
     "SHIN_2019",
     "SILVA_2015",
+    "SOULA_2023",
     "TANG_2017",
     "TIROLE_2022",
     "WIDLOSKI_FOSTER_2022",
@@ -4863,9 +4867,7 @@ HARVEY_2023 = ReplayMethod(
         "with each direction's maps, test each, and call it replay if either "
         "is.",
         "The paper's alternative check, the posterior within a 21 cm band "
-        "of a line fit to the decoded positions, is not reproduced; the "
-        "code's replay-participation scripts select replay with it against "
-        "time-bin permutations.",
+        "of a line fit to the decoded positions, is HARVEY_2023_LINE.",
         "Candidate events are sharp-wave ripples; sessions with a median "
         "running decoding error of 25 cm or more, or a decoding accuracy "
         "that does not beat circular spike-time shuffles, were excluded. "
@@ -4932,6 +4934,181 @@ LIU_2023 = ReplayMethod(
         "Candidate events: pyramidal-cell rate above its mean with a peak "
         "more than 2 SD above it, 100-500 ms, overlapping an independently "
         "detected SWR; event selection is not applied here.",
+    ),
+)
+
+SOULA_2023 = ReplayMethod(
+    name="soula_2023",
+    reference=(
+        "Soula, M., Maslarova, A., Harvey, R. E., Valero, M., Brandner, S., "
+        "Hamer, H., Fernández-Ruiz, A., & Buzsáki, G. (2023). Interictal "
+        "epileptiform discharges affect memory in an Alzheimer's disease "
+        "mouse model. Proceedings of the National Academy of Sciences, "
+        "120(34), e2302676120. https://doi.org/10.1073/pnas.2302676120"
+    ),
+    score=regression_line_score,
+    score_options={"band": 10.5},
+    nulls=("column_cycle",),
+    n_shuffles=1000,
+    alpha=0.05,
+    empty_time_bins="zero",
+    criteria=(
+        ReplayCriterion("n_active_cells", ">=", 5),
+        ReplayCriterion("empty_fraction", "<=", 0.5),
+    ),
+    units="cm",
+    decoding={"time_bin": 0.02, "position_bin": 3.0, "prior": "uniform"},
+    notes=(
+        "'Linear regression was used to fit a line to the posterior "
+        "probability distribution. A Bayesian replay score for a given event "
+        "was defined as the sum probability mass under the fit line within a "
+        "bandwidth (21 cm)', against 1,000 shuffles 'circularly shifting each "
+        "column of the posterior probability matrix by a random amount'; p = "
+        "(k + 1) / (n + 1) < 0.05 with k the shuffles scoring at least the "
+        "event (the paper: 'higher than the observed score').",
+        "The line is read as the least-squares line of each time bin's most "
+        "likely position on time, as the same co-author's code does for "
+        "Harvey et al. 2023 (nelpy's trajectory_score_array, which regresses "
+        "the MAP bin on the time-bin number); no Soula-specific code was "
+        "read. A search for the line holding the most posterior (Davidson et "
+        "al. 2009, detect_trajectory_radon with band 10.5) is another reading "
+        "of 'fit a line', not followed.",
+        "Band: 21 cm read as the full width, the 2w + 1 = 7 bins of 3 cm the "
+        "code sums around the line (w = 3), so band (a half-width) is 10.5 "
+        "cm. The code rounds the line to a bin and wraps the band around the "
+        "track's ends (each time bin's posterior is shifted circularly); "
+        "here band past an end holds nothing. "
+        "score_options={'band': 10.5, 'wrap_band': True} wraps it as the "
+        "code does; with the line on bin centers the two then agree.",
+        "Time bins without spikes have no posterior in nelpy: set to zero "
+        "here (empty_time_bins='zero') and left out of the line and of the "
+        "mean band mass, as in the code.",
+        "At least five active pyramidal cells with a peak rate of at least 1 "
+        "Hz and a peak-to-mean ratio of 1.5: pass those cells' spike counts. "
+        "Events with more than 50% of their time bins without spikes are "
+        "discarded, so at most half is kept (applied).",
+        "Candidate events are SWRs (30-100 ms) in home-cage sleep; sessions "
+        "with a median running decoding error of 25 cm or more (speed > 3 "
+        "cm/s) were excluded. Event and session selection are not applied "
+        "here.",
+    ),
+)
+
+HARVEY_2023_LINE = dataclasses.replace(
+    SOULA_2023,
+    name="harvey_2023_line",
+    reference=HARVEY_2023.reference,
+    decoding=HARVEY_2023.decoding,
+    notes=(
+        "The paper's 'alternative approach' (STAR Methods, 'Detection of "
+        "replay'): 'linear regression to fit a line to the posterior "
+        "probability distribution. A Bayesian replay score for a given event "
+        "was defined as the sum probability mass under the fit line within a "
+        "bandwidth (21 cm)', with the same 1,000 column-cycle shuffles, alpha "
+        "and event rules as its weighted correlation (HARVEY_2023).",
+        "The authors' code (ryanharvey1/ripple_heterogeneity, "
+        "replay/score.py) scores nelpy's trajectory_score_array(w=3, "
+        "normalize=True): the least-squares line of the MAP bin on the "
+        "time-bin number, rounded to bins, and the posterior in the 7 bins "
+        "of 3 cm around it (21 cm, so band is 10.5 cm), averaged over the "
+        "time bins with a posterior. The band wraps around the track's ends "
+        "in the code; here band past an end holds nothing. "
+        "score_options={'band': 10.5, 'wrap_band': True} wraps it as the "
+        "code does.",
+        "Code differences not followed: 1,500 shuffles by default (the paper "
+        "states 1,000), each time bin shifted by 1 to n_bins - 1 bins "
+        "(null_options={'column_cycle': {'exclude_zero_shift': True}}), and "
+        "the replay-participation scripts select replay with this score "
+        "against time-bin permutations (nulls=('time_bin_permutation',)), "
+        "which the paper does not state.",
+        "Time bins without spikes have no posterior in nelpy: set to zero "
+        "here (empty_time_bins='zero') and left out of the line and of the "
+        "mean band mass, as in the code.",
+        "At least 5 active pyramidal cells with a peak rate of at least 1 Hz "
+        "and a peak-to-mean ratio of 1 (1.5 and at least 100 running spikes "
+        "in the code): pass those cells' spike counts. Events with more than "
+        "50% of their time bins without spikes are discarded (applied).",
+        "One decoder per running direction: decode each event with each "
+        "direction's maps and test each. Candidate events are sharp-wave "
+        "ripples; session selection (median running decoding error below 25 "
+        "cm) is not applied here.",
+    ),
+)
+
+CHANG_2025 = ReplayMethod(
+    name="chang_2025",
+    reference=(
+        "Chang, H., Tang, W., Wulf, A. M., Nyasulu, T., Wolf, M. E., "
+        "Fernandez-Ruiz, A., & Oliva, A. (2025). Sleep microstructure "
+        "organizes memory replay. Nature, 637(8048), 1161-1169. "
+        "https://doi.org/10.1038/s41586-024-08340-w"
+    ),
+    score=weighted_correlation,
+    score_options={"row_normalization": "none"},
+    nulls=("column_cycle",),
+    n_shuffles=1000,
+    alpha=0.05,
+    alternative="two-sided",
+    use_absolute=False,
+    empty_time_bins="zero",
+    criteria=(ReplayCriterion("n_active_cells", ">=", 5),),
+    template_choice="smallest_p",
+    decoding={
+        "time_bin": 0.01,
+        "prior": "uniform over position and trajectory",
+        "templates": "left and right T-maze trajectories, decoded jointly",
+        "rate_map_speed": 2.0,
+    },
+    notes=(
+        "'a weighted correlation was calculated for the posterior "
+        "probability matrix of each trajectory, and the significance was "
+        "assessed by circularly shifting the time-bins of the posterior "
+        "probability matrix (n = 1000 times). A sequence was considered "
+        "significant if its weighted correlation exceeded the 97.5th "
+        "percentile or was below the 2.5th percentile (for reverse "
+        "sequences) of the shuffled distributions (i.e., p < 0.025)': the "
+        "signed r tested two-sided at alpha = 0.05 against column cycles "
+        "(each time bin's posterior shifted along the track, as the code "
+        "does). The two-sided p-value here is at least 2 / (n + 1), so an "
+        "event at the edge of a percentile rule can differ.",
+        "'If more than one trajectory type were significant, the trajectory "
+        "with the lowest p-value was considered as the replayed trajectory': "
+        "template_choice='smallest_p', not corrected for the two "
+        "trajectories, as in the paper.",
+        "The decoder is joint over position and trajectory with a uniform "
+        "prior, so each trajectory's posterior matrix is its share of the "
+        "joint posterior: pass decode_jointly(...) as the event with both "
+        "trajectories' rate maps. The weighted correlation uses the share "
+        "as weights (row_normalization='none'), so time bins the trajectory "
+        "explains less weigh less. Each time bin weighted equally "
+        "(score_options={}) is the code's separate decode of each "
+        "trajectory: with a uniform prior, a share renormalized per time bin "
+        "is that trajectory's own posterior.",
+        "Each candidate event was 'divided into 10-ms non-overlapping bins'. "
+        "Time bins without spikes are set to zero (empty_time_bins='zero'), "
+        "as the code shifts only time bins with spikes; the paper does not "
+        "say. At least 5 active cells (the paper's 'at least 5 place cells "
+        "fired', applied to the event's cells given).",
+        "Code differences not followed (pupil_project, "
+        "replayHSEseq_decoding_CA1_slidingwin_linfittingR2.m): 20 ms windows "
+        "stepped by 10 ms; 500 shuffles of 1 to n_bins - 1 bins; p = k / n "
+        "with k shuffles strictly beyond the event, one-sided in the "
+        "direction of r's sign; among significant trajectories the largest "
+        "|r|; cells with a peak rate of at least 3 Hz, counted for a "
+        "trajectory above 2 Hz there; and an event must also pass a "
+        "Davidson-type line test (p < 0.025: band of 2 bins of 2 cm on each "
+        "side, 100 log-spaced speeds of 100 to 10,000 cm/s in both "
+        "directions, mean band mass over the time bins with spikes), which "
+        "one method cannot express (it tests one score). Nearest variant: "
+        "dataclasses.replace(CHANG_2025, n_shuffles=500, score_options={}, "
+        "null_options={'column_cycle': {'exclude_zero_shift': True}}) on 20 "
+        "ms windows stepped by 10 ms (sum adjacent 10 ms counts and decode "
+        "with dt=0.02), still without the line test.",
+        "Rate maps: speed above 2 cm/s, 100 linear bins per trajectory, "
+        "Gaussian SD of 1 bin. Candidate events are high-synchrony events "
+        "(1 ms bins smoothed with a 15 ms SD Gaussian, above 3 SD, at least "
+        "50 ms, overlapping an SWR, immobility below 1 cm/s); event "
+        "selection is not applied here.",
     ),
 )
 
@@ -5375,8 +5552,11 @@ PUBLISHED_METHODS: tuple[
     BERNERS_LEE_2022,
     WIDLOSKI_FOSTER_2022,
     HARVEY_2023,
+    HARVEY_2023_LINE,
     LIU_2023,
+    SOULA_2023,
     MALLORY_2025,
+    CHANG_2025,
     WIDLOSKI_FOSTER_2025,
 )
 """Every published per-event method recipe in this module.

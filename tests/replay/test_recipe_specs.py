@@ -672,6 +672,68 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
             },
         },
     ),
+    # Harvey et al. (2023), "alternative approach", and Soula et al. (2023):
+    # posterior within a 21 cm bandwidth (half-width 10.5 cm) of the line
+    # fit to the posterior; 1,000 column cycles; p < 0.05; >= 5 active
+    # cells; > 50% inactive time bins discarded; 20 ms and 3 cm bins.
+    "harvey_2023_line": (
+        ReplayMethod,
+        {
+            "score": "regression_line_score",
+            "score_options": {"band": 10.5},
+            "nulls": ("column_cycle",),
+            "empty_time_bins": "zero",
+            "criteria": (
+                ("n_active_cells", ">=", 5, None, False),
+                ("empty_fraction", "<=", 0.5, None, False),
+            ),
+            "units": "cm",
+            "decoding": {
+                "time_bin": 0.02,
+                "position_bin": 3.0,
+                "rate_map_smoothing_sd": 3.0,
+                "prior": "uniform",
+            },
+        },
+    ),
+    "soula_2023": (
+        ReplayMethod,
+        {
+            "score": "regression_line_score",
+            "score_options": {"band": 10.5},
+            "nulls": ("column_cycle",),
+            "empty_time_bins": "zero",
+            "criteria": (
+                ("n_active_cells", ">=", 5, None, False),
+                ("empty_fraction", "<=", 0.5, None, False),
+            ),
+            "units": "cm",
+            "decoding": {"time_bin": 0.02, "position_bin": 3.0, "prior": "uniform"},
+        },
+    ),
+    # Chang et al. (2025): weighted correlation of each trajectory's share
+    # of a joint decode in 10 ms bins; 1,000 column cycles; above the 97.5th
+    # or below the 2.5th percentile; lowest p-value over the trajectories;
+    # >= 5 place cells.
+    "chang_2025": (
+        ReplayMethod,
+        {
+            "score": "weighted_correlation",
+            "score_options": {"row_normalization": "none"},
+            "nulls": ("column_cycle",),
+            "alternative": "two-sided",
+            "use_absolute": False,
+            "empty_time_bins": "zero",
+            "criteria": (("n_active_cells", ">=", 5, None, False),),
+            "template_choice": "smallest_p",
+            "decoding": {
+                "time_bin": 0.01,
+                "prior": "uniform over position and trajectory",
+                "templates": "left and right T-maze trajectories, decoded jointly",
+                "rate_map_speed": 2.0,
+            },
+        },
+    ),
     "maboudi_2018": (
         ReplayMethod,
         {
