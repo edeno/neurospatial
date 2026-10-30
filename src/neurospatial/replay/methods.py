@@ -95,6 +95,14 @@ _SEGMENT_QUANTITIES = {
     "segment_start_to_end_distance": "start_to_end_distances",
     "segment_path_length": "path_lengths",
 }
+# The scale each ReplaySegmentation option may be given relative to.
+_SEGMENT_OPTION_SCALES = {
+    "max_jump": "track_length",
+    "max_spread": "track_length",
+    "merge_max_distance": "track_length",
+    "min_dispersion": "track_length",
+    "min_peak_probability": "chance",
+}
 # Criterion quantities that compare the templates of a joint decode.
 _TEMPLATE_QUANTITIES = ("template_fraction", "segment_template_fraction")
 _COMPARISONS: dict[str, Callable[[float, float], bool]] = {
@@ -248,10 +256,11 @@ class ReplaySegmentation:
         ``units``.
     relative_to : Mapping[str, {"track_length", "chance"}]
         Options given as a multiple of a property of the environment.
-        ``"track_length"`` multiplies the option by the track's length;
-        ``"chance"`` multiplies it by ``1 / env.n_bins``, the mass per bin
-        of a uniform posterior on equal bins (Igata et al. 2021: a MAP
-        above 5 times chance).
+        ``"track_length"`` multiplies a distance option (``max_jump``,
+        ``max_spread``, ``merge_max_distance``, ``min_dispersion``) by the
+        track's length; ``"chance"`` multiplies ``min_peak_probability`` by
+        ``1 / env.n_bins``, the mass per bin of a uniform posterior on equal
+        bins (Igata et al. 2021: a MAP above 5 times chance).
     choose : {"longest", "any"}
         Which segment is tested. ``"longest"`` tests the longest segment,
         as papers that truncate the event to its longest sequence and then
@@ -282,16 +291,21 @@ class ReplaySegmentation:
     rows: Literal["segment", "trajectory"] = "segment"
 
     def __post_init__(self) -> None:
-        """Freeze the mappings and refuse options replay_segments does not take."""
-        from neurospatial.replay.segments import replay_segments
+        """Freeze the mappings and refuse options replay_segments would refuse."""
+        from neurospatial.replay.segments import (
+            _checked_options,
+            _threshold,
+            replay_segments,
+        )
 
         object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
         object.__setattr__(
             self, "relative_to", MappingProxyType(dict(self.relative_to))
         )
+        parameters = inspect.signature(replay_segments).parameters
         accepted = [
             name
-            for name, parameter in inspect.signature(replay_segments).parameters.items()
+            for name, parameter in parameters.items()
             if parameter.kind is inspect.Parameter.KEYWORD_ONLY
             and name != "valid_time_bins"
         ]
@@ -314,11 +328,39 @@ class ReplaySegmentation:
                 "not in options; add their values to options or remove them "
                 "from relative_to."
             )
-        scales = sorted(set(self.relative_to.values()) - {"track_length", "chance"})
-        if scales:
+        mismatched = {
+            name: scale
+            for name, scale in self.relative_to.items()
+            if _SEGMENT_OPTION_SCALES.get(name) != scale
+        }
+        if mismatched:
             raise ValueError(
-                f"ReplaySegmentation: relative_to values must be 'track_length' "
-                f"or 'chance', got {scales}."
+                _format_error(
+                    f"ReplaySegmentation: relative_to={mismatched} scales "
+                    "options by a property they are not measured in.",
+                    why="'track_length' multiplies a distance (max_jump, "
+                    "max_spread, merge_max_distance, min_dispersion) and "
+                    "'chance' multiplies min_peak_probability, a posterior "
+                    "mass; times and counts have no scale",
+                    fix="pair each option with its scale, or give it in its own "
+                    "units and leave it out of relative_to",
+                )
+            )
+        # Check every option as replay_segments would; an option relative to
+        # chance is checked against 1 only once n_bins is known.
+        chance = [name for name, scale in self.relative_to.items() if scale == "chance"]
+        defaults = {
+            name: parameters[name].default
+            for name in accepted
+            if parameters[name].default is not inspect.Parameter.empty
+        }
+        given = {
+            name: value for name, value in self.options.items() if name not in chance
+        }
+        _checked_options("ReplaySegmentation", **{**defaults, **given})
+        for name in chance:
+            _threshold(
+                name, self.options[name], minimum="zero", operation="ReplaySegmentation"
             )
         if self.choose not in ("longest", "any"):
             raise ValueError(

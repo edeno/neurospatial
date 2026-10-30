@@ -388,3 +388,82 @@ class TestMethodValidation:
                 score=weighted_correlation,
                 nulls=("column_cycle", "column_cycle"),
             )
+
+
+class TestSegmentationValidation:
+    @pytest.mark.parametrize(
+        ("name", "scale"),
+        [
+            ("max_jump", "chance"),  # would be distance / n_bins
+            ("min_peak_probability", "track_length"),
+            ("min_duration", "track_length"),  # seconds
+            ("min_time_bins", "track_length"),  # a count
+            ("max_gap_bins", "chance"),
+        ],
+    )
+    def test_a_scale_must_fit_the_option(self, name, scale):
+        options = {"max_jump": 20.0, name: 5}
+        with pytest.raises(ValueError, match="not measured in"):
+            ReplaySegmentation(options, relative_to={name: scale})
+
+    @pytest.mark.parametrize(
+        "relative_to",
+        [
+            {"max_jump": "track_length"},
+            {"max_spread": "track_length"},
+            {"merge_max_distance": "track_length"},
+            {"min_dispersion": "track_length"},
+            {"min_peak_probability": "chance"},
+        ],
+    )
+    def test_each_option_takes_its_scale(self, env, relative_to):
+        options = {
+            "max_jump": 0.4,
+            "max_spread": 0.1,
+            "merge_max_time_gap": 0.05,
+            "merge_max_distance": 0.2,
+            "min_dispersion": 0.1,
+            "min_peak_probability": 0.5,
+        }
+        segmentation = ReplaySegmentation(options, relative_to=relative_to)
+        ((name, scale),) = relative_to.items()
+        factor = 100.0 if scale == "track_length" else 1.0 / env.n_bins
+        resolved = segmentation.resolved_options(env)
+        assert resolved[name] == pytest.approx(options[name] * factor)
+
+    @pytest.mark.parametrize(
+        ("options", "match"),
+        [
+            ({"max_jump": -5.0}, "max_jump must be a finite number > 0"),
+            ({"max_jump": np.nan}, "max_jump must be a finite number > 0"),
+            ({"max_jump": "20"}, "max_jump must be a number"),
+            ({"max_jump": 20.0, "method": "mean"}, "method must be one of"),
+            ({"max_jump": 20.0, "jump_rule": "after"}, "jump_rule must be one of"),
+            ({"max_jump": 20.0, "min_time_bins": 2.5}, "min_time_bins must be an"),
+            ({"max_jump": 20.0, "max_gap_bins": -1}, "max_gap_bins must be an"),
+            ({"max_jump": 20.0, "min_peak_probability": 1.0}, "below 1"),
+            ({"max_jump": 20.0, "merge_max_time_gap": 0.05}, "given together"),
+            ({"max_jump": 20.0, "metric": "manhattan"}, "metric must be one of"),
+        ],
+    )
+    def test_option_values_are_checked_when_made(self, options, match):
+        with pytest.raises(ValueError, match=f"ReplaySegmentation: .*{match}"):
+            ReplaySegmentation(options)
+
+    def test_an_option_relative_to_chance_may_exceed_one(self):
+        # 5 times chance is below 1 on any environment with more than 5 bins.
+        segmentation = ReplaySegmentation(
+            {"max_jump": 20.0, "min_peak_probability": 5.0},
+            relative_to={"min_peak_probability": "chance"},
+        )
+        assert segmentation.options["min_peak_probability"] == 5.0
+        with pytest.raises(ValueError, match="min_peak_probability must be a finite"):
+            ReplaySegmentation(
+                {"max_jump": 20.0, "min_peak_probability": -5.0},
+                relative_to={"min_peak_probability": "chance"},
+            )
+
+    def test_replay_segments_still_names_itself(self, env, sweep):
+        posterior, times = sweep
+        with pytest.raises(ValueError, match=r"replay_segments\(\): max_jump"):
+            replay_segments(env, posterior, times, max_jump=-5.0)

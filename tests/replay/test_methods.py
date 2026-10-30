@@ -1068,7 +1068,7 @@ class TestSegmentationValidation:
             ),
             (
                 {"options": {"max_jump": 0.4}, "relative_to": {"max_jump": "arena"}},
-                "relative_to values",
+                "not measured in",
             ),
             ({"options": {"max_jump": 20.0}, "choose": "all"}, "choose"),
             (

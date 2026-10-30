@@ -428,6 +428,14 @@ def trajectory_metrics(
     )
 
 
+def _check_metric(metric: Any, operation: str) -> None:
+    """Refuse a distance metric other than geodesic, Euclidean or None."""
+    if metric is not None and metric not in _METRICS:
+        raise ValueError(
+            f"{operation}: metric must be one of {_METRICS} or None, got {metric!r}."
+        )
+
+
 def _trajectory_metrics(
     env: Environment,
     posterior: NDArray[np.float64],
@@ -442,10 +450,7 @@ def _trajectory_metrics(
     from neurospatial.environment import _track_extents
     from neurospatial.geometry import require_cartesian
 
-    if metric is not None and metric not in _METRICS:
-        raise ValueError(
-            f"{operation}: metric must be one of {_METRICS} or None, got {metric!r}."
-        )
+    _check_metric(metric, operation)
     require_cartesian(
         env.coordinate_system,
         operation,
