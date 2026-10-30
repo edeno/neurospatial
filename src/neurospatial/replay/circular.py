@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import numpy as np
 
+from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.replay._inputs import _FIT_WHY, _posterior_times, _probability_rows
@@ -490,8 +491,8 @@ def _cumulative_angles(decoded: NDArray[np.float64]) -> NDArray[np.float64]:
     NDArray[np.float64], shape (..., n_time_bins)
         0 at the first time bin, then the running sum of the steps.
     """
-    # pi - ((pi - step) mod 2 pi) lies in (-pi, pi]: a half-loop step is +pi.
-    steps = np.pi - np.mod(np.pi - np.diff(decoded, axis=-1), 2 * np.pi)
+    # A half-loop step is +pi.
+    steps = wrap_angle(np.diff(decoded, axis=-1))
     cumulative: NDArray[np.float64] = np.concatenate(
         [np.zeros((*decoded.shape[:-1], 1)), np.cumsum(steps, axis=-1)], axis=-1
     )
