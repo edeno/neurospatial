@@ -1455,7 +1455,9 @@ class TestReplayShuffleCalibration:
             for seed in range(200)
         ]
 
-        assert np.mean(np.array(p_values) <= 0.05) <= 0.08
+        # Near the nominal 5% (binomial SD 1.5% for 200 events), from both
+        # sides: a null that never moves the posterior would give none.
+        assert 0.02 <= np.mean(np.array(p_values) <= 0.05) <= 0.08
 
     def test_planted_sweep_is_significant(self, track):
         posterior = self._decode(

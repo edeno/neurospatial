@@ -281,7 +281,18 @@ class TestTemplateShare:
         np.testing.assert_allclose(part.mean_positions, full.mean_positions)
         np.testing.assert_allclose(part.spread, full.spread)
         np.testing.assert_allclose(part.map_jumps, full.map_jumps)
+        np.testing.assert_allclose(part.mean_jumps, full.mean_jumps)
         assert part.dispersion == pytest.approx(full.dispersion)
+        for name in (
+            "map_range",
+            "mean_range",
+            "start_to_end_map_distance",
+            "start_to_end_mean_distance",
+            "map_path_length",
+            "max_map_jump",
+            "max_mean_jump",
+        ):
+            assert getattr(part, name) == pytest.approx(getattr(full, name)), name
         # Peak mass is reported as given.
         np.testing.assert_allclose(
             part.peak_probability, share[np.arange(5), full.map_bins]

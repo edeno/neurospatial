@@ -698,15 +698,21 @@ class TestDecodeIntervals:
             )
 
 
-def test_false_positives_on_cell_identity_copies(track):
-    """Shuffling cell identities of real sweeps removes their replay."""
+@pytest.mark.parametrize("kind", ["cell_identity", "spike_shift", "poisson"])
+def test_false_positives_on_null_copies(track, kind):
+    """Every null kind removes the replay of real sweeps.
+
+    The bound of 0.1 is calibrated: over seeds 0-9, these 100 null events
+    give rates of at most 0.07 for every kind, and 0.13 at seed 0 when one
+    spike shift is shared by every cell, which keeps the sweep's order.
+    """
     x = track.bin_centers[:, 0]
     rates = 0.5 + 25.0 * np.exp(
         -0.5 * ((x - np.linspace(0.0, 100.0, 20)[:, None]) / 8.0) ** 2
     )
     trains = [[] for _ in range(20)]
     intervals = []
-    for index in range(6):
+    for index in range(10):
         event = simulate_replay_event(
             track, rates, kind="sweep", speed=400.0, rate_gain=4.0, seed=index
         )
@@ -717,14 +723,14 @@ def test_false_positives_on_cell_identity_copies(track):
     trains = [np.concatenate(parts) for parts in trains]
     intervals = np.asarray(intervals)
     real_events, real_counts = decode_intervals(track, trains, intervals, rates, dt=DT)
-    null = null_events(trains, intervals, kind="cell_identity", n_copies=3, rng=0)
+    null = null_events(trains, intervals, kind=kind, n_copies=10, rng=0)
     null_decoded, null_counts = decode_intervals(
         track, null.spike_times, null.intervals, rates, dt=DT
     )
     tables = []
     for name, events, counts in (
         ("real", real_events, real_counts),
-        ("cell_identity", null_decoded, null_counts),
+        ("null", null_decoded, null_counts),
     ):
         table = compare_replay_methods(
             track, events, replay_methods=[SILVA_2015], spike_counts=counts, rng=0
@@ -735,7 +741,7 @@ def test_false_positives_on_cell_identity_copies(track):
         "data"
     )
     assert rates_by_data.loc["real", "rate"] >= 0.8
-    assert rates_by_data.loc["cell_identity", "rate"] <= 0.25
+    assert rates_by_data.loc["null", "rate"] <= 0.1
 
 
 KF = KARLSSON_FRANK_2009
