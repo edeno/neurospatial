@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import operator
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from copy import deepcopy
+from dataclasses import fields
+from types import MappingProxyType
 from typing import Any, Protocol, TypeVar
 
 import numpy as np
@@ -115,6 +117,38 @@ def plain_value(value: Any) -> Any:
 def label_at(unit_ids: Any, index: int) -> Any:
     """Return one label as a plain Python value, whatever the array's dtype."""
     return plain_value(np.asarray(unit_ids)[index])
+
+
+def _rebuild_dataclass(cls: type[Any], state: dict[str, Any]) -> Any:
+    """Construct ``cls`` from its fields by name, for unpickling."""
+    return cls(**state)
+
+
+def reduce_through_constructor(
+    obj: Any,
+) -> tuple[Callable[..., Any], tuple[type, dict[str, Any]]]:
+    """``__reduce__`` for a frozen dataclass that holds read-only mappings.
+
+    A ``MappingProxyType`` cannot be pickled, so pickle, copy and deepcopy
+    rebuild the object through its constructor, which freezes the mappings
+    again. Every field is passed by name, so a field added later is kept.
+
+    Parameters
+    ----------
+    obj : dataclass instance
+        The object to reduce; every field must be an ``__init__`` argument.
+
+    Returns
+    -------
+    tuple
+        ``(rebuild, (type(obj), fields))`` for ``__reduce__``.
+    """
+    state = {
+        item.name: dict(value) if isinstance(value, MappingProxyType) else value
+        for item in fields(obj)
+        for value in (getattr(obj, item.name),)
+    }
+    return _rebuild_dataclass, (type(obj), state)
 
 
 _ResultT = TypeVar("_ResultT")

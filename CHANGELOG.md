@@ -2,6 +2,81 @@
 
 ## [Unreleased]
 
+### Replay scoring robustness
+
+- An event whose score is undefined, such as the R² of a decoded position
+  that never changes, no longer stops `compare_replay_methods` for every
+  event. `detect_replay` gives it no verdict (`is_replay` and every criterion
+  False, score and p-value NaN), and the table row has the `error` "score
+  undefined (e.g. the decoded position does not change)".
+- The weighted correlation treats a variance at round-off level as no
+  variation. With all of the posterior mass in one time bin, it used to
+  return 0 or NaN depending on the bin's time. A method that drops or zeroes
+  time bins without spikes now gets the `error` "fewer than two time bins
+  with spikes to score" for an event with fewer than two.
+- Shuffles whose score is undefined are still left out of the p-value, and
+  now also out of the z-score: one undefined shuffle no longer makes
+  `compute_shuffle_zscore` NaN. `ReplaySignificanceResult.n_shuffles_used`
+  gives the shuffles each null counts. `ReplayDetectionResult` and the
+  `compare_replay_methods` table have `n_shuffles_used`, the smallest over the
+  method's nulls (NaN without shuffles). The warning names the null, and from
+  `compare_replay_methods` also the event and the method.
+- Spike counts summed over cells, shape `(n_time_bins,)`, are refused by
+  `event_properties` and by `detect_replay` methods that count active cells;
+  they counted every event as one active cell.
+- A prior with one row per time bin is cut with the time bins a method tests
+  (its segment, or the time bins with spikes) before the shuffles decode
+  again.
+- In `compare_replay_methods`: rows with an `error` have every `passes[...]`
+  of their method False instead of NaN; spike counts and `valid_time_bins`
+  must have one row per time bin of their event, for every method;
+  `table.attrs["rng_entropy"]` holds the seed of the run, so passing it as
+  `rng` reproduces a run made with `rng=None`; and a pooled SSI method whose
+  threshold lies beyond the SSI grid says so in `error`.
+- `replay_significance` refuses a custom score whose signature cannot be
+  read, instead of running it without the seeded `rng`.
+
+### Replay recipe validation
+
+- `ReplaySignificanceResult` can be pickled and deep-copied; its
+  `shuffles` stay read-only. Its `summary()` works for a custom `score=`
+  whose result has only a `score`.
+- `ReplayMethod`, `ReplaySegmentation`, `ArmReplayMethod` and
+  `ReplayDetectionResult` pickle every field by name, so no setting is
+  reset when a copy is rebuilt.
+- `ReplayCriterion` refuses a threshold that is not a finite number (NaN,
+  a string, a bool) and an `absolute` that is not True or False.
+- `ReplayMethod` refuses two criteria with the same label, such as
+  thresholds 2.0 and 2.000001 on one quantity: results are keyed by label,
+  so one criterion overwrote the other and the verdict depended on their
+  order.
+- `ReplayMethod` checks its settings when it is made rather than partway
+  through `detect_replay`:
+  - a method without nulls, criteria or a segmentation is refused, since
+    it would call every event replay;
+  - criteria must test a quantity of an event: `"score"`,
+    `"n_active_cells"`, `"active_fraction"`, a `segment_*` or template
+    quantity, or a scalar of `TrajectoryMetrics`. A typo, a per-time-bin
+    array such as `"map_jumps"` or a method name is refused;
+  - `score` must be callable, and `score_options` must be options it
+    takes;
+  - `n_shuffles` must be an integer (NumPy integers included), not 2.5 or
+    `"99"`;
+  - `nulls="column_cycle"` is one null, as in `replay_significance`, and a
+    null named twice is refused.
+- `ReplaySegmentation` ties each `relative_to` scale to the options it
+  fits: `"track_length"` to the distances `max_jump`, `max_spread`,
+  `merge_max_distance` and `min_dispersion`, and `"chance"` to
+  `min_peak_probability`. `relative_to={"max_jump": "chance"}` gave a
+  maximum jump of the distance over `n_bins`. Option values are checked
+  as `replay_segments` checks them (a negative `max_jump`, an unknown
+  `method`, a non-integer `min_time_bins`) when the segmentation is made.
+- `WeightedCorrelationResult`, `LinearFitResult` and
+  `RankOrderSignificanceResult` compare equal only to themselves, like
+  every other replay result. Compare their fields to compare values.
+- `ArmReplayMethod` refuses a bool or a string for its numeric settings;
+  `peak_threshold=True` passed as 1.
+
 ### Published replay methods as comparable recipes
 
 `neurospatial.replay.methods` holds published replay tests as explicit
@@ -27,7 +102,7 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
   Davidson et al. (2009) and Michon et al. (2019) did. Each (event, method)
   pair has its own random stream, so adding or reordering methods does not
   change the other results. An event with fewer than two time bins to score
-  gets a row with an `error` and no verdict.
+  gets a row with an `error`, and `is_replay` is False.
 - `replay_significance` and `detect_replay` test one template's share of a
   joint decode: pass the share, `decode_jointly(...).joint(name)`, every
   template's rate maps as `encoding_models` and `template=name`. Shuffled
@@ -55,6 +130,9 @@ measure each method's false-positive rate on several kinds of null data:
   - `"spike_shift"`: each cell's spikes shifted circularly within the
     event;
   - `"poisson"`: each cell keeps its count, with spikes placed at random.
+
+  Overlapping intervals are refused: their shared spikes would be copied
+  into two null events.
 - `simulated_null_events(env, encoding_models, n_events=, kind=)`
   simulates random or stationary events. Stationary events are placed at
   random along the track.
@@ -79,7 +157,7 @@ and random events). It then:
 - compares the methods at a matched false-positive rate;
 - shows how to run the same steps on your own recording.
 
-The guide shows where methods fail differently. Davidson et al.'s line fit
+The guide shows where methods fail differently. Davidson et al.'s line search
 calls stationary and spike-shift events replay. Correlation and rank-order
 tests call short, jumpy random events replay.
 
@@ -97,7 +175,8 @@ the default.
   computed exactly from the p-values, not read off a grid, so the rate never
   exceeds the target. `groups=` matches each kind of null data or each
   session separately. Warnings say when the matched α is the smallest
-  p-value the shuffles can give (run more shuffles), when there are too
+  p-value the shuffles can give, `1 / (n_shuffles + 1)` or twice that for
+  a two-sided test (run more shuffles), when there are too
   few null events for the target, and when no α holds the rate: then α is
   NaN.
 - `apply_alpha(table, alpha=, replay_methods=)` gives the table's verdicts
@@ -137,7 +216,12 @@ New `neurospatial.replay.calibration` summarizes the table of
   sensitivity.
   - It can be split by bins of event properties (`by=`) and by table
     columns such as the kind of null data or the session (`groups=`).
-    Every combination is reported.
+    Every combination is reported. A missing `groups` value forms its own
+    group, as in `matched_alpha` and `method_agreement`.
+  - `properties=` joins on the `groups` and `event` when it has the
+    `groups` columns. Several concatenated tables each number their events
+    from 0, so their properties must have the `groups` columns; without
+    them they are refused rather than joined to another table's events.
   - An event that falls in no bin is refused rather than dropped.
   - Events a method could not score count as not replay by default, so
     every method's rate covers the same events. `errors="exclude"` gives
@@ -470,8 +554,8 @@ arena, where paths along the bin grid are longer; `metric=` overrides this.
 
 `template_fractions(result)` gives the share of a jointly decoded event
 (`decode_jointly`) in each template (Ambrose et al. 2016, eq. 1).
-`exclude_end_distance=10.0` leaves out bins within 10 cm of either track end
-first, as the Mallory et al. (2025) code does; their |left − right| > 0.33
+`exclude_end_distance=20.0` leaves out bins within 20 cm of either track end
+first, as the Mallory et al. (2025) code does (10 bins of 2 cm); their |left − right| > 0.33
 criterion is the larger fraction exceeding 0.665.
 
 ### Simulate replay events with a known path
@@ -483,8 +567,9 @@ fires as an inhomogeneous Poisson process at its rate map there (times
 `rate_gain`).
 
 - `kind="sweep"`: constant speed.
-- `kind="stationary"`: a fixed position, which fools a line fit but not the
-  weighted correlation (van der Meer et al. 2020).
+- `kind="stationary"`: a fixed position, which fools Davidson et al.'s line
+  search (`detect_trajectory_radon`) but not the weighted correlation (van der
+  Meer et al. 2020) or the R² of `fit_linear_trajectory`.
 - `kind="jump"`: two sweep fragments, `jump_distance` apart (default a quarter
   of the track).
 - `kind="random"`: a new position every 20 ms, a null event.
@@ -574,7 +659,7 @@ New `shuffle_spike_counts_circular(spike_counts)` yields the shifted counts
 on their own. It and the place-field and column-cycle shuffles shift each
 cell or time bin independently, by a shift drawn uniformly from all shifts.
 The Bendor-lab code's `ceil(rand * n)` gives the same distribution.
-`shuffle_place_fields_circular` now leaves bins without a rate for every cell
+`shuffle_place_fields_circular` now leaves bins where any cell's rate is NaN
 in place and shifts each field over the other bins.
 
 ### Rank-order correlation of replay events
@@ -614,9 +699,10 @@ alike.
 ### Test any replay score against shuffles; weighted correlation
 
 `replay_significance(env, posterior, times, score=..., nulls=...)` replaces
-`replay_trajectory_significance`. It tests any replay score against the
-column-cycle, unit-identity and pseudo-event nulls, rescoring every shuffle
-with the same score and search. It reports each null's Monte Carlo p-value and
+`replay_trajectory_significance`. It tests any replay score against
+shuffle nulls, by default the column-cycle, unit-identity and pseudo-event
+nulls of Davidson et al. (2009), rescoring every shuffle with the same score
+and search. It reports each null's Monte Carlo p-value and
 the largest, since an event is significant only when every null rejects it.
 
 - `score` is the score function itself. The default is
@@ -625,8 +711,8 @@ the largest, since an event is significant only when every null rejects it.
   `fit_isotonic_trajectory` and any function returning a result with a
   `score` also work. Options go in `score_options`, for example
   `{"band": 10.0}`.
-- `nulls=` chooses the nulls. By default, every null whose inputs are given
-  is run, as before.
+- `nulls=` chooses the nulls. By default, the column-cycle, unit-identity
+  and pseudo-event nulls are run, each when its inputs are given, as before.
 - `alternative=` (`"greater"`, `"less"`, `"two-sided"`) and `use_absolute=`
   set what counts as extreme. By default the weighted correlation is tested
   as |r|, as Grosmark & Buzsáki (2016) and Tirole et al. (2022) do, so reverse
@@ -683,15 +769,15 @@ Replay scoring and reactivation are now separate from decoding:
   reactivation.
 
 `neurospatial.decoding` keeps decoding, position estimates and decoding
-accuracy. The functions behave exactly as before; only their import paths
-changed.
+accuracy. The move itself changes no behavior; the entries above describe
+changes to the scores and shuffles.
 
 **Breaking changes**
 
 | Old import | New import |
 | --- | --- |
 | `neurospatial.decoding.detect_trajectory_radon`, `fit_linear_trajectory`, `fit_isotonic_trajectory` and their results (`RadonDetectionResult`, `LinearFitResult`, `IsotonicFitResult`) | `neurospatial.replay` |
-| `neurospatial.decoding.replay_trajectory_significance` | `neurospatial.replay.replay_significance` (see above) |
+| `neurospatial.decoding.replay_trajectory_significance` | `neurospatial.replay.replay_significance`, returning `ReplaySignificanceResult` (see above) |
 | `neurospatial.stats.shuffle_cell_identity`, `shuffle_place_fields_circular`, `shuffle_place_fields_circular_2d`, `shuffle_posterior_circular`, `shuffle_posterior_weighted_circular` | `neurospatial.replay` |
 | `neurospatial.decoding.detect_assemblies`, `assembly_activation`, `reactivation_strength`, `marchenko_pastur_threshold`, `pairwise_correlations`, `explained_variance_reactivation` and their results (`AssemblyPattern`, `AssemblyDetectionResult`, `ExplainedVarianceResult`) | `neurospatial.reactivation` |
 
