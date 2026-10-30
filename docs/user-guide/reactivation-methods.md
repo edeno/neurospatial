@@ -95,7 +95,7 @@ because the correlation of 100 ms counts is a different number from that of
 | `LANSINK_2009` | 50 ms | different regions | 20-min blocks of rest | EV − REV | bootstrap of pairs: 2.5th percentile above 0 |
 | `PEYRACHE_2010` | 100 ms | (assemblies, PCA) | whole periods | mean R(t) after − before | per-bin cell-identity shuffles (shares only) |
 | `VAN_DE_VEN_2016` | 25 ms | (assemblies, ICA) | whole periods; smoothed spikes | mean R(t) after − before | none (across patterns) |
-| `OLIVA_2020_ASSEMBLY` | 20 ms | (assemblies, ICA) | whole periods; smoothed spikes | mean R(t) after − before | none |
+| `OLIVA_2020_ASSEMBLY` | 20 ms | (assemblies, ICA) | whole periods; smoothed spikes, z-scored over the whole session | mean R(t) after − before | none |
 | `GIRI_2019`, `GIRI_2024` | 250 ms | different shanks; `pair_mask` | 15-min windows sliding by 5 min | EV averaged over windows before | none |
 
 REV, the reversed EV (Pennartz et al. 2004), swaps the two rest periods: how
@@ -248,7 +248,7 @@ print(mean_value.unstack().round(3).to_string())
   produce EV.
 - **Assemblies on null data.** The assembly difference depends on the kind
   of null. With cell identities permuted it is small but positive, 0.07 to
-  0.13 or 5 to 10% of the reactivated value, because a permutation can send
+  0.23 or 5 to 11% of the reactivated value, because a permutation can send
   an assembly member's spikes to another member. With trains rotated or
   redrawn it is negative: the bursts still
   correlate the cells in rest before the task but no longer in rest after
@@ -343,8 +343,10 @@ subsample from binned counts: for each unit, the rest period in which it
 fires more per bin loses spikes chosen at random until it fires at its rate
 in the other period. The task is not subsampled. A recipe with
 `n_rate_subsamples=` does this for each pair of windows of rest before and
-after and reports the medians over the subsamples. Giri et al. drew 100;
-10 keep this guide fast.
+after and reports the subsample whose statistic is the median (the lower
+of the two middle ones for an even count), so EV, REV, the partial
+correlation and its p-value all come from one subsample and stay
+consistent with each other. Giri et al. drew 100; 10 keep this guide fast.
 
 <!-- docs-test: run -->
 ```python
@@ -368,8 +370,8 @@ print(called.mul(2).astype(int).to_string())
   Giri's 0.14, and Kudrimoti's t test calls both windows reactivated. With
   equal rates both fall to 0.002 to 0.004, the EV of the session without
   reactivation, and the test calls neither window.
-- **Real reactivation survives.** EV stays at 0.84 to 0.89 in the
-  reactivated session and 0.70 to 0.74 when the rates also change. It is
+- **Real reactivation survives.** EV stays at 0.84 to 0.88 in the
+  reactivated session and 0.69 to 0.74 when the rates also change. It is
   lower than with every spike because the subsample also removes spikes of
   the assembly events after the task, which raise the members' rates too.
   The control is conservative: it can lower a genuine effect.
@@ -591,8 +593,9 @@ activation strength R(t) around SWR onsets (`event_response`):
 
 The assembly recipes that follow R(t) around SWRs z-score each unit over
 rest before and after together (`zscore_over="control_and_match"`), as the
-labs' code does; the time-binned assembly recipes above z-score each period
-on its own.
+labs' code does. `HARVEY_2023_ASSEMBLY` and `OLIVA_2020_ASSEMBLY` z-score
+over the whole session (`"all_periods"`), and `PEYRACHE_2010` and
+`VAN_DE_VEN_2016` each period on its own.
 
 `compare_reactivation_methods` takes the events as `(start, stop)` rows:
 `control_events` and `match_events` for the SWRs of rest before and after,
@@ -601,8 +604,8 @@ events that start inside its window. Events may touch but not overlap. A
 recipe's `needs_events` names the arguments it uses. Here the simulated
 bursts stand in for SWRs, and the task is cut into 125 ms theta cycles. The
 simulated rest periods last 20 minutes, shorter than the hour of NREM that
-Harvey et al. and Liu et al. used, so these two recipes use the whole
-periods here.
+Harvey et al. and Liu et al. used; as in their code, a shorter sleep is used
+whole (`ReactivationWindows(allow_shorter=True)`).
 
 <!-- docs-test: run -->
 ```python
@@ -611,11 +614,8 @@ edges = np.arange(start, stop + 1e-9, 0.125)
 theta_cycles = np.column_stack([edges[:-1], edges[1:]])
 print("SWRs before:", len(session.control_events), "after:", len(session.match_events))
 
-whole = {"control_windows": ReactivationWindows(), "match_windows": ReactivationWindows()}
 event_methods = [
-    dataclasses.replace(method, **whole) if method.control_windows.length else method
-    for method in PUBLISHED_REACTIVATION_METHODS
-    if method.needs_events
+    method for method in PUBLISHED_REACTIVATION_METHODS if method.needs_events
 ]
 
 
