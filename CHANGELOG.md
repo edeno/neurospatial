@@ -250,6 +250,25 @@ default lap route all changed.
   east edge passes through a column of bin centers now departs one sample
   earlier.
 
+### Project vision
+
+- Document the long-term goals for shared spatial environments, durable storage,
+  validated and comparable methods, simulation, agents, visualization, and future
+  methods development. Link the vision from the README, documentation home page,
+  and contributor guide.
+- Make scientific inference, reproducible analyses, comparisons across
+  experiments, changing environments, community validation, and interoperability
+  explicit in the vision and contributor principles, with accessibility and
+  performance on realistic recordings as shared requirements.
+- Add goals for the animal's sensory access and interaction opportunities, and
+  richer behavioral analysis of routes, encounters, choices, sequences, and
+  history in environmental context. Distinguish modeled opportunities, observed
+  behavior, and inferred perception or knowledge.
+- Add an explicit goal for reusable regressors and features for GLMs, state-space
+  models, and reinforcement learning, with preserved timing and scientific
+  meaning. NeMoS and other modeling or RL frameworks remain optional consumers.
+  Record POT benchmarking and PyVista interoperability as integration candidates.
+
 ### Spatial information of very small rates
 
 - Skaggs spatial information (`spatial_information`,
