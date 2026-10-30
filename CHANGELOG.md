@@ -41,6 +41,44 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
   counts. The Bendor-lab code zeroes the original event's empty time bins in
   shuffles that move them, which is not reproduced.
 
+### Criteria-based replay recipes test a trajectory segment
+
+Five more recipes follow criteria-based papers: `PFEIFFER_FOSTER_2013`,
+`PFEIFFER_FOSTER_2015`, `CAREY_2019`, `IGATA_2021` and
+`WIDLOSKI_FOSTER_2022`. Each cuts the event into trajectory segments with
+`replay_segments` and tests one segment.
+
+- New `ReplaySegmentation`, the `segmentation=` of a `ReplayMethod`, holds:
+  - the `replay_segments` options, with options given relative to the track
+    length or to chance (`1 / env.n_bins`);
+  - which segment is tested: `choose="longest"` (Pfeiffer & Foster; Igata)
+    or `choose="any"`, the longest segment that meets the criteria (Carey;
+    Widloski & Foster);
+  - Carey's active-cell rule, `min_active_cells_per_time_bin`.
+- The score, the shuffles and the criteria apply to the tested segment.
+  Without a segment, the event is not replay.
+- New criterion quantities describe the tested segment:
+  `segment_duration`, `segment_time_bin_count`, `segment_dispersion`,
+  `segment_start_to_end_distance` and `segment_path_length`.
+- A segmentation method without a score can still be tested against
+  shuffles: each shuffle scores 1 when it has a segment that meets the
+  criteria, so p is the share of shuffles that have one (Igata et al.
+  2021).
+- `ReplayDetectionResult` has `segments` and `segment`, and its `summary()`
+  and the `compare_replay_methods` table add `n_segments`,
+  `segment_start_time` and `segment_end_time`.
+- `detect_replay(..., valid_time_bins=)` and
+  `compare_replay_methods(..., valid_time_bins=)` pass time bins that cannot
+  be on a trajectory, such as Widloski & Foster's running bins, to the
+  segmentation. Methods without a segmentation ignore them.
+- `ReplayMethod(units=)` names the units of a recipe's distance thresholds;
+  `detect_replay` refuses an environment in other units. The new recipes are
+  in cm.
+- `ReplayCriterion` treats a value within 1e-9 of its threshold as equal to
+  it, as `replay_segments` does. A segment of 21 time bins on 5 ms steps
+  therefore lasts 100 ms and fails a strict 100 ms test, whatever the
+  floating-point rounding of its times.
+
 ### Cut a candidate event into replayed trajectories
 
 `replay_segments(env, posterior, times, max_jump=...)` finds the part of a

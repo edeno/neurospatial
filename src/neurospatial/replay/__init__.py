@@ -53,8 +53,11 @@ Published Methods
 detect_replay : Apply one published replay method to one decoded event
 compare_replay_methods : Several methods on several events, as a table
 ReplayMethod, ReplayCriterion : A method's score, shuffles and thresholds
+ReplaySegmentation : How a criteria-based method finds the trajectory segment
 neurospatial.replay.methods : The published recipes (DAVIDSON_2009,
-    KARLSSON_FRANK_2009, SILVA_2015, WU_2017, MICHON_2019, TIROLE_2022)
+    KARLSSON_FRANK_2009, PFEIFFER_FOSTER_2013, PFEIFFER_FOSTER_2015,
+    SILVA_2015, WU_2017, CAREY_2019, MICHON_2019, IGATA_2021, TIROLE_2022,
+    WIDLOSKI_FOSTER_2022)
 
 Significance
 ------------
@@ -101,6 +104,7 @@ from neurospatial.replay.methods import (
     ReplayCriterion,
     ReplayDetectionResult,
     ReplayMethod,
+    ReplaySegmentation,
     compare_replay_methods,
     detect_replay,
 )
@@ -137,6 +141,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "ReplayCriterion",
     "ReplayDetectionResult",
     "ReplayMethod",
+    "ReplaySegmentation",
     "compare_replay_methods",
     "detect_replay",
     # Result containers
