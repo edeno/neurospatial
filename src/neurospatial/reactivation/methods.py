@@ -51,8 +51,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals, times_in_intervals
-from neurospatial._results import resolve_unit_ids
-from neurospatial._spikes import as_spike_trains
+from neurospatial._spikes import as_labelled_spike_trains
 from neurospatial._time_bins import _count_spikes_in_time_bins
 from neurospatial.reactivation.assemblies import (
     AssemblyPattern,
@@ -947,7 +946,9 @@ def compare_reactivation_methods(
     Parameters
     ----------
     spike_times : sequence of arrays or spike group
-        One spike train per unit, in seconds.
+        One spike train per unit, in seconds. A spike group (a dict of unit
+        ID to train, :class:`~neurospatial.encoding.SpikeTrains` or a
+        pynapple ``TsGroup``) names its units with its own IDs.
     template_epochs : array-like, shape (n, 2), or IntervalSet
         Epochs of the template period, for example running on the track
         (or its theta periods).
@@ -968,8 +969,9 @@ def compare_reactivation_methods(
         spikes in events counts them from each event's start to its stop,
         and one following R(t) around events aligns it to their starts.
     unit_ids : array-like, shape (n_units,), optional
-        Label of each unit, for ``member_unit_ids``; default
-        ``np.arange(n_units)``.
+        Label of each unit, for ``member_unit_ids``; default the IDs a
+        spike group carries, else ``np.arange(n_units)``. With a spike
+        group it must equal the group's IDs.
     unit_groups : mapping of str to array-like, optional
         Each unit's group, by kind: ``"tetrode"``, ``"shank"`` or
         ``"region"``, one entry per unit, as methods with a ``pairs`` rule
@@ -1046,7 +1048,8 @@ def compare_reactivation_methods(
         If the methods' names repeat, a method needs ``control_epochs``,
         events or a ``unit_groups`` kind that is not given, events overlap,
         a group or ``pair_mask`` does not have one entry per unit or pair,
-        or ``unit_ids`` does not hold one distinct label per unit.
+        ``unit_ids`` does not hold one distinct label per unit or differs
+        from the IDs of a spike group, or a spike time is NaN or infinite.
 
     Warns
     -----
@@ -1121,9 +1124,8 @@ def compare_reactivation_methods(
                 "dataclasses.replace(method, name='...')",
             )
         )
-    trains = as_spike_trains(spike_times)
+    trains, labels, _ = as_labelled_spike_trains(spike_times, unit_ids, context=_CALL)
     n_units = len(trains)
-    labels = resolve_unit_ids(unit_ids, n_units, context=_CALL)
     template = as_intervals(template_epochs, name="template_epochs")
     match = as_intervals(match_epochs, name="match_epochs")
     control = as_intervals(control_epochs, name="control_epochs")

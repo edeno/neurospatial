@@ -36,6 +36,10 @@
   NaN rows.
 - `n_shuffles`, `n_rate_subsamples`, `min_events` and
   `ReactivationWindows.count` refuse floats such as `20.0`.
+- `compare_reactivation_methods` names pattern members by the IDs a spike
+  group carries (a dict, `SpikeTrains` or `TsGroup`); before, they were
+  renumbered by position. A `unit_ids` that differs from the group's IDs is
+  refused.
 
 ### Reactivation assembly fixes
 
