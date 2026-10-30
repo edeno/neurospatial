@@ -246,6 +246,71 @@ class TestDegradation:
         assert default.n_dropped_spikes == 0
         assert default.n_noise_spikes == 0
 
+    @pytest.mark.parametrize(
+        ("kwargs", "seed", "expected"),
+        [
+            (
+                {"speed": 600.0},
+                0,
+                {
+                    3: [0.01655181024825076],
+                    4: [0.009412270840200394, 0.024283057841432573],
+                    6: [0.03342258895802071],
+                    7: [0.04876727473653436],
+                    31: [0.026181098886736687],
+                },
+            ),
+            (
+                {"speed": 600.0},
+                1,
+                {
+                    0: [0.0032882629114890033],
+                    2: [0.018905267790182017],
+                    3: [
+                        0.013875311004623324,
+                        0.021604266504455672,
+                        0.03366747981868414,
+                        0.03857701830609792,
+                    ],
+                    4: [0.049785697672175645],
+                    6: [0.04430382387670968],
+                },
+            ),
+            (
+                {"kind": "random"},
+                2,
+                {
+                    3: [0.005726733553635087, 0.038242048779537456],
+                    6: [0.03725397968650889],
+                    17: [0.04996127096404444],
+                    36: [0.008138291268662166],
+                    37: [0.00036743483408249614],
+                    38: [0.0034251830847614713],
+                },
+            ),
+            (
+                {"kind": "jump", "speed": 400.0, "jump_distance": 80.0},
+                3,
+                {18: [0.009642359793399622], 19: [0.04272538973029196]},
+            ),
+        ],
+    )
+    def test_default_event_matches_the_one_before_degradation(
+        self, place_code, kwargs, seed, expected
+    ):
+        """Spike times recorded before ``drop_fraction`` and ``n_noise_spikes``.
+
+        Recorded from ``simulate_replay_event`` before the degradation
+        options existed, so adding their streams must not have moved the
+        path or spike streams of a seeded event.
+        """
+        env, rates = place_code
+        event = simulate_replay_event(env, rates, duration=0.05, seed=seed, **kwargs)
+        for unit, train in enumerate(event.spike_times):
+            np.testing.assert_allclose(
+                train, expected.get(unit, []), rtol=1e-12, atol=0.0
+            )
+
     @pytest.mark.parametrize("fraction", [0.25, 0.5, 1.0])
     def test_removes_that_fraction_of_the_rate_map_spikes(self, place_code, fraction):
         env, rates = place_code
