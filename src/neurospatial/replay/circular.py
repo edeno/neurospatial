@@ -246,7 +246,7 @@ def fit_circular_sequence(
     ----------
     Wikenheiser, A. M., & Redish, A. D. (2013). The balance of forward and
     backward hippocampal sequences shifts across behavioral states.
-    *Hippocampus*, 23(1), 22-29. https://doi.org/10.1002/hipo.22072
+    *Hippocampus*, 23(1), 22-29. https://doi.org/10.1002/hipo.22049
 
     Karlsson, M. P., & Frank, L. M. (2009). Awake replay of remote
     experiences in the hippocampus. *Nature Neuroscience*, 12(7), 913-918.

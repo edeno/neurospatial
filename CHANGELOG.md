@@ -82,6 +82,53 @@ other seeded simulations give the same spikes as before.
   `grid_spacing` used to build grid cells with NaN spacing.
 - Head-direction and boundary-vector `ground_truth` report a preferred
   direction of exactly −π as +π, the package's (−π, π] convention.
+
+### More published replay recipes
+
+Twelve more recipes in `neurospatial.replay.methods`, each with the paper's
+values, its decoding settings for reference, and notes on every value the
+paper leaves open and the reading taken here:
+
+- `WIKENHEISER_REDISH_2013`: `fit_circular_sequence` on a circular track
+  against time-bin permutations (10,000, Karlsson & Frank's count; the
+  paper gives none), time bins without spikes dropped, at least 3 active
+  cells and 5 spikes.
+- `OLAFSDOTTIR_2015`: line search with a 20 cm band at 2-50 m/s against
+  1,000 cell-identity shuffles, p < 0.05, at least 7 active cells; time
+  bins without spikes kept (not stated; the lab's later rule, dropping
+  them, is one `dataclasses.replace` away).
+- `OLAFSDOTTIR_2016`: `OLAFSDOTTIR_2017` with p < 0.2, kept empty time
+  bins, at least 15% of the place cells active, and the running direction
+  with the smaller p-value (`template_choice="smallest_p"`).
+- `JADHAV_2016`, `TANG_2017`, `SHIN_2019`: Karlsson & Frank's sampled
+  regression on the four W-track trajectories, keeping the trajectory with
+  the smallest p-value; 500, 10,000 and 1,500 shuffles, at least 4, 5 and
+  5 active cells.
+- `YAMAMOTO_TONEGAWA_2017`: Davidson's line search against 2,000
+  column-cycle shuffles at p < 0.05. The paper states little else; the
+  notes list each value taken from Davidson et al.
+- `FAROOQ_2019`: the signed weighted correlation against 500 time-bin
+  permutations, two-sided at 0.05, at least 5 active cells.
+- `MUESSIG_2019`: line search with a 12.5 cm half-width band (the paper's
+  "25 cm wide"), speeds from 0 to 25 m/s, wrapping around a square track
+  (`wrap=True`), the largest score over clockwise and counterclockwise
+  decodes in the event and in each of 500 cell-identity shuffles
+  (`template_choice="max_score"`).
+- `BUSH_2022`: line search with a 15 cm half-width band at 1-50 m/s on
+  time bins with spikes, against 100 shuffles of the active cells'
+  identities (`null_options={"unit_identity": {"active_only": True}}`), at
+  least 5 active cells and 15% of the cells.
+- `HARVEY_2023`: |weighted correlation| with empty time bins zeroed,
+  against 1,000 column-cycle shuffles, at least 5 active cells and at most
+  half the time bins empty (`"empty_fraction"`).
+- `LIU_2023`: line search with a 22.5 cm band over lines that start and
+  end on the track (`line_ends="on_track"`, as the authors' code), against
+  500 column-cycle shuffles.
+- `KARLSSON_FRANK_2009` notes that Carr et al. (2012) used it, and
+  `WU_2017` that Mou et al. (2022) did.
+- The user guide's replay page names the recipes that choose among
+  templates and how to build a closed-loop track for the circular ones.
+
 ### New replay nulls
 
 - The `unit_identity` null takes `null_options={"unit_identity":
