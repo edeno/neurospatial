@@ -95,6 +95,10 @@ class ReplaySignificanceResult(ResultMixin):
         The side of the null distribution tested.
     use_absolute : bool
         Whether the absolute value of the score was tested.
+    template : str or None
+        For several templates decoded separately (``posterior`` given as a
+        mapping), the template with the largest score, whose result is
+        ``observed``; None for one posterior.
 
     Results compare equal only to themselves.
 
@@ -108,6 +112,7 @@ class ReplaySignificanceResult(ResultMixin):
     p_value: float
     alternative: str
     use_absolute: bool
+    template: str | None = None
 
     def __post_init__(self) -> None:
         """Freeze the mapping of shuffle tests."""
@@ -137,14 +142,15 @@ class ReplaySignificanceResult(ResultMixin):
         Starts with the observed result's ``summary()``, or only its
         ``score`` for a custom score whose result has no ``summary()``. Each
         null adds its p-value, ``{null}_p_value``, and the shuffles it counts,
-        ``{null}_n_shuffles_used``.
+        ``{null}_n_shuffles_used``. Separately decoded templates add the
+        ``template`` with the largest score.
         """
         summarize = getattr(self.observed, "summary", None)
         observed = (
             summarize() if callable(summarize) else {"score": self.observed.score}
         )
         used = self.n_shuffles_used
-        return {
+        values = {
             **observed,
             "p_value": self.p_value,
             **{f"{name}_p_value": test.p_value for name, test in self.shuffles.items()},
@@ -152,11 +158,14 @@ class ReplaySignificanceResult(ResultMixin):
             "alternative": self.alternative,
             "use_absolute": self.use_absolute,
         }
+        if self.template is not None:
+            values["template"] = self.template
+        return values
 
 
 def replay_significance(
     env: Environment | Mapping[str, Environment],
-    posterior: NDArray[np.float64],
+    posterior: NDArray[np.float64] | Mapping[str, NDArray[np.float64]],
     times: NDArray[np.float64],
     *,
     score: Callable[..., Any] = detect_trajectory_radon,
@@ -229,8 +238,20 @@ def replay_significance(
         linearized track. For one template's share of a joint decode over
         separate tracks, the mapping of environments passed to
         :func:`~neurospatial.decoding.decode_jointly` (see ``template``).
-    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
-        Posterior mass over spatial bins for each time bin of the event.
+        For separately decoded templates on different environments, a
+        mapping keyed like ``posterior``.
+    posterior : NDArray[np.float64] or Mapping[str, NDArray[np.float64]]
+        Posterior mass over spatial bins for each time bin of the event,
+        shape (n_time_bins, n_bins). Or, for several templates decoded
+        separately, such as the two running directions each decoded with
+        :func:`~neurospatial.decoding.decode_position` on its own rate maps
+        (not jointly), a mapping of template name to posterior: the tested
+        statistic is then the largest over the templates, in the event and
+        in every shuffle (Muessig et al. 2019; see Notes).
+        ``encoding_models`` and ``prior`` are then mappings keyed like it,
+        or one value for every template; ``template`` and
+        ``pseudo_event_pool`` are not used, and ``alternative`` must be
+        ``"greater"``.
     times : NDArray[np.float64], shape (n_time_bins,)
         Center time of each posterior row, in seconds; strictly increasing for
         :func:`detect_trajectory_radon`.
@@ -303,13 +324,17 @@ def replay_significance(
         Davidson et al. (2009) used 1500, Tirole et al. (2022) 1000.
     rng : np.random.Generator, int, or None, default=None
         Random number generator or seed; the nulls draw from it in the order
-        listed above. Pass a seed for a reproducible result.
+        listed above. Pass a seed for a reproducible result. Separately
+        decoded templates each draw from their own stream, derived from
+        ``rng`` and the template's name, so the result does not depend on
+        the order of the templates.
 
     Returns
     -------
     ReplaySignificanceResult
         The event's score result, one shuffle test per null run, and the
-        largest of their p-values.
+        largest of their p-values; for separately decoded templates, also
+        the template with the largest score.
 
     Raises
     ------
@@ -351,6 +376,17 @@ def replay_significance(
     The unit-identity null decodes the shuffled counts the way ``posterior``
     was decoded, which is checked by decoding the unshuffled counts first.
 
+    For templates decoded separately, the event's statistic is the largest
+    over the templates, and each shuffle's statistic is the largest over
+    the templates' shuffles, each template shuffled independently: the
+    shuffles are not yoked to the template that fits the event best (Silva
+    et al. 2015; Muessig et al. 2019). Taking the largest of several scores
+    raises the event's statistic even without replay, so the null must take
+    the same largest; comparing the event's largest score with one
+    template's shuffles calls too many events replay (up to ``1 - (1 -
+    alpha)**k`` of events without replay for ``k`` independent templates).
+    A shuffle whose score is undefined in any template is left out.
+
     References
     ----------
     Davidson, T. J., Kloosterman, F., & Wilson, M. A. (2009). Hippocampal
@@ -370,6 +406,14 @@ def replay_significance(
     Takigawa, M., Huelin Gorriz, M., Tirole, M., & Bendor, D. (2024).
     Evaluating hippocampal replay without a ground truth. *eLife*, 13,
     e85635.
+
+    Silva, D., Feng, T., & Foster, D. J. (2015). Trajectory events across
+    hippocampal place cells require previous experience. *Nature
+    Neuroscience*, 18(12), 1772-1779.
+
+    Muessig, L., Lasek, M., Varsavsky, I., Cacucci, F., & Wills, T. J.
+    (2019). Coordinated emergence of hippocampal replay and theta sequences
+    during post-natal development. *Current Biology*, 29(5), 834-840.
 
     Examples
     --------
@@ -401,12 +445,27 @@ def replay_significance(
         shuffle_spike_counts_circular,
     )
     from neurospatial.stats import _ensure_rng
-    from neurospatial.stats.shuffle import (
-        ShuffleTestResult,
-        compute_shuffle_pvalue,
-        compute_shuffle_zscore,
-    )
 
+    if isinstance(posterior, Mapping):
+        return _max_over_templates(
+            env,
+            posterior,
+            times,
+            score=score,
+            score_options=score_options,
+            nulls=nulls,
+            spike_counts=spike_counts,
+            encoding_models=encoding_models,
+            dt=dt,
+            prior=prior,
+            template=template,
+            pseudo_event_pool=pseudo_event_pool,
+            alternative=alternative,
+            use_absolute=use_absolute,
+            empty_time_bins=empty_time_bins,
+            n_shuffles=n_shuffles,
+            rng=rng,
+        )
     if (
         isinstance(n_shuffles, bool)
         or not isinstance(n_shuffles, (int, np.integer))
@@ -590,9 +649,50 @@ def replay_significance(
             n_shuffles,
         )
 
+    shuffles = _shuffle_tests(
+        observed,
+        {
+            name: _statistic(scores, use_absolute)
+            for name, scores in null_scores.items()
+        },
+        score=float(observed_result.score),
+        alternative=alternative,
+        n_shuffles=n_shuffles,
+        stacklevel=3,
+    )
+    return ReplaySignificanceResult(
+        observed=observed_result,
+        shuffles=shuffles,
+        p_value=max(test.p_value for test in shuffles.values()),
+        alternative=alternative,
+        use_absolute=use_absolute,
+    )
+
+
+def _shuffle_tests(
+    observed: float,
+    null_statistics: Mapping[str, NDArray[np.float64]],
+    *,
+    score: float,
+    alternative: Literal["greater", "less", "two-sided"],
+    n_shuffles: int,
+    stacklevel: int,
+) -> dict[str, ShuffleTestResult]:
+    """One shuffle test per null, leaving out shuffles with an undefined score.
+
+    ``observed`` and ``null_statistics`` are the tested statistic (the
+    absolute score when it is tested); ``score`` is the event's score,
+    reported when a null has no defined shuffle. ``stacklevel`` points the
+    warning about undefined shuffles at the caller of the public function.
+    """
+    from neurospatial.stats.shuffle import (
+        ShuffleTestResult,
+        compute_shuffle_pvalue,
+        compute_shuffle_zscore,
+    )
+
     shuffles = {}
-    for name, scores in null_scores.items():
-        statistic = _statistic(scores, use_absolute)
+    for name, statistic in null_statistics.items():
         defined = np.isfinite(statistic)
         n_used = int(defined.sum())
         if n_used == 0:
@@ -605,7 +705,7 @@ def replay_significance(
                     fix=f"leave {name} out of nulls, or check that the score is "
                     "defined on shuffled versions of this event",
                 ),
-                score=float(observed_result.score),
+                score=score,
                 null=name,
             )
         if n_used < n_shuffles:
@@ -614,7 +714,7 @@ def replay_significance(
                 "shuffles have an undefined (NaN) score and are left out; the "
                 f"{name} p-value counts the other {n_used} (n_shuffles_used).",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=stacklevel,
             )
         shuffles[name] = ShuffleTestResult(
             observed_score=observed,
@@ -626,13 +726,233 @@ def replay_significance(
             shuffle_type=name,
             n_shuffles=n_shuffles,
         )
+    return shuffles
+
+
+def _max_over_templates(
+    env: Environment | Mapping[str, Environment],
+    posteriors: Mapping[str, NDArray[np.float64]],
+    times: NDArray[np.float64],
+    *,
+    score: Callable[..., Any],
+    score_options: Mapping[str, Any] | None,
+    nulls: str | Sequence[str] | None,
+    spike_counts: NDArray[np.int64] | None,
+    encoding_models: Any,
+    dt: float | None,
+    prior: Any,
+    template: str | None,
+    pseudo_event_pool: NDArray[np.float64] | None,
+    alternative: Literal["greater", "less", "two-sided"],
+    use_absolute: bool | None,
+    empty_time_bins: Literal["keep", "zero"],
+    n_shuffles: int,
+    rng: np.random.Generator | int | None,
+) -> ReplaySignificanceResult:
+    """The largest score over separately decoded templates, tested likewise.
+
+    Each template is tested on its own random stream. The event's statistic
+    is the largest of the templates' statistics, and shuffle ``i`` of the
+    null is the largest of the templates' ``i``-th shuffles, which are drawn
+    independently: not yoked to the template that fits the event best
+    (Silva et al. 2015; Muessig et al. 2019).
+    """
+    names, envs, models, priors = _separate_inputs(
+        env, posteriors, encoding_models, prior, _OPERATION
+    )
+    refused = [
+        name
+        for name, given in (
+            ("template", template),
+            ("pseudo_event_pool", pseudo_event_pool),
+        )
+        if given is not None
+    ]
+    if refused:
+        raise ValueError(
+            _format_error(
+                f"{_OPERATION}: {refused} cannot be used with templates decoded "
+                "separately.",
+                why="every template is tested and the largest score kept; a "
+                "pseudo-event pool holds the rows of one environment's posterior",
+                fix=f"leave out {refused}",
+            )
+        )
+    if alternative != "greater":
+        raise ValueError(
+            _format_error(
+                f"{_OPERATION}: templates decoded separately need "
+                f"alternative='greater', got {alternative!r}.",
+                why="the event's statistic is the largest over the templates, "
+                "which is the best fit only when larger scores are better",
+                fix="use alternative='greater' (with use_absolute=True for a "
+                "signed score such as the weighted correlation)",
+            )
+        )
+    if use_absolute is None:
+        base, _ = _unwrap_partial(score, dict(score_options or {}))
+        use_absolute = base is weighted_correlation
+    streams = _template_streams(rng, names)
+    results: dict[str, ReplaySignificanceResult] = {}
+    scores: dict[str, float] = {}
+    undefined: _UndefinedNullError | None = None
+    with warnings.catch_warnings():
+        # Undefined shuffles are counted, and warned about, after the maximum.
+        warnings.filterwarnings("ignore", message=".*undefined \\(NaN\\) score")
+        for name in names:
+            try:
+                results[name] = replay_significance(
+                    envs[name],
+                    posteriors[name],
+                    times,
+                    score=score,
+                    score_options=score_options,
+                    nulls=nulls,
+                    spike_counts=spike_counts,
+                    encoding_models=models[name],
+                    dt=dt,
+                    prior=priors[name],
+                    alternative="greater",
+                    use_absolute=use_absolute,
+                    empty_time_bins=empty_time_bins,
+                    n_shuffles=n_shuffles,
+                    rng=streams[name],
+                )
+            except _UndefinedNullError as error:
+                undefined = error
+                scores[name] = error.score
+            else:
+                scores[name] = float(results[name].observed.score)
+    statistics = {
+        name: float(_statistic(np.asarray([value]), use_absolute)[0])
+        for name, value in scores.items()
+    }
+    # The first template in the mapping's order wins a tie.
+    best = max(names, key=statistics.__getitem__)
+    if undefined is not None:
+        # Every maximum over the templates' shuffles of that null is undefined.
+        raise _UndefinedNullError(
+            str(undefined), score=scores[best], null=undefined.null
+        )
+    shuffles = _shuffle_tests(
+        statistics[best],
+        {
+            null: np.max(
+                [results[name].shuffles[null].null_scores for name in names], axis=0
+            )
+            for null in results[best].shuffles
+        },
+        score=scores[best],
+        alternative="greater",
+        n_shuffles=n_shuffles,
+        stacklevel=4,
+    )
     return ReplaySignificanceResult(
-        observed=observed_result,
+        observed=results[best].observed,
         shuffles=shuffles,
         p_value=max(test.p_value for test in shuffles.values()),
-        alternative=alternative,
+        alternative="greater",
         use_absolute=use_absolute,
+        template=best,
     )
+
+
+def _separate_inputs(
+    env: Any,
+    posteriors: Mapping[str, Any],
+    encoding_models: Any,
+    prior: Any,
+    operation: str,
+) -> tuple[tuple[str, ...], dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Each separately decoded template's name, environment, rate maps and prior.
+
+    ``env``, ``encoding_models`` and ``prior`` are mappings keyed like
+    ``posteriors`` or one value for every template; rate maps must be a
+    mapping, since templates decoded on the same maps would be the same.
+    """
+    names = tuple(posteriors)
+    shapes = {name: np.shape(posteriors[name]) for name in names}
+    if (
+        not names
+        or any(not isinstance(name, str) for name in names)
+        or any(len(shape) != 2 for shape in shapes.values())
+    ):
+        raise ValueError(
+            _format_error(
+                f"{operation}: separately decoded templates need a mapping of "
+                f"template name to posterior, shape (n_time_bins, n_bins); got "
+                f"shapes {shapes}.",
+                why="each template's posterior is scored on its own",
+                fix="pass {name: decode_position(...).posterior, ...}, one per "
+                "template, all for the same time bins",
+            )
+        )
+    if len({shape[0] for shape in shapes.values()}) > 1:
+        raise ValueError(
+            _format_error(
+                f"{operation}: the templates' posteriors have different numbers "
+                f"of time bins: {shapes}.",
+                why="separately decoded templates decode the same event's time bins",
+                fix="decode every template from the same spike counts and times",
+            )
+        )
+    if encoding_models is not None and not isinstance(encoding_models, Mapping):
+        raise ValueError(
+            _format_error(
+                f"{operation}: templates decoded separately need a mapping of "
+                "encoding_models.",
+                why="each template was decoded with its own rate maps, and the "
+                "nulls that decode again decode each template with them",
+                fix=f"pass encoding_models={{name: rates, ...}} keyed like "
+                f"posterior, {list(names)}",
+            )
+        )
+    per_template = []
+    for argument, value in (
+        ("env", env),
+        ("encoding_models", encoding_models),
+        ("prior", prior),
+    ):
+        if isinstance(value, Mapping) and set(value) != set(names):
+            raise ValueError(
+                _format_error(
+                    f"{operation}: {argument} has keys {sorted(value)} but the "
+                    f"templates are {sorted(names)}.",
+                    why=f"each template is tested with its own {argument}",
+                    fix=f"key {argument} by the template names of posterior, "
+                    "or pass one value for every template",
+                )
+            )
+        per_template.append(
+            {name: value[name] for name in names}
+            if isinstance(value, Mapping)
+            else dict.fromkeys(names, value)
+        )
+    envs, models, priors = per_template
+    return names, envs, models, priors
+
+
+def _template_streams(
+    rng: np.random.Generator | int | None, names: Sequence[str]
+) -> dict[str, np.random.Generator]:
+    """One random stream per template, derived from ``rng`` and its name.
+
+    A template's stream does not depend on the other templates or their
+    order.
+    """
+    import zlib
+
+    entropy = (
+        int(rng.integers(2**63))
+        if isinstance(rng, np.random.Generator)
+        else np.random.SeedSequence(rng).entropy
+    )
+    return {
+        name: np.random.default_rng(
+            np.random.SeedSequence(entropy, spawn_key=(zlib.crc32(name.encode()),))
+        )
+        for name in names
+    }
 
 
 def _zero_empty_rows(
