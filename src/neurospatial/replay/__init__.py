@@ -53,6 +53,13 @@ rank_order_correlation : Field order vs firing order (Foster & Wilson 2006)
 
 rank_order_significance : Rank-order correlation against cell-order shuffles
 
+pairwise_order_score : Firing order of spike pairs (Gupta et al. 2010)
+    Over every pair of spikes less than 80 ms apart, +1 in field order and
+    -1 against it, summed; multi-field cells take their best field.
+
+pairwise_order_significance : Pairwise-order score against spike-time and
+    cell-identity shuffles
+
 Published Methods
 -----------------
 detect_replay : Apply one published replay method to one decoded event
@@ -60,6 +67,8 @@ compare_replay_methods : Several methods on several events, as a table
 ReplayMethod, ReplayCriterion : A method's score, shuffles and thresholds
 ReplaySegmentation : How a criteria-based method finds the trajectory segment
 detect_rank_order_replay, RankOrderMethod : Published rank-order tests on spikes
+detect_pairwise_order_replay, PairwiseOrderMethod : Pairwise firing-order test
+    on spikes, every template forward and backward (Gupta et al. 2010)
 detect_arm_replay, ArmReplayMethod : Single-arm and joint-arm replay on a maze
 event_properties, detection_rates, method_agreement : Calibrate methods on a
     comparison table: rates (false positives on null data) by event
@@ -71,7 +80,7 @@ null_events, simulated_null_events, decode_intervals : Events without replay
 matched_alpha, apply_alpha : Each method's alpha that holds its
     false-positive rate on null data to a target, and verdicts at it
 neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
-    DIBA_BUZSAKI_2007, DAVIDSON_2009, KARLSSON_FRANK_2009,
+    DIBA_BUZSAKI_2007, DAVIDSON_2009, KARLSSON_FRANK_2009, GUPTA_2010,
     PFEIFFER_FOSTER_2013, WIKENHEISER_REDISH_2013, WU_FOSTER_2014,
     OLAFSDOTTIR_2015, PFEIFFER_FOSTER_2015, SILVA_2015, AMBROSE_2016,
     GROSMARK_2016, JADHAV_2016, OLAFSDOTTIR_2016, WU_2017, OLAFSDOTTIR_2017,
@@ -106,6 +115,9 @@ Result Containers
 -----------------
 RadonDetectionResult, LinearFitResult, IsotonicFitResult, WeightedCorrelationResult
     The fitted trajectory or correlation, and its ``score``.
+PairwiseOrderResult, PairwiseOrderSignificanceResult
+    A pairwise-order score with its scored cells and assigned fields, and its
+    shuffle tests.
 CircularSequenceResult
     The circular-track fit: replay speed around the loop and its ``score``.
 TrajectoryMetrics
@@ -165,6 +177,14 @@ from neurospatial.replay.nulls import (
     shuffle_spike_counts_circular,
     shuffle_spike_counts_uniform,
 )
+from neurospatial.replay.pairwise_order import (
+    PairwiseOrderMethod,
+    PairwiseOrderResult,
+    PairwiseOrderSignificanceResult,
+    detect_pairwise_order_replay,
+    pairwise_order_score,
+    pairwise_order_significance,
+)
 from neurospatial.replay.rank_order import (
     RankOrderResult,
     RankOrderSignificanceResult,
@@ -188,6 +208,7 @@ from neurospatial.replay.trajectory import (
 __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Published methods
     "ArmReplayMethod",
+    "PairwiseOrderMethod",
     "ReplayCriterion",
     "ReplayDetectionResult",
     "RankOrderMethod",
@@ -195,6 +216,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "ReplaySegmentation",
     "compare_replay_methods",
     "detect_arm_replay",
+    "detect_pairwise_order_replay",
     "detect_rank_order_replay",
     # Calibration and comparison
     "NullSpikeData",
@@ -211,6 +233,8 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "CircularSequenceResult",
     "IsotonicFitResult",
     "LinearFitResult",
+    "PairwiseOrderResult",
+    "PairwiseOrderSignificanceResult",
     "RadonDetectionResult",
     "RankOrderResult",
     "RankOrderSignificanceResult",
@@ -233,6 +257,9 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Rank order
     "rank_order_correlation",
     "rank_order_significance",
+    # Pairwise order
+    "pairwise_order_score",
+    "pairwise_order_significance",
     # Shuffles
     "shuffle_cell_identity",
     "shuffle_place_fields_circular",

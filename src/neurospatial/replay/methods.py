@@ -8,7 +8,10 @@ to one decoded event and :func:`compare_replay_methods` applies several
 methods to several events, so the same data can be scored the way each lab
 scored it. :class:`RankOrderMethod` records a rank-order test, which scores
 the event's spikes rather than a decoded posterior
-(:func:`detect_rank_order_replay`), and
+(:func:`detect_rank_order_replay`),
+:class:`~neurospatial.replay.PairwiseOrderMethod` the pairwise firing-order
+test of Gupta et al. (2010) on the event's spikes
+(:func:`~neurospatial.replay.detect_pairwise_order_replay`), and
 :class:`~neurospatial.replay.ArmReplayMethod` a test for replay of single
 arms and pairs of arms on a maze.
 
@@ -40,6 +43,11 @@ from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
 from neurospatial.replay.circular import fit_circular_sequence
 from neurospatial.replay.correlation import weighted_correlation
+from neurospatial.replay.pairwise_order import (
+    PairwiseOrderMethod,
+    _FieldSearchTooLargeError,
+    detect_pairwise_order_replay,
+)
 from neurospatial.replay.significance import (
     _ALTERNATIVES,
     _COUNT_CHANGING_NULLS,
@@ -74,6 +82,7 @@ __all__ = [
     "FAROOQ_2019",
     "FOSTER_WILSON_2006",
     "GROSMARK_2016",
+    "GUPTA_2010",
     "HARVEY_2023",
     "IGATA_2021",
     "JADHAV_2016",
@@ -1101,8 +1110,8 @@ class ReplayDetectionResult(ResultMixin):
     method : str
         The method's name.
     is_replay : bool
-        For a :class:`ReplayMethod` and a rank-order method with a p-value
-        test: True when the event meets every criterion and, for a method
+        For a :class:`ReplayMethod`, a rank-order method with a p-value
+        test and a pairwise-order method: True when the event meets every criterion and, for a method
         with shuffles, its largest p-value is below ``alpha``. For the
         pooled-SSI test (``test="pooled_ssi"``): True when the score
         exceeds the ``1 - alpha`` quantile of the epoch's pooled shuffles;
@@ -1133,6 +1142,8 @@ class ReplayDetectionResult(ResultMixin):
         for an event decoded on one set of rate maps, for a joint decode's
         summed posterior (``template_choice="sum"``) and for a
         ``"max_score"`` event without a verdict.
+        For a pairwise-order method given a mapping of rate maps, the
+        template of the test with the smallest p-value.
         For an arm method (:func:`~neurospatial.replay.detect_arm_replay`),
         the replayed arm, arms (``"center,left"``) or pair
         (``"center+left"``); None without a replay.
@@ -2543,7 +2554,9 @@ def compare_replay_methods(
         DecodingResult | JointDecodingResult | Mapping[str, DecodingResult]
     ],
     *,
-    replay_methods: Sequence[ReplayMethod | RankOrderMethod | ArmReplayMethod],
+    replay_methods: Sequence[
+        ReplayMethod | RankOrderMethod | PairwiseOrderMethod | ArmReplayMethod
+    ],
     spike_counts: Sequence[NDArray[np.int64]] | None = None,
     encoding_models: Any = None,
     dt: float | None = None,
@@ -2568,7 +2581,7 @@ def compare_replay_methods(
         the templates decoded separately, as a mapping of template name to
         :class:`~neurospatial.decoding.DecodingResult` with the same times
         (see :func:`detect_replay`).
-    replay_methods : sequence of ReplayMethod, RankOrderMethod or ArmReplayMethod
+    replay_methods : sequence of ReplayMethod, RankOrderMethod, PairwiseOrderMethod or ArmReplayMethod
         The methods to compare. An arm method classifies each event's
         posterior as a single-arm or joint-arm replay on ``arms`` (see
         :func:`~neurospatial.replay.detect_arm_replay`). A rank-order method scores each event's
@@ -2578,7 +2591,11 @@ def compare_replay_methods(
         of rate maps, the one named by ``template``, or the one its
         ``template_choice`` picks. A method with ``test="pooled_ssi"``
         treats the events as one epoch (pass one epoch per call) and scores
-        every template unless ``template`` names one.
+        every template unless ``template`` names one. A pairwise-order
+        method (:class:`~neurospatial.replay.PairwiseOrderMethod`) scores
+        the spikes over the same window, on every template of a mapping of
+        rate maps in each of its directions, and reports the test with the
+        smallest p-value; it ignores ``template``.
     spike_counts : sequence of arrays or None
         Each event's spike counts, shape (n_time_bins, n_cells), for methods
         that need them (see :func:`detect_replay`).
@@ -2595,7 +2612,7 @@ def compare_replay_methods(
         :func:`detect_replay`).
     spike_times : array, sequence of arrays, or spike group, optional
         The session's spike times, one train per row of
-        ``encoding_models``, for rank-order methods.
+        ``encoding_models``, for rank-order and pairwise-order methods.
     arms : Mapping[str, NDArray[np.intp]] or None
         Each arm's bins from the junction outward, for arm methods.
     rng : numpy.random.Generator, int, or None
@@ -2626,7 +2643,10 @@ def compare_replay_methods(
         example the R² of a decoded position that does not change; score
         and p-value are
         NaN), an undefined rank-order correlation (too few active template
-        cells, or no variation in their order), or, for a pooled SSI
+        cells, or no variation in their order), for a pairwise-order method,
+        an event or shuffle whose multi-field cells have more field
+        combinations than are searched (``"too many combinations of
+        multi-field cells' fields to search"``), or, for a pooled SSI
         method, an epoch with too few events or without a threshold (score
         and p-value are still reported). A method with a segmentation that
         finds no segment has a verdict, not an error: score NaN,
@@ -2655,8 +2675,8 @@ def compare_replay_methods(
         ``valid_time_bins`` does not have one entry per event, or an entry
         does not have one row per time bin of its event; if a method
         draws pseudo-events or weighted column cycles from joint decodes; or
-        if a rank-order method is given without ``spike_times``,
-        ``encoding_models`` or ``dt``.
+        if a rank-order or pairwise-order method is given without
+        ``spike_times``, ``encoding_models`` or ``dt``.
 
     Warns
     -----
@@ -2788,7 +2808,12 @@ def compare_replay_methods(
                 "templates or a mapping of environments."
             )
     rank_methods = [m for m in replay_methods if isinstance(m, RankOrderMethod)]
-    if rank_methods:
+    spike_methods = [
+        m
+        for m in replay_methods
+        if isinstance(m, (RankOrderMethod, PairwiseOrderMethod))
+    ]
+    if spike_methods:
         missing = [
             name
             for name, value in (
@@ -2801,8 +2826,8 @@ def compare_replay_methods(
         if missing:
             raise ValueError(
                 _format_error(
-                    f"compare_replay_methods(): rank-order methods "
-                    f"{[m.name for m in rank_methods]} need {missing}.",
+                    f"compare_replay_methods(): spike-order methods "
+                    f"{[m.name for m in spike_methods]} need {missing}.",
                     why="they score each cell's spikes in the event against its "
                     "field, over the event's decoding windows of width dt",
                     fix="pass the session's spike_times, the rate maps as "
@@ -2842,7 +2867,8 @@ def compare_replay_methods(
     )
 
     def stream_for(
-        index: int, method: ReplayMethod | RankOrderMethod | ArmReplayMethod
+        index: int,
+        method: ReplayMethod | RankOrderMethod | PairwiseOrderMethod | ArmReplayMethod,
     ) -> Any:
         return np.random.default_rng(
             np.random.SeedSequence(
@@ -2950,7 +2976,7 @@ def _compare_row(
     env: Environment | Mapping[str, Environment],
     event: DecodingResult | JointDecodingResult | Mapping[str, DecodingResult],
     times: NDArray[np.float64],
-    method: ReplayMethod | RankOrderMethod | ArmReplayMethod,
+    method: ReplayMethod | RankOrderMethod | PairwiseOrderMethod | ArmReplayMethod,
     *,
     spike_counts: NDArray[np.int64] | None,
     encoding_models: Any,
@@ -3010,6 +3036,23 @@ def _compare_row(
             "template cells, or no variation in their order"
         )
         return {**ranked.summary(), "error": error}
+    if isinstance(method, PairwiseOrderMethod):
+        assert dt is not None
+        centers = np.asarray(times, dtype=np.float64)
+        try:
+            ordered = detect_pairwise_order_replay(
+                env,
+                spike_times,
+                (centers[0] - dt / 2, centers[-1] + dt / 2),
+                encoding_models,
+                pairwise_order_method=method,
+                rng=rng,
+            )
+        except _FieldSearchTooLargeError:
+            return error_row(
+                "too many combinations of multi-field cells' fields to search"
+            )
+        return {**ordered.summary(), "error": ""}
     usable = times
     if method.empty_time_bins != "keep" and spike_counts is not None:
         spiking = (
@@ -3058,7 +3101,9 @@ def _compare_row(
 
 def _fail_criteria_of_error_rows(
     table: pd.DataFrame,
-    replay_methods: Sequence[ReplayMethod | RankOrderMethod | ArmReplayMethod],
+    replay_methods: Sequence[
+        ReplayMethod | RankOrderMethod | PairwiseOrderMethod | ArmReplayMethod
+    ],
 ) -> pd.DataFrame:
     """Set every criterion of a row's method to False on rows with an error.
 
@@ -3079,7 +3124,7 @@ def _fail_criteria_of_error_rows(
             for column in table.columns
             if column.startswith("passes[") and table.loc[mine, column].notna().any()
         }
-        if isinstance(method, (ReplayMethod, RankOrderMethod)):
+        if isinstance(method, (ReplayMethod, RankOrderMethod, PairwiseOrderMethod)):
             columns |= {f"passes[{c.label}]" for c in method.criteria}
         for column in sorted(columns):
             if column not in table:
@@ -4464,6 +4509,73 @@ CHENANI_2019 = RankOrderMethod(
     ),
 )
 
+GUPTA_2010 = PairwiseOrderMethod(
+    name="gupta_2010",
+    reference=(
+        "Gupta, A. S., van der Meer, M. A. A., Touretzky, D. S., & Redish, A. "
+        "D. (2010). Hippocampal replay is not a simple function of "
+        "experience. Neuron, 65(5), 695-705. "
+        "https://doi.org/10.1016/j.neuron.2010.01.034"
+    ),
+    field_threshold=0.05,
+    merge_gap_bins=1,
+    field_center="rate_weighted",
+    max_time_lag=0.08,
+    directions=("forward", "backward"),
+    nulls=("spike_time_permutation", "cell_identity"),
+    n_shuffles=300,
+    alpha=0.05,
+    min_active_cells=3,
+    notes=(
+        "Score (Supplemental Experimental Procedures, 'Sequence detection'): "
+        "every pair of spikes less than 80 ms apart adds +1 when the cells "
+        "fire in the order of their place-field centers along the lap and -1 "
+        "against it, summed over the event; each pair counts once (counting "
+        "each twice, as 'compared with the other spikes within its local "
+        "region' could mean, doubles every score and leaves the p-values "
+        "unchanged). 'Within 80 ms' and 'separated by less than 80 ms' are "
+        "read as strictly less.",
+        "Multi-field cells: the paper assigns each spike the field center "
+        "that maximizes the score without giving the optimizer. Here all "
+        "spikes of a cell take one field, the best combination over the "
+        "event's multi-field cells is found exactly, in the event and in "
+        "every shuffle, and searches over more than 65,536 combinations "
+        "are refused.",
+        "Fields: contiguous linearized pixels (about 3.5 cm) above 5% of "
+        "the highest rate of any cell at any pixel, merged across one-pixel "
+        "gaps; the maximum is read as one population-wide value per "
+        "template, taken over bins with spatial support. Field centers are "
+        "not defined in the paper and are read as rate-weighted. Pass rate "
+        "maps in about 3.5 cm bins for the paper's merge rule.",
+        "Templates: each lap's linearization (left and right laps, positions "
+        "running from maze start in the direction run) is one template: "
+        "pass a mapping of environments and rate maps. Each is tested "
+        "forward and backward and the smallest p-value is reported without "
+        "correction, as in the paper; the score is the forward score or "
+        "minus the backward score.",
+        "Shuffles: 300 permutations of the scored spikes' times (each spike "
+        "keeps its cell; the paper 'randomly shuffled the spike times', and "
+        "a uniform redraw is the other reading) and 300 permutations of the "
+        "cells' field sets across every cell given (the cell-identity "
+        "shuffle of Davidson et al. 2009). Replay when the score is greater "
+        "than 95% of both sets: p = (k + 1) / 301 < 0.05 for each, ties "
+        "counted against the event.",
+        "The 80 cm limit on the distance between the two spikes' field "
+        "centers applied only to the detection scan; the paper removed it "
+        "for significance testing, and it is not applied here.",
+        "Events: the paper scanned the session in 10 ms steps with windows "
+        "growing from 40 ms to 600 ms until five steps added no score, at "
+        "reward sites with SWR power more than 2 SD above the mean, and "
+        "kept events with at least 3 active cells (counted here over every "
+        "cell given). The scan and the event selection are not applied: "
+        "pass candidate windows.",
+        "Cells firing more than 15,000 spikes in the 40 min session or "
+        "fewer than 100 were excluded; leave them out of spike_times and "
+        "encoding_models. Replays found on both laps over the central stem "
+        "were merged into one in the paper's counts; that is not applied.",
+    ),
+)
+
 WU_FOSTER_2014 = ArmReplayMethod(
     name="wu_foster_2014",
     reference=(
@@ -4572,11 +4684,14 @@ BERNERS_LEE_2021 = ArmReplayMethod(
     ),
 )
 
-PUBLISHED_METHODS: tuple[ReplayMethod | RankOrderMethod | ArmReplayMethod, ...] = (
+PUBLISHED_METHODS: tuple[
+    ReplayMethod | RankOrderMethod | PairwiseOrderMethod | ArmReplayMethod, ...
+] = (
     FOSTER_WILSON_2006,
     DIBA_BUZSAKI_2007,
     DAVIDSON_2009,
     KARLSSON_FRANK_2009,
+    GUPTA_2010,
     PFEIFFER_FOSTER_2013,
     WIKENHEISER_REDISH_2013,
     WU_FOSTER_2014,

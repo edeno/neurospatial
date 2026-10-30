@@ -12,7 +12,12 @@ from typing import Any
 
 import pytest
 
-from neurospatial.replay import ArmReplayMethod, RankOrderMethod, ReplayMethod
+from neurospatial.replay import (
+    ArmReplayMethod,
+    PairwiseOrderMethod,
+    RankOrderMethod,
+    ReplayMethod,
+)
 from neurospatial.replay.methods import PUBLISHED_METHODS
 
 # Class defaults: a recipe's fields are these, updated by its entry in SPEC.
@@ -45,6 +50,21 @@ DEFAULTS: dict[type, dict[str, Any]] = {
         "alpha": 0.05,
         "min_epoch_events": None,
         "template_choice": None,
+    },
+    # Gupta et al. (2010): fields above 5% of the population's highest rate,
+    # merged across one-pixel gaps; spike pairs less than 80 ms apart; left
+    # and right laps forward and backward; 300 spike-time and 300
+    # cell-identity shuffles, beat 95% of both; at least 3 active cells.
+    PairwiseOrderMethod: {
+        "field_threshold": 0.05,
+        "merge_gap_bins": 1,
+        "field_center": "rate_weighted",
+        "max_time_lag": 0.08,
+        "directions": ("forward", "backward"),
+        "nulls": ("spike_time_permutation", "cell_identity"),
+        "n_shuffles": 300,
+        "alpha": 0.05,
+        "min_active_cells": 3,
     },
     # Wu & Foster (2014): peak above 5x chance, 10 ms smoothing, 50 ms,
     # more than 50% of the arm, |weighted correlation| > 0.5.
@@ -139,6 +159,7 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
             "decoding": {"time_bin": 0.02, "time_step": 0.005},
         },
     ),
+    "gupta_2010": (PairwiseOrderMethod, {}),
     "wu_foster_2014": (
         ArmReplayMethod,
         {"decoding": {"time_bin": 0.01, "position_bin": 1.85}},
