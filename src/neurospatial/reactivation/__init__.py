@@ -25,7 +25,9 @@ pairwise_correlations : Compute pairwise correlations between neurons
     Extract upper triangle of correlation matrix.
 
 explained_variance_reactivation : Explained variance reactivation analysis
-    Measure how template correlations predict match correlations.
+    Partial correlation of template and match pair correlations controlling
+    for control periods (Kudrimoti et al. 1999), with REV (Pennartz et al.
+    2004), pair selection and a p-value.
 
 Result Containers
 -----------------
@@ -33,8 +35,8 @@ AssemblyPattern : Single assembly pattern with weights and members
 AssemblyDetectionResult : Patterns, activations, eigenvalues and metadata
 AssemblyReactivationResult : Mean activation strength before and after a task,
     their difference and the share of bins above the control's percentile
-ExplainedVarianceResult : Explained variance, reversed explained variance and
-    the number of pairs
+ExplainedVarianceResult : Explained variance, reversed explained variance,
+    partial correlation, its p-value and the number of pairs
 
 Bin spike times with :func:`neurospatial.decoding.bin_spikes_in_time`.
 """

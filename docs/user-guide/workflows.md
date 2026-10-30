@@ -1241,9 +1241,10 @@ reactivation = explained_variance_reactivation(
     control_unit_ids=selected_ids,
 )
 print(
-    "EV, controlled REV (effect sizes):",
+    "EV, controlled REV (effect sizes), pair-level p-value:",
     reactivation.explained_variance,
     reactivation.reversed_explained_variance,
+    reactivation.p_value,
 )
 assert np.isfinite(reactivation.explained_variance) and np.isfinite(
     reactivation.reversed_explained_variance
@@ -1278,12 +1279,13 @@ match bins above the control's 99th percentile (Peyrache et al., 2010). Both
 are effect sizes; compare them across patterns or sessions, or with a shuffle
 null.
 
-Controlled EV is `r(template, match | control)^2`, while controlled REV
-is `r(template, control | match)^2`, swapping the pre- and post-behavior
-periods. EV > REV is an effect-size comparison,
-not calibrated reactivation significance. Report control choice, preprocessing,
-unit selection and a separately justified null when a significance claim is
-needed.
+Controlled EV is `r(template, match | control)^2` (Kudrimoti et al., 1999),
+while controlled REV is `r(template, control | match)^2`, swapping the pre-
+and post-behavior periods (Pennartz et al., 2004). EV > REV is an effect-size
+comparison, not calibrated reactivation significance, and `p_value` treats
+pairs that share cells as independent, so it overstates the evidence. Report
+control choice, preprocessing, unit selection and a separately justified null
+when a significance claim is needed.
 
 ## Workflow 7: One Event Cohort Across a Gapped Recording
 

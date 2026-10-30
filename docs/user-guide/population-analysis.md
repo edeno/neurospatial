@@ -580,10 +580,12 @@ labels for only one period raise.
 The explained-variance measure asks whether the whole correlation structure of
 running returns during rest. It correlates the pairwise correlations of
 running with those of post-task rest, controlling for the correlations that
-were already present before the task. The reversed measure (REV) swaps the
-two rest periods: it measures how much the running correlations resemble
-pre-task rest, controlling for post-task rest. Reactivation predicts EV larger
-than REV.
+were already present before the task (Kudrimoti et al., 1999): EV is the
+squared partial correlation of the running and post-task pair correlations,
+controlling for the pre-task ones. The reversed measure (REV), introduced by
+Pennartz et al. (2004) as a control, swaps the two rest periods: it measures
+how much the running correlations resemble pre-task rest, controlling for
+post-task rest. Reactivation predicts EV larger than REV.
 
 Each correlation must be compared with the correlation of the same two cells
 in the other periods. Pass each period's column labels (`template_unit_ids=`,
@@ -605,7 +607,8 @@ reactivation = explained_variance_reactivation(
     control_unit_ids=unit_ids,
 )
 print(f"EV = {reactivation.explained_variance:.2f}, "
-      f"REV = {reactivation.reversed_explained_variance:.3f}, over {reactivation.n_pairs} pairs")
+      f"REV = {reactivation.reversed_explained_variance:.3f}, over {reactivation.n_pairs} pairs, "
+      f"p = {reactivation.p_value:.1e}")
 assert np.isclose(reactivation.explained_variance, 0.74, atol=0.006)
 assert np.isclose(reactivation.reversed_explained_variance, 0.011, atol=0.0006)
 
@@ -623,12 +626,40 @@ assert np.isclose(reordered.explained_variance, reactivation.explained_variance)
 
 EV (0.74) is far above REV (0.011): the correlation structure of running
 reappears after the task and was absent before it, which is what we planted.
-EV and REV are effect sizes. To claim reactivation in a real recording, compare against a
-null built for your data (for example, EV computed after shuffling unit
-identities or using other rest epochs) and report the control period, the bin
-size and the unit selection. Without `control_correlations` there is no
-period to swap, so `reversed_explained_variance` is NaN and EV alone says
+EV and REV are effect sizes. `p_value` tests the partial correlation with the
+t test on `n_pairs - 3` degrees of freedom; Kudrimoti et al. report such a
+p-value per session without naming the test, so this test is our inference.
+It treats the 378 pairs as independent although they share 28 cells, so it
+overstates the evidence. To claim reactivation in a real recording, compare
+EV with REV across sessions (Pennartz et al. used a Wilcoxon signed-rank
+test) or against a null built for your data, and report the control period,
+the bin size and the unit selection. Without `control_correlations` there is
+no period to swap, so `reversed_explained_variance` is NaN and EV alone says
 nothing about direction.
+
+Cells recorded on the same tetrode share spike-sorting errors, which correlate
+their counts in every period. Kudrimoti et al. (1999) therefore used only
+pairs of cells on different tetrodes; pass each unit's tetrode as
+`unit_groups=` to do the same, or tetrode, shank or region for cross-region
+pairs (Lansink et al., 2009). `pair_mask=` selects pairs by any other rule,
+such as waveform similarity. Pass several control periods as a list to
+partial out all of them, as Kudrimoti et al. did with pre-task sleep and a
+familiar part of the track.
+
+```python
+tetrode_of_unit = np.arange(n_units) % 7  # 7 tetrodes of 4 units
+different_tetrodes = explained_variance_reactivation(
+    run_correlations,
+    rest_correlations["post_rest"],
+    control_correlations=rest_correlations["pre_rest"],
+    unit_groups=tetrode_of_unit,
+)
+print(f"Different-tetrode pairs: {different_tetrodes.n_pairs} of 378, "
+      f"EV = {different_tetrodes.explained_variance:.2f}, "
+      f"p = {different_tetrodes.p_value:.1e}")
+assert different_tetrodes.n_pairs == 378 - 7 * 6
+assert different_tetrodes.explained_variance > 0.5
+```
 
 ## What position does the population encode?
 
@@ -727,8 +758,8 @@ Checks before you interpret the numbers:
   position, so every count matrix must share one column order.
 - **Screens, not verdicts.** The information cutoff, the Marchenko-Pastur
   threshold, the membership cutoff, activation strength above 5, the share
-  of bins above the pre-task 99th percentile and EV versus REV are
-  descriptive. Use `spatial_cell_type_significance` labels or
+  of bins above the pre-task 99th percentile, EV versus REV and the
+  pair-level EV p-value are descriptive. Use `spatial_cell_type_significance` labels or
   `is_place_cell(..., criterion="shuffle")` for cell-type decisions and a
   null built for your recording for reactivation claims.
 - **Missing is not zero.** Unvisited bins stay NaN in rate maps; compare

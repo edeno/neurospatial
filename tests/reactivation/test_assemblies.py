@@ -870,7 +870,9 @@ class TestExplainedVarianceReactivation:
         corr1 = np.array([0.1, np.nan, np.nan, np.nan, np.nan])
         corr2 = np.array([0.1, np.nan, np.nan, np.nan, np.nan])
 
-        with pytest.warns(UserWarning, match="valid pairs after removing NaN"):
+        with pytest.warns(
+            UserWarning, match="valid pairs after pair selection and removing NaN"
+        ):
             result = explained_variance_reactivation(corr1, corr2)
 
         assert np.isnan(result.explained_variance)
