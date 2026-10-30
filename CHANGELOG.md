@@ -135,6 +135,9 @@ measure each method's false-positive rate on several kinds of null data:
   - `"spike_shift"`: each cell's spikes shifted circularly within the
     event;
   - `"poisson"`: each cell keeps its count, with spikes placed at random.
+
+  Overlapping intervals are refused: their shared spikes would be copied
+  into two null events.
 - `simulated_null_events(env, encoding_models, n_events=, kind=)`
   simulates random or stationary events. Stationary events are placed at
   random along the track.

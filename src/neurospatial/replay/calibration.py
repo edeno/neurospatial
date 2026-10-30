@@ -287,7 +287,10 @@ def detection_rates(
     properties : pandas.DataFrame or None
         Event properties indexed by event, such as from
         :func:`event_properties`, for ``by`` keys that are not table
-        columns. Joined on ``event``, so use it with one call's table.
+        columns. Joined on ``event``, or on the ``groups`` and ``event``
+        when it has the ``groups`` as columns or index levels. It must have
+        them for several concatenated tables, which each number their
+        events from 0.
     by : Mapping[str, Sequence[float]] or None
         Break rates down by numeric properties: each key a column of
         ``table`` or ``properties``, each value at least two bin edges,
@@ -826,8 +829,9 @@ def apply_alpha(
     pandas.DataFrame
         A copy of ``table`` with ``is_replay`` at the new alphas and an
         ``alpha`` column: the new alpha, or the method's own (which a
-        method without nulls does not use; NaN for an arm method, which
-        has none).
+        method without nulls does not use). ``alpha`` is NaN for an arm
+        method, which has none, and for a table method not in
+        ``replay_methods``, whose alpha is unknown; its verdicts are kept.
 
     Raises
     ------
@@ -1194,7 +1198,7 @@ def null_events(
         If ``kind`` is not one of the options, ``n_copies`` is not a
         positive integer, ``cells`` is not one boolean per cell, or
         ``intervals`` is not a list of finite ``(start, stop)`` with
-        ``start < stop``.
+        ``start < stop`` that do not overlap.
 
     See Also
     --------
@@ -1263,6 +1267,20 @@ def null_events(
         )
     _positive_count(n_copies, "n_copies", operation)
     windows = _checked_intervals(intervals, operation)
+    ordered = windows[np.argsort(windows[:, 0], kind="stable")]
+    overlaps = np.flatnonzero(ordered[1:, 0] < ordered[:-1, 1])
+    if overlaps.size:
+        first = ordered[overlaps[0] : overlaps[0] + 2].tolist()
+        raise ValueError(
+            _format_error(
+                f"{operation}: {overlaps.size} intervals overlap the one before "
+                f"them, such as {first[0]} and {first[1]}.",
+                why="spikes in the overlap would be copied into two null "
+                "events, which are then not independent",
+                fix="merge overlapping candidate events, or pass one interval "
+                "per event without overlap",
+            )
+        )
     trains = as_spike_trains(spike_times)
     chosen = np.ones(len(trains), dtype=bool) if cells is None else np.asarray(cells)
     if chosen.dtype != np.bool_ or chosen.shape != (len(trains),):
