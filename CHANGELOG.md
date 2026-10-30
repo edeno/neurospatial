@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Reactivation assembly fixes
+
+**Fixes**
+
+- `detect_assemblies(n_shuffles=20.0)` raises the documented "positive
+  integer" `ValueError` instead of a `TypeError` from inside the surrogate
+  loop.
+- `pairwise_activation` with `unit_ids=` and `template_unit_ids=` names the
+  caller's column and its label in the constant-neuron warning, not its
+  position in template order.
+- `explained_variance_reactivation(control_correlations=[c],
+  control_unit_ids=[labels])` accepts one control's labels in a one-item
+  list, as it does for several controls.
+
+**Documentation**
+
+- The `tracy_widom` threshold is described as Peyrache et al.'s heuristic
+  margin `n ** (-2/3)`, not the null spread of the largest eigenvalue,
+  which also shrinks with the number of time bins (Johnstone 2001).
+- `null_reactivation_data(kind="cell_identity")` permutes each unit's rate
+  with its spikes, so it does not calibrate the rate confound.
+- Four numbers in "Comparing reactivation methods" corrected from a rerun.
+
 ### Replay checks from Tingley & Peyrache (2020)
 
 **New**
@@ -20,7 +43,8 @@
   compared, the rule of `explained_variance_reactivation(unit_groups=)`, so
   a burst split across two clusters of one tetrode cannot score as a
   sequence. Each spike train keeps its group in both shuffles, and
-  `n_pairs` counts only the compared pairs.
+  `n_pairs` counts only the compared pairs. A missing group (None, NaN or
+  infinite) is refused, since NaN would compare unequal to every group.
 - `rank_order_correlation` and `rank_order_significance` take
   `multi_field_cells="keep" | "exclude"` and `place_fields=`. Tingley &
   Peyrache note that cells with several place fields have no single place
@@ -291,8 +315,9 @@ Several replay papers test a whole data set, not each event:
 - `detect_assemblies(..., component_threshold=)` chooses the eigenvalue
   threshold that sets the number of assemblies. `"marchenko_pastur"` (the
   default, unchanged) is the analytical edge; `"tracy_widom"` adds
-  `n ** (-2/3)`, the finite-sample spread of the largest eigenvalue
-  (Peyrache et al., 2010); `"bin_shuffle"` and `"circular_shift"` take a
+  `n ** (-2/3)`, the heuristic margin of Peyrache et al. (2010), which for
+  typical recordings sits many null standard deviations above the edge;
+  `"bin_shuffle"` and `"circular_shift"` take a
   percentile of the largest eigenvalue of surrogate matrices whose neurons
   are shuffled or rotated in time (Lopes-dos-Santos et al., 2013).
   Surrogate thresholds need `percentile=`, because the paper gives no single
@@ -430,7 +455,9 @@ papers define.
   units from different groups: tetrodes, as Kudrimoti et al. (1999) and
   Tatsuno et al. (2006) did, or regions for cross-region pairs (Lansink et
   al., 2009). `pair_mask=` selects pairs by any other rule, such as waveform
-  similarity (Giri et al., 2024). `n_pairs` counts the pairs used.
+  similarity (Giri et al., 2024). `n_pairs` counts the pairs used. A
+  missing or NaN group is refused, since NaN compares unequal to every
+  group and would pair those units as if on different tetrodes.
 - `control_correlations=` takes a list of control periods and partials out
   all of them, as in Kudrimoti et al.'s second experiment. REV is NaN with
   several controls. Tatsuno et al. (2006) and Giri et al. (2019) instead
@@ -619,14 +646,17 @@ computes this score and applies the published test.
   combinations is refused.
 - `pairwise_order_significance()`: the score against 300 permutations of
   the scored spikes' times (each cell keeps its spikes' count) and 300
-  permutations of the cells' field sets across every cell given, each
-  re-maximized; p = (k + 1) / (n + 1) per null, and the event must beat
-  both.
+  permutations of the field sets among the cells with a field, active or
+  not, each re-maximized; cells without a field stay unscored, so they
+  change neither the score nor its shuffles. p = (k + 1) / (n + 1) per
+  null, and the event must beat both.
 - `PairwiseOrderMethod`, `detect_pairwise_order_replay()` and the recipe
   `GUPTA_2010`: every template (pass a mapping of rate maps, one per lap)
   is tested forward and backward, and the test with the smallest p-value
   is reported, without a correction, as in the paper; the score is negative
-  for a backward sequence. At least 3 active cells. The recipe's notes list
+  for a backward sequence, and so are its `z_scores`, one per null (the
+  `z_score[...]` columns of `compare_replay_methods`). At least 3 active
+  cells. The recipe's notes list
   the readings taken where the paper is silent and the steps not applied
   (the session scan for events, the 80 cm detection limit, which the paper
   dropped for significance, and the merging of central-stem replays).
