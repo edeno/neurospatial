@@ -92,45 +92,48 @@ class TestJumpRules:
 
     def test_a_lone_outlier_costs_its_earlier_neighbor(self, track):
         # Jumps 10, 10, 60, 50, 10: bin 2 carries the jump into the outlier
-        # and the outlier carries the jump out of it.
+        # and the outlier carries the jump out of it. The outlier alone is a
+        # one-bin piece, which is no segment.
         posterior = _sweep(track, [1, 2, 3, 9, 4, 5])
         between = replay_segments(track, posterior, _times(6), max_jump=20.0)
         earlier = replay_segments(
             track, posterior, _times(6), max_jump=20.0, jump_rule="drop_earlier"
         )
-        assert _segments(between) == [[0, 3], [3, 4], [4, 6]]
+        assert _segments(between) == [[0, 3], [4, 6]]
         assert _segments(earlier) == [[0, 2], [4, 6]]
+        assert not between.trajectory_time_bins[3]
 
     def test_the_last_bin_is_not_rejected_by_a_jump(self, track):
         result = replay_segments(
             track,
-            _sweep(track, [1, 2, 3, 9]),
-            _times(4),
+            _sweep(track, [1, 2, 3, 9, 8]),
+            _times(5),
             max_jump=20.0,
             jump_rule="drop_earlier",
         )
-        assert _segments(result) == [[0, 2], [3, 4]]
+        assert _segments(result) == [[0, 2], [3, 5]]
 
     def test_a_jump_equal_to_max_jump_splits(self, track):
-        posterior = _sweep(track, [1, 2, 4])  # jumps 10 and 20
-        at = replay_segments(track, posterior, _times(3), max_jump=20.0)
-        rounded = replay_segments(track, posterior, _times(3), max_jump=20.0 + 1e-12)
-        above = replay_segments(track, posterior, _times(3), max_jump=20.5)
-        assert _segments(at) == _segments(rounded) == [[0, 2], [2, 3]]
-        assert _segments(above) == [[0, 3]]
+        posterior = _sweep(track, [1, 2, 4, 5])  # jumps 10, 20 and 10
+        at = replay_segments(track, posterior, _times(4), max_jump=20.0)
+        rounded = replay_segments(track, posterior, _times(4), max_jump=20.0 + 1e-12)
+        above = replay_segments(track, posterior, _times(4), max_jump=20.5)
+        assert _segments(at) == _segments(rounded) == [[0, 2], [2, 4]]
+        assert _segments(above) == [[0, 4]]
 
     def test_posterior_mean_jumps(self, track):
-        # Means 15, 25, 35 then 47 (0.6 in bin 3, 0.4 in bin 6): a 12 cm
+        # Means 15, 25, 35 then 47, 47 (0.6 in bin 3, 0.4 in bin 6): a 12 cm
         # mean jump although the MAP stays in bin 3.
-        posterior = _sweep(track, [1, 2, 3, 3]).astype(float)
-        posterior[3] = 0.0
-        posterior[3, [3, 6]] = [0.6, 0.4]
-        by_map = replay_segments(track, posterior, _times(4), max_jump=11.0)
+        posterior = _sweep(track, [1, 2, 3, 3, 3]).astype(float)
+        posterior[3:] = 0.0
+        posterior[3:, 3] = 0.6
+        posterior[3:, 6] = 0.4
+        by_map = replay_segments(track, posterior, _times(5), max_jump=11.0)
         by_mean = replay_segments(
-            track, posterior, _times(4), max_jump=11.0, method="mean"
+            track, posterior, _times(5), max_jump=11.0, method="expected"
         )
-        assert _segments(by_map) == [[0, 4]]
-        assert _segments(by_mean) == [[0, 3], [3, 4]]
+        assert _segments(by_map) == [[0, 5]]
+        assert _segments(by_mean) == [[0, 3], [3, 5]]
 
 
 class TestGaps:
@@ -140,7 +143,7 @@ class TestGaps:
         one_gap = replay_segments(
             track, posterior, _times(5), max_jump=20.0, max_gap_bins=1
         )
-        assert _segments(no_gap) == [[0, 2], [2, 3], [3, 5]]
+        assert _segments(no_gap) == [[0, 2], [3, 5]]
         assert _segments(one_gap) == [[0, 5]]
         np.testing.assert_array_equal(
             one_gap.trajectory_time_bins, [True, True, False, True, True]
@@ -168,7 +171,7 @@ class TestGaps:
         result = replay_segments(
             track, posterior, _times(5), max_jump=20.0, max_gap_bins=1
         )
-        assert _segments(result) == [[0, 2], [2, 3], [3, 5]]
+        assert _segments(result) == [[0, 2], [3, 5]]
 
     def test_a_gap_can_skip_a_rejected_bin(self, track):
         posterior = _sweep(track, [1, 2, 3, 4, 5]).astype(float)
@@ -270,6 +273,24 @@ class TestMerge:
         result = self._merge(track, gapped, 0.04, 20.0)
         assert _segments(result) == [[0, 3], [4, 7]]
 
+    def test_a_time_gap_equal_to_the_threshold_does_not_merge(self, track):
+        # 10 steps of 5 ms after t0 = 100 s: the gap is 0.05 up to rounding,
+        # which in floating point falls just below 0.05.
+        posterior = _sweep(track, [1, 2, 3] + [3] * 9 + [4, 5]).astype(float)
+        posterior[3:12] = 1.0 / track.n_bins
+        times = 100.0 + np.arange(len(posterior)) * 0.005
+        assert times[12] - times[2] < 0.05
+        result = replay_segments(
+            track,
+            posterior,
+            times,
+            max_jump=20.0,
+            min_peak_probability=0.5,
+            merge_max_time_gap=0.05,
+            merge_max_distance=20.0,
+        )
+        assert _segments(result) == [[0, 3], [12, 14]]
+
     def test_merges_a_chain_of_pieces(self, track):
         posterior = _sweep(track, [1, 2, 2, 3, 4, 4, 5, 6]).astype(float)
         posterior[[2, 5]] = 1.0 / track.n_bins
@@ -277,11 +298,12 @@ class TestMerge:
         assert _segments(result) == [[0, 8]]
 
     def test_drop_earlier_and_merge_bridge_an_outlier(self, track):
-        """Widloski & Foster (2022) by hand, posterior means, 5 ms steps.
+        """The Widloski & Foster (2022) rules, posterior means, 5 ms steps.
 
         Means 15, 25, 35, 95, 45, 55, 65. Jumps 10, 10, 60, 50, 10, 10:
         rows 2 and 3 are rejected, leaving rows 0-1 and 4-6, 15 ms and
-        20 cm apart (25 -> 45).
+        20 cm apart (25 -> 45). Their 20 cm merge distance is strict, so
+        25 cm lets these pieces merge.
         """
         posterior = _sweep(track, [1, 2, 3, 9, 4, 5, 6])
         result = replay_segments(
@@ -289,7 +311,7 @@ class TestMerge:
             posterior,
             _times(7, dt=0.005),
             max_jump=20.0,
-            method="mean",
+            method="expected",
             jump_rule="drop_earlier",
             merge_max_time_gap=0.05,
             merge_max_distance=25.0,
@@ -471,12 +493,12 @@ class TestGeometry:
         np.testing.assert_allclose(result.path_lengths, [30.0 + np.sqrt(200.0), 10.0])
 
     def test_arena_posterior_means(self, arena):
-        points = np.array([[5, 5], [15, 5], [25, 5], [45, 45]], dtype=float)
+        points = np.array([[5, 5], [15, 5], [25, 5], [45, 45], [45, 35]], dtype=float)
         posterior = np.eye(arena.n_bins)[arena.bin_at(points)]
         result = replay_segments(
-            arena, posterior, _times(4), max_jump=20.0, method="mean"
+            arena, posterior, _times(5), max_jump=20.0, method="expected"
         )
-        assert _segments(result) == [[0, 3], [3, 4]]
+        assert _segments(result) == [[0, 3], [3, 5]]
 
     def test_track_jumps_follow_the_track(self, l_track):
         posterior = _sweep(l_track, [1, 2, 3, 6, 7])
@@ -595,3 +617,129 @@ class TestRefusals:
         )
         with pytest.raises(CartesianOnlyError, match="allocentric"):
             replay_segments(env, np.eye(env.n_bins)[:2], _times(2), max_jump=20.0)
+
+
+class TestLoneBins:
+    def test_a_lone_outlier_does_not_block_a_merge(self, track):
+        """The Mallory et al. (2025) code drops one-bin runs before merging.
+
+        Rows 0-2 and 4-5 sit 10 cm and 40 ms apart across the outlier in
+        row 3, so they merge; the outlier stays off the trajectory.
+        """
+        result = replay_segments(
+            track,
+            _sweep(track, [1, 2, 3, 9, 4, 5]),
+            _times(6),
+            max_jump=20.0,
+            merge_max_time_gap=0.05,
+            merge_max_distance=20.0,
+        )
+        assert _segments(result) == [[0, 6]]
+        np.testing.assert_array_equal(np.flatnonzero(~result.trajectory_time_bins), [3])
+        np.testing.assert_allclose(result.path_lengths, [40.0])
+
+    def test_a_lone_accepted_bin_counts_in_a_merged_segment(self, track):
+        """The Widloski & Foster (2022) code counts it in the dispersion.
+
+        Means 15, 25, 35, (35 blurred), 45, (45 blurred), 55, 65, 75: the
+        blurred rows are rejected, which leaves row 4 alone between the
+        pieces 0-2 and 6-8. They merge, and row 4 leads on to row 5.
+        """
+        posterior = _sweep(track, [1, 2, 3, 3, 4, 4, 5, 6, 7]).astype(float)
+        posterior[3] = 0.0
+        posterior[3, [2, 4]] = 0.5
+        posterior[5] = 0.0
+        posterior[5, [3, 5]] = 0.5
+        result = replay_segments(
+            track,
+            posterior,
+            _times(9, dt=0.005),
+            max_jump=20.0,
+            method="expected",
+            jump_rule="drop_earlier",
+            max_spread=8.0,
+            merge_max_time_gap=0.05,
+            merge_max_distance=25.0,
+        )
+        assert _segments(result) == [[0, 9]]
+        np.testing.assert_array_equal(
+            np.flatnonzero(~result.trajectory_time_bins), [3, 5]
+        )
+        positions = np.array([15.0, 25.0, 35.0, 45.0, 55.0, 65.0, 75.0])
+        expected = np.sqrt(np.mean((positions - positions.mean()) ** 2))
+        np.testing.assert_allclose(result.dispersions, [expected])
+
+    def test_merging_on_a_maze_measures_along_the_track(self, l_track):
+        # Pieces end in bin 3 and start in bin 6: 30 cm along the track,
+        # 21.2 cm in a straight line.
+        posterior = _sweep(l_track, [1, 2, 3, 3, 6, 7]).astype(float)
+        posterior[3] = 1.0 / l_track.n_bins
+        options = {
+            "max_jump": 15.0,
+            "min_peak_probability": 0.5,
+            "merge_max_time_gap": 0.05,
+            "merge_max_distance": 25.0,
+        }
+        along = replay_segments(l_track, posterior, _times(6), **options)
+        straight = replay_segments(
+            l_track, posterior, _times(6), metric="euclidean", **options
+        )
+        assert _segments(along) == [[0, 3], [4, 6]]
+        assert _segments(straight) == [[0, 6]]
+
+
+class TestValidTimeBins:
+    @pytest.fixture(scope="class")
+    def sweep(self, track):
+        valid = np.ones(6, dtype=bool)
+        valid[3] = False
+        return _sweep(track, [1, 2, 3, 4, 5, 6]), valid
+
+    def test_an_invalid_bin_splits_without_a_jump_across_it(self, track, sweep):
+        posterior, valid = sweep
+        result = replay_segments(
+            track, posterior, _times(6), max_jump=20.0, valid_time_bins=valid
+        )
+        assert _segments(result) == [[0, 3], [4, 6]]
+        # Deleting the row instead would join 35 and 55 into one segment.
+        assert _segments(
+            replay_segments(track, posterior[valid], _times(5), max_jump=25.0)
+        ) == [[0, 5]]
+
+    def test_drop_earlier_also_rejects_the_bin_before_an_invalid_bin(
+        self, track, sweep
+    ):
+        posterior, valid = sweep
+        result = replay_segments(
+            track,
+            posterior,
+            _times(6),
+            max_jump=20.0,
+            jump_rule="drop_earlier",
+            valid_time_bins=valid,
+        )
+        assert _segments(result) == [[0, 2], [4, 6]]
+
+    def test_merging_bridges_an_invalid_bin(self, track, sweep):
+        posterior, valid = sweep
+        result = replay_segments(
+            track,
+            posterior,
+            _times(6),
+            max_jump=20.0,
+            merge_max_time_gap=0.05,
+            merge_max_distance=25.0,
+            valid_time_bins=valid,
+        )
+        assert _segments(result) == [[0, 6]]
+        assert not result.trajectory_time_bins[3]
+
+    @pytest.mark.parametrize(
+        "valid", [np.ones(5, dtype=bool), np.ones(6, dtype=int)], ids=["shape", "dtype"]
+    )
+    def test_refuses_a_mask_that_is_not_one_boolean_per_row(self, track, sweep, valid):
+        posterior, _ = sweep
+        with pytest.raises(ValueError, match="valid_time_bins must be a boolean"):
+            replay_segments(
+                track, posterior, _times(6), max_jump=20.0, valid_time_bins=valid
+            )

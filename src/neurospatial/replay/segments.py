@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 _OPERATION = "replay_segments()"
-_METHODS = ("map", "mean")
+_METHODS = ("map", "expected")
 _JUMP_RULES = ("between", "drop_earlier")
 
 
@@ -69,11 +69,13 @@ class ReplaySegmentsResult(ReadOnlyArraysMixin, ResultMixin):
     trajectory_time_bins : NDArray[np.bool_], shape (n_time_bins,)
         True for each time bin on a kept segment's trajectory. Rows that a
         segment spans but skips (a gap, or the rows between merged pieces)
-        are False.
+        are False, except a lone accepted time bin between merged pieces
+        that lies within ``max_jump`` of the next time bin, which the
+        Widloski & Foster (2022) code counts in the segment's dispersion.
     longest : int or None
         Index of the segment spanning the most time bins, the earliest on a
         tie; None without segments.
-    method : {"map", "mean"}
+    method : {"map", "expected"}
         Decoded position used: MAP bin center or posterior mean.
     jump_rule : {"between", "drop_earlier"}
         Which time bins a jump removed.
@@ -193,7 +195,7 @@ def replay_segments(
     times: NDArray[np.float64],
     *,
     max_jump: float,
-    method: Literal["map", "mean"] = "map",
+    method: Literal["map", "expected"] = "map",
     jump_rule: Literal["between", "drop_earlier"] = "between",
     max_gap_bins: int = 0,
     max_spread: float | None = None,
@@ -203,6 +205,7 @@ def replay_segments(
     min_duration: float | None = None,
     min_time_bins: int | None = None,
     min_dispersion: float | None = None,
+    valid_time_bins: NDArray[np.bool_] | None = None,
     metric: Literal["geodesic", "euclidean"] | None = None,
 ) -> ReplaySegmentsResult:
     """Cut a decoded event into segments in which the position moves smoothly.
@@ -214,9 +217,9 @@ def replay_segments(
     (Widloski & Foster 2022; Carey et al. 2019). The steps are applied in
     this order:
 
-    1. **Reject time bins** whose posterior spread is not below
-       ``max_spread`` or whose peak probability is not above
-       ``min_peak_probability``.
+    1. **Reject time bins** marked invalid in ``valid_time_bins``, whose
+       posterior spread is not below ``max_spread``, or whose peak
+       probability is not above ``min_peak_probability``.
     2. **Split at jumps.** A jump is the distance between the decoded
        positions of consecutive time bins ``t - 1`` and ``t``; a jump not
        below ``max_jump`` separates them. ``jump_rule`` sets whether a bin
@@ -224,13 +227,18 @@ def replay_segments(
     3. **Bridge gaps.** With ``max_gap_bins > 0``, a segment continues
        past up to that many time bins to the next bin within ``max_jump``.
     4. **Merge** neighboring segments separated by less than
-       ``merge_max_time_gap`` and ``merge_max_distance``.
+       ``merge_max_time_gap`` and ``merge_max_distance``. Pieces of a
+       single time bin have no step and are dropped before merging, as the
+       Widloski & Foster (2022) and Mallory et al. (2025) code drops them.
     5. **Filter** segments by ``min_duration``, ``min_time_bins`` and
        ``min_dispersion``.
 
     Works on 1-D environments, linearized tracks and mazes, and 2-D or 3-D
-    arenas. Each segment's own metrics follow from
-    ``trajectory_metrics(env, posterior[result.rows(i)], times[result.rows(i)])``.
+    arenas. For a segment without skipped or merged rows, its own metrics
+    follow from
+    ``trajectory_metrics(env, posterior[result.rows(i)], times[result.rows(i)])``;
+    otherwise ``rows(i)`` also holds the skipped rows, which
+    ``trajectory_time_bins`` marks False.
 
     Parameters
     ----------
@@ -250,10 +258,10 @@ def replay_segments(
         move between consecutive time bins of a segment; a jump of
         ``max_jump`` or more separates them. Published values range from
         20 cm to 40% of the track (see Examples), so there is no default.
-    method : {"map", "mean"}, default="map"
+    method : {"map", "expected"}, default="map"
         Decoded position of each time bin. ``"map"`` is the center of the
         MAP bin (Pfeiffer & Foster 2013; Igata et al. 2021; Carey et al.
-        2019; Mallory et al. 2025); ``"mean"`` is the posterior mean
+        2019; Mallory et al. 2025); ``"expected"`` is the posterior mean
         (Pfeiffer & Foster 2015; Widloski & Foster 2022).
     jump_rule : {"between", "drop_earlier"}, default="between"
         Which time bin a jump between ``t - 1`` and ``t`` removes.
@@ -299,6 +307,16 @@ def replay_segments(
     min_dispersion : float or None, default=None
         Drop segments whose dispersion is below this, in environment units
         (Widloski & Foster 2022: 12 cm).
+    valid_time_bins : NDArray[np.bool_] or None, shape (n_time_bins,), default=None
+        False for time bins that must not be part of a trajectory, such as
+        bins with too few active cells (Carey et al. 2019: fewer than 4) or
+        while the animal runs (Widloski & Foster 2022: 5 cm/s or faster).
+        They are rejected like a blurred bin: they split segments, and
+        merging may bridge them. With ``jump_rule="drop_earlier"``, the bin
+        before an invalid bin is rejected too, because its jump to the next
+        position is undefined. None treats every time bin as valid. Keep the
+        rows in ``posterior`` rather than deleting them: deleting rows makes
+        their neighbors consecutive and measures a jump across them.
     metric : {"geodesic", "euclidean"} or None, default=None
         Distance between MAP bins, as in :func:`trajectory_metrics`: None
         uses geodesic on a track or 1-D environment and Euclidean in an
@@ -316,7 +334,8 @@ def replay_segments(
     ValueError
         If ``method``, ``jump_rule`` or ``metric`` is not one of the
         options; if a threshold is out of range; if only one of the merge
-        thresholds is given; if ``posterior`` does not have one column per
+        thresholds is given; if ``valid_time_bins`` is not one boolean per
+        row; if ``posterior`` does not have one column per
         bin, or a row has NaN, Inf or negative entries, no mass, or more
         than 1; or if ``times`` does not have one finite, increasing value
         per row.
@@ -362,9 +381,14 @@ def replay_segments(
       bin, is never rejected by a jump. Segments are merged by the time
       between bin centers and the Euclidean distance between posterior
       means. The code computes dispersion over the merged segment's
-      accepted bins only, ignoring the rows between pieces, as
-      ``dispersions`` does here. Restricting time bins to running speed
-      below 5 cm/s is left to the caller.
+      accepted bins only, ignoring the rejected rows between pieces, as
+      ``dispersions`` does here; a lone accepted bin between pieces counts.
+      Its bins at running speed of 5 cm/s or more have no decoded position;
+      pass them as ``valid_time_bins=False``. The code's final tests are
+      strict, duration > 100 ms and dispersion > 12 cm, while
+      ``min_duration`` and ``min_dispersion`` pass a segment that reaches
+      them; on 5 ms steps, ``min_time_bins=22`` gives the strict duration
+      test.
     - The Mallory et al. (2025) code (``filter_candidate_events.m``) rejects
       bin ``t`` when the MAP jump from ``t - 1`` is at least the threshold
       (``jumps = [0; abs(diff(x))]``), but its run finder
@@ -388,13 +412,14 @@ def replay_segments(
     - Igata et al. (2021) do not say whether the bin skipped by "a 1-gap
       time bin" may be a bin below the peak threshold, a bin whose MAP is
       out of range, or both. Both are skipped here, and a segment continues
-      to the earliest bin within reach.
+      to the earliest bin within reach. They also computed the MAP of each
+      path of the maze separately and extended sequences into neighboring
+      paths; the example below uses one MAP over the whole maze.
     - The Carey et al. (2019) code (``DecSeqDetectZ.m``) keeps jumps of
       ``round(40 / bin_size)`` bins or fewer; on their 3 cm bins this is
       the same as ``max_jump=40.0``. It runs over whole sessions and keeps
       every sequence. Its time bins with fewer than 4 active cells are
-      NaN, which break sequences; drop such rows, or pass the event between
-      them, before calling this function.
+      NaN, which break sequences: pass them as ``valid_time_bins=False``.
 
     References
     ----------
@@ -427,14 +452,14 @@ def replay_segments(
     - Pfeiffer & Foster (2013): ``max_jump=20.0, method="map",
       min_time_bins=11``; keep ``result.longest`` if its
       ``start_to_end_distances`` is at least 40 cm.
-    - Pfeiffer & Foster (2015): ``max_jump=50.0, method="mean",
+    - Pfeiffer & Foster (2015): ``max_jump=50.0, method="expected",
       min_time_bins=11``; start-to-end distance at least 80 cm.
     - Igata et al. (2021): ``max_jump=40.0, method="map", max_gap_bins=1,
       min_peak_probability=5 / n_bins, min_time_bins=5``; path length of
       the longest above 20 cm.
     - Carey et al. (2019): ``max_jump=40.0, method="map",
       min_time_bins=10``; every segment.
-    - Widloski & Foster (2022): ``max_jump=20.0, method="mean",
+    - Widloski & Foster (2022): ``max_jump=20.0, method="expected",
       jump_rule="drop_earlier", max_spread=10.0, merge_max_time_gap=0.05,
       merge_max_distance=20.0, min_duration=0.1, min_dispersion=12.0``;
       every segment.
@@ -442,7 +467,9 @@ def replay_segments(
       with more posterior, ``max_jump=0.4 * track_length, method="map",
       min_peak_probability=5 / (2 * env.n_bins), merge_max_time_gap=0.05,
       merge_max_distance=0.4 * track_length, min_duration=0.03``; keep
-      ``result.longest``.
+      ``result.longest``. The code compares the templates' posterior with
+      10 bins (20 cm) at each end of the track left out, and rejects the
+      segment if it holds more posterior in the other template.
 
     A sweep along a 100 cm track that jumps from bin 5 to bin 9 after five
     time bins and then runs back:
@@ -538,13 +565,18 @@ def replay_segments(
     distance = _distance_function(env, metrics, method)
     jumps = metrics.map_jumps if method == "map" else metrics.mean_jumps
 
-    accepted = np.ones(n_time_bins, dtype=bool)
+    valid = (
+        np.ones(n_time_bins, dtype=bool)
+        if valid_time_bins is None
+        else _valid_time_bins(valid_time_bins, n_time_bins)
+    )
+    accepted = valid.copy()
     if max_spread is not None:
         accepted &= _below(metrics.spread, max_spread)
     if min_peak_probability is not None:
         accepted &= _above(metrics.peak_probability, min_peak_probability)
     if jump_rule == "drop_earlier":
-        accepted[:-1] &= _below(jumps, max_jump)
+        accepted[:-1] &= _below(jumps, max_jump) & valid[1:]
 
     # The bin each time bin's segment continues to: the earliest accepted
     # bin within reach, or -1. Writing the farthest offset first lets the
@@ -572,6 +604,9 @@ def replay_segments(
         pieces.append((start, t + 1))
         t += 1
     bounds = np.array(pieces, dtype=np.int64).reshape(-1, 2)
+    lone = bounds[bounds[:, 1] - bounds[:, 0] == 1, 0]
+    on_trajectory[lone] = False
+    bounds = bounds[bounds[:, 1] - bounds[:, 0] > 1]
 
     if (
         merge_max_time_gap is not None
@@ -586,6 +621,13 @@ def replay_segments(
         bounds = np.column_stack(
             [bounds[np.r_[True, ~join], 0], bounds[np.r_[~join, True], 1]]
         )
+        # A lone bin inside a merged segment that leads on to the next bin
+        # is on the trajectory. It never ends a segment, so lone + 1 is
+        # inside it too.
+        span = np.searchsorted(bounds[:, 0], lone, side="right") - 1
+        inside = (span >= 0) & (lone < bounds[np.maximum(span, 0), 1])
+        lone = lone[inside]
+        on_trajectory[lone[_below(distance(lone, lone + 1), max_jump)]] = True
 
     starts, stops = bounds[:, 0], bounds[:, 1]
     durations = times[stops - 1] - times[starts]
@@ -624,12 +666,28 @@ def replay_segments(
     )
 
 
+def _valid_time_bins(valid_time_bins: Any, n_time_bins: int) -> NDArray[np.bool_]:
+    """One boolean per time bin."""
+    valid = np.asarray(valid_time_bins)
+    if valid.dtype != np.bool_ or valid.shape != (n_time_bins,):
+        raise ValueError(
+            _format_error(
+                f"{_OPERATION}: valid_time_bins must be a boolean array of shape "
+                f"({n_time_bins},), got dtype {valid.dtype} and shape "
+                f"{valid.shape}.",
+                why="it marks each posterior row as usable or not",
+                fix="pass one True/False per time bin, e.g. n_active_cells >= 4",
+            )
+        )
+    return valid
+
+
 def _distance_function(env: Environment, metrics: Any, method: str) -> Any:
     """Distance between the decoded positions of time bins ``first`` and ``second``.
 
     MAP positions use the event's metric; posterior means are Euclidean.
     """
-    if method == "mean":
+    if method == "expected":
         means = metrics.mean_positions
 
         def between_means(

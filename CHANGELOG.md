@@ -60,6 +60,15 @@ compared on the same events; the docstring lists each paper's settings.
   the Mallory code), merge neighboring segments separated by less than
   `merge_max_time_gap` and `merge_max_distance` (Widloski & Foster 2022),
   and drop segments by `min_duration`, `min_time_bins` or `min_dispersion`.
+- `valid_time_bins` marks rows that cannot be on a trajectory, such as bins
+  with too few active cells (Carey et al. 2019) or at running speed
+  (Widloski & Foster 2022). They split segments without a jump being
+  measured across them, and merging can bridge them.
+- A piece of one time bin has no step and is not a segment; as in the
+  Widloski and Mallory code it is dropped before merging, so a lone outlier
+  does not keep its neighbors apart.
+- `method="expected"` uses the posterior mean, as `fit_isotonic_trajectory`
+  and `confusion_matrix` name it.
 - `ReplaySegmentsResult` holds each segment's rows, times, duration,
   dispersion, start-to-end distance and path length, the trajectory time
   bins, and the `longest` segment; `posterior[result.rows()]` selects it.
