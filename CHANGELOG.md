@@ -45,12 +45,11 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
 
 Three more recipes score the posterior's weighted correlation:
 
-- `AMBROSE_2016`: |weighted correlation| > 0.6, confirmed against 1,500
-  column-cycle shuffles at p < 0.05. The paper does not name its posterior
-  shuffle, and the notes say so.
+- `AMBROSE_2016`: |weighted correlation| > 0.6. The paper's Monte Carlo
+  test was a robustness check, not the definition; the notes describe it.
 - `GROSMARK_2016`: |r| against 1,000 circular place-field shuffles, decoded
-  again, with at least 5 active cells. The paper gives no per-event α;
-  0.05 is read from Fig. S5C.
+  again, with at least max(5, 10% of the cells) active. The paper gives no
+  per-event α or test side; 0.05 on |r| is read from Fig. S5C.
 - `BERNERS_LEE_2022`: |weighted correlation| > 0.6 and a maximum MAP jump
   below 0.4 of the track. Both are computed on the posterior summed over
   the two running directions of a joint decode. The paper's significance
@@ -59,6 +58,9 @@ Three more recipes score the posterior's weighted correlation:
 New `ReplayMethod(template_choice="sum")` tests the posterior summed over a
 joint decode's templates. The templates must share one environment, and
 nulls that decode again cannot be used.
+
+New criterion quantity `active_fraction`: active cells over the columns of
+`spike_counts`.
 
 ### Chenani et al. (2019): rank-order replay against the epoch's shuffles
 

@@ -2044,16 +2044,65 @@ def test_compare_refuses_duplicate_method_names(place_code):
 
 class TestWeightedCorrelationRecipes:
     def test_berners_lee_scores_both_directions_summed(self, direction_track):
-        """Half of each time bin's posterior is in each direction.
+        """The trajectory hands over from outbound to inbound halfway.
 
-        Neither share alone holds the event; summed, the sweep is a line.
+        Each direction alone jumps to bin 90 where it holds little mass;
+        summed, the MAP runs smoothly from bin 10 to bin 69.
         """
+        env = direction_track
+        parked = _parked(env, 30, bin_index=90)
+        outbound = np.vstack([_one_hot(env, range(10, 40)), parked])
+        inbound = np.vstack([parked, _one_hot(env, range(40, 70))])
+        p_outbound = np.r_[np.full(30, 0.9), np.full(30, 0.1)]
+        event = _joint_event(env, outbound, inbound, p_outbound)
+        summed = detect_replay(env, event, _steps(60), replay_method=BERNERS_LEE_2022)
+        assert summed.is_replay and summed.template is None
+        assert summed.values["max_map_jump < 0.4 x track_length"] == pytest.approx(2.0)
+        for name in ("outbound", "inbound"):
+            alone = detect_replay(
+                env,
+                event,
+                _steps(60),
+                replay_method=BERNERS_LEE_2022,
+                template=name,
+            )
+            assert not alone.criteria["max_map_jump < 0.4 x track_length"]
+
+    def test_a_sum_works_with_segments_and_posterior_nulls(self, direction_track):
+        import dataclasses
+
         env = direction_track
         sweep = _one_hot(env, range(10, 70))
         event = _joint_event(env, sweep, sweep, p_outbound=0.5)
-        result = detect_replay(env, event, _steps(60), replay_method=BERNERS_LEE_2022)
-        assert result.is_replay and result.template is None
-        assert result.score == pytest.approx(1.0)
+        segmented = detect_replay(
+            env,
+            event,
+            _steps(60),
+            replay_method=dataclasses.replace(
+                PFEIFFER_FOSTER_2013, name="pf_sum", template_choice="sum"
+            ),
+        )
+        assert segmented.is_replay and segmented.template is None
+        shuffled = detect_replay(
+            env,
+            event,
+            _steps(60),
+            replay_method=dataclasses.replace(
+                BERNERS_LEE_2022, nulls=("column_cycle",), n_shuffles=99
+            ),
+            rng=0,
+        )
+        assert shuffled.is_replay and shuffled.p_value == pytest.approx(0.01)
+
+    def test_compare_sums_each_joint_event(self, direction_track):
+        env = direction_track
+        sweep = _one_hot(env, range(10, 70))
+        events = [_joint_event(env, sweep, sweep, p_outbound=0.5)] * 2
+        table = compare_replay_methods(
+            env, events, replay_methods=[BERNERS_LEE_2022], template="outbound"
+        )
+        assert table["is_replay"].all()
+        assert "template" not in table or table["template"].isna().all()
 
     def test_berners_lee_rejects_a_large_jump(self, direction_track):
         env = direction_track
@@ -2095,10 +2144,19 @@ class TestWeightedCorrelationRecipes:
                 template_choice="sum",
             )
 
-    @pytest.mark.parametrize(
-        "method", [AMBROSE_2016, GROSMARK_2016], ids=lambda m: m.name
-    )
-    def test_detects_a_sweep_and_rejects_a_random_event(self, place_code, method):
+    def test_ambrose_thresholds_the_weighted_correlation(self, place_code):
+        env, rates = place_code
+        sweep, _ = _decoded(env, rates, "sweep", seed=1, speed=900.0)
+        noise, _ = _decoded(env, rates, "random", seed=9)
+        replayed = detect_replay(
+            env, sweep.posterior, sweep.times, replay_method=AMBROSE_2016
+        )
+        assert replayed.is_replay and np.isnan(replayed.p_value)
+        assert not detect_replay(
+            env, noise.posterior, noise.times, replay_method=AMBROSE_2016
+        ).is_replay
+
+    def test_grosmark_tests_r_against_shifted_fields(self, place_code):
         env, rates = place_code
         verdicts = []
         for kind, seed in (("sweep", 1), ("random", 9)):
@@ -2114,7 +2172,7 @@ class TestWeightedCorrelationRecipes:
                     env,
                     decoded.posterior,
                     decoded.times,
-                    replay_method=_fast(method),
+                    replay_method=_fast(GROSMARK_2016),
                     spike_counts=counts,
                     encoding_models=rates,
                     dt=DT,
@@ -2125,6 +2183,42 @@ class TestWeightedCorrelationRecipes:
         assert sweep.is_replay and sweep.p_value == pytest.approx(1 / 200)
         assert not random_event.is_replay
 
+    def test_grosmark_tests_the_absolute_correlation(self, place_code):
+        """A reverse sweep is as significant as a forward one."""
+        env, rates = place_code
+        decoded, counts = _decoded(env, rates, "sweep", seed=1, speed=900.0)
+        reverse = detect_replay(
+            env,
+            decoded.posterior[::-1],
+            decoded.times,
+            replay_method=_fast(GROSMARK_2016),
+            spike_counts=counts[::-1],
+            encoding_models=rates,
+            dt=DT,
+            rng=0,
+        )
+        assert reverse.score < -0.6
+        assert reverse.is_replay and reverse.p_value == pytest.approx(1 / 200)
+
+    @pytest.mark.parametrize(
+        ("n_active", "n_cells", "expected"),
+        [(4, 40, False), (5, 40, True), (5, 60, False), (6, 60, True)],
+    )
+    def test_grosmark_needs_5_cells_and_10_percent(
+        self, place_code, n_active, n_cells, expected
+    ):
+        env, _ = place_code
+        counts = np.zeros((20, n_cells), dtype=int)
+        counts[np.arange(n_active), np.arange(n_active)] = 1
+        result = detect_replay(
+            env,
+            _one_hot(env, range(20)),
+            np.arange(20) * DT,
+            replay_method=dataclasses_replace_nulls(GROSMARK_2016),
+            spike_counts=counts,
+        )
+        assert all(result.criteria.values()) is expected
+
     @pytest.mark.parametrize(
         ("method", "expected"),
         [
@@ -2132,15 +2226,7 @@ class TestWeightedCorrelationRecipes:
                 BERNERS_LEE_2022,
                 {"nulls": (), "template_choice": "sum", "units": None},
             ),
-            (
-                AMBROSE_2016,
-                {
-                    "nulls": ("column_cycle",),
-                    "n_shuffles": 1500,
-                    "alpha": 0.05,
-                    "use_absolute": True,
-                },
-            ),
+            (AMBROSE_2016, {"nulls": ()}),
             (
                 GROSMARK_2016,
                 {
@@ -2162,4 +2248,11 @@ class TestWeightedCorrelationRecipes:
         elif method is AMBROSE_2016:
             assert labels == ["|score| > 0.6"]
         else:
-            assert labels == ["n_active_cells >= 5"]
+            assert labels == ["n_active_cells >= 5", "active_fraction >= 0.1"]
+
+
+def dataclasses_replace_nulls(method):
+    """The method without shuffles, to check its criteria alone."""
+    import dataclasses
+
+    return dataclasses.replace(method, nulls=())
