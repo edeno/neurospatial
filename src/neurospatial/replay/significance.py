@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -58,6 +59,10 @@ _DECODING_NULLS = ("unit_identity", "spike_train_circular", "place_field_circula
 _ALTERNATIVES = ("greater", "less", "two-sided")
 
 
+class _UndefinedScoreError(ValueError):
+    """The event's own score is undefined (NaN), so it cannot be tested."""
+
+
 @dataclass(frozen=True, repr=False, eq=False)
 class ReplaySignificanceResult(ResultMixin):
     """A decoded event's replay score tested against shuffled events.
@@ -71,8 +76,9 @@ class ReplaySignificanceResult(ResultMixin):
         tested value.
     shuffles : Mapping[str, ShuffleTestResult]
         One shuffle test per null that was run, keyed by the null's name.
-        Each holds the observed statistic, the statistic of every shuffle and
-        the Monte Carlo p-value ``(k + 1) / (n + 1)``.
+        Each holds the observed statistic, the statistic of every shuffle
+        (NaN where a shuffle's score is undefined) and the Monte Carlo
+        p-value ``(k + 1) / (n + 1)`` over the shuffles with a score.
     p_value : float
         The largest p-value among ``shuffles``: an event is significant when
         every null rejects it.
@@ -102,20 +108,38 @@ class ReplaySignificanceResult(ResultMixin):
         """Rebuild through the constructor; the read-only mapping cannot pickle."""
         return reduce_through_constructor(self)
 
+    @property
+    def n_shuffles_used(self) -> Mapping[str, int]:
+        """Shuffles with a defined score per null: those its p-value counts.
+
+        Equal to ``n_shuffles`` unless some shuffles' scores are undefined
+        (NaN); those are left out.
+        """
+        return MappingProxyType(
+            {
+                name: int(np.isfinite(test.null_scores).sum())
+                for name, test in self.shuffles.items()
+            }
+        )
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result.
 
         Starts with the observed result's ``summary()``, or only its
-        ``score`` for a custom score whose result has no ``summary()``.
+        ``score`` for a custom score whose result has no ``summary()``. Each
+        null adds its p-value, ``{null}_p_value``, and the shuffles it counts,
+        ``{null}_n_shuffles_used``.
         """
         summarize = getattr(self.observed, "summary", None)
         observed = (
             summarize() if callable(summarize) else {"score": self.observed.score}
         )
+        used = self.n_shuffles_used
         return {
             **observed,
             "p_value": self.p_value,
             **{f"{name}_p_value": test.p_value for name, test in self.shuffles.items()},
+            **{f"{name}_n_shuffles_used": used[name] for name in self.shuffles},
             "alternative": self.alternative,
             "use_absolute": self.use_absolute,
         }
@@ -210,7 +234,8 @@ def replay_significance(
         scored in batches (also when wrapped in :func:`functools.partial`).
         A score that takes ``rng`` gets one derived from ``rng`` unless
         ``score_options`` sets it, so sampled fits are reproducible too; the
-        event and every shuffle then draw the same uniforms.
+        event and every shuffle then draw the same uniforms; whether it takes
+        ``rng`` is read from its signature.
     score_options : Mapping[str, Any] or None, default=None
         Keyword arguments for ``score``, for example ``{"band": 10.0}`` for
         :func:`detect_trajectory_radon`.
@@ -285,9 +310,11 @@ def replay_significance(
         ``spike_counts`` with ``encoding_models``, ``dt`` and ``prior`` does
         not reproduce ``posterior``; if ``pseudo_event_pool`` does not hold
         probability rows with one column per bin; if ``n_shuffles`` is not a
-        positive integer; or if the event's score is NaN.
+        positive integer; if the event's score is NaN; or if every shuffle
+        of a null has a NaN score.
     TypeError
-        If ``score_options`` holds an argument ``score`` does not take.
+        If ``score_options`` holds an argument ``score`` does not take, or
+        the signature of ``score`` cannot be read.
 
     See Also
     --------
@@ -300,7 +327,12 @@ def replay_significance(
     -----
     The p-values are ``(k + 1) / (n + 1)``, where ``k`` counts shuffles at
     least as extreme as the event (a Monte Carlo p-value; Davison & Hinkley
-    1997; Phipson & Smyth 2010). Shuffles whose score is NaN are left out.
+    1997; Phipson & Smyth 2010). Shuffles whose score is undefined (NaN),
+    such as the weighted correlation of a shuffle whose decoded position does
+    not change, are left out of ``n``, ``k`` and the z-score, with a warning
+    that names the null; ``n_shuffles_used`` reports how many each null
+    kept. Counting them as less extreme than the event would make the
+    p-value too small.
     Requiring every null to reject an event, and reporting the largest
     p-value, follows Davidson et al. (2009), who called an event significant
     replay when all three p-values were below 0.01, and Tirole et al. (2022)
@@ -462,13 +494,18 @@ def replay_significance(
     observed_result = scorer.observe()
     observed = float(_statistic(np.asarray([observed_result.score]), use_absolute)[0])
     if not np.isfinite(observed):
-        raise ValueError(
+        example = (
+            "the weighted correlation is undefined when all of the posterior "
+            "mass is at one position or in one time bin"
+            if score is weighted_correlation
+            else f"{getattr(score, '__name__', 'the score')} is undefined for "
+            "this event, for example when the decoded position does not change"
+        )
+        raise _UndefinedScoreError(
             _format_error(
                 f"{_OPERATION}: the event's score is {observed_result.score}.",
                 why="a score that is not a number cannot be compared with the "
-                "shuffles; the weighted correlation, for example, is undefined "
-                "when all of the posterior mass is at one position or in one "
-                "time bin",
+                f"shuffles; {example}",
                 fix="check the event's posterior, or choose a score defined for it",
             )
         )
@@ -539,11 +576,34 @@ def replay_significance(
     shuffles = {}
     for name, scores in null_scores.items():
         statistic = _statistic(scores, use_absolute)
+        defined = np.isfinite(statistic)
+        n_used = int(defined.sum())
+        if n_used == 0:
+            raise ValueError(
+                _format_error(
+                    f"{_OPERATION}: all {n_shuffles} {name} shuffles have an "
+                    "undefined (NaN) score.",
+                    why="the p-value compares the event with its shuffles, and "
+                    "this null left none to compare with",
+                    fix=f"leave {name} out of nulls, or check that the score is "
+                    "defined on shuffled versions of this event",
+                )
+            )
+        if n_used < n_shuffles:
+            warnings.warn(
+                f"{_OPERATION}: {n_shuffles - n_used} of {n_shuffles} {name} "
+                "shuffles have an undefined (NaN) score and are left out; the "
+                f"{name} p-value counts the other {n_used} (n_shuffles_used).",
+                UserWarning,
+                stacklevel=2,
+            )
         shuffles[name] = ShuffleTestResult(
             observed_score=observed,
             null_scores=statistic,
-            p_value=compute_shuffle_pvalue(observed, statistic, tail=alternative),
-            z_score=compute_shuffle_zscore(observed, statistic),
+            p_value=compute_shuffle_pvalue(
+                observed, statistic[defined], tail=alternative
+            ),
+            z_score=compute_shuffle_zscore(observed, statistic[defined]),
             shuffle_type=name,
             n_shuffles=n_shuffles,
         )
@@ -818,10 +878,22 @@ def _unwrap_partial(
 
 
 def _takes_rng(score: Callable[..., Any]) -> bool:
+    """Whether ``score`` takes an ``rng`` keyword."""
     try:
         return "rng" in inspect.signature(score).parameters
-    except (TypeError, ValueError):
-        return False
+    except (TypeError, ValueError) as error:
+        raise TypeError(
+            _format_error(
+                f"{_OPERATION}: cannot read the signature of score {score!r} "
+                f"({error}).",
+                why="a score that takes rng gets one derived from the test's "
+                "rng, so that a seeded test is reproducible, and only the "
+                "signature tells whether it takes one",
+                fix="wrap the score in a Python function, def score(env, "
+                "posterior, times, **options), with an rng keyword if it "
+                "draws random numbers",
+            )
+        ) from error
 
 
 def _scorer_for(
