@@ -411,7 +411,9 @@ papers define.
   units from different groups: tetrodes, as Kudrimoti et al. (1999) and
   Tatsuno et al. (2006) did, or regions for cross-region pairs (Lansink et
   al., 2009). `pair_mask=` selects pairs by any other rule, such as waveform
-  similarity (Giri et al., 2024). `n_pairs` counts the pairs used.
+  similarity (Giri et al., 2024). `n_pairs` counts the pairs used. A
+  missing or NaN group is refused, since NaN compares unequal to every
+  group and would pair those units as if on different tetrodes.
 - `control_correlations=` takes a list of control periods and partials out
   all of them, as in Kudrimoti et al.'s second experiment. REV is NaN with
   several controls. Tatsuno et al. (2006) and Giri et al. (2019) instead
