@@ -1635,6 +1635,10 @@ class _MomentTables:
     difference of large numbers loses precision.
     """
 
+    # Entries of each (n_time, shifts, n_bins) temporary, about 8 MB; a
+    # chunk of shifts holds about six at once.
+    _TABLE_VALUES = 1_000_000
+
     def __init__(
         self,
         context: _NullContext,
@@ -1660,30 +1664,43 @@ class _MomentTables:
         along = posterior[:, order]  # (n_time, n_bins), in track order
         mass = along.sum(axis=1)
         self.mass = mass
-        index = (np.arange(n_bins)[None, :] - self.shifts[:, None]) % n_bins
-        rolled = along[:, index]  # (n_time, n_shifts, n_bins)
         positions = tables["positions"][order]
-        with np.errstate(invalid="ignore", divide="ignore"):
-            weights = np.where(
-                mass[:, None, None] > 0, rolled / mass[:, None, None], 0.0
+        n_time, n_shifts = len(along), len(self.shifts)
+        self.mean = np.empty((n_time, n_shifts))
+        self.variance = np.empty((n_time, n_shifts))
+        self.maps = np.empty((n_time, n_shifts), dtype=np.intp)
+        self.peaks = np.empty((n_time, n_shifts))
+        # Shifts a chunk at a time, so each (n_time, chunk, n_bins)
+        # temporary stays within the budget.
+        step = max(1, self._TABLE_VALUES // max(n_time * n_bins, 1))
+        for first in range(0, n_shifts, step):
+            shifts = self.shifts[first : first + step]
+            columns = slice(first, first + len(shifts))
+            index = (np.arange(n_bins)[None, :] - shifts[:, None]) % n_bins
+            rolled = along[:, index]  # (n_time, chunk, n_bins)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                weights = np.where(
+                    mass[:, None, None] > 0, rolled / mass[:, None, None], 0.0
+                )
+            mean = weights @ positions
+            self.mean[:, columns] = mean
+            self.variance[:, columns] = np.einsum(
+                "tsb,tsb->ts",
+                weights,
+                (positions[None, None, :] - mean[..., None]) ** 2,
             )
-        mean = weights @ positions
-        self.mean = mean
-        self.variance = np.einsum(
-            "tsb,tsb->ts", weights, (positions[None, None, :] - mean[..., None]) ** 2
-        )
-        # The MAP bin of each shifted row, as trajectory_metrics finds it: on
-        # the renormalized row, in bin numbering.
-        n_time, n_shifts, _ = rolled.shape
-        in_bins = np.empty((n_time * n_shifts, env.n_bins))
-        in_bins[:, order] = rolled.reshape(n_time * n_shifts, n_bins)
-        maps = np.asarray(
-            map_bin(env, in_bins / in_bins.sum(axis=1, keepdims=True))
-        ).reshape(n_time, n_shifts)
-        self.maps = maps
-        self.peaks = in_bins[np.arange(n_time * n_shifts), maps.ravel()].reshape(
-            n_time, n_shifts
-        )
+            # The MAP bin of each shifted row, as trajectory_metrics finds it:
+            # on the renormalized row, in bin numbering.
+            n_rows = n_time * len(shifts)
+            in_bins = np.empty((n_rows, env.n_bins))
+            in_bins[:, order] = rolled.reshape(n_rows, n_bins)
+            maps = np.asarray(
+                map_bin(env, in_bins / in_bins.sum(axis=1, keepdims=True))
+            )
+            self.maps[:, columns] = maps.reshape(n_time, len(shifts))
+            self.peaks[:, columns] = in_bins[np.arange(n_rows), maps].reshape(
+                n_time, len(shifts)
+            )
 
     def values(
         self,
