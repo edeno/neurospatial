@@ -152,22 +152,19 @@ def test_other_rate_objects_raise_type_error(decode, firing_rates) -> None:
 
 def _capture_model_dtype(env, spike_counts, encoding_models, dt):
     """Decode while spying on the dtype of the encoding models that reach
-    the likelihood inside ``_prepare_decode_inputs``."""
-    import neurospatial.decoding.posterior as posterior_mod
+    the likelihood."""
+    from neurospatial.decoding.likelihood import _PoissonRates
 
     captured: dict[str, Any] = {}
-    real = posterior_mod._prepare_decode_inputs
+    real = _PoissonRates.from_rates.__func__
 
-    def spy(env_, counts_, models_, *args, **kwargs):
-        sc, em, prior = real(env_, counts_, models_, *args, **kwargs)
-        captured["dtype"] = em.dtype
-        return sc, em, prior
+    def spy(cls, models, dt_, **kwargs):
+        captured["dtype"] = np.asarray(models).dtype
+        return real(cls, models, dt_, **kwargs)
 
-    posterior_mod._prepare_decode_inputs = spy  # type: ignore[assignment]
-    try:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_PoissonRates, "from_rates", classmethod(spy))
         decode_position(env, spike_counts, encoding_models, dt=dt)
-    finally:
-        posterior_mod._prepare_decode_inputs = real  # type: ignore[assignment]
     return captured["dtype"]
 
 

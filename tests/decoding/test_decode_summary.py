@@ -580,10 +580,10 @@ class TestSummaryDecodeStreamingThroughput:
     ``time_chunk`` rather than (a) materializing the whole ``(n_time, n_bins)``
     posterior in one shot or (b) doing work that fans out with neuron count.
     Both ``decode_position_summary`` and ``decode_session_summary`` express that
-    by looping ``for start in range(0, n_time, time_chunk)`` and calling the
-    shared per-block helper ``_decode_and_reduce_block`` exactly once per block.
+    by decoding through the shared block loop, which normalizes each block with
+    ``_normalize_block`` exactly once.
 
-    These tests spy on ``_decode_and_reduce_block`` (preserving its behavior via
+    These tests spy on ``_normalize_block`` (preserving its behavior via
     ``wraps=real``) and assert the call count equals ``ceil(n_time/time_chunk)``
     and is INDEPENDENT of ``n_neurons``. They are deterministic (call counts,
     not tracemalloc/timing), so they run in default CI without flaking.
@@ -591,7 +591,7 @@ class TestSummaryDecodeStreamingThroughput:
     Why these catch the two structural regressions:
 
     - **Materialize-in-one-block:** if the summary path decoded the whole window
-      in a single block, ``_decode_and_reduce_block`` would be called exactly
+      in a single block, ``_normalize_block`` would be called exactly
       once (== ``ceil(n_time/n_time) == 1``) instead of ``ceil(n_time/k)``, so
       the block-count assertion fails.
     - **Per-neuron fan-out:** if the per-block work were split per neuron, the
@@ -604,7 +604,7 @@ class TestSummaryDecodeStreamingThroughput:
         import neurospatial.decoding.posterior as posterior_mod
         from neurospatial.decoding import decode_position_summary
 
-        real = posterior_mod._decode_and_reduce_block
+        real = posterior_mod._normalize_block
         n_time, time_chunk = 100, 32
         expected_blocks = math.ceil(n_time / time_chunk)  # ceil(100/32) == 4
         assert expected_blocks == 4
@@ -612,7 +612,7 @@ class TestSummaryDecodeStreamingThroughput:
         spike_counts, encoding_models = _make_decode_inputs(
             small_2d_env, n_time=n_time, n_neurons=8
         )
-        with patch.object(posterior_mod, "_decode_and_reduce_block", wraps=real) as spy:
+        with patch.object(posterior_mod, "_normalize_block", wraps=real) as spy:
             decode_position_summary(
                 small_2d_env,
                 spike_counts,
@@ -637,14 +637,14 @@ class TestSummaryDecodeStreamingThroughput:
         import neurospatial.decoding.posterior as posterior_mod
         from neurospatial.decoding import decode_position_summary
 
-        real = posterior_mod._decode_and_reduce_block
+        real = posterior_mod._normalize_block
         n_time, time_chunk = 100, 32
         expected_blocks = math.ceil(n_time / time_chunk)  # 4, regardless of n_neurons
 
         spike_counts, encoding_models = _make_decode_inputs(
             small_2d_env, n_time=n_time, n_neurons=n_neurons
         )
-        with patch.object(posterior_mod, "_decode_and_reduce_block", wraps=real) as spy:
+        with patch.object(posterior_mod, "_normalize_block", wraps=real) as spy:
             decode_position_summary(
                 small_2d_env,
                 spike_counts,
@@ -659,7 +659,7 @@ class TestSummaryDecodeStreamingThroughput:
         import neurospatial.decoding.posterior as posterior_mod
         from neurospatial.decoding import decode_position_summary
 
-        real = posterior_mod._decode_and_reduce_block
+        real = posterior_mod._normalize_block
         time_chunk = 32
 
         def _count_blocks(n_time):
@@ -667,7 +667,7 @@ class TestSummaryDecodeStreamingThroughput:
                 small_2d_env, n_time=n_time, n_neurons=8
             )
             with patch.object(
-                posterior_mod, "_decode_and_reduce_block", wraps=real
+                posterior_mod, "_normalize_block", wraps=real
             ) as spy:
                 decode_position_summary(
                     small_2d_env,
@@ -704,9 +704,8 @@ class TestSummaryDecodeStreamingThroughput:
     ):
         """decode_session_summary: per-block decode count == ceil(n_time/chunk).
 
-        ``session.py`` does a function-local
-        ``from neurospatial.decoding.posterior import _decode_and_reduce_block``,
-        so it is looked up on the ``posterior`` module at call time -- patch it
+        The session decoder runs the block loop of the ``posterior`` module,
+        which looks ``_normalize_block`` up there at call time -- patch it
         THERE. With ``times`` spanning [0, 10] and ``dt=0.1``, the global grid is
         ``n_time = floor(10/0.1 + 1e-9) = 100`` (mirrors session.py's grid math),
         so a non-dividing ``time_chunk=32`` gives ``ceil(100/32) == 4`` blocks --
@@ -715,7 +714,7 @@ class TestSummaryDecodeStreamingThroughput:
         import neurospatial.decoding.posterior as posterior_mod
         from neurospatial.decoding import decode_session_summary
 
-        real = posterior_mod._decode_and_reduce_block
+        real = posterior_mod._normalize_block
         dt, time_chunk = 0.1, 32
         n_time = 100  # floor((10 - 0) / 0.1 + 1e-9)
         expected_blocks = math.ceil(n_time / time_chunk)  # 4
@@ -724,7 +723,7 @@ class TestSummaryDecodeStreamingThroughput:
         spike_times, times, positions = self._session_inputs(
             small_2d_env, n_neurons=n_neurons
         )
-        with patch.object(posterior_mod, "_decode_and_reduce_block", wraps=real) as spy:
+        with patch.object(posterior_mod, "_normalize_block", wraps=real) as spy:
             result = decode_session_summary(
                 small_2d_env,
                 spike_times,

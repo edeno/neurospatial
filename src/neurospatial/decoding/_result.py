@@ -41,9 +41,9 @@ def _read_only(array: _ArrayT) -> _ArrayT:
     return array
 
 
-# Largest accepted |row sum - 1|. It matches the decoders' own output check
-# and is about ten times the float32 rounding of a normalized row (1.2e-7 at
-# 200,000 bins).
+# Largest accepted |row sum - 1|, also applied to the summary decoders'
+# posterior blocks. It is about ten times the float32 rounding of a normalized
+# row (1.2e-7 at 200,000 bins).
 _ROW_SUM_TOLERANCE = 1e-6
 
 # Rows per validation block, sized so temporaries stay near 2**22 elements.

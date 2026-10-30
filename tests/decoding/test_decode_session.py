@@ -632,6 +632,33 @@ class TestSpikeClockMismatch:
         assert not any("milliseconds" in str(w.message) for w in caught)
 
 
+def _spy_working_set(monkeypatch) -> dict:
+    """Capture the decode working set: ``models_dtype`` and posterior ``dtype``.
+
+    Wraps the construction of the likelihood terms (which receive the
+    firing-rate models) and the decode block loop (which receives the
+    posterior dtype); the real functions still run.
+    """
+    from neurospatial.decoding import posterior as posterior_mod
+    from neurospatial.decoding.likelihood import _PoissonRates
+
+    seen: dict = {}
+    real_from_rates = _PoissonRates.from_rates.__func__
+    real_blocks = posterior_mod._posterior_blocks
+
+    def _from_rates(cls, encoding_models, dt, **kw):
+        seen.setdefault("models_dtype", np.asarray(encoding_models).dtype)
+        return real_from_rates(cls, encoding_models, dt, **kw)
+
+    def _blocks(*args, **kw):
+        seen.setdefault("dtype", kw.get("dtype", "MISSING"))
+        return real_blocks(*args, **kw)
+
+    monkeypatch.setattr(_PoissonRates, "from_rates", classmethod(_from_rates))
+    monkeypatch.setattr(posterior_mod, "_posterior_blocks", _blocks)
+    return seen
+
+
 class TestDecodeSessionDtype:
     """The `dtype` knob honors float32 end-to-end (R8).
 
@@ -642,31 +669,13 @@ class TestDecodeSessionDtype:
     """
 
     def _spy_decode_position(self, monkeypatch):
-        """Wrap decode_position to capture the encoding-model dtype it receives.
+        """Capture the dtypes of the decode working set.
 
-        Returns the ``seen`` dict; ``seen["models_dtype"]`` is the dtype of the
-        firing-rate model array passed into the real ``decode_position`` (i.e.
-        the working set), and the real function still runs so the decode
-        completes.
+        ``seen["models_dtype"]`` is the dtype of the firing-rate models reaching
+        the likelihood, and ``seen["dtype"]`` the posterior dtype of the decode
+        loop; the real functions still run.
         """
-        import neurospatial.decoding.session as session_mod
-        from neurospatial.decoding import posterior as posterior_mod
-
-        seen: dict = {}
-        real = posterior_mod.decode_position
-
-        def _spy(env, counts, firing_rates, *, dt, **kw):
-            seen["models_dtype"] = np.asarray(firing_rates).dtype
-            seen["posterior_dtype_kw"] = kw.get("dtype", "MISSING")
-            return real(env, counts, firing_rates, dt=dt, **kw)
-
-        # decode_session imports decode_position locally from
-        # neurospatial.decoding.posterior, so patch it there.
-        monkeypatch.setattr(posterior_mod, "decode_position", _spy)
-        # Guard against decode_session resolving the name another way.
-        if hasattr(session_mod, "decode_position"):
-            monkeypatch.setattr(session_mod, "decode_position", _spy, raising=False)
-        return seen
+        return _spy_working_set(monkeypatch)
 
     def test_computed_branch_float32_reaches_working_set(self, monkeypatch) -> None:
         """dtype=np.float32 (computed branch) → decode_position gets float32 models."""
@@ -680,7 +689,7 @@ class TestDecodeSessionDtype:
         decode_session(env, spike_times, times, positions, dt=0.1, dtype=np.float32)
 
         assert seen["models_dtype"] == np.float32
-        assert seen["posterior_dtype_kw"] is np.float32
+        assert seen["dtype"] is np.float32
 
     def test_computed_branch_default_is_float64(self, monkeypatch) -> None:
         """Default dtype (computed branch) → decode_position gets float64 models."""
@@ -694,7 +703,7 @@ class TestDecodeSessionDtype:
         decode_session(env, spike_times, times, positions, dt=0.1)
 
         assert seen["models_dtype"] == np.float64
-        assert seen["posterior_dtype_kw"] is np.float64
+        assert seen["dtype"] is np.float64
 
     def test_passthrough_branch_float32_reaches_working_set(self, monkeypatch) -> None:
         """float64 encoding_models + dtype=float32 → decode_position gets float32."""
@@ -718,7 +727,7 @@ class TestDecodeSessionDtype:
 
         # dtype is authoritative end-to-end: float64-in is cast down to float32.
         assert seen["models_dtype"] == np.float32
-        assert seen["posterior_dtype_kw"] is np.float32
+        assert seen["dtype"] is np.float32
 
     def test_posterior_dtype_follows_knob(self) -> None:
         """decode_session(dtype=...) sets the posterior dtype; default float64."""
@@ -1226,24 +1235,8 @@ class TestDecodeSessionSummaryDtype:
     """decode_session_summary honors the dtype knob (working set + parity, R8)."""
 
     def _spy_reduce_block(self, monkeypatch):
-        """Wrap _decode_and_reduce_block to capture firing-rates + dtype it gets.
-
-        Records the dtype of the per-block working set: ``seen["models_dtype"]``
-        is the firing-rate model dtype reaching the block decode, and
-        ``seen["dtype"]`` is the working dtype forwarded to it.
-        """
-        from neurospatial.decoding import posterior as posterior_mod
-
-        seen: dict = {}
-        real = posterior_mod._decode_and_reduce_block
-
-        def _spy(counts_block, firing_rates, dt, bin_centers, **kw):
-            seen.setdefault("models_dtype", np.asarray(firing_rates).dtype)
-            seen.setdefault("dtype", kw.get("dtype", "MISSING"))
-            return real(counts_block, firing_rates, dt, bin_centers, **kw)
-
-        monkeypatch.setattr(posterior_mod, "_decode_and_reduce_block", _spy)
-        return seen
+        """Capture the dtypes of the streamed block decode; see ``_spy_working_set``."""
+        return _spy_working_set(monkeypatch)
 
     def test_float32_reaches_block_working_set(self, monkeypatch) -> None:
         """dtype=np.float32 → the streamed block decode gets float32 models + dtype."""

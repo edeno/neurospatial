@@ -10,6 +10,7 @@ encode-then-decode workflow.
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
@@ -20,12 +21,13 @@ from neurospatial._intervals import DEFAULT_MAX_GAP, resolve_time_windows
 from neurospatial._observation import validate_break_before
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._time_bins import _count_spikes_in_time_bins
+from neurospatial._validation import validate_float_dtype
 from neurospatial.decoding._time_bins import validate_dt
-from neurospatial.encoding._spatial_counts import _clock_ratio_hint
+from neurospatial.encoding._spatial_counts import (
+    _clock_ratio_hint,
+    _emit_time_window_warning,
+)
 
-# Warn when more than this fraction of spikes fall outside the decode window.
-# Always < 1.0, so the 100%-dropped case (frac == 1.0) always warns.
-_DROP_WARN_THRESHOLD = 0.5
 # Share of observed time that whole-dt bins may leave undecoded before warning.
 _DROPPED_TIME_WARN_FRACTION = 0.1
 
@@ -33,10 +35,12 @@ _DROPPED_TIME_WARN_FRACTION = 0.1
 # decode_position_summary's default ``time_chunk`` so the two paths block the
 # time axis identically.
 _SUMMARY_DEFAULT_TIME_CHUNK = 1024
+_DECODE_OPTIONS = ("prior", "validate", "time_chunk")
 
 if TYPE_CHECKING:
     from neurospatial._typing import SpikeTrainsLike
     from neurospatial.decoding._result import DecodingResult, DecodingSummary
+    from neurospatial.decoding.likelihood import _PoissonRates
     from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
 
@@ -46,43 +50,26 @@ def _warn_if_spikes_out_of_window(
     t_start: float,
     t_stop: float,
 ) -> None:
-    """Emit one UserWarning if most spikes fall outside the decode window.
+    """Warn once if most spikes fall outside the decode window ``[t_start, t_stop]``.
 
-    Aggregates across all spike trains. Warns (does not raise) when the
-    dropped fraction exceeds ``_DROP_WARN_THRESHOLD``. A genuinely empty
-    session is legitimate, so an empty input never warns. When the spike
-    times span about 1000 times (or 1/1000 of) the window, the message names
-    the likely millisecond/second mix-up.
-
-    Parameters
-    ----------
-    trains : list of ndarray
-        Per-neuron spike-time arrays (already normalized).
-    t_start, t_stop : float
-        Decode time window bounds ``[t_start, t_stop]`` (seconds).
+    Aggregates across all spike trains; an empty session never warns. The
+    warning names a likely millisecond/second mix-up.
     """
-    total = sum(int(t.size) for t in trains)
-    if total == 0:
+    nonempty = [t for t in trains if t.size > 0]
+    if not nonempty:
         return
-
-    n_out = sum(int(np.count_nonzero((t < t_start) | (t > t_stop))) for t in trains)
-    frac = n_out / total
-    if frac <= _DROP_WARN_THRESHOLD:
-        return
-
-    all_spikes = np.concatenate([t for t in trains if t.size > 0])
-    warnings.warn(
-        f"{n_out}/{total} spike_times "
-        f"({100 * frac:.0f}%) fell outside the decode time window "
-        f"[{t_start:.6g}, {t_stop:.6g}]; "
-        f"spike_times.min()={all_spikes.min():.6g} "
-        f"spike_times.max()={all_spikes.max():.6g}. "
-        f"{_clock_ratio_hint(all_spikes, t_start, t_stop)}"
-        f"Check that spike_times and times share units (both seconds). "
-        f"Dropped spikes do not contribute to the posterior. "
-        f"Set warn_on_drop=False to suppress this warning.",
-        UserWarning,
-        stacklevel=_external_stacklevel(),
+    n_out = sum(int(np.count_nonzero((t < t_start) | (t > t_stop))) for t in nonempty)
+    # The message needs only the spike-time range.
+    spike_range = np.array(
+        [min(float(t.min()) for t in nonempty), max(float(t.max()) for t in nonempty)]
+    )
+    _emit_time_window_warning(
+        n_out,
+        sum(int(t.size) for t in nonempty),
+        t_start,
+        t_stop,
+        spike_range,
+        window="decode",
     )
 
 
@@ -300,9 +287,10 @@ def decode_session(
         their memory. Rates are computed in float64 and then cast. Any other
         dtype raises ``ValueError``.
     **decode_kwargs
-        Forwarded to :func:`~neurospatial.decoding.decode_position`: ``prior``
-        and ``validate``. ``method`` above names the rate estimator, and
-        ``dtype`` is the explicit parameter above.
+        ``prior``, ``validate`` and ``time_chunk``, with the meaning they have
+        in :func:`~neurospatial.decoding.decode_position`. ``method`` above
+        names the rate estimator, and ``dtype`` is the explicit parameter
+        above. Unknown kwargs raise ``TypeError``.
 
     Returns
     -------
@@ -420,7 +408,9 @@ def decode_session(
     ... )
     """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    validate_dt(dt)
+    dt = validate_dt(dt)
+    dtype = validate_float_dtype(dtype, stored="rate maps and posteriors")
+    options = _decode_options(decode_kwargs, caller="decode_session", summary=False)
     trains, firing_rates, rates_result = _fit_encoding_model(
         env,
         spike_times,
@@ -455,35 +445,44 @@ def decode_session(
         dtype=dtype,
         spatial_support=rates_result.spatial_support,
         sample_valid=_tracked(times, positions),
-        **decode_kwargs,
+        **options,
     )
 
 
-def _validate_session_dtype(
-    dtype: type[np.float32] | type[np.float64],
-) -> type[np.float32] | type[np.float64]:
-    """Resolve the supported encoding/posterior working precision."""
-    # Validate dtype: only single/double precision working sets are supported.
-    # Mirrors compute_spatial_rates' dtype validation wording. Wrap the parse so
-    # an unparseable dtype string (e.g. "bogus") raises this clean ValueError
-    # naming `dtype`, not a raw NumPy
-    # ``TypeError: data type 'bogus' not understood``.
-    _dtype_msg = (
-        f"dtype must be np.float32 or np.float64, got {dtype!r}. "
-        "Only single- and double-precision rate maps are supported "
-        "(float32 halves the encoding-model working set and the "
-        "downstream decode posterior)."
-    )
-    try:
-        _resolved_dtype = np.dtype(dtype)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(_dtype_msg) from exc
-    if _resolved_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
-        raise ValueError(_dtype_msg)
-    # Normalize to the canonical numpy scalar type for downstream casts.
-    dtype = np.float32 if _resolved_dtype == np.dtype(np.float32) else np.float64
+def _decode_options(
+    decode_kwargs: dict[str, Any], *, caller: str, summary: bool
+) -> dict[str, Any]:
+    """Validate the forwarded decode keywords before the encoding fit.
 
-    return dtype
+    Returns ``prior``, ``validate`` and ``time_chunk``; a summary decoder
+    refuses ``time_chunk=None``.
+    """
+    from neurospatial.decoding.posterior import (
+        _summary_time_chunk,
+        _validate_time_chunk,
+    )
+
+    unknown = sorted(set(decode_kwargs) - set(_DECODE_OPTIONS))
+    if unknown:
+        raise TypeError(
+            f"{caller} got unexpected keyword argument(s): {unknown}. Supported "
+            f"decode kwargs are {', '.join(_DECODE_OPTIONS)} (dtype is an "
+            "explicit parameter)."
+        )
+    time_chunk = decode_kwargs.get(
+        "time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK if summary else None
+    )
+    return {
+        "prior": decode_kwargs.get("prior"),
+        "validate": decode_kwargs.get("validate", True),
+        "time_chunk": (
+            _summary_time_chunk(
+                time_chunk, caller=caller, full_decoder="decode_session"
+            )
+            if summary
+            else _validate_time_chunk(time_chunk, allow_none=True)
+        ),
+    }
 
 
 def _tracked(times: ArrayLike, positions: ArrayLike) -> NDArray[np.bool_]:
@@ -494,48 +493,57 @@ def _tracked(times: ArrayLike, positions: ArrayLike) -> NDArray[np.bool_]:
 
 
 def _prepare_session_decode(
+    env: Environment,
     spike_times: Any,
     times: ArrayLike,
     encoding_models: NDArray[np.float64],
     *,
     dt: float,
-    max_gap: float | None = DEFAULT_MAX_GAP,
-    epochs: NDArray[np.float64] | None = None,
-    break_before: ArrayLike | None = None,
-    spike_window: NDArray[np.float64] | None = None,
-    sample_valid: NDArray[np.bool_] | None = None,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: ArrayLike | None,
+    spike_window: Any,
+    sample_valid: NDArray[np.bool_] | None,
     warn_spikes_outside: bool,
     warn_partial_bins: bool,
-    dtype: type[np.float32] | type[np.float64] = np.float64,
-    context: str = "decode_session",
+    dtype: type[np.float32] | type[np.float64],
+    spatial_support: NDArray[np.bool_] | None,
+    prior: Any,
+    validate: bool,
+    context: str,
 ) -> tuple[
-    list[NDArray[np.float64]],
-    NDArray[np.float64],
+    Callable[[int, int], NDArray[np.int64]],
+    _PoissonRates,
+    NDArray[np.float64] | None,
     NDArray[np.float64],
     NDArray[np.float64],
 ]:
-    """Normalize spike inputs/models and tile bins inside observed runs.
+    """Tile decode bins inside the observed runs and prepare the rate maps.
 
     ``break_before`` is validated here (naming ``context``); no decode bin
     spans a declared break. ``sample_valid`` marks the tracked samples; a
     missing one is bridged like a deleted row, so a tracking loss longer than
     ``max_gap`` is not decoded.
+
+    Returns
+    -------
+    count_block : callable
+        ``count_block(start, stop)`` counts the spikes of decode bins
+        ``start:stop``, so no full count matrix is built.
+    rates, prior
+        Likelihood terms and resolved prior, as from ``_prepare_decode_inputs``.
+    centers : NDArray[np.float64], shape (n_time_bins,)
+        Decode bin centers in seconds.
+    spike_window : NDArray[np.float64] or None
+        The resolved spike-recording windows.
     """
+    from neurospatial._intervals import TimeSupport, interval_valid_mask
     from neurospatial._spikes import _as_spike_trains_with_ids
+    from neurospatial._time_bins import _time_bins_in_windows
+    from neurospatial.decoding.posterior import _prepare_decode_inputs
     from neurospatial.encoding import _validate_times
 
-    # Validate dt up front, BEFORE the grid math below builds the decode time
-    # grid directly (bypassing bin_spikes_in_time's own guard). Without this,
-    # invalid dt leaks cryptic errors: dt=0 → ZeroDivisionError; dt=NaN →
-    # "cannot convert float NaN to integer"; dt<0 → a MISLEADING "span smaller
-    # than one bin dt" message; dt=inf → a similar cryptic failure. Route
-    # through the shared bin_spikes_in_time guard so both paths report
-    # identically. The legitimate n_time < 1 "span smaller than one bin" check
-    # below still covers a valid positive dt with a too-short span.
-    dt = validate_dt(dt)
-
-    dtype = _validate_session_dtype(dtype)
-
+    epochs, spike_window = resolve_time_windows(epochs, spike_window)
     # Normalize array timestamps and spike groups at the boundary.
     trains, _ = _as_spike_trains_with_ids(spike_times)
     times_arr = np.asarray(times, dtype=np.float64)
@@ -548,17 +556,10 @@ def _prepare_session_decode(
     _validate_times(times_arr, context=context)
     breaks = validate_break_before(break_before, times_arr.size, call=context)
 
-    # Decode window — computed ONCE and reused for both the out-of-window drop
-    # check and the time-grid construction so they agree exactly.
-    t_start = float(times_arr.min())
-    t_stop = float(times_arr.max())
-
-    firing_rates = cast("NDArray[np.float64]", np.asarray(encoding_models, dtype=dtype))
     if warn_spikes_outside:
-        _warn_if_spikes_out_of_window(trains, t_start, t_stop)
-
-    from neurospatial._intervals import TimeSupport, interval_valid_mask
-    from neurospatial._time_bins import _time_bins_in_windows
+        _warn_if_spikes_out_of_window(
+            trains, float(times_arr.min()), float(times_arr.max())
+        )
 
     # Decode bins exist only where the recording was observed: the gap, epochs and
     # spike_window gates, with missing tracking bridged like deleted rows. The
@@ -598,7 +599,50 @@ def _prepare_session_decode(
             f"max_gap (max_gap=None decodes across gaps)."
         )
 
-    return trains, firing_rates, bin_left, bin_right
+    rates, prior = _prepare_decode_inputs(
+        env,
+        np.asarray(encoding_models, dtype=dtype),
+        prior,
+        bin_left.size,
+        dt=dt,
+        validate=validate,
+        context=context,
+        spatial_support=spatial_support,
+    )
+    return (
+        _spike_count_blocks(trains, bin_left, bin_right),
+        rates,
+        prior,
+        bin_left + dt / 2.0,
+        spike_window,
+    )
+
+
+def _spike_count_blocks(
+    trains: list[NDArray[np.float64]],
+    bin_left: NDArray[np.float64],
+    bin_right: NDArray[np.float64],
+) -> Callable[[int, int], NDArray[np.int64]]:
+    """Count spikes in decode bins ``start:stop`` on demand.
+
+    Sorted trains let each block take its spikes by binary search instead of
+    a full-length mask per block.
+    """
+    trains = [
+        t if t.size < 2 or bool(np.all(t[1:] >= t[:-1])) else np.sort(t) for t in trains
+    ]
+
+    def count_block(start: int, stop: int) -> NDArray[np.int64]:
+        lo, hi = bin_left[start], bin_right[stop - 1]
+        block_trains = [
+            s[np.searchsorted(s, lo, side="left") : np.searchsorted(s, hi, side="left")]
+            for s in trains
+        ]
+        return _count_spikes_in_time_bins(
+            block_trains, bin_left[start:stop], bin_right[start:stop]
+        )
+
+    return count_block
 
 
 def _fit_encoding_model(
@@ -633,7 +677,6 @@ def _fit_encoding_model(
 
     times_arr, positions = validate_times_positions(times, positions, call=context)
     breaks = validate_break_before(break_before, times_arr.size, call=context)
-    dtype = _validate_session_dtype(dtype)
     trains, _ = _as_spike_trains_with_ids(spike_times)
     # Mirror the encoder's method-specific validation (mutual exclusivity +
     # value domains) at the decoder boundary, reusing the SAME validator so
@@ -720,49 +763,44 @@ def _decode_with_models(
     dtype: type[np.float32] | type[np.float64] = np.float64,
     spatial_support: NDArray[np.bool_] | None = None,
     sample_valid: NDArray[np.bool_] | None = None,
+    prior: Any = None,
+    validate: bool = True,
+    time_chunk: int | None = None,
     context: str = "decode_session",
-    **decode_kwargs: Any,
 ) -> DecodingResult:
     """Decode existing models on the per-run recording clock."""
-    from neurospatial.decoding.posterior import decode_position
+    from neurospatial.decoding.posterior import _decode_posterior
 
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    trains, firing_rates, bin_left, bin_right = _prepare_session_decode(
+    count_block, rates, prior, centers, spike_window = _prepare_session_decode(
+        env,
         spike_times,
         times,
         encoding_models,
         dt=dt,
         max_gap=max_gap,
-        epochs=resolved_epochs,
+        epochs=epochs,
         break_before=break_before,
-        spike_window=resolved_spike_window,
+        spike_window=spike_window,
         sample_valid=sample_valid,
         warn_spikes_outside=warn_spikes_outside,
         warn_partial_bins=warn_partial_bins,
         dtype=dtype,
+        spatial_support=spatial_support,
+        prior=prior,
+        validate=validate,
         context=context,
     )
-    from neurospatial.decoding._support import models_on_support, resolve_prior
-
-    decode_kwargs["prior"] = resolve_prior(
-        env, decode_kwargs.get("prior"), spatial_support, len(bin_left), context=context
+    return _decode_posterior(
+        env,
+        count_block,
+        centers.size,
+        rates,
+        prior,
+        dtype=dtype,
+        time_chunk=time_chunk,
+        times=centers,
+        spike_window=spike_window,
     )
-    firing_rates = models_on_support(firing_rates, spatial_support)
-    counts = _count_spikes_in_time_bins(trains, bin_left, bin_right)
-    centers = bin_left + dt / 2.0
-    return decode_position(
-        env, counts, firing_rates, dt=dt, times=centers, dtype=dtype, **decode_kwargs
-    )._evolve(spike_window=resolved_spike_window)
-
-
-_SUMMARY_TIME_CHUNK_NONE_MSG = (
-    "time_chunk=None is not allowed for decode_session_summary: this "
-    "streamed summary decoder bins time and reduces the posterior one "
-    "time-block at a time, and None would materialize the full "
-    "(n_time, n_bins) posterior, defeating its purpose. Use "
-    "decode_session if you want the full posterior, or pass a positive "
-    "time_chunk (default 1024) here."
-)
 
 
 def decode_session_summary(
@@ -886,20 +924,12 @@ warn_on_drop, dtype
     True
     """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    dt = validate_dt(dt)
+    dtype = validate_float_dtype(dtype, stored="rate maps and posteriors")
     # Reject unsupported reduction options before performing the encoding fit.
-    unknown = set(decode_kwargs) - {"prior", "validate", "time_chunk"}
-    if unknown:
-        raise TypeError(
-            f"decode_session_summary got unexpected keyword argument(s): {sorted(unknown)}"
-        )
-    from neurospatial.decoding.posterior import _validate_time_chunk
-
-    if decode_kwargs.get("time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK) is None:
-        raise ValueError(_SUMMARY_TIME_CHUNK_NONE_MSG)
-    _validate_time_chunk(
-        decode_kwargs.get("time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK), allow_none=False
+    options = _decode_options(
+        decode_kwargs, caller="decode_session_summary", summary=True
     )
-    validate_dt(dt)
     trains, firing_rates, rates_result = _fit_encoding_model(
         env,
         spike_times,
@@ -935,7 +965,7 @@ warn_on_drop, dtype
         dtype=dtype,
         spatial_support=rates_result.spatial_support,
         sample_valid=_tracked(times, positions),
-        **decode_kwargs,
+        **options,
     )
 
 
@@ -955,146 +985,47 @@ def _decode_with_models_summary(
     dtype: type[np.float32] | type[np.float64] = np.float64,
     spatial_support: NDArray[np.bool_] | None = None,
     sample_valid: NDArray[np.bool_] | None = None,
+    prior: Any = None,
+    validate: bool = True,
+    time_chunk: int = _SUMMARY_DEFAULT_TIME_CHUNK,
     context: str = "decode_session_summary",
-    **decode_kwargs: Any,
 ) -> DecodingSummary:
-    """Stream reductions over existing models and per-run time bins."""
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    """Stream reductions over existing models and per-run time bins.
 
-    from neurospatial.decoding._result import DecodingSummary
-    from neurospatial.decoding.posterior import (
-        _decode_and_reduce_block,
-        _prepare_decode_inputs,
-        _validate_time_chunk,
-    )
+    The spikes are binned one block at a time, so neither the full count
+    matrix nor the full posterior is built.
+    """
+    from neurospatial.decoding.posterior import _decode_summary
 
-    # Split out the decode-time knobs from decode_kwargs; everything else is an
-    # unknown kwarg and must error rather than be silently dropped.
-    prior = decode_kwargs.pop("prior", None)
-    validate = decode_kwargs.pop("validate", True)
-    time_chunk = decode_kwargs.pop("time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK)
-    if decode_kwargs:
-        raise TypeError(
-            f"decode_session_summary got unexpected keyword argument(s): "
-            f"{sorted(decode_kwargs)}. Supported decode kwargs are prior, "
-            f"validate, time_chunk (dtype is an explicit parameter)."
-        )
-    # ``method`` names the rate estimator; the likelihood is always Poisson.
-    likelihood_method: Literal["poisson"] = "poisson"
-
-    if time_chunk is None:
-        raise ValueError(_SUMMARY_TIME_CHUNK_NONE_MSG)
-    time_chunk = _validate_time_chunk(time_chunk, allow_none=False)
-
-    trains, firing_rates, bin_left, bin_right = _prepare_session_decode(
+    count_block, rates, prior, centers, spike_window = _prepare_session_decode(
+        env,
         spike_times,
         times,
         encoding_models,
         dt=dt,
         max_gap=max_gap,
-        epochs=resolved_epochs,
+        epochs=epochs,
         break_before=break_before,
-        spike_window=resolved_spike_window,
+        spike_window=spike_window,
         sample_valid=sample_valid,
         warn_spikes_outside=warn_spikes_outside,
         warn_partial_bins=warn_partial_bins,
         dtype=dtype,
-        context=context,
-    )
-
-    from neurospatial.decoding._support import (
-        models_on_support,
-        relative_bin_measures,
-        resolve_prior,
-    )
-
-    prior = resolve_prior(env, prior, spatial_support, len(bin_left), context=context)
-    firing_rates = models_on_support(firing_rates, spatial_support)
-    n_time = bin_left.size
-    bin_centers_time = bin_left + dt / 2.0
-
-    # Validate the encoding model once against a single row of counts, so the
-    # neuron-count check runs. The streamed per-block counts come from
-    # _count_spikes_in_time_bins and are non-negative integers by construction.
-    _, firing_rates, prior = _prepare_decode_inputs(
-        env,
-        np.zeros((1, firing_rates.shape[0]), dtype=np.int64),
-        firing_rates,
+        spatial_support=spatial_support,
         prior=prior,
-        method=likelihood_method,
         validate=validate,
         context=context,
     )
-    prior_is_time_varying = prior is not None and np.ndim(prior) == 2
-
-    from neurospatial.decoding.estimates import (
-        _finish_posterior_mean,
-        _posterior_mean_basis,
-    )
-
-    bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
-    mean_basis = _posterior_mean_basis(env)
-    measures = relative_bin_measures(env, context=context)
-    n_dims = bin_centers.shape[1]
-
-    map_bin = np.empty(n_time, dtype=np.int64)
-    mean_position = np.empty((n_time, n_dims), dtype=np.float64)
-    posterior_entropy = np.empty(n_time, dtype=np.float64)
-    peak_probability = np.empty(n_time, dtype=np.float64)
-
-    # time_chunk is guaranteed a positive int by the up-front guard, so the
-    # streamed-binning loop and the posterior reduction below both stay bounded
-    # — the full (n_time, n_bins) posterior is never materialized in one shot.
-    # Sorted trains let each block take its spikes by binary search instead
-    # of a full-length mask per block.
-    trains = [
-        t if t.size < 2 or bool(np.all(t[1:] >= t[:-1])) else np.sort(t) for t in trains
-    ]
-    block = time_chunk
-    for start in range(0, n_time, block):
-        stop = min(start + block, n_time)
-        lo, hi = bin_left[start], bin_right[stop - 1]
-        block_trains = [
-            s[np.searchsorted(s, lo, side="left") : np.searchsorted(s, hi, side="left")]
-            for s in trains
-        ]
-        counts_block = _count_spikes_in_time_bins(
-            block_trains, bin_left[start:stop], bin_right[start:stop]
-        )
-
-        block_prior = prior
-        if prior_is_time_varying:
-            block_prior = np.asarray(prior)[start:stop]
-
-        (
-            block_map_bin,
-            block_mean,
-            block_entropy,
-            block_peak,
-        ) = _decode_and_reduce_block(
-            counts_block,
-            firing_rates,
-            dt,
-            bin_centers,
-            prior_block=block_prior,
-            validate=validate,
-            dtype=dtype,
-            mean_basis=mean_basis,
-            measures=measures,
-        )
-        map_bin[start:stop] = block_map_bin
-        mean_position[start:stop] = block_mean
-        posterior_entropy[start:stop] = block_entropy
-        peak_probability[start:stop] = block_peak
-        # counts_block / block posterior go out of scope before the next block.
-
-    mean_position = _finish_posterior_mean(env, mean_position)
-    return DecodingSummary._from_owned(
-        times=bin_centers_time,
-        mean_position=mean_position,
-        posterior_entropy=posterior_entropy,
-        peak_probability=peak_probability,
-        map_bin=map_bin,
-        env=env,
-        spike_window=resolved_spike_window,
+    return _decode_summary(
+        env,
+        count_block,
+        centers.size,
+        rates,
+        prior,
+        dtype=dtype,
+        time_chunk=time_chunk,
+        validate=validate,
+        times=centers,
+        spike_window=spike_window,
+        context=context,
     )

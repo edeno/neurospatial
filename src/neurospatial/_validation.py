@@ -277,6 +277,48 @@ def is_positive_integer(value: object) -> bool:
     )
 
 
+def validate_float_dtype(
+    dtype: Any, *, stored: str
+) -> type[np.float32] | type[np.float64]:
+    """Resolve a working precision to ``np.float32`` or ``np.float64``.
+
+    Parameters
+    ----------
+    dtype : Any
+        Anything :class:`numpy.dtype` accepts: a scalar type, a dtype or a
+        name such as ``"float32"``.
+    stored : str
+        What the dtype is stored in, named in the error message, e.g.
+        ``"rate maps"``.
+
+    Returns
+    -------
+    type
+        ``np.float32`` or ``np.float64``.
+
+    Raises
+    ------
+    ValueError
+        If ``dtype`` is not single or double precision, or not a dtype.
+    """
+    message = (
+        f"dtype must be np.float32 or np.float64, got {dtype!r}. Only single- "
+        f"and double-precision {stored} are supported (float32 halves their "
+        "memory)."
+    )
+    # An unparseable name such as "bogus" raises this message, not NumPy's
+    # "data type 'bogus' not understood".
+    try:
+        resolved = np.dtype(dtype)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(message) from exc
+    if resolved == np.float32:
+        return np.float32
+    if resolved == np.float64:
+        return np.float64
+    raise ValueError(message)
+
+
 def validate_finite_scalar(
     value: Any, *, name: str, positive: bool, none_allowed: bool = False
 ) -> None:

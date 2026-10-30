@@ -289,16 +289,14 @@ class TestNormalizeToPosterior:
         assert "NaN" not in str(caught.value)
 
     def test_nan_degenerate_posterior_validates_without_spurious_error(self) -> None:
-        """A nan-degenerate posterior must pass _validate_output cleanly.
+        """A nan-degenerate posterior is a valid decode result.
 
         With handle_degenerate='nan', degenerate rows are intentionally NaN.
-        _validate_output should tolerate those rows (not raise about
-        NaN/Inf or row sums) while still validating the finite rows.
+        The posterior check tolerates those rows (no NaN/Inf or row-sum
+        problem) while still validating the finite rows.
         """
-        from neurospatial.decoding.posterior import (
-            _validate_output,
-            normalize_to_posterior,
-        )
+        from neurospatial.decoding._result import _posterior_value_problems
+        from neurospatial.decoding.posterior import normalize_to_posterior
 
         ll = np.array(
             [
@@ -310,9 +308,7 @@ class TestNormalizeToPosterior:
         )
         posterior = normalize_to_posterior(ll, handle_degenerate="nan")
         assert np.isnan(posterior[1]).all()
-
-        # Should not raise despite the NaN row.
-        _validate_output(posterior)
+        assert _posterior_value_problems(posterior) == []
 
     def test_log_likelihood_must_be_2d(self) -> None:
         """Normalization runs over the bin axis of a (n_time, n_bins) array."""
