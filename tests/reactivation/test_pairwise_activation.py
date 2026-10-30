@@ -93,6 +93,24 @@ def test_constant_neuron_contributes_nothing_and_warns() -> None:
     )
 
 
+def test_constant_neuron_warning_names_the_callers_column_and_label() -> None:
+    """Matching by label reorders the columns; the warning still names the
+    column the caller passed and its label."""
+    rng = np.random.default_rng(5)
+    template = pairwise_correlations(rng.poisson(2.0, (500, 4)).astype(float))
+    counts = rng.poisson(2.0, (200, 4)).astype(float)
+    counts[:, 0] = 1.0
+    with pytest.warns(UserWarning) as record:
+        pairwise_activation(
+            counts,
+            template,
+            unit_ids=["a", "b", "c", "d"],
+            template_unit_ids=["d", "c", "b", "a"],
+        )
+    (message,) = [str(warning.message) for warning in record]
+    assert "neuron columns [0] (units ['a'])" in message
+
+
 @pytest.mark.parametrize(
     ("template", "options", "message"),
     [

@@ -383,6 +383,19 @@ class TestSeveralControls:
             corr["a"], corr["b"], control_correlations=[corr["c"], corr["d"]]
         )
         assert_allclose(reordered.partial_correlation, expected.partial_correlation)
+        # One control in a one-item list takes its labels the same way.
+        listed = explained_variance_reactivation(
+            corr["a"],
+            corr["b"],
+            control_correlations=[pairwise_correlations(counts["d"][:, order])],
+            template_unit_ids=labels,
+            match_unit_ids=labels,
+            control_unit_ids=[labels[order]],
+        )
+        alone = explained_variance_reactivation(
+            corr["a"], corr["b"], control_correlations=corr["d"]
+        )
+        assert_allclose(listed.partial_correlation, alone.partial_correlation)
         with pytest.raises(ValueError, match="one label array per control"):
             explained_variance_reactivation(
                 corr["a"],
