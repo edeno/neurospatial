@@ -277,6 +277,19 @@ Several replay papers test a whole data set, not each event:
   products of the two periods' correlations, which the tests check against
   `np.corrcoef`; a rank-one template gives `assembly_activation`.
 
+**Documentation**
+
+- [Comparing reactivation methods](docs/user-guide/reactivation-methods.md)
+  applies both of Tingley & Peyrache's rate controls to sessions with and
+  without reactivation and a rate change. Equal rates bring the rate-change
+  EV to the null level and keep real reactivation. Bins of 5 s also stop
+  the rate-change session being called reactivated, but only because 240
+  bins estimate each correlation too poorly to see it; the member-pair
+  excess is unchanged and real EV halves. The guide also compares EV and
+  assembly differences at 50, 100 and 250 ms (the assembly rate confound
+  grows with the bin) and follows reactivation in time with
+  `pairwise_activation`.
+
 ### Reactivation measures
 
 The pattern and pair-correlation reactivation measures now compute what the
