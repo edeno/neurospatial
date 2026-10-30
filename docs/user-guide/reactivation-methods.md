@@ -769,8 +769,9 @@ in the two rest periods.
   al. used every SWR of a sleep session and required at least 200.
 - **Units.** Use the units recorded and stable in all three periods; the
   papers' inclusion criteria (pyramidal cells, stability, minimum counts)
-  are not applied by the recipes. Pass `unit_ids=` to name assembly members
-  by your sorter's labels.
+  are not applied by the recipes. A dict of unit ID to spike train, a
+  `SpikeTrains` or a pynapple `TsGroup` names assembly members by its own
+  IDs; for a list of trains, pass `unit_ids=` with your sorter's labels.
 - **Pairs.** Give each unit's tetrode, shank or region in `unit_groups=`.
   Pairs on the same tetrode can share spike-sorting errors. For Giri et al.
   (2024), pass the pairs with waveform similarity below 0.8 as
