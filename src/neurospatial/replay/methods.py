@@ -5118,7 +5118,6 @@ CHANG_2025 = ReplayMethod(
         "https://doi.org/10.1038/s41586-024-08340-w"
     ),
     score=weighted_correlation,
-    score_options={"row_normalization": "none"},
     nulls=("column_cycle",),
     n_shuffles=1000,
     alpha=0.05,
@@ -5150,14 +5149,18 @@ CHANG_2025 = ReplayMethod(
         "template_choice='smallest_p', not corrected for the two "
         "trajectories, as in the paper.",
         "The decoder is joint over position and trajectory with a uniform "
-        "prior, so each trajectory's posterior matrix is its share of the "
-        "joint posterior: pass decode_jointly(...) as the event with both "
-        "trajectories' rate maps. The weighted correlation uses the share "
-        "as weights (row_normalization='none'), so time bins the trajectory "
-        "explains less weigh less. Each time bin weighted equally "
-        "(score_options={}) is the code's separate decode of each "
-        "trajectory: with a uniform prior, a share renormalized per time bin "
-        "is that trajectory's own posterior.",
+        "prior: pass decode_jointly(...) as the event with both "
+        "trajectories' rate maps. The paper does not say how 'the posterior "
+        "probability matrix of each trajectory' is weighted; the code "
+        "(replayHSEseq_decoding_CA1_slidingwin_linfittingR2.m) takes the "
+        "trajectory's rows of the joint posterior and normalizes each time "
+        "bin to sum to 1 before the weighted correlation, for the event and "
+        "its shuffles, so every time bin weighs the same. That is followed "
+        "(the default row_normalization='per_time_bin'); with a uniform "
+        "prior it equals a separate decode of the trajectory. The other "
+        "reading, the trajectory's share of the joint posterior as weights, "
+        "so that time bins it explains less weigh less, is "
+        "score_options={'row_normalization': 'none'}.",
         "Each candidate event was 'divided into 10-ms non-overlapping bins'. "
         "Time bins without spikes are set to zero (empty_time_bins='zero'), "
         "as the code shifts only time bins with spikes; the paper does not "
@@ -5174,7 +5177,7 @@ CHANG_2025 = ReplayMethod(
         "side, 100 log-spaced speeds of 100 to 10,000 cm/s in both "
         "directions, mean band mass over the time bins with spikes), which "
         "one method cannot express (it tests one score). Nearest variant: "
-        "dataclasses.replace(CHANG_2025, n_shuffles=500, score_options={}, "
+        "dataclasses.replace(CHANG_2025, n_shuffles=500, "
         "null_options={'column_cycle': {'exclude_zero_shift': True}}) on 20 "
         "ms windows stepped by 10 ms (sum adjacent 10 ms counts and decode "
         "with dt=0.02), still without the line test.",

@@ -164,8 +164,12 @@ and Chang et al. (2025) as recipes in `neurospatial.replay.methods`.
   approach"): that score against 1,000 column cycles, with at least 5
   active cells and at most half the time bins empty.
 - `CHANG_2025`: the signed weighted correlation of each T-maze
-  trajectory's share of a joint decode in 10 ms bins, two-sided (2.5th and
-  97.5th percentiles), keeping the trajectory with the smallest p-value.
+  trajectory's posterior from a joint decode in 10 ms bins, two-sided (2.5th
+  and 97.5th percentiles), keeping the trajectory with the smallest p-value.
+  Each time bin is normalized to sum to 1 over the trajectory's bins, as
+  the authors' code does where the paper is silent;
+  `score_options={"row_normalization": "none"}` weighs each time bin by
+  the trajectory's share of the joint posterior instead.
   The code's second line-fit test (p < 0.025), 20 ms windows stepped by 10
   ms and 500 shuffles are in its notes, with the nearest variant.
 - `pairwise_bias_matrix(spike_times, interval, *, unit_ids=None)`,
