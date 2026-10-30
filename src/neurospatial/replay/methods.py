@@ -40,7 +40,7 @@ from neurospatial.replay.trajectory import (
 if TYPE_CHECKING:
     import pandas as pd
 
-    from neurospatial.decoding import DecodingResult
+    from neurospatial.decoding import DecodingResult, JointDecodingResult
     from neurospatial.environment import Environment
     from neurospatial.replay.segments import ReplaySegmentsResult
 
@@ -49,6 +49,7 @@ __all__ = [
     "DAVIDSON_2009",
     "IGATA_2021",
     "KARLSSON_FRANK_2009",
+    "MALLORY_2025",
     "MICHON_2019",
     "PFEIFFER_FOSTER_2013",
     "PFEIFFER_FOSTER_2015",
@@ -77,6 +78,8 @@ _SEGMENT_QUANTITIES = {
     "segment_start_to_end_distance": "start_to_end_distances",
     "segment_path_length": "path_lengths",
 }
+# Criterion quantities that compare the templates of a joint decode.
+_TEMPLATE_QUANTITIES = ("template_fraction", "segment_template_fraction")
 _COMPARISONS: dict[str, Callable[[float, float], bool]] = {
     "<": operator.lt,
     "<=": operator.le,
@@ -93,14 +96,21 @@ class ReplayCriterion:
     ----------
     quantity : str
         ``"score"`` (the method's score), ``"n_active_cells"`` (cells with a
-        spike in the event), a scalar of
+        spike anywhere in the event, also for a method with a
+        segmentation), a scalar of
         :class:`~neurospatial.replay.TrajectoryMetrics`, such as
         ``"max_map_jump"``, or, for a method with a
         :class:`ReplaySegmentation`, a value of the tested segment:
         ``"segment_duration"``, ``"segment_time_bin_count"``,
         ``"segment_dispersion"``, ``"segment_start_to_end_distance"`` or
         ``"segment_path_length"`` (see
-        :class:`~neurospatial.replay.ReplaySegmentsResult`).
+        :class:`~neurospatial.replay.ReplaySegmentsResult`). For an event
+        given as a joint decode, ``"template_fraction"`` is the tested
+        template's share of the event's posterior, leaving out the method's
+        ``exclude_end_distance`` at each track end (see
+        :func:`~neurospatial.replay.template_fractions`), and
+        ``"segment_template_fraction"`` its share over the tested segment's
+        trajectory time bins, with no ends left out.
     comparison : {"<", "<=", ">", ">="}
         How the value is compared with the threshold, as the paper states it.
     threshold : float
@@ -194,6 +204,13 @@ class ReplaySegmentation:
         Time bins in which fewer cells spike cannot be on a trajectory
         (Carey et al. 2019: 4). They are passed to ``replay_segments`` as
         invalid time bins, so :func:`detect_replay` needs ``spike_counts``.
+    rows : {"segment", "trajectory"}
+        Rows of the tested segment that the score, shuffles and
+        trajectory-metric criteria use. ``"segment"`` uses every row the
+        segment spans, including rows skipped or merged across;
+        ``"trajectory"`` uses only its trajectory time bins
+        (``ReplaySegmentsResult.trajectory_time_bins``), as the Mallory et
+        al. (2025) code does. Times keep their values either way.
     """
 
     options: Mapping[str, Any]
@@ -202,6 +219,7 @@ class ReplaySegmentation:
     )
     choose: Literal["longest", "any"] = "longest"
     min_active_cells_per_time_bin: int | None = None
+    rows: Literal["segment", "trajectory"] = "segment"
 
     def __post_init__(self) -> None:
         """Freeze the mappings and refuse options replay_segments does not take."""
@@ -247,6 +265,11 @@ class ReplaySegmentation:
                 f"ReplaySegmentation: choose must be 'longest' or 'any', got "
                 f"{self.choose!r}."
             )
+        if self.rows not in ("segment", "trajectory"):
+            raise ValueError(
+                f"ReplaySegmentation: rows must be 'segment' or 'trajectory', "
+                f"got {self.rows!r}."
+            )
         cells = self.min_active_cells_per_time_bin
         if cells is not None and (
             isinstance(cells, bool)
@@ -266,6 +289,7 @@ class ReplaySegmentation:
                 tuple(sorted(self.relative_to.items())),
                 self.choose,
                 self.min_active_cells_per_time_bin,
+                self.rows,
             )
         )
 
@@ -278,6 +302,7 @@ class ReplaySegmentation:
                 dict(self.relative_to),
                 self.choose,
                 self.min_active_cells_per_time_bin,
+                self.rows,
             ),
         )
 
@@ -372,6 +397,18 @@ class ReplayMethod:
         Units of the method's distance thresholds, such as ``"cm"``;
         :func:`detect_replay` refuses an environment in other units. None
         for a method whose thresholds have no units or scale with the track.
+    template_choice : {"most_posterior"} or None
+        For an event given as a joint decode without ``template=``, which
+        template is tested. ``"most_posterior"`` tests the template that
+        holds the most posterior over the event, leaving out
+        ``exclude_end_distance`` at each track end (Mallory et al. 2025);
+        the last template wins a tie, as in the Mallory et al. code, which
+        tests the second map unless the first holds more. None needs
+        ``template=``.
+    exclude_end_distance : float
+        Distance, in the method's ``units``, left out at each end of each
+        template's track when the templates are compared: by
+        ``template_choice`` and the ``"template_fraction"`` criterion.
     decoding : Mapping[str, Any]
         The paper's decoding settings, for reference (not enforced).
     notes : tuple of str
@@ -392,6 +429,8 @@ class ReplayMethod:
     criteria: tuple[ReplayCriterion, ...] = ()
     segmentation: ReplaySegmentation | None = None
     units: str | None = None
+    template_choice: Literal["most_posterior"] | None = None
+    exclude_end_distance: float = 0.0
     decoding: Mapping[str, Any] = field(default_factory=dict)
     notes: tuple[str, ...] = ()
 
@@ -453,6 +492,29 @@ class ReplayMethod:
                 f"ReplayMethod {self.name!r}: empty_time_bins must be 'keep', "
                 f"'drop' or 'zero', got {self.empty_time_bins!r}."
             )
+        if self.template_choice not in (None, "most_posterior"):
+            raise ValueError(
+                f"ReplayMethod {self.name!r}: template_choice must be None or "
+                f"'most_posterior', got {self.template_choice!r}."
+            )
+        distance = self.exclude_end_distance
+        if not (
+            isinstance(distance, (int, float, np.integer, np.floating))
+            and not isinstance(distance, bool)
+            and np.isfinite(distance)
+            and distance >= 0
+        ):
+            raise ValueError(
+                f"ReplayMethod {self.name!r}: exclude_end_distance must be a "
+                f"finite distance >= 0, got {distance!r}."
+            )
+        if self.segmentation is None and any(
+            c.quantity == "segment_template_fraction" for c in self.criteria
+        ):
+            raise ValueError(
+                f"ReplayMethod {self.name!r}: segment_template_fraction needs a "
+                "segmentation; give the method a ReplaySegmentation."
+            )
         from neurospatial.replay.significance import _NULLS
 
         unknown = [name for name in self.nulls if name not in _NULLS]
@@ -499,6 +561,8 @@ class ReplayMethod:
                 self.criteria,
                 self.segmentation,
                 self.units,
+                self.template_choice,
+                self.exclude_end_distance,
                 dict(self.decoding),
                 self.notes,
             ),
@@ -530,6 +594,9 @@ class ReplayDetectionResult(ResultMixin):
         Index in ``segments`` of the tested segment; None without a
         segmentation or without segments. ``segments.rows(segment)`` selects
         its rows.
+    template : str or None
+        The tested template of a joint decode, chosen or given as
+        ``template=``; None for an event decoded on one set of rate maps.
     """
 
     method: str
@@ -540,6 +607,7 @@ class ReplayDetectionResult(ResultMixin):
     values: Mapping[str, float]
     segments: ReplaySegmentsResult | None = None
     segment: int | None = None
+    template: str | None = None
 
     def __post_init__(self) -> None:
         """Freeze the mappings."""
@@ -559,15 +627,16 @@ class ReplayDetectionResult(ResultMixin):
                 dict(self.values),
                 self.segments,
                 self.segment,
+                self.template,
             ),
         )
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result.
 
-        A method with a segmentation adds ``n_segments`` and the tested
-        segment's ``segment_start_time`` and ``segment_end_time`` (NaN
-        without one).
+        A joint decode adds the tested ``template``. A method with a
+        segmentation adds ``n_segments`` and the tested segment's
+        ``segment_start_time`` and ``segment_end_time`` (NaN without one).
         """
         values: dict[str, Any] = {
             "method": self.method,
@@ -576,6 +645,8 @@ class ReplayDetectionResult(ResultMixin):
             "p_value": self.p_value,
             **{f"passes[{label}]": ok for label, ok in self.criteria.items()},
         }
+        if self.template is not None:
+            values["template"] = self.template
         if self.segments is not None:
             tested = self.segment is not None
             values["n_segments"] = self.segments.n_segments
@@ -590,7 +661,7 @@ class ReplayDetectionResult(ResultMixin):
 
 def detect_replay(
     env: Environment | Mapping[str, Environment],
-    posterior: NDArray[np.float64],
+    posterior: NDArray[np.float64] | JointDecodingResult,
     times: NDArray[np.float64],
     *,
     replay_method: ReplayMethod,
@@ -612,8 +683,11 @@ def detect_replay(
         share of a joint decode over separate tracks, the mapping of
         environments passed to :func:`~neurospatial.decoding.decode_jointly`,
         with ``template`` naming the share.
-    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
-        The event's posterior, as decoded.
+    posterior : NDArray[np.float64] or JointDecodingResult
+        The event's posterior, as decoded, shape (n_time_bins, n_bins); or
+        the event's joint decode over several templates, from
+        :func:`~neurospatial.decoding.decode_jointly`, whose tested
+        template is ``template=`` or the method's ``template_choice``.
     times : NDArray[np.float64], shape (n_time_bins,)
         Center time of each posterior row, in seconds.
     replay_method : ReplayMethod
@@ -624,7 +698,8 @@ def detect_replay(
     encoding_models, dt, prior, template
         The decoding inputs, for the nulls that decode again (see
         :func:`~neurospatial.replay.replay_significance`), including one
-        template's share of a joint decode (``template=``).
+        template's share of a joint decode (``template=``). With a joint
+        decode as ``posterior``, ``template`` names the tested template.
     pseudo_event_pool : NDArray[np.float64] or None
         Posterior rows of the session's candidate events, for the
         pseudo-event null.
@@ -640,15 +715,19 @@ def detect_replay(
     Returns
     -------
     ReplayDetectionResult
-        The verdict, score, p-value and each criterion, and for a method
-        with a segmentation, the segments and the tested segment.
+        The verdict, score, p-value and each criterion; for a method with
+        a segmentation, the segments and the tested segment; and for a
+        joint decode, the tested template.
 
     Raises
     ------
     ValueError
         If the method needs an input that is not given (spike counts,
         decoding inputs or a pseudo-event pool); if the method's
-        ``units`` are not the environment's; if ``valid_time_bins`` is
+        ``units`` are not the environment's; if a joint decode is given
+        without ``template=`` to a method without a ``template_choice``, or
+        a template criterion is used without a joint decode; if
+        ``valid_time_bins`` is
         given with a segment-detection test whose nulls move time bins; or
         for inputs the score, the shuffles,
         :func:`~neurospatial.replay.replay_segments` or
@@ -691,8 +770,60 @@ def detect_replay(
     >>> round(result.values["segment_start_to_end_distance >= 40"], 6)
     52.0
     """
-    from neurospatial.replay.criteria import trajectory_metrics
+    from neurospatial.decoding import JointDecodingResult
+    from neurospatial.replay.criteria import template_fractions, trajectory_metrics
     from neurospatial.replay.significance import replay_significance
+
+    joint = posterior if isinstance(posterior, JointDecodingResult) else None
+    event_values: dict[str, float] = {}
+    if joint is not None:
+        needs_fractions = replay_method.template_choice is not None or any(
+            c.quantity == "template_fraction" for c in replay_method.criteria
+        )
+        fractions = (
+            template_fractions(
+                joint, exclude_end_distance=replay_method.exclude_end_distance
+            )
+            if needs_fractions
+            else {}
+        )
+        if template is None:
+            if replay_method.template_choice is None:
+                raise ValueError(
+                    _format_error(
+                        f"{_OPERATION}: method {replay_method.name!r} needs "
+                        "template= for a joint decode.",
+                        why="it tests one template's share and has no rule to "
+                        "choose one",
+                        fix=f"pass template= one of {list(joint.template_names)}",
+                    )
+                )
+            template = max(reversed(list(fractions)), key=fractions.__getitem__)
+        elif template not in joint.template_names:
+            raise ValueError(
+                f"{_OPERATION}: template {template!r} is not a template of the "
+                f"joint decode; choose one of {list(joint.template_names)}."
+            )
+        tested: str = template
+        if fractions:
+            event_values["template_fraction"] = fractions[tested]
+        posterior = joint.joint(tested)
+    else:
+        template_criteria = [
+            c.label
+            for c in replay_method.criteria
+            if c.quantity in _TEMPLATE_QUANTITIES
+        ]
+        if template_criteria:
+            raise ValueError(
+                _format_error(
+                    f"{_OPERATION}: criteria {template_criteria} of method "
+                    f"{replay_method.name!r} compare templates.",
+                    why="they need every template's posterior, not one share",
+                    fix="pass the event's JointDecodingResult from "
+                    "decode_jointly as posterior",
+                )
+            )
 
     if isinstance(env, Mapping):
         if template is None:
@@ -707,6 +838,23 @@ def detect_replay(
         track_env = env[template]
     else:
         track_env = env
+    if joint is not None:
+        assert template is not None
+        decoded_env = joint.conditional[template].env
+        if track_env is not decoded_env and (
+            track_env.n_bins != decoded_env.n_bins
+            or track_env.units != decoded_env.units
+            or not np.allclose(track_env.bin_centers, decoded_env.bin_centers)
+        ):
+            raise ValueError(
+                _format_error(
+                    f"{_OPERATION}: env is not the environment template "
+                    f"{template!r} was decoded on.",
+                    why="positions and distances would be read on other bins",
+                    fix="pass the environment (or mapping of environments) "
+                    "given to decode_jointly",
+                )
+            )
     if replay_method.units is not None and track_env.units != replay_method.units:
         stated = (
             "has no units" if track_env.units is None else f"is in {track_env.units!r}"
@@ -731,6 +879,8 @@ def detect_replay(
             f"{_OPERATION}: spike_counts has {len(counts)} rows but posterior "
             f"has {len(posterior)}; pass one row of counts per posterior row."
         )
+    if counts is not None:
+        event_values["n_active_cells"] = float(np.sum(counts.sum(axis=0) > 0))
     segmentation = replay_method.segmentation
     needs_counts = (
         replay_method.empty_time_bins != "keep"
@@ -771,7 +921,9 @@ def detect_replay(
 
         segment_options = segmentation.resolved_options(
             track_env,
-            n_decoded_bins=_decoded_bins(env, track_env, template, encoding_models)
+            n_decoded_bins=_decoded_bins(
+                env, track_env, template, encoding_models, joint
+            )
             if "chance" in segmentation.relative_to.values()
             else None,
         )
@@ -820,15 +972,29 @@ def detect_replay(
                 values={c.label: np.nan for c in replay_method.criteria},
                 segments=segments,
                 segment=None,
+                template=template,
             )
         rows = segments.rows(segment)
-        posterior, times = posterior[rows], times[rows]
-        counts = None if counts is None else counts[rows]
+        if joint is not None:
+            on_trajectory = segments.trajectory_time_bins[rows]
+            masses = {
+                name: float(np.sum(joint.joint(name)[rows][on_trajectory]))
+                for name in joint.template_names
+            }
+            event_values["segment_template_fraction"] = masses[tested] / sum(
+                masses.values()
+            )
+        tested_rows = np.arange(rows.start, rows.stop)
+        if segmentation.rows == "trajectory":
+            tested_rows = tested_rows[segments.trajectory_time_bins[rows]]
+        posterior, times = posterior[tested_rows], times[tested_rows]
+        counts = None if counts is None else counts[tested_rows]
 
     if replay_method.empty_time_bins == "drop":
         assert counts is not None
         keep = counts.sum(axis=1) > 0
-        posterior, times, counts = posterior[keep], times[keep], counts[keep]
+        posterior = np.asarray(posterior[keep])
+        times, counts = times[keep], counts[keep]
 
     options = dict(replay_method.score_options)
     if "n_samples_per_time_bin" in options:
@@ -872,7 +1038,8 @@ def detect_replay(
         score = float(replay_method.score(track_env, scored, times, **options).score)
 
     needs_metrics = any(
-        c.quantity not in ("score", "n_active_cells", *_SEGMENT_QUANTITIES)
+        c.quantity
+        not in ("score", "n_active_cells", *_SEGMENT_QUANTITIES, *_TEMPLATE_QUANTITIES)
         for c in replay_method.criteria
     )
     metrics = (
@@ -885,9 +1052,8 @@ def detect_replay(
     for criterion in replay_method.criteria:
         if criterion.quantity == "score":
             value = score
-        elif criterion.quantity == "n_active_cells":
-            assert counts is not None
-            value = float(np.sum(counts.sum(axis=0) > 0))
+        elif criterion.quantity in event_values:
+            value = event_values[criterion.quantity]
         elif criterion.quantity in _SEGMENT_QUANTITIES:
             assert segments is not None and segment is not None
             value = float(
@@ -907,6 +1073,7 @@ def detect_replay(
         values=values,
         segments=segments,
         segment=segment,
+        template=template,
     )
 
 
@@ -925,8 +1092,11 @@ def _decoded_bins(
     track_env: Environment,
     template: str | None,
     encoding_models: Any,
+    joint: JointDecodingResult | None,
 ) -> int:
     """Bins of every template decoded together, for thresholds over chance."""
+    if joint is not None:
+        return sum(result.env.n_bins for result in joint.conditional.values())
     if template is None:
         return track_env.n_bins
     if isinstance(env, Mapping):
@@ -1088,7 +1258,7 @@ def _segment_detection_p_value(
 
 def compare_replay_methods(
     env: Environment | Mapping[str, Environment],
-    events: Sequence[DecodingResult],
+    events: Sequence[DecodingResult | JointDecodingResult],
     *,
     replay_methods: Sequence[ReplayMethod],
     spike_counts: Sequence[NDArray[np.int64]] | None = None,
@@ -1106,15 +1276,19 @@ def compare_replay_methods(
     env : Environment or Mapping[str, Environment]
         The environment the events were decoded on, or the mapping of
         environments of a joint decode (see :func:`detect_replay`).
-    events : sequence of DecodingResult
-        The decoded candidate events, each with ``times``.
+    events : sequence of DecodingResult or JointDecodingResult
+        The decoded candidate events, each with ``times``: a decode on one
+        set of rate maps, or a joint decode over several templates (see
+        :func:`detect_replay`).
     replay_methods : sequence of ReplayMethod
         The methods to compare.
     spike_counts : sequence of arrays or None
         Each event's spike counts, for methods that need them.
     encoding_models, dt, prior, template
         The decoding inputs, for the nulls that decode again (see
-        :func:`detect_replay`).
+        :func:`detect_replay`). For joint decodes, ``template`` is the
+        template tested by methods without a ``template_choice``; methods
+        with one choose the template of each event themselves.
     valid_time_bins : sequence of arrays or None
         Each event's valid time bins, for methods with a segmentation (see
         :func:`detect_replay`).
@@ -1130,7 +1304,8 @@ def compare_replay_methods(
         One row per (event, method): ``event``, ``method``, ``is_replay``,
         ``score``, ``p_value``, one ``passes[...]`` column per criterion,
         ``n_segments``, ``segment_start_time`` and ``segment_end_time`` for
-        methods with a segmentation (NaN for the others), and ``error``.
+        methods with a segmentation (NaN for the others), ``template`` for
+        joint decodes, and ``error``.
         ``error`` is empty unless the event has fewer than two time bins
         left to score (after the method drops time bins without spikes);
         then ``is_replay`` is False and the score and p-value are NaN.
@@ -1144,8 +1319,9 @@ def compare_replay_methods(
     Raises
     ------
     ValueError
-        If an event has no ``times``, or if ``spike_counts`` or
-        ``valid_time_bins`` does not have one entry per event.
+        If an event has no ``times``; if ``spike_counts`` or
+        ``valid_time_bins`` does not have one entry per event; or if a
+        method draws pseudo-events from joint decodes.
 
     See Also
     --------
@@ -1164,8 +1340,16 @@ def compare_replay_methods(
                 f"compare_replay_methods(): {name} has {len(per_event)} "
                 f"entries but there are {len(events)} events."
             )
-    for index, event in enumerate(events):
-        if event.times is None:
+    from neurospatial.decoding import JointDecodingResult
+
+    event_times = [
+        event.conditional[event.template_names[0]].times
+        if isinstance(event, JointDecodingResult)
+        else event.times
+        for event in events
+    ]
+    for index, times in enumerate(event_times):
+        if times is None:
             raise ValueError(
                 _format_error(
                     f"compare_replay_methods(): event {index} has no times.",
@@ -1176,7 +1360,24 @@ def compare_replay_methods(
             )
     pool = None
     if any("pseudo_event" in method.nulls for method in replay_methods):
-        pool = np.vstack([event.posterior for event in events])
+        if any(isinstance(event, JointDecodingResult) for event in events):
+            raise ValueError(
+                _format_error(
+                    "compare_replay_methods(): the pseudo-event null cannot "
+                    "draw from joint decodes.",
+                    why="a joint decode's rows hold several templates, and a "
+                    "pseudo-event draws rows of one posterior",
+                    fix="pass each event's tested share as a DecodingResult, "
+                    "or leave out methods with the pseudo-event null",
+                )
+            )
+        pool = np.vstack(
+            [
+                event.posterior
+                for event in events
+                if not isinstance(event, JointDecodingResult)
+            ]
+        )
     entropy = (
         int(rng.integers(2**63))
         if isinstance(rng, np.random.Generator)
@@ -1191,7 +1392,7 @@ def compare_replay_methods(
                 )
             )
             counts = None if spike_counts is None else np.asarray(spike_counts[index])
-            usable = np.asarray(event.times)
+            usable = np.asarray(event_times[index])
             if method.empty_time_bins == "drop" and counts is not None:
                 usable = usable[counts.reshape(len(usable), -1).sum(axis=1) > 0]
             if np.unique(usable).size < 2:
@@ -1208,14 +1409,17 @@ def compare_replay_methods(
                 continue
             result = detect_replay(
                 env,
-                event.posterior,
-                np.asarray(event.times),
+                event if isinstance(event, JointDecodingResult) else event.posterior,
+                np.asarray(event_times[index]),
                 replay_method=method,
                 spike_counts=counts,
                 encoding_models=encoding_models,
                 dt=dt,
                 prior=prior,
-                template=template,
+                template=None
+                if isinstance(event, JointDecodingResult)
+                and method.template_choice is not None
+                else template,
                 pseudo_event_pool=pool,
                 valid_time_bins=None
                 if valid_time_bins is None
@@ -1567,6 +1771,83 @@ WIDLOSKI_FOSTER_2022 = ReplayMethod(
     ),
 )
 
+MALLORY_2025 = ReplayMethod(
+    name="mallory_2025",
+    reference=(
+        "Mallory, C. S., Widloski, J., & Foster, D. J. (2025). The time course "
+        "and organization of hippocampal replay. Science, 387(6733), 541-548."
+    ),
+    score=weighted_correlation,
+    score_options={"row_normalization": "none"},
+    segmentation=ReplaySegmentation(
+        {
+            "max_jump": 0.4,
+            "method": "map",
+            "min_peak_probability": 5.0,
+            "merge_max_time_gap": 0.05,
+            "merge_max_distance": 0.4,
+            "min_duration": 0.03,
+        },
+        relative_to={
+            "max_jump": "track_length",
+            "merge_max_distance": "track_length",
+            "min_peak_probability": "chance",
+        },
+        rows="trajectory",
+    ),
+    criteria=(
+        ReplayCriterion("segment_template_fraction", ">=", 0.5),
+        ReplayCriterion("template_fraction", ">", 0.665),
+        ReplayCriterion("score", ">", 0.6, absolute=True),
+        ReplayCriterion("max_map_jump", "<", 0.4, relative_to="track_length"),
+        ReplayCriterion("map_range", ">", 0.2, relative_to="track_length"),
+        ReplayCriterion("n_active_cells", ">=", 10),
+    ),
+    units="cm",
+    template_choice="most_posterior",
+    exclude_end_distance=20.0,
+    decoding={
+        "time_bin": 0.02,
+        "time_step": 0.005,
+        "position_bin": 2.0,
+        "templates": "the two running directions, decoded jointly",
+    },
+    notes=(
+        "Pass each event's joint decode over the two running directions "
+        "(decode_jointly). The tested template holds the most posterior over "
+        "the event with 10 bins (20 cm) left out at each track end "
+        "(filter_candidate_events.m).",
+        "Segmentation from filter_candidate_events.m: MAP jumps below 40% of "
+        "the track, peak above 5 times chance over both maps, runs merged "
+        "across gaps below 50 ms and 40% of the track, runs of at least "
+        "30 ms, longest kept. The code divides the merge distance by the "
+        "bin size twice, halving it; the intended threshold is used.",
+        "The code rejects the segment when the other map holds more "
+        "posterior over its time bins: segment_template_fraction >= 0.5.",
+        "The score and metrics use the segment's trajectory time bins only "
+        "(load_candidateEvents_cm_new.m drops the NaN rows of the segment), "
+        "at their own times; whether the code's weighted_correlation.m, "
+        "which is not deposited, uses times or row numbers is unknown.",
+        "Criteria from load_replay_criterion.m and the bioRxiv methods: more "
+        "than 66% of the posterior in one map, weighted correlation above "
+        "0.6 in absolute value, maximum MAP jump below 40% of the track, MAP "
+        "range above 20% of the track, and at least 10 cells active in the "
+        "event.",
+        "The script that applies load_replay_criterion.m is not deposited. "
+        "The directional rule is read as the |left - right| > 0.33 that "
+        "filter_candidate_events.m stores for the whole event with 10 bins "
+        "(20 cm) left out at each end, the same as a fraction above 0.665; "
+        "the metrics script also computes fractions with 15 bins (30 cm) "
+        "left out.",
+        "The weighted correlation uses the template's columns of the joint "
+        "posterior as weights (best_posterior in "
+        "load_candidateEventMetricsDirectionalDecoding.m).",
+        "load_replay_criterion.m sets a 50 ms duration threshold; measured "
+        "from the start of the first 20 ms window to the end of the last, "
+        "that is the segmentation's 30 ms between centers.",
+    ),
+)
+
 PUBLISHED_METHODS: tuple[ReplayMethod, ...] = (
     DAVIDSON_2009,
     KARLSSON_FRANK_2009,
@@ -1579,5 +1860,6 @@ PUBLISHED_METHODS: tuple[ReplayMethod, ...] = (
     IGATA_2021,
     TIROLE_2022,
     WIDLOSKI_FOSTER_2022,
+    MALLORY_2025,
 )
 """Every published method recipe in this module."""
