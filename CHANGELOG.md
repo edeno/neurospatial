@@ -83,6 +83,40 @@ other seeded simulations give the same spikes as before.
 - Head-direction and boundary-vector `ground_truth` report a preferred
   direction of exactly −π as +π, the package's (−π, π] convention.
 
+### Pairwise-order replay test (Gupta et al. 2010)
+
+Gupta et al. (2010) detected replay without decoding: every pair of spikes
+less than 80 ms apart adds +1 when the two cells fire in the order of their
+place fields along the lap and -1 against it. `neurospatial.replay` now
+computes this score and applies the published test.
+
+**New**
+
+- `pairwise_order_score()`: the summed pair score of one event on one
+  template, forward or backward, with the number of pairs compared, the
+  active cells and the field each cell takes. Fields are runs of bins above
+  5% of the highest rate of any cell, merged across one-bin gaps, placed at
+  their rate-weighted center (or peak). A cell with several fields takes,
+  for all its spikes, the field that makes the score largest, found
+  exactly; an event whose multi-field cells give more than 65,536
+  combinations is refused.
+- `pairwise_order_significance()`: the score against 300 permutations of
+  the scored spikes' times (each cell keeps its spikes' count) and 300
+  permutations of the cells' field sets across every cell given, each
+  re-maximized; p = (k + 1) / (n + 1) per null, and the event must beat
+  both.
+- `PairwiseOrderMethod`, `detect_pairwise_order_replay()` and the recipe
+  `GUPTA_2010`: every template (pass a mapping of rate maps, one per lap)
+  is tested forward and backward, and the test with the smallest p-value
+  is reported, without a correction, as in the paper; the score is negative
+  for a backward sequence. At least 3 active cells. The recipe's notes list
+  the readings taken where the paper is silent and the steps not applied
+  (the session scan for events, the 80 cm detection limit, which the paper
+  dropped for significance, and the merging of central-stem replays).
+- `compare_replay_methods()` runs pairwise-order methods with the
+  rank-order ones, from `spike_times`, `encoding_models` and `dt`; an event
+  whose field search is too large gets an `error` row.
+
 ### Widloski & Foster (2025): trajectory quantities tested against shuffles
 
 - `WIDLOSKI_FOSTER_2025`: the candidates of `WIDLOSKI_FOSTER_2022`, each

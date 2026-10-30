@@ -188,6 +188,11 @@ Detecting the candidate events (ripples, population bursts) is not included.
 - `rank_order_correlation()`, `rank_order_significance()`: Spearman
   correlation of field order and firing order in an event, with a
   cell-order permutation test; needs no decoding
+- `pairwise_order_score()`, `pairwise_order_significance()`: Firing order
+  of every pair of spikes less than 80 ms apart against the cells'
+  place-field order, summed (Gupta et al. 2010), with spike-time and
+  cell-identity shuffles; cells with several fields take their best field;
+  needs no decoding
 - `detect_replay()`, `compare_replay_methods()`: Apply published replay
   methods (`neurospatial.replay.methods`: Davidson 2009, Karlsson & Frank
   2009, Pfeiffer & Foster 2013 and 2015, Wikenheiser & Redish 2013,
@@ -215,6 +220,10 @@ Detecting the candidate events (ripples, population bursts) is not included.
   spikes; `compare_replay_methods(spike_times=...)` compares them with the
   decoded methods and runs Chenani 2019, which tests an epoch's events
   together
+- `detect_pairwise_order_replay()`, `PairwiseOrderMethod`: Apply the
+  pairwise-order test of Gupta et al. 2010 (`GUPTA_2010`) to an event's
+  spikes on every template (such as each lap), forward and backward;
+  `compare_replay_methods(spike_times=...)` runs it with the other methods
 - `shuffle_cell_identity()`, `shuffle_spike_counts_circular()`,
   `shuffle_spike_counts_uniform()`, `shuffle_place_fields_circular()`,
   `shuffle_place_fields_circular_2d()`, `shuffle_posterior_circular()`,
