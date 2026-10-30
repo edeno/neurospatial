@@ -83,6 +83,7 @@ from neurospatial.replay.trajectory import (
     regression_line_score,
 )
 from neurospatial.stats._utils import _entropy, _name_key, _stream
+from neurospatial.stats.shuffle import _tail_p_values
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -3367,8 +3368,9 @@ def _pooled_ssi_verdicts(
         finite = np.isfinite(scores)
         best = int(np.nanargmax(scores)) if finite.any() else 0
         score = float(scores[best]) if finite.any() else np.nan
+        # An empty pool gives 1, as (0 + 1) / (0 + 1).
         p_value = (
-            float((np.sum(pooled >= score) + 1) / (pooled.size + 1))
+            float(_tail_p_values(np.sum(pooled >= score), 0, pooled.size, "greater"))
             if np.isfinite(score)
             else np.nan
         )
