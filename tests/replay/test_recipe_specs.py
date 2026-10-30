@@ -629,6 +629,32 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
             },
         },
     ),
+    "maboudi_2018": (
+        ReplayMethod,
+        {
+            "score": "detect_trajectory_radon",
+            "score_options": {
+                "band": 3.0,
+                "off_track": "bin_median",
+                "zero_rows": "line_median",
+                "n_lines": 35000,
+            },
+            "nulls": ("column_cycle",),
+            "n_shuffles": 5000,
+            "alpha": 0.01,
+            "empty_time_bins": "zero",
+            "criteria": (
+                ("n_active_cells", ">=", 4, None, False),
+                ("n_time_bins", ">=", 4, None, False),
+            ),
+            "units": "cm",
+            "decoding": {
+                "time_bin": 0.02,
+                "prior": "uniform",
+                "rate_map_time_bin": 0.1,
+            },
+        },
+    ),
     "liu_2023": (
         ReplayMethod,
         {

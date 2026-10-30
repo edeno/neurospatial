@@ -88,6 +88,7 @@ __all__ = [
     "JADHAV_2016",
     "KARLSSON_FRANK_2009",
     "LIU_2023",
+    "MABOUDI_2018",
     "MALLORY_2025",
     "MICHON_2019",
     "MUESSIG_2019",
@@ -4837,6 +4838,97 @@ LIU_2023 = ReplayMethod(
     ),
 )
 
+MABOUDI_2018 = ReplayMethod(
+    name="maboudi_2018",
+    reference=(
+        "Maboudi, K., Ackermann, E., de Jong, L. W., Pfeiffer, B. E., Foster, "
+        "D., Diba, K., & Kemere, C. (2018). Uncovering temporal structure in "
+        "hippocampal output patterns. eLife, 7, e34467. "
+        "https://doi.org/10.7554/eLife.34467"
+    ),
+    score=detect_trajectory_radon,
+    score_options={
+        "band": 3.0,
+        "off_track": "bin_median",
+        "zero_rows": "line_median",
+        "n_lines": 35000,
+    },
+    nulls=("column_cycle",),
+    n_shuffles=5000,
+    alpha=0.01,
+    empty_time_bins="zero",
+    criteria=(
+        ReplayCriterion("n_active_cells", ">=", 4),
+        ReplayCriterion("n_time_bins", ">=", 4),
+    ),
+    units="cm",
+    decoding={"time_bin": 0.02, "prior": "uniform", "rate_map_time_bin": 0.1},
+    notes=(
+        "Mean posterior mass within 3 cm of the best of 35,000 random lines "
+        "(Davidson et al. 2009, with lines drawn as in Kloosterman 2012), "
+        "against 5000 shuffles circularly shifting each time bin's posterior "
+        "along the track; replay at the paper's 99% threshold, p = (k + 1) / "
+        "(n + 1) < 0.01 with k the shuffles scoring at least the event. The "
+        "published scores came from nelpy's score_Davidson_final_bst_fast "
+        "(nelpy 444d5243, archived with the paper; called with w = 3, "
+        "n_samples = 35000 and n_shuffles = 5000 in the analysis notebooks, "
+        "kemerelab/UncoveringTemporalStructureHippocampus Figure7.ipynb).",
+        "Band: the paper's 'bandwidth (of 3 cm)', read as the half-width d of "
+        "Davidson et al. The code sums the 2w + 1 = 7 bins centered on the "
+        "line's bin (w = 3), a half-width of 3.5 bins; the decoding bin size "
+        "is in no public file, so the two cannot be reconciled.",
+        "A time bin where the line leaves the track scores its median "
+        "single-bin posterior mass (off_track='bin_median'), as both the text "
+        "and the code say; Davidson et al.'s median, used by default, is "
+        "over the band's mass.",
+        "Time bins without spikes, which the authors' decoder leaves without "
+        "a posterior, are set to zero (empty_time_bins='zero') and each "
+        "scores the median of the line's band mass over its on-track time "
+        "bins with spikes (zero_rows='line_median'), as the text says. The "
+        "code computes that median but never adds it, so its empty time bins "
+        "score 0; the text's rule is followed and the code's is not "
+        "reproduced by default.",
+        "Lines: 35,000 drawn at random over every slope (n_lines=35000, "
+        "seeded by line_seed=0), the same for the event and its shuffles, as "
+        "in the code; the code draws new lines for each event, here every "
+        "event with the same numbers of time and position bins gets the "
+        "same lines. Positions along a line are exact; the code rounds them "
+        "to bins. For the dense grid of Davidson et al., which cannot miss "
+        "the best line, pass n_lines=None: on a 200 cm track in 2 cm bins, a "
+        "200 ms event with two empty time bins took 139 s for 5000 shuffles "
+        "on the dense grid and 3.5 s with 35,000 random lines (one laptop).",
+        "Shuffles: 5000 independent column cycles, each time bin shifted by "
+        "0 to n_bins - 1 bins. The code draws shifts of 1 to n_bins - 1 but "
+        "accumulates them from one shuffle to the next (a random walk, not "
+        "independent shuffles; not reproduced), so from the second shuffle "
+        "on every shift, 0 included, occurs; "
+        "null_options={'column_cycle': {'exclude_zero_shift': True}} draws "
+        "the code's 1 to n_bins - 1 independently.",
+        "p-value: the code calls an event replay at a percentile of at least "
+        "99 with ties counted half (scipy percentileofscore, kind='mean'), "
+        "so #greater + #ties / 2 <= 50 of 5000; here ties count in full, "
+        "k <= 49.",
+        "To reproduce the code as run: dataclasses.replace(MABOUDI_2018, "
+        "empty_time_bins='drop', score_options={'band': 3.5 * bin_size, "
+        "'off_track': 'bin_median', 'n_lines': 35000}). Dropping the time "
+        "bins without spikes scores every line as the code does, times "
+        "n_time_bins over the time bins with spikes, so it gives the code's "
+        "ranking of lines and its p-values (up to the random lines and "
+        "shuffles drawn and the tie rule). The n_time_bins criterion then "
+        "counts only time bins with spikes: apply the four-time-bin rule to "
+        "the events before.",
+        "Event rules applied: at least 4 time bins of 20 ms and 4 active "
+        "pyramidal cells (pass pyramidal cells' counts). Not applied: "
+        "interneurons (mean rate above 10 Hz while moving) are excluded, and "
+        "population burst events are detected from multi-unit activity (3 "
+        "SD) while the animal moves at most 5 cm/s.",
+        "Decoding: Poisson, uniform prior, rate maps estimated in 100 ms "
+        "bins and events decoded in 20 ms bins; the analysis notebooks "
+        "smooth the tuning curves with a 4 cm SD Gaussian (sigma_tc = 4), "
+        "which the paper does not state.",
+    ),
+)
+
 FOSTER_WILSON_2006 = RankOrderMethod(
     name="foster_wilson_2006",
     reference=(
@@ -5165,6 +5257,7 @@ PUBLISHED_METHODS: tuple[
     OLAFSDOTTIR_2017,
     TANG_2017,
     YAMAMOTO_TONEGAWA_2017,
+    MABOUDI_2018,
     CAREY_2019,
     CHENANI_2019,
     FAROOQ_2019,

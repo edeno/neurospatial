@@ -4,6 +4,11 @@
 
 ### Maboudi et al. (2018) replay recipe
 
+- `MABOUDI_2018`: mean posterior mass within 3 cm of the best of 35,000
+  random lines, against 5000 column-cycle shuffles at p < 0.01, with at
+  least 4 time bins and 4 active cells. The notes list each difference
+  from the authors' code (nelpy's `score_Davidson_final_bst_fast`) and how
+  to reproduce the code as run.
 - `detect_trajectory_radon(..., off_track="bin_median")` scores a time bin
   where the line leaves the track by the median of its single-bin masses,
   as Maboudi et al. did; the default, `"band_median"`, is Davidson et al.'s

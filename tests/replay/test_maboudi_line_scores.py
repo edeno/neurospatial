@@ -6,10 +6,12 @@ the line leaves the track by its median single-bin mass, and
 the line's band mass over its on-track time bins with spikes, as the paper's
 text says. ``n_lines`` draws lines at random over every slope, as nelpy does.
 ``null_options={"column_cycle": {"exclude_zero_shift": True}}`` draws shifts
-of 1 to n_bins - 1 bins.
+of 1 to n_bins - 1 bins. ``MABOUDI_2018`` puts them together.
 """
 
 from __future__ import annotations
+
+import dataclasses
 
 import networkx as nx
 import numpy as np
@@ -17,11 +19,15 @@ import pytest
 from numpy.testing import assert_array_equal
 
 from neurospatial import Environment
+from neurospatial.decoding import bin_spikes_in_time, decode_position
 from neurospatial.replay import (
+    detect_replay,
     detect_trajectory_radon,
     replay_significance,
     shuffle_posterior_circular,
 )
+from neurospatial.replay.methods import MABOUDI_2018
+from neurospatial.simulation import simulate_replay_event
 
 DT = 0.02
 
@@ -331,3 +337,62 @@ class TestColumnCycleWithoutZeroShift:
                 null_options={"column_cycle": {"exclude_zero_shift": 1}},
                 n_shuffles=5,
             )
+
+
+class TestRecipe:
+    @pytest.fixture(scope="class")
+    def place_code(self):
+        """A 200 cm track in 4 cm bins with 40 place cells tiling it."""
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [200.0, 0.0]], bin_size=4.0, units="cm"
+        )
+        x = env.bin_centers[:, 0]
+        rates = 0.5 + 25.0 * np.exp(
+            -0.5 * ((x - np.linspace(0.0, 200.0, 40)[:, None]) / 10.0) ** 2
+        )
+        return env, rates
+
+    def _detect(self, env, rates, kind, seed, empty=(), **kwargs):
+        event = simulate_replay_event(
+            env, rates, kind=kind, rate_gain=4.0, seed=seed, **kwargs
+        )
+        counts, times = bin_spikes_in_time(
+            list(event.spike_times), dt=DT, t_start=0.0, t_stop=event.duration
+        )
+        counts[list(empty)] = 0
+        decoded = decode_position(env, counts, rates, dt=DT, times=times)
+        # 199 shuffles: the smallest p-value, 1 / 200, is below alpha = 0.01.
+        method = dataclasses.replace(MABOUDI_2018, n_shuffles=199)
+        result = detect_replay(
+            env,
+            decoded.posterior,
+            decoded.times,
+            replay_method=method,
+            spike_counts=counts,
+            encoding_models=rates,
+            dt=DT,
+            rng=0,
+        )
+        return result, decoded, counts
+
+    def test_detects_a_sweep_with_empty_time_bins(self, place_code):
+        env, rates = place_code
+        result, decoded, counts = self._detect(
+            env, rates, "sweep", seed=1, empty=(3, 6), speed=900.0
+        )
+        assert result.is_replay, result.summary()
+        assert result.p_value == pytest.approx(1 / 200)
+        # The score is the line score of the posterior with empty rows zeroed.
+        zeroed = np.where(counts.sum(axis=1)[:, None] > 0, decoded.posterior, 0.0)
+        line = detect_trajectory_radon(
+            env, zeroed, decoded.times, **MABOUDI_2018.score_options
+        )
+        assert result.score == line.score
+
+    def test_rejects_random_events(self, place_code):
+        env, rates = place_code
+        verdicts = [
+            self._detect(env, rates, "random", seed=300 + seed)[0].is_replay
+            for seed in range(4)
+        ]
+        assert not any(verdicts)
