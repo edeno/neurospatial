@@ -137,26 +137,6 @@ class Walls:
         nearest = self.starts + along[:, None] * self.vectors
         return float(np.min(np.linalg.norm(point - nearest, axis=1)))
 
-    def _hits(
-        self, origins: NDArray[np.float64], rays: NDArray[np.float64]
-    ) -> NDArray[np.float64]:
-        """Fraction of each ray travelled to each segment, shape (n_rays, n_segments).
-
-        ``origins`` and ``rays`` have shape (n_rays, 2). ``inf`` where the ray
-        (``0 < t``) does not meet the segment.
-        """
-        vx, vy = self.vectors[:, 0], self.vectors[:, 1]
-        denominator = rays[:, :1] * vy - rays[:, 1:] * vx
-        ox = self.starts[:, 0] - origins[:, :1]
-        oy = self.starts[:, 1] - origins[:, 1:]
-        with np.errstate(divide="ignore", invalid="ignore"):
-            along_ray = (ox * vy - oy * vx) / denominator
-            along_wall = (ox * rays[:, 1:] - oy * rays[:, :1]) / denominator
-        hit = (
-            (denominator != 0) & (along_ray > 0) & (along_wall >= 0) & (along_wall <= 1)
-        )
-        return np.where(hit, along_ray, np.inf)
-
     def first_hit(
         self, position: NDArray[np.float64], step: NDArray[np.float64]
     ) -> int | None:
@@ -207,15 +187,32 @@ class Walls:
             ``inf`` where no wall lies along the ray.
         """
         units = np.column_stack([np.cos(angles), np.sin(angles)])
+        ux, uy = units[:, :1], units[:, 1:]
+        vx, vy = self.vectors[:, 0], self.vectors[:, 1]
+        # Cross product of each ray with each segment, (n_angles, n_segments);
+        # zero where they are parallel.
+        denominator = ux * vy - uy * vx
         n_angles = len(angles)
         out = np.empty((len(origins), n_angles))
         per_chunk = max(1, _INTERSECTIONS_PER_CHUNK // (n_angles * len(self.starts)))
         for start in range(0, len(origins), per_chunk):
             chunk = origins[start : start + per_chunk]
-            starts = np.repeat(chunk, n_angles, axis=0)
-            rays = np.tile(units, (len(chunk), 1))
-            out[start : start + len(chunk)] = (
-                self._hits(starts, rays).min(axis=1).reshape(len(chunk), n_angles)
+            # Offsets from each origin to each segment start, (n_chunk, 1, S).
+            ox = (self.starts[:, 0] - chunk[:, :1])[:, None, :]
+            oy = (self.starts[:, 1] - chunk[:, 1:])[:, None, :]
+            # Fractions of the ray and of the segment to the crossing, each
+            # (n_chunk, n_angles, n_segments).
+            with np.errstate(divide="ignore", invalid="ignore"):
+                along_ray = (ox * vy - oy * vx) / denominator
+                along_wall = (ox * uy - oy * ux) / denominator
+            hit = (
+                (denominator != 0)
+                & (along_ray > 0)
+                & (along_wall >= 0)
+                & (along_wall <= 1)
+            )
+            out[start : start + len(chunk)] = np.where(hit, along_ray, np.inf).min(
+                axis=2
             )
         return out
 
