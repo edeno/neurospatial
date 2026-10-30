@@ -664,6 +664,111 @@ event by event against 200 place-field shuffles (about an hour per class
 and epoch), parallelize over data sets with seeds from
 `np.random.SeedSequence(seed).spawn(100)`.
 
+## Before and after a task
+
+Replay is often compared between sleep before a task (PRE) and after it
+(POST). Excitability and firing rates change between the two, and Tingley &
+Peyrache (2020, p. 7) point out that this can change the share of events
+called replay by chance, the false-positive rate. So compare each epoch's
+share of replay events with a false-positive rate measured on null events
+made from that epoch's own events, not with α and not with the other
+epoch.
+
+In this simulation the two epochs hold the same content, 8 sweeps and 16
+stationary events each, but cells fire at their running rate in PRE and at
+4 times it in POST. The null events are uniform-spike-time copies, which
+keep each event's spike counts and so carry its epoch's excitability. The
+rank-order method is scored on them exactly as on the real events.
+
+<!-- docs-test: run -->
+```python
+rank_order = dataclasses.replace(DIBA_BUZSAKI_2007, n_shuffles=200)
+
+
+def simulate_epoch(rate_gain, seed):
+    """8 sweeps and 16 stationary events, 2 s apart."""
+    epoch_rng = np.random.default_rng(seed)
+    trains = [[] for _ in range(40)]
+    epoch_intervals = []
+    for index, kind in enumerate(["sweep"] * 8 + ["stationary"] * 16):
+        speed = {}
+        if kind == "sweep":
+            direction = epoch_rng.choice([-1, 1])
+            speed["speed"] = float(direction * epoch_rng.uniform(400, 800))
+        event = simulate_replay_event(
+            env,
+            rates,
+            kind=kind,
+            duration=float(epoch_rng.uniform(0.08, 0.2)),
+            rate_gain=rate_gain,
+            seed=100 * seed + index,
+            **speed,
+        )
+        start = 2.0 * index
+        for cell, train in enumerate(event.spike_times):
+            trains[cell].append(np.asarray(train) + start)
+        epoch_intervals.append((start, start + event.duration))
+    return [np.concatenate(parts) for parts in trains], np.asarray(epoch_intervals)
+
+
+def score_epoch(spike_times, epoch_intervals):
+    decoded, epoch_counts = decode_intervals(
+        env, spike_times, epoch_intervals, rates, dt=dt
+    )
+    return compare_replay_methods(
+        env,
+        decoded,
+        replay_methods=[rank_order],
+        spike_counts=epoch_counts,
+        spike_times=spike_times,
+        encoding_models=rates,
+        dt=dt,
+        rng=0,
+    )
+
+
+epoch_rows = []
+for epoch, rate_gain, seed in [("PRE", 1.0, 7), ("POST", 4.0, 8)]:
+    epoch_spikes, epoch_intervals = simulate_epoch(rate_gain, seed)
+    epoch_table = score_epoch(epoch_spikes, epoch_intervals)
+    epoch_null = null_events(
+        epoch_spikes, epoch_intervals, kind="spike_time_uniform", n_copies=4, rng=seed
+    )
+    epoch_null_table = score_epoch(epoch_null.spike_times, epoch_null.intervals)
+    null_rate = detection_rates(epoch_null_table)["rate"].item()
+    own = detection_rates(epoch_table, expected_rate=null_rate, alternative="greater")
+    nominal = detection_rates(
+        epoch_table, expected_rate=rank_order.alpha, alternative="greater"
+    )
+    epoch_rows.append(
+        {
+            "epoch": epoch,
+            "n_replay": own["n_replay"].item(),
+            "rate": own["rate"].item(),
+            "null_rate": null_rate,
+            "p_vs_null": own["p_value"].item(),
+            "p_vs_alpha": nominal["p_value"].item(),
+        }
+    )
+print(pd.DataFrame(epoch_rows).round(3).to_string(index=False))
+```
+
+`DIBA_BUZSAKI_2007` calls 3% of the PRE null events replay but 12.5% of the
+POST ones, above its α of 0.1. With four times the spikes, the copies of a
+sweep keep more of the order of which cells fire most, as in the null data
+above. Tested against α, PRE's 5 of 24 events are not more than chance
+(p = 0.085); against PRE's own null rate they are (p = 0.001). In five of
+six repetitions with other seeds the PRE null rate was lower too (2 to 6%
+against 5 to 15%).
+
+Two limits remain. Both epochs hold 8 sweeps, yet POST calls twice the
+share of events replay: excitability changes how many real sequences a
+method detects as well, and no null rate corrects that. Compare epochs on
+events with similar properties (`event_properties`,
+`detection_rates(by=...)`). And the binomial test takes the null rate as
+known, although it is estimated, here from 96 copies of 24 events; make the
+null events from many real events.
+
 ## Using your own recording
 
 - **Rate maps.** Estimate them from running only, e.g.
