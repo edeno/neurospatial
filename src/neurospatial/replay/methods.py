@@ -38,6 +38,7 @@ from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
+from neurospatial.replay.circular import fit_circular_sequence
 from neurospatial.replay.correlation import weighted_correlation
 from neurospatial.replay.significance import (
     _ALTERNATIVES,
@@ -65,25 +66,37 @@ __all__ = [
     "AMBROSE_2016",
     "BERNERS_LEE_2021",
     "BERNERS_LEE_2022",
+    "BUSH_2022",
     "CAREY_2019",
     "CHENANI_2019",
     "DAVIDSON_2009",
     "DIBA_BUZSAKI_2007",
+    "FAROOQ_2019",
     "FOSTER_WILSON_2006",
     "GROSMARK_2016",
+    "HARVEY_2023",
     "IGATA_2021",
+    "JADHAV_2016",
     "KARLSSON_FRANK_2009",
+    "LIU_2023",
     "MALLORY_2025",
     "MICHON_2019",
+    "MUESSIG_2019",
+    "OLAFSDOTTIR_2015",
+    "OLAFSDOTTIR_2016",
     "OLAFSDOTTIR_2017",
     "PFEIFFER_FOSTER_2013",
     "PFEIFFER_FOSTER_2015",
     "PUBLISHED_METHODS",
+    "SHIN_2019",
     "SILVA_2015",
+    "TANG_2017",
     "TIROLE_2022",
     "WIDLOSKI_FOSTER_2022",
+    "WIKENHEISER_REDISH_2013",
     "WU_2017",
     "WU_FOSTER_2014",
+    "YAMAMOTO_TONEGAWA_2017",
     "RankOrderMethod",
     "ReplayCriterion",
     "ReplayDetectionResult",
@@ -3687,6 +3700,639 @@ MALLORY_2025 = ReplayMethod(
     ),
 )
 
+WIKENHEISER_REDISH_2013 = ReplayMethod(
+    name="wikenheiser_redish_2013",
+    reference=(
+        "Wikenheiser, A. M., & Redish, A. D. (2013). The balance of forward "
+        "and backward hippocampal sequences shifts across behavioral states. "
+        "Hippocampus, 23(1), 22-29. https://doi.org/10.1002/hipo.22049"
+    ),
+    score=fit_circular_sequence,
+    nulls=("time_bin_permutation",),
+    n_shuffles=10_000,
+    alpha=0.05,
+    empty_time_bins="drop",
+    criteria=(
+        ReplayCriterion("n_active_cells", ">=", 3),
+        ReplayCriterion("n_spikes", ">=", 5),
+    ),
+    decoding={"time_bin": 0.01, "position_bin": 4.0, "prior": "uniform"},
+    notes=(
+        "Circular mean of each 10 ms time bin's posterior on a circular "
+        "track 80 cm across (64 bins of about 4 cm, uniform prior), steps "
+        "between successive time bins taken the short way around the loop, "
+        "and a line fit to their cumulative sum; its R² is tested against "
+        "shuffles of time-bin order, 'the bootstrap procedure of Karlsson "
+        "and Frank (2009)', p < 0.05. The slope's sign gives forward or "
+        "backward replay. Pass the circular track (Environment.from_graph "
+        "on a cycle graph); fit_circular_sequence lists the readings of the "
+        "fit (wrapped steps, the first point at 0, regression on time, R² "
+        "as the statistic).",
+        "The number of shuffles is not stated; 10,000, Karlsson & Frank's "
+        "count, is a choice made here.",
+        "Only time bins with at least one spike were decoded: the others are "
+        "dropped with their times, and steps are taken between successive "
+        "decoded time bins.",
+        "Events need at least 3 active cells firing at least 5 spikes in "
+        "total (applied). Candidate events are 150 ms windows centered where "
+        "ripple power (140-220 Hz) exceeded 1 SD above baseline, overlapping "
+        "windows concatenated; event selection is not applied here.",
+        "The p-value of Karlsson & Frank is the share of shuffles with a "
+        "larger R²; here it is (k + 1) / (n + 1), which gives the same "
+        "verdict at alpha 0.05 with 10,000 shuffles.",
+    ),
+)
+
+OLAFSDOTTIR_2015 = ReplayMethod(
+    name="olafsdottir_2015",
+    reference=(
+        "Ólafsdóttir, H. F., Barry, C., Saleem, A. B., Hassabis, D., & "
+        "Spiers, H. J. (2015). Hippocampal place cells construct reward "
+        "related sequences through unexplored space. eLife, 4, e06063. "
+        "https://doi.org/10.7554/eLife.06063"
+    ),
+    score=detect_trajectory_radon,
+    score_options={"band": 20.0, "max_speed": 5000.0, "min_speed": 200.0},
+    nulls=("unit_identity",),
+    n_shuffles=1000,
+    alpha=0.05,
+    empty_time_bins="keep",
+    criteria=(ReplayCriterion("n_active_cells", ">=", 7),),
+    units="cm",
+    decoding={
+        "time_bin": 0.005,
+        "position_bin": 1.0,
+        "rate_map_smoothing_sd": 2.0,
+        "prior": "uniform",
+    },
+    notes=(
+        "The Bayesian line fit that corroborates the paper's rank-order "
+        "preplay (Fig. 4): the mean over 5 ms time bins of the posterior "
+        "within 20 cm of a line, speeds from 2 to 50 m/s in either "
+        "direction, against 1,000 posteriors decoded again with the "
+        "identities of the cells shuffled. Preplay when the best fit "
+        "exceeded the 95th percentile of the shuffles; here p = (k + 1) / "
+        "(n + 1) < 0.05, which allows at most 49 shuffles at least as high, "
+        "the percentile rule up to interpolation at 50.",
+        "Time bins without spikes are not mentioned. They are kept here, "
+        "reading Eq. 3 as the mean over all n time bins of the decoded "
+        "matrix; a choice made here. The lab's 2017 paper set them to zero, "
+        "which for this score is the same as dropping them: "
+        "dataclasses.replace(OLAFSDOTTIR_2015, empty_time_bins='drop'). With "
+        "5 ms time bins most rows of an event are empty, so the choice "
+        "matters more than in other recipes: the empty rows decode alike in "
+        "the event and in every cell-identity shuffle, but they can change "
+        "which line fits best.",
+        "'Shuffling the identities of cells included in the event' is read "
+        "as permuting every cell the decoder uses: pass the template's "
+        "cells as spike_counts and encoding_models; a choice made here. "
+        "Permuting only the cells active in the event, as Bush et al. "
+        "(2022) of the same lab state, is the other reading: "
+        "dataclasses.replace(OLAFSDOTTIR_2015, null_options={'unit_identity': "
+        "{'active_only': True}}).",
+        "Time bins where a line leaves the track score the median over "
+        "positions of Davidson et al. (not stated in the paper). Start "
+        "positions are searched densely rather than in 1 cm steps from -15 "
+        "to 16 m, speeds rather than in 0.2 m/s steps.",
+        "Each arm was decoded with its own rate maps: 1 cm bins smoothed "
+        "with a Gaussian of sigma 2 cm, speeds below 3 cm/s and the last "
+        "20 cm of each arm excluded, cells with a peak of at least 0.5 Hz, "
+        "five contiguous bins above their mean rate and a correlation of at "
+        "least 0.3 between session halves. Events need at least 7 active "
+        "cells (applied); candidate events, in which at least 15% of a "
+        "template's cells fired within 300 ms bounded by 50 ms of silence, "
+        "are event selection and not applied here.",
+    ),
+)
+
+OLAFSDOTTIR_2016 = dataclasses.replace(
+    OLAFSDOTTIR_2017,
+    name="olafsdottir_2016",
+    reference=(
+        "Ólafsdóttir, H. F., Carpenter, F., & Barry, C. (2016). Coordinated "
+        "grid and place cell replay during rest. Nature Neuroscience, 19(6), "
+        "792-794. https://doi.org/10.1038/nn.4291"
+    ),
+    alpha=0.2,
+    empty_time_bins="keep",
+    criteria=(ReplayCriterion("active_fraction", ">=", 0.15),),
+    template_choice="smallest_p",
+    decoding={
+        "time_bin": 0.01,
+        "position_bin": 2.0,
+        "templates": "inbound and outbound rate maps, decoded separately",
+    },
+    notes=(
+        "Line fit of Ólafsdóttir et al. (2015): the mean posterior within "
+        "30 cm of a line, speeds from 2 to 50 m/s in either direction in "
+        "0.5 m/s steps and start positions from -15 to 21 m in 1 cm steps "
+        "(searched densely here). Time bins where a line leaves the track "
+        "score the median over positions of Davidson et al.",
+        "100 shuffles rotating each place cell's rate map by 1 to n_bins - 1 "
+        "bins, decoded again; here shifts of 0 to n_bins - 1. 'Robust events, "
+        "with an individual P-value of less than 0.2, were accepted as "
+        "replay events': with 100 shuffles, p = (k + 1) / (n + 1) < 0.2 "
+        "allows at most 19 shuffles at least as high, the same as k / 100 < "
+        "0.2.",
+        "Supplementary Fig. 3 marks the 95th percentile of the shuffles as "
+        "the threshold for significance, which contradicts the Methods and "
+        "main text (p < 0.2 for the 1,826 replay events); the Methods are "
+        "followed. The strongest events (p < 0.025) were a control: "
+        "dataclasses.replace(OLAFSDOTTIR_2016, alpha=0.025), which with 100 "
+        "shuffles allows at most 1 shuffle at least as high where a "
+        "percentile rule allows 2.",
+        "Each event was decoded separately with inbound and outbound rate "
+        "maps, each tested against its own shuffles, and took the direction "
+        "with the lower p-value: template_choice='smallest_p', with no "
+        "correction for the two directions. Pass a mapping of both "
+        "directions' posteriors with encoding_models keyed alike.",
+        "Time bins without spikes are not mentioned (the 2017 paper set "
+        "them to zero). They are kept here, reading Eq. 2 as the mean over "
+        "all n time bins; a choice made here. "
+        "dataclasses.replace(OLAFSDOTTIR_2016, empty_time_bins='drop') "
+        "gives the 2017 rule, which under the place-field shuffle has the "
+        "same p-value as zeroing and normalizing by the summed probability.",
+        "Events need activity from at least 15% of the recorded place cells "
+        "(applied: pass the place cells' counts); the 'more than 5 cells' "
+        "rule is the 2017 paper's. Candidate events (place-cell multi-unit "
+        "activity in 1 ms bins smoothed with a 5 ms Gaussian, above its mean "
+        "by 3 SD, at least 40 ms) are event selection, not applied here. "
+        "Rate maps: 2 cm bins smoothed with a Gaussian of sigma 5 bins, "
+        "speeds below 3 cm/s, the last 10 cm at either end and 5 cm around "
+        "each corner excluded; place cells peak above 1 Hz with fields at "
+        "least 20 cm long.",
+    ),
+)
+
+JADHAV_2016 = dataclasses.replace(
+    KARLSSON_FRANK_2009,
+    name="jadhav_2016",
+    reference=(
+        "Jadhav, S. P., Rothschild, G., Roumis, D. K., & Frank, L. M. (2016). "
+        "Coordinated excitation and inhibition of prefrontal ensembles "
+        "during awake hippocampal sharp-wave ripple events. Neuron, 90(1), "
+        "113-127. https://doi.org/10.1016/j.neuron.2016.02.010"
+    ),
+    n_shuffles=500,
+    criteria=(ReplayCriterion("n_active_cells", ">=", 4),),
+    template_choice="smallest_p",
+    decoding={"time_bin": 0.015, "templates": "the four W-track trajectories"},
+    notes=(
+        "Karlsson & Frank (2009), as the paper cites it: 10,000 posterior "
+        "samples per decoded 15 ms time bin, one regression of position on "
+        "time, R² against 500 shuffles of time-bin order, p < 0.05. The "
+        "score is given only by that citation.",
+        "At least 4 CA1 cells spiking in the event (applied). The lineage "
+        "code (JadhavLab/PrefrontalRipples) counts place cells (peak rate "
+        "of at least 3 Hz): pass those cells' counts.",
+        "Each of the four W-track trajectories is tested and the event takes "
+        "the one with the smallest p-value, with no correction for four "
+        "tests: template_choice='smallest_p'. The paper implies it ('a "
+        "series of spatial locations on a trajectory', 'the corresponding "
+        "trajectory'); Tang et al. (2017) from the same lab state it, and "
+        "the lineage code does it. A choice made here. Pass a joint decode "
+        "over the four trajectories (decode_jointly) or each trajectory's "
+        "posterior.",
+        "The position bin, rate-map smoothing and prior are not stated; the "
+        "lineage uses 2 cm bins, a 4 cm SD Gaussian and a uniform prior.",
+        "Time bins without spikes are dropped, by citation of Karlsson & "
+        "Frank; the lineage code keeps the dropped bins' indices, as these "
+        "keep their times.",
+        "The lineage code (written for Shin & Jadhav 2024) draws 10,000 "
+        "samples in total split by spike count, averages R² over 500 "
+        "resamples and scores each of 1,500 shuffles once; the recipe "
+        "follows the paper. Its p-value is the share of shuffles with a "
+        "larger R²; here (k + 1) / (n + 1), the same verdict at alpha 0.05 "
+        "with 500 shuffles.",
+        "Candidate events are SWRs (150-250 Hz, 3 SD, speed below 4 cm/s, "
+        "SWRs within 1 s of another discarded); event selection is not "
+        "applied here.",
+    ),
+)
+
+TANG_2017 = dataclasses.replace(
+    KARLSSON_FRANK_2009,
+    name="tang_2017",
+    reference=(
+        "Tang, W., Shin, J. D., Frank, L. M., & Jadhav, S. P. (2017). "
+        "Hippocampal-prefrontal reactivation during learning is stronger in "
+        "awake compared with sleep states. Journal of Neuroscience, 37(49), "
+        "11789-11805."
+    ),
+    template_choice="smallest_p",
+    decoding={
+        "time_bin": 0.01,
+        "position_bin": 2.0,
+        "prior": "uniform",
+        "templates": "the four W-track trajectories",
+    },
+    notes=(
+        "Karlsson & Frank (2009) in 10 ms time bins: 10,000 posterior "
+        "samples per decoded time bin, a regression of position on time-bin "
+        "number, R² against 10,000 shuffles of time-bin order, p < 0.05; at "
+        "least 5 active place cells (peak rate of at least 3 Hz; pass those "
+        "cells' counts).",
+        "Four posteriors, one per W-track trajectory (center to left, left "
+        "to center, center to right, right to center); 'the decoded "
+        "trajectory was determined as the one (among the four possible "
+        "trajectories) with the lowest p value': template_choice="
+        "'smallest_p', with no correction for four tests. Pass a joint "
+        "decode over the four trajectories (decode_jointly) or each "
+        "trajectory's posterior.",
+        "Time bins without spikes are dropped, by citation of Karlsson & "
+        "Frank, and keep their times; the lineage code keeps their indices.",
+        "The paper's p-value is the share of shuffles with a larger R²; here "
+        "(k + 1) / (n + 1), the same verdict at alpha 0.05 with 10,000 "
+        "shuffles.",
+        "Candidate events are SWRs (150-250 Hz, mean + 3 SD on at least one "
+        "tetrode, speed below 4 cm/s) in which at least 5 place cells fired; "
+        "event selection is not applied here.",
+    ),
+)
+
+YAMAMOTO_TONEGAWA_2017 = dataclasses.replace(
+    DAVIDSON_2009,
+    name="yamamoto_tonegawa_2017",
+    reference=(
+        "Yamamoto, J., & Tonegawa, S. (2017). Direct medial entorhinal "
+        "cortex input to hippocampal CA1 is crucial for extended quiet awake "
+        "replay. Neuron, 96(1), 217-227. "
+        "https://doi.org/10.1016/j.neuron.2017.09.017"
+    ),
+    nulls=("column_cycle",),
+    n_shuffles=2000,
+    alpha=0.05,
+    decoding={"prior": "uniform"},
+    notes=(
+        "A reading of an under-specified method. The paper gives the replay "
+        "score of Davidson et al. (2009), the mean over time bins of the "
+        "posterior within D of a line, a 'column shuffle' of the posterior "
+        "2,000 times, Monte Carlo p-values, and a uniform prior over "
+        "position; nothing more.",
+        "Unstated, each a choice made here: the band D and speed range, "
+        "Davidson et al.'s 15 cm and up to 30 m/s with no minimum (the "
+        "defaults of detect_trajectory_radon), since the score and the event "
+        "detection cite Davidson et al.; alpha = 0.05 (about 12-15% of "
+        "candidates were significant); p = (k + 1) / (n + 1), the usual "
+        "Monte Carlo p-value; time bins without spikes kept; and time bins "
+        "where a line leaves the track scored with Davidson et al.'s median.",
+        "'Spatial column of PDF were randomly shuffled (column shuffle)' is "
+        "read as Davidson et al.'s column cycle, each time bin's posterior "
+        "shifted circularly in position. Other readings: time bins permuted "
+        "(dataclasses.replace(..., nulls=('time_bin_permutation',))), or each "
+        "column's values permuted, which is not available.",
+        "The decoding time bin, position bin and rate-map smoothing are not "
+        "stated (the 10 ms bins in the Methods are for multi-unit activity). "
+        "Candidate events: ripple power above 3 SD and multi-unit activity "
+        "peaking above 3 SD, extended to 1 SD; event selection is not "
+        "applied here.",
+    ),
+)
+
+FAROOQ_2019 = ReplayMethod(
+    name="farooq_2019",
+    reference=(
+        "Farooq, U., Sibille, J., Liu, K., & Dragoi, G. (2019). Strengthened "
+        "temporal coordination within pre-existing sequential cell "
+        "assemblies supports trajectory replay. Neuron, 103(4), 719-733. "
+        "https://doi.org/10.1016/j.neuron.2019.05.040"
+    ),
+    score=weighted_correlation,
+    nulls=("time_bin_permutation",),
+    n_shuffles=500,
+    alpha=0.05,
+    alternative="two-sided",
+    use_absolute=False,
+    criteria=(ReplayCriterion("n_active_cells", ">=", 5),),
+    decoding={"time_bin": 0.02, "prior": "uniform"},
+    notes=(
+        "Weighted correlation of each frame against 500 permutations of its "
+        "decoded time bins (the 'time-bin shuffle'); a significant sequence "
+        "is 'above the 97.5th percentile or below the 2.5th percentile (for "
+        "reverse sequences)'. Here the signed correlation is tested two-"
+        "sided, p = 2 min(p_greater, p_less) < 0.05 with (k + 1) / (n + 1) "
+        "on each side, which rejects with at most 11 shuffles at least as "
+        "extreme on one side where the percentile rule allows about 12.",
+        "Each running direction was decoded and tested on its own: decode "
+        "with one direction's rate maps (1 cm bins smoothed with a 5 cm "
+        "Gaussian; the decoding position bin is not stated).",
+        "Frames of 100-800 ms with at least 5 distinct neurons active "
+        "(applied to the cells passed as spike_counts; the paper counts any "
+        "pyramidal cell, not only the decoder's); frame detection is not "
+        "applied here. The sequence score is the weighted correlation "
+        "z-scored against the time-bin shuffles (ShuffleTestResult.z_score "
+        "of replay_significance).",
+        "The paper's main tests are on the data set, not on each frame: the "
+        "share of frames passing |r| and maximum-jump thresholds against "
+        "500 time-bin-shuffled data sets, 500 rate-matched Poisson data sets "
+        "(make them with null_events(kind='rate_poisson') and decode them), "
+        "and, as a check, data sets with each time bin's peak moved to a "
+        "position drawn from the mean decoded posterior and kept 10 cm from "
+        "the track's ends (the weighted column cycle: "
+        "dataclasses.replace(FAROOQ_2019, nulls=('column_cycle_weighted',), "
+        "null_options={'column_cycle_weighted': {'edge_exclusion': 10.0}}), "
+        "with the session's candidate events as pseudo_event_pool). None of "
+        "these is the per-frame test.",
+    ),
+)
+
+MUESSIG_2019 = ReplayMethod(
+    name="muessig_2019",
+    reference=(
+        "Muessig, L., Lasek, M., Varsavsky, I., Cacucci, F., & Wills, T. J. "
+        "(2019). Coordinated emergence of hippocampal replay and theta "
+        "sequences during post-natal development. Current Biology, 29(5), "
+        "834-840. https://doi.org/10.1016/j.cub.2019.01.005"
+    ),
+    score=detect_trajectory_radon,
+    score_options={"band": 12.5, "max_speed": 2500.0, "min_speed": 0.0, "wrap": True},
+    nulls=("unit_identity",),
+    n_shuffles=500,
+    alpha=0.05,
+    units="cm",
+    template_choice="max_score",
+    decoding={
+        "time_bin": 0.02,
+        "time_step": 0.01,
+        "position_bin": 2.5,
+        "rate_map_smoothing_sd": 5.0,
+        "templates": "clockwise and counterclockwise rate maps, decoded separately",
+    },
+    notes=(
+        "Summed posterior under 'a linear band, 25 cm wide', read as the "
+        "band's full width: a half-width (band) of 12.5 cm, a choice made "
+        "here (the Barry lab, of the same lineage, calls a 30 cm band 'the "
+        "width of the trajectory (60cm)'); a 25 cm half-width is the other "
+        "reading. Lines start every 2.5 cm, with speeds of 0 to 25 m/s in "
+        "50 cm/s steps in either direction (searched densely here). The sum "
+        "and the mean over time bins give the same best line and p-value.",
+        "Lines with speed 0 are searched: events representing a single "
+        "location ('stationary events') are part of the paper's results.",
+        "The square track is a closed loop, and bands wrap around its first "
+        "and last spatial bins: wrap=True. Pass the track built with "
+        "Environment.from_graph with an edge_order that closes the loop.",
+        "Each event is decoded separately with clockwise and "
+        "counterclockwise rate maps; the best fit over both is the event's "
+        "score, and each shuffle's score is the best over both directions, "
+        "each shuffled independently, not yoked to the direction of the "
+        "event's best fit (after Silva et al. 2015): "
+        "template_choice='max_score'. Pass a mapping of both posteriors, "
+        "with encoding_models keyed alike.",
+        "500 cell-identity shuffles (spikes matched to rate maps at random, "
+        "decoded again); significant when the best fit exceeded the 95th "
+        "percentile of the shuffles: here p = (k + 1) / (n + 1) < 0.05, at "
+        "most 24 shuffles at least as high.",
+        "The 'map shuffle' (each rate map given its own random offset, "
+        "decoded again) was an alternative test of significance (Figs. "
+        "S3D-S3F), not the per-event definition: "
+        "dataclasses.replace(MUESSIG_2019, nulls=('place_field_circular',)). "
+        "Its offset range is not stated; here 0 to n_bins - 1.",
+        "Time bins without spikes are not mentioned; they are kept.",
+        "Rate maps from 5 s epochs of constant clockwise or counterclockwise "
+        "running, 2.5 cm bins smoothed with a 5 cm SD Gaussian, speeds below "
+        "2.5 cm/s excluded; ensembles with more than 25 complex-spike cells "
+        "firing more than 75 spikes during the run and a median decoding "
+        "error below 10 cm. Candidate events are multi-unit bursts of "
+        "100-750 ms overlapping a sharp-wave ripple at rest; ensemble and "
+        "event selection are not applied here.",
+    ),
+)
+
+SHIN_2019 = dataclasses.replace(
+    KARLSSON_FRANK_2009,
+    name="shin_2019",
+    reference=(
+        "Shin, J. D., Tang, W., & Jadhav, S. P. (2019). Dynamics of awake "
+        "hippocampal-prefrontal replay for spatial learning and "
+        "memory-guided decision making. Neuron, 104(6), 1110-1125. "
+        "https://doi.org/10.1016/j.neuron.2019.09.012"
+    ),
+    n_shuffles=1500,
+    template_choice="smallest_p",
+    decoding={
+        "time_bin": 0.01,
+        "position_bin": 2.0,
+        "rate_map_smoothing_sd": 4.0,
+        "prior": "uniform over position and trajectory",
+        "templates": "the four W-track trajectories",
+    },
+    notes=(
+        "10,000 posterior samples per decoded 10 ms time bin, a regression "
+        "of position on time-bin number, R² against 1,500 shuffles of "
+        "time-bin order, p < 0.05; at least 5 active place cells (peak rate "
+        "of at least 3 Hz; pass those cells' counts).",
+        "One decoder over the four W-track trajectories with a uniform "
+        "prior over position and trajectory; 'we considered the trajectory "
+        "with the lowest p value ... as the replay trajectory (instead of "
+        "the one with the highest summed posterior probability)': "
+        "template_choice='smallest_p', with no correction for four tests. "
+        "Pass the joint decode over the four trajectories (decode_jointly).",
+        "Outside the recipe: the place-field templates leave out positions "
+        "within 15 cm of the reward wells (main results were similar "
+        "without), so decode on trajectories without those bins; and only "
+        "SWRs of at least 50 ms were candidate events, an event-selection "
+        "rule not applied here.",
+        "Time bins without spikes are dropped, by citation of Karlsson & "
+        "Frank, and keep their times.",
+        "The lineage code (JadhavLab/PrefrontalRipples, written for Shin & "
+        "Jadhav 2024) draws 10,000 samples in total split by spike count, "
+        "averages R² over 500 resamples and scores each shuffle once; the "
+        "recipe follows the paper's text. The paper's p-value is the share "
+        "of shuffles with a larger R²; here (k + 1) / (n + 1), the same "
+        "verdict at alpha 0.05 with 1,500 shuffles.",
+    ),
+)
+
+BUSH_2022 = ReplayMethod(
+    name="bush_2022",
+    reference=(
+        "Bush, D., Ólafsdóttir, H. F., Barry, C., & Burgess, N. (2022). "
+        "Ripple band phase precession of place cell firing during replay. "
+        "Current Biology, 32(1), 64-73. "
+        "https://doi.org/10.1016/j.cub.2021.10.033"
+    ),
+    score=detect_trajectory_radon,
+    score_options={"band": 15.0, "max_speed": 5000.0, "min_speed": 100.0},
+    nulls=("unit_identity",),
+    null_options={"unit_identity": {"active_only": True}},
+    n_shuffles=100,
+    alpha=0.05,
+    empty_time_bins="drop",
+    criteria=(
+        ReplayCriterion("n_active_cells", ">=", 5),
+        ReplayCriterion("active_fraction", ">=", 0.15),
+    ),
+    units="cm",
+    decoding={
+        "time_bin": 0.01,
+        "position_bin": 2.0,
+        "rate_map_smoothing_sd": 10.0,
+        "templates": "outbound and inbound rate maps",
+    },
+    notes=(
+        "The line search of the Ólafsdóttir et al. (2017) lineage: 'the "
+        "linear fit ... which maximizes the summed probability under a line "
+        "of fifteen spatial bins in width (i.e., 30cm), testing all "
+        "potential spatial bins as a starting point and movement speeds of "
+        "100 to 5000 cm/s in steps of 50 cm/s, in either forward or reverse "
+        "directions along the track'. 30 cm is the band's full width, so "
+        "band (a half-width) is 15 cm. Speeds and start positions are "
+        "searched densely here; time bins where a line leaves the track "
+        "score the median over positions of Davidson et al. (not stated).",
+        "'We decoded location independently in each time bin where at least "
+        "one spike was fired by any cell', and the fit score is 'the average "
+        "summed probability per time bin': time bins without spikes are "
+        "dropped, keeping their times.",
+        "'We shuffled the identity of active cells within each event 100 "
+        "times ... An event is considered to be significant if the true fit "
+        "score exceeds the 95th percentile of the fit score distribution': "
+        "null_options={'unit_identity': {'active_only': True}}, decoded "
+        "again. Here p = (k + 1) / (n + 1) < 0.05 allows at most 4 of the "
+        "100 shuffles at least as high, where a percentile rule allows "
+        "about 5, as for OLAFSDOTTIR_2017.",
+        "'We excluded any events during which < 5 or 15% of all pyramidal "
+        "cells were active (whichever is the larger)': at least 5 active "
+        "cells and 15% of the cells passed (applied). The decoder 'includes "
+        "all putative pyramidal cells, whether or not they have a place "
+        "field on the track', so pass every putative pyramidal cell as "
+        "spike_counts and encoding_models.",
+        "Decoding: 'consecutive time bins of T = 10ms throughout the replay "
+        "event, starting at the time of the first spike fired by any cell'. "
+        "Rate maps: 'dwell time and the total number of spikes fired at "
+        "running speeds of >= 10cm/s in 2cm bins ... smoothed using a "
+        "Gaussian kernel with standard deviation of 5 bins', spikes in the "
+        "final 10 cm at either end and 5 cm around each corner left out, "
+        "with 'separate rate maps for runs in the outbound and inbound "
+        "directions'. How the two directions are combined for replay is not "
+        "stated: run the recipe on each direction's decode.",
+        "Candidate events are periods of multi-unit activity or ripple-band "
+        "amplitude (Z >= 0 with a peak Z >= 3, merged across gaps of 40 ms "
+        "or less, longer than 40 ms) with a median running speed of at most "
+        "10 cm/s and a duration of at most 0.5 s; event selection is not "
+        "applied here.",
+    ),
+)
+
+HARVEY_2023 = ReplayMethod(
+    name="harvey_2023",
+    reference=(
+        "Harvey, R. E., Robinson, H. L., Liu, C., Oliva, A., & "
+        "Fernandez-Ruiz, A. (2023). Hippocampo-cortical circuits for "
+        "selective memory encoding, routing, and replay. Neuron, 111, "
+        "2076-2090. https://doi.org/10.1016/j.neuron.2023.04.015"
+    ),
+    score=weighted_correlation,
+    nulls=("column_cycle",),
+    n_shuffles=1000,
+    alpha=0.05,
+    use_absolute=True,
+    empty_time_bins="zero",
+    criteria=(
+        ReplayCriterion("n_active_cells", ">=", 5),
+        ReplayCriterion("empty_fraction", "<=", 0.5),
+    ),
+    decoding={
+        "time_bin": 0.02,
+        "position_bin": 3.0,
+        "rate_map_smoothing_sd": 3.0,
+        "prior": "uniform",
+    },
+    notes=(
+        "Weighted correlation of the posterior against 1,000 shuffles "
+        "circularly shifting each time bin's posterior; p = (k + 1) / (n + "
+        "1) < 0.05 with k the shuffles whose |r| is at least the event's. "
+        "The paper says 'replay scores higher than the observed score'; the "
+        "authors' code (ryanharvey1/ripple_heterogeneity, "
+        "get_significant_events with tail='both') compares |r|, so forward "
+        "and reverse replay both count.",
+        "Time bins without spikes have no posterior in the authors' decoder "
+        "(nelpy) and are set to 0 before scoring, so they carry no weight: "
+        "empty_time_bins='zero'.",
+        "At least 5 active pyramidal cells with a peak rate of at least 1 Hz "
+        "and a peak-to-mean ratio of 1 (1.5 and at least 100 running spikes "
+        "in the code): pass those cells' spike counts. Events with more than "
+        "50% of their time bins without spikes are discarded, so at most "
+        "half is kept (applied); the code keeps only events below 50%.",
+        "Code differences not followed: the code's default is 1,500 "
+        "shuffles (the paper states 1,000), and it shifts each time bin by "
+        "1 to n_bins - 1 bins (here 0 to n_bins - 1). With 1,000 shuffles, "
+        "the code's p <= 0.05 in some scripts and the paper's p < 0.05 "
+        "select the same events.",
+        "One decoder per running direction (rate maps in 3 cm bins smoothed "
+        "with a 3 cm SD Gaussian, speeds above 4 cm/s): decode each event "
+        "with each direction's maps, test each, and call it replay if either "
+        "is.",
+        "The paper's alternative check, the posterior within a 21 cm band "
+        "of a line fit to the decoded positions, is not reproduced; the "
+        "code's replay-participation scripts select replay with it against "
+        "time-bin permutations.",
+        "Candidate events are sharp-wave ripples; sessions with a median "
+        "running decoding error of 25 cm or more, or a decoding accuracy "
+        "that does not beat circular spike-time shuffles, were excluded. "
+        "Event and session selection are not applied here.",
+    ),
+)
+
+LIU_2023 = ReplayMethod(
+    name="liu_2023",
+    reference=(
+        "Liu, C., Todorova, R., Tang, W., Oliva, A., & Fernandez-Ruiz, A. "
+        "(2023). Associative and predictive hippocampal codes support "
+        "memory-guided behaviors. Science, 382(6668), eadi8237. "
+        "https://doi.org/10.1126/science.adi8237"
+    ),
+    score=detect_trajectory_radon,
+    score_options={"band": 22.5, "max_speed": None, "line_ends": "on_track"},
+    nulls=("column_cycle",),
+    n_shuffles=500,
+    alpha=0.05,
+    units="cm",
+    decoding={
+        "time_bin": 0.02,
+        "position_bin": 1.5,
+        "templates": "OFF and ON running directions, decoded and tested separately",
+    },
+    notes=(
+        "Mean over 20 ms time bins of the posterior within 22.5 cm of a line "
+        "(Davidson et al. 2009), against 500 shuffles shifting each time "
+        "bin's posterior along the track by a random distance; significant "
+        "when the score exceeds 95% of the shuffles. The authors' code "
+        "(FindReplayScore.m, ayalab1/neurocode) computes p = k / 500 with k "
+        "shuffles at least as high; here (k + 1) / 501. Both reject at k <= "
+        "24.",
+        "Lines start and end on the track at the first and last time bins, "
+        "as in the code's line family (every start bin to every end bin): "
+        "line_ends='on_track', a choice made here from the code, since the "
+        "paper gives no speed range. Speeds are then bounded by the track's "
+        "length over the event's duration (max_speed=None), stationary lines "
+        "included, and band beyond the track's ends holds the time bin's "
+        "median posterior, as the code pads it.",
+        "The code shifts the band sums rather than the posterior, by "
+        "round(rand * (n_bins - 1)) bins (0 and n_bins - 1 at half weight); "
+        "here each posterior row is shifted by 0 to n_bins - 1 bins, "
+        "uniformly.",
+        "OFF and ON running directions were decoded with their own rate maps "
+        "and scored independently: run the recipe on each direction's "
+        "decode. Rate maps on 1.5 cm bins (the 300 cm track in 200 bins), "
+        "speeds above 4 cm/s; the code smooths them with 5 bins (7.5 cm), "
+        "which the paper does not state.",
+        "The code's decoder (ReconstructPosition.m) uses an occupancy prior "
+        "by default and leaves time bins without spikes uniform over "
+        "position. To match, decode with the occupancy as prior and set the "
+        "posterior rows of time bins without spikes to 1 / n_bins before "
+        "detect_replay; the column-cycle shuffles do not decode again, so "
+        "this reproduces the code exactly. With a uniform prior on equal "
+        "bins, such time bins already decode to a uniform row.",
+        "Trajectory events (weighted correlation above 0.6 and a maximum "
+        "jump below 75 cm), compared in number with 500 cell-identity-"
+        "shuffled surrogates over a grid of thresholds, are a test of the "
+        "data set, not of each event; not applied here.",
+        "Candidate events: pyramidal-cell rate above its mean with a peak "
+        "more than 2 SD above it, 100-500 ms, overlapping an independently "
+        "detected SWR; event selection is not applied here.",
+    ),
+)
+
 FOSTER_WILSON_2006 = RankOrderMethod(
     name="foster_wilson_2006",
     reference=(
@@ -3932,21 +4578,33 @@ PUBLISHED_METHODS: tuple[ReplayMethod | RankOrderMethod | ArmReplayMethod, ...] 
     DAVIDSON_2009,
     KARLSSON_FRANK_2009,
     PFEIFFER_FOSTER_2013,
+    WIKENHEISER_REDISH_2013,
     WU_FOSTER_2014,
+    OLAFSDOTTIR_2015,
     PFEIFFER_FOSTER_2015,
     SILVA_2015,
     AMBROSE_2016,
     GROSMARK_2016,
+    JADHAV_2016,
+    OLAFSDOTTIR_2016,
     WU_2017,
     OLAFSDOTTIR_2017,
+    TANG_2017,
+    YAMAMOTO_TONEGAWA_2017,
     CAREY_2019,
     CHENANI_2019,
+    FAROOQ_2019,
     MICHON_2019,
+    MUESSIG_2019,
+    SHIN_2019,
     IGATA_2021,
     BERNERS_LEE_2021,
+    BUSH_2022,
     TIROLE_2022,
     BERNERS_LEE_2022,
     WIDLOSKI_FOSTER_2022,
+    HARVEY_2023,
+    LIU_2023,
     MALLORY_2025,
 )
 """Every published method recipe in this module."""

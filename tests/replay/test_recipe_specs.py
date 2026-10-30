@@ -386,6 +386,215 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
             },
         },
     ),
+    "wikenheiser_redish_2013": (
+        ReplayMethod,
+        {
+            "score": "fit_circular_sequence",
+            "nulls": ("time_bin_permutation",),
+            "n_shuffles": 10_000,
+            "empty_time_bins": "drop",
+            "criteria": (
+                ("n_active_cells", ">=", 3, None, False),
+                ("n_spikes", ">=", 5, None, False),
+            ),
+            "decoding": {"time_bin": 0.01, "position_bin": 4.0, "prior": "uniform"},
+        },
+    ),
+    "olafsdottir_2015": (
+        ReplayMethod,
+        {
+            "score": "detect_trajectory_radon",
+            "score_options": {"band": 20.0, "max_speed": 5000.0, "min_speed": 200.0},
+            "nulls": ("unit_identity",),
+            "criteria": (("n_active_cells", ">=", 7, None, False),),
+            "units": "cm",
+            "decoding": {
+                "time_bin": 0.005,
+                "position_bin": 1.0,
+                "rate_map_smoothing_sd": 2.0,
+                "prior": "uniform",
+            },
+        },
+    ),
+    "jadhav_2016": (
+        ReplayMethod,
+        {
+            "score": "fit_linear_trajectory",
+            "score_options": {"method": "sample", "n_samples_per_time_bin": 10_000},
+            "nulls": ("time_bin_permutation",),
+            "n_shuffles": 500,
+            "empty_time_bins": "drop",
+            "criteria": (("n_active_cells", ">=", 4, None, False),),
+            "template_choice": "smallest_p",
+            "decoding": {
+                "time_bin": 0.015,
+                "templates": "the four W-track trajectories",
+            },
+        },
+    ),
+    "olafsdottir_2016": (
+        ReplayMethod,
+        {
+            "score": "detect_trajectory_radon",
+            "score_options": {"band": 30.0, "max_speed": 5000.0, "min_speed": 200.0},
+            "nulls": ("place_field_circular",),
+            "n_shuffles": 100,
+            "alpha": 0.2,
+            "criteria": (("active_fraction", ">=", 0.15, None, False),),
+            "units": "cm",
+            "template_choice": "smallest_p",
+            "decoding": {
+                "time_bin": 0.01,
+                "position_bin": 2.0,
+                "templates": "inbound and outbound rate maps, decoded separately",
+            },
+        },
+    ),
+    "tang_2017": (
+        ReplayMethod,
+        {
+            "score": "fit_linear_trajectory",
+            "score_options": {"method": "sample", "n_samples_per_time_bin": 10_000},
+            "nulls": ("time_bin_permutation",),
+            "n_shuffles": 10_000,
+            "empty_time_bins": "drop",
+            "criteria": (("n_active_cells", ">=", 5, None, False),),
+            "template_choice": "smallest_p",
+            "decoding": {
+                "time_bin": 0.01,
+                "position_bin": 2.0,
+                "prior": "uniform",
+                "templates": "the four W-track trajectories",
+            },
+        },
+    ),
+    "yamamoto_tonegawa_2017": (
+        ReplayMethod,
+        {
+            "score": "detect_trajectory_radon",
+            "nulls": ("column_cycle",),
+            "n_shuffles": 2000,
+            "decoding": {"prior": "uniform"},
+        },
+    ),
+    "farooq_2019": (
+        ReplayMethod,
+        {
+            "score": "weighted_correlation",
+            "nulls": ("time_bin_permutation",),
+            "n_shuffles": 500,
+            "alternative": "two-sided",
+            "use_absolute": False,
+            "criteria": (("n_active_cells", ">=", 5, None, False),),
+            "decoding": {"time_bin": 0.02, "prior": "uniform"},
+        },
+    ),
+    "muessig_2019": (
+        ReplayMethod,
+        {
+            "score": "detect_trajectory_radon",
+            "score_options": {
+                "band": 12.5,
+                "max_speed": 2500.0,
+                "min_speed": 0.0,
+                "wrap": True,
+            },
+            "nulls": ("unit_identity",),
+            "n_shuffles": 500,
+            "units": "cm",
+            "template_choice": "max_score",
+            "decoding": {
+                "time_bin": 0.02,
+                "time_step": 0.01,
+                "position_bin": 2.5,
+                "rate_map_smoothing_sd": 5.0,
+                "templates": (
+                    "clockwise and counterclockwise rate maps, decoded separately"
+                ),
+            },
+        },
+    ),
+    "shin_2019": (
+        ReplayMethod,
+        {
+            "score": "fit_linear_trajectory",
+            "score_options": {"method": "sample", "n_samples_per_time_bin": 10_000},
+            "nulls": ("time_bin_permutation",),
+            "n_shuffles": 1500,
+            "empty_time_bins": "drop",
+            "criteria": (("n_active_cells", ">=", 5, None, False),),
+            "template_choice": "smallest_p",
+            "decoding": {
+                "time_bin": 0.01,
+                "position_bin": 2.0,
+                "rate_map_smoothing_sd": 4.0,
+                "prior": "uniform over position and trajectory",
+                "templates": "the four W-track trajectories",
+            },
+        },
+    ),
+    "bush_2022": (
+        ReplayMethod,
+        {
+            "score": "detect_trajectory_radon",
+            "score_options": {"band": 15.0, "max_speed": 5000.0, "min_speed": 100.0},
+            "nulls": ("unit_identity",),
+            "null_options": {"unit_identity": {"active_only": True}},
+            "n_shuffles": 100,
+            "empty_time_bins": "drop",
+            "criteria": (
+                ("n_active_cells", ">=", 5, None, False),
+                ("active_fraction", ">=", 0.15, None, False),
+            ),
+            "units": "cm",
+            "decoding": {
+                "time_bin": 0.01,
+                "position_bin": 2.0,
+                "rate_map_smoothing_sd": 10.0,
+                "templates": "outbound and inbound rate maps",
+            },
+        },
+    ),
+    "harvey_2023": (
+        ReplayMethod,
+        {
+            "score": "weighted_correlation",
+            "nulls": ("column_cycle",),
+            "use_absolute": True,
+            "empty_time_bins": "zero",
+            "criteria": (
+                ("n_active_cells", ">=", 5, None, False),
+                ("empty_fraction", "<=", 0.5, None, False),
+            ),
+            "decoding": {
+                "time_bin": 0.02,
+                "position_bin": 3.0,
+                "rate_map_smoothing_sd": 3.0,
+                "prior": "uniform",
+            },
+        },
+    ),
+    "liu_2023": (
+        ReplayMethod,
+        {
+            "score": "detect_trajectory_radon",
+            "score_options": {
+                "band": 22.5,
+                "max_speed": None,
+                "line_ends": "on_track",
+            },
+            "nulls": ("column_cycle",),
+            "n_shuffles": 500,
+            "units": "cm",
+            "decoding": {
+                "time_bin": 0.02,
+                "position_bin": 1.5,
+                "templates": (
+                    "OFF and ON running directions, decoded and tested separately"
+                ),
+            },
+        },
+    ),
 }
 
 _TEXT_FIELDS = ("name", "reference", "notes")
