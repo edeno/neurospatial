@@ -593,7 +593,7 @@ class TestReplaySignificance:
     def test_place_field_shift_keeps_bins_without_training_data_out(self, place_code):
         from neurospatial.decoding import decode_position
         from neurospatial.replay import shuffle_place_fields_circular
-        from neurospatial.replay.significance import _supported_rates
+        from neurospatial.replay.significance import _decode_support
 
         env, rates = place_code
         partial = rates.copy()
@@ -602,7 +602,7 @@ class TestReplaySignificance:
         with pytest.warns(UserWarning, match="zero posterior probability"):
             posterior = decode_position(env, counts, partial, dt=0.02).posterior
 
-        supported, support_prior = _supported_rates(env, partial, None)
+        supported, support_prior = _decode_support(env, partial, None)
         unshifted = decode_position(
             env, counts, np.nan_to_num(supported), dt=0.02, prior=support_prior
         ).posterior

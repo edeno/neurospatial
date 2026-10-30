@@ -1573,7 +1573,7 @@ class _EventDecoder:
         from neurospatial.replay.nulls import shuffle_place_fields_circular
 
         if self.template is None:
-            rates, support_prior = _supported_rates(
+            rates, support_prior = _decode_support(
                 self.env, self.encoding_models, self.prior
             )
             for maps in shuffle_place_fields_circular(
@@ -1590,7 +1590,7 @@ class _EventDecoder:
         streams = {
             name: shuffle_place_fields_circular(
                 envs[name],
-                _supported_rates(envs[name], self.encoding_models[name], None)[0],
+                _decode_support(envs[name], self.encoding_models[name], None)[0],
                 n_shuffles=n_shuffles,
                 rng=generator,
             )
@@ -1619,7 +1619,7 @@ def _posterior(
     return posterior
 
 
-def _supported_rates(
+def _decode_support(
     env: Environment, encoding_models: Any, prior: Any
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Rate maps with NaN outside training support, and the matching prior.
