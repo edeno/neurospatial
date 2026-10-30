@@ -545,8 +545,10 @@ class ReplayMethod:
             self, "score_options", MappingProxyType(dict(self.score_options))
         )
         object.__setattr__(self, "decoding", MappingProxyType(dict(self.decoding)))
-        nulls = (self.nulls,) if isinstance(self.nulls, str) else tuple(self.nulls)
-        object.__setattr__(self, "nulls", nulls)
+        given: Any = self.nulls  # one name is one null, as in replay_significance
+        object.__setattr__(
+            self, "nulls", (given,) if isinstance(given, str) else tuple(given)
+        )
         object.__setattr__(self, "criteria", tuple(self.criteria))
         object.__setattr__(self, "notes", tuple(self.notes))
         self._check_score()
