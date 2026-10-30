@@ -159,6 +159,41 @@ def test_default_rule_has_no_fixed_limit():
     assert "x each cell's true field width" in result.report()
 
 
+def _polar_session():
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 40.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 8,
+        units="cm",
+    )
+    times = np.arange(200) * 0.1
+    positions = np.column_stack(
+        [np.linspace(1.0, 39.0, 200), np.linspace(-3.0, 3.0, 200)]
+    )
+    model = PlaceCellModel(env, center=[20.0, 0.5], width=5.0)
+    return SimulationSession(
+        env=env,
+        spike_times=[times[::7]],
+        unit_ids=np.array([0]),
+        times=times,
+        positions=positions,
+        models=[model],
+        ground_truth={0: model.ground_truth},
+        metadata={},
+    )
+
+
+@pytest.mark.parametrize("call", ["validate_simulation", "plot_session_summary"])
+def test_polar_sessions_are_refused_with_the_function_named(call):
+    """Rate maps and centre errors need allocentric Cartesian positions."""
+    from neurospatial import CartesianOnlyError
+    from neurospatial.simulation import validation
+
+    with pytest.raises(CartesianOnlyError, match=rf"{call}\(\).*\n.*\n.*allocentric"):
+        getattr(validation, call)(_polar_session())
+
+
 def _with_border_unit(session):
     """``session`` plus a second unit, label 3, whose ground truth is a border cell."""
     return replace(

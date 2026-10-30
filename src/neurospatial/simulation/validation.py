@@ -29,9 +29,10 @@ if TYPE_CHECKING:
 
 
 def _select_unit_indices(
-    session: SimulationSession, unit_ids: list[int] | None
+    session: SimulationSession, unit_ids: list[int] | None, operation: str
 ) -> list[int]:
-    """Resolve unit labels to aligned spike/model rows."""
+    """Resolve unit labels to aligned spike/model rows of an allocentric session."""
+    from neurospatial.geometry import require_cartesian
     from neurospatial.simulation.session import SimulationSession
 
     if not isinstance(session, SimulationSession):
@@ -40,6 +41,14 @@ def _select_unit_indices(
             "Why: validation and plotting need the simulator's ground truth.\n"
             "Fix: pass the holder returned by simulate_session() or open_field_session()."
         )
+    require_cartesian(
+        session.env.coordinate_system,
+        operation,
+        why="It estimates each unit's rate map from the session's positions "
+        "with compute_spatial_rate, which needs the animal's allocentric "
+        "positions, and measures field centers as straight-line distances.",
+        fix="simulate the session on the allocentric environment the animal moves in",
+    )
     if unit_ids is None:
         return list(range(len(session.unit_ids)))
     valid_ids = session.unit_ids.tolist()
@@ -354,6 +363,9 @@ def validate_simulation(
     ------
     ValueError
         If unit_ids contains unknown labels.
+    CartesianOnlyError
+        If the session's environment is egocentric polar: rate maps need the
+        animal's allocentric positions.
 
     Warns
     -----
@@ -447,7 +459,7 @@ def validate_simulation(
     from neurospatial.encoding import compute_spatial_rate
     from neurospatial.simulation.models import PlaceCellModel
 
-    cell_indices = _select_unit_indices(session, unit_ids)
+    cell_indices = _select_unit_indices(session, unit_ids, "validate_simulation()")
     env = session.env
     spike_times = session.spike_times
     positions = session.positions
@@ -660,6 +672,9 @@ def plot_session_summary(
         If session is not a SimulationSession instance.
     ValueError
         If unit_ids contains unknown labels.
+    CartesianOnlyError
+        If the session's environment is egocentric polar: rate maps need the
+        animal's allocentric positions.
 
     Examples
     --------
@@ -718,7 +733,7 @@ def plot_session_summary(
     # Import here to avoid circular dependency
     from neurospatial.encoding import compute_spatial_rate
 
-    cell_indices = _select_unit_indices(session, unit_ids)
+    cell_indices = _select_unit_indices(session, unit_ids, "plot_session_summary()")
     if unit_ids is None:
         cell_indices = cell_indices[:6]
     elif len(cell_indices) > 6:

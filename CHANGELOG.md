@@ -101,6 +101,10 @@ default lap route all changed.
 - `SimulationValidationResult.max_center_error` holds a fixed center-error
   limit, so `report()` states it even for an empty selection, which used to
   raise `IndexError`.
+- `validate_simulation` and `plot_session_summary` refuse a session on an
+  egocentric polar environment up front, with `CartesianOnlyError` naming
+  the function. The error used to come from `compute_spatial_rate` inside
+  them, and only when a unit had spikes.
 - `SimulationSession` compares and hashes by identity, like the models.
   `==` between two sessions used to raise, because it compared their arrays
   element by element.
