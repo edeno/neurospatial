@@ -257,9 +257,10 @@ class RadonDetectionResult(ReadOnlyArraysMixin, ResultMixin):
         Replay score of every candidate trajectory: entry ``(i, j)`` is the
         trajectory of speed ``sinogram_speeds[i]`` through
         ``sinogram_start_positions[j]`` at ``times[0]``; NaN for one that is
-        never on the track.
+        never on the track or is slower than the search's ``min_speed``.
     sinogram_speeds : NDArray[np.float64], shape (n_speeds,)
-        Searched speeds, in environment units per second, evenly spaced.
+        Speeds of the sinogram's rows, in environment units per second,
+        evenly spaced; rows slower than ``min_speed`` were not searched.
     sinogram_start_positions : NDArray[np.float64], shape (n_start_positions,)
         Searched start positions along the track, in environment units,
         evenly spaced at most ``band / 5`` apart, reaching beyond both ends
@@ -1352,6 +1353,7 @@ def detect_trajectory_radon(
     *,
     band: float | None = None,
     max_speed: float | None = None,
+    min_speed: float = 0.0,
 ) -> RadonDetectionResult:
     """Detect the constant-speed replay trajectory in a decoded event.
 
@@ -1385,6 +1387,11 @@ def detect_trajectory_radon(
         Largest speed searched, in environment units per second, in either
         direction. None means 30 m/s in the environment's units: Davidson et
         al. found replay speeds up to about 20 m/s (median 8.1 m/s).
+    min_speed : float, default=0.0
+        Smallest speed searched, in environment units per second, in either
+        direction; slower trajectories are not scored, so a stationary
+        event does not score as a trajectory (Ólafsdóttir et al. 2017:
+        2 m/s). Must be below ``max_speed``.
 
     Returns
     -------
@@ -1398,9 +1405,10 @@ def detect_trajectory_radon(
         If ``env`` is neither 1-D nor a linearized track, if ``posterior``
         does not have one column per bin or a row is not a probability mass
         (NaN or Inf, negative, or not summing to 1), if ``times`` does not
-        have one finite, strictly increasing entry per row, or if ``band`` or
+        have one finite, strictly increasing entry per row, if ``band`` or
         ``max_speed`` is not positive (or is None on an environment without
-        metric units).
+        metric units), or if ``min_speed`` is negative or not below
+        ``max_speed``.
 
     See Also
     --------
@@ -1448,6 +1456,9 @@ def detect_trajectory_radon(
     ``band / (5 * (times[-1] - times[0]))``, and the start position to the
     start spacing, at most ``band / 5``.
 
+    With ``min_speed``, trajectories slower than it are left out of the
+    search and have no score in the sinogram (NaN).
+
     **Track geometry.** Positions are read along the track (the linear
     position of a linearized track). Gaps between bins, such as
     ``edge_spacing`` between the segments of a maze, count as track for the
@@ -1486,6 +1497,7 @@ def detect_trajectory_radon(
         times,
         band=band,
         max_speed=max_speed,
+        min_speed=min_speed,
         operation="detect_trajectory_radon()",
     )
     return _best_line(lines, posterior)
@@ -1498,6 +1510,7 @@ def _prepare_replay_lines(
     *,
     band: float | None,
     max_speed: float | None,
+    min_speed: float = 0.0,
     operation: str,
 ) -> tuple[_ReplayLines, NDArray[np.float64]]:
     """Validate a replay line search and build its scorer.
@@ -1546,6 +1559,17 @@ def _prepare_replay_lines(
                     fix=f"pass a positive value, e.g. {example}",
                 )
             )
+    if not (np.isfinite(min_speed) and 0 <= min_speed < max_speed):
+        raise ValueError(
+            _format_error(
+                f"{operation} needs 0 <= min_speed < max_speed, got min_speed "
+                f"{min_speed:g} and max_speed {max_speed:g}.",
+                why="trajectories slower than min_speed are not searched, so "
+                "some speed must remain",
+                fix="pass a min_speed below max_speed, e.g. min_speed=200.0 for "
+                "2 m/s on a track in cm",
+            )
+        )
     bin_starts, _ = _require_track_extents(
         env, operation, alternative=_TRACK_ALTERNATIVE
     )
@@ -1558,6 +1582,7 @@ def _prepare_replay_lines(
         float(band),
         float(max_speed),
         operation,
+        min_speed=float(min_speed),
     )
     return lines, posterior
 
@@ -1645,8 +1670,11 @@ class _ReplayLines:
         band: float,
         max_speed: float,
         operation: str,
+        *,
+        min_speed: float = 0.0,
     ) -> None:
         self.order = order
+        self.min_speed = min_speed
         self.elapsed = elapsed
         self.band = band
         self.track_start, self.track_end = float(starts[0]), float(stops[-1])
@@ -1697,6 +1725,18 @@ class _ReplayLines:
         )
         self.on_bin_positions = self.start_positions[on_bin]
         self._blocks: list[_LineBlock] | None = None
+        if not np.any(np.abs(self.speeds) >= min_speed - 1e-9):
+            raise ValueError(
+                _format_error(
+                    f"{operation} searches speeds up to "
+                    f"{float(np.abs(self.speeds).max()):g} units/s, all below "
+                    f"min_speed {min_speed:g}.",
+                    why="speeds are spaced so that neighboring trajectories end "
+                    "band / 5 apart, so a short event has few, widely spaced "
+                    "speeds",
+                    fix="lower min_speed, raise max_speed or widen band",
+                )
+            )
 
     def cumulative_mass(self, posteriors: NDArray[np.float64]) -> NDArray[np.float64]:
         """Posterior mass from the track start to each bin's start and stop.
@@ -1797,6 +1837,8 @@ class _ReplayLines:
             )
         )
         for block in self._line_blocks(n_events):
+            if block.lines.size == 0:  # every speed of the block below min_speed
+                continue
             block_scores = block.operator @ values  # (n_lines, n_events)
             if scores is None:
                 np.maximum(best, block_scores.max(axis=0), out=best)
@@ -1860,7 +1902,10 @@ class _ReplayLines:
         on_track = (position >= self.track_start) & (position <= self.track_end)
         position = position.reshape(-1, n_time)
         on_track = on_track.reshape(-1, n_time)
-        touches = on_track.any(axis=1)
+        fast_enough = np.repeat(
+            np.abs(self.speeds[speeds]) >= self.min_speed - 1e-9, n_starts
+        )
+        touches = on_track.any(axis=1) & fast_enough
         position, on_track = position[touches], on_track[touches]
         lines = speeds.start * n_starts + np.flatnonzero(touches)
         # A trajectory is monotonic, so its time bins on the track are a run.

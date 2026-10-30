@@ -121,6 +121,20 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
   counts. The Bendor-lab code zeroes the original event's empty time bins in
   shuffles that move them, which is not reproduced.
 
+### Ólafsdóttir et al. (2017) line-fit recipe; minimum speed in the line search
+
+- `OLAFSDOTTIR_2017`: the replay line search with a 30 cm band, speeds of
+  2–50 m/s in either direction, and time bins without spikes dropped. The
+  event is tested against 100 rate-map rotations decoded again, at
+  p < 0.025, with more than 5 and at least 15% of the place cells active.
+  The notes give where this differs from the paper: zero shifts are kept,
+  the 97.5th-percentile rule differs by one shuffle from p < 0.025, and
+  off-track time bins take Davidson's median rather than 0.
+- `detect_trajectory_radon(..., min_speed=)` leaves out trajectories slower
+  than `min_speed`, in either direction. Their sinogram entries are NaN.
+  Shuffle tests via `replay_significance` use the same search. A
+  `min_speed` above every searched speed is refused.
+
 ### Weighted-correlation recipes: Ambrose 2016, Grosmark 2016, Berners-Lee 2022
 
 Three more recipes score the posterior's weighted correlation:
