@@ -2056,7 +2056,7 @@ def _require_closed_loop(env: Environment, operation: str) -> None:
     only without ``edge_spacing``: a gap between segments would count as
     loop length at every corner but not at the seam.
     """
-    linearization = env.binning.linearization
+    linearization = env._binning.linearization
     if linearization is None:
         problem = "it is not a track built from a graph, so it has no loop"
     else:

@@ -373,10 +373,10 @@ def _bin_angles(env: Environment) -> tuple[NDArray[np.float64], float]:
     ValueError
         If ``env`` is not such a track.
     """
-    linearization = env.binning.linearization
+    linearization = env._binning.linearization
     if linearization is None:
         _refuse_open_track(
-            f"this is a {env.n_dims}-D {env.binning.kind} environment, not a track"
+            f"this is a {env.n_dims}-D {env._binning.kind} environment, not a track"
         )
     edge_order = list(linearization.edge_order)
     heads = [edge[0] for edge in edge_order]

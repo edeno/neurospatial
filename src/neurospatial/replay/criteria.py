@@ -598,7 +598,7 @@ def _along_track(
     coordinate. None on a branched track, where positions along the
     linearization jump between arms.
     """
-    linearization = env.binning.linearization
+    linearization = env._binning.linearization
     if linearization is None:
         along: NDArray[np.float64] = (starts + stops) / 2
         return along
