@@ -21,13 +21,19 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.environment._cache import CacheKey
 
 if TYPE_CHECKING:
+    from scipy.sparse import csr_array
+
     from neurospatial.decoding import JointDecodingResult
     from neurospatial.environment import Environment
 
 _OPERATION = "trajectory_metrics()"
 _METRICS = ("geodesic", "euclidean")
+# The bin graph's edge lengths, kept with the environment: every scored
+# shuffle of an event looks up geodesic distances between its MAP bins.
+_BIN_GRAPH: CacheKey[csr_array] = CacheKey("replay bin graph")
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -433,7 +439,7 @@ def trajectory_metrics(
     >>> round(metrics.well_decoded_fraction(), 2)  # 6 of 10 bins
     0.6
     """
-    return _trajectory_metrics(
+    metrics, _ = _trajectory_metrics(
         env,
         posterior,
         times,
@@ -441,6 +447,7 @@ def trajectory_metrics(
         metric=metric,
         operation=_OPERATION,
     )
+    return metrics
 
 
 def _check_metric(metric: Any, operation: str) -> None:
@@ -459,8 +466,12 @@ def _trajectory_metrics(
     spike_counts: NDArray[np.int64] | None,
     metric: Literal["geodesic", "euclidean"] | None,
     operation: str,
-) -> TrajectoryMetrics:
-    """:func:`trajectory_metrics`, naming ``operation`` in its errors."""
+) -> tuple[TrajectoryMetrics, tuple[NDArray[np.float64], NDArray[np.intp]]]:
+    """:func:`trajectory_metrics`, naming ``operation`` in its errors.
+
+    Also returns the :func:`_bin_distance_lookup` of the MAP bins, so a
+    caller measuring further distances between them reuses it.
+    """
     from neurospatial.decoding import map_bin, mean_position
     from neurospatial.environment import _track_extents
     from neurospatial.geometry import require_cartesian
@@ -506,7 +517,7 @@ def _trajectory_metrics(
 
     sizes = np.asarray(env.bin_sizes, dtype=np.float64)
     deviations = means - means.mean(axis=0)
-    return TrajectoryMetrics(
+    metrics = TrajectoryMetrics(
         map_bins=bins,
         map_positions=centers[bins],
         peak_probability=raw[rows, bins],
@@ -537,6 +548,7 @@ def _trajectory_metrics(
             np.nan if empty_time_bins is None else float(np.mean(empty_time_bins))
         ),
     )
+    return metrics, (between, rows_of)
 
 
 def _posterior_rows(posterior: Any, n_bins: int, operation: str) -> NDArray[np.float64]:
@@ -670,11 +682,20 @@ def _bin_distance_lookup(
     ``between[rows_of[i], rows_of[j]]``. Only distinct bins are paired, so
     a long event costs no more than its distinct MAP bins.
     """
-    from neurospatial.ops import pairwise_distances
+    from scipy.sparse.csgraph import dijkstra
+
+    from neurospatial.ops.distance import _bin_adjacency
 
     unique, rows_of = np.unique(bins, return_inverse=True)
     if metric == "geodesic":
-        between = pairwise_distances(env.connectivity, unique)
+        graph = env._cache.get(
+            _BIN_GRAPH,
+            lambda: _bin_adjacency(
+                env.connectivity, weight="distance", operation=_OPERATION
+            ),
+        )
+        # As ops.pairwise_distances computes it, on the cached graph.
+        between = dijkstra(graph, directed=False, indices=unique)[:, unique]
     else:
         points = env.bin_centers[unique]
         between = np.linalg.norm(points[:, None, :] - points[None, :, :], axis=-1)
