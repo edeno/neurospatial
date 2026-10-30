@@ -5,7 +5,9 @@
 ### Faster simulations and validation
 
 A cleanup of `neurospatial.simulation` shares work that does not depend on
-the cell. Seeded simulations give the same spikes as before.
+the cell, and fixes two places where simulated cells ignored a wall.
+Seeded sessions with uniform field coverage in 2-D get new field centers;
+other seeded simulations give the same spikes as before.
 
 - `generate_population_spikes` computes each population's gaze points
   (spatial-view cells), wall distances (border cells) and geodesic bin
@@ -19,6 +21,22 @@ the cell. Seeded simulations give the same spikes as before.
   rate map in one `compute_spatial_rates` call; validating 50 cells is
   about 20 times faster. Importing `neurospatial.simulation` no longer
   loads `scipy.stats`.
+- A boundary-vector cell's memory no longer grows with each cell: at
+  3 × 10⁵ samples a cell needs 50 MB beyond the shared rays instead of
+  870 MB.
+
+**Fixes**
+
+- Uniform field coverage in 2-D keeps centers clear of declared internal
+  walls. The distance to a wall used to be measured to the edge of the
+  bins only, straight through internal walls, so in a box split by a
+  70 cm wall 6 of 40 field centers sat within 5 cm of it. Centers now
+  keep the same clearance from internal walls as from the outline, and
+  in mazes no center sits closer to a wall than before.
+- A boundary-vector cell at a position exactly on a wall fired at its
+  baseline: rays leaving the floor from there saw no wall. They now meet
+  it at distance 0, as `compute_boundary_distances` measures, so the rate
+  on the wall equals the rate just inside it.
 
 **Breaking changes**
 
