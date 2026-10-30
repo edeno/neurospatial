@@ -1263,7 +1263,7 @@ cells in every period. A pattern can have no core members at the default absolut
 z-score cutoff, even when its dimension passes the reference: with `k`
 equally weighted members among `n` units, the members' z-score is
 sqrt((n - k) / k), only 1.4 for 3 members of the 9 units here. Pass a lower
-`z_threshold=` for small recordings. PCA also mixes assemblies of similar
+`member_threshold=` for small recordings. PCA also mixes assemblies of similar
 strength within one pattern; use the default `method="ica"` to separate
 them.
 

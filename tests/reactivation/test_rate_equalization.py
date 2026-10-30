@@ -10,8 +10,10 @@ import pytest
 
 from neurospatial.decoding import bin_spikes_in_time
 from neurospatial.reactivation import (
+    EL_GABY_2021,
     GIRI_2019,
     KUDRIMOTI_1999,
+    OLIVA_2020_EV,
     PEYRACHE_2010,
     ReactivationMethod,
     ReactivationWindows,
@@ -263,6 +265,8 @@ def test_rate_subsampled_tables_are_seeded() -> None:
         (GIRI_2019, 2.5, "positive integer"),
         (GIRI_2019, True, "positive integer"),
         (PEYRACHE_2010, 10, "only to EV methods"),
+        (EL_GABY_2021, 10, "only to EV methods"),
+        (OLIVA_2020_EV, 10, "rest_bins='fixed'"),
         (
             dataclasses.replace(KUDRIMOTI_1999, test="pair_bootstrap"),
             10,

@@ -9,7 +9,7 @@ within-session test. :func:`compare_reactivation_methods` bins one
 session's spike times for each method and applies it, so the same
 recording can be analyzed the way each lab analyzed it.
 
-Two families are covered:
+Three families are covered:
 
 - Explained variance (EV): the pair-correlation pattern of a template
   period (running) predicts that of a match period (rest after running)
@@ -18,7 +18,16 @@ Two families are covered:
   (Pennartz et al. 2004).
 - Assembly patterns: patterns detected in the template period, and their
   activation strength R(t) in rest after minus rest before (Peyrache et
-  al. 2010; van de Ven et al. 2016).
+  al. 2010; van de Ven et al. 2016), or around sharp-wave ripples (SWRs)
+  in each (Harvey et al. 2023; Liu et al. 2023; Chang et al. 2025;
+  Robinson et al. 2026).
+- Member co-firing: the correlation of each pattern's members over the
+  SWRs of rest before and after (El-Gaby et al. 2021).
+
+Some recipes count spikes in events instead of fixed bins: one bin per SWR
+of rest, or per theta cycle of the task (``rest_bins="events"``,
+``template_bins="events"``), with the events passed to
+:func:`compare_reactivation_methods`.
 
 Unlike the replay recipes, which record their decoding settings for
 reference only, a reactivation recipe applies its ``bin_size``: binning is
@@ -30,6 +39,7 @@ counts). Choices a paper does not specify are listed in each recipe's
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import warnings
 import zlib
 from collections.abc import Iterator, Mapping, Sequence
@@ -40,37 +50,61 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals
+from neurospatial._intervals import as_intervals, times_in_intervals
 from neurospatial._results import resolve_unit_ids
 from neurospatial._spikes import as_spike_trains
+from neurospatial._time_bins import _count_spikes_in_time_bins
 from neurospatial.reactivation.assemblies import (
+    AssemblyPattern,
     _activation_strength,
     _z_scores,
     detect_assemblies,
     explained_variance_reactivation,
 )
 from neurospatial.reactivation.calibration import equalize_firing_rates
+from neurospatial.reactivation.coactivity import (
+    _in_lag_window,
+    _lags,
+    _peri_event_values,
+    _signed_rank_p,
+    assembly_member_cofiring,
+    ev_rev_contrast,
+)
+from neurospatial.reactivation.coactivity import (
+    _nanmean as _nanmean_along,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
 
 __all__ = [
+    "CHANG_2025_ASSEMBLY",
+    "EL_GABY_2021",
     "GIRI_2019",
     "GIRI_2024",
+    "HARVEY_2023_ASSEMBLY",
     "KUDRIMOTI_1999",
     "LANSINK_2009",
+    "LIU_2023_ASSEMBLY",
+    "LIU_2023_EV",
+    "LIU_2023_PAIRWISE",
+    "OLIVA_2020_ASSEMBLY",
+    "OLIVA_2020_EV",
     "PENNARTZ_2004",
     "PEYRACHE_2010",
     "PUBLISHED_REACTIVATION_METHODS",
+    "ROBINSON_2026_ASSEMBLY",
+    "ROBINSON_2026_PAIRWISE",
     "TATSUNO_2006",
     "VAN_DE_VEN_2016",
+    "EventResponse",
     "ReactivationMethod",
     "ReactivationWindows",
     "compare_reactivation_methods",
 ]
 
 _CALL = "compare_reactivation_methods()"
-_MEASURES = ("explained_variance", "assembly")
+_MEASURES = ("explained_variance", "assembly", "member_cofiring")
 _PAIRS = ("all", "different_tetrodes", "different_shanks", "different_regions")
 # The unit_groups key each pair rule reads.
 _GROUP_OF_PAIRS = {
@@ -79,14 +113,34 @@ _GROUP_OF_PAIRS = {
     "different_regions": "region",
 }
 _STATISTICS = {
-    "explained_variance": ("explained_variance", "ev_minus_rev"),
-    "assembly": ("mean_activation_difference",),
+    "explained_variance": (
+        "explained_variance",
+        "ev_minus_rev",
+        "ev_rev_contrast",
+        "partial_correlation",
+        "semipartial_correlation",
+    ),
+    "assembly": (
+        "mean_activation_difference",
+        "event_response_difference",
+        "event_response_ratio",
+    ),
+    "member_cofiring": ("mean_member_correlation_difference",),
 }
+# Statistics of one control window: they are not averaged over windows.
+_ONE_CONTROL_STATISTICS = ("partial_correlation", "semipartial_correlation")
+_EVENT_RESPONSE_STATISTICS = ("event_response_difference", "event_response_ratio")
 _TESTS = {
     "explained_variance": (None, "partial_correlation_t", "pair_bootstrap"),
-    "assembly": (None, "cell_identity_shuffle"),
+    "assembly": (None, "cell_identity_shuffle", "event_modulation"),
+    "member_cofiring": (None,),
 }
 _DETECTIONS = ("pca", "ica")
+_BINS = ("fixed", "events")
+_MEMBER_RULES = ("abs_z", "positive_z", "otsu", "inverse_sqrt_n")
+_Z_MEMBER_RULES = ("abs_z", "positive_z")
+_DETECTION_UNITS = ("all", "each_region", "each_region_and_cross_region")
+_ZSCORE_OVER = ("period", "control_and_match", "all_periods")
 
 
 @dataclass(frozen=True)
@@ -262,6 +316,83 @@ def _clipped(rows: NDArray[np.float64], low: float, high: float) -> NDArray[np.f
 
 
 @dataclass(frozen=True)
+class EventResponse:
+    """How an assembly method measures R(t) around events, such as SWR onsets.
+
+    Attributes
+    ----------
+    window : tuple of float
+        ``(start, stop)`` of the peri-event lags, seconds relative to each
+        event onset, half-open. Default ``(-0.5, 0.5)``, the ±0.5 s of the
+        labs' peri-event histograms.
+    response_window : tuple of float
+        Lags averaged into each event's response. Default ``(0.0, 0.1)``:
+        "the mean reactivation strength within 0–100 ms of SWR onset"
+        (Robinson et al. 2026).
+    reduce : {"mean", "peak"}
+        A period's response: the mean of its events' responses, or the peak
+        of its peri-event mean over the response lags (Harvey et al. 2023).
+    baseline_window : tuple of float or None
+        Lags of each event's baseline for ``test="event_modulation"``
+        (Chang et al. 2025: "baseline (−500 to −100 ms relative to SWR
+        onset)").
+    significant_z : float or None
+        Report the share of each period's events whose response, z-scored
+        over the events of both periods, exceeds this value (Robinson et al.
+        2026: "responses were z-scored within each assembly ... responses
+        exceeding z = 1.96 (P < 0.05) were considered significant").
+
+    See Also
+    --------
+    neurospatial.reactivation.assembly_event_response : The same measure on
+        one R(t) trace.
+    """
+
+    window: tuple[float, float] = (-0.5, 0.5)
+    response_window: tuple[float, float] = (0.0, 0.1)
+    reduce: Literal["mean", "peak"] = "mean"
+    baseline_window: tuple[float, float] | None = None
+    significant_z: float | None = None
+
+    def __post_init__(self) -> None:
+        """Check the windows."""
+        windows = {
+            "window": self.window,
+            "response_window": self.response_window,
+            "baseline_window": self.baseline_window,
+        }
+        for name, value in windows.items():
+            if value is None:
+                continue
+            pair = np.asarray(value, dtype=np.float64)
+            if (
+                pair.shape != (2,)
+                or not np.all(np.isfinite(pair))
+                or pair[0] >= pair[1]
+            ):
+                raise ValueError(
+                    f"EventResponse: {name} must be (start, stop) in seconds with "
+                    f"start < stop, got {value!r}."
+                )
+            if name != "window" and (
+                pair[0] < self.window[0] or pair[1] > self.window[1]
+            ):
+                raise ValueError(
+                    f"EventResponse: {name}={value} must lie inside "
+                    f"window={self.window}."
+                )
+        if self.reduce not in ("mean", "peak"):
+            raise ValueError(
+                f"EventResponse: reduce must be 'mean' or 'peak', got {self.reduce!r}."
+            )
+        if self.significant_z is not None and not np.isfinite(self.significant_z):
+            raise ValueError(
+                "EventResponse: significant_z must be a finite z-score or None, "
+                f"got {self.significant_z!r}."
+            )
+
+
+@dataclass(frozen=True)
 class ReactivationMethod:
     """A published reactivation analysis: bins, pairs, windows and test.
 
@@ -271,16 +402,18 @@ class ReactivationMethod:
         Short name, for example ``"kudrimoti_1999"``.
     reference : str
         The paper the method follows.
-    measure : {"explained_variance", "assembly"}
+    measure : {"explained_variance", "assembly", "member_cofiring"}
         ``"explained_variance"`` compares pair correlations between periods
         (:func:`~neurospatial.reactivation.explained_variance_reactivation`);
         ``"assembly"`` detects patterns in the template period
         (:func:`~neurospatial.reactivation.detect_assemblies`) and compares
         their activation strength R(t) between the control and match
-        periods.
-    bin_size : float
+        periods; ``"member_cofiring"`` detects patterns and compares the
+        correlation of each pattern's members between the periods
+        (:func:`~neurospatial.reactivation.assembly_member_cofiring`).
+    bin_size : float or None
         Time bin in seconds. Applied: spike times are binned at this width
-        inside each window.
+        inside each window. None when every period is counted in events.
     pairs : {"all", "different_tetrodes", "different_shanks", "different_regions"}
         Which pairs of cells an EV method uses. A rule other than ``"all"``
         keeps the pairs whose units are in different groups of
@@ -292,20 +425,80 @@ class ReactivationMethod:
         several control windows averages the single-control EVs and REVs
         over them (Tatsuno et al. 2006); an assembly method needs one
         control window.
+    template_bins, rest_bins : {"fixed", "events"}
+        ``"fixed"`` (default): counts in ``bin_size`` bins. ``"events"``:
+        one bin per event, the spikes from its start to its stop, for the
+        template (``template_events``, for example theta cycles) or for the
+        control and match periods (``control_events`` and ``match_events``,
+        for example SWRs), keeping the events whose start lies in the
+        period's window. Events shorter than ``bin_size`` are kept. Spike
+        counts of events of different lengths share a duration component
+        that raises every pair correlation alike; it cancels between
+        periods only when their events have similar durations. ``rest_bins``
+        does not apply to ``"assembly"`` methods, which measure R(t) around
+        events with ``event_response``.
+    min_events : int or None
+        A control or match window with fewer events is refused, and the
+        method's row reports why in ``error`` (El-Gaby et al. 2021: "only
+        sessions where at least 200 SWR events were detected were
+        included").
     detection : {"pca", "ica"} or None
-        Assembly detection on the template counts, with the
-        Marchenko-Pastur threshold; None for EV methods.
+        Pattern detection on the template counts, with the Marchenko-Pastur
+        threshold; None for EV methods.
+    member_rule : {"abs_z", "positive_z", "otsu", "inverse_sqrt_n"}
+        How the patterns' members are chosen (``detect_assemblies(member_rule=...)``).
+    member_threshold : float or None
+        Z-score cutoff of the ``"abs_z"`` and ``"positive_z"`` rules; None
+        for the other rules, which set their own.
+    detection_units : {"all", "each_region", "each_region_and_cross_region"}
+        Units of each detection: all units together; each region's units on
+        their own (``unit_groups["region"]``); or each region and also all
+        units together, keeping the patterns of the latter whose members
+        lie in at least two regions (Robinson et al. 2026's cross-structural
+        assemblies). The table's ``region`` column says which.
     smoothing_bandwidth : float or None
         For assembly methods, the standard deviation in seconds of a
         Gaussian kernel applied to the spike trains before z-scoring and
         computing R(t) in the control and match periods (van de Ven et al.
         2016); None uses counts in ``bin_size`` bins.
+    activation_step : float or None
+        For assembly methods, seconds between samples of R(t). Without
+        smoothing, counts in ``bin_size`` bins that slide by this step (it
+        must divide ``bin_size``); with smoothing, the spacing of the
+        smoothed samples. None: ``bin_size`` without smoothing,
+        ``smoothing_bandwidth / 2`` with it.
+    zscore_over : {"period", "control_and_match", "all_periods"}
+        For assembly methods, the samples each unit is z-scored over before
+        R(t): each period on its own (default), the control and match
+        periods together, or the template, control and match periods
+        together. Neither removes a rate change: if the members fire more
+        in the match period without firing together more, their R(t) in
+        its events rises when the periods are z-scored together and falls
+        when each is z-scored on its own (its larger variance shrinks the
+        z-scores).
     activation_threshold : float or None
         For assembly methods, R(t) peaks above this value are activations;
         their rate in each period is reported. None reports none.
-    statistic : {"explained_variance", "ev_minus_rev", "mean_activation_difference"}
-        The method's headline value, the ``value`` column of the table.
-    test : {"partial_correlation_t", "pair_bootstrap", "cell_identity_shuffle"} or None
+    event_response : EventResponse or None
+        For assembly methods, measure R(t) around the onsets of
+        ``control_events`` and ``match_events``.
+    statistic : str
+        The method's headline value, the ``value`` column of the table:
+
+        - EV methods: ``"explained_variance"``, ``"ev_minus_rev"``,
+          ``"ev_rev_contrast"`` ((EV - REV) / (EV + REV)),
+          ``"partial_correlation"`` (the correlation of the residuals of the
+          template and match pair correlations regressed on the control's)
+          or ``"semipartial_correlation"`` (the template correlations
+          against the residual of the match correlations regressed on the
+          control's). The last two need one control window.
+        - Assembly methods: ``"mean_activation_difference"``,
+          ``"event_response_difference"`` (match response minus control
+          response) or ``"event_response_ratio"`` ((match - control) /
+          control; NaN unless the control response is positive).
+        - Member co-firing: ``"mean_member_correlation_difference"``.
+
+    test : {"partial_correlation_t", "pair_bootstrap", "cell_identity_shuffle", "event_modulation"} or None
         The within-session test:
 
         - ``"partial_correlation_t"``: the t test of the partial
@@ -320,6 +513,11 @@ class ReactivationMethod:
           is compared with the ``percentile``-th percentile of its shuffles
           (Peyrache et al. 2010). Reports the share of control and match
           bins above it; no verdict.
+        - ``"event_modulation"``: the two-sided Wilcoxon signed-rank test,
+          over the match events, of each event's response against its
+          baseline (``event_response.baseline_window``); reactivated when
+          ``p < alpha`` and the median difference is positive (Chang et al.
+          2025).
         - None: no within-session test; ``is_reactivated`` is missing.
 
     percentile : float or None
@@ -338,39 +536,67 @@ class ReactivationMethod:
         many times; EV, REV, the partial correlation and its p-value are the
         medians over the subsamples ("median Pearson's r … median p … for
         100 different random subsamples"), and ``value`` is computed from
-        them. None (default) uses every spike. Not combined with
-        ``test="pair_bootstrap"``.
+        them. None (default) uses every spike. Needs ``rest_bins="fixed"``
+        and is not combined with ``test="pair_bootstrap"``.
     notes : tuple of str
         Each value's source in the paper and the choices it leaves open.
 
     Examples
     --------
     >>> import dataclasses
-    >>> from neurospatial.reactivation import KUDRIMOTI_1999
+    >>> from neurospatial.reactivation import EL_GABY_2021, KUDRIMOTI_1999
     >>> KUDRIMOTI_1999.bin_size, KUDRIMOTI_1999.pairs
     (0.1, 'different_tetrodes')
     >>> wider = dataclasses.replace(
     ...     KUDRIMOTI_1999, name="kudrimoti_200ms", bin_size=0.2
     ... )
+    >>> EL_GABY_2021.rest_bins, EL_GABY_2021.min_events
+    ('events', 200)
+    >>> EL_GABY_2021.needs_events
+    ('control_events', 'match_events')
     """
 
     name: str
     reference: str
-    measure: Literal["explained_variance", "assembly"]
-    bin_size: float
+    measure: Literal["explained_variance", "assembly", "member_cofiring"]
+    bin_size: float | None
     pairs: Literal[
         "all", "different_tetrodes", "different_shanks", "different_regions"
     ] = "all"
     control_windows: ReactivationWindows = ReactivationWindows()
     match_windows: ReactivationWindows = ReactivationWindows()
+    template_bins: Literal["fixed", "events"] = "fixed"
+    rest_bins: Literal["fixed", "events"] = "fixed"
+    min_events: int | None = None
     detection: Literal["pca", "ica"] | None = None
+    member_rule: Literal["abs_z", "positive_z", "otsu", "inverse_sqrt_n"] = "abs_z"
+    member_threshold: float | None = 2.0
+    detection_units: Literal["all", "each_region", "each_region_and_cross_region"] = (
+        "all"
+    )
     smoothing_bandwidth: float | None = None
+    activation_step: float | None = None
+    zscore_over: Literal["period", "control_and_match", "all_periods"] = "period"
     activation_threshold: float | None = None
+    event_response: EventResponse | None = None
     statistic: Literal[
-        "explained_variance", "ev_minus_rev", "mean_activation_difference"
+        "explained_variance",
+        "ev_minus_rev",
+        "ev_rev_contrast",
+        "partial_correlation",
+        "semipartial_correlation",
+        "mean_activation_difference",
+        "event_response_difference",
+        "event_response_ratio",
+        "mean_member_correlation_difference",
     ] = "explained_variance"
     test: (
-        Literal["partial_correlation_t", "pair_bootstrap", "cell_identity_shuffle"]
+        Literal[
+            "partial_correlation_t",
+            "pair_bootstrap",
+            "cell_identity_shuffle",
+            "event_modulation",
+        ]
         | None
     ) = None
     percentile: float | None = None
@@ -379,6 +605,16 @@ class ReactivationMethod:
     n_rate_subsamples: int | None = None
     notes: tuple[str, ...] = ()
 
+    @property
+    def needs_events(self) -> tuple[str, ...]:
+        """Event arguments of :func:`compare_reactivation_methods` the method needs."""
+        needed = []
+        if self.template_bins == "events":
+            needed.append("template_events")
+        if self.rest_bins == "events" or self.event_response is not None:
+            needed.extend(["control_events", "match_events"])
+        return tuple(needed)
+
     def __post_init__(self) -> None:
         """Check that the options fit the measure."""
         where = f"ReactivationMethod {self.name!r}"
@@ -386,10 +622,43 @@ class ReactivationMethod:
             raise ValueError(
                 f"{where}: measure must be one of {_MEASURES}, got {self.measure!r}."
             )
-        if not (np.isfinite(self.bin_size) and self.bin_size > 0):
+        for name, choices in (
+            ("template_bins", _BINS),
+            ("rest_bins", _BINS),
+            ("member_rule", _MEMBER_RULES),
+            ("detection_units", _DETECTION_UNITS),
+            ("zscore_over", _ZSCORE_OVER),
+        ):
+            if getattr(self, name) not in choices:
+                raise ValueError(
+                    f"{where}: {name} must be one of {choices}, got "
+                    f"{getattr(self, name)!r}."
+                )
+        assembly = self.measure == "assembly"
+        if assembly and self.rest_bins == "events":
+            raise ValueError(
+                _format_error(
+                    f"{where}: rest_bins='events' does not apply to an assembly "
+                    "method.",
+                    why="Why: an assembly method follows R(t) over time.",
+                    fix="pass event_response=EventResponse() to measure R(t) "
+                    "around the events",
+                )
+            )
+        fixed_bins = assembly or "fixed" in (self.template_bins, self.rest_bins)
+        if fixed_bins and not (
+            self.bin_size is not None
+            and np.isfinite(self.bin_size)
+            and self.bin_size > 0
+        ):
             raise ValueError(
                 f"{where}: bin_size must be a positive number of seconds, got "
                 f"{self.bin_size!r}."
+            )
+        if not fixed_bins and self.bin_size is not None:
+            raise ValueError(
+                f"{where}: every period is counted in events, so bin_size must "
+                f"be None, got {self.bin_size!r}."
             )
         if self.pairs not in _PAIRS:
             raise ValueError(
@@ -405,41 +674,89 @@ class ReactivationMethod:
                 f"{where}: test {self.test!r} does not fit measure "
                 f"{self.measure!r}; use one of {_TESTS[self.measure]}."
             )
-        assembly = self.measure == "assembly"
-        if assembly and self.detection not in _DETECTIONS:
+        patterns = self.measure in ("assembly", "member_cofiring")
+        if patterns and self.detection not in _DETECTIONS:
             raise ValueError(
-                f"{where}: an assembly method needs detection='pca' or 'ica', "
-                f"got {self.detection!r}."
+                f"{where}: a {self.measure} method needs detection='pca' or "
+                f"'ica', got {self.detection!r}."
             )
-        if not assembly:
-            given = [
-                name
-                for name in (
-                    "detection",
-                    "smoothing_bandwidth",
-                    "activation_threshold",
-                    "percentile",
+        assembly_only = (
+            "smoothing_bandwidth",
+            "activation_step",
+            "activation_threshold",
+            "percentile",
+            "event_response",
+        )
+        given = [name for name in assembly_only if getattr(self, name) is not None]
+        if not assembly and self.zscore_over != "period":
+            given.append("zscore_over")
+        if not patterns:
+            given += [name for name in ("detection",) if self.detection is not None]
+            if self.member_rule != "abs_z" or self.detection_units != "all":
+                given += ["member_rule", "detection_units"]
+        if not assembly and given:
+            raise ValueError(
+                _format_error(
+                    f"{where}: {given} do not apply to {self.measure} methods.",
+                    why=f"Why: a {self.measure} method would ignore them.",
+                    fix="drop them, or use measure='assembly'",
                 )
-                if getattr(self, name) is not None
-            ]
-            if given:
-                raise ValueError(
-                    _format_error(
-                        f"{where}: {given} apply only to assembly methods.",
-                        why="Why: an EV method compares pair correlations and "
-                        "would ignore them.",
-                        fix="drop them, or use measure='assembly'",
-                    )
-                )
-        elif self.pairs != "all":
+            )
+        if self.measure != "explained_variance" and self.pairs != "all":
             raise ValueError(
                 f"{where}: pairs={self.pairs!r} applies only to EV methods; "
-                "an assembly method uses every unit."
+                f"a {self.measure} method uses every unit."
             )
-        if self.smoothing_bandwidth is not None and not self.smoothing_bandwidth > 0:
+        z_rule = self.member_rule in _Z_MEMBER_RULES
+        if z_rule and not (
+            self.member_threshold is not None and np.isfinite(self.member_threshold)
+        ):
             raise ValueError(
-                f"{where}: smoothing_bandwidth must be positive seconds or None, "
-                f"got {self.smoothing_bandwidth!r}."
+                f"{where}: member_rule={self.member_rule!r} needs a finite "
+                f"member_threshold, got {self.member_threshold!r}."
+            )
+        if not z_rule and self.member_threshold is not None:
+            raise ValueError(
+                f"{where}: member_rule={self.member_rule!r} sets its own cutoff; "
+                "pass member_threshold=None."
+            )
+        if self.min_events is not None and (
+            isinstance(self.min_events, bool)
+            or int(self.min_events) != self.min_events
+            or self.min_events < 1
+            or not self.needs_events
+        ):
+            raise ValueError(
+                f"{where}: min_events must be a positive integer for a method "
+                f"that counts or follows events, got {self.min_events!r}."
+            )
+        for name in ("smoothing_bandwidth", "activation_step"):
+            value = getattr(self, name)
+            if value is not None and not (np.isfinite(value) and value > 0):
+                raise ValueError(
+                    f"{where}: {name} must be positive seconds or None, got {value!r}."
+                )
+        if self.activation_step is not None and self.smoothing_bandwidth is None:
+            assert self.bin_size is not None
+            ratio = self.bin_size / self.activation_step
+            if not (ratio >= 1 - 1e-9 and abs(ratio - round(ratio)) < 1e-6):
+                raise ValueError(
+                    f"{where}: without smoothing, activation_step "
+                    f"({self.activation_step:g} s) must divide bin_size "
+                    f"({self.bin_size:g} s) into a whole number of steps."
+                )
+        if self.statistic in _EVENT_RESPONSE_STATISTICS and self.event_response is None:
+            raise ValueError(
+                f"{where}: statistic {self.statistic!r} needs "
+                "event_response=EventResponse(...)."
+            )
+        if self.test == "event_modulation" and (
+            self.event_response is None or self.event_response.baseline_window is None
+        ):
+            raise ValueError(
+                f"{where}: test='event_modulation' compares each event's "
+                "response with its baseline; pass "
+                "event_response=EventResponse(baseline_window=(start, stop))."
             )
         if self.percentile is not None and not 0 < self.percentile < 100:
             raise ValueError(
@@ -472,15 +789,28 @@ class ReactivationMethod:
                     f"{where}: n_rate_subsamples must be a positive integer or "
                     f"None, got {subsamples!r}."
                 )
-            if assembly:
+            if self.measure != "explained_variance":
                 raise ValueError(
                     _format_error(
                         f"{where}: n_rate_subsamples applies only to EV methods.",
                         why="Why: Giri et al. (2019) equalized rates for the "
-                        "pair correlations; R(t) z-scores each period with its "
-                        "own mean and standard deviation.",
+                        "pair correlations of fixed time bins; activation "
+                        "strength and member co-firing z-score each period on "
+                        "its own.",
                         fix="drop n_rate_subsamples, or use measure="
                         "'explained_variance'",
+                    )
+                )
+            if self.rest_bins == "events":
+                raise ValueError(
+                    _format_error(
+                        f"{where}: n_rate_subsamples needs rest_bins='fixed'.",
+                        why="Why: it equalizes each unit's spikes per bin; "
+                        "events of different durations make spikes per event "
+                        "and spikes per second disagree, and Giri et al. "
+                        "(2019) equalized fixed 250 ms bins.",
+                        fix="drop n_rate_subsamples, or bin rest periods with "
+                        "rest_bins='fixed' and bin_size=",
                     )
                 )
             if self.test == "pair_bootstrap":
@@ -507,14 +837,18 @@ _COLUMNS = (
     "window_stop",
     "window_duration",
     "component",
+    "region",
     "statistic",
     "value",
     "explained_variance",
     "reversed_explained_variance",
     "partial_correlation",
+    "semipartial_correlation",
     "ev_minus_rev_lower",
     "n_pairs",
     "n_control_windows",
+    "n_control_events",
+    "n_match_events",
     "n_components",
     "member_unit_ids",
     "control_mean_activation",
@@ -524,6 +858,13 @@ _COLUMNS = (
     "match_fraction_above_shuffle",
     "control_activation_rate",
     "match_activation_rate",
+    "control_event_response",
+    "match_event_response",
+    "control_significant_event_fraction",
+    "match_significant_event_fraction",
+    "control_member_correlation",
+    "match_member_correlation",
+    "n_member_pairs",
     "p_value",
     "n_shuffles_used",
     "is_reactivated",
@@ -534,8 +875,19 @@ _COUNT_COLUMNS = (
     "component",
     "n_pairs",
     "n_control_windows",
+    "n_control_events",
+    "n_match_events",
     "n_components",
+    "n_member_pairs",
     "n_shuffles_used",
+)
+_TEXT_COLUMNS = (
+    "method",
+    "region",
+    "statistic",
+    "member_unit_ids",
+    "is_reactivated",
+    "error",
 )
 
 
@@ -546,6 +898,9 @@ def compare_reactivation_methods(
     control_epochs: Any = None,
     *,
     reactivation_methods: Sequence[ReactivationMethod],
+    template_events: Any = None,
+    control_events: Any = None,
+    match_events: Any = None,
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     unit_groups: Mapping[str, NDArray[Any] | Sequence[Any]] | None = None,
     pair_mask: NDArray[np.bool_] | Sequence[bool] | None = None,
@@ -568,13 +923,22 @@ def compare_reactivation_methods(
         the task. Every published method needs one.
     reactivation_methods : sequence of ReactivationMethod
         The methods to compare, with distinct names.
+    template_events, control_events, match_events : array-like, shape (n, 2), or IntervalSet, optional
+        Start and stop of each event, seconds, for the methods whose
+        ``needs_events`` names them: for example theta cycles of the task
+        and SWRs of rest before and after it. Events may touch but not
+        overlap, since a spike would then count in two events. A period
+        uses the events whose start lies in its window; a method counting
+        spikes in events counts them from each event's start to its stop,
+        and one following R(t) around events aligns it to their starts.
     unit_ids : array-like, shape (n_units,), optional
         Label of each unit, for ``member_unit_ids``; default
         ``np.arange(n_units)``.
     unit_groups : mapping of str to array-like, optional
         Each unit's group, by kind: ``"tetrode"``, ``"shank"`` or
         ``"region"``, one entry per unit, as methods with a ``pairs`` rule
-        need (for example ``{"tetrode": tetrode_of_unit}``).
+        or a ``detection_units`` by region need (for example
+        ``{"tetrode": tetrode_of_unit}``).
     pair_mask : array-like of bool, shape (n_units * (n_units - 1) / 2,), optional
         Pairs every EV method may use, in ``np.triu_indices(n_units, k=1)``
         order, for example waveform similarity below 0.8 (Giri et al. 2024).
@@ -589,32 +953,47 @@ def compare_reactivation_methods(
     -------
     pandas.DataFrame
         One row per (method, match window, component): EV methods have one
-        row per match window with ``component`` missing; assembly methods
-        one per detected component (one row with ``n_components`` 0 and
-        ``component`` missing when none is detected). Columns:
+        row per match window with ``component`` missing; assembly and
+        member co-firing methods one per detected component (one row with
+        ``n_components`` 0 and ``component`` missing when none is detected).
+        Columns:
 
         - ``method``, ``window`` (match window number), ``window_start``,
           ``window_stop`` (the window's first and last epoch time) and
           ``window_duration`` (seconds of epoch time inside it).
-        - ``component``, ``n_components`` and ``member_unit_ids`` (the
-          pattern's core members) for assembly methods.
+        - ``component``, ``n_components``, ``member_unit_ids`` (the
+          pattern's core members) and ``region`` (the region whose units
+          the pattern was detected in, ``"cross_region"`` for a pattern of
+          all units with members in several regions, missing when all units
+          were used together) for pattern methods.
         - ``statistic`` (its name) and ``value``.
+        - ``n_control_events`` and ``n_match_events``: events in the
+          control window (the fewest over windows) and the match window,
+          for methods that use events.
         - EV methods: ``explained_variance``, ``reversed_explained_variance``
-          (averaged over control windows), ``partial_correlation`` (one
-          control window), ``n_pairs`` (fewest over control windows),
-          ``n_control_windows`` and ``ev_minus_rev_lower`` (the bootstrap's
-          ``100 * alpha / 2`` percentile).
+          (averaged over control windows), ``partial_correlation`` and
+          ``semipartial_correlation`` (one control window), ``n_pairs``
+          (fewest over control windows), ``n_control_windows`` and
+          ``ev_minus_rev_lower`` (the bootstrap's ``100 * alpha / 2``
+          percentile).
         - Assembly methods: ``control_mean_activation`` and
           ``match_mean_activation`` (mean R(t)),
           ``fraction_above_control_threshold``,
           ``control_fraction_above_shuffle``,
           ``match_fraction_above_shuffle``, ``control_activation_rate`` and
-          ``match_activation_rate`` (activations per second).
+          ``match_activation_rate`` (activations per second); with
+          ``event_response``, ``control_event_response`` and
+          ``match_event_response`` and, with ``significant_z``,
+          ``control_significant_event_fraction`` and
+          ``match_significant_event_fraction``.
+        - Member co-firing: ``control_member_correlation`` and
+          ``match_member_correlation`` (mean over member pairs defined in
+          both periods) and ``n_member_pairs``.
         - ``p_value``, ``n_shuffles_used`` and ``is_reactivated`` (the
           method's within-session verdict; missing for methods without
           one), and ``error``: why a method could not be applied (for
-          example a period shorter than one window), with the other
-          columns missing.
+          example a period shorter than one window, or fewer events than
+          ``min_events``), with the other columns missing.
 
         Columns that do not apply to a method are NaN. ``table.attrs``
         holds ``rng_entropy``, the seed the streams derive from: passing it
@@ -623,10 +1002,10 @@ def compare_reactivation_methods(
     Raises
     ------
     ValueError
-        If the methods' names repeat, a method needs ``control_epochs`` or
-        a ``unit_groups`` kind that is not given, a group or ``pair_mask``
-        does not have one entry per unit or pair, or ``unit_ids`` does not
-        hold one distinct label per unit.
+        If the methods' names repeat, a method needs ``control_epochs``,
+        events or a ``unit_groups`` kind that is not given, events overlap,
+        a group or ``pair_mask`` does not have one entry per unit or pair,
+        or ``unit_ids`` does not hold one distinct label per unit.
 
     Warns
     -----
@@ -638,8 +1017,8 @@ def compare_reactivation_methods(
     -----
     Each method bins spike times at its own ``bin_size`` inside each of its
     windows (:func:`~neurospatial.decoding.bin_spikes_in_time`), so bins
-    never span two epochs. The template period is always one window of all
-    ``template_epochs``.
+    never span two epochs, or counts spikes in each event. The template
+    period is always one window of all ``template_epochs``.
 
     Examples
     --------
@@ -661,6 +1040,31 @@ def compare_reactivation_methods(
     ... )
     >>> table[["method", "window", "n_pairs"]].to_dict("records")
     [{'method': 'kudrimoti_1999', 'window': 0, 'n_pairs': 54}, {'method': 'kudrimoti_1999', 'window': 1, 'n_pairs': 54}]
+
+    A method with events, one bin per SWR of each rest period (here
+    random 50-150 ms intervals):
+
+    >>> from neurospatial.reactivation import LIU_2023_EV
+    >>> def events(start, stop):
+    ...     onsets = np.sort(rng.uniform(start, stop - 1, 300))
+    ...     onsets = onsets[np.r_[True, np.diff(onsets) > 0.2]]
+    ...     return np.column_stack(
+    ...         [onsets, onsets + rng.uniform(0.05, 0.15, onsets.size)]
+    ...     )
+    >>> table = compare_reactivation_methods(
+    ...     spike_times,
+    ...     template_epochs=[[1200.0, 2400.0]],
+    ...     match_epochs=[[2400.0, 3600.0]],
+    ...     control_epochs=[[0.0, 1200.0]],
+    ...     reactivation_methods=[LIU_2023_EV],
+    ...     template_events=np.column_stack(
+    ...         [np.arange(1200.0, 2400.0, 0.125), np.arange(1200.125, 2400.1, 0.125)]
+    ...     ),
+    ...     control_events=events(0.0, 1200.0),
+    ...     match_events=events(2400.0, 3600.0),
+    ... )
+    >>> int(table.loc[0, "n_pairs"])
+    66
     """
     import pandas as pd
 
@@ -692,6 +1096,30 @@ def compare_reactivation_methods(
                 fix="pass control_epochs=, for example slow-wave sleep before the task",
             )
         )
+    events = {
+        "template_events": _checked_events(template_events, "template_events"),
+        "control_events": _checked_events(control_events, "control_events"),
+        "match_events": _checked_events(match_events, "match_events"),
+    }
+    missing = {
+        name: [method.name for method in methods if name in method.needs_events]
+        for name, value in events.items()
+        if value is None
+    }
+    missing = {name: users for name, users in missing.items() if users}
+    if missing:
+        raise ValueError(
+            _format_error(
+                f"{_CALL}: {sorted(missing)} not given, but methods "
+                f"{sorted({user for users in missing.values() for user in users})} "
+                "use them.",
+                why="Why: these methods count spikes in events (one bin per "
+                "event) or follow R(t) around events.",
+                fix="pass the events' (start, stop) times, for example "
+                "control_events=pre_sleep_swrs, match_events=post_sleep_swrs "
+                "and template_events=theta_cycles",
+            )
+        )
     groups = _checked_groups(unit_groups, methods, n_units)
     n_pairs = n_units * (n_units - 1) // 2
     selected = np.ones(n_pairs, dtype=bool)
@@ -715,6 +1143,9 @@ def compare_reactivation_methods(
     )
 
     rows: list[dict[str, Any]] = []
+    if methods:
+        assert control is not None  # every method needs one, checked above
+        session = _Session(trains, template, control, match, events, labels, groups)
     for method in methods:
         key = zlib.crc32(method.name.encode())
 
@@ -724,7 +1155,6 @@ def compare_reactivation_methods(
             )
 
         with _warnings_with_context(f"{_CALL}: method {method.name!r}"):
-            assert control is not None  # every method needs one, checked above
             try:
                 if method.measure == "explained_variance":
                     pair_rule = selected.copy()
@@ -733,12 +1163,12 @@ def compare_reactivation_methods(
                         first, second = np.triu_indices(n_units, k=1)
                         pair_rule &= unit_group[first] != unit_group[second]
                     method_rows = _explained_variance_rows(
-                        method, trains, template, control, match, pair_rule, stream
+                        method, session, pair_rule, stream
                     )
+                elif method.measure == "assembly":
+                    method_rows = _assembly_rows(method, session, stream)
                 else:
-                    method_rows = _assembly_rows(
-                        method, trains, template, control, match, labels, stream
-                    )
+                    method_rows = _member_cofiring_rows(method, session, stream)
             except _MethodError as failure:
                 method_rows = [{"error": str(failure)}]
         rows.extend({"method": method.name, **row} for row in method_rows)
@@ -746,9 +1176,7 @@ def compare_reactivation_methods(
     numeric = [
         name
         for name in _COLUMNS
-        if name not in _COUNT_COLUMNS
-        and name
-        not in ("method", "statistic", "member_unit_ids", "is_reactivated", "error")
+        if name not in _COUNT_COLUMNS and name not in _TEXT_COLUMNS
     ]
     table[numeric] = table[numeric].astype(np.float64)
     for name in _COUNT_COLUMNS:
@@ -757,6 +1185,121 @@ def compare_reactivation_methods(
     table["error"] = table["error"].fillna("").astype(str)
     table.attrs["rng_entropy"] = entropy
     return table
+
+
+@dataclass(frozen=True)
+class _Session:
+    """One session's inputs, checked."""
+
+    trains: list[NDArray[np.float64]]
+    template: NDArray[np.float64]
+    control: NDArray[np.float64]
+    match: NDArray[np.float64]
+    events: dict[str, NDArray[np.float64] | None]
+    labels: NDArray[Any]
+    groups: dict[str, NDArray[Any]]
+
+
+def _checked_events(value: Any, name: str) -> NDArray[np.float64] | None:
+    """Events as ``(n, 2)`` rows sorted by start; overlapping rows refused.
+
+    Unlike epochs, touching or overlapping events are not merged: each event
+    is one bin, so merging two would change the number of bins.
+    """
+    if value is None:
+        return None
+    if hasattr(value, "start") and hasattr(value, "end"):
+        value = np.column_stack([np.asarray(value.start), np.asarray(value.end)])
+    rows = np.asarray(value, dtype=np.float64)
+    if rows.ndim != 2 or rows.shape[1] != 2 or not len(rows):
+        raise ValueError(
+            f"{_CALL}: {name} must be an (n_events, 2) array of start and stop "
+            f"times, got shape {rows.shape}."
+        )
+    bad = ~np.all(np.isfinite(rows), axis=1) | (rows[:, 1] <= rows[:, 0])
+    if bad.any():
+        raise ValueError(
+            f"{_CALL}: {name} rows {np.flatnonzero(bad)[:10].tolist()} are not "
+            "finite with stop > start."
+        )
+    rows = rows[np.argsort(rows[:, 0], kind="stable")]
+    overlapping = np.flatnonzero(rows[1:, 0] < rows[:-1, 1])
+    if overlapping.size:
+        first = rows[overlapping[0] : overlapping[0] + 2]
+        raise ValueError(
+            _format_error(
+                f"{_CALL}: {overlapping.size} events of {name} overlap the next "
+                f"one, e.g. {first.tolist()}.",
+                why="Why: each event is one bin of spike counts, and a spike in "
+                "two overlapping events would count twice.",
+                fix="merge overlapping events into one before the call, or keep "
+                "the first of each overlapping group",
+            )
+        )
+    return rows
+
+
+def _events_in(
+    events: NDArray[np.float64] | None, window: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """The events whose start lies in a piece of ``window``."""
+    assert events is not None  # checked against needs_events
+    inside: NDArray[np.float64] = events[times_in_intervals(window, events[:, 0])]
+    return inside
+
+
+def _event_counts(
+    trains: list[NDArray[np.float64]], events: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Spikes of each unit in each event, shape (n_events, n_units)."""
+    return _count_spikes_in_time_bins(trains, events[:, 0], events[:, 1]).astype(
+        np.float64
+    )
+
+
+def _rest_counts(
+    method: ReactivationMethod,
+    session: _Session,
+    window: NDArray[np.float64],
+    period: Literal["control", "match"],
+) -> tuple[NDArray[np.float64], int | None]:
+    """Counts of a control or match window, and its number of events.
+
+    Returns
+    -------
+    counts : ndarray, shape (n_bins, n_units)
+        One row per event with ``rest_bins="events"``, else per time bin.
+    n_events : int or None
+        Events in the window; None for fixed bins.
+    """
+    if method.rest_bins == "fixed":
+        assert method.bin_size is not None
+        return _counts(session.trains, window, method.bin_size), None
+    events = _events_in(session.events[f"{period}_events"], window)
+    _check_min_events(method, events.shape[0], period)
+    return _event_counts(session.trains, events), events.shape[0]
+
+
+def _check_min_events(method: ReactivationMethod, n_events: int, period: str) -> None:
+    """Refuse a window with fewer events than ``min_events``."""
+    if method.min_events is not None and n_events < method.min_events:
+        raise _MethodError(
+            f"a {period} window has {n_events} events, fewer than "
+            f"min_events={method.min_events}"
+        )
+
+
+def _template_counts(
+    method: ReactivationMethod, session: _Session
+) -> NDArray[np.float64]:
+    """Counts of the template period, per event or per time bin."""
+    if method.template_bins == "events":
+        events = _events_in(session.events["template_events"], session.template)
+        if not len(events):
+            raise _MethodError("no template event starts inside template_epochs")
+        return _event_counts(session.trains, events)
+    assert method.bin_size is not None
+    return _counts(session.trains, session.template, method.bin_size)
 
 
 class _MethodError(ValueError):
@@ -789,7 +1332,8 @@ def _checked_groups(
     unit_groups : mapping or None
         Group arrays by kind.
     methods : sequence of ReactivationMethod
-        The methods, whose ``pairs`` rules say which kinds are needed.
+        The methods, whose ``pairs`` rules and ``detection_units`` say which
+        kinds are needed.
     n_units : int
         Number of units.
 
@@ -803,15 +1347,19 @@ def _checked_groups(
         for method in methods
         if method.pairs != "all"
     }
+    for method in methods:
+        if method.detection_units != "all":
+            needed["region"] = method.name
     missing = {kind: name for kind, name in needed.items() if kind not in given}
     if missing:
         raise ValueError(
             _format_error(
-                f"{_CALL}: methods {sorted(missing.values())} use pairs of units in "
-                f"different groups but unit_groups has no {sorted(missing)}.",
+                f"{_CALL}: methods {sorted(missing.values())} use groups of units "
+                f"but unit_groups has no {sorted(missing)}.",
                 why="Why: the papers used only pairs of cells on different "
                 "tetrodes or shanks (cells on one tetrode can share sorting "
-                "errors) or in different regions.",
+                "errors) or in different regions, or detected patterns in each "
+                "region.",
                 fix="pass unit_groups={'tetrode': tetrode_of_unit, ...} with one "
                 "entry per unit",
             )
@@ -837,13 +1385,26 @@ def _counts(
     trains: list[NDArray[np.float64]], windows: NDArray[np.float64], bin_size: float
 ) -> NDArray[np.float64]:
     """Spike counts in ``bin_size`` bins inside ``windows``, (n_bins, n_units)."""
+    return _binned(trains, windows, bin_size)[0]
+
+
+def _binned(
+    trains: list[NDArray[np.float64]], windows: NDArray[np.float64], bin_size: float
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Counts in ``bin_size`` bins inside ``windows`` and the bin centers.
+
+    Returns
+    -------
+    counts : ndarray, shape (n_bins, n_units)
+    centers : ndarray, shape (n_bins,)
+    """
     from neurospatial.decoding import bin_spikes_in_time
 
     try:
-        counts, _centers = bin_spikes_in_time(trains, dt=bin_size, epochs=windows)
+        counts, centers = bin_spikes_in_time(trains, dt=bin_size, epochs=windows)
     except ValueError as error:
         raise _MethodError(str(error)) from error
-    return counts.astype(np.float64)
+    return counts.astype(np.float64), np.asarray(centers, dtype=np.float64)
 
 
 def _pair_correlations(counts: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -892,32 +1453,30 @@ def _window_columns(index: int, window: NDArray[np.float64]) -> dict[str, Any]:
 
 def _explained_variance_rows(
     method: ReactivationMethod,
-    trains: list[NDArray[np.float64]],
-    template: NDArray[np.float64],
-    control: NDArray[np.float64],
-    match: NDArray[np.float64],
+    session: _Session,
     pair_rule: NDArray[np.bool_],
     stream: Any,
 ) -> list[dict[str, Any]]:
     """One row per match window of an EV method."""
-    template_correlations = _pair_correlations(
-        _counts(trains, template, method.bin_size)
-    )
-    control_counts = [
-        _counts(trains, window, method.bin_size)
-        for window in _windows_or_error(method.control_windows, control, "control")
-    ]
+    template_correlations = _pair_correlations(_template_counts(method, session))
+    control_counts = []
+    control_events = []
+    for window in _windows_or_error(method.control_windows, session.control, "control"):
+        counts, n_events = _rest_counts(method, session, window, "control")
+        control_counts.append(counts)
+        control_events.append(n_events)
     control_correlations = [_pair_correlations(counts) for counts in control_counts]
     n_controls = len(control_correlations)
-    if method.test is not None and n_controls != 1:
-        raise _MethodError(
-            f"the {method.test} test needs one control window, got {n_controls}"
-        )
+    if (
+        method.test is not None or method.statistic in _ONE_CONTROL_STATISTICS
+    ) and n_controls != 1:
+        needs = method.test if method.test is not None else method.statistic
+        raise _MethodError(f"{needs} needs one control window, got {n_controls}")
     rows = []
     for index, window in enumerate(
-        _windows_or_error(method.match_windows, match, "match")
+        _windows_or_error(method.match_windows, session.match, "match")
     ):
-        match_counts = _counts(trains, window, method.bin_size)
+        match_counts, n_match_events = _rest_counts(method, session, window, "match")
         if method.n_rate_subsamples is None:
             match_correlations = _pair_correlations(match_counts)
             summary = _ev_summary(
@@ -936,18 +1495,27 @@ def _explained_variance_rows(
             )
         explained = summary["explained_variance"]
         reversed_ = summary["reversed_explained_variance"]
+        values = {
+            "explained_variance": explained,
+            "ev_minus_rev": explained - reversed_,
+            "ev_rev_contrast": ev_rev_contrast(explained, reversed_),
+            "partial_correlation": summary["partial_correlation"],
+            "semipartial_correlation": summary["semipartial_correlation"],
+        }
         row: dict[str, Any] = {
             **_window_columns(index, window),
             "statistic": method.statistic,
-            "value": explained
-            if method.statistic == "explained_variance"
-            else explained - reversed_,
+            "value": values[method.statistic],
             "explained_variance": explained,
             "reversed_explained_variance": reversed_,
             "partial_correlation": summary["partial_correlation"],
+            "semipartial_correlation": summary["semipartial_correlation"],
             "n_pairs": summary["n_pairs"],
             "n_control_windows": n_controls,
         }
+        if method.rest_bins == "events":
+            row["n_control_events"] = min(n for n in control_events if n is not None)
+            row["n_match_events"] = n_match_events
         if method.test == "partial_correlation_t":
             p_value = summary["p_value"]
             row["p_value"] = p_value
@@ -1003,9 +1571,9 @@ def _ev_summary(
     -------
     dict
         ``explained_variance`` and ``reversed_explained_variance`` (means
-        over control windows), ``partial_correlation`` and ``p_value`` (NaN
-        unless there is one control window) and ``n_pairs`` (fewest over
-        control windows).
+        over control windows), ``partial_correlation``,
+        ``semipartial_correlation`` and ``p_value`` (NaN unless there is one
+        control window) and ``n_pairs`` (fewest over control windows).
     """
     # One partial correlation per control window, each on the pairs
     # defined in the template, the match and that control window.
@@ -1027,6 +1595,9 @@ def _ev_summary(
             [result.reversed_explained_variance for result in results]
         ),
         "partial_correlation": results[0].partial_correlation if single else np.nan,
+        "semipartial_correlation": results[0].semipartial_correlation
+        if single
+        else np.nan,
         "p_value": results[0].p_value if single else np.nan,
         "n_pairs": min(result.n_pairs for result in results),
     }
@@ -1082,6 +1653,7 @@ def _rate_equalized_ev_summary(
             "explained_variance",
             "reversed_explained_variance",
             "partial_correlation",
+            "semipartial_correlation",
             "p_value",
         )
     }
@@ -1170,38 +1742,96 @@ def _bootstrap_ev_minus_rev(
 # =============================================================================
 
 
-def _assembly_rows(
+def _detected_patterns(
     method: ReactivationMethod,
-    trains: list[NDArray[np.float64]],
-    template: NDArray[np.float64],
-    control: NDArray[np.float64],
-    match: NDArray[np.float64],
-    labels: NDArray[Any],
+    counts: NDArray[np.float64],
+    session: _Session,
     stream: Any,
+) -> list[tuple[AssemblyPattern, str | None]]:
+    """The method's patterns of the template counts, with their region.
+
+    Each pattern has a weight for every unit (0 for units outside its
+    detection) and the session's labels.
+
+    Returns
+    -------
+    list of (AssemblyPattern, region)
+        ``region`` is the region a pattern was detected in, ``"cross_region"``
+        for a pattern of all units with members in several regions, or None
+        when all units were detected together.
+    """
+    n_units = counts.shape[1]
+    every = np.arange(n_units)
+    sets: list[tuple[NDArray[np.intp], str | None]] = []
+    if method.detection_units == "all":
+        sets.append((every, None))
+    else:
+        regions = session.groups["region"]
+        for region in np.unique(regions):
+            sets.append((np.flatnonzero(regions == region), str(region)))
+        if method.detection_units == "each_region_and_cross_region":
+            sets.append((every, "cross_region"))
+    generator = stream()
+    patterns: list[tuple[AssemblyPattern, str | None]] = []
+    for units, region in sets:
+        try:
+            detection = detect_assemblies(
+                counts[:, units],
+                method=method.detection,  # type: ignore[arg-type]
+                member_rule=method.member_rule,
+                member_threshold=2.0
+                if method.member_threshold is None
+                else method.member_threshold,
+                rng=int(generator.integers(2**32 - 1)),
+                unit_ids=session.labels[units],
+            )
+        except ValueError as error:
+            where = "" if region is None else f" (units of {region})"
+            raise _MethodError(f"{error}{where}") from error
+        for pattern in detection.patterns:
+            members = units[pattern.member_indices]
+            if region == "cross_region":
+                member_regions = session.groups["region"][members]
+                if np.unique(member_regions).size < 2:
+                    continue
+            weights = np.zeros(n_units)
+            weights[units] = pattern.weights
+            full = AssemblyPattern(
+                weights=weights,
+                member_indices=np.sort(members).astype(np.int64),
+                explained_variance_ratio=pattern.explained_variance_ratio,
+                unit_ids=session.labels,
+            )
+            patterns.append((full, region))
+    return patterns
+
+
+def _assembly_rows(
+    method: ReactivationMethod, session: _Session, stream: Any
 ) -> list[dict[str, Any]]:
     """One row per (match window, component) of an assembly method."""
-    template_counts = _counts(trains, template, method.bin_size)
-    try:
-        detection = detect_assemblies(
-            template_counts,
-            method=method.detection,  # type: ignore[arg-type]
-            rng=int(stream().integers(2**32 - 1)),
-            unit_ids=labels,
-        )
-    except ValueError as error:
-        raise _MethodError(str(error)) from error
-    control_windows = _windows_or_error(method.control_windows, control, "control")
+    patterns = _detected_patterns(
+        method, _template_counts(method, session), session, stream
+    )
+    control_windows = _windows_or_error(
+        method.control_windows, session.control, "control"
+    )
     if len(control_windows) != 1:
         raise _MethodError(
             f"an assembly method compares one control window, got {len(control_windows)}"
         )
-    control_z, control_constant, control_segments = _period_z(
-        method, trains, control_windows[0]
+    control_window = control_windows[0]
+    control_samples = _period_samples(method, session.trains, control_window)
+    template_samples = (
+        _period_samples(method, session.trains, session.template)
+        if method.zscore_over == "all_periods"
+        else None
     )
-    n_components = len(detection.patterns)
+    n_components = len(patterns)
+    all_weights = np.array([pattern.weights for pattern, _ in patterns])
     rows: list[dict[str, Any]] = []
     for index, window in enumerate(
-        _windows_or_error(method.match_windows, match, "match")
+        _windows_or_error(method.match_windows, session.match, "match")
     ):
         window_columns = {
             **_window_columns(index, window),
@@ -1211,11 +1841,14 @@ def _assembly_rows(
         if not n_components:
             rows.append(window_columns)
             continue
-        match_z, match_constant, match_segments = _period_z(method, trains, window)
-        # A unit constant in either period has no z-score there; leave it out
-        # of both, as assembly_reactivation() does, and rescale the weights.
-        included = ~(control_constant | match_constant)
-        weights = np.array([pattern.weights for pattern in detection.patterns])
+        match_samples = _period_samples(method, session.trains, window)
+        control_z, match_z, included = _z_scored(
+            method, control_samples, match_samples, template_samples
+        )
+        # A unit without a z-score (constant over the samples it is z-scored
+        # over) is left out of both periods, as assembly_reactivation() does,
+        # and the weights are rescaled.
+        weights = all_weights.copy()
         weights[:, ~included] = 0.0
         norms = np.linalg.norm(weights, axis=1)
         defined = norms > 0
@@ -1240,12 +1873,22 @@ def _assembly_rows(
                 method.percentile,
                 stream(index, 1),
             )
-        for component, pattern in enumerate(detection.patterns):
+        if method.event_response is not None:
+            event_columns = _event_response_columns(
+                method,
+                session,
+                (control_window, control_samples.times, control_activation),
+                (window, match_samples.times, match_activation),
+            )
+        for component, (pattern, region) in enumerate(patterns):
             row = {
                 **window_columns,
                 "component": component,
+                "region": region,
                 "member_unit_ids": tuple(pattern.member_unit_ids.tolist()),
             }
+            if method.event_response is not None:
+                row.update(event_columns["shared"])
             if not defined[component]:
                 rows.append(row)
                 continue
@@ -1258,6 +1901,8 @@ def _assembly_rows(
                 control_mean_activation=control_mean,
                 match_mean_activation=match_mean,
             )
+            if method.event_response is not None:
+                row.update(event_columns["components"][component])
             if method.percentile is not None:
                 threshold = np.percentile(control_strength, method.percentile)
                 row["fraction_above_control_threshold"] = float(
@@ -1265,10 +1910,12 @@ def _assembly_rows(
                 )
             if method.activation_threshold is not None:
                 row["control_activation_rate"] = _activation_rate(
-                    control_strength, control_segments, method.activation_threshold
+                    control_strength,
+                    control_samples.segments,
+                    method.activation_threshold,
                 )
                 row["match_activation_rate"] = _activation_rate(
-                    match_strength, match_segments, method.activation_threshold
+                    match_strength, match_samples.segments, method.activation_threshold
                 )
             if method.test == "cell_identity_shuffle":
                 row["control_fraction_above_shuffle"] = control_shares[component]
@@ -1278,60 +1925,288 @@ def _assembly_rows(
     return rows
 
 
-def _period_z(
+def _event_response_columns(
     method: ReactivationMethod,
-    trains: list[NDArray[np.float64]],
-    window: NDArray[np.float64],
-) -> tuple[NDArray[np.float64], NDArray[np.bool_], list[tuple[int, int, float]]]:
-    """Z-scored activity of one period for R(t).
+    session: _Session,
+    control: tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]],
+    match: tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]],
+) -> dict[str, Any]:
+    """Event-response columns of each component in one match window.
 
     Parameters
     ----------
     method : ReactivationMethod
-        Its ``bin_size`` and ``smoothing_bandwidth``.
-    trains : list of ndarray
-        Spike trains.
-    window : ndarray, shape (n_pieces, 2)
-        The period's epochs.
+        Its ``event_response``, ``statistic``, ``test`` and ``alpha``.
+    session : _Session
+        The events.
+    control, match : tuple of (window, times, activation)
+        Each period's window, sample times (n_samples,) and R(t), shape
+        (n_samples, n_components).
 
     Returns
     -------
-    z : ndarray, shape (n_samples, n_units)
-        Counts in ``bin_size`` bins, or, with a smoothing bandwidth, spike
-        trains convolved with a Gaussian of that standard deviation and
-        sampled every half bandwidth (each epoch piece on its own), z-scored
-        over the period; 0 for constant units.
-    constant : ndarray of bool, shape (n_units,)
-        Units with the same value in every sample.
+    dict
+        ``"shared"``: the event counts; ``"components"``: one dict of
+        columns per component.
+    """
+    response = method.event_response
+    assert response is not None
+    step = method.activation_step
+    if step is None:
+        step = (
+            method.bin_size
+            if method.smoothing_bandwidth is None
+            else method.smoothing_bandwidth / 2
+        )
+    assert step is not None
+    lags = _lags(response.window, step)
+    in_response = _in_lag_window(lags, response.response_window, step)
+    periods = {}
+    for name, (window, times, activation) in (("control", control), ("match", match)):
+        onsets = _events_in(session.events[f"{name}_events"], window)[:, 0]
+        _check_min_events(method, onsets.size, name)
+        # Shape (n_events, n_lags, n_components).
+        values = _peri_event_values(times, activation, step, onsets, lags)
+        responses = _nanmean_along(values[:, in_response], axis=1)
+        if response.reduce == "mean":
+            summary = _nanmean_along(responses, axis=0)
+        else:
+            peri_event = _nanmean_along(values, axis=0)[in_response]
+            summary = np.where(
+                np.isfinite(peri_event).any(axis=0),
+                np.nanmax(
+                    np.where(np.isfinite(peri_event), peri_event, -np.inf), axis=0
+                ),
+                np.nan,
+            )
+        baselines = (
+            _nanmean_along(
+                values[:, _in_lag_window(lags, response.baseline_window, step)], axis=1
+            )
+            if response.baseline_window is not None
+            else None
+        )
+        periods[name] = (onsets.size, responses, summary, baselines)
+    n_control, control_responses, control_summary, _ = periods["control"]
+    n_match, match_responses, match_summary, match_baselines = periods["match"]
+    components = []
+    for component in range(control_responses.shape[1]):
+        before = float(control_summary[component])
+        after = float(match_summary[component])
+        if method.statistic == "event_response_ratio":
+            value = (after - before) / before if before > 0 else np.nan
+            if not before > 0:
+                warnings.warn(
+                    f"component {component}: the control event response is "
+                    f"{before:.3g}, not positive, so the ratio to it is undefined "
+                    "(NaN).",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        else:
+            value = after - before
+        columns: dict[str, Any] = {
+            "control_event_response": before,
+            "match_event_response": after,
+        }
+        if method.statistic in _EVENT_RESPONSE_STATISTICS:
+            columns["value"] = value
+        if response.significant_z is not None:
+            pooled = np.concatenate(
+                [control_responses[:, component], match_responses[:, component]]
+            )
+            pooled = pooled[np.isfinite(pooled)]
+            spread = pooled.std() if pooled.size else 0.0
+            for name, responses in (
+                ("control", control_responses[:, component]),
+                ("match", match_responses[:, component]),
+            ):
+                defined = responses[np.isfinite(responses)]
+                columns[f"{name}_significant_event_fraction"] = (
+                    float(
+                        np.mean(
+                            (defined - pooled.mean()) / spread > response.significant_z
+                        )
+                    )
+                    if defined.size and spread > 0
+                    else np.nan
+                )
+        if method.test == "event_modulation":
+            assert match_baselines is not None
+            p_value, median = _signed_rank_p(
+                match_responses[:, component], match_baselines[:, component]
+            )
+            columns["p_value"] = p_value
+            columns["is_reactivated"] = (
+                bool(p_value < method.alpha and median > 0)
+                if np.isfinite(p_value)
+                else _missing()
+            )
+        components.append(columns)
+    return {
+        "shared": {"n_control_events": n_control, "n_match_events": n_match},
+        "components": components,
+    }
+
+
+@dataclass(frozen=True)
+class _Samples:
+    """One period's activity for R(t), before z-scoring.
+
+    Attributes
+    ----------
+    values : ndarray, shape (n_samples, n_units)
+        Counts, sliding counts or smoothed counts.
+    times : ndarray, shape (n_samples,)
+        Center of each sample's bin, seconds.
     segments : list of (first, stop, sample_duration)
         Sample ranges of each epoch piece and the seconds per sample.
     """
+
+    values: NDArray[np.float64]
+    times: NDArray[np.float64]
+    segments: list[tuple[int, int, float]]
+
+
+def _period_samples(
+    method: ReactivationMethod,
+    trains: list[NDArray[np.float64]],
+    window: NDArray[np.float64],
+) -> _Samples:
+    """Activity of one period for R(t): counts, sliding or smoothed.
+
+    Without smoothing, counts in ``bin_size`` bins, sliding by
+    ``activation_step`` when it is given. With a smoothing bandwidth, spike
+    trains convolved with a Gaussian of that standard deviation and sampled
+    every ``activation_step`` (default half the bandwidth). Each epoch piece
+    is binned and smoothed on its own, so nothing crosses a gap; a piece
+    shorter than one bin holds no sample.
+    """
     from scipy.ndimage import gaussian_filter1d
 
+    assert method.bin_size is not None  # assembly methods have one
     smoothing = method.smoothing_bandwidth
-    step = method.bin_size if smoothing is None else smoothing / 2
-    # Each epoch piece on its own, so smoothing does not cross a gap; a piece
-    # shorter than one sample holds no bin.
-    pieces = [
-        _counts(trains, piece[None, :], step)
-        for piece in window
-        if piece[1] - piece[0] >= step
-    ]
-    if not pieces:
-        raise _MethodError(f"no epoch of the window holds a whole {step:g} s bin")
-    if smoothing is not None:
-        # Kernel standard deviation of 2 samples of smoothing / 2 seconds.
-        pieces = [
-            gaussian_filter1d(piece, sigma=2.0, axis=0, mode="constant")
-            for piece in pieces
-        ]
-    stops = np.cumsum([len(piece) for piece in pieces])
+    if smoothing is None:
+        width = method.bin_size
+        step = width if method.activation_step is None else method.activation_step
+    else:
+        step = (
+            smoothing / 2 if method.activation_step is None else method.activation_step
+        )
+        width = step
+    per_bin = round(width / step)
+    values, times = [], []
+    for piece in window:
+        if piece[1] - piece[0] < width:
+            continue
+        counts, centers = _binned(trains, piece[None, :], step)
+        if smoothing is not None:
+            counts = gaussian_filter1d(
+                counts, sigma=smoothing / step, axis=0, mode="constant"
+            )
+        elif per_bin > 1:
+            # Sliding bins: each sample sums per_bin consecutive steps.
+            cumulative = np.vstack(
+                [np.zeros((1, counts.shape[1])), np.cumsum(counts, 0)]
+            )
+            counts = cumulative[per_bin:] - cumulative[:-per_bin]
+            centers = centers[: counts.shape[0]] - step / 2 + width / 2
+        if counts.shape[0]:
+            values.append(counts)
+            times.append(centers)
+    if not values:
+        raise _MethodError(f"no epoch of the window holds a whole {width:g} s bin")
+    stops = np.cumsum([len(piece) for piece in values])
     segments = [
         (int(stop - len(piece)), int(stop), step)
-        for stop, piece in zip(stops, pieces, strict=True)
+        for stop, piece in zip(stops, values, strict=True)
     ]
-    z, constant = _z_scores(np.vstack(pieces))
-    return z, constant, segments
+    return _Samples(np.vstack(values), np.concatenate(times), segments)
+
+
+def _z_scored(
+    method: ReactivationMethod,
+    control: _Samples,
+    match: _Samples,
+    template: _Samples | None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_]]:
+    """Z-score the control and match samples as ``method.zscore_over`` says.
+
+    Returns
+    -------
+    control_z, match_z : ndarray, shape (n_samples, n_units)
+        0 for the units left out.
+    included : ndarray of bool, shape (n_units,)
+        Units with a z-score: not constant over the samples they are
+        z-scored over (each period, for ``"period"``).
+    """
+    if method.zscore_over == "period":
+        control_z, control_constant = _z_scores(control.values)
+        match_z, match_constant = _z_scores(match.values)
+        return control_z, match_z, ~(control_constant | match_constant)
+    pooled = [control.values, match.values]
+    if method.zscore_over == "all_periods":
+        assert template is not None
+        pooled.append(template.values)
+    stacked = np.vstack(pooled)
+    constant = np.ptp(stacked, axis=0) == 0
+    mean = stacked.mean(axis=0)
+    std = np.where(constant, 1.0, stacked.std(axis=0))
+    control_z = (control.values - mean) / std
+    match_z = (match.values - mean) / std
+    control_z[:, constant] = 0.0
+    match_z[:, constant] = 0.0
+    return control_z, match_z, ~constant
+
+
+def _member_cofiring_rows(
+    method: ReactivationMethod, session: _Session, stream: Any
+) -> list[dict[str, Any]]:
+    """One row per (match window, component) of a member co-firing method."""
+    patterns = _detected_patterns(
+        method, _template_counts(method, session), session, stream
+    )
+    control_windows = _windows_or_error(
+        method.control_windows, session.control, "control"
+    )
+    if len(control_windows) != 1:
+        raise _MethodError(
+            "a member co-firing method compares one control window, got "
+            f"{len(control_windows)}"
+        )
+    control_counts, n_control_events = _rest_counts(
+        method, session, control_windows[0], "control"
+    )
+    rows: list[dict[str, Any]] = []
+    for index, window in enumerate(
+        _windows_or_error(method.match_windows, session.match, "match")
+    ):
+        match_counts, n_match_events = _rest_counts(method, session, window, "match")
+        window_columns = {
+            **_window_columns(index, window),
+            "statistic": method.statistic,
+            "n_components": len(patterns),
+            "n_control_events": n_control_events,
+            "n_match_events": n_match_events,
+        }
+        if not patterns:
+            rows.append(window_columns)
+            continue
+        for component, (pattern, region) in enumerate(patterns):
+            cofiring = assembly_member_cofiring(control_counts, match_counts, pattern)
+            rows.append(
+                {
+                    **window_columns,
+                    "component": component,
+                    "region": region,
+                    "member_unit_ids": tuple(pattern.member_unit_ids.tolist()),
+                    "value": cofiring.mean_correlation_difference,
+                    "control_member_correlation": cofiring.control_mean_correlation,
+                    "match_member_correlation": cofiring.match_mean_correlation,
+                    "n_member_pairs": cofiring.n_member_pairs,
+                }
+            )
+    return rows
 
 
 def _activation_rate(
@@ -1715,6 +2590,470 @@ VAN_DE_VEN_2016 = ReactivationMethod(
     ),
 )
 
+_SWR_EVENTS_NOTE = (
+    "One bin per SWR: pass each sleep period's SWR (start, stop) times as "
+    "control_events and match_events. SWRs vary in length, so spike counts "
+    "per SWR share a duration component that raises every pair correlation "
+    "alike; it cancels between the periods only when their SWRs have "
+    "similar durations."
+)
+
+OLIVA_2020_EV = dataclasses.replace(
+    KUDRIMOTI_1999,
+    name="oliva_2020_ev",
+    reference=(
+        "Oliva, A., Fernández-Ruiz, A., Leroy, F., & Siegelbaum, S. A. (2020). "
+        "Hippocampal CA2 sharp-wave ripples reactivate and promote social "
+        "memory. Nature, 587(7833), 264-269. "
+        "https://doi.org/10.1038/s41586-020-2758-y"
+    ),
+    bin_size=0.1,
+    rest_bins="events",
+    pairs="all",
+    control_windows=ReactivationWindows(),
+    match_windows=ReactivationWindows(),
+    statistic="ev_minus_rev",
+    test=None,
+    notes=(
+        "Kudrimoti's EV with the social-learning trials as template: "
+        "'r_social episode,POST and r_social episode,PRE are the Pearson's "
+        "correlation coefficients of pairwise correlation matrices between "
+        "the social learning episodes and SWRs times of the post-sleep and "
+        "pre-sleep periods' (Methods, Reactivation analysis). The printed "
+        "formula is garbled in the manuscript; it is Kudrimoti's.",
+        "100 ms bins: 'Pairwise neuronal correlations for EV and REV were "
+        "calculated using the Pearson correlation coefficient on 100 ms "
+        "binned spike trains'. 100 ms bins cannot tile SWRs, which are "
+        "mostly shorter: here the task is binned at 100 ms and each SWR is "
+        "one bin ('all epochs/events were detected individually and pooled "
+        "together'), as in the lab's code (neurocode ExplainedVariance.m "
+        "counts spikes per interval). " + _SWR_EVENTS_NOTE,
+        "Whole sleep periods: SWRs of all of pre- and post-sleep are pooled; "
+        "no window is stated.",
+        "All pairs of interest: 'calculated in each session using the cell "
+        "pairs of interest ... for pyramidal cells only'; pass the pairs as "
+        "pair_mask=.",
+        "Statistic EV - REV: 'The control value (REV) was obtained by "
+        "switching the temporal order of the pre- and post-sleep sessions'; "
+        "Extended Data Fig. 8b plots '(EV – REV) measure of post-sleep "
+        "reactivation'.",
+        "No per-session test: 'EV was significantly higher than REV (chance) "
+        "... n = 13 mice' (Fig. 3b), so is_reactivated is missing. The "
+        "per-pair contributions are explained_variance_contributions().",
+    ),
+)
+
+OLIVA_2020_ASSEMBLY = dataclasses.replace(
+    VAN_DE_VEN_2016,
+    name="oliva_2020_assembly",
+    reference=OLIVA_2020_EV.reference,
+    bin_size=0.02,
+    smoothing_bandwidth=0.01,
+    notes=(
+        "20 ms bins: 'spike trains of each neuron were binned in 20-ms "
+        "intervals for the whole session and z-scored' (Methods, Cell "
+        "assembly analysis); 'for the whole session' is read as the "
+        "social-learning trials passed as template_epochs.",
+        "Smoothing: 'Spike trains were convolved with a Gaussian kernel (SD = "
+        "10 ms)'. Whether detection used the smoothed or the binned trains is "
+        "not clear; here detection uses the 20 ms counts and R(t) the "
+        "smoothed trains, as in VAN_DE_VEN_2016, sampled every 5 ms.",
+        "Detection: 'principal components whose eigenvalues exceeded the "
+        "threshold for random firing correlations (Marčenko-Pastur "
+        "distribution). Independent component analysis was then used'.",
+        "Activations: 'Assembly activity was only considered when its "
+        "expression strength exceeded a threshold of 5'.",
+        "Statistic: 'Reactivation strength of an assembly was defined as the "
+        "difference in its average expression strength during post-sleep "
+        "minus that during pre-sleep'. Over all sleep or only SWRs is not "
+        "stated; pass the sleep (or NREM) epochs. Each period is z-scored on "
+        "its own, as in VAN_DE_VEN_2016.",
+        "No per-pattern test in the text.",
+    ),
+)
+
+EL_GABY_2021 = ReactivationMethod(
+    name="el_gaby_2021",
+    reference=(
+        "El-Gaby, M., Reeve, H. M., Lopes-dos-Santos, V., Campo-Urriza, N., "
+        "Perestenko, P. V., Morley, A., Strickland, L. A. M., Lukács, I. P., "
+        "Paulsen, O., & Dupret, D. (2021). An emergent neural coactivity code "
+        "for dynamic memory. Nature Neuroscience, 24(5), 694-704. "
+        "https://doi.org/10.1038/s41593-021-00820-w"
+    ),
+    measure="member_cofiring",
+    bin_size=0.025,
+    rest_bins="events",
+    min_events=200,
+    detection="ica",
+    member_rule="positive_z",
+    member_threshold=2.0,
+    statistic="mean_member_correlation_difference",
+    test=None,
+    notes=(
+        "Detection on 25 ms counts: 'Spikes discharged by each neuron were "
+        "counted in 25-ms ... time bins and standardised (z-scored ...)' "
+        "(Methods: Neuronal pattern isolation and tracking); 'the number of "
+        "principal components of the activity matrix with variances above a "
+        "threshold derived from an analytical probability function for "
+        "uncorrelated data ... independent component analysis' (ref. 26, "
+        "Lopes-dos-Santos et al. 2013). No smoothing is stated.",
+        "Template: 'active periods (speed > 2 cm.s-1) separately during the "
+        "entire last session of contingency X, contingency Y (i.e. X2 and Y2) "
+        "or the exploration session of the control enclosure'. Pass one "
+        "session's running epochs as template_epochs and call once per "
+        "session.",
+        "Members: 'the direction where weights were highest was assigned "
+        "positive weights, and principal CA1 neurons whose weight was "
+        "positive and exceeded 2 standard deviations from the mean were "
+        'defined as pattern "members"\' (signed weights, unit length, the '
+        "largest absolute weight positive); 1 and 3 SD were robustness "
+        "checks.",
+        "Rest bins: 'we used SWR events as activity bins and calculated the "
+        "Pearson correlations between pairs of pattern members separately "
+        "across each sleep session ... only sessions where at least 200 SWR "
+        "events were detected were included' (Methods: LFP analyses). Whether "
+        "counts were divided by SWR duration is not stated; counts are used. "
+        + _SWR_EVENTS_NOTE,
+        "Control and match: Fig. 4c compares pre-learning (post-exploration) "
+        "sleep with post-learning sleep; Fig. 4b pre- with post-exploration "
+        "sleep. Sleep analyses are not speed-filtered.",
+        "Statistic: mean member-pair r in the match period minus the control "
+        "period, over the pairs defined in both. The paper reports the "
+        "per-session means and forms no difference.",
+        "No per-pattern or per-session test: Fig. 4b,c report DABEST "
+        "bootstrap confidence intervals (1,000 resamples) without stating "
+        "whether pairs, members or patterns are the unit, so is_reactivated "
+        "is missing.",
+        "The 'contingency-discriminating' and 'contingency-invariant' "
+        "classes use best-match cosine similarity with thresholds pooled "
+        "over recording days (assembly_similarity()); join your "
+        "classification to component and member_unit_ids.",
+    ),
+)
+
+_HARVEY_2023_REFERENCE = (
+    "Harvey, R. E., Robinson, H. L., Liu, C., Oliva, A., & Fernandez-Ruiz, A. "
+    "(2023). Hippocampo-cortical circuits for selective memory encoding, "
+    "routing, and replay. Neuron, 111(13), 2076-2090. "
+    "https://doi.org/10.1016/j.neuron.2023.04.015"
+)
+_LIU_2023_REFERENCE = (
+    "Liu, C., Todorova, R., Tang, W., Oliva, A., & Fernandez-Ruiz, A. (2023). "
+    "Associative and predictive hippocampal codes support memory-guided "
+    "behaviors. Science, 382(6668), eadi8237. "
+    "https://doi.org/10.1126/science.adi8237"
+)
+
+HARVEY_2023_ASSEMBLY = ReactivationMethod(
+    name="harvey_2023_assembly",
+    reference=_HARVEY_2023_REFERENCE,
+    measure="assembly",
+    bin_size=0.025,
+    control_windows=ReactivationWindows(length=3600.0, count=1, clock="wall"),
+    match_windows=ReactivationWindows(length=3600.0, count=1, clock="wall"),
+    detection="ica",
+    member_rule="otsu",
+    member_threshold=None,
+    smoothing_bandwidth=0.025 / np.sqrt(12.0),
+    activation_step=0.002,
+    zscore_over="all_periods",
+    activation_threshold=5.0,
+    event_response=EventResponse(response_window=(0.0, 0.05), reduce="peak"),
+    statistic="event_response_difference",
+    test=None,
+    notes=(
+        "Detection on 25 ms bins: 'The spike trains for each neuron were "
+        "binned into time windows (25-ms for inter-hippocampal in Figure 1 "
+        "...) and z-score transformed ... Marcenko-Pastur ... ICA, using the "
+        "fast ICA algorithm' (STAR Methods, Cell assembly analyses, p. e5). "
+        "The lab's code detects in the task's theta epochs: pass them as "
+        "template_epochs.",
+        "Members: 'Cell assembly members were identified using Otsu's method "
+        "to divide the absolute weights into two groups that maximized "
+        "inter-class variance. Neurons in the group with greater absolute "
+        "weights were classified as members.'",
+        "R(t): 'z(t) was obtained by convolving the spike-train of each "
+        "neuron with a Gaussian kernel (s.d. = w/√(dt/2)) and then z-scoring "
+        "each trace. w was set to 25 ms'. The code computes the s.d. as "
+        "w / √⌊w_ms / 2⌋, 25 / √12 ≈ 7.2 ms (50 / √25 = 10 ms for the 50 ms "
+        "bins of Fig. 7), on spikes binned at 2 ms: activation_step=0.002.",
+        "Z-scoring: 'z-scoring each trace'; the code z-scores over the whole "
+        "session, read here as the template, control and match periods "
+        "together (zscore_over='all_periods').",
+        "Windows: the code takes the first 3,600 s of the pre- and post-task "
+        "sleep sessions restricted to NREM; here the first hour on the clock "
+        "from the first NREM epoch given (pass the first hour of each sleep "
+        "session intersected with NREM to match the code).",
+        "Response: Fig. 2G, 'SWR-triggered average reactivation strength in "
+        "post-task sleep'; the figure's statistic in the code is the peak of "
+        "the post-sleep peri-SWR mean over 0-50 ms after SWR start "
+        "(reduce='peak', response_window=(0, 0.05)), around ±0.5 s.",
+        "Activations: 'Assembly activations were defined as peaks exceeding "
+        "R_THRES > 5'.",
+        "Statistic: the paper compares post-sleep responses of deep and "
+        "superficial assemblies ('p = 0.022, rank-sum test, 197 "
+        "assemblies'), so match_event_response is the paper's number; post "
+        "minus pre is reported for comparison. No per-pattern test.",
+        "Fig. 7 variant: dataclasses.replace(HARVEY_2023_ASSEMBLY, "
+        "name=..., bin_size=0.05, smoothing_bandwidth=0.01, "
+        "activation_step=0.005, zscore_over='control_and_match'). Its "
+        "cross-region selection and per-lag z-scoring of the peri-event "
+        "curve are not applied. The code also drops patterns whose Otsu "
+        "members have mixed signs (not applied by the Fig. 2 scripts, nor "
+        "here).",
+    ),
+)
+
+LIU_2023_EV = ReactivationMethod(
+    name="liu_2023_ev",
+    reference=_LIU_2023_REFERENCE,
+    measure="explained_variance",
+    bin_size=None,
+    template_bins="events",
+    rest_bins="events",
+    statistic="explained_variance",
+    test=None,
+    notes=(
+        "Theta-cycle template: 'Each spike train was binned in individual "
+        "theta cycles, and the cofiring of a pair of cells was defined as the "
+        "Pearson correlation coefficient of the binned firing rates of the "
+        "two cells across all theta cycles in the recorded session' "
+        "(Materials and methods, Coactivity and reactivation analysis, p. "
+        "13). Pass the task's theta cycles as template_events.",
+        "SWR bins in sleep: 'C, CPRE, and CPOST refer to the cofiring matrix "
+        "and the correlation matrices across SWRs in pre- and post-task "
+        "sleep'; the lab's code counts spikes per SWR (neurocode "
+        "ExplainedVariance.m). " + _SWR_EVENTS_NOTE,
+        "EV = ((r_C,CPOST − r_C,CPRE r_CPOST,CPRE) / √((1 − r²_C,CPRE)(1 − "
+        "r²_CPOST,CPRE)))², 'compared with the control value of reverse "
+        "explained variance (REV) obtained by recomputing EV after swapping "
+        "CPRE and CPOST'.",
+        "Windows: 'EV was computed for each recorded session separately'; no "
+        "sleep window is stated, so all SWRs of each sleep period are used.",
+        "No per-session test: 'Wilcoxon signed-rank test ... n = 5 sessions' "
+        "of EV against REV (Fig. 4E).",
+    ),
+)
+
+LIU_2023_PAIRWISE = dataclasses.replace(
+    LIU_2023_EV,
+    name="liu_2023_pairwise",
+    statistic="semipartial_correlation",
+    notes=(
+        "Pairwise reactivation: 'we used linear regression between CPOST and "
+        "CPRE to remove the portion of the variance in CPOST that can be "
+        "explained by preexisting patterns, and we correlated the resultant "
+        "residuals CRESIDUAL with C' (after Giri et al. 2019). Only the "
+        "post-task side is residualized, so this is the semipartial "
+        "correlation (r_tm − r_tc r_mc) / √(1 − r_mc²), not the partial "
+        "correlation; the lab's CorrResiduals.m fits the line with an "
+        "intercept over the pairs defined in both periods.",
+        "Bins as LIU_2023_EV: one per theta cycle in the task (template_events) "
+        "and one per SWR in sleep. " + _SWR_EVENTS_NOTE,
+        "For the cheeseboard task the paper compared pairs of cells "
+        "preferring the same side; pass them as pair_mask=.",
+        "No per-session test.",
+    ),
+)
+
+LIU_2023_ASSEMBLY = ReactivationMethod(
+    name="liu_2023_assembly",
+    reference=_LIU_2023_REFERENCE,
+    measure="assembly",
+    bin_size=0.025,
+    control_windows=ReactivationWindows(length=3600.0, anchor="end", count=1),
+    match_windows=ReactivationWindows(length=3600.0, count=1),
+    detection="ica",
+    member_rule="positive_z",
+    member_threshold=2.0,
+    zscore_over="control_and_match",
+    activation_threshold=5.0,
+    event_response=EventResponse(),
+    statistic="event_response_difference",
+    test=None,
+    notes=(
+        "Detection: 'spike trains of each neuron were binned in 25-ms "
+        "intervals for the whole session (including only task periods during "
+        "movement) ... Marchenko-Pastur ... fast-ICA' (Materials and methods, "
+        "Cell assembly analyses, p. 13). Pass the task's movement epochs as "
+        "template_epochs.",
+        "Members: 'Assembly members were thus considered those cells whose "
+        "weight exceeded the mean weight of the assembly by two standard "
+        "deviations' (signed weights).",
+        "Windows: 'the last hour of cumulative baseline sleep and the first "
+        "hour of cumulative post-task sleep, excluding periods outside of "
+        "non-REM sleep' (fig. S9B). Pass NREM epochs; the hours are "
+        "concatenated NREM time.",
+        "Response: 'Reactivation strength of task-related assemblies "
+        "centered on post-task sleep SWR, increased relative to baseline' "
+        "(Fig. 4D). The lab's pipeline (neurocode pipelineReactivation.m) "
+        "takes 'the mean response to ripples as the strength between 0 and "
+        "100ms after the ripple start', over ±0.5 s.",
+        "R(t) sampling is not stated: here the 25 ms detection bins (the "
+        "lab tutorial uses 20 ms bins in 1 ms steps; "
+        "dataclasses.replace(..., bin_size=0.02, activation_step=0.001) is "
+        "close to it, though detection then uses 20 ms bins too).",
+        "Z-scoring: the lab's ReactivationStrength.m z-scores the bins it is "
+        "given, pre- and post-task NREM together "
+        "(zscore_over='control_and_match').",
+        "Activations: 'Assembly activation events were detected as peaks in "
+        "the assembly activation strength exceeding a value of 5'.",
+        "No per-component test: 'Wilcoxon signed-rank test, n = 31 "
+        "components' across components (Fig. 4D).",
+    ),
+)
+
+_CHANG_2025_REFERENCE = (
+    "Chang, H., Tang, W., Wulf, A. M., Nyasulu, T., Wolf, M. E., "
+    "Fernandez-Ruiz, A., & Oliva, A. (2025). Sleep microstructure organizes "
+    "memory replay. Nature, 637(8048), 1161-1169. "
+    "https://doi.org/10.1038/s41586-024-08340-w"
+)
+
+CHANG_2025_ASSEMBLY = ReactivationMethod(
+    name="chang_2025_assembly",
+    reference=_CHANG_2025_REFERENCE,
+    measure="assembly",
+    bin_size=0.05,
+    detection="ica",
+    member_rule="positive_z",
+    member_threshold=3.0,
+    activation_step=0.01,
+    zscore_over="control_and_match",
+    event_response=EventResponse(baseline_window=(-0.5, -0.1)),
+    statistic="event_response_ratio",
+    test="event_modulation",
+    alpha=0.05,
+    notes=(
+        "Detection: 'spike trains for each neuron were binned (50-ms bin) "
+        "for the whole session. During the locomotor periods of the task (> "
+        "2 cm/s), the matrix of firing correlation coefficients ... "
+        "Marčenko-Pastur law ... ICA (fast-ICA algorithm)' (Methods, "
+        "Reactivation strength and cell assembly analyses). Pass running "
+        "epochs as template_epochs.",
+        "Members: 'A given cell was considered a member of an assembly if "
+        "its weight exceeded the mean weight of the assembly by 3 SDs'.",
+        "R(t) sampling and z-scoring are not stated; the lab's code "
+        "(pupil_project cal_ReactivationStrength.m) uses 50 ms bins in 10 ms "
+        "steps over PRE and POST NREM, z-scored together "
+        "(activation_step=0.01, zscore_over='control_and_match').",
+        "Per-SWR strength: 'Reactivation strength (RS) for a given SWR was "
+        "calculated as the mean of S during that event'; the classification "
+        "uses 'the mean RS within a 100-ms window after SWR onset', as does "
+        "the code, which is used here for every SWR.",
+        "Statistic: 'we normalized RS during POST sleep by the mean RS in PRE "
+        "sleep'; the code computes (POST − PRE) / PRE, NaN here unless the "
+        "PRE response is positive.",
+        "Test: 'cell assemblies with a significant increase in RS during POST "
+        "SWRs (0 to 100 ms after SWR onset) compared to baseline (−500 to "
+        "−100 ms relative to SWR onset; with p < 0.05, rank-sum paired "
+        "test)'. Read as the two-sided Wilcoxon signed-rank test over POST "
+        "SWRs; is_reactivated when p < 0.05 and the median difference is "
+        "positive. The paper uses it to select assemblies, then calls them "
+        "'rigid' or 'plastic' by whether POST exceeds PRE.",
+        "Windows: whole PRE and POST sleep; pass their NREM epochs.",
+    ),
+)
+
+_ROBINSON_2026_REFERENCE = (
+    "Robinson, H. L., Todorova, R., Nagy, G. A., Gruzdeva, A., Paudel, P., "
+    "Oliva, A., & Fernandez-Ruiz, A. (2026). Large sharp-wave ripples "
+    "promote hippocampo-cortical memory reactivation and consolidation "
+    "during sleep. Neuron, 114(2), 226-236.e6. "
+    "https://doi.org/10.1016/j.neuron.2025.10.003"
+)
+_ROBINSON_2026_SOURCE = (
+    "Read from the bioRxiv preprint v2 (10.1101/2025.06.27.662061, STAR "
+    "Methods); the published version was not checked."
+)
+
+ROBINSON_2026_PAIRWISE = dataclasses.replace(
+    KUDRIMOTI_1999,
+    name="robinson_2026_pairwise",
+    reference=_ROBINSON_2026_REFERENCE,
+    bin_size=0.1,
+    rest_bins="events",
+    pairs="all",
+    control_windows=ReactivationWindows(),
+    match_windows=ReactivationWindows(),
+    statistic="partial_correlation",
+    test=None,
+    notes=(
+        _ROBINSON_2026_SOURCE,
+        "'we binned the activity of all units in 100 ms during movement "
+        "intervals of training of the object task ... Cbehavior' (STAR "
+        "Methods, Pairwise reactivation). Pass the training's movement "
+        "epochs as template_epochs.",
+        "'we binned the activity of all units during SWRs in baseline sleep "
+        "... Cbaseline ... during SWRs in post-task sleep ... Cpost'. The bin "
+        "is not stated: one bin per SWR, as in the lab's CorrInIntervals. "
+        + _SWR_EVENTS_NOTE,
+        "'We used linear regression between Cbaseline and Cbehavior and "
+        "between Cbaseline and Cpost to remove the portion of the variance "
+        "that can be explained by preexisting patterns. The reactivation of "
+        "pairwise behavioral patterns in post-task sleep was quantified as "
+        "the correlation between the resultant residuals Rbehavior and "
+        "Rpost.' The correlation of two residuals on the same regressor is "
+        "the partial correlation, so this is Kudrimoti's partial "
+        "correlation without the square (statistic='partial_correlation').",
+        "Pairs: CA1, PFC or CA1-PFC pairs; dataclasses.replace(..., "
+        "pairs='different_regions') with unit_groups={'region': ...} for the "
+        "cross-region pairs of Fig. 4A.",
+        "No per-session test: a hierarchical bootstrap (animals, sessions, "
+        "pairs; 5,000 resamples) across sessions.",
+    ),
+)
+
+ROBINSON_2026_ASSEMBLY = ReactivationMethod(
+    name="robinson_2026_assembly",
+    reference=_ROBINSON_2026_REFERENCE,
+    measure="assembly",
+    bin_size=0.05,
+    detection="ica",
+    member_rule="inverse_sqrt_n",
+    member_threshold=None,
+    detection_units="each_region_and_cross_region",
+    activation_step=0.01,
+    zscore_over="control_and_match",
+    event_response=EventResponse(significant_z=1.96),
+    statistic="event_response_difference",
+    test=None,
+    notes=(
+        _ROBINSON_2026_SOURCE,
+        "Detection: 'for each region (the hippocampus and the prefrontal "
+        "cortex), spike trains of each neuron were binned in 50-ms intervals "
+        "for the whole session ... Marčenko-Pastur law ... fast-ICA' (STAR "
+        "Methods, Cell assembly analyses). Pass unit_groups={'region': ...} "
+        "and the training's exploration epochs as template_epochs.",
+        "Cross-structural assemblies: 'we combined the recordings in the "
+        "hippocampus and the prefrontal cortex and performed assembly "
+        "detection as described above. For a given assembly, the weight "
+        "vector was normalized to have unit Euclidean norm, and units whose "
+        "weights exceeded 1/√N, where N is the number of recorded units, "
+        "were considered assembly members. Cell assemblies with members in "
+        "both the hippocampus and the prefrontal cortex were retained'. The "
+        "same rule names the members of the per-region patterns, with N the "
+        "region's units (no rule is stated for them).",
+        "Response: 'Assembly responses to SWRs were quantified as the mean "
+        "reactivation strength within 0–100 ms of SWR onset.' Per-SWR "
+        "significance: 'responses were z-scored within each assembly ... "
+        "responses exceeding z = 1.96 (P < 0.05) were considered "
+        "significant', read as z-scored over the assembly's SWRs of both "
+        "sleep periods (significant_z=1.96).",
+        "R(t) sampling and z-scoring are not stated: 50 ms bins in 10 ms "
+        "steps over both sleep periods together, as in the lab's code for "
+        "Chang et al. (2025).",
+        "Not applied: 'We therefore discarded cell assemblies with "
+        "significant reactivation in baseline sleep before object "
+        "exploration' (no test is stated; control_significant_event_fraction "
+        "and control_event_response describe baseline sleep).",
+        "No per-pattern test: hierarchical bootstrap 'of assembly "
+        "reactivation in post-task sleep relative to baseline sleep' (Fig. "
+        "3J).",
+    ),
+)
+
 PUBLISHED_REACTIVATION_METHODS: tuple[ReactivationMethod, ...] = (
     KUDRIMOTI_1999,
     PENNARTZ_2004,
@@ -1723,6 +3062,16 @@ PUBLISHED_REACTIVATION_METHODS: tuple[ReactivationMethod, ...] = (
     PEYRACHE_2010,
     VAN_DE_VEN_2016,
     GIRI_2019,
+    OLIVA_2020_EV,
+    OLIVA_2020_ASSEMBLY,
+    EL_GABY_2021,
+    HARVEY_2023_ASSEMBLY,
+    LIU_2023_EV,
+    LIU_2023_PAIRWISE,
+    LIU_2023_ASSEMBLY,
     GIRI_2024,
+    CHANG_2025_ASSEMBLY,
+    ROBINSON_2026_PAIRWISE,
+    ROBINSON_2026_ASSEMBLY,
 )
 """Every published reactivation recipe in this module, by year."""

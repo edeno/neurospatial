@@ -297,10 +297,22 @@ by position:
   sizes rather than significance verdicts
 - `detect_assemblies(component_threshold=...)`: Marchenko-Pastur (default),
   Tracy-Widom, bin-shuffle or circular-shift eigenvalue thresholds
-- `ReactivationMethod`, `ReactivationWindows`, `PUBLISHED_REACTIVATION_METHODS`
-  and `compare_reactivation_methods()`: published EV and assembly analyses
-  (Kudrimoti 1999 to Giri 2024) as recipes with their bin sizes, pair rules,
-  windows and tests, applied to one session's spike times
+- `ReactivationMethod`, `ReactivationWindows`, `EventResponse`,
+  `PUBLISHED_REACTIVATION_METHODS` and `compare_reactivation_methods()`:
+  published EV, assembly and member co-firing analyses (Kudrimoti 1999 to
+  Robinson 2026) as recipes with their bin sizes, pair rules, windows and
+  tests, applied to one session's spike times; spikes counted in fixed bins
+  or one bin per event (SWRs, theta cycles), and assemblies followed around
+  SWR onsets
+- `detect_assemblies(member_rule=...)`: members by absolute or signed weight
+  z-scores, Otsu's split or weights above 1/√N
+- `assembly_member_cofiring()`: correlations of a pattern's members in two
+  periods (El-Gaby et al., 2021); `assembly_similarity()`: absolute cosine
+  similarity and best matches between sessions' patterns
+- `assembly_event_response()`: R(t) averaged around events such as SWR
+  onsets, each event's response and a signed-rank test against a baseline
+- `explained_variance_contributions()`: each pair's and unit's share of EV
+  (Oliva et al., 2020); `ev_rev_contrast()`: (EV − REV) / (EV + REV)
 - `null_reactivation_data()`, `simulated_reactivation_session()` and
   `reactivation_detection_rates()`: data without reactivation, a simulated
   session with a rate-change confound, and verdict rates with exact intervals

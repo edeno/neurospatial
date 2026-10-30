@@ -296,7 +296,7 @@ class TestDetectAssemblies:
         assert len(result.patterns) == 0
         assert result.activations.shape == (random_spike_counts.shape[0], 0)
 
-    def test_z_threshold_affects_membership(self) -> None:
+    def test_member_threshold_affects_membership(self) -> None:
         """Weak participants are members at a low cutoff only; core cells at both."""
         rng = np.random.default_rng(1)
         counts = rng.poisson(1.0, (4000, 60)).astype(np.float64)
@@ -308,8 +308,8 @@ class TestDetectAssemblies:
             if k == 0:  # cells 30 and 31 join assembly 0 weakly
                 counts[np.ix_(events, [30, 31])] += rng.poisson(1.0, (200, 2))
 
-        def members(z_threshold: float) -> list[list[int]]:
-            result = detect_assemblies(counts, z_threshold=z_threshold, rng=0)
+        def members(member_threshold: float) -> list[list[int]]:
+            result = detect_assemblies(counts, member_threshold=member_threshold, rng=0)
             return sorted(p.member_indices.tolist() for p in result.patterns)
 
         core = [[0, 1, 2, 3], [10, 11, 12, 13], [20, 21, 22, 23]]
