@@ -9,7 +9,7 @@ spike times and each cell's place field.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -30,6 +30,12 @@ if TYPE_CHECKING:
 _SPIKE_STATISTICS = ("first", "median", "mean", "all_spikes")
 _FIELD_ORDERS = ("peak", "center")
 _MULTI_FIELD_CELLS = ("keep", "exclude")
+# When a cell fired in an event, for each spike_statistic but "all_spikes".
+_SPIKE_SUMMARIES: dict[str, Callable[..., Any]] = {
+    "first": np.min,
+    "median": np.median,
+    "mean": np.mean,
+}
 # Largest number of (shuffle, pair) values ranked at once.
 _BLOCK_VALUES = 2_000_000
 
@@ -131,8 +137,12 @@ class RankOrderSignificanceResult(ResultMixin):
 
     observed: RankOrderResult
     shuffle: ShuffleTestResult
-    p_value: float
     alternative: str
+
+    @property
+    def p_value(self) -> float:
+        """The shuffle test's p-value."""
+        return self.shuffle.p_value
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
@@ -430,11 +440,6 @@ def rank_order_significance(
     rho = 1.00, p = 0.002
     """
     from neurospatial.stats import _ensure_rng
-    from neurospatial.stats.shuffle import (
-        ShuffleTestResult,
-        compute_shuffle_pvalue,
-        compute_shuffle_zscore,
-    )
 
     operation = "rank_order_significance()"
     if (
@@ -477,28 +482,12 @@ def rank_order_significance(
                 fix="skip this event, or lower min_active_cells (at least 3)",
             )
         )
-    generator = _ensure_rng(rng)
-    n_active = observed.n_active_cells
-    permutations = np.argsort(generator.random((n_shuffles, n_active)), axis=1)
-    null = _permuted_correlations(pairs, permutations)
-    test = ShuffleTestResult(
-        observed_score=observed.score,
-        null_scores=null,
-        # Ties in rho differ by rounding between spearmanr and the matrix
-        # formula of the shuffles.
-        p_value=compute_shuffle_pvalue(
-            round(observed.score, _SCORE_DECIMALS),
-            np.round(null, _SCORE_DECIMALS),
-            tail=alternative,
-        ),
-        z_score=compute_shuffle_zscore(observed.score, null),
-        shuffle_type="cell_order",
-        n_shuffles=n_shuffles,
+    test = _cell_order_test(
+        pairs, observed.score, n_shuffles, alternative, _ensure_rng(rng)
     )
     return RankOrderSignificanceResult(
         observed=observed,
         shuffle=test,
-        p_value=test.p_value,
         alternative=alternative,
     )
 
@@ -561,17 +550,8 @@ def _event_pairs(
     )
     positions[excluded] = np.nan
     trains = as_spike_trains(spike_times)
-    if len(trains) != len(positions):
-        raise ValueError(
-            _format_error(
-                f"{operation}: spike_times has {len(trains)} cells but "
-                f"encoding_models has {len(positions)} rate maps.",
-                why="each cell's firing is compared with its own place field",
-                fix="pass spike times and rate maps for the same cells, in the "
-                "same order",
-            )
-        )
-    in_event = [train[(train >= start) & (train < stop)] for train in trains]
+    _require_same_cells(len(trains), len(positions), operation)
+    in_event = _spikes_in(trains, start, stop)
     active = np.array(
         [
             unit
@@ -580,32 +560,13 @@ def _event_pairs(
         ],
         dtype=np.intp,
     )
-    if spike_statistic == "all_spikes":
-        times = (
-            np.concatenate([in_event[unit] for unit in active])
-            if active.size
-            else np.empty(0)
-        )
-        cell = np.repeat(
-            np.arange(active.size), [in_event[unit].size for unit in active]
-        )
-    else:
-        summaries = [in_event[unit] for unit in active]
-        if spike_statistic == "first":
-            times = np.array([spikes.min() for spikes in summaries], dtype=np.float64)
-        elif spike_statistic == "median":
-            times = np.array(
-                [np.median(spikes) for spikes in summaries], dtype=np.float64
-            )
-        else:
-            times = np.array([spikes.mean() for spikes in summaries], dtype=np.float64)
-        cell = np.arange(active.size)
+    times, cell = _pooled_spikes(in_event, active, spike_statistic)
     if active.size < min_active_cells:
         times, cell = np.empty(0), np.empty(0, dtype=np.intp)
     return _EventPairs(
         field_positions=positions[active],
-        times=np.asarray(times, dtype=np.float64),
-        cell=np.asarray(cell, dtype=np.intp),
+        times=times,
+        cell=cell,
         active_units=active,
         multi_field_cells=multi_field_cells,
         excluded_units=excluded,
@@ -613,15 +574,25 @@ def _event_pairs(
 
 
 def _result(
-    pairs: _EventPairs, spike_statistic: str, field_order: str
+    pairs: _EventPairs,
+    spike_statistic: str,
+    field_order: str,
+    *,
+    analytic_p_value: bool = True,
 ) -> RankOrderResult:
+    """The event's correlation; ``analytic_p_value=False`` leaves the p-value NaN.
+
+    The exact p-value enumerates every ordering of up to 9 pairs, so callers
+    that test the score otherwise skip it.
+    """
     score, p_value = np.nan, np.nan
     if pairs.times.size:
         x = pairs.field_positions[pairs.cell]
         if np.ptp(x) > 0 and np.ptp(pairs.times) > 0:
             test = stats.spearmanr(x, pairs.times)
             score = float(test.statistic)
-            p_value = _spearman_p_value(x, pairs.times, score, float(test.pvalue))
+            if analytic_p_value:
+                p_value = _spearman_p_value(x, pairs.times, score, float(test.pvalue))
     return RankOrderResult(
         score=score,
         analytic_p_value=p_value,
@@ -707,7 +678,8 @@ def _spearman_p_value(
 ) -> float:
     """Two-sided Spearman p-value: exact for few pairs, else the t-approximation."""
     import math
-    from itertools import permutations
+
+    from neurospatial.replay.sequence_match import _all_permutations
 
     n = x.size
     if n > _EXACT_MAX_PAIRS:
@@ -715,12 +687,15 @@ def _spearman_p_value(
         # distinct values is rarer than 2 / n!, computed in log space because
         # n! overflows a float from n = 171 (the bound then underflows to 0).
         return max(approximate, 2.0 * math.exp(-math.lgamma(n + 1)))
-    x_ranks = stats.rankdata(x)
-    t_ranks = stats.rankdata(times)
-    orders = np.array(list(permutations(range(n))), dtype=np.intp)
-    permuted = x_ranks[orders] - x_ranks.mean()
-    t_dev = t_ranks - t_ranks.mean()
-    rho = (permuted @ t_dev) / np.sqrt((permuted[0] ** 2).sum() * (t_dev**2).sum())
+    orders = _all_permutations(n)
+    # Blocks of orderings bound the memory of the rank arrays (n = 9 has 362,880).
+    block = _BLOCK_VALUES // (8 * n)
+    rho = np.concatenate(
+        [
+            _spearman_rows(x[orders[start : start + block]], times)
+            for start in range(0, len(orders), block)
+        ]
+    )
     return float(
         np.mean(
             np.abs(np.round(rho, _SCORE_DECIMALS)) >= round(abs(score), _SCORE_DECIMALS)
@@ -728,24 +703,58 @@ def _spearman_p_value(
     )
 
 
+def _spearman_rows(
+    x: NDArray[np.float64], values: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Spearman correlation of each row of ``x``, shape (n_rows, n), with ``values``.
+
+    Average ranks for ties; NaN where a row, or ``values``, does not vary.
+    """
+    v_ranks = stats.rankdata(values)
+    v_dev = v_ranks - v_ranks.mean()
+    x_ranks = stats.rankdata(x, axis=1)
+    x_dev = x_ranks - x_ranks.mean(axis=1, keepdims=True)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        rho = (x_dev @ v_dev) / np.sqrt((x_dev**2).sum(axis=1) * (v_dev**2).sum())
+    varies = (np.ptp(x, axis=1) > 0) & (np.ptp(values) > 0)
+    return np.where(varies, rho, np.nan)
+
+
+def _cell_order_test(
+    pairs: _EventPairs,
+    score: float,
+    n_shuffles: int,
+    alternative: Literal["greater", "less", "two-sided"],
+    rng: np.random.Generator,
+) -> ShuffleTestResult:
+    """Test an event's correlation against permutations of its fields among cells."""
+    from neurospatial.stats.shuffle import ShuffleTestResult
+
+    n_active = pairs.active_units.size
+    permutations = np.argsort(rng.random((n_shuffles, n_active)), axis=1)
+    return ShuffleTestResult.from_null(
+        score,
+        _permuted_correlations(pairs, permutations),
+        shuffle_type="cell_order",
+        tail=alternative,
+        # Ties in rho differ by rounding between spearmanr and the matrix
+        # formula of the shuffles.
+        decimals=_SCORE_DECIMALS,
+    )
+
+
 def _permuted_correlations(
     pairs: _EventPairs, permutations: NDArray[np.intp]
 ) -> NDArray[np.float64]:
     """Spearman correlation under each permutation of the active cells' fields."""
-    t_ranks = stats.rankdata(pairs.times)
-    t_dev = t_ranks - t_ranks.mean()
     correlations = np.empty(len(permutations))
     # Rank the pairs in blocks of shuffles to bound memory with many spikes.
     block = max(1, _BLOCK_VALUES // max(pairs.cell.size, 1))
     for start in range(0, len(permutations), block):
         chunk = permutations[start : start + block]
-        x = pairs.field_positions[chunk][:, pairs.cell]  # (n_chunk, n_pairs)
-        x_ranks = stats.rankdata(x, axis=1)
-        x_dev = x_ranks - x_ranks.mean(axis=1, keepdims=True)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            correlations[start : start + block] = (x_dev @ t_dev) / np.sqrt(
-                (x_dev**2).sum(axis=1) * (t_dev**2).sum()
-            )
+        correlations[start : start + block] = _spearman_rows(
+            pairs.field_positions[chunk][:, pairs.cell], pairs.times
+        )
     return correlations
 
 
@@ -762,6 +771,183 @@ def _validated_interval(interval: Any, operation: str) -> tuple[float, float]:
             )
         )
     return float(values[0]), float(values[1])
+
+
+def _template_fields(
+    env: Environment,
+    encoding_models: Any,
+    field_order: str,
+    min_peak_rate: float | None,
+    operation: str,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """The template cells' rate maps and field positions, checked against env.
+
+    Returns the supported rate maps, shape (n_cells, n_bins), and each
+    cell's field position, shape (n_cells,). A cell whose highest rate is
+    below ``min_peak_rate`` is not a template cell: its rate map and field
+    position are NaN, as for a cell without a field.
+    """
+    positions = _field_positions(env, encoding_models, field_order, operation)
+    rates = _supported_rates(encoding_models)
+    if min_peak_rate is not None:
+        keep = np.where(np.isfinite(rates), rates, 0.0).max(axis=1) >= min_peak_rate
+        rates = np.where(keep[:, None], rates, np.nan)
+        positions = np.where(keep, positions, np.nan)
+    return rates, positions
+
+
+def _template_items(
+    env: Environment | Mapping[str, Environment],
+    encoding_models: Any,
+    template: str | None,
+    operation: str,
+    *,
+    single_template_method: str | None = None,
+) -> list[tuple[str | None, Environment, Any]]:
+    """Each tested template's name, environment and rate maps.
+
+    ``encoding_models`` is one set of rate maps, named None, or a mapping of
+    template name to rate maps, of which ``template`` picks one and None
+    tests every one. ``env`` is one environment or a mapping with each tested
+    template's environment. ``single_template_method`` names a method that
+    tests one template and has no rule to choose one, so it needs
+    ``template=`` with a mapping.
+    """
+    if not isinstance(encoding_models, Mapping):
+        if template is not None:
+            raise ValueError(
+                _format_error(
+                    f"{operation}: template={template!r} needs a mapping of rate maps.",
+                    why="a template names one of several rate-map sets",
+                    fix="pass encoding_models={'left': rates_left, 'right': "
+                    "rates_right}, or leave out template=",
+                )
+            )
+        if isinstance(env, Mapping):
+            raise ValueError(
+                _format_error(
+                    f"{operation}: a mapping of environments needs a mapping of "
+                    "rate maps with the same templates.",
+                    why="each template's fields are read on its own environment",
+                    fix="pass encoding_models as a mapping keyed like env, or one "
+                    "environment",
+                )
+            )
+        return [(None, env, encoding_models)]
+    names = list(encoding_models)
+    if not names:
+        raise ValueError(
+            _format_error(
+                f"{operation}: encoding_models is an empty mapping.",
+                why="each template's rate maps place the cells' fields",
+                fix="pass at least one set of rate maps, such as "
+                "encoding_models={'left': rates_left}, or one array of rate maps",
+            )
+        )
+    if template is not None:
+        if template not in encoding_models:
+            raise ValueError(
+                _format_error(
+                    f"{operation}: template {template!r} is not one of {names}.",
+                    why="template= names one of the rate-map sets in encoding_models",
+                    fix=f"pass template= one of {names}",
+                )
+            )
+        names = [template]
+    elif single_template_method is not None:
+        raise ValueError(
+            _format_error(
+                f"{operation}: method {single_template_method!r} needs template= "
+                "with several rate-map sets.",
+                why="it tests one template and has no rule to choose one",
+                fix=f"pass template= one of {names}",
+            )
+        )
+    if isinstance(env, Mapping):
+        missing = [name for name in names if name not in env]
+        if missing:
+            raise ValueError(
+                _format_error(
+                    f"{operation}: templates {missing} have rate maps but no "
+                    f"environment in env, whose templates are {list(env)}.",
+                    why="each template's fields are read on its own environment",
+                    fix="pass a mapping of environments with the keys of "
+                    "encoding_models, or one environment",
+                )
+            )
+        return [(name, env[name], encoding_models[name]) for name in names]
+    return [(name, env, encoding_models[name]) for name in names]
+
+
+def _require_same_cells(n_trains: int, n_maps: int, operation: str) -> None:
+    """Refuse spike trains and rate maps of different numbers of cells."""
+    if n_trains != n_maps:
+        raise ValueError(
+            _format_error(
+                f"{operation}: spike_times has {n_trains} cells but "
+                f"encoding_models has {n_maps} rate maps.",
+                why="each cell's firing is compared with its own place field",
+                fix="pass spike times and rate maps for the same cells, in the "
+                "same order",
+            )
+        )
+
+
+def _spikes_in(
+    trains: Sequence[NDArray[np.float64]], start: float, stop: float
+) -> list[NDArray[np.float64]]:
+    """Each train's spikes at ``start <= t < stop``, in the train's order."""
+    return [train[(train >= start) & (train < stop)] for train in trains]
+
+
+def _spikes_by_window(
+    trains: Sequence[NDArray[np.float64]], windows: Any
+) -> Iterator[list[NDArray[np.float64]]]:
+    """:func:`_spikes_in` for each ``(start, stop)`` row of ``windows``, in turn.
+
+    Each train is sorted once and cut by binary search instead of compared
+    with every window. The spikes keep the train's order, so a summary such
+    as their mean adds them in the same order as :func:`_spikes_in`.
+    """
+    bounds = np.asarray(windows, dtype=np.float64).reshape(-1, 2)
+    cuts = []
+    for train in trains:
+        order = (
+            None
+            if np.all(train[:-1] <= train[1:])
+            else np.argsort(train, kind="stable")
+        )
+        lo, hi = np.searchsorted(
+            train if order is None else train[order], bounds.T, side="left"
+        )
+        cuts.append((order, lo, hi))
+    for window in range(len(bounds)):
+        yield [
+            train[lo[window] : hi[window]]
+            if order is None
+            else train[np.sort(order[lo[window] : hi[window]])]
+            for train, (order, lo, hi) in zip(trains, cuts, strict=True)
+        ]
+
+
+def _pooled_spikes(
+    in_event: Sequence[NDArray[np.float64]],
+    cells: NDArray[np.intp],
+    spike_statistic: str,
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+    """When each of ``cells`` fired in an event, and each time's position in ``cells``.
+
+    ``"all_spikes"`` gives every spike of ``in_event[cell]``, cell after cell
+    in the order of ``cells``; the other statistics give one time per cell,
+    its first, median or mean spike.
+    """
+    if spike_statistic == "all_spikes":
+        times = np.concatenate([np.empty(0), *(in_event[cell] for cell in cells)])
+        cell = np.repeat(np.arange(cells.size), [in_event[c].size for c in cells])
+        return times, cell.astype(np.intp)
+    summarize = _SPIKE_SUMMARIES[spike_statistic]
+    times = np.array([summarize(in_event[cell]) for cell in cells], dtype=np.float64)
+    return times, np.arange(cells.size, dtype=np.intp)
 
 
 def _supported_rates(encoding_models: Any) -> NDArray[np.float64]:

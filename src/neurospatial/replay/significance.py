@@ -818,11 +818,7 @@ def _shuffle_tests(
     reported when a null has no defined shuffle. ``stacklevel`` points the
     warning about undefined shuffles at the caller of the public function.
     """
-    from neurospatial.stats.shuffle import (
-        ShuffleTestResult,
-        compute_shuffle_pvalue,
-        compute_shuffle_zscore,
-    )
+    from neurospatial.stats.shuffle import ShuffleTestResult
 
     shuffles = {}
     for name, statistic in null_statistics.items():
@@ -849,15 +845,8 @@ def _shuffle_tests(
                 UserWarning,
                 stacklevel=stacklevel,
             )
-        shuffles[name] = ShuffleTestResult(
-            observed_score=observed,
-            null_scores=statistic,
-            p_value=compute_shuffle_pvalue(
-                observed, statistic[defined], tail=alternative
-            ),
-            z_score=compute_shuffle_zscore(observed, statistic[defined]),
-            shuffle_type=name,
-            n_shuffles=n_shuffles,
+        shuffles[name] = ShuffleTestResult.from_null(
+            observed, statistic, shuffle_type=name, tail=alternative
         )
     return shuffles
 

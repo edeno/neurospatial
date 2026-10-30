@@ -450,6 +450,67 @@ class ShuffleTestResult(ReadOnlyArraysMixin):
         )
         self._own_arrays()
 
+    @classmethod
+    def from_null(
+        cls,
+        observed_score: float,
+        null_scores: NDArray[np.float64],
+        *,
+        shuffle_type: str,
+        tail: Literal["greater", "less", "two-sided"] = "greater",
+        decimals: int | None = None,
+    ) -> ShuffleTestResult:
+        """Test an observed score against the scores of its shuffles.
+
+        Parameters
+        ----------
+        observed_score : float
+            The score of the original (non-shuffled) data.
+        null_scores : NDArray[np.float64], shape (n_shuffles,)
+            The score of each shuffle. Non-finite scores (shuffles whose
+            score is undefined) are left out of the p-value and z-score.
+        shuffle_type : str
+            Name of the shuffle method (e.g., "time_bins", "cell_identity").
+        tail : {"greater", "less", "two-sided"}, default="greater"
+            Direction of the test, as for :func:`compute_shuffle_pvalue`.
+        decimals : int or None, default=None
+            Compare the observed and shuffled scores rounded to this many
+            decimals for the p-value, so that scores equal up to
+            floating-point error tie. None compares them as they are.
+
+        Returns
+        -------
+        ShuffleTestResult
+            The p-value of :func:`compute_shuffle_pvalue` and the z-score of
+            :func:`compute_shuffle_zscore`, over the finite null scores.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.stats.shuffle import ShuffleTestResult
+        >>> result = ShuffleTestResult.from_null(
+        ...     10.0, np.array([1.0, 2.0, 3.0, 4.0]), shuffle_type="time_bins"
+        ... )
+        >>> result.p_value, result.n_shuffles
+        (0.2, 4)
+        """
+        null = np.asarray(null_scores, dtype=np.float64)
+        defined = null[np.isfinite(null)]
+        if decimals is None:
+            p_value = compute_shuffle_pvalue(observed_score, defined, tail=tail)
+        else:
+            p_value = compute_shuffle_pvalue(
+                round(observed_score, decimals), np.round(defined, decimals), tail=tail
+            )
+        return cls(
+            observed_score=observed_score,
+            null_scores=null,
+            p_value=p_value,
+            z_score=compute_shuffle_zscore(observed_score, defined),
+            shuffle_type=shuffle_type,
+            n_shuffles=null.size,
+        )
+
     @property
     def is_significant(self) -> bool:
         """Return True if p_value < 0.05.

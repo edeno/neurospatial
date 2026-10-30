@@ -65,6 +65,7 @@ from neurospatial.replay.methods import (
     ReplayCriterion,
     ReplayMethod,
 )
+from neurospatial.replay.rank_order import _spearman_rows
 from neurospatial.replay.significance import _ALTERNATIVES, _DECODING_NULLS
 from neurospatial.stats._utils import _entropy, _stream
 from neurospatial.stats.shuffle import _tail_p_values
@@ -1772,9 +1773,11 @@ def _rank_order_values(
     from neurospatial._spikes import as_spike_trains
     from neurospatial.replay.rank_order import (
         _event_pairs,
-        _field_positions,
+        _require_same_cells,
         _result,
-        _supported_rates,
+        _spikes_by_window,
+        _template_fields,
+        _template_items,
     )
 
     if null not in (None, "cell_order"):
@@ -1806,40 +1809,15 @@ def _rank_order_values(
             )
         )
     windows = _event_windows(env, events, dt, operation)
-    if isinstance(encoding_models, Mapping):
-        names: list[str | None] = list(encoding_models)
-        if template is not None:
-            if template not in encoding_models:
-                raise ValueError(
-                    f"{operation}: template {template!r} is not one of "
-                    f"{list(encoding_models)}."
-                )
-            names = [template]
-    else:
-        if template is not None:
-            raise ValueError(
-                f"{operation}: template={template!r} needs a mapping of rate maps."
-            )
-        names = [None]
+    items = _template_items(env, encoding_models, template, operation)
     trains = as_spike_trains(spike_times)
     templates = []
-    for name in names:
-        template_env = env[name] if isinstance(env, Mapping) else env
-        rates = encoding_models if name is None else encoding_models[name]
-        _field_positions(template_env, rates, method.field_order, operation)
-        masked = _supported_rates(rates)
-        if method.min_peak_rate is not None:
-            peak = np.where(np.isfinite(masked), masked, 0.0).max(axis=1)
-            masked = np.where((peak >= method.min_peak_rate)[:, None], masked, np.nan)
-        positions = _field_positions(
-            template_env, masked, method.field_order, operation
+    for name, template_env, rates in items:
+        masked, positions = _template_fields(
+            template_env, rates, method.field_order, method.min_peak_rate, operation
         )
         templates.append((name, template_env, masked, positions))
-        if len(positions) != len(trains):
-            raise ValueError(
-                f"{operation}: spike_times has {len(trains)} cells but the rate "
-                f"maps have {len(positions)}."
-            )
+        _require_same_cells(len(trains), len(positions), operation)
     permutations = None
     if shared:
         generator = _stream(entropy, _SHARED_KEY)
@@ -1852,8 +1830,9 @@ def _rank_order_values(
         "n_active_cells": [],
         "active_fraction": [],
     }
-    for index, (start, stop) in enumerate(windows):
-        in_event = [train[(train >= start) & (train < stop)] for train in trains]
+    for index, ((start, stop), in_event) in enumerate(
+        zip(windows, _spikes_by_window(trains, windows), strict=True)
+    ):
         for slot, (name, template_env, masked, positions) in enumerate(templates):
             n_template = max(int(np.isfinite(positions).sum()), 1)
             if null is None:
@@ -1867,7 +1846,12 @@ def _rank_order_values(
                     min_active_cells=method.min_active_cells,
                     operation=operation,
                 )
-                observed = _result(pairs, method.spike_statistic, method.field_order)
+                observed = _result(
+                    pairs,
+                    method.spike_statistic,
+                    method.field_order,
+                    analytic_p_value=False,
+                )
                 scores = np.array([observed.score])
                 active = np.array([observed.n_active_cells])
                 datasets = np.zeros(1, dtype=np.intp)
@@ -1890,7 +1874,7 @@ def _rank_order_values(
                 np.asarray(active, dtype=np.float64) / n_template
             )
     table = pd.DataFrame({name: np.concatenate(parts) for name, parts in rows.items()})
-    if names == [None]:
+    if not isinstance(encoding_models, Mapping):
         table = table.drop(columns="template")
     if not any(c.quantity == "active_fraction" for c in method.criteria):
         table = table.drop(columns="active_fraction")
@@ -1947,30 +1931,15 @@ def _permuted_rank_scores(
 
     Returns the correlations and the active cells, each (n_datasets,).
     """
+    from neurospatial.replay.rank_order import _pooled_spikes
+
     spiking = np.array(
         [cell for cell, spikes in enumerate(in_event) if spikes.size], dtype=np.intp
     )
     if permutations is None:
         # Only the active template cells take part; their number is fixed.
         spiking = spiking[np.isfinite(positions[spiking])]
-    if method.spike_statistic == "all_spikes":
-        times = (
-            np.concatenate([in_event[cell] for cell in spiking])
-            if spiking.size
-            else np.empty(0)
-        )
-        cell_of = np.repeat(
-            np.arange(spiking.size), [in_event[cell].size for cell in spiking]
-        )
-    else:
-        summaries: dict[str, Callable[..., Any]] = {
-            "first": np.min,
-            "median": np.median,
-            "mean": np.mean,
-        }
-        summarize = summaries[method.spike_statistic]
-        times = np.array([summarize(in_event[cell]) for cell in spiking], dtype=float)
-        cell_of = np.arange(spiking.size)
+    times, cell_of = _pooled_spikes(in_event, spiking, method.spike_statistic)
     if permutations is None:
         order = np.argsort(generator.random((n_datasets, spiking.size)), axis=1)
         fields = positions[spiking][order]
@@ -1988,25 +1957,6 @@ def _permuted_rank_scores(
         keep = finite[k][cell_of]
         scores[k] = _spearman_rows(fields[k][cell_of][keep][None, :], times[keep])[0]
     return scores, n_active
-
-
-def _spearman_rows(
-    x: NDArray[np.float64], values: NDArray[np.float64]
-) -> NDArray[np.float64]:
-    """Spearman correlation of each row of ``x`` with ``values``.
-
-    Average ranks for ties; NaN where a row, or ``values``, does not vary.
-    """
-    from scipy import stats
-
-    v_ranks = stats.rankdata(values)
-    v_dev = v_ranks - v_ranks.mean()
-    x_ranks = stats.rankdata(x, axis=1)
-    x_dev = x_ranks - x_ranks.mean(axis=1, keepdims=True)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        rho = (x_dev @ v_dev) / np.sqrt((x_dev**2).sum(axis=1) * (v_dev**2).sum())
-    varies = (np.ptp(x, axis=1) > 0) & (np.ptp(values) > 0)
-    return np.where(varies, rho, np.nan)
 
 
 # --------------------------------------------------------------------------
@@ -2632,15 +2582,14 @@ def relative_rank_template(
 
     from neurospatial._spikes import as_spike_trains
     from neurospatial.replay._inputs import _checked_intervals
+    from neurospatial.replay.rank_order import _SPIKE_SUMMARIES
 
     operation = "relative_rank_template()"
-    statistics: dict[str, Callable[..., Any]] = {
-        "mean": np.mean,
-        "first": np.min,
-        "median": np.median,
-    }
     validate_choice(
-        spike_statistic, tuple(statistics), name="spike_statistic", owner=operation
+        spike_statistic,
+        tuple(_SPIKE_SUMMARIES),
+        name="spike_statistic",
+        owner=operation,
     )
     if not is_integer_at_least(min_active_cells, 2):
         raise ValueError(
@@ -2658,7 +2607,7 @@ def relative_rank_template(
         if spike_statistic == "first":
             firing[cell, active] = train[first[active]]
         else:
-            summarize = statistics[spike_statistic]
+            summarize = _SPIKE_SUMMARIES[spike_statistic]
             firing[cell, active] = [
                 summarize(train[first[f] : last[f]]) for f in active
             ]

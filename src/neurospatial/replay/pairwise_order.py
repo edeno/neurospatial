@@ -30,7 +30,14 @@ from neurospatial._results import (
     reduce_through_constructor,
 )
 from neurospatial._validation import validate_alpha
-from neurospatial.replay.rank_order import _supported_rates, _validated_interval
+from neurospatial.replay.rank_order import (
+    _pooled_spikes,
+    _require_same_cells,
+    _spikes_in,
+    _supported_rates,
+    _template_items,
+    _validated_interval,
+)
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -142,7 +149,11 @@ class PairwiseOrderSignificanceResult(ResultMixin):
 
     observed: PairwiseOrderResult
     shuffles: Mapping[str, ShuffleTestResult]
-    p_value: float
+
+    @property
+    def p_value(self) -> float:
+        """The largest p-value among ``shuffles``."""
+        return max(test.p_value for test in self.shuffles.values())
 
     def __post_init__(self) -> None:
         """Freeze the mapping of shuffle tests."""
@@ -745,62 +756,19 @@ def detect_pairwise_order_replay(
 
     method = pairwise_order_method
     operation = "detect_pairwise_order_replay()"
-    names: list[str | None]
-    if isinstance(encoding_models, Mapping):
-        names = list(encoding_models)
-        if not names:
-            raise ValueError(
-                _format_error(
-                    f"{operation}: encoding_models is an empty mapping.",
-                    why="each template's rate maps place the cells' fields",
-                    fix="pass at least one set of rate maps, such as "
-                    "encoding_models={'left': rates_left}, or one array of "
-                    "rate maps",
-                )
-            )
-        if template is not None:
-            if template not in encoding_models:
-                raise ValueError(
-                    f"{operation}: template {template!r} is not one of "
-                    f"{list(encoding_models)}."
-                )
-            names = [template]
-    elif template is not None:
-        raise ValueError(
-            _format_error(
-                f"{operation}: template={template!r} needs a mapping of rate maps.",
-                why="a template names one of several rate-map sets",
-                fix="pass encoding_models={'left': rates_left, 'right': "
-                "rates_right}, or leave out template=",
-            )
-        )
-    else:
-        names = [None]
+    items = _template_items(env, encoding_models, template, operation)
     labels = {
         (name, direction): direction if name is None else f"{name}:{direction}"
-        for name in names
+        for name, _, _ in items
         for direction in method.directions
     }
     streams = _template_streams(rng, list(labels.values()))
     event = None
     best: tuple[float, float, str | None, dict[str, float]] | None = None
-    for name in names:
-        if isinstance(env, Mapping):
-            if name is None or name not in env:
-                raise ValueError(
-                    _format_error(
-                        f"{operation}: env has no environment for template {name!r}.",
-                        why="each template's fields are read on its own track",
-                        fix="pass a mapping of rate maps and a mapping of "
-                        "environments with the same keys, or one environment",
-                    )
-                )
-            template_env = env[name]
-        else:
-            template_env = env
+    for name, template_env, models in items:
         fields = _place_fields(
             template_env,
-            encoding_models if name is None else encoding_models[name],
+            models,
             field_threshold=method.field_threshold,
             merge_gap_bins=method.merge_gap_bins,
             field_center=method.field_center,
@@ -810,10 +778,9 @@ def detect_pairwise_order_replay(
             event = _event_spikes(
                 spike_times, interval, len(fields), operation, unit_groups
             )
-        elif len(fields) != event.n_cells:
-            raise ValueError(
-                f"{operation}: template {name!r} has {len(fields)} rate maps "
-                f"but spike_times has {event.n_cells} cells."
+        else:
+            _require_same_cells(
+                event.n_cells, len(fields), f"{operation}: template {name!r}"
             )
         for direction in method.directions:
             tested = _significance(
@@ -991,16 +958,7 @@ def _event_spikes(
 
     start, stop = _validated_interval(interval, operation)
     trains = as_spike_trains(spike_times)
-    if len(trains) != n_cells:
-        raise ValueError(
-            _format_error(
-                f"{operation}: spike_times has {len(trains)} cells but "
-                f"encoding_models has {n_cells} rate maps.",
-                why="each cell's spikes are placed at its own fields",
-                fix="pass spike times and rate maps for the same cells, in the "
-                "same order",
-            )
-        )
+    _require_same_cells(len(trains), n_cells, operation)
     groups = None
     if unit_groups is not None:
         groups = np.asarray(unit_groups)
@@ -1039,20 +997,15 @@ def _event_spikes(
                     "encoding_models",
                 )
             )
-    in_event = [train[(train >= start) & (train < stop)] for train in trains]
+    in_event = _spikes_in(trains, start, stop)
     active = np.array(
         [unit for unit, spikes in enumerate(in_event) if spikes.size], dtype=np.intp
     )
-    times = (
-        np.concatenate([in_event[unit] for unit in active])
-        if active.size
-        else np.empty(0)
-    )
-    cell = np.repeat(np.arange(active.size), [in_event[unit].size for unit in active])
+    times, cell = _pooled_spikes(in_event, active, "all_spikes")
     order = np.argsort(times, kind="stable")
     return _EventSpikes(
         times=times[order],
-        cell=cell[order].astype(np.intp),
+        cell=cell[order],
         active_units=active,
         n_cells=len(trains),
         groups=None if groups is None else groups[active],
@@ -1222,11 +1175,7 @@ def _significance(
 ) -> PairwiseOrderSignificanceResult:
     """The event's score and one shuffle test per null."""
     from neurospatial.replay.significance import _template_streams
-    from neurospatial.stats.shuffle import (
-        ShuffleTestResult,
-        compute_shuffle_pvalue,
-        compute_shuffle_zscore,
-    )
+    from neurospatial.stats.shuffle import ShuffleTestResult
 
     observed = _observed(event, fields, direction, max_time_lag, operation)
     sign = 1.0 if direction == "forward" else -1.0
@@ -1265,18 +1214,10 @@ def _significance(
                 source[with_field] = with_field[draw]
                 shuffled = [fields[source[unit]] for unit in event.active_units]
                 null_scores[k] = _searched(weights, shuffled, sign, operation)[0]
-        tests[null] = ShuffleTestResult(
-            observed_score=float(observed.score),
-            null_scores=null_scores,
-            p_value=compute_shuffle_pvalue(
-                float(observed.score), null_scores, tail="greater"
-            ),
-            z_score=compute_shuffle_zscore(float(observed.score), null_scores),
-            shuffle_type=null,
-            n_shuffles=n_shuffles,
+        tests[null] = ShuffleTestResult.from_null(
+            float(observed.score), null_scores, shuffle_type=null
         )
     return PairwiseOrderSignificanceResult(
         observed=observed,
         shuffles=tests,
-        p_value=max(test.p_value for test in tests.values()),
     )

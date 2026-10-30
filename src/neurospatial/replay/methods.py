@@ -75,7 +75,6 @@ from neurospatial.replay.template_match import (
     TemplateMatchMethod,
 )
 from neurospatial.replay.trajectory import (
-    _SCORE_DECIMALS,
     detect_trajectory_radon,
     fit_isotonic_trajectory,
     fit_linear_trajectory,
@@ -2783,50 +2782,29 @@ def detect_rank_order_replay(
                 fix="pass the epoch's events to compare_replay_methods",
             )
         )
-    if isinstance(encoding_models, Mapping):
-        names: list[str | None] = list(encoding_models)
-        if template is not None:
-            if template not in encoding_models:
-                raise ValueError(
-                    f"detect_rank_order_replay(): template {template!r} is not "
-                    f"one of {list(encoding_models)}."
-                )
-            names = [template]
-        elif method.template_choice is None:
-            raise ValueError(
-                _format_error(
-                    f"detect_rank_order_replay(): method {method.name!r} needs "
-                    "template= with several rate-map sets.",
-                    why="it tests one template and has no rule to choose one",
-                    fix=f"pass template= one of {list(encoding_models)}",
-                )
-            )
-    else:
-        names = [None]
+    from neurospatial.replay.rank_order import _template_items
+
+    items = _template_items(
+        env,
+        encoding_models,
+        template,
+        "detect_rank_order_replay()",
+        single_template_method=method.name if method.template_choice is None else None,
+    )
     generator = np.random.default_rng(rng)
-    seeds = generator.integers(2**63, size=len(names))
-    results = []
-    for name, seed in zip(names, seeds, strict=True):
-        if isinstance(env, Mapping):
-            if name is None:
-                raise ValueError(
-                    "detect_rank_order_replay(): a mapping of environments "
-                    "needs a mapping of rate maps with the same templates."
-                )
-            template_env = env[name]
-        else:
-            template_env = env
-        results.append(
-            _rank_order_verdict(
-                template_env,
-                spike_times,
-                interval,
-                encoding_models if name is None else encoding_models[name],
-                method,
-                template=name,
-                rng=np.random.default_rng(seed),
-            )
+    seeds = generator.integers(2**63, size=len(items))
+    results = [
+        _rank_order_verdict(
+            template_env,
+            spike_times,
+            interval,
+            models,
+            method,
+            template=name,
+            rng=np.random.default_rng(seed),
         )
+        for (name, template_env, models), seed in zip(items, seeds, strict=True)
+    ]
     if len(results) == 1:
         return results[0]
     detected = [result for result in results if result.is_replay]
@@ -2852,24 +2830,16 @@ def _rank_order_verdict(
     from scipy import stats
 
     from neurospatial.replay.rank_order import (
+        _cell_order_test,
         _event_pairs,
-        _field_positions,
-        _permuted_correlations,
         _result,
-        _supported_rates,
-    )
-    from neurospatial.stats.shuffle import (
-        compute_shuffle_pvalue,
-        compute_shuffle_zscore,
+        _template_fields,
     )
 
     operation = "detect_rank_order_replay()"
-    # Validates the rates against env, then keeps the template cells' maps.
-    _field_positions(env, encoding_models, method.field_order, operation)
-    rates = _supported_rates(encoding_models)
-    if method.min_peak_rate is not None:
-        peak = np.where(np.isfinite(rates), rates, 0.0).max(axis=1)
-        rates = np.where((peak >= method.min_peak_rate)[:, None], rates, np.nan)
+    rates, positions = _template_fields(
+        env, encoding_models, method.field_order, method.min_peak_rate, operation
+    )
     pairs = _event_pairs(
         env,
         spike_times,
@@ -2880,7 +2850,9 @@ def _rank_order_verdict(
         min_active_cells=method.min_active_cells,
         operation=operation,
     )
-    observed = _result(pairs, method.spike_statistic, method.field_order)
+    observed = _result(
+        pairs, method.spike_statistic, method.field_order, analytic_p_value=False
+    )
     score = float(observed.score)
     p_value = np.nan
     n_shuffles_used = None
@@ -2894,24 +2866,13 @@ def _rank_order_verdict(
                 t = score * np.sqrt((n - 2) / (1.0 - score**2))
                 p_value = float(2.0 * stats.t.sf(abs(t), n - 2))
         else:
-            n_active = observed.n_active_cells
-            permutations = np.argsort(rng.random((method.n_shuffles, n_active)), axis=1)
-            null = _permuted_correlations(pairs, permutations)
-            n_shuffles_used = int(np.isfinite(null).sum())
-            # Ties in rho differ by rounding between the two formulas.
-            p_value = float(
-                compute_shuffle_pvalue(
-                    round(score, _SCORE_DECIMALS),
-                    np.round(null, _SCORE_DECIMALS),
-                    tail=method.alternative,
-                )
+            test = _cell_order_test(
+                pairs, score, method.n_shuffles, method.alternative, rng
             )
-            z_scores["cell_order"] = float(
-                compute_shuffle_zscore(score, null[np.isfinite(null)])
-            )
-    n_templates = int(
-        np.isfinite(_field_positions(env, rates, method.field_order, operation)).sum()
-    )
+            n_shuffles_used = int(np.isfinite(test.null_scores).sum())
+            p_value = test.p_value
+            z_scores["cell_order"] = test.z_score
+    n_templates = int(np.isfinite(positions).sum())
     event_values = {
         "n_active_cells": float(observed.n_active_cells),
         "active_fraction": observed.n_active_cells / max(n_templates, 1),
@@ -2954,54 +2915,33 @@ def _pooled_ssi_verdicts(
     streams: list[np.random.Generator],
 ) -> list[ReplayDetectionResult]:
     """Each event's verdict under the epoch-pooled SSI test (Chenani 2019)."""
-    from scipy import stats
-
     from neurospatial._spikes import as_spike_trains
-    from neurospatial.replay.rank_order import _field_positions, _supported_rates
+    from neurospatial.replay.rank_order import (
+        _pooled_spikes,
+        _require_same_cells,
+        _spearman_rows,
+        _spikes_by_window,
+        _template_fields,
+        _template_items,
+    )
 
     operation = "compare_replay_methods()"
-    if isinstance(encoding_models, Mapping):
-        if template is not None and template not in encoding_models:
-            raise ValueError(
-                f"{operation}: template {template!r} is not one of "
-                f"{list(encoding_models)}."
-            )
-        names: list[str | None] = (
-            [template] if template is not None else list(encoding_models)
-        )
-    else:
-        names = [None]
-    positions = []
-    for name in names:
-        models = encoding_models if name is None else encoding_models[name]
-        if isinstance(env, Mapping):
-            if name is None:
-                raise ValueError(
-                    f"{operation}: a mapping of environments needs a mapping of "
-                    "rate maps with the same templates."
-                )
-            template_env = env[name]
-        else:
-            template_env = env
-        position = _field_positions(template_env, models, method.field_order, operation)
-        if method.min_peak_rate is not None:
-            rates = _supported_rates(models)
-            peak = np.where(np.isfinite(rates), rates, 0.0).max(axis=1)
-            position = np.where(peak >= method.min_peak_rate, position, np.nan)
-        positions.append(position)
-    fields = np.vstack(positions)  # (n_templates, n_cells)
+    items = _template_items(env, encoding_models, template, operation)
+    names = [name for name, _, _ in items]
+    fields = np.vstack(
+        [
+            _template_fields(
+                template_env,
+                models,
+                method.field_order,
+                method.min_peak_rate,
+                operation,
+            )[1]
+            for _, template_env, models in items
+        ]
+    )  # (n_templates, n_cells)
     trains = as_spike_trains(spike_times)
-    if len(trains) != fields.shape[1]:
-        raise ValueError(
-            f"{operation}: spike_times has {len(trains)} cells but "
-            f"encoding_models has {fields.shape[1]} rate maps."
-        )
-    summaries: dict[str, Callable[..., Any]] = {
-        "first": np.min,
-        "median": np.median,
-        "mean": np.mean,
-    }
-    summary = summaries[method.spike_statistic]
+    _require_same_cells(len(trains), fields.shape[1], operation)
     template_cell = np.isfinite(fields).any(axis=0)
 
     def ssi(field: NDArray[np.float64], times: NDArray[np.float64]) -> Any:
@@ -3010,27 +2950,22 @@ def _pooled_ssi_verdicts(
         n = int(known.sum())
         if n < 2:
             return np.full(times.shape[0], np.nan)
-        field_dev = stats.rankdata(field[known]) - (n + 1) / 2
-        time_ranks = stats.rankdata(times[:, known], axis=1)
-        time_dev = time_ranks - time_ranks.mean(axis=1, keepdims=True)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            rho = (time_dev @ field_dev) / np.sqrt(
-                (time_dev**2).sum(axis=1) * (field_dev**2).sum()
-            )
+        rho = _spearman_rows(times[:, known], field[known])
         # testsession.m rounds rho to 1e-5 before scaling it.
         return np.round(rho, 5) * np.sqrt(n - 1)
 
     observed: list[tuple[int, NDArray[np.float64]] | None] = []
     surrogates: list[NDArray[np.float64]] = []
-    for (start, stop), stream in zip(intervals, streams, strict=True):
-        in_event = [train[(train >= start) & (train < stop)] for train in trains]
+    for in_event, stream in zip(
+        _spikes_by_window(trains, intervals), streams, strict=True
+    ):
         active = np.flatnonzero(
             np.array([spikes.size > 0 for spikes in in_event]) & template_cell
         )
         if active.size < method.min_active_cells:
             observed.append(None)
             continue
-        times = np.array([summary(in_event[cell]) for cell in active])
+        times = _pooled_spikes(in_event, active, method.spike_statistic)[0]
         order = np.argsort(stream.random((method.n_shuffles, active.size)), axis=1)
         event_scores = np.vstack(
             [ssi(field[active], times[None, :]) for field in fields]

@@ -29,8 +29,14 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
 from neurospatial._validation import validate_alpha
+from neurospatial.replay.rank_order import (
+    _BLOCK_VALUES,
+    _pooled_spikes,
+    _spikes_in,
+    _validated_interval,
+)
 from neurospatial.replay.significance import _ALTERNATIVES
 
 if TYPE_CHECKING:
@@ -337,7 +343,7 @@ def pairwise_bias_matrix(
     """
     operation = "pairwise_bias_matrix()"
     times, labels, n_units = _event_spikes(spike_times, interval, operation)
-    ids = _unit_ids(unit_ids, n_units, operation)
+    ids = resolve_unit_ids(unit_ids, n_units, context=operation)
     bias, counts = _skew_bias(times, labels, n_units)
     return PairwiseBiasResult(bias=bias, n_spikes=counts, unit_ids=ids)
 
@@ -662,6 +668,7 @@ def detect_bias_sequence_replay(
     (True, -1.0)
     """
     from neurospatial.replay.methods import ReplayDetectionResult
+    from neurospatial.stats.shuffle import compute_shuffle_zscore
 
     method = bias_sequence_method
     tested = bias_similarity_significance(
@@ -684,11 +691,7 @@ def detect_bias_sequence_replay(
     passes = {criterion.label: not error and criterion.evaluate(n_active, np.nan)}
     null = tested.null_similarities
     defined = null[np.isfinite(null)]
-    z_score = (
-        float((tested.similarity - defined.mean()) / defined.std())
-        if defined.size and defined.std() > 0
-        else np.nan
-    )
+    z_score = compute_shuffle_zscore(tested.similarity, defined)
     return ReplayDetectionResult(
         method=method.name,
         is_replay=bool(method._passes_alpha(tested.p_value, method.alpha))
@@ -739,24 +742,6 @@ def _check_test(
         )
 
 
-def _interval(interval: Any, operation: str) -> tuple[float, float]:
-    from neurospatial.replay.rank_order import _validated_interval
-
-    return _validated_interval(interval, operation)
-
-
-def _unit_ids(unit_ids: Any, n_units: int, operation: str) -> NDArray[Any]:
-    if unit_ids is None:
-        return np.arange(n_units)
-    ids = np.asarray(unit_ids)
-    if ids.shape != (n_units,):
-        raise ValueError(
-            f"{operation}: unit_ids has shape {ids.shape} but spike_times has "
-            f"{n_units} units; pass one label per spike train."
-        )
-    return ids
-
-
 def _sorted_spikes(
     spike_times: Any, operation: str, interval: tuple[float, float] | None = None
 ) -> tuple[NDArray[np.float64], NDArray[np.intp], int]:
@@ -768,26 +753,24 @@ def _sorted_spikes(
 
     trains = as_spike_trains(spike_times)
     if interval is not None:
-        start, stop = interval
-        trains = [t[(t >= start) & (t < stop)] for t in trains]
-    times = np.concatenate(
-        [np.empty(0)] + [np.asarray(t, dtype=np.float64) for t in trains]
-    )
-    labels = np.repeat(np.arange(len(trains)), [len(t) for t in trains])
+        trains = _spikes_in(trains, *interval)
+    times, labels = _pooled_spikes(trains, np.arange(len(trains)), "all_spikes")
     if not np.isfinite(times).all():
         raise ValueError(
             f"{operation}: spike_times holds NaN or Inf; pass finite spike "
             "times in seconds."
         )
     order = np.argsort(times, kind="stable")
-    return times[order], labels[order].astype(np.intp), len(trains)
+    return times[order], labels[order], len(trains)
 
 
 def _event_spikes(
     spike_times: Any, interval: Any, operation: str
 ) -> tuple[NDArray[np.float64], NDArray[np.intp], int]:
     """The event's spikes, in time order, with their units."""
-    return _sorted_spikes(spike_times, operation, _interval(interval, operation))
+    return _sorted_spikes(
+        spike_times, operation, _validated_interval(interval, operation)
+    )
 
 
 def _skew_bias(
@@ -875,15 +858,27 @@ def _significance(
 
     n_units = len(template)
     bias, counts = _skew_bias(times, labels, n_units)
-    observed = float(_cosines(template, bias[np.newaxis])[0])
-    generator = _ensure_rng(rng)
-    shuffled = np.stack(
-        [
-            _skew_bias(times, generator.permutation(labels), n_units)[0]
-            for _ in range(n_shuffles)
-        ]
+    # A unit silent in the event has no defined pair, in the event or in any
+    # shuffle (permuting the labels keeps each unit's spike count), so the
+    # matrices are scored over the active units only.
+    active = np.flatnonzero(counts > 0)
+    active_labels = np.searchsorted(active, labels)
+    active_template = template[np.ix_(active, active)]
+    observed = float(
+        _cosines(active_template, bias[np.ix_(active, active)][np.newaxis])[0]
     )
-    null = _cosines(template, shuffled)
+    generator = _ensure_rng(rng)
+    null = np.empty(n_shuffles)
+    # Blocks of shuffles bound the memory of the stacked matrices.
+    block = max(1, _BLOCK_VALUES // max(active.size**2, 1))
+    for start in range(0, n_shuffles, block):
+        shuffled = np.stack(
+            [
+                _skew_bias(times, generator.permutation(active_labels), active.size)[0]
+                for _ in range(start, min(start + block, n_shuffles))
+            ]
+        )
+        null[start : start + block] = _cosines(active_template, shuffled)
     defined = null[np.isfinite(null)]
     if np.isfinite(observed) and defined.size:
         statistic = np.abs if use_absolute else np.asarray

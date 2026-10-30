@@ -1589,6 +1589,7 @@ def null_events(
     [6, 5, 0]
     """
     from neurospatial._spikes import as_spike_trains
+    from neurospatial.replay.rank_order import _spikes_by_window
 
     operation = "null_events()"
     validate_choice(kind, _NULL_KINDS, name="kind", owner=operation)
@@ -1618,17 +1619,16 @@ def null_events(
     randomized = np.flatnonzero(chosen)
     generator = np.random.default_rng(rng)
     durations = windows[:, 1] - windows[:, 0]
+    # Each interval's spikes, one list of trains per interval.
+    by_window = list(_spikes_by_window(trains, windows))
     if kind == "rate_poisson":
         # Each cell's pooled rate: its spikes in every interval over their
         # summed duration.
         rates = (
             np.array(
                 [
-                    sum(
-                        np.count_nonzero((train >= start) & (train < stop))
-                        for start, stop in windows
-                    )
-                    for train in trains
+                    sum(in_event[cell].size for in_event in by_window)
+                    for cell in range(len(trains))
                 ],
                 dtype=np.float64,
             )
@@ -1640,12 +1640,11 @@ def null_events(
     sources = []
     copy_numbers = []
     slot = 0
-    for index, (start, stop) in enumerate(windows):
+    for index, ((start, stop), spikes_in_window) in enumerate(
+        zip(windows, by_window, strict=True)
+    ):
         duration = stop - start
-        in_event = [
-            np.asarray(train[(train >= start) & (train < stop)]) - start
-            for train in trains
-        ]
+        in_event = [spikes - start for spikes in spikes_in_window]
         for copy_number in range(n_copies):
             offset = slot * spacing
             copies = list(in_event)
