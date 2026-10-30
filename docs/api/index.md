@@ -190,9 +190,9 @@ Detecting the candidate events (ripples, population bursts) is not included.
   and compare their verdicts; `ReplaySegmentation` sets how
   criteria-based methods find the trajectory segment
 - `detect_rank_order_replay()`, `RankOrderMethod`: Apply published
-  rank-order tests (Foster & Wilson 2006, Diba & Buzsáki 2007) to an event's
-  spikes; `compare_replay_methods(spike_times=...)` compares them with the
-  decoded methods
+  rank-order tests (Foster & Wilson 2006, Diba & Buzsáki 2007, Chenani
+  2019) to an event's spikes; `compare_replay_methods(spike_times=...)`
+  compares them with the decoded methods
 - `shuffle_cell_identity()`, `shuffle_spike_counts_circular()`,
   `shuffle_place_fields_circular()`, `shuffle_place_fields_circular_2d()`,
   `shuffle_posterior_circular()`, `shuffle_posterior_weighted_circular()`:
