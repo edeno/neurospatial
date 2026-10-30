@@ -671,6 +671,7 @@ def test_n_shuffles_used_is_the_smallest_over_the_nulls(track, monkeypatch):
             observed=SimpleNamespace(score=0.9),
             p_value=0.01,
             n_shuffles_used={"column_cycle": 10, "pseudo_event": 7},
+            shuffles={},
         )
 
     monkeypatch.setattr(significance, "replay_significance", fake)

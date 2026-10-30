@@ -1323,6 +1323,17 @@ class ReplayDetectionResult(ResultMixin):
     tested_p_values : Mapping[str, float]
         Each tested quantity's p-value, the largest over the nulls; the
         same keys as ``tested_values``.
+    z_scores : Mapping[str, float]
+        The score's z-score against each null's shuffles, keyed by null
+        name: ``(statistic - mean) / std`` over the shuffles with a defined
+        score, on the tested statistic (the absolute score with
+        ``use_absolute``), as
+        :attr:`~neurospatial.stats.shuffle.ShuffleTestResult.z_score`. With
+        ``use_absolute=True`` this is the sequence score rZ of Grosmark &
+        Buzsáki (2016), the replay score-z of Xu et al. (2019) and the
+        sequence score of Farooq et al. (2019). Empty for a method without a
+        score's shuffle test. The standard deviation has ``ddof = 0``;
+        MATLAB's ``std`` uses ``ddof = 1``, a factor ``sqrt(n / (n - 1))``.
     """
 
     method: str
@@ -1337,10 +1348,17 @@ class ReplayDetectionResult(ResultMixin):
     n_shuffles_used: int | None = None
     tested_values: Mapping[str, float] = field(default_factory=dict)
     tested_p_values: Mapping[str, float] = field(default_factory=dict)
+    z_scores: Mapping[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Freeze the mappings."""
-        for name in ("criteria", "values", "tested_values", "tested_p_values"):
+        for name in (
+            "criteria",
+            "values",
+            "tested_values",
+            "tested_p_values",
+            "z_scores",
+        ):
             object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
@@ -1355,7 +1373,10 @@ class ReplayDetectionResult(ResultMixin):
         adds ``n_segments`` and the tested segment's ``segment_start_time``
         and ``segment_end_time`` (NaN without one). A method with tested
         quantities adds each quantity's value under its name, such as
-        ``mean_spread``, and its p-value, ``p_value[mean_spread]``.
+        ``mean_spread``, and its p-value, ``p_value[mean_spread]``. Each
+        criterion adds the value it was compared on, ``value[label]`` (the
+        raw value, before ``absolute`` and the ``relative_to`` scale), and
+        each null of the score's test its z-score, ``z_score[null]``.
         """
         values: dict[str, Any] = {
             "method": self.method,
@@ -1366,6 +1387,8 @@ class ReplayDetectionResult(ResultMixin):
             if self.n_shuffles_used is None
             else self.n_shuffles_used,
             **{f"passes[{label}]": ok for label, ok in self.criteria.items()},
+            **{f"value[{label}]": value for label, value in self.values.items()},
+            **{f"z_score[{name}]": z for name, z in self.z_scores.items()},
             **self.tested_values,
             **{f"p_value[{name}]": p for name, p in self.tested_p_values.items()},
         }
@@ -1795,6 +1818,7 @@ def detect_replay(
     score = np.nan
     p_value = np.nan
     n_shuffles_used = None
+    z_scores: dict[str, float] = {}
     segments = None
     segment = None
     # Rows of the event still tested, to cut a per-time-bin prior with them.
@@ -2025,6 +2049,9 @@ def detect_replay(
         else:
             score, p_value = float(result.observed.score), float(result.p_value)
             n_shuffles_used = min(result.n_shuffles_used.values())
+            z_scores = {
+                name: float(test.z_score) for name, test in result.shuffles.items()
+            }
             if separate is not None:
                 # Criteria are evaluated on the template with the largest score.
                 assert result.template is not None
@@ -2120,6 +2147,7 @@ def detect_replay(
         n_shuffles_used=n_shuffles_used,
         tested_values={} if quantity_test is None else quantity_test.values,
         tested_p_values={} if quantity_test is None else quantity_test.p_values,
+        z_scores=z_scores,
     )
 
 
@@ -2668,7 +2696,10 @@ def _rank_order_verdict(
         _result,
         _supported_rates,
     )
-    from neurospatial.stats.shuffle import compute_shuffle_pvalue
+    from neurospatial.stats.shuffle import (
+        compute_shuffle_pvalue,
+        compute_shuffle_zscore,
+    )
 
     operation = "detect_rank_order_replay()"
     # Validates the rates against env, then keeps the template cells' maps.
@@ -2691,6 +2722,7 @@ def _rank_order_verdict(
     score = float(observed.score)
     p_value = np.nan
     n_shuffles_used = None
+    z_scores: dict[str, float] = {}
     if np.isfinite(score):
         if method.test == "t_distribution":
             n = pairs.times.size
@@ -2711,6 +2743,9 @@ def _rank_order_verdict(
                     np.round(null, _SCORE_DECIMALS),
                     tail=method.alternative,
                 )
+            )
+            z_scores["cell_order"] = float(
+                compute_shuffle_zscore(score, null[np.isfinite(null)])
             )
     n_templates = int(
         np.isfinite(_field_positions(env, rates, method.field_order, operation)).sum()
@@ -2735,6 +2770,7 @@ def _rank_order_verdict(
         values=values,
         template=template,
         n_shuffles_used=n_shuffles_used,
+        z_scores=z_scores,
     )
 
 
@@ -2997,7 +3033,13 @@ def compare_replay_methods(
         One row per (event, method): ``event``, ``method``, ``is_replay``,
         ``score``, ``p_value``, ``n_shuffles_used`` (the shuffles the
         p-value counts, smallest over the method's nulls; NaN for methods
-        without shuffles), one ``passes[...]`` column per criterion, each
+        without shuffles), one ``passes[...]`` column per criterion and a
+        ``value[...]`` column with the value it was compared on (such as
+        ``value[max_map_jump < 0.4 x track_length]``, the raw jump in
+        environment units), a ``z_score[...]`` column per null of the
+        score's shuffle test (``z_score[place_field_circular]`` is rZ of
+        Grosmark & Buzsáki 2016 with ``use_absolute=True``; ``z_score[
+        cell_order]`` for a rank-order permutation test), each
         tested quantity's value and ``p_value[...]`` for methods with
         ``tested_quantities`` (NaN for the others),
         ``n_segments``, ``segment_start_time`` and ``segment_end_time`` for
