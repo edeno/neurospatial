@@ -320,10 +320,10 @@ def rank_order_significance(
     spikes move together. Foster & Wilson (2006) used the analytic Spearman
     p-value per event instead, which :class:`RankOrderResult` reports as
     ``analytic_p_value``. The z-score of the shuffle test approximates the
-    spatial similarity index of Chenani et al. (2019), who divided the
-    correlation by the standard deviation of correlations under 100,000
-    random permutations of the same number of cells, without subtracting a
-    mean.
+    spatial similarity index of Chenani et al. (2019), who z-scored the
+    correlation against 100,000 random permutations of the same number of
+    cells (``testsession.m`` subtracts their mean and divides by their
+    standard deviation).
 
     Examples
     --------
