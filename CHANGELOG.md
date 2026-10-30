@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Replay checks from Tingley & Peyrache (2020)
+
+**New**
+
+- `simulate_replay_event(..., drop_fraction=0.0, n_noise_spikes=0)`:
+  degrade a simulated event as in Tingley & Peyrache's Fig. 4. A fraction
+  of the rate-map spikes is removed, chosen without replacement from all
+  cells together, then noise spikes are added to uniformly drawn cells at
+  uniform times. Each draws from its own seeded stream, and the defaults
+  leave the event unchanged bit for bit. `ReplayEventSimulation` records
+  `drop_fraction`, `n_dropped_spikes` and `n_noise_spikes`, also in
+  `summary()`.
+
+**Changed**
+
+- `rank_order_correlation` notes that Tingley & Peyrache's 5-12% false
+  positives are for random 10-cell sequences in sets of 100 events and
+  come from MATLAB's parametric p-value (about 5.4% per event at 10 cells,
+  8.3% at 4-5, 33% at 3); an exact permutation test stays at or below 5%.
+- `neurospatial.simulation.replay` no longer cites Tingley & Peyrache, or
+  Takigawa et al. (2024), for stationary or scattered control events,
+  which neither studied.
+
 ### Fernández-Ruiz-lab replay methods
 
 Replay tests of Harvey et al. (2023), Soula et al. (2023), Liu et al. (2023)

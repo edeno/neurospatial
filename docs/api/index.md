@@ -462,7 +462,8 @@ Generate synthetic spatial data, neural activity, and spike trains for testing a
 - `simulation.examples`: Pre-configured example sessions
 - `simulation.replay`: `simulate_replay_event()`, a candidate replay event
   with a known path (sweep, stationary, jump or random), for comparing replay
-  methods
+  methods; `drop_fraction=` and `n_noise_spikes=` degrade it to measure
+  each method's sensitivity (Tingley & Peyrache 2020)
 
 **Key Classes:**
 
