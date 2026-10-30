@@ -737,11 +737,31 @@ def shuffle_posterior_weighted_circular(
     >>> sorted(peaks)
     [4, 5, 6]
     """
-    from neurospatial.environment import _require_track_extents
-
     operation = "shuffle_posterior_weighted_circular()"
     posterior = np.asarray(posterior, dtype=np.float64)
     order = _track_order(env, posterior, operation, _POSTERIOR_SHUFFLE_ALTERNATIVE)
+    probabilities = _peak_probabilities(
+        env, order, peak_weights, edge_exclusion, operation
+    )
+    return _peak_weighted_rolls(
+        posterior, order, probabilities, n_shuffles, _ensure_rng(rng)
+    )
+
+
+def _peak_probabilities(
+    env: Environment,
+    order: NDArray[np.intp],
+    peak_weights: NDArray[np.float64],
+    edge_exclusion: float,
+    operation: str,
+) -> NDArray[np.float64]:
+    """Probability of each bin, in track order, to receive a shifted peak.
+
+    The weights with bins within ``edge_exclusion`` of either end set to
+    zero, normalized to sum to 1; refused when no bin keeps weight.
+    """
+    from neurospatial.environment import _require_track_extents
+
     weights = np.asarray(peak_weights, dtype=np.float64)
     if (
         weights.shape != (env.n_bins,)
@@ -789,9 +809,8 @@ def shuffle_posterior_weighted_circular(
                 "candidate events",
             )
         )
-    return _peak_weighted_rolls(
-        posterior, order, weights / total, n_shuffles, _ensure_rng(rng)
-    )
+    probabilities: NDArray[np.float64] = weights / total
+    return probabilities
 
 
 def _peak_weighted_rolls(

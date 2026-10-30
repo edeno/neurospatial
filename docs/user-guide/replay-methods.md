@@ -442,6 +442,180 @@ report the rates on the other kinds and on simulated replay with it. The `alpha`
 `matched_alpha` is NaN for a method no α can hold to the target, and a
 warning says why.
 
+## Data-set-level replay tests
+
+Several papers draw no verdict on single events. They ask whether a data set,
+a session or every event of a condition, holds more trajectory events than
+data sets without sequences would. `neurospatial.replay.dataset` holds these
+tests and records each paper's choices as a `DatasetTestRecipe`
+(`SILVA_2015_MATRIX`, `SILVA_2015_RANK_ORDER`, `GROSMARK_2016_SURROGATES`,
+`FAROOQ_2019_TIME_BIN`, `FAROOQ_2019_POISSON`, `FAROOQ_2019_SPACE_BIN`,
+`FAROOQ_2019_WEIGHTED`, `LIU_2019_TEMPLATES`, `STELLA_2019_JITTER`,
+`XU_2019_ROTATION`). Each recipe's `notes` give the calls that run it and
+what the paper leaves open. The tests come in three kinds.
+
+**A data-set statistic against null data sets.** Silva et al. (2015) counted
+the events with |weighted correlation| above one threshold and maximum jump
+below another, for every pair of thresholds on a 10 x 10 grid, and compared
+each count with its value in 5,000 null data sets, each made by
+column-cycling every event once. `dataset_values` measures the events of the
+real data set and of the null data sets with the same method, so both are
+scored the same way, and `dataset_test` gives a p-value per grid point,
+`(n + 1) / (r + 1)` as Silva et al. computed it. Here we use 199 null data
+sets so the guide runs quickly.
+
+<!-- docs-test: run -->
+```python
+from neurospatial.replay import dataset_test, dataset_values, distribution_test
+from neurospatial.replay.dataset import FAROOQ_2019_POISSON, SILVA_2015_MATRIX
+
+real = dataset_values(env, events, replay_method=SILVA_2015, spike_counts=counts)
+shuffled = dataset_values(
+    env, events, replay_method=SILVA_2015, null="column_cycle", n_datasets=199, rng=0
+)
+matrix = dataset_test(real, shuffled, criteria=SILVA_2015_MATRIX.criteria)
+ax = matrix.plot()
+ax.set_title("Silva et al. (2015) significance matrix, 199 data sets")
+# Silva's trio: (|r| > 0.6, jump < 0.4), (0.7, 0.4), (0.7, 0.3)
+print(matrix.p_value[[6, 7, 7], [3, 3, 2]].round(3))
+print(matrix.statistic[[6, 7, 7], [3, 3, 2]].round(2))
+```
+
+The matrix shows the p-value of every pair of thresholds: rows are |r|
+thresholds from > 0 (top) to > 0.9, columns jump thresholds from < 0.1 to
+< 1 of the track, red below 0.05 and blue above. A third to a quarter of
+the 24 events pass Silva's three threshold pairs, more than in any of the
+199 column-cycled data sets, so p is the smallest 199 data sets can give,
+1/200. Silva et al. read trajectory events from the lower-left quadrant
+(high |r|, small jumps). With 12 sweeps among 24 events nearly every grid
+point is red here. Two corners are not: at the top right, thresholds so
+lenient that shuffled events pass them too (any |r| with jumps up to the
+whole track), and at the bottom left, a pair no event passes (|r| > 0.9
+with jumps below a tenth of the track), where every data set counts 0 and
+p = 1. With 5,000 data sets the smallest p is 1/5,001, the 0.0002 of Silva
+et al.'s Supplementary Table 1.
+
+**Surrogate data sets made from spikes.** Silva et al. (2015), Grosmark &
+Buzsáki (2016) and Farooq et al. (2019) also compared the real events with
+data sets of Poisson spikes at each cell's mean rate. `null_events` makes
+`n_copies` such copies of every event, and `copy_index` says which copy, so
+copy `k` of every event is the `k`-th null data set. Farooq et al. computed
+p as one minus the share of null data sets below the real one, without the
+`+ 1`; `paper_p_value` applies a recipe's own rule.
+
+<!-- docs-test: run -->
+```python
+poisson = null_events(rest_spikes, intervals, kind="rate_poisson", n_copies=50, rng=3)
+poisson_events, poisson_counts = decode_intervals(
+    env, poisson.spike_times, poisson.intervals, rates, dt=dt
+)
+surrogate = dataset_values(
+    env, poisson_events, replay_method=SILVA_2015, spike_counts=poisson_counts
+)
+surrogate["dataset"] = poisson.copy_index[surrogate["event"]]
+against_poisson = dataset_test(real, surrogate, criteria=SILVA_2015_MATRIX.criteria)
+print(
+    "p at (|r| > 0.6, jump < 0.4):",
+    round(against_poisson.p_value[6, 3], 3),
+    "library;",
+    round(FAROOQ_2019_POISSON.paper_p_value(against_poisson)[6, 3], 3),
+    "Farooq's rule",
+)
+```
+
+No Poisson data set has as many trajectory events as the real one, so the
+library's p is 1/51 and Farooq's rule gives 0. The `+ 1` keeps p above zero
+and changes it by at most 1/(n + 1); report which rule you use. Poisson
+surrogates break every sequence, but also each event's own burst: every
+surrogate event fires at the session's mean rate.
+
+**Pooled two-sample tests.** Stella et al. (2019), Xu et al. (2019) and
+Grosmark & Buzsáki (2016, Fig. S8) compared a value of every real event with
+the pooled values of the null events, by a Kolmogorov-Smirnov or rank-sum
+test. `distribution_test` states the side in terms of the values:
+`alternative="greater"` asks whether the real events' values are larger.
+(SciPy's `ks_2samp` names the side by the distribution functions, the
+opposite way.)
+
+<!-- docs-test: run -->
+```python
+pooled = distribution_test(
+    real.assign(abs_score=real["score"].abs()),
+    surrogate.assign(abs_score=surrogate["score"].abs()),
+    column="abs_score",
+    test="ks",
+    alternative="greater",
+)
+print(pooled.summary())
+```
+
+The real events' |r| (median 0.61) are larger than those of the 1,200
+Poisson events (median 0.19). The 50 copies of one event share its interval
+and are not independent; with many copies the pooled null estimates the
+null distribution well, but the test's power rests on the 24 real events,
+and a small p from tens of thousands of null values can come from a small
+shift. Report the medians with the p-value.
+
+**A share of events against chance.** Grosmark & Buzsáki (2016) tested the
+share of events with p < 0.05 against 5%. `detection_rates(...,
+expected_rate=0.05)` adds an exact binomial p-value to each rate.
+
+<!-- docs-test: run -->
+```python
+wu = table[table["method"] == "wu_2017"]
+share = detection_rates(
+    wu.assign(is_replay=wu["p_value"] < 0.05), groups=["kind"], expected_rate=0.05
+)
+print(share[["kind", "n_events", "n_replay", "rate", "p_value"]].round(4))
+```
+
+Eleven of 12 sweeps have p < 0.05 under `WU_2017`, far more than 5%. So do
+4 of 6 random events (p = 0.0001), the false positives found above: a share
+above chance says that some events beat their shuffles, not that they are
+trajectories.
+
+**Template order.** Liu et al. (2019) asked whether the order in which cells
+fire in sleep follows their order on the track, without decoding. Each
+cell's mean relative rank across sleep frames (`relative_rank_template`) is
+correlated with its field position, averaged over animals and running
+directions, and compared with shuffles of the running template
+(`template_correlation_test`). Our sweeps run both ways, and a backward
+sweep reverses the order, so here the frames are the sweeps whose weighted
+correlation is positive, for one "animal" and one running direction.
+
+<!-- docs-test: run -->
+```python
+from neurospatial.replay import relative_rank_template, template_correlation_test
+
+field_peaks = env.bin_centers[np.nanargmax(np.asarray(rates.firing_rates), axis=1), 0]
+forward = intervals[(kinds == "sweep") & (real["score"].to_numpy() > 0)]
+sleep_order = relative_rank_template(rest_spikes, forward, min_active_cells=4)
+templates = template_correlation_test(
+    [sleep_order], [field_peaks], n_shuffles=999, rng=0
+)
+print(templates.summary())
+```
+
+The sleep order correlates with the field order (rho = 0.54) better than in
+all 999 shuffles. Liu et al. reported the percentile of the real
+correlation among the shuffles (97.6 before running) and a one-tailed p of
+`1 - percentile / 100`, which `LIU_2019_TEMPLATES.paper_p_value(templates)`
+gives.
+
+Paper-scale runs are tractable. For the column-cycle, weighted column-cycle
+and time-bin nulls with a weighted-correlation score, `dataset_values`
+measures each event once per circular shift of each time bin and then reads
+every shuffle from those tables: 1,000 events and 5,000 data sets took about
+2 s on a laptop, and the 10 x 10 matrix test as long, so Silva et al.'s 9,818
+events take well under a minute (their table holds 49 million rows, about
+2 GB). `decode_intervals` decodes disjoint intervals in one pass, about 70
+times faster than one interval at a time, which matters for Farooq et al.'s
+500 Poisson data sets of 38,820 frames (about 10 minutes to decode). Nested
+designs, such as Grosmark & Buzsáki's 100 surrogate data sets each tested
+event by event against 200 place-field shuffles (about an hour per class
+and epoch), parallelize over data sets with seeds from
+`np.random.SeedSequence(seed).spawn(100)`.
+
 ## Using your own recording
 
 - **Rate maps.** Estimate them from running only, e.g.
@@ -534,8 +708,19 @@ warning says why.
   extended experience. *Neuron* 63:497–507.
 - Diba K, Buzsáki G (2007). Forward and reverse hippocampal place-cell
   sequences during ripples. *Nat Neurosci* 10:1241–1242.
+- Farooq U, Sibille J, Liu K, Dragoi G (2019). Strengthened temporal
+  coordination within pre-existing sequential cell assemblies supports
+  trajectory replay. *Neuron* 103:719–733.
+- Grosmark AD, Buzsáki G (2016). Diversity in neural firing dynamics supports
+  both rigid and learned hippocampal sequences. *Science* 351:1440–1443.
+- Liu K, Sibille J, Dragoi G (2019). Preconfigured patterns are the primary
+  driver of offline multi-neuronal sequence replay. *Hippocampus*
+  29:275–283.
 - Silva D, Feng T, Foster DJ (2015). Trajectory events across hippocampal
   place cells require previous experience. *Nat Neurosci* 18:1772–1779.
+- Stella F, Baracskay P, O'Neill J, Csicsvari J (2019). Hippocampal
+  reactivation of random trajectories resembling Brownian diffusion.
+  *Neuron* 102:450–461.
 - Takigawa M, Huelin Gorriz M, Tirole M, Bendor D (2024). Evaluating
   hippocampal replay without a ground truth. *eLife* 13:e85635.
 - Tingley D, Peyrache A (2020). On the methods for reactivation and replay

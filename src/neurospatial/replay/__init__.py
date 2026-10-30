@@ -98,6 +98,28 @@ null_events, simulated_null_events, decode_intervals : Events without replay
     simulated random and stationary events) to measure false positives
 matched_alpha, apply_alpha : Each method's alpha that holds its
     false-positive rate on null data to a target, and verdicts at it
+
+Data-Set-Level Tests
+--------------------
+dataset_values : Per-event values of the real data set or of null data sets
+    Each null data set shuffles every event once, measured by the same
+    method; ``shared=True`` draws one template shuffle per data set.
+dataset_test, CriterionGrid : A data-set statistic against null data sets
+    The share of events passing every criterion on a grid of thresholds
+    (Silva et al. 2015's significance matrix), or any statistic.
+distribution_test : Real events' values against pooled null events' values
+    KS, rank-sum or Levene test, the side stated in terms of the values
+    (Stella et al. 2019; Xu et al. 2019; Grosmark & Buzsáki 2016).
+shuffle_events : Null data sets as decoded events, for nested analyses
+relative_rank_template, template_correlation_test : Liu et al. (2019)
+    Sleep template from relative ranks, tested against shuffled running
+    templates.
+DatasetTestResult, DistributionTestResult, ShuffledDataset : Their results
+neurospatial.replay.dataset : The papers' data-set tests as recipes
+    (SILVA_2015_MATRIX, SILVA_2015_RANK_ORDER, GROSMARK_2016_SURROGATES,
+    FAROOQ_2019_TIME_BIN, FAROOQ_2019_POISSON, FAROOQ_2019_SPACE_BIN,
+    FAROOQ_2019_WEIGHTED, LIU_2019_TEMPLATES, STELLA_2019_JITTER,
+    XU_2019_ROTATION)
 neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
     DIBA_BUZSAKI_2007, DAVIDSON_2009, KARLSSON_FRANK_2009, GUPTA_2010,
     LEE_WILSON_2002, JI_WILSON_2007,
@@ -178,6 +200,18 @@ from neurospatial.replay.criteria import (
     TrajectoryMetrics,
     template_fractions,
     trajectory_metrics,
+)
+from neurospatial.replay.dataset import (
+    CriterionGrid,
+    DatasetTestResult,
+    DistributionTestResult,
+    ShuffledDataset,
+    dataset_test,
+    dataset_values,
+    distribution_test,
+    relative_rank_template,
+    shuffle_events,
+    template_correlation_test,
 )
 from neurospatial.replay.methods import (
     RankOrderMethod,
@@ -277,6 +311,17 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "null_events",
     "simulated_null_events",
     "detect_replay",
+    # Data-set-level tests
+    "CriterionGrid",
+    "DatasetTestResult",
+    "DistributionTestResult",
+    "ShuffledDataset",
+    "dataset_test",
+    "dataset_values",
+    "distribution_test",
+    "relative_rank_template",
+    "shuffle_events",
+    "template_correlation_test",
     # Result containers
     "CircularSequenceResult",
     "IsotonicFitResult",

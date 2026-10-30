@@ -50,7 +50,13 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.replay.arms import ArmReplayMethod
     from neurospatial.replay.methods import RankOrderMethod, ReplayMethod
+    from neurospatial.replay.pairwise_order import PairwiseOrderMethod
     from neurospatial.replay.template_match import TemplateMatchMethod
+
+    # Methods whose verdict tests a p-value against alpha.
+    _TestedMethod = (
+        ReplayMethod | RankOrderMethod | PairwiseOrderMethod | TemplateMatchMethod
+    )
 
 __all__ = [
     "NullSpikeData",
@@ -294,11 +300,15 @@ def detection_rates(
     groups: Sequence[str] = (),
     errors: Literal["not_replay", "exclude"] = "not_replay",
     confidence: float = 0.95,
+    expected_rate: float | None = None,
+    alternative: Literal["two-sided", "greater", "less"] = "two-sided",
 ) -> pd.DataFrame:
     """Each method's share of events called replay, with a confidence interval.
 
     On events without replay (null data) the rate is the method's
-    false-positive rate; on simulated replays, its sensitivity.
+    false-positive rate; on simulated replays, its sensitivity. With
+    ``expected_rate``, each rate is also tested against a rate expected by
+    chance, such as the share of events with p < 0.05 against 0.05.
 
     Parameters
     ----------
@@ -332,6 +342,16 @@ def detection_rates(
         scored. ``n_errors`` counts them either way.
     confidence : float, default=0.95
         Level of the Clopper-Pearson (exact binomial) interval.
+    expected_rate : float or None, default=None
+        A rate in (0, 1) to test each stratum's rate against with an exact
+        binomial test, ``scipy.stats.binomtest(n_replay, n_events,
+        expected_rate)``. Grosmark & Buzsáki (2016, Figs. S5C and S7B)
+        compared the share of events with p < 0.05 with 5% by a chi-square
+        test of proportions; the exact binomial test is its exact form, and
+        the p-values differ slightly.
+    alternative : {"two-sided", "greater", "less"}, default="two-sided"
+        Side of the binomial test: ``"greater"`` asks whether more events
+        are called replay than ``expected_rate`` predicts.
 
     Returns
     -------
@@ -339,7 +359,8 @@ def detection_rates(
         One row per method and stratum, in every combination: ``method``,
         one column per ``groups`` and ``by`` key (the bin, as an interval),
         ``n_events``, ``n_replay``, ``rate``, ``ci_low``, ``ci_high`` and
-        ``n_errors``. ``rate`` and the interval are NaN without events.
+        ``n_errors``; with ``expected_rate``, the binomial ``p_value``.
+        ``rate``, the interval and ``p_value`` are NaN without events.
 
     Raises
     ------
@@ -351,8 +372,8 @@ def detection_rates(
         events outside its bins (NaN, out of range, or absent from
         ``properties``); if ``properties`` lacks the ``groups`` of a
         table that numbers its events again in each group, or repeats a
-        (``groups``, ``event``) key; or if ``errors`` or ``confidence`` is
-        invalid.
+        (``groups``, ``event``) key; or if ``errors``, ``confidence``,
+        ``expected_rate`` or ``alternative`` is invalid.
 
     See Also
     --------
@@ -374,6 +395,16 @@ def detection_rates(
     >>> rates = detection_rates(table)
     >>> rates[["method", "n_events", "n_replay"]].to_dict("records")
     [{'method': 'a', 'n_events': 3, 'n_replay': 2}, {'method': 'b', 'n_events': 3, 'n_replay': 1}]
+
+    Against a chance rate: 9 of 100 events with p < 0.05 is more than the
+    5% expected, but not significantly (two-sided exact binomial test).
+
+    >>> table = pd.DataFrame(
+    ...     {"event": range(100), "method": "a", "is_replay": [True] * 9 + [False] * 91}
+    ... )
+    >>> row = detection_rates(table, expected_rate=0.05).iloc[0]
+    >>> print(f"{row['rate']:.2f}, p = {row['p_value']:.3f}")
+    0.09, p = 0.100
     """
     import pandas as pd
     from scipy.stats import binomtest
@@ -386,6 +417,21 @@ def detection_rates(
     if not 0 < confidence < 1:
         raise ValueError(
             f"{operation}: confidence must be in (0, 1), got {confidence}."
+        )
+    if expected_rate is not None and not (
+        isinstance(expected_rate, (int, float, np.integer, np.floating))
+        and not isinstance(expected_rate, bool)
+        and 0 < expected_rate < 1
+    ):
+        raise ValueError(
+            f"{operation}: expected_rate must be a rate in (0, 1) or None, got "
+            f"{expected_rate!r}; for the share of p < 0.05 events by chance, "
+            "pass 0.05."
+        )
+    if alternative not in ("two-sided", "greater", "less"):
+        raise ValueError(
+            f"{operation}: alternative must be 'two-sided', 'greater' or "
+            f"'less', got {alternative!r}."
         )
     data = _checked_table(table, groups, operation)
     keys = ["method", *groups]
@@ -459,6 +505,19 @@ def detection_rates(
             ci_high=high,
             n_errors=int(failed.sum()),
         )
+        if expected_rate is not None:
+            row["p_value"] = (
+                float(
+                    binomtest(
+                        n_replay,
+                        n_events,
+                        float(expected_rate),
+                        alternative=alternative,
+                    ).pvalue
+                )
+                if n_events
+                else np.nan
+            )
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -634,7 +693,11 @@ def matched_alpha(
     null_table: pd.DataFrame,
     *,
     replay_methods: Sequence[
-        ReplayMethod | RankOrderMethod | ArmReplayMethod | TemplateMatchMethod
+        ReplayMethod
+        | RankOrderMethod
+        | PairwiseOrderMethod
+        | ArmReplayMethod
+        | TemplateMatchMethod
     ],
     target: float = 0.05,
     groups: Sequence[str] = (),
@@ -655,11 +718,14 @@ def matched_alpha(
         on events without replay, such as from :func:`null_events` or
         :func:`simulated_null_events`, or several concatenated with
         ``groups`` columns that tell their events apart.
-    replay_methods : sequence of ReplayMethod, RankOrderMethod or TemplateMatchMethod
+    replay_methods : sequence of ReplayMethod, RankOrderMethod, PairwiseOrderMethod or TemplateMatchMethod
         The methods the table was made with. Each must test a p-value
         against its ``alpha``: a :class:`ReplayMethod` with ``nulls``, a
         :class:`RankOrderMethod` with the ``"t_distribution"`` or
-        ``"cell_order"`` test that tests one template, or a
+        ``"cell_order"`` test that tests one template, a
+        :class:`~neurospatial.replay.PairwiseOrderMethod` (whose reported
+        test, the smallest p-value over templates and directions, and
+        active-cell rule, over every cell, do not depend on alpha), or a
         :class:`TemplateMatchMethod` (whose p-values are exact and take few
         values, so the matched alpha moves in steps).
     target : float, default=0.05
@@ -831,7 +897,11 @@ def apply_alpha(
     *,
     alpha: Mapping[str, float] | pd.Series,
     replay_methods: Sequence[
-        ReplayMethod | RankOrderMethod | ArmReplayMethod | TemplateMatchMethod
+        ReplayMethod
+        | RankOrderMethod
+        | PairwiseOrderMethod
+        | ArmReplayMethod
+        | TemplateMatchMethod
     ],
     groups: Sequence[str] = (),
 ) -> pd.DataFrame:
@@ -854,7 +924,7 @@ def apply_alpha(
         ``matched_alpha(...).set_index("method")["alpha"]``. Methods not
         named keep their verdicts. After ``matched_alpha`` with
         ``groups``, choose one group's alphas first.
-    replay_methods : sequence of ReplayMethod, RankOrderMethod or TemplateMatchMethod
+    replay_methods : sequence of ReplayMethod, RankOrderMethod, PairwiseOrderMethod or TemplateMatchMethod
         The methods the table was made with; those named in ``alpha`` must
         test a p-value against alpha (see :func:`matched_alpha`).
     groups : sequence of str, default=()
@@ -949,13 +1019,18 @@ def apply_alpha(
 def _alpha_methods(
     data: pd.DataFrame,
     replay_methods: Sequence[
-        ReplayMethod | RankOrderMethod | ArmReplayMethod | TemplateMatchMethod
+        ReplayMethod
+        | RankOrderMethod
+        | PairwiseOrderMethod
+        | ArmReplayMethod
+        | TemplateMatchMethod
     ],
     names: list[str],
     operation: str,
-) -> dict[str, ReplayMethod | RankOrderMethod | TemplateMatchMethod]:
+) -> dict[str, _TestedMethod]:
     """The named methods, checked to test a p-value against alpha."""
     from neurospatial.replay.methods import RankOrderMethod, ReplayMethod
+    from neurospatial.replay.pairwise_order import PairwiseOrderMethod
     from neurospatial.replay.template_match import TemplateMatchMethod
 
     by_name = {method.name: method for method in replay_methods}
@@ -975,7 +1050,7 @@ def _alpha_methods(
             f"{operation}: table lacks a p_value column; pass the table of "
             "compare_replay_methods()."
         )
-    tested: dict[str, ReplayMethod | RankOrderMethod | TemplateMatchMethod] = {}
+    tested: dict[str, _TestedMethod] = {}
     untested, choosing = [], []
     for name in names:
         method = by_name[name]
@@ -984,12 +1059,13 @@ def _alpha_methods(
             if "template" in data and data.loc[rows, "template"].notna().any():
                 choosing.append(name)
                 continue
-        # A template-matching method's choice of template (the largest score)
-        # does not depend on alpha.
+        # A template-matching method's choice of template (the largest
+        # score) and a pairwise-order method's (the smallest p-value, with an
+        # active-cell rule over every cell) do not depend on alpha.
         if (
             (isinstance(method, ReplayMethod) and method.nulls)
             or (isinstance(method, RankOrderMethod) and method.test != "pooled_ssi")
-            or isinstance(method, TemplateMatchMethod)
+            or isinstance(method, (TemplateMatchMethod, PairwiseOrderMethod))
         ):
             tested[name] = method
         else:
@@ -1020,7 +1096,7 @@ def _alpha_methods(
 
 
 def _smallest_p_value(
-    method: ReplayMethod | RankOrderMethod | TemplateMatchMethod,
+    method: _TestedMethod,
 ) -> float:
     """The smallest p-value a method's shuffles can give.
 
@@ -1040,12 +1116,14 @@ def _smallest_p_value(
     ):
         return 0.0
     smallest = 1.0 / (method.n_shuffles + 1)
-    return min(2.0 * smallest, 1.0) if method.alternative == "two-sided" else smallest
+    # A pairwise-order test is one-sided: the score against larger shuffles.
+    two_sided = getattr(method, "alternative", "greater") == "two-sided"
+    return min(2.0 * smallest, 1.0) if two_sided else smallest
 
 
 def _verdicts(
     frame: pd.DataFrame,
-    method: ReplayMethod | RankOrderMethod | TemplateMatchMethod,
+    method: _TestedMethod,
     alpha: float,
     operation: str,
 ) -> NDArray[np.bool_]:
@@ -1073,7 +1151,7 @@ def _verdicts(
 def _p_passes(
     p_values: NDArray[np.float64],
     alpha: float,
-    method: ReplayMethod | RankOrderMethod | TemplateMatchMethod,
+    method: _TestedMethod,
 ) -> NDArray[np.bool_]:
     """Whether each p-value passes alpha by the method's comparison."""
     from neurospatial.replay.sequence_match import _passes
@@ -1086,7 +1164,7 @@ def _p_passes(
 
 def _check_verdicts(
     frame: pd.DataFrame,
-    method: ReplayMethod | RankOrderMethod | TemplateMatchMethod,
+    method: _TestedMethod,
     operation: str,
 ) -> None:
     """Refuse a table whose verdicts do not follow from the method."""
@@ -1166,7 +1244,10 @@ class NullSpikeData(ReadOnlyArraysMixin, ResultMixin):
     draws from every event of a call. Concatenate the tables with a column
     telling them apart and pass it to ``detection_rates(groups=...)``. The
     table's ``event`` indexes ``intervals``, so ``source_events[event]``
-    joins a null event to its real event's properties.
+    joins a null event to its real event's properties, and
+    ``copy_index[event]`` names the null data set it belongs to: copy ``k``
+    of every real event forms the ``k``-th null data set of a data-set-level
+    test (see :mod:`neurospatial.replay.dataset`).
 
     Attributes
     ----------
@@ -1177,6 +1258,10 @@ class NullSpikeData(ReadOnlyArraysMixin, ResultMixin):
     source_events : NDArray[np.intp], shape (n_events,)
         Index of the real event each null event was made from; -1 for a
         simulated event.
+    copy_index : NDArray[np.intp], shape (n_events,)
+        Which copy of its real event each null event is, from 0 to
+        ``n_copies - 1``; 0 for a simulated event. The events with
+        ``copy_index == k`` form one null data set the size of the real one.
     kind : str
         How the null events were made.
 
@@ -1189,6 +1274,7 @@ class NullSpikeData(ReadOnlyArraysMixin, ResultMixin):
     spike_times: tuple[NDArray[np.float64], ...]
     intervals: NDArray[np.float64]
     source_events: NDArray[np.intp]
+    copy_index: NDArray[np.intp]
     kind: str
 
     def __post_init__(self) -> None:
@@ -1273,7 +1359,8 @@ def null_events(
     -------
     NullSpikeData
         ``n_events * n_copies`` null events, the copies of each event
-        together, with ``source_events`` naming the real event.
+        together, with ``source_events`` naming the real event and
+        ``copy_index`` the copy.
 
     Raises
     ------
@@ -1440,6 +1527,7 @@ def null_events(
     placed: list[list[NDArray[np.float64]]] = [[] for _ in trains]
     out_intervals = []
     sources = []
+    copy_numbers = []
     slot = 0
     for index, (start, stop) in enumerate(windows):
         duration = stop - start
@@ -1447,7 +1535,7 @@ def null_events(
             np.asarray(train[(train >= start) & (train < stop)]) - start
             for train in trains
         ]
-        for _ in range(n_copies):
+        for copy_number in range(n_copies):
             offset = slot * spacing
             copies = list(in_event)
             if kind == "cell_identity":
@@ -1472,6 +1560,7 @@ def null_events(
                 placed[cell].append(np.sort(spikes) + offset)
             out_intervals.append((offset, offset + duration))
             sources.append(index)
+            copy_numbers.append(copy_number)
             slot += 1
     return NullSpikeData(
         spike_times=tuple(
@@ -1479,6 +1568,7 @@ def null_events(
         ),
         intervals=np.asarray(out_intervals, dtype=np.float64),
         source_events=np.asarray(sources, dtype=np.intp),
+        copy_index=np.asarray(copy_numbers, dtype=np.intp),
         kind=kind,
     )
 
@@ -1596,6 +1686,7 @@ def simulated_null_events(
         spike_times=tuple(np.concatenate(parts) for parts in placed),
         intervals=np.column_stack([starts, starts + float(duration)]),
         source_events=np.full(n_events, -1, dtype=np.intp),
+        copy_index=np.zeros(n_events, dtype=np.intp),
         kind=f"simulated_{kind}",
     )
 
@@ -1651,11 +1742,29 @@ def decode_intervals(
     --------
     null_events : Null events to decode.
     neurospatial.replay.compare_replay_methods : Score the decoded events.
+
+    Notes
+    -----
+    Intervals that do not overlap (touching is fine) and a prior with one
+    weight per bin are binned in one pass and decoded together, in blocks
+    of 50,000 time bins: the time bins are decoded independently, so this
+    gives each interval's posterior up to round-off (about 1e-15). On a
+    laptop, 5,000 events of 10 time bins, 100 cells and 72 bins took 0.16 s
+    this way against 11 s one interval at a time, which matters for the
+    many surrogate events of a data-set-level test.
+    Overlapping intervals, or a prior per time bin, are decoded one interval
+    at a time.
     """
     from neurospatial.decoding import bin_spikes_in_time, decode_position
 
     operation = "decode_intervals()"
     windows = _checked_intervals(intervals, operation)
+    ordered = np.argsort(windows[:, 0], kind="stable")
+    disjoint = bool(np.all(windows[ordered][1:, 0] >= windows[ordered][:-1, 1]))
+    if disjoint and (prior is None or np.ndim(prior) == 1):
+        return _decode_intervals_together(
+            env, spike_times, windows, encoding_models, dt=dt, prior=prior
+        )
     events = []
     counts = []
     for start, stop in windows:
@@ -1668,6 +1777,75 @@ def decode_intervals(
             )
         )
         counts.append(np.asarray(event_counts))
+    return events, counts
+
+
+# Time bins decoded at once by the batched path of decode_intervals.
+_DECODE_BLOCK = 50_000
+
+
+def _decode_intervals_together(
+    env: Environment,
+    spike_times: Any,
+    windows: NDArray[np.float64],
+    encoding_models: Any,
+    *,
+    dt: float,
+    prior: NDArray[np.float64] | None,
+) -> tuple[list[DecodingResult], list[NDArray[np.int64]]]:
+    """:func:`decode_intervals` for disjoint intervals, in one decode.
+
+    The bins are those :func:`~neurospatial.decoding.bin_spikes_in_time`
+    makes for each interval alone (each window tiled from its own start),
+    counted in one pass, and every bin is decoded in one call to
+    :func:`~neurospatial.decoding.decode_position`.
+    """
+    from neurospatial._spikes import as_spike_trains
+    from neurospatial._time_bins import (
+        _count_spikes_in_time_bins,
+        _time_bins_in_windows,
+    )
+    from neurospatial.decoding import DecodingResult, decode_position
+    from neurospatial.decoding._time_bins import validate_dt
+
+    dt = validate_dt(dt)
+    order = np.argsort(windows[:, 0], kind="stable")
+    sorted_windows = windows[order]
+    left, right = _time_bins_in_windows(sorted_windows, dt)
+    per_window = np.bincount(
+        np.searchsorted(sorted_windows[:, 0], left, side="right") - 1,
+        minlength=len(sorted_windows),
+    )
+    if np.any(per_window == 0):
+        empty = sorted_windows[per_window == 0][0]
+        span = float(empty[1] - empty[0])
+        raise ValueError(
+            _format_error(
+                f"decode_intervals(): the interval {empty.tolist()} spans {span} "
+                f"s, smaller than one bin dt ({dt}); no whole time bin fits.",
+                why="each interval is decoded in whole time bins of width dt",
+                fix=f"use dt <= {span:g} or leave out intervals shorter than dt",
+            )
+        )
+    all_counts = _count_spikes_in_time_bins(as_spike_trains(spike_times), left, right)
+    decoded = decode_position(
+        env,
+        all_counts,
+        encoding_models,
+        dt=dt,
+        prior=prior,
+        time_chunk=_DECODE_BLOCK,
+    ).posterior
+    stops = np.cumsum(per_window)
+    starts = stops - per_window
+    centers = left + dt / 2.0
+    events: list[DecodingResult] = [None] * len(windows)  # type: ignore[list-item]
+    counts: list[NDArray[np.int64]] = [None] * len(windows)  # type: ignore[list-item]
+    for slot, (first, last) in zip(order, zip(starts, stops, strict=True), strict=True):
+        events[slot] = DecodingResult(
+            posterior=decoded[first:last], env=env, times=centers[first:last]
+        )
+        counts[slot] = all_counts[first:last].copy()
     return events, counts
 
 
