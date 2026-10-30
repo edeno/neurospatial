@@ -21,10 +21,10 @@ from neurospatial.reactivation.assemblies import (
     AssemblyDetectionResult,
     AssemblyPattern,
     assembly_activation,
+    assembly_reactivation,
     detect_assemblies,
     explained_variance_reactivation,
     pairwise_correlations,
-    reactivation_strength,
 )
 
 LABELS = np.array(
@@ -179,49 +179,58 @@ def test_label_free_activation_is_unchanged_by_labels_on_the_pattern(
 
 
 @pytest.mark.parametrize("order", ORDERS)
-def test_reactivation_strength_is_invariant_to_column_order_with_labels(
+def test_assembly_reactivation_is_invariant_to_column_order_with_labels(
     labelled, run_counts, rest_counts, order
 ) -> None:
     pattern = labelled.patterns[0]
-    expected = reactivation_strength(run_counts, rest_counts, pattern)
-    assert expected > 1.0  # the members burst more strongly at rest
+    expected = assembly_reactivation(run_counts, rest_counts, pattern)
+    # The members burst more strongly in rest_counts than in run_counts.
+    assert expected.mean_activation_difference > 0.1
 
-    strength = reactivation_strength(
+    result = assembly_reactivation(
         run_counts[:, order],
         rest_counts[:, order],
         pattern,
-        template_unit_ids=LABELS[order],
+        control_unit_ids=LABELS[order],
         match_unit_ids=LABELS[order],
     )
 
-    assert strength == pytest.approx(expected, rel=1e-12)
+    np.testing.assert_allclose(
+        list(result.summary().values()),
+        list(expected.summary().values()),
+        **ROUNDING,
+    )
 
 
-def test_reactivation_strength_matches_each_period_by_its_own_labels(
+def test_assembly_reactivation_matches_each_period_by_its_own_labels(
     labelled, run_counts, rest_counts
 ) -> None:
-    """Periods sorted or binned in different unit orders give the same ratio."""
+    """Periods sorted or binned in different unit orders give the same answer."""
     pattern = labelled.patterns[0]
-    expected = reactivation_strength(run_counts, rest_counts, pattern)
+    expected = assembly_reactivation(run_counts, rest_counts, pattern)
     run_order, rest_order = ORDERS
 
-    strength = reactivation_strength(
+    result = assembly_reactivation(
         run_counts[:, run_order],
         rest_counts[:, rest_order],
         pattern,
-        template_unit_ids=LABELS[run_order],
+        control_unit_ids=LABELS[run_order],
         match_unit_ids=LABELS[rest_order],
     )
 
-    assert strength == pytest.approx(expected, rel=1e-12)
+    np.testing.assert_allclose(
+        list(result.summary().values()),
+        list(expected.summary().values()),
+        **ROUNDING,
+    )
     # Why identity matters: by position, the rest period's members meet the
-    # weights and normalization of other cells, and the burst disappears.
-    wrong = reactivation_strength(
+    # weights of other cells, and the burst disappears.
+    wrong = assembly_reactivation(
         run_counts[:, run_order],
         rest_counts[:, rest_order],
         _relabelled(pattern, run_order),
     )
-    assert wrong < 1.0 < expected
+    assert wrong.match_mean_activation < 0.5 * expected.match_mean_activation
 
 
 def _relabelled(pattern: AssemblyPattern, order: np.ndarray) -> AssemblyPattern:
@@ -234,21 +243,21 @@ def _relabelled(pattern: AssemblyPattern, order: np.ndarray) -> AssemblyPattern:
     )
 
 
-@pytest.mark.parametrize("given", ["template_unit_ids", "match_unit_ids"])
-def test_reactivation_strength_refuses_labels_for_one_period(
+@pytest.mark.parametrize("given", ["control_unit_ids", "match_unit_ids"])
+def test_assembly_reactivation_refuses_labels_for_one_period(
     labelled, run_counts, rest_counts, given
 ) -> None:
-    missing = ({"template_unit_ids", "match_unit_ids"} - {given}).pop()
+    missing = ({"control_unit_ids", "match_unit_ids"} - {given}).pop()
     with pytest.raises(
         ValueError, match=re.escape(f"got {given}= but not {missing}=")
     ) as caught:
-        reactivation_strength(
+        assembly_reactivation(
             run_counts, rest_counts, labelled.patterns[0], **{given: LABELS}
         )
     assert "or neither to pair columns by position" in str(caught.value)
 
 
-def test_reactivation_strength_names_missing_labels_of_each_period(
+def test_assembly_reactivation_names_missing_labels_of_each_period(
     labelled, run_counts, rest_counts
 ) -> None:
     pattern = labelled.patterns[0]
@@ -258,23 +267,23 @@ def test_reactivation_strength_names_missing_labels_of_each_period(
         ValueError,
         match=re.escape("only in the pattern: [7], only in match_counts: [100]"),
     ) as caught:
-        reactivation_strength(
+        assembly_reactivation(
             run_counts,
             rest_counts,
             pattern,
-            template_unit_ids=LABELS,
+            control_unit_ids=LABELS,
             match_unit_ids=labels,
         )
     assert "np.isin(match_unit_ids, pattern.unit_ids)" in str(caught.value)
     with pytest.raises(ValueError, match="unique") as caught:
-        reactivation_strength(
+        assembly_reactivation(
             run_counts,
             rest_counts,
             pattern,
-            template_unit_ids=np.r_[LABELS[:-1], LABELS[0]],
+            control_unit_ids=np.r_[LABELS[:-1], LABELS[0]],
             match_unit_ids=LABELS,
         )
-    assert "for template_counts" in str(caught.value)
+    assert "for control_counts" in str(caught.value)
 
 
 def test_missing_and_extra_labels_are_named(labelled, rest_counts) -> None:
@@ -300,16 +309,16 @@ def test_missing_and_extra_labels_are_named(labelled, rest_counts) -> None:
         assembly_activation(rest_counts[:, :-1], pattern, unit_ids=LABELS[:-1])
 
 
-def test_reactivation_strength_names_the_period_with_wrong_labels(
+def test_assembly_reactivation_names_the_period_with_wrong_labels(
     labelled, run_counts, rest_counts
 ) -> None:
     pattern = labelled.patterns[0]
     with pytest.raises(ValueError, match="for match_counts") as caught:
-        reactivation_strength(
+        assembly_reactivation(
             run_counts,
             rest_counts[:, :-1],
             pattern,
-            template_unit_ids=LABELS,
+            control_unit_ids=LABELS,
             match_unit_ids=LABELS,
         )
     assert "length mismatch" in str(caught.value)
@@ -322,11 +331,11 @@ def test_labels_against_a_pattern_without_labels_are_refused(
         assembly_activation(rest_counts, unlabelled.patterns[0], unit_ids=LABELS)
     assert "unit_ids= to detect_assemblies()" in str(caught.value)
     with pytest.raises(ValueError, match="the pattern has no unit_ids"):
-        reactivation_strength(
+        assembly_reactivation(
             rest_counts,
             rest_counts,
             unlabelled.patterns[0],
-            template_unit_ids=LABELS,
+            control_unit_ids=LABELS,
             match_unit_ids=LABELS,
         )
 
@@ -349,11 +358,11 @@ def test_string_labels_match_across_periods() -> None:
 
 def test_labelled_counts_must_be_two_dimensional(labelled, rest_counts) -> None:
     with pytest.raises(ValueError, match="must be 2D"):
-        reactivation_strength(
+        assembly_reactivation(
             rest_counts,
             rest_counts[:, 0],
             labelled.patterns[0],
-            template_unit_ids=LABELS,
+            control_unit_ids=LABELS,
             match_unit_ids=LABELS,
         )
 

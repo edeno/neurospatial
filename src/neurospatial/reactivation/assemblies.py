@@ -2,8 +2,8 @@
 Cell assembly detection and reactivation analysis.
 
 This module provides functions for detecting coordinated neural ensembles
-(cell assemblies) and measuring their reactivation strength across behavioral
-states.
+(cell assemblies), measuring their activation strength over time, and
+comparing co-firing between behavioral periods.
 
 Cell assemblies are groups of neurons that fire together more often than
 expected by chance, representing stored neural patterns. Detecting these
@@ -63,6 +63,17 @@ Typical Workflows
    ...     counts_sleep, result.patterns[0], unit_ids=sleep_labels
    ... )  # doctest: +SKIP
 
+5. Compare rest after the task with rest before it:
+
+   >>> comparison = assembly_reactivation(
+   ...     counts_pre_rest,
+   ...     counts_post_rest,
+   ...     result.patterns[0],
+   ...     control_unit_ids=pre_labels,
+   ...     match_unit_ids=post_labels,
+   ... )  # doctest: +SKIP
+   >>> comparison.mean_activation_difference  # doctest: +SKIP
+
 **Reactivation Analysis**:
 
 1. Compute pairwise correlations in behavior and sleep:
@@ -70,13 +81,14 @@ Typical Workflows
    >>> corr_behavior = pairwise_correlations(counts_behavior)  # doctest: +SKIP
    >>> corr_sleep = pairwise_correlations(counts_sleep)  # doctest: +SKIP
 
-2. Measure explained variance:
+2. Measure explained variance, controlling for rest before the task and
+   using only pairs of cells on different tetrodes:
 
    >>> ev_result = explained_variance_reactivation(
    ...     corr_behavior,
    ...     corr_sleep,
-   ...     template_unit_ids=behavior_labels,
-   ...     match_unit_ids=sleep_labels,
+   ...     control_correlations=corr_pre_sleep,
+   ...     unit_groups=tetrode_of_unit,
    ... )  # doctest: +SKIP
    >>> print(f"EV = {ev_result.explained_variance:.3f}")  # doctest: +SKIP
 
@@ -118,6 +130,9 @@ van de Ven GM, Trouche S, McNamara CG, Allen K, Dupret D (2016).
 Kudrimoti HS, Barnes CA, McNaughton BL (1999). Reactivation of hippocampal
     cell assemblies: effects of behavioral state, experience, and EEG dynamics.
     J Neurosci 19(10):4090-4101.
+Pennartz CMA, Lee E, Verheul J, Lipa P, Barnes CA, McNaughton BL (2004).
+    The ventral striatum in off-line processing: ensemble reactivation during
+    sleep and modulation by hippocampal ripples. J Neurosci 24(29):6446-6456.
 """
 
 from __future__ import annotations
@@ -137,13 +152,14 @@ from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit
 __all__ = [
     "AssemblyDetectionResult",
     "AssemblyPattern",
+    "AssemblyReactivationResult",
     "ExplainedVarianceResult",
     "assembly_activation",
+    "assembly_reactivation",
     "detect_assemblies",
     "explained_variance_reactivation",
     "marchenko_pastur_threshold",
     "pairwise_correlations",
-    "reactivation_strength",
 ]
 
 
@@ -186,8 +202,8 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
         ``unit_ids=`` given to :func:`detect_assemblies`, else
         ``np.arange(n_neurons)``. Pass the column labels of new counts as
         ``unit_ids=`` to :func:`assembly_activation`, or as
-        ``template_unit_ids=`` and ``match_unit_ids=`` to
-        :func:`reactivation_strength`, to match their columns by label
+        ``control_unit_ids=`` and ``match_unit_ids=`` to
+        :func:`assembly_reactivation`, to match their columns by label
         instead of by position.
     member_unit_ids : ndarray
         Labels of the core members, ``unit_ids[member_indices]``.
@@ -437,6 +453,77 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
 
 
 @dataclass(frozen=True, repr=False)
+class AssemblyReactivationResult(ResultMixin):
+    """
+    A pattern's activation strength after a task compared with before it.
+
+    Attributes
+    ----------
+    mean_activation_difference : float
+        ``match_mean_activation - control_mean_activation``: the pattern's
+        mean activation strength R(t) in the match period (e.g. rest after
+        the task) minus its mean in the control period (e.g. rest before).
+        van de Ven et al. (2016) call this difference the pattern's
+        "reactivation strength"; Peyrache et al. (2009, Fig. 2c) report it
+        as the difference in average reactivation strength between pre and
+        post sleep. 0 when the pattern is expressed equally in both periods.
+    control_mean_activation, match_mean_activation : float
+        Mean of R(t) over each period. For unit-length weights ``w`` this is
+        ``w @ C @ w - 1`` with ``C`` the period's correlation matrix
+        (Peyrache et al., 2010: "the average reactivation strength is equal
+        to γ − 1"), the pattern's co-firing beyond independent firing.
+    control_threshold : float
+        The ``percentile``-th percentile of R(t) over the control bins
+        (NumPy's default linear interpolation).
+    fraction_above_control_threshold : float
+        Share of match bins with R(t) strictly above ``control_threshold``
+        (Peyrache et al., 2010, "Reactivation is a rare event"). Without
+        reactivation it is about ``1 - percentile / 100``.
+    percentile : float
+        Percentile of the control distribution used for the threshold.
+    n_control_bins, n_match_bins : int
+        Number of time bins in each period.
+
+    Notes
+    -----
+    Peyrache et al. (2009, 2010) call R(t) itself the "reactivation
+    strength"; here R(t) is the activation strength of
+    :func:`assembly_activation`, and the comparison between periods is
+    ``mean_activation_difference``. Both statistics are effect sizes: neither
+    is a p-value.
+
+    Examples
+    --------
+    >>> result = assembly_reactivation(
+    ...     counts_pre_rest, counts_post_rest, pattern
+    ... )  # doctest: +SKIP
+    >>> result.mean_activation_difference  # doctest: +SKIP
+    """
+
+    mean_activation_difference: float
+    control_mean_activation: float
+    match_mean_activation: float
+    control_threshold: float
+    fraction_above_control_threshold: float
+    percentile: float
+    n_control_bins: int
+    n_match_bins: int
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "mean_activation_difference": self.mean_activation_difference,
+            "control_mean_activation": self.control_mean_activation,
+            "match_mean_activation": self.match_mean_activation,
+            "control_threshold": self.control_threshold,
+            "fraction_above_control_threshold": (self.fraction_above_control_threshold),
+            "percentile": self.percentile,
+            "n_control_bins": self.n_control_bins,
+            "n_match_bins": self.n_match_bins,
+        }
+
+
+@dataclass(frozen=True, repr=False)
 class ExplainedVarianceResult(ResultMixin):
     """
     Results from explained variance reactivation analysis.
@@ -445,17 +532,28 @@ class ExplainedVarianceResult(ResultMixin):
     ----------
     explained_variance : float
         Squared correlation between template and match correlation vectors,
-        partialled for the baseline control when one is supplied. Range [0, 1].
+        partialled for the control periods when they are supplied. Range
+        [0, 1].
     reversed_explained_variance : float
-        REV: with a baseline control, the squared partial correlation between
-        template and control vectors, partialled for the match. NaN without
-        a control: REV swaps the control and match periods, so it is not
-        defined without one.
+        REV (Pennartz et al., 2004): with one control period, the squared
+        partial correlation between template and control vectors, partialled
+        for the match. NaN without a control (there is no period to swap)
+        and with several controls (REV is defined for one).
     partial_correlation : float
-        Partial correlation between template and match, controlling for
-        baseline correlations; without a control, their plain correlation.
+        Partial correlation between template and match, controlling for the
+        control periods; without a control, their plain correlation.
+    p_value : float
+        Two-sided p-value of ``partial_correlation`` from the t test
+        ``t = r * sqrt(df / (1 - r**2))`` with
+        ``df = n_pairs - 2 - n_controls``. It treats pairs as independent
+        observations, which they are not (pairs share cells), so it is
+        anticonservative. NaN when ``df < 1`` or the correlation is
+        undefined.
     n_pairs : int
-        Number of neuron pairs used in analysis.
+        Number of neuron pairs used in analysis, after pair selection and
+        dropping pairs that are NaN in any period.
+    n_controls : int
+        Number of control periods partialled out.
 
     Notes
     -----
@@ -464,11 +562,13 @@ class ExplainedVarianceResult(ResultMixin):
     With a baseline control, EV > REV describes more template-related
     correlation structure after behavior than before behavior. Without that
     control, REV is NaN and EV alone provides no directional evidence.
-    These are effect sizes, not p-values: a fixed cutoff such as EV > 0.1 or
-    EV > 0.3 does not establish statistical significance. Statistical inference
-    needs a suitable null/control analysis for the recording and question.
-    An in-sample or synthetic demonstration does not establish biological
-    reactivation or held-out decoding accuracy.
+    EV and REV are effect sizes, and a fixed cutoff such as EV > 0.1 or
+    EV > 0.3 does not establish statistical significance. ``p_value`` tests
+    the partial correlation over pairs within one session; because pairs
+    share cells it overstates the evidence, so a claim of reactivation needs
+    a comparison across sessions (Pennartz et al. 2004: EV vs REV, Wilcoxon
+    signed-rank) or a null built for the recording. An in-sample or synthetic
+    demonstration does not establish biological reactivation.
 
     Examples
     --------
@@ -486,7 +586,9 @@ class ExplainedVarianceResult(ResultMixin):
     explained_variance: float
     reversed_explained_variance: float
     partial_correlation: float
+    p_value: float
     n_pairs: int
+    n_controls: int
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
@@ -494,7 +596,9 @@ class ExplainedVarianceResult(ResultMixin):
             "explained_variance": self.explained_variance,
             "reversed_explained_variance": self.reversed_explained_variance,
             "partial_correlation": self.partial_correlation,
+            "p_value": self.p_value,
             "n_pairs": self.n_pairs,
+            "n_controls": self.n_controls,
         }
 
 
@@ -740,7 +844,7 @@ def detect_assemblies(
         sorter's unit IDs. Stored on the result and on every pattern, so
         ``pattern.member_unit_ids`` names the members, and passing the labels
         of new counts to :func:`assembly_activation` (``unit_ids=``) or
-        :func:`reactivation_strength` (``template_unit_ids=`` and
+        :func:`assembly_reactivation` (``control_unit_ids=`` and
         ``match_unit_ids=``) matches columns by label. Default
         ``np.arange(n_neurons)``: column positions, which match new counts
         by position only.
@@ -1333,8 +1437,12 @@ def assembly_activation(
 
     Each period is z-scored with its own mean and standard deviation, so a
     change in firing rate between periods does not by itself change R(t).
-    Use :func:`reactivation_strength` to compare a pattern's mean activation
-    between periods.
+    Use :func:`assembly_reactivation` to compare a pattern's activation
+    after a task with before it.
+
+    Peyrache et al. (2009, 2010) call R(t) the "reactivation strength" and
+    van de Ven et al. (2016) the "expression strength"; this package calls
+    it the activation strength.
 
     Examples
     --------
@@ -1372,13 +1480,16 @@ def assembly_activation(
     See Also
     --------
     detect_assemblies : Detect assembly patterns
-    reactivation_strength : Compare activations between periods
+    assembly_reactivation : Compare activation after a task with before it
 
     References
     ----------
     Lopes-dos-Santos V, Ribeiro S, Tort ABL (2013). Detecting cell
         assemblies in large neuronal populations. J Neurosci Methods
         220(2):149-166.
+    Peyrache A, Khamassi M, Benchenane K, Wiener SI, Battaglia FP (2009).
+        Replay of rule-learning related neural patterns in the prefrontal
+        cortex during sleep. Nat Neurosci 12(7):919-926.
     Peyrache A, Benchenane K, Khamassi M, Wiener SI, Battaglia FP (2010).
         Principal component analysis of ensemble recordings reveals cell
         assemblies at high temporal resolution. J Comput Neurosci
@@ -1609,6 +1720,11 @@ def pairwise_correlations(
     :func:`explained_variance_reactivation` drops NaN pairs and reports the
     number of pairs it used.
 
+    Every pair is returned, including pairs of cells on the same tetrode.
+    Select pairs in :func:`explained_variance_reactivation` with
+    ``unit_groups=`` (pairs from different tetrodes or regions) or
+    ``pair_mask=``, so the pair vector keeps its ``np.triu_indices`` order.
+
     Examples
     --------
     >>> import numpy as np
@@ -1657,34 +1773,51 @@ def pairwise_correlations(
     return correlations
 
 
-def reactivation_strength(
-    template_counts: NDArray[np.float64],
+def assembly_reactivation(
+    control_counts: NDArray[np.float64],
     match_counts: NDArray[np.float64],
     pattern: AssemblyPattern,
     *,
-    template_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    percentile: float = 99.0,
+    control_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     match_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
-) -> float:
+) -> AssemblyReactivationResult:
     """
-    Compare a pattern's mean activation strength between two periods.
+    Compare a pattern's activation strength after a task with before it.
 
-    Returns the mean activation strength R(t) of the pattern in the match
-    period divided by its mean in the template period (Peyrache et al., 2009,
-    2010). Values > 1 mean the pattern's neurons fire together more in the
-    match period than in the template period.
+    Computes the activation strength R(t) of the pattern (as in
+    :func:`assembly_activation`) in a control period, such as rest before
+    the task, and in a match period, such as rest after it, and returns the
+    two published comparisons:
+
+    - ``mean_activation_difference``: mean R(t) in the match period minus
+      mean R(t) in the control period. van de Ven et al. (2016) define a
+      pattern's reactivation strength as "its average expression strength
+      during the rest after minus its average expression strength during the
+      rest before"; Peyrache et al. (2009, Fig. 2c) compare the average
+      R(t) of post- and pre-task sleep the same way.
+    - ``fraction_above_control_threshold``: the share of match bins whose
+      R(t) exceeds the ``percentile``-th percentile of the control bins'
+      R(t) (Peyrache et al., 2010: "4.5% of the bins from POST exceeded the
+      99th percentile of the PRE distribution", against an expected 1%).
 
     Parameters
     ----------
-    template_counts : NDArray[np.float64], shape (n_template_bins, n_neurons)
-        Spike counts during template period (e.g., behavior), finite and
-        non-negative.
+    control_counts : NDArray[np.float64], shape (n_control_bins, n_neurons)
+        Spike counts in the control period (e.g. rest before the task),
+        finite and non-negative.
     match_counts : NDArray[np.float64], shape (n_match_bins, n_neurons)
-        Spike counts during match period (e.g., sleep), finite and
-        non-negative.
+        Spike counts in the match period (e.g. rest after the task), finite
+        and non-negative.
     pattern : AssemblyPattern
-        Assembly pattern to measure.
-    template_unit_ids : array-like, shape (n_neurons,), optional
-        Label of the unit in each column of ``template_counts``. Pass it
+        Assembly pattern to measure, usually detected in the task (template)
+        period with :func:`detect_assemblies`.
+    percentile : float, default=99.0
+        Percentile of the control period's R(t) used as the threshold for
+        ``fraction_above_control_threshold``, in (0, 100). Peyrache et al.
+        (2010) used the 99th.
+    control_unit_ids : array-like, shape (n_neurons,), optional
+        Label of the unit in each column of ``control_counts``. Pass it
         together with ``match_unit_ids``: the columns of each period are then
         matched to the pattern's weights by label, as in
         :func:`assembly_activation`, so the two periods may list their units
@@ -1699,55 +1832,65 @@ def reactivation_strength(
 
     Returns
     -------
-    float
-        Mean activation strength in the match period over its mean in the
-        template period. 1 when both periods are the same counts, about 0
-        when the pattern's neurons fire independently in the match period,
-        and negative when they fire in opposition. NaN when the pattern shows
-        no co-activation in the template period (mean activation strength
-        <= 0) or every neuron with nonzero weight is constant in a period,
-        so the ratio is undefined.
+    AssemblyReactivationResult
+        Mean activation strength in each period, their difference, the
+        control threshold and the share of match bins above it. All values
+        are NaN when every neuron with nonzero weight is constant in a
+        period.
 
     Raises
     ------
     ValueError
         If the counts and the pattern have different numbers of neurons,
         either period holds NaN, infinite or negative values, the pattern
-        has no nonzero weight, or with labels, if only one of
-        ``template_unit_ids`` and ``match_unit_ids`` is given, the pattern's
-        labels were generated, or a period's labels differ from the
-        pattern's.
+        has no nonzero weight, ``percentile`` is outside (0, 100), or with
+        labels, if only one of ``control_unit_ids`` and ``match_unit_ids`` is
+        given, the pattern's labels were generated, or a period's labels
+        differ from the pattern's.
 
     Warns
     -----
     UserWarning
         If neurons with nonzero weight have the same count in every bin of
         either period (they are excluded from both periods, named in the
-        warning), or the ratio is undefined.
+        warning).
 
     Notes
     -----
-    Each period is z-scored with its own per-neuron mean and standard
-    deviation, as in the published method. The mean of R(t) over a period is
+    **Terms.** Peyrache et al. (2009, 2010) call R(t) itself the
+    "reactivation strength"; van de Ven et al. (2016) call R(t) the
+    "expression strength" and the after-minus-before difference the
+    "reactivation strength". This package calls R(t) the activation strength
+    and this difference ``mean_activation_difference``, so neither name is
+    ambiguous.
+
+    **Z-scoring.** Each period is z-scored with its own per-neuron mean and
+    standard deviation, as in both papers. The mean of R(t) over a period is
     then :math:`w^T C w - 1` for unit-length weights :math:`w` and the
-    period's correlation matrix :math:`C`, the pattern's co-activation
-    beyond independent firing, so the ratio compares how strongly the
-    pattern's correlation structure is expressed in the two periods.
+    period's correlation matrix :math:`C` (Peyrache et al. 2010: the average
+    reactivation strength "is equal to γ − 1"), so the difference is
+    :math:`w^T (C_{match} - C_{control}) w`, and scaling a period's counts
+    does not change it. A neuron with the same count in every bin of a
+    period has no z-score there. It is excluded from both periods, so both
+    means use the same neurons, and the remaining weights are rescaled to
+    unit length.
 
-    A neuron with the same count in every bin of a period has no z-score
-    there. It is excluded from both periods, so both means use the same
-    neurons, and the remaining weights are rescaled to unit length.
+    **Smoothing.** van de Ven et al. (2016) computed R(t) on spike trains
+    convolved with a Gaussian kernel of standard deviation 25 ms / sqrt(12)
+    and then z-scored (Supplemental Experimental Procedures); this function
+    uses the counts you pass, so their binned version is reproduced exactly
+    only for binned counts.
 
-    **Rate and noise floor**: Because each period is standardized on its
-    own, scaling a period's counts leaves the ratio unchanged. Firing-rate
-    changes still matter when they change the correlations: independent
-    spikes added to the members dilute their correlation and lower the
-    ratio. With no co-activation in the match period the mean activation
-    strength is 0 up to sampling noise of standard deviation about
-    :math:`\\sqrt{2 / n_{match}}` (independent Gaussian z-scores), so the ratio
-    has a noise floor of about :math:`\\sqrt{2 / n_{match}}` divided by the
-    template mean. Compare against a control period (such as pre-task rest)
-    or a shuffle null rather than against 1 or 0.
+    **Noise floor.** Without co-firing, a period's mean R(t) is 0 up to
+    sampling noise of standard deviation about :math:`\\sqrt{2 / n}` for
+    ``n`` independent Gaussian bins; spike counts have heavier tails.
+    Firing-rate changes matter when they change the correlations:
+    independent spikes added to the members dilute their correlation. Neither
+    statistic is a p-value: van de Ven et al. tested the differences of a
+    set of patterns against 0 with a one-sample t-test, and the share of
+    patterns with a positive difference against 50% with a z-test for
+    proportions; Peyrache et al. (2010) built a null by permuting cell
+    identities within each time bin.
 
     For the correlation structure of the whole population rather than one
     pattern, use :func:`explained_variance_reactivation` with pairwise
@@ -1755,23 +1898,24 @@ def reactivation_strength(
 
     Examples
     --------
-    Units 7 and 8 burst together more often in the match period, whose counts
-    list the units in another order:
+    Units 7 and 8 burst together after the task but not before it; the
+    post-task counts list the units in another order:
 
     >>> import numpy as np
-    >>> from neurospatial.reactivation import AssemblyPattern, reactivation_strength
+    >>> from neurospatial.reactivation import AssemblyPattern, assembly_reactivation
     >>> pattern = AssemblyPattern(
     ...     np.array([0.7, 0.7, 0.1]), np.array([0, 1]), 0.5, unit_ids=[7, 8, 9]
     ... )
     >>> rng = np.random.default_rng(0)
-    >>> run = rng.poisson(1.0, (500, 3)).astype(float)
-    >>> run[:, :2] += 2 * rng.poisson(0.2, (500, 1))
-    >>> rest = rng.poisson(1.0, (500, 3)).astype(float)
-    >>> rest[:, 1:] += 2 * rng.poisson(0.6, (500, 1))  # columns: 9, 7, 8
-    >>> strength = reactivation_strength(
-    ...     run, rest, pattern, template_unit_ids=[7, 8, 9], match_unit_ids=[9, 7, 8]
+    >>> pre = rng.poisson(1.0, (2000, 3)).astype(float)
+    >>> post = rng.poisson(1.0, (2000, 3)).astype(float)
+    >>> post[:, 1:] += 2 * rng.poisson(0.3, (2000, 1))  # columns: 9, 7, 8
+    >>> result = assembly_reactivation(
+    ...     pre, post, pattern, control_unit_ids=[7, 8, 9], match_unit_ids=[9, 7, 8]
     ... )
-    >>> bool(strength > 1.0)
+    >>> bool(result.mean_activation_difference > 0.3)
+    True
+    >>> bool(result.fraction_above_control_threshold > 0.01)
     True
 
     References
@@ -1783,13 +1927,27 @@ def reactivation_strength(
         Principal component analysis of ensemble recordings reveals cell
         assemblies at high temporal resolution. J Comput Neurosci
         29(1-2):309-325.
+    van de Ven GM, Trouche S, McNamara CG, Allen K, Dupret D (2016).
+        Hippocampal offline reactivation consolidates recently formed cell
+        assembly patterns during sharp wave-ripples. Neuron 92(5):968-974.
     """
-    call = "reactivation_strength()"
-    if (template_unit_ids is None) != (match_unit_ids is None):
+    call = "assembly_reactivation()"
+    if not 0.0 < percentile < 100.0:
+        raise ValueError(
+            _format_error(
+                f"{call}: percentile must be in (0, 100), got {percentile}.",
+                why="Why: it is the percentile of the control period's "
+                "activation strength used as the threshold for the match "
+                "period.",
+                fix="pass percentile=99.0 (Peyrache et al. 2010) or another "
+                "value between 0 and 100",
+            )
+        )
+    if (control_unit_ids is None) != (match_unit_ids is None):
         given, missing = (
-            ("template_unit_ids", "match_unit_ids")
+            ("control_unit_ids", "match_unit_ids")
             if match_unit_ids is None
-            else ("match_unit_ids", "template_unit_ids")
+            else ("match_unit_ids", "control_unit_ids")
         )
         raise ValueError(
             _format_error(
@@ -1799,19 +1957,19 @@ def reactivation_strength(
                 "a period whose units are listed in another order would "
                 "silently pair weights with the wrong cells.",
                 fix="pass the column labels of both count matrices "
-                "(template_unit_ids= and match_unit_ids=; the same labels when "
+                "(control_unit_ids= and match_unit_ids=; the same labels when "
                 "both were binned from one list of spike trains), or neither "
                 "to pair columns by position",
             )
         )
-    template_counts = _columns_by_label(
-        _validated_counts(template_counts, call=call, argument="template_counts"),
-        template_unit_ids,
+    control_counts = _columns_by_label(
+        _validated_counts(control_counts, call=call, argument="control_counts"),
+        control_unit_ids,
         pattern,
         call=call,
-        argument="template_counts",
-        labels_argument="template_unit_ids",
-    ).T
+        argument="control_counts",
+        labels_argument="control_unit_ids",
+    )
     match_counts = _columns_by_label(
         _validated_counts(match_counts, call=call, argument="match_counts"),
         match_unit_ids,
@@ -1819,25 +1977,26 @@ def reactivation_strength(
         call=call,
         argument="match_counts",
         labels_argument="match_unit_ids",
-    ).T
+    )
 
-    n_template_neurons = template_counts.shape[0]
-    n_match_neurons = match_counts.shape[0]
+    n_control_neurons = control_counts.shape[1]
+    n_match_neurons = match_counts.shape[1]
     n_weights = len(pattern.weights)
-    if n_template_neurons != n_weights or n_match_neurons != n_weights:
+    if n_control_neurons != n_weights or n_match_neurons != n_weights:
         raise ValueError(
-            f"template_counts has {n_template_neurons} neurons and "
+            f"{call}: control_counts has {n_control_neurons} neurons and "
             f"match_counts has {n_match_neurons} neurons but pattern has "
             f"{n_weights} weights. All must match."
         )
 
     weights = _unit_weights(pattern.weights, call=call)
-    template_z, template_constant = _z_scores(template_counts.T)
-    match_z, match_constant = _z_scores(match_counts.T)
+    control_z, control_constant = _z_scores(control_counts)
+    match_z, match_constant = _z_scores(match_counts)
+    n_control_bins, n_match_bins = control_counts.shape[0], match_counts.shape[0]
 
     # A neuron constant in either period has no z-score there; drop it from
     # both so the two means use the same neurons.
-    excluded = (template_constant | match_constant) & (weights != 0)
+    excluded = (control_constant | match_constant) & (weights != 0)
     if np.any(excluded):
         names = np.asarray(pattern.unit_ids)
         warnings.warn(
@@ -1846,7 +2005,7 @@ def reactivation_strength(
             + " and ".join(
                 period
                 for period, constant in (
-                    ("template_counts", template_constant & excluded),
+                    ("control_counts", control_constant & excluded),
                     ("match_counts", match_constant & excluded),
                 )
                 if constant.any()
@@ -1861,35 +2020,48 @@ def reactivation_strength(
         if norm == 0:
             warnings.warn(
                 f"{call}: every unit with nonzero weight is excluded, so the "
-                "strength is undefined (NaN).",
+                "comparison is undefined (NaN).",
                 UserWarning,
                 stacklevel=2,
             )
-            return np.nan
+            return AssemblyReactivationResult(
+                mean_activation_difference=np.nan,
+                control_mean_activation=np.nan,
+                match_mean_activation=np.nan,
+                control_threshold=np.nan,
+                fraction_above_control_threshold=np.nan,
+                percentile=float(percentile),
+                n_control_bins=n_control_bins,
+                n_match_bins=n_match_bins,
+            )
         weights = weights / norm
 
-    mean_template = float(np.mean(_activation_strength(template_z, weights[None])))
-    mean_match = float(np.mean(_activation_strength(match_z, weights[None])))
-
-    if not mean_template > 0:
-        warnings.warn(
-            f"{call}: the pattern's mean activation strength in the template "
-            f"period is {mean_template:.3g}, so its neurons do not fire together "
-            "there and the ratio is undefined (NaN). Measure a pattern detected "
-            "in template_counts, or compare mean assembly_activation() values "
-            "directly.",
-            UserWarning,
-            stacklevel=2,
-        )
-        return np.nan
-    return mean_match / mean_template
+    control_activation = _activation_strength(control_z, weights[None])[:, 0]
+    match_activation = _activation_strength(match_z, weights[None])[:, 0]
+    control_mean = float(np.mean(control_activation))
+    match_mean = float(np.mean(match_activation))
+    threshold = float(np.percentile(control_activation, percentile))
+    return AssemblyReactivationResult(
+        mean_activation_difference=match_mean - control_mean,
+        control_mean_activation=control_mean,
+        match_mean_activation=match_mean,
+        control_threshold=threshold,
+        fraction_above_control_threshold=float(np.mean(match_activation > threshold)),
+        percentile=float(percentile),
+        n_control_bins=n_control_bins,
+        n_match_bins=n_match_bins,
+    )
 
 
 def explained_variance_reactivation(
     template_correlations: NDArray[np.float64],
     match_correlations: NDArray[np.float64],
     *,
-    control_correlations: NDArray[np.float64] | None = None,
+    control_correlations: NDArray[np.float64]
+    | Sequence[NDArray[np.float64]]
+    | None = None,
+    unit_groups: NDArray[Any] | Sequence[Any] | None = None,
+    pair_mask: NDArray[np.bool_] | Sequence[bool] | None = None,
     template_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     match_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     control_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
@@ -1898,7 +2070,9 @@ def explained_variance_reactivation(
     Compute explained variance for pairwise correlation reactivation.
 
     Measures how well pairwise correlations during 'match' period
-    are predicted by correlations from 'template' period.
+    are predicted by correlations from 'template' period, beyond what the
+    correlations of one or more control periods already predict (Kudrimoti
+    et al., 1999).
 
     Parameters
     ----------
@@ -1909,9 +2083,25 @@ def explained_variance_reactivation(
         same column order.
     match_correlations : NDArray[np.float64], shape (n_pairs,)
         Pairwise correlations during match (e.g., sleep/rest).
-    control_correlations : NDArray[np.float64], optional
-        Control period correlations (e.g., pre-behavior baseline).
-        If provided, computes partial correlation controlling for baseline.
+    control_correlations : array-like, shape (n_pairs,), or sequence of them, optional
+        Correlations of the control period (e.g., pre-behavior rest), or a
+        sequence of several control periods' correlations. EV is then the
+        squared partial correlation of template and match controlling for
+        all of them at once (Kudrimoti et al. 1999, experiment 2, partialled
+        out pre-task sleep and the other half of the track).
+    unit_groups : array-like, shape (n_neurons,), optional
+        Group of each unit, such as its tetrode, shank or brain region, in
+        the column order of the template counts (``template_unit_ids``
+        order when labels are given). Only pairs of units from different
+        groups are used: Kudrimoti et al. (1999) and Tatsuno et al. (2006)
+        used pairs on different tetrodes, since cells on one tetrode can
+        share spike-sorting errors; Lansink et al. (2009) and Tang et al.
+        (2017) used only cross-region pairs.
+    pair_mask : array-like of bool, shape (n_pairs,), optional
+        ``True`` for the pairs to use, in the template's pair order (the
+        order of ``np.triu_indices(n_neurons, k=1)``), e.g. pairs with
+        waveform similarity below 0.8 (Giri et al., 2024). Combined with
+        ``unit_groups`` by logical AND.
     template_unit_ids : array-like, shape (n_neurons,), optional
         Label of the unit in each column of the counts that
         ``template_correlations`` came from, so pair ``k`` is the cells
@@ -1925,66 +2115,105 @@ def explained_variance_reactivation(
     match_unit_ids : array-like, shape (n_neurons,), optional
         Column labels of the counts that ``match_correlations`` came from.
         Required with ``template_unit_ids``.
-    control_unit_ids : array-like, shape (n_neurons,), optional
-        Column labels of the counts that ``control_correlations`` came from.
-        Required with ``template_unit_ids`` when ``control_correlations`` is
-        given, and refused without it.
+    control_unit_ids : array-like, shape (n_neurons,), or sequence of them, optional
+        Column labels of the counts that ``control_correlations`` came from;
+        with several controls, one label array per control. Required with
+        ``template_unit_ids`` when ``control_correlations`` is given, and
+        refused without it.
 
     Returns
     -------
     ExplainedVarianceResult
-        Contains EV, reversed EV, partial correlation, and n_pairs.
+        EV, reversed EV, partial correlation, its p-value, the number of
+        pairs used and the number of controls.
 
     Raises
     ------
     ValueError
-        If correlation arrays have different lengths. With labels: if a
-        supplied period has no labels, a period's labels are not one
-        distinct label per unit of its pair vector, or the periods hold
-        different units.
+        If correlation arrays have different lengths, ``pair_mask`` is not a
+        boolean array with one entry per pair, or ``unit_groups`` does not
+        hold one group per unit. With labels: if a supplied period has no
+        labels, a period's labels are not one distinct label per unit of its
+        pair vector, or the periods hold different units.
+
+    Warns
+    -----
+    UserWarning
+        If fewer than 3 pairs remain, or EV is undefined (a correlation
+        vector is constant, or the controls explain the template or match
+        correlations completely).
 
     Notes
     -----
     **Explained Variance (EV)**:
 
-    When a control is provided, EV is the squared *partial* correlation
-    between template and match correlations, controlling for the control
-    (pre-behavior) baseline:
+    With a control, EV is the squared *partial* correlation between template
+    and match correlations, controlling for the control (pre-behavior)
+    baseline (Kudrimoti et al., 1999, p. 4093):
 
     .. math::
 
-        EV = r_{partial}(template, match \\mid control)^2
+        EV = r_{tm \\mid c}^2
+           = \\left(\\frac{r_{tm} - r_{tc} \\cdot r_{mc}}
+                    {\\sqrt{(1-r_{tc}^2)(1-r_{mc}^2)}}\\right)^2
 
-    This measures how much of the match period correlation structure is
-    explained by the template period beyond what the control already
-    explains. When no control is provided, EV reduces to the plain
-    squared correlation :math:`r(template, match)^2`.
+    where t=template, m=match, c=control and each ``r`` is the Pearson
+    correlation of two periods' pair-correlation vectors. With several
+    controls, :math:`r_{tm \\mid c_1 \\ldots c_k}` is the correlation of the
+    template and match vectors after regressing both on all controls. Without
+    a control, EV is the plain squared correlation :math:`r_{tm}^2`
+    (Kudrimoti's EV for the pre-task period, and the co-firing similarity of
+    Gridchyn et al. 2020 without the square).
+
+    Tatsuno et al. (2006) and Giri et al. (2019, 2024) used several control
+    blocks differently: they computed one EV per control block and averaged
+    the EVs, :math:`\\frac{1}{K} \\sum_k r_{tm \\mid c_k}^2`. Compute that
+    as the mean of one call per control block.
 
     **Reversed EV (REV)**:
 
-    REV, the time-reversed control used by Pennartz et al. (2004) and
-    Lansink et al. (2009), swaps the pre- and post-behavior periods: the
-    template's correlation with the control, partialled for the match:
+    REV was introduced by Pennartz et al. (2004) as a control measure; it
+    swaps the pre- and post-behavior periods: the template's correlation
+    with the control, partialled for the match:
 
     .. math::
 
-        REV = r_{partial}(template, control \\mid match)^2
+        REV = r_{tc \\mid m}^2
 
-    With a control, EV exceeding REV indicates a larger template-related
-    effect after behavior than before behavior; it is not a
-    calibrated significance test. Without a control there is nothing to swap,
-    so REV is NaN. Neither a fixed EV cutoff nor EV > REV alone establishes
-    significant reactivation.
+    Kudrimoti et al. (1999) has no REV. With one control, EV exceeding REV
+    indicates a larger template-related effect after behavior than before
+    it. Without a control there is nothing to swap, and with several
+    controls no swap is defined, so REV is NaN.
 
-    **Partial Correlation**:
+    **p-value**:
 
-    The partial correlation underlying EV is:
+    ``p_value`` is the two-sided t test of the partial correlation,
+    :math:`t = r \\sqrt{df / (1 - r^2)}` with :math:`df = n_{pairs} - 2 - k`
+    for ``k`` controls (the plain Pearson test without a control).
+    Kudrimoti et al. (1999) report per-session p-values of the partial
+    correlation computed with SPSS without naming the test; this standard
+    partial-correlation t test is inferred, not stated. The test treats
+    every pair as an independent observation, but pairs share cells (``n``
+    cells give ``n (n - 1) / 2`` pairs), so the p-value is anticonservative.
+    Compare EV with REV across sessions (Pennartz et al. 2004 used a
+    Wilcoxon signed-rank test) or build a null for your recording before
+    claiming reactivation.
 
-    .. math::
+    **Split-half check**:
 
-        r_{partial} = \\frac{r_{tm} - r_{tc} \\cdot r_{mc}}{\\sqrt{(1-r_{tc}^2)(1-r_{mc}^2)}}
+    Kudrimoti et al. (1999, p. 4094) used one half of the template period as
+    the control for the other half and found EV of about 0. This check is
+    not 0 in expectation: if both halves and the match period measure the
+    same pair-correlation structure with independent noise, so that each two
+    of the three vectors correlate with :math:`\\rho`, the partial correlation
+    is :math:`\\rho / (1 + \\rho)` (up to 1/2), and it is near 0 only when the
+    correlations are mostly noise.
 
-    where t=template, m=match, c=control.
+    **Pair selection**:
+
+    ``n_pairs`` counts the pairs left after ``unit_groups``, ``pair_mask``
+    and dropping pairs that are NaN in any period (pairs with a neuron
+    constant in that period).
 
     Examples
     --------
@@ -2013,6 +2242,17 @@ def explained_variance_reactivation(
     >>> bool(result.explained_variance > 0.5)
     True
 
+    Only pairs of units on different tetrodes (two units per tetrode here):
+
+    >>> tetrode = np.repeat(np.arange(5), 2)
+    >>> different = explained_variance_reactivation(
+    ...     pairwise_correlations(behavior),
+    ...     pairwise_correlations(sleep),
+    ...     unit_groups=tetrode,
+    ... )
+    >>> different.n_pairs  # 45 pairs minus the 5 within a tetrode
+    40
+
     With a pre-behavior baseline control:
 
     >>> result = explained_variance_reactivation(  # doctest: +SKIP
@@ -2029,28 +2269,33 @@ def explained_variance_reactivation(
     References
     ----------
     Kudrimoti HS, Barnes CA, McNaughton BL (1999). Reactivation of
-        hippocampal cell assemblies. J Neurosci 19(10):4090-4101.
+        hippocampal cell assemblies: effects of behavioral state, experience,
+        and EEG dynamics. J Neurosci 19(10):4090-4101.
     Pennartz CMA, Lee E, Verheul J, Lipa P, Barnes CA, McNaughton BL (2004).
         The ventral striatum in off-line processing: ensemble reactivation
         during sleep and modulation by hippocampal ripples. J Neurosci
         24(29):6446-6456.
+    Tatsuno M, Lipa P, McNaughton BL (2006). Methodological considerations
+        on the use of template matching to study long-lasting memory trace
+        replay. J Neurosci 26(42):10727-10742.
     Lansink CS, Goltstein PM, Lankelma JV, McNaughton BL, Pennartz CMA
         (2009). Hippocampus leads ventral striatum in replay of place-reward
         information. PLoS Biol 7(8):e1000173.
+    Giri B, Miyawaki H, Mizuseki K, Cheng S, Diba K (2019). Hippocampal
+        reactivation extends for several hours following novel experience.
+        J Neurosci 39(5):866-875.
     """
+    call = "explained_variance_reactivation()"
+    controls = _control_list(control_correlations)
+    n_controls = len(controls)
     labels = {
         "template_unit_ids": template_unit_ids,
         "match_unit_ids": match_unit_ids,
         "control_unit_ids": control_unit_ids,
     }
     if any(value is not None for value in labels.values()):
-        template_correlations, match_correlations, control_correlations = (
-            _pairs_in_template_order(
-                template_correlations,
-                match_correlations,
-                control_correlations,
-                labels,
-            )
+        template_correlations, match_correlations, controls = _pairs_in_template_order(
+            template_correlations, match_correlations, controls, labels
         )
 
     template_correlations = np.asarray(template_correlations, dtype=np.float64)
@@ -2069,24 +2314,22 @@ def explained_variance_reactivation(
     if n_pairs < 3:
         raise ValueError(f"Need at least 3 pairs for EV calculation, got {n_pairs}")
 
-    # Remove NaN pairs
-    valid_mask = np.isfinite(template_correlations) & np.isfinite(match_correlations)
-    if control_correlations is not None:
-        control_correlations = np.asarray(control_correlations, dtype=np.float64)
-        if len(control_correlations) != n_pairs:
+    valid_mask = _selected_pairs(n_pairs, unit_groups, pair_mask, call=call)
+    valid_mask &= np.isfinite(template_correlations) & np.isfinite(match_correlations)
+    for index, control in enumerate(controls):
+        name = "control_correlations" + (f"[{index}]" if n_controls > 1 else "")
+        if len(control) != n_pairs:
             raise ValueError(
                 f"control correlations must have same length as template/match. "
-                f"Got {len(control_correlations)}, expected {n_pairs}."
+                f"Got {len(control)} for {name}, expected {n_pairs}."
             )
-        _check_correlation_values(control_correlations, "control_correlations")
-        valid_mask &= np.isfinite(control_correlations)
+        _check_correlation_values(control, name)
+        valid_mask &= np.isfinite(control)
 
-    template_valid = template_correlations[valid_mask]
-    match_valid = match_correlations[valid_mask]
-
-    if len(template_valid) < 3:
+    n_valid = int(np.sum(valid_mask))
+    if n_valid < 3:
         warnings.warn(
-            f"Only {len(template_valid)} valid pairs after removing NaN. "
+            f"Only {n_valid} valid pairs after pair selection and removing NaN. "
             "Results may be unreliable.",
             UserWarning,
             stacklevel=2,
@@ -2099,41 +2342,38 @@ def explained_variance_reactivation(
             explained_variance=np.nan,
             reversed_explained_variance=np.nan,
             partial_correlation=np.nan,
-            n_pairs=len(template_valid),
+            p_value=np.nan,
+            n_pairs=n_valid,
+            n_controls=n_controls,
         )
 
-    # Pairwise correlation between template and match correlation vectors.
-    r_tm = _pearson(template_valid, match_valid)
-
-    if control_correlations is not None:
-        control_valid = control_correlations[valid_mask]
-        r_tc = _pearson(template_valid, control_valid)
-        r_mc = _pearson(match_valid, control_valid)
-
-        # EV: variance of match correlations explained by template, after
-        # partialling out the control (pre-behavior) baseline.
-        #   r_partial(template, match | control)
-        partial_corr = _partial_correlation(r_tm, r_tc, r_mc)
-        ev = partial_corr**2
-
-        # Reverse time by swapping pre (control) and post (match):
-        # r_partial(template, control | match).
-        rev = _partial_correlation(r_tc, r_tm, r_mc) ** 2
-    else:
-        # No control: EV is the plain squared correlation. REV swaps the
-        # control and match periods, so it has no value without a control.
-        partial_corr = r_tm
-        ev = r_tm**2
-        rev = np.nan
+    # Rows: template (0), match (1), controls (2 ...).
+    vectors = np.vstack([template_correlations, match_correlations, *controls])[
+        :, valid_mask
+    ]
+    period_correlations = _correlation_matrix(vectors)
+    control_rows = list(range(2, 2 + n_controls))
+    # EV: variance of match correlations explained by template, after
+    # partialling out the control periods; the plain correlation without one.
+    partial_corr = _partial_correlation(period_correlations, 0, 1, control_rows)
+    ev = partial_corr**2
+    # REV reverses time by swapping pre (control) and post (match):
+    # r_partial(template, control | match). Defined for one control only.
+    rev = (
+        _partial_correlation(period_correlations, 0, 2, [1]) ** 2
+        if n_controls == 1
+        else np.nan
+    )
 
     if np.isnan(ev):
         warnings.warn(
             "explained_variance_reactivation(): EV is undefined (NaN). A "
             "correlation vector is the same for every valid pair, or the "
             "control correlations are a perfect linear function of the "
-            "template or match correlations, so the partial correlation has "
-            "no value. Check that each period's correlations come from "
-            "pairwise_correlations() on that period's own counts.",
+            "template or match correlations (or of each other), so the "
+            "partial correlation has no value. Check that each period's "
+            "correlations come from pairwise_correlations() on that period's "
+            "own counts.",
             UserWarning,
             stacklevel=2,
         )
@@ -2142,8 +2382,113 @@ def explained_variance_reactivation(
         explained_variance=float(ev),
         reversed_explained_variance=float(rev),
         partial_correlation=float(partial_corr),
-        n_pairs=int(np.sum(valid_mask)),
+        p_value=_partial_correlation_p_value(partial_corr, n_valid - 2 - n_controls),
+        n_pairs=n_valid,
+        n_controls=n_controls,
     )
+
+
+def _control_list(
+    control_correlations: NDArray[np.float64] | Sequence[Any] | None,
+) -> list[NDArray[np.float64]]:
+    """Return the control periods' pair correlations as a list of 1-D arrays.
+
+    Parameters
+    ----------
+    control_correlations : array-like or sequence of array-like, or None
+        One control's pair correlations, shape (n_pairs,), or one per
+        control, shape (n_controls, n_pairs).
+
+    Returns
+    -------
+    list of ndarray, each shape (n_pairs,)
+        Empty without controls.
+    """
+    if control_correlations is None:
+        return []
+    # Scalar entries: one period's pair vector. Vector entries (a list of
+    # vectors or a 2-D array's rows): one vector per control period.
+    first = control_correlations[0] if len(control_correlations) else 0.0
+    items = (
+        [control_correlations] if np.ndim(first) == 0 else list(control_correlations)
+    )
+    controls = [np.asarray(item, dtype=np.float64) for item in items]
+    if not controls or any(control.ndim != 1 for control in controls):
+        raise ValueError(
+            _format_error(
+                "explained_variance_reactivation(): control_correlations must be "
+                "one period's pair correlations or a sequence of them.",
+                fix="pass pairwise_correlations(control_counts), or a list "
+                "[pairwise_correlations(a), pairwise_correlations(b)] for "
+                "several control periods",
+            )
+        )
+    return controls
+
+
+def _selected_pairs(
+    n_pairs: int,
+    unit_groups: NDArray[Any] | Sequence[Any] | None,
+    pair_mask: NDArray[np.bool_] | Sequence[bool] | None,
+    *,
+    call: str,
+) -> NDArray[np.bool_]:
+    """Pairs kept by ``unit_groups`` (different groups) and ``pair_mask``.
+
+    Parameters
+    ----------
+    n_pairs : int
+        Number of pairs, ``n_units * (n_units - 1) / 2``.
+    unit_groups : array-like, shape (n_units,), or None
+        Group of each unit; only pairs from different groups are kept.
+    pair_mask : array-like of bool, shape (n_pairs,), or None
+        Pairs to keep.
+    call : str
+        Function name for error messages.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_pairs,)
+        True for the pairs to use.
+    """
+    selected = np.ones(n_pairs, dtype=bool)
+    if pair_mask is not None:
+        mask = np.asarray(pair_mask)
+        if mask.dtype != np.bool_ or mask.shape != (n_pairs,):
+            raise ValueError(
+                _format_error(
+                    f"{call}: pair_mask must be a boolean array with one entry "
+                    f"per pair ({n_pairs}), got dtype {mask.dtype} and shape "
+                    f"{mask.shape}.",
+                    why="Why: entry k selects pair k of the template correlations; "
+                    "an integer array would be read as pair indices.",
+                    fix="pass a boolean array in np.triu_indices(n_units, k=1) "
+                    "order, e.g. waveform_similarity < 0.8",
+                )
+            )
+        selected &= mask
+    if unit_groups is not None:
+        groups = np.asarray(unit_groups)
+        n_units = round((1 + np.sqrt(1 + 8 * n_pairs)) / 2)
+        if (
+            groups.ndim != 1
+            or groups.size != n_units
+            or n_units * (n_units - 1) // 2 != n_pairs
+        ):
+            raise ValueError(
+                _format_error(
+                    f"{call}: unit_groups must hold one group per unit; got shape "
+                    f"{groups.shape} for {n_pairs} pairs.",
+                    why="Why: a pair is kept when its two units are in different "
+                    "groups, so every unit of the template counts needs a group.",
+                    fix="pass the tetrode, shank or region of each column of the "
+                    "template counts (in template_unit_ids order when labels are "
+                    "given)",
+                )
+            )
+        first, second = np.triu_indices(n_units, k=1)
+        selected &= groups[first] != groups[second]
+    return selected
 
 
 def _check_correlation_values(correlations: NDArray[np.float64], argument: str) -> None:
@@ -2167,72 +2512,126 @@ def _check_correlation_values(correlations: NDArray[np.float64], argument: str) 
         )
 
 
-def _pearson(first: NDArray[np.float64], second: NDArray[np.float64]) -> float:
-    """Pearson correlation of two vectors, NaN when either is constant.
+def _correlation_matrix(vectors: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Pearson correlations between the rows, NaN for a constant row.
 
     Parameters
     ----------
-    first, second : ndarray, shape (n_pairs,)
+    vectors : ndarray, shape (n_vectors, n_pairs)
         Finite values.
 
     Returns
     -------
-    float
-        Their correlation, or NaN when a vector has no variance.
+    ndarray, shape (n_vectors, n_vectors)
+        Correlation matrix; rows and columns of a constant vector are NaN.
     """
-    if np.ptp(first) == 0 or np.ptp(second) == 0:
-        return np.nan
-    return float(np.corrcoef(first, second)[0, 1])
+    constant = np.ptp(vectors, axis=1) == 0
+    matrix = np.full((len(vectors), len(vectors)), np.nan)
+    varying = np.flatnonzero(~constant)
+    if varying.size:
+        matrix[np.ix_(varying, varying)] = np.atleast_2d(np.corrcoef(vectors[varying]))
+    return matrix
 
 
-def _partial_correlation(r_xy: float, r_xz: float, r_yz: float) -> float:
-    """Correlation of x and y controlling for z, NaN when undefined.
+def _partial_correlation(
+    correlations: NDArray[np.float64], x: int, y: int, controls: Sequence[int]
+) -> float:
+    """Correlation of x and y controlling for ``controls``, NaN when undefined.
 
     Parameters
     ----------
-    r_xy, r_xz, r_yz : float
-        Pairwise correlations; NaN propagates.
+    correlations : ndarray, shape (n_vectors, n_vectors)
+        Correlation matrix of all vectors; NaN propagates.
+    x, y : int
+        Rows of the two vectors to correlate.
+    controls : sequence of int
+        Rows of the vectors to partial out; empty for the plain correlation.
 
     Returns
     -------
     float
-        The partial correlation, or NaN when z explains x or y perfectly
-        (within rounding), which leaves no residual to correlate.
+        ``S_xy / sqrt(S_xx S_yy)`` with ``S`` the Schur complement of the
+        controls' block, i.e. the correlation of the residuals of x and y
+        regressed on the controls. With one control this is
+        ``(r_xy - r_xz r_yz) / sqrt((1 - r_xz**2) (1 - r_yz**2))``. NaN when
+        the controls are collinear or explain x or y perfectly (within
+        rounding), which leaves no residual to correlate.
     """
-    unexplained_x, unexplained_y = 1.0 - r_xz**2, 1.0 - r_yz**2
+    if not controls:
+        return float(correlations[x, y])
+    pair, rows = [x, y], list(controls)
+    if np.isnan(correlations[np.ix_(pair + rows, pair + rows)]).any():
+        return np.nan
+    between_controls = correlations[np.ix_(rows, rows)]
+    # Collinear controls (within rounding) leave the regression undefined.
+    if not np.linalg.eigvalsh(between_controls).min() > 1e-12:
+        return np.nan
+    with_controls = correlations[np.ix_(pair, rows)]
+    residual = correlations[np.ix_(pair, pair)] - with_controls @ np.linalg.solve(
+        between_controls, with_controls.T
+    )
+    unexplained_x, unexplained_y = residual[0, 0], residual[1, 1]
     # |r| within rounding of 1 (np.corrcoef of identical vectors can return
     # 1 - 2e-16) leaves a residual of pure rounding error.
     if not (unexplained_x > 1e-12 and unexplained_y > 1e-12):
         return np.nan
-    return float((r_xy - r_xz * r_yz) / np.sqrt(unexplained_x * unexplained_y))
+    return float(residual[0, 1] / np.sqrt(unexplained_x * unexplained_y))
+
+
+def _partial_correlation_p_value(correlation: float, df: int) -> float:
+    """Two-sided t-test p-value of a (partial) correlation.
+
+    Parameters
+    ----------
+    correlation : float
+        Partial correlation; NaN gives NaN.
+    df : int
+        Degrees of freedom, ``n - 2 - n_controls``.
+
+    Returns
+    -------
+    float
+        ``2 * t.sf(|r| sqrt(df / (1 - r**2)), df)``; 0 for ``|r| = 1``, NaN
+        when ``df < 1`` or the correlation is NaN.
+    """
+    if df < 1 or not np.isfinite(correlation):
+        return np.nan
+    unexplained = 1.0 - correlation**2
+    if unexplained <= 0:
+        return 0.0
+    t_statistic = abs(correlation) * np.sqrt(df / unexplained)
+    return float(2.0 * stats.t.sf(t_statistic, df))
 
 
 def _pairs_in_template_order(
     template_correlations: NDArray[np.float64],
     match_correlations: NDArray[np.float64],
-    control_correlations: NDArray[np.float64] | None,
-    labels: dict[str, NDArray[Any] | Sequence[Any] | None],
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64] | None]:
+    controls: list[NDArray[np.float64]],
+    labels: dict[str, Any],
+) -> tuple[NDArray[np.float64], NDArray[np.float64], list[NDArray[np.float64]]]:
     """Put the match and control pairs in the template's unit order, by label.
 
     Parameters
     ----------
     template_correlations, match_correlations : array-like, shape (n_pairs,)
         Pair correlations from :func:`pairwise_correlations`.
-    control_correlations : array-like, shape (n_pairs,), or None
-        Pair correlations of the control period, if any.
+    controls : list of ndarray, each shape (n_pairs,)
+        Pair correlations of the control periods; empty without a control.
     labels : dict
         ``template_unit_ids``, ``match_unit_ids`` and ``control_unit_ids``
-        as given; at least one is not None.
+        as given; at least one is not None. With several controls,
+        ``control_unit_ids`` holds one label array per control.
 
     Returns
     -------
-    template, match, control : ndarray, shape (n_pairs,)
-        The template pairs unchanged, and the match and control pairs
-        reordered so pair ``k`` of every period is the same two cells.
+    template, match : ndarray, shape (n_pairs,)
+        The template pairs unchanged, and the match pairs reordered so pair
+        ``k`` of every period is the same two cells.
+    controls : list of ndarray, each shape (n_pairs,)
+        The control pairs reordered the same way.
     """
     call = "explained_variance_reactivation()"
-    if control_correlations is None and labels["control_unit_ids"] is not None:
+    if not controls and labels["control_unit_ids"] is not None:
         raise ValueError(
             _format_error(
                 f"{call} got control_unit_ids= but no control_correlations=.",
@@ -2242,7 +2641,7 @@ def _pairs_in_template_order(
             )
         )
     needed = ["template_unit_ids", "match_unit_ids"]
-    if control_correlations is not None:
+    if controls:
         needed.append("control_unit_ids")
     missing = [name for name in needed if labels[name] is None]
     if missing:
@@ -2262,20 +2661,28 @@ def _pairs_in_template_order(
             )
         )
     template = np.asarray(template_correlations, dtype=np.float64)
-    reference = _pair_labels(template, labels["template_unit_ids"], "template")
+    reference = _pair_labels(
+        template,
+        labels["template_unit_ids"],
+        "template_correlations",
+        "template_unit_ids",
+    )
 
     def in_template_order(
-        correlations: NDArray[np.float64], period: str
+        correlations: NDArray[np.float64],
+        unit_ids: Any,
+        argument: str,
+        labels_argument: str,
     ) -> NDArray[np.float64]:
         values = np.asarray(correlations, dtype=np.float64)
-        period_labels = _pair_labels(values, labels[f"{period}_unit_ids"], period)
+        period_labels = _pair_labels(values, unit_ids, argument, labels_argument)
         order, only_template, only_period = _label_order(period_labels, reference)
         if only_template or only_period:
             raise ValueError(
                 _format_error(
-                    f"{call}: {period}_correlations must describe the same units "
+                    f"{call}: {argument} must describe the same units "
                     f"as template_correlations; only in template_unit_ids: "
-                    f"{only_template}, only in {period}_unit_ids: {only_period}.",
+                    f"{only_template}, only in {labels_argument}: {only_period}.",
                     why="Why: EV compares the correlation of each pair of cells "
                     "across periods, so every pair needs a correlation in every "
                     "period.",
@@ -2286,19 +2693,65 @@ def _pairs_in_template_order(
             )
         return _reorder_pairs(values, order)
 
-    match = in_template_order(match_correlations, "match")
-    control = (
-        None
-        if control_correlations is None
-        else in_template_order(control_correlations, "control")
+    match = in_template_order(
+        match_correlations,
+        labels["match_unit_ids"],
+        "match_correlations",
+        "match_unit_ids",
     )
-    return template, match, control
+    if not controls:
+        return template, match, []
+    if len(controls) == 1:
+        return (
+            template,
+            match,
+            [
+                in_template_order(
+                    controls[0],
+                    labels["control_unit_ids"],
+                    "control_correlations",
+                    "control_unit_ids",
+                )
+            ],
+        )
+    control_labels = labels["control_unit_ids"]
+    if (
+        control_labels is None
+        or len(control_labels) != len(controls)
+        or any(np.ndim(item) != 1 for item in control_labels)
+    ):
+        raise ValueError(
+            _format_error(
+                f"{call}: with {len(controls)} control periods, control_unit_ids "
+                "must hold one label array per control.",
+                why="Why: each control period's pair correlations are matched to "
+                "the template's pairs by that period's own column labels.",
+                fix="pass control_unit_ids=[labels_a, labels_b, ...] in the order "
+                "of control_correlations",
+            )
+        )
+    return (
+        template,
+        match,
+        [
+            in_template_order(
+                control,
+                unit_ids,
+                f"control_correlations[{index}]",
+                f"control_unit_ids[{index}]",
+            )
+            for index, (control, unit_ids) in enumerate(
+                zip(controls, control_labels, strict=True)
+            )
+        ],
+    )
 
 
 def _pair_labels(
     correlations: NDArray[np.float64],
     unit_ids: NDArray[Any] | Sequence[Any] | None,
-    period: str,
+    argument: str,
+    labels_argument: str,
 ) -> NDArray[Any]:
     """Validate the unit labels of one period's pair vector.
 
@@ -2308,8 +2761,8 @@ def _pair_labels(
         Pair correlations from :func:`pairwise_correlations`.
     unit_ids : array-like
         One label per unit, ``n_pairs == n_units * (n_units - 1) / 2``.
-    period : {'template', 'match', 'control'}
-        Period name for error messages.
+    argument, labels_argument : str
+        Names of the correlations and labels arguments for error messages.
 
     Returns
     -------
@@ -2317,12 +2770,11 @@ def _pair_labels(
         The resolved labels.
     """
     call = "explained_variance_reactivation()"
-    argument = f"{period}_correlations"
     if correlations.ndim != 1:
         raise ValueError(
             _format_error(
                 f"{call}: {argument} must be 1-D to be labelled by "
-                f"{period}_unit_ids=, got shape {correlations.shape}.",
+                f"{labels_argument}=, got shape {correlations.shape}.",
                 fix="pass the pair correlations returned by pairwise_correlations()",
             )
         )
@@ -2333,7 +2785,7 @@ def _pair_labels(
             _format_error(
                 f"{call}: {argument} has {n_pairs} entries, which is not "
                 "n * (n - 1) / 2 pairs for any number of units n.",
-                why=f"Why: {period}_unit_ids labels the units whose pairs "
+                why=f"Why: {labels_argument} labels the units whose pairs "
                 "pairwise_correlations() lists in np.triu_indices(n, k=1) order, "
                 "so the correlations must hold every pair.",
                 fix="pass the full output of pairwise_correlations() together "

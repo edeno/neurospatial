@@ -2,6 +2,56 @@
 
 ## [Unreleased]
 
+### Reactivation measures
+
+The pattern and pair-correlation reactivation measures now compute what the
+papers define.
+
+**Breaking**
+
+- `reactivation_strength` is removed. It returned the mean activation
+  strength R(t) in the match period divided by its mean in the template
+  period, a ratio that neither Peyrache et al. (2009, 2010) nor any other
+  paper uses. `assembly_reactivation(control_counts, match_counts, pattern,
+  *, percentile=99.0, control_unit_ids=None, match_unit_ids=None)` returns
+  an `AssemblyReactivationResult` with the published comparisons of rest
+  after a task with rest before it: `mean_activation_difference`, the mean
+  R(t) after minus before (the "reactivation strength" of van de Ven et al.
+  2016; Peyrache et al. 2009, Fig. 2c), and
+  `fraction_above_control_threshold`, the share of post-task bins above the
+  99th percentile of the pre-task R(t) (Peyrache et al., 2010). Each period
+  is z-scored on its own, so the period means equal `w @ C @ w - 1`. The
+  name avoids "reactivation strength", which Peyrache et al. use for R(t)
+  itself.
+- `ExplainedVarianceResult` gains `p_value` and `n_controls`.
+
+**New**
+
+- `explained_variance_reactivation(..., unit_groups=)` uses only pairs of
+  units from different groups: tetrodes, as Kudrimoti et al. (1999) and
+  Tatsuno et al. (2006) did, or regions for cross-region pairs (Lansink et
+  al., 2009). `pair_mask=` selects pairs by any other rule, such as waveform
+  similarity (Giri et al., 2024). `n_pairs` counts the pairs used.
+- `control_correlations=` takes a list of control periods and partials out
+  all of them, as in Kudrimoti et al.'s second experiment. REV is NaN with
+  several controls. Tatsuno et al. (2006) and Giri et al. (2019) instead
+  averaged single-control EVs over control blocks; the docstring shows how.
+- `p_value`: the two-sided t test of the partial correlation with
+  `n_pairs - 2 - n_controls` degrees of freedom. Kudrimoti et al. report a
+  per-session p-value without naming the test, so this test is inferred. It
+  treats pairs that share cells as independent and is anticonservative.
+
+**Documentation**
+
+- REV is credited to Pennartz et al. (2004), who introduced it as a control
+  for EV; Kudrimoti et al. (1999) have none.
+- The EV docstring notes that Kudrimoti's split-half check (one half of
+  running as the control for the other) is not 0 in expectation: with three
+  equally noisy measurements of one correlation structure the partial
+  correlation is rho / (1 + rho).
+- The population-analysis and workflow guides use `assembly_reactivation`,
+  show different-tetrode pairs and report the p-value with its caveat.
+
 ### Maboudi et al. (2018) replay recipe
 
 - `MABOUDI_2018`: mean posterior mass within 3 cm of the best of 35,000

@@ -261,10 +261,15 @@ by position:
   cells) in each bin of a chosen period; descriptive rather than a
   calibrated bin-level significance test
 - `pairwise_correlations()`: Upper-triangle neuron-pair correlations
-- `explained_variance_reactivation()`: EV and controlled REV effect sizes;
-  pass an explicit baseline control and avoid treating EV > REV as a p-value
-- `reactivation_strength()`: Mean activation strength in the match period
-  over the template period; an effect size rather than a significance verdict
+- `explained_variance_reactivation()`: EV (Kudrimoti et al., 1999) and REV
+  (Pennartz et al., 2004) effect sizes over all pairs or selected pairs
+  (`unit_groups=` for different tetrodes or regions, `pair_mask=`), with one
+  or several control periods and a pair-level p-value that is
+  anticonservative because pairs share cells
+- `assembly_reactivation()`: A pattern's mean activation strength after a
+  task minus before it (van de Ven et al., 2016) and the share of post-task
+  bins above the pre-task 99th percentile (Peyrache et al., 2010); effect
+  sizes rather than significance verdicts
 
 See the [complete public workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).
 

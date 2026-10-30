@@ -191,7 +191,7 @@ REQUIRED_DATA_NAMES = {
     *("times", "t", "positions", "position", "points"),
     *("position_bins", "position_bins1", "position_bins2"),
     *("headings", "heading", "nose", "tail", "speeds", "lfp", "signals"),
-    *("spike_times", "spike_counts", "template_counts", "match_counts"),
+    *("spike_times", "spike_counts", "control_counts", "match_counts"),
     *("targets", "ego_points", "object_positions", "cue_positions"),
     *("goal", "goal_bins", "start", "subgoals", "regions", "region_names"),
     *("angles", "angles1", "angles2", "angle", "linear_values", "phases"),
