@@ -2,6 +2,70 @@
 
 ## [Unreleased]
 
+### Replay: faster shuffle tests, one method interface
+
+**Changed**
+
+- Replay shuffle tests do less repeated work. Seeded results are unchanged
+  (bit-identical on fixed-seed batteries of the user guide and 35 published
+  recipes; one guide z-score moves by 2.7e-15).
+  - `dataset_values` builds an event's Radon line search once for all of its
+    shuffles: 100 column-cycle data sets of 20 events with
+    `DAVIDSON_2009` take 2.9 s instead of 64 s.
+  - Nulls that decode again (`unit_identity`, `spike_train_circular`,
+    `spike_time_uniform`) compute the rate terms once per event and decode
+    the shuffles together, about 4x faster.
+  - Segment and trajectory-metric tests reuse the bin graph's distances and
+    no longer copy the environment's binning per shuffle: `IGATA_2021` is
+    about 2x faster per event.
+  - Rank-order verdicts skip the exact Spearman p-value they do not use (10
+    verdicts of 9-cell events: 5 ms instead of 0.9 s), and the exact
+    p-value itself is 4x faster and uses a quarter of the memory.
+  - The sequence-bias shuffle test scores only the event's active units: 300
+    units and 1,000 shuffles peak at 62 MB instead of 3 GB.
+  - Radon line blocks are sized for the batch they score (316 MB to 132 MB
+    peak at 100 bins), the moment tables of `dataset_values` are built in
+    chunks (408 MB to 51 MB at 1,000 bins), `null_events` cuts windows by
+    binary search, and `compare_replay_methods` checks a pseudo-event pool
+    once.
+- `ReplayDetectionResult.error` says why a result has no verdict (score or
+  null undefined, too few active template cells, too few time bins), and
+  every `detect_*` function sets it with every criterion False. A
+  template-match criterion no longer reads True when the score is NaN. The
+  `error` column of `compare_replay_methods` comes from this field.
+- `compare_replay_methods`: rows without a verdict have boolean `passes[...]`
+  columns, and an arm-replay row too short to score leaves the arm checks
+  NaN instead of False, because its arm labels depend on the event.
+- Derived values are properties, not constructor arguments:
+  `ReplaySignificanceResult.p_value`, `RankOrderSignificanceResult.p_value`,
+  `PairwiseOrderSignificanceResult.p_value`, ten `TrajectoryMetrics`
+  scalars (`n_time_bins`, `max_map_jump`, `max_mean_jump`, `mean_mean_jump`,
+  `map_path_length`, `mean_spread`, `mean_peak_probability`,
+  `empty_fraction`, `start_to_end_mean_distance`, `dispersion`) and
+  `ReplaySegmentsResult.durations`, `time_bin_counts`, `longest` and
+  `n_time_bins`.
+- `ShuffleTestResult.from_null(observed, null, ...)` builds a shuffle test
+  from its null scores.
+- `ArmReplayMethod.alpha` is NaN: arm methods test no p-value.
+- Thresholds of `replay_segments` count a value within round-off of the
+  threshold as equal, like every other criterion (verdicts differ only for
+  values 1 ulp outside the old band). Circular-track steps wrap to
+  (-π, π], so a step just above π reads +π, not -π.
+- Choice and count errors across `neurospatial.replay` use the package's
+  shared messages; refusals of `compare_replay_methods` name the methods and
+  the missing argument (`need spike_times=.`).
+
+**Fixed**
+
+- Rank-order, pairwise-order and template-match methods check templates the
+  same way: an empty mapping of rate maps, `template=` with a single set of
+  rate maps, an unknown template, or a template missing from a mapping of
+  environments is refused.
+- `pairwise_bias_matrix` refuses duplicate or missing unit labels.
+- `ReplayMethod(template_choice="max_score")` refuses every null that needs
+  the pseudo-event pool (`pseudo_event` and `column_cycle_weighted`) when
+  the method is made, not when it is run.
+
 ### Decoding: faster, leaner decoders
 
 **Changed**
