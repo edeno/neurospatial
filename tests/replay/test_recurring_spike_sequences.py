@@ -107,6 +107,64 @@ class TestSearch:
         assert result.complexity.tolist() == [3, 4]
         assert result.repetitions.tolist() == [1, 0]
 
+    def test_each_template_spike_needs_its_own_exemplar_spike(self):
+        """Cell 1 fires twice, 7 ms apart, after the first reference spike. One
+        spike of cell 1 between them is within 5 ms of both lags but cannot be
+        both template spikes; two spikes at the lags can.
+        """
+        spikes = [
+            np.array([0.0, 1.0, 2.0]),
+            np.array([0.020, 0.027, 1.0235, 2.019, 2.026]),
+        ]
+        result = recurring_spike_sequences(spikes, reference_unit=0)
+        assert result.complexity.tolist() == [3, 3]
+        # The window at 1 s (one spike) repeats neither; 0 s and 2 s repeat
+        # each other.
+        assert result.repetitions.tolist() == [1, 1]
+
+    def test_repetitions_agree_with_a_bipartite_matching(self):
+        """Dense random trains, so cells often give several spikes to a
+        template: an exemplar repeats it when a maximum matching of template
+        spikes to distinct exemplar spikes of the same cell, within +/- 5 ms
+        of the lag, covers every template spike.
+        """
+        from scipy.sparse import csr_array
+        from scipy.sparse.csgraph import maximum_bipartite_matching
+
+        rng = np.random.default_rng(11)
+        spikes = [np.sort(rng.uniform(0.0, 4.0, 40))] + [
+            np.sort(rng.uniform(0.0, 4.0, 60)) for _ in range(2)
+        ]
+        window, half = 0.2, 0.005
+        result = recurring_spike_sequences(
+            spikes, reference_unit=0, window=window, tolerance=2 * half, burst_isi=0.0
+        )
+        table = result.sequences_table()
+        reference = spikes[0]
+        expected = []
+        for row in table.itertuples():
+            count = 0
+            for other in reference[np.abs(reference - row.reference_time) >= window]:
+                edges = np.array(
+                    [
+                        [
+                            float(
+                                cell == exemplar_cell and abs(t - other - lag) <= half
+                            )
+                            for exemplar_cell in (1, 2)
+                            for t in spikes[exemplar_cell]
+                        ]
+                        for cell, lag in zip(row.units, row.lags, strict=True)
+                    ]
+                )
+                matched = maximum_bipartite_matching(
+                    csr_array(edges), perm_type="column"
+                )
+                count += bool(np.all(matched >= 0))
+            expected.append(count)
+        assert result.repetitions.tolist() == expected
+        assert max(np.bincount(units).max() for units in table["units"]) >= 2
+
     def test_overlapping_windows_do_not_repeat_each_other(self):
         """Reference spikes 7 ms apart see the same spikes shifted by 7 ms."""
         spikes = [np.array([0.0, 0.007]), np.array([0.05]), np.array([0.09])]

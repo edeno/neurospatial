@@ -224,8 +224,8 @@ class RecurringSequencesResult(ReadOnlyArraysMixin, ResultMixin):
     other cells' spikes in the ``window`` after it. A later or earlier
     window of the reference cell, not overlapping the template's, repeats
     the template when every template spike has a spike of the same cell
-    within ``tolerance / 2`` of the same lag; other spikes in the window are
-    allowed.
+    within ``tolerance / 2`` of the same lag, a different spike for each;
+    other spikes in the window are allowed.
 
     Attributes
     ----------
@@ -341,7 +341,7 @@ def recurring_spike_sequences(
     other spike of the reference cell whose window does not overlap the
     template's is an exemplar, which repeats the template when, for every
     template spike, the same cell fires within ``tolerance / 2`` of the
-    same lag after it.
+    same lag after it, with a different spike for each template spike.
 
     Parameters
     ----------
@@ -389,7 +389,8 @@ def recurring_spike_sequences(
     exemplars do not overlap the template's window (so a template does not
     match its own spikes shifted by a few milliseconds), and only templates
     of at least ``min_complexity`` spikes count. A cell may contribute
-    several spikes to a template, each matched on its own.
+    several spikes to a template; each needs its own spike of the cell in
+    the exemplar, taken in time order.
 
     References
     ----------
@@ -487,15 +488,22 @@ def _search(
         cells = pooled_cells[lo:hi]
         lags = pooled[lo:hi] - reference[index]
         candidates = np.flatnonzero(np.abs(reference - reference[index]) >= window)
+        # Each cell's template spikes, in time order, take distinct exemplar
+        # spikes in order: the earliest spike in the match window after the
+        # one the cell's previous template spike took.
+        next_free: dict[int, NDArray[np.intp]] = {}
         for cell, lag in zip(cells, lags, strict=True):
             if not candidates.size:
                 break
             train = onsets[cell]
             shifted = reference[candidates] + lag
-            found = np.searchsorted(train, shifted + half, side="right") > (
-                np.searchsorted(train, shifted - half, side="left")
-            )
+            earliest = np.searchsorted(train, shifted - half, side="left")
+            if cell in next_free:
+                earliest = np.maximum(earliest, next_free[cell])
+            found = np.searchsorted(train, shifted + half, side="right") > earliest
             candidates = candidates[found]
+            next_free = {key: free[found] for key, free in next_free.items()}
+            next_free[int(cell)] = earliest[found] + 1
         kept.append(index)
         repetitions.append(candidates.size)
         elements.append((cells, lags))
@@ -838,7 +846,7 @@ NADASDY_1999 = RecurringSequenceMethod(
         "width (+/- 5 ms); an exemplar may hold extra spikes; exemplars do not "
         "overlap the template's window; templates are whole windows of at least "
         "3 spikes (the reference included); a cell may give several spikes to "
-        "a template.",
+        "a template, each matched to its own spike of the cell in the exemplar.",
         "Surrogates: interspike intervals in random order (the paper swapped "
         "pairs repeatedly, number not stated; a uniform permutation is its "
         "limit), spikes moved later by 0-50 ms, spikes given to cells at random "

@@ -471,7 +471,8 @@ fields, scored from spikes without decoding, as recipes that
   Nádasdy et al. (1999) against interval-shuffle, 0-50 ms jitter,
   across-train and theta-phase surrogates. The paper leaves the match
   tolerance, extra spikes and the smallest sequence unstated; the readings
-  are in the recipe's notes. It has no per-event verdict and is not in
+  are in the recipe's notes. A cell's template spikes each need their own
+  spike of that cell in a repeat, so one spike cannot match two of them. It has no per-event verdict and is not in
   `PUBLISHED_METHODS`; the paper's joint-probability-map comparison of
   sleep and running is not implemented.
 
