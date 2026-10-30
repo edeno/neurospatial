@@ -722,15 +722,15 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
             "decoding": {"time_bin": 0.02, "position_bin": 3.0, "prior": "uniform"},
         },
     ),
-    # Chang et al. (2025): weighted correlation of each trajectory's share
-    # of a joint decode in 10 ms bins; 1,000 column cycles; above the 97.5th
-    # or below the 2.5th percentile; lowest p-value over the trajectories;
-    # >= 5 place cells.
+    # Chang et al. (2025): weighted correlation of each trajectory's
+    # posterior from a joint decode in 10 ms bins, normalized per time bin
+    # as the authors' code does (the paper is silent); 1,000 column cycles;
+    # above the 97.5th or below the 2.5th percentile; lowest p-value over
+    # the trajectories; >= 5 place cells.
     "chang_2025": (
         ReplayMethod,
         {
             "score": "weighted_correlation",
-            "score_options": {"row_normalization": "none"},
             "nulls": ("column_cycle",),
             "alternative": "two-sided",
             "use_absolute": False,

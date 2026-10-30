@@ -982,8 +982,9 @@ visited get no mass), and decode the null events with the same prior.
   score the same 20 ms decodes; pass `score_options={"band": 10.5,
   "wrap_band": True}` to wrap the band around the track ends as the
   authors' code does. `CHANG_2025` takes a joint decode of the two T-maze
-  trajectories (`decode_jointly`) in 10 ms bins and tests both tails of
-  the signed correlation. `LIU_2023_BIAS` needs no decoding: build the
+  trajectories (`decode_jointly`) in 10 ms bins, normalizes each
+  trajectory's posterior per time bin as the authors' code does, and tests
+  both tails of the signed correlation. `LIU_2023_BIAS` needs no decoding: build the
   template from the running theta cycles' spikes,
   `template = mean_pairwise_bias(spike_times, theta_cycles)`, and pass it
   as `compare_replay_methods(..., spike_times=..., template_bias=template,

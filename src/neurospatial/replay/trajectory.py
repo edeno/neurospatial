@@ -1847,7 +1847,9 @@ def detect_trajectory_radon(
         ``zero_rows`` is not one of its choices, or
         ``off_track="bin_median"`` is given where no trajectory leaves the
         track (``wrap=True`` or ``line_ends="on_track"``); if ``n_lines`` is
-        not a positive integer or ``line_seed`` not a non-negative integer.
+        not a positive integer or ``line_seed`` not a non-negative integer,
+        or if no random line is both within the speed range and on the
+        track; if no speed of the dense grid reaches ``min_speed``.
 
     See Also
     --------
@@ -1903,11 +1905,14 @@ def detect_trajectory_radon(
     following the approach in (Kloosterman, 2012)" 35,000 lines; their code
     (nelpy's ``score_Davidson_final_bst_fast``) draws them on the image of
     the event, time bins by position bins, with the normal of each line at
-    an angle uniform on (-pi/2, pi/2) and its distance from the image's
-    center uniform within half the image's diagonal, so lines of every
-    slope are drawn. Here the image's units are the mean time step and the
-    mean spacing of the bin centers, and positions along a line are exact
-    (the code rounds them to bins). The sinogram then holds one score per
+    an angle uniform on (-pi/2, pi/2) and its distance from a center point
+    uniform within half the image's diagonal, so lines of every slope are
+    drawn. The center point is nelpy's, ``(n_time_bins + 1) / 2`` and
+    ``(n_bins + 1) / 2`` with bins numbered from 0, one bin past the
+    image's center on both axes; lines are drawn about it here too. Here
+    the image's units are the mean time step and the mean spacing of the
+    bin centers, and positions along a line are exact (the code rounds them
+    to bins). The sinogram then holds one score per
     line, in the order drawn, with that line's speed and start position.
 
     **Track geometry.** Positions are read along the track (the linear
@@ -2408,7 +2413,9 @@ class _ReplayLines:
             if n_lines is None
             else self._random_lines(n_lines, line_seed)
         )
-        if not np.any(np.abs(self.speeds) >= min_speed - 1e-9):
+        if self.random:
+            self._require_a_searched_line(operation, line_seed)
+        elif not np.any(np.abs(self.speeds) >= min_speed - 1e-9):
             raise ValueError(
                 _format_error(
                     f"{operation} searches speeds up to "
@@ -2421,6 +2428,40 @@ class _ReplayLines:
                     fix="lower min_speed, raise max_speed or widen band",
                 )
             )
+
+    def _require_a_searched_line(self, operation: str, line_seed: int) -> None:
+        """Refuse random lines of which none is searched."""
+        _, _, in_speed_range, placed = self._search_mask(
+            self.speeds, self.start_positions
+        )
+        if np.any(in_speed_range & placed):
+            return
+        speed_range = (
+            f"of at least min_speed {self.min_speed:g}"
+            if np.isinf(self.max_speed)
+            else f"between min_speed {self.min_speed:g} and max_speed "
+            f"{self.max_speed:g}"
+        )
+        where = (
+            "at the first and last time bins"
+            if self.line_ends == "on_track"
+            else "at some time bin"
+        )
+        raise ValueError(
+            _format_error(
+                f"{operation} has no line to score: none of the "
+                f"{self.speeds.size} random lines (line_seed {line_seed}) is "
+                f"both within the speed range and on the track. "
+                f"{int(in_speed_range.sum())} have speeds {speed_range} "
+                f"units/s, and {int(placed.sum())} lie on the track {where}.",
+                why="random lines are drawn over every slope and across the "
+                "event's image of time bins by position bins, so few lines, "
+                "or a narrow speed range, can leave none to score",
+                fix="draw more lines (Maboudi et al. 2018 drew n_lines=35000), "
+                "widen the range between min_speed and max_speed, or search "
+                "the dense grid with n_lines=None",
+            )
+        )
 
     def _grid(
         self, n_on_track: int, spacing: float, operation: str
@@ -2482,9 +2523,13 @@ class _ReplayLines:
         2018, after Kloosterman 2012), lines are drawn on the image of the
         event, time bins by position bins: the normal of each line makes an
         angle uniform on (-pi/2, pi/2) with the time axis, and its distance
-        from the image's center is uniform within half the image's diagonal,
-        so every slope is drawn. Image units are the mean time step and the
-        mean spacing of the bin centers.
+        from nelpy's center is uniform within half the image's diagonal, so
+        every slope is drawn. nelpy's center is ``((n_time_bins + 1) / 2,
+        (n_bins + 1) / 2)`` with bins numbered from 0, one bin past the
+        image's center on both axes, so some lines through the image's
+        first corner (first time bin, first position bin) are never drawn,
+        while every line through the opposite corner can be. Image units
+        are the mean time step and the mean spacing of the bin centers.
 
         Parameters
         ----------
@@ -2513,10 +2558,12 @@ class _ReplayLines:
         # nelpy keeps lines off the vertical, whose speed is infinite.
         angle[np.abs(angle) < 1e-4] = 1e-4
         # (c - c_mid) cos(angle) + (r - r_mid) sin(angle) = distance, for time
-        # bin c and position bin r about the image's center.
+        # bin c and position bin r numbered from 0, about nelpy's center
+        # c_mid = (n_time + 1) / 2, r_mid = (n_bins + 1) / 2, one bin past
+        # the image's center on both axes.
         slope = -np.cos(angle) / np.sin(angle)
-        start = (distance + (n_time - 1) / 2 * np.cos(angle)) / np.sin(angle)
-        start += (n_bins - 1) / 2
+        start = (distance + (n_time + 1) / 2 * np.cos(angle)) / np.sin(angle)
+        start += (n_bins + 1) / 2
         speeds: NDArray[np.float64] = slope * bin_step / time_step
         start_positions: NDArray[np.float64] = self.bin_centers[0] + start * bin_step
         return speeds, start_positions
@@ -2945,6 +2992,49 @@ class _ReplayLines:
             padded,
         )
 
+    def _search_mask(
+        self, speeds: NDArray[np.float64], start_positions: NDArray[np.float64]
+    ) -> tuple[
+        NDArray[np.float64], NDArray[np.bool_], NDArray[np.bool_], NDArray[np.bool_]
+    ]:
+        """Which trajectories are searched, by speed and by where they lie.
+
+        Parameters
+        ----------
+        speeds, start_positions : NDArray[np.float64], shape (n,)
+            Each trajectory's speed and position at the first time bin.
+
+        Returns
+        -------
+        position : NDArray[np.float64], shape (n, n_time_bins)
+            Each trajectory's position at each time bin.
+        on_track : NDArray[np.bool_], shape (n, n_time_bins)
+            Whether it lies on the track at each time bin.
+        in_speed_range : NDArray[np.bool_], shape (n,)
+            Whether its speed is at least ``min_speed`` (and, for random
+            lines, at most ``max_speed``).
+        placed : NDArray[np.bool_], shape (n,)
+            Whether it lies on the track where the search needs it: at some
+            time bin, or at the first and last with ``line_ends="on_track"``.
+        """
+        position = start_positions[:, None] + speeds[:, None] * self.elapsed[None, :]
+        in_speed_range = np.abs(speeds) >= self.min_speed - 1e-9
+        if self.random:
+            in_speed_range &= np.abs(speeds) <= self.max_speed
+        if self.wrap:
+            on_track = np.ones(position.shape, dtype=bool)
+            placed = np.ones(speeds.shape, dtype=bool)
+        else:
+            on_track = (position >= self.track_start) & (position <= self.track_end)
+            # A trajectory is monotonic: on the track at both ends means on
+            # it throughout.
+            placed = np.asarray(
+                on_track[:, 0] & on_track[:, -1]
+                if self.line_ends == "on_track"
+                else on_track.any(axis=1)
+            )
+        return position, on_track, in_speed_range, placed
+
     def _block(self, candidates: NDArray[np.intp]) -> _LineBlock:
         """The searched trajectories among ``candidates`` (flat indices).
 
@@ -2958,22 +3048,10 @@ class _ReplayLines:
         n_time = self.elapsed.size
         n_values = n_time * (len(self.knots) + 2) + 1
         speeds, start_positions = self.line_parameters(candidates)
-        # (n_candidates, n_time)
-        position = start_positions[:, None] + speeds[:, None] * self.elapsed[None, :]
-        fast_enough = np.abs(speeds) >= self.min_speed - 1e-9
-        if self.random:
-            fast_enough &= np.abs(speeds) <= self.max_speed
-        if self.wrap:
-            on_track = np.ones(position.shape, dtype=bool)
-            searched = fast_enough
-        else:
-            on_track = (position >= self.track_start) & (position <= self.track_end)
-            if self.line_ends == "on_track":
-                # A trajectory is monotonic: on the track at both ends means
-                # on it throughout.
-                searched = on_track[:, 0] & on_track[:, -1] & fast_enough
-            else:
-                searched = on_track.any(axis=1) & fast_enough
+        position, on_track, in_speed_range, placed = self._search_mask(
+            speeds, start_positions
+        )
+        searched = in_speed_range & placed
         position, on_track = position[searched], on_track[searched]
         lines = candidates[searched]
         row, time = np.nonzero(on_track)

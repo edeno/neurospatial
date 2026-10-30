@@ -188,8 +188,12 @@ and Chang et al. (2025) as recipes in `neurospatial.replay.methods`.
   approach"): that score against 1,000 column cycles, with at least 5
   active cells and at most half the time bins empty.
 - `CHANG_2025`: the signed weighted correlation of each T-maze
-  trajectory's share of a joint decode in 10 ms bins, two-sided (2.5th and
-  97.5th percentiles), keeping the trajectory with the smallest p-value.
+  trajectory's posterior from a joint decode in 10 ms bins, two-sided (2.5th
+  and 97.5th percentiles), keeping the trajectory with the smallest p-value.
+  Each time bin is normalized to sum to 1 over the trajectory's bins, as
+  the authors' code does where the paper is silent;
+  `score_options={"row_normalization": "none"}` weighs each time bin by
+  the trajectory's share of the joint posterior instead.
   The code's second line-fit test (p < 0.025), 20 ms windows stepped by 10
   ms and 500 shuffles are in its notes, with the nearest variant.
 - `pairwise_bias_matrix(spike_times, interval, *, unit_ids=None)`,
@@ -501,7 +505,10 @@ papers define.
   instead of the dense grid. At a 3 cm band the dense grid is slow with
   empty time bins: a 200 ms event on a 200 cm track in 2 cm bins took 139 s
   for 5000 shuffles, against 3.5 s with 35,000 random lines. The sinogram
-  then holds one score per line.
+  then holds one score per line. When no drawn line is both within
+  `min_speed` to `max_speed` and on the track, it raises a `ValueError`
+  that counts the lines failing each condition, instead of an
+  `IndexError`.
 - The `column_cycle` null takes `null_options={"column_cycle":
   {"exclude_zero_shift": True}}`, and `shuffle_posterior_circular` takes
   `exclude_zero_shift=True`, to draw shifts of 1 to n_bins - 1 bins, as
