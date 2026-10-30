@@ -82,6 +82,29 @@ other seeded simulations give the same spikes as before.
   `grid_spacing` used to build grid cells with NaN spacing.
 - Head-direction and boundary-vector `ground_truth` report a preferred
   direction of exactly −π as +π, the package's (−π, π] convention.
+### Decode several sets of rate maps in one posterior
+
+`decode_jointly(env, spike_counts, {"outbound": ..., "inbound": ...}, dt=dt)`
+decodes several sets of rate maps together, such as each running direction or
+each of two tracks. The posterior sums to 1 over the bins of every set, so
+`JointDecodingResult.template_probability` gives, for each time bin, the
+probability that each set generated the spikes. `conditional[name]` is the
+usual posterior within one set, and `joint(name)` its share of the joint
+posterior.
+
+- This is the decode behind Ambrose et al. (2016) and Mallory et al. (2025),
+  who concatenate the two running-direction maps, and Tirole et al. (2022),
+  who normalize across two tracks.
+- By default the prior is uniform over space across all sets, so each set's
+  prior is proportional to the space its environment covers: equal for two
+  directions on one track, and proportional to length for two tracks.
+  Separate environments must then have units, the same units and the same
+  measure (length or area); otherwise pass `prior=` weights on one scale.
+- Each set's bins without training support, or with a NaN rate, are excluded
+  from that set only. Their prior weight moves to the set's other bins, so a
+  direction with less training coverage does not start with less prior
+  probability.
+
 ### Replay and reactivation have their own subpackages
 
 Replay scoring and reactivation are now separate from decoding:
