@@ -229,7 +229,11 @@ def replay_significance(
     - ``"spike_train_circular"``: each cell's spike counts are shifted
       circularly in time within the event and decoded again, which keeps each
       cell's spikes but breaks the order in which cells fire (Tirole et al.
-      2022). Needs the inputs of ``"unit_identity"``.
+      2022). Needs the inputs of ``"unit_identity"``; ``times`` must be at
+      most ``dt`` apart, since a gap between time bins would make a shift
+      by one time bin longer than one time step and leave part of the event
+      without spikes. Pass every time bin of the event, including those
+      without spikes.
     - ``"place_field_circular"``: each cell's rate map is shifted circularly
       along the track and the event decoded again, which keeps each cell's
       firing but moves its field (Grosmark & Buzsáki 2016; Tirole et al.
@@ -251,9 +255,11 @@ def replay_significance(
       its count; all timing is broken: the order of cells, bursts and which
       cells fire together. On equal time bins this spreads each cell's
       count over the time bins as Multinomial(count, 1 / n_time_bins). Needs
-      the inputs of ``"unit_identity"``; ``times`` must be spaced at least
-      ``dt`` apart, since overlapping windows share spikes. Pass every time
-      bin of the event, including those without spikes.
+      the inputs of ``"unit_identity"``; ``times`` must be spaced exactly
+      ``dt`` apart (up to round-off): overlapping windows share spikes, and
+      a gap between time bins is part of the event that could receive no
+      spikes. Pass every time bin of the event, including those without
+      spikes.
     - ``"column_cycle_weighted"``: as ``"column_cycle"``, but each time bin's
       peak is moved to a position drawn from the session's mean posterior,
       ``pseudo_event_pool.mean(axis=0)``, and the whole row is shifted
@@ -397,8 +403,10 @@ def replay_significance(
         For inputs ``score`` refuses; if a null in ``nulls`` is unknown or
         lacks its inputs; if ``null_options`` names a null that is not run or
         an option the null does not take; if ``"spike_time_uniform"`` is run
-        on time bins less than ``dt`` apart; if only some of ``spike_counts``,
-        ``encoding_models`` and ``dt`` are given; if decoding
+        on time bins less than ``dt`` apart, or it or
+        ``"spike_train_circular"`` on time bins more than ``dt`` apart; if
+        only some of ``spike_counts``, ``encoding_models`` and ``dt`` are
+        given; if decoding
         ``spike_counts`` with ``encoding_models``, ``dt`` and ``prior`` does
         not reproduce ``posterior``; if ``pseudo_event_pool`` does not hold
         probability rows with one column per bin; if ``n_shuffles`` is not a
@@ -483,10 +491,6 @@ def replay_significance(
     Takigawa, M., Huelin Gorriz, M., Tirole, M., & Bendor, D. (2024).
     Evaluating hippocampal replay without a ground truth. *eLife*, 13,
     e85635.
-
-    Silva, D., Feng, T., & Foster, D. J. (2015). Trajectory events across
-    hippocampal place cells require previous experience. *Nature
-    Neuroscience*, 18(12), 1772-1779.
 
     Muessig, L., Lasek, M., Varsavsky, I., Cacucci, F., & Wills, T. J.
     (2019). Coordinated emergence of hippocampal replay and theta sequences
@@ -618,9 +622,12 @@ def replay_significance(
     scorer = _scorer_for(score, track_env, posterior, times, options)
     run = _nulls_to_run(nulls, spike_counts, encoding_models, dt, pseudo_event_pool)
     options_of = _checked_null_options(null_options, run, _OPERATION)
-    if "spike_time_uniform" in run:
+    spreading = [name for name in run if name in _COUNT_CHANGING_NULLS]
+    if spreading:
         assert dt is not None  # _nulls_to_run needs the decoding inputs.
-        _require_separate_time_bins(times, dt)
+        _require_contiguous_time_bins(
+            times, dt, spreading, overlap="spike_time_uniform" in run
+        )
     moving = [name for name in run if name in _ROW_MOVING_NULLS]
     if "spike_counts" in options and moving:
         raise ValueError(
@@ -1242,12 +1249,24 @@ def _checked_null_options(
     return checked
 
 
-def _require_separate_time_bins(times: Any, dt: float) -> None:
-    """Refuse time bins closer than ``dt``: their counts share spikes."""
+def _require_contiguous_time_bins(
+    times: Any, dt: float, nulls: list[str], *, overlap: bool
+) -> None:
+    """Refuse time bins that leave gaps in the event, or overlap.
+
+    The nulls in ``nulls`` move each cell's spikes over the event's time
+    bins, so the bins must tile the event: time bins further apart than
+    ``dt`` leave stretches of the event that cannot receive spikes. With
+    ``overlap``, time bins closer than ``dt`` are refused too: their counts
+    share spikes, so they cannot be spread as separate spikes.
+    """
     centers = np.sort(np.asarray(times, dtype=np.float64).ravel())
     spacing = np.diff(centers)
+    if not spacing.size:
+        return
+    plural = "s" if len(nulls) > 1 else ""
     # Allow round-off in times built as start + k * step.
-    if spacing.size and np.min(spacing) < dt * (1.0 - 1e-6):
+    if overlap and np.min(spacing) < dt * (1.0 - 1e-6):
         raise ValueError(
             _format_error(
                 f"{_OPERATION}: the spike_time_uniform null needs time bins that "
@@ -1258,6 +1277,22 @@ def _require_separate_time_bins(times: Any, dt: float) -> None:
                 fix="decode the event in time bins that do not overlap (a time "
                 "step equal to dt) for this null, or make null events from the "
                 "spike times with null_events(kind='spike_time_uniform')",
+            )
+        )
+    if np.max(spacing) > dt * (1.0 + 1e-6):
+        raise ValueError(
+            _format_error(
+                f"{_OPERATION}: the {nulls} null{plural} need{'' if plural else 's'} "
+                "time bins that cover the event without gaps, but times are up "
+                f"to {np.max(spacing):g} s apart with dt={dt:g} s.",
+                why="these nulls move each cell's spikes over the time bins "
+                "given, so stretches of the event between them could receive "
+                "no spikes, and a shift by one time bin would not be one time "
+                "step",
+                fix="pass every time bin of the event, including those without "
+                "spikes (set their posterior to zero with "
+                "empty_time_bins='zero' rather than dropping them), decoded in "
+                "time bins a step of dt apart",
             )
         )
 

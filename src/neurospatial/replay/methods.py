@@ -573,7 +573,10 @@ class ReplayMethod:
     segmentation : ReplaySegmentation or None
         How the event is cut into trajectory segments. When given, the
         score, the shuffles and the criteria apply to the tested segment's
-        rows, and the event is not replay without a segment.
+        rows, and the event is not replay without a segment. A method with
+        a score and a segmentation cannot use ``"spike_train_circular"`` or
+        ``"spike_time_uniform"``: they would move spikes over the segment's
+        rows only, not over the event.
     units : str or None
         Units of the method's distance thresholds, such as ``"cm"``;
         :func:`detect_replay` refuses an environment in other units. None
@@ -837,6 +840,23 @@ class ReplayMethod:
                     "cannot be dropped",
                     fix="use empty_time_bins='zero', which zeroes each "
                     "shuffle's own time bins without spikes, or 'keep'",
+                )
+            )
+        if spreading and self.score is not None and self.segmentation is not None:
+            raise ValueError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: a segmentation cannot be used "
+                    f"with the {spreading} null"
+                    f"{'s' if len(spreading) > 1 else ''} when the method has a "
+                    "score.",
+                    why="the score is tested on the segment's rows, so these "
+                    "nulls would move each cell's spikes over the segment only "
+                    "(with rows='trajectory', over rows that are not even "
+                    "adjacent), not over the event",
+                    fix="leave out the segmentation and test the whole event, "
+                    "use nulls that do not spread spikes across time bins "
+                    "(such as 'place_field_circular' or 'column_cycle'), or "
+                    "test the segment's detection with score=None",
                 )
             )
         if self.alternative not in _ALTERNATIVES:
@@ -4331,7 +4351,7 @@ TANG_2017 = dataclasses.replace(
         "Tang, W., Shin, J. D., Frank, L. M., & Jadhav, S. P. (2017). "
         "Hippocampal-prefrontal reactivation during learning is stronger in "
         "awake compared with sleep states. Journal of Neuroscience, 37(49), "
-        "11789-11805."
+        "11789-11805. https://doi.org/10.1523/JNEUROSCI.2291-17.2017"
     ),
     template_choice="smallest_p",
     decoding={
@@ -4355,9 +4375,11 @@ TANG_2017 = dataclasses.replace(
         "trajectory's posterior.",
         "Time bins without spikes are dropped, by citation of Karlsson & "
         "Frank, and keep their times; the lineage code keeps their indices.",
-        "The paper's p-value is the share of shuffles with a larger R²; here "
-        "(k + 1) / (n + 1), the same verdict at alpha 0.05 with 10,000 "
-        "shuffles.",
+        "The paper states only 'p < 0.05 versus its shuffled data'; the "
+        "p-value as the share of shuffles with a larger R² comes from Karlsson "
+        "& Frank (2009), which it cites, and the lineage code "
+        "(JadhavLab/PrefrontalRipples). Here (k + 1) / (n + 1), the same "
+        "verdict at alpha 0.05 with 10,000 shuffles.",
         "Candidate events are SWRs (150-250 Hz, mean + 3 SD on at least one "
         "tetrode, speed below 4 cm/s) in which at least 5 place cells fired; "
         "event selection is not applied here.",
@@ -4431,11 +4453,20 @@ FAROOQ_2019 = ReplayMethod(
         "with one direction's rate maps (1 cm bins smoothed with a 5 cm "
         "Gaussian; the decoding position bin is not stated).",
         "Frames of 100-800 ms with at least 5 distinct neurons active "
-        "(applied to the cells passed as spike_counts; the paper counts any "
-        "pyramidal cell, not only the decoder's); frame detection is not "
-        "applied here. The sequence score is the weighted correlation "
-        "z-scored against the time-bin shuffles (ShuffleTestResult.z_score "
-        "of replay_significance).",
+        "(applied to the cells passed as spike_counts); frame detection is "
+        "not applied here. The paper is inconsistent about the cells: the "
+        "main text asks for 'a minimum of 5 distinct place cells', the STAR "
+        "Methods for 'at least 5 distinct neurons' among all pyramidal "
+        "cells. Pass the counts of the place cells or of every pyramidal "
+        "cell, following one reading.",
+        "Time bins without spikes are kept, a reading: the paper does not "
+        "say how they are treated.",
+        "The paper's sequence score rZ is the absolute weighted correlation "
+        "z-scored against the shuffles' absolute values, (|r| - mean "
+        "|r_shuffled|) / std |r_shuffled|: ShuffleTestResult.z_score of "
+        "replay_significance with use_absolute=True (and "
+        "alternative='greater'). The recipe's signed two-sided test reports "
+        "the z-score of the signed r instead.",
         "The paper's main tests are on the data set, not on each frame: the "
         "share of frames passing |r| and maximum-jump thresholds against "
         "500 time-bin-shuffled data sets, 500 rate-matched Poisson data sets "
@@ -4444,7 +4475,9 @@ FAROOQ_2019 = ReplayMethod(
         "position drawn from the mean decoded posterior and kept 10 cm from "
         "the track's ends (the weighted column cycle: "
         "dataclasses.replace(FAROOQ_2019, nulls=('column_cycle_weighted',), "
-        "null_options={'column_cycle_weighted': {'edge_exclusion': 10.0}}), "
+        "null_options={'column_cycle_weighted': {'edge_exclusion': 10.0}}, "
+        "units='cm'), so that detect_replay checks the 10 cm against the "
+        "environment's units, "
         "with the session's candidate events as pseudo_event_pool). None of "
         "these is the per-frame test.",
     ),
@@ -4551,9 +4584,11 @@ SHIN_2019 = dataclasses.replace(
         "The lineage code (JadhavLab/PrefrontalRipples, written for Shin & "
         "Jadhav 2024) draws 10,000 samples in total split by spike count, "
         "averages R² over 500 resamples and scores each shuffle once; the "
-        "recipe follows the paper's text. The paper's p-value is the share "
-        "of shuffles with a larger R²; here (k + 1) / (n + 1), the same "
-        "verdict at alpha 0.05 with 1,500 shuffles.",
+        "recipe follows the paper's text. The paper says only that 'the p "
+        "value was calculated based on a Monte Carlo shuffle'; the p-value as "
+        "the share of shuffles with a larger R² comes from Karlsson & Frank "
+        "(2009), which it cites, and the lineage code. Here (k + 1) / (n + "
+        "1), the same verdict at alpha 0.05 with 1,500 shuffles.",
     ),
 )
 
@@ -4584,15 +4619,23 @@ BUSH_2022 = ReplayMethod(
         "templates": "outbound and inbound rate maps",
     },
     notes=(
-        "The line search of the Ólafsdóttir et al. (2017) lineage: 'the "
-        "linear fit ... which maximizes the summed probability under a line "
-        "of fifteen spatial bins in width (i.e., 30cm), testing all "
+        "The line search, citing Davidson et al. (2009) for the fit (and "
+        "Ólafsdóttir et al. 2015 for the decoding and fitting procedure): "
+        "'the linear fit ... which maximizes the summed probability under a "
+        "line of fifteen spatial bins in width (i.e., 30cm), testing all "
         "potential spatial bins as a starting point and movement speeds of "
         "100 to 5000 cm/s in steps of 50 cm/s, in either forward or reverse "
-        "directions along the track'. 30 cm is the band's full width, so "
-        "band (a half-width) is 15 cm. Speeds and start positions are "
+        "directions along the track'. Speeds and start positions are "
         "searched densely here; time bins where a line leaves the track "
         "score the median over positions of Davidson et al. (not stated).",
+        "The band is a choice made here: 30 cm read as the band's full "
+        "width, so band (a half-width) is 15 cm. The same lab's 2016 and "
+        "2017 papers score the posterior within d = 30 cm of the line (a 60 "
+        "cm band; OLAFSDOTTIR_2016, OLAFSDOTTIR_2017), and the Barry-lab "
+        "line-search code counts its y_range bins on each side of the line, "
+        "so a 30 cm half-width is as plausible: "
+        "dataclasses.replace(BUSH_2022, score_options={"
+        "**BUSH_2022.score_options, 'band': 30.0}).",
         "'We decoded location independently in each time bin where at least "
         "one spike was fired by any cell', and the fit score is 'the average "
         "summed probability per time bin': time bins without spikes are "
@@ -4632,7 +4675,7 @@ HARVEY_2023 = ReplayMethod(
     reference=(
         "Harvey, R. E., Robinson, H. L., Liu, C., Oliva, A., & "
         "Fernandez-Ruiz, A. (2023). Hippocampo-cortical circuits for "
-        "selective memory encoding, routing, and replay. Neuron, 111, "
+        "selective memory encoding, routing, and replay. Neuron, 111(13), "
         "2076-2090. https://doi.org/10.1016/j.neuron.2023.04.015"
     ),
     score=weighted_correlation,
@@ -4735,8 +4778,10 @@ LIU_2023 = ReplayMethod(
         "position. To match, decode with the occupancy as prior and set the "
         "posterior rows of time bins without spikes to 1 / n_bins before "
         "detect_replay; the column-cycle shuffles do not decode again, so "
-        "this reproduces the code exactly. With a uniform prior on equal "
-        "bins, such time bins already decode to a uniform row.",
+        "this reproduces the code exactly. A Poisson decoder does not give "
+        "such time bins a uniform row by itself, even with a uniform prior: "
+        "with no spikes the posterior is the prior times exp(-dt * the "
+        "cells' summed rate at x), flat only where the summed rate is flat.",
         "Trajectory events (weighted correlation above 0.6 and a maximum "
         "jump below 75 cm), compared in number with 500 cell-identity-"
         "shuffled surrogates over a grid of thresholds, are a test of the "

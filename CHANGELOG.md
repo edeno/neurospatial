@@ -143,7 +143,9 @@ paper leaves open and the reading taken here:
   (`wrap=True`), the largest score over clockwise and counterclockwise
   decodes in the event and in each of 500 cell-identity shuffles
   (`template_choice="max_score"`).
-- `BUSH_2022`: line search with a 15 cm half-width band at 1-50 m/s on
+- `BUSH_2022`: line search with a 15 cm half-width band (the paper's "30cm"
+  width read as the full width; the notes give the 30 cm half-width
+  reading) at 1-50 m/s on
   time bins with spikes, against 100 shuffles of the active cells'
   identities (`null_options={"unit_identity": {"active_only": True}}`), at
   least 5 active cells and 15% of the cells.
@@ -180,8 +182,11 @@ paper leaves open and the reading taken here:
 - `replay_significance(nulls="spike_time_uniform")` redraws each cell's
   spikes uniformly over the event and decodes the event again (Stella et
   al. 2019). It needs the decoding inputs, refuses time bins closer than
-  `dt` (overlapping windows share spikes), and with `empty_time_bins="zero"`
-  each shuffle zeroes its own empty time bins.
+  `dt` (overlapping windows share spikes) or further apart (a gap is part
+  of the event that could receive no spikes; `"spike_train_circular"`
+  refuses gaps too, since a shift by one time bin would then not be one
+  time step), and with `empty_time_bins="zero"` each shuffle zeroes its own
+  empty time bins.
 - `replay_significance(nulls="column_cycle_weighted")` runs Farooq et al.'s
   weighted circular shift, with peaks drawn from
   `pseudo_event_pool.mean(axis=0)`. Its edge exclusion is set with the new
@@ -193,7 +198,10 @@ paper leaves open and the reading taken here:
 - `ReplayMethod` refuses `empty_time_bins="drop"` with
   `"spike_train_circular"` or `"spike_time_uniform"`: after the drop they
   would spread spikes over the kept time bins only, and their shuffles have
-  new empty time bins that cannot be dropped. Use `"zero"`.
+  new empty time bins that cannot be dropped. Use `"zero"`. A method with a
+  score also refuses them with a `segmentation`: the score is tested on the
+  segment's rows, so they would move spikes within the segment only. A
+  segment-detection test (`score=None`) still draws them over the event.
 - `null_events(kind="poisson")` is renamed `kind="spike_time_uniform"`: it
   keeps each cell's count and redraws the spike times, Stella et al.'s
   spike jittering, not the papers' Poisson surrogate. The new
@@ -205,6 +213,16 @@ paper leaves open and the reading taken here:
 - The `time_bin_permutation` docs say it is the "time swap" of Silva et al.
   (2015) and Maboudi et al. (2018) and the "time-bin shuffle" of Grosmark &
   Buzsáki (2016) and Farooq et al. (2019).
+
+**Breaking changes**
+
+- `shuffle_posterior_weighted_circular` takes a new positional
+  `peak_weights` argument after `posterior` and no longer takes
+  `edge_buffer`: pass the session's mean decoded posterior, and
+  `edge_exclusion=` for the distance kept from the track's ends.
+- `null_events(kind="poisson")` is now `kind="spike_time_uniform"` (see
+  above); `kind="poisson"` is refused.
+
 ### Template choices
 
 - `ReplayMethod(template_choice="smallest_p")` tests every template of an
@@ -239,6 +257,7 @@ paper leaves open and the reading taken here:
   derived from `rng` and the template's name, so results are reproducible
   and do not depend on the order of the templates. `compare_replay_methods`
   records the chosen template in its `template` column.
+
 ### Line search options
 
 - `detect_trajectory_radon(..., wrap=True)` searches lines on a closed-loop
@@ -247,9 +266,10 @@ paper leaves open and the reading taken here:
   wrap across the seam where the end of the track meets its start, and a
   sweep across the seam scores as it would anywhere else on the loop. The
   track must be a loop built with `Environment.from_graph`, whose last
-  segment in `edge_order` ends at the node where the first starts; an open
-  track, a band of half the loop or more, and `line_ends="on_track"` are
-  refused.
+  segment in `edge_order` ends at the node where the first starts, with no
+  `edge_spacing` (a gap would count as loop length at each corner but not
+  at the seam); an open track, a loop with `edge_spacing`, a band of half
+  the loop or more, and `line_ends="on_track"` are refused.
 - `detect_trajectory_radon(..., line_ends="on_track")` searches only lines
   that are on the track at the event's first and last time bins (Liu et al.
   2023, after `FindReplayScore` of ayalab1/neurocode), so the speed is
@@ -260,6 +280,7 @@ paper leaves open and the reading taken here:
   al. (2009) and is unchanged.
 - `replay_significance` takes both options in `score_options` and scores
   shuffles with the same line family.
+
 ### Circular-track replay score
 
 - `fit_circular_sequence(env, posterior, times)` scores a decoded event on a
