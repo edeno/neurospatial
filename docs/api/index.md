@@ -200,7 +200,7 @@ Detecting the candidate events (ripples, population bursts) is not included.
   2016, Jadhav 2016, Tang 2017, Wu 2017, Yamamoto & Tonegawa 2017, Carey
   2019, Farooq 2019, Michon 2019, Muessig 2019, Shin 2019, Igata 2021,
   Bush 2022, Tirole 2022, Berners-Lee 2022, Widloski & Foster 2022,
-  Harvey 2023, Liu 2023, Mallory 2025) to decoded events, including joint decodes over running
+  Harvey 2023, Liu 2023, Mallory 2025, Widloski & Foster 2025) to decoded events, including joint decodes over running
   directions, and compare their verdicts; `ReplaySegmentation` sets how
   criteria-based methods find the trajectory segment
 - `null_events()`, `simulated_null_events()`, `decode_intervals()`: Events

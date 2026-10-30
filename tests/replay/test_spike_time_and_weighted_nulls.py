@@ -208,6 +208,47 @@ class TestSpikeTimeUniform:
                 n_shuffles=5,
             )
 
+    @pytest.mark.parametrize("null", ["spike_time_uniform", "spike_train_circular"])
+    def test_refuses_gaps_between_time_bins(self, place_code, sweep, null):
+        """Spikes cannot be moved into the part of the event left out."""
+        env, rates = place_code
+        counts, times = sweep
+        kept = np.flatnonzero(counts.sum(axis=1) > 0)  # empty time bins dropped
+        posterior = decode_position(env, counts[kept], rates, dt=DT).posterior
+        with pytest.raises(ValueError, match="cover the event without gaps"):
+            replay_significance(
+                env,
+                posterior,
+                times[kept],
+                score=weighted_correlation,
+                nulls=null,
+                spike_counts=counts[kept],
+                encoding_models=rates,
+                dt=DT,
+                n_shuffles=5,
+            )
+
+    @pytest.mark.parametrize("null", ["spike_time_uniform", "spike_train_circular"])
+    def test_accepts_time_bins_with_round_off(self, place_code, sweep, null):
+        """Times built as start + k * dt far from zero still tile the event."""
+        env, rates = place_code
+        counts, _ = sweep
+        times = 5000.0 + np.arange(10) * DT
+        assert np.ptp(np.diff(times)) > 0, "the spacing carries round-off"
+        posterior = decode_position(env, counts, rates, dt=DT).posterior
+        replay_significance(
+            env,
+            posterior,
+            times,
+            score=weighted_correlation,
+            nulls=null,
+            spike_counts=counts,
+            encoding_models=rates,
+            dt=DT,
+            n_shuffles=5,
+            rng=0,
+        )
+
     def test_refuses_spike_counts_in_score_options(self, place_code, sweep):
         from neurospatial.replay import fit_linear_trajectory
 
@@ -239,6 +280,30 @@ class TestSpikeTimeUniform:
                 nulls=(null,),
                 empty_time_bins="drop",
             )
+
+    @pytest.mark.parametrize("null", ["spike_time_uniform", "spike_train_circular"])
+    @pytest.mark.parametrize("rows", ["segment", "trajectory"])
+    def test_a_scored_method_refuses_a_segmentation(self, null, rows):
+        """The score is tested on the segment, so spikes would move within it."""
+        with pytest.raises(ValueError, match="segmentation cannot be used"):
+            ReplayMethod(
+                name="x",
+                reference="y",
+                score=weighted_correlation,
+                nulls=("column_cycle", null),
+                segmentation=ReplaySegmentation({"max_jump": 20.0}, rows=rows),
+            )
+
+    def test_a_segment_detection_test_may_use_them(self):
+        """Without a score the shuffles are drawn over the whole event."""
+        method = ReplayMethod(
+            name="x",
+            reference="y",
+            score=None,
+            nulls=("spike_time_uniform",),
+            segmentation=ReplaySegmentation({"max_jump": 20.0}),
+        )
+        assert method.nulls == ("spike_time_uniform",)
 
 
 class TestSegmentDetectionWithCountChangingNulls:
