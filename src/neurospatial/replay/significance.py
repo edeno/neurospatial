@@ -471,6 +471,11 @@ def replay_significance(
         track_env = env[template]
     else:
         track_env = env
+    # One template's share of a joint decode keeps its joint weights only for
+    # a score built for them; any other score sees the conditional posterior.
+    conditional = template is not None and not _uses_joint_weights(score, options)
+    if conditional:
+        posterior = _conditional_rows(posterior)
     scorer = _scorer_for(score, track_env, posterior, times, options)
     run = _nulls_to_run(nulls, spike_counts, encoding_models, dt, pseudo_event_pool)
     moving = [name for name in run if name in _ROW_MOVING_NULLS]
@@ -538,6 +543,8 @@ def replay_significance(
         def decode(event_counts: Any, models: Any = None) -> Any:
             """Decode shuffled counts or rate maps as the posterior was decoded."""
             decoded = decoder.decode(event_counts, models)
+            if conditional:
+                decoded = _conditional_rows(decoded)
             if empty_time_bins == "zero":
                 return _zero_empty_rows(decoded, np.asarray(event_counts))
             return decoded
@@ -887,6 +894,29 @@ def _unwrap_partial(
             "score_options."
         )
     return score.func, {**score.keywords, **options}
+
+
+def _uses_joint_weights(score: Callable[..., Any], options: Mapping[str, Any]) -> bool:
+    """Whether a score reads a template's joint weights rather than its rows.
+
+    The weighted correlation with ``row_normalization="none"`` weighs each
+    time bin by the template's share of it (Tirole et al. 2022). Every other
+    score needs rows that sum to 1.
+    """
+    return score is weighted_correlation and options.get("row_normalization") == "none"
+
+
+def _conditional_rows(posterior: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Rows divided by their sums: the posterior given the template.
+
+    A row without mass (a time bin zeroed for having no spikes) stays zero.
+    """
+    posterior = np.asarray(posterior, dtype=np.float64)
+    sums = posterior.sum(axis=1, keepdims=True)
+    conditional: NDArray[np.float64] = np.divide(
+        posterior, sums, out=np.zeros_like(posterior), where=sums > 0
+    )
+    return conditional
 
 
 def _takes_rng(score: Callable[..., Any]) -> bool:

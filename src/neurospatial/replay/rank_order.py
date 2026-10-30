@@ -557,8 +557,9 @@ def _spearman_p_value(
     n = x.size
     if n > _EXACT_MAX_PAIRS:
         # The t-approximation reaches 0 for |rho| = 1; no ordering of n
-        # distinct values is rarer than 2 / n!.
-        return max(approximate, 2.0 / math.factorial(n))
+        # distinct values is rarer than 2 / n!, computed in log space because
+        # n! overflows a float from n = 171 (the bound then underflows to 0).
+        return max(approximate, 2.0 * math.exp(-math.lgamma(n + 1)))
     x_ranks = stats.rankdata(x)
     t_ranks = stats.rankdata(times)
     orders = np.array(list(permutations(range(n))), dtype=np.intp)
@@ -608,6 +609,22 @@ def _validated_interval(interval: Any, operation: str) -> tuple[float, float]:
     return float(values[0]), float(values[1])
 
 
+def _supported_rates(encoding_models: Any) -> NDArray[np.float64]:
+    """Rate maps as an array, NaN outside a rate result's ``spatial_support``.
+
+    A :class:`~neurospatial.encoding.spatial.SpatialRatesResult` can hold
+    finite rates in bins with too little occupancy; those bins have no
+    defensible rate, so a field's peak or center must not fall there.
+    """
+    rates = np.asarray(
+        getattr(encoding_models, "firing_rates", encoding_models), dtype=np.float64
+    )
+    support = getattr(encoding_models, "spatial_support", None)
+    if support is None:
+        return rates
+    return np.where(np.asarray(support, dtype=bool), rates, np.nan)
+
+
 def _field_positions(
     env: Environment, encoding_models: Any, field_order: str, operation: str
 ) -> NDArray[np.float64]:
@@ -631,9 +648,7 @@ def _field_positions(
                 first=source,
                 second=env,
             )
-    rates = np.asarray(
-        getattr(encoding_models, "firing_rates", encoding_models), dtype=np.float64
-    )
+    rates = _supported_rates(encoding_models)
     if rates.ndim != 2 or rates.shape[1] != env.n_bins:
         raise ValueError(
             f"{operation}: encoding_models must have shape (n_cells, {env.n_bins}), "
