@@ -12,12 +12,12 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._results import read_only_copy
 from neurospatial._units import default_length
-from neurospatial._validation import validate_choice
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops._types import DistanceMetric
 from neurospatial.ops.distance import distance_field
 from neurospatial.simulation.models.base import (
+    _check_metric,
     _check_point,
     _draw_rng,
     _model_inputs,
@@ -250,12 +250,9 @@ class PlaceCellModel:
     def __post_init__(self) -> None:
         env = self.env
         _set_rates(self)
-        validate_choice(
-            self.metric,
-            ("euclidean", "geodesic"),
-            name="metric",
-            owner="PlaceCellModel()",
-        )
+        _check_metric(self.metric, "PlaceCellModel()")
+        object.__setattr__(self, "max_rate", float(self.max_rate))
+        object.__setattr__(self, "baseline_rate", float(self.baseline_rate))
         if self.center is None:
             center_idx = _draw_rng(self).integers(0, env.n_bins)
             center = read_only_copy(env.bin_centers[center_idx], np.float64)

@@ -90,8 +90,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._units import default_length
-from neurospatial._validation import validate_choice
 from neurospatial.geometry import CallIndexes, require_cartesian, valid_observers
 from neurospatial.ops.egocentric import compute_egocentric_bearing
 from neurospatial.ops.visibility import FieldOfView, _sight_lines, gaze_points
@@ -292,12 +292,14 @@ class SpatialViewCellModel:
             width = default_length(env, 10.0, name="view_field_width", call=call)
         _check_positive("view_field_width", width)
         _set_rates(self)
-        validate_choice(
-            self.boundary_source,
-            ("physical", "analysis"),
-            name="boundary_source",
-            owner=call,
-        )
+        if self.boundary_source not in ("physical", "analysis"):
+            raise ValueError(
+                _format_error(
+                    f"{call} got boundary_source={self.boundary_source!r}.",
+                    fix="pass boundary_source='physical' for the arena's declared "
+                    "walls, or 'analysis' for the edges of the bins",
+                )
+            )
 
         # The view analysis's own gaze models, gaze-distance rule and default.
         from neurospatial.encoding.view import (
