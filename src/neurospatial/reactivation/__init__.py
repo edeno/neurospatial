@@ -40,6 +40,16 @@ PUBLISHED_REACTIVATION_METHODS : Every published recipe
     KUDRIMOTI_1999, PENNARTZ_2004, TATSUNO_2006, LANSINK_2009,
     PEYRACHE_2010, VAN_DE_VEN_2016, GIRI_2019 and GIRI_2024.
 
+Null Data and Calibration
+-------------------------
+null_reactivation_data : Match-period spikes without reactivation
+    Cell identities permuted, trains rotated in time, or Poisson spikes.
+simulated_reactivation_session : Rest, task and rest with assemblies
+    Reactivation strength and a rate-change confound are settings.
+reactivation_detection_rates : Share of rows called reactivated
+    With Clopper-Pearson intervals, overall or by group.
+SimulatedReactivationSession : Spike times, epochs and assemblies
+
 Result Containers
 -----------------
 AssemblyPattern : Single assembly pattern with weights and members
@@ -63,6 +73,12 @@ from neurospatial.reactivation.assemblies import (
     explained_variance_reactivation,
     marchenko_pastur_threshold,
     pairwise_correlations,
+)
+from neurospatial.reactivation.calibration import (
+    SimulatedReactivationSession,
+    null_reactivation_data,
+    reactivation_detection_rates,
+    simulated_reactivation_session,
 )
 from neurospatial.reactivation.methods import (
     GIRI_2019,
@@ -106,4 +122,9 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "PEYRACHE_2010",
     "TATSUNO_2006",
     "VAN_DE_VEN_2016",
+    # Null data and calibration
+    "SimulatedReactivationSession",
+    "null_reactivation_data",
+    "reactivation_detection_rates",
+    "simulated_reactivation_session",
 ]

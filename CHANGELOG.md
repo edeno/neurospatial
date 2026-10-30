@@ -53,6 +53,21 @@
   windows of rest before; pairs on different shanks, or chosen by
   `pair_mask=`). Tang et al. (2017) is not a recipe: its cross-regional PCA
   of a rectangular matrix is not specified.
+- `null_reactivation_data(spike_times, match_epochs, *, kind, rng)` replaces
+  the spikes of the match period: `"cell_identity"` gives each unit another
+  unit's spikes (the period keeps its own co-firing), `"circular_shift"`
+  rotates each unit's spikes within each epoch, and `"rate_poisson"` draws
+  Poisson spikes at each unit's rate. The published methods call none of
+  them reactivation in the tests.
+- `simulated_reactivation_session(...)` simulates rest, a task and rest with
+  assemblies that fire together during the task and, by `reactivation`,
+  during rest after it; rest has population bursts. `rate_change` raises the
+  members' rates after the task without any co-firing: the published EV
+  methods call this reactivation in every simulated session, and assembly
+  activation rises too, the rate confound of Tingley & Peyrache (2020).
+- `reactivation_detection_rates(table, *, groups=, confidence=)` gives each
+  method's share of rows called reactivated with a Clopper-Pearson interval,
+  and the mean of its statistic for methods without a within-session test.
 
 ### Reactivation measures
 
