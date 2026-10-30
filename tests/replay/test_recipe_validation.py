@@ -489,3 +489,23 @@ class TestResultEquality:
         assert first.score == second.score
         assert first == first
         assert first != second
+
+
+@pytest.mark.parametrize(
+    "name", ["_DECODING_NULLS", "_ROW_MOVING_NULLS", "_ALTERNATIVES", "_SCORE_DECIMALS"]
+)
+def test_shared_replay_constants_are_defined_once(name):
+    """Copies of a constant in several modules could drift apart."""
+    import ast
+    from pathlib import Path
+
+    import neurospatial.replay as replay
+
+    defining = [
+        path.name
+        for path in sorted(Path(replay.__file__).parent.glob("*.py"))
+        for node in ast.parse(path.read_text()).body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)
+    ]
+    assert len(defining) == 1, defining
