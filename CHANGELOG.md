@@ -48,7 +48,8 @@ another.
 
 - New `detect_arm_replay(env, posterior, times, arms=...,
   arm_replay_method=...)` classifies one decoded event. `arms` maps each arm
-  to its bins, ordered from the junction outward. The result's `template`
+  to its bins, ordered from the junction outward; contiguity and
+  orientation are checked. The result's `template`
   names the replayed arm (`"left"`), several arms (`"center,left"`), or a
   pair (`"center+left"`).
 - `ArmReplayMethod` records the thresholds.
@@ -56,12 +57,12 @@ another.
   - Each arm's subregion lies around the largest peak of its peak
     posterior, smoothed with a 10 ms Gaussian, while that peak stays above
     5 × chance.
-  - A single arm is a replay with at least 5 time bins, more than 50% of
-    the arm covered, and |weighted correlation| > 0.5.
+  - A single arm is a replay when its subregion lasts at least 50 ms,
+    covers more than 50% of the arm, and has |weighted correlation| > 0.5.
   - A pair of arms is a joint replay when its subregion, along the path
     through the junction, has |weighted correlation| > 0.5, both arms meet
-    the length and coverage rules, and both run the same way along the
-    path.
+    the length and coverage rules, and both arms' correlations have the
+    joint's sign along the path.
   - Exclusivity follows the paper: a joint replay is reported only when no
     other pair is one, and single-arm replays only when no pair is one.
 - `compare_replay_methods(..., arms=)` includes arm methods in the
