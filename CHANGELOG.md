@@ -2,6 +2,45 @@
 
 ## [Unreleased]
 
+### Test any replay score against shuffles; weighted correlation
+
+`replay_significance(env, posterior, times, score=..., nulls=...)` replaces
+`replay_trajectory_significance`. It tests any replay score against the
+column-cycle, unit-identity and pseudo-event nulls, rescoring every shuffle
+with the same score and search. It reports each null's Monte Carlo p-value and
+the largest, since an event is significant only when every null rejects it.
+
+- `score` is the score function itself. The default is
+  `detect_trajectory_radon` (Davidson et al. 2009).
+  `weighted_correlation` (new), `fit_linear_trajectory`,
+  `fit_isotonic_trajectory` and any function returning a result with a
+  `score` also work. Options go in `score_options`, for example
+  `{"band": 10.0}`.
+- `nulls=` chooses the nulls. By default, every null whose inputs are given
+  is run, as before.
+- `alternative=` (`"greater"`, `"less"`, `"two-sided"`) and `use_absolute=`
+  set what counts as extreme. By default the weighted correlation is tested
+  as |r|, as Grosmark & Buzsáki (2016) and Tirole et al. (2022) do, so reverse
+  replay counts; the other scores are tested as they are.
+- Weighted correlations are rounded to 12 decimals, like the replay line
+  score, so shuffles tied with the event count as ties.
+- A score passed as `functools.partial(detect_trajectory_radon, band=10.0)`
+  still takes the fast batched path. A score that takes `rng` (such as
+  `fit_linear_trajectory`) gets a seed derived from `rng`, so seeded results
+  repeat.
+- The default `n_shuffles` is now 1000 (Tirole et al. 2022); pass 1500 for
+  Davidson et al.'s count.
+- `ReplaySignificanceResult.trajectory` is now `observed`, the score's own
+  result. It also records `alternative` and `use_absolute`.
+- New `weighted_correlation(env, posterior, times)`: the posterior-weighted
+  correlation between time and position (Wu & Foster 2014). It is signed:
+  positive for sweeps toward larger track positions. With
+  `row_normalization="per_time_bin"` (default) every time bin weighs the same.
+  With `"none"`, rows keep their mass, for one template's share of a
+  `decode_jointly` posterior.
+- `LinearFitResult` and `IsotonicFitResult` gain `score` (their R²), so every
+  trajectory score reads the same way.
+
 ### Decode several sets of rate maps in one posterior
 
 `decode_jointly(env, spike_counts, {"outbound": ..., "inbound": ...}, dt=dt)`
@@ -42,7 +81,8 @@ changed.
 
 | Old import | New import |
 | --- | --- |
-| `neurospatial.decoding.detect_trajectory_radon`, `fit_linear_trajectory`, `fit_isotonic_trajectory`, `replay_trajectory_significance` and their results (`RadonDetectionResult`, `LinearFitResult`, `IsotonicFitResult`, `ReplaySignificanceResult`) | `neurospatial.replay` |
+| `neurospatial.decoding.detect_trajectory_radon`, `fit_linear_trajectory`, `fit_isotonic_trajectory` and their results (`RadonDetectionResult`, `LinearFitResult`, `IsotonicFitResult`) | `neurospatial.replay` |
+| `neurospatial.decoding.replay_trajectory_significance` | `neurospatial.replay.replay_significance` (see above) |
 | `neurospatial.stats.shuffle_cell_identity`, `shuffle_place_fields_circular`, `shuffle_place_fields_circular_2d`, `shuffle_posterior_circular`, `shuffle_posterior_weighted_circular` | `neurospatial.replay` |
 | `neurospatial.decoding.detect_assemblies`, `assembly_activation`, `reactivation_strength`, `marchenko_pastur_threshold`, `pairwise_correlations`, `explained_variance_reactivation` and their results (`AssemblyPattern`, `AssemblyDetectionResult`, `ExplainedVarianceResult`) | `neurospatial.reactivation` |
 
