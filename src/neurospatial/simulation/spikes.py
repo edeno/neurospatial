@@ -73,7 +73,8 @@ def generate_poisson_spikes(
        - Conditional on that count, place spikes uniformly within the interval.
          Multiple spikes per interval are supported, even with coarse sampling.
 
-    2. Sort candidate spike times (should already be sorted, but ensures correctness)
+    2. Sort candidate spike times: within an interval they are drawn in no
+       particular order
     3. Apply refractory period filter (single pass, O(n)):
 
        - Initialize last_spike_time = -inf
@@ -218,14 +219,10 @@ def generate_poisson_spikes(
         candidate_spikes, np.nextafter(times[interval_ids + 1], times[interval_ids])
     )
 
-    # Sort candidate spikes (should already be sorted, but ensure correctness)
+    # The spikes of an interval are drawn in no particular order: sort them.
     candidate_spikes = np.sort(candidate_spikes)
 
     # Apply refractory period filter (single pass, O(n) algorithm)
-    if len(candidate_spikes) == 0:
-        return np.array([], dtype=np.float64)
-
-    # Keep track of accepted spikes
     accepted_spikes = []
     last_spike_time = -np.inf
 
