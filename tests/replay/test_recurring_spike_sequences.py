@@ -222,10 +222,20 @@ class TestSignificance:
         )
 
     def test_the_theta_surrogate_needs_peaks(self, trains):
+        method = dataclasses.replace(NADASDY_1999, surrogates=("theta_phase",))
         with pytest.raises(ValueError, match="theta_peak_times"):
             recurring_sequences_significance(
-                trains, recurring_sequence_method=NADASDY_1999, reference_unit=0
+                trains, recurring_sequence_method=method, reference_unit=0
             )
+
+    def test_the_recipe_runs_on_sleep_without_theta_peaks(self, trains):
+        """The paper's five-rat test shuffled across trains only."""
+        method = dataclasses.replace(NADASDY_1999, n_surrogates=5)
+        result = recurring_sequences_significance(
+            trains, recurring_sequence_method=method, reference_unit=0, rng=0
+        )
+        assert list(result.p_values) == ["across_trains"]
+        assert result.p_value == result.p_values["across_trains"]
 
 
 def test_the_recipe_is_session_level():
@@ -237,5 +247,6 @@ def test_the_recipe_is_session_level():
     )
     assert NADASDY_1999.n_surrogates == 100 and NADASDY_1999.alpha == 0.01
     assert NADASDY_1999.max_jitter == 0.05
+    assert NADASDY_1999.surrogates == ("across_trains",)
     with pytest.raises(ValueError, match="surrogates"):
         RecurringSequenceMethod(name="x", reference="r", surrogates=("shuffle",))

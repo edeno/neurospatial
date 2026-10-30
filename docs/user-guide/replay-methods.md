@@ -1003,7 +1003,9 @@ visited get no mass), and decode the null events with the same prior.
   epochs=sws).intervals`. `NADASDY_1999` asks a different question, whether
   spike sequences recur within one session more often than in surrogate
   trains (`recurring_sequences_significance`), and has no per-event
-  verdict.
+  verdict. Like the paper's five-rat test, it shuffles spikes across cells,
+  which gives every cell the same rate; when your cells' rates differ, add
+  `"isi_shuffle"` to its `surrogates`, or independent cells can pass.
 - **Several sessions.** Score each session's events in its own call, add a
   `session` column, and pass it as `groups=` to `detection_rates`,
   `method_agreement` and `matched_alpha`. `score_agreement(table,

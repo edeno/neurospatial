@@ -553,7 +553,8 @@ class RecurringSequenceMethod:
         Fewest spikes in a counted template, the reference spike included.
     surrogates : tuple of str
         The surrogates the count is compared with (see
-        :func:`surrogate_spike_trains`).
+        :func:`surrogate_spike_trains`). Default ``("across_trains",)``,
+        the paper's test.
     max_jitter : float
         Largest displacement of the ``"spike_jitter"`` surrogate, in seconds.
     n_surrogates : int
@@ -571,7 +572,7 @@ class RecurringSequenceMethod:
     tolerance: float = 0.01
     burst_isi: float = 0.006
     min_complexity: int = 3
-    surrogates: tuple[str, ...] = _SURROGATES
+    surrogates: tuple[str, ...] = ("across_trains",)
     max_jitter: float = 0.05
     n_surrogates: int = 100
     alpha: float = 0.01
@@ -727,7 +728,11 @@ def recurring_sequences_significance(
     session exceeded those of every one of 100 surrogates (p < 0.01); with
     the ``(k + 1) / (n + 1)`` p-value used here and 100 surrogates, that is
     p = 1/101. They found across-train shuffling gave the most repetitions,
-    making it the strictest surrogate. The statistic here is the number of
+    making it the strictest surrogate, and used it alone for their five
+    rats, as ``NADASDY_1999`` does. It gives every cell the same rate, so
+    when the cells' rates differ, a session of independent cells can beat
+    it; add ``"isi_shuffle"``, which keeps each cell's spikes, to guard
+    against that. The statistic here is the number of
     templates of at least ``min_complexity`` spikes that recur at least
     once; the paper compared repetitions per sequence and per complexity
     without one summary number.
@@ -832,7 +837,7 @@ NADASDY_1999 = RecurringSequenceMethod(
     tolerance=0.01,
     burst_isi=0.006,
     min_complexity=3,
-    surrogates=_SURROGATES,
+    surrogates=("across_trains",),
     max_jitter=0.05,
     n_surrogates=100,
     alpha=0.01,
@@ -847,17 +852,30 @@ NADASDY_1999 = RecurringSequenceMethod(
         "overlap the template's window; templates are whole windows of at least "
         "3 spikes (the reference included); a cell may give several spikes to "
         "a template, each matched to its own spike of the cell in the exemplar.",
-        "Surrogates: interspike intervals in random order (the paper swapped "
-        "pairs repeatedly, number not stated; a uniform permutation is its "
-        "limit), spikes moved later by 0-50 ms, spikes given to cells at random "
-        "(every cell equally likely; the paper's most rigorous surrogate), and "
-        "theta cycles of each train in random order with spike phases kept "
-        "(cycles from one theta peak to the next; spikes outside them stay). "
-        "Surrogates are made from the burst-merged trains.",
+        "Surrogate: spikes given to cells at random (every cell equally likely), "
+        "made from the burst-merged trains. The paper's test in all five rats "
+        "(Fig. 6) shuffled across spike trains only, because the trains held "
+        "theta and non-theta epochs; it gave the most repetitions of the four "
+        "shuffles, 'the most rigorous test'. It loses each cell's rate (the "
+        "paper's caveat), so the test is anti-conservative when rates differ: "
+        "for six independent Poisson cells over 2 min, the reference at 8 Hz "
+        "and the others at 3 Hz, 20 of 20 sessions were significant. Adding "
+        "'isi_shuffle', which keeps each cell's spikes and intervals, left 1 "
+        "of 20.",
+        "The paper also compared one rat's wheel running with all four "
+        "surrogates (interspike intervals in random order, spikes moved later "
+        "by 0-50 ms, across trains, and theta cycles in random order with spike "
+        "phases kept), and the session exceeded every one. Run that check with "
+        "dataclasses.replace(NADASDY_1999, surrogates=('isi_shuffle', "
+        "'spike_jitter', 'across_trains', 'theta_phase')) and theta_peak_times=; "
+        "the theta surrogate needs theta and is not defined in sleep. The paper "
+        "swapped interval pairs repeatedly (number not stated); a uniform "
+        "permutation is its limit.",
         "Significant when the number of recurring templates exceeds that of "
-        "every one of 100 surrogates of each kind (p = 1/101 < 0.01); the "
-        "paper compared repetitions per sequence without one summary number, "
-        "and analyzed each state (sleep, run) separately.",
+        "every one of 100 surrogates (p = 1/101 < 0.01; with several surrogate "
+        "kinds, of every kind); the paper compared repetitions per sequence "
+        "without one summary number, and analyzed each state (sleep, run) "
+        "separately.",
         "Session level only; no per-event verdict and no behavioral template, "
         "so it is not in PUBLISHED_METHODS and compare_replay_methods does not "
         "take it. The RUN-to-sleep comparison used joint-probability maps of "
