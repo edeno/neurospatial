@@ -191,7 +191,8 @@ class PairwiseOrderMethod:
     directions : tuple of {"forward", "backward"}
         The orders tested on each template.
     nulls : tuple of {"spike_time_permutation", "cell_identity"}
-        The shuffles; the event must beat every one.
+        The shuffles; the event must beat every one. Each test is
+        one-sided: the score against larger shuffled scores.
     n_shuffles : int
         Shuffles per null.
     alpha : float
@@ -277,6 +278,26 @@ class PairwiseOrderMethod:
         from neurospatial.replay.methods import _SPIKE_ORDER_NEEDS
 
         return _SPIKE_ORDER_NEEDS
+
+    def _passes_alpha(self, p_value: Any, alpha: float) -> Any:
+        """Whether ``p_value`` (scalar or array) is below ``alpha``."""
+        return p_value < alpha
+
+    @property
+    def _smallest_p_value(self) -> float:
+        """The smallest p-value of its one-sided shuffle tests."""
+        from neurospatial.replay.methods import _shuffle_p_floor
+
+        return _shuffle_p_floor(self.n_shuffles, "greater")
+
+    @property
+    def _alpha_refusal(self) -> None:
+        """None: its verdicts can be redone at another alpha.
+
+        The reported test (the smallest p-value over templates and
+        directions) and the active-cell rule do not depend on alpha.
+        """
+        return None
 
     def _compare(
         self, event: _CompareEvent, rng: np.random.Generator
@@ -824,7 +845,8 @@ def detect_pairwise_order_replay(
     passes = {criterion.label: criterion.evaluate(n_active, np.nan)}
     return ReplayDetectionResult(
         method=method.name,
-        is_replay=bool(p_value < method.alpha) and all(passes.values()),
+        is_replay=bool(method._passes_alpha(p_value, method.alpha))
+        and all(passes.values()),
         score=score,
         p_value=p_value,
         criteria=passes,

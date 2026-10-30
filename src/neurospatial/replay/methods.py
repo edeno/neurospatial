@@ -309,6 +309,16 @@ class ReplayCriterion:
         return bool(_COMPARISONS[self.comparison](value, threshold))
 
 
+def _shuffle_p_floor(n_shuffles: int, alternative: str) -> float:
+    """The smallest p-value ``n_shuffles`` shuffles can give.
+
+    ``1 / (n + 1)`` for a one-sided test and twice that for a two-sided
+    test, which doubles the smaller tail (``compute_shuffle_pvalue``).
+    """
+    smallest = 1.0 / (n_shuffles + 1)
+    return min(2.0 * smallest, 1.0) if alternative == "two-sided" else smallest
+
+
 def _active_cell_criteria(
     min_active_cells: int, min_active_fraction: float | None = None
 ) -> tuple[ReplayCriterion, ...]:
@@ -1104,6 +1114,32 @@ class ReplayMethod:
         """No input beyond the decoded events (detect_replay checks the rest)."""
         return None
 
+    def _passes_alpha(self, p_value: Any, alpha: float) -> Any:
+        """Whether ``p_value`` (scalar or array) is below ``alpha``."""
+        return p_value < alpha
+
+    @property
+    def _smallest_p_value(self) -> float:
+        """The smallest p-value the method's ``n_shuffles`` can give."""
+        return _shuffle_p_floor(self.n_shuffles, self.alternative)
+
+    @property
+    def _alpha_refusal(self) -> Literal["segment_choice", "no_test"] | None:
+        """Why a table's verdicts cannot be redone at another alpha, or None.
+
+        A method without nulls tests no p-value; one with tested quantities
+        and ``choose="any"`` reports the first segment that is replay at its
+        alpha, so its row changes with alpha.
+        """
+        segmentation = self.segmentation
+        if (
+            self.tested_quantities
+            and segmentation is not None
+            and segmentation.choose == "any"
+        ):
+            return "segment_choice"
+        return None if self.nulls else "no_test"
+
     def _compare(
         self, event: _CompareEvent, rng: np.random.Generator
     ) -> ReplayDetectionResult:
@@ -1322,6 +1358,22 @@ class RankOrderMethod:
     def _compare_needs(self) -> _CompareNeeds:
         """The spikes, rate maps and decoding window it scores each event on."""
         return _SPIKE_ORDER_NEEDS
+
+    def _passes_alpha(self, p_value: Any, alpha: float) -> Any:
+        """Whether ``p_value`` (scalar or array) is below ``alpha``."""
+        return p_value < alpha
+
+    @property
+    def _smallest_p_value(self) -> float:
+        """The smallest p-value of its test; the t-distribution has no floor."""
+        if self.test == "t_distribution":
+            return 0.0
+        return _shuffle_p_floor(self.n_shuffles, self.alternative)
+
+    @property
+    def _alpha_refusal(self) -> Literal["no_test"] | None:
+        """``"no_test"`` for the pooled SSI test, which thresholds the score."""
+        return "no_test" if self.test == "pooled_ssi" else None
 
     def _compare(
         self, event: _CompareEvent, rng: np.random.Generator
@@ -2909,7 +2961,8 @@ def _rank_order_verdict(
         )
     return ReplayDetectionResult(
         method=method.name,
-        is_replay=bool(p_value < method.alpha) and all(passes.values()),
+        is_replay=bool(method._passes_alpha(p_value, method.alpha))
+        and all(passes.values()),
         score=score,
         p_value=p_value,
         criteria=passes,

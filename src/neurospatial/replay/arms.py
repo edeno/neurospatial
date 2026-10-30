@@ -17,7 +17,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from itertools import combinations, pairwise
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -102,6 +102,8 @@ class ArmReplayMethod:
         The paper's decoding settings, for reference (not enforced).
     notes : tuple of str
         Choices the paper does not specify.
+    alpha : float
+        NaN, a class constant: an arm method tests no p-value.
     """
 
     name: str
@@ -120,6 +122,7 @@ class ArmReplayMethod:
     arm_fallback: bool = False
     decoding: Mapping[str, Any] = field(default_factory=dict)
     notes: tuple[str, ...] = ()
+    alpha: ClassVar[float] = float("nan")
 
     def __post_init__(self) -> None:
         """Freeze the mapping and refuse settings that cannot run."""
@@ -199,6 +202,11 @@ class ArmReplayMethod:
             "bins from the junction outward",
             one_environment=True,
         )
+
+    @property
+    def _alpha_refusal(self) -> Literal["no_test"]:
+        """An arm method applies its checks only; it tests no p-value."""
+        return "no_test"
 
     def _compare(
         self, event: _CompareEvent, rng: np.random.Generator

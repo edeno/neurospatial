@@ -39,7 +39,7 @@ import itertools
 import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -867,7 +867,7 @@ def matched_alpha(
         on events without replay, such as from :func:`null_events` or
         :func:`simulated_null_events`, or several concatenated with
         ``groups`` columns that tell their events apart.
-    replay_methods : sequence of ReplayMethod, RankOrderMethod, PairwiseOrderMethod or TemplateMatchMethod
+    replay_methods : sequence of ReplayMethod, RankOrderMethod, PairwiseOrderMethod, TemplateMatchMethod or BiasSequenceMethod
         The methods the table was made with. Each must test a p-value
         against its ``alpha``: a :class:`ReplayMethod` with ``nulls`` (but
         not ``tested_quantities`` with a segmentation that has
@@ -876,9 +876,10 @@ def matched_alpha(
         ``"cell_order"`` test that tests one template, a
         :class:`~neurospatial.replay.PairwiseOrderMethod` (whose reported
         test, the smallest p-value over templates and directions, and
-        active-cell rule, over every cell, do not depend on alpha), or a
+        active-cell rule, over every cell, do not depend on alpha), a
         :class:`TemplateMatchMethod` (whose p-values are exact and take few
-        values, so the matched alpha moves in steps).
+        values, so the matched alpha moves in steps), or a
+        :class:`~neurospatial.replay.BiasSequenceMethod`.
     target : float, default=0.05
         The false-positive rate to hold to, in (0, 1).
     groups : sequence of str, default=()
@@ -1002,9 +1003,10 @@ def matched_alpha(
         # round-off in target * n_events.
         allowed = int(np.floor(target * n_events + 1e-9))
         alpha = float(p_values[allowed]) if p_values.size > allowed else 1.0
-        if getattr(method, "p_comparison", "<") == "<=" and p_values.size > allowed:
-            # p <= alpha (equal within round-off) would pass this event too:
-            # the largest alpha that does not lies just below it.
+        if p_values.size > allowed and method._passes_alpha(alpha, alpha):
+            # A method that passes p <= alpha (equal within round-off) would
+            # pass this event too: the largest alpha that does not lies just
+            # below it.
             alpha = max(
                 alpha - 2 * (ABSOLUTE_TOLERANCE + RELATIVE_TOLERANCE * alpha), 0.0
             )
@@ -1017,7 +1019,7 @@ def matched_alpha(
                 f"correlation is 1), more than {target:g}, so no alpha holds "
                 "the rate; require more active cells or use the cell_order test"
             )
-        elif alpha <= _smallest_p_value(method) * (1 + 1e-9):
+        elif alpha <= method._smallest_p_value * (1 + 1e-9):
             problem = (
                 f"the matched alpha, {alpha:g}, is the smallest p-value its "
                 f"{method.n_shuffles} shuffles can give, so real events cannot "
@@ -1040,7 +1042,7 @@ def matched_alpha(
                 "published_alpha": method.alpha,
                 "published_rate": float(frame["is_replay"].sum()) / n_events,
                 "alpha": alpha,
-                "rate": float(np.sum(_p_passes(p_values, alpha, method))) / n_events
+                "rate": float(np.sum(method._passes_alpha(p_values, alpha))) / n_events
                 if np.isfinite(alpha)
                 else np.nan,
             }
@@ -1074,7 +1076,7 @@ def apply_alpha(
         ``matched_alpha(...).set_index("method")["alpha"]``. Methods not
         named keep their verdicts. After ``matched_alpha`` with
         ``groups``, choose one group's alphas first.
-    replay_methods : sequence of ReplayMethod, RankOrderMethod, PairwiseOrderMethod or TemplateMatchMethod
+    replay_methods : sequence of ReplayMethod, RankOrderMethod, PairwiseOrderMethod, ArmReplayMethod, TemplateMatchMethod or BiasSequenceMethod
         The methods the table was made with; those named in ``alpha`` must
         test a p-value against alpha (see :func:`matched_alpha`).
     groups : sequence of str, default=()
@@ -1153,7 +1155,7 @@ def apply_alpha(
         )
     methods = _alpha_methods(data, replay_methods, list(alphas), operation)
     result = table.copy()
-    own = {m.name: getattr(m, "alpha", np.nan) for m in replay_methods}
+    own = {m.name: m.alpha for m in replay_methods}
     result["alpha"] = data["method"].map(own).astype(float)
     for name, new_alpha in alphas.items():
         rows = data["method"] == name
@@ -1173,10 +1175,7 @@ def _alpha_methods(
     operation: str,
 ) -> dict[str, _TestedMethod]:
     """The named methods, checked to test a p-value against alpha."""
-    from neurospatial.replay.methods import RankOrderMethod, ReplayMethod
-    from neurospatial.replay.pairwise_order import PairwiseOrderMethod
-    from neurospatial.replay.sequence_bias import BiasSequenceMethod
-    from neurospatial.replay.template_match import TemplateMatchMethod
+    from neurospatial.replay.methods import RankOrderMethod
 
     by_name = {method.name: method for method in replay_methods}
     unknown = [name for name in names if name not in by_name]
@@ -1204,27 +1203,14 @@ def _alpha_methods(
             if "template" in data and data.loc[rows, "template"].notna().any():
                 choosing.append(name)
                 continue
-        if (
-            isinstance(method, ReplayMethod)
-            and method.tested_quantities
-            and method.segmentation is not None
-            and method.segmentation.choose == "any"
-        ):
+        refusal = method._alpha_refusal
+        if refusal == "segment_choice":
             segment_choosing.append(name)
-            continue
-        # A template-matching method's choice of template (the largest
-        # score) and a pairwise-order method's (the smallest p-value, with an
-        # active-cell rule over every cell) do not depend on alpha.
-        if (
-            (isinstance(method, ReplayMethod) and method.nulls)
-            or (isinstance(method, RankOrderMethod) and method.test != "pooled_ssi")
-            or isinstance(
-                method, (TemplateMatchMethod, PairwiseOrderMethod, BiasSequenceMethod)
-            )
-        ):
-            tested[name] = method
-        else:
+        elif refusal == "no_test":
             untested.append(name)
+        else:
+            # Arm methods, the only ones without an alpha test, refuse.
+            tested[name] = cast("_TestedMethod", method)
     if choosing:
         raise ValueError(
             _format_error(
@@ -1261,32 +1247,6 @@ def _alpha_methods(
     return tested
 
 
-def _smallest_p_value(
-    method: _TestedMethod,
-) -> float:
-    """The smallest p-value a method's shuffles can give.
-
-    ``1 / (n + 1)`` for a one-sided test and twice that for a two-sided
-    test, which doubles the smaller tail (``compute_shuffle_pvalue``). It
-    uses the method's full ``n_shuffles``, not the shuffles a null event
-    kept: the warning asks whether real events, tested with every shuffle,
-    can reach the matched alpha. Analytic tests have no shuffle floor: the
-    t-distribution, and the template-matching probabilities (at least
-    ``1 / n!`` over an event's ``n`` letters or cells).
-    """
-    from neurospatial.replay.template_match import TemplateMatchMethod
-
-    if (
-        isinstance(method, TemplateMatchMethod)
-        or getattr(method, "test", None) == "t_distribution"
-    ):
-        return 0.0
-    smallest = 1.0 / (method.n_shuffles + 1)
-    # A pairwise-order test is one-sided: the score against larger shuffles.
-    two_sided = getattr(method, "alternative", "greater") == "two-sided"
-    return min(2.0 * smallest, 1.0) if two_sided else smallest
-
-
 def _verdicts(
     frame: pd.DataFrame,
     method: _TestedMethod,
@@ -1310,22 +1270,8 @@ def _verdicts(
     for column in columns:
         verdicts &= frame[column].eq(True).to_numpy()
     if np.isfinite(alpha):
-        verdicts &= _p_passes(frame["p_value"].to_numpy(dtype=float), alpha, method)
+        verdicts &= method._passes_alpha(frame["p_value"].to_numpy(dtype=float), alpha)
     return verdicts
-
-
-def _p_passes(
-    p_values: NDArray[np.float64],
-    alpha: float,
-    method: _TestedMethod,
-) -> NDArray[np.bool_]:
-    """Whether each p-value passes alpha by the method's comparison."""
-    from neurospatial.replay.sequence_match import _passes
-    from neurospatial.replay.template_match import TemplateMatchMethod
-
-    if isinstance(method, TemplateMatchMethod):
-        return np.asarray(_passes(p_values, alpha, method.p_comparison), dtype=bool)
-    return p_values < alpha
 
 
 def _check_verdicts(

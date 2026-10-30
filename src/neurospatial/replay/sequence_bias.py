@@ -233,6 +233,22 @@ class BiasSequenceMethod:
             "and the decoding window dt",
         )
 
+    def _passes_alpha(self, p_value: Any, alpha: float) -> Any:
+        """Whether ``p_value`` (scalar or array) is below ``alpha``."""
+        return p_value < alpha
+
+    @property
+    def _smallest_p_value(self) -> float:
+        """The smallest p-value the method's ``n_shuffles`` can give."""
+        from neurospatial.replay.methods import _shuffle_p_floor
+
+        return _shuffle_p_floor(self.n_shuffles, self.alternative)
+
+    @property
+    def _alpha_refusal(self) -> None:
+        """None: its verdict is the p-value against alpha and its criterion."""
+        return None
+
     def _compare(
         self, event: _CompareEvent, rng: np.random.Generator
     ) -> ReplayDetectionResult:
@@ -679,7 +695,8 @@ def detect_bias_sequence_replay(
     )
     return ReplayDetectionResult(
         method=method.name,
-        is_replay=bool(tested.p_value < method.alpha) and all(passes.values()),
+        is_replay=bool(method._passes_alpha(tested.p_value, method.alpha))
+        and all(passes.values()),
         score=tested.similarity,
         p_value=tested.p_value,
         criteria=passes,

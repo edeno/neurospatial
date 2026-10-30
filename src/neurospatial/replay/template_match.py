@@ -291,6 +291,23 @@ class TemplateMatchMethod:
 
         return _SPIKE_ORDER_NEEDS
 
+    def _passes_alpha(self, p_value: Any, alpha: float) -> Any:
+        """Whether ``p_value`` passes ``alpha`` by ``p_comparison``.
+
+        Equality is judged within round-off; NaN fails.
+        """
+        return _passes(p_value, alpha, self.p_comparison)
+
+    @property
+    def _smallest_p_value(self) -> float:
+        """0: the p-values are exact (at least ``1 / n!`` over ``n`` cells)."""
+        return 0.0
+
+    @property
+    def _alpha_refusal(self) -> None:
+        """None: its choice of template (the largest score) is alpha-free."""
+        return None
+
     def _compare(
         self, event: _CompareEvent, rng: np.random.Generator
     ) -> ReplayDetectionResult:
@@ -556,7 +573,7 @@ def _verdict(
     passes = not error and criterion.evaluate(float(n_active), np.nan)
     return ReplayDetectionResult(
         method=method.name,
-        is_replay=bool(passes and _passes(p_value, method.alpha, method.p_comparison)),
+        is_replay=bool(passes and method._passes_alpha(p_value, method.alpha)),
         score=float(score),
         p_value=float(p_value),
         criteria={criterion.label: passes},
