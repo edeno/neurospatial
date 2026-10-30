@@ -219,6 +219,7 @@ REQUIRED_DATA_NAMES = {
     *("templates", "reference_templates"),
     *("source_probs", "decoded_positions", "actual_positions", "actual_bins"),
     *("template_correlations", "match_correlations", "rates"),
+    *("template_bias", "event_bias"),
     *("observed", "null_scores", "beta_sin", "beta_cos", "cov_matrix"),
     *("vte_index", "z_head_sweep", "z_speed_inv", "head_sweeps"),
     *("result", "expected_bins", "table", "null_table"),

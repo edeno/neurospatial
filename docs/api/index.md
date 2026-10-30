@@ -170,6 +170,9 @@ Detecting the candidate events (ripples, population bursts) is not included.
   through the start of its linear position (Wikenheiser & Redish 2013)
 - `weighted_correlation()`: Posterior-weighted correlation of time and
   position (Wu & Foster 2014)
+- `regression_line_score()`: Posterior mass within a band of the
+  least-squares line through each time bin's most likely position (Harvey
+  et al. 2023; Soula et al. 2023)
 - `trajectory_metrics()`, `template_fractions()`: Per-event metrics that
   criteria-based replay detection thresholds (jumps, spread, range, path
   length, dispersion, coverage, empty time bins) and the directional
@@ -200,7 +203,9 @@ Detecting the candidate events (ripples, population bursts) is not included.
   2016, Jadhav 2016, Tang 2017, Wu 2017, Yamamoto & Tonegawa 2017,
   Maboudi 2018, Carey 2019, Farooq 2019, Michon 2019, Muessig 2019, Shin 2019, Igata 2021,
   Bush 2022, Tirole 2022, Berners-Lee 2022, Widloski & Foster 2022,
-  Harvey 2023, Liu 2023, Mallory 2025, Widloski & Foster 2025) to decoded events, including joint decodes over running
+  Harvey 2023 (weighted correlation and regression line), Liu 2023,
+  Soula 2023, Mallory 2025, Chang 2025, Widloski & Foster 2025) to decoded
+  events, including joint decodes over running
   directions, and compare their verdicts; `ReplaySegmentation` sets how
   criteria-based methods find the trajectory segment
 - `null_events()`, `simulated_null_events()`, `decode_intervals()`: Events
@@ -254,6 +259,13 @@ Detecting the candidate events (ripples, population bursts) is not included.
   pairwise-order test of Gupta et al. 2010 (`GUPTA_2010`) to an event's
   spikes on every template (such as each lap), forward and backward;
   `compare_replay_methods(spike_times=...)` runs it with the other methods
+- `pairwise_bias_matrix()`, `mean_pairwise_bias()`, `bias_similarity()`,
+  `bias_similarity_significance()`: Skew-bias matrices of firing order for
+  an event or averaged over many (such as theta cycles), and the cosine
+  between two against permuted cell labels (Liu et al. 2023, after Drieu
+  et al. 2018); `detect_bias_sequence_replay()`, `BiasSequenceMethod` and
+  `LIU_2023_BIAS` apply the published test, and
+  `compare_replay_methods(template_bias=...)` runs it with the other methods
 - `shuffle_cell_identity()`, `shuffle_spike_counts_circular()`,
   `shuffle_spike_counts_uniform()`, `shuffle_place_fields_circular()`,
   `shuffle_place_fields_circular_2d()`, `shuffle_posterior_circular()`,

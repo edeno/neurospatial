@@ -51,11 +51,16 @@ if TYPE_CHECKING:
     from neurospatial.replay.arms import ArmReplayMethod
     from neurospatial.replay.methods import RankOrderMethod, ReplayMethod
     from neurospatial.replay.pairwise_order import PairwiseOrderMethod
+    from neurospatial.replay.sequence_bias import BiasSequenceMethod
     from neurospatial.replay.template_match import TemplateMatchMethod
 
     # Methods whose verdict tests a p-value against alpha.
     _TestedMethod = (
-        ReplayMethod | RankOrderMethod | PairwiseOrderMethod | TemplateMatchMethod
+        ReplayMethod
+        | RankOrderMethod
+        | PairwiseOrderMethod
+        | TemplateMatchMethod
+        | BiasSequenceMethod
     )
 
 __all__ = [
@@ -698,6 +703,7 @@ def matched_alpha(
         | PairwiseOrderMethod
         | ArmReplayMethod
         | TemplateMatchMethod
+        | BiasSequenceMethod
     ],
     target: float = 0.05,
     groups: Sequence[str] = (),
@@ -902,6 +908,7 @@ def apply_alpha(
         | PairwiseOrderMethod
         | ArmReplayMethod
         | TemplateMatchMethod
+        | BiasSequenceMethod
     ],
     groups: Sequence[str] = (),
 ) -> pd.DataFrame:
@@ -1024,6 +1031,7 @@ def _alpha_methods(
         | PairwiseOrderMethod
         | ArmReplayMethod
         | TemplateMatchMethod
+        | BiasSequenceMethod
     ],
     names: list[str],
     operation: str,
@@ -1031,6 +1039,7 @@ def _alpha_methods(
     """The named methods, checked to test a p-value against alpha."""
     from neurospatial.replay.methods import RankOrderMethod, ReplayMethod
     from neurospatial.replay.pairwise_order import PairwiseOrderMethod
+    from neurospatial.replay.sequence_bias import BiasSequenceMethod
     from neurospatial.replay.template_match import TemplateMatchMethod
 
     by_name = {method.name: method for method in replay_methods}
@@ -1065,7 +1074,9 @@ def _alpha_methods(
         if (
             (isinstance(method, ReplayMethod) and method.nulls)
             or (isinstance(method, RankOrderMethod) and method.test != "pooled_ssi")
-            or isinstance(method, (TemplateMatchMethod, PairwiseOrderMethod))
+            or isinstance(
+                method, (TemplateMatchMethod, PairwiseOrderMethod, BiasSequenceMethod)
+            )
         ):
             tested[name] = method
         else:

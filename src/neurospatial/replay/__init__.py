@@ -19,6 +19,10 @@ fit_linear_trajectory : Line fit (Karlsson & Frank 2009; Wu et al. 2017)
     R² of a line through positions sampled from the posterior, or through
     the MAP positions.
 
+regression_line_score : Band mass under the MAP regression line (Harvey et al.
+    2023; Soula et al. 2023)
+    Posterior mass within a band of the least-squares line through each
+    time bin's most likely position.
 fit_isotonic_trajectory : Monotonic fit (Michon et al. 2019)
     Weighted isotonic fit of the MAP positions, scored by the mean MAP
     probability times R².
@@ -78,6 +82,13 @@ pairwise_order_score : Firing order of spike pairs (Gupta et al. 2010)
 
 pairwise_order_significance : Pairwise-order score against spike-time and
     cell-identity shuffles
+pairwise_bias_matrix, mean_pairwise_bias : Skew-bias matrices of firing order
+    Share of each pair's spike pairs in which one cell fires first, scaled
+    to [-1, 1], for one event or averaged over many (Liu et al. 2023, after
+    Drieu et al. 2018).
+bias_similarity, bias_similarity_significance : Cosine between two skew-bias
+    matrices, and its test against the event's spikes with permuted cell
+    labels
 
 Published Methods
 -----------------
@@ -89,6 +100,8 @@ detect_rank_order_replay, RankOrderMethod : Published rank-order tests on spikes
 detect_pairwise_order_replay, PairwiseOrderMethod : Pairwise firing-order test
     on spikes, every template forward and backward (Gupta et al. 2010)
 detect_arm_replay, ArmReplayMethod : Single-arm and joint-arm replay on a maze
+detect_bias_sequence_replay, BiasSequenceMethod : Pairwise-bias sequence test
+    of an event's spikes against a template (Liu et al. 2023)
 event_properties, detection_rates, method_agreement : Calibrate methods on a
     comparison table: rates (false positives on null data) by event
     property, with confidence intervals, and agreement between methods
@@ -129,7 +142,8 @@ neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
     TANG_2017, YAMAMOTO_TONEGAWA_2017, MABOUDI_2018, CAREY_2019, CHENANI_2019,
     FAROOQ_2019, MICHON_2019, MUESSIG_2019, SHIN_2019, IGATA_2021,
     BERNERS_LEE_2021, BUSH_2022, TIROLE_2022, BERNERS_LEE_2022,
-    WIDLOSKI_FOSTER_2022, HARVEY_2023, LIU_2023, MALLORY_2025,
+    WIDLOSKI_FOSTER_2022, HARVEY_2023, HARVEY_2023_LINE, LIU_2023,
+    LIU_2023_BIAS, SOULA_2023, MALLORY_2025, CHANG_2025,
     WIDLOSKI_FOSTER_2025) and the session-level NADASDY_1999
 
 Significance
@@ -156,11 +170,15 @@ shuffle_posterior_weighted_circular : Shift each time bin's peak to a position
 
 Result Containers
 -----------------
-RadonDetectionResult, LinearFitResult, IsotonicFitResult, WeightedCorrelationResult
+RadonDetectionResult, LinearFitResult, IsotonicFitResult, WeightedCorrelationResult,
+RegressionLineScoreResult
     The fitted trajectory or correlation, and its ``score``.
 PairwiseOrderResult, PairwiseOrderSignificanceResult
     A pairwise-order score with its scored cells and assigned fields, and its
     shuffle tests.
+PairwiseBiasResult, BiasSimilarityResult
+    An event's skew-bias matrix, and its similarity to a template with the
+    shuffle test.
 CircularSequenceResult
     The circular-track fit: replay speed around the loop and its ``score``.
 TrajectoryMetrics
@@ -255,6 +273,16 @@ from neurospatial.replay.recurring_sequences import (
     surrogate_spike_trains,
 )
 from neurospatial.replay.segments import ReplaySegmentsResult, replay_segments
+from neurospatial.replay.sequence_bias import (
+    BiasSequenceMethod,
+    BiasSimilarityResult,
+    PairwiseBiasResult,
+    bias_similarity,
+    bias_similarity_significance,
+    detect_bias_sequence_replay,
+    mean_pairwise_bias,
+    pairwise_bias_matrix,
+)
 from neurospatial.replay.sequence_match import (
     MatchingIndexResult,
     SequenceMatchResult,
@@ -278,14 +306,17 @@ from neurospatial.replay.trajectory import (
     IsotonicFitResult,
     LinearFitResult,
     RadonDetectionResult,
+    RegressionLineScoreResult,
     detect_trajectory_radon,
     fit_isotonic_trajectory,
     fit_linear_trajectory,
+    regression_line_score,
 )
 
 __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Published methods
     "ArmReplayMethod",
+    "BiasSequenceMethod",
     "PairwiseOrderMethod",
     "ReplayCriterion",
     "ReplayDetectionResult",
@@ -294,6 +325,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "ReplaySegmentation",
     "compare_replay_methods",
     "detect_arm_replay",
+    "detect_bias_sequence_replay",
     "detect_pairwise_order_replay",
     "detect_rank_order_replay",
     "RecurringSequenceMethod",
@@ -323,16 +355,19 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "shuffle_events",
     "template_correlation_test",
     # Result containers
+    "BiasSimilarityResult",
     "CircularSequenceResult",
     "IsotonicFitResult",
     "LinearFitResult",
     "MatchingIndexResult",
+    "PairwiseBiasResult",
     "PairwiseOrderResult",
     "PairwiseOrderSignificanceResult",
     "RadonDetectionResult",
     "RankOrderResult",
     "RankOrderSignificanceResult",
     "RecurringSequencesResult",
+    "RegressionLineScoreResult",
     "RecurringSequencesSignificanceResult",
     "ReplaySegmentsResult",
     "ReplaySignificanceResult",
@@ -346,6 +381,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "fit_circular_sequence",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",
+    "regression_line_score",
     "weighted_correlation",
     # Criteria metrics
     "template_fractions",
@@ -367,6 +403,11 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Pairwise order
     "pairwise_order_score",
     "pairwise_order_significance",
+    # Pairwise bias
+    "bias_similarity",
+    "bias_similarity_significance",
+    "mean_pairwise_bias",
+    "pairwise_bias_matrix",
     # Shuffles
     "shuffle_cell_identity",
     "shuffle_place_fields_circular",

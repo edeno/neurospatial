@@ -11,7 +11,10 @@ the event's spikes rather than a decoded posterior
 (:func:`detect_rank_order_replay`),
 :class:`~neurospatial.replay.PairwiseOrderMethod` the pairwise firing-order
 test of Gupta et al. (2010) on the event's spikes
-(:func:`~neurospatial.replay.detect_pairwise_order_replay`), and
+(:func:`~neurospatial.replay.detect_pairwise_order_replay`),
+:class:`~neurospatial.replay.BiasSequenceMethod` the pairwise-bias sequence
+test of Liu et al. (2023)
+(:func:`~neurospatial.replay.detect_bias_sequence_replay`), and
 :class:`~neurospatial.replay.ArmReplayMethod` a test for replay of single
 arms and pairs of arms on a maze.
 
@@ -49,6 +52,10 @@ from neurospatial.replay.pairwise_order import (
     detect_pairwise_order_replay,
 )
 from neurospatial.replay.recurring_sequences import NADASDY_1999
+from neurospatial.replay.sequence_bias import (
+    BiasSequenceMethod,
+    detect_bias_sequence_replay,
+)
 from neurospatial.replay.significance import (
     _ALTERNATIVES,
     _COUNT_CHANGING_NULLS,
@@ -68,6 +75,7 @@ from neurospatial.replay.trajectory import (
     detect_trajectory_radon,
     fit_isotonic_trajectory,
     fit_linear_trajectory,
+    regression_line_score,
 )
 
 if TYPE_CHECKING:
@@ -83,6 +91,7 @@ __all__ = [
     "BERNERS_LEE_2022",
     "BUSH_2022",
     "CAREY_2019",
+    "CHANG_2025",
     "CHENANI_2019",
     "DAVIDSON_2009",
     "DIBA_BUZSAKI_2007",
@@ -91,12 +100,14 @@ __all__ = [
     "GROSMARK_2016",
     "GUPTA_2010",
     "HARVEY_2023",
+    "HARVEY_2023_LINE",
     "IGATA_2021",
     "JADHAV_2016",
     "JI_WILSON_2007",
     "KARLSSON_FRANK_2009",
     "LEE_WILSON_2002",
     "LIU_2023",
+    "LIU_2023_BIAS",
     "MABOUDI_2018",
     "MALLORY_2025",
     "MICHON_2019",
@@ -110,6 +121,7 @@ __all__ = [
     "PUBLISHED_METHODS",
     "SHIN_2019",
     "SILVA_2015",
+    "SOULA_2023",
     "TANG_2017",
     "TIROLE_2022",
     "WIDLOSKI_FOSTER_2022",
@@ -2959,6 +2971,7 @@ def compare_replay_methods(
         | PairwiseOrderMethod
         | ArmReplayMethod
         | TemplateMatchMethod
+        | BiasSequenceMethod
     ],
     spike_counts: Sequence[NDArray[np.int64]] | None = None,
     encoding_models: Any = None,
@@ -2968,6 +2981,7 @@ def compare_replay_methods(
     valid_time_bins: Sequence[NDArray[np.bool_]] | None = None,
     spike_times: Any = None,
     arms: Mapping[str, NDArray[np.intp]] | None = None,
+    template_bias: NDArray[np.float64] | None = None,
     rng: np.random.Generator | int | None = None,
 ) -> pd.DataFrame:
     """Apply several published replay methods to several decoded events.
@@ -2984,7 +2998,7 @@ def compare_replay_methods(
         the templates decoded separately, as a mapping of template name to
         :class:`~neurospatial.decoding.DecodingResult` with the same times
         (see :func:`detect_replay`).
-    replay_methods : sequence of ReplayMethod, RankOrderMethod, PairwiseOrderMethod or ArmReplayMethod
+    replay_methods : sequence of ReplayMethod, RankOrderMethod, PairwiseOrderMethod, ArmReplayMethod, TemplateMatchMethod or BiasSequenceMethod
         The methods to compare. An arm method classifies each event's
         posterior as a single-arm or joint-arm replay on ``arms`` (see
         :func:`~neurospatial.replay.detect_arm_replay`). A rank-order method scores each event's
@@ -3001,7 +3015,10 @@ def compare_replay_methods(
         smallest p-value; it ignores ``template``.
         A :class:`~neurospatial.replay.TemplateMatchMethod` scores the same
         window's spikes as a rank-order method does (see
-        :func:`~neurospatial.replay.detect_template_match_replay`).
+        :func:`~neurospatial.replay.detect_template_match_replay`). A
+        :class:`~neurospatial.replay.BiasSequenceMethod` compares the same
+        window's skew-bias matrix with ``template_bias`` (see
+        :func:`~neurospatial.replay.detect_bias_sequence_replay`).
     spike_counts : sequence of arrays or None
         Each event's spike counts, shape (n_time_bins, n_cells), for methods
         that need them (see :func:`detect_replay`).
@@ -3018,9 +3035,15 @@ def compare_replay_methods(
         :func:`detect_replay`).
     spike_times : array, sequence of arrays, or spike group, optional
         The session's spike times, one train per row of
-        ``encoding_models``, for rank-order, pairwise-order and template-matching methods.
+        ``encoding_models``, for rank-order, pairwise-order,
+        template-matching and bias-sequence methods.
     arms : Mapping[str, NDArray[np.intp]] or None
         Each arm's bins from the junction outward, for arm methods.
+    template_bias : NDArray[np.float64] or None
+        The template's skew-bias matrix, shape (n_cells, n_cells), for
+        bias-sequence methods, such as
+        :func:`~neurospatial.replay.mean_pairwise_bias` of the task's theta
+        cycles, with the cells in the order of ``spike_times``.
     rng : numpy.random.Generator, int, or None
         Random number generator or seed for the shuffles. Each (event, method)
         pair draws from its own stream, derived from ``rng``, the event's
@@ -3062,7 +3085,9 @@ def compare_replay_methods(
         cells, or no variation in their order), for a pairwise-order method,
         an event or shuffle whose multi-field cells have more field
         combinations than are searched (``"too many combinations of
-        multi-field cells' fields to search"``), or, for a pooled SSI
+        multi-field cells' fields to search"``), for a bias-sequence
+        method, a similarity undefined because no pair of cells fired in
+        both the event and the template, or, for a pooled SSI
         method, an epoch with too few events or without a threshold (score
         and p-value are still reported). A method with a segmentation that
         finds no segment has a verdict, not an error: score NaN,
@@ -3092,7 +3117,8 @@ def compare_replay_methods(
         does not have one row per time bin of its event; if a method
         draws pseudo-events or weighted column cycles from joint decodes; or
         if a rank-order, pairwise-order or template-matching method is given without
-        ``spike_times``, ``encoding_models`` or ``dt``.
+        ``spike_times``, ``encoding_models`` or ``dt``, or a bias-sequence
+        method without ``spike_times``, ``template_bias`` or ``dt``.
 
     Warns
     -----
@@ -3250,6 +3276,30 @@ def compare_replay_methods(
                     "encoding_models and the decoding window dt",
                 )
             )
+    bias_methods = [m for m in replay_methods if isinstance(m, BiasSequenceMethod)]
+    if bias_methods:
+        missing = [
+            name
+            for name, value in (
+                ("spike_times", spike_times),
+                ("template_bias", template_bias),
+                ("dt", dt),
+            )
+            if value is None
+        ]
+        if missing:
+            raise ValueError(
+                _format_error(
+                    f"compare_replay_methods(): bias-sequence methods "
+                    f"{[m.name for m in bias_methods]} need {missing}.",
+                    why="they compare the order of each event's spikes, over "
+                    "the event's decoding windows of width dt, with a "
+                    "template's skew-bias matrix",
+                    fix="pass the session's spike_times, the template's matrix "
+                    "as template_bias (e.g. mean_pairwise_bias(spike_times, "
+                    "theta_cycles)) and the decoding window dt",
+                )
+            )
     pool = None
     if any(
         name in method.nulls
@@ -3288,7 +3338,8 @@ def compare_replay_methods(
         | RankOrderMethod
         | PairwiseOrderMethod
         | ArmReplayMethod
-        | TemplateMatchMethod,
+        | TemplateMatchMethod
+        | BiasSequenceMethod,
     ) -> Any:
         return np.random.default_rng(
             np.random.SeedSequence(
@@ -3338,6 +3389,7 @@ def compare_replay_methods(
                     else valid_time_bins[index],
                     spike_times=spike_times,
                     arms=arms,
+                    template_bias=template_bias,
                     pool=pool,
                     pooled=pooled_verdicts[method.name][index]
                     if method.name in pooled_verdicts
@@ -3400,7 +3452,8 @@ def _compare_row(
     | RankOrderMethod
     | PairwiseOrderMethod
     | ArmReplayMethod
-    | TemplateMatchMethod,
+    | TemplateMatchMethod
+    | BiasSequenceMethod,
     *,
     spike_counts: NDArray[np.int64] | None,
     encoding_models: Any,
@@ -3410,6 +3463,7 @@ def _compare_row(
     valid_time_bins: NDArray[np.bool_] | None,
     spike_times: Any,
     arms: Mapping[str, NDArray[np.intp]] | None,
+    template_bias: NDArray[np.float64] | None,
     pool: NDArray[np.float64] | None,
     pooled: tuple[ReplayDetectionResult, str] | None,
     rng: np.random.Generator,
@@ -3481,6 +3535,23 @@ def _compare_row(
             "template cells, or no variation in their order"
         )
         return {**ranked.summary(), "error": error}
+    if isinstance(method, BiasSequenceMethod):
+        assert dt is not None and template_bias is not None
+        centers = np.asarray(times, dtype=np.float64)
+        biased = detect_bias_sequence_replay(
+            spike_times,
+            (centers[0] - dt / 2, centers[-1] + dt / 2),
+            template_bias,
+            bias_sequence_method=method,
+            rng=rng,
+        )
+        error = (
+            ""
+            if np.isfinite(biased.score)
+            else "bias similarity undefined: no pair of cells fired in both "
+            "the event and the template"
+        )
+        return {**biased.summary(), "error": error}
     if isinstance(method, PairwiseOrderMethod):
         assert dt is not None
         centers = np.asarray(times, dtype=np.float64)
@@ -3561,6 +3632,7 @@ def _fail_criteria_of_error_rows(
         | PairwiseOrderMethod
         | ArmReplayMethod
         | TemplateMatchMethod
+        | BiasSequenceMethod
     ],
 ) -> pd.DataFrame:
     """Set every criterion of a row's method to False on rows with an error.
@@ -3584,7 +3656,13 @@ def _fail_criteria_of_error_rows(
         }
         if isinstance(
             method,
-            (ReplayMethod, RankOrderMethod, PairwiseOrderMethod, TemplateMatchMethod),
+            (
+                ReplayMethod,
+                RankOrderMethod,
+                PairwiseOrderMethod,
+                TemplateMatchMethod,
+                BiasSequenceMethod,
+            ),
         ):
             columns |= {f"passes[{c.label}]" for c in method.criteria}
         for column in sorted(columns):
@@ -4863,9 +4941,7 @@ HARVEY_2023 = ReplayMethod(
         "with each direction's maps, test each, and call it replay if either "
         "is.",
         "The paper's alternative check, the posterior within a 21 cm band "
-        "of a line fit to the decoded positions, is not reproduced; the "
-        "code's replay-participation scripts select replay with it against "
-        "time-bin permutations.",
+        "of a line fit to the decoded positions, is HARVEY_2023_LINE.",
         "Candidate events are sharp-wave ripples; sessions with a median "
         "running decoding error of 25 cm or more, or a decoding accuracy "
         "that does not beat circular spike-time shuffles, were excluded. "
@@ -4932,6 +5008,223 @@ LIU_2023 = ReplayMethod(
         "Candidate events: pyramidal-cell rate above its mean with a peak "
         "more than 2 SD above it, 100-500 ms, overlapping an independently "
         "detected SWR; event selection is not applied here.",
+    ),
+)
+
+SOULA_2023 = ReplayMethod(
+    name="soula_2023",
+    reference=(
+        "Soula, M., Maslarova, A., Harvey, R. E., Valero, M., Brandner, S., "
+        "Hamer, H., Fernández-Ruiz, A., & Buzsáki, G. (2023). Interictal "
+        "epileptiform discharges affect memory in an Alzheimer's disease "
+        "mouse model. Proceedings of the National Academy of Sciences, "
+        "120(34), e2302676120. https://doi.org/10.1073/pnas.2302676120"
+    ),
+    score=regression_line_score,
+    score_options={"band": 10.5},
+    nulls=("column_cycle",),
+    n_shuffles=1000,
+    alpha=0.05,
+    empty_time_bins="zero",
+    criteria=(
+        ReplayCriterion("n_active_cells", ">=", 5),
+        ReplayCriterion("empty_fraction", "<=", 0.5),
+    ),
+    units="cm",
+    decoding={"time_bin": 0.02, "position_bin": 3.0, "prior": "uniform"},
+    notes=(
+        "'Linear regression was used to fit a line to the posterior "
+        "probability distribution. A Bayesian replay score for a given event "
+        "was defined as the sum probability mass under the fit line within a "
+        "bandwidth (21 cm)', against 1,000 shuffles 'circularly shifting each "
+        "column of the posterior probability matrix by a random amount'; p = "
+        "(k + 1) / (n + 1) < 0.05 with k the shuffles scoring at least the "
+        "event (the paper: 'higher than the observed score').",
+        "The line is read as the least-squares line of each time bin's most "
+        "likely position on time, as the same co-author's code does for "
+        "Harvey et al. 2023 (nelpy's trajectory_score_array, which regresses "
+        "the MAP bin on the time-bin number); no Soula-specific code was "
+        "read. A search for the line holding the most posterior (Davidson et "
+        "al. 2009, detect_trajectory_radon with band 10.5) is another reading "
+        "of 'fit a line', not followed.",
+        "Band: 21 cm read as the full width, the 2w + 1 = 7 bins of 3 cm the "
+        "code sums around the line (w = 3), so band (a half-width) is 10.5 "
+        "cm. The code rounds the line to a bin and wraps the band around the "
+        "track's ends (each time bin's posterior is shifted circularly); "
+        "here band past an end holds nothing. "
+        "score_options={'band': 10.5, 'wrap_band': True} wraps it as the "
+        "code does; with the line on bin centers the two then agree.",
+        "Time bins without spikes have no posterior in nelpy: set to zero "
+        "here (empty_time_bins='zero') and left out of the line and of the "
+        "mean band mass, as in the code.",
+        "At least five active pyramidal cells with a peak rate of at least 1 "
+        "Hz and a peak-to-mean ratio of 1.5: pass those cells' spike counts. "
+        "Events with more than 50% of their time bins without spikes are "
+        "discarded, so at most half is kept (applied).",
+        "Candidate events are SWRs (30-100 ms) in home-cage sleep; sessions "
+        "with a median running decoding error of 25 cm or more (speed > 3 "
+        "cm/s) were excluded. Event and session selection are not applied "
+        "here.",
+    ),
+)
+
+HARVEY_2023_LINE = dataclasses.replace(
+    SOULA_2023,
+    name="harvey_2023_line",
+    reference=HARVEY_2023.reference,
+    decoding=HARVEY_2023.decoding,
+    notes=(
+        "The paper's 'alternative approach' (STAR Methods, 'Detection of "
+        "replay'): 'linear regression to fit a line to the posterior "
+        "probability distribution. A Bayesian replay score for a given event "
+        "was defined as the sum probability mass under the fit line within a "
+        "bandwidth (21 cm)', with the same 1,000 column-cycle shuffles, alpha "
+        "and event rules as its weighted correlation (HARVEY_2023).",
+        "The authors' code (ryanharvey1/ripple_heterogeneity, "
+        "replay/score.py) scores nelpy's trajectory_score_array(w=3, "
+        "normalize=True): the least-squares line of the MAP bin on the "
+        "time-bin number, rounded to bins, and the posterior in the 7 bins "
+        "of 3 cm around it (21 cm, so band is 10.5 cm), averaged over the "
+        "time bins with a posterior. The band wraps around the track's ends "
+        "in the code; here band past an end holds nothing. "
+        "score_options={'band': 10.5, 'wrap_band': True} wraps it as the "
+        "code does.",
+        "Code differences not followed: 1,500 shuffles by default (the paper "
+        "states 1,000), each time bin shifted by 1 to n_bins - 1 bins "
+        "(null_options={'column_cycle': {'exclude_zero_shift': True}}), and "
+        "the replay-participation scripts select replay with this score "
+        "against time-bin permutations (nulls=('time_bin_permutation',)), "
+        "which the paper does not state.",
+        "Time bins without spikes have no posterior in nelpy: set to zero "
+        "here (empty_time_bins='zero') and left out of the line and of the "
+        "mean band mass, as in the code.",
+        "At least 5 active pyramidal cells with a peak rate of at least 1 Hz "
+        "and a peak-to-mean ratio of 1 (1.5 and at least 100 running spikes "
+        "in the code): pass those cells' spike counts. Events with more than "
+        "50% of their time bins without spikes are discarded (applied).",
+        "One decoder per running direction: decode each event with each "
+        "direction's maps and test each. Candidate events are sharp-wave "
+        "ripples; session selection (median running decoding error below 25 "
+        "cm) is not applied here.",
+    ),
+)
+
+CHANG_2025 = ReplayMethod(
+    name="chang_2025",
+    reference=(
+        "Chang, H., Tang, W., Wulf, A. M., Nyasulu, T., Wolf, M. E., "
+        "Fernandez-Ruiz, A., & Oliva, A. (2025). Sleep microstructure "
+        "organizes memory replay. Nature, 637(8048), 1161-1169. "
+        "https://doi.org/10.1038/s41586-024-08340-w"
+    ),
+    score=weighted_correlation,
+    score_options={"row_normalization": "none"},
+    nulls=("column_cycle",),
+    n_shuffles=1000,
+    alpha=0.05,
+    alternative="two-sided",
+    use_absolute=False,
+    empty_time_bins="zero",
+    criteria=(ReplayCriterion("n_active_cells", ">=", 5),),
+    template_choice="smallest_p",
+    decoding={
+        "time_bin": 0.01,
+        "prior": "uniform over position and trajectory",
+        "templates": "left and right T-maze trajectories, decoded jointly",
+        "rate_map_speed": 2.0,
+    },
+    notes=(
+        "'a weighted correlation was calculated for the posterior "
+        "probability matrix of each trajectory, and the significance was "
+        "assessed by circularly shifting the time-bins of the posterior "
+        "probability matrix (n = 1000 times). A sequence was considered "
+        "significant if its weighted correlation exceeded the 97.5th "
+        "percentile or was below the 2.5th percentile (for reverse "
+        "sequences) of the shuffled distributions (i.e., p < 0.025)': the "
+        "signed r tested two-sided at alpha = 0.05 against column cycles "
+        "(each time bin's posterior shifted along the track, as the code "
+        "does). The two-sided p-value here is at least 2 / (n + 1), so an "
+        "event at the edge of a percentile rule can differ.",
+        "'If more than one trajectory type were significant, the trajectory "
+        "with the lowest p-value was considered as the replayed trajectory': "
+        "template_choice='smallest_p', not corrected for the two "
+        "trajectories, as in the paper.",
+        "The decoder is joint over position and trajectory with a uniform "
+        "prior, so each trajectory's posterior matrix is its share of the "
+        "joint posterior: pass decode_jointly(...) as the event with both "
+        "trajectories' rate maps. The weighted correlation uses the share "
+        "as weights (row_normalization='none'), so time bins the trajectory "
+        "explains less weigh less. Each time bin weighted equally "
+        "(score_options={}) is the code's separate decode of each "
+        "trajectory: with a uniform prior, a share renormalized per time bin "
+        "is that trajectory's own posterior.",
+        "Each candidate event was 'divided into 10-ms non-overlapping bins'. "
+        "Time bins without spikes are set to zero (empty_time_bins='zero'), "
+        "as the code shifts only time bins with spikes; the paper does not "
+        "say. At least 5 active cells (the paper's 'at least 5 place cells "
+        "fired', applied to the event's cells given).",
+        "Code differences not followed (pupil_project, "
+        "replayHSEseq_decoding_CA1_slidingwin_linfittingR2.m): 20 ms windows "
+        "stepped by 10 ms; 500 shuffles of 1 to n_bins - 1 bins; p = k / n "
+        "with k shuffles strictly beyond the event, one-sided in the "
+        "direction of r's sign; among significant trajectories the largest "
+        "|r|; cells with a peak rate of at least 3 Hz, counted for a "
+        "trajectory above 2 Hz there; and an event must also pass a "
+        "Davidson-type line test (p < 0.025: band of 2 bins of 2 cm on each "
+        "side, 100 log-spaced speeds of 100 to 10,000 cm/s in both "
+        "directions, mean band mass over the time bins with spikes), which "
+        "one method cannot express (it tests one score). Nearest variant: "
+        "dataclasses.replace(CHANG_2025, n_shuffles=500, score_options={}, "
+        "null_options={'column_cycle': {'exclude_zero_shift': True}}) on 20 "
+        "ms windows stepped by 10 ms (sum adjacent 10 ms counts and decode "
+        "with dt=0.02), still without the line test.",
+        "Rate maps: speed above 2 cm/s, 100 linear bins per trajectory, "
+        "Gaussian SD of 1 bin. Candidate events are high-synchrony events "
+        "(1 ms bins smoothed with a 15 ms SD Gaussian, above 3 SD, at least "
+        "50 ms, overlapping an SWR, immobility below 1 cm/s); event "
+        "selection is not applied here.",
+    ),
+)
+
+LIU_2023_BIAS = BiasSequenceMethod(
+    name="liu_2023_bias",
+    reference=LIU_2023.reference,
+    n_shuffles=100,
+    alpha=0.05,
+    use_absolute=True,
+    notes=(
+        "Pairwise bias correlation (Materials and methods, 'Pairwise bias "
+        "correlations', after Drieu, Todorova & Zugaro 2018): each event's "
+        "skew-bias matrix S(i, j) = 2 n(i before j) / (n_i n_j) - 1 is "
+        "compared with the template's by the cosine between them, 'The "
+        "activity of cells that are not common to the two sequences is "
+        "ignored': the cosine runs over the pairs defined in both. The lab's "
+        "code (neuro_py pairwise_bias_correlation) fills undefined pairs "
+        "with 0 and keeps them, which shrinks its cosines.",
+        "The paper prints the unwrapped matrix as '2Bk - 2', which runs from "
+        "-2 to 0; its stated range [-1, 1] and the lab's code give 2B - 1, "
+        "used here.",
+        "Template: 'the mean bias matrix of all sequences taking place in "
+        "theta cycles during the task': pass mean_pairwise_bias(spike_times, "
+        "theta_cycles) as template_bias, with the running theta cycles' "
+        "intervals; each pair is averaged over the cycles in which both "
+        "cells fired (not stated; the code computes one matrix over all task "
+        "theta spikes). No theta-cycle detector is applied here.",
+        "Shuffles: 'shuffling the spikes sequence n = 100 times', read as "
+        "permuting the cell labels of the event's spikes, as the code does "
+        "(each cell keeps its spike count, the event its spike times). "
+        "'Significant those sequences with correlations whose absolute value "
+        "exceeded 5% of the shuffled distribution': |cosine| against the "
+        "shuffles' |cosine|, p = (k + 1) / 101 < 0.05, which allows at most "
+        "4 shuffles at or above the event where a percentile rule allows 5.",
+        "At least 2 active cells (a pair; not stated). Candidate events "
+        "(post-task sleep SWRs) are not detected here.",
+        "'We normalized the proportion of significant events by subtracting "
+        "the mean proportion of significant events in pre-task sleep': a "
+        "session statistic, not applied per event. Run "
+        "compare_replay_methods on the pre- and post-task events and "
+        "subtract the pre-task detection rate (detection_rates) from the "
+        "post-task one.",
     ),
 )
 
@@ -5337,7 +5630,8 @@ PUBLISHED_METHODS: tuple[
     | RankOrderMethod
     | PairwiseOrderMethod
     | ArmReplayMethod
-    | TemplateMatchMethod,
+    | TemplateMatchMethod
+    | BiasSequenceMethod,
     ...,
 ] = (
     LEE_WILSON_2002,
@@ -5375,8 +5669,12 @@ PUBLISHED_METHODS: tuple[
     BERNERS_LEE_2022,
     WIDLOSKI_FOSTER_2022,
     HARVEY_2023,
+    HARVEY_2023_LINE,
     LIU_2023,
+    LIU_2023_BIAS,
+    SOULA_2023,
     MALLORY_2025,
+    CHANG_2025,
     WIDLOSKI_FOSTER_2025,
 )
 """Every published per-event method recipe in this module.

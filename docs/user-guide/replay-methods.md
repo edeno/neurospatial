@@ -685,6 +685,20 @@ and epoch), parallelize over data sets with seeds from
 - **Mazes with arms.** `ArmReplayMethod` recipes (`WU_FOSTER_2014`,
   `BERNERS_LEE_2021`) classify replay per arm: pass `arms=` to
   `compare_replay_methods`.
+- **Fernández-Ruiz-lab recipes.** `HARVEY_2023` (weighted correlation) and
+  `HARVEY_2023_LINE` or `SOULA_2023` (`regression_line_score`, the
+  posterior within 10.5 cm of the line through the most likely positions)
+  score the same 20 ms decodes; pass `score_options={"band": 10.5,
+  "wrap_band": True}` to wrap the band around the track ends as the
+  authors' code does. `CHANG_2025` takes a joint decode of the two T-maze
+  trajectories (`decode_jointly`) in 10 ms bins and tests both tails of
+  the signed correlation. `LIU_2023_BIAS` needs no decoding: build the
+  template from the running theta cycles' spikes,
+  `template = mean_pairwise_bias(spike_times, theta_cycles)`, and pass it
+  as `compare_replay_methods(..., spike_times=..., template_bias=template,
+  dt=dt)`. Liu et al. report the share of significant post-task events
+  minus the share in pre-task sleep: run both sets of events and subtract
+  their `detection_rates`.
 - **Firing order without decoding.** `LEE_WILSON_2002` and
   `JI_WILSON_2007` test whether the cells fire in the order of their
   fields, from the spike times and rate maps alone (pass `spike_times=` as
