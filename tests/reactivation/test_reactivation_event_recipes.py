@@ -547,6 +547,27 @@ def test_simulated_session_returns_its_bursts_as_events() -> None:
         ),
         (LIU_2023_ASSEMBLY, {"test": "event_modulation"}, "baseline_window"),
         (CHANG_2025_ASSEMBLY, {"activation_step": 0.03}, "must divide bin_size"),
+        # R(t) every 250 ms: lags -0.5, -0.25, 0 and 0.25 s.
+        (
+            CHANG_2025_ASSEMBLY,
+            {
+                "bin_size": 0.25,
+                "activation_step": None,
+                "event_response": EventResponse(
+                    response_window=(0.05, 0.2), baseline_window=(-0.5, -0.1)
+                ),
+            },
+            r"response_window=\(0.05, 0.2\) holds no lag",
+        ),
+        (
+            CHANG_2025_ASSEMBLY,
+            {
+                "bin_size": 0.25,
+                "activation_step": None,
+                "event_response": EventResponse(baseline_window=(-0.2, -0.1)),
+            },
+            r"baseline_window=\(-0.2, -0.1\) holds no lag",
+        ),
         (OLIVA_2020_EV, {"zscore_over": "control_and_match"}, "do not apply"),
         (EL_GABY_2021, {"smoothing_bandwidth": 0.01}, "do not apply"),
         (OLIVA_2020_EV, {"statistic": "event_response_ratio"}, "does not fit measure"),

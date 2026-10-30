@@ -750,6 +750,22 @@ class ReactivationMethod:
                 f"{where}: statistic {self.statistic!r} needs "
                 "event_response=EventResponse(...)."
             )
+        if self.event_response is not None:
+            step = _sample_step(self)
+            lags = _lags(self.event_response.window, step)
+            for name in ("response_window", "baseline_window"):
+                part = getattr(self.event_response, name)
+                if part is not None and not _in_lag_window(lags, part, step).any():
+                    raise ValueError(
+                        _format_error(
+                            f"{where}: event_response {name}={part} holds no lag "
+                            f"of R(t), which is sampled every {step:g} s.",
+                            why="Why: its mean over the events would be "
+                            "undefined (NaN).",
+                            fix=f"widen {name}, or sample R(t) more finely with "
+                            "activation_step=",
+                        )
+                    )
         if self.test == "event_modulation" and (
             self.event_response is None or self.event_response.baseline_window is None
         ):
@@ -1964,14 +1980,7 @@ def _event_response_columns(
     """
     response = method.event_response
     assert response is not None
-    step = method.activation_step
-    if step is None:
-        step = (
-            method.bin_size
-            if method.smoothing_bandwidth is None
-            else method.smoothing_bandwidth / 2
-        )
-    assert step is not None
+    step = _sample_step(method)
     lags = _lags(response.window, step)
     in_response = _in_lag_window(lags, response.response_window, step)
     periods = {}
@@ -2099,14 +2108,8 @@ def _period_samples(
 
     assert method.bin_size is not None  # assembly methods have one
     smoothing = method.smoothing_bandwidth
-    if smoothing is None:
-        width = method.bin_size
-        step = width if method.activation_step is None else method.activation_step
-    else:
-        step = (
-            smoothing / 2 if method.activation_step is None else method.activation_step
-        )
-        width = step
+    step = _sample_step(method)
+    width = method.bin_size if smoothing is None else step
     per_bin = round(width / step)
     values, times = [], []
     for piece in window:
@@ -2135,6 +2138,20 @@ def _period_samples(
         for stop, piece in zip(stops, values, strict=True)
     ]
     return _Samples(np.vstack(values), np.concatenate(times), segments)
+
+
+def _sample_step(method: ReactivationMethod) -> float:
+    """Seconds between samples of an assembly method's R(t).
+
+    ``activation_step`` when given; otherwise ``bin_size`` without
+    smoothing and half the smoothing bandwidth with it.
+    """
+    if method.activation_step is not None:
+        return method.activation_step
+    if method.smoothing_bandwidth is not None:
+        return method.smoothing_bandwidth / 2
+    assert method.bin_size is not None  # assembly methods have one
+    return method.bin_size
 
 
 def _z_scored(
