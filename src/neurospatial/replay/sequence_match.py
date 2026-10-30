@@ -942,16 +942,9 @@ def _template_ranks(
 def _matched_trains(
     trains: list[NDArray[np.float64]], ranks: NDArray[np.intp], operation: str
 ) -> list[NDArray[np.float64]]:
-    if len(trains) != ranks.size:
-        raise ValueError(
-            _format_error(
-                f"{operation}: spike_times has {len(trains)} cells but "
-                f"encoding_models has {ranks.size} rate maps.",
-                why="each cell's firing is compared with its own place field",
-                fix="pass spike times and rate maps for the same cells, in the "
-                "same order",
-            )
-        )
+    from neurospatial.replay.rank_order import _require_same_cells
+
+    _require_same_cells(len(trains), ranks.size, operation)
     return _sorted_trains(trains)
 
 

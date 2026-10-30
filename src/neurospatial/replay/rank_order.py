@@ -567,16 +567,7 @@ def _event_pairs(
     )
     positions[excluded] = np.nan
     trains = as_spike_trains(spike_times)
-    if len(trains) != len(positions):
-        raise ValueError(
-            _format_error(
-                f"{operation}: spike_times has {len(trains)} cells but "
-                f"encoding_models has {len(positions)} rate maps.",
-                why="each cell's firing is compared with its own place field",
-                fix="pass spike times and rate maps for the same cells, in the "
-                "same order",
-            )
-        )
+    _require_same_cells(len(trains), len(positions), operation)
     in_event = _spikes_in(trains, start, stop)
     active = np.array(
         [
@@ -749,6 +740,20 @@ def _validated_interval(interval: Any, operation: str) -> tuple[float, float]:
             )
         )
     return float(values[0]), float(values[1])
+
+
+def _require_same_cells(n_trains: int, n_maps: int, operation: str) -> None:
+    """Refuse spike trains and rate maps of different numbers of cells."""
+    if n_trains != n_maps:
+        raise ValueError(
+            _format_error(
+                f"{operation}: spike_times has {n_trains} cells but "
+                f"encoding_models has {n_maps} rate maps.",
+                why="each cell's firing is compared with its own place field",
+                fix="pass spike times and rate maps for the same cells, in the "
+                "same order",
+            )
+        )
 
 
 def _spikes_in(

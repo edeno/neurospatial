@@ -1802,6 +1802,7 @@ def _rank_order_values(
     from neurospatial.replay.rank_order import (
         _event_pairs,
         _field_positions,
+        _require_same_cells,
         _result,
         _spikes_by_window,
         _supported_rates,
@@ -1865,11 +1866,7 @@ def _rank_order_values(
             template_env, masked, method.field_order, operation
         )
         templates.append((name, template_env, masked, positions))
-        if len(positions) != len(trains):
-            raise ValueError(
-                f"{operation}: spike_times has {len(trains)} cells but the rate "
-                f"maps have {len(positions)}."
-            )
+        _require_same_cells(len(trains), len(positions), operation)
     permutations = None
     if shared:
         generator = _stream(entropy, _SHARED_KEY)

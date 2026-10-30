@@ -2802,6 +2802,7 @@ def _pooled_ssi_verdicts(
     from neurospatial.replay.rank_order import (
         _field_positions,
         _pooled_spikes,
+        _require_same_cells,
         _spikes_by_window,
         _supported_rates,
     )
@@ -2838,11 +2839,7 @@ def _pooled_ssi_verdicts(
         positions.append(position)
     fields = np.vstack(positions)  # (n_templates, n_cells)
     trains = as_spike_trains(spike_times)
-    if len(trains) != fields.shape[1]:
-        raise ValueError(
-            f"{operation}: spike_times has {len(trains)} cells but "
-            f"encoding_models has {fields.shape[1]} rate maps."
-        )
+    _require_same_cells(len(trains), fields.shape[1], operation)
     template_cell = np.isfinite(fields).any(axis=0)
 
     def ssi(field: NDArray[np.float64], times: NDArray[np.float64]) -> Any:

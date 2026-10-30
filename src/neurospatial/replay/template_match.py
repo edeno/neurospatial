@@ -22,6 +22,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.replay.rank_order import _require_same_cells, _validated_interval
 from neurospatial.replay.sequence_match import (
     _FIELD_ORDERS,
     _MATCH_ORDERS,
@@ -369,7 +370,6 @@ def detect_template_match_replay(
     (True, 1.0, 1)
     """
     from neurospatial._spikes import as_spike_trains
-    from neurospatial.replay.rank_order import _validated_interval
 
     operation = "detect_template_match_replay()"
     method = template_match_method
@@ -449,16 +449,7 @@ def _method_ranks(
         min_peak_rate=method.min_peak_rate,
         operation=operation,
     )
-    if ranks.size != n_cells:
-        raise ValueError(
-            _format_error(
-                f"{operation}: spike_times has {n_cells} cells but encoding_models "
-                f"has {ranks.size} rate maps.",
-                why="each cell's firing is compared with its own place field",
-                fix="pass spike times and rate maps for the same cells, in the "
-                "same order",
-            )
-        )
+    _require_same_cells(n_cells, ranks.size, operation)
     n_template = int(np.sum(ranks >= 0))
     if method.min_template_cells is not None and n_template < method.min_template_cells:
         label = "the template" if name is None else f"template {name!r}"

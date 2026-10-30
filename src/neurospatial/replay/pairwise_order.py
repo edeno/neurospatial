@@ -31,6 +31,7 @@ from neurospatial._results import (
 )
 from neurospatial.replay.rank_order import (
     _pooled_spikes,
+    _require_same_cells,
     _spikes_in,
     _supported_rates,
     _validated_interval,
@@ -762,10 +763,9 @@ def detect_pairwise_order_replay(
             event = _event_spikes(
                 spike_times, interval, len(fields), operation, unit_groups
             )
-        elif len(fields) != event.n_cells:
-            raise ValueError(
-                f"{operation}: template {name!r} has {len(fields)} rate maps "
-                f"but spike_times has {event.n_cells} cells."
+        else:
+            _require_same_cells(
+                event.n_cells, len(fields), f"{operation}: template {name!r}"
             )
         for direction in method.directions:
             tested = _significance(
@@ -942,16 +942,7 @@ def _event_spikes(
 
     start, stop = _validated_interval(interval, operation)
     trains = as_spike_trains(spike_times)
-    if len(trains) != n_cells:
-        raise ValueError(
-            _format_error(
-                f"{operation}: spike_times has {len(trains)} cells but "
-                f"encoding_models has {n_cells} rate maps.",
-                why="each cell's spikes are placed at its own fields",
-                fix="pass spike times and rate maps for the same cells, in the "
-                "same order",
-            )
-        )
+    _require_same_cells(len(trains), n_cells, operation)
     groups = None
     if unit_groups is not None:
         groups = np.asarray(unit_groups)
