@@ -268,6 +268,38 @@ class SimulationSession:
         return _rebuild_session, (state,)
 
 
+def _simulated_session(
+    env: Environment,
+    positions: NDArray[np.float64],
+    times: NDArray[np.float64],
+    models: list[NeuralModel],
+    *,
+    spike_seed: int,
+    show_progress: bool,
+    metadata: Mapping[str, Any],
+) -> SimulationSession:
+    """Draw each model's spikes along the trajectory and hold them in a session.
+
+    Units are labelled ``0 .. len(models) - 1`` in model order, and each
+    unit's ground truth is its model's.
+    """
+    from neurospatial.simulation.spikes import generate_population_spikes
+
+    spike_times = generate_population_spikes(
+        models, times, positions, seed=spike_seed, show_progress=show_progress
+    )
+    return SimulationSession(
+        env=env,
+        positions=positions,
+        times=times,
+        spike_times=spike_times,
+        unit_ids=np.arange(len(models), dtype=np.int64),
+        models=models,
+        ground_truth={i: model.ground_truth for i, model in enumerate(models)},
+        metadata=metadata,
+    )
+
+
 #: Model parameters ``simulate_session`` passes to each cell type, by the
 #: models' own names.
 _MODEL_PARAMETERS: dict[str, frozenset[str]] = {
@@ -754,7 +786,6 @@ def simulate_session(
     """
     # Import functions here to avoid circular imports
     from neurospatial.simulation.models import GridCellModel, PlaceCellModel
-    from neurospatial.simulation.spikes import generate_population_spikes
     from neurospatial.simulation.trajectory import (
         _DEFAULT_LAP_PAUSE_DURATION,
         _DEFAULT_LAP_SAMPLING_FREQUENCY,
@@ -883,19 +914,6 @@ def simulate_session(
         for center in field_centers[n_place:]
     )
 
-    # Generate spikes for all cells using the independent spike seed.
-    spike_times = generate_population_spikes(
-        models,
-        times,
-        positions,
-        seed=spike_seed,
-        show_progress=show_progress,
-    )
-
-    # Collect ground truth from each model
-    ground_truth = {i: model.ground_truth for i, model in enumerate(models)}
-
-    # Create metadata dict
     metadata = {
         "duration": duration,
         "n_cells": n_cells,
@@ -915,14 +933,13 @@ def simulate_session(
             sampling_convention="k / sampling_frequency in [0, duration)",
         )
 
-    # Return SimulationSession
-    return SimulationSession(
-        env=env,
-        positions=positions,
-        times=times,
-        spike_times=spike_times,
-        unit_ids=np.arange(len(spike_times), dtype=np.int64),
-        models=models,
-        ground_truth=ground_truth,
+    # Spikes for all cells from the independent spike seed.
+    return _simulated_session(
+        env,
+        positions,
+        times,
+        models,
+        spike_seed=spike_seed,
+        show_progress=show_progress,
         metadata=metadata,
     )

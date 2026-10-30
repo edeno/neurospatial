@@ -708,11 +708,10 @@ def border_cell_session(
     from neurospatial.simulation._seeds import _stream_seeds
     from neurospatial.simulation.models import PlaceCellModel
     from neurospatial.simulation.session import (
-        SimulationSession,
         _border_cells,
         _field_centers,
+        _simulated_session,
     )
-    from neurospatial.simulation.spikes import generate_population_spikes
     from neurospatial.simulation.trajectory import simulate_trajectory_ou
 
     # Validate parameters
@@ -759,10 +758,6 @@ def border_cell_session(
         for center in _field_centers(env, n_place_cells, "uniform", rng)
     )
 
-    spike_times = generate_population_spikes(
-        models, times, positions, seed=spike_seed, show_progress=False
-    )
-
     metadata = {
         "duration": duration,
         "arena_shape": arena_shape,
@@ -776,15 +771,13 @@ def border_cell_session(
         "coverage": "uniform",
         "seed": seed,
     }
-
-    return SimulationSession(
-        env=env,
-        positions=positions,
-        times=times,
-        spike_times=spike_times,
-        unit_ids=np.arange(len(models), dtype=np.int64),
-        models=models,
-        ground_truth={i: model.ground_truth for i, model in enumerate(models)},
+    return _simulated_session(
+        env,
+        positions,
+        times,
+        models,
+        spike_seed=spike_seed,
+        show_progress=False,
         metadata=metadata,
     )
 
@@ -911,8 +904,7 @@ def grid_cell_session(
     from neurospatial.environment import Environment
     from neurospatial.simulation._seeds import _stream_seeds
     from neurospatial.simulation.models import GridCellModel
-    from neurospatial.simulation.session import SimulationSession
-    from neurospatial.simulation.spikes import generate_population_spikes
+    from neurospatial.simulation.session import _simulated_session
     from neurospatial.simulation.trajectory import simulate_trajectory_ou
 
     # Validate parameters
@@ -973,11 +965,6 @@ def grid_cell_session(
         for i in range(n_grid_cells)
     ]
 
-    spike_times = generate_population_spikes(
-        models, times, positions, seed=spike_seed, show_progress=False
-    )
-
-    # Create metadata
     metadata = {
         "duration": duration,
         "arena_shape": "square",
@@ -990,14 +977,12 @@ def grid_cell_session(
         "coverage": "uniform",
         "seed": seed,
     }
-
-    return SimulationSession(
-        env=env,
-        positions=positions,
-        times=times,
-        spike_times=spike_times,
-        unit_ids=np.arange(len(models), dtype=np.int64),
-        models=models,
-        ground_truth={i: model.ground_truth for i, model in enumerate(models)},
+    return _simulated_session(
+        env,
+        positions,
+        times,
+        models,
+        spike_seed=spike_seed,
+        show_progress=False,
         metadata=metadata,
     )
