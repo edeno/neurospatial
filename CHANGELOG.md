@@ -31,6 +31,45 @@
   `exclude_zero_shift=True`, to draw shifts of 1 to n_bins - 1 bins, as
   nelpy does. The default still draws every shift, 0 included.
 
+### Template matching
+
+Three published tests of whether cells fire in the order of their place
+fields, scored from spikes without decoding, as recipes that
+`compare_replay_methods` compares with the decoded and rank-order methods.
+
+- `best_sequence_match()` scores an event as Lee & Wilson (2002) did: each
+  template cell's burst (spikes < 50 ms apart) is a letter, and the word's
+  best (x, y) match to the field order is tested against every ordering of
+  its letters (exact up to 10 letters, then 100,000 random orderings). It
+  reproduces the paper's example (325789A: a (6, 0) match, p = 13/5040).
+  `burst_onset_times()` and `spike_words()` cut spike trains into letters
+  and words whose intervals can be scored as candidate events.
+- `sequence_matching_index()` scores an event as Ji & Wilson (2007) did:
+  one firing time per active cell (the peak of its spikes smoothed with a
+  180 ms Gaussian) and the matching index of their order, with an exact
+  p-value for every number of cells. It reproduces Supplementary Table 1,
+  except that the paper's sampled 14-cell cutoff (30 opposite pairs) is
+  p = 0.0505 exactly, so those frames are not replay here.
+- `TemplateMatchMethod`, `detect_template_match_replay()` and the recipes
+  `LEE_WILSON_2002` (p <= 1/24, inclusive) and `JI_WILSON_2007` (p < 0.05,
+  the template with the larger index) in `PUBLISHED_METHODS`.
+  `matched_alpha` and `apply_alpha` take them; their p-values are exact and
+  discrete, so matched alphas move in steps.
+- `template_match_dataset_test()` runs the papers' data-set tests: Lee &
+  Wilson's binomial Z of pairs, triplets and low-probability words (their
+  35 of 270 gives Z = 7.2) with 1000 template shuffles, and Ji & Wilson's
+  chance and template-shuffle significance of the number of replaying
+  frames, reassigning frames to templates on every shuffle.
+- `recurring_spike_sequences()`, `recurring_sequences_significance()`,
+  `surrogate_spike_trains()` and `RecurringSequenceMethod` with
+  `NADASDY_1999`: the session-level search for recurring spike sequences of
+  Nádasdy et al. (1999) against interval-shuffle, 0-50 ms jitter,
+  across-train and theta-phase surrogates. The paper leaves the match
+  tolerance, extra spikes and the smallest sequence unstated; the readings
+  are in the recipe's notes. It has no per-event verdict and is not in
+  `PUBLISHED_METHODS`; the paper's joint-probability-map comparison of
+  sleep and running is not implemented.
+
 ### Walls thinner than a bin keep the bins beside them apart
 
 A slit, hole or concave corner of the arena's outline that lay inside one

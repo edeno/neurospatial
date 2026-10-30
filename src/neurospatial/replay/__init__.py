@@ -53,6 +53,25 @@ rank_order_correlation : Field order vs firing order (Foster & Wilson 2006)
 
 rank_order_significance : Rank-order correlation against cell-order shuffles
 
+Template Matching
+-----------------
+best_sequence_match : Best (x, y) match of an event's letters (Lee & Wilson 2002)
+    Bursts of each template cell are letters; the p-value is the share of
+    the orderings of the letters that match the field order as well.
+
+sequence_matching_index : Matching index of firing order (Ji & Wilson 2007)
+    Pairs of active cells in field order minus pairs in opposite order,
+    with its exact p-value.
+
+burst_onset_times, spike_words : Letters and words of Lee & Wilson (2002)
+detect_template_match_replay, TemplateMatchMethod : Published template tests
+template_match_dataset_test : The papers' data-set tests (binomial counts
+    of matches, chance and template-shuffle significance)
+recurring_spike_sequences, recurring_sequences_significance : Sequences that
+    recur within a session, against surrogate spike trains (Nádasdy et al.
+    1999); RecurringSequenceMethod records the test
+surrogate_spike_trains : Interval-shuffle, jitter, across-train and
+    theta-phase surrogates
 pairwise_order_score : Firing order of spike pairs (Gupta et al. 2010)
     Over every pair of spikes less than 80 ms apart, +1 in field order and
     -1 against it, summed; multi-field cells take their best field.
@@ -81,6 +100,7 @@ matched_alpha, apply_alpha : Each method's alpha that holds its
     false-positive rate on null data to a target, and verdicts at it
 neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
     DIBA_BUZSAKI_2007, DAVIDSON_2009, KARLSSON_FRANK_2009, GUPTA_2010,
+    LEE_WILSON_2002, JI_WILSON_2007,
     PFEIFFER_FOSTER_2013, WIKENHEISER_REDISH_2013, WU_FOSTER_2014,
     OLAFSDOTTIR_2015, PFEIFFER_FOSTER_2015, SILVA_2015, AMBROSE_2016,
     GROSMARK_2016, JADHAV_2016, OLAFSDOTTIR_2016, WU_2017, OLAFSDOTTIR_2017,
@@ -88,7 +108,7 @@ neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
     FAROOQ_2019, MICHON_2019, MUESSIG_2019, SHIN_2019, IGATA_2021,
     BERNERS_LEE_2021, BUSH_2022, TIROLE_2022, BERNERS_LEE_2022,
     WIDLOSKI_FOSTER_2022, HARVEY_2023, LIU_2023, MALLORY_2025,
-    WIDLOSKI_FOSTER_2025)
+    WIDLOSKI_FOSTER_2025) and the session-level NADASDY_1999
 
 Significance
 ------------
@@ -192,10 +212,33 @@ from neurospatial.replay.rank_order import (
     rank_order_correlation,
     rank_order_significance,
 )
+from neurospatial.replay.recurring_sequences import (
+    RecurringSequenceMethod,
+    RecurringSequencesResult,
+    RecurringSequencesSignificanceResult,
+    recurring_sequences_significance,
+    recurring_spike_sequences,
+    surrogate_spike_trains,
+)
 from neurospatial.replay.segments import ReplaySegmentsResult, replay_segments
+from neurospatial.replay.sequence_match import (
+    MatchingIndexResult,
+    SequenceMatchResult,
+    SpikeWordsResult,
+    best_sequence_match,
+    burst_onset_times,
+    sequence_matching_index,
+    spike_words,
+)
 from neurospatial.replay.significance import (
     ReplaySignificanceResult,
     replay_significance,
+)
+from neurospatial.replay.template_match import (
+    TemplateMatchDatasetResult,
+    TemplateMatchMethod,
+    detect_template_match_replay,
+    template_match_dataset_test,
 )
 from neurospatial.replay.trajectory import (
     IsotonicFitResult,
@@ -219,6 +262,10 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "detect_arm_replay",
     "detect_pairwise_order_replay",
     "detect_rank_order_replay",
+    "RecurringSequenceMethod",
+    "TemplateMatchMethod",
+    "detect_template_match_replay",
+    "template_match_dataset_test",
     # Calibration and comparison
     "NullSpikeData",
     "apply_alpha",
@@ -234,13 +281,19 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "CircularSequenceResult",
     "IsotonicFitResult",
     "LinearFitResult",
+    "MatchingIndexResult",
     "PairwiseOrderResult",
     "PairwiseOrderSignificanceResult",
     "RadonDetectionResult",
     "RankOrderResult",
     "RankOrderSignificanceResult",
+    "RecurringSequencesResult",
+    "RecurringSequencesSignificanceResult",
     "ReplaySegmentsResult",
     "ReplaySignificanceResult",
+    "SequenceMatchResult",
+    "SpikeWordsResult",
+    "TemplateMatchDatasetResult",
     "TrajectoryMetrics",
     "WeightedCorrelationResult",
     # Trajectory scores
@@ -258,6 +311,14 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Rank order
     "rank_order_correlation",
     "rank_order_significance",
+    # Template matching
+    "best_sequence_match",
+    "burst_onset_times",
+    "sequence_matching_index",
+    "spike_words",
+    "recurring_sequences_significance",
+    "recurring_spike_sequences",
+    "surrogate_spike_trains",
     # Pairwise order
     "pairwise_order_score",
     "pairwise_order_significance",
