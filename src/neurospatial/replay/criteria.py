@@ -690,8 +690,8 @@ def template_fractions(
     exclude_end_distance : float, default=0.0
         Leave out bins whose center lies closer than this to either end of
         their template's track, in environment units, before summing. The
-        Mallory et al. (2025) code leaves out 10 cm at each end. Needs every
-        template on a track environment when positive.
+        Mallory et al. (2025) code leaves out 10 bins (20 cm) at each end.
+        Needs every template on a track environment when positive.
 
     Returns
     -------

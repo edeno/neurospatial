@@ -69,9 +69,12 @@ class ReplaySegmentsResult(ReadOnlyArraysMixin, ResultMixin):
     trajectory_time_bins : NDArray[np.bool_], shape (n_time_bins,)
         True for each time bin on a kept segment's trajectory. Rows that a
         segment spans but skips (a gap, or the rows between merged pieces)
-        are False, except a lone accepted time bin between merged pieces
-        that lies within ``max_jump`` of the next time bin, which the
-        Widloski & Foster (2022) code counts in the segment's dispersion.
+        are False, except, with ``jump_rule="drop_earlier"``, a lone
+        accepted time bin between merged pieces that lies within
+        ``max_jump`` of the next time bin, which the Widloski & Foster
+        (2022) code counts in the segment's dispersion. With
+        ``"between"``, as in the Mallory et al. (2025) code, a lone bin is
+        never on the trajectory.
     longest : int or None
         Index of the segment spanning the most time bins, the earliest on a
         tie; None without segments.
@@ -621,13 +624,14 @@ def replay_segments(
         bounds = np.column_stack(
             [bounds[np.r_[True, ~join], 0], bounds[np.r_[~join, True], 1]]
         )
-        # A lone bin inside a merged segment that leads on to the next bin
-        # is on the trajectory. It never ends a segment, so lone + 1 is
-        # inside it too.
-        span = np.searchsorted(bounds[:, 0], lone, side="right") - 1
-        inside = (span >= 0) & (lone < bounds[np.maximum(span, 0), 1])
-        lone = lone[inside]
-        on_trajectory[lone[_below(distance(lone, lone + 1), max_jump)]] = True
+        if jump_rule == "drop_earlier":
+            # A lone accepted bin inside a merged segment leads on to the
+            # next bin, so the Widloski & Foster (2022) code keeps it on the
+            # trajectory. It never ends a segment: lone + 1 is inside too.
+            span = np.searchsorted(bounds[:, 0], lone, side="right") - 1
+            inside = (span >= 0) & (lone < bounds[np.maximum(span, 0), 1])
+            lone = lone[inside]
+            on_trajectory[lone[_below(distance(lone, lone + 1), max_jump)]] = True
 
     starts, stops = bounds[:, 0], bounds[:, 1]
     durations = times[stops - 1] - times[starts]

@@ -50,7 +50,11 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
 - The tested direction is the one holding the most posterior, with 20 cm
   left out at each track end.
 - Its longest smooth segment is kept, then rejected if the other direction
-  holds more posterior over it.
+  holds more posterior over it. The score and metrics use only the
+  segment's trajectory time bins, as the code does.
+- A Python port of the code agrees with the recipe on 288 of 300 simulated
+  events. The 12 differences come from the code's handling of low-peak
+  bins at run edges, documented in `replay_segments`.
 - The event must then meet these criteria:
   - more than 66.5% of the posterior in the tested direction;
   - |weighted correlation| > 0.6;
@@ -67,6 +71,16 @@ Supporting changes:
   it, leaving out `exclude_end_distance` at each track end.
 - `ReplayDetectionResult.template` records the tested template, and the
   comparison table has a `template` column.
+- In `compare_replay_methods`, methods with a `template_choice` choose each
+  event's template; `template=` applies to the other methods.
+- `detect_replay` refuses an `env` that is not the environment the joint
+  decode used.
+- New `ReplaySegmentation(rows="trajectory")` scores and measures only the
+  tested segment's trajectory time bins.
+- `replay_segments` counts a lone time bin between merged pieces as
+  trajectory only with `jump_rule="drop_earlier"` (the Widloski & Foster
+  code); with `"between"`, as in the Mallory code, it is off the
+  trajectory.
 - New criterion quantities `template_fraction` and
   `segment_template_fraction` compare the templates over the event and over
   the tested segment's trajectory time bins.
