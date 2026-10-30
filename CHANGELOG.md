@@ -41,6 +41,25 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
   counts. The Bendor-lab code zeroes the original event's empty time bins in
   shuffles that move them, which is not reproduced.
 
+### Weighted-correlation recipes: Ambrose 2016, Grosmark 2016, Berners-Lee 2022
+
+Three more recipes score the posterior's weighted correlation:
+
+- `AMBROSE_2016`: |weighted correlation| > 0.6, confirmed against 1,500
+  column-cycle shuffles at p < 0.05. The paper does not name its posterior
+  shuffle, and the notes say so.
+- `GROSMARK_2016`: |r| against 1,000 circular place-field shuffles, decoded
+  again, with at least 5 active cells. The paper gives no per-event α;
+  0.05 is read from Fig. S5C.
+- `BERNERS_LEE_2022`: |weighted correlation| > 0.6 and a maximum MAP jump
+  below 0.4 of the track. Both are computed on the posterior summed over
+  the two running directions of a joint decode. The paper's significance
+  test is on event counts, not per event, and is not applied.
+
+New `ReplayMethod(template_choice="sum")` tests the posterior summed over a
+joint decode's templates. The templates must share one environment, and
+nulls that decode again cannot be used.
+
 ### Chenani et al. (2019): rank-order replay against the epoch's shuffles
 
 `CHENANI_2019` follows the authors' MIT code (`testsession.m`,
