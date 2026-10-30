@@ -783,9 +783,11 @@ def marchenko_pastur_threshold(
 
     The bound is the asymptotic edge as both sizes grow at a fixed ratio.
     For a finite recording of independent neurons the largest eigenvalue
-    fluctuates around it on a scale of order :math:`n^{-2/3}` (Tracy-Widom;
-    Peyrache et al., 2010), so an eigenvalue just above the threshold can
-    arise by chance. When it matters, use a surrogate threshold
+    fluctuates around it with a Tracy-Widom distribution, so an eigenvalue
+    just above the threshold can arise by chance. The width of that
+    fluctuation shrinks as the number of time bins grows (Johnstone, 2001):
+    for 30 neurons and 48,000 bins its standard deviation is about 0.003.
+    When it matters, use a surrogate threshold
     (``detect_assemblies(component_threshold="circular_shift", ...)``).
 
     Examples
@@ -812,6 +814,8 @@ def marchenko_pastur_threshold(
         Principal component analysis of ensemble recordings reveals cell
         assemblies at high temporal resolution. J Comput Neurosci
         29(1-2):309-325.
+    Johnstone IM (2001). On the distribution of the largest eigenvalue in
+        principal components analysis. Ann Stat 29(2):295-327.
     """
     if n_neurons <= 0:
         raise ValueError(f"n_neurons must be positive, got {n_neurons}")
@@ -892,11 +896,17 @@ def detect_assemblies(
         - 'marchenko_pastur': the analytical upper edge
           :math:`(1 + \\sqrt{n / B})^2` for ``n`` varying neurons and ``B``
           time bins (Lopes-dos-Santos et al., 2013; Peyrache et al., 2010).
-        - 'tracy_widom': that edge plus :math:`n^{-2/3}`, the scale of the
-          finite-sample fluctuation of the largest eigenvalue, which "lies
-          around λmax with a standard deviation of order N^−2/3" (Peyrache
-          et al., 2010). The Lopes-dos-Santos Python code adds the same term
-          with ``tracywidom=True``.
+        - 'tracy_widom': that edge plus :math:`n^{-2/3}`, the margin of
+          Peyrache et al. (2010), who wrote that the largest eigenvalue
+          "lies around λmax with a standard deviation of order N^−2/3".
+          The Lopes-dos-Santos Python code adds the same term with
+          ``tracywidom=True``. It is a heuristic margin, not a calibrated
+          quantile: the null standard deviation also shrinks with the
+          number of time bins (Johnstone, 2001), so for typical recordings
+          the margin sits many standard deviations above the edge (for 30
+          neurons and 48,000 bins, 0.10 against about 0.003), and a real
+          component just above the edge can fall below it. Use a surrogate
+          threshold for a calibrated cutoff.
         - 'bin_shuffle': the ``percentile``-th percentile of the largest
           eigenvalue of ``n_shuffles`` surrogate matrices in which the time
           bins of each neuron are shuffled independently, which keeps each
@@ -1107,6 +1117,8 @@ def detect_assemblies(
         Principal component analysis of ensemble recordings reveals cell
         assemblies at high temporal resolution. J Comput Neurosci
         29(1-2):309-325.
+    Johnstone IM (2001). On the distribution of the largest eigenvalue in
+        principal components analysis. Ann Stat 29(2):295-327.
     """
     spike_counts = _validated_counts(spike_counts, call="detect_assemblies()")
     n_time_bins, n_neurons = spike_counts.shape
