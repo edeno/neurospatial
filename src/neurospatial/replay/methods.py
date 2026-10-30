@@ -150,8 +150,8 @@ class ReplayCriterion:
         ``"score"`` (the method's score), ``"n_active_cells"`` (cells with a
         spike anywhere in the event, also for a method with a
         segmentation), ``"active_fraction"`` (``n_active_cells`` over the
-        columns of ``spike_counts``), a scalar of
-        :class:`~neurospatial.replay.TrajectoryMetrics`, such as
+        columns of ``spike_counts``), a scalar attribute (not a method)
+        of :class:`~neurospatial.replay.TrajectoryMetrics`, such as
         ``"max_map_jump"``, or, for a method with a
         :class:`ReplaySegmentation`, a value of the tested segment:
         ``"segment_duration"``, ``"segment_time_bin_count"``,
@@ -264,8 +264,11 @@ class ReplaySegmentation:
         ``"track_length"`` multiplies a distance option (``max_jump``,
         ``max_spread``, ``merge_max_distance``, ``min_dispersion``) by the
         track's length; ``"chance"`` multiplies ``min_peak_probability`` by
-        ``1 / env.n_bins``, the mass per bin of a uniform posterior on equal
-        bins (Igata et al. 2021: a MAP above 5 times chance).
+        ``1 / n``, the mass per bin of a uniform posterior on ``n`` equal
+        bins decoded together (Igata et al. 2021: a MAP above 5 times
+        chance). ``n`` is ``env.n_bins`` for a decode on one set of rate
+        maps, and every template's bins together for one template's share
+        of a joint decode.
     choose : {"longest", "any"}
         Which segment is tested. ``"longest"`` tests the longest segment,
         as papers that truncate the event to its longest sequence and then
@@ -941,8 +944,16 @@ class ReplayDetectionResult(ResultMixin):
     method : str
         The method's name.
     is_replay : bool
-        True when the event meets every criterion and, for a method with
-        shuffles, its largest p-value is below ``alpha``.
+        For a :class:`ReplayMethod` and a rank-order method with a p-value
+        test: True when the event meets every criterion and, for a method
+        with shuffles, its largest p-value is below ``alpha``. For the
+        pooled-SSI test (``test="pooled_ssi"``): True when the score
+        exceeds the ``1 - alpha`` quantile of the epoch's pooled shuffles;
+        ``p_value`` is reported but not used. For an arm method: True when
+        an arm, arms or a pair is reported in ``template``; ``criteria``
+        holds every arm's and pair's checks, which need not all pass, and
+        with ``arm_fallback`` a replay can have ``criteria["sequence"]``
+        False.
     score : float
         The method's score (NaN for a criteria-only method).
     p_value : float
@@ -2222,10 +2233,10 @@ def compare_replay_methods(
         without shuffles), one ``passes[...]`` column per criterion,
         ``n_segments``, ``segment_start_time`` and ``segment_end_time`` for
         methods with a segmentation (NaN for the others), ``template`` for
-        joint decodes and for the arm or pair an arm method found, and
-        ``error``. ``error`` says why an event has no verdict, and
-        ``is_replay`` and every ``passes[...]`` of the method are then
-        False: fewer than two time bins left to score (``"fewer than two
+        joint decodes, for rank-order methods given a mapping of rate maps
+        and for the arm or pair an arm method found, and ``error``.
+        ``error`` says why an event has no verdict, and ``is_replay`` and
+        every ``passes[...]`` of the method are then False: fewer than two time bins left to score (``"fewer than two
         time bins with spikes to score"`` for a method that drops or zeroes
         time bins without spikes), an undefined score (for example the R²
         of a decoded position that does not change; score and p-value are
@@ -2239,11 +2250,17 @@ def compare_replay_methods(
         from; passing it as ``rng`` reproduces the table, also when ``rng``
         was None.
 
-    Notes
-    -----
-    The pseudo-event null draws from the posterior rows of every event, as
-    Davidson et al. (2009) and Michon et al. (2019) drew from the complete
-    set of candidate events.
+        ``is_replay`` follows each method's rule (see
+        :class:`ReplayDetectionResult`). For the pooled-SSI test it compares
+        the score with the epoch's shuffles, not ``p_value`` with
+        ``alpha``. For an arm method it means an arm or pair was reported,
+        and the ``passes[...]`` columns hold every arm's and pair's checks,
+        which need not all pass. An arm method with ``arm_fallback``
+        (``BERNERS_LEE_2021``) also calls an event replay on a sustained
+        run that met none of the sequence rules: its row has
+        ``passes[sequence]`` False and a ``score`` that can be below the
+        threshold or NaN. Count only sequence replays with
+        ``table["is_replay"] & table["passes[sequence]"].eq(True)``.
 
     Raises
     ------
@@ -2263,6 +2280,12 @@ def compare_replay_methods(
     See Also
     --------
     detect_replay : One method on one event.
+
+    Notes
+    -----
+    The pseudo-event null draws from the posterior rows of every event, as
+    Davidson et al. (2009) and Michon et al. (2019) drew from the complete
+    set of candidate events.
     """
     import zlib
 
@@ -2632,9 +2655,13 @@ DAVIDSON_2009 = ReplayMethod(
         "Band of 15 cm and speeds up to 30 m/s, as in detect_trajectory_radon.",
         "Significant when the p-value of every null is below 0.01.",
         "The paper decoded position x direction jointly in 20 ms windows and "
-        "summed over direction; decode the same way and pass the summed "
-        "posterior. template_choice='sum' is not used because the unit-"
-        "identity null decodes again.",
+        "summed over direction. The unit-identity null decodes the shuffled "
+        "counts again, which reproduces only a posterior decoded on one set "
+        "of rate maps, so the summed posterior is refused with it (and "
+        "template_choice='sum' is not used). Either decode on one set of "
+        "rate maps and pass that posterior, or drop the null with "
+        "dataclasses.replace(DAVIDSON_2009, nulls=('column_cycle', "
+        "'pseudo_event')) and pass the summed posterior.",
         "Candidate events of at least 100 ms; event selection is not applied here.",
         "Pseudo-events draw from the complete set of candidate events.",
     ),
@@ -3184,7 +3211,7 @@ MALLORY_2025 = ReplayMethod(
         "at their own times; whether the code's weighted_correlation.m, "
         "which is not deposited, uses times or row numbers is unknown.",
         "Criteria from load_replay_criterion.m and the bioRxiv methods: more "
-        "than 66% of the posterior in one map, weighted correlation above "
+        "than 66.5% of the posterior in one map, weighted correlation above "
         "0.6 in absolute value, maximum MAP jump below 40% of the track, MAP "
         "range above 20% of the track, and at least 10 cells active in the "
         "event.",
@@ -3427,9 +3454,10 @@ BERNERS_LEE_2021 = ArmReplayMethod(
         "code, nor here; Wu & Foster's same-sign rule is off "
         "(joint_same_sign=False).",
         "Otherwise the strongest single-arm replay; otherwise, as the paper "
-        "defines arm-replays, the run with the largest correlation on any "
-        "arm that stayed above the threshold for 50 ms, if it is the only "
-        "one, even when it fails the correlation and coverage rules "
+        "defines arm-replays, the run with the largest absolute correlation "
+        "on any arm that stayed above the threshold for 50 ms, unless "
+        "another run ties it, even when it fails the correlation and "
+        "coverage rules "
         "(criteria['sequence'] is False for these). In simulations these "
         "were 40-70% of the single-arm outcomes.",
         "Events were padded by 20 ms on each side and centered on whole "

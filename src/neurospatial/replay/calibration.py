@@ -296,7 +296,10 @@ def detection_rates(
     properties : pandas.DataFrame or None
         Event properties indexed by event, such as from
         :func:`event_properties`, for ``by`` keys that are not table
-        columns. Joined on ``event``, so use it with one call's table.
+        columns. Joined on ``event``, or on the ``groups`` and ``event``
+        when it has the ``groups`` as columns or index levels. It must have
+        them for several concatenated tables, which each number their
+        events from 0.
     by : Mapping[str, Sequence[float]] or None
         Break rates down by numeric properties: each key a column of
         ``table`` or ``properties``, each value at least two bin edges,
@@ -304,7 +307,7 @@ def detection_rates(
         closed on the left. Every event must fall in a bin.
     groups : sequence of str, default=()
         Columns of ``table`` to break rates down by their values, such as
-        ``("null_kind",)``.
+        ``("null_kind",)``. A missing value forms its own group.
     errors : {"not_replay", "exclude"}, default="not_replay"
         Events a method could not score (rows with an ``error``):
         ``"not_replay"`` counts them as not replay, so every method's rate
@@ -332,7 +335,10 @@ def detection_rates(
         method) pair within its ``groups``; if a ``by`` key is in neither
         ``table`` nor ``properties``, has fewer than two edges, or leaves
         events outside its bins (NaN, out of range, or absent from
-        ``properties``); or if ``errors`` or ``confidence`` is invalid.
+        ``properties``); if ``properties`` lacks the ``groups`` of a
+        table that numbers its events again in each group, or repeats a
+        (``groups``, ``event``) key; or if ``errors`` or ``confidence`` is
+        invalid.
 
     See Also
     --------
@@ -378,7 +384,7 @@ def detection_rates(
         if name in data:
             values = data[name]
         elif properties is not None and name in properties:
-            values = data["event"].map(properties[name])
+            values = _property_values(data, properties, name, groups, operation)
         else:
             raise ValueError(
                 _format_error(
@@ -404,12 +410,20 @@ def detection_rates(
             )
         data[name] = binned
         keys.append(name)
-    levels = [list(dict.fromkeys(data[key])) for key in ["method", *groups]] + [
-        list(data[name].cat.categories) for name in (by or {})
-    ]
-    frames = dict(iter(data.groupby(keys, observed=True, sort=False)))
+    # Group on integer codes, so a missing groups value (NaN or None) forms
+    # its own group, as in matched_alpha, and is found again below.
+    levels = {}
+    for key in ["method", *groups]:
+        codes, uniques = pd.factorize(data[key], use_na_sentinel=False)
+        data[f"_code[{key}]"] = codes
+        levels[key] = list(uniques)
+    for name in by or {}:
+        data[f"_code[{name}]"] = data[name].cat.codes
+        levels[name] = list(data[name].cat.categories)
+    coded = [f"_code[{key}]" for key in keys]
+    frames = dict(iter(data.groupby(coded, sort=False)))
     rows = []
-    for group in itertools.product(*levels):
+    for group in itertools.product(*(range(len(levels[key])) for key in keys)):
         frame = frames.get(group, data.iloc[:0])
         failed = frame["_error"]
         calls = frame["is_replay"] & ~failed
@@ -422,7 +436,7 @@ def detection_rates(
             rate, low, high = n_replay / n_events, interval.low, interval.high
         else:
             rate = low = high = np.nan
-        row = dict(zip(keys, group, strict=True))
+        row = {key: levels[key][code] for key, code in zip(keys, group, strict=True)}
         row.update(
             n_events=n_events,
             n_replay=n_replay,
@@ -433,6 +447,60 @@ def detection_rates(
         )
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def _property_values(
+    data: pd.DataFrame,
+    properties: pd.DataFrame,
+    name: str,
+    groups: Sequence[str],
+    operation: str,
+) -> pd.Series:
+    """Each table row's event property.
+
+    Joined on ``[*groups, "event"]`` when ``properties`` has the ``groups``
+    (an index without the name ``event`` is the event), and otherwise on
+    the index, as the event, when each event number names one event of the
+    table.
+    """
+    import pandas as pd
+
+    available = {*properties.columns, *properties.index.names}
+    missing = [key for key in groups if key not in available]
+    if not groups or missing:
+        if groups and data.duplicated(subset=["event", "method"]).any():
+            raise ValueError(
+                _format_error(
+                    f"{operation}: properties lacks {missing} as columns or "
+                    "index levels, and the table numbers its events again in "
+                    f"each group of {list(groups)}.",
+                    why="events are numbered within each compare_replay_methods "
+                    "call, so the event number alone does not say which call's "
+                    "event a property belongs to",
+                    fix="add the groups columns to each call's properties before "
+                    "concatenating them, e.g. event_properties(env, events)"
+                    ".assign(session='s1')",
+                )
+            )
+        return data["event"].map(properties[name])
+    join = [*groups, "event"]
+    named = [level for level in properties.index.names if level is not None]
+    flat = properties.reset_index(level=named) if named else properties
+    if "event" not in flat:
+        flat = flat.rename_axis("event").reset_index()
+    flat = flat[[*join, name]]
+    repeated = flat.duplicated(subset=join)
+    if repeated.any():
+        raise ValueError(
+            _format_error(
+                f"{operation}: properties has {int(repeated.sum())} repeated "
+                f"{join} keys.",
+                why="each event needs one value of each property",
+                fix="pass one row per event and group",
+            )
+        )
+    joined = data[join].merge(flat, on=join, how="left")
+    return pd.Series(joined[name].to_numpy(), index=data.index, name=name)
 
 
 def method_agreement(
@@ -455,7 +523,8 @@ def method_agreement(
         or several concatenated with ``groups`` columns that tell their
         events apart.
     groups : sequence of str, default=()
-        Columns of ``table`` that, with ``event``, identify an event.
+        Columns of ``table`` that, with ``event``, identify an event. A
+        missing value forms its own group.
     errors : {"not_replay", "exclude"}, default="not_replay"
         Events a method could not score count as not replay, or leave the
         pair's events (see :func:`detection_rates`).
@@ -769,8 +838,9 @@ def apply_alpha(
     pandas.DataFrame
         A copy of ``table`` with ``is_replay`` at the new alphas and an
         ``alpha`` column: the new alpha, or the method's own (which a
-        method without nulls does not use; NaN for an arm method, which
-        has none).
+        method without nulls does not use). ``alpha`` is NaN for an arm
+        method, which has none, and for a table method not in
+        ``replay_methods``, whose alpha is unknown; its verdicts are kept.
 
     Raises
     ------
@@ -915,10 +985,15 @@ def _alpha_methods(
 
 
 def _smallest_p_value(method: ReplayMethod | RankOrderMethod) -> float:
-    """The smallest p-value a method's shuffles can give, (0 + 1) / (n + 1)."""
+    """The smallest p-value a method's shuffles can give.
+
+    ``1 / (n + 1)`` for a one-sided test and twice that for a two-sided
+    test, which doubles the smaller tail (``compute_shuffle_pvalue``).
+    """
     if getattr(method, "test", None) == "t_distribution":
         return 0.0
-    return 1.0 / (method.n_shuffles + 1)
+    smallest = 1.0 / (method.n_shuffles + 1)
+    return min(2.0 * smallest, 1.0) if method.alternative == "two-sided" else smallest
 
 
 def _verdicts(
@@ -1132,7 +1207,7 @@ def null_events(
         If ``kind`` is not one of the options, ``n_copies`` is not a
         positive integer, ``cells`` is not one boolean per cell, or
         ``intervals`` is not a list of finite ``(start, stop)`` with
-        ``start < stop``.
+        ``start < stop`` that do not overlap.
 
     See Also
     --------
@@ -1201,6 +1276,20 @@ def null_events(
         )
     _positive_count(n_copies, "n_copies", operation)
     windows = _checked_intervals(intervals, operation)
+    ordered = windows[np.argsort(windows[:, 0], kind="stable")]
+    overlaps = np.flatnonzero(ordered[1:, 0] < ordered[:-1, 1])
+    if overlaps.size:
+        first = ordered[overlaps[0] : overlaps[0] + 2].tolist()
+        raise ValueError(
+            _format_error(
+                f"{operation}: {overlaps.size} intervals overlap the one before "
+                f"them, such as {first[0]} and {first[1]}.",
+                why="spikes in the overlap would be copied into two null "
+                "events, which are then not independent",
+                fix="merge overlapping candidate events, or pass one interval "
+                "per event without overlap",
+            )
+        )
     trains = as_spike_trains(spike_times)
     chosen = np.ones(len(trains), dtype=bool) if cells is None else np.asarray(cells)
     if chosen.dtype != np.bool_ or chosen.shape != (len(trains),):
@@ -1269,8 +1358,9 @@ def simulated_null_events(
     :func:`~neurospatial.simulation.simulate_replay_event`: cells fire as
     Poisson processes at ``rate_gain`` times their rate at a position that
     jumps at random every 20 ms (``"random"``) or stays put, at a position
-    drawn uniformly along the track (``"stationary"``, which line fits
-    score well but correlation scores do not). Match ``rate_gain`` to the
+    drawn uniformly along the track (``"stationary"``, which the line
+    search of ``detect_trajectory_radon`` scores well but correlation scores
+    and the R² of ``fit_linear_trajectory`` do not). Match ``rate_gain`` to the
     real events' spike counts, or stratify rates by active cells: with
     running rates, many events fail cell criteria and their rates are not
     comparable.

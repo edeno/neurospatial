@@ -509,8 +509,9 @@ class TestShufflePosteriorWeightedCircular:
     def test_edge_buffer_restricts_shifts(self, posterior: np.ndarray) -> None:
         """With edge_buffer, shifts near boundaries should be restricted.
 
-        When the MAP position is near an edge, the shift should be limited
-        to avoid wrapping probability mass to the other end.
+        When the MAP position is near an edge, the shift is limited so the
+        MAP bin does not wrap to the other end. The rest of the row is still
+        rolled circularly, so mass in other bins can wrap.
         """
 
         # Create a posterior with clear edge positions

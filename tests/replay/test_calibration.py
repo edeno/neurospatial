@@ -167,6 +167,101 @@ class TestDetectionRates:
         assert rates.loc["a", "ci_high"] == pytest.approx(interval.high)
         assert rates.loc["b", "rate"] == 0.0
 
+    def test_confidence_level_and_interval_ends(self):
+        table = _table(
+            {
+                "some": [True] * 3 + [False] * 17,
+                "none": [False] * 20,
+                "all": [True] * 20,
+            }
+        )
+        rates = detection_rates(table, confidence=0.8).set_index("method")
+        interval = binomtest(3, 20).proportion_ci(0.8, method="exact")
+        assert rates.loc["some", "ci_low"] == pytest.approx(interval.low)
+        assert rates.loc["some", "ci_high"] == pytest.approx(interval.high)
+        wider = detection_rates(table).set_index("method")
+        assert wider.loc["some", "ci_low"] < interval.low
+        assert rates.loc["none", "ci_low"] == 0.0
+        assert rates.loc["none", "ci_high"] < 1.0
+        assert rates.loc["all", "ci_high"] == 1.0
+        assert rates.loc["all", "ci_low"] > 0.0
+
+    def test_a_missing_group_is_its_own_group(self):
+        """As in matched_alpha: events with a NaN group are counted."""
+        table = _table(
+            {"a": [True, False, True, True], "b": [False] * 4},
+            session=["s1", "s1", np.nan, np.nan],
+        )
+        rates = detection_rates(table, groups=["session"])
+        assert rates["n_events"].tolist() == [2, 2, 2, 2]
+        assert rates["n_replay"].tolist() == [1, 2, 0, 0]
+        assert rates["session"].isna().tolist() == [False, True, False, True]
+        agreement = method_agreement(table, groups=["session"]).iloc[0]
+        assert agreement["n_events"] == 4 and agreement["n_first_only"] == 3
+
+    def test_properties_join_on_groups_and_event(self):
+        """Two sessions number their events from 0; each keeps its own cells."""
+        table = pd.concat(
+            [
+                _table({"a": [True, False]}, session=["s1", "s1"]),
+                _table({"a": [False, True]}, session=["s2", "s2"]),
+            ]
+        )
+        properties = pd.concat(
+            [
+                pd.DataFrame(
+                    {"n_active_cells": [4, 12]}, index=pd.Index([0, 1], name="event")
+                ).assign(session="s1"),
+                pd.DataFrame(
+                    {"n_active_cells": [12, 4]}, index=pd.Index([0, 1], name="event")
+                ).assign(session="s2"),
+            ]
+        )
+        rates = detection_rates(
+            table,
+            properties=properties,
+            by={"n_active_cells": [0, 10, np.inf]},
+            groups=["session"],
+        )
+        few = rates[rates["n_active_cells"].astype(str) == "[0.0, 10.0)"]
+        # s1's event 0 (4 cells) is replay; s2's event 1 (4 cells) is replay.
+        assert few["n_replay"].tolist() == [1, 1]
+        assert few["n_events"].tolist() == [1, 1]
+        # The same properties as columns join alike.
+        flat = detection_rates(
+            table,
+            properties=properties.reset_index(),
+            by={"n_active_cells": [0, 10, np.inf]},
+            groups=["session"],
+        )
+        pd.testing.assert_frame_equal(flat, rates)
+
+    def test_properties_without_the_groups_are_refused(self):
+        table = pd.concat(
+            [
+                _table({"a": [True, False]}, session=["s1", "s1"]),
+                _table({"a": [False, True]}, session=["s2", "s2"]),
+            ]
+        )
+        properties = pd.DataFrame(
+            {"n_active_cells": [4, 12]}, index=pd.Index([0, 1], name="event")
+        )
+        with pytest.raises(ValueError, match=r"lacks \['session'\]"):
+            detection_rates(
+                table,
+                properties=properties,
+                by={"n_active_cells": [0, 10, np.inf]},
+                groups=["session"],
+            )
+        repeated = pd.concat([properties, properties]).assign(session="s1")
+        with pytest.raises(ValueError, match="repeated"):
+            detection_rates(
+                table,
+                properties=repeated,
+                by={"n_active_cells": [0, 10, np.inf]},
+                groups=["session"],
+            )
+
     def test_errors_count_as_not_replay_unless_excluded(self):
         table = _table(
             {"a": [True, False, True, True]},
@@ -272,6 +367,20 @@ class TestMethodAgreement:
         observed = np.mean(a == b)
         chance = a.mean() * b.mean() + (1 - a.mean()) * (1 - b.mean())
         assert kappa == pytest.approx((observed - chance) / (1 - chance))
+
+    def test_groups_tell_concatenated_tables_apart(self):
+        table = pd.concat(
+            [
+                _table({"a": [True, False], "b": [True, True]}, session=["s1"] * 2),
+                _table({"a": [True, False], "b": [False, False]}, session=["s2"] * 2),
+            ]
+        )
+        with pytest.raises(ValueError, match="repeats"):
+            method_agreement(table)
+        row = method_agreement(table, groups=["session"]).iloc[0]
+        assert row["n_events"] == 4
+        assert (row["n_both"], row["n_first_only"]) == (1, 1)
+        assert (row["n_second_only"], row["n_neither"]) == (1, 1)
 
     def test_same_constant_verdicts_have_no_kappa(self):
         assert np.isnan(
@@ -437,6 +546,13 @@ class TestNullEvents:
             null_events(trains, intervals, kind="poisson", n_copies=0)
         with pytest.raises(ValueError, match="start < stop"):
             null_events(trains, np.array([[1.0, 0.5]]), kind="poisson")
+        with pytest.raises(ValueError, match="1 intervals overlap"):
+            null_events(
+                trains, np.array([[3.0, 3.2], [1.0, 1.2], [3.1, 3.3]]), kind="poisson"
+            )
+        # Touching intervals are fine: each is closed on the left only.
+        null = null_events(trains, np.array([[1.0, 1.1], [1.1, 1.2]]), kind="poisson")
+        assert null.n_events == 2
 
     def test_simulated_events(self, track):
         x = track.bin_centers[:, 0]
@@ -448,6 +564,8 @@ class TestNullEvents:
         assert len(null.spike_times) == 8
         with pytest.raises(ValueError, match="kind must be"):
             simulated_null_events(track, rates, n_events=3, kind="sweep")
+        with pytest.raises(ValueError, match="n_events must be a positive"):
+            simulated_null_events(track, rates, n_events=0)
 
 
 class TestNullRandomization:
@@ -546,6 +664,22 @@ class TestDecodeIntervals:
         np.testing.assert_allclose(events[1].times, 3.0 + DT / 2 + DT * np.arange(10))
         assert counts[0].shape == (10, 6)
         assert counts[0].sum() == sum(c.size for c in _in_events(trains, intervals)[0])
+
+    def test_passes_the_prior_to_the_decoder(self, track, recording):
+        trains, intervals = recording
+        x = track.bin_centers[:, 0]
+        rates = 1.0 + 20.0 * np.exp(
+            -0.5 * ((x - np.linspace(5, 95, 6)[:, None]) / 10.0) ** 2
+        )
+        prior = np.where(x < 50.0, 1.0, 0.0)
+        prior = prior / prior.sum()
+        events, _ = decode_intervals(
+            track, trains, intervals[:1], rates, dt=DT, prior=prior
+        )
+        counts, grid = bin_spikes_in_time(trains, dt=DT, t_start=1.0, t_stop=1.2)
+        direct = decode_position(track, counts, rates, dt=DT, prior=prior, times=grid)
+        np.testing.assert_array_equal(events[0].posterior, direct.posterior)
+        assert np.all(events[0].posterior[:, x > 50.0] == 0.0)
 
     def test_drops_a_trailing_remainder_and_keeps_one_whole_bin(self, track, recording):
         trains, _ = recording
@@ -676,6 +810,15 @@ class TestMatchedAlpha:
             row = matched_alpha(table, replay_methods=[KF]).iloc[0]
         assert row["alpha"] == floor and row["rate"] == 0.0
 
+    def test_warns_at_the_two_sided_floor(self):
+        """A two-sided shuffle p-value is at least 2 / (n_shuffles + 1)."""
+        diba = DIBA_BUZSAKI_2007
+        floor = 2 / (diba.n_shuffles + 1)
+        table = _p_table([floor] * 3 + [0.5] * 17, method=diba)
+        with pytest.warns(UserWarning, match="more shuffles"):
+            row = matched_alpha(table, replay_methods=[diba]).iloc[0]
+        assert row["alpha"] == floor and row["rate"] == 0.0
+
     def test_warns_with_too_few_null_events(self):
         table = _p_table([0.3] + [0.6] * 9)
         with pytest.warns(UserWarning, match="more null events"):
@@ -765,6 +908,10 @@ class TestApplyAlpha:
         assert out["is_replay"].tolist() == [True, False, False, False, True, True]
         assert out["alpha"].tolist() == [0.01] * 3 + [SILVA_2015.alpha] * 3
         assert table["is_replay"].tolist()[:3] == [True, True, False]
+        # A table method not in replay_methods keeps its verdicts, alpha NaN.
+        unlisted = apply_alpha(table, alpha={KF.name: 0.01}, replay_methods=[KF])
+        assert unlisted["is_replay"].tolist()[3:] == [False, True, True]
+        assert unlisted["alpha"].isna().tolist() == [False] * 3 + [True] * 3
 
     def test_refusals(self):
         table = _p_table([0.01, 0.5])
