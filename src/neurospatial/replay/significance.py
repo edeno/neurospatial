@@ -956,7 +956,10 @@ def _scorer_for(
     batched: dict[
         Callable[..., Any], tuple[Callable[..., _Scorer], tuple[str, ...]]
     ] = {
-        detect_trajectory_radon: (_RadonScorer, ("band", "max_speed", "min_speed")),
+        detect_trajectory_radon: (
+            _RadonScorer,
+            ("band", "max_speed", "min_speed", "wrap", "line_ends"),
+        ),
         weighted_correlation: (_WeightedCorrelationScorer, ("row_normalization",)),
         fit_circular_sequence: (_CircularSequenceScorer, ()),
     }
@@ -1003,6 +1006,8 @@ class _RadonScorer(_Scorer):
         band: float | None = None,
         max_speed: float | None = None,
         min_speed: float = 0.0,
+        wrap: bool = False,
+        line_ends: str = "any",
     ) -> None:
         self.lines, self.posterior = _prepare_replay_lines(
             env,
@@ -1011,6 +1016,8 @@ class _RadonScorer(_Scorer):
             band=band,
             max_speed=max_speed,
             min_speed=min_speed,
+            wrap=wrap,
+            line_ends=line_ends,
             operation=_OPERATION,
         )
 
