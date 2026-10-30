@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Reactivation recipes
+
+**New**
+
+- `detect_assemblies(..., component_threshold=)` chooses the eigenvalue
+  threshold that sets the number of assemblies. `"marchenko_pastur"` (the
+  default, unchanged) is the analytical edge; `"tracy_widom"` adds
+  `n ** (-2/3)`, the finite-sample spread of the largest eigenvalue
+  (Peyrache et al., 2010); `"bin_shuffle"` and `"circular_shift"` take a
+  percentile of the largest eigenvalue of surrogate matrices whose neurons
+  are shuffled or rotated in time (Lopes-dos-Santos et al., 2013).
+  Surrogate thresholds need `percentile=`, because the paper gives no single
+  value (it used the 95th and the 99th), and take `n_shuffles=` (default
+  1000, the authors' code) and `rng=`. Circular shifts keep each neuron's
+  autocorrelation, so neurons whose rates drift slowly, which the
+  Marchenko-Pastur edge calls assemblies, are not. The result records
+  `component_threshold` and `surrogate_max_eigenvalues`.
+
 ### Reactivation measures
 
 The pattern and pair-correlation reactivation measures now compute what the
