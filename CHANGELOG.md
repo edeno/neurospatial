@@ -25,6 +25,9 @@
 - `replay_significance` scores `fit_circular_sequence` shuffles in batches,
   about 100 times faster than one call per shuffle (10,000 time-bin
   permutations of a 15-bin event in under 0.1 s).
+- New `ReplayCriterion` quantity `"n_spikes"`: the event's total spike count
+  over all cells, for the "at least 5 spikes" candidate rule of Wikenheiser
+  & Redish. It accepts spike counts summed over cells.
 
 ### Replay scoring robustness
 
