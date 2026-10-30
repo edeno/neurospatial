@@ -649,9 +649,10 @@ def detect_pairwise_order_replay(
     Raises
     ------
     ValueError
-        If ``template`` is given without a mapping of rate maps or is not
-        one of its keys, if a mapping of environments lacks a template, or
-        for inputs :func:`pairwise_order_score` refuses.
+        If ``encoding_models`` is an empty mapping, if ``template`` is given
+        without a mapping of rate maps or is not one of its keys, if a
+        mapping of environments lacks a template, or for inputs
+        :func:`pairwise_order_score` refuses.
 
     See Also
     --------
@@ -690,6 +691,16 @@ def detect_pairwise_order_replay(
     names: list[str | None]
     if isinstance(encoding_models, Mapping):
         names = list(encoding_models)
+        if not names:
+            raise ValueError(
+                _format_error(
+                    f"{operation}: encoding_models is an empty mapping.",
+                    why="each template's rate maps place the cells' fields",
+                    fix="pass at least one set of rate maps, such as "
+                    "encoding_models={'left': rates_left}, or one array of "
+                    "rate maps",
+                )
+            )
         if template is not None:
             if template not in encoding_models:
                 raise ValueError(

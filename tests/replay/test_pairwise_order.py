@@ -711,6 +711,16 @@ class TestDetection:
                 template="right",
             )
 
+    def test_an_empty_mapping_of_rate_maps_is_refused(self, track):
+        with pytest.raises(ValueError, match="empty mapping"):
+            detect_pairwise_order_replay(
+                track,
+                [np.array([1.0])] * 3,
+                (1.0, 1.1),
+                {},
+                pairwise_order_method=GUPTA_2010,
+            )
+
 
 class TestCompare:
     def test_recipe_runs_through_compare_replay_methods(self):
