@@ -5097,7 +5097,14 @@ HARVEY_2023_LINE = dataclasses.replace(
         "which the paper does not state.",
         "Time bins without spikes have no posterior in nelpy: set to zero "
         "here (empty_time_bins='zero') and left out of the line and of the "
-        "mean band mass, as in the code.",
+        "mean band mass, for the event and each shuffle, which the paper "
+        "scores alike. The code leaves them out of the event's score only: "
+        "its weighted correlation, run between the event's score and the "
+        "shuffles (trajectory_score_bst), sets the event's missing "
+        "posterior to 0 in place, so in each shuffle a time bin without "
+        "spikes enters the line fit at MAP bin 0 (it still adds no band "
+        "mass, and the mean is still over the time bins with spikes). Not "
+        "reproduced.",
         "At least 5 active pyramidal cells with a peak rate of at least 1 Hz "
         "and a peak-to-mean ratio of 1 (1.5 and at least 100 running spikes "
         "in the code): pass those cells' spike counts. Events with more than "
