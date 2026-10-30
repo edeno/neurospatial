@@ -991,7 +991,8 @@ def _firing_order(
 
     Tied letters go in decreasing template rank, so a tie never helps a match.
     """
-    return np.lexsort((-ranks[units], times))
+    order: NDArray[np.intp] = np.lexsort((-ranks[units], times))
+    return order
 
 
 def _all_permutations(n: int) -> NDArray[np.int8]:
