@@ -905,18 +905,16 @@ def _template_ranks(
     operation: str,
 ) -> NDArray[np.intp]:
     """Each cell's place in the field order; -1 for a cell not in the template."""
-    from neurospatial.replay.rank_order import _field_positions, _supported_rates
+    from neurospatial.replay.rank_order import _template_fields
 
     if field_order not in _FIELD_ORDERS:
         raise ValueError(
             f"{operation}: field_order must be one of {_FIELD_ORDERS}, got "
             f"{field_order!r}."
         )
-    positions = _field_positions(env, encoding_models, field_order, operation)
-    if min_peak_rate is not None:
-        rates = _supported_rates(encoding_models)
-        peak = np.where(np.isfinite(rates), rates, 0.0).max(axis=1)
-        positions = np.where(peak >= min_peak_rate, positions, np.nan)
+    _, positions = _template_fields(
+        env, encoding_models, field_order, min_peak_rate, operation
+    )
     template = np.flatnonzero(np.isfinite(positions))
     order = template[np.argsort(positions[template], kind="stable")]
     tied = np.flatnonzero(np.diff(positions[order]) == 0)

@@ -1801,11 +1801,10 @@ def _rank_order_values(
     from neurospatial._spikes import as_spike_trains
     from neurospatial.replay.rank_order import (
         _event_pairs,
-        _field_positions,
         _require_same_cells,
         _result,
         _spikes_by_window,
-        _supported_rates,
+        _template_fields,
         _template_items,
     )
 
@@ -1842,13 +1841,8 @@ def _rank_order_values(
     trains = as_spike_trains(spike_times)
     templates = []
     for name, template_env, rates in items:
-        _field_positions(template_env, rates, method.field_order, operation)
-        masked = _supported_rates(rates)
-        if method.min_peak_rate is not None:
-            peak = np.where(np.isfinite(masked), masked, 0.0).max(axis=1)
-            masked = np.where((peak >= method.min_peak_rate)[:, None], masked, np.nan)
-        positions = _field_positions(
-            template_env, masked, method.field_order, operation
+        masked, positions = _template_fields(
+            template_env, rates, method.field_order, method.min_peak_rate, operation
         )
         templates.append((name, template_env, masked, positions))
         _require_same_cells(len(trains), len(positions), operation)

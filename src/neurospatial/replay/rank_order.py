@@ -742,6 +742,29 @@ def _validated_interval(interval: Any, operation: str) -> tuple[float, float]:
     return float(values[0]), float(values[1])
 
 
+def _template_fields(
+    env: Environment,
+    encoding_models: Any,
+    field_order: str,
+    min_peak_rate: float | None,
+    operation: str,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """The template cells' rate maps and field positions, checked against env.
+
+    Returns the supported rate maps, shape (n_cells, n_bins), and each
+    cell's field position, shape (n_cells,). A cell whose highest rate is
+    below ``min_peak_rate`` is not a template cell: its rate map and field
+    position are NaN, as for a cell without a field.
+    """
+    positions = _field_positions(env, encoding_models, field_order, operation)
+    rates = _supported_rates(encoding_models)
+    if min_peak_rate is not None:
+        keep = np.where(np.isfinite(rates), rates, 0.0).max(axis=1) >= min_peak_rate
+        rates = np.where(keep[:, None], rates, np.nan)
+        positions = np.where(keep, positions, np.nan)
+    return rates, positions
+
+
 def _template_items(
     env: Environment | Mapping[str, Environment],
     encoding_models: Any,

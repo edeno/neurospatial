@@ -2682,10 +2682,9 @@ def _rank_order_verdict(
 
     from neurospatial.replay.rank_order import (
         _event_pairs,
-        _field_positions,
         _permuted_correlations,
         _result,
-        _supported_rates,
+        _template_fields,
     )
     from neurospatial.stats.shuffle import (
         compute_shuffle_pvalue,
@@ -2693,12 +2692,9 @@ def _rank_order_verdict(
     )
 
     operation = "detect_rank_order_replay()"
-    # Validates the rates against env, then keeps the template cells' maps.
-    _field_positions(env, encoding_models, method.field_order, operation)
-    rates = _supported_rates(encoding_models)
-    if method.min_peak_rate is not None:
-        peak = np.where(np.isfinite(rates), rates, 0.0).max(axis=1)
-        rates = np.where((peak >= method.min_peak_rate)[:, None], rates, np.nan)
+    rates, positions = _template_fields(
+        env, encoding_models, method.field_order, method.min_peak_rate, operation
+    )
     pairs = _event_pairs(
         env,
         spike_times,
@@ -2738,9 +2734,7 @@ def _rank_order_verdict(
             z_scores["cell_order"] = float(
                 compute_shuffle_zscore(score, null[np.isfinite(null)])
             )
-    n_templates = int(
-        np.isfinite(_field_positions(env, rates, method.field_order, operation)).sum()
-    )
+    n_templates = int(np.isfinite(positions).sum())
     event_values = {
         "n_active_cells": float(observed.n_active_cells),
         "active_fraction": observed.n_active_cells / max(n_templates, 1),
@@ -2779,26 +2773,28 @@ def _pooled_ssi_verdicts(
 
     from neurospatial._spikes import as_spike_trains
     from neurospatial.replay.rank_order import (
-        _field_positions,
         _pooled_spikes,
         _require_same_cells,
         _spikes_by_window,
-        _supported_rates,
+        _template_fields,
         _template_items,
     )
 
     operation = "compare_replay_methods()"
     items = _template_items(env, encoding_models, template, operation)
     names = [name for name, _, _ in items]
-    positions = []
-    for _, template_env, models in items:
-        position = _field_positions(template_env, models, method.field_order, operation)
-        if method.min_peak_rate is not None:
-            rates = _supported_rates(models)
-            peak = np.where(np.isfinite(rates), rates, 0.0).max(axis=1)
-            position = np.where(peak >= method.min_peak_rate, position, np.nan)
-        positions.append(position)
-    fields = np.vstack(positions)  # (n_templates, n_cells)
+    fields = np.vstack(
+        [
+            _template_fields(
+                template_env,
+                models,
+                method.field_order,
+                method.min_peak_rate,
+                operation,
+            )[1]
+            for _, template_env, models in items
+        ]
+    )  # (n_templates, n_cells)
     trains = as_spike_trains(spike_times)
     _require_same_cells(len(trains), fields.shape[1], operation)
     template_cell = np.isfinite(fields).any(axis=0)
