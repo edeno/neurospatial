@@ -1,10 +1,12 @@
 """Simulate candidate replay events with a known path along a track.
 
-Replay methods are compared on events whose content is known: a sweep along
-the track should be detected, a stationary or scattered event should not
-(Tingley & Peyrache 2020; Takigawa et al. 2024). :func:`simulate_replay_event`
-moves a position along a track and draws spikes from place-cell rate maps at
-that position, so each method can be scored against the truth.
+Replay methods can be compared on simulated events whose content is known.
+Tingley & Peyrache (2020) degraded simulated sequences by adding noise
+spikes and removing real ones to see how each method's score falls.
+:func:`simulate_replay_event` moves a position along a track and draws spikes
+from place-cell rate maps at that position, so each method can be scored
+against the truth: a sweep along the track should be detected, a stationary
+or scattered event should not.
 """
 
 from __future__ import annotations
@@ -191,10 +193,6 @@ def simulate_replay_event(
     van der Meer, M. A. A., Kemere, C., & Diba, K. (2020). Progress and issues
     in second-order analysis of hippocampal replay. *Philosophical
     Transactions of the Royal Society B*, 375(1799), 20190238.
-
-    Takigawa, M., Huelin Gorriz, M., Tirole, M., & Bendor, D. (2024).
-    Evaluating hippocampal replay without a ground truth. *eLife*, 13,
-    e85635.
 
     Examples
     --------
