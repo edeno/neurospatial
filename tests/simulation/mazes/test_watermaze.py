@@ -238,17 +238,19 @@ class TestMakeWatermaze:
         platform = env.regions["platform"].data
         assert env.regions["NE"].data.contains(platform)
 
-    def test_quadrants_cover_every_bin(self):
-        """Every bin lies in some quadrant; off-axis bins lie in exactly one."""
+    def test_quadrants_partition_the_bins(self):
+        """Every bin lies in exactly one quadrant, also on the dividing lines."""
         from neurospatial.simulation.mazes.watermaze import make_watermaze
 
         env = make_watermaze().env_2d
         counts = np.zeros(env.n_bins, dtype=int)
         for q in ("NE", "NW", "SE", "SW"):
             counts[env.bins_in_region(q)] += 1
-        assert (counts >= 1).all()
-        on_axis = np.isclose(env.bin_centers, 0.0).any(axis=1)
-        assert (counts[~on_axis] == 1).all()
+        np.testing.assert_array_equal(counts, 1)
+        # Centres on the dividing lines go east and north.
+        x, y = env.bin_centers.T
+        assert ((x == 0) | (y == 0)).sum() > 0
+        np.testing.assert_array_equal(env.region_mask("NE"), (x >= 0) & (y >= 0))
 
     def test_no_start_or_cue_landmarks(self):
         """Morris (2008) gives no fixed start positions or cue placement."""

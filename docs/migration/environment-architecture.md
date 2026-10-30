@@ -905,8 +905,10 @@ has Position data, names it and points to `environment_from_position`.
 
 Every region query uses one rule. A point region, such as a reward port,
 covers the bin that contains the point. A polygon region, such as a reward
-zone or a maze arm, covers the bins whose centers lie inside it or exactly on
-its edge. `bins_in_region`, `region_mask`, `region_membership`,
+zone or a maze arm, covers the bins whose centers lie inside it. A center
+exactly on its edge is covered when nudging it a hair north-east would move it
+inside, so polygons that share an edge, such as quadrants, split the centers on
+it and no bin is in two of them. `bins_in_region`, `region_mask`, `region_membership`,
 `distance_to` with a region, `subset(region_names=...)`,
 `subset(polygon=...)` and `regions_to_mask` all follow it, so the bins you
 count time in are the bins you measure distance to.
@@ -917,18 +919,19 @@ count time in are the bins you measure distance to.
 | `regions_to_mask(env, "reward")`, point region | no bins and a warning | the bin containing the point |
 | `env.distance_to("reward")`, point region | warning, then `ValueError` | distance to the bin containing the point |
 | `env.subset(region_names=["reward"])`, point region | `ValueError` | keeps the bin containing the point |
-| `env.bins_in_region("zone")`, centers on the polygon's edge | left out | included |
-| `env.subset(polygon=...)` and `subset(region_names=...)`, centers on the edge | left out | included |
+| `env.bins_in_region("zone")`, centers on the polygon's edge | left out | included on the south and west edges, left out on the north and east edges |
+| `env.subset(polygon=...)` and `subset(region_names=...)`, centers on the edge | left out | as `bins_in_region` |
+| `include_boundary=` on `bins_in_region`, `region_mask`, `region_membership`, `subset`, `regions_to_mask`, `points_in_any_region` and `regions_containing_points` | chose open or closed edges | removed; one rule for every query |
 
 A bin center lies exactly on a polygon's edge when the polygon is drawn on the
 bin grid, for example `box(0, 0, 50, 100)` on a grid with a center at
-`x = 50`. Analyses that use `bins_in_region` then see those edge bins too:
-decision-region entry times (`decision_region_entry_time`,
-`compute_decision_analysis`, `compute_vte_session`), the goal bins and
-decision boundary of `compute_decision_analysis`, `trials_to_region_arrays`
-and `distance_to_boundary(region_name=...)`. To keep only the interior, pass
-`include_boundary=False` to `bins_in_region`, `region_mask`,
-`region_membership` or `subset`:
+`x = 50`. Analyses that use `bins_in_region` then see the edge bins on the
+polygon's south and west sides: decision-region entry times
+(`decision_region_entry_time`, `compute_decision_analysis`,
+`compute_vte_session`), the goal bins and decision boundary of
+`compute_decision_analysis`, `trials_to_region_arrays` and
+`distance_to_boundary(region_name=...)`. Two regions that meet along a column
+of centers each get part of it, never both:
 
 <!-- docs-test: run -->
 ```python
@@ -941,14 +944,16 @@ grid = Environment.from_grid_mask(np.ones((10, 10), dtype=bool), (edges, edges))
 regions = Regions()
 regions.add("reward", point=(52.0, 48.0))
 regions.add("west", polygon=box(0.0, 0.0, 55.0, 100.0))  # edge on x = 55
+regions.add("east", polygon=box(55.0, 0.0, 100.0, 100.0))
 grid = grid.with_regions(regions)
 
 reward_bins = grid.bins_in_region("reward")  # the bin containing the point
 assert np.array_equal(np.flatnonzero(grid.region_membership()[:, 0]), reward_bins)
-# Before: grid.bins_in_region("west") left out the column of centers at x = 55
-west_bins = grid.bins_in_region("west")
-west_interior = grid.bins_in_region("west", include_boundary=False)
-assert len(west_bins) == len(west_interior) + 10
+# The column of centers at x = 55 lies on the shared edge: it goes to "east",
+# the side a nudge north-east enters, so the halves split the grid 50 / 50.
+west_bins, east_bins = grid.bins_in_region("west"), grid.bins_in_region("east")
+assert (len(west_bins), len(east_bins)) == (50, 50)
+assert np.all(grid.bin_centers[east_bins, 0] >= 55.0)
 ```
 
 ## Query targets are keywords: `bins=`, `points=` or `region=`

@@ -3,7 +3,7 @@ Tests for Environment.region_membership() method.
 
 Tests cover:
 - Basic functionality with single and multiple regions
-- Boundary inclusion behavior (include_boundary parameter)
+- Bin centers on a shared polygon edge
 - Different region types (polygons vs points)
 - Empty regions and edge cases
 - Caching behavior
@@ -106,64 +106,22 @@ class TestRegionMembershipBasic:
 
 
 class TestRegionMembershipBoundaryBehavior:
-    """Test boundary inclusion behavior."""
+    """Bin centers on a shared polygon edge belong to one region."""
 
-    def test_include_boundary_true(self):
-        """Test that bins on boundary are included when include_boundary=True."""
-        # Create grid with known bin centers
+    def test_halves_sharing_a_line_of_centers_split_it(self):
         data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Find a bin center that we know is exactly on the boundary
-        # Grid centers are at 1, 3, 5, 7, 9 (with bin_size=2, starting from 0)
-        # Create region with edge at x=5.0
+        env = Environment.from_samples(data, bin_size=2.0)  # centers 0, 2, ..., 10
         region_builder = Regions(env.regions.values())
-        region_builder.add("test", polygon=box(0, 0, 5.0, 10))
+        region_builder.add("west", polygon=box(-1, -1, 4, 11))
+        region_builder.add("east", polygon=box(4, -1, 11, 11))
         env = env.with_regions(region_builder)
 
-        membership = env.region_membership(include_boundary=True)
+        membership = env.region_membership()
 
-        # Bins with centers at x=5.0 should be included
-        bin_centers = env.bin_centers
-        boundary_bins = np.where(np.isclose(bin_centers[:, 0], 5.0))[0]
-
-        if len(boundary_bins) > 0:
-            # At least one boundary bin should be included
-            assert np.any(membership[boundary_bins, 0])
-
-    def test_include_boundary_false(self):
-        """Test that bins on boundary are excluded when include_boundary=False."""
-        # Create grid
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Region with edge that might exactly hit bin centers
-        region_builder = Regions(env.regions.values())
-        region_builder.add("test", polygon=box(0, 0, 5.0, 10))
-        env = env.with_regions(region_builder)
-
-        membership_with = env.region_membership(include_boundary=True)
-        membership_without = env.region_membership(include_boundary=False)
-
-        # Without boundary should have equal or fewer members
-        assert np.sum(membership_without) <= np.sum(membership_with)
-
-    def test_boundary_behavior_consistency(self):
-        """Test that boundary parameter is consistent across multiple calls."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("test", polygon=box(2, 2, 8, 8))
-        env = env.with_regions(region_builder)
-
-        # Multiple calls with same parameter should give same result
-        m1 = env.region_membership(include_boundary=True)
-        m2 = env.region_membership(include_boundary=True)
-        assert np.array_equal(m1, m2)
-
-        m3 = env.region_membership(include_boundary=False)
-        m4 = env.region_membership(include_boundary=False)
-        assert np.array_equal(m3, m4)
+        np.testing.assert_array_equal(membership.sum(axis=1), 1)
+        on_line = env.bin_centers[:, 0] == 4.0
+        assert on_line.sum() == 6
+        assert membership[on_line, 1].all()
 
 
 class TestRegionMembershipRegionTypes:
@@ -333,18 +291,6 @@ class TestRegionMembershipValidation:
         # Invalid type
         with pytest.raises(TypeError, match=r"[Rr]egions"):
             env.region_membership(regions="not_a_regions_object")
-
-    def test_include_boundary_validation(self):
-        """Test that include_boundary parameter is validated."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("test", polygon=box(0, 0, 5, 5))
-        env = env.with_regions(region_builder)
-
-        # Invalid type
-        with pytest.raises(TypeError, match=r"[Bb]ool"):
-            env.region_membership(include_boundary="true")
 
 
 class TestRegionMembershipPerformance:

@@ -173,6 +173,34 @@ default lap route all changed.
 - `MazeEnvironments` is frozen.
 - Estimated sizes are marked as estimates in the maze guide.
 
+### Regions that share an edge split its bins
+
+- A bin center or position exactly on a region's edge belongs to the region
+  when nudging it a hair north-east (37° from east, a fixed fraction of the
+  region's coordinate size) would move it inside. Regions that share an
+  edge, such as quadrants or maze arms cut along a line, now partition the
+  bins and positions on it; before, an edge center was in every region it
+  touched. A rectangle holds its south and west edges but not its north and
+  east edges, like a bin `[a, b)`, so a box drawn through a row of bin
+  centers covers as many bins as fit in its area. The rim of a point region's
+  `point_radius` disc follows the same rule. Interior points are unchanged,
+  and a region drawn as an environment's arena outline still holds every bin
+  of an environment built from that outline.
+- One rule decides membership everywhere: `bins_in_region`, `region_mask`,
+  `region_membership`, `subset(region_names=...)`, `subset(polygon=...)`,
+  `regions_to_mask`, `distance_to(region=...)`, `points_in_any_region`,
+  `regions_containing_points`, and the behavior analyses built on them
+  (`detect_region_visits`, `segment_trials`, `detect_runs_between_regions`,
+  decision and VTE analyses). `detect_region_visits` accepts quadrants
+  together instead of refusing them as overlapping.
+- `include_boundary=` is removed from all of these. Passing it raises
+  `TypeError`.
+- `point_radius` must be positive; a disc of radius 0 holds no position.
+- Seeded results can shift where bin centers lay on a region's north or
+  east edge: in the segmentation snapshots, a run leaving a source box whose
+  east edge passes through a column of bin centers now departs one sample
+  earlier.
+
 ### Spatial information of very small rates
 
 - Skaggs spatial information (`spatial_information`,

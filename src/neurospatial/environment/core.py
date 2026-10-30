@@ -2614,7 +2614,6 @@ class Environment(Generic[_C]):
         mask: NDArray[np.bool_] | None = None,
         region_names: Sequence[str] | None = None,
         polygon: shapely.Polygon | None = None,
-        include_boundary: bool = True,
         invert: bool = False,
         name: str | None = None,
     ) -> Environment[CartesianSystem]:
@@ -2634,17 +2633,13 @@ class Environment(Generic[_C]):
         region_names : Sequence[str], optional
             Keep the bins these named regions cover, by the rule of
             :meth:`bins_in_region`: the bin containing a point region, and
-            the bins whose centers lie inside (or on the edge of) a polygon
-            region. Regions must exist in self.regions.
+            the bins whose centers lie in a polygon region. Regions must
+            exist in self.regions.
         polygon : shapely.Polygon, optional
-            Keep bins whose centers lie inside this polygon or on its edge.
-            Only works for 2D environments.
-        include_boundary : bool, default=True
-            For ``region_names=`` polygons and ``polygon=``, keep a bin whose
-            center lies exactly on the polygon's edge; with False keep only
-            centers strictly inside. This is the rule of
-            :meth:`bins_in_region`. Point regions ignore it, and it cannot be
-            changed with ``mask=``, which already lists the bins to keep.
+            Keep bins whose centers lie in this polygon, by the rule of
+            :meth:`bins_in_region` (a center exactly on the edge is kept when
+            nudging it north-east moves it inside). Only works for 2D
+            environments.
         invert : bool, default=False
             If True, invert the selection mask (select complement).
         name : str, optional
@@ -2707,17 +2702,20 @@ class Environment(Generic[_C]):
         >>> env.n_bins
         121
 
-        Keep the bins inside the goal zone, or everything except it:
+        Keep the bins inside the goal zone, or everything except it. Bin
+        centers lie on the zone's edges: those on its south and west edges are
+        kept and those on its north and east edges are not, so the 30 x 30 cm
+        zone keeps 3 x 3 bins of 10 cm:
 
         >>> env.subset(region_names=["goal"]).n_bins
-        16
+        9
         >>> env.subset(region_names=["goal"], invert=True).n_bins
-        105
+        112
 
         Crop to a polygon, or select bins with a boolean mask:
 
         >>> env.subset(polygon=box(0, 0, 50, 50)).n_bins
-        36
+        25
         >>> left_half = env.bin_centers[:, 0] < 50
         >>> env.subset(mask=left_half).n_bins
         55
@@ -2731,7 +2729,6 @@ class Environment(Generic[_C]):
             mask=mask,
             region_names=region_names,
             polygon=polygon,
-            include_boundary=include_boundary,
             invert=invert,
         )
         return publish_derived(self, derivation, name=name)
@@ -5416,13 +5413,17 @@ class Environment(Generic[_C]):
 
         write_environment(nwbfile, self, name=name, overwrite=overwrite)
 
-    def bins_in_region(
-        self, region_name: str, *, include_boundary: bool = True
-    ) -> NDArray[np.intp]:
+    def bins_in_region(self, region_name: str) -> NDArray[np.intp]:
         """Return the indices of the bins a named region covers.
 
         A point region covers the one bin that contains the point. A polygon
-        region covers the bins whose centers lie inside it. This is the same
+        region covers the bins whose centers lie inside it. A center exactly
+        on the polygon's edge is covered when nudging it a hair north-east
+        would move it inside: polygons that share an edge, such as the
+        quadrants of an open field, split the bins on it, so no bin is in
+        two of them, and a rectangle holds the centers on its south and west
+        edges but not those on its north and east edges, as a bin ``[a, b)``
+        holds ``a``. This is the same
         rule as :meth:`region_mask`, :meth:`region_membership`,
         ``distance_to(region=...)`` and ``subset(region_names=...)``.
 
@@ -5430,9 +5431,6 @@ class Environment(Generic[_C]):
         ----------
         region_name : str
             The name of a region in ``self.regions``.
-        include_boundary : bool, default=True
-            For a polygon region, count a bin whose center lies exactly on the
-            polygon's edge as inside. Point regions ignore it.
 
         Returns
         -------
@@ -5476,10 +5474,15 @@ class Environment(Generic[_C]):
         >>> env = env.with_regions(regions)
         >>> env.bin_centers[env.bins_in_region("reward")]
         array([[5., 5.]])
-        >>> len(env.bins_in_region("roi"))  # centers 3, 5 and 7 in x and y
-        9
-        >>> len(env.bins_in_region("roi", include_boundary=False))  # only (5, 5)
-        1
+
+        Centers lie on every edge of the box: those on its south and west
+        edges (3) are in it, those on its north and east edges (7) are not.
+
+        >>> env.bin_centers[env.bins_in_region("roi")]
+        array([[3., 3.],
+               [3., 5.],
+               [5., 3.],
+               [5., 5.]])
 
         See Also
         --------
@@ -5493,14 +5496,11 @@ class Environment(Generic[_C]):
             binning=self._binning,
             arena=self._arena,
             cache=self._cache,
-            include_boundary=include_boundary,
         )
 
     def region_membership(
         self,
         regions: Mapping[str, Region] | None = None,
-        *,
-        include_boundary: bool = True,
     ) -> NDArray[np.bool_]:
         """Check which bins belong to which regions.
 
@@ -5518,11 +5518,6 @@ class Environment(Generic[_C]):
             (default), uses self.regions.
             Allows testing against external region sets without modifying
             the environment.
-        include_boundary : bool, default=True
-            How to handle bins whose centers lie on a polygon's edge:
-            - True: Bins on boundary count as inside (shapely.covers).
-            - False: Only bins strictly inside count (shapely.contains).
-            Point regions ignore it.
 
         Returns
         -------
@@ -5535,7 +5530,6 @@ class Environment(Generic[_C]):
         ------
         TypeError
             If regions is not a mapping of names to Region values or None.
-            If include_boundary is not a boolean.
 
         See Also
         --------
@@ -5545,7 +5539,9 @@ class Environment(Generic[_C]):
         Notes
         -----
         **Region Types**:
-        - Polygon regions: bins whose centers lie inside (covers/contains).
+        - Polygon regions: bins whose centers lie inside. A center exactly on
+          the edge is inside when nudging it a hair north-east would move it
+          inside, so regions that share an edge split its bins.
         - Point regions: the one bin that contains the point.
 
         **Polar Environments**:
@@ -5566,16 +5562,6 @@ class Environment(Generic[_C]):
         For N bins and R regions, complexity is O(N * R), but vectorized
         operations make it fast even for thousands of bins.
 
-        **Boundary Semantics**:
-        The include_boundary parameter controls the Shapely predicate used:
-        - include_boundary=True: Uses shapely.covers(region, point)
-          Returns True if point is inside region OR on its boundary.
-        - include_boundary=False: Uses shapely.contains(region, point)
-          Returns True only if point is strictly inside region.
-
-        For most applications, include_boundary=True is appropriate, as it
-        avoids ambiguity for bins whose centers lie exactly on region edges.
-
         **Region Order**:
         The column order in the output array matches the iteration order of
         the regions mapping. For self.regions, this is insertion order.
@@ -5589,8 +5575,8 @@ class Environment(Generic[_C]):
         >>> env = Environment.from_samples(data, bin_size=2.0)
         >>> from neurospatial.regions import Regions
         >>> regions = Regions(env.regions.values())
-        >>> _ = regions.add("left", polygon=box(0, 0, 5, 10))
-        >>> _ = regions.add("right", polygon=box(5, 0, 10, 10))
+        >>> _ = regions.add("west", polygon=box(-1, -1, 6, 11))
+        >>> _ = regions.add("east", polygon=box(6, -1, 11, 11))
         >>> env = env.with_regions(regions)
         >>> membership = env.region_membership()
         >>> membership.shape[1]
@@ -5598,12 +5584,14 @@ class Environment(Generic[_C]):
         >>> membership.dtype
         dtype('bool')
 
-        Each column counts the bins of one region; no bin is in both halves:
+        Each column counts the bins of one region. The column of bin centers
+        at x = 6 lies on the shared edge and goes to the east half, so every
+        bin is in exactly one half:
 
         >>> membership.sum(axis=0)
         array([18, 18])
-        >>> int(np.all(membership, axis=1).sum())
-        0
+        >>> bool(np.all(membership.sum(axis=1) == 1))
+        True
 
         Regions that are not attached to the environment can be tested too:
 
@@ -5612,30 +5600,28 @@ class Environment(Generic[_C]):
         >>> env.region_membership(regions=external).shape
         (36, 1)
 
-        Excluding bins whose centers lie on a region's edge keeps fewer bins:
-
-        >>> env.region_membership(include_boundary=False).sum(axis=0)
-        array([8, 8])
-
         """
         return _region_membership(
             self.regions if regions is None else regions,
             binning=self._binning,
             arena=self._arena,
             cache=self._cache,
-            include_boundary=include_boundary,
         )
 
     def region_mask(
         self,
         regions: str | list[str | Region] | Region | Mapping[str, Region],
-        *,
-        include_boundary: bool = True,
     ) -> NDArray[np.bool_]:
         """Boolean mask over bins for one or more regions.
 
         A point region covers the one bin that contains the point. A polygon
-        region covers the bins whose centers lie inside it. This is the same
+        region covers the bins whose centers lie inside it. A center exactly
+        on the polygon's edge is covered when nudging it a hair north-east
+        would move it inside: polygons that share an edge, such as the
+        quadrants of an open field, split the bins on it, so no bin is in
+        two of them, and a rectangle holds the centers on its south and west
+        edges but not those on its north and east edges, as a bin ``[a, b)``
+        holds ``a``. This is the same
         rule as :meth:`bins_in_region`, :meth:`region_membership`,
         ``distance_to(region=...)`` and
         :func:`neurospatial.ops.mapping.regions_to_mask`.
@@ -5646,11 +5632,6 @@ class Environment(Generic[_C]):
             Region(s) to select. A name refers to an entry in ``self.regions``;
             Region objects, and the values of a mapping such as a Regions
             builder, are used directly.
-        include_boundary : bool, default=True
-            For polygon regions, count a bin whose center lies exactly on the
-            polygon's edge as inside (``shapely.covers``); with False only
-            centers strictly inside count (``shapely.contains``). Point
-            regions ignore it.
 
         Returns
         -------
@@ -5662,8 +5643,7 @@ class Environment(Generic[_C]):
         RegionNotFoundError
             If a region name is not in ``self.regions`` (a ``KeyError``).
         TypeError
-            If ``regions`` has an invalid type or ``include_boundary`` is not
-            a bool.
+            If ``regions`` has an invalid type.
 
         Notes
         -----
@@ -5713,7 +5693,6 @@ class Environment(Generic[_C]):
             named_regions=self.regions,
             binning=self._binning,
             arena=self._arena,
-            include_boundary=include_boundary,
         )
 
     def _plot_labels(self) -> PlotLabels:

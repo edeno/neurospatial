@@ -56,7 +56,17 @@ table = regions_table(env.regions)        # One row per region: kind, area, cent
 ```
 
 A bin belongs to a polygon region when its center lies inside the polygon, and
-to a point region when the point lies inside the bin. A polygon's `center` is
+to a point region when the point lies inside the bin. A center exactly on a
+polygon's edge belongs to it when nudging the center a hair north-east would
+move it inside. Regions that share an edge, such as the four quadrants of an
+open field or the arms of a maze cut along a line, therefore split the bins on
+that edge: every bin is in exactly one of them, so time in each quadrant adds up
+to the session. A rectangle holds the centers on its south and west edges but
+not those on its north and east edges, as a histogram bin `[a, b)` holds `a`.
+The same rule decides positions in `regions_containing_points` and
+`points_in_any_region`, and the rim of a point region's `point_radius` disc.
+
+A polygon's `center` is
 its centroid, which can lie outside a non-convex region such as a U-shaped
 arm, so it is not necessarily a place the animal can be.
 
