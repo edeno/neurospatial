@@ -19,6 +19,40 @@
   autocorrelation, so neurons whose rates drift slowly, which the
   Marchenko-Pastur edge calls assemblies, are not. The result records
   `component_threshold` and `surrogate_max_eigenvalues`.
+- `ReactivationMethod` records a published reactivation analysis: the
+  measure (explained variance or assembly patterns), the time bin, which
+  pairs count, how the control and match periods are cut into windows
+  (`ReactivationWindows`: length, step, from the start or end, and
+  concatenated or clock time), the statistic and the within-session test.
+  Unlike the replay recipes, the bin size is applied, because binning is part
+  of the statistic. Every value is quoted from the paper in the recipe's
+  `notes`, with the choices the paper leaves open.
+- `compare_reactivation_methods(spike_times, template_epochs, match_epochs,
+  control_epochs, *, reactivation_methods, unit_ids=, unit_groups=,
+  pair_mask=, rng=)` applies several recipes to one session and returns one
+  row per (method, match window, component): EV, REV, the partial
+  correlation and its p-value for EV methods; mean activation strength
+  before and after, the share of bins above the control's percentile or
+  above each bin's cell-identity shuffles, and activation rates for
+  assembly methods; `is_reactivated` for methods with a within-session test
+  and `error` for a method that cannot be applied. Each method draws from
+  its own random stream, and `table.attrs["rng_entropy"]` reproduces the
+  table.
+- Recipes in `PUBLISHED_REACTIVATION_METHODS`: `KUDRIMOTI_1999` (100 ms,
+  pairs on different tetrodes, last 10 min of rest before, three 10-min
+  blocks after, partial-correlation t test), `PENNARTZ_2004` (50 ms, all
+  pairs, 10-min clock windows, EV - REV), `TATSUNO_2006` (250 ms, 15-min
+  segments, EV averaged over every control segment), `LANSINK_2009` (50 ms,
+  cross-region pairs, 20-min blocks of concatenated rest, 10,000 pair-triplet
+  bootstrap: reactivated when the 2.5th percentile of EV - REV is above 0),
+  `PEYRACHE_2010` (100 ms, PCA, mean R(t) after minus before, share of bins
+  above the 99th percentile of rest before and of 1000 per-bin cell-identity
+  shuffles), `VAN_DE_VEN_2016` (25 ms, ICA, R(t) on spike trains smoothed with
+  a Gaussian of 25 ms / sqrt(12), activations above 5), `GIRI_2019` and
+  `GIRI_2024` (250 ms, 15-min windows sliding by 5 min, EV averaged over the
+  windows of rest before; pairs on different shanks, or chosen by
+  `pair_mask=`). Tang et al. (2017) is not a recipe: its cross-regional PCA
+  of a rectangular matrix is not specified.
 
 ### Reactivation measures
 
