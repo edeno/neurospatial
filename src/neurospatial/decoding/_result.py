@@ -6,7 +6,6 @@ distributions from neural decoding and computes derived properties lazily.
 
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
@@ -23,7 +22,7 @@ from neurospatial._results import (
     _coord_dim_names,
     read_only_copy,
 )
-from neurospatial.decoding.estimates import _UNDECODABLE_BIN
+from neurospatial.decoding.estimates import _UNDECODABLE_BIN, _row_blocks
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -45,9 +44,6 @@ def _read_only(array: _ArrayT) -> _ArrayT:
 # posterior blocks. It is about ten times the float32 rounding of a normalized
 # row (1.2e-7 at 200,000 bins).
 _ROW_SUM_TOLERANCE = 1e-6
-
-# Rows per validation block, sized so temporaries stay near 2**22 elements.
-_VALIDATION_BLOCK_ELEMENTS = 2**22
 
 
 def _posterior_value_problems(posterior: NDArray[Any]) -> list[str]:
@@ -73,10 +69,8 @@ def _posterior_value_problems(posterior: NDArray[Any]) -> list[str]:
     }
     counts = dict.fromkeys(messages, 0)
     first: dict[str, str] = {}
-    n_time, n_bins = posterior.shape
-    step = max(1, _VALIDATION_BLOCK_ELEMENTS // max(n_bins, 1))
-    for start in range(0, n_time, step):
-        block = posterior[start : start + step]
+    for block_rows in _row_blocks(*posterior.shape):
+        block = posterior[block_rows]
         nan = np.isnan(block)
         any_nan = nan.any(axis=1)
         infinite = np.isinf(block).any(axis=1)
@@ -91,7 +85,7 @@ def _posterior_value_problems(posterior: NDArray[Any]) -> list[str]:
             hits = np.flatnonzero(mask)
             if hits.size and kind not in first:
                 detail = f" (sum {sums[hits[0]]:.6g})" if kind == "sum" else ""
-                first[kind] = f"first row {start + int(hits[0])}{detail}"
+                first[kind] = f"first row {block_rows.start + int(hits[0])}{detail}"
             counts[kind] += hits.size
     return [
         f"{counts[kind]} posterior row(s) {messages[kind]}, {where}"
@@ -361,15 +355,10 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
     def __post_init__(self) -> None:
         """Take ownership of input arrays as read-only copies and validate them."""
         object.__setattr__(self, "posterior", read_only_copy(self.posterior))
-        self._own_and_validate(check_posterior_values=True)
+        self._own_and_validate()
 
-    def _own_and_validate(self, *, check_posterior_values: bool) -> None:
-        """Copy ``times`` and ``spike_window`` read-only and enforce invariants.
-
-        Shapes, times and spike windows are always checked. The posterior
-        values are checked unless ``check_posterior_values`` is False, which
-        only :meth:`_evolve` passes because it reuses a validated posterior.
-        """
+    def _own_and_validate(self) -> None:
+        """Copy ``times`` and ``spike_window`` read-only and enforce invariants."""
         if self.times is not None:
             object.__setattr__(self, "times", read_only_copy(self.times, np.float64))
         if self.spike_window is not None:
@@ -388,7 +377,7 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
                     f"posterior has {self.posterior.shape[1]} columns but env has "
                     f"n_bins={self.env.n_bins}"
                 )
-            elif check_posterior_values:
+            else:
                 problems += _posterior_value_problems(self.posterior)
             if self.times is not None:
                 problems += _times_problems(self.times, self.posterior.shape[0])
@@ -424,44 +413,12 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         constructor.
         """
         posterior.flags.writeable = False
-        return cls._assemble(posterior, fields, check_posterior_values=True)
-
-    @classmethod
-    def _assemble(
-        cls,
-        posterior: NDArray[Any],
-        fields: dict[str, Any],
-        *,
-        check_posterior_values: bool,
-    ) -> DecodingResult:
-        """Set a read-only ``posterior`` and ``fields`` without copying it."""
         obj = cls.__new__(cls)
         object.__setattr__(obj, "posterior", posterior)
         for name, value in fields.items():
             object.__setattr__(obj, name, value)
-        obj._own_and_validate(check_posterior_values=check_posterior_values)
+        obj._own_and_validate()
         return obj
-
-    def _evolve(self, **changes: Any) -> DecodingResult:
-        """Return a copy with changes applied, sharing this result's posterior.
-
-        Internal use only. This result owns its read-only, validated
-        posterior, so sharing it with the new result cannot create a writable
-        alias; the changed fields are validated as in the constructor.
-        """
-        if "posterior" in changes:
-            raise ValueError(
-                "_evolve never replaces the posterior; use dataclasses.replace."
-            )
-        fields = {
-            f.name: getattr(self, f.name)
-            for f in dataclasses.fields(self)
-            if f.name != "posterior"
-        }
-        fields.update(changes)
-        return type(self)._assemble(
-            self.posterior, fields, check_posterior_values=False
-        )
 
     @property
     def spike_window_assumed(self) -> bool:
@@ -472,6 +429,15 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         coverage.
         """
         return self.spike_window is None
+
+    @property
+    def _decoded_rows(self) -> NDArray[np.bool_]:
+        """Time bins with a posterior, shape ``(n_time_bins,)``.
+
+        A validated row is either entirely NaN (undecodable) or has no NaN, so
+        its first entry tells which.
+        """
+        return np.asarray(~np.isnan(self.posterior[:, 0]))
 
     @property
     def n_time_bins(self) -> int:
@@ -846,7 +812,7 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         def broken(values: NDArray[np.float64]) -> NDArray[np.float64]:
             return np.insert(values, breaks + 1, np.nan)
 
-        decodable = np.any(np.isfinite(self.posterior), axis=1)
+        decodable = self._decoded_rows
         if show_map:
             map_bins = np.where(self.map_bin >= 0, self.map_bin, np.nan)
             ax.plot(
@@ -923,7 +889,7 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         ['max_entropy', 'mean_entropy', 'n_bins', 'n_time_bins', 'n_undecodable', 'spike_window', 'spike_window_assumed']
         """
         n_bins = int(self.posterior.shape[1])
-        decoded: NDArray[np.bool_] = np.asarray(np.isfinite(self.posterior).any(axis=1))
+        decoded = self._decoded_rows
         return {
             "n_time_bins": self.n_time_bins,
             "n_undecodable": int(np.count_nonzero(~decoded)),

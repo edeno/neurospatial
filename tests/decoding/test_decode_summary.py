@@ -666,9 +666,7 @@ class TestSummaryDecodeStreamingThroughput:
             spike_counts, encoding_models = _make_decode_inputs(
                 small_2d_env, n_time=n_time, n_neurons=8
             )
-            with patch.object(
-                posterior_mod, "_normalize_block", wraps=real
-            ) as spy:
+            with patch.object(posterior_mod, "_normalize_block", wraps=real) as spy:
                 decode_position_summary(
                     small_2d_env,
                     spike_counts,

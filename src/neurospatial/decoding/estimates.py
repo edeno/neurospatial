@@ -36,6 +36,7 @@ Entropy: 6.64 bits
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -45,22 +46,27 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 
-def _is_polar(env: Environment) -> bool:
-    return env.coordinate_kind == "polar"
+def _egocentric_plane(positions: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Polar ``(distance, angle)`` rows as ``(x ahead, y to the left)``.
+
+    Distance 0 is the animal's position whatever the angle; a centroid there
+    has a NaN angle (see :func:`_finish_posterior_mean`).
+    """
+    distance, angle = positions[:, 0], positions[:, 1]
+    angle = np.where(distance == 0, 0.0, angle)
+    return np.column_stack([distance * np.cos(angle), distance * np.sin(angle)])
 
 
 def _posterior_mean_basis(env: Environment) -> NDArray[np.float64]:
     """Bin coordinates that may be averaged, shape ``(n_bins, n_dims)``.
 
     Cartesian bin centers are returned unchanged. Polar ``(distance, angle)``
-    centers are mapped to the egocentric plane, ``(distance * cos(angle),
-    distance * sin(angle))`` with x ahead and y to the left.
+    centers are mapped to the egocentric plane.
     """
     centers = np.asarray(env.bin_centers, dtype=np.float64)
-    if not _is_polar(env):
+    if env.coordinate_kind != "polar":
         return centers
-    distance, angle = centers[:, 0], centers[:, 1]
-    return np.column_stack([distance * np.cos(angle), distance * np.sin(angle)])
+    return _egocentric_plane(centers)
 
 
 def _finish_posterior_mean(
@@ -73,7 +79,7 @@ def _finish_posterior_mean(
     animal's position, shape ``(n_time, 2)`` input, is the animal's position:
     distance 0 and no direction (NaN angle).
     """
-    if not _is_polar(env):
+    if env.coordinate_kind != "polar":
         return weighted
     x, y = weighted[:, 0], weighted[:, 1]
     distance = np.hypot(x, y)
@@ -105,15 +111,21 @@ def _tie_tolerance(dtype: np.dtype[Any] | type) -> float:
     return float(16 * np.finfo(np.result_type(dtype, np.float32)).eps)
 
 
-# Rows per block in _density_mode, sized so temporaries stay near 2**22 elements.
+# Row blocks hold about this many elements, bounding the temporaries of a
+# reduction over a large posterior.
 _BLOCK_ELEMENTS = 2**22
+
+
+def _row_blocks(n_rows: int, n_cols: int) -> Iterator[slice]:
+    """Slices of consecutive rows holding about ``_BLOCK_ELEMENTS`` elements."""
+    step = max(1, _BLOCK_ELEMENTS // max(n_cols, 1))
+    for start in range(0, n_rows, step):
+        yield slice(start, start + step)
 
 
 def _density_mode(
     posterior: NDArray[np.float64],
     measures: NDArray[np.float64] | None,
-    *,
-    rounding_dtype: np.dtype[Any] | type | None = None,
 ) -> NDArray[np.int64]:
     """Bin of highest posterior density per row, shape ``(n_time_bins,)``.
 
@@ -124,16 +136,14 @@ def _density_mode(
     largest count as tied and the lowest bin index wins. NaN and Inf bins are
     skipped; a row with no finite entry gets ``_UNDECODABLE_BIN``.
 
-    Densities are compared in float64 with the tolerance of ``rounding_dtype``
-    (default: the posterior's dtype), so a float32 posterior and its float64
-    copy give the same bins when ``rounding_dtype`` names the float32 source.
+    Densities are compared in float64 with the tolerance of the posterior's
+    dtype.
     """
     posterior = np.asarray(posterior)
-    rtol = _tie_tolerance(posterior.dtype if rounding_dtype is None else rounding_dtype)
+    rtol = _tie_tolerance(posterior.dtype)
     result = np.empty(posterior.shape[0], dtype=np.int64)
-    step = max(1, _BLOCK_ELEMENTS // max(posterior.shape[1], 1))
-    for start in range(0, posterior.shape[0], step):
-        block = np.asarray(posterior[start : start + step], dtype=np.float64)
+    for rows in _row_blocks(*posterior.shape):
+        block = np.asarray(posterior[rows], dtype=np.float64)
         if measures is not None:
             block = block / measures
         finite = np.isfinite(block)
@@ -141,7 +151,7 @@ def _density_mode(
         peak = density.max(axis=1, keepdims=True, initial=-np.inf)
         modes = np.argmax(density >= peak - rtol * np.abs(peak), axis=1)
         modes[~finite.any(axis=1)] = _UNDECODABLE_BIN
-        result[start : start + step] = modes
+        result[rows] = modes
     return result
 
 
@@ -399,15 +409,14 @@ def posterior_entropy(
     """
     posterior = np.asarray(posterior)
     result = np.empty(posterior.shape[0], dtype=np.float64)
-    step = max(1, _BLOCK_ELEMENTS // max(posterior.shape[1], 1))
-    for start in range(0, posterior.shape[0], step):
+    for rows in _row_blocks(*posterior.shape):
         # Accumulate in float64 whatever the posterior dtype.
-        p = np.clip(posterior[start : start + step], 0.0, 1.0, dtype=np.float64)
+        p = np.clip(posterior[rows], 0.0, 1.0, dtype=np.float64)
         # A zero bin contributes 0 and a NaN bin keeps the row NaN.
         with np.errstate(divide="ignore", invalid="ignore"):
             terms = np.where(p > 0, p * np.log2(p), p)
         # 0.0 - sum keeps a zero entropy +0.0 rather than -0.0.
-        result[start : start + step] = 0.0 - np.sum(terms, axis=1)
+        result[rows] = 0.0 - np.sum(terms, axis=1)
     return result
 
 
@@ -502,31 +511,35 @@ def credible_region(
 
     posterior = np.asarray(posterior)
     measures = relative_bin_measures(env, context="credible_region")
-    finite = np.isfinite(posterior)
-    # Mass and density of each bin; NaN/Inf bins hold no mass and sort last.
-    mass = np.where(finite, posterior, 0.0)
-    density = mass if measures is None else mass / measures
-    density = np.where(finite, density, -np.inf)
-
-    # Stable descending sort: tied densities stay in bin order.
-    order = np.argsort(-density, axis=1, kind="stable")
-    sorted_density = np.take_along_axis(density, order, axis=1)
-    cumsum = np.cumsum(np.take_along_axis(mass, order, axis=1), axis=1)
-    reached = cumsum >= level
-    # Position of the bin that brings the mass to `level`.
-    last = np.argmax(reached, axis=1)
-    threshold = sorted_density[np.arange(len(posterior)), last]
     rtol = _tie_tolerance(posterior.dtype)
-    in_region = sorted_density >= (threshold * (1.0 - rtol))[:, np.newaxis]
-    n_bins_needed = in_region.sum(axis=1)
+    regions: list[NDArray[np.int64]] = []
+    for rows in _row_blocks(*posterior.shape):
+        block = posterior[rows]
+        finite = np.isfinite(block)
+        # Mass and density of each bin; NaN/Inf bins hold no mass and sort last.
+        mass = np.where(finite, block, 0.0)
+        density = mass if measures is None else mass / measures
+        density = np.where(finite, density, -np.inf)
 
-    # A row whose finite mass never reaches `level` (e.g. off-track/NaN rows)
-    # keeps every bin with mass and never a NaN/Inf or zero-mass one; an
-    # undecodable row gets an empty region.
-    never_reached = ~reached.any(axis=1)
-    n_bins_needed[never_reached] = (mass > 0).sum(axis=1)[never_reached]
+        # Stable descending sort: tied densities stay in bin order.
+        order = np.argsort(-density, axis=1, kind="stable")
+        sorted_density = np.take_along_axis(density, order, axis=1)
+        cumsum = np.cumsum(np.take_along_axis(mass, order, axis=1), axis=1)
+        reached = cumsum >= level
+        # Position of the bin that brings the mass to `level`.
+        last = np.argmax(reached, axis=1)
+        threshold = sorted_density[np.arange(len(block)), last]
+        in_region = sorted_density >= (threshold * (1.0 - rtol))[:, np.newaxis]
+        n_bins_needed = in_region.sum(axis=1)
 
-    # Build result list (variable-length arrays require Python loop)
-    return [
-        order[t, : n_bins_needed[t]].astype(np.int64) for t in range(len(posterior))
-    ]
+        # A row whose finite mass never reaches `level` (e.g. off-track/NaN
+        # rows) keeps every bin with mass and never a NaN/Inf or zero-mass one;
+        # an undecodable row gets an empty region.
+        never_reached = ~reached.any(axis=1)
+        n_bins_needed[never_reached] = (mass > 0).sum(axis=1)[never_reached]
+
+        # Variable-length regions need a Python loop.
+        regions.extend(
+            order[t, : n_bins_needed[t]].astype(np.int64) for t in range(len(block))
+        )
+    return regions

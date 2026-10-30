@@ -796,12 +796,23 @@ def test_every_construction_path_enforces_invariants(env_4bin):
         DecodingResult._from_owned_posterior(
             np.full((2, 4), 0.5), env=env_4bin, times=None, spike_window=None
         )
-    result = DecodingResult(posterior=np.full((2, 4), 0.25), env=env_4bin)
     with pytest.raises(ValueError, match="increasing"):
-        result._evolve(times=np.array([1.0, 0.0]))
+        DecodingResult._from_owned_posterior(
+            np.full((2, 4), 0.25),
+            env=env_4bin,
+            times=np.array([1.0, 0.0]),
+            spike_window=None,
+        )
     with pytest.raises(ValueError, match="spike_window"):
-        result._evolve(spike_window=np.array([0.0, 1.0, 2.0]))
-    windowed = result._evolve(spike_window=(0.0, 2.0))
+        DecodingResult._from_owned_posterior(
+            np.full((2, 4), 0.25),
+            env=env_4bin,
+            times=None,
+            spike_window=np.array([0.0, 1.0, 2.0]),
+        )
+    windowed = DecodingResult._from_owned_posterior(
+        np.full((2, 4), 0.25), env=env_4bin, times=None, spike_window=(0.0, 2.0)
+    )
     np.testing.assert_array_equal(windowed.spike_window, [[0.0, 2.0]])
     assert windowed.spike_window.flags.writeable is False
 

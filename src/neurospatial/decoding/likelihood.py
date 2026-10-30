@@ -79,7 +79,7 @@ def log_poisson_likelihood(
     Raises
     ------
     ValueError
-        If ``dt`` is not a finite number > 0 (non-numeric, ``bool``, ``NaN``,
+        If ``dt`` is not finite and positive (non-numeric, ``bool``, ``NaN``,
         ``Inf``, or ``<= 0`` all raise), or if ``min_rate`` is not positive.
         If ``spike_counts`` is not 2-D ``(n_time_bins, n_neurons)`` or
         ``encoding_models`` is not 2-D ``(n_neurons, n_bins)``.

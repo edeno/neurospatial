@@ -77,7 +77,7 @@ def _dt_calls() -> dict[str, Callable[[dict[str, Any], Any], Any]]:
 @pytest.mark.parametrize("entry", list(_dt_calls()))
 @pytest.mark.parametrize("bad", [0, -0.025, np.nan, np.inf, "0.1", "abc", True, False])
 def test_bad_dt_raises(session, entry, bad):
-    with pytest.raises(ValueError, match=r"dt must be a finite number > 0, got"):
+    with pytest.raises(ValueError, match=r"dt must be finite and positive; got"):
         _dt_calls()[entry](session, bad)
 
 
