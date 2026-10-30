@@ -466,17 +466,18 @@ warning says why.
   (`decode_jointly(env, counts, {"outbound": ..., "inbound": ...}, dt=dt,
   times=...)`) and pass the joint result as the event, with the mapping of
   rate maps as `encoding_models`. Recipes such as `MALLORY_2025` and
-  `BERNERS_LEE_2022` choose or sum the templates as their papers did; for
-  other methods, pass `template=` to test one, or give the method a
-  template choice with `dataclasses.replace(method,
-  template_choice="smallest_p")`, which tests every template and keeps the
-  one with the smallest p-value, as Tang et al. (2017) and Shin et al.
-  (2019) did for the four W-track trajectories. The p-value is not
-  corrected for the number of templates, as in those papers, so measure
-  the false-positive rate with all your templates. Muessig et al. (2019)
-  decoded each direction separately and took the largest score over the
-  directions, in the event and in every shuffle (`template_choice=
-  "max_score"`): decode each direction with `decode_position` and pass
+  `BERNERS_LEE_2022` choose or sum the templates as their papers did.
+  `JADHAV_2016`, `TANG_2017`, `SHIN_2019` (the four W-track trajectories)
+  and `OLAFSDOTTIR_2016` (two directions decoded separately) test every
+  template and keep the one with the smallest p-value
+  (`template_choice="smallest_p"`). For other methods, pass `template=` to
+  test one, or add that choice with `dataclasses.replace(method,
+  template_choice="smallest_p")`. The p-value is not corrected for the
+  number of templates, as in those papers, so measure the false-positive
+  rate with all your templates. `MUESSIG_2019` decodes each direction
+  separately and takes the largest score over the directions, in the
+  event and in every shuffle (`template_choice="max_score"`): decode each
+  direction with `decode_position` and pass
   `{"cw": cw_result, "ccw": ccw_result}` as the event, with
   `encoding_models={"cw": ..., "ccw": ...}`. Taking the largest score of
   the event but comparing it with one direction's shuffles would call too
@@ -493,6 +494,11 @@ warning says why.
   template passes, so it calls more events without replay significant than
   with one template: measure its false-positive rate with both templates,
   as you run it on real events.
+- **Circular and square tracks.** `WIKENHEISER_REDISH_2013` and
+  `MUESSIG_2019` score events on a closed loop: build the track with
+  `Environment.from_graph` from a cycle, with an `edge_order` whose last
+  segment ends where the first starts, so a sequence that runs past the
+  point where the linear position starts again is scored whole.
 - **Mazes with arms.** `ArmReplayMethod` recipes (`WU_FOSTER_2014`,
   `BERNERS_LEE_2021`) classify replay per arm: pass `arms=` to
   `compare_replay_methods`.
