@@ -83,6 +83,13 @@ other seeded simulations give the same spikes as before.
 - Head-direction and boundary-vector `ground_truth` report a preferred
   direction of exactly −π as +π, the package's (−π, π] convention.
 
+### Widloski & Foster (2025): trajectory quantities tested against shuffles
+
+- `TrajectoryMetrics.mean_spread` and `mean_mean_jump`: the mean posterior
+  spread over time bins and the mean center-of-mass jump between
+  consecutive time bins (NaN with one time bin). They are also criterion
+  quantities.
+
 ### More published replay recipes
 
 Twelve more recipes in `neurospatial.replay.methods`, each with the paper's

@@ -87,6 +87,9 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
         track segments; NaN off a track.
     max_map_jump, max_mean_jump : float
         Largest of ``map_jumps`` and ``mean_jumps``; NaN with one time bin.
+    mean_mean_jump : float
+        Mean of ``mean_jumps``, the average center-of-mass jump between
+        consecutive time bins; NaN with one time bin.
     map_range, mean_range : float
         Largest minus smallest position along the track of the MAP bin, and
         of the posterior mean along the track; NaN off a track and on a
@@ -101,6 +104,8 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
     dispersion : float
         Root-mean-square distance of the posterior means from their average
         over the event.
+    mean_spread : float
+        Mean of ``spread`` over time bins.
     mean_peak_probability : float
         Mean of ``peak_probability`` over time bins.
     empty_fraction : float
@@ -128,12 +133,14 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
     track_length: float
     max_map_jump: float
     max_mean_jump: float
+    mean_mean_jump: float
     map_range: float
     mean_range: float
     start_to_end_map_distance: float
     start_to_end_mean_distance: float
     map_path_length: float
     dispersion: float
+    mean_spread: float
     mean_peak_probability: float
     empty_fraction: float
 
@@ -221,12 +228,14 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
             "track_length": self.track_length,
             "max_map_jump": self.max_map_jump,
             "max_mean_jump": self.max_mean_jump,
+            "mean_mean_jump": self.mean_mean_jump,
             "map_range": self.map_range,
             "mean_range": self.mean_range,
             "start_to_end_map_distance": self.start_to_end_map_distance,
             "start_to_end_mean_distance": self.start_to_end_mean_distance,
             "map_path_length": self.map_path_length,
             "dispersion": self.dispersion,
+            "mean_spread": self.mean_spread,
             "mean_peak_probability": self.mean_peak_probability,
             "well_decoded_fraction": self.well_decoded_fraction(),
             "empty_fraction": self.empty_fraction,
@@ -318,8 +327,13 @@ def trajectory_metrics(
       as the square root of the posterior's second moment. The formula
       printed in the paper, :math:`\\sum (x - \\bar x)^2 (y - \\bar y)^2 P`,
       has a square root in units of length squared, which a threshold in cm
-      cannot apply to, and the deposited code does not include the
-      posterior-spread computation, so the second central moment is used.
+      cannot apply to. The deposited ``compute_imageSpread.m`` takes the
+      exponent as an argument, but the decoder that calls it on the
+      posterior is not deposited, so the exponent used is unknown; the
+      isotropic second central moment is used.
+    - ``mean_spread`` and ``mean_mean_jump``: Widloski & Foster (2025)
+      tested the mean posterior spread and the mean center-of-mass jump of
+      each candidate against cell-identity shuffles.
     - ``dispersion``: Widloski & Foster (2022) ``compute_sequenceDispersion.m``,
       > 12 cm, the root-mean-square distance of the posterior means from
       their average. The paper prints the mean of these distances instead.
@@ -509,12 +523,14 @@ def _trajectory_metrics(
         track_length=track_length,
         max_map_jump=_max_or_nan(map_jumps),
         max_mean_jump=_max_or_nan(mean_jumps),
+        mean_mean_jump=float(np.mean(mean_jumps)) if len(mean_jumps) else np.nan,
         map_range=map_range,
         mean_range=mean_range,
         start_to_end_map_distance=float(between[rows_of[0], rows_of[-1]]),
         start_to_end_mean_distance=float(np.linalg.norm(means[-1] - means[0])),
         map_path_length=float(np.sum(map_jumps)),
         dispersion=float(np.sqrt(np.mean(np.sum(deviations**2, axis=1)))),
+        mean_spread=float(np.mean(spread)),
         mean_peak_probability=float(np.mean(raw[rows, bins])),
         empty_fraction=(
             np.nan if empty_time_bins is None else float(np.mean(empty_time_bins))
