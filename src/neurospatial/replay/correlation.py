@@ -17,17 +17,16 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin
+from neurospatial.replay.trajectory import _SCORE_DECIMALS
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 _OPERATION = "weighted_correlation()"
-# Decimals kept in a correlation, as for the replay line score.
-_SCORE_DECIMALS = 12
 _ROW_NORMALIZATIONS = ("per_time_bin", "none")
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class WeightedCorrelationResult(ResultMixin):
     """Weighted correlation between time and decoded position in one event.
 

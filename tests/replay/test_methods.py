@@ -1068,7 +1068,7 @@ class TestSegmentationValidation:
             ),
             (
                 {"options": {"max_jump": 0.4}, "relative_to": {"max_jump": "arena"}},
-                "relative_to values",
+                "not measured in",
             ),
             ({"options": {"max_jump": 20.0}, "choose": "all"}, "choose"),
             (
@@ -2039,7 +2039,7 @@ def test_compare_refuses_duplicate_method_names(place_code):
         compare_replay_methods(
             env,
             [decoded],
-            replay_methods=[SILVA_2015, dataclasses.replace(SILVA_2015, criteria=())],
+            replay_methods=[SILVA_2015, dataclasses.replace(SILVA_2015, notes=())],
         )
 
 
