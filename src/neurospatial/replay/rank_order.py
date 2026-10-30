@@ -9,6 +9,7 @@ spike times and each cell's place field.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 
 _SPIKE_STATISTICS = ("first", "median", "mean", "all_spikes")
 _FIELD_ORDERS = ("peak", "center")
+_MULTI_FIELD_CELLS = ("keep", "exclude")
 # Largest number of (shuffle, pair) values ranked at once.
 _BLOCK_VALUES = 2_000_000
 
@@ -67,6 +69,13 @@ class RankOrderResult(ReadOnlyArraysMixin, ResultMixin):
         time, or ``"all_spikes"``.
     field_order : str
         How fields were placed on the track: ``"peak"`` or ``"center"``.
+    multi_field_cells : str
+        ``"keep"`` or ``"exclude"``: whether cells with more than one place
+        field were left out of the template.
+    excluded_units : NDArray[np.intp], shape (n_excluded_cells,)
+        Index in ``spike_times`` of each cell left out for having more than
+        one place field, whether or not it fired in the event; empty with
+        ``multi_field_cells="keep"``.
 
     See Also
     --------
@@ -79,9 +88,11 @@ class RankOrderResult(ReadOnlyArraysMixin, ResultMixin):
     active_units: NDArray[np.intp]
     spike_statistic: str
     field_order: str
+    multi_field_cells: str
+    excluded_units: NDArray[np.intp]
 
     def __post_init__(self) -> None:
-        """Own a read-only copy of ``active_units``."""
+        """Own read-only copies of ``active_units`` and ``excluded_units``."""
         self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
@@ -92,6 +103,8 @@ class RankOrderResult(ReadOnlyArraysMixin, ResultMixin):
             "n_active_cells": self.n_active_cells,
             "spike_statistic": self.spike_statistic,
             "field_order": self.field_order,
+            "multi_field_cells": self.multi_field_cells,
+            "n_excluded_cells": int(self.excluded_units.size),
         }
 
 
@@ -139,6 +152,8 @@ def rank_order_correlation(
     spike_statistic: Literal["first", "median", "mean", "all_spikes"] = "median",
     field_order: Literal["peak", "center"] = "peak",
     min_active_cells: int = 5,
+    multi_field_cells: Literal["keep", "exclude"] = "keep",
+    place_fields: Sequence[Any] | None = None,
 ) -> RankOrderResult:
     """Rank-order correlation between field order and firing order in an event.
 
@@ -179,16 +194,39 @@ def rank_order_correlation(
         them; the rate-weighted center is this function's reading. A cell
         with several fields is placed between them by ``"center"``, and on
         a branching track the center can fall between arms; use ``"peak"``
-        for such cells.
+        for such cells, or leave them out with
+        ``multi_field_cells="exclude"``.
     min_active_cells : int, default=5
         Fewest active cells for a correlation (Chenani et al. 2019; Diba &
         Buzsáki 2007 required 5 cells or 30% of place cells, whichever was
         greater, when detecting events). With fewer, ``score`` is NaN.
+    multi_field_cells : {"keep", "exclude"}, default="keep"
+        Cells with more than one place field have no single place in the
+        order (Tingley & Peyrache 2020: "Typically, such neurons are
+        excluded"; their method comparison used only single-field cells).
+
+        - ``"keep"``: every cell takes its position by ``field_order``.
+        - ``"exclude"``: each cell with more than one field is left out of
+          the template, as if it had no field. Fields are found by
+          :func:`~neurospatial.encoding.detect_place_fields` with its default
+          settings and the rate result's ``bandwidth``, or taken from
+          ``place_fields``. The excluded cells are listed in the result's
+          ``excluded_units``. A cell with no detected field is kept and
+          placed by ``field_order``.
+    place_fields : sequence, optional
+        Each cell's place fields, one entry per row of ``encoding_models``,
+        such as ``[detect_place_fields(env, rate, bandwidth=5.0) for rate in
+        rates]``; a cell with more than one entry is excluded. Only with
+        ``multi_field_cells="exclude"``, where it is required for rate maps
+        given as an array, since the smoothing bandwidth that sets the
+        smallest field is not known. With a rate result, pass it to choose
+        other detection settings.
 
     Returns
     -------
     RankOrderResult
-        The correlation, its analytic p-value and the active cells.
+        The correlation, its analytic p-value, the active cells and the
+        cells excluded for having several fields.
 
     Raises
     ------
@@ -197,8 +235,11 @@ def rank_order_correlation(
         ``encoding_models`` does not have one row per cell and one column per
         bin, has negative rates, or is a rate result computed on another
         environment, if ``interval`` is not a finite ``(start, stop)`` with
-        ``start < stop``, if ``spike_statistic`` or ``field_order`` is not
-        one of the options, or if ``min_active_cells`` is less than 3.
+        ``start < stop``, if ``spike_statistic``, ``field_order`` or
+        ``multi_field_cells`` is not one of the options, if
+        ``min_active_cells`` is less than 3, or if ``place_fields`` is given
+        without ``multi_field_cells="exclude"``, does not have one entry
+        per cell, or is missing for rate maps given as an array.
 
     See Also
     --------
@@ -259,6 +300,25 @@ def rank_order_correlation(
     (1.0, 6)
     >>> rank_order_correlation(env, spike_times[::-1], (1.0, 1.1), rates).score
     -1.0
+
+    Cell 2 also fires at the end of the track, so it has two fields. Leave
+    it out of the order:
+
+    >>> from neurospatial.encoding import detect_place_fields
+    >>> rates[2] += 20.0 * np.exp(-0.5 * ((x - 115.0) / 8.0) ** 2)
+    >>> fields = [detect_place_fields(env, rate, bandwidth=0.0) for rate in rates]
+    >>> [len(cell_fields) for cell_fields in fields]
+    [1, 1, 2, 1, 1, 1]
+    >>> result = rank_order_correlation(
+    ...     env,
+    ...     spike_times,
+    ...     (1.0, 1.1),
+    ...     rates,
+    ...     multi_field_cells="exclude",
+    ...     place_fields=fields,
+    ... )
+    >>> result.excluded_units, result.n_active_cells
+    (array([2]), 5)
     """
     pairs = _event_pairs(
         env,
@@ -269,6 +329,8 @@ def rank_order_correlation(
         field_order=field_order,
         min_active_cells=min_active_cells,
         operation="rank_order_correlation()",
+        multi_field_cells=multi_field_cells,
+        place_fields=place_fields,
     )
     return _result(pairs, spike_statistic, field_order)
 
@@ -282,6 +344,8 @@ def rank_order_significance(
     spike_statistic: Literal["first", "median", "mean", "all_spikes"] = "median",
     field_order: Literal["peak", "center"] = "peak",
     min_active_cells: int = 5,
+    multi_field_cells: Literal["keep", "exclude"] = "keep",
+    place_fields: Sequence[Any] | None = None,
     alternative: Literal["greater", "less", "two-sided"] = "two-sided",
     n_shuffles: int = 1000,
     rng: np.random.Generator | int | None = None,
@@ -299,6 +363,9 @@ def rank_order_significance(
         As for :func:`rank_order_correlation`.
     spike_statistic, field_order, min_active_cells
         As for :func:`rank_order_correlation`.
+    multi_field_cells, place_fields
+        As for :func:`rank_order_correlation`. Excluded cells are left out
+        of the shuffles too.
     alternative : {"two-sided", "greater", "less"}, default="two-sided"
         ``"two-sided"`` counts forward and reverse sequences alike (Diba &
         Buzsáki 2007): twice the smaller one-sided p-value, capped at 1.
@@ -393,6 +460,8 @@ def rank_order_significance(
         field_order=field_order,
         min_active_cells=min_active_cells,
         operation=operation,
+        multi_field_cells=multi_field_cells,
+        place_fields=place_fields,
     )
     observed = _result(pairs, spike_statistic, field_order)
     if not np.isfinite(observed.score):
@@ -445,6 +514,8 @@ class _EventPairs:
     times: NDArray[np.float64]  # (n_pairs,)
     cell: NDArray[np.intp]  # (n_pairs,)
     active_units: NDArray[np.intp]  # (n_active,)
+    multi_field_cells: str
+    excluded_units: NDArray[np.intp]  # (n_excluded,)
 
 
 def _event_pairs(
@@ -457,6 +528,8 @@ def _event_pairs(
     field_order: str,
     min_active_cells: int,
     operation: str,
+    multi_field_cells: str = "keep",
+    place_fields: Sequence[Any] | None = None,
 ) -> _EventPairs:
     from neurospatial._spikes import as_spike_trains
 
@@ -482,6 +555,10 @@ def _event_pairs(
         )
     start, stop = _validated_interval(interval, operation)
     positions = _field_positions(env, encoding_models, field_order, operation)
+    excluded = _multi_field_units(
+        env, encoding_models, multi_field_cells, place_fields, operation
+    )
+    positions[excluded] = np.nan
     trains = as_spike_trains(spike_times)
     if len(trains) != len(positions):
         raise ValueError(
@@ -529,6 +606,8 @@ def _event_pairs(
         times=np.asarray(times, dtype=np.float64),
         cell=np.asarray(cell, dtype=np.intp),
         active_units=active,
+        multi_field_cells=multi_field_cells,
+        excluded_units=excluded,
     )
 
 
@@ -549,7 +628,74 @@ def _result(
         active_units=pairs.active_units,
         spike_statistic=spike_statistic,
         field_order=field_order,
+        multi_field_cells=pairs.multi_field_cells,
+        excluded_units=pairs.excluded_units,
     )
+
+
+def _multi_field_units(
+    env: Environment,
+    encoding_models: Any,
+    multi_field_cells: str,
+    place_fields: Sequence[Any] | None,
+    operation: str,
+) -> NDArray[np.intp]:
+    """Index of each cell to exclude for having more than one place field.
+
+    Run after :func:`_field_positions` has validated ``encoding_models``.
+    """
+    if multi_field_cells not in _MULTI_FIELD_CELLS:
+        raise ValueError(
+            f"{operation}: multi_field_cells must be one of {_MULTI_FIELD_CELLS}, "
+            f"got {multi_field_cells!r}."
+        )
+    if multi_field_cells == "keep":
+        if place_fields is not None:
+            raise ValueError(
+                _format_error(
+                    f"{operation}: place_fields was given with "
+                    "multi_field_cells='keep'.",
+                    why="place_fields only decides which cells "
+                    "multi_field_cells='exclude' leaves out",
+                    fix="pass multi_field_cells='exclude' to leave out cells with "
+                    "more than one field, or leave out place_fields",
+                )
+            )
+        return np.empty(0, dtype=np.intp)
+    rates = _supported_rates(encoding_models)
+    if place_fields is None:
+        if not hasattr(encoding_models, "firing_rates"):
+            raise ValueError(
+                _format_error(
+                    f"{operation}: multi_field_cells='exclude' needs place_fields "
+                    "for rate maps given as an array.",
+                    why="the smallest place field depends on the bandwidth the "
+                    "maps were smoothed with, which an array does not carry",
+                    fix="pass place_fields=[detect_place_fields(env, rate, "
+                    "bandwidth=...) for rate in rates], or pass the "
+                    "SpatialRatesResult itself",
+                )
+            )
+        from neurospatial.encoding.spatial import detect_place_fields
+
+        bandwidth = getattr(encoding_models, "bandwidth", None)
+        place_fields = [
+            detect_place_fields(
+                env, rate, bandwidth=0.0 if bandwidth is None else bandwidth
+            )
+            for rate in rates
+        ]
+    if len(place_fields) != len(rates):
+        raise ValueError(
+            _format_error(
+                f"{operation}: place_fields has {len(place_fields)} entries but "
+                f"encoding_models has {len(rates)} rate maps.",
+                why="each cell's fields decide whether that cell is excluded",
+                fix="pass one entry per cell, in the order of the rate maps",
+            )
+        )
+    n_fields = np.array([len(cell_fields) for cell_fields in place_fields])
+    return np.flatnonzero(n_fields > 1).astype(np.intp)
 
 
 _EXACT_MAX_PAIRS = 9

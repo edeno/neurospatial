@@ -21,6 +21,15 @@
   a burst split across two clusters of one tetrode cannot score as a
   sequence. Each spike train keeps its group in both shuffles, and
   `n_pairs` counts only the compared pairs.
+- `rank_order_correlation` and `rank_order_significance` take
+  `multi_field_cells="keep" | "exclude"` and `place_fields=`. Tingley &
+  Peyrache note that cells with several place fields have no single place
+  in the order and are typically excluded. `"exclude"` leaves out each cell
+  with more than one field, found by `detect_place_fields` with the rate
+  result's `bandwidth`, or given as `place_fields=` (required for rate maps
+  given as an array). `RankOrderResult` records `multi_field_cells` and
+  `excluded_units`, and `summary()` reports `n_excluded_cells`. The default
+  `"keep"` leaves results unchanged.
 
 **Changed**
 
