@@ -45,6 +45,7 @@ from neurospatial.replay.trajectory import (
 )
 
 if TYPE_CHECKING:
+    from neurospatial.decoding.likelihood import _PoissonRates
     from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
     from neurospatial.stats.shuffle import ShuffleTestResult
@@ -710,14 +711,18 @@ def replay_significance(
         decoder = _EventDecoder(env, encoding_models, dt, prior, template)
         _require_reproducible_decode(decoder.decode(counts), decoded_posterior)
 
-        def decode(event_counts: Any, models: Any = None) -> Any:
-            """Decode shuffled counts or rate maps as the posterior was decoded."""
-            decoded = decoder.decode(event_counts, models)
+        def finish(decoded: Any, event_counts: Any) -> Any:
+            """A shuffle's decoded posterior, conditioned and zeroed as the event's."""
             if conditional:
                 decoded = _conditional_rows(decoded)
             if empty_time_bins == "zero":
                 return _zero_empty_rows(decoded, np.asarray(event_counts))
             return decoded
+
+        def decode_each(shuffled_counts: Iterable[Any]) -> Iterator[Any]:
+            """Decode shuffled counts as the posterior was decoded."""
+            for decoded, event_counts in decoder.decode_each(shuffled_counts):
+                yield finish(decoded, event_counts)
 
     if "unit_identity" in run:
         permuted = (
@@ -730,7 +735,7 @@ def replay_significance(
                 rng=generator,
             )
         )
-        null_scores["unit_identity"] = scorer.scores(map(decode, permuted), n_shuffles)
+        null_scores["unit_identity"] = scorer.scores(decode_each(permuted), n_shuffles)
 
     if "pseudo_event" in run:
         draws = generator.integers(len(pool), size=(n_shuffles, len(posterior)))
@@ -743,13 +748,13 @@ def replay_significance(
             counts, n_shuffles=n_shuffles, rng=generator
         )
         null_scores["spike_train_circular"] = scorer.scores(
-            map(decode, shifted_counts), n_shuffles
+            decode_each(shifted_counts), n_shuffles
         )
 
     if "place_field_circular" in run:
         null_scores["place_field_circular"] = scorer.scores(
             (
-                decode(counts, models)
+                finish(decoder.decode(counts, models), counts)
                 for models in decoder.shifted_models(n_shuffles, generator)
             ),
             n_shuffles,
@@ -769,7 +774,7 @@ def replay_significance(
             counts, n_shuffles=n_shuffles, rng=generator
         )
         null_scores["spike_time_uniform"] = scorer.scores(
-            map(decode, spread_counts), n_shuffles
+            decode_each(spread_counts), n_shuffles
         )
 
     if "column_cycle_weighted" in run:
@@ -1347,6 +1352,10 @@ class _EventDecoder:
     share.
     """
 
+    # Posterior entries of the shuffles decoded together by decode_each
+    # (about 32 MB).
+    _BATCH_VALUES = 4_000_000
+
     def __init__(
         self,
         env: Any,
@@ -1360,6 +1369,9 @@ class _EventDecoder:
         self.dt = dt
         self.prior = prior
         self.template = template
+        # The rate maps' likelihood terms and the prior, for an event length.
+        self._prepared: tuple[int, _PoissonRates, NDArray[np.float64] | None] | None
+        self._prepared = None
 
     @property
     def first_rates(self) -> NDArray[np.float64]:
@@ -1370,22 +1382,33 @@ class _EventDecoder:
         return np.asarray(getattr(models, "firing_rates", models))
 
     def decode(self, counts: Any, models: Any = None) -> NDArray[np.float64]:
-        """The posterior of ``counts``, with ``models`` replacing the rate maps."""
-        from neurospatial.decoding import decode_jointly, decode_position
+        """The posterior of ``counts``, with ``models`` replacing the rate maps.
+
+        With one set of rate maps this is ``decode_position(env, counts,
+        encoding_models, dt=dt, prior=prior).posterior``, with the rate maps
+        checked and their likelihood terms built once per event length
+        rather than for every shuffle. ``models`` is a place-field shuffle's
+        ``(rates, prior)`` from :meth:`shifted_models`: finite, non-negative
+        rates whose unsupported bins the prior excludes.
+        """
+        from neurospatial.decoding import decode_jointly
+        from neurospatial.decoding._support import validate_prior
+        from neurospatial.decoding.likelihood import _PoissonRates
+        from neurospatial.decoding.posterior import _validate_spike_counts
 
         if self.template is None:
-            event_models, event_prior = (
-                models
-                if models is not None
-                else (
-                    self.encoding_models,
-                    self.prior,
+            counts = np.asarray(counts)
+            _validate_spike_counts(counts)
+            n_time = len(counts)
+            if models is None:
+                rates, prior = self._rates_and_prior(n_time)
+            else:
+                maps, support_prior = models
+                rates = _PoissonRates.from_rates(np.asarray(maps), float(self.dt))
+                prior = validate_prior(
+                    support_prior, n_time, self.env.n_bins, context="decode_position"
                 )
-            )
-            decoded: NDArray[np.float64] = decode_position(
-                self.env, counts, event_models, dt=self.dt, prior=event_prior
-            ).posterior
-            return decoded
+            return _posterior(counts, rates, prior)
         import warnings
 
         with warnings.catch_warnings():
@@ -1400,6 +1423,73 @@ class _EventDecoder:
                 prior=self.prior,
             )
         return np.asarray(result.joint(self.template))
+
+    def decode_each(
+        self, shuffled: Iterable[NDArray[np.int64]]
+    ) -> Iterator[tuple[NDArray[np.float64], NDArray[np.int64]]]:
+        """Each shuffle's posterior, with its counts, as :meth:`decode` gives it.
+
+        With one set of rate maps, the shuffles' counts are stacked and
+        decoded together, a batch at a time: the posterior of a time bin
+        depends only on its own counts. Each posterior is a view of its
+        batch.
+        """
+        from neurospatial.decoding.posterior import _validate_spike_counts
+
+        if self.template is not None:
+            for counts in shuffled:
+                yield self.decode(counts), counts
+            return
+
+        def decoded(
+            batch: list[NDArray[np.int64]],
+        ) -> Iterator[tuple[NDArray[np.float64], NDArray[np.int64]]]:
+            n_time = len(batch[0])
+            stacked = np.concatenate(batch)
+            _validate_spike_counts(stacked)
+            rates, prior = self._rates_and_prior(n_time)
+            if prior is not None and prior.ndim == 2:  # one row per time bin
+                prior = np.tile(prior, (len(batch), 1))
+            posterior = _posterior(stacked, rates, prior)
+            for index, counts in enumerate(batch):
+                yield posterior[index * n_time : (index + 1) * n_time], counts
+
+        batch: list[NDArray[np.int64]] = []
+        size = 1
+        for counts in shuffled:
+            batch.append(np.asarray(counts))
+            if len(batch) == 1:
+                posterior_size = max(len(batch[0]), 1) * self.env.n_bins
+                size = max(1, self._BATCH_VALUES // posterior_size)
+            if len(batch) == size:
+                yield from decoded(batch)
+                batch = []
+        if batch:
+            yield from decoded(batch)
+
+    def _rates_and_prior(
+        self, n_time: int
+    ) -> tuple[_PoissonRates, NDArray[np.float64] | None]:
+        """The checked rate maps' likelihood terms and resolved prior.
+
+        As :func:`decode_position` prepares them for ``n_time`` time bins,
+        kept for the next call with as many.
+        """
+        from neurospatial.decoding._time_bins import validate_dt
+        from neurospatial.decoding.posterior import _prepare_decode_inputs
+
+        if self._prepared is None or self._prepared[0] != n_time:
+            rates, prior = _prepare_decode_inputs(
+                self.env,
+                self.encoding_models,
+                self.prior,
+                n_time,
+                dt=validate_dt(self.dt),
+                validate=True,
+                context="decode_position",
+            )
+            self._prepared = (n_time, rates, prior)
+        return self._prepared[1], self._prepared[2]
 
     def shifted_models(
         self, n_shuffles: int, generator: np.random.Generator
@@ -1433,6 +1523,25 @@ class _EventDecoder:
         }
         for _ in range(n_shuffles):
             yield {name: next(streams[name]) for name in names}
+
+
+def _posterior(
+    counts: NDArray[np.int64],
+    rates: _PoissonRates,
+    prior: NDArray[np.float64] | None,
+) -> NDArray[np.float64]:
+    """The posterior of ``counts``, decoded as :func:`decode_position` does."""
+    from neurospatial.decoding.posterior import _posterior_blocks
+
+    ((_, _, posterior, _),) = _posterior_blocks(
+        lambda start, stop: counts[start:stop],
+        len(counts),
+        rates,
+        prior,
+        time_chunk=max(len(counts), 1),
+        dtype=np.float64,
+    )
+    return posterior
 
 
 def _supported_rates(

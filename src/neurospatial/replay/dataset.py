@@ -1586,8 +1586,7 @@ class _NullContext:
                         rng=generator,
                     )
                 )
-            for shuffled_counts in permuted:
-                yield decoder.decode(shuffled_counts), shuffled_counts
+            yield from decoder.decode_each(permuted)
         elif self.null == "place_field_circular":
             models_of = (
                 iter(self.shared_draws)
@@ -1602,10 +1601,9 @@ class _NullContext:
                 if self.null == "spike_train_circular"
                 else shuffle_spike_counts_uniform
             )
-            for shuffled_counts in shuffle(
-                event_counts, n_shuffles=self.n_datasets, rng=generator
-            ):
-                yield decoder.decode(shuffled_counts), shuffled_counts
+            yield from decoder.decode_each(
+                shuffle(event_counts, n_shuffles=self.n_datasets, rng=generator)
+            )
 
 
 def _fast_path_applies(
