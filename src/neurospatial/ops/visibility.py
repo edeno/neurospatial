@@ -1053,20 +1053,15 @@ def _sight_lines(
     targets, shape (n_targets, 2), and returns a bool per target, as
     ``batch_line_of_sight_clear`` does.
     """
-    from neurospatial.geometry import (
-        analysis_interior,
-        boundary_geometry,
-        clear_segments,
-        physical_clear_segments,
-    )
+    from neurospatial.geometry import analysis_interior, boundary_geometry
+    from neurospatial.geometry._boundaries import SightWalls, physical_sight_lines
 
     walls = boundary_geometry(binning, arena, boundary_source, blocking="gaze")
     if boundary_source == "physical":
-        return lambda observer, targets: physical_clear_segments(
-            arena, observer, targets
-        )
+        return physical_sight_lines(arena)
     interior = analysis_interior(binning, arena, indexes)
-    return lambda observer, targets: clear_segments(walls, observer, targets, interior)
+    sight = SightWalls(walls)
+    return lambda observer, targets: sight.clear(observer, targets, interior)
 
 
 def _in_view(
