@@ -17,16 +17,20 @@ from neurospatial.decoding import (
     decode_position,
 )
 from neurospatial.replay import (
+    RankOrderMethod,
     ReplayCriterion,
     ReplayMethod,
     ReplaySegmentation,
     compare_replay_methods,
+    detect_rank_order_replay,
     detect_replay,
     weighted_correlation,
 )
 from neurospatial.replay.methods import (
     CAREY_2019,
     DAVIDSON_2009,
+    DIBA_BUZSAKI_2007,
+    FOSTER_WILSON_2006,
     IGATA_2021,
     KARLSSON_FRANK_2009,
     MALLORY_2025,
@@ -1504,3 +1508,166 @@ class TestMallory:
         ]
         assert MALLORY_2025.template_choice == "most_posterior"
         assert MALLORY_2025.exclude_end_distance == 20.0
+
+
+def _firing(cells, n_cells=40, start=1.0, step=0.01, spikes_per_cell=1):
+    """Spike trains in which ``cells`` fire once (or a burst) in turn."""
+    trains = [np.array([]) for _ in range(n_cells)]
+    for k, cell in enumerate(cells):
+        trains[cell] = start + step * k + 0.002 * np.arange(spikes_per_cell)
+    return trains
+
+
+class TestRankOrderMethods:
+    @pytest.mark.parametrize("order", [1, -1], ids=["forward", "reverse"])
+    def test_diba_detects_forward_and_reverse_sequences(self, place_code, order):
+        env, rates = place_code
+        cells = list(range(10, 25))[::order]  # 15 of 40 cells
+        result = detect_rank_order_replay(
+            env,
+            _firing(cells),
+            (1.0, 1.2),
+            rates,
+            rank_order_method=DIBA_BUZSAKI_2007,
+            rng=0,
+        )
+        assert result.is_replay
+        assert result.score == pytest.approx(order)
+        assert result.p_value == pytest.approx(2 / 501)
+
+    def test_diba_rejects_a_shuffled_order(self, place_code):
+        env, rates = place_code
+        cells = list(np.random.default_rng(3).permutation(np.arange(10, 25)))
+        result = detect_rank_order_replay(
+            env,
+            _firing(cells),
+            (1.0, 1.2),
+            rates,
+            rank_order_method=DIBA_BUZSAKI_2007,
+            rng=0,
+        )
+        assert abs(result.score) < 0.4 and not result.is_replay
+
+    def test_diba_needs_30_percent_of_the_cells(self, place_code):
+        env, rates = place_code
+        result = detect_rank_order_replay(
+            env,
+            _firing(range(10, 18)),  # 8 of 40 cells
+            (1.0, 1.2),
+            rates,
+            rank_order_method=DIBA_BUZSAKI_2007,
+            rng=0,
+        )
+        assert result.p_value < 0.1
+        assert result.values["active_fraction >= 0.3"] == pytest.approx(0.2)
+        assert not result.is_replay
+
+    def test_foster_uses_every_spike_and_the_analytic_p(self, place_code):
+        env, rates = place_code
+        result = detect_rank_order_replay(
+            env,
+            _firing(range(10, 24), spikes_per_cell=2),  # 14 of 40 cells
+            (1.0, 1.2),
+            rates,
+            rank_order_method=FOSTER_WILSON_2006,
+        )
+        assert result.is_replay
+        assert result.criteria["active_fraction >= 0.333333"]
+        assert result.p_value < 1e-6
+
+    def test_too_few_cells_is_not_replay(self, place_code):
+        env, rates = place_code
+        result = detect_rank_order_replay(
+            env,
+            _firing([10, 11]),
+            (1.0, 1.2),
+            rates,
+            rank_order_method=DIBA_BUZSAKI_2007,
+        )
+        assert np.isnan(result.score) and np.isnan(result.p_value)
+        assert not result.is_replay
+
+    def test_compare_scores_spikes_over_each_events_windows(self, place_code):
+        env, rates = place_code
+        event = simulate_replay_event(
+            env, rates, kind="sweep", rate_gain=4.0, seed=1, speed=900.0
+        )
+        counts, grid = bin_spikes_in_time(
+            list(event.spike_times), dt=DT, t_start=0.0, t_stop=event.duration
+        )
+        decoded = decode_position(env, counts, rates, dt=DT, times=grid)
+        table = compare_replay_methods(
+            env,
+            [decoded],
+            replay_methods=[SILVA_2015, DIBA_BUZSAKI_2007],
+            spike_times=list(event.spike_times),
+            encoding_models=rates,
+            dt=DT,
+            rng=0,
+        )
+        assert table["method"].tolist() == ["silva_2015", "diba_buzsaki_2007"]
+        assert table["is_replay"].all()
+        expected = detect_rank_order_replay(
+            env,
+            list(event.spike_times),
+            (grid[0] - DT / 2, grid[-1] + DT / 2),
+            rates,
+            rank_order_method=DIBA_BUZSAKI_2007,
+            rng=0,
+        )
+        assert table["score"].iloc[1] == pytest.approx(expected.score)
+        with pytest.raises(ValueError, match="need \\['spike_times'\\]"):
+            compare_replay_methods(
+                env,
+                [decoded],
+                replay_methods=[DIBA_BUZSAKI_2007],
+                encoding_models=rates,
+                dt=DT,
+            )
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"test": "analytic", "alternative": "greater"}, "two-sided"),
+            ({"test": "bootstrap"}, "test must be"),
+            ({"min_active_cells": 2}, "min_active_cells"),
+            ({"min_active_fraction": 1.5}, "min_active_fraction"),
+            ({"n_shuffles": 0}, "n_shuffles"),
+        ],
+    )
+    def test_invalid_rank_order_methods_are_refused(self, kwargs, match):
+        with pytest.raises(ValueError, match=match):
+            RankOrderMethod(name="x", reference="y", **kwargs)
+
+    @pytest.mark.parametrize(
+        ("method", "expected"),
+        [
+            (
+                FOSTER_WILSON_2006,
+                {
+                    "spike_statistic": "all_spikes",
+                    "field_order": "peak",
+                    "min_active_fraction": 1 / 3,
+                    "test": "analytic",
+                    "alpha": 0.05,
+                },
+            ),
+            (
+                DIBA_BUZSAKI_2007,
+                {
+                    "spike_statistic": "first",
+                    "field_order": "peak",
+                    "min_active_cells": 5,
+                    "min_active_fraction": 0.3,
+                    "test": "cell_order",
+                    "alternative": "two-sided",
+                    "n_shuffles": 500,
+                    "alpha": 0.1,
+                },
+            ),
+        ],
+        ids=lambda value: getattr(value, "name", ""),
+    )
+    def test_rank_order_recipes_match_the_papers(self, method, expected):
+        for name, value in expected.items():
+            assert getattr(method, name) == value, name

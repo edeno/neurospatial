@@ -121,6 +121,32 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
   counts. The Bendor-lab code zeroes the original event's empty time bins in
   shuffles that move them, which is not reproduced.
 
+### Rank-order replay recipes
+
+New `RankOrderMethod` records a published rank-order test, and
+`detect_rank_order_replay(env, spike_times, interval, encoding_models,
+rank_order_method=...)` applies it to one event. Each method records:
+
+- which spike times count;
+- how fields are ordered;
+- the fewest active cells, as a count and as a fraction of the template
+  cells;
+- the analytic p-value or a number of cell-order permutations, with the
+  test's side and α.
+
+The recipes are:
+
+- `FOSTER_WILSON_2006`: every spike against its cell's field peak, with the
+  analytic p-value, and a third of the probe cells active. Takigawa et al.
+  (2024) found about 17% false positives with this combination.
+- `DIBA_BUZSAKI_2007`: first spikes, 500 cell-order permutations, more
+  extreme than 95% of shuffles in either direction (a two-sided p below
+  0.10), and at least 5 cells and 30% of the place cells active.
+
+`compare_replay_methods(..., spike_times=)` puts rank-order and decoded
+methods in one table. A rank-order method scores each event's spikes from
+the first decoding window's start to the last window's end.
+
 ### Replay recipes on joint decodes; Mallory et al. (2025)
 
 `MALLORY_2025` follows the authors' code (`filter_candidate_events.m`,

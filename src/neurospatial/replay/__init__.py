@@ -54,7 +54,9 @@ detect_replay : Apply one published replay method to one decoded event
 compare_replay_methods : Several methods on several events, as a table
 ReplayMethod, ReplayCriterion : A method's score, shuffles and thresholds
 ReplaySegmentation : How a criteria-based method finds the trajectory segment
-neurospatial.replay.methods : The published recipes (DAVIDSON_2009,
+detect_rank_order_replay, RankOrderMethod : Published rank-order tests on spikes
+neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
+    DIBA_BUZSAKI_2007, DAVIDSON_2009,
     KARLSSON_FRANK_2009, PFEIFFER_FOSTER_2013, PFEIFFER_FOSTER_2015,
     SILVA_2015, WU_2017, CAREY_2019, MICHON_2019, IGATA_2021, TIROLE_2022,
     WIDLOSKI_FOSTER_2022, MALLORY_2025)
@@ -101,11 +103,13 @@ from neurospatial.replay.criteria import (
     trajectory_metrics,
 )
 from neurospatial.replay.methods import (
+    RankOrderMethod,
     ReplayCriterion,
     ReplayDetectionResult,
     ReplayMethod,
     ReplaySegmentation,
     compare_replay_methods,
+    detect_rank_order_replay,
     detect_replay,
 )
 from neurospatial.replay.nulls import (
@@ -140,9 +144,11 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Published methods
     "ReplayCriterion",
     "ReplayDetectionResult",
+    "RankOrderMethod",
     "ReplayMethod",
     "ReplaySegmentation",
     "compare_replay_methods",
+    "detect_rank_order_replay",
     "detect_replay",
     # Result containers
     "IsotonicFitResult",

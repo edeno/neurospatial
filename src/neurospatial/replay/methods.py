@@ -6,7 +6,9 @@ how the event is cut into trajectory segments (:class:`ReplaySegmentation`),
 and the thresholds an event must meet. :func:`detect_replay` applies a method
 to one decoded event and :func:`compare_replay_methods` applies several
 methods to several events, so the same data can be scored the way each lab
-scored it.
+scored it. :class:`RankOrderMethod` records a rank-order test, which scores
+the event's spikes rather than a decoded posterior
+(:func:`detect_rank_order_replay`).
 
 A recipe records the paper's decoding settings (time-bin and position-bin
 sizes) for reference but does not decode: methods are compared on the same
@@ -41,12 +43,15 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from neurospatial.decoding import DecodingResult, JointDecodingResult
+    from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
     from neurospatial.replay.segments import ReplaySegmentsResult
 
 __all__ = [
     "CAREY_2019",
     "DAVIDSON_2009",
+    "DIBA_BUZSAKI_2007",
+    "FOSTER_WILSON_2006",
     "IGATA_2021",
     "KARLSSON_FRANK_2009",
     "MALLORY_2025",
@@ -58,11 +63,13 @@ __all__ = [
     "TIROLE_2022",
     "WIDLOSKI_FOSTER_2022",
     "WU_2017",
+    "RankOrderMethod",
     "ReplayCriterion",
     "ReplayDetectionResult",
     "ReplayMethod",
     "ReplaySegmentation",
     "compare_replay_methods",
+    "detect_rank_order_replay",
     "detect_replay",
 ]
 
@@ -567,6 +574,112 @@ class ReplayMethod:
                 self.notes,
             ),
         )
+
+
+@dataclass(frozen=True)
+class RankOrderMethod:
+    """A published rank-order replay test.
+
+    The event's score is the Spearman correlation between when each active
+    cell fired and where its field lies on the track
+    (:func:`~neurospatial.replay.rank_order_correlation`), tested with the
+    analytic p-value or against cell-order permutations
+    (:func:`~neurospatial.replay.rank_order_significance`).
+
+    Attributes
+    ----------
+    name : str
+        Short name, for example ``"diba_buzsaki_2007"``.
+    reference : str
+        The paper the method follows.
+    spike_statistic : {"first", "median", "mean", "all_spikes"}
+        When each cell fired in the event (see
+        :func:`~neurospatial.replay.rank_order_correlation`).
+    field_order : {"peak", "center"}
+        Each cell's field position: its peak or rate-weighted center.
+    min_active_cells : int
+        Fewest active cells; with fewer the event is not replay.
+    min_active_fraction : float or None
+        Fewest active cells as a fraction of the cells with a field in
+        ``encoding_models`` (Foster & Wilson 2006: one third; Diba & Buzsáki
+        2007: 30%). Pass the rate maps of the paper's template cells.
+    test : {"analytic", "cell_order"}
+        The analytic two-sided Spearman p-value (Foster & Wilson 2006), or
+        ``n_shuffles`` cell-order permutations (Diba & Buzsáki 2007).
+    alternative : {"greater", "less", "two-sided"}
+        Tail of the permutation test; the analytic test is two-sided.
+    n_shuffles : int
+        Cell-order permutations.
+    alpha : float
+        Significance level: the p-value must be below it.
+    notes : tuple of str
+        Choices the paper does not specify, and event-selection rules not
+        applied.
+    """
+
+    name: str
+    reference: str
+    spike_statistic: Literal["first", "median", "mean", "all_spikes"] = "median"
+    field_order: Literal["peak", "center"] = "peak"
+    min_active_cells: int = 5
+    min_active_fraction: float | None = None
+    test: Literal["analytic", "cell_order"] = "cell_order"
+    alternative: Literal["greater", "less", "two-sided"] = "two-sided"
+    n_shuffles: int = 1000
+    alpha: float = 0.05
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Refuse settings that cannot run."""
+        object.__setattr__(self, "notes", tuple(self.notes))
+        prefix = f"RankOrderMethod {self.name!r}"
+        if self.test not in ("analytic", "cell_order"):
+            raise ValueError(
+                f"{prefix}: test must be 'analytic' or 'cell_order', got {self.test!r}."
+            )
+        if self.alternative not in ("greater", "less", "two-sided"):
+            raise ValueError(
+                f"{prefix}: alternative must be 'greater', 'less' or "
+                f"'two-sided', got {self.alternative!r}."
+            )
+        if self.test == "analytic" and self.alternative != "two-sided":
+            raise ValueError(
+                f"{prefix}: the analytic Spearman p-value is two-sided; use "
+                "test='cell_order' for a one-sided test."
+            )
+        if not 0 < self.alpha < 1:
+            raise ValueError(f"{prefix}: alpha must be in (0, 1), got {self.alpha!r}.")
+        for field_name in ("min_active_cells", "n_shuffles"):
+            value = getattr(self, field_name)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, np.integer))
+                or value < (3 if field_name == "min_active_cells" else 1)
+            ):
+                raise ValueError(
+                    f"{prefix}: {field_name} must be an integer of at least "
+                    f"{3 if field_name == 'min_active_cells' else 1}, got {value!r}."
+                )
+        fraction = self.min_active_fraction
+        if fraction is not None and not (
+            isinstance(fraction, (int, float, np.floating))
+            and not isinstance(fraction, bool)
+            and 0 < fraction <= 1
+        ):
+            raise ValueError(
+                f"{prefix}: min_active_fraction must be in (0, 1] or None, got "
+                f"{fraction!r}."
+            )
+
+    @property
+    def criteria(self) -> tuple[ReplayCriterion, ...]:
+        """The active-cell thresholds, as criteria."""
+        criteria = [ReplayCriterion("n_active_cells", ">=", self.min_active_cells)]
+        if self.min_active_fraction is not None:
+            criteria.append(
+                ReplayCriterion("active_fraction", ">=", self.min_active_fraction)
+            )
+        return tuple(criteria)
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -1256,17 +1369,150 @@ def _segment_detection_p_value(
     return float(result.p_value)
 
 
+def detect_rank_order_replay(
+    env: Environment,
+    spike_times: Any,
+    interval: tuple[float, float] | NDArray[np.float64],
+    encoding_models: NDArray[np.float64] | SpatialRatesResult,
+    *,
+    rank_order_method: RankOrderMethod,
+    rng: np.random.Generator | int | None = None,
+) -> ReplayDetectionResult:
+    """Apply one published rank-order method to one candidate event.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment of the rate maps: a 1-D environment or a linearized
+        track.
+    spike_times : array, sequence of arrays, or spike group
+        Spike times in seconds, one train per cell, in the order of the rows
+        of ``encoding_models``.
+    interval : (start, stop)
+        The candidate event, in seconds.
+    encoding_models : array of shape (n_cells, n_bins), or SpatialRatesResult
+        Each cell's rate map on ``env``, in Hz: the template cells of the
+        method's paper.
+    rank_order_method : RankOrderMethod
+        The method, for example
+        ``neurospatial.replay.methods.DIBA_BUZSAKI_2007``.
+    rng : np.random.Generator, int, or None
+        Random number generator or seed for the cell-order permutations.
+
+    Returns
+    -------
+    ReplayDetectionResult
+        The verdict, the rank-order correlation as ``score``, its p-value
+        and the active-cell criteria. An event with too few active cells, or
+        with all field positions or firing times equal, has a NaN score and
+        is not replay.
+
+    Raises
+    ------
+    ValueError
+        For inputs :func:`~neurospatial.replay.rank_order_correlation`
+        refuses.
+
+    See Also
+    --------
+    neurospatial.replay.rank_order_correlation : The correlation.
+    neurospatial.replay.rank_order_significance : The permutation test.
+    compare_replay_methods : Several methods, rank-order and decoded, on
+        several events.
+
+    Examples
+    --------
+    Eight cells fire in reverse field order within 80 ms:
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.replay import detect_rank_order_replay
+    >>> from neurospatial.replay.methods import DIBA_BUZSAKI_2007
+    >>> env = Environment.linear_track(
+    ...     endpoints=[[0.0, 0.0], [120.0, 0.0]], bin_size=10.0, units="cm"
+    ... )
+    >>> x = env.bin_centers[:, 0]
+    >>> rates = 20.0 * np.exp(
+    ...     -0.5 * ((x - np.linspace(10.0, 110.0, 8)[:, None]) / 8.0) ** 2
+    ... )
+    >>> spikes = [np.array([1.07 - 0.01 * i]) for i in range(8)]
+    >>> result = detect_rank_order_replay(
+    ...     env, spikes, (1.0, 1.1), rates, rank_order_method=DIBA_BUZSAKI_2007, rng=0
+    ... )
+    >>> result.is_replay, result.score
+    (True, -1.0)
+    """
+    from neurospatial.replay.rank_order import (
+        _field_positions,
+        rank_order_correlation,
+        rank_order_significance,
+    )
+
+    method = rank_order_method
+    options: dict[str, Any] = {
+        "spike_statistic": method.spike_statistic,
+        "field_order": method.field_order,
+        "min_active_cells": method.min_active_cells,
+    }
+    observed = rank_order_correlation(
+        env, spike_times, interval, encoding_models, **options
+    )
+    score = float(observed.score)
+    p_value = np.nan
+    if np.isfinite(score):
+        if method.test == "analytic":
+            p_value = float(observed.analytic_p_value)
+        else:
+            p_value = float(
+                rank_order_significance(
+                    env,
+                    spike_times,
+                    interval,
+                    encoding_models,
+                    **options,
+                    alternative=method.alternative,
+                    n_shuffles=method.n_shuffles,
+                    rng=rng,
+                ).p_value
+            )
+    with_field = np.isfinite(
+        _field_positions(
+            env, encoding_models, method.field_order, "detect_rank_order_replay()"
+        )
+    )
+    event_values = {
+        "n_active_cells": float(observed.n_active_cells),
+        "active_fraction": observed.n_active_cells / max(int(with_field.sum()), 1),
+    }
+    passes: dict[str, bool] = {}
+    values: dict[str, float] = {}
+    for criterion in method.criteria:
+        values[criterion.label] = event_values[criterion.quantity]
+        passes[criterion.label] = criterion.evaluate(
+            event_values[criterion.quantity], np.nan
+        )
+    return ReplayDetectionResult(
+        method=method.name,
+        is_replay=bool(p_value < method.alpha) and all(passes.values()),
+        score=score,
+        p_value=p_value,
+        criteria=passes,
+        values=values,
+    )
+
+
 def compare_replay_methods(
     env: Environment | Mapping[str, Environment],
     events: Sequence[DecodingResult | JointDecodingResult],
     *,
-    replay_methods: Sequence[ReplayMethod],
+    replay_methods: Sequence[ReplayMethod | RankOrderMethod],
     spike_counts: Sequence[NDArray[np.int64]] | None = None,
     encoding_models: Any = None,
     dt: float | None = None,
     prior: Any = None,
     template: str | None = None,
     valid_time_bins: Sequence[NDArray[np.bool_]] | None = None,
+    spike_times: Any = None,
     rng: np.random.Generator | int | None = None,
 ) -> pd.DataFrame:
     """Apply several published replay methods to several decoded events.
@@ -1280,8 +1526,12 @@ def compare_replay_methods(
         The decoded candidate events, each with ``times``: a decode on one
         set of rate maps, or a joint decode over several templates (see
         :func:`detect_replay`).
-    replay_methods : sequence of ReplayMethod
-        The methods to compare.
+    replay_methods : sequence of ReplayMethod or RankOrderMethod
+        The methods to compare. A rank-order method scores each event's
+        spikes over the event's decoding windows, from the first window's
+        start to the last window's end (``times[0] - dt / 2`` to
+        ``times[-1] + dt / 2``), against ``encoding_models`` (for a mapping,
+        ``encoding_models[template]``).
     spike_counts : sequence of arrays or None
         Each event's spike counts, for methods that need them.
     encoding_models, dt, prior, template
@@ -1292,6 +1542,9 @@ def compare_replay_methods(
     valid_time_bins : sequence of arrays or None
         Each event's valid time bins, for methods with a segmentation (see
         :func:`detect_replay`).
+    spike_times : array, sequence of arrays, or spike group, optional
+        The session's spike times, one train per row of
+        ``encoding_models``, for rank-order methods.
     rng : numpy.random.Generator, int, or None
         Random number generator or seed for the shuffles. Each (event, method)
         pair draws from its own stream, derived from ``rng``, the event's
@@ -1320,8 +1573,9 @@ def compare_replay_methods(
     ------
     ValueError
         If an event has no ``times``; if ``spike_counts`` or
-        ``valid_time_bins`` does not have one entry per event; or if a
-        method draws pseudo-events from joint decodes.
+        ``valid_time_bins`` does not have one entry per event; if a method
+        draws pseudo-events from joint decodes; or if a rank-order method is
+        given without ``spike_times``, ``encoding_models`` or ``dt``.
 
     See Also
     --------
@@ -1358,8 +1612,56 @@ def compare_replay_methods(
                     "decode_position(env, counts, rates, dt=dt, times=grid)",
                 )
             )
+    rank_methods = [m for m in replay_methods if isinstance(m, RankOrderMethod)]
+    if rank_methods:
+        missing = [
+            name
+            for name, value in (
+                ("spike_times", spike_times),
+                ("encoding_models", encoding_models),
+                ("dt", dt),
+            )
+            if value is None
+        ]
+        if missing:
+            raise ValueError(
+                _format_error(
+                    f"compare_replay_methods(): rank-order methods "
+                    f"{[m.name for m in rank_methods]} need {missing}.",
+                    why="they score each cell's spikes in the event against its "
+                    "field, over the event's decoding windows of width dt",
+                    fix="pass the session's spike_times, the rate maps as "
+                    "encoding_models and the decoding window dt",
+                )
+            )
+        if (isinstance(encoding_models, Mapping) or isinstance(env, Mapping)) and (
+            template is None
+        ):
+            raise ValueError(
+                _format_error(
+                    "compare_replay_methods(): rank-order methods need "
+                    "template= with a mapping of rate maps or environments.",
+                    why="a rank-order correlation compares the spikes with one "
+                    "template's field order",
+                    fix="pass template=, the name of the template to test",
+                )
+            )
+        rank_models = (
+            encoding_models[template]
+            if isinstance(encoding_models, Mapping)
+            else encoding_models
+        )
+        if isinstance(env, Mapping):
+            assert template is not None
+            rank_env = env[template]
+        else:
+            rank_env = env
     pool = None
-    if any("pseudo_event" in method.nulls for method in replay_methods):
+    if any(
+        "pseudo_event" in method.nulls
+        for method in replay_methods
+        if isinstance(method, ReplayMethod)
+    ):
         if any(isinstance(event, JointDecodingResult) for event in events):
             raise ValueError(
                 _format_error(
@@ -1391,6 +1693,19 @@ def compare_replay_methods(
                     entropy, spawn_key=(index, zlib.crc32(method.name.encode()))
                 )
             )
+            if isinstance(method, RankOrderMethod):
+                assert dt is not None
+                centers = np.asarray(event_times[index], dtype=np.float64)
+                ranked = detect_rank_order_replay(
+                    rank_env,
+                    spike_times,
+                    (centers[0] - dt / 2, centers[-1] + dt / 2),
+                    rank_models,
+                    rank_order_method=method,
+                    rng=stream,
+                )
+                rows.append({"event": index, **ranked.summary(), "error": ""})
+                continue
             counts = None if spike_counts is None else np.asarray(spike_counts[index])
             usable = np.asarray(event_times[index])
             if method.empty_time_bins == "drop" and counts is not None:
@@ -1848,7 +2163,66 @@ MALLORY_2025 = ReplayMethod(
     ),
 )
 
-PUBLISHED_METHODS: tuple[ReplayMethod, ...] = (
+FOSTER_WILSON_2006 = RankOrderMethod(
+    name="foster_wilson_2006",
+    reference=(
+        "Foster, D. J., & Wilson, M. A. (2006). Reverse replay of behavioural "
+        "sequences in hippocampal place cells during the awake state. Nature, "
+        "440(7084), 680-683."
+    ),
+    spike_statistic="all_spikes",
+    field_order="peak",
+    min_active_cells=3,
+    min_active_fraction=1 / 3,
+    test="analytic",
+    alpha=0.05,
+    notes=(
+        "Rank-order correlation between cell number, in order of field "
+        "peaks, and spike time, with its analytic probability; P < 0.05. "
+        "The paper does not say which spikes; Silva et al. (2015) describe "
+        "the same measure as the time of every spike against its cell's "
+        "ranked peak, which is used here.",
+        "Takigawa et al. (2024) found about 17% false positives for every "
+        "spike with the analytic p-value, because a cell's spikes share one "
+        "field position.",
+        "Events are proto-events in which at least a third of the probe "
+        "sequence's cells fired: pass the probe-sequence cells (peak rate "
+        "of at least 5 Hz, interneurons excluded) as encoding_models.",
+        "Events longer than 500 ms were rejected; event selection is not "
+        "applied here. The 100 cell-order permutations per event fed a "
+        "session-level Kolmogorov-Smirnov test, not a per-event test.",
+    ),
+)
+
+DIBA_BUZSAKI_2007 = RankOrderMethod(
+    name="diba_buzsaki_2007",
+    reference=(
+        "Diba, K., & Buzsáki, G. (2007). Forward and reverse hippocampal "
+        "place-cell sequences during ripples. Nature Neuroscience, 10(10), "
+        "1241-1242."
+    ),
+    spike_statistic="first",
+    field_order="peak",
+    min_active_cells=5,
+    min_active_fraction=0.3,
+    test="cell_order",
+    alternative="two-sided",
+    n_shuffles=500,
+    alpha=0.1,
+    notes=(
+        "First spike of each cell against the place-field order; 500 "
+        "shuffles of neuron identity. An event is significant when its "
+        "correlation is more positive or more negative than 95% of the "
+        "shuffles: 5% in each tail, a two-sided p-value below 0.10.",
+        "Events are 300 ms windows, preceded by at least 60 ms of silence, "
+        "in which at least 30% or 5 of the place cells fired, whichever was "
+        "greater; the cell thresholds are applied, the windows are not.",
+    ),
+)
+
+PUBLISHED_METHODS: tuple[ReplayMethod | RankOrderMethod, ...] = (
+    FOSTER_WILSON_2006,
+    DIBA_BUZSAKI_2007,
     DAVIDSON_2009,
     KARLSSON_FRANK_2009,
     PFEIFFER_FOSTER_2013,
