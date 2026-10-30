@@ -97,6 +97,22 @@ class TestClosedLoop:
         with pytest.raises(ValueError, match="not a closed-loop track"):
             detect_trajectory_radon(track, posterior, np.arange(3) * 0.02, wrap=True)
 
+    def test_loop_with_edge_spacing_is_refused(self):
+        """Gaps count as loop length at each corner but not at the seam."""
+        graph = nx.Graph()
+        for node, position in enumerate([(0, 0), (100, 0), (100, 100), (0, 100)]):
+            graph.add_node(node, pos=position)
+        edge_order = [(0, 1), (1, 2), (2, 3), (3, 0)]
+        graph.add_edges_from(edge_order)
+        spaced = Environment.from_graph(
+            graph, edge_order, bin_size=BIN_SIZE, edge_spacing=5.0, units="cm"
+        )
+        posterior = np.full((3, spaced.n_bins), 1.0 / spaced.n_bins)
+        with pytest.raises(ValueError, match="edge_spacing puts gaps of up to 5"):
+            detect_trajectory_radon(
+                spaced, posterior, np.arange(3) * 0.02, band=LOOP_BAND, wrap=True
+            )
+
     def test_one_dimensional_environment_is_refused(self):
         env = Environment.from_samples(
             np.linspace(0, 100, 200)[:, None], bin_size=5.0, units="cm"

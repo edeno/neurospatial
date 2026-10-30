@@ -218,9 +218,10 @@ paper leaves open and the reading taken here:
   wrap across the seam where the end of the track meets its start, and a
   sweep across the seam scores as it would anywhere else on the loop. The
   track must be a loop built with `Environment.from_graph`, whose last
-  segment in `edge_order` ends at the node where the first starts; an open
-  track, a band of half the loop or more, and `line_ends="on_track"` are
-  refused.
+  segment in `edge_order` ends at the node where the first starts, with no
+  `edge_spacing` (a gap would count as loop length at each corner but not
+  at the seam); an open track, a loop with `edge_spacing`, a band of half
+  the loop or more, and `line_ends="on_track"` are refused.
 - `detect_trajectory_radon(..., line_ends="on_track")` searches only lines
   that are on the track at the event's first and last time bins (Liu et al.
   2023, after `FindReplayScore` of ayalab1/neurocode), so the speed is
