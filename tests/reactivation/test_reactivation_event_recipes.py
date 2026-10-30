@@ -220,6 +220,42 @@ def test_min_events_gives_an_error_row(reactivated: EventSession) -> None:
     assert (table.loc[table["method"] == "enough", "error"] == "").all()
 
 
+@pytest.mark.parametrize(
+    "method",
+    [
+        LIU_2023_EV,
+        LIU_2023_PAIRWISE,
+        OLIVA_2020_EV,
+        ROBINSON_2026_PAIRWISE,
+        dataclasses.replace(EL_GABY_2021, min_events=None),
+        dataclasses.replace(LIU_2023_ASSEMBLY, **WHOLE),
+    ],
+    ids=lambda method: method.name,
+)
+@pytest.mark.parametrize("empty", ["outside", "none_given"])
+def test_a_window_without_events_is_an_error_row(
+    reactivated: EventSession, method: ReactivationMethod, empty: str
+) -> None:
+    """No match event in the window: the method's row says so, and the
+    other methods' rows are kept."""
+    data = reactivated
+    # Events of rest before only, none starting in rest after; or none at all.
+    match_events = data.control_events if empty == "outside" else np.empty((0, 2))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        table = _compare(
+            data,
+            [dataclasses.replace(OLIVA_2020_EV, name="other", rest_bins="fixed"), method],
+            match_events=match_events,
+        )
+    failed = table[table["method"] == method.name]
+    assert len(failed) == 1
+    assert "no match_events start inside the match window" in failed["error"].iloc[0]
+    assert failed["value"].isna().all()
+    other = table[table["method"] == "other"]
+    assert (other["error"] == "").all() and other["value"].notna().all()
+
+
 # ---------------------------------------------------------------------------
 # Member co-firing (El-Gaby et al. 2021)
 # ---------------------------------------------------------------------------

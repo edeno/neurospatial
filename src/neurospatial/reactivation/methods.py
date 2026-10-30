@@ -441,7 +441,7 @@ class ReactivationMethod:
         A control or match window with fewer events is refused, and the
         method's row reports why in ``error`` (El-Gaby et al. 2021: "only
         sessions where at least 200 SWR events were detected were
-        included").
+        included"). A window without events is refused even when None.
     detection : {"pca", "ica"} or None
         Pattern detection on the template counts, with the Marchenko-Pastur
         threshold; None for EV methods.
@@ -992,8 +992,9 @@ def compare_reactivation_methods(
         - ``p_value``, ``n_shuffles_used`` and ``is_reactivated`` (the
           method's within-session verdict; missing for methods without
           one), and ``error``: why a method could not be applied (for
-          example a period shorter than one window, or fewer events than
-          ``min_events``), with the other columns missing.
+          example a period shorter than one window, or a window without
+          events or with fewer than ``min_events``), with the other
+          columns missing.
 
         Columns that do not apply to a method are NaN. ``table.attrs``
         holds ``rng_entropy``, the seed the streams derive from: passing it
@@ -1211,7 +1212,7 @@ def _checked_events(value: Any, name: str) -> NDArray[np.float64] | None:
     if hasattr(value, "start") and hasattr(value, "end"):
         value = np.column_stack([np.asarray(value.start), np.asarray(value.end)])
     rows = np.asarray(value, dtype=np.float64)
-    if rows.ndim != 2 or rows.shape[1] != 2 or not len(rows):
+    if rows.ndim != 2 or rows.shape[1] != 2:
         raise ValueError(
             f"{_CALL}: {name} must be an (n_events, 2) array of start and stop "
             f"times, got shape {rows.shape}."
@@ -1281,7 +1282,13 @@ def _rest_counts(
 
 
 def _check_min_events(method: ReactivationMethod, n_events: int, period: str) -> None:
-    """Refuse a window with fewer events than ``min_events``."""
+    """Refuse a window without events, or with fewer than ``min_events``."""
+    if not n_events:
+        raise _MethodError(
+            f"no {period}_events start inside the {period} window, so its "
+            f"counts per event or event responses are undefined; pass "
+            f"{period}_events that start inside {period}_epochs"
+        )
     if method.min_events is not None and n_events < method.min_events:
         raise _MethodError(
             f"a {period} window has {n_events} events, fewer than "
