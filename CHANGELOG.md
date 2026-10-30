@@ -10,6 +10,12 @@
 - `ReplayMethod`, `ReplaySegmentation`, `ArmReplayMethod` and
   `ReplayDetectionResult` pickle every field by name, so no setting is
   reset when a copy is rebuilt.
+- `ReplayCriterion` refuses a threshold that is not a finite number (NaN,
+  a string, a bool) and an `absolute` that is not True or False.
+- `ReplayMethod` refuses two criteria with the same label, such as
+  thresholds 2.0 and 2.000001 on one quantity: results are keyed by label,
+  so one criterion overwrote the other and the verdict depended on their
+  order.
 
 ### Published replay methods as comparable recipes
 
