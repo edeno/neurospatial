@@ -11,9 +11,8 @@ Each step should produce usable public operations and a worked example.
 
 This document sequences the remaining work in [PLAN.md](PLAN.md) against the
 [project vision](../../vision.md). Existing phase files remain the detailed
-contracts, subject to checking their descriptions against current code. For
-example, immutable environments are already implemented; older phase text that
-describes them as a future prerequisite is stale. New public API names and the
+contracts, subject to checking their descriptions against current code. New
+public API names and the
 access-sampling interface below are proposals requiring normal design review.
 
 ## 1. Select the environment that applies at each time

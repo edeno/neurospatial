@@ -67,11 +67,10 @@ delegating environment methods. Do not dispatch by layout type strings.
 | 2F. Interval states | 2A, 2E for fixed-geometry owned feature arrays | Environment-valued snapshots and their identity-keyed caches require existing roadmap stage B. Changed movement uses 2C; changed walls use 2D only for consumers that require walls. |
 
 Behavior analyses that only consume positions, times and a static environment
-remain independently deliverable. Fixed-geometry feature-array state tables can
-land before stage B when their values and metadata are owned and immutable.
-Queries still require the selected lookup capability. Immutable Environment reuse
-waits for stage B; no frozen wrapper or parallel environment system substitutes
-for that prerequisite.
+remain independently deliverable. Queries still require the selected lookup
+capability. [Stage B](../environment-representation/overview.md#roadmap-after-phase-4)
+is complete: an `Environment` is an immutable value, so state tables can
+reference environments directly and cache by their identity.
 
 ## 2A — Stable IDs and explicit correspondences
 
@@ -217,13 +216,10 @@ blanket stage A dependency.
   Use `times` in seconds, existing interval validation and a declared time origin.
 - Deliver fixed-geometry feature-only tables first if useful: own read-only
   feature arrays and immutable units/frame/state metadata, aligned to one fixed
-  binning. Do not claim a mutable Environment supplied by reference is a registered
-  immutable state or cache it as one.
-- Require [existing roadmap stage B](../environment-representation/overview.md#roadmap-after-phase-4)
-  before registering Environment-valued snapshots or reusing caches by snapshot
-  identity. Representation phases 1–4 do not freeze graph attribute dictionaries,
-  units, or regions. A frozen wrapper around those mutable objects is insufficient;
-  implement no second environment representation to avoid the prerequisite.
+  binning.
+- Environment-valued snapshots reference immutable `Environment` values (stage B,
+  complete) and may reuse caches by snapshot identity. Implement no second
+  environment representation.
 - Feature-only changes reuse one fixed binning. Topology changes select immutable
   movement/environment snapshots by read-only reference; do not copy geometry
   per lookup. Shared IDs require a common declared binning;
