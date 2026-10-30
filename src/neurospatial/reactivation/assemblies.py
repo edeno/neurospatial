@@ -3054,6 +3054,29 @@ def _selected_pairs(
                     "given)",
                 )
             )
+        missing = np.array(
+            [
+                group is None
+                or (
+                    isinstance(group, (float, complex, np.inexact))
+                    and not np.isfinite(group)
+                )
+                for group in groups.tolist()
+            ],
+            dtype=bool,
+        )
+        if missing.any():
+            raise ValueError(
+                _format_error(
+                    f"{call}: unit_groups has a missing or non-finite group for "
+                    f"units {np.flatnonzero(missing).tolist()}.",
+                    why="Why: NaN compares unequal to every group, itself "
+                    "included, so units with NaN groups would all be paired as if "
+                    "on different tetrodes.",
+                    fix="give every unit its tetrode, shank or region, or leave "
+                    "units whose group is unknown out of the counts",
+                )
+            )
         first, second = np.triu_indices(n_units, k=1)
         selected &= groups[first] != groups[second]
     return selected

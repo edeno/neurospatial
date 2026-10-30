@@ -218,8 +218,8 @@ def simulate_replay_event(
         have one finite, non-negative row per cell and one column per bin, if
         ``speed`` is missing for a sweep, if a sweep leaves the track, or if
         ``duration``, ``rate_gain`` or ``random_interval`` is not positive,
-        if ``drop_fraction`` is outside ``[0, 1]``, or if ``n_noise_spikes``
-        is not a non-negative integer.
+        if ``drop_fraction`` is not a number in ``[0, 1]`` (a bool is
+        refused), or if ``n_noise_spikes`` is not a non-negative integer.
 
     See Also
     --------
@@ -285,7 +285,11 @@ def simulate_replay_event(
     ):
         if not (np.isfinite(value) and value > 0):
             raise ValueError(f"{_OPERATION}: {name} must be positive, got {value!r}.")
-    if not 0.0 <= drop_fraction <= 1.0:
+    if (
+        isinstance(drop_fraction, bool)
+        or not isinstance(drop_fraction, (int, float, np.integer, np.floating))
+        or not 0.0 <= drop_fraction <= 1.0
+    ):
         raise ValueError(
             f"{_OPERATION}: drop_fraction must be a fraction from 0 to 1 of the "
             f"event's spikes, got {drop_fraction!r}."

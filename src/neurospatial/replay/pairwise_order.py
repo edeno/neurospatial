@@ -326,9 +326,9 @@ def pairwise_order_score(
         "center", not defined there) or its peak bin.
     unit_groups : array-like, shape (n_cells,), optional
         Group of each cell, such as its tetrode or shank, in the order of
-        ``spike_times``. Only pairs of spikes from cells in different groups
-        are compared, the rule of
-        ``explained_variance_reactivation(unit_groups=)``. See Notes.
+        ``spike_times``; None, NaN and infinite groups are refused. Only
+        pairs of spikes from cells in different groups are compared, the
+        rule of ``explained_variance_reactivation(unit_groups=)``. See Notes.
 
     Returns
     -------
@@ -344,9 +344,10 @@ def pairwise_order_score(
         ``spike_times`` and one column per bin, has negative rates, or is a
         rate result computed on another environment, if ``interval`` is not
         a finite ``(start, stop)`` with ``start < stop``, if an option is
-        out of range, if ``unit_groups`` does not hold one group per cell,
-        or if the active cells' fields give more than 65,536 combinations of
-        one field per cell to search.
+        out of range, if ``unit_groups`` does not hold one group per cell
+        or holds a missing group (None, NaN or infinite), or if the active
+        cells' fields give more than 65,536 combinations of one field per
+        cell to search.
 
     See Also
     --------
@@ -481,10 +482,12 @@ def pairwise_order_significance(
           shuffled the spike times for each event"; redrawing times
           uniformly over the event is another reading, which changes the
           number of nearby pairs.
-        - ``"cell_identity"``: permute the cells' sets of fields across
-          every cell given, active or not, with or without a field, so each
-          spike train takes another cell's fields (Davidson et al. 2009's
-          cell-identity shuffle, which Gupta et al. cite).
+        - ``"cell_identity"``: permute the sets of fields among the cells
+          with a field, active or not, so each spike train of a cell with a
+          field takes another such cell's fields. Cells without a field
+          stay unscored, so adding them changes neither the score nor its
+          shuffles. Davidson et al. (2009), whose cell-identity shuffle
+          Gupta et al. cite, shuffled among spatially tuned units only.
     n_shuffles : int, default=300
         Shuffles per null (Gupta et al. 2010: 300). A p-value is at least
         ``1 / (n_shuffles + 1)``.
@@ -641,15 +644,19 @@ def detect_pairwise_order_replay(
         or minus the backward score, so a backward sequence scores below
         zero. ``p_value`` is the largest over the method's nulls,
         ``template`` the tested template (None for one set of rate maps),
-        and ``criteria`` the active-cell rule, counted over every cell
-        given.
+        ``criteria`` the active-cell rule, counted over every cell given,
+        and ``z_scores`` the score's z-score against each null's shuffles,
+        keyed by null name and signed like ``score``: positive for a
+        forward sequence that beats its shuffles, negative for a backward
+        one.
 
     Raises
     ------
     ValueError
-        If ``template`` is given without a mapping of rate maps or is not
-        one of its keys, if a mapping of environments lacks a template, or
-        for inputs :func:`pairwise_order_score` refuses.
+        If ``encoding_models`` is an empty mapping, if ``template`` is given
+        without a mapping of rate maps or is not one of its keys, if a
+        mapping of environments lacks a template, or for inputs
+        :func:`pairwise_order_score` refuses.
 
     See Also
     --------
@@ -688,6 +695,16 @@ def detect_pairwise_order_replay(
     names: list[str | None]
     if isinstance(encoding_models, Mapping):
         names = list(encoding_models)
+        if not names:
+            raise ValueError(
+                _format_error(
+                    f"{operation}: encoding_models is an empty mapping.",
+                    why="each template's rate maps place the cells' fields",
+                    fix="pass at least one set of rate maps, such as "
+                    "encoding_models={'left': rates_left}, or one array of "
+                    "rate maps",
+                )
+            )
         if template is not None:
             if template not in encoding_models:
                 raise ValueError(
@@ -713,7 +730,7 @@ def detect_pairwise_order_replay(
     }
     streams = _template_streams(rng, list(labels.values()))
     event = None
-    best: tuple[float, float, str | None] | None = None
+    best: tuple[float, float, str | None, dict[str, float]] | None = None
     for name in names:
         if isinstance(env, Mapping):
             if name is None or name not in env:
@@ -757,11 +774,15 @@ def detect_pairwise_order_replay(
                 operation,
             )
             sign = 1.0 if direction == "forward" else -1.0
-            candidate = (tested.p_value, sign * tested.observed.score, name)
+            # The z-score of the signed score against the signed shuffles.
+            z_scores = {
+                null: sign * test.z_score for null, test in tested.shuffles.items()
+            }
+            candidate = (tested.p_value, sign * tested.observed.score, name, z_scores)
             if best is None or candidate[0] < best[0]:
                 best = candidate
     assert best is not None and event is not None
-    p_value, score, chosen = best
+    p_value, score, chosen, z_scores = best
     n_active = float(event.active_units.size)
     criterion = method.criteria[0]
     passes = {criterion.label: criterion.evaluate(n_active, np.nan)}
@@ -774,6 +795,7 @@ def detect_pairwise_order_replay(
         values={criterion.label: n_active},
         template=chosen,
         n_shuffles_used=method.n_shuffles,
+        z_scores=z_scores,
     )
 
 
@@ -937,6 +959,30 @@ def _event_spikes(
                     "different groups, so every cell needs a group",
                     fix="pass the tetrode or shank of each cell, in the order of "
                     "spike_times",
+                )
+            )
+        missing = np.array(
+            [
+                group is None
+                or (
+                    isinstance(group, (float, complex, np.inexact))
+                    and not np.isfinite(group)
+                )
+                for group in groups.tolist()
+            ],
+            dtype=bool,
+        )
+        if missing.any():
+            raise ValueError(
+                _format_error(
+                    f"{operation}: unit_groups has a missing or non-finite group "
+                    f"for cells {np.flatnonzero(missing).tolist()}.",
+                    why="NaN compares unequal to every group, itself included, "
+                    "so cells with NaN groups would all be compared as if on "
+                    "different tetrodes",
+                    fix="give every cell its tetrode or shank, or leave cells "
+                    "whose group is unknown out of spike_times and "
+                    "encoding_models",
                 )
             )
     in_event = [train[(train >= start) & (train < stop)] for train in trains]
@@ -1156,9 +1202,14 @@ def _significance(
             weights = _order_weights(
                 first, second, signs * compared, event.cell, n_active
             )
-            draws = np.argsort(generator.random((n_shuffles, len(fields))), axis=1)
+            # Field sets move among the cells with a field; the others stay
+            # fieldless and unscored.
+            with_field = np.flatnonzero([f.size > 0 for f in fields])
+            source = np.arange(len(fields))
+            draws = np.argsort(generator.random((n_shuffles, with_field.size)), axis=1)
             for k, draw in enumerate(draws):
-                shuffled = [fields[draw[unit]] for unit in event.active_units]
+                source[with_field] = with_field[draw]
+                shuffled = [fields[source[unit]] for unit in event.active_units]
                 null_scores[k] = _searched(weights, shuffled, sign, operation)[0]
         tests[null] = ShuffleTestResult(
             observed_score=float(observed.score),

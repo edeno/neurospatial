@@ -281,6 +281,16 @@ class TestPairSelection:
         with pytest.raises(ValueError, match="one group per unit"):
             explained_variance_reactivation(corr, corr, unit_groups=np.arange(15))
 
+    @pytest.mark.parametrize("missing", [np.nan, None])
+    def test_missing_groups_are_refused(self, tetrode_session, missing) -> None:
+        corr = pairwise_correlations(tetrode_session["run"])
+        groups = np.arange(16, dtype=object if missing is None else float)
+        groups[[3, 7]] = missing
+        with pytest.raises(
+            ValueError, match=r"missing or non-finite group for units \[3, 7\]"
+        ):
+            explained_variance_reactivation(corr, corr, unit_groups=groups)
+
     def test_selection_leaving_too_few_pairs_is_nan(self, tetrode_session) -> None:
         corr = pairwise_correlations(tetrode_session["run"])
         with pytest.warns(UserWarning, match="valid pairs after pair selection"):

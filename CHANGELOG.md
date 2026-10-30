@@ -43,7 +43,8 @@
   compared, the rule of `explained_variance_reactivation(unit_groups=)`, so
   a burst split across two clusters of one tetrode cannot score as a
   sequence. Each spike train keeps its group in both shuffles, and
-  `n_pairs` counts only the compared pairs.
+  `n_pairs` counts only the compared pairs. A missing group (None, NaN or
+  infinite) is refused, since NaN would compare unequal to every group.
 - `rank_order_correlation` and `rank_order_significance` take
   `multi_field_cells="keep" | "exclude"` and `place_fields=`. Tingley &
   Peyrache note that cells with several place fields have no single place
@@ -410,7 +411,9 @@ papers define.
   units from different groups: tetrodes, as Kudrimoti et al. (1999) and
   Tatsuno et al. (2006) did, or regions for cross-region pairs (Lansink et
   al., 2009). `pair_mask=` selects pairs by any other rule, such as waveform
-  similarity (Giri et al., 2024). `n_pairs` counts the pairs used.
+  similarity (Giri et al., 2024). `n_pairs` counts the pairs used. A
+  missing or NaN group is refused, since NaN compares unequal to every
+  group and would pair those units as if on different tetrodes.
 - `control_correlations=` takes a list of control periods and partials out
   all of them, as in Kudrimoti et al.'s second experiment. REV is NaN with
   several controls. Tatsuno et al. (2006) and Giri et al. (2019) instead
@@ -599,14 +602,17 @@ computes this score and applies the published test.
   combinations is refused.
 - `pairwise_order_significance()`: the score against 300 permutations of
   the scored spikes' times (each cell keeps its spikes' count) and 300
-  permutations of the cells' field sets across every cell given, each
-  re-maximized; p = (k + 1) / (n + 1) per null, and the event must beat
-  both.
+  permutations of the field sets among the cells with a field, active or
+  not, each re-maximized; cells without a field stay unscored, so they
+  change neither the score nor its shuffles. p = (k + 1) / (n + 1) per
+  null, and the event must beat both.
 - `PairwiseOrderMethod`, `detect_pairwise_order_replay()` and the recipe
   `GUPTA_2010`: every template (pass a mapping of rate maps, one per lap)
   is tested forward and backward, and the test with the smallest p-value
   is reported, without a correction, as in the paper; the score is negative
-  for a backward sequence. At least 3 active cells. The recipe's notes list
+  for a backward sequence, and so are its `z_scores`, one per null (the
+  `z_score[...]` columns of `compare_replay_methods`). At least 3 active
+  cells. The recipe's notes list
   the readings taken where the paper is silent and the steps not applied
   (the session scan for events, the 80 cm detection limit, which the paper
   dropped for significance, and the merging of central-stem replays).
