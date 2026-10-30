@@ -41,6 +41,82 @@
   Takigawa et al. (2024), for stationary or scattered control events,
   which neither studied.
 
+### Event-based reactivation recipes
+
+Several labs count spikes per sharp-wave ripple (SWR) or theta cycle, or
+follow assemblies around SWR onsets. The reactivation recipes now do too.
+
+**New**
+
+- `ReactivationMethod(template_bins="events", rest_bins="events")` counts the
+  spikes of each event, from its start to its stop, as one bin: theta cycles
+  in the task, SWRs in rest. `compare_reactivation_methods` takes the events
+  as `template_events=`, `control_events=` and `match_events=` (`(start,
+  stop)` rows; a period uses the events starting in its window; events may
+  touch but not overlap, and events shorter than a bin are kept).
+  `min_events=` refuses a window with fewer events (an `error` row), and
+  `ReactivationMethod.needs_events` names the event arguments a recipe uses.
+  Counts per event share a duration component that raises every pair
+  correlation alike; the recipes' notes and the guide say so.
+- `measure="member_cofiring"` and `assembly_member_cofiring(control_counts,
+  match_counts, pattern)`: the Pearson correlation of every pair of a
+  pattern's members in each period, their means over the pairs defined in
+  both, and the difference (El-Gaby et al., 2021).
+- `detect_assemblies(..., member_rule=, member_threshold=)` chooses the
+  members: `"abs_z"` (the default, as before), `"positive_z"` (signed
+  weights above mean + `member_threshold` SD, El-Gaby et al. 2021),
+  `"otsu"` (Otsu's split of the absolute weights, Harvey et al. 2023) or
+  `"inverse_sqrt_n"` (weights above 1/√N, Robinson et al. 2026).
+  `z_threshold=` is renamed `member_threshold=`.
+- `assembly_event_response(times, activation, event_times, window, *,
+  response_window=, baseline_window=, reduce=)`: R(t) averaged around events,
+  each event's mean over a response window, and a signed-rank test against a
+  baseline window. Recipes take it as `event_response=EventResponse(...)`,
+  with `zscore_over="control_and_match"` (or `"all_periods"`) to z-score rest
+  before and after together, `activation_step=` for sliding bins or the
+  sampling of smoothed spikes, statistics `"event_response_difference"` and
+  `"event_response_ratio"`, `test="event_modulation"`, and the share of
+  events whose response is z > `significant_z`.
+- `ReactivationMethod(detection_units="each_region" |
+  "each_region_and_cross_region")` detects patterns in each region's units,
+  and across regions keeping patterns with members in at least two
+  (`region` column).
+- EV recipes take `statistic="partial_correlation"` (the correlation of the
+  residuals of the task and post-task pair correlations regressed on the
+  pre-task ones), `"semipartial_correlation"` (only the post-task side
+  residualized; new `ExplainedVarianceResult.semipartial_correlation`) and
+  `"ev_rev_contrast"`; `ev_rev_contrast(ev, rev)` returns (EV − REV) /
+  (EV + REV) (Karaba et al. 2024; no Karaba recipe, its methods supplement
+  was not read).
+- `explained_variance_contributions(...)`: EV with every pair minus EV
+  without each pair, and each unit's mean over its pairs (Oliva et al.
+  2020). `assembly_similarity(patterns, reference_patterns)`: absolute
+  cosine similarity and each pattern's best match (El-Gaby et al. 2021).
+- Recipes, every value quoted in their `notes` with the choices the papers
+  leave open: `OLIVA_2020_EV` (100 ms task bins, one bin per SWR, EV − REV),
+  `OLIVA_2020_ASSEMBLY` (20 ms, Gaussian SD 10 ms), `EL_GABY_2021` (25 ms
+  ICA, signed members above mean + 2 SD, member-pair correlations over
+  SWRs, at least 200 SWRs), `HARVEY_2023_ASSEMBLY` (25 ms ICA, Otsu members,
+  spikes smoothed by 25 / √12 ms every 2 ms, first NREM hour, peak of the
+  SWR-triggered mean 0–50 ms), `LIU_2023_EV` and `LIU_2023_PAIRWISE` (theta
+  cycles and SWRs as bins; EV and the semipartial correlation),
+  `LIU_2023_ASSEMBLY` (25 ms, members above mean + 2 SD, last and first NREM
+  hour, mean R(t) 0–100 ms after SWR onsets), `CHANG_2025_ASSEMBLY` (50 ms
+  bins every 10 ms, members above mean + 3 SD, (POST − PRE) / PRE, signed-rank
+  test against −500 to −100 ms), `ROBINSON_2026_PAIRWISE` (the partial
+  correlation) and `ROBINSON_2026_ASSEMBLY` (per region and across regions,
+  members above 1/√N, share of SWRs with z > 1.96). Robinson et al. was read
+  from the bioRxiv preprint.
+- `simulated_reactivation_session()` returns its rest bursts as
+  `control_events` and `match_events`.
+
+**Documentation**
+
+- The "Comparing reactivation methods" guide
+  compares the event-based recipes, shows how event lengths raise pair
+  correlations, and shows that a rate change without co-firing raises the
+  SWR responses of the assembly recipes more than reactivation does.
+
 ### Fernández-Ruiz-lab replay methods
 
 Replay tests of Harvey et al. (2023), Soula et al. (2023), Liu et al. (2023)
@@ -205,7 +281,7 @@ Several replay papers test a whole data set, not each event:
 
 **Documentation**
 
-- New guide, [Comparing reactivation methods](docs/user-guide/reactivation-methods.md):
+- New guide, "Comparing reactivation methods":
   the published recipes on one simulated session, what each reports, their
   values on three kinds of null data and on a session without reactivation,
   the rate-change confound that every published method calls reactivation,

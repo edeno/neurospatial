@@ -187,6 +187,11 @@ class SimulatedReactivationSession:
         Units of each assembly.
     reactivation, rate_change : float
         The simulation's settings (see :func:`simulated_reactivation_session`).
+    control_events, match_events : ndarray, shape (n_events, 2)
+        Start and stop of each population burst of the two rest periods,
+        overlapping bursts merged into one event: stand-ins for the
+        sharp-wave ripples of sleep, for the recipes that count spikes per
+        event or follow R(t) around events.
     """
 
     spike_times: tuple[NDArray[np.float64], ...]
@@ -196,6 +201,8 @@ class SimulatedReactivationSession:
     assemblies: tuple[tuple[int, ...], ...]
     reactivation: float
     rate_change: float
+    control_events: NDArray[np.float64]
+    match_events: NDArray[np.float64]
 
 
 def simulated_reactivation_session(
@@ -222,7 +229,10 @@ def simulated_reactivation_session(
     about 10 ms. During both rest periods every unit's rate is multiplied by
     ``burst_gain`` in 100 ms population bursts that occur ``burst_rate``
     times per second, like the population events of sleep; they make pair
-    correlations in rest grow with firing rates.
+    correlations in rest grow with firing rates. The bursts are returned as
+    ``control_events`` and ``match_events``, stand-ins for sharp-wave
+    ripples; assembly events in rest fall in them only by chance, as often
+    as the bursts cover the period (5% with the defaults).
 
     Parameters
     ----------
@@ -257,7 +267,8 @@ def simulated_reactivation_session(
     Returns
     -------
     SimulatedReactivationSession
-        Spike times, the three periods' epochs and the assemblies.
+        Spike times, the three periods' epochs, the assemblies and the
+        bursts of the two rest periods as events.
 
     Raises
     ------
@@ -308,6 +319,7 @@ def simulated_reactivation_session(
     member = np.zeros(n_units, dtype=bool)
     member[members] = True
     trains: list[list[NDArray[np.float64]]] = [[] for _ in range(n_units)]
+    burst_times: dict[bool, NDArray[np.float64]] = {}
     for start, stop in (control[0], template[0], match[0]):
         rest = start != template[0, 0]
         after = start == match[0, 0]
@@ -321,6 +333,7 @@ def simulated_reactivation_session(
             bursts = generator.uniform(
                 start, stop - 0.1, generator.poisson(burst_rate * duration)
             )
+            burst_times[bool(after)] = bursts
             for unit in range(n_units):
                 extra = (burst_gain - 1) * rate * gains[unit] * 0.1
                 counts = generator.poisson(extra, bursts.size)
@@ -350,10 +363,22 @@ def simulated_reactivation_session(
         template_epochs=template,
         match_epochs=match,
         control_epochs=control,
+        control_events=_merged_events(burst_times.get(False)),
+        match_events=_merged_events(burst_times.get(True)),
         assemblies=assemblies,
         reactivation=float(reactivation),
         rate_change=float(rate_change),
     )
+
+
+def _merged_events(starts: NDArray[np.float64] | None) -> NDArray[np.float64]:
+    """100 ms events starting at ``starts``, overlapping ones merged, (n, 2)."""
+    if starts is None or not starts.size:
+        return np.zeros((0, 2))
+    starts = np.sort(starts)
+    rows = as_intervals(np.column_stack([starts, starts + 0.1]), name="events")
+    assert rows is not None
+    return rows
 
 
 def reactivation_detection_rates(
