@@ -676,6 +676,15 @@ class TestMatchedAlpha:
             row = matched_alpha(table, replay_methods=[KF]).iloc[0]
         assert row["alpha"] == floor and row["rate"] == 0.0
 
+    def test_warns_at_the_two_sided_floor(self):
+        """A two-sided shuffle p-value is at least 2 / (n_shuffles + 1)."""
+        diba = DIBA_BUZSAKI_2007
+        floor = 2 / (diba.n_shuffles + 1)
+        table = _p_table([floor] * 3 + [0.5] * 17, method=diba)
+        with pytest.warns(UserWarning, match="more shuffles"):
+            row = matched_alpha(table, replay_methods=[diba]).iloc[0]
+        assert row["alpha"] == floor and row["rate"] == 0.0
+
     def test_warns_with_too_few_null_events(self):
         table = _p_table([0.3] + [0.6] * 9)
         with pytest.warns(UserWarning, match="more null events"):
