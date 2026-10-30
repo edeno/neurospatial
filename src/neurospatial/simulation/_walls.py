@@ -7,6 +7,7 @@ are a few vectorized line-segment intersections against every wall segment.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -66,6 +67,9 @@ class Walls:
         self.normals = np.column_stack([-self.vectors[:, 1], self.vectors[:, 0]])
         self.normals /= self.lengths[:, None]
         self.squared_lengths = self.lengths**2
+        # Longest straight run between any two wall points.
+        corners = np.concatenate([starts, ends])
+        self.span = float(np.hypot(*np.ptp(corners, axis=0))) if len(corners) else 0.0
         # A walker inside the walls has coordinates no larger than theirs.
         reference = float(np.max(np.abs(np.concatenate([starts, ends])), initial=0.0))
         self.tolerance = float(
@@ -91,10 +95,18 @@ class Walls:
         return starts, ends
 
     @classmethod
+    def _merged_segments(
+        cls, geometry: shapely.Geometry | list[shapely.Geometry]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Starts and ends of the straight pieces of ``geometry``'s merged lines."""
+        return cls._segments(
+            shapely.get_parts(shapely.line_merge(unary_union(geometry)))
+        )
+
+    @classmethod
     def from_geometry(cls, geometry: shapely.Geometry) -> Walls:
         """The straight segments of lines or polygon boundaries, open on both sides."""
-        lines = shapely.get_parts(shapely.line_merge(unary_union(geometry)))
-        return cls(*cls._segments(lines))
+        return cls(*cls._merged_segments(geometry))
 
     @classmethod
     def enclosing(cls, env: Environment) -> Walls | None:
@@ -118,9 +130,7 @@ class Walls:
         # the left of every outline segment.
         rings = shapely.get_rings(shapely.get_parts(shapely.orient_polygons(domain)))
         outline = cls._segments(rings)
-        inner = cls._segments(
-            shapely.get_parts(shapely.line_merge(unary_union(list(arena.walls))))
-        )
+        inner = cls._merged_segments(list(arena.walls))
         one_sided = np.repeat([True, False], [len(outline[0]), len(inner[0])])
         return cls(
             np.concatenate([outline[0], inner[0]]),
@@ -136,26 +146,6 @@ class Walls:
         )
         nearest = self.starts + along[:, None] * self.vectors
         return float(np.min(np.linalg.norm(point - nearest, axis=1)))
-
-    def _hits(
-        self, origins: NDArray[np.float64], rays: NDArray[np.float64]
-    ) -> NDArray[np.float64]:
-        """Fraction of each ray travelled to each segment, shape (n_rays, n_segments).
-
-        ``origins`` and ``rays`` have shape (n_rays, 2). ``inf`` where the ray
-        (``0 < t``) does not meet the segment.
-        """
-        vx, vy = self.vectors[:, 0], self.vectors[:, 1]
-        denominator = rays[:, :1] * vy - rays[:, 1:] * vx
-        ox = self.starts[:, 0] - origins[:, :1]
-        oy = self.starts[:, 1] - origins[:, 1:]
-        with np.errstate(divide="ignore", invalid="ignore"):
-            along_ray = (ox * vy - oy * vx) / denominator
-            along_wall = (ox * rays[:, 1:] - oy * rays[:, :1]) / denominator
-        hit = (
-            (denominator != 0) & (along_ray > 0) & (along_wall >= 0) & (along_wall <= 1)
-        )
-        return np.where(hit, along_ray, np.inf)
 
     def first_hit(
         self, position: NDArray[np.float64], step: NDArray[np.float64]
@@ -191,15 +181,28 @@ class Walls:
         return wall if np.isfinite(reach[wall]) else None
 
     def ray_distances(
-        self, origins: NDArray[np.float64], angles: NDArray[np.float64]
+        self,
+        origins: NDArray[np.float64],
+        angles: NDArray[np.float64],
+        inside: Callable[[NDArray[np.float64]], NDArray[np.bool_]] | None = None,
     ) -> NDArray[np.float64]:
         """Distance from each origin to the first wall along each direction.
+
+        An origin within :attr:`tolerance` of a wall stands on it. A ray that
+        leaves that wall into the floor sees the next wall; one that runs
+        along the wall, or leaves it out of the floor, meets it at distance
+        zero. The side is decided as geometry's ray casts decide it: by
+        whether the point halfway to the next wall is on the floor.
 
         Parameters
         ----------
         origins : ndarray of float64, shape (n_points, 2)
         angles : ndarray of float64, shape (n_angles,)
             Ray directions in radians (0 = East, +pi/2 = North).
+        inside : callable, optional
+            Maps points, shape (n, 2), to whether they are on the floor.
+            None when only the wall lines are known: every ray leaving a wall
+            then sees the next one.
 
         Returns
         -------
@@ -207,16 +210,54 @@ class Walls:
             ``inf`` where no wall lies along the ray.
         """
         units = np.column_stack([np.cos(angles), np.sin(angles)])
+        ux, uy = units[:, :1], units[:, 1:]
+        vx, vy = self.vectors[:, 0], self.vectors[:, 1]
+        nx, ny = self.normals[:, 0], self.normals[:, 1]
+        slack = self.tolerance / self.lengths
+        # Cross product of each ray with each segment, (n_angles, n_segments);
+        # zero where they are parallel.
+        denominator = ux * vy - uy * vx
         n_angles = len(angles)
         out = np.empty((len(origins), n_angles))
+        # Rays that meet the wall they start on, (n_points, n_angles).
+        meets_own = np.zeros(out.shape, dtype=bool)
+        on_any = np.zeros(len(origins), dtype=bool)
         per_chunk = max(1, _INTERSECTIONS_PER_CHUNK // (n_angles * len(self.starts)))
         for start in range(0, len(origins), per_chunk):
-            chunk = origins[start : start + per_chunk]
-            starts = np.repeat(chunk, n_angles, axis=0)
-            rays = np.tile(units, (len(chunk), 1))
-            out[start : start + len(chunk)] = (
-                self._hits(starts, rays).min(axis=1).reshape(len(chunk), n_angles)
+            rows = slice(start, start + per_chunk)
+            chunk = origins[rows]
+            # Offsets from each origin to each segment start, (n_chunk, 1, S).
+            ox = (self.starts[:, 0] - chunk[:, :1])[:, None, :]
+            oy = (self.starts[:, 1] - chunk[:, 1:])[:, None, :]
+            # Origins on a segment: on its line, within its extent.
+            on = (np.abs(ox * nx + oy * ny) <= self.tolerance) & (
+                np.abs(-(ox * vx + oy * vy) / self.squared_lengths - 0.5) <= 0.5 + slack
             )
+            # Fractions of the ray and of the segment to the crossing, each
+            # (n_chunk, n_angles, n_segments).
+            with np.errstate(divide="ignore", invalid="ignore"):
+                along_ray = (ox * vy - oy * vx) / denominator
+                along_wall = (ox * uy - oy * ux) / denominator
+            hit = (
+                (denominator != 0)
+                & (along_ray > 0)
+                & (along_wall >= 0)
+                & (along_wall <= 1)
+                & ~on
+            )
+            out[rows] = np.where(hit, along_ray, np.inf).min(axis=2)
+            # A ray along its own wall meets it at once.
+            meets_own[rows] = np.any(on & (denominator == 0), axis=2)
+            on_any[rows] = on.any(axis=(1, 2))
+        if inside is not None and on_any.any():
+            # Halfway to the next wall; a ray that meets no other wall has
+            # left the floor, and any point along it shows that.
+            standing = np.flatnonzero(on_any)
+            ahead = out[standing]
+            reach = np.where(np.isfinite(ahead), ahead, self.span) / 2
+            probes = origins[standing, None, :] + reach[..., None] * units
+            meets_own[standing] |= ~inside(probes.reshape(-1, 2)).reshape(reach.shape)
+        out[meets_own] = 0.0
         return out
 
     def move(

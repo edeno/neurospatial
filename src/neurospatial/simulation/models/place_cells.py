@@ -10,6 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._results import read_only_copy
 from neurospatial._units import default_length
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
@@ -18,10 +19,10 @@ from neurospatial.ops.distance import distance_field
 from neurospatial.simulation.models.base import (
     _check_metric,
     _check_point,
-    _check_rates,
     _draw_rng,
     _model_inputs,
-    _read_only,
+    _set_rates,
+    _tuned_rate,
     geodesic_lookup_bins,
 )
 
@@ -248,13 +249,13 @@ class PlaceCellModel:
 
     def __post_init__(self) -> None:
         env = self.env
-        _check_rates(self.max_rate, self.baseline_rate)
+        _set_rates(self)
         _check_metric(self.metric, "PlaceCellModel()")
         object.__setattr__(self, "max_rate", float(self.max_rate))
         object.__setattr__(self, "baseline_rate", float(self.baseline_rate))
         if self.center is None:
             center_idx = _draw_rng(self).integers(0, env.n_bins)
-            center = _read_only(env.bin_centers[center_idx])
+            center = read_only_copy(env.bin_centers[center_idx], np.float64)
         else:
             center = _check_point("center", self.center, env.n_dims)
             object.__setattr__(self, "center", center)
@@ -293,7 +294,7 @@ class PlaceCellModel:
         if width_check.ndim == 0 or env.n_dims == 1:
             width = float(width_check.reshape(-1)[0])
         else:
-            width = _read_only(width_check)
+            width = read_only_copy(width_check, np.float64)
             if env.coordinate_kind == "polar":
                 require_cartesian(
                     env.coordinate_system,
@@ -417,9 +418,7 @@ class PlaceCellModel:
         # unreachable geodesic distance, inf, gives exactly 0), so the rate
         # settles on the baseline without any clipping.
         gaussian = np.exp(-0.5 * sigmas**2)
-        rates: NDArray[np.float64] = (
-            self.baseline_rate + (self.max_rate - self.baseline_rate) * gaussian
-        )
+        rates = _tuned_rate(self, gaussian)
 
         if self.condition is not None:
             mask = np.asarray(self.condition(positions, times))

@@ -235,8 +235,8 @@ def make_t_maze(
         bin_size=bin_size,
         name="t_maze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     # Add regions for key locations
     region_builder = Regions()

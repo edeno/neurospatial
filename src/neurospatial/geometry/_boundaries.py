@@ -651,9 +651,16 @@ def ray_hits(
 
 
 def _wall_frame(
-    arena: Arena, query: NDArray[np.float64], blocking: Blocking
+    arena: Arena,
+    query: NDArray[np.float64],
+    blocking: Blocking,
+    walls: shapely.Geometry | None = None,
 ) -> tuple[Arena, NDArray[np.float64], list[_TransformedArena]]:
-    """Use stored projection errors for contact in a shared physical-wall frame."""
+    """Use stored projection errors for contact in a shared physical-wall frame.
+
+    ``walls``, when given, are the base arena's ``physical_walls`` for
+    ``blocking``, already built.
+    """
 
     frames = []
     error = None
@@ -662,7 +669,9 @@ def _wall_frame(
         query, error = arena.affine.project(query, error)
         arena = arena.base
     if error is not None:
-        _snap_onto_walls(query, error, physical_walls(arena, blocking=blocking), arena)
+        if walls is None:
+            walls = physical_walls(arena, blocking=blocking)
+        _snap_onto_walls(query, error, walls, arena)
     return arena, query, frames
 
 
@@ -702,6 +711,33 @@ def physical_ray_hits(
     return result
 
 
+def physical_sight_lines(
+    arena: Arena,
+) -> Callable[[NDArray[np.float64], NDArray[np.float64]], NDArray[np.bool_]]:
+    """Clear sight lines past every boundary but opaque walls, walls built once.
+
+    Keeps on-wall cues visible under shared-frame inverse rounding. The
+    returned test takes an observer, shape (2,), and targets, shape
+    (n_targets, 2), as :func:`physical_clear_segments` does.
+    """
+    base = arena
+    while isinstance(base, _TransformedArena):
+        base = base.base
+    walls = physical_walls(base, blocking="gaze")
+    sight = SightWalls(walls)
+    interior = physical_footprint_interior(base)
+
+    def clear(
+        observer: NDArray[np.float64], targets: NDArray[np.float64]
+    ) -> NDArray[np.bool_]:
+        _base, query, _frames = _wall_frame(
+            arena, np.vstack((observer, targets)), "gaze", walls
+        )
+        return sight.clear(query[0], query[1:], interior)
+
+    return clear
+
+
 def physical_clear_segments(
     arena: Arena, observer: NDArray[np.float64], targets: NDArray[np.float64]
 ) -> NDArray[np.bool_]:
@@ -709,13 +745,7 @@ def physical_clear_segments(
 
     Keeps on-wall cues visible under shared-frame inverse rounding.
     """
-    base, query, _frames = _wall_frame(arena, np.vstack((observer, targets)), "gaze")
-    return clear_segments(
-        physical_walls(base, blocking="gaze"),
-        query[0],
-        query[1:],
-        physical_footprint_interior(base),
-    )
+    return physical_sight_lines(arena)(observer, targets)
 
 
 def clear_segments(
@@ -729,76 +759,99 @@ def clear_segments(
     An observer standing on a wall does not block its own view when the
     segment leaves that wall into ``interior`` (see ``_start_departures``).
     """
-    targets = np.asarray(targets, dtype=np.float64)
-    valid = np.all(np.isfinite(targets), axis=1) & np.all(np.isfinite(observer))
-    result = np.zeros(len(targets), dtype=bool)
-    selected = targets[valid]
-    same = np.all(selected == observer, axis=1)
-    if np.any(~same):
-        lines = shapely.linestrings(
-            np.stack(
-                (np.broadcast_to(observer, selected[~same].shape), selected[~same]),
-                axis=1,
-            )
-        )
-        # Intersect each sight line only with the wall segments it touches:
-        # most lines touch none, and overlaying a line with the whole wall
-        # geometry costs time in the number of wall vertices.
+    return SightWalls(walls).clear(observer, targets, interior)
+
+
+class SightWalls:
+    """The straight segments of ``walls``, indexed once for many sight lines.
+
+    Parameters
+    ----------
+    walls : shapely.Geometry
+        Known planar line geometry, possibly empty.
+    """
+
+    def __init__(self, walls: shapely.Geometry) -> None:
         parts = shapely.get_parts(walls)
         vertices, part_index = shapely.get_coordinates(parts, return_index=True)
         adjacent = part_index[:-1] == part_index[1:]
-        wall_segments = np.stack((vertices[:-1], vertices[1:]), axis=1)[adjacent]
-        wall_segments = wall_segments[
-            np.any(wall_segments[:, 0] != wall_segments[:, 1], axis=1)
-        ]
-        tree = shapely.STRtree(shapely.linestrings(wall_segments))
-        line_index, segment_index = tree.query(lines, predicate="intersects")
-        order = np.argsort(line_index, kind="stable")
-        line_index, segment_index = line_index[order], segment_index[order]
-        pieces = shapely.intersection(lines[line_index], tree.geometries[segment_index])
-        kept = ~shapely.is_empty(pieces)
-        contact = np.full(len(lines), shapely.GeometryCollection(), dtype=object)
-        if kept.any():
-            shapely.geometrycollections(
-                pieces[kept], indices=line_index[kept], out=contact
+        segments = np.stack((vertices[:-1], vertices[1:]), axis=1)[adjacent]
+        #: Wall segments, shape (n_segments, 2, 2).
+        self.segments = segments[np.any(segments[:, 0] != segments[:, 1], axis=1)]
+        self.tree = shapely.STRtree(shapely.linestrings(self.segments))
+
+    def clear(
+        self,
+        observer: NDArray[np.float64],
+        targets: NDArray[np.float64],
+        interior: Interior | None = None,
+    ) -> NDArray[np.bool_]:
+        """Whether each target is in sight of ``observer``; see `clear_segments`."""
+        targets = np.asarray(targets, dtype=np.float64)
+        valid = np.all(np.isfinite(targets), axis=1) & np.all(np.isfinite(observer))
+        result = np.zeros(len(targets), dtype=bool)
+        selected = targets[valid]
+        same = np.all(selected == observer, axis=1)
+        if np.any(~same):
+            lines = shapely.linestrings(
+                np.stack(
+                    (np.broadcast_to(observer, selected[~same].shape), selected[~same]),
+                    axis=1,
+                )
             )
-        # Intersection and interpolation can cancel one endpoint coordinate
-        # to zero. Allow eight ULPs in the cue's own coordinates and project
-        # that rounding box onto the intersected wall's tangent. A coordinate
-        # perpendicular to the wall contributes no cross-axis allowance, and
-        # distant endpoints cannot widen gaps. Any positive wall overlap blocks.
-        coordinates, owners = shapely.get_coordinates(contact, return_index=True)
-        terminal = selected[~same]
-        allowance = 8 * np.spacing(np.abs(terminal[owners]))
-        if len(coordinates):
-            nearest = tree.nearest(shapely.points(coordinates))
-            tangent = np.abs(np.diff(wall_segments[nearest], axis=1)[:, 0])
-            tangent /= np.hypot.reduce(tangent, axis=1)[:, None]
-            allowance += tangent * np.sum(tangent * allowance, axis=1)[:, None]
-        at_terminal = np.all(
-            np.abs(coordinates - terminal[owners]) <= allowance, axis=1
-        )
-        own_wall = (
-            np.hypot.reduce(coordinates - observer, axis=1)
-            <= _start_allowance(observer.reshape(1, 2))[0]
-        )
-        rows = np.unique(owners[own_wall])
-        if len(rows):
-            departs, _later = _start_departures(
-                contact[rows],
-                np.broadcast_to(observer, (len(rows), 2)),
-                terminal[rows],
-                interior,
+            # Intersect each sight line only with the wall segments it touches:
+            # most lines touch none, and overlaying a line with the whole wall
+            # geometry costs time in the number of wall vertices.
+            tree, wall_segments = self.tree, self.segments
+            line_index, segment_index = tree.query(lines, predicate="intersects")
+            order = np.argsort(line_index, kind="stable")
+            line_index, segment_index = line_index[order], segment_index[order]
+            pieces = shapely.intersection(
+                lines[line_index], tree.geometries[segment_index]
             )
-            departing = np.zeros(len(terminal), dtype=bool)
-            departing[rows[departs]] = True
-            at_terminal |= departing[owners] & own_wall
-        clear = np.ones(len(terminal), dtype=bool)
-        np.logical_and.at(clear, owners, at_terminal)
-        clear &= shapely.is_empty(contact) | (shapely.get_dimensions(contact) <= 0)
-        same[~same] = clear
-    result[valid] = same
-    return result
+            kept = ~shapely.is_empty(pieces)
+            contact = np.full(len(lines), shapely.GeometryCollection(), dtype=object)
+            if kept.any():
+                shapely.geometrycollections(
+                    pieces[kept], indices=line_index[kept], out=contact
+                )
+            # Intersection and interpolation can cancel one endpoint coordinate
+            # to zero. Allow eight ULPs in the cue's own coordinates and project
+            # that rounding box onto the intersected wall's tangent. A coordinate
+            # perpendicular to the wall contributes no cross-axis allowance, and
+            # distant endpoints cannot widen gaps. Any positive wall overlap blocks.
+            coordinates, owners = shapely.get_coordinates(contact, return_index=True)
+            terminal = selected[~same]
+            allowance = 8 * np.spacing(np.abs(terminal[owners]))
+            if len(coordinates):
+                nearest = tree.nearest(shapely.points(coordinates))
+                tangent = np.abs(np.diff(wall_segments[nearest], axis=1)[:, 0])
+                tangent /= np.hypot.reduce(tangent, axis=1)[:, None]
+                allowance += tangent * np.sum(tangent * allowance, axis=1)[:, None]
+            at_terminal = np.all(
+                np.abs(coordinates - terminal[owners]) <= allowance, axis=1
+            )
+            own_wall = (
+                np.hypot.reduce(coordinates - observer, axis=1)
+                <= _start_allowance(observer.reshape(1, 2))[0]
+            )
+            rows = np.unique(owners[own_wall])
+            if len(rows):
+                departs, _later = _start_departures(
+                    contact[rows],
+                    np.broadcast_to(observer, (len(rows), 2)),
+                    terminal[rows],
+                    interior,
+                )
+                departing = np.zeros(len(terminal), dtype=bool)
+                departing[rows[departs]] = True
+                at_terminal |= departing[owners] & own_wall
+            clear = np.ones(len(terminal), dtype=bool)
+            np.logical_and.at(clear, owners, at_terminal)
+            clear &= shapely.is_empty(contact) | (shapely.get_dimensions(contact) <= 0)
+            same[~same] = clear
+        result[valid] = same
+        return result
 
 
 def search_distance(walls: shapely.Geometry, positions: NDArray[np.float64]) -> float:

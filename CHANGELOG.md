@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+### Faster simulations and validation
+
+A cleanup of `neurospatial.simulation` shares work that does not depend on
+the cell, and fixes two places where simulated cells ignored a wall.
+Seeded sessions with uniform field coverage in 2-D get new field centers;
+other seeded simulations give the same spikes as before.
+
+- `generate_population_spikes` computes each population's gaze points
+  (spatial-view cells), wall distances (border cells) and geodesic bin
+  lookups (geodesic place and object-vector cells) once instead of once
+  per cell. Four spatial-view cells at 10⁵ samples take 0.47 s instead of
+  1.5 s.
+- Boundary-vector rays are cast about 2.4 times faster in walled mazes,
+  and spatial-view cells with `require_visibility=True` (and viewsheds)
+  build their sight-line walls once instead of once per sample.
+- `validate_simulation` and `plot_session_summary` estimate every cell's
+  rate map in one `compute_spatial_rates` call; validating 50 cells is
+  about 20 times faster. Importing `neurospatial.simulation` no longer
+  loads `scipy.stats`.
+- A boundary-vector cell's memory no longer grows with each cell: at
+  3 × 10⁵ samples a cell needs 50 MB beyond the shared rays instead of
+  870 MB.
+
+**Fixes**
+
+- Uniform field coverage in 2-D keeps centers clear of declared internal
+  walls. The distance to a wall used to be measured to the edge of the
+  bins only, straight through internal walls, so in a box split by a
+  70 cm wall 6 of 40 field centers sat within 5 cm of it. Centers now
+  keep the same clearance from internal walls as from the outline, and
+  in mazes no center sits closer to a wall than before.
+- A boundary-vector cell at a position exactly on a wall fired at its
+  baseline: rays leaving the floor from there saw no wall. They now meet
+  it at distance 0, as `compute_boundary_distances` measures, so the rate
+  on the wall equals the rate just inside it.
+
+**Breaking changes**
+
+- `simulate_trajectory_sinusoidal` no longer takes `seed`, which never
+  changed its output.
+- The session and example functions refuse NaN durations, sizes and
+  spacings, and counts that are not positive integers. A NaN
+  `grid_spacing` used to build grid cells with NaN spacing.
+- Head-direction and boundary-vector `ground_truth` report a preferred
+  direction of exactly −π as +π, the package's (−π, π] convention.
+
 ### Simulations produce what they say and refuse what they cannot simulate
 
 A review of `neurospatial.simulation` found sessions whose ground truth

@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.stats import pearsonr
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
@@ -347,7 +346,8 @@ def validate_simulation(
         Minimum acceptable correlation between detected and true fields.
         If None, 0.9. Calibrated; see Notes.
     **kwargs
-        Additional parameters passed to ``compute_spatial_rate()``.
+        Rate-map parameters of ``compute_spatial_rate()``. Every evaluated
+        cell's map is estimated in one ``compute_spatial_rates()`` call.
 
     Returns
     -------
@@ -364,6 +364,8 @@ def validate_simulation(
     ------
     ValueError
         If unit_ids contains unknown labels.
+    TypeError
+        If a keyword argument is not a parameter of ``compute_spatial_rate()``.
     CartesianOnlyError
         If the session's environment is egocentric polar: rate maps need the
         animal's allocentric positions.
@@ -457,8 +459,25 @@ def validate_simulation(
     - 'binned': Simple binning without smoothing (noisy but unbiased)
     """
     # Import here to avoid circular dependency
-    from neurospatial.encoding import compute_spatial_rate
+    import inspect
+
+    from scipy.stats import pearsonr
+
+    from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
     from neurospatial.simulation.models import PlaceCellModel
+
+    # The maps come from one batch call, but each is a single-cell estimate:
+    # batch-only options (n_jobs, dtype) are refused.
+    unknown = sorted(
+        set(kwargs) - set(inspect.signature(compute_spatial_rate).parameters)
+    )
+    if unknown:
+        raise TypeError(
+            _format_error(
+                f"validate_simulation() got unexpected keyword arguments {unknown}.",
+                fix="Pass only rate-map parameters of compute_spatial_rate().",
+            )
+        )
 
     cell_indices = _select_unit_indices(session, unit_ids, "validate_simulation()")
     env = session.env
@@ -492,9 +511,11 @@ def validate_simulation(
     correlations = np.full(len(cell_indices), np.nan)
     skip_reasons: list[str | None] = [None] * len(cell_indices)
 
-    # Validate each cell
+    # Place units with a ground-truth field and at least one spike can be
+    # evaluated; the rest keep the reason they cannot.
     not_place: dict[int, str] = {}
     unsupported: list[int] = []
+    evaluable: list[int] = []
     for i, cell_idx in enumerate(cell_indices):
         cell_key = int(session.unit_ids[cell_idx])
         gt = ground_truth[cell_key]
@@ -502,31 +523,34 @@ def validate_simulation(
         if cell_type != "place":
             not_place[cell_key] = str(cell_type)
             skip_reasons[i] = "not_a_place_field"
-            continue
-        if "center" not in gt or "width" not in gt:
+        elif "center" not in gt or "width" not in gt:
             unsupported.append(cell_key)
             skip_reasons[i] = "unsupported_ground_truth"
-            continue
-
-        train = spike_times[cell_idx]
-
-        # Skip cells with no spikes (cannot compute place field)
-        if len(train) == 0:
+        elif len(spike_times[cell_idx]) == 0:
             skip_reasons[i] = "no_spikes"
-            continue
+        else:
+            evaluable.append(i)
 
-        # Compute detected place field
-        detected_field = np.asarray(
-            compute_spatial_rate(
+    # One batch call shares the occupancy and smoothing across the cells.
+    # compute_spatial_rates also takes method="glm"; it then still fits each
+    # cell its own penalty, as for a single cell.
+    detected_fields = np.empty((0, env.n_bins))
+    if evaluable:
+        rate_kwargs = {**kwargs, "pooled": False} if str(method) == "glm" else kwargs
+        detected_fields = np.asarray(
+            compute_spatial_rates(
                 env,
-                train,
+                [spike_times[cell_indices[i]] for i in evaluable],
                 times,
                 positions,
                 method=method,
-                **kwargs,
-            ).firing_rate,
+                **rate_kwargs,
+            ).firing_rates,
             dtype=np.float64,
         )
+
+    for i, detected_field in zip(evaluable, detected_fields, strict=True):
+        gt = ground_truth[int(session.unit_ids[cell_indices[i]])]
 
         # Find detected center (peak of rate map). Bins the smoothing cannot
         # resolve are NaN; with no finite bin there is no peak to compare.
@@ -739,7 +763,7 @@ def plot_session_summary(
     from matplotlib.gridspec import GridSpec
 
     # Import here to avoid circular dependency
-    from neurospatial.encoding import compute_spatial_rate
+    from neurospatial.encoding import compute_spatial_rates
 
     cell_indices = _select_unit_indices(session, unit_ids, "plot_session_summary()")
     if unit_ids is None:
@@ -831,16 +855,22 @@ Traj: {metadata.get("trajectory_method", "ou")}
         fontsize=9,
     )
 
-    # Plots 3-8: Rate maps for selected cells
-    for i, cell_idx in enumerate(cell_indices):
+    # Plots 3-8: Rate maps for selected cells, estimated in one call for the
+    # cells that spiked.
+    spiking = [cell_idx for cell_idx in cell_indices if len(spike_trains[cell_idx])]
+    rate_maps: dict[int, NDArray[np.float64]] = {}
+    if spiking:
+        rates = compute_spatial_rates(
+            env,
+            [spike_trains[cell_idx] for cell_idx in spiking],
+            times,
+            positions,
+            method="diffusion_kde",
+        ).firing_rates
+        rate_maps = dict(zip(spiking, np.asarray(rates, dtype=np.float64), strict=True))
+    for ax, cell_idx in zip(axes_rates, cell_indices, strict=False):
         cell_id = int(session.unit_ids[cell_idx])
-        if i >= len(axes_rates):
-            break
-
-        ax = axes_rates[i]
-        spike_times = spike_trains[cell_idx]
-
-        if len(spike_times) == 0:
+        if cell_idx not in rate_maps:
             # Empty spike train
             ax.text(
                 0.5,
@@ -853,19 +883,7 @@ Traj: {metadata.get("trajectory_method", "ou")}
             ax.set_title(f"Cell {cell_id}", fontsize=10)
             ax.axis("off")
         else:
-            # Compute rate map
-            rate_map = np.asarray(
-                compute_spatial_rate(
-                    env,
-                    spike_times,
-                    times,
-                    positions,
-                    method="diffusion_kde",
-                ).firing_rate,
-                dtype=np.float64,
-            )
-
-            env.plot_field(rate_map, ax=ax, colorbar_label="Rate (Hz)")
+            env.plot_field(rate_maps[cell_idx], ax=ax, colorbar_label="Rate (Hz)")
             ax.set_title(f"Cell {cell_id}", fontsize=10)
 
     # Hide unused rate map subplots

@@ -98,9 +98,12 @@ from neurospatial.ops.visibility import FieldOfView, _sight_lines, gaze_points
 from neurospatial.simulation.models.base import (
     _check_point,
     _check_positive,
-    _check_rates,
+    _digest,
     _model_headings,
     _model_inputs,
+    _set_rates,
+    _shared,
+    _tuned_rate,
 )
 
 if TYPE_CHECKING:
@@ -288,7 +291,7 @@ class SpatialViewCellModel:
         if width is None:
             width = default_length(env, 10.0, name="view_field_width", call=call)
         _check_positive("view_field_width", width)
-        _check_rates(self.max_rate, self.baseline_rate)
+        _set_rates(self)
         if self.boundary_source not in ("physical", "analysis"):
             raise ValueError(
                 _format_error(
@@ -323,8 +326,6 @@ class SpatialViewCellModel:
             ("preferred_view_location", location),
             ("_view_field_width", float(width)),
             ("view_distance", view_distance),
-            ("max_rate", float(self.max_rate)),
-            ("baseline_rate", float(self.baseline_rate)),
         ):
             object.__setattr__(self, name, value)
 
@@ -382,21 +383,38 @@ class SpatialViewCellModel:
         headings = _model_headings(headings, len(times), call=call)
         binning, arena = self.env.binning, self.env.arena
         indexes = CallIndexes()
-        observed = np.isfinite(headings) & valid_observers(
-            binning, arena, positions, self.boundary_source, indexes
-        )
 
-        # The gaze the view analysis uses: it stops at the first wall.
-        viewed_locations, _at_wall = gaze_points(
-            positions,
-            headings,
-            method=self.gaze_model,
-            view_distance=self.view_distance,
-            gaze_offsets=None,
-            env=self.env,
-            max_distance=None,
-            boundary_source=self.boundary_source,
+        def observe() -> tuple[NDArray[np.bool_], NDArray[np.float64]]:
+            # Where the animal is inside the walls, and the gaze the view
+            # analysis uses: it stops at the first wall.
+            inside = valid_observers(
+                binning, arena, positions, self.boundary_source, indexes
+            )
+            viewed, _at_wall = gaze_points(
+                positions,
+                headings,
+                method=self.gaze_model,
+                view_distance=self.view_distance,
+                gaze_offsets=None,
+                env=self.env,
+                max_distance=None,
+                boundary_source=self.boundary_source,
+            )
+            return inside, viewed
+
+        # Cells with the same gaze model share the gaze of one trajectory.
+        inside, viewed_locations = _shared(
+            (
+                "spatial_view_gaze",
+                self.env,
+                self.gaze_model,
+                self.view_distance,
+                self.boundary_source,
+                _digest(positions, headings),
+            ),
+            observe,
         )
+        observed = np.isfinite(headings) & inside
         distances = np.linalg.norm(
             viewed_locations - self.preferred_view_location, axis=1
         )
@@ -427,9 +445,7 @@ class SpatialViewCellModel:
                     response[i] = 0.0
 
         rates: NDArray[np.float64] = np.where(
-            observed,
-            self.baseline_rate + (self.max_rate - self.baseline_rate) * response,
-            np.nan,
+            observed, _tuned_rate(self, response), np.nan
         )
         return rates
 

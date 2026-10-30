@@ -256,8 +256,8 @@ def make_cheeseboard_maze(
         arena=OpenArena(platform_polygon, outline="drop"),
         name="cheeseboard_maze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     # Square lattice of wells centred on the origin, kept rim_margin in from
     # the rim

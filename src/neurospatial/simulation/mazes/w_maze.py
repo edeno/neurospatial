@@ -247,8 +247,8 @@ def make_w_maze(
         arena=OpenArena(w_polygon, outline="drop"),
         name="w_maze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     # One food well in the end square of each arm; its size is unpublished
     region_builder = Regions()
@@ -327,7 +327,7 @@ def _create_w_maze_track_graph(
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="w_maze_1d",
+        units="cm",
     )
-    env_track = env_track.with_metadata(units="cm")
 
     return env_track

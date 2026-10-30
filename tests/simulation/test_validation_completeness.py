@@ -109,8 +109,8 @@ def test_degenerate_rate_maps_are_not_evaluable(monkeypatch, field, reason):
     # Supply exact degenerate estimates to isolate report handling from the
     # estimator's floating-point exposure calculations.
     monkeypatch.setattr(
-        "neurospatial.encoding.compute_spatial_rate",
-        lambda *args, **kwargs: SimpleNamespace(firing_rate=field),
+        "neurospatial.encoding.compute_spatial_rates",
+        lambda *args, **kwargs: SimpleNamespace(firing_rates=field[None, :]),
     )
     with pytest.warns(UserWarning, match="No cells could be fully validated"):
         result = validate_simulation(_session())

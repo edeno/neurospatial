@@ -40,16 +40,14 @@ George, T. M., Rastogi, M., de Cothi, W., Clopath, C., Stachenfeld, K., &
 
 from __future__ import annotations
 
-import hashlib
-from collections.abc import Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import shapely
 from numpy.typing import NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._units import default_length
 from neurospatial.geometry import (
@@ -57,14 +55,21 @@ from neurospatial.geometry import (
     require_cartesian,
     valid_observers,
 )
+from neurospatial.geometry._boundaries import (
+    analysis_interior,
+    physical_footprint_interior,
+)
 from neurospatial.ops.boundary_vectors import boundary_directions, nearest_boundary
 from neurospatial.simulation._walls import Walls
 from neurospatial.simulation.models.base import (
     _check_angle,
     _check_positive,
-    _check_rates,
+    _digest,
     _draw_rng,
     _model_inputs,
+    _set_rates,
+    _shared,
+    _tuned_rate,
 )
 
 if TYPE_CHECKING:
@@ -86,44 +91,15 @@ BVC_PREFERRED_DISTANCE_CM = 17.5
 # over (George et al. 2024).
 _N_RAYS = 180
 
-# Ray distances shared by the boundary-vector cells of one population, keyed
-# by the digests of the walls and rays and of the positions they were cast
-# from; None outside ``_shared_ray_distances()``.
-_RAY_DISTANCES: ContextVar[dict[tuple[bytes, bytes], NDArray[np.float64]] | None] = (
-    ContextVar("_RAY_DISTANCES", default=None)
-)
-
-
-@contextmanager
-def _shared_ray_distances() -> Iterator[None]:
-    """Let boundary-vector cells reuse each other's ray distances in the block.
-
-    Ray distances depend on the walls, the ray directions and the positions,
-    not on a cell's tuning, so every cell of a population on the same walls
-    needs the same ones. Inside the block each set is cast once; the
-    distances are dropped when the block ends.
-    """
-    token = _RAY_DISTANCES.set({})
-    try:
-        yield
-    finally:
-        _RAY_DISTANCES.reset(token)
-
-
-def _digest(*arrays: NDArray[Any]) -> bytes:
-    """A digest of the arrays' dtypes, shapes and contents."""
-    digest = hashlib.blake2b(digest_size=16)
-    for array in arrays:
-        contiguous = np.ascontiguousarray(array)
-        digest.update(f"{contiguous.dtype.str}{contiguous.shape}".encode())
-        digest.update(contiguous.tobytes())
-    return digest.digest()
+# Positions per block when summing ray terms: bounds the (positions, rays)
+# temporaries to about 24 MB however long the trajectory is.
+_DRIVE_BLOCK = 16_384
 
 
 def _require_walls(
     env: Environment, boundary_source: BoundarySource, call: str
-) -> None:
-    """Refuse an environment whose walls are unknown, before any rate is asked."""
+) -> shapely.Geometry:
+    """The walls a cell measures; refuses unknown walls before any rate is asked."""
     require_cartesian(
         env.coordinate_system,
         call,
@@ -131,7 +107,9 @@ def _require_walls(
         "the animal's allocentric Cartesian position.",
         fix="simulate on the allocentric environment the animal moves in",
     )
-    boundary_geometry(env.binning, env.arena, boundary_source, blocking="movement")
+    return boundary_geometry(
+        env.binning, env.arena, boundary_source, blocking="movement"
+    )
 
 
 @dataclass(frozen=True, eq=False)
@@ -235,14 +213,12 @@ class BorderCellModel:
             )
         _check_positive("distance_tolerance", tolerance)
         _check_positive("preferred_distance", self.preferred_distance, allow_zero=True)
-        _check_rates(self.max_rate, self.baseline_rate)
+        _set_rates(self)
         _require_walls(self.env, self.boundary_source, "BorderCellModel()")
         if self.distance_tolerance is not None:
             object.__setattr__(self, "distance_tolerance", float(tolerance))
         object.__setattr__(self, "_distance_tolerance", float(tolerance))
         object.__setattr__(self, "preferred_distance", float(self.preferred_distance))
-        object.__setattr__(self, "max_rate", float(self.max_rate))
-        object.__setattr__(self, "baseline_rate", float(self.baseline_rate))
 
     @property
     def requires_headings(self) -> bool:
@@ -281,17 +257,18 @@ class BorderCellModel:
         _times, positions = _model_inputs(
             times, positions, 2, call="BorderCellModel.firing_rate()"
         )
-        distances, _directions = nearest_boundary(
-            self.env, positions, boundary_source=self.boundary_source
+        # Cells on the same walls share the distances from the same positions.
+        distances = _shared(
+            ("nearest_wall", self.env, self.boundary_source, _digest(positions)),
+            lambda: nearest_boundary(
+                self.env, positions, boundary_source=self.boundary_source
+            )[0],
         )
         tuning = np.exp(
             -0.5
             * ((distances - self.preferred_distance) / self._distance_tolerance) ** 2
         )
-        rates: NDArray[np.float64] = (
-            self.baseline_rate + (self.max_rate - self.baseline_rate) * tuning
-        )
-        return rates
+        return _tuned_rate(self, tuning)
 
     @property
     def ground_truth(self) -> dict[str, Any]:
@@ -376,7 +353,7 @@ class BoundaryVectorCellModel:
     ----------
     ground_truth : dict[str, Any]
         The values the model fires with: the drawn direction, wrapped to
-        [-pi, pi], and the default distance and tolerance. Every parameter is
+        (-pi, pi], and the default distance and tolerance. Every parameter is
         also an attribute holding the argument as passed, so
         ``preferred_distance``, ``preferred_direction`` and
         ``distance_tolerance`` read None when left to their defaults.
@@ -471,14 +448,9 @@ class BoundaryVectorCellModel:
                     "np.pi / 6 for 30 degrees",
                 )
             )
-        _check_rates(self.max_rate, self.baseline_rate)
-        _require_walls(env, self.boundary_source, call)
-        wrapped = float(np.angle(np.exp(1j * direction)))
-        walls = Walls.from_geometry(
-            boundary_geometry(
-                env.binning, env.arena, self.boundary_source, blocking="movement"
-            )
-        )
+        _set_rates(self)
+        walls = Walls.from_geometry(_require_walls(env, self.boundary_source, call))
+        wrapped = float(wrap_angle(np.asarray(direction, dtype=np.float64)))
         directions = boundary_directions(n_directions=_N_RAYS)
         # von Mises concentration with half-maximum at direction_tolerance.
         kappa = np.log(2.0) / (1.0 - np.cos(half_width))
@@ -497,8 +469,6 @@ class BoundaryVectorCellModel:
             ("_preferred_direction", wrapped),
             ("_distance_tolerance", float(tolerance)),
             ("direction_tolerance", float(half_width)),
-            ("max_rate", float(self.max_rate)),
-            ("baseline_rate", float(self.baseline_rate)),
             ("_walls", walls),
             ("_directions", directions),
             (
@@ -526,21 +496,18 @@ class BoundaryVectorCellModel:
         terms: NDArray[np.float64] = radial * self._angular
         return terms
 
-    def _ray_distances(self, positions: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Distance to the first wall along every ray, shape (n_time, n_rays).
+    def _on_floor(self, points: NDArray[np.float64]) -> NDArray[np.bool_]:
+        """Whether ``points``, shape (n, 2), lie where this cell's walls bound.
 
-        Inside ``_shared_ray_distances()``, cells on the same walls reuse the
-        distances already cast from the same positions.
+        The region geometry's ray casts test a ray leaving a wall against:
+        the declared footprints, or the bins for ``'analysis'``.
         """
-        shared = _RAY_DISTANCES.get()
-        if shared is None:
-            return self._walls.ray_distances(positions, self._directions)
-        key = (self._rays_key, _digest(positions))
-        if key not in shared:
-            distances = self._walls.ray_distances(positions, self._directions)
-            distances.setflags(write=False)
-            shared[key] = distances
-        return shared[key]
+        if self.boundary_source == "analysis":
+            return analysis_interior(self.env.binning, self.env.arena)(points)
+        interior = physical_footprint_interior(self.env.arena)
+        return (
+            np.ones(len(points), dtype=bool) if interior is None else interior(points)
+        )
 
     @property
     def requires_headings(self) -> bool:
@@ -578,17 +545,33 @@ class BoundaryVectorCellModel:
         _times, positions = _model_inputs(
             times, positions, 2, call="BoundaryVectorCellModel.firing_rate()"
         )
-        observed = valid_observers(
-            self.env.binning, self.env.arena, positions, self.boundary_source
+
+        def cast() -> tuple[NDArray[np.bool_], NDArray[np.float64]]:
+            observed = valid_observers(
+                self.env.binning, self.env.arena, positions, self.boundary_source
+            )
+            return observed, self._walls.ray_distances(
+                positions[observed], self._directions, self._on_floor
+            )
+
+        # Cells on the same walls share the rays cast from the same positions.
+        observed, distances = _shared(
+            (
+                "boundary_vector_rays",
+                self.env,
+                self.boundary_source,
+                self._rays_key,
+                _digest(positions),
+            ),
+            cast,
         )
+        sums = np.empty(len(distances))
+        for start in range(0, len(distances), _DRIVE_BLOCK):
+            block = slice(start, start + _DRIVE_BLOCK)
+            sums[block] = self._drive_terms(distances[block]).sum(axis=1)
         drive = np.full(len(positions), np.nan)
-        if observed.any():
-            distances = self._ray_distances(positions[observed])
-            drive[observed] = self._drive_terms(distances).sum(axis=1)
-        rates: NDArray[np.float64] = self.baseline_rate + (
-            self.max_rate - self.baseline_rate
-        ) * (drive / self._reference_drive)
-        return rates
+        drive[observed] = sums
+        return _tuned_rate(self, drive / self._reference_drive)
 
     @property
     def ground_truth(self) -> dict[str, Any]:

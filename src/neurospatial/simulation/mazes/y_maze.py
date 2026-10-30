@@ -210,8 +210,8 @@ def make_y_maze(
         bin_size=bin_size,
         name="y_maze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     # Add regions for key locations
     region_builder = Regions()
@@ -272,7 +272,7 @@ def _create_y_maze_track_graph(
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="y_maze_1d",
+        units="cm",
     )
-    env_track = env_track.with_metadata(units="cm")
 
     return env_track

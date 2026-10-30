@@ -69,3 +69,100 @@ def test_enclosing_walls_of_a_box():
     walls = Walls.enclosing(env)
     assert walls is not None
     assert len(walls.starts) == 4
+
+
+def _box_with_wall():
+    from shapely.geometry import LineString
+
+    from neurospatial.geometry import OpenArena
+
+    outline = box(0, 0, 100, 100)
+    wall = LineString([(50, 0), (50, 70)])
+    return Environment.from_polygon(
+        outline, bin_size=2.0, units="cm", arena=OpenArena(outline, walls=(wall,))
+    )
+
+
+def _rotated_box():
+    from shapely import affinity
+
+    rotated = affinity.translate(
+        affinity.rotate(box(0, 0, 100, 100), 30, (0, 0)), 7, -2
+    )
+    return Environment.from_polygon(rotated, bin_size=2.0, units="cm")
+
+
+@pytest.mark.parametrize(
+    ("make_env", "boundary_source"),
+    [
+        (_box_with_wall, "physical"),
+        # Bin edges run along this outline, so it is also the analysis wall.
+        (_box_with_wall, "analysis"),
+        (_rotated_box, "physical"),
+    ],
+)
+def test_ray_distances_match_the_analysis_ray_casts(make_env, boundary_source):
+    """Boundary-vector cells and the analysis measure the same wall distances,
+    including from observers standing on the outline, a corner or a wall."""
+    import shapely
+
+    from neurospatial.geometry._boundaries import valid_observers
+    from neurospatial.ops.boundary_vectors import (
+        boundary_directions,
+        compute_boundary_distances,
+    )
+    from neurospatial.simulation.models import BoundaryVectorCellModel
+
+    env = make_env()
+    model = BoundaryVectorCellModel(
+        env,
+        preferred_distance=10.0,
+        preferred_direction=0.0,
+        boundary_source=boundary_source,
+    )
+    rng = np.random.default_rng(0)
+    # Points on the outline, between and at its corners.
+    outline = shapely.get_coordinates(
+        shapely.get_exterior_ring(env.arena.polygonal_domain())
+    )
+    pieces = rng.integers(0, len(outline) - 1, 20)
+    on_outline = outline[pieces] + rng.uniform(0, 1, (20, 1)) * (
+        outline[pieces + 1] - outline[pieces]
+    )
+    positions = np.concatenate(
+        [
+            # Off the bin lattice: a ray through a lattice corner of the
+            # analysis walls is a tie the two casts may break differently.
+            env.bin_centers[rng.choice(env.n_bins, 20)]
+            + rng.uniform(-0.9, 0.9, (20, 2)),
+            on_outline,
+            outline,
+            [[50.0, 30.0], [50.0, 70.0]],  # on the internal wall and its end
+        ]
+    )
+    positions = positions[
+        valid_observers(env.binning, env.arena, positions, boundary_source)
+    ]
+    assert len(positions) >= 30  # observers on walls are part of the comparison
+    directions = boundary_directions(n_directions=36)
+    expected, _ = compute_boundary_distances(
+        env,
+        positions,
+        direction_frame="allocentric",
+        n_directions=36,
+        boundary_source=boundary_source,
+    )
+    found = model._walls.ray_distances(positions, directions, model._on_floor)
+    np.testing.assert_allclose(found, expected, rtol=0, atol=1e-9)
+
+
+def test_boundary_vector_rate_is_continuous_at_the_wall():
+    """A cell tuned to the south wall fires at the wall as just inside it."""
+    from neurospatial.simulation.models import BoundaryVectorCellModel
+
+    env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
+    model = BoundaryVectorCellModel(
+        env, preferred_distance=10.0, preferred_direction=-np.pi / 2
+    )
+    rates = model.firing_rate(np.zeros(2), np.array([[60.0, 0.0], [60.0, 1e-9]]))
+    np.testing.assert_allclose(rates[0], rates[1], rtol=1e-6)

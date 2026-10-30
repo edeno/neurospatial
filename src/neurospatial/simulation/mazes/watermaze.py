@@ -239,8 +239,8 @@ def make_watermaze(
         bin_size=bin_size,
         name="watermaze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     platform_center = (platform_x, platform_y)
     region_builder = Regions()

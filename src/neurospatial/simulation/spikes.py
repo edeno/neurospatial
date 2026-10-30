@@ -9,9 +9,9 @@ from tqdm.auto import tqdm
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
-from neurospatial._validation import validate_finite
-from neurospatial.simulation.models.base import NeuralModel
-from neurospatial.simulation.models.boundary_cells import _shared_ray_distances
+from neurospatial._validation import validate_finite, validate_finite_scalar
+from neurospatial.simulation._seeds import _stream_seeds
+from neurospatial.simulation.models.base import NeuralModel, _population_cache
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,8 @@ def generate_poisson_spikes(
        - Conditional on that count, place spikes uniformly within the interval.
          Multiple spikes per interval are supported, even with coarse sampling.
 
-    2. Sort candidate spike times (should already be sorted, but ensures correctness)
+    2. Sort candidate spike times: within an interval they are drawn in no
+       particular order
     3. Apply refractory period filter (single pass, O(n)):
 
        - Initialize last_spike_time = -inf
@@ -158,8 +159,7 @@ def generate_poisson_spikes(
             "firing_rate and times must be 1-D arrays, got "
             f"firing_rate.shape={firing_rate.shape}, times.shape={times.shape}."
         )
-    if not np.isfinite(refractory_period) or refractory_period < 0:
-        raise ValueError("refractory_period must be finite and non-negative.")
+    validate_finite_scalar(refractory_period, name="refractory_period", positive=False)
 
     if len(firing_rate) != len(times):
         raise ValueError(
@@ -218,14 +218,10 @@ def generate_poisson_spikes(
         candidate_spikes, np.nextafter(times[interval_ids + 1], times[interval_ids])
     )
 
-    # Sort candidate spikes (should already be sorted, but ensure correctness)
+    # The spikes of an interval are drawn in no particular order: sort them.
     candidate_spikes = np.sort(candidate_spikes)
 
     # Apply refractory period filter (single pass, O(n) algorithm)
-    if len(candidate_spikes) == 0:
-        return np.array([], dtype=np.float64)
-
-    # Keep track of accepted spikes
     accepted_spikes = []
     last_spike_time = -np.inf
 
@@ -442,11 +438,7 @@ def generate_population_spikes(
     if derived:
         headings = _held_movement_heading(times, positions, break_before=breaks)
 
-    model_seeds: list[np.random.SeedSequence | None] = (
-        [None] * len(models)
-        if seed is None
-        else list(np.random.SeedSequence(seed).spawn(len(models)))
-    )
+    model_seeds = _stream_seeds(seed, len(models))
     duration = float(times[-1] - times[0])
     spike_trains = []
     iterator = tqdm(
@@ -455,8 +447,8 @@ def generate_population_spikes(
         desc="Generating spikes",
         disable=not show_progress,
     )
-    # Boundary-vector cells on the same walls cast their rays once.
-    with _shared_ray_distances():
+    # Cells share work that depends on the trajectory, not on the cell.
+    with _population_cache():
         for i, model in iterator:
             rates = np.asarray(
                 model.firing_rate(times, positions, headings=headings),
@@ -469,7 +461,7 @@ def generate_population_spikes(
                 rates,
                 times,
                 refractory_period=refractory_period,
-                seed=_seed_int(model_seeds[i]),
+                seed=model_seeds[i],
             )
             spike_trains.append(spikes)
             iterator.set_postfix(
@@ -488,11 +480,6 @@ def generate_population_spikes(
         )
 
     return spike_trains
-
-
-def _seed_int(sequence: np.random.SeedSequence | None) -> int | None:
-    """An integer seed drawn from ``sequence``, or None for fresh entropy."""
-    return None if sequence is None else int(sequence.generate_state(1)[0])
 
 
 def _check_model_rates(

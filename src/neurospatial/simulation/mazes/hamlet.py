@@ -353,8 +353,8 @@ def make_hamlet_maze(
         bin_size=bin_size,
         name="hamlet_maze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     region_builder = Regions()
     region_builder.add("agora", polygon=agora)
@@ -501,12 +501,12 @@ def _create_hamlet_track_graph(
         )
         graph.add_edge(u, v, distance=float(distance))
 
-    env_track = Environment.from_graph(
+    return Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
         edge_spacing=0.0,
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="hamlet_maze_1d",
+        units="cm",
     )
-    return env_track.with_metadata(units="cm")

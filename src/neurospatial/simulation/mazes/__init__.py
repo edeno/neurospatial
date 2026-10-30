@@ -151,26 +151,19 @@ __all__ = [
     "MAZE_LANDMARK_ROLES",
     "BarnesDims",
     "CheeseboardDims",
-    # Structured Lattices
     "CrosswordDims",
     "HamletDims",
     "HamptonCourtDims",
     "HoneycombDims",
-    # Simple Corridor Mazes
     "LinearTrackDims",
-    # Base classes
     "MazeDims",
     "MazeEnvironments",
-    # Plus Maze (Cruciate)
     "PlusMazeDims",
     "RadialArmDims",
-    # Complex
     "RatHexmazeDims",
     "RepeatedTDims",
-    # Repeated Alleyway Mazes
     "RepeatedYDims",
     "SmallHexDims",
-    # Open-Field Mazes
     "SquareMazeDims",
     "SungodDims",
     "TMazeDims",
@@ -178,7 +171,6 @@ __all__ = [
     "WatermazeDims",
     "YMazeDims",
     "make_barnes_maze",
-    # Geometry helpers
     "make_buffered_line",
     "make_cheeseboard_maze",
     "make_circular_arena",

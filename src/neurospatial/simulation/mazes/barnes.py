@@ -266,8 +266,8 @@ def make_barnes_maze(
         arena=OpenArena(platform_polygon, outline="drop"),
         name="barnes_maze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     # Hole centres lie on a ring hole_inset in from the rim
     hole_placement_radius = radius - dims.hole_inset

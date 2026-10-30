@@ -90,6 +90,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._results import read_only_copy
 from neurospatial._units import default_length
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import distance_field
@@ -98,10 +99,10 @@ from neurospatial.simulation.models.base import (
     _check_angle,
     _check_metric,
     _check_positive,
-    _check_rates,
     _model_headings,
     _model_inputs,
-    _read_only,
+    _set_rates,
+    _tuned_rate,
     geodesic_lookup_bins,
 )
 
@@ -307,11 +308,11 @@ class ObjectVectorCellModel:
             raise ValueError(
                 _format_error(
                     f"Unknown direction_frame={self.direction_frame!r}.",
-                    why="Why: direction tuning needs an allocentric or egocentric reference frame",
+                    why="direction tuning needs an allocentric or egocentric reference frame",
                     fix='pass direction_frame="allocentric" or direction_frame="egocentric"',
                 )
             )
-        objects = _read_only(self.object_positions)
+        objects = read_only_copy(self.object_positions, np.float64)
         if objects.ndim != 2 or objects.shape[1] != 2 or len(objects) == 0:
             raise ValueError(
                 _format_error(
@@ -351,7 +352,7 @@ class ObjectVectorCellModel:
         _check_positive(
             "direction_concentration", self.direction_concentration, units=None
         )
-        _check_rates(self.max_rate, self.baseline_rate)
+        _set_rates(self)
         _check_metric(self.metric, call)
 
         valid_selectivities = ("any", "nearest", "specific")
@@ -427,8 +428,6 @@ class ObjectVectorCellModel:
                 else float(self.preferred_direction),
             ),
             ("direction_concentration", float(self.direction_concentration)),
-            ("max_rate", float(self.max_rate)),
-            ("baseline_rate", float(self.baseline_rate)),
             ("_distance_fields", fields),
         ):
             object.__setattr__(self, name, value)
@@ -544,10 +543,7 @@ class ObjectVectorCellModel:
             assert self.specific_object_index is not None
             response = combined_response[:, self.specific_object_index]
 
-        rates: NDArray[np.float64] = (
-            self.baseline_rate + (self.max_rate - self.baseline_rate) * response
-        )
-        return rates
+        return _tuned_rate(self, response)
 
     @property
     def ground_truth(self) -> dict[str, Any]:

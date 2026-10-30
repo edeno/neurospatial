@@ -418,7 +418,8 @@ def make_small_hex_maze(
         bin_size=bin_size,
         name="small_hex_maze",
         connect_diagonal_neighbors=True,
-    ).with_metadata(units="cm")
+        units="cm",
+    )
     # Each port sits in the wall that cuts off its corner of the triangle, the
     # outer side of its port hex; the maze centre is the origin.
     apothem = math.sqrt(3) / 2 * side
@@ -501,4 +502,5 @@ def _create_hex_track_graph(
         bin_size=bin_size,
         track_width=widest_corridor(floor, segments),
         name="small_hex_maze_1d",
-    ).with_metadata(units="cm")
+        units="cm",
+    )

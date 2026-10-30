@@ -1,15 +1,28 @@
 """Base protocol and shared input checks for neural models."""
 
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+import hashlib
+from collections.abc import Callable, Hashable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._results import read_only_copy
 from neurospatial.geometry import require_position_columns
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+
+_T = TypeVar("_T")
+
+# Work shared by the cells of one population, keyed by what it depends on;
+# None outside ``_population_cache()``.
+_POPULATION_CACHE: ContextVar[dict[Hashable, Any] | None] = ContextVar(
+    "_POPULATION_CACHE", default=None
+)
 
 
 @runtime_checkable
@@ -209,6 +222,52 @@ class NeuralModel(Protocol):
         ...
 
 
+@contextmanager
+def _population_cache() -> Iterator[None]:
+    """Let the cells of a population share work that does not depend on the cell.
+
+    Ray distances, gazes and bin lookups depend on the environment and the
+    trajectory, not on a cell's tuning, so every cell of a population on the
+    same trajectory needs the same ones. Inside the block :func:`_shared`
+    computes each once; the results are dropped when the block ends.
+    """
+    token = _POPULATION_CACHE.set({})
+    try:
+        yield
+    finally:
+        _POPULATION_CACHE.reset(token)
+
+
+def _shared(key: Hashable, compute: Callable[[], _T]) -> _T:
+    """``compute()``, reused for an equal ``key`` inside ``_population_cache()``.
+
+    ``key`` must name everything the result depends on: arrays by
+    :func:`_digest`, so an edited array never gets a stale result. Shared
+    arrays are made read-only. Outside the block this just computes.
+    """
+    cache = _POPULATION_CACHE.get()
+    if cache is None:
+        return compute()
+    if key not in cache:
+        value = compute()
+        for array in value if isinstance(value, tuple) else (value,):
+            if isinstance(array, np.ndarray):
+                array.setflags(write=False)
+        cache[key] = value
+    result: _T = cache[key]
+    return result
+
+
+def _digest(*arrays: NDArray[Any]) -> bytes:
+    """A digest of the arrays' dtypes, shapes and contents."""
+    digest = hashlib.blake2b(digest_size=16)
+    for array in arrays:
+        contiguous = np.ascontiguousarray(array)
+        digest.update(f"{contiguous.dtype.str}{contiguous.shape}".encode())
+        digest.update(contiguous.tobytes())
+    return digest.digest()
+
+
 def geodesic_lookup_bins(
     env: "Environment", positions: NDArray[np.float64]
 ) -> NDArray[np.intp]:
@@ -227,13 +286,19 @@ def geodesic_lookup_bins(
     Returns
     -------
     NDArray[np.intp], shape (n_time,)
-        Bin index per position, or -1 for a missing position.
+        Bin index per position, or -1 for a missing position; read-only
+        inside ``_population_cache()``.
     """
-    bins = np.asarray(env.nearest_bin(positions), dtype=np.intp)
-    inside = env.contains(positions)
-    if inside.any():
-        bins[inside] = env.bin_at(positions[inside])
-    return bins
+
+    def lookup() -> NDArray[np.intp]:
+        bins = np.array(env.bin_at(positions), dtype=np.intp)
+        outside = (bins < 0) & np.all(np.isfinite(positions), axis=1)
+        if outside.any():
+            bins[outside] = env.nearest_bin(positions[outside])
+        return bins
+
+    # Cells on the same environment share the bins of one trajectory.
+    return _shared(("geodesic_lookup_bins", env, _digest(positions)), lookup)
 
 
 def _draw_rng(model: Any) -> np.random.Generator:
@@ -251,15 +316,12 @@ def _draw_rng(model: Any) -> np.random.Generator:
     return np.random.default_rng(seed)
 
 
-def _read_only(values: ArrayLike) -> NDArray[np.float64]:
-    """A float64 copy of ``values`` that cannot be written."""
-    array = np.array(values, dtype=np.float64)
-    array.setflags(write=False)
-    return array
+def _set_rates(model: Any) -> None:
+    """Check a model's ``max_rate`` and ``baseline_rate`` and store them as floats.
 
-
-def _check_rates(max_rate: float, baseline_rate: float) -> None:
-    """Refuse a non-finite or negative rate, or a baseline above the peak."""
+    Refuses a non-finite or negative rate, or a baseline above the peak.
+    """
+    max_rate, baseline_rate = model.max_rate, model.baseline_rate
     if not (np.isfinite(max_rate) and max_rate > 0):
         raise ValueError(
             _format_error(
@@ -284,6 +346,16 @@ def _check_rates(max_rate: float, baseline_rate: float) -> None:
                 fix="pass a baseline_rate no larger than max_rate",
             )
         )
+    object.__setattr__(model, "max_rate", float(max_rate))
+    object.__setattr__(model, "baseline_rate", float(baseline_rate))
+
+
+def _tuned_rate(model: Any, tuning: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Rate in Hz from tuning in [0, 1]: ``baseline + (max - baseline) * tuning``."""
+    rates: NDArray[np.float64] = (
+        model.baseline_rate + (model.max_rate - model.baseline_rate) * tuning
+    )
+    return rates
 
 
 def _check_positive(
@@ -331,7 +403,7 @@ def _check_metric(metric: str, call: str) -> None:
 
 def _check_point(name: str, value: ArrayLike, n_dims: int) -> NDArray[np.float64]:
     """One finite point of ``n_dims`` coordinates, as a read-only array."""
-    point = _read_only(value)
+    point = read_only_copy(value, np.float64)
     if point.shape != (n_dims,) or not np.all(np.isfinite(point)):
         raise ValueError(
             _format_error(

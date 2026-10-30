@@ -14,6 +14,7 @@ from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
 from neurospatial.simulation._lap_routes import LapRouter
 from neurospatial.simulation._walls import Walls
+from neurospatial.simulation.models.base import _check_positive
 
 #: Default exploration speed, in centimeters per second: the RatInABox
 #: default (0.08 m/s; George et al. 2024).
@@ -23,23 +24,8 @@ _DEFAULT_OU_SPEED_CM_PER_S = 8.0
 _SAMPLE_COUNT_RTOL = 1e-9
 
 
-def _require_finite(
-    checks: list[tuple[str, float, bool]], why: str | None = None
-) -> None:
-    """Refuse a value that is not finite, or not positive (or non-negative).
-
-    ``checks`` holds ``(name, value, positive)``; ``positive`` False allows 0.
-    """
-    for name, value, positive in checks:
-        if not np.isfinite(value) or (value <= 0 if positive else value < 0):
-            bound = "positive" if positive else "non-negative"
-            raise ValueError(
-                _format_error(
-                    f"{name} must be finite and {bound}, got {value}.",
-                    why=why,
-                    fix=f"pass a finite {bound} {name}",
-                )
-            )
+#: Units of a running speed, named in errors.
+_SPEED_UNITS = "the environment's units per second"
 
 
 def _sample_count(duration: float, step: float, step_name: str, call: str) -> int:
@@ -363,21 +349,21 @@ def simulate_trajectory_ou(
         )
     if speed_std is None:
         speed_std = speed_mean / 2
-    _require_finite(
-        [
-            ("duration", duration, True),
-            ("dt", dt, True),
-            ("speed_mean", speed_mean, True),
-            ("speed_std", speed_std, False),
-            ("coherence_time", coherence_time, True),
-            ("rotational_velocity_std", rotational_velocity_std, False),
-            (
-                "rotational_velocity_coherence_time",
-                rotational_velocity_coherence_time,
-                True,
-            ),
-        ]
-    )
+    for name, value, allow_zero, units in (
+        ("duration", duration, False, "seconds"),
+        ("dt", dt, False, "seconds"),
+        ("speed_mean", speed_mean, False, _SPEED_UNITS),
+        ("speed_std", speed_std, True, _SPEED_UNITS),
+        ("coherence_time", coherence_time, False, "seconds"),
+        ("rotational_velocity_std", rotational_velocity_std, True, "radians/s"),
+        (
+            "rotational_velocity_coherence_time",
+            rotational_velocity_coherence_time,
+            False,
+            "seconds",
+        ),
+    ):
+        _check_positive(name, value, allow_zero=allow_zero, units=units)
     modes = ("reflect", "periodic", "stop")
     if boundary_mode not in modes:
         raise ValueError(
@@ -655,12 +641,13 @@ def simulate_trajectory_sinusoidal(
     period: float | None = None,
     pause_duration: float = 0.0,
     pause_at_peaks: bool = True,
-    seed: int | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Simulate sinusoidal back-and-forth running along a track.
 
     Generates simple back-and-forth motion with optional pauses at track ends.
-    Useful for testing place field detection on linear tracks.
+    Useful for testing place field detection on linear tracks. The trajectory
+    is deterministic (a closed-form sinusoid with fixed pauses), so it takes
+    no seed.
 
     Parameters
     ----------
@@ -685,12 +672,6 @@ def simulate_trajectory_sinusoidal(
     pause_at_peaks : bool, optional
         Whether to pause at the track ends (default: True). False ignores
         ``pause_duration``.
-    seed : int | None, optional
-        Accepted for a uniform trajectory API but has no effect: this trajectory
-        is fully deterministic (a closed-form sinusoid with deterministic
-        pauses), so the output is identical regardless of ``seed``. Provided so
-        callers (e.g. ``simulate_session``) can pass ``seed`` uniformly across
-        trajectory methods.
 
     Returns
     -------
@@ -773,22 +754,19 @@ def simulate_trajectory_sinusoidal(
             problem="not a metric length unit, so the default 10 cm/s",
             placeholder="running speed",
         )
-    _require_finite(
-        [
-            ("duration", duration, True),
-            ("sampling_frequency", sampling_frequency, True),
-            ("speed", speed, True),
-            *([] if period is None else [("period", period, True)]),
-            ("pause_duration", pause_duration, False),
-        ]
-    )
+    for name, value, allow_zero, units in (
+        ("duration", duration, False, "seconds"),
+        ("sampling_frequency", sampling_frequency, False, "Hz"),
+        ("speed", speed, False, _SPEED_UNITS),
+        *([] if period is None else [("period", period, False, "seconds")]),
+        ("pause_duration", pause_duration, True, "seconds"),
+    ):
+        _check_positive(name, value, allow_zero=allow_zero, units=units)
 
     # The motion runs along the track between its two far ends, in the
     # environment's coordinates.
     waypoints = _track_end_to_end(env, call)
-    waypoint_distances = np.concatenate(
-        [[0.0], np.cumsum(np.linalg.norm(np.diff(waypoints, axis=0), axis=1))]
-    )
+    waypoint_distances = _arc_lengths(waypoints)
     track_length = float(waypoint_distances[-1])
 
     # Compute period if not provided
@@ -814,13 +792,35 @@ def simulate_trajectory_sinusoidal(
     # Distance along the track: d = L/2 + L/2 sin(2π motion_time / period)
     distance = track_length / 2 * (1 + np.sin(2 * np.pi * motion_time / period))
 
-    positions = np.column_stack(
+    positions = _interpolate_along(waypoints, waypoint_distances, distance)
+    return positions, times
+
+
+def _arc_lengths(points: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Distance along the polyline ``points`` to each of its points, shape (n_points,).
+
+    ``points`` has shape (n_points, n_dims); the first distance is 0.
+    """
+    steps = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    return np.concatenate([[0.0], np.cumsum(steps)])
+
+
+def _interpolate_along(
+    points: NDArray[np.float64],
+    arc_lengths: NDArray[np.float64],
+    distances: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Positions at ``distances`` along the polyline ``points``, shape (n, n_dims).
+
+    ``arc_lengths`` is ``_arc_lengths(points)``; each coordinate is
+    interpolated linearly between the points.
+    """
+    return np.column_stack(
         [
-            np.interp(distance, waypoint_distances, waypoints[:, dim])
-            for dim in range(env.n_dims)
+            np.interp(distances, arc_lengths, points[:, dim])
+            for dim in range(points.shape[1])
         ]
     )
-    return positions, times
 
 
 def _longest_bin_path(env: Environment, call: str) -> list[int]:
@@ -969,6 +969,12 @@ def _track_end_to_end(env: Environment, call: str) -> NDArray[np.float64]:
 #: Default lap running speed, in centimeters per second.
 _DEFAULT_LAP_SPEED_CM_PER_S = 20.0
 
+#: Default lap sampling rate, in samples per second.
+_DEFAULT_LAP_SAMPLING_FREQUENCY = 500.0
+
+#: Default pause at the end of each traversal but the last, in seconds.
+_DEFAULT_LAP_PAUSE_DURATION = 0.5
+
 
 def simulate_trajectory_laps(
     env: Environment,
@@ -978,8 +984,8 @@ def simulate_trajectory_laps(
     speed_std: float | None = None,
     outbound_path: list[int] | None = None,
     inbound_path: list[int] | None = None,
-    pause_duration: float = 0.5,
-    sampling_frequency: float = 500.0,
+    pause_duration: float = _DEFAULT_LAP_PAUSE_DURATION,
+    sampling_frequency: float = _DEFAULT_LAP_SAMPLING_FREQUENCY,
     seed: int | None = None,
     return_metadata: bool = False,
 ) -> (
@@ -1175,8 +1181,8 @@ def _simulate_trajectory_laps(
     speed_std: float | None = None,
     outbound_path: list[int] | None = None,
     inbound_path: list[int] | None = None,
-    pause_duration: float = 0.5,
-    sampling_frequency: float = 500.0,
+    pause_duration: float = _DEFAULT_LAP_PAUSE_DURATION,
+    sampling_frequency: float = _DEFAULT_LAP_SAMPLING_FREQUENCY,
     seed: int | None = None,
     return_metadata: bool = False,
     duration: float | None = None,
@@ -1205,15 +1211,16 @@ def _simulate_trajectory_laps(
             )
     if speed_std is None:
         speed_std = 0.2 * speed_mean
-    _require_finite(
-        [
-            *([] if duration is None else [("duration", duration, True)]),
-            ("sampling_frequency", sampling_frequency, True),
-            ("speed_mean", speed_mean, True),
-            ("speed_std", speed_std, False),
-            ("pause_duration", pause_duration, False),
-        ]
-    )
+    # With a duration the speeds only weight the traversal times: no units.
+    speed_units = _SPEED_UNITS if duration is None else None
+    for name, value, allow_zero, units in (
+        *([] if duration is None else [("duration", duration, False, "seconds")]),
+        ("sampling_frequency", sampling_frequency, False, "Hz"),
+        ("speed_mean", speed_mean, False, speed_units),
+        ("speed_std", speed_std, True, speed_units),
+        ("pause_duration", pause_duration, True, "seconds"),
+    ):
+        _check_positive(name, value, allow_zero=allow_zero, units=units)
     if (
         not isinstance(n_laps, (int, np.integer))
         or isinstance(n_laps, bool)
@@ -1289,12 +1296,7 @@ def _simulate_trajectory_laps(
         )
     ]
     # Distance run from the start of each route to each of its waypoints.
-    route_distances = [
-        np.concatenate(
-            [[0.0], np.cumsum(np.linalg.norm(np.diff(route, axis=0), axis=1))]
-        )
-        for route in routes
-    ]
+    route_distances = [_arc_lengths(route) for route in routes]
     if all(distances[-1] == 0 for distances in route_distances):
         raise ValueError(
             _format_error(
@@ -1389,13 +1391,9 @@ def _simulate_trajectory_laps(
         if continues:
             interpolation_points = interpolation_points[1:]
         n_samples = len(interpolation_points)
-
-        # Interpolate each dimension separately
-        lap_positions = np.zeros((n_samples, env.n_dims))
-        for dim in range(env.n_dims):
-            lap_positions[:, dim] = np.interp(
-                interpolation_points, cumulative_distances, path_positions[:, dim]
-            )
+        lap_positions = _interpolate_along(
+            path_positions, cumulative_distances, interpolation_points
+        )
 
         all_positions.append(lap_positions)
         all_lap_ids.extend([lap_idx] * n_samples)

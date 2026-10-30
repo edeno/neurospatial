@@ -14,8 +14,9 @@ from neurospatial.simulation.models.base import (
     _check_angle,
     _check_point,
     _check_positive,
-    _check_rates,
     _model_inputs,
+    _set_rates,
+    _tuned_rate,
 )
 
 if TYPE_CHECKING:
@@ -206,7 +207,7 @@ class GridCellModel:
             [0.0, 0.0] if self.phase_offset is None else self.phase_offset,
             2,
         )
-        _check_rates(self.max_rate, self.baseline_rate)
+        _set_rates(self)
 
         # Three wave vectors at 60° intervals. The field lattice lies 30°
         # from the first wave (see firing_rate Notes), so the waves start at
@@ -224,8 +225,6 @@ class GridCellModel:
             ("_grid_spacing", float(spacing)),
             ("_phase_offset", phase),
             ("grid_orientation", float(self.grid_orientation)),
-            ("max_rate", float(self.max_rate)),
-            ("baseline_rate", float(self.baseline_rate)),
             ("_wave_vectors", wave_vectors),
         ):
             object.__setattr__(self, name, value)
@@ -315,10 +314,7 @@ class GridCellModel:
 
         # Rectify: only positive parts contribute to firing
         grid_pattern = np.maximum(0.0, grid_pattern)
-        rates: NDArray[np.float64] = (
-            self.baseline_rate + (self.max_rate - self.baseline_rate) * grid_pattern
-        )
-        return rates
+        return _tuned_rate(self, grid_pattern)
 
     @property
     def ground_truth(self) -> dict[str, Any]:

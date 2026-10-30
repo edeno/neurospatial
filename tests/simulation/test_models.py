@@ -653,9 +653,9 @@ class TestSharedRayDistances:
         calls = []
         cast = Walls.ray_distances
 
-        def counting(self, positions, directions):
+        def counting(self, positions, directions, inside=None):
             calls.append(len(positions))
-            return cast(self, positions, directions)
+            return cast(self, positions, directions, inside)
 
         monkeypatch.setattr(Walls, "ray_distances", counting)
         return calls
@@ -680,9 +680,7 @@ class TestSharedRayDistances:
 
     def test_shared_rays_follow_new_positions(self, cells, samples, monkeypatch):
         """A different or edited positions array is never given stale rays."""
-        from neurospatial.simulation.models.boundary_cells import (
-            _shared_ray_distances,
-        )
+        from neurospatial.simulation.models.base import _population_cache
 
         times, positions = samples
         moved = positions[::-1].copy()
@@ -690,7 +688,7 @@ class TestSharedRayDistances:
             cell.firing_rate(times, p) for cell in cells for p in (positions, moved)
         ]
         calls = self._count_casts(monkeypatch)
-        with _shared_ray_distances():
+        with _population_cache():
             got = [
                 cell.firing_rate(times, p) for cell in cells for p in (positions, moved)
             ]
@@ -715,6 +713,78 @@ class TestSharedRayDistances:
         cells[0].firing_rate(times, positions)
         cells[1].firing_rate(times, positions)
         assert len(calls) == 2
+
+
+class TestPopulationCache:
+    """A population computes trajectory work once; every cell's spikes are
+    those it fires alone."""
+
+    @staticmethod
+    def _population(family, env):
+        """Cells of one family, and the module attribute doing the shared work."""
+        from neurospatial.simulation.models import (
+            BorderCellModel,
+            ObjectVectorCellModel,
+            SpatialViewCellModel,
+            boundary_cells,
+            spatial_view_cells,
+        )
+
+        objects = np.array([[30.0, 30.0], [70.0, 60.0]])
+        if family == "spatial_view":
+            cells = [
+                SpatialViewCellModel(env, preferred_view_location=[100.0, y])
+                for y in (20.0, 50.0, 80.0)
+            ]
+            return cells, (spatial_view_cells, "gaze_points")
+        if family == "border":
+            cells = [BorderCellModel(env, preferred_distance=d) for d in (0.0, 3.0)]
+            return cells, (boundary_cells, "nearest_boundary")
+        cells = [
+            PlaceCellModel(env, center=[50.0, 50.0], width=10.0, metric="geodesic"),
+            ObjectVectorCellModel(env, object_positions=objects, metric="geodesic"),
+        ]
+        return cells, (Environment, "bin_at")
+
+    @pytest.mark.parametrize("family", ["spatial_view", "border", "geodesic"])
+    def test_population_shares_work_and_keeps_spikes(
+        self, family, walled_box, monkeypatch
+    ):
+        from neurospatial.simulation import (
+            generate_poisson_spikes,
+            generate_population_spikes,
+        )
+
+        cells, (owner, name) = self._population(family, walled_box)
+        rng = np.random.default_rng(5)
+        n = 300
+        times = np.arange(n) / 50.0
+        positions = rng.uniform(1, 99, (n, 2))
+        headings = rng.uniform(-np.pi, np.pi, n)
+        separate = [
+            generate_poisson_spikes(
+                cell.firing_rate(times, positions, headings=headings),
+                times,
+                seed=int(sequence.generate_state(1)[0]),
+            )
+            for cell, sequence in zip(
+                cells, np.random.SeedSequence(8).spawn(len(cells)), strict=True
+            )
+        ]
+        calls = []
+        work = getattr(owner, name)
+
+        def counting(*args, **kwargs):
+            calls.append(name)
+            return work(*args, **kwargs)
+
+        monkeypatch.setattr(owner, name, counting)
+        shared = generate_population_spikes(
+            cells, times, positions, headings=headings, seed=8, show_progress=False
+        )
+        assert len(calls) == 1
+        for alone, together in zip(separate, shared, strict=True):
+            np.testing.assert_array_equal(alone, together)
 
 
 def generate_poisson_spikes_for(cell, times, positions, sequence):

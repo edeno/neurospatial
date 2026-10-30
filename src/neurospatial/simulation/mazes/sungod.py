@@ -367,8 +367,8 @@ def make_sungod_maze(
         arena=arena,
         name="sungod_maze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     # The paper gives no port size, so each port region is a point.
     region_builder = Regions()
@@ -564,7 +564,7 @@ def _create_sungod_track_graph(
         bin_size=bin_size,
         track_width=max(corridor_width(arm) for arm in arm_polygons),
         name="sungod_maze_1d",
+        units="cm",
     )
-    env_track = env_track.with_metadata(units="cm")
 
     return env_track

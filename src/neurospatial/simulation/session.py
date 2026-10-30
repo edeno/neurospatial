@@ -12,6 +12,9 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import read_only_copy
+from neurospatial._validation import is_positive_integer, validate_finite_scalar
+from neurospatial.ops.boundary_vectors import nearest_boundary
+from neurospatial.simulation._seeds import _stream_seeds
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -267,6 +270,63 @@ class SimulationSession:
         return _rebuild_session, (state,)
 
 
+def _require_positive(
+    name: str, value: object, *, count: bool = False, units: str = ""
+) -> None:
+    """Refuse a count that is not a positive integer, or a value not finite and positive.
+
+    ``units`` follows the requirement in the message, e.g. ``" (seconds)"``.
+    """
+    if count:
+        if is_positive_integer(value):
+            return
+    else:
+        try:
+            validate_finite_scalar(value, name=name, positive=True)
+            return
+        except ValueError:
+            pass
+    requirement = "an integer" if count else "finite"
+    raise ValueError(
+        _format_error(
+            f"{name} must be positive and {requirement}{units}, got {value!r}.",
+            fix=f"pass a positive {'whole' if count else 'finite'} number as {name}",
+        )
+    )
+
+
+def _simulated_session(
+    env: Environment,
+    positions: NDArray[np.float64],
+    times: NDArray[np.float64],
+    models: list[NeuralModel],
+    *,
+    spike_seed: int,
+    show_progress: bool,
+    metadata: Mapping[str, Any],
+) -> SimulationSession:
+    """Draw each model's spikes along the trajectory and hold them in a session.
+
+    Units are labelled ``0 .. len(models) - 1`` in model order, and each
+    unit's ground truth is its model's.
+    """
+    from neurospatial.simulation.spikes import generate_population_spikes
+
+    spike_times = generate_population_spikes(
+        models, times, positions, seed=spike_seed, show_progress=show_progress
+    )
+    return SimulationSession(
+        env=env,
+        positions=positions,
+        times=times,
+        spike_times=spike_times,
+        unit_ids=np.arange(len(models), dtype=np.int64),
+        models=models,
+        ground_truth={i: model.ground_truth for i, model in enumerate(models)},
+        metadata=metadata,
+    )
+
+
 #: Model parameters ``simulate_session`` passes to each cell type, by the
 #: models' own names.
 _MODEL_PARAMETERS: dict[str, frozenset[str]] = {
@@ -338,14 +398,6 @@ def _border_cells(
     ]
 
 
-def _stream_seeds(seed: int | None, n_streams: int) -> list[int]:
-    """Seeds of ``n_streams`` independent streams spawned from ``seed``."""
-    return [
-        int(child.generate_state(1)[0])
-        for child in np.random.SeedSequence(seed).spawn(n_streams)
-    ]
-
-
 #: Share of its local half-width that a uniform field center keeps clear of
 #: the walls (see ``_interior_bins``). In a square arena of side ``L`` every
 #: interior bin's half-width is ``L / 2``, so the centers keep 20% of the side
@@ -357,13 +409,24 @@ UNIFORM_WALL_INSET = 0.4
 def _bin_depths(env: Environment) -> NDArray[np.float64] | None:
     """Each bin's distance to the nearest wall, shape (n_bins,), or None.
 
-    The distance is measured to the nearest boundary bin's center plus half
-    that bin's length, the distance from the bin center to the boundary
-    bin's outer edge. None when the bins have no known outline (point bins
-    without cells) or no boundary.
+    In 2-D it is the exact distance from the bin center to the edge of the
+    bins or a wall between them (``nearest_boundary`` with
+    ``boundary_source='analysis'``), so a declared internal wall counts. In
+    other dimensions it is measured to the nearest boundary bin's center
+    plus half that bin's length, the distance from the bin center to the
+    boundary bin's outer edge. None when the bins have no known outline
+    (point bins without cells) or no boundary.
     """
     from scipy.spatial import cKDTree
 
+    if env.n_dims == 2:
+        try:
+            distances, _ = nearest_boundary(
+                env, env.bin_centers, boundary_source="analysis"
+            )
+        except NotImplementedError:
+            return None
+        return distances
     try:
         boundary = env.boundary_bins
     except NotImplementedError:
@@ -433,17 +496,14 @@ def _spread_bins(
     points the layout of ``n`` points is the first ``n`` of the layout of
     ``n + 1``: adding a cell adds one center and moves none.
     """
-    from scipy.sparse import coo_array
     from scipy.sparse.csgraph import dijkstra
+
+    from neurospatial.behavior._environment_paths import _bin_graph
 
     deepest = int(candidates[np.argmax(depths[candidates])])
     if n_points == 1:
         return np.array([deepest])
-    pairs = env.edge_pairs
-    graph = coo_array(
-        (env.binning.connections.pair_distances, (pairs[:, 0], pairs[:, 1])),
-        shape=(env.n_bins, env.n_bins),
-    ).tocsr()
+    graph = _bin_graph(env)
 
     def distances_from(bin_index: int) -> NDArray[np.float64]:
         return np.asarray(dijkstra(graph, directed=False, indices=bin_index))
@@ -664,7 +724,8 @@ def simulate_session(
     ValueError
         If grid cells requested but environment is not 2D.
     ValueError
-        If ``n_cells`` or ``duration`` is not positive.
+        If ``n_cells`` is not a positive integer or ``duration`` is not
+        finite and positive.
     ValueError
         If a model parameter applies only to a cell type the session does
         not simulate (for example ``grid_spacing`` with
@@ -761,8 +822,9 @@ def simulate_session(
     """
     # Import functions here to avoid circular imports
     from neurospatial.simulation.models import GridCellModel, PlaceCellModel
-    from neurospatial.simulation.spikes import generate_population_spikes
     from neurospatial.simulation.trajectory import (
+        _DEFAULT_LAP_PAUSE_DURATION,
+        _DEFAULT_LAP_SAMPLING_FREQUENCY,
         _simulate_trajectory_laps,
         simulate_trajectory_ou,
         simulate_trajectory_sinusoidal,
@@ -792,12 +854,8 @@ def simulate_session(
             f"Grid cells require 2D environment, but environment has {env.n_dims} dimensions"
         )
 
-    # Validate n_cells and duration
-    if n_cells <= 0:
-        raise ValueError(f"n_cells must be positive, got {n_cells}")
-
-    if duration <= 0:
-        raise ValueError(f"duration must be positive (seconds), got {duration}")
+    _require_positive("n_cells", n_cells, count=True)
+    _require_positive("duration", duration, units=" (seconds)")
 
     # Model parameters go to the cell types that take them; the rest are
     # trajectory parameters.
@@ -821,9 +879,6 @@ def simulate_session(
             value = kwargs.pop(name)
             for params in model_params.values():
                 params[name] = value
-    place_cell_params = model_params["place"]
-    border_cell_params = model_params["border"]
-    grid_cell_params = model_params["grid"]
 
     # Independent streams for the trajectory, the field parameters and the
     # spikes, so that spike draws are not correlated with the movement.
@@ -840,9 +895,9 @@ def simulate_session(
         )
     elif trajectory_method == "sinusoidal":
         positions, times = simulate_trajectory_sinusoidal(
-            env, duration=duration, seed=trajectory_seed, **kwargs
+            env, duration=duration, **kwargs
         )
-    elif trajectory_method == "laps":
+    else:
         # Ensure return_metadata is False for consistent return signature
         # Extract n_laps separately to avoid duplicate keyword argument
         n_laps = kwargs.pop("n_laps", 10)
@@ -858,8 +913,6 @@ def simulate_session(
         )
         # Type narrowing: return_metadata=False guarantees 2-tuple
         positions, times = result  # type: ignore[misc]
-    else:
-        raise ValueError(f"Unknown trajectory method: {trajectory_method}")
 
     rng = np.random.default_rng(field_center_seed)
 
@@ -880,44 +933,19 @@ def simulate_session(
     if cell_type == "mixed":
         field_centers = field_centers[rng.permutation(len(field_centers))]
 
-    # Create models based on cell_type
-    models: list[NeuralModel] = []
-    if cell_type == "place":
-        for center in field_centers:
-            models.append(PlaceCellModel(env, center=center, **place_cell_params))
-    elif cell_type == "border":
-        models.extend(_border_cells(env, n_border, rng, border_cell_params))
-    elif cell_type == "grid":
-        for center in field_centers:
-            # Use center for phase offset
-            models.append(GridCellModel(env, phase_offset=center, **grid_cell_params))
-    elif cell_type == "mixed":
-        # Create place cells
-        for center in field_centers[:n_place]:
-            models.append(PlaceCellModel(env, center=center, **place_cell_params))
-
-        # Create border cells
-        models.extend(_border_cells(env, n_border, rng, border_cell_params))
-
-        # Create grid cells
-        for center in field_centers[n_place : n_place + n_grid]:
-            models.append(GridCellModel(env, phase_offset=center, **grid_cell_params))
-    else:
-        raise ValueError(f"Unknown cell_type: {cell_type}")
-
-    # Generate spikes for all cells using the independent spike seed.
-    spike_times = generate_population_spikes(
-        models,
-        times,
-        positions,
-        seed=spike_seed,
-        show_progress=show_progress,
+    # Place cells, then border cells, then grid cells; a type the session
+    # does not simulate has no cells. Grid cells take the centers after the
+    # place cells' as their phase offsets.
+    models: list[NeuralModel] = [
+        PlaceCellModel(env, center=center, **model_params["place"])
+        for center in field_centers[:n_place]
+    ]
+    models.extend(_border_cells(env, n_border, rng, model_params["border"]))
+    models.extend(
+        GridCellModel(env, phase_offset=center, **model_params["grid"])
+        for center in field_centers[n_place:]
     )
 
-    # Collect ground truth from each model
-    ground_truth = {i: model.ground_truth for i, model in enumerate(models)}
-
-    # Create metadata dict
     metadata = {
         "duration": duration,
         "n_cells": n_cells,
@@ -930,19 +958,20 @@ def simulate_session(
     if trajectory_method == "laps":
         metadata.update(
             n_laps=n_laps,
-            sampling_frequency=kwargs.get("sampling_frequency", 500.0),
-            pause_duration=kwargs.get("pause_duration", 0.5),
+            sampling_frequency=kwargs.get(
+                "sampling_frequency", _DEFAULT_LAP_SAMPLING_FREQUENCY
+            ),
+            pause_duration=kwargs.get("pause_duration", _DEFAULT_LAP_PAUSE_DURATION),
             sampling_convention="k / sampling_frequency in [0, duration)",
         )
 
-    # Return SimulationSession
-    return SimulationSession(
-        env=env,
-        positions=positions,
-        times=times,
-        spike_times=spike_times,
-        unit_ids=np.arange(len(spike_times), dtype=np.int64),
-        models=models,
-        ground_truth=ground_truth,
+    # Spikes for all cells from the independent spike seed.
+    return _simulated_session(
+        env,
+        positions,
+        times,
+        models,
+        spike_seed=spike_seed,
+        show_progress=show_progress,
         metadata=metadata,
     )

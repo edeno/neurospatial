@@ -173,8 +173,8 @@ def make_square_maze(
         bin_size=bin_size,
         name="square_maze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     # Add center region
     region_builder = Regions()

@@ -8,13 +8,15 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial.simulation.models.base import (
     _check_angle,
     _check_positive,
-    _check_rates,
     _draw_rng,
     _model_headings,
     _model_inputs,
+    _set_rates,
+    _tuned_rate,
 )
 
 
@@ -66,7 +68,7 @@ class HeadDirectionCellModel:
     ----------
     ground_truth : dict[str, Any]
         The values the model fires with: read the drawn preferred direction,
-        wrapped to [-π, π], here. Every parameter is also an attribute
+        wrapped to (-π, π], here. Every parameter is also an attribute
         holding the argument as passed, so ``preferred_direction`` reads None
         when it is drawn from ``seed``, and ``dataclasses.replace(model,
         seed=2)`` draws again, as the constructor would. Only ``seed``
@@ -200,17 +202,15 @@ class HeadDirectionCellModel:
             direction = float(_draw_rng(self).uniform(-np.pi, np.pi))
         _check_angle("preferred_direction", direction)
         _check_positive("concentration", self.concentration, units=None)
-        _check_rates(self.max_rate, self.baseline_rate)
+        _set_rates(self)
         if self.preferred_direction is not None:
             object.__setattr__(self, "preferred_direction", float(direction))
         for name, value in (
             (
                 "_preferred_direction",
-                float(np.arctan2(np.sin(direction), np.cos(direction))),
+                float(wrap_angle(np.asarray(direction, dtype=np.float64))),
             ),
             ("concentration", float(self.concentration)),
-            ("max_rate", float(self.max_rate)),
-            ("baseline_rate", float(self.baseline_rate)),
         ):
             object.__setattr__(self, name, value)
 
@@ -267,10 +267,7 @@ class HeadDirectionCellModel:
         tuning = np.exp(
             self.concentration * (np.cos(headings - self._preferred_direction) - 1)
         )
-        rates: NDArray[np.float64] = (
-            self.baseline_rate + (self.max_rate - self.baseline_rate) * tuning
-        )
-        return rates
+        return _tuned_rate(self, tuning)
 
     @property
     def ground_truth(self) -> dict[str, Any]:
