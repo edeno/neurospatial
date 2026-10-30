@@ -178,6 +178,10 @@ Detecting the candidate events (ripples, population bursts) is not included.
 - `rank_order_correlation()`, `rank_order_significance()`: Spearman
   correlation of field order and firing order in an event, with a
   cell-order permutation test; needs no decoding
+- `detect_replay()`, `compare_replay_methods()`: Apply published replay
+  methods (`neurospatial.replay.methods`: Davidson 2009, Karlsson & Frank
+  2009, Silva 2015, Wu 2017, Michon 2019, Tirole 2022) to decoded events and
+  compare their verdicts
 - `shuffle_cell_identity()`, `shuffle_spike_counts_circular()`,
   `shuffle_place_fields_circular()`, `shuffle_place_fields_circular_2d()`,
   `shuffle_posterior_circular()`, `shuffle_posterior_weighted_circular()`:
