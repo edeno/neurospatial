@@ -455,6 +455,201 @@ class TestReplaySignificance:
         )
         return env, rates
 
+    def test_tirole_nulls_reject_a_planted_sweep(self, place_code):
+        """Spike-train shift, place-field shift and column cycle (Tirole 2022)."""
+        from neurospatial.decoding import decode_position
+
+        env, rates = place_code
+        dt = 0.02
+        times = np.arange(15) * dt
+        path = 30.0 + 500.0 * times
+        true_bins = np.abs(env.bin_centers[:, 0][None] - path[:, None]).argmin(axis=1)
+        counts = np.random.default_rng(7).poisson(rates[:, true_bins].T * dt * 2)
+        posterior = decode_position(env, counts, rates, dt=dt).posterior
+
+        result = replay_significance(
+            env,
+            posterior,
+            times,
+            score=weighted_correlation,
+            nulls=["spike_train_circular", "place_field_circular", "column_cycle"],
+            spike_counts=counts,
+            encoding_models=rates,
+            dt=dt,
+            n_shuffles=199,
+            rng=0,
+        )
+        assert set(result.shuffles) == {
+            "spike_train_circular",
+            "place_field_circular",
+            "column_cycle",
+        }
+        assert result.p_value == pytest.approx(1 / 200)
+
+    def test_default_nulls_stay_davidsons(self, place_code):
+        from neurospatial.decoding import decode_position
+
+        env, rates = place_code
+        counts = np.random.default_rng(2).poisson(1.0, (10, rates.shape[0]))
+        posterior = decode_position(env, counts, rates, dt=0.02).posterior
+        result = replay_significance(
+            env,
+            posterior,
+            np.arange(10) * 0.02,
+            spike_counts=counts,
+            encoding_models=rates,
+            dt=0.02,
+            n_shuffles=9,
+            rng=0,
+        )
+        assert set(result.shuffles) == {"column_cycle", "unit_identity"}
+
+    def test_tirole_nulls_together_are_calibrated_without_replay(self, place_code):
+        """Spikes from random positions: all three nulls together keep alpha.
+
+        One decoding null alone rejects such events too often (about 0.16 at
+        a nominal 0.1), which is why Tirole et al. require all three.
+        """
+        from neurospatial.decoding import decode_position
+
+        env, rates = place_code
+        dt = 0.02
+        times = np.arange(10) * dt
+        position_rng = np.random.default_rng(13)
+        spike_rng = np.random.default_rng(14)
+        shuffle_rng = np.random.default_rng(15)
+        p_values = []
+        for _ in range(300):
+            bins = position_rng.integers(0, env.n_bins, len(times))
+            counts = spike_rng.poisson(rates[:, bins].T * dt * 2)
+            posterior = decode_position(env, counts, rates, dt=dt).posterior
+            p_values.append(
+                replay_significance(
+                    env,
+                    posterior,
+                    times,
+                    score=weighted_correlation,
+                    nulls=[
+                        "spike_train_circular",
+                        "place_field_circular",
+                        "column_cycle",
+                    ],
+                    spike_counts=counts,
+                    encoding_models=rates,
+                    dt=dt,
+                    n_shuffles=39,
+                    rng=shuffle_rng,
+                ).p_value
+            )
+        # 30 of 300 expected (sd 5.2); one null alone gives about 47.
+        assert 16 <= np.sum(np.asarray(p_values) <= 0.1) <= 42
+
+    def test_time_bin_permutation_is_calibrated_without_replay(self, place_code):
+        """Independent time bins are exchangeable, so this null is exact."""
+        env, _ = place_code
+        rng = np.random.default_rng(16)
+        times = np.arange(10) * 0.02
+        p_values = np.array(
+            [
+                replay_significance(
+                    env,
+                    wrapped_bump(env, rng.uniform(0, 200, len(times)), 8.0),
+                    times,
+                    score=weighted_correlation,
+                    nulls="time_bin_permutation",
+                    n_shuffles=39,
+                    rng=rng,
+                ).p_value
+                for _ in range(300)
+            ]
+        )
+        assert 16 <= np.sum(p_values <= 0.1) <= 44
+
+    def test_permuting_posterior_rows_equals_decoding_permuted_counts(self, place_code):
+        from neurospatial.decoding import decode_position
+
+        env, rates = place_code
+        counts = np.random.default_rng(3).poisson(1.0, (12, rates.shape[0]))
+        order = np.random.default_rng(4).permutation(12)
+        posterior = decode_position(env, counts, rates, dt=0.02).posterior
+        permuted = decode_position(env, counts[order], rates, dt=0.02).posterior
+        np.testing.assert_allclose(posterior[order], permuted, atol=1e-12)
+
+    def test_time_bin_permutation_needs_only_the_posterior(self, place_code):
+        env, _ = place_code
+        posterior = wrapped_bump(env, 20.0 + 8.0 * np.arange(12), 6.0)
+        result = replay_significance(
+            env,
+            posterior,
+            np.arange(12) * 0.02,
+            score=weighted_correlation,
+            nulls="time_bin_permutation",
+            n_shuffles=199,
+            rng=0,
+        )
+        assert set(result.shuffles) == {"time_bin_permutation"}
+        assert result.p_value == pytest.approx(1 / 200)
+
+    def test_place_field_shift_keeps_bins_without_training_data_out(self, place_code):
+        from neurospatial.decoding import decode_position
+        from neurospatial.replay import shuffle_place_fields_circular
+        from neurospatial.replay.significance import _supported_rates
+
+        env, rates = place_code
+        partial = rates.copy()
+        partial[:, :3] = np.nan  # the animal never reached the first 12 cm
+        counts = np.random.default_rng(2).poisson(1.0, (10, rates.shape[0]))
+        with pytest.warns(UserWarning, match="zero posterior probability"):
+            posterior = decode_position(env, counts, partial, dt=0.02).posterior
+
+        supported, support_prior = _supported_rates(env, partial, None)
+        unshifted = decode_position(
+            env, counts, np.nan_to_num(supported), dt=0.02, prior=support_prior
+        ).posterior
+        np.testing.assert_allclose(unshifted, posterior, atol=1e-12)
+        for maps in shuffle_place_fields_circular(env, supported, n_shuffles=5, rng=0):
+            assert np.all(np.isnan(maps[:, :3]))
+            assert np.isfinite(maps[:, 3:]).all()
+
+        with pytest.warns(UserWarning, match="zero posterior probability"):
+            result = replay_significance(
+                env,
+                posterior,
+                np.arange(10) * 0.02,
+                nulls="place_field_circular",
+                spike_counts=counts,
+                encoding_models=partial,
+                dt=0.02,
+                n_shuffles=5,
+                rng=0,
+            )
+        assert set(result.shuffles) == {"place_field_circular"}
+
+    def test_partial_decoding_inputs_name_every_decoding_null(self, place_code):
+        env, rates = place_code
+        posterior = wrapped_bump(env, 20.0 + 8.0 * np.arange(6), 6.0)
+        with pytest.raises(
+            ValueError, match="spike_train_circular, place_field_circular"
+        ):
+            replay_significance(
+                env,
+                posterior,
+                np.arange(6) * 0.02,
+                nulls="spike_train_circular",
+                spike_counts=np.ones((6, rates.shape[0]), dtype=int),
+                encoding_models=rates,
+                n_shuffles=5,
+            )
+
+    def test_decoding_nulls_need_their_inputs(self, place_code):
+        env, _ = place_code
+        posterior = wrapped_bump(env, 20.0 + 8.0 * np.arange(6), 6.0)
+        for name in ("spike_train_circular", "place_field_circular"):
+            with pytest.raises(ValueError, match="without their inputs"):
+                replay_significance(
+                    env, posterior, np.arange(6) * 0.02, nulls=name, n_shuffles=5
+                )
+
     def test_weighted_correlation_under_every_shuffle(self, place_code):
         from neurospatial.decoding import decode_position
 

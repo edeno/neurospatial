@@ -468,6 +468,7 @@ neurospatial.replay.shuffle_place_fields_circular(env, encoding_models, *, n_shu
 neurospatial.replay.shuffle_place_fields_circular_2d(env, encoding_models, *, n_shuffles=1000, rng=None)
 neurospatial.replay.shuffle_posterior_circular(env, posterior, *, n_shuffles=1000, rng=None)
 neurospatial.replay.shuffle_posterior_weighted_circular(env, posterior, *, edge_buffer=5, n_shuffles=1000, rng=None)
+neurospatial.replay.shuffle_spike_counts_circular(spike_counts, *, n_shuffles=1000, rng=None)
 neurospatial.replay.weighted_correlation(env, posterior, times, *, row_normalization='per_time_bin')
 neurospatial.simulation (module)
 neurospatial.simulation.BorderCellModel (class)
