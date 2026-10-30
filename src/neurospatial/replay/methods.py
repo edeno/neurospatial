@@ -3129,6 +3129,14 @@ KARLSSON_FRANK_2009 = ReplayMethod(
         "renumbered after dropping is not stated. Here they keep their times.",
         "The paper's p-value is the share of shuffles with a larger R² (no "
         "+1); here it is (k + 1) / (n + 1).",
+        "Carr et al. (2012; Carr, M. F., Karlsson, M. P., & Frank, L. M., "
+        "Transient slow gamma synchrony underlies hippocampal memory replay, "
+        "Neuron, 75(4), 700-713) used this method unchanged (15 ms bins, "
+        "10,000 shuffles, p < 0.05, at least 5 place cells), decoding with "
+        "the templates of the current and the previously run W-track 'to "
+        "minimize false negatives'. How the two were combined is not stated; "
+        "replay on either template is the natural reading: test each with "
+        "template= and keep the smaller p-value.",
     ),
 )
 
@@ -3156,6 +3164,16 @@ WU_2017 = ReplayMethod(
         "Dropped time bins keep their times; the paper regresses on time-bin "
         "number and does not say whether bins are renumbered.",
         "The paper's p-value has no +1; here it is (k + 1) / (n + 1).",
+        "Mou et al. (2022; Mou, X., Pokhrel, A., Suresh, P., & Ji, D., "
+        "Observational learning promotes hippocampal remote awake replay "
+        "toward future reward locations, Neuron, 110(5), 891-902) used this "
+        "method (20 ms bins stepped by 10 ms, at least 4 active template "
+        "cells, 1,000 shuffles, p < 0.05), testing each template on its own "
+        "candidate events. They compared the correlation R rather than R² "
+        "with shuffled values 'greater than the actual R value', yet "
+        "defined reverse replays by R < 0, which a one-sided test on signed "
+        "R could never find; read as |R|, which gives the same p-value as "
+        "R².",
     ),
 )
 
