@@ -8,10 +8,11 @@ the rest:
 |---------|---------|--------|
 | ``shuffle_cell_identity`` | spike counts vs. rate maps | the place code |
 | ``shuffle_spike_counts_circular`` | each cell's counts in time | co-firing order |
+| ``shuffle_spike_counts_uniform`` | each cell's spikes in the event | all spike timing |
 | ``shuffle_place_fields_circular`` | 1-D rate maps | field positions |
 | ``shuffle_place_fields_circular_2d`` | 2-D rate maps | field positions |
 | ``shuffle_posterior_circular`` | posterior rows | alignment along a trajectory |
-| ``shuffle_posterior_weighted_circular`` | posterior rows | alignment, with edge control |
+| ``shuffle_posterior_weighted_circular`` | posterior rows | alignment, with peaks drawn from the session's posterior |
 
 Temporal shuffles (``shuffle_time_bins``), spike-train surrogates and the
 Monte Carlo p-value helpers live in :mod:`neurospatial.stats`.
@@ -573,8 +574,8 @@ def shuffle_posterior_circular(
 
     See Also
     --------
-    shuffle_posterior_weighted_circular : Weighted circular shift with edge
-        effect mitigation
+    shuffle_posterior_weighted_circular : Shift each peak to a position drawn
+        from the session's mean posterior (Farooq et al. 2019)
     shuffle_place_fields_circular : Circular shift of place fields
     """
     posterior = np.asarray(posterior)
@@ -587,192 +588,200 @@ def shuffle_posterior_circular(
 def shuffle_posterior_weighted_circular(
     env: Environment,
     posterior: NDArray[np.float64],
+    peak_weights: NDArray[np.float64],
     *,
-    edge_buffer: int = 5,
+    edge_exclusion: float = 0.0,
     n_shuffles: int = 1000,
     rng: np.random.Generator | int | None = None,
 ) -> Generator[NDArray[np.float64], None, None]:
-    """Weighted circular shift with edge effect mitigation.
+    """Shift each time bin's posterior so its peak lands at a weighted position.
 
-    Refined version of posterior shuffle that maintains non-uniformity and
-    reduces edge effects by restricting shifts when the MAP position is near
-    track boundaries. This is more conservative than standard circular shuffle.
+    The weighted circular shift of Farooq et al. (2019). For each time bin
+    independently, a new position for the row's peak (its MAP bin) is
+    drawn with probability proportional to ``peak_weights``, and the whole
+    row is shifted circularly along the track so that its peak lands there.
+    Each row keeps its shape, but the decoded positions follow where the
+    decoder places mass across the session rather than a uniform
+    distribution, as the plain column cycle
+    (:func:`shuffle_posterior_circular`) assumes. Peaks never land within
+    ``edge_exclusion`` of either end of the track, so a decoded
+    distribution is not split across the track's two ends.
 
     Parameters
     ----------
     env : Environment
         The environment the posterior was decoded on: a 1-D environment or a
-        linearized track. Track ends are the first and last bins along the
-        track.
+        linearized track.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
-        Posterior probability distribution from decoding. Each row should
-        sum to 1.0.
-    edge_buffer : int, default=5
-        Number of bins from track ends where shifts are restricted.
-        When the MAP position is within ``edge_buffer`` bins of either edge,
-        the shift is restricted to keep the MAP position within bounds
-        (not wrapping to the other end).
-
-        **Default justification (5 bins)**: For typical 1D track decoding with
-        2-5 cm spatial bins, 5 bins = 10-25 cm buffer region. This prevents
-        unrealistic position jumps (e.g., rat at start wrapping to end) while
-        allowing sufficient shift variability. Recommended values:
-
-        - Short tracks (<1m): edge_buffer = 3-5 bins
-        - Medium tracks (1-2m): edge_buffer = 5-10 bins
-        - Long tracks (>2m): edge_buffer = 10-15 bins
-        - Adaptive: edge_buffer = max(5, n_bins // 20)
-
-        For circular tracks, use ``shuffle_posterior_circular`` instead (no
-        edge restriction needed).
+        Posterior mass of each time bin of the event.
+    peak_weights : NDArray[np.float64], shape (n_bins,)
+        Non-negative weight of each bin as a new peak position. Farooq et al.
+        used the mean decoded posterior over every time bin of the
+        session's candidate events: ``np.vstack(posteriors).mean(axis=0)``.
+    edge_exclusion : float, default=0.0
+        Distance along the track, in the environment's units, within which
+        no peak lands at either end: bins whose center is closer than this
+        to the first or last position of the track get no weight. Farooq et
+        al. used 10 cm, set from the smoothing of their rate maps. The
+        default excludes nothing.
     n_shuffles : int, default=1000
-        Number of shuffled versions to generate.
-    rng : np.random.Generator | int | None, default=None
-        Random number generator for reproducibility.
-
-        - If Generator: Use directly
-        - If int: Seed for ``np.random.default_rng()``
-        - If None: Use default RNG (not reproducible)
+        Number of shuffled posteriors to yield.
+    rng : np.random.Generator, int, or None, default=None
+        Random number generator or seed.
 
     Yields
     ------
-    shuffled_posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
-        Posterior with weighted circular shifts applied.
+    NDArray[np.float64], shape (n_time_bins, n_bins)
+        The posterior with each row shifted circularly along the track.
 
-    Notes
-    -----
-    - More conservative than standard circular shuffle
-    - Shifts are restricted near track ends to mitigate edge effects
-    - When MAP position is within ``edge_buffer`` of an edge, shift is
-      constrained so the MAP bin does not wrap to the other end; the row is
-      still rolled circularly, so mass in the other bins can wrap
-    - Preserves row normalization (each row still sums to 1.0)
-
-    The edge restriction works as follows:
-    - For each time bin, compute MAP position (argmax)
-    - If MAP is within ``edge_buffer`` of left edge (bin < edge_buffer):
-      restrict shift to [-MAP, n_bins - 2*edge_buffer] to keep MAP in center
-    - If MAP is within ``edge_buffer`` of right edge (bin >= n_bins - edge_buffer):
-      restrict shift to [-(MAP - center), n_bins - MAP] to keep MAP in center
-    - Otherwise: allow full circular shift [0, n_bins)
-
-    Example with n_bins=20 and edge_buffer=5:
-    - MAP at bin 2 (near left): shift limited to [-2, 10) so MAP stays in [0, 11]
-    - MAP at bin 17 (near right): shift limited to [-7, 3) so MAP stays in [10, 19]
-    - MAP at bin 10 (center): full circular shift [0, 20)
-
-    Bin positions here count along the track. A shift moves values by a whole number of bins in track order: bins are
-    ordered by their position along the track (linear position on a
-    linearized track, the coordinate in a 1-D environment), not by bin
-    number, and the gap between two track segments is skipped. With bins of
-    one length this moves a field rigidly. With bins of unequal length each
-    value keeps its own bin's worth of track, so a field is stretched or
-    compressed where it lands on bins of a different length; use bins of
-    one length when a field's extent in centimeters must be kept.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.replay.nulls import shuffle_posterior_weighted_circular
-
-    >>> # A 1-D track of 10 bins and a normalized posterior (3 time bins)
-    >>> env = Environment.linear_track(
-    ...     endpoints=[[0.0, 0.0], [20.0, 0.0]], bin_size=2.0
-    ... )
-    >>> raw = np.random.default_rng(42).random((3, 10))
-    >>> posterior = raw / raw.sum(axis=1, keepdims=True)
-    >>> for i, shuffled in enumerate(
-    ...     shuffle_posterior_weighted_circular(
-    ...         env, posterior, edge_buffer=2, n_shuffles=3, rng=42
-    ...     )
-    ... ):
-    ...     print(f"Shuffle {i}: sums to 1={np.allclose(shuffled.sum(axis=1), 1.0)}")
-    Shuffle 0: sums to 1=True
-    Shuffle 1: sums to 1=True
-    Shuffle 2: sums to 1=True
+    Raises
+    ------
+    ValueError
+        If ``env`` is neither 1-D nor a linearized track; if ``posterior``
+        does not have one column per bin; if ``peak_weights`` is not one
+        finite, non-negative weight per bin; if ``edge_exclusion`` is not a
+        finite distance >= 0; or if no bin outside the excluded ends has
+        weight.
 
     See Also
     --------
-    shuffle_posterior_circular : Standard circular shift without edge restriction
-    shuffle_place_fields_circular : Circular shift of place fields
+    shuffle_posterior_circular : Shift by a uniformly random distance.
+    neurospatial.replay.replay_significance : Runs this shuffle as the
+        ``"column_cycle_weighted"`` null.
+
+    Notes
+    -----
+    Farooq et al. (2019, STAR Methods p. e4): "the maximum decoded location
+    in each bin within the frames ... was shifted, weighted by the mean
+    decoded posteriors across the track, to conserve non-uniformity in these
+    shuffles. Second, the decoding field surrounding the maximum decoded
+    location was prevented from being divided at the ends of the track to
+    mitigate the edge effect ... this peak was not shifted to within 10 cm
+    of the ends of the virtual track". Figure S4B: "the average decoded
+    probabilities across bins for the whole sleep were calculated, and the
+    peak decoded location was shifted to a location weighed by that
+    distribution ... the whole bin was circularly shifted". The methods
+    text also says "a pseudorandom function of the average peak decoded
+    locations", which could mean a histogram of MAP positions; the legend's
+    mean posterior is used here.
+
+    Only the peak is kept away from the ends: the rest of the row is still
+    shifted circularly, so mass far from the peak can wrap from one end to
+    the other. A row's peak is its first largest bin along the track, and a
+    row without mass (a time bin whose posterior was set to zero) stays
+    zero. The new peak may be the old one, so a shift of zero is possible.
+    Shifts move values by whole bins in track order, as in
+    :func:`shuffle_posterior_circular`; with bins of unequal length a
+    row is stretched or compressed where it lands.
+
+    References
+    ----------
+    Farooq, U., Sibille, J., Liu, K., & Dragoi, G. (2019). Strengthened
+    temporal coordination within pre-existing sequential cell assemblies
+    supports trajectory replay. *Neuron*, 103(4), 719-733.
+
+    Examples
+    --------
+    Peaks land only where the weights put them: here on the middle three of
+    ten bins.
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.replay import shuffle_posterior_weighted_circular
+    >>> env = Environment.linear_track(
+    ...     endpoints=[[0.0, 0.0], [20.0, 0.0]], bin_size=2.0, units="cm"
+    ... )
+    >>> posterior = np.full((4, env.n_bins), 0.05)
+    >>> posterior[np.arange(4), [0, 3, 6, 9]] = 0.55
+    >>> weights = np.zeros(env.n_bins)
+    >>> weights[4:7] = 1.0
+    >>> peaks = set()
+    >>> for shuffled in shuffle_posterior_weighted_circular(
+    ...     env, posterior, weights, n_shuffles=50, rng=0
+    ... ):
+    ...     peaks |= set(np.argmax(shuffled, axis=1).tolist())
+    >>> sorted(peaks)
+    [4, 5, 6]
     """
-    posterior = np.asarray(posterior)
-    order = _track_order(
-        env,
-        posterior,
-        "shuffle_posterior_weighted_circular()",
-        _POSTERIOR_SHUFFLE_ALTERNATIVE,
+    from neurospatial.environment import _require_track_extents
+
+    operation = "shuffle_posterior_weighted_circular()"
+    posterior = np.asarray(posterior, dtype=np.float64)
+    order = _track_order(env, posterior, operation, _POSTERIOR_SHUFFLE_ALTERNATIVE)
+    weights = np.asarray(peak_weights, dtype=np.float64)
+    if (
+        weights.shape != (env.n_bins,)
+        or not np.isfinite(weights).all()
+        or np.any(weights < 0)
+    ):
+        raise ValueError(
+            _format_error(
+                f"{operation}: peak_weights must be one finite, non-negative "
+                f"weight per bin, shape ({env.n_bins},); got shape "
+                f"{weights.shape}.",
+                why="each time bin's new peak position is drawn in proportion "
+                "to these weights",
+                fix="pass the mean posterior of the session's candidate "
+                "events, np.vstack(posteriors).mean(axis=0)",
+            )
+        )
+    if (
+        isinstance(edge_exclusion, bool)
+        or not isinstance(edge_exclusion, (int, float, np.integer, np.floating))
+        or not np.isfinite(edge_exclusion)
+        or edge_exclusion < 0
+    ):
+        raise ValueError(
+            f"{operation}: edge_exclusion must be a finite distance >= 0 in "
+            f"the environment's units, got {edge_exclusion!r}."
+        )
+    starts, stops = _require_track_extents(
+        env, operation, alternative=_POSTERIOR_SHUFFLE_ALTERNATIVE
     )
-    return _weighted_rolls(posterior, order, edge_buffer, n_shuffles, _ensure_rng(rng))
+    centers = (np.asarray(starts) + np.asarray(stops)) / 2.0
+    allowed = (centers - np.min(starts) >= edge_exclusion) & (
+        np.max(stops) - centers >= edge_exclusion
+    )
+    weights = np.where(allowed, weights, 0.0)[order]
+    total = weights.sum()
+    if not total > 0:
+        raise ValueError(
+            _format_error(
+                f"{operation}: no bin farther than edge_exclusion="
+                f"{edge_exclusion} from the track's ends has weight.",
+                why="each time bin's peak must land on a bin with weight, "
+                "away from the ends",
+                fix="use a smaller edge_exclusion, or weights from more "
+                "candidate events",
+            )
+        )
+    return _peak_weighted_rolls(
+        posterior, order, weights / total, n_shuffles, _ensure_rng(rng)
+    )
 
 
-def _weighted_rolls(
+def _peak_weighted_rolls(
     posterior: NDArray[np.float64],
     order: NDArray[np.intp],
-    edge_buffer: int,
+    probabilities: NDArray[np.float64],
     n_shuffles: int,
     generator: np.random.Generator,
 ) -> Generator[NDArray[np.float64], None, None]:
-    """Edge-restricted rolls of each posterior row, in track order."""
-    n_time_bins, n_bins = posterior.shape
+    """Roll each row, in track order, so its peak lands at a drawn bin.
 
-    # Handle empty posterior
-    if n_time_bins == 0:
-        for _ in range(n_shuffles):
-            yield posterior.copy()
-        return
-
+    ``probabilities`` are in track order and sum to 1.
+    """
+    n_rows = len(posterior)
+    n_bins = len(order)
     along = posterior[:, order]
-    # MAP positions along the track (used to determine shift restrictions)
-    map_positions = np.argmax(along, axis=1)
-
-    # NOTE: the per-time-bin loop below is intentionally not vectorized. Each
-    # iteration draws exactly one integer from ``generator`` in time order,
-    # and the *range* of that draw depends on the bin's MAP position (edge
-    # bins use a narrower, position-dependent range). Drawing all shifts at
-    # once would change the RNG consumption pattern and therefore the output
-    # for a fixed seed, breaking the reproducible-shuffle contract that
-    # callers rely on for null distributions. The cost is also bounded by
-    # n_time_bins (a single candidate event, typically tens of bins), so
-    # vectorizing buys little. Left as a loop deliberately.
+    source = np.argmax(along, axis=1)
+    columns = np.arange(n_bins)
+    rows = np.arange(n_rows)[:, np.newaxis]
     for _ in range(n_shuffles):
-        shuffled_along = np.empty_like(along)
-        for i in range(n_time_bins):
-            map_pos = map_positions[i]
-
-            # Determine allowed shift range based on MAP position
-            # The key principle: restrict shifts to prevent probability mass from
-            # wrapping to the opposite end of the track when near edges.
-            if edge_buffer == 0 or n_bins <= 2 * edge_buffer:
-                # No edge restriction or buffer spans entire track
-                # Allow any shift in [0, n_bins)
-                shift_amount = generator.integers(0, n_bins)
-            elif map_pos < edge_buffer:
-                # Near left edge: restrict shift range to avoid wrapping to far right
-                # Allow negative shifts (move left) but limit positive shifts
-                min_shift = -map_pos  # Don't shift MAP below 0
-                # Limit positive shift: keep shifted MAP within center region
-                max_shift = min(n_bins - map_pos, n_bins - 2 * edge_buffer)
-                if max_shift <= min_shift:
-                    max_shift = min_shift + 1  # Ensure valid range
-                shift_amount = generator.integers(min_shift, max_shift)
-            elif map_pos >= n_bins - edge_buffer:
-                # Near right edge: restrict shift range to avoid wrapping to far left
-                # Allow positive shifts (move right) but limit negative shifts
-                max_shift = n_bins - map_pos  # Don't shift MAP beyond last bin
-                # Limit negative shift: keep shifted MAP within center region
-                min_shift = max(-(map_pos - (n_bins - 2 * edge_buffer)), -(map_pos))
-                if max_shift <= min_shift:
-                    min_shift = max_shift - 1  # Ensure valid range
-                shift_amount = generator.integers(min_shift, max_shift)
-            else:
-                # Not near edge: allow full circular shift
-                shift_amount = generator.integers(0, n_bins)
-
-            shuffled_along[i, :] = np.roll(along[i, :], shift_amount)
+        destination = generator.choice(n_bins, size=n_rows, p=probabilities)
+        shifts = destination - source
         shuffled = np.empty_like(posterior)
-        shuffled[:, order] = shuffled_along
+        shuffled[:, order] = along[rows, (columns - shifts[:, np.newaxis]) % n_bins]
         yield shuffled
 
 
@@ -854,3 +863,98 @@ def shuffle_spike_counts_circular(
     for _ in range(n_shuffles):
         shifts = generator.integers(0, max(n_time, 1), size=n_neurons)
         yield counts[(rows - shifts[np.newaxis, :]) % max(n_time, 1), columns]
+
+
+def shuffle_spike_counts_uniform(
+    spike_counts: NDArray[np.int64],
+    *,
+    n_shuffles: int = 1000,
+    rng: np.random.Generator | int | None = None,
+) -> Generator[NDArray[np.int64], None, None]:
+    """Place each cell's spikes uniformly at random within one event.
+
+    Each cell keeps its number of spikes in the event, and each spike is put
+    in a time bin drawn uniformly and independently, so a cell with ``n``
+    spikes gets counts ``Multinomial(n, 1 / n_time_bins)``. This is binning
+    spike times redrawn uniformly over the event window, the "spike
+    jittering" of Stella et al. (2019), when the time bins are equal and do
+    not overlap. All timing is broken: the order of cells, each cell's
+    spike intervals and bursts, and which cells fire together.
+
+    Parameters
+    ----------
+    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
+        Spike counts of one event, in equal time bins that do not overlap
+        and that together cover the event.
+    n_shuffles : int, default=1000
+        Number of shuffles to yield.
+    rng : np.random.Generator, int, or None, default=None
+        Random number generator or seed.
+
+    Yields
+    ------
+    NDArray[np.int64], shape (n_time_bins, n_neurons)
+        Counts with each cell's spikes spread over the time bins.
+
+    Raises
+    ------
+    ValueError
+        If ``spike_counts`` is not 2-D or holds negative counts.
+
+    See Also
+    --------
+    shuffle_spike_counts_circular : Shift each cell's counts in time,
+        keeping its spike intervals.
+    neurospatial.replay.replay_significance : Runs this shuffle as the
+        ``"spike_time_uniform"`` null, and refuses overlapping time bins.
+    neurospatial.replay.null_events : ``kind="spike_time_uniform"`` makes
+        the same null events from spike times.
+
+    Notes
+    -----
+    Stella et al. (2019, STAR Methods p. e4): "Within each reactivation
+    event, the decoding procedure was performed after each spike's
+    occurrence time was randomly and independently reassigned by drawing it
+    from a uniform distribution within the event window." The spikes keep
+    their cells, so each cell keeps its count. In spike-train analyses
+    "jitter" usually means a small local shift of each spike; this null
+    moves each spike anywhere in the event.
+
+    Counts of overlapping windows (a time step shorter than the window)
+    share spikes, and windows whose edges follow the spikes (Stella et al.'s
+    15-spike windows) change with them, so neither can be redrawn from
+    counts: redraw spike times with :func:`~neurospatial.replay.null_events`
+    and bin them again instead.
+
+    References
+    ----------
+    Stella, F., Baracskay, P., O'Neill, J., & Csicsvari, J. (2019).
+    Hippocampal reactivation of random trajectories resembling Brownian
+    diffusion. *Neuron*, 102(2), 450-461.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.replay import shuffle_spike_counts_uniform
+    >>> counts = np.array([[3, 0], [0, 1], [0, 0], [0, 0]])
+    >>> shuffled = next(shuffle_spike_counts_uniform(counts, n_shuffles=1, rng=0))
+    >>> shuffled.sum(axis=0).tolist()  # each cell keeps its spikes
+    [3, 1]
+    """
+    counts = np.asarray(spike_counts)
+    if counts.ndim != 2 or np.any(counts < 0):
+        raise ValueError(
+            "shuffle_spike_counts_uniform(): spike_counts must be 2-D "
+            "(n_time_bins, n_neurons) non-negative counts, got shape "
+            f"{counts.shape}."
+        )
+    generator = _ensure_rng(rng)
+    n_time = len(counts)
+    totals = counts.sum(axis=0)
+    share = np.full(n_time, 1.0 / max(n_time, 1))
+    for _ in range(n_shuffles):
+        if n_time == 0:
+            yield counts.copy()
+            continue
+        drawn = generator.multinomial(totals, share)  # (n_neurons, n_time_bins)
+        yield drawn.T.astype(counts.dtype, copy=False)
