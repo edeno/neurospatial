@@ -43,7 +43,7 @@
 - `rank_order_correlation` notes that Tingley & Peyrache's 5-12% false
   positives are for random 10-cell sequences in sets of 100 events and
   come from MATLAB's parametric p-value (about 5.4% per event at 10 cells,
-  8.3% at 4-5, 33% at 3); an exact permutation test stays at or below 5%.
+  8.3% at 4-5, 33% at 3); a permutation test stays at or below 5%.
 - `neurospatial.simulation.replay` no longer cites Tingley & Peyrache, or
   Takigawa et al. (2024), for stationary or scattered control events,
   which neither studied.
