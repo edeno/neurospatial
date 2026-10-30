@@ -882,7 +882,7 @@ def _outline_is_the_grid(binning: Binning, arena: Arena) -> bool:
         return False
 
 
-def _center_pieces(
+def center_pieces(
     cells: NDArray[np.object_],
     centers: NDArray[np.float64],
     domain: Polygon | MultiPolygon,
@@ -925,7 +925,7 @@ def _close_outside_outline(binning: Binning, arena: Arena) -> Binning:
     """Close the pairs whose bins meet only outside the arena's outline.
 
     Each bin stands for the piece of its cell inside the arena that holds its
-    center (see :func:`_center_pieces`). Two bins whose centers are inside
+    center (see :func:`center_pieces`). Two bins whose centers are inside
     can still be kept apart by a slit, a hole or a concave corner of the
     outline, where an animal cannot pass, even one thinner than a bin that
     lies inside one of the two cells rather than on the side they share. A
@@ -959,7 +959,7 @@ def _close_outside_outline(binning: Binning, arena: Arena) -> Binning:
     pieces = cell_array.copy()
     cut = np.flatnonzero(~covered)
     cut = cut[np.isin(cut, pairs[candidates])]
-    pieces[cut] = _center_pieces(cell_array[cut], centers[cut], domain)
+    pieces[cut] = center_pieces(cell_array[cut], centers[cut], domain)
     contact = shapely.intersection(
         shapely.boundary(cell_array[u]), shapely.boundary(cell_array[v])
     )
