@@ -54,7 +54,14 @@ possible.
 Modeled access is not observed behavior: visibility alone is not evidence that
 a cue was perceived, and proximity alone is not evidence of contact.
 
-### 3. Make environment information durable and shareable
+### 3. Bring recordings in faithfully and keep environments durable
+
+Read the outputs of acquisition, tracking, and spike-sorting tools, including
+NWB files and pynapple objects, without losing their meaning. Keep timestamps,
+units, recording gaps, and unit identities intact. Make tracking errors,
+position jumps, and head direction derived from LEDs or pose visible and
+correctable with explicit, documented steps rather than silent cleaning, so
+that every later analysis knows which observations it can trust.
 
 Provide a documented, versioned way to save spatial environments and exchange
 them between tools and laboratories. Preserve the geometry, topology, spatial
@@ -97,6 +104,12 @@ Support scientific inference with effect sizes, uncertainty estimates,
 appropriate null models, and evaluation on held-out observations. Make the
 assumptions about sampling, temporal dependence, and independent experimental
 units explicit so scientists can judge what a result supports.
+
+Read out what neural populations represent. Decode position and other
+variables from spikes with calibrated uncertainty, and evaluate decoders on
+held-out data. Detect and test non-local content, such as replay during
+sharp-wave ripples, theta sequences, and the reactivation of assemblies during
+rest, against appropriate null models.
 
 Enable comparisons across animals, sessions, conditions, and environments.
 Account for coordinate alignment, spatial correspondence, differences in
@@ -232,6 +245,8 @@ across all goals.
 Evaluate proposed work by the scientific workflow it enables and the evidence
 that the workflow preserves meaning. In particular:
 
+- Can a scientist load a recording with its gaps, tracking errors, and unit
+  identities visible, and correct them with explicit steps?
 - Can a scientist describe an experimental space, save it, reload it, and obtain
   equivalent spatial measurements?
 - Can a scientist distinguish what the animal could sense or interact with from
@@ -244,6 +259,8 @@ that the workflow preserves meaning. In particular:
   without requiring a particular modeling or learning framework?
 - Can recorded animals and simulated agents use the same environment and be
   compared through the same behavioral and neural analyses?
+- Can a scientist decode what a population represents, including replay and
+  other non-local content, with calibrated uncertainty and an appropriate null?
 - Can competing methods be evaluated on matched observations with documented
   assumptions and independently checked numerical expectations?
 - Can scientists assess uncertainty and generalization with methods appropriate
