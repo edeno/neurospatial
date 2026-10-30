@@ -326,7 +326,9 @@ def trajectory_metrics(
     - ``mean_peak_probability``: the "decoding confidence" of Stella et al.
       (2019), mean over time bins of the largest posterior value, > 0.1.
       Here the peak is the mass in the MAP bin, which is the largest mass on
-      equal bins.
+      equal bins. Within admitted events they also kept only the time bins
+      whose own peak passes 0.1: ``peak_probability > 0.1``, on rows that
+      sum to 1.
     - ``well_decoded_fraction()``: the coverage of Wu & Foster (2014), as in
       the Mallory code's ``coverage_wu``.
     - ``empty_fraction``: Harvey et al. (2023) discarded events with more
