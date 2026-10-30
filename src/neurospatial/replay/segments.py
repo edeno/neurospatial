@@ -20,6 +20,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import is_integer_at_least
 from neurospatial.replay._compare import _compare
 from neurospatial.replay.criteria import (
     _bin_distance_lookup,
@@ -864,11 +865,7 @@ def _optional_threshold(
 
 def _count(name: str, value: Any, *, minimum: int, operation: str) -> int:
     """An integer of at least ``minimum``."""
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, np.integer))
-        or value < minimum
-    ):
+    if not is_integer_at_least(value, minimum):
         raise ValueError(
             f"{operation}: {name} must be an integer >= {minimum}, got {value!r}."
         )

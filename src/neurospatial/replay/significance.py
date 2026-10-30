@@ -22,6 +22,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, reduce_through_constructor
+from neurospatial._validation import is_integer_at_least
 from neurospatial.replay.correlation import (
     WeightedCorrelationResult,
     _track_bin_centers,
@@ -563,11 +564,7 @@ def replay_significance(
             n_shuffles=n_shuffles,
             rng=rng,
         )
-    if (
-        isinstance(n_shuffles, bool)
-        or not isinstance(n_shuffles, (int, np.integer))
-        or n_shuffles < 1
-    ):
+    if not is_integer_at_least(n_shuffles, 1):
         raise ValueError(
             f"{_OPERATION} needs n_shuffles to be a positive integer, got "
             f"{n_shuffles!r}. Davidson et al. used 1500 per null, Tirole et al. "

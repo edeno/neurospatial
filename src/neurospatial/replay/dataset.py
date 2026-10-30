@@ -46,6 +46,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import is_integer_at_least, validate_integer_at_least
 from neurospatial.replay._compare import (
     _check_criterion_settings,
     _compare,
@@ -874,7 +875,7 @@ def _dataset_values(
 ) -> pd.DataFrame:
     """:func:`dataset_values`, with the moment-table fast path optional."""
     operation = "dataset_values()"
-    _positive_integer(n_datasets, "n_datasets", operation)
+    validate_integer_at_least(n_datasets, 1, name="n_datasets", owner=operation)
     if null is None and (n_datasets != 1 or shared):
         raise ValueError(
             f"{operation}: n_datasets and shared apply to null data sets; with "
@@ -2094,7 +2095,7 @@ def shuffle_events(
     [0, 1, 2, 3, 4]
     """
     operation = "shuffle_events()"
-    _positive_integer(n_datasets, "n_datasets", operation)
+    validate_integer_at_least(n_datasets, 1, name="n_datasets", owner=operation)
     if null not in _EVENT_NULLS:
         raise ValueError(
             f"{operation}: null must be one of {list(_EVENT_NULLS)}, got {null!r}."
@@ -2659,11 +2660,7 @@ def relative_rank_template(
             f"{operation}: spike_statistic must be one of {list(statistics)}, got "
             f"{spike_statistic!r}."
         )
-    if (
-        isinstance(min_active_cells, bool)
-        or not isinstance(min_active_cells, (int, np.integer))
-        or min_active_cells < 2
-    ):
+    if not is_integer_at_least(min_active_cells, 2):
         raise ValueError(
             f"{operation}: min_active_cells must be an integer of at least 2, got "
             f"{min_active_cells!r}; a relative rank needs two active cells."
@@ -2794,7 +2791,7 @@ def template_correlation_test(
     """
 
     operation = "template_correlation_test()"
-    _positive_integer(n_shuffles, "n_shuffles", operation)
+    validate_integer_at_least(n_shuffles, 1, name="n_shuffles", owner=operation)
     if alternative not in _ALTERNATIVES:
         raise ValueError(
             f"{operation}: alternative must be one of {_ALTERNATIVES}, got "
@@ -2871,13 +2868,6 @@ def template_correlation_test(
         n_datasets=n_shuffles,
         n_observed=len(templates),
     )
-
-
-def _positive_integer(value: Any, name: str, operation: str) -> None:
-    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 1:
-        raise ValueError(
-            f"{operation}: {name} must be a positive integer, got {value!r}."
-        )
 
 
 # --------------------------------------------------------------------------

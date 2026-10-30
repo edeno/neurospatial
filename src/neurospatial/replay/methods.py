@@ -40,6 +40,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial._stacklevel import _warnings_with_context
+from neurospatial._validation import is_integer_at_least, validate_integer_at_least
 from neurospatial.replay._compare import (
     _check_criterion_settings,
     _compare,
@@ -443,11 +444,7 @@ class ReplaySegmentation:
                 f"got {self.rows!r}."
             )
         cells = self.min_active_cells_per_time_bin
-        if cells is not None and (
-            isinstance(cells, bool)
-            or not isinstance(cells, (int, np.integer))
-            or cells < 1
-        ):
+        if cells is not None and not is_integer_at_least(cells, 1):
             raise ValueError(
                 "ReplaySegmentation: min_active_cells_per_time_bin must be a "
                 f"positive integer or None, got {cells!r}."
@@ -892,15 +889,9 @@ class ReplayMethod:
                 f"ReplayMethod {self.name!r}: alpha must be in (0, 1), got "
                 f"{self.alpha!r}."
             )
-        if (
-            isinstance(self.n_shuffles, bool)
-            or not isinstance(self.n_shuffles, (int, np.integer))
-            or self.n_shuffles < 1
-        ):
-            raise ValueError(
-                f"ReplayMethod {self.name!r}: n_shuffles must be a positive "
-                f"integer, got {self.n_shuffles!r}."
-            )
+        validate_integer_at_least(
+            self.n_shuffles, 1, name="n_shuffles", owner=f"ReplayMethod {self.name!r}"
+        )
         if not (self.nulls or self.criteria or self.segmentation is not None):
             raise ValueError(
                 _format_error(
@@ -1225,15 +1216,7 @@ class RankOrderMethod:
             value = getattr(self, field_name)
             if value is None and field_name == "min_epoch_events":
                 continue
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, np.integer))
-                or value < minimum
-            ):
-                raise ValueError(
-                    f"{prefix}: {field_name} must be an integer of at least "
-                    f"{minimum}, got {value!r}."
-                )
+            validate_integer_at_least(value, minimum, name=field_name, owner=prefix)
         for field_name, upper in (
             ("min_active_fraction", 1.0),
             ("min_peak_rate", None),

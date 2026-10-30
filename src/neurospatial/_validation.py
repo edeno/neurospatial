@@ -265,16 +265,47 @@ def format_times_positions_error(
     )
 
 
-def is_positive_integer(value: object) -> bool:
-    """Whether ``value`` is an integer of at least 1, booleans excluded.
+def is_integer_at_least(value: object, minimum: int) -> bool:
+    """Whether ``value`` is an integer of at least ``minimum``, booleans excluded.
 
     Python and NumPy integers both count; ``True`` is not read as 1.
     """
     return (
         not isinstance(value, (bool, np.bool_))
         and isinstance(value, numbers.Integral)
-        and int(value) > 0
+        and int(value) >= minimum
     )
+
+
+def validate_integer_at_least(
+    value: object, minimum: int, *, name: str, owner: str
+) -> None:
+    """Require an integer of at least ``minimum``, booleans excluded.
+
+    Parameters
+    ----------
+    value : object
+        The value to check.
+    minimum : int
+        The smallest allowed value.
+    name : str
+        Argument or field name, used in the error message.
+    owner : str
+        What received the value, as the message names it, such as
+        ``"shuffle_events()"`` or ``"ReplayMethod 'x'"``.
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is not an integer of at least ``minimum``.
+    """
+    if not is_integer_at_least(value, minimum):
+        bound = (
+            "a positive integer"
+            if minimum == 1
+            else f"an integer of at least {minimum}"
+        )
+        raise ValueError(f"{owner}: {name} must be {bound}, got {value!r}.")
 
 
 def validate_float_dtype(

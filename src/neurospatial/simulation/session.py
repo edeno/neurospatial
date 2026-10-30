@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import read_only_copy
-from neurospatial._validation import is_positive_integer, validate_finite_scalar
+from neurospatial._validation import is_integer_at_least, validate_finite_scalar
 from neurospatial.ops.boundary_vectors import nearest_boundary
 from neurospatial.simulation._seeds import _stream_seeds
 
@@ -278,7 +278,7 @@ def _require_positive(
     ``units`` follows the requirement in the message, e.g. ``" (seconds)"``.
     """
     if count:
-        if is_positive_integer(value):
+        if is_integer_at_least(value, 1):
             return
     else:
         try:

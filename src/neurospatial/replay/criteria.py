@@ -21,6 +21,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import is_integer_at_least
 
 if TYPE_CHECKING:
     from neurospatial.decoding import JointDecodingResult
@@ -206,11 +207,7 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
             )
         if chance_bins is None:
             chance_bins = len(self.max_posterior)
-        elif (
-            isinstance(chance_bins, bool)
-            or not isinstance(chance_bins, (int, np.integer))
-            or chance_bins < 1
-        ):
+        elif not is_integer_at_least(chance_bins, 1):
             raise ValueError(
                 "well_decoded_fraction(): chance_bins must be a positive "
                 f"number of bins, such as 2 * env.n_bins, got {chance_bins!r}."

@@ -22,7 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._validation import is_positive_integer
+from neurospatial._validation import is_integer_at_least
 from neurospatial.geometry import ReadOnlyState, _check_homogeneous
 
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
@@ -822,7 +822,7 @@ class VideoCalibration:
                 )
             )
         size: tuple[object, ...] = tuple(self.frame_size_px)
-        if len(size) != 2 or not all(is_positive_integer(n) for n in size):
+        if len(size) != 2 or not all(is_integer_at_least(n, 1) for n in size):
             raise ValueError(
                 _format_error(
                     "frame_size_px must be two positive integers (width, height), "

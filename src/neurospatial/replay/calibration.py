@@ -46,6 +46,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import validate_integer_at_least
 from neurospatial.replay._compare import _tolerance
 
 if TYPE_CHECKING:
@@ -1671,7 +1672,7 @@ def null_events(
         raise ValueError(
             f"{operation}: kind must be one of {_NULL_KINDS}, got {kind!r}."
         )
-    _positive_count(n_copies, "n_copies", operation)
+    validate_integer_at_least(n_copies, 1, name="n_copies", owner=operation)
     windows = _checked_intervals(intervals, operation)
     ordered = windows[np.argsort(windows[:, 0], kind="stable")]
     overlaps = np.flatnonzero(ordered[1:, 0] < ordered[:-1, 1])
@@ -1843,7 +1844,7 @@ def simulated_null_events(
         raise ValueError(
             f"{operation}: kind must be one of {_SIMULATED_KINDS}, got {kind!r}."
         )
-    _positive_count(n_events, "n_events", operation)
+    validate_integer_at_least(n_events, 1, name="n_events", owner=operation)
     generator = np.random.default_rng(rng)
     seeds = generator.integers(2**63, size=n_events)
     starts_, stops_ = _require_track_extents(
@@ -2043,13 +2044,6 @@ def _decode_intervals_together(
         )
         counts[slot] = all_counts[first:last].copy()
     return events, counts
-
-
-def _positive_count(value: Any, name: str, operation: str) -> None:
-    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 1:
-        raise ValueError(
-            f"{operation}: {name} must be a positive integer, got {value!r}."
-        )
 
 
 def _checked_intervals(intervals: Any, operation: str) -> NDArray[np.float64]:
