@@ -12,6 +12,9 @@
   method's false-positive rate; on simulated replays, its sensitivity.
 - :func:`method_agreement` counts how often every pair of methods agree,
   with Cohen's kappa.
+- :func:`matched_alpha` finds each method's alpha that holds its
+  false-positive rate on null data to a target (Takigawa et al. 2024), and
+  :func:`apply_alpha` gives a table's verdicts at those alphas.
 
 Null data for false-positive rates: :func:`null_events` makes events
 without replay from real candidate events (cell identities reassigned,
@@ -27,6 +30,7 @@ rates per stratum, and on several kinds of null data rather than one.
 from __future__ import annotations
 
 import itertools
+import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -42,12 +46,16 @@ if TYPE_CHECKING:
 
     from neurospatial.decoding import DecodingResult, JointDecodingResult
     from neurospatial.environment import Environment
+    from neurospatial.replay.arms import ArmReplayMethod
+    from neurospatial.replay.methods import RankOrderMethod, ReplayMethod
 
 __all__ = [
     "NullSpikeData",
+    "apply_alpha",
     "decode_intervals",
     "detection_rates",
     "event_properties",
+    "matched_alpha",
     "method_agreement",
     "null_events",
     "simulated_null_events",
@@ -528,6 +536,350 @@ def method_agreement(
             }
         )
     return pd.DataFrame(rows)
+
+
+def matched_alpha(
+    null_table: pd.DataFrame,
+    *,
+    replay_methods: Sequence[ReplayMethod | RankOrderMethod | ArmReplayMethod],
+    target: float = 0.05,
+    groups: Sequence[str] = (),
+) -> pd.DataFrame:
+    """Each method's alpha that holds its false-positive rate to a target.
+
+    Methods with the same nominal alpha call different shares of events
+    without replay significant. Takigawa et al. (2024) compared methods at
+    the alpha that gives each the same false-positive rate on null data.
+    This finds, for each method, the largest alpha at which at most
+    ``target`` of the null events are called replay, from the p-values
+    and criteria already in the table: the shuffles are not run again.
+
+    Parameters
+    ----------
+    null_table : pandas.DataFrame
+        The table of :func:`~neurospatial.replay.compare_replay_methods`
+        on events without replay, such as from :func:`null_events` or
+        :func:`simulated_null_events`, or several concatenated with
+        ``groups`` columns that tell their events apart.
+    replay_methods : sequence of ReplayMethod or RankOrderMethod
+        The methods the table was made with. Each must test a p-value
+        against its ``alpha``: a :class:`ReplayMethod` with ``nulls``, or
+        a :class:`RankOrderMethod` with the ``"t_distribution"`` or
+        ``"cell_order"`` test.
+    target : float, default=0.05
+        The false-positive rate to hold to, in (0, 1).
+    groups : sequence of str, default=()
+        Columns of ``null_table`` to match alpha in separately, such as
+        ``("null_kind",)`` or ``("session",)``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per method (and group): ``method``, the ``groups``
+        columns, ``n_events``, ``published_alpha`` and
+        ``published_rate`` (the method's own alpha and its rate on these
+        events), ``alpha`` and ``rate`` (the matched alpha and the rate at
+        it, never above ``target``). ``alpha`` is 1 when the criteria
+        alone hold the rate to ``target``. Events a method could not score
+        count as not replay, as in :func:`detection_rates`.
+
+    Raises
+    ------
+    ValueError
+        If ``target`` is not in (0, 1); if the table lacks the ``event``,
+        ``method``, ``is_replay``, ``p_value`` or a method's ``passes[...]``
+        columns, or repeats an (event, method) pair; if a method in the
+        table is not in ``replay_methods``, or does not test a p-value
+        against alpha; or if the table's verdicts do not follow from its
+        p-values and criteria at the method's own alpha (it was made with
+        other settings).
+
+    Warns
+    -----
+    UserWarning
+        If more than ``target`` of the null events pass the criteria at
+        the smallest p-value among them. Only an alpha that rejects all of
+        them holds the rate, and real events then need a smaller p-value
+        than any null event reached; run more shuffles.
+
+    See Also
+    --------
+    apply_alpha : Verdicts of a table at the matched alphas.
+    null_events, simulated_null_events : Events without replay.
+    detection_rates : Rates at each method's own alpha.
+
+    Notes
+    -----
+    Takigawa et al. (2024) used three copies of each session's events with
+    cell identities reassigned, and chose each method's p-value threshold
+    on a log-spaced grid from 0.001 to 0.2 as the one whose mean
+    false-positive rate was closest to 0.05, so it could lie above it.
+    Here alpha is exact and the rate never exceeds ``target``. Their code
+    calls an event significant at p <= alpha; here, as in each method,
+    p < alpha.
+
+    Matching holds the false-positive rate on one kind of null data.
+    Each kind keeps some structure of real events and breaks the rest, so
+    rates on other kinds still differ (see :func:`null_events`); match on
+    several kinds with ``groups`` and report each. The matched alpha is
+    chosen on these null events, so the rate on new null data is likely a
+    little higher, and with few null events it is poorly determined: with
+    ``target * n_events`` below about 10 it rests on a handful of events.
+    A method that is conservative at its own alpha gets a larger matched
+    alpha.
+
+    Methods without a shuffle test, arm methods and the pooled-SSI test
+    have no p-value to threshold; leave them out of the table.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from neurospatial.replay import matched_alpha
+    >>> from neurospatial.replay.methods import KARLSSON_FRANK_2009
+    >>> p_values = [0.002, 0.01, 0.03, 0.04] + [0.5] * 16
+    >>> null_table = pd.DataFrame(
+    ...     {
+    ...         "event": range(20),
+    ...         "method": "karlsson_frank_2009",
+    ...         "is_replay": [p < 0.05 for p in p_values],
+    ...         "p_value": p_values,
+    ...         "passes[n_active_cells >= 5]": True,
+    ...     }
+    ... )
+    >>> row = matched_alpha(null_table, replay_methods=[KARLSSON_FRANK_2009]).iloc[0]
+    >>> print(row["published_rate"], row["alpha"], row["rate"])
+    0.2 0.01 0.05
+    """
+    import pandas as pd
+
+    operation = "matched_alpha()"
+    if not 0 < target < 1:
+        raise ValueError(f"{operation}: target must be in (0, 1), got {target!r}.")
+    data = _checked_table(null_table, groups, operation)
+    methods = _alpha_methods(
+        data, replay_methods, list(dict.fromkeys(data["method"])), operation
+    )
+    rows = []
+    for key, frame in data.groupby(["method", *groups], sort=False):
+        method = methods[key[0]]
+        criteria_met = _verdicts(frame, method, np.inf, operation)
+        _check_verdicts(frame, method, operation)
+        n_events = len(frame)
+        p_values = np.sort(frame["p_value"].to_numpy(dtype=float)[criteria_met])
+        p_values = p_values[np.isfinite(p_values)]
+        # Most null events allowed at the target, with a tolerance for
+        # round-off in target * n_events.
+        allowed = int(np.floor(target * n_events + 1e-9))
+        alpha = float(p_values[allowed]) if p_values.size > allowed else 1.0
+        if p_values.size > allowed and alpha == p_values[0]:
+            warnings.warn(
+                f"{operation}: {method.name!r} calls more than {target:g} of "
+                f"the null events replay at the smallest p-value among them, "
+                f"{alpha:g}; the matched alpha rejects all of them, so real "
+                "events need a smaller p-value than any null event reached. "
+                "Run more shuffles (n_shuffles).",
+                UserWarning,
+                stacklevel=2,
+            )
+        rows.append(
+            {
+                **dict(zip(["method", *groups], key, strict=True)),
+                "n_events": n_events,
+                "published_alpha": method.alpha,
+                "published_rate": float(frame["is_replay"].sum()) / n_events,
+                "alpha": alpha,
+                "rate": float(np.sum(p_values < alpha)) / n_events,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def apply_alpha(
+    table: pd.DataFrame,
+    *,
+    alpha: Mapping[str, float] | pd.Series,
+    replay_methods: Sequence[ReplayMethod | RankOrderMethod | ArmReplayMethod],
+    groups: Sequence[str] = (),
+) -> pd.DataFrame:
+    """A comparison table's verdicts at other alphas, such as matched ones.
+
+    Each event is called replay at the new alpha when it passes the
+    method's criteria and its p-value is below the alpha. The p-values and
+    criteria come from the table, so the shuffles are not run again; this
+    gives the verdicts :func:`~neurospatial.replay.compare_replay_methods`
+    would give with ``dataclasses.replace(method, alpha=...)`` and the
+    same ``rng``.
+
+    Parameters
+    ----------
+    table : pandas.DataFrame
+        The table of :func:`~neurospatial.replay.compare_replay_methods`,
+        such as on real candidate events.
+    alpha : Mapping[str, float] or pandas.Series
+        The new alpha in (0, 1] of each method by name, such as
+        ``matched_alpha(...).set_index("method")["alpha"]``. Methods not
+        named keep their verdicts.
+    replay_methods : sequence of ReplayMethod or RankOrderMethod
+        The methods the table was made with; those named in ``alpha`` must
+        test a p-value against alpha (see :func:`matched_alpha`).
+    groups : sequence of str, default=()
+        Columns of ``table`` that, with ``event``, identify an event, for
+        several concatenated tables.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A copy of ``table`` with ``is_replay`` at the new alphas and an
+        ``alpha`` column: the alpha each row's verdict uses (NaN for a
+        method without one).
+
+    Raises
+    ------
+    ValueError
+        If an alpha is not in (0, 1], or names a method not in the table;
+        otherwise as :func:`matched_alpha`.
+
+    See Also
+    --------
+    matched_alpha : The alpha that holds each method's false-positive rate.
+    detection_rates, method_agreement : Summaries of the new table.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from neurospatial.replay import apply_alpha
+    >>> from neurospatial.replay.methods import KARLSSON_FRANK_2009
+    >>> table = pd.DataFrame(
+    ...     {
+    ...         "event": [0, 1, 2],
+    ...         "method": "karlsson_frank_2009",
+    ...         "is_replay": [True, True, False],
+    ...         "p_value": [0.002, 0.03, 0.03],
+    ...         "passes[n_active_cells >= 5]": [True, True, False],
+    ...     }
+    ... )
+    >>> matched = apply_alpha(
+    ...     table,
+    ...     alpha={"karlsson_frank_2009": 0.01},
+    ...     replay_methods=[KARLSSON_FRANK_2009],
+    ... )
+    >>> print(matched["is_replay"].tolist())
+    [True, False, False]
+    """
+    operation = "apply_alpha()"
+    alphas = {str(name): float(value) for name, value in dict(alpha).items()}
+    bad = {name: value for name, value in alphas.items() if not 0 < value <= 1}
+    if bad:
+        raise ValueError(f"{operation}: alphas must be in (0, 1], got {bad}.")
+    data = _checked_table(table, groups, operation)
+    absent = sorted(set(alphas) - set(data["method"]))
+    if absent:
+        raise ValueError(
+            f"{operation}: alpha names methods {absent} that are not in the "
+            f"table, whose methods are {list(dict.fromkeys(data['method']))}."
+        )
+    methods = _alpha_methods(data, replay_methods, list(alphas), operation)
+    result = table.copy()
+    own = {m.name: getattr(m, "alpha", np.nan) for m in replay_methods}
+    result["alpha"] = data["method"].map(own).astype(float)
+    for name, new_alpha in alphas.items():
+        rows = data["method"] == name
+        frame = data[rows]
+        _check_verdicts(frame, methods[name], operation)
+        result.loc[rows, "is_replay"] = _verdicts(
+            frame, methods[name], new_alpha, operation
+        )
+        result.loc[rows, "alpha"] = new_alpha
+    return result
+
+
+def _alpha_methods(
+    data: pd.DataFrame,
+    replay_methods: Sequence[ReplayMethod | RankOrderMethod | ArmReplayMethod],
+    names: list[str],
+    operation: str,
+) -> dict[str, ReplayMethod | RankOrderMethod]:
+    """The named methods, checked to test a p-value against alpha."""
+    from neurospatial.replay.methods import RankOrderMethod, ReplayMethod
+
+    by_name = {method.name: method for method in replay_methods}
+    unknown = [name for name in names if name not in by_name]
+    if unknown:
+        raise ValueError(
+            _format_error(
+                f"{operation}: the table has methods {unknown} that are not in "
+                "replay_methods.",
+                why="each method's criteria and alpha are needed to call events "
+                "replay at another alpha",
+                fix="pass the replay_methods the table was made with",
+            )
+        )
+    if "p_value" not in data:
+        raise ValueError(
+            f"{operation}: table lacks a p_value column; pass the table of "
+            "compare_replay_methods()."
+        )
+    tested: dict[str, ReplayMethod | RankOrderMethod] = {}
+    untested = []
+    for name in names:
+        method = by_name[name]
+        if (isinstance(method, ReplayMethod) and method.nulls) or (
+            isinstance(method, RankOrderMethod) and method.test != "pooled_ssi"
+        ):
+            tested[name] = method
+        else:
+            untested.append(name)
+    if untested:
+        raise ValueError(
+            _format_error(
+                f"{operation}: methods {untested} do not test a p-value against alpha.",
+                why="methods without nulls and arm methods apply criteria only, "
+                "and the pooled-SSI test thresholds the score against a null "
+                "pooled over the epoch",
+                fix=f"leave them out, e.g. table[~table['method'].isin({untested})]",
+            )
+        )
+    return tested
+
+
+def _verdicts(
+    frame: pd.DataFrame,
+    method: ReplayMethod | RankOrderMethod,
+    alpha: float,
+    operation: str,
+) -> NDArray[np.bool_]:
+    """Rows scored without error that pass the criteria with p < alpha."""
+    columns = [f"passes[{criterion.label}]" for criterion in method.criteria]
+    absent = [column for column in columns if column not in frame]
+    if absent:
+        raise ValueError(
+            f"{operation}: table lacks columns {absent} of method "
+            f"{method.name!r}; pass the table of compare_replay_methods() made "
+            "with this method."
+        )
+    verdicts: NDArray[np.bool_] = ~frame["_error"].to_numpy(dtype=bool)
+    for column in columns:
+        verdicts &= frame[column].eq(True).to_numpy()
+    if np.isfinite(alpha):
+        verdicts &= frame["p_value"].to_numpy(dtype=float) < alpha
+    return verdicts
+
+
+def _check_verdicts(
+    frame: pd.DataFrame, method: ReplayMethod | RankOrderMethod, operation: str
+) -> None:
+    """Refuse a table whose verdicts do not follow from the method."""
+    expected = _verdicts(frame, method, method.alpha, operation)
+    differ = int(np.sum(expected != frame["is_replay"].to_numpy(dtype=bool)))
+    if differ:
+        raise ValueError(
+            _format_error(
+                f"{operation}: {differ} verdicts of method {method.name!r} do not "
+                f"follow from its p-values and criteria at alpha = {method.alpha:g}.",
+                why="the table was made with other settings under the same name",
+                fix="pass the replay_methods the table was made with",
+            )
+        )
 
 
 def _checked_table(
