@@ -843,3 +843,37 @@ class TestReplaySignificance:
             replay_significance(
                 env, posterior, np.arange(10) * 0.02, n_shuffles=n_shuffles
             )
+
+
+def test_spike_counts_in_score_options_are_refused_with_row_moving_nulls():
+    """The counts would stay with the original rows while the null moves them."""
+    from neurospatial.replay import fit_linear_trajectory
+
+    env = Environment.linear_track(
+        endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=4.0, units="cm"
+    )
+    posterior = np.zeros((10, env.n_bins))
+    posterior[np.arange(10), 2 * np.arange(10)] = 1.0
+    spikes = np.ones(10, dtype=int)
+    with pytest.raises(ValueError, match="change which time bins have spikes"):
+        replay_significance(
+            env,
+            posterior,
+            np.arange(10) * 0.02,
+            score=fit_linear_trajectory,
+            score_options={"method": "map", "spike_counts": spikes},
+            nulls="time_bin_permutation",
+            n_shuffles=5,
+        )
+    # Column cycle keeps each row in its time bin, so it is allowed.
+    result = replay_significance(
+        env,
+        posterior,
+        np.arange(10) * 0.02,
+        score=fit_linear_trajectory,
+        score_options={"method": "map", "spike_counts": spikes},
+        nulls="column_cycle",
+        n_shuffles=5,
+        rng=0,
+    )
+    assert set(result.shuffles) == {"column_cycle"}

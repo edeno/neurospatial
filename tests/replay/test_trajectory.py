@@ -36,6 +36,7 @@ class TestIsotonicFitResult:
         result = IsotonicFitResult(
             fitted_positions=np.array([1.0, 2.0]),
             r_squared=0.9,
+            mean_map_probability=0.5,
             direction="decreasing",
             residuals=np.array([0.0, 0.0]),
         )
@@ -375,7 +376,7 @@ class TestFitLinearTrajectory:
         assert np.isfinite(result.intercept)
 
     def test_sampled_fit_of_certain_posterior_has_no_spread(self, simple_env):
-        """One-hot rows: every sample is the MAP sequence."""
+        """One-hot rows, equal samples per time bin: every resample is the MAP fit."""
         from neurospatial.replay.trajectory import fit_linear_trajectory
 
         n_time_bins = 20
@@ -385,21 +386,23 @@ class TestFitLinearTrajectory:
         posterior[np.arange(n_time_bins), rng.integers(0, 50, n_time_bins)] = 1.0
 
         sampled = fit_linear_trajectory(
-            simple_env, posterior, times, method="sample", n_samples=50, rng=0
+            simple_env, posterior, times, n_samples=60, n_resamples=5, rng=0
         )
         map_fit = fit_linear_trajectory(simple_env, posterior, times, method="map")
 
         assert sampled.slope_std == pytest.approx(0.0, abs=1e-9)
         assert sampled.slope == pytest.approx(map_fit.slope)
         assert sampled.intercept == pytest.approx(map_fit.intercept)
+        assert sampled.r_squared == pytest.approx(map_fit.r_squared)
 
-    def test_sampled_slope_spread_matches_posterior_width(self):
-        """slope_std is the standard error of a line through noisy positions.
+    def test_slope_std_is_the_monte_carlo_spread_of_the_pooled_slope(self):
+        """slope_std is the sampling SD of one pooled least-squares slope.
 
         Each row is a Gaussian of width sigma on 1 cm bins, so a sampled
-        sequence is the true line plus independent noise of variance
-        sigma**2 + 1/12 (the bin width), and the least-squares slope has
-        standard deviation sqrt(sigma**2 + 1/12) / sqrt(sum((t - mean(t))**2)).
+        position is the true line plus independent noise of variance
+        sigma**2 + 1/12 (the bin width). With m samples at each of the
+        times t, the pooled slope has standard deviation
+        sqrt(sigma**2 + 1/12) / sqrt(m * sum((t - mean(t))**2)).
         """
         from scipy.stats import norm
 
@@ -414,16 +417,25 @@ class TestFitLinearTrajectory:
         center = 100.0 + 500.0 * times
         posterior = np.diff(norm.cdf((edges - center[:, None]) / sigma), axis=1)
         posterior /= posterior.sum(axis=1, keepdims=True)
+        per_bin, n_resamples = 20, 400
 
         result = fit_linear_trajectory(
-            env, posterior, times, method="sample", n_samples=2000, rng=11
+            env,
+            posterior,
+            times,
+            n_samples=per_bin * len(times),
+            n_resamples=n_resamples,
+            rng=11,
         )
 
         expected = np.sqrt(sigma**2 + 1 / 12) / np.sqrt(
-            np.sum((times - times.mean()) ** 2)
+            per_bin * np.sum((times - times.mean()) ** 2)
         )
+        # The SD of 400 resamples is within about 3.5% of the truth.
         assert result.slope_std == pytest.approx(expected, rel=0.15)
-        assert result.slope == pytest.approx(500.0, abs=3 * expected / np.sqrt(2000))
+        assert result.slope == pytest.approx(
+            500.0, abs=4 * expected / np.sqrt(n_resamples)
+        )
 
     def test_fit_linear_trajectory_invalid_method_raises(self, simple_env):
         """Invalid method should raise ValueError."""
@@ -437,7 +449,7 @@ class TestFitLinearTrajectory:
         for t in range(n_time_bins):
             posterior[t, t % n_bins] = 1.0
 
-        with pytest.raises(ValueError, match=r"method.*map.*sample"):
+        with pytest.raises(ValueError, match=r"method.*sample.*map"):
             fit_linear_trajectory(simple_env, posterior, times, method="invalid")
 
     def test_fit_linear_trajectory_1d_posterior_raises(self, simple_env):
@@ -720,7 +732,7 @@ class TestFitsReadPositionAlongTrack:
         assert reverse.intercept == pytest.approx(97.5)  # last bin center
         assert renumbered.slope == pytest.approx(original.slope)
         assert renumbered.r_squared == pytest.approx(original.r_squared)
-        assert (original.slope_std is None) == (method == "map")
+        assert original.slope_std is None  # one resample, or the MAP fit
 
     @pytest.mark.parametrize("method", ["map", "expected"])
     def test_isotonic_fit_ignores_bin_numbering(self, sweep, method):
@@ -1005,6 +1017,374 @@ class TestArgumentChecks:
             fit_linear_trajectory(env, posterior, times, n_samples=n_samples)
 
 
+def _bumps(n_time_bins: int, n_bins: int, seed: int) -> np.ndarray:
+    """A noisy forward sweep: rows are 3-bin-wide Gaussian bumps on 1 cm bins."""
+    noise = np.random.default_rng(seed).normal(0, 0.1 * n_bins, n_time_bins)
+    centers = np.linspace(0.2, 0.8, n_time_bins) * n_bins + noise
+    posterior = np.exp(-0.5 * ((np.arange(n_bins) + 0.5 - centers[:, None]) / 3.0) ** 2)
+    return posterior / posterior.sum(axis=1, keepdims=True)
+
+
+class TestLinearFitFollowsThePapers:
+    """Karlsson & Frank (2009), Jadhav-lab code and Wu et al. (2017)."""
+
+    def test_sampled_fit_is_one_least_squares_line_through_the_samples(self):
+        """The fit equals scipy's linregress on the same sampled points.
+
+        The draws are rebuilt independently: equal shares per time bin in
+        time-bin order, each the first bin whose cumulative mass exceeds the
+        uniform times the row total.
+        """
+        from scipy.stats import linregress
+
+        from neurospatial.replay import fit_linear_trajectory
+
+        posterior = _bumps(8, 40, seed=1)
+        env = _track_for(posterior)
+        times = np.arange(8) * 0.015
+        n_samples = 8 * 37 + 5  # remainder of 5 goes to the earliest bins
+
+        result = fit_linear_trajectory(
+            env, posterior, times, n_samples=n_samples, rng=3
+        )
+
+        shares = np.full(8, n_samples // 8)
+        shares[:5] += 1
+        time_bins = np.repeat(np.arange(8), shares)
+        uniforms = np.random.default_rng(3).random(n_samples)
+        cumulative = np.cumsum(posterior, axis=1)
+        drawn = [
+            np.argmax(cumulative[t] > u * cumulative[t, -1])
+            for t, u in zip(time_bins, uniforms, strict=True)
+        ]
+        expected = linregress(times[time_bins], env.bin_centers[drawn, 0])
+
+        assert result.slope == pytest.approx(expected.slope, rel=1e-10)
+        assert result.intercept == pytest.approx(expected.intercept, rel=1e-10)
+        assert result.r_squared == pytest.approx(expected.rvalue**2, rel=1e-10)
+        assert result.slope_std is None
+
+    def test_equal_split_gives_the_remainder_to_the_earliest_time_bins(self):
+        """One-hot rows: 7 samples over 5 time bins are points 2, 2, 1, 1, 1."""
+        from scipy.stats import linregress
+
+        from neurospatial.replay import fit_linear_trajectory
+
+        bins = np.array([3, 9, 4, 15, 12])
+        posterior = np.eye(20)[bins]
+        env = _track_for(posterior)
+        times = np.arange(5) * 0.02
+
+        result = fit_linear_trajectory(env, posterior, times, n_samples=7, rng=0)
+
+        repeats = [2, 2, 1, 1, 1]
+        expected = linregress(
+            np.repeat(times, repeats), np.repeat(env.bin_centers[bins, 0], repeats)
+        )
+        assert result.slope == pytest.approx(expected.slope)
+        assert result.r_squared == pytest.approx(expected.rvalue**2)
+
+    def test_r_squared_slope_and_intercept_are_means_over_resamples(self):
+        """Three resamples are three consecutive one-resample fits, averaged."""
+        from neurospatial.replay import fit_linear_trajectory
+
+        posterior = _bumps(10, 50, seed=2)
+        env = _track_for(posterior)
+        times = np.arange(10) * 0.02
+
+        pooled = fit_linear_trajectory(
+            env, posterior, times, n_samples=500, n_resamples=3, rng=5
+        )
+        shared = np.random.default_rng(5)
+        single = [
+            fit_linear_trajectory(env, posterior, times, n_samples=500, rng=shared)
+            for _ in range(3)
+        ]
+
+        slopes = [fit.slope for fit in single]
+        assert pooled.r_squared == pytest.approx(
+            np.mean([fit.r_squared for fit in single])
+        )
+        assert pooled.slope == pytest.approx(np.mean(slopes))
+        assert pooled.intercept == pytest.approx(
+            np.mean([fit.intercept for fit in single])
+        )
+        assert pooled.slope_std == pytest.approx(np.std(slopes, ddof=1))
+        assert len(set(slopes)) == 3  # the resamples differ
+
+    def test_spike_counts_split_samples_in_proportion_to_spikes(self):
+        """Each resample splits n_samples multinomially by spike count."""
+        from neurospatial.replay.trajectory import _samples_per_time_bin
+
+        spikes = np.array([0, 3, 1, 0, 6])
+        split = _samples_per_time_bin(
+            1000, 2000, 5, spikes, "spikes", np.random.default_rng(0)
+        )
+
+        assert split.shape == (2000, 5)
+        np.testing.assert_array_equal(split.sum(axis=1), 1000)
+        np.testing.assert_array_equal(split[:, [0, 3]], 0)
+        assert len(np.unique(split[:, 1])) > 1  # random, not a fixed share
+        # Multinomial mean n p, standard error sqrt(n p (1 - p) / 2000) < 0.4.
+        np.testing.assert_allclose(split.mean(axis=0), 1000 * spikes / 10, atol=2.0)
+
+    def test_equal_split_totals_are_exact(self):
+        from neurospatial.replay.trajectory import _samples_per_time_bin
+
+        split = _samples_per_time_bin(
+            10_005, 3, 7, None, "equal", np.random.default_rng(0)
+        )
+
+        np.testing.assert_array_equal(split.sum(axis=1), 10_005)
+        np.testing.assert_array_equal(
+            split[0], [1430, 1430, 1429, 1429, 1429, 1429, 1429]
+        )
+
+    @pytest.mark.parametrize("method", ["sample", "map"])
+    def test_time_bins_without_spikes_are_left_out(self, method):
+        """Spike-free time bins decode a far-off position that would ruin the line."""
+        from neurospatial.replay import fit_linear_trajectory
+
+        bins = np.array([2, 4, 39, 8, 10, 39, 14])
+        posterior = np.eye(40)[bins]
+        env = _track_for(posterior)
+        times = np.arange(7) * 0.02
+        spikes = np.array([[1, 0], [2, 1], [0, 0], [0, 1], [3, 0], [0, 0], [1, 1]])
+
+        result = fit_linear_trajectory(
+            env,
+            posterior,
+            times,
+            method=method,
+            n_samples=1000,
+            n_resamples=4,
+            spike_counts=spikes,
+            rng=0,
+        )
+
+        assert result.r_squared == pytest.approx(1.0)
+        assert result.slope == pytest.approx(100.0)  # 2 cm per 20 ms
+
+    def test_spike_counts_per_neuron_are_summed(self):
+        from neurospatial.replay import fit_linear_trajectory
+
+        posterior = _bumps(6, 30, seed=4)
+        env = _track_for(posterior)
+        times = np.arange(6) * 0.02
+        per_neuron = np.random.default_rng(1).poisson(1.0, size=(6, 4))
+
+        kwargs = {"n_samples": 300, "n_resamples": 3, "rng": 2}
+        assert fit_linear_trajectory(
+            env, posterior, times, spike_counts=per_neuron, **kwargs
+        ) == fit_linear_trajectory(
+            env, posterior, times, spike_counts=per_neuron.sum(axis=1), **kwargs
+        )
+
+    def test_map_fit_is_least_squares_through_the_map_positions(self):
+        """Wu et al. (2017): regress the MAP position on time."""
+        from scipy.stats import linregress
+
+        from neurospatial.decoding.estimates import map_bin
+        from neurospatial.replay import fit_linear_trajectory
+
+        posterior = _bumps(12, 50, seed=6)
+        env = _track_for(posterior)
+        times = np.arange(12) * 0.02
+        spikes = np.array([1, 0, 2, 3, 0, 1, 1, 0, 4, 1, 2, 1])
+        positions = env.bin_centers[map_bin(env, posterior), 0]
+
+        result = fit_linear_trajectory(env, posterior, times, method="map")
+        with_spikes = fit_linear_trajectory(
+            env, posterior, times, method="map", spike_counts=spikes
+        )
+
+        expected = linregress(times, positions)
+        assert result.slope == pytest.approx(expected.slope)
+        assert result.intercept == pytest.approx(expected.intercept)
+        assert result.r_squared == pytest.approx(expected.rvalue**2)
+        active = linregress(times[spikes > 0], positions[spikes > 0])
+        assert with_spikes.slope == pytest.approx(active.slope)
+        assert with_spikes.r_squared == pytest.approx(active.rvalue**2)
+
+
+class TestLinearFitRefusals:
+    """Inputs that leave no line to fit, or are not spike counts, are refused."""
+
+    @pytest.fixture
+    def sweep(self):
+        posterior = np.eye(10, 20)
+        return _track_for(posterior), posterior, np.arange(10) * 0.01
+
+    @pytest.mark.parametrize("method", ["sample", "map"])
+    def test_one_time_bin_with_spikes_is_refused(self, sweep, method):
+        from neurospatial.replay import fit_linear_trajectory
+
+        env, posterior, times = sweep
+        spikes = np.zeros(10, dtype=int)
+        spikes[4] = 3
+        with pytest.raises(ValueError, match=r"only 1 of 10 time bins have spikes"):
+            fit_linear_trajectory(
+                env, posterior, times, method=method, spike_counts=spikes
+            )
+
+    @pytest.mark.parametrize(
+        ("spikes", "match"),
+        [
+            (np.ones(9, dtype=int), r"spike_counts has shape \(9,\)"),
+            (np.ones((10, 2, 2), dtype=int), r"spike_counts has shape"),
+            (np.full(10, -1), r"non-negative whole numbers"),
+            (np.full(10, 0.5), r"non-negative whole numbers"),
+            (np.full(10, np.nan), r"non-negative whole numbers"),
+        ],
+    )
+    def test_spike_counts_must_be_counts_per_time_bin(self, sweep, spikes, match):
+        from neurospatial.replay import fit_linear_trajectory
+
+        env, posterior, times = sweep
+        with pytest.raises(ValueError, match=match):
+            fit_linear_trajectory(env, posterior, times, spike_counts=spikes)
+
+    def test_whole_number_floats_are_accepted(self, sweep):
+        from neurospatial.replay import fit_linear_trajectory
+
+        env, posterior, times = sweep
+        result = fit_linear_trajectory(
+            env, posterior, times, spike_counts=np.full(10, 2.0), rng=0
+        )
+        assert result.r_squared == pytest.approx(1.0)
+
+    def test_resamples_with_all_samples_at_one_time_are_refused(self, sweep):
+        """Two samples split at random over two spiking time bins often coincide."""
+        from neurospatial.replay import fit_linear_trajectory
+
+        env, posterior, times = sweep
+        spikes = np.zeros(10, dtype=int)
+        spikes[[2, 7]] = 1
+        with pytest.raises(ValueError, match=r"raise n_samples"):
+            fit_linear_trajectory(
+                env,
+                posterior,
+                times,
+                n_samples=2,
+                n_resamples=50,
+                spike_counts=spikes,
+                allocation="spikes",
+                rng=0,
+            )
+
+    def test_n_resamples_must_be_positive(self, sweep):
+        from neurospatial.replay import fit_linear_trajectory
+
+        env, posterior, times = sweep
+        with pytest.raises(ValueError, match=r"n_resamples of at least 1"):
+            fit_linear_trajectory(env, posterior, times, n_resamples=0)
+
+    def test_n_samples_must_be_an_integer(self, sweep):
+        from neurospatial.replay import fit_linear_trajectory
+
+        env, posterior, times = sweep
+        with pytest.raises(TypeError, match=r"n_samples must be an integer"):
+            fit_linear_trajectory(env, posterior, times, n_samples=1e4)
+
+
+class TestIsotonicFitFollowsMichon:
+    """Michon et al. (2019): weighted isotonic fit of the MAP positions."""
+
+    @staticmethod
+    def _weighted_r_squared(y, fitted, w):
+        mean = np.sum(w * y) / np.sum(w)
+        return 1 - np.sum(w * (y - fitted) ** 2) / np.sum(w * (y - mean) ** 2)
+
+    def test_fit_is_sklearn_weighted_isotonic_with_map_weights(self):
+        from sklearn.isotonic import IsotonicRegression
+
+        from neurospatial.decoding.estimates import map_bin
+        from neurospatial.replay import fit_isotonic_trajectory
+
+        rng = np.random.default_rng(8)
+        n_time_bins, n_bins = 15, 40
+        centers = np.linspace(5, 35, n_time_bins) + rng.normal(0, 4, n_time_bins)
+        posterior = np.exp(
+            -0.5 * ((np.arange(n_bins) + 0.5 - centers[:, None]) / 2.0) ** 2
+        )
+        posterior += rng.uniform(0, 0.3, posterior.shape)  # uneven MAP mass
+        posterior /= posterior.sum(axis=1, keepdims=True)
+        env = _track_for(posterior)
+        times = np.arange(n_time_bins) * 0.01
+
+        result = fit_isotonic_trajectory(env, posterior, times)
+
+        modes = map_bin(env, posterior)
+        x = env.bin_centers[modes, 0]
+        w = posterior[np.arange(n_time_bins), modes]
+        fits = {
+            increasing: IsotonicRegression(increasing=increasing).fit(
+                times, x, sample_weight=w
+            )
+            for increasing in (True, False)
+        }
+        r_squared = {
+            increasing: self._weighted_r_squared(x, fit.predict(times), w)
+            for increasing, fit in fits.items()
+        }
+        best = max(r_squared, key=r_squared.get)
+
+        assert result.direction == ("increasing" if best else "decreasing")
+        np.testing.assert_allclose(result.fitted_positions, fits[best].predict(times))
+        assert result.r_squared == pytest.approx(r_squared[best])
+        assert result.mean_map_probability == pytest.approx(np.mean(w))
+        assert result.score == pytest.approx(np.mean(w) * r_squared[best])
+        assert result.r_squared < 1  # the noise is not monotonic
+        assert result.mean_map_probability < 0.5  # weights matter
+
+    def test_reversed_sweep_is_the_decreasing_fit_with_the_same_score(self):
+        from neurospatial.replay import fit_isotonic_trajectory
+
+        posterior = _bumps(12, 50, seed=9)
+        env = _track_for(posterior)
+        times = np.arange(12) * 0.01
+
+        forward = fit_isotonic_trajectory(env, posterior, times, increasing=True)
+        reversed_ = fit_isotonic_trajectory(env, posterior[::-1], times)
+
+        assert reversed_.direction == "decreasing"
+        assert reversed_.score == pytest.approx(forward.score)
+        np.testing.assert_allclose(
+            reversed_.fitted_positions, forward.fitted_positions[::-1]
+        )
+
+    def test_expected_positions_share_the_map_weights(self):
+        from neurospatial.replay import fit_isotonic_trajectory
+
+        posterior = _bumps(10, 30, seed=10)
+        env = _track_for(posterior)
+        times = np.arange(10) * 0.01
+
+        by_map = fit_isotonic_trajectory(env, posterior, times)
+        by_mean = fit_isotonic_trajectory(env, posterior, times, method="expected")
+
+        assert by_mean.mean_map_probability == by_map.mean_map_probability
+        np.testing.assert_allclose(
+            by_mean.fitted_positions + by_mean.residuals,
+            posterior @ env.bin_centers[:, 0],
+        )
+
+    def test_summary_reports_the_score_and_its_parts(self):
+        from neurospatial.replay import fit_isotonic_trajectory
+
+        posterior = 0.5 * np.eye(10, 20) + 0.5 * np.eye(10, 20, k=10)
+        env = _track_for(posterior)
+        result = fit_isotonic_trajectory(env, posterior, np.arange(10) * 0.01)
+
+        assert result.summary() == {
+            "score": result.score,
+            "r_squared": result.r_squared,
+            "mean_map_probability": 0.5,
+            "direction": result.direction,
+        }
+        assert result.score == pytest.approx(0.5 * result.r_squared)
+
+
 class TestReplayShuffleCalibration:
     """A replay screen against a circular-shift null keeps its error rate.
 
@@ -1193,3 +1573,96 @@ class TestReplayScore:
         posterior = np.eye(env.n_bins)
         with pytest.raises(ValueError, match=r"needs band.*15 cm"):
             detect_trajectory_radon(env, posterior, np.arange(env.n_bins) * 0.01)
+
+
+class TestSampledFitAllocation:
+    """Karlsson & Frank split samples equally; the Jadhav-lab code by spikes."""
+
+    @pytest.fixture
+    def mixed_event(self):
+        """Alternating sharp and wide posteriors with unequal spike counts."""
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [120.0, 0.0]], bin_size=5.0, units="cm"
+        )
+        x = env.bin_centers[:, 0]
+        centers = np.linspace(10.0, 110.0, 12)
+        widths = np.where(np.arange(12) % 2 == 0, 4.0, 20.0)
+        posterior = np.exp(-0.5 * ((x - centers[:, None]) / widths[:, None]) ** 2)
+        posterior /= posterior.sum(axis=1, keepdims=True)
+        spikes = np.array([1, 0, 9, 1, 0, 8, 1, 1, 7, 0, 1, 6])
+        return env, posterior, np.arange(12) * 0.02, spikes
+
+    def test_sampled_r_squared_converges_to_the_weighted_correlation(self, mixed_event):
+        """Pooled R² tends to the squared weighted correlation of the sampled bins."""
+        from neurospatial.replay import fit_linear_trajectory, weighted_correlation
+
+        env, posterior, times, spikes = mixed_event
+        keep = spikes > 0
+        equal = weighted_correlation(env, posterior[keep], times[keep]).score ** 2
+        by_spikes = (
+            weighted_correlation(
+                env,
+                posterior[keep] * spikes[keep, None],
+                times[keep],
+                row_normalization="none",
+            ).score
+            ** 2
+        )
+        assert abs(equal - by_spikes) > 0.005  # the two estimands differ
+
+        fit_equal = fit_linear_trajectory(
+            env, posterior, times, n_samples=400_000, spike_counts=spikes, rng=0
+        )
+        fit_spikes = fit_linear_trajectory(
+            env,
+            posterior,
+            times,
+            n_samples=400_000,
+            spike_counts=spikes,
+            allocation="spikes",
+            rng=0,
+        )
+        assert fit_equal.r_squared == pytest.approx(equal, abs=0.003)
+        assert fit_spikes.r_squared == pytest.approx(by_spikes, abs=0.003)
+
+    def test_equal_split_skips_time_bins_without_spikes(self, mixed_event):
+        from neurospatial.replay.trajectory import _samples_per_time_bin
+
+        _, _, _, spikes = mixed_event
+        split = _samples_per_time_bin(
+            90, 1, len(spikes), spikes, "equal", np.random.default_rng(0)
+        )[0]
+        assert np.all(split[spikes == 0] == 0)
+        assert split.sum() == 90
+        assert set(split[spikes > 0]) == {10}
+
+    def test_spike_allocation_needs_spike_counts(self, mixed_event):
+        from neurospatial.replay import fit_linear_trajectory
+
+        env, posterior, times, _ = mixed_event
+        with pytest.raises(ValueError, match="needs spike_counts"):
+            fit_linear_trajectory(env, posterior, times, allocation="spikes")
+
+    def test_fewer_samples_than_sampled_time_bins_is_refused(self, mixed_event):
+        from neurospatial.replay import fit_linear_trajectory
+
+        env, posterior, times, spikes = mixed_event
+        with pytest.raises(ValueError, match="fewer than the 9 time bins"):
+            fit_linear_trajectory(
+                env, posterior, times, n_samples=5, spike_counts=spikes
+            )
+
+    def test_blocked_draws_match_one_block(self, mixed_event, monkeypatch):
+        """Drawing and fitting in blocks gives the same result as one block."""
+        import neurospatial.replay.trajectory as trajectory
+
+        env, posterior, times, _ = mixed_event
+        whole = trajectory.fit_linear_trajectory(
+            env, posterior, times, n_samples=1200, n_resamples=6, rng=3
+        )
+        monkeypatch.setattr(trajectory, "_SAMPLE_BLOCK", 2400)  # 2 resamples a block
+        blocked = trajectory.fit_linear_trajectory(
+            env, posterior, times, n_samples=1200, n_resamples=6, rng=3
+        )
+        assert blocked.r_squared == whole.r_squared
+        assert blocked.slope_std == whole.slope_std

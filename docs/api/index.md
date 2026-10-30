@@ -163,8 +163,9 @@ Score decoded candidate replay events and test them against shuffles.
 Detecting the candidate events (ripples, population bursts) is not included.
 
 - `fit_isotonic_trajectory()`, `fit_linear_trajectory()`,
-  `detect_trajectory_radon()`: Fit replay trajectories along a track; slopes
-  are in environment units per second
+  `detect_trajectory_radon()`: Fit replay trajectories along a track
+  (Michon et al. 2019; Karlsson & Frank 2009 and Wu et al. 2017; Davidson
+  et al. 2009); slopes are in environment units per second
 - `weighted_correlation()`: Posterior-weighted correlation of time and
   position (Wu & Foster 2014)
 - `replay_significance()`: Test any replay score against column-cycle,
