@@ -65,6 +65,11 @@ to the session. A rectangle holds the centers on its south and west edges but
 not those on its north and east edges, as a histogram bin `[a, b)` holds `a`.
 The same rule decides positions in `regions_containing_points` and
 `points_in_any_region`, and the rim of a point region's `point_radius` disc.
+Those functions know no environment, so where the nudge north-east would
+leave every polygon region passed, as on an arena's north or east wall, a
+position is nudged south-west instead. Tracking clipped to the walls of an
+arena tiled by quadrants keeps every wall sample in one quadrant, and a
+position on the edge of a lone box is in the box.
 
 A polygon's `center` is
 its centroid, which can lie outside a non-convex region such as a U-shaped

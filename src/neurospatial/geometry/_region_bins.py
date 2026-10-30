@@ -24,10 +24,16 @@ if TYPE_CHECKING:
 # nudged a hair in this direction: north-east, 0.65 rad (about 37°)
 # counterclockwise from east, so not along an axis-aligned, diagonal or
 # hexagonal (30°, 60°) edge.
-TIE_DIRECTION = np.array([np.cos(0.65), np.sin(0.65)])
+_TIE_ANGLE = 0.65
+TIE_DIRECTION = np.array([np.cos(_TIE_ANGLE), np.sin(_TIE_ANGLE)])
 # The nudge, as a fraction of the polygon's largest coordinate magnitude:
 # far above float64 rounding there (2**-52), far below any drawn feature.
 _TIE_STEP = 2.0**-30
+# Where the nudge along TIE_DIRECTION leaves the domain, the first of these
+# turns of it that stays inside is used: the opposite (south-west), then
+# the two across it, then the four diagonals between. Any corner of the
+# domain wider than 45° takes one of them.
+_FALLBACK_TURNS = np.pi * np.array([1.0, 0.5, -0.5, 0.25, -0.25, 0.75, -0.75])
 
 
 def polygon_bin_mask(
@@ -71,18 +77,85 @@ def polygon_bin_mask(
                 fix="use a point region, or select bins with a boolean mask",
             )
         )
+    return polygon_point_mask(polygon, centers, domain=None)
+
+
+def polygon_point_mask(
+    polygon: shapely.geometry.base.BaseGeometry,
+    points: NDArray[np.float64],
+    *,
+    domain: shapely.geometry.base.BaseGeometry | None,
+) -> NDArray[np.bool_]:
+    """Select the 2-D points in a polygon, edges half-open within a domain.
+
+    A point exactly on the polygon's edge is in it when nudging it a hair
+    along :data:`TIE_DIRECTION` (north-east) moves it inside. Where that
+    nudge leaves ``domain``, the point is nudged instead in the first of
+    the :data:`_FALLBACK_TURNS` of that direction that stays in ``domain``,
+    starting with south-west. The choice of nudge depends on the point and
+    the domain only, never on the polygon, so polygons that tile the domain
+    still split every point of it, edges and outline included, one to each.
+
+    Parameters
+    ----------
+    polygon : shapely geometry
+        Area in the same 2-D coordinates as ``points``.
+    points : ndarray of float64, shape (n_points, 2)
+        Points to test.
+    domain : shapely geometry or None
+        The space the points can occupy, such as the union of the regions
+        that tile an arena. None nudges every edge point north-east, which
+        is the rule for bin centers: a center's nudge stays inside its own
+        bin, so it never leaves the environment.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_points,)
+        True for each point in the polygon.
+    """
     # The _xy predicates are exact, take raw coordinates and prepare the
     # polygon, so no Point objects are built. For a point, intersects is
     # covers: inside or on the edge.
-    x, y = centers[:, 0], centers[:, 1]
+    x, y = points[:, 0], points[:, 1]
     inside = np.asarray(shapely.intersects_xy(polygon, x, y), dtype=np.bool_)
     covered = np.flatnonzero(inside)
     on_edge = covered[~shapely.contains_xy(polygon, x[covered], y[covered])]
     if on_edge.size:
+        directions = (
+            np.broadcast_to(TIE_DIRECTION, (on_edge.size, 2))
+            if domain is None
+            else _tie_directions(points[on_edge], domain)
+        )
         step = _TIE_STEP * float(np.max(np.abs(polygon.bounds)))
-        nudged = centers[on_edge] + step * TIE_DIRECTION
+        nudged = points[on_edge] + step * directions
         inside[on_edge] = shapely.contains_xy(polygon, nudged[:, 0], nudged[:, 1])
     return inside
+
+
+def _tie_directions(
+    points: NDArray[np.float64], domain: shapely.geometry.base.BaseGeometry
+) -> NDArray[np.float64]:
+    """Direction in which to nudge each point so that it stays in ``domain``.
+
+    :data:`TIE_DIRECTION` where that nudge stays in ``domain``, otherwise its
+    first turn in :data:`_FALLBACK_TURNS` that does, shape (n_points, 2). A
+    point at the tip of a corner of the domain no nudge enters keeps
+    :data:`TIE_DIRECTION`.
+    """
+    step = _TIE_STEP * float(np.max(np.abs(domain.bounds)))
+    directions = np.tile(TIE_DIRECTION, (len(points), 1))
+    nudged = points + step * TIE_DIRECTION
+    left = np.flatnonzero(~shapely.contains_xy(domain, nudged[:, 0], nudged[:, 1]))
+    for turn in _FALLBACK_TURNS:
+        if not left.size:
+            break
+        angle = _TIE_ANGLE + turn
+        direction = np.array([np.cos(angle), np.sin(angle)])
+        nudged = points[left] + step * direction
+        enters = shapely.contains_xy(domain, nudged[:, 0], nudged[:, 1])
+        directions[left[enters]] = direction
+        left = left[~enters]
+    return directions
 
 
 def disc_mask(

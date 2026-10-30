@@ -58,8 +58,8 @@ def box_and_well(square, well):
 
 # Interior, west-edge, east-edge and exterior points of the 10 x 10 square.
 EDGE_PROBES = np.array([[5.0, 5.0], [0.0, 5.0], [10.0, 5.0], [15.0, 15.0]])
-# The square holds its west edge but not its east edge.
-EDGE_EXPECTED = [True, True, False, False]
+# A square alone holds its whole edge: no other region lies beyond it.
+EDGE_EXPECTED = [True, True, True, False]
 
 
 class PixelsToCm:
@@ -194,7 +194,7 @@ class TestPolygonMembership:
 
 
 class TestEdges:
-    """Edge positions follow the half-open rule, in every output."""
+    """Edge positions follow one rule, in every output."""
 
     def test_any(self, square):
         assert_array_equal(points_in_any_region(EDGE_PROBES, square), EDGE_EXPECTED)

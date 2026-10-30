@@ -220,6 +220,16 @@ default lap route all changed.
   `point_radius` disc follows the same rule. Interior points are unchanged,
   and a region drawn as an environment's arena outline still holds every bin
   of an environment built from that outline.
+- Where the nudge north-east would leave the space a point can occupy, the
+  point is nudged south-west instead, so a position on an arena's wall is in
+  the quadrant beside it. For bins that space is the environment, and a bin
+  center's nudge never leaves it, so bins follow the north-east rule.
+  `points_in_any_region` and `regions_containing_points` know no
+  environment and use the union of the polygon regions passed (all of
+  them, also those not named in `region_names`): a position on that union's
+  outline is in a region, and a lone box holds its whole edge. Without
+  this, tracking clipped to the square maze's walls lost its samples on the
+  north and east walls from every quadrant.
 - One rule decides membership everywhere: `bins_in_region`, `region_mask`,
   `region_membership`, `subset(region_names=...)`, `subset(polygon=...)`,
   `regions_to_mask`, `distance_to(region=...)`, `points_in_any_region`,
