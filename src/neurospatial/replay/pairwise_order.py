@@ -1117,11 +1117,7 @@ def _significance(
 ) -> PairwiseOrderSignificanceResult:
     """The event's score and one shuffle test per null."""
     from neurospatial.replay.significance import _template_streams
-    from neurospatial.stats.shuffle import (
-        ShuffleTestResult,
-        compute_shuffle_pvalue,
-        compute_shuffle_zscore,
-    )
+    from neurospatial.stats.shuffle import ShuffleTestResult
 
     observed = _observed(event, fields, direction, max_time_lag, operation)
     sign = 1.0 if direction == "forward" else -1.0
@@ -1160,15 +1156,8 @@ def _significance(
                 source[with_field] = with_field[draw]
                 shuffled = [fields[source[unit]] for unit in event.active_units]
                 null_scores[k] = _searched(weights, shuffled, sign, operation)[0]
-        tests[null] = ShuffleTestResult(
-            observed_score=float(observed.score),
-            null_scores=null_scores,
-            p_value=compute_shuffle_pvalue(
-                float(observed.score), null_scores, tail="greater"
-            ),
-            z_score=compute_shuffle_zscore(float(observed.score), null_scores),
-            shuffle_type=null,
-            n_shuffles=n_shuffles,
+        tests[null] = ShuffleTestResult.from_null(
+            float(observed.score), null_scores, shuffle_type=null
         )
     return PairwiseOrderSignificanceResult(
         observed=observed,

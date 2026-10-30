@@ -436,11 +436,7 @@ def rank_order_significance(
     rho = 1.00, p = 0.002
     """
     from neurospatial.stats import _ensure_rng
-    from neurospatial.stats.shuffle import (
-        ShuffleTestResult,
-        compute_shuffle_pvalue,
-        compute_shuffle_zscore,
-    )
+    from neurospatial.stats.shuffle import ShuffleTestResult
 
     operation = "rank_order_significance()"
     if (
@@ -487,19 +483,14 @@ def rank_order_significance(
     n_active = observed.n_active_cells
     permutations = np.argsort(generator.random((n_shuffles, n_active)), axis=1)
     null = _permuted_correlations(pairs, permutations)
-    test = ShuffleTestResult(
-        observed_score=observed.score,
-        null_scores=null,
+    test = ShuffleTestResult.from_null(
+        observed.score,
+        null,
+        shuffle_type="cell_order",
+        tail=alternative,
         # Ties in rho differ by rounding between spearmanr and the matrix
         # formula of the shuffles.
-        p_value=compute_shuffle_pvalue(
-            round(observed.score, _SCORE_DECIMALS),
-            np.round(null, _SCORE_DECIMALS),
-            tail=alternative,
-        ),
-        z_score=compute_shuffle_zscore(observed.score, null),
-        shuffle_type="cell_order",
-        n_shuffles=n_shuffles,
+        decimals=_SCORE_DECIMALS,
     )
     return RankOrderSignificanceResult(
         observed=observed,

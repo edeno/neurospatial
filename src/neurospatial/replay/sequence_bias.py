@@ -616,6 +616,7 @@ def detect_bias_sequence_replay(
     (True, -1.0)
     """
     from neurospatial.replay.methods import ReplayDetectionResult
+    from neurospatial.stats.shuffle import compute_shuffle_zscore
 
     method = bias_sequence_method
     tested = bias_similarity_significance(
@@ -632,11 +633,7 @@ def detect_bias_sequence_replay(
     passes = {criterion.label: criterion.evaluate(n_active, np.nan)}
     null = tested.null_similarities
     defined = null[np.isfinite(null)]
-    z_score = (
-        float((tested.similarity - defined.mean()) / defined.std())
-        if defined.size and defined.std() > 0
-        else np.nan
-    )
+    z_score = compute_shuffle_zscore(tested.similarity, defined)
     return ReplayDetectionResult(
         method=method.name,
         is_replay=bool(tested.p_value < method.alpha) and all(passes.values()),
