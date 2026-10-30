@@ -143,6 +143,15 @@ _DETECTION_UNITS = ("all", "each_region", "each_region_and_cross_region")
 _ZSCORE_OVER = ("period", "control_and_match", "all_periods")
 
 
+def _is_count(value: Any) -> bool:
+    """Whether ``value`` is a positive integer, not a bool or a float."""
+    return (
+        isinstance(value, (int, np.integer))
+        and not isinstance(value, bool)
+        and bool(value >= 1)
+    )
+
+
 @dataclass(frozen=True)
 class ReactivationWindows:
     """How a period's epochs are cut into analysis windows.
@@ -174,6 +183,12 @@ class ReactivationWindows:
         each window (Pennartz et al. 2004: "the last 10 min of REST1,
         immediately preceding the behavioral phase"). The two agree when a
         period is one epoch.
+    allow_shorter : bool
+        False (default): a period shorter than ``length`` gives no window,
+        and a method using it reports an error. True: it gives one window
+        holding all of it, for "the first hour of sleep, or all of it when
+        shorter", as the labs' code truncates sleep (Harvey et al. 2023;
+        Liu et al. 2023). A remainder after whole windows is still dropped.
 
     Examples
     --------
@@ -186,6 +201,9 @@ class ReactivationWindows:
     >>> last = ReactivationWindows(length=300.0, anchor="end", count=1, clock="wall")
     >>> [w.tolist() for w in last.split(epochs)]
     [[[600.0, 900.0]]]
+    >>> first_hour = ReactivationWindows(length=3600.0, count=1, allow_shorter=True)
+    >>> [w.tolist() for w in first_hour.split(epochs)]  # all 800 s
+    [[[0.0, 400.0], [500.0, 900.0]]]
     """
 
     length: float | None = None
@@ -193,6 +211,7 @@ class ReactivationWindows:
     anchor: Literal["start", "end"] = "start"
     count: int | None = None
     clock: Literal["concatenated", "wall"] = "concatenated"
+    allow_shorter: bool = False
 
     def __post_init__(self) -> None:
         """Check the window options."""
@@ -203,12 +222,21 @@ class ReactivationWindows:
                     f"ReactivationWindows: {name} must be a positive number of "
                     f"seconds or None, got {value!r}."
                 )
-        if self.length is None and (self.step is not None or self.count is not None):
+        if not isinstance(self.allow_shorter, (bool, np.bool_)):
+            raise ValueError(
+                "ReactivationWindows: allow_shorter must be True or False, got "
+                f"{self.allow_shorter!r}."
+            )
+        if self.length is None and (
+            self.step is not None or self.count is not None or self.allow_shorter
+        ):
             raise ValueError(
                 _format_error(
-                    "ReactivationWindows: step= and count= need length=.",
+                    "ReactivationWindows: step=, count= and allow_shorter= need "
+                    "length=.",
                     why="Why: without a length the period is one window.",
-                    fix="pass length= in seconds, or drop step= and count=",
+                    fix="pass length= in seconds, or drop step=, count= and "
+                    "allow_shorter=",
                 )
             )
         if self.anchor not in ("start", "end"):
@@ -221,11 +249,7 @@ class ReactivationWindows:
                 "ReactivationWindows: clock must be 'concatenated' or 'wall', "
                 f"got {self.clock!r}."
             )
-        if self.count is not None and (
-            isinstance(self.count, bool)
-            or int(self.count) != self.count
-            or self.count < 1
-        ):
+        if self.count is not None and not _is_count(self.count):
             raise ValueError(
                 f"ReactivationWindows: count must be a positive integer or None, "
                 f"got {self.count!r}."
@@ -245,7 +269,8 @@ class ReactivationWindows:
         list of ndarray, each shape (n_pieces, 2)
             The windows in time order, each the parts of the epochs it
             covers. A ``"wall"`` window that covers no epoch time is left
-            out. Empty when the epochs are shorter than one window.
+            out. When the epochs are shorter than one window: empty, or all
+            of them with ``allow_shorter=True``.
         """
         rows = as_intervals(epochs, name="epochs")
         assert rows is not None
@@ -263,7 +288,7 @@ class ReactivationWindows:
         tolerance = 1e-9 * max(1.0, total)
         n_windows = int(np.floor((total - self.length + tolerance) / step)) + 1
         if total + tolerance < self.length:
-            n_windows = 0
+            return [rows] if self.allow_shorter else []
         if self.count is not None:
             n_windows = min(n_windows, self.count)
         offsets = np.arange(n_windows) * step
@@ -441,7 +466,7 @@ class ReactivationMethod:
         A control or match window with fewer events is refused, and the
         method's row reports why in ``error`` (El-Gaby et al. 2021: "only
         sessions where at least 200 SWR events were detected were
-        included").
+        included"). A window without events is refused even when None.
     detection : {"pca", "ica"} or None
         Pattern detection on the template counts, with the Marchenko-Pastur
         threshold; None for EV methods.
@@ -455,7 +480,10 @@ class ReactivationMethod:
         their own (``unit_groups["region"]``); or each region and also all
         units together, keeping the patterns of the latter whose members
         lie in at least two regions (Robinson et al. 2026's cross-structural
-        assemblies). The table's ``region`` column says which.
+        assemblies). The table's ``region`` column says which. A region
+        that cannot be detected in (for example one with fewer than 3
+        units) is left out with a warning; the method's row reports an
+        error only when every region fails.
     smoothing_bandwidth : float or None
         For assembly methods, the standard deviation in seconds of a
         Gaussian kernel applied to the spike trains before z-scoring and
@@ -533,11 +561,14 @@ class ReactivationMethod:
         pair of control and match windows, each unit's spikes are subsampled
         so it fires at the same rate in both
         (:func:`~neurospatial.reactivation.equalize_firing_rates`), this
-        many times; EV, REV, the partial correlation and its p-value are the
-        medians over the subsamples ("median Pearson's r … median p … for
-        100 different random subsamples"), and ``value`` is computed from
-        them. None (default) uses every spike. Needs ``rest_bins="fixed"``
-        and is not combined with ``test="pair_bootstrap"``.
+        many times ("median Pearson's r … median p … for 100 different
+        random subsamples"). The row reports the subsample whose
+        ``statistic`` is the median (the lower of the middle two for an
+        even number): ``value`` is the median of the statistic, and EV,
+        REV, the partial correlation, its p-value and the verdict all come
+        from that one subsample, so they agree with each other. None
+        (default) uses every spike. Needs ``rest_bins="fixed"`` and is not
+        combined with ``test="pair_bootstrap"``.
     notes : tuple of str
         Each value's source in the paper and the choices it leaves open.
 
@@ -721,10 +752,7 @@ class ReactivationMethod:
                 "pass member_threshold=None."
             )
         if self.min_events is not None and (
-            isinstance(self.min_events, bool)
-            or int(self.min_events) != self.min_events
-            or self.min_events < 1
-            or not self.needs_events
+            not _is_count(self.min_events) or not self.needs_events
         ):
             raise ValueError(
                 f"{where}: min_events must be a positive integer for a method "
@@ -750,6 +778,22 @@ class ReactivationMethod:
                 f"{where}: statistic {self.statistic!r} needs "
                 "event_response=EventResponse(...)."
             )
+        if self.event_response is not None:
+            step = _sample_step(self)
+            lags = _lags(self.event_response.window, step)
+            for name in ("response_window", "baseline_window"):
+                part = getattr(self.event_response, name)
+                if part is not None and not _in_lag_window(lags, part, step).any():
+                    raise ValueError(
+                        _format_error(
+                            f"{where}: event_response {name}={part} holds no lag "
+                            f"of R(t), which is sampled every {step:g} s.",
+                            why="Why: its mean over the events would be "
+                            "undefined (NaN).",
+                            fix=f"widen {name}, or sample R(t) more finely with "
+                            "activation_step=",
+                        )
+                    )
         if self.test == "event_modulation" and (
             self.event_response is None or self.event_response.baseline_window is None
         ):
@@ -767,11 +811,7 @@ class ReactivationMethod:
                 f"{where}: the cell-identity shuffle compares each bin with a "
                 "percentile of its shuffles; pass percentile=."
             )
-        if (
-            isinstance(self.n_shuffles, bool)
-            or int(self.n_shuffles) != self.n_shuffles
-            or self.n_shuffles < 1
-        ):
+        if not _is_count(self.n_shuffles):
             raise ValueError(
                 f"{where}: n_shuffles must be a positive integer, got "
                 f"{self.n_shuffles!r}."
@@ -780,11 +820,7 @@ class ReactivationMethod:
             raise ValueError(f"{where}: alpha must be in (0, 1), got {self.alpha!r}.")
         subsamples = self.n_rate_subsamples
         if subsamples is not None:
-            if (
-                isinstance(subsamples, bool)
-                or int(subsamples) != subsamples
-                or subsamples < 1
-            ):
+            if not _is_count(subsamples):
                 raise ValueError(
                     f"{where}: n_rate_subsamples must be a positive integer or "
                     f"None, got {subsamples!r}."
@@ -944,10 +980,14 @@ def compare_reactivation_methods(
         order, for example waveform similarity below 0.8 (Giri et al. 2024).
         Combined with each method's ``pairs`` rule.
     rng : numpy.random.Generator, int, or None
-        Seed or generator for ICA, bootstraps and shuffles. Each method,
-        match window and component draws from its own stream, derived from
-        ``rng`` and the method's name, so adding, removing or reordering
-        methods does not change the other methods' results.
+        Seed or generator for ICA, bootstraps, shuffles and rate
+        subsamples. Each method draws from its own streams, derived from
+        ``rng`` and the method's name: one for pattern detection and one
+        per match window for its bootstrap, shuffles or subsamples, so
+        adding, removing or reordering methods does not change the other
+        methods' results. A method's components share its streams: they
+        are detected together, and each bin's cell-identity shuffles are
+        shared by the components.
 
     Returns
     -------
@@ -992,8 +1032,9 @@ def compare_reactivation_methods(
         - ``p_value``, ``n_shuffles_used`` and ``is_reactivated`` (the
           method's within-session verdict; missing for methods without
           one), and ``error``: why a method could not be applied (for
-          example a period shorter than one window, or fewer events than
-          ``min_events``), with the other columns missing.
+          example a period shorter than one window, or a window without
+          events or with fewer than ``min_events``), with the other
+          columns missing.
 
         Columns that do not apply to a method are NaN. ``table.attrs``
         holds ``rng_entropy``, the seed the streams derive from: passing it
@@ -1211,7 +1252,7 @@ def _checked_events(value: Any, name: str) -> NDArray[np.float64] | None:
     if hasattr(value, "start") and hasattr(value, "end"):
         value = np.column_stack([np.asarray(value.start), np.asarray(value.end)])
     rows = np.asarray(value, dtype=np.float64)
-    if rows.ndim != 2 or rows.shape[1] != 2 or not len(rows):
+    if rows.ndim != 2 or rows.shape[1] != 2:
         raise ValueError(
             f"{_CALL}: {name} must be an (n_events, 2) array of start and stop "
             f"times, got shape {rows.shape}."
@@ -1281,7 +1322,13 @@ def _rest_counts(
 
 
 def _check_min_events(method: ReactivationMethod, n_events: int, period: str) -> None:
-    """Refuse a window with fewer events than ``min_events``."""
+    """Refuse a window without events, or with fewer than ``min_events``."""
+    if not n_events:
+        raise _MethodError(
+            f"no {period}_events start inside the {period} window, so its "
+            f"counts per event or event responses are undefined; pass "
+            f"{period}_events that start inside {period}_epochs"
+        )
     if method.min_events is not None and n_events < method.min_events:
         raise _MethodError(
             f"a {period} window has {n_events} events, fewer than "
@@ -1458,6 +1505,12 @@ def _explained_variance_rows(
     stream: Any,
 ) -> list[dict[str, Any]]:
     """One row per match window of an EV method."""
+    n_units = len(session.trains)
+    if pair_rule.size < 3:
+        raise _MethodError(
+            f"EV needs at least 3 pairs of units; {n_units} units hold "
+            f"{pair_rule.size} pair{'s' * (pair_rule.size != 1)}"
+        )
     template_correlations = _pair_correlations(_template_counts(method, session))
     control_counts = []
     control_events = []
@@ -1491,23 +1544,15 @@ def _explained_variance_rows(
                 control_counts,
                 pair_rule,
                 method.n_rate_subsamples,
+                method.statistic,
                 stream(index, 1),
             )
-        explained = summary["explained_variance"]
-        reversed_ = summary["reversed_explained_variance"]
-        values = {
-            "explained_variance": explained,
-            "ev_minus_rev": explained - reversed_,
-            "ev_rev_contrast": ev_rev_contrast(explained, reversed_),
-            "partial_correlation": summary["partial_correlation"],
-            "semipartial_correlation": summary["semipartial_correlation"],
-        }
         row: dict[str, Any] = {
             **_window_columns(index, window),
             "statistic": method.statistic,
-            "value": values[method.statistic],
-            "explained_variance": explained,
-            "reversed_explained_variance": reversed_,
+            "value": _ev_statistics(summary)[method.statistic],
+            "explained_variance": summary["explained_variance"],
+            "reversed_explained_variance": summary["reversed_explained_variance"],
             "partial_correlation": summary["partial_correlation"],
             "semipartial_correlation": summary["semipartial_correlation"],
             "n_pairs": summary["n_pairs"],
@@ -1603,20 +1648,39 @@ def _ev_summary(
     }
 
 
+def _ev_statistics(summary: dict[str, float]) -> dict[str, float]:
+    """Each EV statistic a method can report, from an :func:`_ev_summary`."""
+    explained = summary["explained_variance"]
+    reversed_ = summary["reversed_explained_variance"]
+    return {
+        "explained_variance": explained,
+        "ev_minus_rev": explained - reversed_,
+        "ev_rev_contrast": ev_rev_contrast(explained, reversed_),
+        "partial_correlation": summary["partial_correlation"],
+        "semipartial_correlation": summary["semipartial_correlation"],
+    }
+
+
 def _rate_equalized_ev_summary(
     template_correlations: NDArray[np.float64],
     match_counts: NDArray[np.float64],
     control_counts: list[NDArray[np.float64]],
     pair_rule: NDArray[np.bool_],
     n_subsamples: int,
+    statistic: str,
     generator: np.random.Generator,
 ) -> dict[str, float]:
-    """:func:`_ev_summary` medians over rate-equalizing subsamples.
+    """:func:`_ev_summary` of the median rate-equalizing subsample.
 
     In each subsample, every (control window, match window) pair gets its
     own draw of :func:`equalize_firing_rates`, so each unit fires at one
     rate in both windows of the pair; the template is not subsampled (Giri
-    et al. 2019).
+    et al. 2019). The subsamples are ordered by ``statistic``, and the one
+    at the median (the lower of the middle two for an even number) is
+    returned whole, so its EV, REV, partial correlation and p-value agree
+    with each other and with ``statistic``. Separate medians of each would
+    not: the median EV is not the squared median partial correlation, nor
+    the median of EV - REV the difference of the medians.
 
     Parameters
     ----------
@@ -1630,15 +1694,16 @@ def _rate_equalized_ev_summary(
         Pairs the method may use.
     n_subsamples : int
         Number of subsamples.
+    statistic : str
+        The method's statistic, which orders the subsamples.
     generator : numpy.random.Generator
         Source of the subsamples.
 
     Returns
     -------
     dict
-        The keys of :func:`_ev_summary`: medians over subsamples of the
-        statistics, NaN where no subsample defines one; ``n_pairs`` is the
-        fewest over subsamples.
+        The keys of :func:`_ev_summary`, from the median subsample over
+        those that define ``statistic``; the first subsample when none does.
     """
     draws = []
     for _ in range(n_subsamples):
@@ -1647,25 +1712,12 @@ def _rate_equalized_ev_summary(
             control, match = equalize_firing_rates(counts, match_counts, rng=generator)
             periods.append((_pair_correlations(match), _pair_correlations(control)))
         draws.append(_ev_summary(template_correlations, periods, pair_rule))
-    summary = {
-        key: _nanmedian([draw[key] for draw in draws])
-        for key in (
-            "explained_variance",
-            "reversed_explained_variance",
-            "partial_correlation",
-            "semipartial_correlation",
-            "p_value",
-        )
-    }
-    summary["n_pairs"] = min(draw["n_pairs"] for draw in draws)
-    return summary
-
-
-def _nanmedian(values: Sequence[float]) -> float:
-    """Median over the defined values, NaN when none is (no warning)."""
-    array = np.asarray(values, dtype=np.float64)
-    finite = array[np.isfinite(array)]
-    return float(np.median(finite)) if finite.size else np.nan
+    values = np.array([_ev_statistics(draw)[statistic] for draw in draws])
+    defined = np.flatnonzero(np.isfinite(values))
+    if not defined.size:
+        return draws[0]
+    ordered = defined[np.argsort(values[defined], kind="stable")]
+    return draws[int(ordered[(ordered.size - 1) // 2])]
 
 
 def _missing() -> Any:
@@ -1773,6 +1825,7 @@ def _detected_patterns(
             sets.append((every, "cross_region"))
     generator = stream()
     patterns: list[tuple[AssemblyPattern, str | None]] = []
+    failures = []
     for units, region in sets:
         try:
             detection = detect_assemblies(
@@ -1786,8 +1839,21 @@ def _detected_patterns(
                 unit_ids=session.labels[units],
             )
         except ValueError as error:
-            where = "" if region is None else f" (units of {region})"
-            raise _MethodError(f"{error}{where}") from error
+            if region is None:
+                raise _MethodError(str(error)) from error
+            # One region too small or too sparse to detect in: keep the
+            # patterns of the others.
+            failures.append(f"{error} (units of {region})")
+            if len(failures) == len(sets):
+                raise _MethodError(
+                    "detection failed in every region: " + "; ".join(failures)
+                ) from error
+            warnings.warn(
+                f"{failures[-1]}; the patterns of these units are left out.",
+                UserWarning,
+                stacklevel=2,
+            )
+            continue
         for pattern in detection.patterns:
             members = units[pattern.member_indices]
             if region == "cross_region":
@@ -1951,14 +2017,7 @@ def _event_response_columns(
     """
     response = method.event_response
     assert response is not None
-    step = method.activation_step
-    if step is None:
-        step = (
-            method.bin_size
-            if method.smoothing_bandwidth is None
-            else method.smoothing_bandwidth / 2
-        )
-    assert step is not None
+    step = _sample_step(method)
     lags = _lags(response.window, step)
     in_response = _in_lag_window(lags, response.response_window, step)
     periods = {}
@@ -2086,14 +2145,8 @@ def _period_samples(
 
     assert method.bin_size is not None  # assembly methods have one
     smoothing = method.smoothing_bandwidth
-    if smoothing is None:
-        width = method.bin_size
-        step = width if method.activation_step is None else method.activation_step
-    else:
-        step = (
-            smoothing / 2 if method.activation_step is None else method.activation_step
-        )
-        width = step
+    step = _sample_step(method)
+    width = method.bin_size if smoothing is None else step
     per_bin = round(width / step)
     values, times = [], []
     for piece in window:
@@ -2122,6 +2175,20 @@ def _period_samples(
         for stop, piece in zip(stops, values, strict=True)
     ]
     return _Samples(np.vstack(values), np.concatenate(times), segments)
+
+
+def _sample_step(method: ReactivationMethod) -> float:
+    """Seconds between samples of an assembly method's R(t).
+
+    ``activation_step`` when given; otherwise ``bin_size`` without
+    smoothing and half the smoothing bandwidth with it.
+    """
+    if method.activation_step is not None:
+        return method.activation_step
+    if method.smoothing_bandwidth is not None:
+        return method.smoothing_bandwidth / 2
+    assert method.bin_size is not None  # assembly methods have one
+    return method.bin_size
 
 
 def _z_scored(
@@ -2475,7 +2542,9 @@ GIRI_2019 = ReactivationMethod(
         "all sessions, Fig. 1c-e), not the 15-min windows. "
         "dataclasses.replace(GIRI_2019, n_rate_subsamples=100) applies it to "
         "every pair of PRE and POST windows, where equal rates and equal "
-        "counts are the same, and reports medians over the subsamples. "
+        "counts are the same, and reports the subsample with the median EV "
+        "(the paper took separate medians of r and p, which can come from "
+        "different subsamples). "
         "Which spikes were removed is not stated; here a uniform random "
         "subset of each unit's spikes in the window that fires more.",
     ),
@@ -2649,11 +2718,13 @@ OLIVA_2020_ASSEMBLY = dataclasses.replace(
     reference=OLIVA_2020_EV.reference,
     bin_size=0.02,
     smoothing_bandwidth=0.01,
+    zscore_over="all_periods",
     notes=(
         "20 ms bins: 'spike trains of each neuron were binned in 20-ms "
-        "intervals for the whole session and z-scored' (Methods, Cell "
-        "assembly analysis); 'for the whole session' is read as the "
-        "social-learning trials passed as template_epochs.",
+        "intervals for the whole session and z-scored firing rates were "
+        "calculated for each bin' (Methods, Cell assembly analysis). "
+        "Detection uses the social-learning trials passed as "
+        "template_epochs.",
         "Smoothing: 'Spike trains were convolved with a Gaussian kernel (SD = "
         "10 ms)'. Whether detection used the smoothed or the binned trains is "
         "not clear; here detection uses the 20 ms counts and R(t) the "
@@ -2666,8 +2737,13 @@ OLIVA_2020_ASSEMBLY = dataclasses.replace(
         "Statistic: 'Reactivation strength of an assembly was defined as the "
         "difference in its average expression strength during post-sleep "
         "minus that during pre-sleep'. Over all sleep or only SWRs is not "
-        "stated; pass the sleep (or NREM) epochs. Each period is z-scored on "
-        "its own, as in VAN_DE_VEN_2016.",
+        "stated; pass the sleep (or NREM) epochs.",
+        "Z-scoring: R(t) multiplies 'the convolved z-scored firing rate', "
+        "and the rates were z-scored 'for the whole session', read here as "
+        "the template, control and match periods together "
+        "(zscore_over='all_periods'), as in HARVEY_2023_ASSEMBLY, whose code "
+        "(Fernández-Ruiz lab) z-scores over the whole session. "
+        "VAN_DE_VEN_2016 z-scores each period on its own.",
         "No per-pattern test in the text.",
     ),
 )
@@ -2750,8 +2826,12 @@ HARVEY_2023_ASSEMBLY = ReactivationMethod(
     reference=_HARVEY_2023_REFERENCE,
     measure="assembly",
     bin_size=0.025,
-    control_windows=ReactivationWindows(length=3600.0, count=1, clock="wall"),
-    match_windows=ReactivationWindows(length=3600.0, count=1, clock="wall"),
+    control_windows=ReactivationWindows(
+        length=3600.0, count=1, clock="wall", allow_shorter=True
+    ),
+    match_windows=ReactivationWindows(
+        length=3600.0, count=1, clock="wall", allow_shorter=True
+    ),
     detection="ica",
     member_rule="otsu",
     member_threshold=None,
@@ -2782,9 +2862,12 @@ HARVEY_2023_ASSEMBLY = ReactivationMethod(
         "session, read here as the template, control and match periods "
         "together (zscore_over='all_periods').",
         "Windows: the code takes the first 3,600 s of the pre- and post-task "
-        "sleep sessions restricted to NREM; here the first hour on the clock "
-        "from the first NREM epoch given (pass the first hour of each sleep "
-        "session intersected with NREM to match the code).",
+        "sleep sessions restricted to NREM, or all of a shorter session "
+        "(ripple_heterogeneity assembly_react_deep_sup_ind_detect.py: "
+        "epochs[0][EpochArray([pre_start, pre_start + 3600])][nrem_epochs]); "
+        "here the first hour on the clock from the first NREM epoch given, "
+        "or all of it when shorter (allow_shorter=True). Pass the first hour "
+        "of each sleep session intersected with NREM to match the code.",
         "Response: Fig. 2G, 'SWR-triggered average reactivation strength in "
         "post-task sleep'; the figure's statistic in the code is the peak of "
         "the post-sleep peri-SWR mean over 0-50 ms after SWR start "
@@ -2821,6 +2904,13 @@ LIU_2023_EV = ReactivationMethod(
         "two cells across all theta cycles in the recorded session' "
         "(Materials and methods, Coactivity and reactivation analysis, p. "
         "13). Pass the task's theta cycles as template_events.",
+        "Counts, not rates: the paper says 'binned firing rates', but the "
+        "lab's code counts each unit's spikes in each theta cycle and each "
+        "SWR (neurocode CofiringCoefficient.m: 'count the spikes emitted by "
+        "each unit in each interval'), and so does this recipe. Theta "
+        "cycles vary in length, so counts per cycle share a duration "
+        "component that raises every pair correlation alike; dividing by "
+        "the cycle's duration would remove it and give a different r.",
         "SWR bins in sleep: 'C, CPRE, and CPOST refer to the cofiring matrix "
         "and the correlation matrices across SWRs in pre- and post-task "
         "sleep'; the lab's code counts spikes per SWR (neurocode "
@@ -2862,8 +2952,10 @@ LIU_2023_ASSEMBLY = ReactivationMethod(
     reference=_LIU_2023_REFERENCE,
     measure="assembly",
     bin_size=0.025,
-    control_windows=ReactivationWindows(length=3600.0, anchor="end", count=1),
-    match_windows=ReactivationWindows(length=3600.0, count=1),
+    control_windows=ReactivationWindows(
+        length=3600.0, anchor="end", count=1, allow_shorter=True
+    ),
+    match_windows=ReactivationWindows(length=3600.0, count=1, allow_shorter=True),
     detection="ica",
     member_rule="positive_z",
     member_threshold=2.0,
@@ -2883,8 +2975,14 @@ LIU_2023_ASSEMBLY = ReactivationMethod(
         "deviations' (signed weights).",
         "Windows: 'the last hour of cumulative baseline sleep and the first "
         "hour of cumulative post-task sleep, excluding periods outside of "
-        "non-REM sleep' (fig. S9B). Pass NREM epochs; the hours are "
-        "concatenated NREM time.",
+        "non-REM sleep' (fig. S9B, the reactivation-strength profiles). Pass "
+        "NREM epochs; the hours are concatenated NREM time, or all of a "
+        "shorter sleep period (allow_shorter=True). The lab's tutorial "
+        "(neurocode pipelineReactivation.m, TruncateIntervals(preSleep, "
+        "3600)) instead takes the first NREM hour of both periods, or all of "
+        "a shorter one; dataclasses.replace(..., control_windows="
+        "ReactivationWindows(length=3600.0, count=1, allow_shorter=True)) "
+        "follows it.",
         "Response: 'Reactivation strength of task-related assemblies "
         "centered on post-task sleep SWR, increased relative to baseline' "
         "(Fig. 4D). The lab's pipeline (neurocode pipelineReactivation.m) "

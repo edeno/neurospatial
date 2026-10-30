@@ -186,7 +186,8 @@ def test_equal_rates_keep_real_reactivation(tables) -> None:
 
 def test_values_are_medians_over_subsamples_of_ev_averaged_over_controls() -> None:
     """Recompute two control windows' rate-equalized EV with the public
-    functions and the method's documented random stream."""
+    functions and the method's documented random stream: the row is the
+    subsample with the median EV."""
     session = simulated_reactivation_session(duration=600.0, rng=3, rate_change=0.5)
     method = ReactivationMethod(
         name="two_controls",
@@ -235,8 +236,77 @@ def test_values_are_medians_over_subsamples_of_ev_averaged_over_controls() -> No
         reversed_.append(np.mean([d.reversed_explained_variance for d in draws]))
     row = table.iloc[0]
     assert row["n_control_windows"] == 2
+    median = int(np.argsort(explained)[2])
     np.testing.assert_allclose(row["explained_variance"], np.median(explained))
-    np.testing.assert_allclose(row["reversed_explained_variance"], np.median(reversed_))
+    np.testing.assert_allclose(row["reversed_explained_variance"], reversed_[median])
+
+
+def test_rate_subsampled_row_is_one_consistent_subsample() -> None:
+    """Weak structure, where the partial correlation changes sign between
+    subsamples: the row's statistics still agree with each other, and the
+    value is the lower median over an even number of subsamples."""
+    rng = np.random.default_rng(3)
+    spike_times = [np.sort(rng.uniform(0, 3600, 2000)) for _ in range(10)]
+    single = dataclasses.replace(
+        KUDRIMOTI_1999,
+        name="single",
+        pairs="all",
+        statistic="ev_minus_rev",
+        match_windows=ReactivationWindows(length=600.0, count=1),
+    )
+    arguments = {
+        "template_epochs": [[1200.0, 2400.0]],
+        "match_epochs": [[2400.0, 3600.0]],
+        "control_epochs": [[0.0, 1200.0]],
+    }
+    for seed in range(4):
+        table = compare_reactivation_methods(
+            spike_times,
+            **arguments,
+            reactivation_methods=[
+                dataclasses.replace(single, name="subsampled", n_rate_subsamples=4)
+            ],
+            rng=seed,
+        )
+        row = table.iloc[0]
+        np.testing.assert_allclose(
+            row["explained_variance"], row["partial_correlation"] ** 2
+        )
+        np.testing.assert_allclose(
+            row["value"],
+            row["explained_variance"] - row["reversed_explained_variance"],
+        )
+        assert row["is_reactivated"] == (
+            row["p_value"] < 0.05 and row["partial_correlation"] > 0
+        )
+        # The four subsamples, by hand from the method's stream.
+        generator = np.random.default_rng(
+            np.random.SeedSequence(
+                table.attrs["rng_entropy"],
+                spawn_key=(zlib.crc32(b"subsampled"), 0, 1),
+            )
+        )
+
+        def counts(epochs):
+            return bin_spikes_in_time(spike_times, dt=0.1, epochs=epochs)[0]
+
+        template = pairwise_correlations(counts(arguments["template_epochs"]))
+        control = counts([[600.0, 1200.0]]).astype(float)  # the last 10 min
+        match = counts([[2400.0, 3000.0]]).astype(float)
+        differences = []
+        for _ in range(4):
+            new_control, new_match = equalize_firing_rates(
+                control, match, rng=generator
+            )
+            result = explained_variance_reactivation(
+                template,
+                pairwise_correlations(new_match),
+                control_correlations=pairwise_correlations(new_control),
+            )
+            differences.append(
+                result.explained_variance - result.reversed_explained_variance
+            )
+        np.testing.assert_allclose(row["value"], np.sort(differences)[1])
 
 
 def test_rate_subsampled_tables_are_seeded() -> None:
@@ -263,6 +333,7 @@ def test_rate_subsampled_tables_are_seeded() -> None:
     [
         (GIRI_2019, 0, "positive integer"),
         (GIRI_2019, 2.5, "positive integer"),
+        (GIRI_2019, 100.0, "positive integer"),
         (GIRI_2019, True, "positive integer"),
         (PEYRACHE_2010, 10, "only to EV methods"),
         (EL_GABY_2021, 10, "only to EV methods"),
