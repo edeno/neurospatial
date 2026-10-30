@@ -338,6 +338,10 @@ class TestRefusals:
                 "pseudo_event",
             ),
             (
+                {"template_choice": "max_score", "nulls": ("column_cycle_weighted",)},
+                r"cannot be used with \['column_cycle_weighted'\]",
+            ),
+            (
                 {
                     "template_choice": "max_score",
                     "segmentation": ReplaySegmentation({"max_jump": 20.0}),

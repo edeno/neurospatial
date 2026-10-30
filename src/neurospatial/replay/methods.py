@@ -629,8 +629,8 @@ class ReplayMethod:
         so its p-value needs no correction; the result's ``template`` is
         the one with the largest score, and criteria are evaluated on it.
         Needs a score and nulls, with ``alternative="greater"``, no
-        segmentation, no template criteria and no pseudo-event null. With
-        either choice, each template draws from its own random stream,
+        segmentation, no template criteria and no pseudo-event or weighted
+        column-cycle null, which draw from one pool. With either choice, each template draws from its own random stream,
         derived from ``rng`` and the template's name, so results do not
         depend on the templates' order. An explicit ``template=`` tests
         that template of a joint decode instead, and a posterior given as
@@ -926,7 +926,7 @@ class ReplayMethod:
                 )
             )
         unused = [c.label for c in self.criteria if c.quantity in _TEMPLATE_QUANTITIES]
-        unused += [name for name in self.nulls if name == "pseudo_event"]
+        unused += [name for name in self.nulls if name in _POOL_NULLS]
         if self.segmentation is not None:
             unused.append("segmentation")
         if unused:
@@ -935,10 +935,10 @@ class ReplayMethod:
                     f"ReplayMethod {self.name!r}: template_choice='max_score' "
                     f"cannot be used with {unused}.",
                     why="the templates are decoded separately, so no template "
-                    "holds a share of a joint posterior to compare, one "
-                    "pseudo-event pool cannot serve every template's "
-                    "environment, and segments would be cut in each template "
-                    "differently",
+                    "holds a share of a joint posterior to compare, the one "
+                    "pool of the pseudo-event and weighted column-cycle nulls "
+                    "cannot serve every template's environment, and segments "
+                    "would be cut in each template differently",
                     fix=f"remove {unused}, or decode the templates jointly and "
                     "use template_choice='smallest_p'",
                 )
