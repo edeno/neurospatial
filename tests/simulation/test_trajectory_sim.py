@@ -118,6 +118,34 @@ class TestSimulateTrajectoryOU:
         np.testing.assert_allclose(results[:, :2], [[8.0, 4.0]] * 3, atol=0.5)
         np.testing.assert_allclose(results[:, 2:], results[[0] * 3, 2:], atol=0.05)
 
+    @pytest.mark.parametrize("dt_over_tau", [700.0, 1000.0])
+    def test_3d_heading_is_uncorrelated_when_dt_dwarfs_tau(self, dt_over_tau):
+        """exp(-dt/τ) underflows past dt/τ ≈ 745: every step turns uniformly."""
+        from neurospatial import Environment
+
+        corners = np.stack(
+            np.meshgrid(*[np.linspace(0, 1000, 11)] * 3, indexing="ij"), axis=-1
+        ).reshape(-1, 3)
+        env = Environment.from_samples(corners, bin_size=100.0, units="cm")
+        dt = 0.1
+        positions, _ = simulate_trajectory_ou(
+            env,
+            duration=4000 * dt,
+            dt=dt,
+            speed_units="cm",
+            speed_mean=1e-3,
+            speed_std=0.0,
+            rotational_velocity_coherence_time=dt / dt_over_tau,
+            start_position=np.array([500.0, 500.0, 500.0]),
+            seed=3,
+        )
+        headings = np.diff(positions, axis=0)
+        headings /= np.linalg.norm(headings, axis=1, keepdims=True)
+        cosines = np.sum(headings[:-1] * headings[1:], axis=1)
+        # Uniform turns on the sphere: mean cosine 0, variance 1/3.
+        assert np.mean(cosines) == pytest.approx(0.0, abs=0.04)
+        assert np.var(cosines) == pytest.approx(1 / 3, abs=0.03)
+
     @pytest.mark.parametrize("dt_over_tau", [1 / 8, 1 / 2, 1.0, 2.0])
     def test_3d_heading_decorrelates_as_exp_minus_t_over_tau_at_any_dt(
         self, dt_over_tau

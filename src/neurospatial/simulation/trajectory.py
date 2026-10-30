@@ -551,6 +551,9 @@ def _sphere_turn_cosines(
     ``n_dims`` dimensions whose mean cosine is ``exp(-dt_over_tau)``, by
     Wood's (1994) rejection sampler. Its concentration ``κ`` solves
     ``I_{p/2}(κ) / I_{p/2 - 1}(κ) = exp(-dt_over_tau)`` with ``p = n_dims``.
+    For a mean cosine below 1e-8 the ratio is ``κ / p`` to double
+    precision, so ``κ = p exp(-dt_over_tau)``; it is 0, uniform turns, once
+    ``exp(-dt_over_tau)`` underflows.
     """
     from scipy.optimize import brentq
     from scipy.special import ive
@@ -561,12 +564,16 @@ def _sphere_turn_cosines(
     def excess(kappa: float) -> float:
         return float(ive(order, kappa) / ive(order - 1, kappa)) - mean_cosine
 
-    # The mean cosine is below kappa / n_dims, so kappa = mean_cosine is too
-    # small; it approaches 1 - (n_dims - 1) / (2 kappa) from below.
-    upper = n_dims / -np.expm1(-dt_over_tau)
-    while excess(upper) < 0:
-        upper *= 2
-    kappa = brentq(excess, mean_cosine, upper, xtol=1e-12, rtol=1e-12)
+    if mean_cosine < 1e-8:
+        # I_{p/2}(κ) / I_{p/2 - 1}(κ) = κ/p - κ³/(p²(p + 2)) + ...
+        kappa = n_dims * mean_cosine
+    else:
+        # The mean cosine is below kappa / n_dims, so kappa = mean_cosine is
+        # too small; it approaches 1 - (n_dims - 1) / (2 kappa) from below.
+        upper = n_dims / -np.expm1(-dt_over_tau)
+        while excess(upper) < 0:
+            upper *= 2
+        kappa = brentq(excess, mean_cosine, upper, xtol=1e-12, rtol=1e-12)
 
     dims = n_dims - 1
     b = dims / (2 * kappa + np.sqrt(4 * kappa**2 + dims**2))
