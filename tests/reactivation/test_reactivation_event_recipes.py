@@ -631,3 +631,19 @@ def test_every_region_too_small_is_an_error_row(reactivated) -> None:
         table = _compare(reactivated, [per_region], unit_groups={"region": regions})
     assert len(table) == 1
     assert "detection failed in every region" in table["error"].iloc[0]
+
+
+@pytest.mark.parametrize(
+    "method", [HARVEY_2023_ASSEMBLY, LIU_2023_ASSEMBLY], ids=lambda m: m.name
+)
+def test_sleep_shorter_than_an_hour_is_used_whole(reactivated, method) -> None:
+    """Like the labs' code, the hour-long recipes use all of a shorter sleep."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        table = _compare(reactivated, [method])
+        whole = _compare(reactivated, [dataclasses.replace(method, **WHOLE)])
+    assert (table["error"] == "").all()
+    np.testing.assert_allclose(
+        table["window_duration"], np.diff(reactivated.match[0])[0]
+    )
+    pd.testing.assert_frame_equal(table, whole)

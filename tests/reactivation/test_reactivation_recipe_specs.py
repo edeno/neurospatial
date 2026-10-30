@@ -168,8 +168,12 @@ SPEC: dict[str, dict[str, Any]] = {
     "harvey_2023_assembly": {
         "measure": "assembly",
         "bin_size": 0.025,
-        "control_windows": ReactivationWindows(length=3600.0, count=1, clock="wall"),
-        "match_windows": ReactivationWindows(length=3600.0, count=1, clock="wall"),
+        "control_windows": ReactivationWindows(
+            length=3600.0, count=1, clock="wall", allow_shorter=True
+        ),
+        "match_windows": ReactivationWindows(
+            length=3600.0, count=1, clock="wall", allow_shorter=True
+        ),
         "detection": "ica",
         "member_rule": "otsu",
         "member_threshold": None,
@@ -204,8 +208,12 @@ SPEC: dict[str, dict[str, Any]] = {
     "liu_2023_assembly": {
         "measure": "assembly",
         "bin_size": 0.025,
-        "control_windows": ReactivationWindows(length=3600.0, anchor="end", count=1),
-        "match_windows": ReactivationWindows(length=3600.0, count=1),
+        "control_windows": ReactivationWindows(
+            length=3600.0, anchor="end", count=1, allow_shorter=True
+        ),
+        "match_windows": ReactivationWindows(
+            length=3600.0, count=1, allow_shorter=True
+        ),
         "detection": "ica",
         "member_rule": "positive_z",
         "member_threshold": 2.0,

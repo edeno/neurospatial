@@ -128,11 +128,33 @@ class TestReactivationWindows:
         assert rule.split([[0.0, 500.0]]) == []
         assert len(ReactivationWindows(length=600.0, count=3).split([[0, 6000.0]])) == 3
 
+    @pytest.mark.parametrize("clock", ["concatenated", "wall"])
+    @pytest.mark.parametrize("anchor", ["start", "end"])
+    def test_allow_shorter_keeps_a_short_period_whole(
+        self, clock: str, anchor: str
+    ) -> None:
+        rule = ReactivationWindows(
+            length=3600.0, count=1, anchor=anchor, clock=clock, allow_shorter=True
+        )
+        # 800 s of epochs over 900 s of clock: shorter than the hour either way.
+        windows = rule.split(self.epochs)
+        assert len(windows) == 1
+        np.testing.assert_array_equal(windows[0], self.epochs)
+        # A long period still gives the whole first or last hour.
+        long = rule.split([[0.0, 5000.0]])
+        expected = [[0.0, 3600.0]] if anchor == "start" else [[1400.0, 5000.0]]
+        assert [w.tolist() for w in long] == [expected]
+        # Remainders after whole windows are still dropped.
+        blocks = ReactivationWindows(length=600.0, allow_shorter=True)
+        assert len(blocks.split([[0.0, 1700.0]])) == 2
+
     @pytest.mark.parametrize(
         ("options", "message"),
         [
             ({"length": -1.0}, "length must be a positive"),
             ({"step": 10.0}, "need length"),
+            ({"allow_shorter": True}, "need length"),
+            ({"length": 10.0, "allow_shorter": 1}, "allow_shorter must be"),
             ({"length": 10.0, "anchor": "middle"}, "anchor must be"),
             ({"length": 10.0, "clock": "sleep"}, "clock must be"),
             ({"length": 10.0, "count": 0}, "count must be a positive"),

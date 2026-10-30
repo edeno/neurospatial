@@ -183,6 +183,12 @@ class ReactivationWindows:
         each window (Pennartz et al. 2004: "the last 10 min of REST1,
         immediately preceding the behavioral phase"). The two agree when a
         period is one epoch.
+    allow_shorter : bool
+        False (default): a period shorter than ``length`` gives no window,
+        and a method using it reports an error. True: it gives one window
+        holding all of it, for "the first hour of sleep, or all of it when
+        shorter", as the labs' code truncates sleep (Harvey et al. 2023;
+        Liu et al. 2023). A remainder after whole windows is still dropped.
 
     Examples
     --------
@@ -195,6 +201,9 @@ class ReactivationWindows:
     >>> last = ReactivationWindows(length=300.0, anchor="end", count=1, clock="wall")
     >>> [w.tolist() for w in last.split(epochs)]
     [[[600.0, 900.0]]]
+    >>> first_hour = ReactivationWindows(length=3600.0, count=1, allow_shorter=True)
+    >>> [w.tolist() for w in first_hour.split(epochs)]  # all 800 s
+    [[[0.0, 400.0], [500.0, 900.0]]]
     """
 
     length: float | None = None
@@ -202,6 +211,7 @@ class ReactivationWindows:
     anchor: Literal["start", "end"] = "start"
     count: int | None = None
     clock: Literal["concatenated", "wall"] = "concatenated"
+    allow_shorter: bool = False
 
     def __post_init__(self) -> None:
         """Check the window options."""
@@ -212,12 +222,21 @@ class ReactivationWindows:
                     f"ReactivationWindows: {name} must be a positive number of "
                     f"seconds or None, got {value!r}."
                 )
-        if self.length is None and (self.step is not None or self.count is not None):
+        if not isinstance(self.allow_shorter, (bool, np.bool_)):
+            raise ValueError(
+                "ReactivationWindows: allow_shorter must be True or False, got "
+                f"{self.allow_shorter!r}."
+            )
+        if self.length is None and (
+            self.step is not None or self.count is not None or self.allow_shorter
+        ):
             raise ValueError(
                 _format_error(
-                    "ReactivationWindows: step= and count= need length=.",
+                    "ReactivationWindows: step=, count= and allow_shorter= need "
+                    "length=.",
                     why="Why: without a length the period is one window.",
-                    fix="pass length= in seconds, or drop step= and count=",
+                    fix="pass length= in seconds, or drop step=, count= and "
+                    "allow_shorter=",
                 )
             )
         if self.anchor not in ("start", "end"):
@@ -250,7 +269,8 @@ class ReactivationWindows:
         list of ndarray, each shape (n_pieces, 2)
             The windows in time order, each the parts of the epochs it
             covers. A ``"wall"`` window that covers no epoch time is left
-            out. Empty when the epochs are shorter than one window.
+            out. When the epochs are shorter than one window: empty, or all
+            of them with ``allow_shorter=True``.
         """
         rows = as_intervals(epochs, name="epochs")
         assert rows is not None
@@ -268,7 +288,7 @@ class ReactivationWindows:
         tolerance = 1e-9 * max(1.0, total)
         n_windows = int(np.floor((total - self.length + tolerance) / step)) + 1
         if total + tolerance < self.length:
-            n_windows = 0
+            return [rows] if self.allow_shorter else []
         if self.count is not None:
             n_windows = min(n_windows, self.count)
         offsets = np.arange(n_windows) * step
@@ -2791,8 +2811,12 @@ HARVEY_2023_ASSEMBLY = ReactivationMethod(
     reference=_HARVEY_2023_REFERENCE,
     measure="assembly",
     bin_size=0.025,
-    control_windows=ReactivationWindows(length=3600.0, count=1, clock="wall"),
-    match_windows=ReactivationWindows(length=3600.0, count=1, clock="wall"),
+    control_windows=ReactivationWindows(
+        length=3600.0, count=1, clock="wall", allow_shorter=True
+    ),
+    match_windows=ReactivationWindows(
+        length=3600.0, count=1, clock="wall", allow_shorter=True
+    ),
     detection="ica",
     member_rule="otsu",
     member_threshold=None,
@@ -2823,9 +2847,12 @@ HARVEY_2023_ASSEMBLY = ReactivationMethod(
         "session, read here as the template, control and match periods "
         "together (zscore_over='all_periods').",
         "Windows: the code takes the first 3,600 s of the pre- and post-task "
-        "sleep sessions restricted to NREM; here the first hour on the clock "
-        "from the first NREM epoch given (pass the first hour of each sleep "
-        "session intersected with NREM to match the code).",
+        "sleep sessions restricted to NREM, or all of a shorter session "
+        "(ripple_heterogeneity assembly_react_deep_sup_ind_detect.py: "
+        "epochs[0][EpochArray([pre_start, pre_start + 3600])][nrem_epochs]); "
+        "here the first hour on the clock from the first NREM epoch given, "
+        "or all of it when shorter (allow_shorter=True). Pass the first hour "
+        "of each sleep session intersected with NREM to match the code.",
         "Response: Fig. 2G, 'SWR-triggered average reactivation strength in "
         "post-task sleep'; the figure's statistic in the code is the peak of "
         "the post-sleep peri-SWR mean over 0-50 ms after SWR start "
@@ -2903,8 +2930,10 @@ LIU_2023_ASSEMBLY = ReactivationMethod(
     reference=_LIU_2023_REFERENCE,
     measure="assembly",
     bin_size=0.025,
-    control_windows=ReactivationWindows(length=3600.0, anchor="end", count=1),
-    match_windows=ReactivationWindows(length=3600.0, count=1),
+    control_windows=ReactivationWindows(
+        length=3600.0, anchor="end", count=1, allow_shorter=True
+    ),
+    match_windows=ReactivationWindows(length=3600.0, count=1, allow_shorter=True),
     detection="ica",
     member_rule="positive_z",
     member_threshold=2.0,
@@ -2924,8 +2953,14 @@ LIU_2023_ASSEMBLY = ReactivationMethod(
         "deviations' (signed weights).",
         "Windows: 'the last hour of cumulative baseline sleep and the first "
         "hour of cumulative post-task sleep, excluding periods outside of "
-        "non-REM sleep' (fig. S9B). Pass NREM epochs; the hours are "
-        "concatenated NREM time.",
+        "non-REM sleep' (fig. S9B, the reactivation-strength profiles). Pass "
+        "NREM epochs; the hours are concatenated NREM time, or all of a "
+        "shorter sleep period (allow_shorter=True). The lab's tutorial "
+        "(neurocode pipelineReactivation.m, TruncateIntervals(preSleep, "
+        "3600)) instead takes the first NREM hour of both periods, or all of "
+        "a shorter one; dataclasses.replace(..., control_windows="
+        "ReactivationWindows(length=3600.0, count=1, allow_shorter=True)) "
+        "follows it.",
         "Response: 'Reactivation strength of task-related assemblies "
         "centered on post-task sleep SWR, increased relative to baseline' "
         "(Fig. 4D). The lab's pipeline (neurocode pipelineReactivation.m) "
