@@ -91,8 +91,8 @@ class ArmReplayMethod:
         ``joint``.
     arm_fallback : bool
         Without a replay, an event with a run on some arm is still a replay
-        of that arm, the run with the largest absolute correlation if it is
-        the only one (Berners-Lee et al. 2021's arm-replays).
+        of that arm: the run with the largest absolute correlation, unless
+        another run ties it (Berners-Lee et al. 2021's arm-replays).
     decoding : Mapping[str, Any]
         The paper's decoding settings, for reference (not enforced).
     notes : tuple of str
