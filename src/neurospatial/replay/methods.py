@@ -77,6 +77,7 @@ from neurospatial.replay.trajectory import (
     fit_linear_trajectory,
     regression_line_score,
 )
+from neurospatial.stats._utils import _entropy, _name_key, _stream
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -3136,8 +3137,6 @@ def compare_replay_methods(
     Davidson et al. (2009) and Michon et al. (2019) drew from the complete
     set of candidate events.
     """
-    import zlib
-
     import pandas as pd
 
     for name, per_event in (
@@ -3326,11 +3325,7 @@ def compare_replay_methods(
                 if not isinstance(event, (JointDecodingResult, Mapping))
             ]
         )
-    entropy = (
-        int(rng.integers(2**63))
-        if isinstance(rng, np.random.Generator)
-        else np.random.SeedSequence(rng).entropy
-    )
+    entropy = _entropy(rng)
 
     def stream_for(
         index: int,
@@ -3341,11 +3336,7 @@ def compare_replay_methods(
         | TemplateMatchMethod
         | BiasSequenceMethod,
     ) -> Any:
-        return np.random.default_rng(
-            np.random.SeedSequence(
-                entropy, spawn_key=(index, zlib.crc32(method.name.encode()))
-            )
-        )
+        return _stream(entropy, index, _name_key(method.name))
 
     pooled_verdicts = {}
     if dt is not None:

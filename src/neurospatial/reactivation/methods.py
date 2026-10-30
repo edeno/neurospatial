@@ -41,7 +41,6 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import warnings
-import zlib
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -72,6 +71,7 @@ from neurospatial.reactivation.coactivity import (
 from neurospatial.reactivation.coactivity import (
     _nanmean as _nanmean_along,
 )
+from neurospatial.stats._utils import _entropy, _name_key, _stream
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -1182,23 +1182,17 @@ def compare_reactivation_methods(
             )
         selected = mask.copy()
 
-    entropy = (
-        int(rng.integers(2**63))
-        if isinstance(rng, np.random.Generator)
-        else np.random.SeedSequence(rng).entropy
-    )
+    entropy = _entropy(rng)
 
     rows: list[dict[str, Any]] = []
     if methods:
         assert control is not None  # every method needs one, checked above
         session = _Session(trains, template, control, match, events, labels, groups)
     for method in methods:
-        key = zlib.crc32(method.name.encode())
+        key = _name_key(method.name)
 
         def stream(*indices: int, key: int = key) -> np.random.Generator:
-            return np.random.default_rng(
-                np.random.SeedSequence(entropy, spawn_key=(key, *indices))
-            )
+            return _stream(entropy, key, *indices)
 
         with _warnings_with_context(f"{_CALL}: method {method.name!r}"):
             try:

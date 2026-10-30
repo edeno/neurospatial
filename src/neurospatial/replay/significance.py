@@ -41,6 +41,7 @@ from neurospatial.replay.trajectory import (
     detect_trajectory_radon,
     regression_line_score,
 )
+from neurospatial.stats._utils import _entropy, _name_key, _stream
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -1075,19 +1076,8 @@ def _template_streams(
     A template's stream does not depend on the other templates or their
     order.
     """
-    import zlib
-
-    entropy = (
-        int(rng.integers(2**63))
-        if isinstance(rng, np.random.Generator)
-        else np.random.SeedSequence(rng).entropy
-    )
-    return {
-        name: np.random.default_rng(
-            np.random.SeedSequence(entropy, spawn_key=(zlib.crc32(name.encode()),))
-        )
-        for name in names
-    }
+    entropy = _entropy(rng)
+    return {name: _stream(entropy, _name_key(name)) for name in names}
 
 
 def _zero_empty_rows(

@@ -58,6 +58,7 @@ from neurospatial.replay.methods import (
     ReplayMethod,
 )
 from neurospatial.replay.significance import _ALTERNATIVES, _DECODING_NULLS
+from neurospatial.stats._utils import _entropy, _stream
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -965,18 +966,6 @@ def _dataset_values(
     table.attrs["null"] = null
     table.attrs["method"] = method.name
     return table
-
-
-def _entropy(rng: np.random.Generator | int | None) -> int:
-    """The entropy every random stream of a call derives from."""
-    if isinstance(rng, np.random.Generator):
-        return int(rng.integers(2**63))
-    return int(np.random.SeedSequence(rng).entropy)  # type: ignore[arg-type]
-
-
-def _stream(entropy: int, *key: int) -> np.random.Generator:
-    """A random stream derived from the table's entropy and ``key``."""
-    return np.random.default_rng(np.random.SeedSequence(entropy, spawn_key=key))
 
 
 # Spawn keys of the random streams: per event, shared draws, real events.
