@@ -33,7 +33,12 @@ from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.replay.significance import _ALTERNATIVES
 
 if TYPE_CHECKING:
-    from neurospatial.replay.methods import ReplayCriterion, ReplayDetectionResult
+    from neurospatial.replay.methods import (
+        ReplayCriterion,
+        ReplayDetectionResult,
+        _CompareEvent,
+        _CompareNeeds,
+    )
 
 __all__ = [
     "BiasSequenceMethod",
@@ -209,9 +214,53 @@ class BiasSequenceMethod:
     @property
     def criteria(self) -> tuple[ReplayCriterion, ...]:
         """The active-cell threshold, as a criterion."""
-        from neurospatial.replay.methods import ReplayCriterion
+        from neurospatial.replay.methods import _active_cell_criteria
 
-        return (ReplayCriterion("n_active_cells", ">=", self.min_active_cells),)
+        return _active_cell_criteria(self.min_active_cells)
+
+    @property
+    def _compare_needs(self) -> _CompareNeeds:
+        """The spikes, decoding window and template matrix it scores events on."""
+        from neurospatial.replay.methods import _CompareNeeds
+
+        return _CompareNeeds(
+            "bias-sequence",
+            ("spike_times", "template_bias", "dt"),
+            why="they compare the order of each event's spikes, over the event's "
+            "decoding windows of width dt, with a template's skew-bias matrix",
+            fix="pass the session's spike_times, the template's matrix as "
+            "template_bias (e.g. mean_pairwise_bias(spike_times, theta_cycles)) "
+            "and the decoding window dt",
+        )
+
+    def _passes_alpha(self, p_value: Any, alpha: float) -> Any:
+        """Whether ``p_value`` (scalar or array) is below ``alpha``."""
+        return p_value < alpha
+
+    @property
+    def _smallest_p_value(self) -> float:
+        """The smallest p-value the method's ``n_shuffles`` can give."""
+        from neurospatial.replay.methods import _shuffle_p_floor
+
+        return _shuffle_p_floor(self.n_shuffles, self.alternative)
+
+    @property
+    def _alpha_refusal(self) -> None:
+        """None: its verdict is the p-value against alpha and its criterion."""
+        return None
+
+    def _compare(
+        self, event: _CompareEvent, rng: np.random.Generator
+    ) -> ReplayDetectionResult:
+        """This method's verdict on one event of ``compare_replay_methods``."""
+        assert event.window is not None and event.template_bias is not None
+        return detect_bias_sequence_replay(
+            event.spike_times,
+            event.window,
+            event.template_bias,
+            bias_sequence_method=self,
+            rng=rng,
+        )
 
 
 def pairwise_bias_matrix(
@@ -589,9 +638,10 @@ def detect_bias_sequence_replay(
     ReplayDetectionResult
         ``score`` is the signed similarity, ``p_value`` its shuffle test,
         ``criteria`` the active-unit rule (over every unit given), and
-        ``n_shuffles_used`` the shuffles with a defined similarity. The
-        verdict is False when the similarity is undefined (no pair active
-        in both).
+        ``n_shuffles_used`` the shuffles with a defined similarity. When
+        the similarity is undefined (no pair active in both), the event has
+        no verdict: it is not replay, its criterion is False and ``error``
+        says why.
 
     Raises
     ------
@@ -628,8 +678,14 @@ def detect_bias_sequence_replay(
         rng=rng,
     )
     n_active = float(tested.n_active_cells)
+    error = (
+        ""
+        if np.isfinite(tested.similarity)
+        else "bias similarity undefined: no pair of cells fired in both the "
+        "event and the template"
+    )
     criterion = method.criteria[0]
-    passes = {criterion.label: criterion.evaluate(n_active, np.nan)}
+    passes = {criterion.label: not error and criterion.evaluate(n_active, np.nan)}
     null = tested.null_similarities
     defined = null[np.isfinite(null)]
     z_score = (
@@ -639,13 +695,15 @@ def detect_bias_sequence_replay(
     )
     return ReplayDetectionResult(
         method=method.name,
-        is_replay=bool(tested.p_value < method.alpha) and all(passes.values()),
+        is_replay=bool(method._passes_alpha(tested.p_value, method.alpha))
+        and all(passes.values()),
         score=tested.similarity,
         p_value=tested.p_value,
         criteria=passes,
         values={criterion.label: n_active},
         n_shuffles_used=int(defined.size),
         z_scores={"spike_label_permutation": z_score},
+        error=error,
     )
 
 

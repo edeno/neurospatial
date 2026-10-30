@@ -850,7 +850,7 @@ class TestCompare:
         )
         assert table.loc[0, "error"].startswith("too many combinations")
         assert not table.loc[0, "is_replay"]
-        assert table.loc[0, "passes[n_active_cells >= 3]"] is False
+        assert not table.loc[0, "passes[n_active_cells >= 3]"]  # False, not NaN
 
     def test_spike_inputs_are_required(self, track):
         event = DecodingResult(

@@ -34,7 +34,12 @@ from neurospatial.replay.rank_order import _supported_rates, _validated_interval
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
-    from neurospatial.replay.methods import ReplayCriterion, ReplayDetectionResult
+    from neurospatial.replay.methods import (
+        ReplayCriterion,
+        ReplayDetectionResult,
+        _CompareEvent,
+        _CompareNeeds,
+    )
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 __all__ = [
@@ -186,7 +191,8 @@ class PairwiseOrderMethod:
     directions : tuple of {"forward", "backward"}
         The orders tested on each template.
     nulls : tuple of {"spike_time_permutation", "cell_identity"}
-        The shuffles; the event must beat every one.
+        The shuffles; the event must beat every one. Each test is
+        one-sided: the score against larger shuffled scores.
     n_shuffles : int
         Shuffles per null.
     alpha : float
@@ -262,9 +268,60 @@ class PairwiseOrderMethod:
     @property
     def criteria(self) -> tuple[ReplayCriterion, ...]:
         """The active-cell threshold, as a criterion."""
-        from neurospatial.replay.methods import ReplayCriterion
+        from neurospatial.replay.methods import _active_cell_criteria
 
-        return (ReplayCriterion("n_active_cells", ">=", self.min_active_cells),)
+        return _active_cell_criteria(self.min_active_cells)
+
+    @property
+    def _compare_needs(self) -> _CompareNeeds:
+        """The spikes, rate maps and decoding window it scores each event on."""
+        from neurospatial.replay.methods import _SPIKE_ORDER_NEEDS
+
+        return _SPIKE_ORDER_NEEDS
+
+    def _passes_alpha(self, p_value: Any, alpha: float) -> Any:
+        """Whether ``p_value`` (scalar or array) is below ``alpha``."""
+        return p_value < alpha
+
+    @property
+    def _smallest_p_value(self) -> float:
+        """The smallest p-value of its one-sided shuffle tests."""
+        from neurospatial.replay.methods import _shuffle_p_floor
+
+        return _shuffle_p_floor(self.n_shuffles, "greater")
+
+    @property
+    def _alpha_refusal(self) -> None:
+        """None: its verdicts can be redone at another alpha.
+
+        The reported test (the smallest p-value over templates and
+        directions) and the active-cell rule do not depend on alpha.
+        """
+        return None
+
+    def _compare(
+        self, event: _CompareEvent, rng: np.random.Generator
+    ) -> ReplayDetectionResult:
+        """This method's verdict on one event of ``compare_replay_methods``."""
+        from neurospatial.replay.methods import _no_verdict
+
+        assert event.window is not None
+        try:
+            return detect_pairwise_order_replay(
+                event.env,
+                event.spike_times,
+                event.window,
+                event.encoding_models,
+                pairwise_order_method=self,
+                rng=rng,
+            )
+        except _FieldSearchTooLargeError:
+            # A direct call refuses the event; a comparison gives it no verdict.
+            return _no_verdict(
+                self.name,
+                self.criteria,
+                "too many combinations of multi-field cells' fields to search",
+            )
 
 
 def pairwise_order_score(
@@ -788,7 +845,8 @@ def detect_pairwise_order_replay(
     passes = {criterion.label: criterion.evaluate(n_active, np.nan)}
     return ReplayDetectionResult(
         method=method.name,
-        is_replay=bool(p_value < method.alpha) and all(passes.values()),
+        is_replay=bool(method._passes_alpha(p_value, method.alpha))
+        and all(passes.values()),
         score=score,
         p_value=p_value,
         criteria=passes,

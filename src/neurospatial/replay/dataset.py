@@ -1952,10 +1952,9 @@ def _event_windows(
                 fix="pass dt, or the events as (n_events, 2) intervals",
             )
         )
-    return [
-        (float(times[0]) - dt / 2, float(times[-1]) + dt / 2)
-        for times in (np.asarray(event.times) for event in decoded)
-    ]
+    from neurospatial.replay.methods import _spike_window
+
+    return [_spike_window(np.asarray(event.times), dt) for event in decoded]
 
 
 def _permuted_rank_scores(

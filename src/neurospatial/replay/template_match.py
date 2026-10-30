@@ -53,7 +53,12 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from neurospatial.environment import Environment
-    from neurospatial.replay.methods import ReplayCriterion, ReplayDetectionResult
+    from neurospatial.replay.methods import (
+        ReplayCriterion,
+        ReplayDetectionResult,
+        _CompareEvent,
+        _CompareNeeds,
+    )
 
 __all__ = [
     "JI_WILSON_2007",
@@ -275,9 +280,51 @@ class TemplateMatchMethod:
     @property
     def criteria(self) -> tuple[ReplayCriterion, ...]:
         """The active-cell threshold, as a criterion."""
-        from neurospatial.replay.methods import ReplayCriterion
+        from neurospatial.replay.methods import _active_cell_criteria
 
-        return (ReplayCriterion("n_active_cells", ">=", self.min_active_cells),)
+        return _active_cell_criteria(self.min_active_cells)
+
+    @property
+    def _compare_needs(self) -> _CompareNeeds:
+        """The spikes, rate maps and decoding window it scores each event on."""
+        from neurospatial.replay.methods import _SPIKE_ORDER_NEEDS
+
+        return _SPIKE_ORDER_NEEDS
+
+    def _passes_alpha(self, p_value: Any, alpha: float) -> Any:
+        """Whether ``p_value`` passes ``alpha`` by ``p_comparison``.
+
+        Equality is judged within round-off; NaN fails.
+        """
+        return _passes(p_value, alpha, self.p_comparison)
+
+    @property
+    def _smallest_p_value(self) -> float:
+        """0: the p-values are exact (at least ``1 / n!`` over ``n`` cells)."""
+        return 0.0
+
+    @property
+    def _alpha_refusal(self) -> None:
+        """None: its choice of template (the largest score) is alpha-free."""
+        return None
+
+    def _compare(
+        self, event: _CompareEvent, rng: np.random.Generator
+    ) -> ReplayDetectionResult:
+        """This method's verdict on one event of ``compare_replay_methods``."""
+        assert event.window is not None
+        return detect_template_match_replay(
+            event.env,
+            event.spike_times,
+            event.window,
+            event.encoding_models,
+            template_match_method=self,
+            template=event.template_for(
+                self.template_choice,
+                several=isinstance(event.encoding_models, Mapping),
+            ),
+            rng=rng,
+        )
 
 
 def detect_template_match_replay(
@@ -325,8 +372,9 @@ def detect_template_match_replay(
         index), the p-value, the active-cell criterion and, with several
         templates, the tested ``template``. With fewer active template
         cells than the method's ``min_active_cells`` the score and p-value
-        are NaN and the event is not replay. ``n_shuffles_used`` is None:
-        the p-values are exact.
+        are NaN and the event has no verdict: it is not replay, its
+        criterion is False and ``error`` says why. ``n_shuffles_used`` is
+        None: the p-values are exact.
 
     Raises
     ------
@@ -516,17 +564,23 @@ def _verdict(
         )
         n_active = index.n_active_cells
         score, p_value = index.score, index.match_probability
+    error = (
+        ""
+        if np.isfinite(score)
+        else f"fewer than {method.min_active_cells} active template cells"
+    )
     criterion = method.criteria[0]
-    passes = criterion.evaluate(float(n_active), np.nan)
+    passes = not error and criterion.evaluate(float(n_active), np.nan)
     return ReplayDetectionResult(
         method=method.name,
-        is_replay=bool(passes and _passes(p_value, method.alpha, method.p_comparison)),
+        is_replay=bool(passes and method._passes_alpha(p_value, method.alpha)),
         score=float(score),
         p_value=float(p_value),
         criteria={criterion.label: passes},
         values={criterion.label: float(n_active)},
         template=template,
         n_shuffles_used=None,
+        error=error,
     )
 
 

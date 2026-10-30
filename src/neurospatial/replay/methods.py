@@ -35,7 +35,7 @@ import warnings
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType, SimpleNamespace
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -43,18 +43,15 @@ from numpy.typing import NDArray
 from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, reduce_through_constructor
-from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
+from neurospatial.replay.arms import ArmReplayMethod
 from neurospatial.replay.circular import fit_circular_sequence
 from neurospatial.replay.correlation import weighted_correlation
 from neurospatial.replay.pairwise_order import (
     PairwiseOrderMethod,
-    _FieldSearchTooLargeError,
-    detect_pairwise_order_replay,
 )
 from neurospatial.replay.recurring_sequences import NADASDY_1999
 from neurospatial.replay.sequence_bias import (
     BiasSequenceMethod,
-    detect_bias_sequence_replay,
 )
 from neurospatial.replay.significance import (
     _ALTERNATIVES,
@@ -68,7 +65,6 @@ from neurospatial.replay.template_match import (
     JI_WILSON_2007,
     LEE_WILSON_2002,
     TemplateMatchMethod,
-    detect_template_match_replay,
 )
 from neurospatial.replay.trajectory import (
     _SCORE_DECIMALS,
@@ -311,6 +307,26 @@ class ReplayCriterion:
         ):
             value = threshold
         return bool(_COMPARISONS[self.comparison](value, threshold))
+
+
+def _shuffle_p_floor(n_shuffles: int, alternative: str) -> float:
+    """The smallest p-value ``n_shuffles`` shuffles can give.
+
+    ``1 / (n + 1)`` for a one-sided test and twice that for a two-sided
+    test, which doubles the smaller tail (``compute_shuffle_pvalue``).
+    """
+    smallest = 1.0 / (n_shuffles + 1)
+    return min(2.0 * smallest, 1.0) if alternative == "two-sided" else smallest
+
+
+def _active_cell_criteria(
+    min_active_cells: int, min_active_fraction: float | None = None
+) -> tuple[ReplayCriterion, ...]:
+    """A spike-based method's active-cell thresholds, as criteria."""
+    criteria = [ReplayCriterion("n_active_cells", ">=", min_active_cells)]
+    if min_active_fraction is not None:
+        criteria.append(ReplayCriterion("active_fraction", ">=", min_active_fraction))
+    return tuple(criteria)
 
 
 @dataclass(frozen=True)
@@ -1093,6 +1109,77 @@ class ReplayMethod:
         }
         return rebuild, (cls, state)
 
+    @property
+    def _compare_needs(self) -> _CompareNeeds | None:
+        """No input beyond the decoded events (detect_replay checks the rest)."""
+        return None
+
+    def _passes_alpha(self, p_value: Any, alpha: float) -> Any:
+        """Whether ``p_value`` (scalar or array) is below ``alpha``."""
+        return p_value < alpha
+
+    @property
+    def _smallest_p_value(self) -> float:
+        """The smallest p-value the method's ``n_shuffles`` can give."""
+        return _shuffle_p_floor(self.n_shuffles, self.alternative)
+
+    @property
+    def _alpha_refusal(self) -> Literal["segment_choice", "no_test"] | None:
+        """Why a table's verdicts cannot be redone at another alpha, or None.
+
+        A method without nulls tests no p-value; one with tested quantities
+        and ``choose="any"`` reports the first segment that is replay at its
+        alpha, so its row changes with alpha.
+        """
+        segmentation = self.segmentation
+        if (
+            self.tested_quantities
+            and segmentation is not None
+            and segmentation.choose == "any"
+        ):
+            return "segment_choice"
+        return None if self.nulls else "no_test"
+
+    def _compare(
+        self, event: _CompareEvent, rng: np.random.Generator
+    ) -> ReplayDetectionResult:
+        """This method's verdict on one event of :func:`compare_replay_methods`."""
+        from neurospatial.decoding import JointDecodingResult
+
+        usable, counts = event.times, event.spike_counts
+        if self.empty_time_bins != "keep" and counts is not None:
+            usable = usable[(counts.sum(axis=1) if counts.ndim == 2 else counts) > 0]
+        if np.unique(usable).size < 2:
+            return _no_verdict(
+                self.name,
+                self.criteria,
+                "fewer than two time bins to score"
+                if self.empty_time_bins == "keep"
+                else "fewer than two time bins with spikes to score",
+            )
+        decoded = event.event
+        return detect_replay(
+            event.env,
+            decoded
+            if isinstance(decoded, JointDecodingResult)
+            else {name: result.posterior for name, result in decoded.items()}
+            if isinstance(decoded, Mapping)
+            else decoded.posterior,
+            event.times,
+            replay_method=self,
+            spike_counts=counts,
+            encoding_models=event.encoding_models,
+            dt=event.dt,
+            prior=event.prior,
+            template=event.template_for(
+                self.template_choice,
+                several=isinstance(decoded, (JointDecodingResult, Mapping)),
+            ),
+            pseudo_event_pool=event.pool,
+            valid_time_bins=event.valid_time_bins,
+            rng=rng,
+        )
+
 
 @dataclass(frozen=True)
 class RankOrderMethod:
@@ -1265,12 +1352,60 @@ class RankOrderMethod:
     @property
     def criteria(self) -> tuple[ReplayCriterion, ...]:
         """The active-cell thresholds, as criteria."""
-        criteria = [ReplayCriterion("n_active_cells", ">=", self.min_active_cells)]
-        if self.min_active_fraction is not None:
-            criteria.append(
-                ReplayCriterion("active_fraction", ">=", self.min_active_fraction)
-            )
-        return tuple(criteria)
+        return _active_cell_criteria(self.min_active_cells, self.min_active_fraction)
+
+    @property
+    def _compare_needs(self) -> _CompareNeeds:
+        """The spikes, rate maps and decoding window it scores each event on."""
+        return _SPIKE_ORDER_NEEDS
+
+    def _passes_alpha(self, p_value: Any, alpha: float) -> Any:
+        """Whether ``p_value`` (scalar or array) is below ``alpha``."""
+        return p_value < alpha
+
+    @property
+    def _smallest_p_value(self) -> float:
+        """The smallest p-value of its test; the t-distribution has no floor."""
+        if self.test == "t_distribution":
+            return 0.0
+        return _shuffle_p_floor(self.n_shuffles, self.alternative)
+
+    @property
+    def _alpha_refusal(self) -> Literal["no_test"] | None:
+        """``"no_test"`` for the pooled SSI test, which thresholds the score."""
+        return "no_test" if self.test == "pooled_ssi" else None
+
+    def _compare(
+        self, event: _CompareEvent, rng: np.random.Generator
+    ) -> ReplayDetectionResult:
+        """This method's verdict on one event of :func:`compare_replay_methods`."""
+        if self.test == "pooled_ssi":
+            # Scored with the epoch's other events before any row.
+            return event.pooled[self.name]
+        assert event.window is not None
+        return detect_rank_order_replay(
+            event.env,
+            event.spike_times,
+            event.window,
+            event.encoding_models,
+            rank_order_method=self,
+            template=event.template_for(
+                self.template_choice,
+                several=isinstance(event.encoding_models, Mapping),
+            ),
+            rng=rng,
+        )
+
+
+# Every kind of replay method compare_replay_methods applies.
+_AnyReplayMethod: TypeAlias = (
+    ReplayMethod
+    | RankOrderMethod
+    | PairwiseOrderMethod
+    | ArmReplayMethod
+    | TemplateMatchMethod
+    | BiasSequenceMethod
+)
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -1346,6 +1481,13 @@ class ReplayDetectionResult(ResultMixin):
         sequence score of Farooq et al. (2019). Empty for a method without a
         score's shuffle test. The standard deviation has ``ddof = 0``;
         MATLAB's ``std`` uses ``ddof = 1``, a factor ``sqrt(n / (n - 1))``.
+    error : str
+        Why the event has no verdict, empty when it has one: for example an
+        undefined score, a null whose every shuffle has an undefined score,
+        or too few active cells to score (see the ``error`` column of
+        :func:`compare_replay_methods`). Without a verdict, ``is_replay``
+        and every criterion are False. A method with a segmentation that
+        finds no segment has a verdict.
     """
 
     method: str
@@ -1361,6 +1503,7 @@ class ReplayDetectionResult(ResultMixin):
     tested_values: Mapping[str, float] = field(default_factory=dict)
     tested_p_values: Mapping[str, float] = field(default_factory=dict)
     z_scores: Mapping[str, float] = field(default_factory=dict)
+    error: str = ""
 
     def __post_init__(self) -> None:
         """Freeze the mappings."""
@@ -1389,6 +1532,8 @@ class ReplayDetectionResult(ResultMixin):
         criterion adds the value it was compared on, ``value[label]`` (the
         raw value, before ``absolute`` and the ``relative_to`` scale), and
         each null of the score's test its z-score, ``z_score[null]``.
+        ``error``, last, says why the event has no verdict (empty when it
+        has one).
         """
         values: dict[str, Any] = {
             "method": self.method,
@@ -1415,7 +1560,44 @@ class ReplayDetectionResult(ResultMixin):
             values["segment_end_time"] = (
                 float(self.segments.end_times[self.segment]) if tested else np.nan
             )
+        values["error"] = self.error
         return values
+
+
+def _no_verdict(
+    method: str,
+    criteria: Sequence[ReplayCriterion],
+    error: str,
+    *,
+    score: float = np.nan,
+    p_value: float = np.nan,
+    **fields: Any,
+) -> ReplayDetectionResult:
+    """A result that is not replay and passes no criterion.
+
+    ``error`` says why the event has no verdict; it is empty for a verdict
+    that found nothing to test, such as a segmentation without a segment.
+    ``fields`` are other fields of :class:`ReplayDetectionResult`.
+    """
+    return ReplayDetectionResult(
+        method=method,
+        is_replay=False,
+        score=score,
+        p_value=p_value,
+        criteria={c.label: False for c in criteria},
+        values={c.label: np.nan for c in criteria},
+        error=error,
+        **fields,
+    )
+
+
+# Why detect_replay gives an event no verdict.
+_UNDEFINED_SCORE = "score undefined (e.g. the decoded position does not change)"
+_UNDEFINED_QUANTITY = (
+    "a tested quantity is undefined (e.g. the mean jump of one time bin), or "
+    "every shuffle of a null has an undefined value"
+)
+_UNDEFINED_NULL = "every shuffle of a null has an undefined score"
 
 
 def _verdict_uses_score(method: ReplayMethod) -> bool:
@@ -1516,7 +1698,8 @@ def detect_replay(
         that does not change) gets no verdict: ``is_replay`` and every
         criterion are False, and the score and p-value are NaN. A tested
         quantity that is undefined (such as the mean jump of one time bin)
-        makes the p-value NaN, and the event is not replay.
+        makes the p-value NaN and also gives no verdict. ``error`` says why
+        an event has no verdict.
 
     Raises
     ------
@@ -1922,15 +2105,13 @@ def detect_replay(
         )
         segment = _tested_segment(replay_method, segments, track_length)
         if segment is None:
-            return ReplayDetectionResult(
-                method=replay_method.name,
-                is_replay=False,
-                score=np.nan,
+            # Without a segment the event is not replay: a verdict, not an error.
+            return _no_verdict(
+                replay_method.name,
+                replay_method.criteria,
+                "",
                 p_value=p_value,
-                criteria={c.label: False for c in replay_method.criteria},
-                values={c.label: np.nan for c in replay_method.criteria},
                 segments=segments,
-                segment=None,
                 template=template,
                 n_shuffles_used=n_shuffles_used,
                 tested_values=untested,
@@ -2043,15 +2224,13 @@ def detect_replay(
             )
         except _UndefinedScoreError:
             pass  # The event's score is NaN: no verdict, below.
-        except _UndefinedNullError as error:
+        except _UndefinedNullError as undefined:
             # The score is defined but a null left no shuffle to compare with.
-            return ReplayDetectionResult(
-                method=replay_method.name,
-                is_replay=False,
-                score=error.score,
-                p_value=np.nan,
-                criteria={c.label: False for c in replay_method.criteria},
-                values={c.label: np.nan for c in replay_method.criteria},
+            return _no_verdict(
+                replay_method.name,
+                replay_method.criteria,
+                _UNDEFINED_QUANTITY if quantities else _UNDEFINED_NULL,
+                score=undefined.score,
                 segments=segments,
                 segment=segment,
                 template=template,
@@ -2086,13 +2265,10 @@ def detect_replay(
     if _verdict_uses_score(replay_method) and not np.isfinite(score):
         # An undefined score (such as R² of a decoded position that does not
         # change) gives no verdict rather than a failed or passed criterion.
-        return ReplayDetectionResult(
-            method=replay_method.name,
-            is_replay=False,
-            score=np.nan,
-            p_value=np.nan,
-            criteria={c.label: False for c in replay_method.criteria},
-            values={c.label: np.nan for c in replay_method.criteria},
+        return _no_verdict(
+            replay_method.name,
+            replay_method.criteria,
+            _UNDEFINED_SCORE,
             segments=segments,
             segment=segment,
             template=template,
@@ -2146,12 +2322,14 @@ def detect_replay(
         values[criterion.label] = value
         passes[criterion.label] = criterion.evaluate(value, track_length)
     significant = bool(p_value < replay_method.alpha) if replay_method.nulls else True
+    # An undefined tested quantity leaves the event without a verdict.
+    error = _UNDEFINED_QUANTITY if quantities and np.isnan(p_value) else ""
     return ReplayDetectionResult(
         method=replay_method.name,
         is_replay=significant and all(passes.values()),
         score=score,
         p_value=p_value,
-        criteria=passes,
+        criteria=dict.fromkeys(passes, False) if error else passes,
         values=values,
         segments=segments,
         segment=segment,
@@ -2160,6 +2338,7 @@ def detect_replay(
         tested_values={} if quantity_test is None else quantity_test.values,
         tested_p_values={} if quantity_test is None else quantity_test.p_values,
         z_scores=z_scores,
+        error=error,
     )
 
 
@@ -2582,8 +2761,9 @@ def detect_rank_order_replay(
         The verdict, the rank-order correlation as ``score``, its p-value,
         the active-cell criteria and, with several templates, the tested
         ``template``. An event with too few active template cells, or with
-        all field positions or firing times equal, has a NaN score and is
-        not replay.
+        all field positions or firing times equal, has a NaN score and no
+        verdict: it is not replay, its criteria are False and ``error``
+        says why.
 
     Raises
     ------
@@ -2766,16 +2946,23 @@ def _rank_order_verdict(
         "n_active_cells": float(observed.n_active_cells),
         "active_fraction": observed.n_active_cells / max(n_templates, 1),
     }
+    error = (
+        ""
+        if np.isfinite(score)
+        else "rank-order correlation undefined: too few active template cells, "
+        "or no variation in their order"
+    )
     passes: dict[str, bool] = {}
     values: dict[str, float] = {}
     for criterion in method.criteria:
         values[criterion.label] = event_values[criterion.quantity]
-        passes[criterion.label] = criterion.evaluate(
+        passes[criterion.label] = not error and criterion.evaluate(
             event_values[criterion.quantity], np.nan
         )
     return ReplayDetectionResult(
         method=method.name,
-        is_replay=bool(p_value < method.alpha) and all(passes.values()),
+        is_replay=bool(method._passes_alpha(p_value, method.alpha))
+        and all(passes.values()),
         score=score,
         p_value=p_value,
         criteria=passes,
@@ -2783,6 +2970,7 @@ def _rank_order_verdict(
         template=template,
         n_shuffles_used=n_shuffles_used,
         z_scores=z_scores,
+        error=error,
     )
 
 
@@ -2794,7 +2982,7 @@ def _pooled_ssi_verdicts(
     encoding_models: Any,
     template: str | None,
     streams: list[np.random.Generator],
-) -> list[tuple[ReplayDetectionResult, str]]:
+) -> list[ReplayDetectionResult]:
     """Each event's verdict under the epoch-pooled SSI test (Chenani 2019)."""
     from scipy import stats
 
@@ -2904,15 +3092,9 @@ def _pooled_ssi_verdicts(
     for entry in observed:
         if entry is None:
             verdicts.append(
-                (
-                    ReplayDetectionResult(
-                        method=method.name,
-                        is_replay=False,
-                        score=np.nan,
-                        p_value=np.nan,
-                        criteria={label: False},
-                        values={label: np.nan},
-                    ),
+                _no_verdict(
+                    method.name,
+                    method.criteria,
                     f"fewer than {method.min_active_cells} active template cells",
                 )
             )
@@ -2942,21 +3124,75 @@ def _pooled_ssi_verdicts(
         else:
             error = ""
         verdicts.append(
-            (
-                ReplayDetectionResult(
-                    method=method.name,
-                    is_replay=bool(epoch_ok and score > threshold),
-                    score=score,
-                    p_value=p_value,
-                    criteria={label: True},
-                    values={label: float(n_active)},
-                    template=names[best] if finite.any() else None,
-                    n_shuffles_used=int(pooled.size) if np.isfinite(p_value) else None,
-                ),
-                error,
+            ReplayDetectionResult(
+                method=method.name,
+                is_replay=bool(epoch_ok and score > threshold),
+                score=score,
+                p_value=p_value,
+                criteria={label: not error},
+                values={label: float(n_active)},
+                template=names[best] if finite.any() else None,
+                n_shuffles_used=int(pooled.size) if np.isfinite(p_value) else None,
+                error=error,
             )
         )
     return verdicts
+
+
+class _CompareNeeds(NamedTuple):
+    """Inputs :func:`compare_replay_methods` needs for a kind of method."""
+
+    kind: str
+    inputs: tuple[str, ...]
+    why: str
+    fix: str
+    # Whether each event must be one decode on one environment.
+    one_environment: bool = False
+
+
+_SPIKE_ORDER_NEEDS = _CompareNeeds(
+    "spike-order",
+    ("spike_times", "encoding_models", "dt"),
+    why="they score each cell's spikes in the event against its field, over "
+    "the event's decoding windows of width dt",
+    fix="pass the session's spike_times, the rate maps as encoding_models and "
+    "the decoding window dt",
+)
+
+
+@dataclass(frozen=True, eq=False)
+class _CompareEvent:
+    """One event and the session's inputs, as each method's ``_compare`` reads them.
+
+    ``window`` is the event's spike window (None without ``dt``) and
+    ``pooled`` its pooled-SSI verdicts by method name, scored on the whole
+    epoch.
+    """
+
+    env: Environment | Mapping[str, Environment]
+    event: DecodingResult | JointDecodingResult | Mapping[str, DecodingResult]
+    times: NDArray[np.float64]
+    window: tuple[float, float] | None
+    spike_counts: NDArray[np.int64] | None
+    valid_time_bins: NDArray[np.bool_] | None
+    spike_times: Any
+    encoding_models: Any
+    dt: float | None
+    prior: Any
+    template: str | None
+    arms: Mapping[str, NDArray[np.intp]] | None
+    template_bias: NDArray[np.float64] | None
+    pool: NDArray[np.float64] | None
+    pooled: Mapping[str, ReplayDetectionResult]
+
+    def template_for(self, template_choice: str | None, *, several: bool) -> str | None:
+        """``template``, or None for a method that chooses among ``several``."""
+        return None if several and template_choice is not None else self.template
+
+
+def _spike_window(times: NDArray[np.float64], dt: float) -> tuple[float, float]:
+    """The spikes of an event decoded at ``times`` with windows of width ``dt``."""
+    return float(times[0]) - dt / 2, float(times[-1]) + dt / 2
 
 
 def compare_replay_methods(
@@ -2965,14 +3201,7 @@ def compare_replay_methods(
         DecodingResult | JointDecodingResult | Mapping[str, DecodingResult]
     ],
     *,
-    replay_methods: Sequence[
-        ReplayMethod
-        | RankOrderMethod
-        | PairwiseOrderMethod
-        | ArmReplayMethod
-        | TemplateMatchMethod
-        | BiasSequenceMethod
-    ],
+    replay_methods: Sequence[_AnyReplayMethod],
     spike_counts: Sequence[NDArray[np.int64]] | None = None,
     encoding_models: Any = None,
     dt: float | None = None,
@@ -3091,7 +3320,10 @@ def compare_replay_methods(
         method, an epoch with too few events or without a threshold (score
         and p-value are still reported). A method with a segmentation that
         finds no segment has a verdict, not an error: score NaN,
-        ``n_segments`` 0, ``is_replay`` False and an empty ``error``.
+        ``n_segments`` 0, ``is_replay`` False and an empty ``error``. An
+        arm method's checks are named by the event's arms and pairs, so an
+        arm event too short to score has none (its ``passes[...]`` are
+        NaN).
         ``table.attrs["rng_entropy"]`` holds the seed the streams derive
         from; passing it as ``rng`` reproduces the table, also when ``rng``
         was None.
@@ -3117,8 +3349,10 @@ def compare_replay_methods(
         does not have one row per time bin of its event; if a method
         draws pseudo-events or weighted column cycles from joint decodes; or
         if a rank-order, pairwise-order or template-matching method is given without
-        ``spike_times``, ``encoding_models`` or ``dt``, or a bias-sequence
-        method without ``spike_times``, ``template_bias`` or ``dt``.
+        ``spike_times``, ``encoding_models`` or ``dt``, a bias-sequence
+        method without ``spike_times``, ``template_bias`` or ``dt``, or an
+        arm method without ``arms`` or with joint decodes, separately
+        decoded templates or a mapping of environments.
 
     Warns
     -----
@@ -3231,74 +3465,38 @@ def compare_replay_methods(
                 "dataclasses.replace(method, name='diba_alpha_0.05', alpha=0.05)",
             )
         )
-    if any(isinstance(m, ArmReplayMethod) for m in replay_methods):
-        if arms is None:
+    given = {
+        "spike_times": spike_times,
+        "encoding_models": encoding_models,
+        "dt": dt,
+        "arms": arms,
+        "template_bias": template_bias,
+    }
+    by_needs: dict[_CompareNeeds, list[str]] = {}
+    for method in replay_methods:
+        if method._compare_needs is not None:
+            by_needs.setdefault(method._compare_needs, []).append(method.name)
+    for needs, names in by_needs.items():
+        missing = [f"{name}=" for name in needs.inputs if given[name] is None]
+        if missing:
             raise ValueError(
                 _format_error(
-                    "compare_replay_methods(): arm methods need arms=.",
-                    why="they classify replay per arm and per pair of arms",
-                    fix="pass arms={'center': bins, 'left': bins, ...} with each "
-                    "arm's bins from the junction outward",
+                    f"compare_replay_methods(): {needs.kind} methods {names} "
+                    f"need {', '.join(missing)}.",
+                    why=needs.why,
+                    fix=needs.fix,
                 )
             )
-        if isinstance(env, Mapping) or any(
-            isinstance(event, (JointDecodingResult, Mapping)) for event in events
+        if needs.one_environment and (
+            isinstance(env, Mapping)
+            or any(
+                isinstance(event, (JointDecodingResult, Mapping)) for event in events
+            )
         ):
             raise ValueError(
-                "compare_replay_methods(): arm methods take events decoded on "
-                "one environment, not joint decodes, separately decoded "
-                "templates or a mapping of environments."
-            )
-    rank_methods = [m for m in replay_methods if isinstance(m, RankOrderMethod)]
-    spike_methods = [
-        m
-        for m in replay_methods
-        if isinstance(m, (RankOrderMethod, PairwiseOrderMethod, TemplateMatchMethod))
-    ]
-    if spike_methods:
-        missing = [
-            name
-            for name, value in (
-                ("spike_times", spike_times),
-                ("encoding_models", encoding_models),
-                ("dt", dt),
-            )
-            if value is None
-        ]
-        if missing:
-            raise ValueError(
-                _format_error(
-                    f"compare_replay_methods(): spike-order methods "
-                    f"{[m.name for m in spike_methods]} need {missing}.",
-                    why="they score each cell's spikes in the event against its "
-                    "field, over the event's decoding windows of width dt",
-                    fix="pass the session's spike_times, the rate maps as "
-                    "encoding_models and the decoding window dt",
-                )
-            )
-    bias_methods = [m for m in replay_methods if isinstance(m, BiasSequenceMethod)]
-    if bias_methods:
-        missing = [
-            name
-            for name, value in (
-                ("spike_times", spike_times),
-                ("template_bias", template_bias),
-                ("dt", dt),
-            )
-            if value is None
-        ]
-        if missing:
-            raise ValueError(
-                _format_error(
-                    f"compare_replay_methods(): bias-sequence methods "
-                    f"{[m.name for m in bias_methods]} need {missing}.",
-                    why="they compare the order of each event's spikes, over "
-                    "the event's decoding windows of width dt, with a "
-                    "template's skew-bias matrix",
-                    fix="pass the session's spike_times, the template's matrix "
-                    "as template_bias (e.g. mean_pairwise_bias(spike_times, "
-                    "theta_cycles)) and the decoding window dt",
-                )
+                f"compare_replay_methods(): {needs.kind} methods {names} take "
+                "events decoded on one environment, not joint decodes, "
+                "separately decoded templates or a mapping of environments."
             )
     pool = None
     if any(
@@ -3347,57 +3545,57 @@ def compare_replay_methods(
             )
         )
 
-    pooled_verdicts = {}
-    if dt is not None:
-        windows = [
-            (float(t[0]) - dt / 2, float(t[-1]) + dt / 2)
-            for t in (np.asarray(times, dtype=np.float64) for times in event_times)
-        ]
-        for rank_method in rank_methods:
-            if rank_method.test == "pooled_ssi":
-                pooled_verdicts[rank_method.name] = _pooled_ssi_verdicts(
-                    rank_method,
-                    env,
-                    spike_times,
-                    windows,
-                    encoding_models,
-                    template,
-                    [stream_for(index, rank_method) for index in range(len(events))],
-                )
+    windows = (
+        None
+        if dt is None
+        else [_spike_window(np.asarray(times), dt) for times in event_times]
+    )
+    # The pooled SSI test scores each event against the whole epoch's shuffles.
+    pooled: list[dict[str, ReplayDetectionResult]] = [{} for _ in events]
+    for method in replay_methods:
+        if isinstance(method, RankOrderMethod) and method.test == "pooled_ssi":
+            assert windows is not None
+            verdicts = _pooled_ssi_verdicts(
+                method,
+                env,
+                spike_times,
+                windows,
+                encoding_models,
+                template,
+                [stream_for(index, method) for index in range(len(events))],
+            )
+            for event_verdicts, verdict in zip(pooled, verdicts, strict=True):
+                event_verdicts[method.name] = verdict
     rows = []
     for index, event in enumerate(events):
+        compared = _CompareEvent(
+            env=env,
+            event=event,
+            times=np.asarray(event_times[index]),
+            window=None if windows is None else windows[index],
+            spike_counts=None
+            if spike_counts is None
+            else np.asarray(spike_counts[index]),
+            valid_time_bins=None if valid_time_bins is None else valid_time_bins[index],
+            spike_times=spike_times,
+            encoding_models=encoding_models,
+            dt=dt,
+            prior=prior,
+            template=template,
+            arms=arms,
+            template_bias=template_bias,
+            pool=pool,
+            pooled=pooled[index],
+        )
         for method in replay_methods:
             stream = stream_for(index, method)
             # A shuffle test's warning names the event and method it is about.
             with _warnings_with_context(
                 f"compare_replay_methods(): event {index}, method {method.name!r}"
             ):
-                row = _compare_row(
-                    env,
-                    event,
-                    np.asarray(event_times[index]),
-                    method,
-                    spike_counts=None
-                    if spike_counts is None
-                    else np.asarray(spike_counts[index]),
-                    encoding_models=encoding_models,
-                    dt=dt,
-                    prior=prior,
-                    template=template,
-                    valid_time_bins=None
-                    if valid_time_bins is None
-                    else valid_time_bins[index],
-                    spike_times=spike_times,
-                    arms=arms,
-                    template_bias=template_bias,
-                    pool=pool,
-                    pooled=pooled_verdicts[method.name][index]
-                    if method.name in pooled_verdicts
-                    else None,
-                    rng=stream,
-                )
-            rows.append({"event": index, **row})
-    table = _fail_criteria_of_error_rows(pd.DataFrame(rows), replay_methods)
+                result = method._compare(compared, stream)
+            rows.append({"event": index, **result.summary()})
+    table = pd.DataFrame(rows)
     table.attrs["rng_entropy"] = entropy
     return table
 
@@ -3442,234 +3640,6 @@ def _warnings_with_context(context: str) -> Iterator[None]:
             caught_warning.category,
             stacklevel=4,
         )
-
-
-def _compare_row(
-    env: Environment | Mapping[str, Environment],
-    event: DecodingResult | JointDecodingResult | Mapping[str, DecodingResult],
-    times: NDArray[np.float64],
-    method: ReplayMethod
-    | RankOrderMethod
-    | PairwiseOrderMethod
-    | ArmReplayMethod
-    | TemplateMatchMethod
-    | BiasSequenceMethod,
-    *,
-    spike_counts: NDArray[np.int64] | None,
-    encoding_models: Any,
-    dt: float | None,
-    prior: Any,
-    template: str | None,
-    valid_time_bins: NDArray[np.bool_] | None,
-    spike_times: Any,
-    arms: Mapping[str, NDArray[np.intp]] | None,
-    template_bias: NDArray[np.float64] | None,
-    pool: NDArray[np.float64] | None,
-    pooled: tuple[ReplayDetectionResult, str] | None,
-    rng: np.random.Generator,
-) -> dict[str, Any]:
-    """One method's row of :func:`compare_replay_methods` for one event."""
-    from neurospatial.decoding import JointDecodingResult
-
-    def error_row(error: str) -> dict[str, Any]:
-        return {
-            "method": method.name,
-            "is_replay": False,
-            "score": np.nan,
-            "p_value": np.nan,
-            "error": error,
-        }
-
-    if isinstance(method, ArmReplayMethod):
-        assert arms is not None and not isinstance(env, Mapping)
-        assert not isinstance(event, (JointDecodingResult, Mapping))
-        if np.unique(times).size < 2:
-            return error_row("fewer than two time bins to score")
-        verdict = detect_arm_replay(
-            env, event.posterior, times, arms=arms, arm_replay_method=method
-        )
-        return {**verdict.summary(), "error": ""}
-    if isinstance(method, TemplateMatchMethod):
-        assert dt is not None
-        centers = np.asarray(times, dtype=np.float64)
-        matched = detect_template_match_replay(
-            env,
-            spike_times,
-            (centers[0] - dt / 2, centers[-1] + dt / 2),
-            encoding_models,
-            template_match_method=method,
-            template=None
-            if isinstance(encoding_models, Mapping)
-            and method.template_choice is not None
-            else template,
-            rng=rng,
-        )
-        error = (
-            ""
-            if np.isfinite(matched.score)
-            else f"fewer than {method.min_active_cells} active template cells"
-        )
-        return {**matched.summary(), "error": error}
-    if isinstance(method, RankOrderMethod) and pooled is not None:
-        verdict, error = pooled
-        return {**verdict.summary(), "error": error}
-    if isinstance(method, RankOrderMethod):
-        assert dt is not None
-        centers = np.asarray(times, dtype=np.float64)
-        ranked = detect_rank_order_replay(
-            env,
-            spike_times,
-            (centers[0] - dt / 2, centers[-1] + dt / 2),
-            encoding_models,
-            rank_order_method=method,
-            template=None
-            if isinstance(encoding_models, Mapping)
-            and method.template_choice is not None
-            else template,
-            rng=rng,
-        )
-        error = (
-            ""
-            if np.isfinite(ranked.score)
-            else "rank-order correlation undefined: too few active "
-            "template cells, or no variation in their order"
-        )
-        return {**ranked.summary(), "error": error}
-    if isinstance(method, BiasSequenceMethod):
-        assert dt is not None and template_bias is not None
-        centers = np.asarray(times, dtype=np.float64)
-        biased = detect_bias_sequence_replay(
-            spike_times,
-            (centers[0] - dt / 2, centers[-1] + dt / 2),
-            template_bias,
-            bias_sequence_method=method,
-            rng=rng,
-        )
-        error = (
-            ""
-            if np.isfinite(biased.score)
-            else "bias similarity undefined: no pair of cells fired in both "
-            "the event and the template"
-        )
-        return {**biased.summary(), "error": error}
-    if isinstance(method, PairwiseOrderMethod):
-        assert dt is not None
-        centers = np.asarray(times, dtype=np.float64)
-        try:
-            ordered = detect_pairwise_order_replay(
-                env,
-                spike_times,
-                (centers[0] - dt / 2, centers[-1] + dt / 2),
-                encoding_models,
-                pairwise_order_method=method,
-                rng=rng,
-            )
-        except _FieldSearchTooLargeError:
-            return error_row(
-                "too many combinations of multi-field cells' fields to search"
-            )
-        return {**ordered.summary(), "error": ""}
-    usable = times
-    if method.empty_time_bins != "keep" and spike_counts is not None:
-        spiking = (
-            spike_counts.sum(axis=1) if spike_counts.ndim == 2 else spike_counts
-        ) > 0
-        usable = usable[spiking]
-    if np.unique(usable).size < 2:
-        return error_row(
-            "fewer than two time bins to score"
-            if method.empty_time_bins == "keep"
-            else "fewer than two time bins with spikes to score"
-        )
-    several = isinstance(event, (JointDecodingResult, Mapping))
-    result = detect_replay(
-        env,
-        event
-        if isinstance(event, JointDecodingResult)
-        else {name: decoded.posterior for name, decoded in event.items()}
-        if isinstance(event, Mapping)
-        else event.posterior,
-        times,
-        replay_method=method,
-        spike_counts=spike_counts,
-        encoding_models=encoding_models,
-        dt=dt,
-        prior=prior,
-        template=None if several and method.template_choice is not None else template,
-        pseudo_event_pool=pool,
-        valid_time_bins=valid_time_bins,
-        rng=rng,
-    )
-    undefined = (
-        _verdict_uses_score(method)
-        and not np.isfinite(result.score)
-        # A segmentation that finds no segment is a verdict, not an error.
-        and (method.segmentation is None or result.segment is not None)
-    )
-    if undefined:
-        error = "score undefined (e.g. the decoded position does not change)"
-    elif (
-        method.tested_quantities
-        and np.isnan(result.p_value)
-        and (method.segmentation is None or result.segment is not None)
-    ):
-        error = (
-            "a tested quantity is undefined (e.g. the mean jump of one time "
-            "bin), or every shuffle of a null has an undefined value"
-        )
-    elif method.nulls and np.isfinite(result.score) and np.isnan(result.p_value):
-        error = "every shuffle of a null has an undefined score"
-    else:
-        error = ""
-    return {**result.summary(), "error": error}
-
-
-def _fail_criteria_of_error_rows(
-    table: pd.DataFrame,
-    replay_methods: Sequence[
-        ReplayMethod
-        | RankOrderMethod
-        | PairwiseOrderMethod
-        | ArmReplayMethod
-        | TemplateMatchMethod
-        | BiasSequenceMethod
-    ],
-) -> pd.DataFrame:
-    """Set every criterion of a row's method to False on rows with an error.
-
-    A row without a verdict passes no criterion; left NaN, a criterion
-    column would read as True after ``astype(bool)``.
-    """
-    import pandas as pd
-
-    if table.empty:
-        return table
-    failed = (table["error"] != "").to_numpy()
-    for method in replay_methods:
-        mine = (table["method"] == method.name).to_numpy()
-        if not (mine & failed).any():
-            continue
-        columns = {
-            column
-            for column in table.columns
-            if column.startswith("passes[") and table.loc[mine, column].notna().any()
-        }
-        if isinstance(
-            method,
-            (
-                ReplayMethod,
-                RankOrderMethod,
-                PairwiseOrderMethod,
-                TemplateMatchMethod,
-                BiasSequenceMethod,
-            ),
-        ):
-            columns |= {f"passes[{c.label}]" for c in method.criteria}
-        for column in sorted(columns):
-            if column not in table:
-                table[column] = pd.Series(np.nan, index=table.index, dtype=object)
-            table.loc[mine & failed, column] = False
-    return table
 
 
 # --------------------------------------------------------------------------
@@ -5651,15 +5621,7 @@ BERNERS_LEE_2021 = ArmReplayMethod(
     ),
 )
 
-PUBLISHED_METHODS: tuple[
-    ReplayMethod
-    | RankOrderMethod
-    | PairwiseOrderMethod
-    | ArmReplayMethod
-    | TemplateMatchMethod
-    | BiasSequenceMethod,
-    ...,
-] = (
+PUBLISHED_METHODS: tuple[_AnyReplayMethod, ...] = (
     LEE_WILSON_2002,
     FOSTER_WILSON_2006,
     DIBA_BUZSAKI_2007,
