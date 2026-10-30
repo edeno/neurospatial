@@ -184,6 +184,16 @@ paper leaves open and the reading taken here:
 - The `time_bin_permutation` docs say it is the "time swap" of Silva et al.
   (2015) and Maboudi et al. (2018) and the "time-bin shuffle" of Grosmark &
   Buzsáki (2016) and Farooq et al. (2019).
+
+**Breaking changes**
+
+- `shuffle_posterior_weighted_circular` takes a new positional
+  `peak_weights` argument after `posterior` and no longer takes
+  `edge_buffer`: pass the session's mean decoded posterior, and
+  `edge_exclusion=` for the distance kept from the track's ends.
+- `null_events(kind="poisson")` is now `kind="spike_time_uniform"` (see
+  above); `kind="poisson"` is refused.
+
 ### Template choices
 
 - `ReplayMethod(template_choice="smallest_p")` tests every template of an
@@ -218,6 +228,7 @@ paper leaves open and the reading taken here:
   derived from `rng` and the template's name, so results are reproducible
   and do not depend on the order of the templates. `compare_replay_methods`
   records the chosen template in its `template` column.
+
 ### Line search options
 
 - `detect_trajectory_radon(..., wrap=True)` searches lines on a closed-loop
@@ -240,6 +251,7 @@ paper leaves open and the reading taken here:
   al. (2009) and is unchanged.
 - `replay_significance` takes both options in `score_options` and scores
   shuffles with the same line family.
+
 ### Circular-track replay score
 
 - `fit_circular_sequence(env, posterior, times)` scores a decoded event on a

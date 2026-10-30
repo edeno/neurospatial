@@ -492,10 +492,6 @@ def replay_significance(
     Evaluating hippocampal replay without a ground truth. *eLife*, 13,
     e85635.
 
-    Silva, D., Feng, T., & Foster, D. J. (2015). Trajectory events across
-    hippocampal place cells require previous experience. *Nature
-    Neuroscience*, 18(12), 1772-1779.
-
     Muessig, L., Lasek, M., Varsavsky, I., Cacucci, F., & Wills, T. J.
     (2019). Coordinated emergence of hippocampal replay and theta sequences
     during post-natal development. *Current Biology*, 29(5), 834-840.
