@@ -1905,11 +1905,14 @@ def detect_trajectory_radon(
     following the approach in (Kloosterman, 2012)" 35,000 lines; their code
     (nelpy's ``score_Davidson_final_bst_fast``) draws them on the image of
     the event, time bins by position bins, with the normal of each line at
-    an angle uniform on (-pi/2, pi/2) and its distance from the image's
-    center uniform within half the image's diagonal, so lines of every
-    slope are drawn. Here the image's units are the mean time step and the
-    mean spacing of the bin centers, and positions along a line are exact
-    (the code rounds them to bins). The sinogram then holds one score per
+    an angle uniform on (-pi/2, pi/2) and its distance from a center point
+    uniform within half the image's diagonal, so lines of every slope are
+    drawn. The center point is nelpy's, ``(n_time_bins + 1) / 2`` and
+    ``(n_bins + 1) / 2`` with bins numbered from 0, one bin past the
+    image's center on both axes; lines are drawn about it here too. Here
+    the image's units are the mean time step and the mean spacing of the
+    bin centers, and positions along a line are exact (the code rounds them
+    to bins). The sinogram then holds one score per
     line, in the order drawn, with that line's speed and start position.
 
     **Track geometry.** Positions are read along the track (the linear
@@ -2520,9 +2523,13 @@ class _ReplayLines:
         2018, after Kloosterman 2012), lines are drawn on the image of the
         event, time bins by position bins: the normal of each line makes an
         angle uniform on (-pi/2, pi/2) with the time axis, and its distance
-        from the image's center is uniform within half the image's diagonal,
-        so every slope is drawn. Image units are the mean time step and the
-        mean spacing of the bin centers.
+        from nelpy's center is uniform within half the image's diagonal, so
+        every slope is drawn. nelpy's center is ``((n_time_bins + 1) / 2,
+        (n_bins + 1) / 2)`` with bins numbered from 0, one bin past the
+        image's center on both axes, so some lines through the image's
+        first corner (first time bin, first position bin) are never drawn,
+        while every line through the opposite corner can be. Image units
+        are the mean time step and the mean spacing of the bin centers.
 
         Parameters
         ----------
@@ -2551,10 +2558,12 @@ class _ReplayLines:
         # nelpy keeps lines off the vertical, whose speed is infinite.
         angle[np.abs(angle) < 1e-4] = 1e-4
         # (c - c_mid) cos(angle) + (r - r_mid) sin(angle) = distance, for time
-        # bin c and position bin r about the image's center.
+        # bin c and position bin r numbered from 0, about nelpy's center
+        # c_mid = (n_time + 1) / 2, r_mid = (n_bins + 1) / 2, one bin past
+        # the image's center on both axes.
         slope = -np.cos(angle) / np.sin(angle)
-        start = (distance + (n_time - 1) / 2 * np.cos(angle)) / np.sin(angle)
-        start += (n_bins - 1) / 2
+        start = (distance + (n_time + 1) / 2 * np.cos(angle)) / np.sin(angle)
+        start += (n_bins + 1) / 2
         speeds: NDArray[np.float64] = slope * bin_step / time_step
         start_positions: NDArray[np.float64] = self.bin_centers[0] + start * bin_step
         return speeds, start_positions

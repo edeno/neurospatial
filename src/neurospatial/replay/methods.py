@@ -5280,7 +5280,9 @@ MABOUDI_2018 = ReplayMethod(
         "reproduced by default.",
         "Lines: 35,000 drawn at random over every slope (n_lines=35000, "
         "seeded by line_seed=0), the same for the event and its shuffles, as "
-        "in the code; the code draws new lines for each event, here every "
+        "in the code, and about the code's center point, one bin past the "
+        "center of the event's image of time bins by position bins on both "
+        "axes; the code draws new lines for each event, here every "
         "event with the same numbers of time and position bins gets the "
         "same lines. Positions along a line are exact; the code rounds them "
         "to bins. For the dense grid of Davidson et al., which cannot miss "

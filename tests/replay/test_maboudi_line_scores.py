@@ -197,6 +197,32 @@ class TestRandomLines:
         k = np.flatnonzero(first.sinogram == first.score)
         assert first.speed in first.sinogram_speeds[k]
 
+    def test_lines_are_drawn_about_nelpys_center(self, short_track):
+        """nelpy 444d5243 draws rho about ((NT + 1) / 2, (NP + 1) / 2).
+
+        Its ``calc_ri`` puts time bin ``ci`` (0-based) at position bin
+        ``(rho - (ci - ci_mid) cos(phi)) / sin(phi) + ri_mid``, with rho
+        uniform within half the image's diagonal: one bin past the image's
+        center on both axes.
+        """
+        n_time, n_bins = 8, short_track.n_bins
+        posterior = np.full((n_time, n_bins), 1.0 / n_bins)
+        result = detect_trajectory_radon(
+            short_track, posterior, np.arange(n_time) * DT, band=2.0, n_lines=5000
+        )
+        # Back to image units: time bins and position bins (2 cm, from 1 cm).
+        slope = result.sinogram_speeds * DT / 2.0
+        first_row = (result.sinogram_start_positions - 1.0) / 2.0
+        phi = np.arctan(-1.0 / slope)  # the normal's angle, on (-pi/2, pi/2)
+        rho = -(n_time + 1) / 2 * np.cos(phi) + (first_row - (n_bins + 1) / 2) * (
+            np.sin(phi)
+        )
+        half_diagonal = np.hypot(n_time - 1, n_bins - 1) / 2
+        assert np.abs(rho).max() <= half_diagonal + 1e-9
+        # Uniform over the whole range: the extremes reach both ends.
+        assert rho.min() < -half_diagonal + 0.05
+        assert rho.max() > half_diagonal - 0.05
+
     def test_finds_a_sweep_near_the_dense_grid(self, short_track):
         posterior = np.eye(short_track.n_bins)
         times = np.arange(short_track.n_bins) * DT
