@@ -42,6 +42,14 @@ rank_order_correlation : Field order vs firing order (Foster & Wilson 2006)
 
 rank_order_significance : Rank-order correlation against cell-order shuffles
 
+Published Methods
+-----------------
+detect_replay : Apply one published replay method to one decoded event
+compare_replay_methods : Several methods on several events, as a table
+ReplayMethod, ReplayCriterion : A method's score, shuffles and thresholds
+neurospatial.replay.methods : The published recipes (DAVIDSON_2009,
+    KARLSSON_FRANK_2009, SILVA_2015, WU_2017, MICHON_2019, TIROLE_2022)
+
 Significance
 ------------
 replay_significance : Test any replay score against shuffled events
@@ -80,6 +88,13 @@ from neurospatial.replay.criteria import (
     template_fractions,
     trajectory_metrics,
 )
+from neurospatial.replay.methods import (
+    ReplayCriterion,
+    ReplayDetectionResult,
+    ReplayMethod,
+    compare_replay_methods,
+    detect_replay,
+)
 from neurospatial.replay.nulls import (
     shuffle_cell_identity,
     shuffle_place_fields_circular,
@@ -108,6 +123,12 @@ from neurospatial.replay.trajectory import (
 )
 
 __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
+    # Published methods
+    "ReplayCriterion",
+    "ReplayDetectionResult",
+    "ReplayMethod",
+    "compare_replay_methods",
+    "detect_replay",
     # Result containers
     "IsotonicFitResult",
     "LinearFitResult",

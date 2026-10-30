@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### Published replay methods as comparable recipes
+
+`neurospatial.replay.methods` holds published replay tests as explicit
+recipes, `ReplayMethod`. Each records:
+
+- the score and its options;
+- the shuffles, number of shuffles, α and test side;
+- how time bins without spikes are handled;
+- the criteria thresholds;
+- the paper's decoding settings, for reference;
+- notes on choices the paper leaves open and on reference-code bugs not
+  reproduced.
+
+The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
+`WU_2017`, `MICHON_2019` and `TIROLE_2022`.
+
+- `detect_replay(env, posterior, times, method=...)` applies one method to
+  one decoded event. It returns `ReplayDetectionResult`: the verdict, score,
+  largest p-value and each criterion.
+- `compare_replay_methods(env, events, methods=...)` applies several methods
+  to several decoded events and returns a table with one row per (event,
+  method). The pseudo-event null draws from the other events.
+- Methods are compared on the same decoded posterior, so differences come from
+  the replay test alone. Decoding settings are recorded, not enforced.
+- New `replay_significance(..., empty_time_bins="zero")` sets the posterior of
+  time bins without spikes to zero in the event and in every shuffle, as the
+  Bendor-lab analyses do. Each shuffle zeroes the time bins empty in its own
+  counts. The Bendor-lab code zeroes the original event's empty time bins in
+  shuffles that move them, which is not reproduced.
+
 ### Per-event metrics for criteria-based replay detection
 
 `trajectory_metrics(env, posterior, times)` computes every per-event quantity
