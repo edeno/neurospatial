@@ -135,8 +135,13 @@ Five more recipes follow criteria-based papers: `PFEIFFER_FOSTER_2013`,
     or `choose="any"`, the longest segment that meets the criteria (Carey;
     Widloski & Foster);
   - Carey's active-cell rule, `min_active_cells_per_time_bin`.
+- Options relative to chance count the bins of every template on one
+  template's share of a joint decode.
 - The score, the shuffles and the criteria apply to the tested segment.
   Without a segment, the event is not replay.
+- With a segmentation, time bins without spikes are invalid rows under
+  `empty_time_bins="drop"` or `"zero"`, so no jump is measured across them;
+  "drop" then removes them from the tested segment.
 - New criterion quantities describe the tested segment:
   `segment_duration`, `segment_time_bin_count`, `segment_dispersion`,
   `segment_start_to_end_distance` and `segment_path_length`.

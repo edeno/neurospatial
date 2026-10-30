@@ -666,13 +666,15 @@ def replay_segments(
     )
 
 
-def _valid_time_bins(valid_time_bins: Any, n_time_bins: int) -> NDArray[np.bool_]:
+def _valid_time_bins(
+    valid_time_bins: Any, n_time_bins: int, operation: str = _OPERATION
+) -> NDArray[np.bool_]:
     """One boolean per time bin."""
     valid = np.asarray(valid_time_bins)
     if valid.dtype != np.bool_ or valid.shape != (n_time_bins,):
         raise ValueError(
             _format_error(
-                f"{_OPERATION}: valid_time_bins must be a boolean array of shape "
+                f"{operation}: valid_time_bins must be a boolean array of shape "
                 f"({n_time_bins},), got dtype {valid.dtype} and shape "
                 f"{valid.shape}.",
                 why="it marks each posterior row as usable or not",
