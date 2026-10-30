@@ -53,8 +53,11 @@ if TYPE_CHECKING:
 
     from neurospatial.decoding import DecodingResult, JointDecodingResult
     from neurospatial.environment import Environment
-    from neurospatial.replay.arms import ArmReplayMethod
-    from neurospatial.replay.methods import RankOrderMethod, ReplayMethod
+    from neurospatial.replay.methods import (
+        RankOrderMethod,
+        ReplayMethod,
+        _AnyReplayMethod,
+    )
     from neurospatial.replay.pairwise_order import PairwiseOrderMethod
     from neurospatial.replay.sequence_bias import BiasSequenceMethod
     from neurospatial.replay.template_match import TemplateMatchMethod
@@ -844,14 +847,7 @@ def _pearson(a: NDArray[np.float64], b: NDArray[np.float64]) -> float:
 def matched_alpha(
     null_table: pd.DataFrame,
     *,
-    replay_methods: Sequence[
-        ReplayMethod
-        | RankOrderMethod
-        | PairwiseOrderMethod
-        | ArmReplayMethod
-        | TemplateMatchMethod
-        | BiasSequenceMethod
-    ],
+    replay_methods: Sequence[_AnyReplayMethod],
     target: float = 0.05,
     groups: Sequence[str] = (),
 ) -> pd.DataFrame:
@@ -1056,14 +1052,7 @@ def apply_alpha(
     table: pd.DataFrame,
     *,
     alpha: Mapping[str, float] | pd.Series,
-    replay_methods: Sequence[
-        ReplayMethod
-        | RankOrderMethod
-        | PairwiseOrderMethod
-        | ArmReplayMethod
-        | TemplateMatchMethod
-        | BiasSequenceMethod
-    ],
+    replay_methods: Sequence[_AnyReplayMethod],
     groups: Sequence[str] = (),
 ) -> pd.DataFrame:
     """A comparison table's verdicts at other alphas, such as matched ones.
@@ -1179,14 +1168,7 @@ def apply_alpha(
 
 def _alpha_methods(
     data: pd.DataFrame,
-    replay_methods: Sequence[
-        ReplayMethod
-        | RankOrderMethod
-        | PairwiseOrderMethod
-        | ArmReplayMethod
-        | TemplateMatchMethod
-        | BiasSequenceMethod
-    ],
+    replay_methods: Sequence[_AnyReplayMethod],
     names: list[str],
     operation: str,
 ) -> dict[str, _TestedMethod]:

@@ -35,7 +35,7 @@ import warnings
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType, SimpleNamespace
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -1271,6 +1271,17 @@ class RankOrderMethod:
                 ReplayCriterion("active_fraction", ">=", self.min_active_fraction)
             )
         return tuple(criteria)
+
+
+# Every kind of replay method compare_replay_methods applies.
+_AnyReplayMethod: TypeAlias = (
+    ReplayMethod
+    | RankOrderMethod
+    | PairwiseOrderMethod
+    | ArmReplayMethod
+    | TemplateMatchMethod
+    | BiasSequenceMethod
+)
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -2965,14 +2976,7 @@ def compare_replay_methods(
         DecodingResult | JointDecodingResult | Mapping[str, DecodingResult]
     ],
     *,
-    replay_methods: Sequence[
-        ReplayMethod
-        | RankOrderMethod
-        | PairwiseOrderMethod
-        | ArmReplayMethod
-        | TemplateMatchMethod
-        | BiasSequenceMethod
-    ],
+    replay_methods: Sequence[_AnyReplayMethod],
     spike_counts: Sequence[NDArray[np.int64]] | None = None,
     encoding_models: Any = None,
     dt: float | None = None,
@@ -3448,12 +3452,7 @@ def _compare_row(
     env: Environment | Mapping[str, Environment],
     event: DecodingResult | JointDecodingResult | Mapping[str, DecodingResult],
     times: NDArray[np.float64],
-    method: ReplayMethod
-    | RankOrderMethod
-    | PairwiseOrderMethod
-    | ArmReplayMethod
-    | TemplateMatchMethod
-    | BiasSequenceMethod,
+    method: _AnyReplayMethod,
     *,
     spike_counts: NDArray[np.int64] | None,
     encoding_models: Any,
@@ -3626,14 +3625,7 @@ def _compare_row(
 
 def _fail_criteria_of_error_rows(
     table: pd.DataFrame,
-    replay_methods: Sequence[
-        ReplayMethod
-        | RankOrderMethod
-        | PairwiseOrderMethod
-        | ArmReplayMethod
-        | TemplateMatchMethod
-        | BiasSequenceMethod
-    ],
+    replay_methods: Sequence[_AnyReplayMethod],
 ) -> pd.DataFrame:
     """Set every criterion of a row's method to False on rows with an error.
 
@@ -5651,15 +5643,7 @@ BERNERS_LEE_2021 = ArmReplayMethod(
     ),
 )
 
-PUBLISHED_METHODS: tuple[
-    ReplayMethod
-    | RankOrderMethod
-    | PairwiseOrderMethod
-    | ArmReplayMethod
-    | TemplateMatchMethod
-    | BiasSequenceMethod,
-    ...,
-] = (
+PUBLISHED_METHODS: tuple[_AnyReplayMethod, ...] = (
     LEE_WILSON_2002,
     FOSTER_WILSON_2006,
     DIBA_BUZSAKI_2007,
