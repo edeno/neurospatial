@@ -73,7 +73,7 @@ follow assemblies around SWR onsets. The reactivation recipes now do too.
 
 **Documentation**
 
-- [Comparing reactivation methods](docs/user-guide/reactivation-methods.md)
+- The "Comparing reactivation methods" guide
   compares the event-based recipes, shows how event lengths raise pair
   correlations, and shows that a rate change without co-firing raises the
   SWR responses of the assembly recipes more than reactivation does.
@@ -199,7 +199,7 @@ Several replay papers test a whole data set, not each event:
 
 **Documentation**
 
-- New guide, [Comparing reactivation methods](docs/user-guide/reactivation-methods.md):
+- New guide, "Comparing reactivation methods":
   the published recipes on one simulated session, what each reports, their
   values on three kinds of null data and on a session without reactivation,
   the rate-change confound that every published method calls reactivation,
