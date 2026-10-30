@@ -121,6 +121,33 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
   counts. The Bendor-lab code zeroes the original event's empty time bins in
   shuffles that move them, which is not reproduced.
 
+### Chenani et al. (2019): rank-order replay against the epoch's shuffles
+
+`CHENANI_2019` follows the authors' MIT code (`testsession.m`,
+`rankseq.m`, `checktempshuffle.m`) and the paper.
+
+- **Score.** Each place cell's mean spike time is ranked against a template
+  for each running direction, ordered by place-field centers. The score is
+  the spatial similarity index of the cells the event and template share:
+  rho divided by the standard deviation of rho over random orders,
+  `rho * sqrt(n - 1)`.
+- **Test.** The event is replay when its larger index over the two
+  directions exceeds the 95% quantile of the larger indices of 100
+  cell-order shuffles of every event in the epoch. The quantile is taken on
+  the code's 0.01 grid.
+- **Limits.** Negative indices are never significant. Bursts need at least
+  5 active cells, and epochs with fewer than 20 such bursts are excluded.
+- **Running it.** The threshold pools every event of an epoch, so the new
+  `RankOrderMethod(test="pooled_ssi")` runs in `compare_replay_methods`,
+  one epoch per call; `detect_rank_order_replay` refuses it.
+- **Checked.**
+  - On 150 epochs of random-order bursts (5,095 bursts), 4.4% ± 0.3% passed
+    at α = 0.05.
+  - A port of the authors' code agrees on every verdict for 1,018 simulated
+    bursts. The port corrects `testsession.m`, which puts only each event's
+    first shuffle into the null and so passes every burst.
+- `compare_replay_methods` refuses duplicate method names.
+
 ### Rank-order replay recipes
 
 New `RankOrderMethod` records a published rank-order test, and

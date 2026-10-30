@@ -471,6 +471,7 @@ neurospatial.replay.detect_trajectory_radon(env, posterior, times, *, band=None,
 neurospatial.replay.fit_isotonic_trajectory(env, posterior, times, *, increasing=None, method='map')
 neurospatial.replay.fit_linear_trajectory(env, posterior, times, *, method='sample', n_samples=10000, n_resamples=1, spike_counts=None, allocation='equal', rng=None)
 neurospatial.replay.methods.CAREY_2019 (constant)
+neurospatial.replay.methods.CHENANI_2019 (constant)
 neurospatial.replay.methods.DAVIDSON_2009 (constant)
 neurospatial.replay.methods.DIBA_BUZSAKI_2007 (constant)
 neurospatial.replay.methods.FOSTER_WILSON_2006 (constant)
