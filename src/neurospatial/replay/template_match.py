@@ -792,8 +792,15 @@ def template_match_dataset_test(
     about twice the size replay. The shuffle test repeats that choice.
 
     Lee & Wilson's shuffles rescore every word that is not a pair or a
-    triplet: 1000 shuffles of 1000 such words take about 15 s. Ji & Wilson's
-    are vectorized and take well under a second.
+    triplet. A word's exact distribution depends only on how many letters
+    each cell gives it, in template order, and is computed once per Python
+    session, so the cost depends on word length. Measured: 1000 shuffles of
+    1000 words of 5 to 8 letters take about 15 s; of 20 ten-letter words
+    with repeated cells about 35 s, and of 200 such words about 1 min.
+    Every pattern of 9 letters together takes about 3 s, every pattern of
+    10 letters about 1 min (ten distinct cells alone about 2.5 s); longer
+    words are sampled. Ji & Wilson's shuffles are vectorized and take well
+    under a second.
 
     Examples
     --------

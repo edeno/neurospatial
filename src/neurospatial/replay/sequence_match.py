@@ -18,6 +18,7 @@ template.
 from __future__ import annotations
 
 import functools
+import itertools
 import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -462,9 +463,9 @@ def best_sequence_match(
         four-letter match).
     exact_max_letters : int, default=10
         Words with up to this many letters enumerate every ordering (10! =
-        3.6 million, about 3 s once per process, cached for the multiset
-        of letters); longer words draw ``n_samples`` random orderings. At
-        most 10.
+        3.6 million: about 2.5 s for ten distinct cells, less when cells
+        repeat, computed once per process for each multiset of letters);
+        longer words draw ``n_samples`` random orderings. At most 10.
     n_samples : int, default=100000
         Random orderings for longer words. At p = 1/24 the standard error
         is about 0.0006.
@@ -1006,6 +1007,30 @@ def _all_permutations(n: int) -> NDArray[np.int8]:
     return perms
 
 
+def _distinct_orderings(pattern: tuple[int, ...]) -> NDArray[np.int8]:
+    """Every distinct ordering of the letters ``pattern``, one per row.
+
+    Shape (n! / prod(m!), n), with ``m`` the number of letters of each value.
+    Built one value at a time: each row's free places, in every combination,
+    take the next value's letters. Distinct letters use the faster
+    permutation table.
+    """
+    values, counts = np.unique(pattern, return_counts=True)
+    if counts.max() == 1:
+        return values.astype(np.int8)[_all_permutations(values.size)]
+    rows = np.full((1, len(pattern)), -1, dtype=np.int8)
+    for value, count in zip(values, counts, strict=True):
+        free = np.nonzero(rows < 0)[1].reshape(rows.shape[0], -1)
+        combinations = np.array(
+            list(itertools.combinations(range(free.shape[1]), int(count))),
+            dtype=np.intp,
+        )
+        places = free[:, combinations].reshape(-1, int(count))
+        rows = np.repeat(rows, combinations.shape[0], axis=0)
+        rows[np.arange(rows.shape[0])[:, None], places] = value
+    return rows
+
+
 def _window_lis(ranks: NDArray[np.int16]) -> NDArray[np.int16]:
     """Longest strictly increasing subsequence in the best window of each length.
 
@@ -1102,24 +1127,49 @@ class _KeyDistribution:
         return float(allowed.max()) if allowed.size else 0.0
 
 
-def _distribution_from_keys(keys: NDArray[np.int64], exact: bool) -> _KeyDistribution:
+def _distribution_from_keys(
+    keys: NDArray[np.int64], exact: bool, weight: int = 1
+) -> _KeyDistribution:
+    """The distribution of ``keys``, each standing for ``weight`` orderings."""
     values, counts = np.unique(keys, return_counts=True)
-    at_least = np.cumsum(counts[::-1])[::-1]
-    return _KeyDistribution(values, at_least, int(keys.size), exact)
+    at_least = np.cumsum(counts[::-1])[::-1] * weight
+    return _KeyDistribution(values, at_least, int(keys.size) * weight, exact)
+
+
+def _exact_distribution(pattern: tuple[int, ...], match_order: str) -> _KeyDistribution:
+    """Keys over all n! orderings of letters with dense template ranks ``pattern``.
+
+    ``pattern`` is sorted. Reversing a word and its template keeps every
+    increasing run of letters in every window, so a pattern and its mirror
+    (ranks ``max - rank``) have the same distribution and share one
+    computation.
+    """
+    mirror = tuple(sorted(pattern[-1] - rank for rank in pattern))
+    return _exact_distribution_of(min(pattern, mirror), match_order)
 
 
 @functools.cache
-def _exact_distribution(pattern: tuple[int, ...], match_order: str) -> _KeyDistribution:
-    """Keys over all n! orderings of letters with dense template ranks ``pattern``."""
-    word = np.asarray(pattern, dtype=np.int16)
-    perms = _all_permutations(word.size)
+def _exact_distribution_of(
+    pattern: tuple[int, ...], match_order: str
+) -> _KeyDistribution:
+    """Keys over all n! orderings, scoring each distinct word once.
+
+    Orderings that only exchange letters of one cell give the same word, so
+    each distinct word stands for prod(m!) orderings, ``m`` the number of
+    letters of each cell. The counts are exact.
+    """
+    words = _distinct_orderings(pattern)
     keys = np.concatenate(
         [
-            _match_keys(word[perms[start : start + _CHUNK_ROWS]], match_order)
-            for start in range(0, perms.shape[0], _CHUNK_ROWS)
+            _match_keys(words[start : start + _CHUNK_ROWS], match_order)
+            for start in range(0, words.shape[0], _CHUNK_ROWS)
         ]
     )
-    return _distribution_from_keys(keys, exact=True)
+    weight = math.prod(
+        math.factorial(int(count))
+        for count in np.unique(pattern, return_counts=True)[1]
+    )
+    return _distribution_from_keys(keys, exact=True, weight=weight)
 
 
 def _sampled_distribution(

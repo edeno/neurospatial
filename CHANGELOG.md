@@ -466,7 +466,10 @@ fields, scored from spikes without decoding, as recipes that
   chance and template-shuffle significance of the number of replaying
   frames, reassigning frames to templates on every shuffle. Letters at the
   same time are ordered against each shuffled template as against the real
-  one, so a tie never helps a match in the shuffles either.
+  one, so a tie never helps a match in the shuffles either. Exact
+  probabilities score each distinct word once and share a computation
+  between a pattern and its mirror, so shuffles of ten-letter words with
+  repeated cells take about a minute rather than hours (still exact).
 - `recurring_spike_sequences()`, `recurring_sequences_significance()`,
   `surrogate_spike_trains()` and `RecurringSequenceMethod` with
   `NADASDY_1999`: the session-level search for recurring spike sequences of
