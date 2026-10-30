@@ -210,10 +210,18 @@ def rank_order_correlation(
     Pearson correlation of the ranks of the field positions and the ranks of
     the firing times. Two cells whose fields peak in the same bin tie.
 
-    Tingley & Peyrache (2020) showed that short random sequences reach
+    Tingley & Peyrache (2020) showed that random sequences of 10 cells reach
     "significant" rank-order correlations with a random template 5-12% of the
-    time (up to 20% at five cells), so judge the proportion of significant
-    events against chance rather than single events. The
+    time in sets of 100 events (up to 20% at five cells), so judge the
+    proportion of significant events against chance rather than single
+    events. Those rates come from the parametric p-value of MATLAB's
+    ``corr`` (Pearson's r of the orders with the t-distribution) and the
+    binomial spread of the count across sets of 100 events
+    (``rankOrder_falsePositive_tests.m``): per event, p < 0.05 for about
+    5.4% of random orders of 10 cells, 8.3% of 4 or 5 cells and 33% of 3
+    cells, while an exact permutation test, such as
+    :func:`rank_order_significance` or ``analytic_p_value`` for up to 9
+    pairs, stays at or below 5% for every number of cells. The
     ``replay_RankOrder.m`` function in their RnR_methods toolbox correlates
     sort indices, not ranks; this function computes Spearman's rho.
 
