@@ -81,15 +81,20 @@ the default.
   called replay. It also reports the method's rate at its own α. The α is
   computed exactly from the p-values, not read off a grid, so the rate never
   exceeds the target. `groups=` matches each kind of null data or each
-  session separately. A warning says when too many null events reach the
-  smallest possible p-value for any α to hold the rate; run more shuffles.
+  session separately. Warnings say when the matched α is the smallest
+  p-value the shuffles can give (run more shuffles), when there are too
+  few null events for the target, and when no α holds the rate: then α is
+  NaN.
 - `apply_alpha(table, alpha=, replay_methods=)` gives the table's verdicts
   at new α values from its p-values and criteria, without running the
   shuffles again. The verdicts are the same as running the method with
   `dataclasses.replace(method, alpha=...)` and the same `rng`.
 - Only methods that test a p-value against α can be matched. Methods
   without shuffles, the arm methods and Chenani et al.'s pooled SSI test
-  are refused, with their names.
+  are refused, with their names. So is a rank-order method that chose
+  among several templates (Diba & Buzsáki 2007 with both running
+  directions): it picks among the templates that pass at its α, so its
+  rows change with α.
 - Both functions refuse a table whose verdicts do not follow from the
   given methods' p-values, criteria and α.
 

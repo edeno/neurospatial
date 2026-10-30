@@ -565,7 +565,7 @@ def matched_alpha(
         The methods the table was made with. Each must test a p-value
         against its ``alpha``: a :class:`ReplayMethod` with ``nulls``, or
         a :class:`RankOrderMethod` with the ``"t_distribution"`` or
-        ``"cell_order"`` test.
+        ``"cell_order"`` test that tests one template.
     target : float, default=0.05
         The false-positive rate to hold to, in (0, 1).
     groups : sequence of str, default=()
@@ -580,8 +580,10 @@ def matched_alpha(
         ``published_rate`` (the method's own alpha and its rate on these
         events), ``alpha`` and ``rate`` (the matched alpha and the rate at
         it, never above ``target``). ``alpha`` is 1 when the criteria
-        alone hold the rate to ``target``. Events a method could not score
-        count as not replay, as in :func:`detection_rates`.
+        alone hold the rate to ``target``, and NaN (with ``rate``) when no
+        alpha does. Events a method could not score count as not replay,
+        as in :func:`detection_rates`. A missing ``groups`` value forms its
+        own group.
 
     Raises
     ------
@@ -589,18 +591,21 @@ def matched_alpha(
         If ``target`` is not in (0, 1); if the table lacks the ``event``,
         ``method``, ``is_replay``, ``p_value`` or a method's ``passes[...]``
         columns, or repeats an (event, method) pair; if a method in the
-        table is not in ``replay_methods``, or does not test a p-value
-        against alpha; or if the table's verdicts do not follow from its
+        table is not in ``replay_methods``, does not test a p-value
+        against alpha, or is a rank-order method that chose among several
+        templates; or if the table's verdicts do not follow from its
         p-values and criteria at the method's own alpha (it was made with
         other settings).
 
     Warns
     -----
     UserWarning
-        If more than ``target`` of the null events pass the criteria at
-        the smallest p-value among them. Only an alpha that rejects all of
-        them holds the rate, and real events then need a smaller p-value
-        than any null event reached; run more shuffles.
+        If no alpha holds the rate: more than ``target`` of the null events
+        pass with p = 0, as the t-distribution test gives when the
+        correlation is 1 (alpha is then NaN). If the matched alpha is at
+        the smallest p-value the shuffles can give, so real events cannot
+        reach it either: run more shuffles. If there are too few null
+        events for ``target`` to allow any to pass.
 
     See Also
     --------
@@ -610,13 +615,16 @@ def matched_alpha(
 
     Notes
     -----
-    Takigawa et al. (2024) used three copies of each session's events with
-    cell identities reassigned, and chose each method's p-value threshold
-    on a log-spaced grid from 0.001 to 0.2 as the one whose mean
-    false-positive rate was closest to 0.05, so it could lie above it.
-    Here alpha is exact and the rate never exceeds ``target``. Their code
-    calls an event significant at p <= alpha; here, as in each method,
-    p < alpha.
+    Takigawa et al. (2024) reassigned cell identities in copies of each
+    session's events. For each method they chose the p-value threshold, on
+    a log-spaced grid from 0.001 to 0.2, whose false-positive rate (a mean
+    over bootstrap resamples of the pooled events) was closest to 0.05, so
+    it could lie above it. Their rate counts each track's verdicts and
+    averages the two, tests half events at alpha / 2, and calls an event
+    significant at p <= alpha. Here each event gets one verdict across
+    templates, so on two-track data this rate can be up to about twice
+    theirs; alpha is exact, the rate never exceeds ``target``, and, as in
+    each method, p < alpha.
 
     Matching holds the false-positive rate on one kind of null data.
     Each kind keeps some structure of real events and breaks the rest, so
@@ -629,7 +637,10 @@ def matched_alpha(
     alpha.
 
     Methods without a shuffle test, arm methods and the pooled-SSI test
-    have no p-value to threshold; leave them out of the table.
+    have no p-value to threshold; leave them out of the table. A
+    rank-order method with ``template_choice`` picks the most active
+    template among those that are replay at its alpha, so its rows change
+    with alpha; rerun it at each alpha instead.
 
     Examples
     --------
@@ -660,7 +671,7 @@ def matched_alpha(
         data, replay_methods, list(dict.fromkeys(data["method"])), operation
     )
     rows = []
-    for key, frame in data.groupby(["method", *groups], sort=False):
+    for key, frame in data.groupby(["method", *groups], sort=False, dropna=False):
         method = methods[key[0]]
         criteria_met = _verdicts(frame, method, np.inf, operation)
         _check_verdicts(frame, method, operation)
@@ -671,15 +682,30 @@ def matched_alpha(
         # round-off in target * n_events.
         allowed = int(np.floor(target * n_events + 1e-9))
         alpha = float(p_values[allowed]) if p_values.size > allowed else 1.0
-        if p_values.size > allowed and alpha == p_values[0]:
+        problem = None
+        if alpha == 0.0:
+            alpha = np.nan
+            problem = (
+                f"{int(np.sum(p_values == 0))} of {n_events} null events pass "
+                "with p = 0 (the t-distribution test gives p = 0 when the "
+                f"correlation is 1), more than {target:g}, so no alpha holds "
+                "the rate; require more active cells or use the cell_order test"
+            )
+        elif alpha <= _smallest_p_value(method) * (1 + 1e-9):
+            problem = (
+                f"the matched alpha, {alpha:g}, is the smallest p-value its "
+                f"{method.n_shuffles} shuffles can give, so real events cannot "
+                "reach it either; run more shuffles (n_shuffles)"
+            )
+        elif allowed == 0 and p_values.size:
+            problem = (
+                f"{n_events} null events are too few for a rate of {target:g} "
+                "to allow any to pass, so the matched alpha is the smallest "
+                "null p-value; use more null events (n_copies)"
+            )
+        if problem is not None:
             warnings.warn(
-                f"{operation}: {method.name!r} calls more than {target:g} of "
-                f"the null events replay at the smallest p-value among them, "
-                f"{alpha:g}; the matched alpha rejects all of them, so real "
-                "events need a smaller p-value than any null event reached. "
-                "Run more shuffles (n_shuffles).",
-                UserWarning,
-                stacklevel=2,
+                f"{operation}: {method.name!r}: {problem}.", UserWarning, stacklevel=2
             )
         rows.append(
             {
@@ -688,7 +714,9 @@ def matched_alpha(
                 "published_alpha": method.alpha,
                 "published_rate": float(frame["is_replay"].sum()) / n_events,
                 "alpha": alpha,
-                "rate": float(np.sum(p_values < alpha)) / n_events,
+                "rate": float(np.sum(p_values < alpha)) / n_events
+                if np.isfinite(alpha)
+                else np.nan,
             }
         )
     return pd.DataFrame(rows)
@@ -708,7 +736,7 @@ def apply_alpha(
     criteria come from the table, so the shuffles are not run again; this
     gives the verdicts :func:`~neurospatial.replay.compare_replay_methods`
     would give with ``dataclasses.replace(method, alpha=...)`` and the
-    same ``rng``.
+    same ``rng`` (methods take alpha below 1).
 
     Parameters
     ----------
@@ -718,7 +746,8 @@ def apply_alpha(
     alpha : Mapping[str, float] or pandas.Series
         The new alpha in (0, 1] of each method by name, such as
         ``matched_alpha(...).set_index("method")["alpha"]``. Methods not
-        named keep their verdicts.
+        named keep their verdicts. After ``matched_alpha`` with
+        ``groups``, choose one group's alphas first.
     replay_methods : sequence of ReplayMethod or RankOrderMethod
         The methods the table was made with; those named in ``alpha`` must
         test a p-value against alpha (see :func:`matched_alpha`).
@@ -730,14 +759,15 @@ def apply_alpha(
     -------
     pandas.DataFrame
         A copy of ``table`` with ``is_replay`` at the new alphas and an
-        ``alpha`` column: the alpha each row's verdict uses (NaN for a
-        method without one).
+        ``alpha`` column: the new alpha, or the method's own (which a
+        method without nulls does not use; NaN for an arm method, which
+        has none).
 
     Raises
     ------
     ValueError
-        If an alpha is not in (0, 1], or names a method not in the table;
-        otherwise as :func:`matched_alpha`.
+        If an alpha is not in (0, 1], a method is named twice, or a name
+        is not a method in the table; otherwise as :func:`matched_alpha`.
 
     See Also
     --------
@@ -766,11 +796,27 @@ def apply_alpha(
     >>> print(matched["is_replay"].tolist())
     [True, False, False]
     """
+    import pandas as pd
+
     operation = "apply_alpha()"
+    if isinstance(alpha, pd.Series) and alpha.index.has_duplicates:
+        repeated = sorted(set(alpha.index[alpha.index.duplicated()]))
+        raise ValueError(
+            _format_error(
+                f"{operation}: alpha names methods {repeated} more than once.",
+                why="matched_alpha with groups gives one alpha per group, and "
+                "a table's verdicts take one alpha per method",
+                fix="choose one group's alphas, e.g. matched[matched['null_kind'] "
+                "== 'cell_identity'].set_index('method')['alpha']",
+            )
+        )
     alphas = {str(name): float(value) for name, value in dict(alpha).items()}
     bad = {name: value for name, value in alphas.items() if not 0 < value <= 1}
     if bad:
-        raise ValueError(f"{operation}: alphas must be in (0, 1], got {bad}.")
+        raise ValueError(
+            f"{operation}: alphas must be in (0, 1], got {bad}; a NaN from "
+            "matched_alpha means no alpha holds that method's rate."
+        )
     data = _checked_table(table, groups, operation)
     absent = sorted(set(alphas) - set(data["method"]))
     if absent:
@@ -820,15 +866,32 @@ def _alpha_methods(
             "compare_replay_methods()."
         )
     tested: dict[str, ReplayMethod | RankOrderMethod] = {}
-    untested = []
+    untested, choosing = [], []
     for name in names:
         method = by_name[name]
+        if isinstance(method, RankOrderMethod) and method.template_choice:
+            rows = data["method"] == name
+            if "template" in data and data.loc[rows, "template"].notna().any():
+                choosing.append(name)
+                continue
         if (isinstance(method, ReplayMethod) and method.nulls) or (
             isinstance(method, RankOrderMethod) and method.test != "pooled_ssi"
         ):
             tested[name] = method
         else:
             untested.append(name)
+    if choosing:
+        raise ValueError(
+            _format_error(
+                f"{operation}: methods {choosing} chose among several templates.",
+                why="they pick the most active template among those that are "
+                "replay at their alpha, so the tested template and its p-value "
+                "change with alpha",
+                fix="rerun compare_replay_methods with dataclasses.replace("
+                "method, alpha=...) at each alpha, or pass one template's rate "
+                "maps",
+            )
+        )
     if untested:
         raise ValueError(
             _format_error(
@@ -840,6 +903,13 @@ def _alpha_methods(
             )
         )
     return tested
+
+
+def _smallest_p_value(method: ReplayMethod | RankOrderMethod) -> float:
+    """The smallest p-value a method's shuffles can give, (0 + 1) / (n + 1)."""
+    if getattr(method, "test", None) == "t_distribution":
+        return 0.0
+    return 1.0 / (method.n_shuffles + 1)
 
 
 def _verdicts(
