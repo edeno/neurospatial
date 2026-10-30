@@ -135,6 +135,9 @@ from neurospatial.geometry._locators import TransformedLocator as TransformedLoc
 from neurospatial.geometry._locators import (
     _nearest_lowest_index as _nearest_lowest_index,
 )
+from neurospatial.geometry._locators import (
+    coordinate_roundoff as coordinate_roundoff,
+)
 from neurospatial.geometry._lookup import locate as locate
 from neurospatial.geometry._lookup import (
     locate_outline_points as locate_outline_points,

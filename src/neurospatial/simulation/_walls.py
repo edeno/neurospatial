@@ -15,7 +15,7 @@ import shapely
 from numpy.typing import NDArray
 from shapely.ops import unary_union
 
-from neurospatial.geometry._locators import _coordinate_roundoff
+from neurospatial.geometry import coordinate_roundoff
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -73,7 +73,7 @@ class Walls:
         # A walker inside the walls has coordinates no larger than theirs.
         reference = float(np.max(np.abs(np.concatenate([starts, ends])), initial=0.0))
         self.tolerance = float(
-            _coordinate_roundoff(np.array([[reference]]), reference)[0]
+            coordinate_roundoff(np.array([[reference]]), reference)[0]
         )
         # Distance a walker can travel before it could come within
         # ``tolerance`` of a wall.

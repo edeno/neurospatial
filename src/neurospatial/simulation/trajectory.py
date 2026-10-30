@@ -390,12 +390,7 @@ def simulate_trajectory_ou(
         Walls.enclosing(env) if n_dims == 2 and boundary_mode != "periodic" else None
     )
     if start_position is not None and not (
-        position.shape == (n_dims,)
-        and (
-            env.contains(position[None])[0]
-            # A start computed onto a slanted wall may round outside it.
-            or (walls is not None and walls.distance(position) <= walls.tolerance)
-        )
+        position.shape == (n_dims,) and env.contains(position[None])[0]
     ):
         raise ValueError(
             _format_error(

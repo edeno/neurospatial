@@ -3137,7 +3137,7 @@ class _TrackPaths(EnvironmentPaths):
         A point as near, within rounding, to several segments takes the one
         first in the track's linear order, as ``Environment.to_linear`` does.
         """
-        from neurospatial.geometry._locators import _coordinate_roundoff
+        from neurospatial.geometry import coordinate_roundoff
 
         squared = self._length**2
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -3150,7 +3150,7 @@ class _TrackPaths(EnvironmentPaths):
         along = np.clip(np.where(squared > 0, along, 0.0), 0.0, 1.0)
         projected = self._first + along[:, :, None] * self._direction
         distance = np.linalg.norm(points[:, None, :] - projected, axis=2)
-        tolerance = _coordinate_roundoff(points, self._scale)
+        tolerance = coordinate_roundoff(points, self._scale)
         tied = distance <= (distance.min(axis=1) + tolerance)[:, None]
         segment = np.argmax(tied, axis=1)
         rows = np.arange(points.shape[0])

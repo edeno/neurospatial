@@ -51,7 +51,7 @@ from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
-    _coordinate_roundoff,
+    coordinate_roundoff,
 )
 from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon import (
@@ -84,7 +84,7 @@ def _gap(points: NDArray[np.float64]) -> float:
     if len(points) < 2:
         return math.inf
     tree = cKDTree(points)
-    same = _coordinate_roundoff(points, float(np.max(np.abs(points))))
+    same = coordinate_roundoff(points, float(np.max(np.abs(points))))
     # Widen the search until every point sees a center at another place.
     k = 2
     while True:
@@ -1369,7 +1369,7 @@ def _validate_center_lookup(binning: Binning) -> None:
             (located < 0) | (located >= bins.n_bins)
         ):
             raise ValueError("Track locator does not locate its bin centers.")
-        tolerance = _coordinate_roundoff(
+        tolerance = coordinate_roundoff(
             bins.centers, float(np.max(np.abs(bins.centers)))
         )
         if np.any(

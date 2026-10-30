@@ -149,17 +149,23 @@ def _error_radius(error: NDArray[np.float64]) -> NDArray[np.float64]:
     return np.asarray(np.hypot.reduce(error, axis=1), dtype=np.float64)
 
 
-def _coordinate_roundoff(
+def coordinate_roundoff(
     points: NDArray[np.float64], reference: float
 ) -> NDArray[np.float64]:
     """Distance a distance comparison of ``points`` can be off by rounding.
+
+    The one on-boundary tolerance: a point this close to a cell face, the
+    arena's outline or a wall is on it. Position lookup
+    (:func:`~neurospatial.geometry.locate`), wall contacts of ray casts and
+    the simulated walker's walls all use it.
 
     Parameters
     ----------
     points : ndarray of float64, shape (n_points, n_dims)
         Query coordinates.
     reference : float
-        Largest coordinate magnitude of the locator's own geometry.
+        Largest coordinate magnitude of the geometry the points are compared
+        with (cells, outline or walls).
 
     Returns
     -------
@@ -225,9 +231,9 @@ def _nearest_lowest_index(
     largest = max(
         float(np.max(points, initial=0.0)), -float(np.min(points, initial=0.0))
     )
-    bound = _coordinate_roundoff(np.array([[largest]]), reference)
+    bound = coordinate_roundoff(np.array([[largest]]), reference)
     rows = np.flatnonzero(nearest[:, 1] <= distances + slack + bound)
-    tolerance = slack[rows] + _coordinate_roundoff(points[rows], reference)
+    tolerance = slack[rows] + coordinate_roundoff(points[rows], reference)
     may_tie = nearest[rows, 1] <= distances[rows] + tolerance
     rows, tolerance = rows[may_tie], tolerance[may_tie]
     if len(rows):
@@ -747,7 +753,7 @@ class HexLocator(ReadOnlyState):
         distance = np.linalg.norm(centers - values[:, None, :], axis=2)
         n_rows, n_cols = self.centers_shape
         extent = float(np.max(np.abs(origin))) + width * (max(n_rows, n_cols) + 1)
-        tolerance = 2 * _error_radius(error[finite]) + _coordinate_roundoff(
+        tolerance = 2 * _error_radius(error[finite]) + coordinate_roundoff(
             values, extent
         )
         tied = distance <= distance.min(axis=1, keepdims=True) + tolerance[:, None]

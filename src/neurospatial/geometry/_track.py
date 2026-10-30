@@ -9,7 +9,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry._locators import _coordinate_roundoff
+from neurospatial.geometry._locators import coordinate_roundoff
 
 Edge = tuple[Any, Any]
 
@@ -77,7 +77,7 @@ def project_nd_to_1d(
     along = np.clip(np.where(squared > 0, along, 0.0), 0.0, 1.0)
     projected = first + along[:, :, None] * direction
     distance = np.linalg.norm(values[:, None, :] - projected, axis=2)
-    tolerance = _coordinate_roundoff(values, float(np.max(np.abs(segments))))
+    tolerance = coordinate_roundoff(values, float(np.max(np.abs(segments))))
     tied = distance <= (distance.min(axis=1) + tolerance)[:, None]
     segment = np.argmax(tied, axis=1)
     rows = np.arange(len(query))

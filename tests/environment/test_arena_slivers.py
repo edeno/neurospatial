@@ -199,3 +199,26 @@ def test_every_gaze_wall_hit_has_a_bin(wall_centred):
     assert (bins >= 0).all()
     gaps = np.linalg.norm(env.bin_centers[bins] - hits, axis=1)
     assert gaps.max() < np.sqrt(2) * env.bin_sizes.max()
+
+
+def test_positions_computed_onto_a_slanted_outline_are_inside():
+    """A point placed on the outline by arithmetic may round to either side.
+
+    Points a fraction of the way along each side of a rotated square land
+    within rounding of the outline; some fall just outside the exact
+    polygon. Lookup treats the outline as one tolerance thick
+    (``coordinate_roundoff``), so each is inside and has a bin; a point a
+    nanometre outside is still outside.
+    """
+    square = shapely.affinity.rotate(shapely.box(0, 0, 100, 100), 30, origin=(0, 0))
+    env = Environment.from_polygon(square, bin_size=4.0, units="cm")
+    corners = np.asarray(square.exterior.coords)[:4]
+    on = np.vstack(
+        [f * corners + (1 - f) * np.roll(corners, -1, axis=0) for f in (0.37, 0.63)]
+    )
+    assert not shapely.covers(square, shapely.points(on)).all()
+    assert env.contains(on).all()
+    assert (env.bin_at(on) >= 0).all()
+    center = np.asarray(square.centroid.coords)[0]
+    outward = on + 1e-9 * (on - center) / np.linalg.norm(on - center, axis=1)[:, None]
+    assert not env.contains(outward).any()
