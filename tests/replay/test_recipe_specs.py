@@ -14,6 +14,7 @@ import pytest
 
 from neurospatial.replay import (
     ArmReplayMethod,
+    BiasSequenceMethod,
     PairwiseOrderMethod,
     RankOrderMethod,
     ReplayMethod,
@@ -67,6 +68,15 @@ DEFAULTS: dict[type, dict[str, Any]] = {
         "n_shuffles": 300,
         "alpha": 0.05,
         "min_active_cells": 3,
+    },
+    # Liu et al. (2023): cosine of skew-bias matrices; 100 shuffles of the
+    # spike sequence; |correlation| beyond 5% of the shuffles.
+    BiasSequenceMethod: {
+        "n_shuffles": 100,
+        "alpha": 0.05,
+        "alternative": "greater",
+        "use_absolute": True,
+        "min_active_cells": 2,
     },
     # Wu & Foster (2014): peak above 5x chance, 10 ms smoothing, 50 ms,
     # more than 50% of the arm, |weighted correlation| > 0.5.
@@ -204,6 +214,7 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
         },
     ),
     "gupta_2010": (PairwiseOrderMethod, {}),
+    "liu_2023_bias": (BiasSequenceMethod, {}),
     "wu_foster_2014": (
         ArmReplayMethod,
         {"decoding": {"time_bin": 0.01, "position_bin": 1.85}},

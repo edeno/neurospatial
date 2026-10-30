@@ -11,7 +11,10 @@ the event's spikes rather than a decoded posterior
 (:func:`detect_rank_order_replay`),
 :class:`~neurospatial.replay.PairwiseOrderMethod` the pairwise firing-order
 test of Gupta et al. (2010) on the event's spikes
-(:func:`~neurospatial.replay.detect_pairwise_order_replay`), and
+(:func:`~neurospatial.replay.detect_pairwise_order_replay`),
+:class:`~neurospatial.replay.BiasSequenceMethod` the pairwise-bias sequence
+test of Liu et al. (2023)
+(:func:`~neurospatial.replay.detect_bias_sequence_replay`), and
 :class:`~neurospatial.replay.ArmReplayMethod` a test for replay of single
 arms and pairs of arms on a maze.
 
@@ -49,6 +52,10 @@ from neurospatial.replay.pairwise_order import (
     detect_pairwise_order_replay,
 )
 from neurospatial.replay.recurring_sequences import NADASDY_1999
+from neurospatial.replay.sequence_bias import (
+    BiasSequenceMethod,
+    detect_bias_sequence_replay,
+)
 from neurospatial.replay.significance import (
     _ALTERNATIVES,
     _COUNT_CHANGING_NULLS,
@@ -100,6 +107,7 @@ __all__ = [
     "KARLSSON_FRANK_2009",
     "LEE_WILSON_2002",
     "LIU_2023",
+    "LIU_2023_BIAS",
     "MABOUDI_2018",
     "MALLORY_2025",
     "MICHON_2019",
@@ -2963,6 +2971,7 @@ def compare_replay_methods(
         | PairwiseOrderMethod
         | ArmReplayMethod
         | TemplateMatchMethod
+        | BiasSequenceMethod
     ],
     spike_counts: Sequence[NDArray[np.int64]] | None = None,
     encoding_models: Any = None,
@@ -2972,6 +2981,7 @@ def compare_replay_methods(
     valid_time_bins: Sequence[NDArray[np.bool_]] | None = None,
     spike_times: Any = None,
     arms: Mapping[str, NDArray[np.intp]] | None = None,
+    template_bias: NDArray[np.float64] | None = None,
     rng: np.random.Generator | int | None = None,
 ) -> pd.DataFrame:
     """Apply several published replay methods to several decoded events.
@@ -2988,7 +2998,7 @@ def compare_replay_methods(
         the templates decoded separately, as a mapping of template name to
         :class:`~neurospatial.decoding.DecodingResult` with the same times
         (see :func:`detect_replay`).
-    replay_methods : sequence of ReplayMethod, RankOrderMethod, PairwiseOrderMethod or ArmReplayMethod
+    replay_methods : sequence of ReplayMethod, RankOrderMethod, PairwiseOrderMethod, ArmReplayMethod, TemplateMatchMethod or BiasSequenceMethod
         The methods to compare. An arm method classifies each event's
         posterior as a single-arm or joint-arm replay on ``arms`` (see
         :func:`~neurospatial.replay.detect_arm_replay`). A rank-order method scores each event's
@@ -3005,7 +3015,10 @@ def compare_replay_methods(
         smallest p-value; it ignores ``template``.
         A :class:`~neurospatial.replay.TemplateMatchMethod` scores the same
         window's spikes as a rank-order method does (see
-        :func:`~neurospatial.replay.detect_template_match_replay`).
+        :func:`~neurospatial.replay.detect_template_match_replay`). A
+        :class:`~neurospatial.replay.BiasSequenceMethod` compares the same
+        window's skew-bias matrix with ``template_bias`` (see
+        :func:`~neurospatial.replay.detect_bias_sequence_replay`).
     spike_counts : sequence of arrays or None
         Each event's spike counts, shape (n_time_bins, n_cells), for methods
         that need them (see :func:`detect_replay`).
@@ -3022,9 +3035,15 @@ def compare_replay_methods(
         :func:`detect_replay`).
     spike_times : array, sequence of arrays, or spike group, optional
         The session's spike times, one train per row of
-        ``encoding_models``, for rank-order, pairwise-order and template-matching methods.
+        ``encoding_models``, for rank-order, pairwise-order,
+        template-matching and bias-sequence methods.
     arms : Mapping[str, NDArray[np.intp]] or None
         Each arm's bins from the junction outward, for arm methods.
+    template_bias : NDArray[np.float64] or None
+        The template's skew-bias matrix, shape (n_cells, n_cells), for
+        bias-sequence methods, such as
+        :func:`~neurospatial.replay.mean_pairwise_bias` of the task's theta
+        cycles, with the cells in the order of ``spike_times``.
     rng : numpy.random.Generator, int, or None
         Random number generator or seed for the shuffles. Each (event, method)
         pair draws from its own stream, derived from ``rng``, the event's
@@ -3066,7 +3085,9 @@ def compare_replay_methods(
         cells, or no variation in their order), for a pairwise-order method,
         an event or shuffle whose multi-field cells have more field
         combinations than are searched (``"too many combinations of
-        multi-field cells' fields to search"``), or, for a pooled SSI
+        multi-field cells' fields to search"``), for a bias-sequence
+        method, a similarity undefined because no pair of cells fired in
+        both the event and the template, or, for a pooled SSI
         method, an epoch with too few events or without a threshold (score
         and p-value are still reported). A method with a segmentation that
         finds no segment has a verdict, not an error: score NaN,
@@ -3096,7 +3117,8 @@ def compare_replay_methods(
         does not have one row per time bin of its event; if a method
         draws pseudo-events or weighted column cycles from joint decodes; or
         if a rank-order, pairwise-order or template-matching method is given without
-        ``spike_times``, ``encoding_models`` or ``dt``.
+        ``spike_times``, ``encoding_models`` or ``dt``, or a bias-sequence
+        method without ``spike_times``, ``template_bias`` or ``dt``.
 
     Warns
     -----
@@ -3254,6 +3276,30 @@ def compare_replay_methods(
                     "encoding_models and the decoding window dt",
                 )
             )
+    bias_methods = [m for m in replay_methods if isinstance(m, BiasSequenceMethod)]
+    if bias_methods:
+        missing = [
+            name
+            for name, value in (
+                ("spike_times", spike_times),
+                ("template_bias", template_bias),
+                ("dt", dt),
+            )
+            if value is None
+        ]
+        if missing:
+            raise ValueError(
+                _format_error(
+                    f"compare_replay_methods(): bias-sequence methods "
+                    f"{[m.name for m in bias_methods]} need {missing}.",
+                    why="they compare the order of each event's spikes, over "
+                    "the event's decoding windows of width dt, with a "
+                    "template's skew-bias matrix",
+                    fix="pass the session's spike_times, the template's matrix "
+                    "as template_bias (e.g. mean_pairwise_bias(spike_times, "
+                    "theta_cycles)) and the decoding window dt",
+                )
+            )
     pool = None
     if any(
         name in method.nulls
@@ -3292,7 +3338,8 @@ def compare_replay_methods(
         | RankOrderMethod
         | PairwiseOrderMethod
         | ArmReplayMethod
-        | TemplateMatchMethod,
+        | TemplateMatchMethod
+        | BiasSequenceMethod,
     ) -> Any:
         return np.random.default_rng(
             np.random.SeedSequence(
@@ -3342,6 +3389,7 @@ def compare_replay_methods(
                     else valid_time_bins[index],
                     spike_times=spike_times,
                     arms=arms,
+                    template_bias=template_bias,
                     pool=pool,
                     pooled=pooled_verdicts[method.name][index]
                     if method.name in pooled_verdicts
@@ -3404,7 +3452,8 @@ def _compare_row(
     | RankOrderMethod
     | PairwiseOrderMethod
     | ArmReplayMethod
-    | TemplateMatchMethod,
+    | TemplateMatchMethod
+    | BiasSequenceMethod,
     *,
     spike_counts: NDArray[np.int64] | None,
     encoding_models: Any,
@@ -3414,6 +3463,7 @@ def _compare_row(
     valid_time_bins: NDArray[np.bool_] | None,
     spike_times: Any,
     arms: Mapping[str, NDArray[np.intp]] | None,
+    template_bias: NDArray[np.float64] | None,
     pool: NDArray[np.float64] | None,
     pooled: tuple[ReplayDetectionResult, str] | None,
     rng: np.random.Generator,
@@ -3485,6 +3535,23 @@ def _compare_row(
             "template cells, or no variation in their order"
         )
         return {**ranked.summary(), "error": error}
+    if isinstance(method, BiasSequenceMethod):
+        assert dt is not None and template_bias is not None
+        centers = np.asarray(times, dtype=np.float64)
+        biased = detect_bias_sequence_replay(
+            spike_times,
+            (centers[0] - dt / 2, centers[-1] + dt / 2),
+            template_bias,
+            bias_sequence_method=method,
+            rng=rng,
+        )
+        error = (
+            ""
+            if np.isfinite(biased.score)
+            else "bias similarity undefined: no pair of cells fired in both "
+            "the event and the template"
+        )
+        return {**biased.summary(), "error": error}
     if isinstance(method, PairwiseOrderMethod):
         assert dt is not None
         centers = np.asarray(times, dtype=np.float64)
@@ -3565,6 +3632,7 @@ def _fail_criteria_of_error_rows(
         | PairwiseOrderMethod
         | ArmReplayMethod
         | TemplateMatchMethod
+        | BiasSequenceMethod
     ],
 ) -> pd.DataFrame:
     """Set every criterion of a row's method to False on rows with an error.
@@ -3588,7 +3656,13 @@ def _fail_criteria_of_error_rows(
         }
         if isinstance(
             method,
-            (ReplayMethod, RankOrderMethod, PairwiseOrderMethod, TemplateMatchMethod),
+            (
+                ReplayMethod,
+                RankOrderMethod,
+                PairwiseOrderMethod,
+                TemplateMatchMethod,
+                BiasSequenceMethod,
+            ),
         ):
             columns |= {f"passes[{c.label}]" for c in method.criteria}
         for column in sorted(columns):
@@ -5112,6 +5186,48 @@ CHANG_2025 = ReplayMethod(
     ),
 )
 
+LIU_2023_BIAS = BiasSequenceMethod(
+    name="liu_2023_bias",
+    reference=LIU_2023.reference,
+    n_shuffles=100,
+    alpha=0.05,
+    use_absolute=True,
+    notes=(
+        "Pairwise bias correlation (Materials and methods, 'Pairwise bias "
+        "correlations', after Drieu, Todorova & Zugaro 2018): each event's "
+        "skew-bias matrix S(i, j) = 2 n(i before j) / (n_i n_j) - 1 is "
+        "compared with the template's by the cosine between them, 'The "
+        "activity of cells that are not common to the two sequences is "
+        "ignored': the cosine runs over the pairs defined in both. The lab's "
+        "code (neuro_py pairwise_bias_correlation) fills undefined pairs "
+        "with 0 and keeps them, which shrinks its cosines.",
+        "The paper prints the unwrapped matrix as '2Bk - 2', which runs from "
+        "-2 to 0; its stated range [-1, 1] and the lab's code give 2B - 1, "
+        "used here.",
+        "Template: 'the mean bias matrix of all sequences taking place in "
+        "theta cycles during the task': pass mean_pairwise_bias(spike_times, "
+        "theta_cycles) as template_bias, with the running theta cycles' "
+        "intervals; each pair is averaged over the cycles in which both "
+        "cells fired (not stated; the code computes one matrix over all task "
+        "theta spikes). No theta-cycle detector is applied here.",
+        "Shuffles: 'shuffling the spikes sequence n = 100 times', read as "
+        "permuting the cell labels of the event's spikes, as the code does "
+        "(each cell keeps its spike count, the event its spike times). "
+        "'Significant those sequences with correlations whose absolute value "
+        "exceeded 5% of the shuffled distribution': |cosine| against the "
+        "shuffles' |cosine|, p = (k + 1) / 101 < 0.05, which allows at most "
+        "4 shuffles at or above the event where a percentile rule allows 5.",
+        "At least 2 active cells (a pair; not stated). Candidate events "
+        "(post-task sleep SWRs) are not detected here.",
+        "'We normalized the proportion of significant events by subtracting "
+        "the mean proportion of significant events in pre-task sleep': a "
+        "session statistic, not applied per event. Run "
+        "compare_replay_methods on the pre- and post-task events and "
+        "subtract the pre-task detection rate (detection_rates) from the "
+        "post-task one.",
+    ),
+)
+
 MABOUDI_2018 = ReplayMethod(
     name="maboudi_2018",
     reference=(
@@ -5514,7 +5630,8 @@ PUBLISHED_METHODS: tuple[
     | RankOrderMethod
     | PairwiseOrderMethod
     | ArmReplayMethod
-    | TemplateMatchMethod,
+    | TemplateMatchMethod
+    | BiasSequenceMethod,
     ...,
 ] = (
     LEE_WILSON_2002,
@@ -5554,6 +5671,7 @@ PUBLISHED_METHODS: tuple[
     HARVEY_2023,
     HARVEY_2023_LINE,
     LIU_2023,
+    LIU_2023_BIAS,
     SOULA_2023,
     MALLORY_2025,
     CHANG_2025,

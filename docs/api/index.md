@@ -259,6 +259,13 @@ Detecting the candidate events (ripples, population bursts) is not included.
   pairwise-order test of Gupta et al. 2010 (`GUPTA_2010`) to an event's
   spikes on every template (such as each lap), forward and backward;
   `compare_replay_methods(spike_times=...)` runs it with the other methods
+- `pairwise_bias_matrix()`, `mean_pairwise_bias()`, `bias_similarity()`,
+  `bias_similarity_significance()`: Skew-bias matrices of firing order for
+  an event or averaged over many (such as theta cycles), and the cosine
+  between two against permuted cell labels (Liu et al. 2023, after Drieu
+  et al. 2018); `detect_bias_sequence_replay()`, `BiasSequenceMethod` and
+  `LIU_2023_BIAS` apply the published test, and
+  `compare_replay_methods(template_bias=...)` runs it with the other methods
 - `shuffle_cell_identity()`, `shuffle_spike_counts_circular()`,
   `shuffle_spike_counts_uniform()`, `shuffle_place_fields_circular()`,
   `shuffle_place_fields_circular_2d()`, `shuffle_posterior_circular()`,
