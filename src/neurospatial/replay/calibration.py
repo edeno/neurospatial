@@ -1349,8 +1349,9 @@ def simulated_null_events(
     :func:`~neurospatial.simulation.simulate_replay_event`: cells fire as
     Poisson processes at ``rate_gain`` times their rate at a position that
     jumps at random every 20 ms (``"random"``) or stays put, at a position
-    drawn uniformly along the track (``"stationary"``, which line fits
-    score well but correlation scores do not). Match ``rate_gain`` to the
+    drawn uniformly along the track (``"stationary"``, which the line
+    search of ``detect_trajectory_radon`` scores well but correlation scores
+    and the R² of ``fit_linear_trajectory`` do not). Match ``rate_gain`` to the
     real events' spike counts, or stratify rates by active cells: with
     running rates, many events fail cell criteria and their rates are not
     comparable.
