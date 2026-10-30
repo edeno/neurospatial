@@ -204,6 +204,13 @@ class ReplaySegmentation:
         Time bins in which fewer cells spike cannot be on a trajectory
         (Carey et al. 2019: 4). They are passed to ``replay_segments`` as
         invalid time bins, so :func:`detect_replay` needs ``spike_counts``.
+    rows : {"segment", "trajectory"}
+        Rows of the tested segment that the score, shuffles and
+        trajectory-metric criteria use. ``"segment"`` uses every row the
+        segment spans, including rows skipped or merged across;
+        ``"trajectory"`` uses only its trajectory time bins
+        (``ReplaySegmentsResult.trajectory_time_bins``), as the Mallory et
+        al. (2025) code does. Times keep their values either way.
     """
 
     options: Mapping[str, Any]
@@ -212,6 +219,7 @@ class ReplaySegmentation:
     )
     choose: Literal["longest", "any"] = "longest"
     min_active_cells_per_time_bin: int | None = None
+    rows: Literal["segment", "trajectory"] = "segment"
 
     def __post_init__(self) -> None:
         """Freeze the mappings and refuse options replay_segments does not take."""
@@ -257,6 +265,11 @@ class ReplaySegmentation:
                 f"ReplaySegmentation: choose must be 'longest' or 'any', got "
                 f"{self.choose!r}."
             )
+        if self.rows not in ("segment", "trajectory"):
+            raise ValueError(
+                f"ReplaySegmentation: rows must be 'segment' or 'trajectory', "
+                f"got {self.rows!r}."
+            )
         cells = self.min_active_cells_per_time_bin
         if cells is not None and (
             isinstance(cells, bool)
@@ -276,6 +289,7 @@ class ReplaySegmentation:
                 tuple(sorted(self.relative_to.items())),
                 self.choose,
                 self.min_active_cells_per_time_bin,
+                self.rows,
             )
         )
 
@@ -288,6 +302,7 @@ class ReplaySegmentation:
                 dict(self.relative_to),
                 self.choose,
                 self.min_active_cells_per_time_bin,
+                self.rows,
             ),
         )
 
@@ -387,7 +402,9 @@ class ReplayMethod:
         template is tested. ``"most_posterior"`` tests the template that
         holds the most posterior over the event, leaving out
         ``exclude_end_distance`` at each track end (Mallory et al. 2025);
-        the first template wins a tie. None needs ``template=``.
+        the last template wins a tie, as in the Mallory et al. code, which
+        tests the second map unless the first holds more. None needs
+        ``template=``.
     exclude_end_distance : float
         Distance, in the method's ``units``, left out at each end of each
         template's track when the templates are compared: by
@@ -481,7 +498,12 @@ class ReplayMethod:
                 f"'most_posterior', got {self.template_choice!r}."
             )
         distance = self.exclude_end_distance
-        if not (np.isfinite(distance) and distance >= 0):
+        if not (
+            isinstance(distance, (int, float, np.integer, np.floating))
+            and not isinstance(distance, bool)
+            and np.isfinite(distance)
+            and distance >= 0
+        ):
             raise ValueError(
                 f"ReplayMethod {self.name!r}: exclude_end_distance must be a "
                 f"finite distance >= 0, got {distance!r}."
@@ -573,8 +595,8 @@ class ReplayDetectionResult(ResultMixin):
         segmentation or without segments. ``segments.rows(segment)`` selects
         its rows.
     template : str or None
-        The tested template of a joint decode; None for an event decoded on
-        one set of rate maps.
+        The tested template of a joint decode, chosen or given as
+        ``template=``; None for an event decoded on one set of rate maps.
     """
 
     method: str
@@ -776,7 +798,12 @@ def detect_replay(
                         fix=f"pass template= one of {list(joint.template_names)}",
                     )
                 )
-            template = max(fractions, key=fractions.__getitem__)
+            template = max(reversed(list(fractions)), key=fractions.__getitem__)
+        elif template not in joint.template_names:
+            raise ValueError(
+                f"{_OPERATION}: template {template!r} is not a template of the "
+                f"joint decode; choose one of {list(joint.template_names)}."
+            )
         tested: str = template
         if fractions:
             event_values["template_fraction"] = fractions[tested]
@@ -811,6 +838,23 @@ def detect_replay(
         track_env = env[template]
     else:
         track_env = env
+    if joint is not None:
+        assert template is not None
+        decoded_env = joint.conditional[template].env
+        if track_env is not decoded_env and (
+            track_env.n_bins != decoded_env.n_bins
+            or track_env.units != decoded_env.units
+            or not np.allclose(track_env.bin_centers, decoded_env.bin_centers)
+        ):
+            raise ValueError(
+                _format_error(
+                    f"{_OPERATION}: env is not the environment template "
+                    f"{template!r} was decoded on.",
+                    why="positions and distances would be read on other bins",
+                    fix="pass the environment (or mapping of environments) "
+                    "given to decode_jointly",
+                )
+            )
     if replay_method.units is not None and track_env.units != replay_method.units:
         stated = (
             "has no units" if track_env.units is None else f"is in {track_env.units!r}"
@@ -928,7 +972,7 @@ def detect_replay(
                 values={c.label: np.nan for c in replay_method.criteria},
                 segments=segments,
                 segment=None,
-                template=None if joint is None else template,
+                template=template,
             )
         rows = segments.rows(segment)
         if joint is not None:
@@ -940,8 +984,11 @@ def detect_replay(
             event_values["segment_template_fraction"] = masses[tested] / sum(
                 masses.values()
             )
-        posterior, times = posterior[rows], times[rows]
-        counts = None if counts is None else counts[rows]
+        tested_rows = np.arange(rows.start, rows.stop)
+        if segmentation.rows == "trajectory":
+            tested_rows = tested_rows[segments.trajectory_time_bins[rows]]
+        posterior, times = posterior[tested_rows], times[tested_rows]
+        counts = None if counts is None else counts[tested_rows]
 
     if replay_method.empty_time_bins == "drop":
         assert counts is not None
@@ -1026,7 +1073,7 @@ def detect_replay(
         values=values,
         segments=segments,
         segment=segment,
-        template=None if joint is None else template,
+        template=template,
     )
 
 
@@ -1239,7 +1286,9 @@ def compare_replay_methods(
         Each event's spike counts, for methods that need them.
     encoding_models, dt, prior, template
         The decoding inputs, for the nulls that decode again (see
-        :func:`detect_replay`).
+        :func:`detect_replay`). For joint decodes, ``template`` is the
+        template tested by methods without a ``template_choice``; methods
+        with one choose the template of each event themselves.
     valid_time_bins : sequence of arrays or None
         Each event's valid time bins, for methods with a segmentation (see
         :func:`detect_replay`).
@@ -1367,7 +1416,10 @@ def compare_replay_methods(
                 encoding_models=encoding_models,
                 dt=dt,
                 prior=prior,
-                template=template,
+                template=None
+                if isinstance(event, JointDecodingResult)
+                and method.template_choice is not None
+                else template,
                 pseudo_event_pool=pool,
                 valid_time_bins=None
                 if valid_time_bins is None
@@ -1741,6 +1793,7 @@ MALLORY_2025 = ReplayMethod(
             "merge_max_distance": "track_length",
             "min_peak_probability": "chance",
         },
+        rows="trajectory",
     ),
     criteria=(
         ReplayCriterion("segment_template_fraction", ">=", 0.5),
@@ -1771,20 +1824,27 @@ MALLORY_2025 = ReplayMethod(
         "bin size twice, halving it; the intended threshold is used.",
         "The code rejects the segment when the other map holds more "
         "posterior over its time bins: segment_template_fraction >= 0.5.",
+        "The score and metrics use the segment's trajectory time bins only "
+        "(load_candidateEvents_cm_new.m drops the NaN rows of the segment), "
+        "at their own times; whether the code's weighted_correlation.m, "
+        "which is not deposited, uses times or row numbers is unknown.",
         "Criteria from load_replay_criterion.m and the bioRxiv methods: more "
-        "than 66% of the posterior in one map (the code tests |left - right| "
-        "> 0.33 on the whole event with the ends left out, the same as a "
-        "fraction above 0.665), weighted correlation above 0.6 in absolute "
-        "value, maximum MAP jump below 40% of the track, MAP range above 20% "
-        "of the track, and at least 10 cells active in the event.",
-        "The weighted correlation uses the template's jointly normalized "
-        "posterior as weights, as the bioRxiv formula states; the code's "
-        "weighted_correlation.m is not deposited.",
-        "load_candidateEvents_cm_new.m skips segments shorter than 50 ms "
-        "from the start of the first window to the end of the last; with "
-        "20 ms windows that is the segmentation's 30 ms between centers.",
-        "The deposit calls the metrics step in commented-out code and does "
-        "not include the script that applies load_replay_criterion.m.",
+        "than 66% of the posterior in one map, weighted correlation above "
+        "0.6 in absolute value, maximum MAP jump below 40% of the track, MAP "
+        "range above 20% of the track, and at least 10 cells active in the "
+        "event.",
+        "The script that applies load_replay_criterion.m is not deposited. "
+        "The directional rule is read as the |left - right| > 0.33 that "
+        "filter_candidate_events.m stores for the whole event with 10 bins "
+        "(20 cm) left out at each end, the same as a fraction above 0.665; "
+        "the metrics script also computes fractions with 15 bins (30 cm) "
+        "left out.",
+        "The weighted correlation uses the template's columns of the joint "
+        "posterior as weights (best_posterior in "
+        "load_candidateEventMetricsDirectionalDecoding.m).",
+        "load_replay_criterion.m sets a 50 ms duration threshold; measured "
+        "from the start of the first 20 ms window to the end of the last, "
+        "that is the segmentation's 30 ms between centers.",
     ),
 )
 

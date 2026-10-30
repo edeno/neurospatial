@@ -688,6 +688,33 @@ class TestLoneBins:
         assert _segments(straight) == [[0, 6]]
 
 
+def test_a_lone_bin_between_merged_pieces_is_off_the_trajectory_between_jumps(
+    track,
+):
+    """With jump_rule="between" a lone bin is not on the trajectory.
+
+    Row 3 jumps 40 cm from row 2 and leads on to row 4, whose MAP is the
+    same but whose peak is too low. The Mallory et al. (2025) code leaves
+    row 3 out; the pieces 0-2 and 5-6 still merge.
+    """
+    posterior = _sweep(track, [1, 2, 3, 7, 7, 4, 5]).astype(float)
+    posterior[4] = 0.0
+    posterior[4, [7, 0, 9]] = [0.4, 0.3, 0.3]
+    result = replay_segments(
+        track,
+        posterior,
+        _times(7),
+        max_jump=20.0,
+        min_peak_probability=0.5,
+        merge_max_time_gap=0.1,
+        merge_max_distance=25.0,
+    )
+    assert _segments(result) == [[0, 7]]
+    np.testing.assert_array_equal(
+        np.flatnonzero(result.trajectory_time_bins), [0, 1, 2, 5, 6]
+    )
+
+
 class TestValidTimeBins:
     @pytest.fixture(scope="class")
     def sweep(self, track):
