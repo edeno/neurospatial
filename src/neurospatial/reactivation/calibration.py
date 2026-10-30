@@ -16,6 +16,9 @@ calls reactivation when there is none, and what drives a false call:
 - :func:`reactivation_detection_rates` gives each method's share of rows
   called reactivated, with a confidence interval: on null data its
   false-positive rate, on simulated reactivation its sensitivity.
+- :func:`equalize_firing_rates` removes randomly chosen spikes so each
+  unit fires at the same rate before and after the task, the rate control
+  of Giri et al. (2019).
 
 Tingley & Peyrache (2020) list three limits of explained variance: it
 "does not account for the possible change in firing rates (independent of
@@ -23,7 +26,8 @@ correlations) that inevitably leads to changes in correlation", "does not
 allow for the resolution of reactivation in time", and considers "all
 cell-pair correlation values …, not controlling for the fact that data of
 limited duration inevitably generates non-zero correlations". The null
-data and the rate-change simulation test the first and the last.
+data and the rate-change simulation test the first and the last, and
+:func:`equalize_firing_rates` controls for the first.
 """
 
 from __future__ import annotations
@@ -38,12 +42,14 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
 from neurospatial._spikes import as_spike_trains
+from neurospatial.reactivation.assemblies import _validated_counts
 
 if TYPE_CHECKING:
     import pandas as pd
 
 __all__ = [
     "SimulatedReactivationSession",
+    "equalize_firing_rates",
     "null_reactivation_data",
     "reactivation_detection_rates",
     "simulated_reactivation_session",
@@ -187,6 +193,11 @@ class SimulatedReactivationSession:
         Units of each assembly.
     reactivation, rate_change : float
         The simulation's settings (see :func:`simulated_reactivation_session`).
+    control_events, match_events : ndarray, shape (n_events, 2)
+        Start and stop of each population burst of the two rest periods,
+        overlapping bursts merged into one event: stand-ins for the
+        sharp-wave ripples of sleep, for the recipes that count spikes per
+        event or follow R(t) around events.
     """
 
     spike_times: tuple[NDArray[np.float64], ...]
@@ -196,6 +207,8 @@ class SimulatedReactivationSession:
     assemblies: tuple[tuple[int, ...], ...]
     reactivation: float
     rate_change: float
+    control_events: NDArray[np.float64]
+    match_events: NDArray[np.float64]
 
 
 def simulated_reactivation_session(
@@ -222,7 +235,10 @@ def simulated_reactivation_session(
     about 10 ms. During both rest periods every unit's rate is multiplied by
     ``burst_gain`` in 100 ms population bursts that occur ``burst_rate``
     times per second, like the population events of sleep; they make pair
-    correlations in rest grow with firing rates.
+    correlations in rest grow with firing rates. The bursts are returned as
+    ``control_events`` and ``match_events``, stand-ins for sharp-wave
+    ripples; assembly events in rest fall in them only by chance, as often
+    as the bursts cover the period (5% with the defaults).
 
     Parameters
     ----------
@@ -257,7 +273,8 @@ def simulated_reactivation_session(
     Returns
     -------
     SimulatedReactivationSession
-        Spike times, the three periods' epochs and the assemblies.
+        Spike times, the three periods' epochs, the assemblies and the
+        bursts of the two rest periods as events.
 
     Raises
     ------
@@ -308,6 +325,7 @@ def simulated_reactivation_session(
     member = np.zeros(n_units, dtype=bool)
     member[members] = True
     trains: list[list[NDArray[np.float64]]] = [[] for _ in range(n_units)]
+    burst_times: dict[bool, NDArray[np.float64]] = {}
     for start, stop in (control[0], template[0], match[0]):
         rest = start != template[0, 0]
         after = start == match[0, 0]
@@ -321,6 +339,7 @@ def simulated_reactivation_session(
             bursts = generator.uniform(
                 start, stop - 0.1, generator.poisson(burst_rate * duration)
             )
+            burst_times[bool(after)] = bursts
             for unit in range(n_units):
                 extra = (burst_gain - 1) * rate * gains[unit] * 0.1
                 counts = generator.poisson(extra, bursts.size)
@@ -350,10 +369,197 @@ def simulated_reactivation_session(
         template_epochs=template,
         match_epochs=match,
         control_epochs=control,
+        control_events=_merged_events(burst_times.get(False)),
+        match_events=_merged_events(burst_times.get(True)),
         assemblies=assemblies,
         reactivation=float(reactivation),
         rate_change=float(rate_change),
     )
+
+
+def equalize_firing_rates(
+    control_counts: NDArray[np.float64],
+    match_counts: NDArray[np.float64],
+    *,
+    rng: np.random.Generator | int | None = None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Remove random spikes so each unit fires at one rate in both periods.
+
+    The rate control of Giri et al. (2019): "we repeated this analysis
+    after subsampling to equalize the firing rate for each neuron in PRE
+    and POST … for 100 different random subsamples equalizing PRE and POST
+    spike counts of each cell". For each unit, the period in which it fires
+    more per bin loses randomly chosen spikes until it fires as much per
+    bin as in the other period; the other period is unchanged.
+
+    Parameters
+    ----------
+    control_counts : NDArray[np.float64], shape (n_control_bins, n_units)
+        Spike counts of the control period (e.g. rest before the task):
+        whole, non-negative numbers of spikes.
+    match_counts : NDArray[np.float64], shape (n_match_bins, n_units)
+        Spike counts of the match period (e.g. rest after the task), binned
+        with the same bin size and the same units in the same column order.
+    rng : numpy.random.Generator, int, or None
+        Seed or generator of the subsample.
+
+    Returns
+    -------
+    control_counts, match_counts : NDArray[np.float64]
+        The counts after removing spikes, same shapes as the inputs. With
+        the same number of bins in both periods, each unit has the same
+        total count in both: the smaller of its two totals.
+
+    Raises
+    ------
+    ValueError
+        If the counts are not 2-D, hold NaN, infinite, negative or
+        fractional values, or the two periods have different numbers of
+        units.
+
+    Notes
+    -----
+    **What is removed.** For unit ``i`` with mean counts per bin
+    :math:`\\bar a^{c}_i` and :math:`\\bar a^{m}_i` in ``n_c`` and ``n_m``
+    bins, the period with the higher mean keeps
+    ``round(min(mean_c, mean_m) * n_bins)`` of its spikes, chosen uniformly
+    at random without replacement among the unit's spikes in that period.
+    Removing a random subset of spikes and then binning gives the same
+    counts as drawing the kept spikes from the binned counts, so the
+    subsample is drawn from the counts; the bins and the other units are
+    untouched.
+
+    **Counts or rates.** Giri et al. describe the control both as equal
+    firing rates and as equal spike counts. The two agree when the periods
+    have the same duration, as their 15-minute windows do, and then each
+    unit's counts are equal exactly. For periods of different lengths this
+    function equalizes the rate (mean count per bin), which is what the
+    control is for: equal counts in periods of different lengths would
+    leave the rates, and so the correlations, different. Bin both periods
+    with the same bin size.
+
+    **One subsample per call.** Giri et al. drew 100 subsamples and
+    reported the median correlation and p-value. Call this function once
+    per subsample with one generator, compute the statistic on each and
+    take the median; ``ReactivationMethod(n_rate_subsamples=...)`` does
+    this inside :func:`~neurospatial.reactivation.compare_reactivation_methods`.
+
+    **What it controls and what it costs.** Pair correlations of spike
+    counts grow with firing rate when cells share slow or population-wide
+    modulation (de la Rocha et al. 2007), so cells that fire more after the
+    task can look reactivated without firing together any more than before
+    (Tingley & Peyrache 2020). Equal rates remove that difference. The
+    template period is not changed. The subsample also removes spikes of
+    true co-firing in the period that fired more, so it lowers a genuine
+    reactivation too; it is a conservative check, not an unbiased estimate.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.reactivation import equalize_firing_rates
+    >>> rng = np.random.default_rng(0)
+    >>> before = rng.poisson([1.0, 2.0], (600, 2)).astype(float)
+    >>> after = rng.poisson([2.0, 2.0], (600, 2)).astype(float)
+    >>> new_before, new_after = equalize_firing_rates(before, after, rng=1)
+    >>> before.sum(axis=0).tolist(), after.sum(axis=0).tolist()
+    ([582.0, 1210.0], [1213.0, 1133.0])
+
+    Unit 0 loses spikes after, unit 1 before:
+
+    >>> new_before.sum(axis=0).tolist(), new_after.sum(axis=0).tolist()
+    ([582.0, 1133.0], [582.0, 1133.0])
+
+    References
+    ----------
+    Giri B, Miyawaki H, Mizuseki K, Cheng S, Diba K (2019). Hippocampal
+        reactivation extends for several hours following novel experience.
+        J Neurosci 39(5):866-875.
+    de la Rocha J, Doiron B, Shea-Brown E, Josić K, Reyes A (2007).
+        Correlation between neural spike trains increases with firing rate.
+        Nature 448:802-806.
+    Tingley D, Peyrache A (2020). On the methods for reactivation and
+        replay analysis. Phil Trans R Soc B 375:20190231.
+    """
+    call = "equalize_firing_rates()"
+    periods = {
+        name: _validated_counts(counts, call=call, argument=name)
+        for name, counts in (
+            ("control_counts", control_counts),
+            ("match_counts", match_counts),
+        )
+    }
+    control, match = periods["control_counts"], periods["match_counts"]
+    if control.shape[1] != match.shape[1]:
+        raise ValueError(
+            f"{call}: control_counts has {control.shape[1]} units and "
+            f"match_counts {match.shape[1]}; pass the same units in the same "
+            "column order."
+        )
+    for name, counts in periods.items():
+        if np.any(counts != np.round(counts)):
+            raise ValueError(
+                _format_error(
+                    f"{call}: {name} has fractional values.",
+                    why="Why: the subsample removes whole spikes, so it needs "
+                    "numbers of spikes per bin.",
+                    fix="pass raw counts from bin_spikes_in_time(), before any "
+                    "smoothing or normalization",
+                )
+            )
+    if control.shape[0] == 0 or match.shape[0] == 0:
+        raise ValueError(f"{call}: each period needs at least one time bin.")
+    generator = np.random.default_rng(rng)
+    rate = np.minimum(control.mean(axis=0), match.mean(axis=0))
+    return (
+        _thinned(control, np.round(rate * len(control)).astype(np.int64), generator),
+        _thinned(match, np.round(rate * len(match)).astype(np.int64), generator),
+    )
+
+
+def _thinned(
+    counts: NDArray[np.float64],
+    keep: NDArray[np.int64],
+    generator: np.random.Generator,
+) -> NDArray[np.float64]:
+    """Keep ``keep[i]`` of unit ``i``'s spikes, chosen uniformly at random.
+
+    Parameters
+    ----------
+    counts : ndarray, shape (n_bins, n_units)
+        Whole spike counts.
+    keep : ndarray of int, shape (n_units,)
+        Spikes to keep per unit, at most its total.
+    generator : numpy.random.Generator
+        Source of the subsample.
+
+    Returns
+    -------
+    ndarray, shape (n_bins, n_units)
+        Counts of the kept spikes.
+    """
+    flat = counts.astype(np.int64).ravel()
+    n_units = counts.shape[1]
+    # One entry per spike: its cell (bin * n_units + unit) in ``flat``.
+    cells = np.repeat(np.arange(flat.size), flat)
+    units = cells % n_units
+    # Random order of each unit's spikes, units in order 0, 1, ...
+    order = np.lexsort((generator.random(cells.size), units))
+    totals = counts.sum(axis=0).astype(np.int64)
+    first = np.concatenate([[0], np.cumsum(totals)[:-1]])
+    rank = np.arange(cells.size) - first[units[order]]
+    kept = cells[order][rank < keep[units[order]]]
+    thinned = np.bincount(kept, minlength=flat.size).reshape(counts.shape)
+    return thinned.astype(np.float64)
+
+
+def _merged_events(starts: NDArray[np.float64] | None) -> NDArray[np.float64]:
+    """100 ms events starting at ``starts``, overlapping ones merged, (n, 2)."""
+    if starts is None or not starts.size:
+        return np.zeros((0, 2))
+    starts = np.sort(starts)
+    rows = as_intervals(np.column_stack([starts, starts + 0.1]), name="events")
+    assert rows is not None
+    return rows
 
 
 def reactivation_detection_rates(

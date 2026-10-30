@@ -1,10 +1,12 @@
 """Simulate candidate replay events with a known path along a track.
 
-Replay methods are compared on events whose content is known: a sweep along
-the track should be detected, a stationary or scattered event should not
-(Tingley & Peyrache 2020; Takigawa et al. 2024). :func:`simulate_replay_event`
-moves a position along a track and draws spikes from place-cell rate maps at
-that position, so each method can be scored against the truth.
+Replay methods can be compared on simulated events whose content is known.
+Tingley & Peyrache (2020) degraded simulated sequences by adding noise
+spikes and removing real ones to see how each method's score falls.
+:func:`simulate_replay_event` moves a position along a track and draws spikes
+from place-cell rate maps at that position, so each method can be scored
+against the truth: a sweep along the track should be detected, a stationary
+or scattered event should not.
 """
 
 from __future__ import annotations
@@ -51,6 +53,12 @@ class ReplayEventSimulation(ReadOnlyArraysMixin, ResultMixin):
         Speed of the sweep along the track, in environment units per second
         (negative toward the track start); NaN for events without a constant
         speed.
+    drop_fraction : float
+        Fraction of the rate-map spikes asked to be removed.
+    n_dropped_spikes : int
+        Rate-map spikes removed from the event.
+    n_noise_spikes : int
+        Noise spikes added to the event, included in ``spike_times``.
 
     See Also
     --------
@@ -64,6 +72,9 @@ class ReplayEventSimulation(ReadOnlyArraysMixin, ResultMixin):
     kind: str
     duration: float
     speed: float
+    drop_fraction: float
+    n_dropped_spikes: int
+    n_noise_spikes: int
 
     def __post_init__(self) -> None:
         """Own read-only copies of the arrays, including each spike train."""
@@ -87,6 +98,9 @@ class ReplayEventSimulation(ReadOnlyArraysMixin, ResultMixin):
             "kind": self.kind,
             "duration": self.duration,
             "speed": self.speed,
+            "drop_fraction": self.drop_fraction,
+            "n_dropped_spikes": self.n_dropped_spikes,
+            "n_noise_spikes": self.n_noise_spikes,
             "n_spikes": int(sum(train.size for train in self.spike_times)),
             "n_active_cells": int(sum(train.size > 0 for train in self.spike_times)),
         }
@@ -103,13 +117,18 @@ def simulate_replay_event(
     jump_distance: float | None = None,
     rate_gain: float = 1.0,
     random_interval: float = 0.02,
+    drop_fraction: float = 0.0,
+    n_noise_spikes: int = 0,
     seed: int | None = None,
 ) -> ReplayEventSimulation:
     """Simulate a candidate replay event with a known path along a track.
 
     A position moves along the track and each cell fires as an
     inhomogeneous Poisson process at ``rate_gain`` times its rate map at that
-    position (with a 2 ms refractory period).
+    position (with a 2 ms refractory period). To degrade the event, a
+    fraction of these spikes can be removed and noise spikes added, as
+    Tingley & Peyrache (2020, Fig. 4) did to compare how replay methods
+    hold up as the signal-to-noise ratio falls.
 
     Parameters
     ----------
@@ -153,11 +172,34 @@ def simulate_replay_event(
         refractory period caps the realized rate at ``r / (1 + 0.002 r)``.
     random_interval : float, default=0.02
         How long each position of a ``"random"`` event lasts, in seconds.
+    drop_fraction : float, default=0.0
+        Fraction of the event's rate-map spikes to remove, from 0 to 1. The
+        nearest whole number of spikes (half rounds up) is removed, chosen
+        uniformly at random without replacement from all cells' spikes
+        together, as Tingley & Peyrache (2020) removed "real" spikes.
+    n_noise_spikes : int, default=0
+        Number of noise spikes to add after the removal. Each goes to a cell
+        drawn uniformly from all cells, at a time drawn uniformly over the
+        event, regardless of the path, the rate maps or the refractory
+        period, as Tingley & Peyrache (2020) inserted "noise" spikes. A
+        background rate of ``r`` Hz per cell is about
+        ``r * n_cells * duration`` spikes.
     seed : int or None
-        Seed for the path and the spikes, which draw from separate streams.
+        Seed for the path, the spikes, the removal and the noise spikes,
+        which draw from separate streams: changing ``drop_fraction`` does not
+        move the noise spikes, and neither changes the rate-map spikes
+        before removal.
 
     Notes
     -----
+    Tingley & Peyrache (2020) degraded a perfect event, 100 cells firing one
+    spike each in field order, by removing up to 90 spikes and adding up to
+    90 (``compareNoiseDegradation.m``, on a 1 ms grid, where a noise spike
+    on an occupied millisecond of a cell is lost). Here noise spikes take
+    continuous times, so every one is added. Sweep ``drop_fraction`` and
+    ``n_noise_spikes`` over a grid, with many seeds per setting, to draw a
+    method's detection rate against both, as in their Fig. 4.
+
     The path moves along the track's bins in track order, measured without
     the gaps a linearized track leaves between segments, so it never enters a
     gap. On a maze with several arms the track order joins arm ends, so a path
@@ -175,7 +217,9 @@ def simulate_replay_event(
         If ``env`` is neither 1-D nor a linearized track, if ``rates`` does not
         have one finite, non-negative row per cell and one column per bin, if
         ``speed`` is missing for a sweep, if a sweep leaves the track, or if
-        ``duration``, ``rate_gain`` or ``random_interval`` is not positive.
+        ``duration``, ``rate_gain`` or ``random_interval`` is not positive,
+        if ``drop_fraction`` is outside ``[0, 1]``, or if ``n_noise_spikes``
+        is not a non-negative integer.
 
     See Also
     --------
@@ -191,10 +235,6 @@ def simulate_replay_event(
     van der Meer, M. A. A., Kemere, C., & Diba, K. (2020). Progress and issues
     in second-order analysis of hippocampal replay. *Philosophical
     Transactions of the Royal Society B*, 375(1799), 20190238.
-
-    Takigawa, M., Huelin Gorriz, M., Tirole, M., & Bendor, D. (2024).
-    Evaluating hippocampal replay without a ground truth. *eLife*, 13,
-    e85635.
 
     Examples
     --------
@@ -213,6 +253,25 @@ def simulate_replay_event(
     array([  0., 159.])
     >>> event.summary()["n_active_cells"] > 15
     True
+
+    The same event with half its spikes removed (rounding half up) and 40
+    noise spikes added. With the same seed, the remaining rate-map spikes
+    are a subset of the event's:
+
+    >>> noisy = simulate_replay_event(
+    ...     env,
+    ...     rates,
+    ...     speed=800.0,
+    ...     rate_gain=3.0,
+    ...     drop_fraction=0.5,
+    ...     n_noise_spikes=40,
+    ...     seed=0,
+    ... )
+    >>> n_spikes = event.summary()["n_spikes"]
+    >>> noisy.n_dropped_spikes == (n_spikes + 1) // 2
+    True
+    >>> noisy.summary()["n_spikes"] == n_spikes - noisy.n_dropped_spikes + 40
+    True
     """
     from neurospatial.environment import _require_track_extents
     from neurospatial.simulation.spikes import generate_poisson_spikes
@@ -226,6 +285,20 @@ def simulate_replay_event(
     ):
         if not (np.isfinite(value) and value > 0):
             raise ValueError(f"{_OPERATION}: {name} must be positive, got {value!r}.")
+    if not 0.0 <= drop_fraction <= 1.0:
+        raise ValueError(
+            f"{_OPERATION}: drop_fraction must be a fraction from 0 to 1 of the "
+            f"event's spikes, got {drop_fraction!r}."
+        )
+    if (
+        isinstance(n_noise_spikes, bool)
+        or not isinstance(n_noise_spikes, (int, np.integer))
+        or n_noise_spikes < 0
+    ):
+        raise ValueError(
+            f"{_OPERATION}: n_noise_spikes must be a non-negative integer, got "
+            f"{n_noise_spikes!r}."
+        )
     starts, stops = _require_track_extents(
         env,
         _OPERATION,
@@ -235,7 +308,9 @@ def simulate_replay_event(
     maps = _validated_rates(rates, env.n_bins)
 
     seeds = np.random.SeedSequence(seed)
-    path_seed, spike_seed = seeds.spawn(2)
+    # Spawned in this order, the path and spike streams do not depend on
+    # the degradation settings.
+    path_seed, spike_seed, drop_seed, noise_seed = seeds.spawn(4)
     times: NDArray[np.float64] = np.arange(
         0.0, duration, _SAMPLE_INTERVAL, dtype=np.float64
     )
@@ -263,6 +338,12 @@ def simulate_replay_event(
         )
         for cell, cell_seed in zip(maps, cell_seeds, strict=True)
     )
+    spike_times, n_dropped = _drop_spikes(
+        spike_times, drop_fraction, np.random.default_rng(drop_seed)
+    )
+    spike_times = _add_noise_spikes(
+        spike_times, int(n_noise_spikes), duration, np.random.default_rng(noise_seed)
+    )
     positions = (
         env.linear_to_nd(track_positions)
         if env.is_linearized_track
@@ -276,6 +357,46 @@ def simulate_replay_event(
         kind=kind,
         duration=float(duration),
         speed=event_speed,
+        drop_fraction=float(drop_fraction),
+        n_dropped_spikes=n_dropped,
+        n_noise_spikes=int(n_noise_spikes),
+    )
+
+
+def _drop_spikes(
+    spike_times: tuple[NDArray[np.float64], ...],
+    fraction: float,
+    rng: np.random.Generator,
+) -> tuple[tuple[NDArray[np.float64], ...], int]:
+    """Remove a fraction of all cells' spikes, chosen without replacement."""
+    sizes = [train.size for train in spike_times]
+    n_spikes = sum(sizes)
+    n_dropped = int(np.floor(fraction * n_spikes + 0.5))
+    if n_dropped == 0:
+        return spike_times, 0
+    keep = np.ones(n_spikes, dtype=bool)
+    keep[rng.choice(n_spikes, size=n_dropped, replace=False)] = False
+    pieces = np.split(keep, np.cumsum(sizes)[:-1])
+    return (
+        tuple(train[kept] for train, kept in zip(spike_times, pieces, strict=True)),
+        n_dropped,
+    )
+
+
+def _add_noise_spikes(
+    spike_times: tuple[NDArray[np.float64], ...],
+    n_noise: int,
+    duration: float,
+    rng: np.random.Generator,
+) -> tuple[NDArray[np.float64], ...]:
+    """Add spikes to uniformly drawn cells at uniform times in the event."""
+    if n_noise == 0:
+        return spike_times
+    cells = rng.integers(len(spike_times), size=n_noise)
+    times = rng.uniform(0.0, duration, size=n_noise)
+    return tuple(
+        np.sort(np.concatenate([train, times[cells == cell]]))
+        for cell, train in enumerate(spike_times)
     )
 
 

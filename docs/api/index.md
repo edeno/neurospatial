@@ -190,11 +190,13 @@ Detecting the candidate events (ripples, population bursts) is not included.
   `null_options=`); significant when every null run rejects the event
 - `rank_order_correlation()`, `rank_order_significance()`: Spearman
   correlation of field order and firing order in an event, with a
-  cell-order permutation test; needs no decoding
+  cell-order permutation test; `multi_field_cells="exclude"` leaves out
+  cells with several place fields; needs no decoding
 - `pairwise_order_score()`, `pairwise_order_significance()`: Firing order
   of every pair of spikes less than 80 ms apart against the cells'
   place-field order, summed (Gupta et al. 2010), with spike-time and
   cell-identity shuffles; cells with several fields take their best field;
+  `unit_groups=` compares only cells on different tetrodes or shanks;
   needs no decoding
 - `detect_replay()`, `compare_replay_methods()`: Apply published replay
   methods (`neurospatial.replay.methods`: Davidson 2009, Karlsson & Frank
@@ -287,6 +289,10 @@ by position:
   cells) in each bin of a chosen period; descriptive rather than a
   calibrated bin-level significance test
 - `pairwise_correlations()`: Upper-triangle neuron-pair correlations
+- `pairwise_activation()`: co-firing in each bin weighted by every pair's
+  template correlation, the full-matrix reactivation strength of Tingley &
+  Peyrache (2020); its mean over a period is the inner product of the two
+  periods' pair correlations
 - `explained_variance_reactivation()`: EV (Kudrimoti et al., 1999) and REV
   (Pennartz et al., 2004) effect sizes over all pairs or selected pairs
   (`unit_groups=` for different tetrodes or regions, `pair_mask=`), with one
@@ -298,13 +304,27 @@ by position:
   sizes rather than significance verdicts
 - `detect_assemblies(component_threshold=...)`: Marchenko-Pastur (default),
   Tracy-Widom, bin-shuffle or circular-shift eigenvalue thresholds
-- `ReactivationMethod`, `ReactivationWindows`, `PUBLISHED_REACTIVATION_METHODS`
-  and `compare_reactivation_methods()`: published EV and assembly analyses
-  (Kudrimoti 1999 to Giri 2024) as recipes with their bin sizes, pair rules,
-  windows and tests, applied to one session's spike times
+- `ReactivationMethod`, `ReactivationWindows`, `EventResponse`,
+  `PUBLISHED_REACTIVATION_METHODS` and `compare_reactivation_methods()`:
+  published EV, assembly and member co-firing analyses (Kudrimoti 1999 to
+  Robinson 2026) as recipes with their bin sizes, pair rules, windows and
+  tests, applied to one session's spike times; spikes counted in fixed bins
+  or one bin per event (SWRs, theta cycles), and assemblies followed around
+  SWR onsets
+- `detect_assemblies(member_rule=...)`: members by absolute or signed weight
+  z-scores, Otsu's split or weights above 1/√N
+- `assembly_member_cofiring()`: correlations of a pattern's members in two
+  periods (El-Gaby et al., 2021); `assembly_similarity()`: absolute cosine
+  similarity and best matches between sessions' patterns
+- `assembly_event_response()`: R(t) averaged around events such as SWR
+  onsets, each event's response and a signed-rank test against a baseline
+- `explained_variance_contributions()`: each pair's and unit's share of EV
+  (Oliva et al., 2020); `ev_rev_contrast()`: (EV − REV) / (EV + REV)
 - `null_reactivation_data()`, `simulated_reactivation_session()` and
   `reactivation_detection_rates()`: data without reactivation, a simulated
   session with a rate-change confound, and verdict rates with exact intervals
+- `equalize_firing_rates()`: subsample spikes so each unit fires at one rate
+  before and after the task, the rate control of Giri et al. (2019)
 
 See [Comparing reactivation methods](../user-guide/reactivation-methods.md) and
 the [complete public workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).
@@ -463,7 +483,8 @@ Generate synthetic spatial data, neural activity, and spike trains for testing a
 - `simulation.examples`: Pre-configured example sessions
 - `simulation.replay`: `simulate_replay_event()`, a candidate replay event
   with a known path (sweep, stationary, jump or random), for comparing replay
-  methods
+  methods; `drop_fraction=` and `n_noise_spikes=` degrade it to measure
+  each method's sensitivity (Tingley & Peyrache 2020)
 
 **Key Classes:**
 

@@ -447,7 +447,7 @@ dimensions whose eigenvalues exceed the Marchenko-Pastur threshold: the
 largest eigenvalue expected if the units were independent, given the number of
 units and time bins. ICA then separates the kept dimensions into patterns of
 neuron weights, and units whose weight stands out (absolute weight more than
-2 standard deviations above the mean, set with `z_threshold=`) are listed as
+2 standard deviations above the mean, set with `member_threshold=`) are listed as
 core members. Pass the column labels as `unit_ids=`: each pattern then names
 its members by label (`member_unit_ids`), and later calls can match the
 columns of other periods to the pattern's weights by label.

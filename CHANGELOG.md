@@ -2,10 +2,34 @@
 
 ## [Unreleased]
 
-### Replay methods against Tingley & Peyrache (2020)
+### Replay checks from Tingley & Peyrache (2020)
 
 **New**
 
+- `simulate_replay_event(..., drop_fraction=0.0, n_noise_spikes=0)`:
+  degrade a simulated event as in Tingley & Peyrache's Fig. 4. A fraction
+  of the rate-map spikes is removed, chosen without replacement from all
+  cells together, then noise spikes are added to uniformly drawn cells at
+  uniform times. Each draws from its own seeded stream, and the defaults
+  leave the event unchanged bit for bit. `ReplayEventSimulation` records
+  `drop_fraction`, `n_dropped_spikes` and `n_noise_spikes`, also in
+  `summary()`.
+- `pairwise_order_score`, `pairwise_order_significance` and
+  `detect_pairwise_order_replay` take `unit_groups=`, one group (tetrode or
+  shank) per cell: only pairs of spikes from cells in different groups are
+  compared, the rule of `explained_variance_reactivation(unit_groups=)`, so
+  a burst split across two clusters of one tetrode cannot score as a
+  sequence. Each spike train keeps its group in both shuffles, and
+  `n_pairs` counts only the compared pairs.
+- `rank_order_correlation` and `rank_order_significance` take
+  `multi_field_cells="keep" | "exclude"` and `place_fields=`. Tingley &
+  Peyrache note that cells with several place fields have no single place
+  in the order and are typically excluded. `"exclude"` leaves out each cell
+  with more than one field, found by `detect_place_fields` with the rate
+  result's `bandwidth`, or given as `place_fields=` (required for rate maps
+  given as an array). `RankOrderResult` records `multi_field_cells` and
+  `excluded_units`, and `summary()` reports `n_excluded_cells`. The default
+  `"keep"` leaves results unchanged.
 - `score_agreement(table, *, groups=(), absolute=False)`: the Pearson
   correlation, across events, of every pair of methods' scores in a
   `compare_replay_methods` table (Tingley & Peyrache 2020, Fig. 3), per
@@ -13,6 +37,16 @@
   (weighted or rank-order correlation) and an unsigned one (line fit, R²)
   correlate near 0 when forward and reverse events are equally common,
   however well the methods agree.
+
+**Changed**
+
+- `rank_order_correlation` notes that Tingley & Peyrache's 5-12% false
+  positives are for random 10-cell sequences in sets of 100 events and
+  come from MATLAB's parametric p-value (about 5.4% per event at 10 cells,
+  8.3% at 4-5, 33% at 3); an exact permutation test stays at or below 5%.
+- `neurospatial.simulation.replay` no longer cites Tingley & Peyrache, or
+  Takigawa et al. (2024), for stationary or scattered control events,
+  which neither studied.
 
 **Documentation**
 
@@ -34,6 +68,82 @@
   ln(f1/f2) / (f1 - f2), 27.7 ms for 50 and 25 Hz) and how to pass an
   occupancy prior; and how the uniform-time and Poisson nulls measure the
   confound that faster cells fire first.
+
+### Event-based reactivation recipes
+
+Several labs count spikes per sharp-wave ripple (SWR) or theta cycle, or
+follow assemblies around SWR onsets. The reactivation recipes now do too.
+
+**New**
+
+- `ReactivationMethod(template_bins="events", rest_bins="events")` counts the
+  spikes of each event, from its start to its stop, as one bin: theta cycles
+  in the task, SWRs in rest. `compare_reactivation_methods` takes the events
+  as `template_events=`, `control_events=` and `match_events=` (`(start,
+  stop)` rows; a period uses the events starting in its window; events may
+  touch but not overlap, and events shorter than a bin are kept).
+  `min_events=` refuses a window with fewer events (an `error` row), and
+  `ReactivationMethod.needs_events` names the event arguments a recipe uses.
+  Counts per event share a duration component that raises every pair
+  correlation alike; the recipes' notes and the guide say so.
+- `measure="member_cofiring"` and `assembly_member_cofiring(control_counts,
+  match_counts, pattern)`: the Pearson correlation of every pair of a
+  pattern's members in each period, their means over the pairs defined in
+  both, and the difference (El-Gaby et al., 2021).
+- `detect_assemblies(..., member_rule=, member_threshold=)` chooses the
+  members: `"abs_z"` (the default, as before), `"positive_z"` (signed
+  weights above mean + `member_threshold` SD, El-Gaby et al. 2021),
+  `"otsu"` (Otsu's split of the absolute weights, Harvey et al. 2023) or
+  `"inverse_sqrt_n"` (weights above 1/√N, Robinson et al. 2026).
+  `z_threshold=` is renamed `member_threshold=`.
+- `assembly_event_response(times, activation, event_times, window, *,
+  response_window=, baseline_window=, reduce=)`: R(t) averaged around events,
+  each event's mean over a response window, and a signed-rank test against a
+  baseline window. Recipes take it as `event_response=EventResponse(...)`,
+  with `zscore_over="control_and_match"` (or `"all_periods"`) to z-score rest
+  before and after together, `activation_step=` for sliding bins or the
+  sampling of smoothed spikes, statistics `"event_response_difference"` and
+  `"event_response_ratio"`, `test="event_modulation"`, and the share of
+  events whose response is z > `significant_z`.
+- `ReactivationMethod(detection_units="each_region" |
+  "each_region_and_cross_region")` detects patterns in each region's units,
+  and across regions keeping patterns with members in at least two
+  (`region` column).
+- EV recipes take `statistic="partial_correlation"` (the correlation of the
+  residuals of the task and post-task pair correlations regressed on the
+  pre-task ones), `"semipartial_correlation"` (only the post-task side
+  residualized; new `ExplainedVarianceResult.semipartial_correlation`) and
+  `"ev_rev_contrast"`; `ev_rev_contrast(ev, rev)` returns (EV − REV) /
+  (EV + REV) (Karaba et al. 2024; no Karaba recipe, its methods supplement
+  was not read).
+- `explained_variance_contributions(...)`: EV with every pair minus EV
+  without each pair, and each unit's mean over its pairs (Oliva et al.
+  2020). `assembly_similarity(patterns, reference_patterns)`: absolute
+  cosine similarity and each pattern's best match (El-Gaby et al. 2021).
+- Recipes, every value quoted in their `notes` with the choices the papers
+  leave open: `OLIVA_2020_EV` (100 ms task bins, one bin per SWR, EV − REV),
+  `OLIVA_2020_ASSEMBLY` (20 ms, Gaussian SD 10 ms), `EL_GABY_2021` (25 ms
+  ICA, signed members above mean + 2 SD, member-pair correlations over
+  SWRs, at least 200 SWRs), `HARVEY_2023_ASSEMBLY` (25 ms ICA, Otsu members,
+  spikes smoothed by 25 / √12 ms every 2 ms, first NREM hour, peak of the
+  SWR-triggered mean 0–50 ms), `LIU_2023_EV` and `LIU_2023_PAIRWISE` (theta
+  cycles and SWRs as bins; EV and the semipartial correlation),
+  `LIU_2023_ASSEMBLY` (25 ms, members above mean + 2 SD, last and first NREM
+  hour, mean R(t) 0–100 ms after SWR onsets), `CHANG_2025_ASSEMBLY` (50 ms
+  bins every 10 ms, members above mean + 3 SD, (POST − PRE) / PRE, signed-rank
+  test against −500 to −100 ms), `ROBINSON_2026_PAIRWISE` (the partial
+  correlation) and `ROBINSON_2026_ASSEMBLY` (per region and across regions,
+  members above 1/√N, share of SWRs with z > 1.96). Robinson et al. was read
+  from the bioRxiv preprint.
+- `simulated_reactivation_session()` returns its rest bursts as
+  `control_events` and `match_events`.
+
+**Documentation**
+
+- The "Comparing reactivation methods" guide
+  compares the event-based recipes, shows how event lengths raise pair
+  correlations, and shows that a rate change without co-firing raises the
+  SWR responses of the assembly recipes more than reactivation does.
 
 ### Fernández-Ruiz-lab replay methods
 
@@ -199,12 +309,53 @@ Several replay papers test a whole data set, not each event:
 
 **Documentation**
 
-- New guide, [Comparing reactivation methods](docs/user-guide/reactivation-methods.md):
+- New guide, "Comparing reactivation methods":
   the published recipes on one simulated session, what each reports, their
   values on three kinds of null data and on a session without reactivation,
   the rate-change confound that every published method calls reactivation,
   the choice of assembly threshold, and how to run the recipes on your own
   recording.
+
+### Reactivation checks from Tingley & Peyrache (2020)
+
+**New**
+
+- `equalize_firing_rates(control_counts, match_counts, *, rng=)` is the rate
+  control of Giri et al. (2019): for each unit, the period in which it fires
+  more per bin loses spikes chosen uniformly at random until both periods
+  have its lower rate. With periods of equal length each unit's counts are
+  equal exactly. Pair correlations grow with firing rate, so this separates
+  more co-firing after the task from more firing (Tingley & Peyrache 2020).
+- `ReactivationMethod(n_rate_subsamples=)` applies that control inside
+  `compare_reactivation_methods`: each pair of control and match windows is
+  subsampled this many times, and EV, REV, the partial correlation and its
+  p-value are the medians over subsamples, as Giri et al. reported them. On
+  a simulated session whose assembly members only fire more after the task,
+  Kudrimoti's EV falls from 0.11-0.13 to the level of a session without the
+  rate change; with real reactivation it stays above 0.7. `GIRI_2019` keeps
+  its main analysis; its notes say where the paper applied the control
+  (`dataclasses.replace(GIRI_2019, n_rate_subsamples=100)`).
+- `pairwise_activation(spike_counts, template_correlations, *,
+  z_score_input=, unit_ids=, template_unit_ids=)` is the reactivation
+  strength of Tingley & Peyrache (2020) in its simplest case: each bin's
+  z-scored population vector projected on the template's whole correlation
+  matrix with a zero diagonal (the "cell-pair coherogram" of their
+  supplement). Its mean over a period is the sum over neuron pairs of the
+  products of the two periods' correlations, which the tests check against
+  `np.corrcoef`; a rank-one template gives `assembly_activation`.
+
+**Documentation**
+
+- [Comparing reactivation methods](docs/user-guide/reactivation-methods.md)
+  applies both of Tingley & Peyrache's rate controls to sessions with and
+  without reactivation and a rate change. Equal rates bring the rate-change
+  EV to the null level and keep real reactivation. Bins of 5 s also stop
+  the rate-change session being called reactivated, but only because 240
+  bins estimate each correlation too poorly to see it; the member-pair
+  excess is unchanged and real EV halves. The guide also compares EV and
+  assembly differences at 50, 100 and 250 ms (the assembly rate confound
+  grows with the bin) and follows reactivation in time with
+  `pairwise_activation`.
 
 ### Reactivation measures
 

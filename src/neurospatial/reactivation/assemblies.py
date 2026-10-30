@@ -161,6 +161,7 @@ __all__ = [
     "detect_assemblies",
     "explained_variance_reactivation",
     "marchenko_pastur_threshold",
+    "pairwise_activation",
     "pairwise_correlations",
 ]
 
@@ -181,6 +182,8 @@ _COMPONENT_THRESHOLDS = (
     "circular_shift",
 )
 _SURROGATE_THRESHOLDS = ("bin_shuffle", "circular_shift")
+MemberRule = Literal["abs_z", "positive_z", "otsu", "inverse_sqrt_n"]
+_MEMBER_RULES = ("abs_z", "positive_z", "otsu", "inverse_sqrt_n")
 _THRESHOLD_NAMES = {
     "marchenko_pastur": "Marchenko-Pastur bound",
     "tracy_widom": "Marchenko-Pastur bound plus the Tracy-Widom term",
@@ -202,8 +205,8 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
         each pattern to unit length and orients it so its largest-magnitude
         weight is positive.
     member_indices : NDArray[np.int64], shape (n_members,)
-        Column positions of neurons whose absolute-weight z-scores exceed
-        z_threshold, the "core" members of the assembly: unique integers in
+        Column positions of the "core" members of the assembly, chosen by
+        ``detect_assemblies(member_rule=...)``: unique integers in
         ``[0, n_neurons)``, in increasing order.
     explained_variance_ratio : float
         Fraction of the population's variance this pattern accounts for, in
@@ -244,9 +247,10 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
 
     **Member Selection**:
 
-    Members are selected by z-scoring absolute weights across neurons and
-    thresholding. With the default cutoff of 2.0, an absolute weight must be
-    more than two standard deviations above their mean to be selected.
+    By default members are selected by z-scoring absolute weights across
+    neurons and thresholding (``member_rule="abs_z"``). With the default
+    cutoff of 2.0, an absolute weight must be more than two standard
+    deviations above their mean to be selected.
     This is a heuristic weight cutoff,
     not a calibrated per-neuron significance test. A detected pattern can have
     no core members even when its underlying dimension exceeds the
@@ -254,7 +258,7 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
     neurons and the rest 0, the members' z-score is
     :math:`\\sqrt{(n - k) / k}`: 3 members of 9 neurons reach only 1.41,
     below the default cutoff, so small recordings or large assemblies need a
-    lower ``z_threshold``.
+    lower ``member_threshold``.
 
     Examples
     --------
@@ -581,7 +585,20 @@ class ExplainedVarianceResult(ResultMixin):
         and with several controls (REV is defined for one).
     partial_correlation : float
         Partial correlation between template and match, controlling for the
-        control periods; without a control, their plain correlation.
+        control periods; without a control, their plain correlation. It is
+        also the correlation between the residuals of the template and of
+        the match correlations, each regressed (with an intercept) on the
+        controls (Robinson et al., 2026's pairwise reactivation).
+    semipartial_correlation : float
+        Correlation between the template correlations and the residuals of
+        the match correlations regressed (with an intercept) on the
+        controls; only the match side is residualized. With one control,
+        ``(r_tm - r_tc * r_mc) / sqrt(1 - r_mc**2)``. Liu et al. (2023),
+        after Giri et al. (2019), "used linear regression between CPOST and
+        CPRE to remove the portion of the variance in CPOST that can be
+        explained by preexisting patterns, and ... correlated the resultant
+        residuals CRESIDUAL with C". Its magnitude is at most that of
+        ``partial_correlation``. Without a control, the plain correlation.
     p_value : float
         Two-sided p-value of ``partial_correlation`` from the t test
         ``t = r * sqrt(df / (1 - r**2))`` with
@@ -626,6 +643,7 @@ class ExplainedVarianceResult(ResultMixin):
     explained_variance: float
     reversed_explained_variance: float
     partial_correlation: float
+    semipartial_correlation: float
     p_value: float
     n_pairs: int
     n_controls: int
@@ -636,6 +654,7 @@ class ExplainedVarianceResult(ResultMixin):
             "explained_variance": self.explained_variance,
             "reversed_explained_variance": self.reversed_explained_variance,
             "partial_correlation": self.partial_correlation,
+            "semipartial_correlation": self.semipartial_correlation,
             "p_value": self.p_value,
             "n_pairs": self.n_pairs,
             "n_controls": self.n_controls,
@@ -830,7 +849,8 @@ def detect_assemblies(
     component_threshold: ComponentThreshold = "marchenko_pastur",
     percentile: float | None = None,
     n_shuffles: int = 1000,
-    z_threshold: float = 2.0,
+    member_rule: MemberRule = "abs_z",
+    member_threshold: float = 2.0,
     rng: int | np.random.Generator | None = None,
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> AssemblyDetectionResult:
@@ -902,9 +922,32 @@ def detect_assemblies(
         default of the authors' Python code (``nshu=1000``). Ignored by
         the analytical thresholds.
 
-    z_threshold : float, default=2.0
-        Z-score threshold for assembly membership. Neurons with absolute-weight
-        z-scores above this are selected as core members.
+    member_rule : {'abs_z', 'positive_z', 'otsu', 'inverse_sqrt_n'}, default='abs_z'
+        How the core members of each pattern are chosen from its weights,
+        which are scaled to unit length and oriented so the largest absolute
+        weight is positive:
+
+        - 'abs_z': absolute weights z-scored across the varying neurons, above
+          ``member_threshold``.
+        - 'positive_z': signed weights above ``mean + member_threshold * SD``
+          of the pattern's weights, and positive (El-Gaby et al., 2021: "the
+          direction where weights were highest was assigned positive weights,
+          and ... neurons whose weight was positive and exceeded 2 standard
+          deviations from the mean were defined as pattern 'members'"). A
+          large negative weight lowers the mean and raises the SD of the
+          signed weights, so this can differ from 'abs_z'.
+        - 'otsu': Otsu's split of the absolute weights into the two groups
+          with the smallest within-group variance; the group with the larger
+          absolute weights are members (Harvey et al., 2023). Every split of
+          the sorted weights is tried, so the result is exact.
+          ``member_threshold`` is not used.
+        - 'inverse_sqrt_n': weights above ``1 / sqrt(n_neurons)``, the weight
+          every neuron would have in a uniform unit-length pattern (Robinson
+          et al., 2026: "units whose weights exceeded 1/√N, where N is the
+          number of recorded units"). ``member_threshold`` is not used.
+
+    member_threshold : float, default=2.0
+        Z-score cutoff of the 'abs_z' and 'positive_z' rules.
 
         - 2.0: Default heuristic weight cutoff
         - 2.5: Select fewer core members
@@ -1077,6 +1120,11 @@ def detect_assemblies(
     unit_ids_generated = unit_ids is None
     labels = resolve_unit_ids(unit_ids, n_neurons, context="detect_assemblies()")
     _check_component_threshold(component_threshold, percentile, n_shuffles)
+    if member_rule not in _MEMBER_RULES:
+        raise ValueError(
+            f"detect_assemblies(): member_rule must be one of {_MEMBER_RULES}, "
+            f"got {member_rule!r}."
+        )
 
     if n_time_bins < n_neurons:
         warnings.warn(
@@ -1235,9 +1283,8 @@ def detect_assemblies(
     # shape (n_time_bins, n_found); excluded neurons have weight 0.
     activations = _activation_strength(spike_counts_z.T, patterns)
 
-    # Members: absolute weights z-scored across the retained neurons, then
-    # thresholded; shape (n_found, n_retained).
-    member_masks = stats.zscore(np.abs(patterns), axis=1) > z_threshold
+    # Members among the retained neurons; shape (n_found, n_retained).
+    member_masks = _member_masks(patterns, member_rule, member_threshold, n_neurons)
     full_patterns = np.zeros((n_found, n_neurons))
     full_patterns[:, retained] = patterns
 
@@ -1264,6 +1311,71 @@ def detect_assemblies(
         surrogate_max_eigenvalues=surrogate_max,
         _unit_ids_generated=unit_ids_generated,
     )
+
+
+def _member_masks(
+    patterns: NDArray[np.float64],
+    rule: str,
+    threshold: float,
+    n_neurons: int,
+) -> NDArray[np.bool_]:
+    """Core members of each pattern by ``rule``.
+
+    Parameters
+    ----------
+    patterns : ndarray, shape (n_patterns, n_retained)
+        Unit-length weights of the varying neurons, each pattern oriented so
+        its largest absolute weight is positive.
+    rule : {"abs_z", "positive_z", "otsu", "inverse_sqrt_n"}
+        Membership rule (see :func:`detect_assemblies`).
+    threshold : float
+        Z-score cutoff of the ``"abs_z"`` and ``"positive_z"`` rules.
+    n_neurons : int
+        Number of recorded neurons, the ``N`` of ``"inverse_sqrt_n"``.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_patterns, n_retained)
+    """
+    if rule == "abs_z":
+        return np.asarray(stats.zscore(np.abs(patterns), axis=1) > threshold)
+    if rule == "positive_z":
+        return np.asarray((patterns > 0) & (stats.zscore(patterns, axis=1) > threshold))
+    if rule == "inverse_sqrt_n":
+        return np.asarray(patterns > 1.0 / np.sqrt(n_neurons))
+    return np.array([_otsu_upper(np.abs(weights)) for weights in patterns]).reshape(
+        patterns.shape
+    )
+
+
+def _otsu_upper(values: NDArray[np.float64]) -> NDArray[np.bool_]:
+    """The upper group of Otsu's two-group split of ``values``.
+
+    Tries every split of the sorted values into a lower and an upper group
+    and keeps the one with the smallest within-group variance
+    ``p_low var_low + p_high var_high`` (equivalently the largest variance
+    between the groups), the first such split on ties.
+
+    Parameters
+    ----------
+    values : ndarray, shape (n,)
+
+    Returns
+    -------
+    ndarray of bool, shape (n,)
+        True for values above the split.
+    """
+    ordered = np.sort(values)
+    n = ordered.size
+    if n < 2:
+        return np.zeros(n, dtype=bool)
+    size_low = np.arange(1, n)
+    sums = np.cumsum(ordered)[:-1]
+    total, total_squares = ordered.sum(), (ordered**2).sum()
+    # n * within-group variance = sum of squares minus each group's n * mean^2.
+    within = total_squares - sums**2 / size_low - (total - sums) ** 2 / (n - size_low)
+    split = ordered[int(np.argmin(within))]
+    return np.asarray(values > split)
 
 
 def _check_component_threshold(
@@ -1744,6 +1856,215 @@ def assembly_activation(
         spike_counts_z = spike_counts
 
     return _activation_strength(spike_counts_z, weights[None, :])[:, 0]
+
+
+def pairwise_activation(
+    spike_counts: NDArray[np.float64],
+    template_correlations: NDArray[np.float64],
+    *,
+    z_score_input: bool = True,
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    template_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+) -> NDArray[np.float64]:
+    """Co-firing in each time bin, weighted by every pair's template correlation.
+
+    The reactivation strength of Tingley & Peyrache (2020) in its "simplest
+    case": the z-scored population vector of each bin is projected on the
+    template period's whole correlation matrix with its diagonal set to 0,
+    instead of on one assembly pattern (:func:`assembly_activation`). The
+    supplementary material calls it the "cell-pair coherogram". It tracks
+    in time how much the co-firing of a period resembles the template's pair
+    correlations, which explained variance summarizes over a whole period.
+
+    Parameters
+    ----------
+    spike_counts : NDArray[np.float64], shape (n_time_bins, n_neurons)
+        Population activity of the period to track (e.g. rest after the
+        task), finite. Raw counts must be non-negative.
+    template_correlations : NDArray[np.float64], shape (n_pairs,)
+        Pair correlations of the template period (e.g. running), from
+        :func:`pairwise_correlations`, in ``np.triu_indices(n_neurons, k=1)``
+        order; ``n_pairs = n_neurons * (n_neurons - 1) / 2``. A NaN pair (a
+        neuron constant in the template) gets weight 0.
+    z_score_input : bool, default=True
+        If True, z-score each neuron's counts with this period's own mean
+        and standard deviation, as in the published method. Set to False if
+        ``spike_counts`` is already z-scored.
+    unit_ids, template_unit_ids : array-like, shape (n_neurons,), optional
+        Labels of the columns of ``spike_counts`` and of the counts that
+        ``template_correlations`` came from. Given together, the columns
+        are matched to the template's units by label, in any order, and
+        must hold the same units. Without them, column ``i`` is the
+        template's unit ``i``.
+
+    Returns
+    -------
+    activation : NDArray[np.float64], shape (n_time_bins,)
+        :math:`R(t) = z(t)^T P z(t)`, in units of squared z-scores times
+        correlation.
+
+    Raises
+    ------
+    ValueError
+        If ``spike_counts`` holds NaN, infinite (or negative raw) values,
+        ``template_correlations`` does not hold one finite-or-NaN value in
+        [-1, 1] per pair of the columns, or the labels are given alone or
+        name different units.
+
+    Warns
+    -----
+    UserWarning
+        If some template pairs are NaN, or a neuron with a defined template
+        correlation has the same count in every bin of ``spike_counts`` (its
+        z-score is undefined; it contributes 0).
+
+    Notes
+    -----
+    With :math:`C` the template's correlation matrix and :math:`P = C` with
+    :math:`P_{ii} = 0`,
+
+    .. math::
+
+        R(t) = z(t)^T P z(t) = \\sum_{i \\neq j} C_{ij} z_i(t) z_j(t).
+
+    Removing the diagonal removes each neuron's own squared deviation, so a
+    neuron firing alone adds nothing (Tingley & Peyrache 2020: "To make the
+    measure independent of single-neuron rate fluctuation, the diagonal of
+    the matrix can be set at 0").
+
+    **Time average.** A period's correlation matrix is the average of
+    :math:`z(t) z(t)^T` over its bins, so the mean of R(t) over the bins
+    of the z-scored period is
+
+    .. math::
+
+        \\overline{R} = \\sum_{i \\neq j} C^{template}_{ij} C^{period}_{ij}
+        = 2 \\sum_{pairs} \\rho^{template}_{pair} \\rho^{period}_{pair},
+
+    the inner product of the two periods' pair correlations: what the
+    supplementary material calls "the variance during the sleep epoch
+    explained by the correlation of the wake epoch". Unlike the cell-pair
+    coherence (the Pearson correlation of the two pair vectors, whose
+    square is EV without a control), it is neither centered nor
+    normalized: it grows with the number of pairs and with the size of the
+    correlations in both periods, so compare it between periods recorded
+    with the same units, for example after the task minus before it.
+
+    Every pair counts, weighted by its template correlation, including
+    pairs whose template correlation is noise; the assembly projectors of
+    :func:`assembly_activation` keep only the components above chance
+    (Tingley & Peyrache 2020: using the correlation matrix "does not
+    address the possibility that noisy correlations can potentially
+    overshadow the actual signal").
+
+    Examples
+    --------
+    Units 0, 1 and 2 fire together during the task, and twice during rest:
+
+    >>> import numpy as np
+    >>> from neurospatial.reactivation import (
+    ...     pairwise_activation,
+    ...     pairwise_correlations,
+    ... )
+    >>> rng = np.random.default_rng(0)
+    >>> task = rng.poisson(1.0, (2000, 6)).astype(float)
+    >>> task[:, :3] += rng.poisson(1.0, (2000, 1))
+    >>> rest = rng.poisson(1.0, (300, 6)).astype(float)
+    >>> rest[[100, 200], :3] += 5
+    >>> activation = pairwise_activation(rest, pairwise_correlations(task))
+    >>> int(np.argmax(activation[:150])), int(150 + np.argmax(activation[150:]))
+    (100, 200)
+
+    The mean over the period is twice the sum of products of the two
+    periods' pair correlations:
+
+    >>> mean = 2 * np.sum(pairwise_correlations(task) * pairwise_correlations(rest))
+    >>> bool(np.isclose(activation.mean(), mean))
+    True
+
+    See Also
+    --------
+    assembly_activation : The same projection on one assembly pattern
+    explained_variance_reactivation : Whole-period comparison of pair correlations
+
+    References
+    ----------
+    Tingley D, Peyrache A (2020). On the methods for reactivation and
+        replay analysis. Phil Trans R Soc B 375:20190231 (and its
+        electronic supplementary material).
+    Peyrache A, Khamassi M, Benchenane K, Wiener SI, Battaglia FP (2009).
+        Replay of rule-learning related neural patterns in the prefrontal
+        cortex during sleep. Nat Neurosci 12(7):919-926.
+    """
+    call = "pairwise_activation()"
+    spike_counts = _validated_counts(spike_counts, call=call, nonnegative=z_score_input)
+    n_neurons = spike_counts.shape[1]
+    template = np.asarray(template_correlations, dtype=np.float64)
+    n_pairs = n_neurons * (n_neurons - 1) // 2
+    if template.shape != (n_pairs,):
+        raise ValueError(
+            _format_error(
+                f"{call}: template_correlations has shape {template.shape}, but "
+                f"{n_neurons} neurons have {n_pairs} pairs.",
+                fix="pass pairwise_correlations(template_counts) of the same "
+                "units as spike_counts",
+            )
+        )
+    if np.any(np.isinf(template)) or np.any(np.abs(template) > 1 + 1e-12):
+        raise ValueError(
+            f"{call}: template_correlations must be correlations in [-1, 1] "
+            "or NaN; pass pairwise_correlations(template_counts)."
+        )
+    if (unit_ids is None) != (template_unit_ids is None):
+        raise ValueError(
+            f"{call}: pass unit_ids= and template_unit_ids= together, so the "
+            "columns can be matched to the template's units by label."
+        )
+    if unit_ids is not None:
+        labels = resolve_unit_ids(unit_ids, n_neurons, context=f"{call} for unit_ids")
+        reference = resolve_unit_ids(
+            template_unit_ids, n_neurons, context=f"{call} for template_unit_ids"
+        )
+        order, only_template, only_counts = _label_order(labels, reference)
+        if only_template or only_counts:
+            raise ValueError(
+                f"{call}: spike_counts must hold the template's units; only in "
+                f"the template: {only_template}, only in spike_counts: "
+                f"{only_counts}."
+            )
+        spike_counts = spike_counts[:, order]
+
+    undefined = np.isnan(template)
+    if np.any(undefined):
+        warnings.warn(
+            f"{call}: {int(undefined.sum())} of {n_pairs} template pairs are NaN "
+            "(a neuron constant in the template) and get weight 0.",
+            UserWarning,
+            stacklevel=2,
+        )
+    first, second = np.triu_indices(n_neurons, k=1)
+    weights = np.where(undefined, 0.0, template)
+    projector = np.zeros((n_neurons, n_neurons))
+    projector[first, second] = weights
+    projector[second, first] = weights
+
+    if z_score_input:
+        spike_counts_z, constant = _z_scores(spike_counts)
+        silent = constant & np.any(projector != 0, axis=0)
+        if np.any(silent):
+            warnings.warn(
+                f"{call}: neuron columns {np.flatnonzero(silent).tolist()} have the "
+                "same count in every time bin of spike_counts, so they "
+                "contribute 0 to the activation strength.",
+                UserWarning,
+                stacklevel=2,
+            )
+    else:
+        spike_counts_z = spike_counts
+    activation: NDArray[np.float64] = np.sum(
+        (spike_counts_z @ projector) * spike_counts_z, axis=1
+    )
+    return activation
 
 
 def _unit_weights(weights: NDArray[np.float64], *, call: str) -> NDArray[np.float64]:
@@ -2561,6 +2882,7 @@ def explained_variance_reactivation(
             explained_variance=np.nan,
             reversed_explained_variance=np.nan,
             partial_correlation=np.nan,
+            semipartial_correlation=np.nan,
             p_value=np.nan,
             n_pairs=n_valid,
             n_controls=n_controls,
@@ -2601,6 +2923,9 @@ def explained_variance_reactivation(
         explained_variance=float(ev),
         reversed_explained_variance=float(rev),
         partial_correlation=float(partial_corr),
+        semipartial_correlation=_semipartial_correlation(
+            period_correlations, 0, 1, control_rows
+        ),
         p_value=_partial_correlation_p_value(partial_corr, n_valid - 2 - n_controls),
         n_pairs=n_valid,
         n_controls=n_controls,
@@ -2795,6 +3120,46 @@ def _partial_correlation(
     if not (unexplained_x > 1e-12 and unexplained_y > 1e-12):
         return np.nan
     return float(residual[0, 1] / np.sqrt(unexplained_x * unexplained_y))
+
+
+def _semipartial_correlation(
+    correlations: NDArray[np.float64], x: int, y: int, controls: Sequence[int]
+) -> float:
+    """Correlation of x with the residual of y regressed on ``controls``.
+
+    Parameters
+    ----------
+    correlations : ndarray, shape (n_vectors, n_vectors)
+        Correlation matrix of all vectors; NaN propagates.
+    x, y : int
+        Rows of the vector kept and of the vector residualized.
+    controls : sequence of int
+        Rows of the vectors regressed out of y; empty for the plain
+        correlation.
+
+    Returns
+    -------
+    float
+        ``S_xy / sqrt(S_yy)`` with ``S`` the Schur complement of the
+        controls' block (the controls' share of x is not removed). With one
+        control, ``(r_xy - r_xz r_yz) / sqrt(1 - r_yz**2)``. NaN when the
+        controls are collinear or explain y completely.
+    """
+    if not controls:
+        return float(correlations[x, y])
+    pair, rows = [x, y], list(controls)
+    if np.isnan(correlations[np.ix_(pair + rows, pair + rows)]).any():
+        return np.nan
+    between_controls = correlations[np.ix_(rows, rows)]
+    if not np.linalg.eigvalsh(between_controls).min() > 1e-12:
+        return np.nan
+    with_controls = correlations[np.ix_(pair, rows)]
+    residual = correlations[np.ix_(pair, pair)] - with_controls @ np.linalg.solve(
+        between_controls, with_controls.T
+    )
+    if not residual[1, 1] > 1e-12:
+        return np.nan
+    return float(residual[0, 1] / np.sqrt(residual[1, 1]))
 
 
 def _partial_correlation_p_value(correlation: float, df: int) -> float:
