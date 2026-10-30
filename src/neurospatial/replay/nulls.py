@@ -41,6 +41,7 @@ def shuffle_cell_identity(
     spike_counts: NDArray[np.int64],
     encoding_models: NDArray[np.float64],
     *,
+    active_only: bool = False,
     n_shuffles: int = 1000,
     rng: np.random.Generator | int | None = None,
 ) -> Generator[tuple[NDArray[np.int64], NDArray[np.float64]], None, None]:
@@ -61,6 +62,12 @@ def shuffle_cell_identity(
         Spike counts per neuron per time bin.
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
         Firing rate maps (place fields) for each neuron.
+    active_only : bool, default=False
+        Permute only the neurons that fire in the event among themselves,
+        as Bush et al. (2022) "shuffled the identity of active cells within
+        each event": silent neurons keep their (empty) columns, so a spike
+        train is only ever paired with the field of another active cell.
+        With ``k`` active neurons there are ``k!`` distinct shuffles.
     n_shuffles : int, default=1000
         Number of shuffled versions to generate.
     rng : np.random.Generator | int | None, default=None
@@ -135,10 +142,15 @@ def shuffle_cell_identity(
             f"encoding_models shaped (n_neurons, n_bins)."
         )
 
+    active = (
+        np.flatnonzero(np.asarray(spike_counts).sum(axis=0) > 0)
+        if active_only
+        else np.arange(n_neurons)
+    )
     for _ in range(n_shuffles):
-        # Generate a random permutation of column indices
-        perm = generator.permutation(n_neurons)
-        # Apply permutation to columns (neuron axis)
+        # Permute the chosen columns (neuron axis) among themselves.
+        perm = np.arange(n_neurons)
+        perm[active] = generator.permutation(active)
         yield spike_counts[:, perm].copy(), encoding_models
 
 

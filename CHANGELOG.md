@@ -84,6 +84,12 @@ other seeded simulations give the same spikes as before.
   direction of exactly −π as +π, the package's (−π, π] convention.
 ### New replay nulls
 
+- The `unit_identity` null takes `null_options={"unit_identity":
+  {"active_only": True}}` to permute only the cells active in the event
+  (Bush et al. 2022: "shuffled the identity of active cells within each
+  event"), and `shuffle_cell_identity(..., active_only=True)` does the
+  same. The default still permutes every cell.
+
 - `shuffle_posterior_weighted_circular(env, posterior, peak_weights,
   edge_exclusion=)` is now the weighted circular shift of Farooq et al.
   (2019): each time bin's peak is moved to a position drawn from

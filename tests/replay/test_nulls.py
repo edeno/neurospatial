@@ -744,3 +744,66 @@ class TestShuffleSpikeCountsUniform:
             next(shuffle_spike_counts_uniform(np.ones(5, dtype=int), n_shuffles=1))
         with pytest.raises(ValueError, match="non-negative"):
             next(shuffle_spike_counts_uniform(-np.ones((3, 2), dtype=int)))
+
+
+class TestCellIdentityActiveOnly:
+    """Bush et al. (2022) permuted only the cells active in the event."""
+
+    def test_silent_cells_keep_their_columns(self):
+        rng = np.random.default_rng(0)
+        counts = rng.poisson(1.0, size=(12, 8))
+        counts[:, [1, 4, 6]] = 0  # silent in this event
+        rates = np.ones((8, 5))
+        active = np.array([0, 2, 3, 5, 7])
+        moved = set()
+        for shuffled, _ in shuffle_cell_identity(
+            counts, rates, active_only=True, n_shuffles=200, rng=1
+        ):
+            assert (shuffled[:, [1, 4, 6]] == 0).all()
+            sources = [
+                int(np.flatnonzero((counts == shuffled[:, [j]]).all(axis=0))[0])
+                for j in active
+            ]
+            assert sorted(sources) == list(active)
+            moved.add(tuple(sources))
+        assert len(moved) > 50  # 5! = 120 distinct permutations
+
+    def test_every_cell_moves_by_default(self):
+        counts = np.zeros((4, 6), dtype=np.int64)
+        counts[:, 0] = 3
+        rates = np.ones((6, 5))
+        landed = {
+            int(np.flatnonzero(shuffled.sum(axis=0))[0])
+            for shuffled, _ in shuffle_cell_identity(
+                counts, rates, n_shuffles=100, rng=0
+            )
+        }
+        assert len(landed) > 3
+        landed_active = {
+            int(np.flatnonzero(shuffled.sum(axis=0))[0])
+            for shuffled, _ in shuffle_cell_identity(
+                counts, rates, active_only=True, n_shuffles=100, rng=0
+            )
+        }
+        assert landed_active == {0}
+
+
+def test_unit_identity_null_options_are_checked():
+    from neurospatial.replay import ReplayMethod, weighted_correlation
+
+    method = ReplayMethod(
+        name="active_shuffle",
+        reference="test",
+        score=weighted_correlation,
+        nulls=("unit_identity",),
+        null_options={"unit_identity": {"active_only": True}},
+    )
+    assert method.null_options["unit_identity"]["active_only"] is True
+    with pytest.raises(ValueError, match="active_only of unit_identity"):
+        ReplayMethod(
+            name="bad",
+            reference="test",
+            score=weighted_correlation,
+            nulls=("unit_identity",),
+            null_options={"unit_identity": {"active_only": "yes"}},
+        )
