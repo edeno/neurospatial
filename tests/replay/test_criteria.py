@@ -120,6 +120,26 @@ class TestSweep:
         np.testing.assert_allclose(euclidean.map_jumps, metrics.map_jumps)
         assert euclidean.map_path_length == pytest.approx(metrics.map_path_length)
 
+    def test_means_over_the_event(self, track):
+        """Half-and-half rows over neighbors, then a jump of 35 cm.
+
+        Rows 0 and 1 split their mass over two bins 10 cm apart (spread 5 cm),
+        row 2 is a point (spread 0); the means at 20, 30 and 65 cm move 10 cm,
+        then 35 cm.
+        """
+        posterior = np.zeros((3, track.n_bins))
+        posterior[0, [1, 2]] = 0.5
+        posterior[1, [2, 3]] = 0.5
+        posterior[2, 6] = 1.0
+        metrics = trajectory_metrics(track, posterior, _times(3))
+        np.testing.assert_allclose(metrics.spread, [5.0, 5.0, 0.0], atol=1e-12)
+        assert metrics.mean_spread == pytest.approx(10.0 / 3)
+        np.testing.assert_allclose(metrics.mean_jumps, [10.0, 35.0])
+        assert metrics.mean_mean_jump == pytest.approx(22.5)
+        summary = metrics.summary()
+        assert summary["mean_spread"] == pytest.approx(10.0 / 3)
+        assert summary["mean_mean_jump"] == pytest.approx(22.5)
+
     def test_reverse_sweep_has_the_same_magnitudes(self, track, metrics):
         reverse = trajectory_metrics(track, np.eye(track.n_bins)[7:1:-1], _times(6))
         for name in ("max_map_jump", "map_range", "map_path_length", "dispersion"):
@@ -401,6 +421,8 @@ class TestEdgeCases:
         assert metrics.map_jumps.shape == (0,)
         assert np.isnan(metrics.max_map_jump)
         assert np.isnan(metrics.max_mean_jump)
+        assert np.isnan(metrics.mean_mean_jump)
+        assert metrics.mean_spread == pytest.approx(0.0, abs=1e-12)
         assert metrics.map_path_length == 0.0
         assert metrics.duration == 0.0
         assert metrics.dispersion == 0.0

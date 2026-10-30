@@ -72,6 +72,12 @@ recurring_spike_sequences, recurring_sequences_significance : Sequences that
     1999); RecurringSequenceMethod records the test
 surrogate_spike_trains : Interval-shuffle, jitter, across-train and
     theta-phase surrogates
+pairwise_order_score : Firing order of spike pairs (Gupta et al. 2010)
+    Over every pair of spikes less than 80 ms apart, +1 in field order and
+    -1 against it, summed; multi-field cells take their best field.
+
+pairwise_order_significance : Pairwise-order score against spike-time and
+    cell-identity shuffles
 
 Published Methods
 -----------------
@@ -80,6 +86,8 @@ compare_replay_methods : Several methods on several events, as a table
 ReplayMethod, ReplayCriterion : A method's score, shuffles and thresholds
 ReplaySegmentation : How a criteria-based method finds the trajectory segment
 detect_rank_order_replay, RankOrderMethod : Published rank-order tests on spikes
+detect_pairwise_order_replay, PairwiseOrderMethod : Pairwise firing-order test
+    on spikes, every template forward and backward (Gupta et al. 2010)
 detect_arm_replay, ArmReplayMethod : Single-arm and joint-arm replay on a maze
 event_properties, detection_rates, method_agreement : Calibrate methods on a
     comparison table: rates (false positives on null data) by event
@@ -91,7 +99,7 @@ null_events, simulated_null_events, decode_intervals : Events without replay
 matched_alpha, apply_alpha : Each method's alpha that holds its
     false-positive rate on null data to a target, and verdicts at it
 neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
-    DIBA_BUZSAKI_2007, DAVIDSON_2009, KARLSSON_FRANK_2009,
+    DIBA_BUZSAKI_2007, DAVIDSON_2009, KARLSSON_FRANK_2009, GUPTA_2010,
     LEE_WILSON_2002, JI_WILSON_2007,
     PFEIFFER_FOSTER_2013, WIKENHEISER_REDISH_2013, WU_FOSTER_2014,
     OLAFSDOTTIR_2015, PFEIFFER_FOSTER_2015, SILVA_2015, AMBROSE_2016,
@@ -99,8 +107,8 @@ neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
     TANG_2017, YAMAMOTO_TONEGAWA_2017, CAREY_2019, CHENANI_2019,
     FAROOQ_2019, MICHON_2019, MUESSIG_2019, SHIN_2019, IGATA_2021,
     BERNERS_LEE_2021, BUSH_2022, TIROLE_2022, BERNERS_LEE_2022,
-    WIDLOSKI_FOSTER_2022, HARVEY_2023, LIU_2023, MALLORY_2025) and the
-    session-level NADASDY_1999
+    WIDLOSKI_FOSTER_2022, HARVEY_2023, LIU_2023, MALLORY_2025,
+    WIDLOSKI_FOSTER_2025) and the session-level NADASDY_1999
 
 Significance
 ------------
@@ -128,6 +136,9 @@ Result Containers
 -----------------
 RadonDetectionResult, LinearFitResult, IsotonicFitResult, WeightedCorrelationResult
     The fitted trajectory or correlation, and its ``score``.
+PairwiseOrderResult, PairwiseOrderSignificanceResult
+    A pairwise-order score with its scored cells and assigned fields, and its
+    shuffle tests.
 CircularSequenceResult
     The circular-track fit: replay speed around the loop and its ``score``.
 TrajectoryMetrics
@@ -187,6 +198,14 @@ from neurospatial.replay.nulls import (
     shuffle_spike_counts_circular,
     shuffle_spike_counts_uniform,
 )
+from neurospatial.replay.pairwise_order import (
+    PairwiseOrderMethod,
+    PairwiseOrderResult,
+    PairwiseOrderSignificanceResult,
+    detect_pairwise_order_replay,
+    pairwise_order_score,
+    pairwise_order_significance,
+)
 from neurospatial.replay.rank_order import (
     RankOrderResult,
     RankOrderSignificanceResult,
@@ -233,6 +252,7 @@ from neurospatial.replay.trajectory import (
 __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Published methods
     "ArmReplayMethod",
+    "PairwiseOrderMethod",
     "ReplayCriterion",
     "ReplayDetectionResult",
     "RankOrderMethod",
@@ -240,6 +260,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "ReplaySegmentation",
     "compare_replay_methods",
     "detect_arm_replay",
+    "detect_pairwise_order_replay",
     "detect_rank_order_replay",
     "RecurringSequenceMethod",
     "TemplateMatchMethod",
@@ -261,6 +282,8 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "IsotonicFitResult",
     "LinearFitResult",
     "MatchingIndexResult",
+    "PairwiseOrderResult",
+    "PairwiseOrderSignificanceResult",
     "RadonDetectionResult",
     "RankOrderResult",
     "RankOrderSignificanceResult",
@@ -296,6 +319,9 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "recurring_sequences_significance",
     "recurring_spike_sequences",
     "surrogate_spike_trains",
+    # Pairwise order
+    "pairwise_order_score",
+    "pairwise_order_significance",
     # Shuffles
     "shuffle_cell_identity",
     "shuffle_place_fields_circular",

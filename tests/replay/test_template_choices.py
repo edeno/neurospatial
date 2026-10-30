@@ -213,6 +213,32 @@ class TestSmallestP:
         assert result.template == "out"
         assert result.p_value == alone["out"].p_value < alone["in"].p_value
 
+    def test_a_template_without_a_p_value_is_chosen_last(self, track, separate):
+        """A parked posterior has no weighted correlation, so no p-value.
+
+        It is first in the decode's order, so it would win a tie; it is
+        chosen only when no template has a p-value.
+        """
+        env, _ = track
+        times = separate["out"].times
+        parked = np.zeros_like(separate["out"].posterior)
+        parked[:, 4] = 1.0  # the decoded position never changes
+        method = _method()
+        result = detect_replay(
+            env,
+            {"parked": parked, "out": separate["out"].posterior},
+            times,
+            replay_method=method,
+            rng=0,
+        )
+        assert result.template == "out"
+        assert result.p_value < method.alpha and result.is_replay
+        neither = detect_replay(
+            env, {"a": parked, "b": parked}, times, replay_method=method, rng=0
+        )
+        assert neither.template == "a"
+        assert np.isnan(neither.p_value) and not neither.is_replay
+
     def test_compare_records_the_chosen_template(self, track, sweep, joint, separate):
         env, _ = track
         table = compare_replay_methods(

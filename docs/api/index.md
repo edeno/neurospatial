@@ -188,6 +188,11 @@ Detecting the candidate events (ripples, population bursts) is not included.
 - `rank_order_correlation()`, `rank_order_significance()`: Spearman
   correlation of field order and firing order in an event, with a
   cell-order permutation test; needs no decoding
+- `pairwise_order_score()`, `pairwise_order_significance()`: Firing order
+  of every pair of spikes less than 80 ms apart against the cells'
+  place-field order, summed (Gupta et al. 2010), with spike-time and
+  cell-identity shuffles; cells with several fields take their best field;
+  needs no decoding
 - `detect_replay()`, `compare_replay_methods()`: Apply published replay
   methods (`neurospatial.replay.methods`: Davidson 2009, Karlsson & Frank
   2009, Pfeiffer & Foster 2013 and 2015, Wikenheiser & Redish 2013,
@@ -195,7 +200,7 @@ Detecting the candidate events (ripples, population bursts) is not included.
   2016, Jadhav 2016, Tang 2017, Wu 2017, Yamamoto & Tonegawa 2017, Carey
   2019, Farooq 2019, Michon 2019, Muessig 2019, Shin 2019, Igata 2021,
   Bush 2022, Tirole 2022, Berners-Lee 2022, Widloski & Foster 2022,
-  Harvey 2023, Liu 2023, Mallory 2025) to decoded events, including joint decodes over running
+  Harvey 2023, Liu 2023, Mallory 2025, Widloski & Foster 2025) to decoded events, including joint decodes over running
   directions, and compare their verdicts; `ReplaySegmentation` sets how
   criteria-based methods find the trajectory segment
 - `null_events()`, `simulated_null_events()`, `decode_intervals()`: Events
@@ -232,6 +237,10 @@ Detecting the candidate events (ripples, population bursts) is not included.
   that recur within a session, tested against interval-shuffle, jitter,
   across-train and theta-phase surrogates (Nádasdy et al. 1999,
   `NADASDY_1999`; session level, no per-event verdict)
+- `detect_pairwise_order_replay()`, `PairwiseOrderMethod`: Apply the
+  pairwise-order test of Gupta et al. 2010 (`GUPTA_2010`) to an event's
+  spikes on every template (such as each lap), forward and backward;
+  `compare_replay_methods(spike_times=...)` runs it with the other methods
 - `shuffle_cell_identity()`, `shuffle_spike_counts_circular()`,
   `shuffle_spike_counts_uniform()`, `shuffle_place_fields_circular()`,
   `shuffle_place_fields_circular_2d()`, `shuffle_posterior_circular()`,

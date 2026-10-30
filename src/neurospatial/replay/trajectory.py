@@ -1415,7 +1415,8 @@ def detect_trajectory_radon(
         so start positions are searched once around it. Needs a closed-loop
         track, built with :meth:`~neurospatial.Environment.from_graph` with
         an ``edge_order`` whose last segment ends at the node where the first
-        starts, and a ``band`` shorter than half the loop. False reads the
+        starts and no ``edge_spacing``, and a ``band`` shorter than half the
+        loop. False reads the
         track as open, so on a loop a sweep across the seam scores low.
     line_ends : {"any", "on_track"}, default="any"
         Which trajectories are searched. ``"any"`` (Davidson et al. 2009)
@@ -1448,8 +1449,8 @@ def detect_trajectory_radon(
         metric units, unless ``line_ends="on_track"``), if ``min_speed`` is
         negative or not below ``max_speed``, if ``line_ends`` is not one of
         its choices, or if ``wrap=True`` on a track that is not a closed
-        loop, with ``line_ends="on_track"``, or with a ``band`` of half the
-        loop or more.
+        loop (or has ``edge_spacing``), with ``line_ends="on_track"``, or
+        with a ``band`` of half the loop or more.
 
     See Also
     --------
@@ -1609,19 +1610,30 @@ def _require_closed_loop(env: Environment, operation: str) -> None:
 
     The linear position runs along ``edge_order``, each segment from its
     first node to its second, so it is a loop when the last segment ends at
-    the node where the first starts.
+    the node where the first starts, and it is distance around the loop
+    only without ``edge_spacing``: a gap between segments would count as
+    loop length at every corner but not at the seam.
     """
     linearization = env.binning.linearization
     if linearization is None:
         problem = "it is not a track built from a graph, so it has no loop"
     else:
         first, last = linearization.edge_order[0], linearization.edge_order[-1]
-        if last[1] == first[0]:
+        gaps = np.atleast_1d(np.asarray(linearization.edge_spacing, dtype=np.float64))
+        if last[1] != first[0]:
+            problem = (
+                f"its last segment {tuple(last)!r} ends at node {last[1]!r}, not "
+                f"at node {first[0]!r} where its first segment {tuple(first)!r} "
+                "starts"
+            )
+        elif np.any(gaps > 0):
+            problem = (
+                f"its edge_spacing puts gaps of up to {gaps.max():g} between "
+                "segments, which count as loop length at each corner but not "
+                "where the last segment meets the first"
+            )
+        else:
             return
-        problem = (
-            f"its last segment {tuple(last)!r} ends at node {last[1]!r}, not at "
-            f"node {first[0]!r} where its first segment {tuple(first)!r} starts"
-        )
     raise ValueError(
         _format_error(
             f"{operation} got wrap=True, but this environment is not a "
@@ -1631,8 +1643,9 @@ def _require_closed_loop(env: Environment, operation: str) -> None:
             "on an open track the two ends are different places",
             fix="pass wrap=False on an open track; build a circular or square "
             "track with Environment.from_graph(graph, edge_order=[(0, 1), "
-            "(1, 2), (2, 3), (3, 0)], bin_size=...), so that the last segment "
-            "returns to the node where the first starts",
+            "(1, 2), (2, 3), (3, 0)], bin_size=..., edge_spacing=0.0), so that "
+            "the last segment returns to the node where the first starts with "
+            "no gaps between segments",
         )
     )
 
