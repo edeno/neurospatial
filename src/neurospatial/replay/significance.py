@@ -655,8 +655,9 @@ def replay_significance(
             )
         posterior = _zero_empty_rows(decoded_posterior, np.asarray(spike_counts))
     score, options = _unwrap_partial(score, dict(score_options or {}))
+    spec = _score_specs().get(score)
     if use_absolute is None:
-        use_absolute = score is weighted_correlation
+        use_absolute = spec is not None and spec.signed
     generator = _ensure_rng(rng)
     if _takes_rng(score) and "rng" not in options:
         options["rng"] = int(generator.integers(2**63 - 1))
@@ -734,9 +735,8 @@ def replay_significance(
     observed = float(_statistic(np.asarray([observed_result.score]), use_absolute)[0])
     if not np.isfinite(observed):
         example = (
-            "the weighted correlation is undefined when all of the posterior "
-            "mass is at one position or in one time bin"
-            if score is weighted_correlation
+            spec.undefined
+            if spec is not None and spec.undefined
             else f"{getattr(score, '__name__', 'the score')} is undefined for "
             "this event, for example when the decoded position does not change"
         )
@@ -988,7 +988,8 @@ def _max_over_templates(
         )
     if use_absolute is None:
         base, _ = _unwrap_partial(score, dict(score_options or {}))
-        use_absolute = base is weighted_correlation
+        spec = _score_specs().get(base)
+        use_absolute = spec is not None and spec.signed
     streams = _template_streams(rng, names)
     results: dict[str, ReplaySignificanceResult] = {}
     scores: dict[str, float] = {}
@@ -1728,7 +1729,14 @@ def _uses_joint_weights(score: Callable[..., Any], options: Mapping[str, Any]) -
     time bin by the template's share of it (Tirole et al. 2022). Every other
     score needs rows that sum to 1.
     """
-    return score is weighted_correlation and options.get("row_normalization") == "none"
+    spec = _score_specs().get(score)
+    return (
+        spec is not None
+        and bool(spec.joint_weights)
+        and all(
+            options.get(name) == value for name, value in spec.joint_weights.items()
+        )
+    )
 
 
 def _conditional_rows(posterior: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -1763,6 +1771,62 @@ def _takes_rng(score: Callable[..., Any]) -> bool:
         ) from error
 
 
+@dataclass(frozen=True)
+class _ScoreSpec:
+    """How the tests treat one of the package's replay scores.
+
+    Attributes
+    ----------
+    scorer : callable
+        The class that scores an event and its shuffles in batches, called
+        as ``scorer(env, posterior, times, **score_options)``. It takes the
+        options the score's signature takes.
+    signed : bool
+        Whether the score's sign is the replay direction, so its absolute
+        value is tested by default.
+    undefined : str
+        When the score is undefined, for the refusal of such an event.
+    joint_weights : Mapping[str, Any]
+        Options under which the score reads a template's share of a joint
+        decode as weights, rather than rows that sum to 1.
+    moment_tables : Mapping[str, Any] or None
+        Options, with their defaults, under which :func:`dataset_values`
+        measures the score from moment tables; None when it cannot.
+    """
+
+    scorer: Callable[..., _Scorer]
+    signed: bool = False
+    undefined: str = ""
+    joint_weights: Mapping[str, Any] = MappingProxyType({})
+    moment_tables: Mapping[str, Any] | None = None
+
+
+@functools.cache
+def _score_specs() -> Mapping[Callable[..., Any], _ScoreSpec]:
+    """The scores the tests know, by function."""
+    # circular.py builds its scorer on _Scorer, so it is imported here.
+    from neurospatial.replay.circular import (
+        _CircularSequenceScorer,
+        fit_circular_sequence,
+    )
+
+    return MappingProxyType(
+        {
+            detect_trajectory_radon: _ScoreSpec(_RadonScorer),
+            weighted_correlation: _ScoreSpec(
+                _WeightedCorrelationScorer,
+                signed=True,
+                undefined="the weighted correlation is undefined when all of "
+                "the posterior mass is at one position or in one time bin",
+                joint_weights=MappingProxyType({"row_normalization": "none"}),
+                moment_tables=MappingProxyType({"row_normalization": "per_time_bin"}),
+            ),
+            regression_line_score: _ScoreSpec(_RegressionLineScorer),
+            fit_circular_sequence: _ScoreSpec(_CircularSequenceScorer),
+        }
+    )
+
+
 def _scorer_for(
     score: Callable[..., Any],
     env: Environment,
@@ -1771,42 +1835,16 @@ def _scorer_for(
     options: dict[str, Any],
 ) -> _Scorer:
     """A scorer for ``score``: batched for the scores that support it."""
-    # circular.py builds its scorer on _Scorer, so it is imported here.
-    from neurospatial.replay.circular import (
-        _CircularSequenceScorer,
-        fit_circular_sequence,
-    )
-
-    batched: dict[
-        Callable[..., Any], tuple[Callable[..., _Scorer], tuple[str, ...]]
-    ] = {
-        detect_trajectory_radon: (
-            _RadonScorer,
-            (
-                "band",
-                "max_speed",
-                "min_speed",
-                "wrap",
-                "line_ends",
-                "off_track",
-                "zero_rows",
-                "n_lines",
-                "line_seed",
-            ),
-        ),
-        weighted_correlation: (_WeightedCorrelationScorer, ("row_normalization",)),
-        regression_line_score: (_RegressionLineScorer, ("band", "wrap_band")),
-        fit_circular_sequence: (_CircularSequenceScorer, ()),
-    }
-    if score in batched:
-        scorer_class, accepted = batched[score]
+    spec = _score_specs().get(score)
+    if spec is not None:
+        accepted = list(inspect.signature(score).parameters)[3:]
         unknown = sorted(set(options) - set(accepted))
         if unknown:
             raise TypeError(
                 f"{_OPERATION}: score_options has {unknown}, which "
-                f"{score.__name__} does not take; it takes {list(accepted)}."
+                f"{score.__name__} does not take; it takes {accepted}."
             )
-        return scorer_class(env, posterior, times, **options)
+        return spec.scorer(env, posterior, times, **options)
     if not callable(score):
         raise TypeError(
             f"{_OPERATION}: score must be a function such as "

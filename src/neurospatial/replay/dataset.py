@@ -47,7 +47,6 @@ from numpy.typing import NDArray
 from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial.replay.correlation import weighted_correlation
 from neurospatial.replay.methods import (
     _COMPARISONS,
     FAROOQ_2019,
@@ -57,7 +56,12 @@ from neurospatial.replay.methods import (
     ReplayCriterion,
     ReplayMethod,
 )
-from neurospatial.replay.significance import _ALTERNATIVES, _NULL_SPECS, _NULLS
+from neurospatial.replay.significance import (
+    _ALTERNATIVES,
+    _NULL_SPECS,
+    _NULLS,
+    _score_specs,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -1588,11 +1592,13 @@ def _fast_path_applies(
 ) -> bool:
     """Whether every value of these shuffles follows from moment tables."""
     options = dict(variant.score_options)
+    spec = None if variant.score is None else _score_specs().get(variant.score)
+    tabulated = None if spec is None else spec.moment_tables
     return (
         _NULL_SPECS[null].rolls
-        and variant.score is weighted_correlation
-        and set(options) <= {"row_normalization"}
-        and options.get("row_normalization", "per_time_bin") == "per_time_bin"
+        and tabulated is not None
+        and set(options) <= set(tabulated)
+        and all(options.get(name, value) == value for name, value in tabulated.items())
         and variant.segmentation is None
         and variant.empty_time_bins == "keep"
         and all(quantity in _FAST_QUANTITIES for quantity in labels.values())
