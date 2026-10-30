@@ -9,7 +9,7 @@ time windows into whole bins lives in :mod:`neurospatial._time_bins`.
 The default ``orient="time_x_neuron"`` -- ``(n_time_bins, n_neurons)`` -- is the
 one convention used across the library: both
 :func:`neurospatial.decoding.decode_position` and the assembly functions in
-:mod:`neurospatial.decoding.assemblies` consume it directly, so the default
+:mod:`neurospatial.reactivation.assemblies` consume it directly, so the default
 output feeds either with no transpose. ``orient="neuron_x_time"`` is offered only
 as a convenience for code that wants the transposed layout.
 """
@@ -115,7 +115,7 @@ def bin_spikes_in_time(
         (default) returns shape ``(n_time_bins, n_neurons)`` — the one convention
         used across the library, consumed directly by both
         :func:`neurospatial.decoding.decode_position` and the assembly functions
-        in :mod:`neurospatial.decoding.assemblies`. ``"neuron_x_time"`` returns
+        in :mod:`neurospatial.reactivation.assemblies`. ``"neuron_x_time"`` returns
         the transposed ``(n_neurons, n_time_bins)`` as a convenience for code
         that wants that layout.
 

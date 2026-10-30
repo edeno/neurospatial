@@ -268,9 +268,9 @@ class TestRetrofittedResultSummaries:
 
     def _cases(self):
         from neurospatial.behavior.trajectory import MSDResult
-        from neurospatial.decoding.assemblies import AssemblyPattern
-        from neurospatial.decoding.trajectory import LinearFitResult
         from neurospatial.encoding.grid import GridProperties
+        from neurospatial.reactivation.assemblies import AssemblyPattern
+        from neurospatial.replay.trajectory import LinearFitResult
 
         return [
             (

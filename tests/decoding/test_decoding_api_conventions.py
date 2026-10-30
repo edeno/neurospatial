@@ -13,9 +13,9 @@ import inspect
 import numpy as np
 import pytest
 
-from neurospatial.decoding.assemblies import detect_assemblies
 from neurospatial.decoding.metrics import confusion_matrix
-from neurospatial.decoding.trajectory import (
+from neurospatial.reactivation.assemblies import detect_assemblies
+from neurospatial.replay.trajectory import (
     detect_trajectory_radon,
     fit_isotonic_trajectory,
     fit_linear_trajectory,

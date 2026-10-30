@@ -407,7 +407,7 @@ def _require_probability_rows(
         within the tolerance a ``DecodingResult`` accepts (``1e-6``, which
         covers float32 rounding).
     """
-    from neurospatial.decoding._result import _ROW_SUM_TOLERANCE
+    from neurospatial.decoding import _ROW_SUM_TOLERANCE
 
     posterior = np.asarray(posterior, dtype=np.float64)
     finite = np.isfinite(posterior).all(axis=1)
@@ -470,7 +470,7 @@ def _decoded_positions(
     NDArray[np.float64], shape (n_time_bins,)
         Position along the track, in environment units.
     """
-    from neurospatial.decoding.estimates import _density_mode
+    from neurospatial.decoding import _density_mode
 
     centers = (starts + stops) / 2
     if method == "map":
@@ -560,7 +560,7 @@ def fit_isotonic_trajectory(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+    >>> from neurospatial.replay.trajectory import fit_isotonic_trajectory
     >>>
     >>> # A 100 cm track in 2 cm bins and a posterior that moves along it
     >>> env = Environment.linear_track(
@@ -727,7 +727,7 @@ def fit_linear_trajectory(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.decoding.trajectory import fit_linear_trajectory
+    >>> from neurospatial.replay.trajectory import fit_linear_trajectory
     >>>
     >>> # A 100 cm track in 2 cm bins and a posterior that sweeps along it
     >>> env = Environment.linear_track(
@@ -1039,7 +1039,7 @@ def detect_trajectory_radon(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.decoding.trajectory import detect_trajectory_radon
+    >>> from neurospatial.replay.trajectory import detect_trajectory_radon
     >>>
     >>> # A 100 cm track in 2 cm bins and a posterior that sweeps along it,
     >>> # one bin per 10 ms time bin
@@ -1262,8 +1262,8 @@ def replay_trajectory_significance(
     See Also
     --------
     detect_trajectory_radon : The trajectory search alone.
-    neurospatial.stats.shuffle_posterior_circular : The column-cycle shuffle.
-    neurospatial.stats.shuffle_cell_identity : The unit-identity shuffle.
+    neurospatial.replay.shuffle_posterior_circular : The column-cycle shuffle.
+    neurospatial.replay.shuffle_cell_identity : The unit-identity shuffle.
 
     Notes
     -----
@@ -1290,7 +1290,7 @@ def replay_trajectory_significance(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.decoding import replay_trajectory_significance
+    >>> from neurospatial.replay import replay_trajectory_significance
     >>>
     >>> env = Environment.linear_track(
     ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
@@ -1306,13 +1306,15 @@ def replay_trajectory_significance(
     """
     from types import MappingProxyType
 
+    from neurospatial.replay.nulls import (
+        shuffle_cell_identity,
+        shuffle_posterior_circular,
+    )
     from neurospatial.stats import _ensure_rng
     from neurospatial.stats.shuffle import (
         ShuffleTestResult,
         compute_shuffle_pvalue,
         compute_shuffle_zscore,
-        shuffle_cell_identity,
-        shuffle_posterior_circular,
     )
 
     operation = "replay_trajectory_significance()"
