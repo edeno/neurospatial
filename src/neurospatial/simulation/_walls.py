@@ -91,10 +91,18 @@ class Walls:
         return starts, ends
 
     @classmethod
+    def _merged_segments(
+        cls, geometry: shapely.Geometry | list[shapely.Geometry]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Starts and ends of the straight pieces of ``geometry``'s merged lines."""
+        return cls._segments(
+            shapely.get_parts(shapely.line_merge(unary_union(geometry)))
+        )
+
+    @classmethod
     def from_geometry(cls, geometry: shapely.Geometry) -> Walls:
         """The straight segments of lines or polygon boundaries, open on both sides."""
-        lines = shapely.get_parts(shapely.line_merge(unary_union(geometry)))
-        return cls(*cls._segments(lines))
+        return cls(*cls._merged_segments(geometry))
 
     @classmethod
     def enclosing(cls, env: Environment) -> Walls | None:
@@ -118,9 +126,7 @@ class Walls:
         # the left of every outline segment.
         rings = shapely.get_rings(shapely.get_parts(shapely.orient_polygons(domain)))
         outline = cls._segments(rings)
-        inner = cls._segments(
-            shapely.get_parts(shapely.line_merge(unary_union(list(arena.walls))))
-        )
+        inner = cls._merged_segments(list(arena.walls))
         one_sided = np.repeat([True, False], [len(outline[0]), len(inner[0])])
         return cls(
             np.concatenate([outline[0], inner[0]]),
