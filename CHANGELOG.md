@@ -48,6 +48,15 @@
   NaN rows.
 - `n_shuffles`, `n_rate_subsamples`, `min_events` and
   `ReactivationWindows.count` refuse floats such as `20.0`.
+- A match window that cannot be analysed (for example one without events)
+  is an error row of that window, with its `window`, `window_start`,
+  `window_stop` and `window_duration`; the method's other windows keep their
+  rows. Before, one failed window replaced all of the method's rows with a
+  single error row without window identity.
+- `compare_reactivation_methods` names pattern members by the IDs a spike
+  group carries (a dict, `SpikeTrains` or `TsGroup`); before, they were
+  renumbered by position. A `unit_ids` that differs from the group's IDs is
+  refused.
 
 ### Reactivation assembly fixes
 

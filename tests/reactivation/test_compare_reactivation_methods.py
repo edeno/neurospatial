@@ -575,6 +575,46 @@ def test_assembly_rows_name_members_by_unit_id(reactivated) -> None:
     }
 
 
+def _labelled_group(kind: str, spike_times: list, labels: list):
+    if kind == "dict":
+        return dict(zip(labels, spike_times, strict=True))
+    if kind == "SpikeTrains":
+        from neurospatial.encoding import SpikeTrains
+
+        return SpikeTrains(spike_times, unit_ids=labels)
+    nap = pytest.importorskip("pynapple")
+    return nap.TsGroup(
+        {label: nap.Ts(train) for label, train in zip(labels, spike_times, strict=True)}
+    )
+
+
+@pytest.mark.parametrize("kind", ["dict", "SpikeTrains", "TsGroup"])
+def test_a_labelled_spike_group_names_the_members(reactivated, kind: str) -> None:
+    """A spike group's own labels name the members, as unit_ids would; a
+    unit_ids that contradicts them is refused."""
+    spike_times, template, match, control = reactivated
+    # TsGroup keys are integers.
+    labels = [
+        100 + unit if kind == "TsGroup" else f"cell_{100 + unit}"
+        for unit in range(N_UNITS)
+    ]
+    group = _labelled_group(kind, spike_times, labels)
+    arguments = {
+        "template_epochs": template,
+        "match_epochs": match,
+        "control_epochs": control,
+        "reactivation_methods": [VAN_DE_VEN_2016],
+        "rng": 0,
+    }
+    table = compare_reactivation_methods(group, **arguments)
+    expected = {tuple(labels[unit] for unit in members) for members in ASSEMBLIES}
+    assert {tuple(sorted(m)) for m in table["member_unit_ids"]} == expected
+    named = compare_reactivation_methods(group, unit_ids=labels, **arguments)
+    pd.testing.assert_frame_equal(named, table)
+    with pytest.raises(ValueError, match="unit_ids"):
+        compare_reactivation_methods(group, unit_ids=labels[::-1], **arguments)
+
+
 def test_a_custom_recipe_runs(reactivated) -> None:
     gridchyn_like = ReactivationMethod(
         name="all_pairs_200ms",
