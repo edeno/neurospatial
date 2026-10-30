@@ -46,6 +46,10 @@ default lap route all changed.
   width in metres, and a boundary-vector cell's default
   `distance_tolerance` follows a replaced `preferred_distance`. These used
   to keep the first model's resolved values. `seed` is now an attribute.
+  A model that draws a parameter with `seed=None` draws a seed from the
+  operating system first and keeps it there, so `replace(model,
+  max_rate=30)` and pickling keep the drawn center or direction instead of
+  drawing again.
   `ground_truth` always includes `cell_type` and every parameter needed to
   rebuild the model (for example place `metric`).
 - Object-vector cells: `distance_width` is now `distance_tolerance` and

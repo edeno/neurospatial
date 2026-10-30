@@ -236,6 +236,21 @@ def geodesic_lookup_bins(
     return bins
 
 
+def _draw_rng(model: Any) -> np.random.Generator:
+    """The generator a model draws its random parameters from.
+
+    A model built with ``seed=None`` first draws a seed from the operating
+    system and keeps it in its ``seed`` field, so ``dataclasses.replace``
+    and pickling rebuild the same draw. A seed that was passed is used as
+    passed.
+    """
+    seed = model.seed
+    if seed is None:
+        seed = int(np.random.SeedSequence().generate_state(1)[0])
+        object.__setattr__(model, "seed", seed)
+    return np.random.default_rng(seed)
+
+
 def _read_only(values: ArrayLike) -> NDArray[np.float64]:
     """A float64 copy of ``values`` that cannot be written."""
     array = np.array(values, dtype=np.float64)

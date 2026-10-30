@@ -19,6 +19,7 @@ from neurospatial.simulation.models.base import (
     _check_metric,
     _check_point,
     _check_rates,
+    _draw_rng,
     _model_inputs,
     _read_only,
     geodesic_lookup_bins,
@@ -97,7 +98,10 @@ class PlaceCellModel:
         - Trial-type: ``lambda pos, t: is_correct_trial``, where
           ``is_correct_trial`` is a bool array with one entry per sample
     seed : int | None, optional
-        Random seed for reproducible random center selection.
+        Random seed for reproducible random center selection. When None
+        and the center is drawn, the model draws a seed from the operating
+        system and keeps it in ``seed``, so ``dataclasses.replace`` and
+        pickling keep the drawn center.
 
     Attributes
     ----------
@@ -249,7 +253,7 @@ class PlaceCellModel:
         object.__setattr__(self, "max_rate", float(self.max_rate))
         object.__setattr__(self, "baseline_rate", float(self.baseline_rate))
         if self.center is None:
-            center_idx = np.random.default_rng(self.seed).integers(0, env.n_bins)
+            center_idx = _draw_rng(self).integers(0, env.n_bins)
             center = _read_only(env.bin_centers[center_idx])
         else:
             center = _check_point("center", self.center, env.n_dims)

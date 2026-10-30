@@ -12,6 +12,7 @@ from neurospatial.simulation.models.base import (
     _check_angle,
     _check_positive,
     _check_rates,
+    _draw_rng,
     _model_headings,
     _model_inputs,
 )
@@ -56,7 +57,10 @@ class HeadDirectionCellModel:
         0.01). An illustrative value: Taube et al. (1990) report little
         firing outside the directional range but no single rate.
     seed : int | None, optional
-        Random seed for reproducible random direction selection.
+        Random seed for reproducible random direction selection. When None
+        and the direction is drawn, the model draws a seed from the
+        operating system and keeps it in ``seed``, so
+        ``dataclasses.replace`` and pickling keep the drawn direction.
 
     Attributes
     ----------
@@ -65,7 +69,8 @@ class HeadDirectionCellModel:
         wrapped to [-π, π], here. Every parameter is also an attribute
         holding the argument as passed, so ``preferred_direction`` reads None
         when it is drawn from ``seed``, and ``dataclasses.replace(model,
-        seed=2)`` draws again, as the constructor would.
+        seed=2)`` draws again, as the constructor would. Only ``seed``
+        differs: a seed drawn for ``seed=None`` is kept there.
 
     Raises
     ------
@@ -192,7 +197,7 @@ class HeadDirectionCellModel:
     def __post_init__(self) -> None:
         direction = self.preferred_direction
         if direction is None:
-            direction = float(np.random.default_rng(self.seed).uniform(-np.pi, np.pi))
+            direction = float(_draw_rng(self).uniform(-np.pi, np.pi))
         _check_angle("preferred_direction", direction)
         _check_positive("concentration", self.concentration, units=None)
         _check_rates(self.max_rate, self.baseline_rate)

@@ -198,3 +198,51 @@ def test_place_width_follows_a_replaced_environment(box_cm, box_m):
     model = PlaceCellModel(box_cm, center=[50.0, 50.0])
     replaced = dataclasses.replace(model, env=box_m, center=[0.5, 0.5])
     assert replaced.ground_truth["width"] == pytest.approx(0.111)
+
+
+# Per cell type: the parameter drawn from the seed and a change unrelated to it.
+_DRAWN = {
+    "place": ("center", {"max_rate": 30.0}),
+    "boundary_vector": ("preferred_direction", {"max_rate": 30.0}),
+    "head_direction": ("preferred_direction", {"max_rate": 30.0}),
+}
+
+
+def _unseeded_arguments(box_cm, cell_type):
+    cls, arguments = _defaulted_arguments(box_cm)[cell_type]
+    return cls, {name: value for name, value in arguments.items() if name != "seed"}
+
+
+@pytest.mark.parametrize("cell_type", sorted(_DRAWN))
+def test_an_unseeded_draw_survives_replace_and_pickle(box_cm, cell_type):
+    """With seed=None the model keeps the seed it drew with, as an int."""
+    drawn, unrelated = _DRAWN[cell_type]
+    cls, arguments = _unseeded_arguments(box_cm, cell_type)
+    model = cls(**arguments)
+    assert isinstance(model.seed, int)
+    value = model.ground_truth[drawn]
+    for copy in (
+        dataclasses.replace(model, **unrelated),
+        pickle.loads(pickle.dumps(model)),
+        cls(**_arguments(model)),
+    ):
+        np.testing.assert_array_equal(copy.ground_truth[drawn], value)
+
+
+@pytest.mark.parametrize("cell_type", sorted(_DRAWN))
+def test_an_unseeded_model_redraws_with_a_replaced_seed(box_cm, cell_type):
+    drawn, _ = _DRAWN[cell_type]
+    cls, arguments = _unseeded_arguments(box_cm, cell_type)
+    model = cls(**arguments)
+    for seed in (1, 2):
+        replaced = dataclasses.replace(model, seed=seed)
+        assert replaced.seed == seed
+        np.testing.assert_array_equal(
+            replaced.ground_truth[drawn],
+            cls(**arguments, seed=seed).ground_truth[drawn],
+        )
+
+
+def test_a_seed_is_kept_as_passed_and_drawn_only_for_a_draw(box_cm):
+    assert PlaceCellModel(box_cm, seed=7).seed == 7
+    assert PlaceCellModel(box_cm, center=[50.0, 50.0]).seed is None

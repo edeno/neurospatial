@@ -63,6 +63,7 @@ from neurospatial.simulation.models.base import (
     _check_angle,
     _check_positive,
     _check_rates,
+    _draw_rng,
     _model_inputs,
 )
 
@@ -366,7 +367,10 @@ class BoundaryVectorCellModel:
     boundary_source : {'physical', 'analysis'}, default='physical'
         The arena's declared walls, or the edges of the environment's bins.
     seed : int or None, optional
-        Seed for the random ``preferred_direction``.
+        Seed for the random ``preferred_direction``. When None and the
+        direction is drawn, the model draws a seed from the operating system
+        and keeps it in ``seed``, so ``dataclasses.replace`` and pickling
+        keep the drawn direction.
 
     Attributes
     ----------
@@ -453,7 +457,7 @@ class BoundaryVectorCellModel:
             )
         direction = self.preferred_direction
         if direction is None:
-            direction = float(np.random.default_rng(self.seed).uniform(-np.pi, np.pi))
+            direction = float(_draw_rng(self).uniform(-np.pi, np.pi))
         _check_positive("preferred_distance", distance, allow_zero=True)
         _check_positive("distance_tolerance", tolerance)
         _check_angle("preferred_direction", direction)
