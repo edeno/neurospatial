@@ -117,6 +117,9 @@ other seeded simulations give the same spikes as before.
   maximum jump of the distance over `n_bins`. Option values are checked
   as `replay_segments` checks them (a negative `max_jump`, an unknown
   `method`, a non-integer `min_time_bins`) when the segmentation is made.
+- `WeightedCorrelationResult`, `LinearFitResult` and
+  `RankOrderSignificanceResult` compare equal only to themselves, like
+  every other replay result. Compare their fields to compare values.
 
 ### Published replay methods as comparable recipes
 

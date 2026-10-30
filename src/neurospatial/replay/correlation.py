@@ -27,7 +27,7 @@ _SCORE_DECIMALS = 12
 _ROW_NORMALIZATIONS = ("per_time_bin", "none")
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class WeightedCorrelationResult(ResultMixin):
     """Weighted correlation between time and decoded position in one event.
 

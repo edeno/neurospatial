@@ -91,7 +91,7 @@ class RankOrderResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class RankOrderSignificanceResult(ResultMixin):
     """Rank-order correlation of one event tested against cell-order shuffles.
 

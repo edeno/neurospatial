@@ -156,7 +156,7 @@ class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class LinearFitResult(ResultMixin):
     """A straight-line trajectory fit to a decoded event.
 
