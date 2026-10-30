@@ -7,6 +7,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from neurospatial.encoding import compute_spatial_rate
 from neurospatial.simulation import (
     PlaceCellModel,
     SimulationSession,
@@ -231,6 +232,29 @@ class TestValidateSimulation:
         report = validate_simulation(place_session, method="binned")
         assert report.n_evaluated == 5
         assert report.summary_table().attrs["method"] == "binned"
+
+    @pytest.mark.parametrize("method", ["diffusion_kde", "binned"])
+    def test_each_map_is_the_single_cell_estimate(self, place_session, method):
+        # The maps come from one batch call; each must equal the cell's own
+        # compute_spatial_rate map, so the peaks give the same center errors.
+        report = validate_simulation(place_session, method=method)
+        env = place_session.env
+        for index, center_error in enumerate(report.center_errors):
+            field = compute_spatial_rate(
+                env,
+                place_session.spike_times[index],
+                place_session.times,
+                place_session.positions,
+                method=method,
+            ).firing_rate
+            peak = env.bin_centers[np.nanargmax(field)]
+            truth = place_session.ground_truth[int(place_session.unit_ids[index])]
+            assert center_error == np.linalg.norm(peak - truth["center"])
+
+    @pytest.mark.parametrize("option", ["n_jobs", "dtype"])
+    def test_batch_only_options_are_refused(self, place_session, option):
+        with pytest.raises(TypeError, match=option):
+            validate_simulation(place_session, **{option: None})
 
     def test_validate_simulation_reproducible(self, place_session, place_report):
         again = validate_simulation(place_session)

@@ -346,8 +346,8 @@ def validate_simulation(
         Minimum acceptable correlation between detected and true fields.
         If None, 0.9. Calibrated; see Notes.
     **kwargs
-        Rate-map parameters passed to ``compute_spatial_rates()``, which
-        estimates every evaluated cell's map in one call.
+        Rate-map parameters of ``compute_spatial_rate()``. Every evaluated
+        cell's map is estimated in one ``compute_spatial_rates()`` call.
 
     Returns
     -------
@@ -364,6 +364,8 @@ def validate_simulation(
     ------
     ValueError
         If unit_ids contains unknown labels.
+    TypeError
+        If a keyword argument is not a parameter of ``compute_spatial_rate()``.
     CartesianOnlyError
         If the session's environment is egocentric polar: rate maps need the
         animal's allocentric positions.
@@ -457,10 +459,25 @@ def validate_simulation(
     - 'binned': Simple binning without smoothing (noisy but unbiased)
     """
     # Import here to avoid circular dependency
+    import inspect
+
     from scipy.stats import pearsonr
 
-    from neurospatial.encoding import compute_spatial_rates
+    from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
     from neurospatial.simulation.models import PlaceCellModel
+
+    # The maps come from one batch call, but each is a single-cell estimate:
+    # batch-only options (n_jobs, dtype) are refused.
+    unknown = sorted(
+        set(kwargs) - set(inspect.signature(compute_spatial_rate).parameters)
+    )
+    if unknown:
+        raise TypeError(
+            _format_error(
+                f"validate_simulation() got unexpected keyword arguments {unknown}.",
+                fix="Pass only rate-map parameters of compute_spatial_rate().",
+            )
+        )
 
     cell_indices = _select_unit_indices(session, unit_ids, "validate_simulation()")
     env = session.env
