@@ -705,12 +705,12 @@ def border_cell_session(
     from shapely.geometry import box
 
     from neurospatial.environment import Environment
+    from neurospatial.simulation._seeds import _stream_seeds
     from neurospatial.simulation.models import PlaceCellModel
     from neurospatial.simulation.session import (
         SimulationSession,
         _border_cells,
         _field_centers,
-        _stream_seeds,
     )
     from neurospatial.simulation.spikes import generate_population_spikes
     from neurospatial.simulation.trajectory import simulate_trajectory_ou
@@ -909,8 +909,9 @@ def grid_cell_session(
     """
     # Import here to avoid circular dependencies
     from neurospatial.environment import Environment
+    from neurospatial.simulation._seeds import _stream_seeds
     from neurospatial.simulation.models import GridCellModel
-    from neurospatial.simulation.session import SimulationSession, _stream_seeds
+    from neurospatial.simulation.session import SimulationSession
     from neurospatial.simulation.spikes import generate_population_spikes
     from neurospatial.simulation.trajectory import simulate_trajectory_ou
 

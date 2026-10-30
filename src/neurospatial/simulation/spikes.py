@@ -10,6 +10,7 @@ from tqdm.auto import tqdm
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._validation import validate_finite
+from neurospatial.simulation._seeds import _stream_seeds
 from neurospatial.simulation.models.base import NeuralModel
 from neurospatial.simulation.models.boundary_cells import _shared_ray_distances
 
@@ -442,11 +443,7 @@ def generate_population_spikes(
     if derived:
         headings = _held_movement_heading(times, positions, break_before=breaks)
 
-    model_seeds: list[np.random.SeedSequence | None] = (
-        [None] * len(models)
-        if seed is None
-        else list(np.random.SeedSequence(seed).spawn(len(models)))
-    )
+    model_seeds = _stream_seeds(seed, len(models))
     duration = float(times[-1] - times[0])
     spike_trains = []
     iterator = tqdm(
@@ -469,7 +466,7 @@ def generate_population_spikes(
                 rates,
                 times,
                 refractory_period=refractory_period,
-                seed=_seed_int(model_seeds[i]),
+                seed=model_seeds[i],
             )
             spike_trains.append(spikes)
             iterator.set_postfix(
@@ -488,11 +485,6 @@ def generate_population_spikes(
         )
 
     return spike_trains
-
-
-def _seed_int(sequence: np.random.SeedSequence | None) -> int | None:
-    """An integer seed drawn from ``sequence``, or None for fresh entropy."""
-    return None if sequence is None else int(sequence.generate_state(1)[0])
 
 
 def _check_model_rates(

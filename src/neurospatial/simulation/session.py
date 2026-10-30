@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import read_only_copy
+from neurospatial.simulation._seeds import _stream_seeds
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -335,14 +336,6 @@ def _border_cells(
             },
         )
         for distance, direction in zip(distances, directions, strict=True)
-    ]
-
-
-def _stream_seeds(seed: int | None, n_streams: int) -> list[int]:
-    """Seeds of ``n_streams`` independent streams spawned from ``seed``."""
-    return [
-        int(child.generate_state(1)[0])
-        for child in np.random.SeedSequence(seed).spawn(n_streams)
     ]
 
 
