@@ -119,7 +119,7 @@
   t-distribution p-value under random orders (1/3 with 3 cells, 1/12 with
   4 or 5, about 5.4% with 10) and the calibrated permutation and exact
   alternatives. The recipe still uses the paper's test.
-- [Comparing replay methods](docs/user-guide/replay-methods.md) gains
+- The "Comparing replay methods" guide gains
   executed sections: score agreement with and without signs; PRE and POST
   epochs tested against each epoch's own null rate, since excitability
   changes the false-positive rate; the same events decoded in 10, 20 and
@@ -454,7 +454,7 @@ Several replay papers test a whole data set, not each event:
 
 **Documentation**
 
-- [Comparing reactivation methods](docs/user-guide/reactivation-methods.md)
+- The "Comparing reactivation methods" guide
   applies both of Tingley & Peyrache's rate controls to sessions with and
   without reactivation and a rate change. Equal rates bring the rate-change
   EV to the null level and keep real reactivation. Bins of 5 s also stop
