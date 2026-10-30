@@ -352,6 +352,9 @@ Generate synthetic spatial data, neural activity, and spike trains for testing a
 - `simulation.session`: High-level session simulation API
 - `simulation.validation`: Automated validation against ground truth
 - `simulation.examples`: Pre-configured example sessions
+- `simulation.replay`: `simulate_replay_event()`, a candidate replay event
+  with a known path (sweep, stationary, jump or random), for comparing replay
+  methods
 
 **Key Classes:**
 
