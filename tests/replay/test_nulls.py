@@ -526,6 +526,7 @@ class TestShufflePosteriorWeightedCircular:
 
         # With edge_buffer=5, time bins with MAP near edges should have
         # restricted shifts to avoid wrapping to the opposite side
+        maps = []
         for shuffled in shuffle_posterior_weighted_circular(
             track_for(edge_posterior),
             edge_posterior,
@@ -535,29 +536,34 @@ class TestShufflePosteriorWeightedCircular:
         ):
             assert shuffled.shape == edge_posterior.shape
             assert np.allclose(shuffled.sum(axis=1), 1.0)
+            maps.append(np.argmax(shuffled, axis=1))
+        maps = np.array(maps)
 
-            # Verify edge time bins don't wrap to opposite edge
-            # Time bin 0: MAP=2 (near left), shouldn't wrap to far right
-            map_0 = np.argmax(shuffled[0])
-            assert map_0 < 15, (
-                f"Left edge MAP shouldn't wrap to far right, got bin {map_0}"
-            )
-
-            # Time bin 2: MAP=17 (near right), shouldn't wrap to far left
-            map_2 = np.argmax(shuffled[2])
-            assert map_2 > 5, (
-                f"Right edge MAP shouldn't wrap to far left, got bin {map_2}"
-            )
+        # As documented for 20 bins and edge_buffer=5: the MAP at bin 2 moves
+        # within [0, 11], the MAP at bin 17 within [10, 19], and every bin of
+        # those ranges is reached; the center MAP can go anywhere.
+        assert set(maps[:, 0]) == set(range(0, 12))
+        assert set(maps[:, 2]) == set(range(10, 20))
+        assert len(set(maps[:, 1])) > 12
 
     def test_edge_buffer_zero_allows_full_shifts(self, posterior: np.ndarray) -> None:
         """With edge_buffer=0, should behave like standard circular shuffle."""
 
         # With edge_buffer=0, any shift should be possible
+        shifts = set()
         for shuffled in shuffle_posterior_weighted_circular(
             track_for(posterior), posterior, edge_buffer=0, n_shuffles=10, rng=42
         ):
             assert shuffled.shape == posterior.shape
             assert np.allclose(shuffled.sum(axis=1), 1.0)
+            for row, original in zip(shuffled, posterior, strict=True):
+                shifts |= {
+                    shift
+                    for shift in range(len(original))
+                    if np.allclose(row, np.roll(original, shift))
+                }
+        # Rows do move, by shifts spread over the whole track.
+        assert len(shifts) > posterior.shape[1] // 2
 
     def test_edge_buffer_larger_than_half_bins(self) -> None:
         """Should handle edge_buffer larger than n_bins/2.
@@ -570,11 +576,18 @@ class TestShufflePosteriorWeightedCircular:
         small = np.array(
             [[0.2, 0.2, 0.2, 0.2, 0.2], [0.1, 0.2, 0.4, 0.2, 0.1]], dtype=np.float64
         )
+        peaks = set()
         for shuffled in shuffle_posterior_weighted_circular(
-            track_for(small), small, edge_buffer=4, n_shuffles=5, rng=42
+            track_for(small), small, edge_buffer=4, n_shuffles=20, rng=42
         ):
             assert shuffled.shape == small.shape
             assert np.allclose(shuffled.sum(axis=1), 1.0)
+            assert any(
+                np.allclose(shuffled[1], np.roll(small[1], shift)) for shift in range(5)
+            )
+            peaks.add(int(np.argmax(shuffled[1])))
+        # The buffer covers the whole track, so shifts are unrestricted.
+        assert peaks == set(range(5))
 
 
 # =============================================================================
