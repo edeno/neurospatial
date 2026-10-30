@@ -28,6 +28,7 @@ from neurospatial.replay import (
 )
 from neurospatial.replay.methods import (
     CAREY_2019,
+    CHENANI_2019,
     DAVIDSON_2009,
     DIBA_BUZSAKI_2007,
     FOSTER_WILSON_2006,
@@ -1840,3 +1841,199 @@ class TestRankOrderTemplates:
             dt=DT,
         )
         assert "too few active template cells" in table["error"].iloc[0]
+
+
+class TestChenani:
+    """One epoch of 25 bursts: five replay the outbound order, twenty are random."""
+
+    @pytest.fixture(scope="class")
+    def epoch(self, place_code):
+        env, rates = place_code
+        inbound = rates[np.random.default_rng(7).permutation(40)]
+        rng = np.random.default_rng(11)
+        trains = [[] for _ in range(40)]
+        windows = []
+        for event in range(25):
+            start = 10.0 + event
+            cells = (
+                np.arange(8, 20)
+                if event < 5
+                else rng.choice(40, size=12, replace=False)
+            )
+            for k, cell in enumerate(cells):
+                trains[cell].append(start + 0.01 * k)
+            windows.append(start + DT / 2 + DT * np.arange(8))
+        trains = [np.sort(np.array(train)) for train in trains]
+        events = [
+            decode_position(env, np.zeros((8, 40), dtype=int), rates, dt=DT, times=grid)
+            for grid in windows
+        ]
+        return env, {"outbound": rates, "inbound": inbound}, trains, events
+
+    def _table(self, epoch, events=None, **kwargs):
+        env, templates, trains, all_events = epoch
+        return compare_replay_methods(
+            env,
+            all_events if events is None else events,
+            replay_methods=[CHENANI_2019],
+            spike_times=trains,
+            encoding_models=templates,
+            dt=DT,
+            rng=0,
+            **kwargs,
+        )
+
+    def test_replayed_bursts_pass_and_random_ones_mostly_do_not(self, epoch):
+        table = self._table(epoch)
+        replayed = table.iloc[:5]
+        assert replayed["is_replay"].all()
+        assert (replayed["template"] == "outbound").all()
+        # A perfect order of 12 cells: rho = 1, SSI = sqrt(11).
+        np.testing.assert_allclose(replayed["score"], np.sqrt(11))
+        assert table.iloc[5:]["is_replay"].mean() <= 0.15
+
+    def test_an_epoch_needs_20_bursts(self, epoch):
+        table = self._table(epoch, events=epoch[3][:19])
+        assert not table["is_replay"].any()
+        assert table["error"].str.contains("fewer than 20").all()
+
+    def test_reverse_order_counts_only_through_a_matching_template(self, epoch):
+        """The replayed bursts in reverse order score -sqrt(11) on outbound.
+
+        Negative SSIs are never significant; with an inbound template whose
+        fields run the other way, the same bursts score +sqrt(11) there.
+        """
+        env, templates, trains, events = epoch
+        reversed_trains = [train.copy() for train in trains]
+        for event in range(5):
+            start = 10.0 + event
+            for k, cell in enumerate(range(8, 20)):
+                spikes = reversed_trains[cell]
+                spikes[np.isclose(spikes, start + 0.01 * k)] = start + 0.11 - 0.01 * k
+        options = {
+            "replay_methods": [CHENANI_2019],
+            "spike_times": reversed_trains,
+            "dt": DT,
+            "rng": 0,
+        }
+        outbound_only = compare_replay_methods(
+            env, events, encoding_models={"outbound": templates["outbound"]}, **options
+        )
+        assert (outbound_only.iloc[:5]["score"] < 0).all()
+        assert not outbound_only.iloc[:5]["is_replay"].any()
+        both = compare_replay_methods(
+            env,
+            events,
+            encoding_models={
+                "outbound": templates["outbound"],
+                "inbound": templates["outbound"][::-1],
+            },
+            **options,
+        )
+        np.testing.assert_allclose(both.iloc[:5]["score"], np.sqrt(11))
+        assert both.iloc[:5]["is_replay"].all()
+        assert (both.iloc[:5]["template"] == "inbound").all()
+
+    def test_exactly_20_bursts_make_an_epoch(self, epoch):
+        table = self._table(epoch, events=epoch[3][:20])
+        assert (table["error"] == "").all()
+        assert table.iloc[:5]["is_replay"].all()
+
+    def test_templates_may_hold_different_cells(self, epoch):
+        """Cells without an inbound field are left out of that template."""
+        env, templates, trains, events = epoch
+        inbound = templates["inbound"].copy()
+        inbound[:20] = np.nan
+        table = compare_replay_methods(
+            env,
+            events,
+            replay_methods=[CHENANI_2019],
+            spike_times=trains,
+            encoding_models={"outbound": templates["outbound"], "inbound": inbound},
+            dt=DT,
+            rng=0,
+        )
+        assert table.iloc[:5]["is_replay"].all()
+        assert (table.iloc[:5]["template"] == "outbound").all()
+
+    def test_a_burst_without_order_is_explained(self, epoch):
+        env, templates, trains, events = epoch
+        flat = [train.copy() for train in trains]
+        for cell in range(8, 20):
+            flat[cell][np.isclose(flat[cell] // 1, 10.0)] = 10.05
+        table = self._table((env, templates, flat, events))
+        row = table.iloc[0]
+        assert np.isnan(row["score"]) and not row["is_replay"]
+        assert "no variation" in row["error"]
+        assert row["template"] is None or np.isnan(row["template"])
+
+    def test_a_named_template_must_exist(self, epoch):
+        with pytest.raises(ValueError, match="'sideways' is not one of"):
+            self._table(epoch, template="sideways")
+
+    def test_needs_five_active_cells(self, epoch):
+        env, templates, trains, events = epoch
+        sparse = [
+            train if cell < 3 else train[train < 10.0]
+            for cell, train in enumerate(trains)
+        ]
+        table = compare_replay_methods(
+            env,
+            events,
+            replay_methods=[CHENANI_2019],
+            spike_times=sparse,
+            encoding_models=templates,
+            dt=DT,
+        )
+        assert table["error"].str.contains("fewer than 5 active").all()
+
+    def test_one_event_cannot_be_tested(self, epoch):
+        env, templates, trains, _ = epoch
+        with pytest.raises(ValueError, match="every event in its epoch"):
+            detect_rank_order_replay(
+                env, trains, (10.0, 10.2), templates, rank_order_method=CHENANI_2019
+            )
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"test": "pooled_ssi", "alternative": "two-sided"}, "one-sided"),
+            ({"test": "pooled_ssi", "spike_statistic": "all_spikes"}, "one-sided"),
+            ({"test": "cell_order", "min_epoch_events": 20}, "only to test="),
+            (
+                {
+                    "test": "pooled_ssi",
+                    "alternative": "greater",
+                    "min_active_fraction": 0.5,
+                },
+                "min_active_fraction",
+            ),
+        ],
+    )
+    def test_invalid_pooled_settings(self, kwargs, match):
+        with pytest.raises(ValueError, match=match):
+            RankOrderMethod(name="x", reference="y", **kwargs)
+
+    def test_recipe_matches_the_code(self):
+        assert CHENANI_2019.spike_statistic == "mean"
+        assert CHENANI_2019.field_order == "center"
+        assert CHENANI_2019.min_active_cells == 5
+        assert CHENANI_2019.n_shuffles == 100
+        assert CHENANI_2019.min_epoch_events == 20
+        assert (CHENANI_2019.test, CHENANI_2019.alternative) == (
+            "pooled_ssi",
+            "greater",
+        )
+
+
+def test_compare_refuses_duplicate_method_names(place_code):
+    import dataclasses
+
+    env, rates = place_code
+    decoded, _ = _decoded(env, rates, "random", seed=8)
+    with pytest.raises(ValueError, match="names must be unique"):
+        compare_replay_methods(
+            env,
+            [decoded],
+            replay_methods=[SILVA_2015, dataclasses.replace(SILVA_2015, criteria=())],
+        )

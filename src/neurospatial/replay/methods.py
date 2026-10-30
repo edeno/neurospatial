@@ -48,6 +48,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "CAREY_2019",
+    "CHENANI_2019",
     "DAVIDSON_2009",
     "DIBA_BUZSAKI_2007",
     "FOSTER_WILSON_2006",
@@ -607,17 +608,32 @@ class RankOrderMethod:
     min_active_fraction : float or None
         Fewest active template cells as a fraction of all template cells
         (Foster & Wilson 2006: one third; Diba & Buzsáki 2007: 30%).
-    test : {"t_distribution", "cell_order"}
+    test : {"t_distribution", "cell_order", "pooled_ssi"}
         The two-sided p-value of rho from the t-distribution with
         ``n - 2`` degrees of freedom over the ``n`` (time, field) pairs, as
-        Numerical Recipes' ``spear`` computes it (Foster & Wilson 2006); or
-        ``n_shuffles`` cell-order permutations (Diba & Buzsáki 2007).
+        Numerical Recipes' ``spear`` computes it (Foster & Wilson 2006);
+        ``n_shuffles`` cell-order permutations (Diba & Buzsáki 2007); or the
+        spatial similarity index of Chenani et al. (2019), compared with the
+        cell-order shuffles of every event in the epoch. ``"pooled_ssi"``
+        runs only in :func:`compare_replay_methods`, on one epoch's events:
+        each event's SSI per template is ``rho * sqrt(n - 1)`` over its
+        ``n`` active cells with a field in that template (rho over the
+        standard deviation of rho under random orders), the event scores
+        its largest SSI over the templates, and it is replay when that
+        exceeds the ``1 - alpha`` quantile of the largest SSIs of
+        ``n_shuffles`` cell-order shuffles of every event, taken on a 0.01
+        grid as in the authors' code; its ``p_value``, the share of pooled
+        shuffles at least as large, is reported but not used for the verdict.
     alternative : {"greater", "less", "two-sided"}
-        Tail of the permutation test; the t-distribution test is two-sided.
+        Tail of the permutation test; the t-distribution test is two-sided
+        and the pooled SSI test is one-sided (``"greater"``).
     n_shuffles : int
         Cell-order permutations.
     alpha : float
         Significance level: the p-value must be below it.
+    min_epoch_events : int or None
+        For ``"pooled_ssi"``, fewest events with enough active cells in the
+        epoch; with fewer, no event is replay (Chenani et al. 2019: 20).
     template_choice : {"most_active"} or None
         With several templates (one rate-map set per running direction) and
         no ``template=``, which template is reported. ``"most_active"``
@@ -637,10 +653,11 @@ class RankOrderMethod:
     min_peak_rate: float | None = None
     min_active_cells: int = 5
     min_active_fraction: float | None = None
-    test: Literal["t_distribution", "cell_order"] = "cell_order"
+    test: Literal["t_distribution", "cell_order", "pooled_ssi"] = "cell_order"
     alternative: Literal["greater", "less", "two-sided"] = "two-sided"
     n_shuffles: int = 1000
     alpha: float = 0.05
+    min_epoch_events: int | None = None
     template_choice: Literal["most_active"] | None = None
     notes: tuple[str, ...] = ()
 
@@ -653,7 +670,7 @@ class RankOrderMethod:
         choices = {
             "spike_statistic": _SPIKE_STATISTICS,
             "field_order": _FIELD_ORDERS,
-            "test": ("t_distribution", "cell_order"),
+            "test": ("t_distribution", "cell_order", "pooled_ssi"),
             "alternative": ("greater", "less", "two-sided"),
             "template_choice": (None, "most_active"),
         }
@@ -668,10 +685,37 @@ class RankOrderMethod:
                 f"{prefix}: the t-distribution test of rho is two-sided; use "
                 "test='cell_order' for a one-sided test."
             )
+        if self.test == "pooled_ssi":
+            if self.alternative != "greater" or self.spike_statistic == "all_spikes":
+                raise ValueError(
+                    f"{prefix}: the pooled SSI test is one-sided on one time "
+                    "per cell; use alternative='greater' and a spike_statistic "
+                    "other than 'all_spikes'."
+                )
+            if self.template_choice is not None:
+                raise ValueError(
+                    f"{prefix}: the pooled SSI test scores every template and "
+                    "keeps the largest SSI; leave template_choice=None."
+                )
+            if self.min_active_fraction is not None:
+                raise ValueError(
+                    f"{prefix}: the pooled SSI test counts active cells only; "
+                    "leave min_active_fraction=None."
+                )
+        elif self.min_epoch_events is not None:
+            raise ValueError(
+                f"{prefix}: min_epoch_events applies only to test='pooled_ssi'."
+            )
         if not 0 < self.alpha < 1:
             raise ValueError(f"{prefix}: alpha must be in (0, 1), got {self.alpha!r}.")
-        for field_name, minimum in (("min_active_cells", 3), ("n_shuffles", 1)):
+        for field_name, minimum in (
+            ("min_active_cells", 3),
+            ("n_shuffles", 1),
+            ("min_epoch_events", 1),
+        ):
             value = getattr(self, field_name)
+            if value is None and field_name == "min_epoch_events":
+                continue
             if (
                 isinstance(value, bool)
                 or not isinstance(value, (int, np.integer))
@@ -1480,6 +1524,16 @@ def detect_rank_order_replay(
     (True, -1.0)
     """
     method = rank_order_method
+    if method.test == "pooled_ssi":
+        raise ValueError(
+            _format_error(
+                f"detect_rank_order_replay(): method {method.name!r} compares "
+                "each event with the shuffles of every event in its epoch.",
+                why="its threshold is a quantile of shuffles pooled over the "
+                "epoch's events, which one event cannot give",
+                fix="pass the epoch's events to compare_replay_methods",
+            )
+        )
     if isinstance(encoding_models, Mapping):
         names: list[str | None] = list(encoding_models)
         if template is not None:
@@ -1621,6 +1675,169 @@ def _rank_order_verdict(
     )
 
 
+def _pooled_ssi_verdicts(
+    method: RankOrderMethod,
+    env: Environment | Mapping[str, Environment],
+    spike_times: Any,
+    intervals: list[tuple[float, float]],
+    encoding_models: Any,
+    template: str | None,
+    streams: list[np.random.Generator],
+) -> list[tuple[ReplayDetectionResult, str]]:
+    """Each event's verdict under the epoch-pooled SSI test (Chenani 2019)."""
+    from scipy import stats
+
+    from neurospatial._spikes import as_spike_trains
+    from neurospatial.replay.rank_order import _field_positions
+
+    operation = "compare_replay_methods()"
+    if isinstance(encoding_models, Mapping):
+        if template is not None and template not in encoding_models:
+            raise ValueError(
+                f"{operation}: template {template!r} is not one of "
+                f"{list(encoding_models)}."
+            )
+        names: list[str | None] = (
+            [template] if template is not None else list(encoding_models)
+        )
+    else:
+        names = [None]
+    positions = []
+    for name in names:
+        models = encoding_models if name is None else encoding_models[name]
+        if isinstance(env, Mapping):
+            if name is None:
+                raise ValueError(
+                    f"{operation}: a mapping of environments needs a mapping of "
+                    "rate maps with the same templates."
+                )
+            template_env = env[name]
+        else:
+            template_env = env
+        position = _field_positions(template_env, models, method.field_order, operation)
+        if method.min_peak_rate is not None:
+            rates = np.asarray(getattr(models, "firing_rates", models), dtype=float)
+            peak = np.where(np.isfinite(rates), rates, 0.0).max(axis=1)
+            position = np.where(peak >= method.min_peak_rate, position, np.nan)
+        positions.append(position)
+    fields = np.vstack(positions)  # (n_templates, n_cells)
+    trains = as_spike_trains(spike_times)
+    if len(trains) != fields.shape[1]:
+        raise ValueError(
+            f"{operation}: spike_times has {len(trains)} cells but "
+            f"encoding_models has {fields.shape[1]} rate maps."
+        )
+    summaries: dict[str, Callable[..., Any]] = {
+        "first": np.min,
+        "median": np.median,
+        "mean": np.mean,
+    }
+    summary = summaries[method.spike_statistic]
+    template_cell = np.isfinite(fields).any(axis=0)
+
+    def ssi(field: NDArray[np.float64], times: NDArray[np.float64]) -> Any:
+        """SSI of each row of ``times`` against the cells with a field."""
+        known = np.isfinite(field)
+        n = int(known.sum())
+        if n < 2:
+            return np.full(times.shape[0], np.nan)
+        field_dev = stats.rankdata(field[known]) - (n + 1) / 2
+        time_ranks = stats.rankdata(times[:, known], axis=1)
+        time_dev = time_ranks - time_ranks.mean(axis=1, keepdims=True)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            rho = (time_dev @ field_dev) / np.sqrt(
+                (time_dev**2).sum(axis=1) * (field_dev**2).sum()
+            )
+        # testsession.m rounds rho to 1e-5 before scaling it.
+        return np.round(rho, 5) * np.sqrt(n - 1)
+
+    observed: list[tuple[int, NDArray[np.float64]] | None] = []
+    surrogates: list[NDArray[np.float64]] = []
+    for (start, stop), stream in zip(intervals, streams, strict=True):
+        in_event = [train[(train >= start) & (train < stop)] for train in trains]
+        active = np.flatnonzero(
+            np.array([spikes.size > 0 for spikes in in_event]) & template_cell
+        )
+        if active.size < method.min_active_cells:
+            observed.append(None)
+            continue
+        times = np.array([summary(in_event[cell]) for cell in active])
+        order = np.argsort(stream.random((method.n_shuffles, active.size)), axis=1)
+        event_scores = np.vstack(
+            [ssi(field[active], times[None, :]) for field in fields]
+        )
+        shuffled = np.vstack([ssi(field[active], times[order]) for field in fields])
+        observed.append((active.size, event_scores[:, 0]))
+        # fmax skips a template without two shared cells, without warnings.
+        surrogates.append(np.fmax.reduce(shuffled, axis=0))
+    pooled = np.concatenate(surrogates) if surrogates else np.empty(0)
+    pooled = pooled[np.isfinite(pooled)]
+    n_events = len(surrogates)
+    threshold = np.nan
+    if pooled.size:
+        grid = np.arange(-400, 401) / 100.0  # testsession.m: b0 = -4:.01:4
+        cdf = np.searchsorted(np.sort(pooled), grid, side="right") / pooled.size
+        above = np.flatnonzero(cdf > 1.0 - method.alpha)
+        if above.size:
+            threshold = float(grid[above[0]])
+    epoch_ok = method.min_epoch_events is None or n_events >= method.min_epoch_events
+    label = method.criteria[0].label
+    verdicts = []
+    for entry in observed:
+        if entry is None:
+            verdicts.append(
+                (
+                    ReplayDetectionResult(
+                        method=method.name,
+                        is_replay=False,
+                        score=np.nan,
+                        p_value=np.nan,
+                        criteria={label: False},
+                        values={label: np.nan},
+                    ),
+                    f"fewer than {method.min_active_cells} active template cells",
+                )
+            )
+            continue
+        n_active, scores = entry
+        finite = np.isfinite(scores)
+        best = int(np.nanargmax(scores)) if finite.any() else 0
+        score = float(scores[best]) if finite.any() else np.nan
+        p_value = (
+            float((np.sum(pooled >= score) + 1) / (pooled.size + 1))
+            if np.isfinite(score)
+            else np.nan
+        )
+        if not finite.any():
+            error = (
+                "rank-order correlation undefined: no variation in the active "
+                "cells' order"
+            )
+        elif not epoch_ok:
+            error = (
+                f"the epoch has {n_events} events with at least "
+                f"{method.min_active_cells} active cells, fewer than "
+                f"{method.min_epoch_events}"
+            )
+        else:
+            error = ""
+        verdicts.append(
+            (
+                ReplayDetectionResult(
+                    method=method.name,
+                    is_replay=bool(epoch_ok and score > threshold),
+                    score=score,
+                    p_value=p_value,
+                    criteria={label: True},
+                    values={label: float(n_active)},
+                    template=names[best] if finite.any() else None,
+                ),
+                error,
+            )
+        )
+    return verdicts
+
+
 def compare_replay_methods(
     env: Environment | Mapping[str, Environment],
     events: Sequence[DecodingResult | JointDecodingResult],
@@ -1652,7 +1869,9 @@ def compare_replay_methods(
         start to the last window's end (``times[0] - dt / 2`` to
         ``times[-1] + dt / 2``), against ``encoding_models``: with a mapping
         of rate maps, the one named by ``template``, or the one its
-        ``template_choice`` picks.
+        ``template_choice`` picks. A method with ``test="pooled_ssi"``
+        treats the events as one epoch (pass one epoch per call) and scores
+        every template unless ``template`` names one.
     spike_counts : sequence of arrays or None
         Each event's spike counts, for methods that need them.
     encoding_models, dt, prior, template
@@ -1679,10 +1898,12 @@ def compare_replay_methods(
         ``score``, ``p_value``, one ``passes[...]`` column per criterion,
         ``n_segments``, ``segment_start_time`` and ``segment_end_time`` for
         methods with a segmentation (NaN for the others), ``template`` for
-        joint decodes, and ``error``.
-        ``error`` is empty unless the event has fewer than two time bins
-        left to score (after the method drops time bins without spikes);
-        then ``is_replay`` is False and the score and p-value are NaN.
+        joint decodes, and ``error``. ``error`` says why an event has no
+        verdict, and ``is_replay`` is then False: fewer than two time bins
+        left to score (after the method drops time bins without spikes), an
+        undefined rank-order correlation (too few active template cells, or
+        no variation in their order), or, for a pooled SSI method, an epoch
+        with too few events (score and p-value are still reported).
 
     Notes
     -----
@@ -1733,6 +1954,17 @@ def compare_replay_methods(
                     "decode_position(env, counts, rates, dt=dt, times=grid)",
                 )
             )
+    method_names = [method.name for method in replay_methods]
+    if len(set(method_names)) != len(method_names):
+        raise ValueError(
+            _format_error(
+                f"compare_replay_methods(): method names must be unique, got "
+                f"{method_names}.",
+                why="each row and each random stream is labeled by the method's name",
+                fix="give variants their own name, e.g. "
+                "dataclasses.replace(method, name='diba_alpha_0.05', alpha=0.05)",
+            )
+        )
     rank_methods = [m for m in replay_methods if isinstance(m, RankOrderMethod)]
     if rank_methods:
         missing = [
@@ -1784,14 +2016,39 @@ def compare_replay_methods(
         if isinstance(rng, np.random.Generator)
         else np.random.SeedSequence(rng).entropy
     )
+
+    def stream_for(index: int, method: ReplayMethod | RankOrderMethod) -> Any:
+        return np.random.default_rng(
+            np.random.SeedSequence(
+                entropy, spawn_key=(index, zlib.crc32(method.name.encode()))
+            )
+        )
+
+    pooled_verdicts = {}
+    if dt is not None:
+        windows = [
+            (float(t[0]) - dt / 2, float(t[-1]) + dt / 2)
+            for t in (np.asarray(times, dtype=np.float64) for times in event_times)
+        ]
+        for rank_method in rank_methods:
+            if rank_method.test == "pooled_ssi":
+                pooled_verdicts[rank_method.name] = _pooled_ssi_verdicts(
+                    rank_method,
+                    env,
+                    spike_times,
+                    windows,
+                    encoding_models,
+                    template,
+                    [stream_for(index, rank_method) for index in range(len(events))],
+                )
     rows = []
     for index, event in enumerate(events):
         for method in replay_methods:
-            stream = np.random.default_rng(
-                np.random.SeedSequence(
-                    entropy, spawn_key=(index, zlib.crc32(method.name.encode()))
-                )
-            )
+            stream = stream_for(index, method)
+            if isinstance(method, RankOrderMethod) and method.name in pooled_verdicts:
+                verdict, error = pooled_verdicts[method.name][index]
+                rows.append({"event": index, **verdict.summary(), "error": error})
+                continue
             if isinstance(method, RankOrderMethod):
                 assert dt is not None
                 centers = np.asarray(event_times[index], dtype=np.float64)
@@ -2347,6 +2604,62 @@ DIBA_BUZSAKI_2007 = RankOrderMethod(
     ),
 )
 
+CHENANI_2019 = RankOrderMethod(
+    name="chenani_2019",
+    reference=(
+        "Chenani, A., Sabariego, M., Schlesiger, M. I., Leutgeb, J. K., "
+        "Leutgeb, S., & Leibold, C. (2019). Hippocampal CA1 replay becomes "
+        "less prominent but more rigid without inputs from medial entorhinal "
+        "cortex. Nature Communications, 10, 1341."
+    ),
+    spike_statistic="mean",
+    field_order="center",
+    min_active_cells=5,
+    test="pooled_ssi",
+    alternative="greater",
+    n_shuffles=100,
+    alpha=0.05,
+    min_epoch_events=20,
+    notes=(
+        "Each place cell's mean spike time in a burst against a template "
+        "for each running direction, ordered by place-field centers (the "
+        "Methods and Fig. 2a; Supplementary Fig. 2b says peak rates, "
+        "and the paper does not define the center). Pass the place cells, "
+        "with one rate-map set per direction.",
+        "The SSI divides the rank correlation over the cells shared by the "
+        "event and the template by the standard deviation of correlations "
+        "of random orders of the same length; testsession.m estimates it "
+        "from 100,000 permutations and subtracts their mean, here the exact "
+        "moments are used (mean 0, standard deviation 1 / sqrt(n - 1)).",
+        "Each event's cell order is shuffled 100 times and scored against "
+        "both templates; the largest SSI of every shuffle of every event in "
+        "the epoch forms the null. An event is replay when its largest SSI "
+        "exceeds the 95% quantile, taken as in testsession.m on a 0.01 grid "
+        "with a strict comparison. Negative SSIs are never significant. "
+        "Pass one epoch's events to each compare_replay_methods call.",
+        "Only bursts with at least 5 active cells count, and epochs with "
+        "fewer than 20 such bursts are excluded (the code keeps exactly 20; "
+        "the paper says '20 or less' and the supplement 'more than 20').",
+        "testsession.m indexes the shuffled SSIs with the observed lengths "
+        "(id0R = find(lenR == n)), so only the first shuffle of each event "
+        "enters its null while the cdf divides by all of them: the threshold "
+        "falls to -4 and every burst is significant. The intended null, every "
+        "shuffle of every event, is used here; checked against a port of the "
+        "corrected code on 1,018 simulated bursts, every verdict agrees.",
+        "Ties in field positions or spike times get average ranks; the code's "
+        "sequences are strict orders. Shuffles without an SSI (fewer than two "
+        "shared cells on every template) are left out of the null rather than "
+        "counted below the threshold.",
+        "Each template holds every cell with a field in encoding_models; to "
+        "leave a cell out of one direction's template, set its rate map to NaN "
+        "there.",
+        "The session-level binomial tests are not applied; testsession.m "
+        "also refers to an undefined ns and its binocdf(..., 'upper') leaves "
+        "out the observed count. Bursts (place-cell rate 1 SD above its mean, "
+        "peaking at 3 SD) are not detected here.",
+    ),
+)
+
 PUBLISHED_METHODS: tuple[ReplayMethod | RankOrderMethod, ...] = (
     FOSTER_WILSON_2006,
     DIBA_BUZSAKI_2007,
@@ -2357,6 +2670,7 @@ PUBLISHED_METHODS: tuple[ReplayMethod | RankOrderMethod, ...] = (
     SILVA_2015,
     WU_2017,
     CAREY_2019,
+    CHENANI_2019,
     MICHON_2019,
     IGATA_2021,
     TIROLE_2022,

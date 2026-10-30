@@ -192,7 +192,8 @@ Detecting the candidate events (ripples, population bursts) is not included.
 - `detect_rank_order_replay()`, `RankOrderMethod`: Apply published
   rank-order tests (Foster & Wilson 2006, Diba & Buzsáki 2007) to an event's
   spikes; `compare_replay_methods(spike_times=...)` compares them with the
-  decoded methods
+  decoded methods and runs Chenani 2019, which tests an epoch's events
+  together
 - `shuffle_cell_identity()`, `shuffle_spike_counts_circular()`,
   `shuffle_place_fields_circular()`, `shuffle_place_fields_circular_2d()`,
   `shuffle_posterior_circular()`, `shuffle_posterior_weighted_circular()`:

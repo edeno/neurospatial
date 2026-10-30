@@ -56,9 +56,9 @@ ReplayMethod, ReplayCriterion : A method's score, shuffles and thresholds
 ReplaySegmentation : How a criteria-based method finds the trajectory segment
 detect_rank_order_replay, RankOrderMethod : Published rank-order tests on spikes
 neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
-    DIBA_BUZSAKI_2007, DAVIDSON_2009,
-    KARLSSON_FRANK_2009, PFEIFFER_FOSTER_2013, PFEIFFER_FOSTER_2015,
-    SILVA_2015, WU_2017, CAREY_2019, MICHON_2019, IGATA_2021, TIROLE_2022,
+    DIBA_BUZSAKI_2007, DAVIDSON_2009, KARLSSON_FRANK_2009,
+    PFEIFFER_FOSTER_2013, PFEIFFER_FOSTER_2015, SILVA_2015, WU_2017,
+    CAREY_2019, CHENANI_2019, MICHON_2019, IGATA_2021, TIROLE_2022,
     WIDLOSKI_FOSTER_2022, MALLORY_2025)
 
 Significance
