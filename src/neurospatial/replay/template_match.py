@@ -22,7 +22,11 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial.replay.rank_order import _require_same_cells, _validated_interval
+from neurospatial.replay.rank_order import (
+    _require_same_cells,
+    _template_items,
+    _validated_interval,
+)
 from neurospatial.replay.sequence_match import (
     _FIELD_ORDERS,
     _MATCH_ORDERS,
@@ -373,15 +377,21 @@ def detect_template_match_replay(
 
     operation = "detect_template_match_replay()"
     method = template_match_method
-    names = _template_names(encoding_models, template, method, operation)
+    items = _template_items(
+        env,
+        encoding_models,
+        template,
+        operation,
+        single_template_method=method.name if method.template_choice is None else None,
+    )
     start, stop = _validated_interval(interval, operation)
     trains = _sorted_trains(as_spike_trains(spike_times))
     generator = np.random.default_rng(rng)
-    seeds = generator.integers(2**63, size=len(names))
+    seeds = generator.integers(2**63, size=len(items))
     results = []
-    for name, seed in zip(names, seeds, strict=True):
+    for (name, template_env, models), seed in zip(items, seeds, strict=True):
         ranks = _method_ranks(
-            method, env, encoding_models, name, len(trains), operation
+            method, template_env, models, name, len(trains), operation
         )
         results.append(
             _verdict(
@@ -393,55 +403,15 @@ def detect_template_match_replay(
     return _chosen(results, method)
 
 
-def _template_names(
-    encoding_models: Any,
-    template: str | None,
-    method: TemplateMatchMethod,
-    operation: str,
-) -> list[str | None]:
-    if not isinstance(encoding_models, Mapping):
-        return [None]
-    if template is not None:
-        if template not in encoding_models:
-            raise ValueError(
-                f"{operation}: template {template!r} is not one of "
-                f"{list(encoding_models)}."
-            )
-        return [template]
-    if method.template_choice is None:
-        raise ValueError(
-            _format_error(
-                f"{operation}: method {method.name!r} needs template= with several "
-                "rate-map sets.",
-                why="it tests one template and has no rule to choose one",
-                fix=f"pass template= one of {list(encoding_models)}",
-            )
-        )
-    return list(encoding_models)
-
-
 def _method_ranks(
     method: TemplateMatchMethod,
-    env: Any,
-    encoding_models: Any,
+    env: Environment,
+    models: Any,
     name: str | None,
     n_cells: int,
     operation: str,
 ) -> NDArray[np.intp]:
     """One template's ranks, checked against the method and the spike trains."""
-    if isinstance(env, Mapping):
-        if name is None:
-            raise ValueError(
-                f"{operation}: a mapping of environments needs a mapping of rate "
-                "maps with the same templates."
-            )
-        if name not in env:
-            raise ValueError(
-                f"{operation}: template {name!r} has rate maps but no environment "
-                f"in env, whose templates are {list(env)}."
-            )
-        env = env[name]
-    models = encoding_models if name is None else encoding_models[name]
     ranks = _template_ranks(
         env,
         models,
@@ -830,13 +800,12 @@ def template_match_dataset_test(
 
     operation = "template_match_dataset_test()"
     method = template_match_method
-    names: list[str | None] = (
-        list(encoding_models) if isinstance(encoding_models, Mapping) else [None]
-    )
+    items = _template_items(env, encoding_models, None, operation)
+    names = [name for name, _, _ in items]
     trains = _sorted_trains(as_spike_trains(spike_times))
     ranks = {
-        name: _method_ranks(method, env, encoding_models, name, len(trains), operation)
-        for name in names
+        name: _method_ranks(method, template_env, models, name, len(trains), operation)
+        for name, template_env, models in items
     }
     generator = np.random.default_rng(rng)
     if method.statistic == "best_match":

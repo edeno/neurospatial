@@ -1806,6 +1806,7 @@ def _rank_order_values(
         _result,
         _spikes_by_window,
         _supported_rates,
+        _template_items,
     )
 
     if null not in (None, "cell_order"):
@@ -1837,26 +1838,10 @@ def _rank_order_values(
             )
         )
     windows = _event_windows(env, events, dt, operation)
-    if isinstance(encoding_models, Mapping):
-        names: list[str | None] = list(encoding_models)
-        if template is not None:
-            if template not in encoding_models:
-                raise ValueError(
-                    f"{operation}: template {template!r} is not one of "
-                    f"{list(encoding_models)}."
-                )
-            names = [template]
-    else:
-        if template is not None:
-            raise ValueError(
-                f"{operation}: template={template!r} needs a mapping of rate maps."
-            )
-        names = [None]
+    items = _template_items(env, encoding_models, template, operation)
     trains = as_spike_trains(spike_times)
     templates = []
-    for name in names:
-        template_env = env[name] if isinstance(env, Mapping) else env
-        rates = encoding_models if name is None else encoding_models[name]
+    for name, template_env, rates in items:
         _field_positions(template_env, rates, method.field_order, operation)
         masked = _supported_rates(rates)
         if method.min_peak_rate is not None:
@@ -1918,7 +1903,7 @@ def _rank_order_values(
                 np.asarray(active, dtype=np.float64) / n_template
             )
     table = pd.DataFrame({name: np.concatenate(parts) for name, parts in rows.items()})
-    if names == [None]:
+    if not isinstance(encoding_models, Mapping):
         table = table.drop(columns="template")
     if not any(c.quantity == "active_fraction" for c in method.criteria):
         table = table.drop(columns="active_fraction")

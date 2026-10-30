@@ -9,7 +9,7 @@ spike times and each cell's place field.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -740,6 +740,89 @@ def _validated_interval(interval: Any, operation: str) -> tuple[float, float]:
             )
         )
     return float(values[0]), float(values[1])
+
+
+def _template_items(
+    env: Environment | Mapping[str, Environment],
+    encoding_models: Any,
+    template: str | None,
+    operation: str,
+    *,
+    single_template_method: str | None = None,
+) -> list[tuple[str | None, Environment, Any]]:
+    """Each tested template's name, environment and rate maps.
+
+    ``encoding_models`` is one set of rate maps, named None, or a mapping of
+    template name to rate maps, of which ``template`` picks one and None
+    tests every one. ``env`` is one environment or a mapping with each tested
+    template's environment. ``single_template_method`` names a method that
+    tests one template and has no rule to choose one, so it needs
+    ``template=`` with a mapping.
+    """
+    if not isinstance(encoding_models, Mapping):
+        if template is not None:
+            raise ValueError(
+                _format_error(
+                    f"{operation}: template={template!r} needs a mapping of rate maps.",
+                    why="a template names one of several rate-map sets",
+                    fix="pass encoding_models={'left': rates_left, 'right': "
+                    "rates_right}, or leave out template=",
+                )
+            )
+        if isinstance(env, Mapping):
+            raise ValueError(
+                _format_error(
+                    f"{operation}: a mapping of environments needs a mapping of "
+                    "rate maps with the same templates.",
+                    why="each template's fields are read on its own environment",
+                    fix="pass encoding_models as a mapping keyed like env, or one "
+                    "environment",
+                )
+            )
+        return [(None, env, encoding_models)]
+    names = list(encoding_models)
+    if not names:
+        raise ValueError(
+            _format_error(
+                f"{operation}: encoding_models is an empty mapping.",
+                why="each template's rate maps place the cells' fields",
+                fix="pass at least one set of rate maps, such as "
+                "encoding_models={'left': rates_left}, or one array of rate maps",
+            )
+        )
+    if template is not None:
+        if template not in encoding_models:
+            raise ValueError(
+                _format_error(
+                    f"{operation}: template {template!r} is not one of {names}.",
+                    why="template= names one of the rate-map sets in encoding_models",
+                    fix=f"pass template= one of {names}",
+                )
+            )
+        names = [template]
+    elif single_template_method is not None:
+        raise ValueError(
+            _format_error(
+                f"{operation}: method {single_template_method!r} needs template= "
+                "with several rate-map sets.",
+                why="it tests one template and has no rule to choose one",
+                fix=f"pass template= one of {names}",
+            )
+        )
+    if isinstance(env, Mapping):
+        missing = [name for name in names if name not in env]
+        if missing:
+            raise ValueError(
+                _format_error(
+                    f"{operation}: templates {missing} have rate maps but no "
+                    f"environment in env, whose templates are {list(env)}.",
+                    why="each template's fields are read on its own environment",
+                    fix="pass a mapping of environments with the keys of "
+                    "encoding_models, or one environment",
+                )
+            )
+        return [(name, env[name], encoding_models[name]) for name in names]
+    return [(name, env, encoding_models[name]) for name in names]
 
 
 def _require_same_cells(n_trains: int, n_maps: int, operation: str) -> None:

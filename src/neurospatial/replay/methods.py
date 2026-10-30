@@ -2633,50 +2633,29 @@ def detect_rank_order_replay(
                 fix="pass the epoch's events to compare_replay_methods",
             )
         )
-    if isinstance(encoding_models, Mapping):
-        names: list[str | None] = list(encoding_models)
-        if template is not None:
-            if template not in encoding_models:
-                raise ValueError(
-                    f"detect_rank_order_replay(): template {template!r} is not "
-                    f"one of {list(encoding_models)}."
-                )
-            names = [template]
-        elif method.template_choice is None:
-            raise ValueError(
-                _format_error(
-                    f"detect_rank_order_replay(): method {method.name!r} needs "
-                    "template= with several rate-map sets.",
-                    why="it tests one template and has no rule to choose one",
-                    fix=f"pass template= one of {list(encoding_models)}",
-                )
-            )
-    else:
-        names = [None]
+    from neurospatial.replay.rank_order import _template_items
+
+    items = _template_items(
+        env,
+        encoding_models,
+        template,
+        "detect_rank_order_replay()",
+        single_template_method=method.name if method.template_choice is None else None,
+    )
     generator = np.random.default_rng(rng)
-    seeds = generator.integers(2**63, size=len(names))
-    results = []
-    for name, seed in zip(names, seeds, strict=True):
-        if isinstance(env, Mapping):
-            if name is None:
-                raise ValueError(
-                    "detect_rank_order_replay(): a mapping of environments "
-                    "needs a mapping of rate maps with the same templates."
-                )
-            template_env = env[name]
-        else:
-            template_env = env
-        results.append(
-            _rank_order_verdict(
-                template_env,
-                spike_times,
-                interval,
-                encoding_models if name is None else encoding_models[name],
-                method,
-                template=name,
-                rng=np.random.default_rng(seed),
-            )
+    seeds = generator.integers(2**63, size=len(items))
+    results = [
+        _rank_order_verdict(
+            template_env,
+            spike_times,
+            interval,
+            models,
+            method,
+            template=name,
+            rng=np.random.default_rng(seed),
         )
+        for (name, template_env, models), seed in zip(items, seeds, strict=True)
+    ]
     if len(results) == 1:
         return results[0]
     detected = [result for result in results if result.is_replay]
@@ -2805,32 +2784,14 @@ def _pooled_ssi_verdicts(
         _require_same_cells,
         _spikes_by_window,
         _supported_rates,
+        _template_items,
     )
 
     operation = "compare_replay_methods()"
-    if isinstance(encoding_models, Mapping):
-        if template is not None and template not in encoding_models:
-            raise ValueError(
-                f"{operation}: template {template!r} is not one of "
-                f"{list(encoding_models)}."
-            )
-        names: list[str | None] = (
-            [template] if template is not None else list(encoding_models)
-        )
-    else:
-        names = [None]
+    items = _template_items(env, encoding_models, template, operation)
+    names = [name for name, _, _ in items]
     positions = []
-    for name in names:
-        models = encoding_models if name is None else encoding_models[name]
-        if isinstance(env, Mapping):
-            if name is None:
-                raise ValueError(
-                    f"{operation}: a mapping of environments needs a mapping of "
-                    "rate maps with the same templates."
-                )
-            template_env = env[name]
-        else:
-            template_env = env
+    for _, template_env, models in items:
         position = _field_positions(template_env, models, method.field_order, operation)
         if method.min_peak_rate is not None:
             rates = _supported_rates(models)

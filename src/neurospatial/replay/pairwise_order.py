@@ -34,6 +34,7 @@ from neurospatial.replay.rank_order import (
     _require_same_cells,
     _spikes_in,
     _supported_rates,
+    _template_items,
     _validated_interval,
 )
 
@@ -698,62 +699,19 @@ def detect_pairwise_order_replay(
 
     method = pairwise_order_method
     operation = "detect_pairwise_order_replay()"
-    names: list[str | None]
-    if isinstance(encoding_models, Mapping):
-        names = list(encoding_models)
-        if not names:
-            raise ValueError(
-                _format_error(
-                    f"{operation}: encoding_models is an empty mapping.",
-                    why="each template's rate maps place the cells' fields",
-                    fix="pass at least one set of rate maps, such as "
-                    "encoding_models={'left': rates_left}, or one array of "
-                    "rate maps",
-                )
-            )
-        if template is not None:
-            if template not in encoding_models:
-                raise ValueError(
-                    f"{operation}: template {template!r} is not one of "
-                    f"{list(encoding_models)}."
-                )
-            names = [template]
-    elif template is not None:
-        raise ValueError(
-            _format_error(
-                f"{operation}: template={template!r} needs a mapping of rate maps.",
-                why="a template names one of several rate-map sets",
-                fix="pass encoding_models={'left': rates_left, 'right': "
-                "rates_right}, or leave out template=",
-            )
-        )
-    else:
-        names = [None]
+    items = _template_items(env, encoding_models, template, operation)
     labels = {
         (name, direction): direction if name is None else f"{name}:{direction}"
-        for name in names
+        for name, _, _ in items
         for direction in method.directions
     }
     streams = _template_streams(rng, list(labels.values()))
     event = None
     best: tuple[float, float, str | None, dict[str, float]] | None = None
-    for name in names:
-        if isinstance(env, Mapping):
-            if name is None or name not in env:
-                raise ValueError(
-                    _format_error(
-                        f"{operation}: env has no environment for template {name!r}.",
-                        why="each template's fields are read on its own track",
-                        fix="pass a mapping of rate maps and a mapping of "
-                        "environments with the same keys, or one environment",
-                    )
-                )
-            template_env = env[name]
-        else:
-            template_env = env
+    for name, template_env, models in items:
         fields = _place_fields(
             template_env,
-            encoding_models if name is None else encoding_models[name],
+            models,
             field_threshold=method.field_threshold,
             merge_gap_bins=method.merge_gap_bins,
             field_center=method.field_center,

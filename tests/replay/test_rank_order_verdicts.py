@@ -200,3 +200,58 @@ class TestChenaniPooledShuffles:
         assert table["score"].isna().all()
         assert not table["is_replay"].any()
         assert (table["error"] != "").all()
+
+
+def _spike_order_call(name):
+    """A spike-order entry point that reads templates, as f(env, models, template)."""
+    from neurospatial.replay import dataset_values, detect_template_match_replay
+    from neurospatial.replay.methods import JI_WILSON_2007
+
+    method = dataclasses.replace(DIBA_BUZSAKI_2007, template_choice="most_active")
+    trains = _firing(range(40))
+    calls = {
+        "rank_order": lambda env, models, template: detect_rank_order_replay(
+            env,
+            trains,
+            (1.0, 1.2),
+            models,
+            rank_order_method=method,
+            template=template,
+            rng=0,
+        ),
+        "template_match": lambda env, models, template: detect_template_match_replay(
+            env,
+            trains,
+            (1.0, 1.2),
+            models,
+            template_match_method=JI_WILSON_2007,
+            template=template,
+            rng=0,
+        ),
+        "dataset": lambda env, models, template: dataset_values(
+            env,
+            np.array([[1.0, 1.2]]),
+            replay_method=method,
+            encoding_models=models,
+            template=template,
+            spike_times=trains,
+        ),
+    }
+    return calls[name]
+
+
+@pytest.mark.parametrize("name", ["rank_order", "template_match", "dataset"])
+def test_spike_order_methods_refuse_the_same_template_inputs(place_code, name):
+    """Every spike-order entry point refuses unusable templates alike."""
+    env, rates = place_code
+    run = _spike_order_call(name)
+    with pytest.raises(ValueError, match="needs a mapping of rate maps"):
+        run(env, rates, "left")
+    with pytest.raises(ValueError, match="not one of"):
+        run(env, {"left": rates}, "right")
+    with pytest.raises(ValueError, match="empty mapping"):
+        run(env, {}, None)
+    with pytest.raises(ValueError, match="no environment in env"):
+        run({"left": env}, {"left": rates, "right": rates}, None)
+    with pytest.raises(ValueError, match="mapping of environments needs"):
+        run({"left": env}, rates, None)
