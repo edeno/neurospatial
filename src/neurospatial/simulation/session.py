@@ -420,14 +420,18 @@ def _spread_bins(
     n_points: int,
     depths: NDArray[np.float64],
 ) -> NDArray[np.intp]:
-    """``n_points`` distinct bins of ``candidates``, spread by farthest-point sampling.
+    """``n_points`` distinct bins, spread by farthest-point sampling.
 
-    Distances are geodesic, along the bins' connections, so fields are
-    spread over the space the animal moves through and centers on either
-    side of a wall count as far apart. One point goes to the deepest
-    candidate. Otherwise the first point is the candidate farthest from the
-    deepest one, and each next point the candidate farthest from all points
-    so far, ties going to the lowest bin index. The layout is deterministic.
+    Points go to ``candidates`` first and, once every candidate has one, to
+    the other bins, still farthest from all points so far. Distances are
+    geodesic, along the bins' connections, so fields are spread over the
+    space the animal moves through and centers on either side of a wall
+    count as far apart. One point goes to the deepest candidate. Otherwise
+    the first point is the candidate farthest from the deepest one, and
+    each next point the bin farthest from all points so far, ties going to
+    the lowest bin index. The layout is deterministic, and for two or more
+    points the layout of ``n`` points is the first ``n`` of the layout of
+    ``n + 1``: adding a cell adds one center and moves none.
     """
     from scipy.sparse import coo_array
     from scipy.sparse.csgraph import dijkstra
@@ -444,10 +448,13 @@ def _spread_bins(
     def distances_from(bin_index: int) -> NDArray[np.float64]:
         return np.asarray(dijkstra(graph, directed=False, indices=bin_index))
 
-    chosen = [int(candidates[np.argmax(distances_from(deepest)[candidates])])]
+    pool = candidates
+    chosen = [int(pool[np.argmax(distances_from(deepest)[pool])])]
     nearest = distances_from(chosen[0])
     for _ in range(n_points - 1):
-        chosen.append(int(candidates[np.argmax(nearest[candidates])]))
+        if len(chosen) == len(candidates):
+            pool = np.setdiff1d(np.arange(env.n_bins), candidates)
+        chosen.append(int(pool[np.argmax(nearest[pool])]))
         nearest = np.minimum(nearest, distances_from(chosen[-1]))
     return np.array(chosen)
 
@@ -463,10 +470,11 @@ def _field_centers(
     ``'uniform'`` gives every cell its own bin center. Along a track (a
     linearized or 1-D environment) the centers are evenly spaced from one
     end to the other. In an arena they are spread over the bins by
-    farthest-point sampling (``_spread_bins``), among the bins that keep
+    farthest-point sampling (``_spread_bins``) over the bins that keep
     ``UNIFORM_WALL_INSET`` of their local half-width from the walls
-    (``_interior_bins``) when there are at least ``n_cells`` of them, else
-    among all bins. ``'random'`` draws bin centers with replacement,
+    (``_interior_bins``); cells beyond those bins get the bins nearer the
+    walls, farthest from the centers already chosen. ``'random'`` draws bin
+    centers with replacement,
     ``rng.choice(len(env.bin_centers), n_cells)``.
     """
     if n_cells == 0:
@@ -507,11 +515,11 @@ def _field_centers(
     else:
         depths = _bin_depths(env)
         if depths is None:
-            candidates = np.arange(env.n_bins)
             depths = np.zeros(env.n_bins)
+            candidates = np.arange(env.n_bins)
         else:
             candidates = _interior_bins(env, depths)
-            if len(candidates) < n_cells:
+            if len(candidates) == 0:
                 candidates = np.arange(env.n_bins)
         chosen = _spread_bins(env, candidates, n_cells, depths)
     field_centers: NDArray[np.float64] = env.bin_centers[chosen]
@@ -567,8 +575,10 @@ def simulate_session(
           apart), over the bins that keep 40% of their local half-width
           from the walls: 20% of the side in a square arena, the middle of
           a corridor in a maze. There fields are sampled well and are not
-          cut by a wall. When fewer bins qualify than there are cells, all
-          bins are used. ``n_cells`` larger than ``env.n_bins`` raises.
+          cut by a wall. When more cells than those bins are simulated,
+          the extra cells take the bins nearer the walls, farthest from
+          the centers already chosen; adding a cell adds one center and
+          moves none. ``n_cells`` larger than ``env.n_bins`` raises.
         - 'random': Bin centers drawn with replacement from the seeded
           field-parameter stream, ``rng.choice(len(env.bin_centers),
           size=n)``. May result in clustering or gaps in coverage.

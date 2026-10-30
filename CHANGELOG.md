@@ -90,7 +90,8 @@ default lap route all changed.
   of the side in a square arena, the middle of each corridor in a maze. A
   bin that touches a wall is never one of them, also on hexagonal and
   triangular-mesh layouts, whose corner bins have only wall bins as
-  neighbors. The
+  neighbors. Cells beyond those bins take bins nearer the walls one at a
+  time, so adding a cell adds one center and moves none. The
   old layout snapped a grid over the bounding box to the nearest bins, so
   an L-shaped arena gave 50 cells 27 distinct centres and a plus maze gave
   20 cells 16, none in the outer part of any arm. It also left the last

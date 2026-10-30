@@ -542,6 +542,28 @@ class TestSimulateSession:
         assert len(np.unique(centers, axis=0)) == n_cells
         assert not np.isin(env.bin_at(centers), env.boundary_bins).any()
 
+    def test_uniform_centers_grow_one_at_a_time_past_the_interior(self):
+        """Adding a cell adds one center, also when the inset bins run out.
+
+        The 100 cm box of 5 cm bins has 144 bins 20 cm or more from the
+        walls. Up to 144 cells every center is one of them; each cell past
+        that adds one center next to the walls, and every earlier cell keeps
+        its center.
+        """
+        from shapely.geometry import box
+
+        env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
+        layouts = {n: self._uniform_centers(env, n) for n in (2, 143, 144, 145, 146)}
+        wall_centers = {
+            n: int(np.isin(env.bin_at(centers), env.boundary_bins).sum())
+            for n, centers in layouts.items()
+        }
+        assert wall_centers == {2: 0, 143: 0, 144: 0, 145: 1, 146: 2}
+        np.testing.assert_array_equal(layouts[146][:2], layouts[2])
+        for n in (143, 144, 145):
+            np.testing.assert_array_equal(layouts[n + 1][:n], layouts[n])
+        assert np.all((layouts[144] >= 20.0) & (layouts[144] <= 80.0))
+
     def test_uniform_coverage_refuses_more_cells_than_bins(self):
         from shapely.geometry import box
 
