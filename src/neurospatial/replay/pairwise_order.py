@@ -29,7 +29,12 @@ from neurospatial._results import (
     ResultMixin,
     reduce_through_constructor,
 )
-from neurospatial.replay.rank_order import _supported_rates, _validated_interval
+from neurospatial.replay.rank_order import (
+    _pooled_spikes,
+    _spikes_in,
+    _supported_rates,
+    _validated_interval,
+)
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -985,20 +990,15 @@ def _event_spikes(
                     "encoding_models",
                 )
             )
-    in_event = [train[(train >= start) & (train < stop)] for train in trains]
+    in_event = _spikes_in(trains, start, stop)
     active = np.array(
         [unit for unit, spikes in enumerate(in_event) if spikes.size], dtype=np.intp
     )
-    times = (
-        np.concatenate([in_event[unit] for unit in active])
-        if active.size
-        else np.empty(0)
-    )
-    cell = np.repeat(np.arange(active.size), [in_event[unit].size for unit in active])
+    times, cell = _pooled_spikes(in_event, active, "all_spikes")
     order = np.argsort(times, kind="stable")
     return _EventSpikes(
         times=times[order],
-        cell=cell[order].astype(np.intp),
+        cell=cell[order],
         active_units=active,
         n_cells=len(trains),
         groups=None if groups is None else groups[active],

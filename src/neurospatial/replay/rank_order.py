@@ -9,7 +9,7 @@ spike times and each cell's place field.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -30,6 +30,12 @@ if TYPE_CHECKING:
 _SPIKE_STATISTICS = ("first", "median", "mean", "all_spikes")
 _FIELD_ORDERS = ("peak", "center")
 _MULTI_FIELD_CELLS = ("keep", "exclude")
+# When a cell fired in an event, for each spike_statistic but "all_spikes".
+_SPIKE_SUMMARIES: dict[str, Callable[..., Any]] = {
+    "first": np.min,
+    "median": np.median,
+    "mean": np.mean,
+}
 # Largest number of (shuffle, pair) values ranked at once.
 _BLOCK_VALUES = 2_000_000
 
@@ -571,7 +577,7 @@ def _event_pairs(
                 "same order",
             )
         )
-    in_event = [train[(train >= start) & (train < stop)] for train in trains]
+    in_event = _spikes_in(trains, start, stop)
     active = np.array(
         [
             unit
@@ -580,32 +586,13 @@ def _event_pairs(
         ],
         dtype=np.intp,
     )
-    if spike_statistic == "all_spikes":
-        times = (
-            np.concatenate([in_event[unit] for unit in active])
-            if active.size
-            else np.empty(0)
-        )
-        cell = np.repeat(
-            np.arange(active.size), [in_event[unit].size for unit in active]
-        )
-    else:
-        summaries = [in_event[unit] for unit in active]
-        if spike_statistic == "first":
-            times = np.array([spikes.min() for spikes in summaries], dtype=np.float64)
-        elif spike_statistic == "median":
-            times = np.array(
-                [np.median(spikes) for spikes in summaries], dtype=np.float64
-            )
-        else:
-            times = np.array([spikes.mean() for spikes in summaries], dtype=np.float64)
-        cell = np.arange(active.size)
+    times, cell = _pooled_spikes(in_event, active, spike_statistic)
     if active.size < min_active_cells:
         times, cell = np.empty(0), np.empty(0, dtype=np.intp)
     return _EventPairs(
         field_positions=positions[active],
-        times=np.asarray(times, dtype=np.float64),
-        cell=np.asarray(cell, dtype=np.intp),
+        times=times,
+        cell=cell,
         active_units=active,
         multi_field_cells=multi_field_cells,
         excluded_units=excluded,
@@ -762,6 +749,63 @@ def _validated_interval(interval: Any, operation: str) -> tuple[float, float]:
             )
         )
     return float(values[0]), float(values[1])
+
+
+def _spikes_in(
+    trains: Sequence[NDArray[np.float64]], start: float, stop: float
+) -> list[NDArray[np.float64]]:
+    """Each train's spikes at ``start <= t < stop``, in the train's order."""
+    return [train[(train >= start) & (train < stop)] for train in trains]
+
+
+def _spikes_by_window(
+    trains: Sequence[NDArray[np.float64]], windows: Any
+) -> Iterator[list[NDArray[np.float64]]]:
+    """:func:`_spikes_in` for each ``(start, stop)`` row of ``windows``, in turn.
+
+    Each train is sorted once and cut by binary search instead of compared
+    with every window. The spikes keep the train's order, so a summary such
+    as their mean adds them in the same order as :func:`_spikes_in`.
+    """
+    bounds = np.asarray(windows, dtype=np.float64).reshape(-1, 2)
+    cuts = []
+    for train in trains:
+        order = (
+            None
+            if np.all(train[:-1] <= train[1:])
+            else np.argsort(train, kind="stable")
+        )
+        lo, hi = np.searchsorted(
+            train if order is None else train[order], bounds.T, side="left"
+        )
+        cuts.append((order, lo, hi))
+    for window in range(len(bounds)):
+        yield [
+            train[lo[window] : hi[window]]
+            if order is None
+            else train[np.sort(order[lo[window] : hi[window]])]
+            for train, (order, lo, hi) in zip(trains, cuts, strict=True)
+        ]
+
+
+def _pooled_spikes(
+    in_event: Sequence[NDArray[np.float64]],
+    cells: NDArray[np.intp],
+    spike_statistic: str,
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+    """When each of ``cells`` fired in an event, and each time's position in ``cells``.
+
+    ``"all_spikes"`` gives every spike of ``in_event[cell]``, cell after cell
+    in the order of ``cells``; the other statistics give one time per cell,
+    its first, median or mean spike.
+    """
+    if spike_statistic == "all_spikes":
+        times = np.concatenate([np.empty(0), *(in_event[cell] for cell in cells)])
+        cell = np.repeat(np.arange(cells.size), [in_event[c].size for c in cells])
+        return times, cell.astype(np.intp)
+    summarize = _SPIKE_SUMMARIES[spike_statistic]
+    times = np.array([summarize(in_event[cell]) for cell in cells], dtype=np.float64)
+    return times, np.arange(cells.size, dtype=np.intp)
 
 
 def _supported_rates(encoding_models: Any) -> NDArray[np.float64]:

@@ -1803,6 +1803,7 @@ def _rank_order_values(
         _event_pairs,
         _field_positions,
         _result,
+        _spikes_by_window,
         _supported_rates,
     )
 
@@ -1881,8 +1882,9 @@ def _rank_order_values(
         "n_active_cells": [],
         "active_fraction": [],
     }
-    for index, (start, stop) in enumerate(windows):
-        in_event = [train[(train >= start) & (train < stop)] for train in trains]
+    for index, ((start, stop), in_event) in enumerate(
+        zip(windows, _spikes_by_window(trains, windows), strict=True)
+    ):
         for slot, (name, template_env, masked, positions) in enumerate(templates):
             n_template = max(int(np.isfinite(positions).sum()), 1)
             if null is None:
@@ -1977,30 +1979,15 @@ def _permuted_rank_scores(
 
     Returns the correlations and the active cells, each (n_datasets,).
     """
+    from neurospatial.replay.rank_order import _pooled_spikes
+
     spiking = np.array(
         [cell for cell, spikes in enumerate(in_event) if spikes.size], dtype=np.intp
     )
     if permutations is None:
         # Only the active template cells take part; their number is fixed.
         spiking = spiking[np.isfinite(positions[spiking])]
-    if method.spike_statistic == "all_spikes":
-        times = (
-            np.concatenate([in_event[cell] for cell in spiking])
-            if spiking.size
-            else np.empty(0)
-        )
-        cell_of = np.repeat(
-            np.arange(spiking.size), [in_event[cell].size for cell in spiking]
-        )
-    else:
-        summaries: dict[str, Callable[..., Any]] = {
-            "first": np.min,
-            "median": np.median,
-            "mean": np.mean,
-        }
-        summarize = summaries[method.spike_statistic]
-        times = np.array([summarize(in_event[cell]) for cell in spiking], dtype=float)
-        cell_of = np.arange(spiking.size)
+    times, cell_of = _pooled_spikes(in_event, spiking, method.spike_statistic)
     if permutations is None:
         order = np.argsort(generator.random((n_datasets, spiking.size)), axis=1)
         fields = positions[spiking][order]
@@ -2682,17 +2669,13 @@ def relative_rank_template(
 
     from neurospatial._spikes import as_spike_trains
     from neurospatial.replay.calibration import _checked_intervals
+    from neurospatial.replay.rank_order import _SPIKE_SUMMARIES
 
     operation = "relative_rank_template()"
-    statistics: dict[str, Callable[..., Any]] = {
-        "mean": np.mean,
-        "first": np.min,
-        "median": np.median,
-    }
-    if spike_statistic not in statistics:
+    if spike_statistic not in _SPIKE_SUMMARIES:
         raise ValueError(
-            f"{operation}: spike_statistic must be one of {list(statistics)}, got "
-            f"{spike_statistic!r}."
+            f"{operation}: spike_statistic must be one of {list(_SPIKE_SUMMARIES)}, "
+            f"got {spike_statistic!r}."
         )
     if (
         isinstance(min_active_cells, bool)
@@ -2714,7 +2697,7 @@ def relative_rank_template(
         if spike_statistic == "first":
             firing[cell, active] = train[first[active]]
         else:
-            summarize = statistics[spike_statistic]
+            summarize = _SPIKE_SUMMARIES[spike_statistic]
             firing[cell, active] = [
                 summarize(train[first[f] : last[f]]) for f in active
             ]

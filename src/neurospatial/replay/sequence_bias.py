@@ -711,22 +711,19 @@ def _sorted_spikes(
     With ``interval``, only the spikes at ``start <= t < stop``.
     """
     from neurospatial._spikes import as_spike_trains
+    from neurospatial.replay.rank_order import _pooled_spikes, _spikes_in
 
     trains = as_spike_trains(spike_times)
     if interval is not None:
-        start, stop = interval
-        trains = [t[(t >= start) & (t < stop)] for t in trains]
-    times = np.concatenate(
-        [np.empty(0)] + [np.asarray(t, dtype=np.float64) for t in trains]
-    )
-    labels = np.repeat(np.arange(len(trains)), [len(t) for t in trains])
+        trains = _spikes_in(trains, *interval)
+    times, labels = _pooled_spikes(trains, np.arange(len(trains)), "all_spikes")
     if not np.isfinite(times).all():
         raise ValueError(
             f"{operation}: spike_times holds NaN or Inf; pass finite spike "
             "times in seconds."
         )
     order = np.argsort(times, kind="stable")
-    return times[order], labels[order].astype(np.intp), len(trains)
+    return times[order], labels[order], len(trains)
 
 
 def _event_spikes(

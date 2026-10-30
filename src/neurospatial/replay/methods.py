@@ -2799,7 +2799,12 @@ def _pooled_ssi_verdicts(
     from scipy import stats
 
     from neurospatial._spikes import as_spike_trains
-    from neurospatial.replay.rank_order import _field_positions, _supported_rates
+    from neurospatial.replay.rank_order import (
+        _field_positions,
+        _pooled_spikes,
+        _spikes_by_window,
+        _supported_rates,
+    )
 
     operation = "compare_replay_methods()"
     if isinstance(encoding_models, Mapping):
@@ -2838,12 +2843,6 @@ def _pooled_ssi_verdicts(
             f"{operation}: spike_times has {len(trains)} cells but "
             f"encoding_models has {fields.shape[1]} rate maps."
         )
-    summaries: dict[str, Callable[..., Any]] = {
-        "first": np.min,
-        "median": np.median,
-        "mean": np.mean,
-    }
-    summary = summaries[method.spike_statistic]
     template_cell = np.isfinite(fields).any(axis=0)
 
     def ssi(field: NDArray[np.float64], times: NDArray[np.float64]) -> Any:
@@ -2864,15 +2863,16 @@ def _pooled_ssi_verdicts(
 
     observed: list[tuple[int, NDArray[np.float64]] | None] = []
     surrogates: list[NDArray[np.float64]] = []
-    for (start, stop), stream in zip(intervals, streams, strict=True):
-        in_event = [train[(train >= start) & (train < stop)] for train in trains]
+    for in_event, stream in zip(
+        _spikes_by_window(trains, intervals), streams, strict=True
+    ):
         active = np.flatnonzero(
             np.array([spikes.size > 0 for spikes in in_event]) & template_cell
         )
         if active.size < method.min_active_cells:
             observed.append(None)
             continue
-        times = np.array([summary(in_event[cell]) for cell in active])
+        times = _pooled_spikes(in_event, active, method.spike_statistic)[0]
         order = np.argsort(stream.random((method.n_shuffles, active.size)), axis=1)
         event_scores = np.vstack(
             [ssi(field[active], times[None, :]) for field in fields]
