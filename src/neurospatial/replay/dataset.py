@@ -713,8 +713,9 @@ def dataset_values(
         al.'s (2019) space-bin shuffle ("circularly shifted by a random
         amount between 1 and track length minus 1").
     spike_counts : sequence of arrays or None
-        Each event's spike counts, (n_time_bins, n_cells): for criteria on
-        active cells or spikes, empty time bins and the nulls that decode
+        Each event's spike counts, (n_time_bins, n_cells): needed for
+        criteria on active cells or spikes (such as ``FAROOQ_2019``'s
+        ``n_active_cells >= 5``), empty time bins and the nulls that decode
         again.
     encoding_models, dt, prior
         The decoding inputs of the nulls that decode again (see
@@ -760,7 +761,8 @@ def dataset_values(
         for a null that acts on each event, ``n_datasets`` is not a positive
         integer, a quantity is not a scalar of TrajectoryMetrics, an event is
         not a DecodingResult with times, ``spike_counts`` does not have one
-        entry per event, the inputs a null needs are missing, or decoding
+        entry per event or is missing for a method that counts spikes or
+        active cells, the inputs a null needs are missing, or decoding
         the counts does not reproduce an event's posterior.
 
     See Also
@@ -1028,6 +1030,17 @@ def _replay_values(
             f"TrajectoryMetrics; choose from {scalars}."
         )
     variant, labels = _measuring_method(method, quantities)
+    if counts is None and _counts_spikes(variant):
+        raise ValueError(
+            _format_error(
+                f"{operation}: method {method.name!r} needs spike_counts.",
+                why="it drops or zeroes time bins without spikes, counts the "
+                "event's spikes, or counts the cells active in the event or in "
+                "each time bin",
+                fix="pass spike_counts, one (n_time_bins, n_cells) array per "
+                "event, such as the counts decode_intervals returns",
+            )
+        )
     options_of = _null_options_of(null, null_options, operation)
     track_length = _track_length_or_nan(env)
     columns = list(dict.fromkeys(labels.values()))
@@ -1157,6 +1170,22 @@ def _measuring_method(
     for label, quantity in labels.items():
         first.setdefault(quantity, label)
     return variant, {label: quantity for quantity, label in first.items()}
+
+
+def _counts_spikes(method: ReplayMethod) -> bool:
+    """Whether ``detect_replay`` needs spike counts to apply ``method``."""
+    segmentation = method.segmentation
+    return (
+        method.empty_time_bins != "keep"
+        or any(
+            criterion.quantity in ("n_active_cells", "active_fraction", "n_spikes")
+            for criterion in method.criteria
+        )
+        or (
+            segmentation is not None
+            and segmentation.min_active_cells_per_time_bin is not None
+        )
+    )
 
 
 def _measure(
@@ -3142,10 +3171,11 @@ FAROOQ_2019_TIME_BIN = DatasetTestRecipe(
     notes=(
         "Fig. 1E (Pre-Run vs tPre-Run): 500 data sets with each frame's "
         "decoded time bins permuted. Calls: pre = dataset_values(env, frames, replay_method="
-        "FAROOQ_2019, quantities=('max_map_jump',)); dataset_test(pre, "
-        "dataset_values(env, frames, replay_method=FAROOQ_2019, null='time_bin_permutation', "
-        "n_datasets=500, quantities=('max_map_jump',), rng=0), criteria=recipe"
-        ".criteria); recipe.paper_p_value(result).",
+        "FAROOQ_2019, spike_counts=counts, quantities=('max_map_jump',)); "
+        "dataset_test(pre, dataset_values(env, frames, replay_method=FAROOQ_2019, "
+        "null='time_bin_permutation', n_datasets=500, spike_counts=counts, "
+        "quantities=('max_map_jump',), rng=0), criteria=recipe.criteria); "
+        "recipe.paper_p_value(result).",
         "Fig. 1G (Poisson vs tPoisson): one Poisson data set, then this test on it.",
         *_FAROOQ_NOTES,
     ),
@@ -3162,8 +3192,9 @@ FAROOQ_2019_POISSON = dataclasses.replace(
         "sleep (p. e4). Calls: pois = null_events(spikes, frame_intervals, "
         "kind='rate_poisson', n_copies=500, rng=1); pe, pc = decode_intervals("
         "env, pois.spike_times, pois.intervals, maps, dt=0.02); pv = "
-        "dataset_values(env, pe, replay_method=FAROOQ_2019, quantities=('max_map_jump',))"
-        ".assign(dataset=lambda t: pois.copy_index[t.event]); dataset_test(pre, "
+        "dataset_values(env, pe, replay_method=FAROOQ_2019, spike_counts=pc, "
+        "quantities=('max_map_jump',)).assign(dataset=lambda t: "
+        "pois.copy_index[t.event]); dataset_test(pre, "
         "pv, criteria=recipe.criteria).",
         "Fig. 1H compares the mean |r| of Pre-Run, tPre-Run, Poisson and "
         "tPoisson frames by rank-sum tests; the SEMs suggest one shuffled data "

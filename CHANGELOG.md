@@ -240,6 +240,14 @@ Several replay papers test a whole data set, not each event:
 - `decode_intervals` bins disjoint intervals in one pass and decodes them
   together, about 70 times faster, with the same posteriors to round-off.
 
+**Fixes**
+
+- `dataset_values` refuses a method that counts spikes or active cells,
+  such as `FAROOQ_2019` (`n_active_cells >= 5`), when `spike_counts` is not
+  given. Null data sets measured on the moment tables used to fill
+  `n_active_cells` with the MAP range instead. The `FAROOQ_2019_*` notes
+  now pass `spike_counts`.
+
 ### Reactivation recipes
 
 **New**

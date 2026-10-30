@@ -33,6 +33,7 @@ from neurospatial.replay.dataset import (
     _dataset_values,
 )
 from neurospatial.replay.methods import (
+    FAROOQ_2019,
     GROSMARK_2016,
     SILVA_2015,
 )
@@ -494,6 +495,34 @@ class TestDatasetValues:
             dataset_values(
                 track, events, replay_method=SILVA_2015, quantities=("speed",)
             )
+
+    @pytest.mark.parametrize("null", [None, "time_bin_permutation", "column_cycle"])
+    def test_count_criteria_need_spike_counts(self, track, session, null):
+        """FAROOQ_2019 counts active cells: no counts is an error, not a MAP range.
+
+        With counts, every data set reports the event's active cells, on the
+        moment-table path and when each shuffle is measured alike.
+        """
+        _, _, _, events, counts = session
+        options = {} if null is None else {"null": null, "n_datasets": 3, "rng": 0}
+        with pytest.raises(ValueError, match="needs spike_counts"):
+            dataset_values(
+                track,
+                events,
+                replay_method=FAROOQ_2019,
+                quantities=("max_map_jump",),
+                **options,
+            )
+        table = dataset_values(
+            track,
+            events,
+            replay_method=FAROOQ_2019,
+            quantities=("max_map_jump",),
+            spike_counts=counts,
+            **options,
+        )
+        active = np.array([np.sum(c.sum(axis=0) > 0) for c in counts], dtype=float)
+        np.testing.assert_array_equal(table["n_active_cells"], active[table["event"]])
 
     def test_decoding_nulls_need_their_inputs(self, track, session):
         _, _, _, events, counts = session
