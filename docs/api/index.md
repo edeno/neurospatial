@@ -195,6 +195,7 @@ Detecting the candidate events (ripples, population bursts) is not included.
   of every pair of spikes less than 80 ms apart against the cells'
   place-field order, summed (Gupta et al. 2010), with spike-time and
   cell-identity shuffles; cells with several fields take their best field;
+  `unit_groups=` compares only cells on different tetrodes or shanks;
   needs no decoding
 - `detect_replay()`, `compare_replay_methods()`: Apply published replay
   methods (`neurospatial.replay.methods`: Davidson 2009, Karlsson & Frank

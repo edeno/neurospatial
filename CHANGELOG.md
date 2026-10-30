@@ -14,6 +14,13 @@
   leave the event unchanged bit for bit. `ReplayEventSimulation` records
   `drop_fraction`, `n_dropped_spikes` and `n_noise_spikes`, also in
   `summary()`.
+- `pairwise_order_score`, `pairwise_order_significance` and
+  `detect_pairwise_order_replay` take `unit_groups=`, one group (tetrode or
+  shank) per cell: only pairs of spikes from cells in different groups are
+  compared, the rule of `explained_variance_reactivation(unit_groups=)`, so
+  a burst split across two clusters of one tetrode cannot score as a
+  sequence. Each spike train keeps its group in both shuffles, and
+  `n_pairs` counts only the compared pairs.
 
 **Changed**
 
