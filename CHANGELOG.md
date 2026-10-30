@@ -258,6 +258,11 @@ Several replay papers test a whole data set, not each event:
   `null_table` rows without a `dataset`. They formed an extra null data
   set with `statistic=`, which could give p > 1, and a cryptic indexing
   error with `criteria=`.
+- The moment-table path of `dataset_values` weighs every time bin alike,
+  as the per-time-bin weighted correlation does. It used to weigh each row
+  by its mass. With rows that sum to 1 only within `DecodingResult`'s
+  tolerance, the score could then differ from `detect_replay`'s by about
+  1e-7.
 
 ### Reactivation recipes
 

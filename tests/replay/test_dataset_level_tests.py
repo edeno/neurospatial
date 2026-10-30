@@ -422,6 +422,30 @@ class TestDatasetValues:
         slow = _private_values(env, events, SILVA_2015, fast=False, **options)
         np.testing.assert_allclose(fast, slow, rtol=0, atol=1e-9)
 
+    @pytest.mark.parametrize(
+        "null", ["column_cycle", "column_cycle_weighted", "time_bin_permutation"]
+    )
+    def test_fast_path_weighs_every_time_bin_alike(self, track, null):
+        """Rows summing to 1 within DecodingResult's tolerance, not exactly.
+
+        The weighted correlation normalizes each row, so every time bin
+        weighs the same; weighing by the row's own mass moved the score by
+        about 1e-7.
+        """
+        rng = np.random.default_rng(0)
+        events = []
+        for _ in range(4):
+            raw = rng.gamma(0.4, size=(8, track.n_bins))
+            raw /= raw.sum(axis=1, keepdims=True)
+            raw *= 1.0 + rng.uniform(-9e-7, 9e-7, size=(8, 1))
+            events.append(
+                DecodingResult(posterior=raw, env=track, times=np.arange(8) * DT)
+            )
+        options = {"null": null, "n_datasets": 25, "rng": 5}
+        fast = _private_values(track, events, SILVA_2015, fast=True, **options)
+        slow = _private_values(track, events, SILVA_2015, fast=False, **options)
+        np.testing.assert_allclose(fast["score"], slow["score"], rtol=0, atol=1e-11)
+
     def test_each_event_draws_its_own_stream(self, track, session):
         """An event's shuffles do not depend on the other events."""
         _, _, _, events, _ = session

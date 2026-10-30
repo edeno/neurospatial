@@ -1679,9 +1679,10 @@ class _MomentTables:
         constant["duration"] = float(self.times[-1] - self.times[0])
         constant["track_length"] = self.tables["track_length"]
 
-        # The weighted correlation, as _weighted_correlations computes it.
+        # The weighted correlation, as _weighted_correlations computes it on
+        # rows normalized per time bin: every row with mass weighs 1.
         times = self.times - (self.times.min() + self.times.max()) / 2.0
-        mass = self.mass[rows]  # (n_datasets, n_time)
+        mass = (self.mass[rows] > 0).astype(np.float64)  # (n_datasets, n_time)
         mean = self.mean[rows, shifts]
         variance = self.variance[rows, shifts]
         total = mass.sum(axis=1)
