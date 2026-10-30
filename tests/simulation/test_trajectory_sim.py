@@ -883,6 +883,42 @@ class TestSimulateTrajectorysinusoidal:
         with pytest.raises(ValueError, match=r"outbound_path="):
             simulate_trajectory_sinusoidal(track, duration=1.0)
 
+    @pytest.mark.parametrize("first_piece", ["loop", "segment"])
+    def test_a_track_in_separate_pieces_is_refused(self, first_piece):
+        """No back-and-forth route joins pieces of track that do not touch.
+
+        A straight piece beside a loop or beside another straight piece:
+        the run used to cover one piece, or call the loop one with arms.
+        """
+        import networkx as nx
+
+        from neurospatial import Environment
+
+        graph = nx.Graph()
+        if first_piece == "loop":
+            angles = 2 * np.pi * np.arange(6) / 6
+            for node, angle in enumerate(angles):
+                graph.add_node(node, pos=(50 * np.cos(angle), 50 * np.sin(angle)))
+            edges = [(node, (node + 1) % 6) for node in range(6)]
+        else:
+            graph.add_node(0, pos=(0.0, 0.0))
+            graph.add_node(1, pos=(50.0, 0.0))
+            edges = [(0, 1)]
+        graph.add_node(10, pos=(200.0, 0.0))
+        graph.add_node(11, pos=(300.0, 0.0))
+        edges.append((10, 11))
+        graph.add_edges_from(edges)
+        track = Environment.from_graph(
+            graph,
+            edge_order=edges,
+            edge_spacing=0.0,
+            bin_size=2.0,
+            track_width=5.0,
+            units="cm",
+        )
+        with pytest.raises(ValueError, match=r"2 separate pieces\.\nWhy:.*\nFix:"):
+            simulate_trajectory_sinusoidal(track, duration=1.0)
+
     def test_pauses_hold_at_each_end_for_pause_duration(self, linear_track_env):
         """The animal reaches both ends of a 100 cm track and waits 0.5 s at each."""
         sampling_frequency, pause_duration = 100.0, 0.5

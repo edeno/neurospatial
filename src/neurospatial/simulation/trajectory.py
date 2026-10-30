@@ -711,7 +711,8 @@ def simulate_trajectory_sinusoidal(
     ValueError
         If ``speed`` is None and ``env.units`` is not a metric length.
     ValueError
-        If the track has a loop and is not a single circular loop.
+        If the track is in separate pieces, or has a loop and is not a
+        single circular loop.
 
     Notes
     -----
@@ -920,10 +921,19 @@ def _track_end_to_end(env: Environment, call: str) -> NDArray[np.float64]:
         for node, position in graph.nodes(data="pos")
     }
 
+    if not nx.is_connected(graph):
+        raise ValueError(
+            _format_error(
+                f"{call} cannot run back and forth on this track: it has "
+                f"{nx.number_connected_components(graph)} separate pieces.",
+                why="Why: the animal runs back and forth along one route, and "
+                "no route joins pieces of track that do not touch.",
+                fix="build the environment from one connected piece of track, "
+                "or join the pieces with an edge in the track graph",
+            )
+        )
     if not nx.is_forest(graph):
-        if not (
-            nx.is_connected(graph) and all(degree == 2 for _, degree in graph.degree)
-        ):
+        if not all(degree == 2 for _, degree in graph.degree):
             n_loops = len(nx.cycle_basis(graph))
             shape = "a loop with arms" if n_loops == 1 else f"{n_loops} joined loops"
             raise ValueError(

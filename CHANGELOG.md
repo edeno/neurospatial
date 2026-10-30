@@ -184,7 +184,8 @@ default lap route all changed.
   back. A track with several joined loops or a loop with arms (Hamlet,
   crossword, honeycomb, Hampton Court, rat hexmaze) raises and points to
   `simulate_trajectory_laps(outbound_path=...)`; it used to cover a quarter
-  of the track.
+  of the track. A track in separate pieces raises too; it used to run back
+  and forth on one piece only.
 - Periodic OU walks wrap at the sides of the region the environment
   covers, inside both its arena and its bins. With 3 cm bins on a 100 cm
   box they wrapped at the grid's ±1 cm overhang and left 5% of samples
