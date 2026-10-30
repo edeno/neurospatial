@@ -2045,6 +2045,8 @@ def pairwise_activation(
                 f"{only_counts}."
             )
         spike_counts = spike_counts[:, order]
+    else:
+        labels, order = None, np.arange(n_neurons)
 
     undefined = np.isnan(template)
     if np.any(undefined):
@@ -2064,8 +2066,11 @@ def pairwise_activation(
         spike_counts_z, constant = _z_scores(spike_counts)
         silent = constant & np.any(projector != 0, axis=0)
         if np.any(silent):
+            # Name the caller's columns, not their place in template order.
+            columns = np.sort(order[silent])
+            named = "" if labels is None else f" (units {labels[columns].tolist()})"
             warnings.warn(
-                f"{call}: neuron columns {np.flatnonzero(silent).tolist()} have the "
+                f"{call}: neuron columns {columns.tolist()}{named} have the "
                 "same count in every time bin of spike_counts, so they "
                 "contribute 0 to the activation strength.",
                 UserWarning,
