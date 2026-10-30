@@ -17,6 +17,7 @@ NAMESPACES = (
     "neurospatial.decoding",
     "neurospatial.replay",
     "neurospatial.replay.arms",
+    "neurospatial.replay.calibration",
     "neurospatial.replay.methods",
     "neurospatial.reactivation",
     "neurospatial.behavior",

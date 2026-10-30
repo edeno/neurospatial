@@ -41,6 +41,25 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
   counts. The Bendor-lab code zeroes the original event's empty time bins in
   shuffles that move them, which is not reproduced.
 
+### Calibrating replay methods on comparison tables
+
+New `neurospatial.replay.calibration` summarizes the table of
+`compare_replay_methods`:
+
+- `event_properties(env, events, spike_counts=)` measures each event:
+  - time bins and duration;
+  - mean peak posterior (sharpness);
+  - MAP coverage of the track;
+  - active cells and spikes.
+- `detection_rates(table, properties=, by=)` gives each method's share of
+  events called replay, with an exact binomial interval. It can be broken
+  down by bins of event properties, such as
+  `by={"n_active_cells": [5, 10, 20, np.inf]}`. On null data this is the
+  false-positive rate; on simulated replays, the sensitivity. Events with an
+  `error` are counted separately.
+- `method_agreement(table)` gives Cohen's kappa between every pair of
+  methods.
+
 ### Berners-Lee et al. (2021) arm replay
 
 `BERNERS_LEE_2021` follows the authors' code
