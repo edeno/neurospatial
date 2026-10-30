@@ -57,7 +57,7 @@ from neurospatial.replay.methods import (
     ReplayCriterion,
     ReplayMethod,
 )
-from neurospatial.replay.significance import _ALTERNATIVES, _DECODING_NULLS
+from neurospatial.replay.significance import _ALTERNATIVES, _NULL_SPECS, _NULLS
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -98,21 +98,12 @@ _ARRAY_COMPARISONS: dict[str, Callable[[Any, Any], Any]] = {
     ">": np.greater,
     ">=": np.greater_equal,
 }
-# Nulls that shuffle the decoded posterior of each event.
-_POSTERIOR_NULLS = (
-    "column_cycle",
-    "column_cycle_weighted",
-    "time_bin_permutation",
-    "pseudo_event",
+# Nulls whose one draw can be shared by every event of a data set: the
+# shareable nulls of replay_significance and the rank-order cell_order.
+_SHAREABLE_NULLS = (
+    *(name for name, spec in _NULL_SPECS.items() if spec.shareable),
+    "cell_order",
 )
-_EVENT_NULLS = _POSTERIOR_NULLS + _DECODING_NULLS
-# Nulls whose one draw (a permutation of cells, a set of shifted rate maps)
-# can be shared by every event of a data set.
-_SHAREABLE_NULLS = ("unit_identity", "place_field_circular", "cell_order")
-# Posterior nulls whose shuffles are a row order and a circular shift per row.
-_ROLLING_NULLS = ("column_cycle", "column_cycle_weighted", "time_bin_permutation")
-# Posterior nulls that shift rows along a track, so need a linearized track.
-_COLUMN_CYCLE_NULLS = ("column_cycle", "column_cycle_weighted")
 # Quantities the moment-table fast path computes; the others go through
 # detect_replay.
 _FAST_QUANTITIES = (
@@ -1011,9 +1002,9 @@ def _replay_values(
     from neurospatial.replay.methods import _criterion_quantities
     from neurospatial.replay.trajectory import _reusing_replay_lines
 
-    if null is not None and null not in _EVENT_NULLS:
+    if null is not None and null not in _NULLS:
         raise ValueError(
-            f"{operation}: null must be None or one of {list(_EVENT_NULLS)} for a "
+            f"{operation}: null must be None or one of {list(_NULLS)} for a "
             f"replay method, got {null!r}; 'cell_order' is a rank-order null."
         )
     if template is not None:
@@ -1412,6 +1403,8 @@ class _NullContext:
         )
         from neurospatial.replay.significance import (
             _EventDecoder,
+            _missing_decoding_inputs,
+            _refuse_missing_decoding_inputs,
             _require_contiguous_time_bins,
             _validated_pool,
         )
@@ -1422,7 +1415,8 @@ class _NullContext:
         context.options = options
         context.n_datasets = n_datasets
         context.entropy = entropy
-        if null in _COLUMN_CYCLE_NULLS:
+        spec = _NULL_SPECS[null]
+        if spec.along_track:
             context.order = _track_order(
                 env,
                 np.asarray(events[0].posterior),
@@ -1433,7 +1427,7 @@ class _NullContext:
             # The other nulls (permuting time bins, drawing pool rows) need
             # no order along a track: the bins keep their numbering.
             context.order = np.arange(env.n_bins)
-        if null in ("pseudo_event", "column_cycle_weighted"):
+        if spec.needs == "pool":
             pool = (
                 np.vstack([np.asarray(event.posterior) for event in events])
                 if pseudo_event_pool is None
@@ -1448,29 +1442,12 @@ class _NullContext:
                     options.get("edge_exclusion", 0.0),
                     operation,
                 )
-        if null in _DECODING_NULLS:
-            missing = [
-                name
-                for name, value in (
-                    ("spike_counts", counts),
-                    ("encoding_models", encoding_models),
-                    ("dt", dt),
-                )
-                if value is None
-            ]
+        if spec.needs == "decoding":
+            missing = _missing_decoding_inputs(counts, encoding_models, dt)
             if missing:
-                raise ValueError(
-                    _format_error(
-                        f"{operation}: the {null} null decodes the events again "
-                        f"and needs {missing}.",
-                        why="it decodes shuffled spike counts or shifted rate "
-                        "maps the way the events were decoded",
-                        fix="pass spike_counts, encoding_models and dt (and "
-                        "prior if the decode used one)",
-                    )
-                )
+                _refuse_missing_decoding_inputs(operation, [null], missing)
             assert dt is not None and counts is not None
-            if null in ("spike_train_circular", "spike_time_uniform"):
+            if spec.spreads_spikes:
                 for event in events:
                     _require_contiguous_time_bins(
                         event.times,
@@ -1541,7 +1518,7 @@ class _NullContext:
         )
         from neurospatial.replay.significance import _require_reproducible_decode
 
-        if self.null in _ROLLING_NULLS:
+        if _NULL_SPECS[self.null].rolls:
             rows, shifts = self.rolls(index, posterior)
             along = posterior[:, self.order]
             n_bins = len(self.order)
@@ -1612,7 +1589,7 @@ def _fast_path_applies(
     """Whether every value of these shuffles follows from moment tables."""
     options = dict(variant.score_options)
     return (
-        null in _ROLLING_NULLS
+        _NULL_SPECS[null].rolls
         and variant.score is weighted_correlation
         and set(options) <= {"row_normalization"}
         and options.get("row_normalization", "per_time_bin") == "per_time_bin"
@@ -2149,9 +2126,9 @@ def shuffle_events(
     """
     operation = "shuffle_events()"
     _positive_integer(n_datasets, "n_datasets", operation)
-    if null not in _EVENT_NULLS:
+    if null not in _NULLS:
         raise ValueError(
-            f"{operation}: null must be one of {list(_EVENT_NULLS)}, got {null!r}."
+            f"{operation}: null must be one of {list(_NULLS)}, got {null!r}."
         )
     from neurospatial.decoding import DecodingResult
 

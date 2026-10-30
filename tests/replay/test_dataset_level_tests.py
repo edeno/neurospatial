@@ -625,7 +625,7 @@ class TestDatasetValues:
 
     def test_decoding_nulls_need_their_inputs(self, track, session):
         _, _, _, events, counts = session
-        with pytest.raises(ValueError, match="needs \\['encoding_models', 'dt'\\]"):
+        with pytest.raises(ValueError, match="encoding_models, dt are missing"):
             dataset_values(
                 track,
                 events,

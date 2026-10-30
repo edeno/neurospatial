@@ -17,7 +17,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 import numpy as np
 from numpy.typing import NDArray
@@ -51,43 +51,100 @@ if TYPE_CHECKING:
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 _OPERATION = "replay_significance()"
-_NULLS = (
-    "column_cycle",
-    "unit_identity",
-    "pseudo_event",
-    "spike_train_circular",
-    "place_field_circular",
-    "time_bin_permutation",
-    "spike_time_uniform",
-    "column_cycle_weighted",
-)
-# Run when nulls=None, if their inputs are given: Davidson et al. (2009).
-_DEFAULT_NULLS = ("column_cycle", "unit_identity", "pseudo_event")
-# Nulls after which a time bin no longer holds its own spikes.
-_ROW_MOVING_NULLS = (
-    "pseudo_event",
-    "spike_train_circular",
-    "time_bin_permutation",
-    "spike_time_uniform",
-)
-# Nulls that decode shuffled spike counts again.
-_DECODING_NULLS = (
-    "unit_identity",
-    "spike_train_circular",
-    "place_field_circular",
-    "spike_time_uniform",
-)
-# Nulls that move each cell's spikes to other time bins of the event, so
-# the time bins without spikes differ from shuffle to shuffle.
-_COUNT_CHANGING_NULLS = ("spike_train_circular", "spike_time_uniform")
-# The options each null takes in null_options, with their defaults.
-_NULL_OPTIONS: Mapping[str, Mapping[str, Any]] = MappingProxyType(
+
+
+@dataclass(frozen=True)
+class _NullSpec:
+    """What one null of :func:`replay_significance` needs and changes.
+
+    Attributes
+    ----------
+    needs : {"posterior", "decoding", "pool"}
+        Inputs beyond the posterior: none; the decoding inputs
+        (``spike_counts``, ``encoding_models``, ``dt``), as it decodes
+        shuffled counts or rate maps again; or ``pseudo_event_pool``.
+    pool_use : str
+        Why it needs the pool, for the refusal when the pool is missing.
+    default : bool
+        Run when ``nulls=None``, if its inputs are given (Davidson et al.
+        2009).
+    moves_rows : bool
+        A time bin no longer holds its own spikes after it.
+    spreads_spikes : bool
+        It moves each cell's spikes to other time bins of the event, so the
+        time bins without spikes differ from shuffle to shuffle.
+    rolls : bool
+        Each shuffle is a row order and a circular shift of each row along
+        the track, which :func:`dataset_values` tabulates.
+    along_track : bool
+        It shifts rows along the track, so it needs a linearized track.
+    shareable : bool
+        One draw (a permutation of cells, a set of shifted rate maps) can be
+        shared by every event of a data set.
+    options : Mapping[str, Any]
+        The options it takes in ``null_options``, with their defaults.
+    """
+
+    needs: Literal["posterior", "decoding", "pool"] = "posterior"
+    pool_use: str = ""
+    default: bool = False
+    moves_rows: bool = False
+    spreads_spikes: bool = False
+    rolls: bool = False
+    along_track: bool = False
+    shareable: bool = False
+    options: Mapping[str, Any] = MappingProxyType({})
+
+
+# Every null, in the order the random numbers are drawn.
+_NULL_SPECS: Mapping[str, _NullSpec] = MappingProxyType(
     {
-        "column_cycle": MappingProxyType({"exclude_zero_shift": False}),
-        "column_cycle_weighted": MappingProxyType({"edge_exclusion": 0.0}),
-        "unit_identity": MappingProxyType({"active_only": False}),
+        "column_cycle": _NullSpec(
+            default=True,
+            rolls=True,
+            along_track=True,
+            options=MappingProxyType({"exclude_zero_shift": False}),
+        ),
+        "unit_identity": _NullSpec(
+            needs="decoding",
+            default=True,
+            shareable=True,
+            options=MappingProxyType({"active_only": False}),
+        ),
+        "pseudo_event": _NullSpec(
+            needs="pool",
+            pool_use="whose rows its time bins are drawn from",
+            default=True,
+            moves_rows=True,
+        ),
+        "spike_train_circular": _NullSpec(
+            needs="decoding", moves_rows=True, spreads_spikes=True
+        ),
+        "place_field_circular": _NullSpec(needs="decoding", shareable=True),
+        "time_bin_permutation": _NullSpec(moves_rows=True, rolls=True),
+        "spike_time_uniform": _NullSpec(
+            needs="decoding", moves_rows=True, spreads_spikes=True
+        ),
+        "column_cycle_weighted": _NullSpec(
+            needs="pool",
+            pool_use="whose mean row weights the peaks",
+            rolls=True,
+            along_track=True,
+            options=MappingProxyType({"edge_exclusion": 0.0}),
+        ),
     }
 )
+_NULLS = tuple(_NULL_SPECS)
+_DEFAULT_NULLS = tuple(name for name, spec in _NULL_SPECS.items() if spec.default)
+_ROW_MOVING_NULLS = tuple(name for name, spec in _NULL_SPECS.items() if spec.moves_rows)
+_DECODING_NULLS = tuple(
+    name for name, spec in _NULL_SPECS.items() if spec.needs == "decoding"
+)
+_COUNT_CHANGING_NULLS = tuple(
+    name for name, spec in _NULL_SPECS.items() if spec.spreads_spikes
+)
+_POOL_NULLS = tuple(name for name, spec in _NULL_SPECS.items() if spec.needs == "pool")
+_DECODING_INPUTS = "spike_counts, encoding_models and dt"
 _ALTERNATIVES = ("greater", "less", "two-sided")
 
 
@@ -670,7 +727,7 @@ def replay_significance(
                 fix="leave pseudo_event out of nulls, or use empty_time_bins='keep'",
             )
         )
-    if "pseudo_event" in run or "column_cycle_weighted" in run:
+    if any(name in run for name in _POOL_NULLS):
         pool = _validated_pool(pseudo_event_pool, track_env)
 
     observed_result = scorer.observe()
@@ -1125,62 +1182,40 @@ def _nulls_to_run(
     pseudo_event_pool: Any,
 ) -> tuple[str, ...]:
     """The nulls to run, in the order the random numbers are drawn."""
-    unit_inputs = {
-        "spike_counts": spike_counts,
-        "encoding_models": encoding_models,
-        "dt": dt,
-    }
-    missing = [name for name, value in unit_inputs.items() if value is None]
-    requested_names = (
+    missing = _missing_decoding_inputs(spike_counts, encoding_models, dt)
+    requested = (
         None if nulls is None else ([nulls] if isinstance(nulls, str) else list(nulls))
     )
-    wants_decoding = requested_names is None or any(
-        name in _DECODING_NULLS for name in requested_names
+    wants_decoding = requested is None or any(
+        name in _DECODING_NULLS for name in requested
     )
-    if 0 < len(missing) < len(unit_inputs) and wants_decoding:
-        raise ValueError(
-            _format_error(
-                f"{_OPERATION}: the nulls that decode the event again "
-                f"({', '.join(_DECODING_NULLS)}) "
-                f"need spike_counts, encoding_models and dt, but "
-                f"{', '.join(missing)} {'is' if len(missing) == 1 else 'are'} "
-                "missing.",
-                why="these nulls decode shuffled spike counts or shifted rate "
-                "maps the way the posterior was decoded",
-                fix="pass all three (and prior if the decode used one), or none "
-                "to run only the nulls that need the posterior alone",
-            )
+    if 0 < len(missing) < 3 and wants_decoding:
+        _refuse_missing_decoding_inputs(
+            _OPERATION,
+            _DECODING_NULLS,
+            missing,
+            alternative="or none to run only the nulls that need the posterior alone",
         )
-    available = {
-        "column_cycle": True,
-        "unit_identity": not missing,
-        "pseudo_event": pseudo_event_pool is not None,
-        "spike_train_circular": not missing,
-        "place_field_circular": not missing,
-        "time_bin_permutation": True,
-        "spike_time_uniform": not missing,
-        "column_cycle_weighted": pseudo_event_pool is not None,
+    given = {
+        "posterior": True,
+        "decoding": not missing,
+        "pool": pseudo_event_pool is not None,
     }
-    if nulls is None:
-        return tuple(name for name in _DEFAULT_NULLS if available[name])
-    requested = [nulls] if isinstance(nulls, str) else list(nulls)
+    if requested is None:
+        return tuple(name for name in _DEFAULT_NULLS if given[_NULL_SPECS[name].needs])
     unknown = [name for name in requested if name not in _NULLS]
     if unknown or not requested:
         raise ValueError(
             f"{_OPERATION}: nulls must name at least one of {_NULLS}, got "
             f"{requested!r}."
         )
-    lacking = [name for name in requested if not available[name]]
+    lacking = [name for name in requested if not given[_NULL_SPECS[name].needs]]
     if lacking:
-        decoding = "spike_counts, encoding_models and dt"
         needs = {
-            "unit_identity": decoding,
-            "pseudo_event": "pseudo_event_pool",
-            "spike_train_circular": decoding,
-            "place_field_circular": decoding,
-            "spike_time_uniform": decoding,
-            "column_cycle_weighted": "pseudo_event_pool, whose mean row "
-            "weights the peaks",
+            name: _DECODING_INPUTS
+            if _NULL_SPECS[name].needs == "decoding"
+            else f"pseudo_event_pool, {_NULL_SPECS[name].pool_use}"
+            for name in lacking
         }
         raise ValueError(
             _format_error(
@@ -1190,6 +1225,44 @@ def _nulls_to_run(
             )
         )
     return tuple(name for name in _NULLS if name in requested)
+
+
+def _missing_decoding_inputs(
+    spike_counts: Any, encoding_models: Any, dt: Any
+) -> list[str]:
+    """The inputs of the nulls that decode again that are not given, by name."""
+    return [
+        name
+        for name, value in (
+            ("spike_counts", spike_counts),
+            ("encoding_models", encoding_models),
+            ("dt", dt),
+        )
+        if value is None
+    ]
+
+
+def _refuse_missing_decoding_inputs(
+    operation: str,
+    nulls: Sequence[str],
+    missing: Sequence[str],
+    *,
+    alternative: str = "",
+) -> NoReturn:
+    """Refuse nulls that decode again without all of their inputs."""
+    one = len(nulls) == 1
+    raise ValueError(
+        _format_error(
+            f"{operation}: the {', '.join(nulls)} null{'' if one else 's'} "
+            f"decode{'s' if one else ''} the event again and need"
+            f"{'s' if one else ''} {_DECODING_INPUTS}, but {', '.join(missing)} "
+            f"{'is' if len(missing) == 1 else 'are'} missing.",
+            why="these nulls decode shuffled spike counts or shifted rate maps "
+            "the way the posterior was decoded",
+            fix="pass all three (and prior if the decode used one)"
+            + (f", {alternative}" if alternative else ""),
+        )
+    )
 
 
 def _checked_null_options(
@@ -1242,7 +1315,8 @@ def _checked_null_options(
         )
     checked = {}
     for name in nulls:
-        defaults = _NULL_OPTIONS.get(name, {})
+        # Nulls of other tests, such as the rank-order cell_order, take none.
+        defaults = _NULL_SPECS[name].options if name in _NULL_SPECS else {}
         options = dict(given.get(name, {}))
         unknown = sorted(set(options) - set(defaults))
         if unknown:
@@ -1250,7 +1324,7 @@ def _checked_null_options(
                 f"it takes {sorted(defaults)}" if defaults else "it takes no options"
             )
             raise ValueError(f"{owner}: null_options gives {name} {unknown}; {takes}.")
-        if name in _NULL_OPTIONS:
+        if defaults:
             checked[name] = {**defaults, **options}
     edge = checked.get("column_cycle_weighted", {}).get("edge_exclusion", 0.0)
     if (

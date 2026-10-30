@@ -61,6 +61,7 @@ from neurospatial.replay.significance import (
     _COUNT_CHANGING_NULLS,
     _DECODING_NULLS,
     _NULLS,
+    _POOL_NULLS,
     _ROW_MOVING_NULLS,
     _checked_null_options,
 )
@@ -3305,7 +3306,7 @@ def compare_replay_methods(
         name in method.nulls
         for method in replay_methods
         if isinstance(method, ReplayMethod)
-        for name in ("pseudo_event", "column_cycle_weighted")
+        for name in _POOL_NULLS
     ):
         if any(isinstance(event, (JointDecodingResult, Mapping)) for event in events):
             raise ValueError(
