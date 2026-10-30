@@ -143,9 +143,10 @@ def test_chang_tests_both_tails_and_keeps_the_trajectory_with_the_smallest_p(
     assert rows["is_replay"][kinds == "random"].sum() <= 1
 
 
-def test_chang_weighs_time_bins_by_the_trajectory_share(place_code):
-    """The paper's joint posterior: a share renormalized per time bin is the
-    code's separate decode, which weighs every time bin the same."""
+def test_chang_weighs_every_time_bin_the_same_as_the_code(place_code):
+    """The code normalizes each time bin of a trajectory's slice of the joint
+    posterior, which with a uniform prior is that trajectory's own decode;
+    row_normalization="none" weighs each time bin by the trajectory's share."""
     env, rates = place_code
     dt = 0.01
     maps = {"left": rates, "right": _zigzag(rates)}
@@ -155,21 +156,29 @@ def test_chang_weighs_time_bins_by_the_trajectory_share(place_code):
         name: decode_position(env, counts, maps[name], dt=dt, times=times)
         for name in maps
     }
-    as_code = dataclasses.replace(CHANG_2025, n_shuffles=49, score_options={})
+    recipe = dataclasses.replace(CHANG_2025, n_shuffles=49)
+    by_share = dataclasses.replace(recipe, score_options={"row_normalization": "none"})
     common = {"spike_counts": [counts], "encoding_models": maps, "dt": dt, "rng": 0}
-    paper = compare_replay_methods(
-        env,
-        [joint],
-        replay_methods=[dataclasses.replace(CHANG_2025, n_shuffles=49)],
-        **common,
+    on_joint = compare_replay_methods(env, [joint], replay_methods=[recipe], **common)
+    on_separate = compare_replay_methods(
+        env, [separate], replay_methods=[recipe], **common
     )
-    code_joint = compare_replay_methods(
-        env, [joint], replay_methods=[as_code], **common
+    shares = compare_replay_methods(env, [joint], replay_methods=[by_share], **common)
+    assert on_joint.loc[0, "score"] == pytest.approx(
+        on_separate.loc[0, "score"], abs=1e-9
     )
-    code_separate = compare_replay_methods(
-        env, [separate], replay_methods=[as_code], **common
+    assert shares.loc[0, "score"] != pytest.approx(on_joint.loc[0, "score"], abs=1e-6)
+    # Independently: the weighted correlation of the chosen trajectory's
+    # rows of the joint posterior, each time bin normalized to sum to 1.
+    rows = joint.joint(on_joint.loc[0, "template"])
+    spiking = counts.sum(axis=1) > 0
+    weights = rows[spiking] / rows[spiking].sum(axis=1, keepdims=True)
+    t = np.broadcast_to(times[spiking, None], weights.shape)
+    x = np.broadcast_to(env.bin_centers[:, 0], weights.shape)
+    mean_t, mean_x = np.average(t, weights=weights), np.average(x, weights=weights)
+    cov = np.average((t - mean_t) * (x - mean_x), weights=weights)
+    var_t = np.average((t - mean_t) ** 2, weights=weights)
+    var_x = np.average((x - mean_x) ** 2, weights=weights)
+    assert on_joint.loc[0, "score"] == pytest.approx(
+        cov / np.sqrt(var_t * var_x), abs=1e-9
     )
-    assert code_joint.loc[0, "score"] == pytest.approx(
-        code_separate.loc[0, "score"], abs=1e-9
-    )
-    assert paper.loc[0, "score"] != pytest.approx(code_joint.loc[0, "score"], abs=1e-6)

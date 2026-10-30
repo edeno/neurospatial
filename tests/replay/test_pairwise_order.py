@@ -302,24 +302,96 @@ class TestNulls:
         )
         observed_weights = calls[0][0][0]
         active = [u for u, train in enumerate(trains) if len(train)]
-        every_field_set = [tuple(c) for c in centers]
+        assert not centers[4] and 4 in active  # an active cell without a field
+        field_sets = [tuple(c) for c in centers if len(c)]
         null = result.shuffles["cell_identity"].null_scores
         silent_field_taken = 0
         for k, ((weights, fields, _), _) in enumerate(calls[1:]):
             np.testing.assert_array_equal(weights, observed_weights)
             given = [tuple(f) for f in fields]
-            # The active cells take distinct cells' field sets, any cell's.
-            remaining = list(every_field_set)
-            for field_set in given:
-                remaining.remove(field_set)
+            # Active cells with a field take distinct field sets of cells
+            # with a field; cells without a field stay without one.
+            remaining = list(field_sets)
+            for unit, field_set in zip(active, given, strict=True):
+                if centers[unit]:
+                    remaining.remove(field_set)
+                else:
+                    assert field_set == ()
             shuffled_centers = [[] for _ in trains]
             for unit, field_set in zip(active, given, strict=True):
                 shuffled_centers[unit] = list(field_set)
             assert null[k] == _brute_force(trains, shuffled_centers, 0.08)
             silent_field_taken += (155.0,) in given
         assert len(calls) == 31
-        # Fields of every cell given are drawn, not only the active cells'.
+        # A silent cell's fields are drawn too, not only the active cells'.
         assert silent_field_taken > 0
+
+    def test_cells_without_a_field_change_neither_null(self, track, event):
+        """Fieldless cells, silent or active, leave every shuffle unchanged."""
+        rates, trains, centers = event
+        with_field = [u for u, c in enumerate(centers) if len(c)]
+        field_only = pairwise_order_significance(
+            track,
+            [trains[u] for u in with_field],
+            (1.0, 1.15),
+            rates[with_field],
+            n_shuffles=50,
+            rng=3,
+        )
+        # The fixture's two fieldless cells (one active), and 20 silent ones.
+        padded = pairwise_order_significance(
+            track,
+            [*trains, *[np.array([])] * 20],
+            (1.0, 1.15),
+            np.vstack([rates, np.zeros((20, track.n_bins))]),
+            n_shuffles=50,
+            rng=3,
+        )
+        assert padded.observed.score == field_only.observed.score
+        for null in ("spike_time_permutation", "cell_identity"):
+            np.testing.assert_array_equal(
+                padded.shuffles[null].null_scores,
+                field_only.shuffles[null].null_scores,
+            )
+
+    def test_each_null_alone_holds_alpha_with_fieldless_cells(self):
+        """Random firing order, with silent and active cells without a field.
+
+        Cells without a field once joined the cell-identity pool, which made
+        most shuffles score 0 and called about a third of these events
+        significant at alpha = 0.05.
+        """
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [200.0, 0.0]], bin_size=3.5, units="cm"
+        )
+        x = env.bin_centers[:, 0]
+        rng = np.random.default_rng(0)
+        n_events = 300
+        rejected = dict.fromkeys(("spike_time_permutation", "cell_identity"), 0)
+        for seed in range(n_events):
+            centers = rng.uniform(10.0, 190.0, 12)
+            rates = np.vstack(
+                [
+                    20.0 * np.exp(-0.5 * ((x - centers[:, None]) / 5.0) ** 2),
+                    np.zeros((42, env.n_bins)),
+                ]
+            )
+            trains = [
+                *[
+                    np.sort(rng.uniform(0.0, 0.15, rng.integers(1, 4)))
+                    for _ in range(12)
+                ],
+                *[np.sort(rng.uniform(0.0, 0.15, 3)) for _ in range(6)],
+                *[np.array([])] * 36,
+            ]
+            result = pairwise_order_significance(
+                env, trains, (0.0, 0.15), rates, n_shuffles=100, rng=seed
+            )
+            for null, test in result.shuffles.items():
+                rejected[null] += test.p_value < 0.05
+        # Binomial(300, 0.05) lies in [6, 30] with probability above 99%.
+        for null, count in rejected.items():
+            assert 6 <= count <= 30, (null, count)
 
     def test_nulls_do_not_depend_on_each_other(self, track, event):
         rates, trains, _ = event
@@ -472,6 +544,28 @@ class TestUnitGroups:
         with pytest.raises(ValueError, match="one group per cell"):
             pairwise_order_score(track, trains, (1.0, 1.15), rates, unit_groups=groups)
 
+    @pytest.mark.parametrize(
+        "missing",
+        [
+            np.nan,
+            np.inf,
+            None,
+            pytest.param(np.float32(np.nan), id="float32-nan"),
+        ],
+    )
+    def test_missing_groups_are_refused(self, track, event, missing):
+        """NaN differs from itself, so NaN-group cells would all be compared."""
+        rates, trains, _, _ = event
+        groups = np.array([missing, missing, *range(8)], dtype=object)
+        with pytest.raises(ValueError, match=r"non-finite group for cells \[0, 1\]"):
+            pairwise_order_score(track, trains, (1.0, 1.15), rates, unit_groups=groups)
+        if missing is not None:
+            floats = np.array([missing, missing, *range(8)], dtype=np.float64)
+            with pytest.raises(ValueError, match="missing or non-finite"):
+                pairwise_order_significance(
+                    track, trains, (1.0, 1.15), rates, unit_groups=floats
+                )
+
 
 def _place_code(n_cells=30):
     env = Environment.linear_track(
@@ -523,6 +617,36 @@ class TestDetection:
         assert backward.is_replay and backward.score < 0
         assert forward.p_value == pytest.approx(1 / 301)
         assert forward.n_shuffles_used == 300
+        # z-scores are signed like the score.
+        assert set(forward.z_scores) == set(GUPTA_2010.nulls)
+        assert all(z > 0 for z in forward.z_scores.values())
+        assert all(z < 0 for z in backward.z_scores.values())
+
+    def test_backward_z_scores_are_those_of_the_signed_score(self, track):
+        rates = _rates(track, [[b] for b in range(0, 20, 2)])
+        trains = [np.array([1.09 - 0.01 * k]) for k in range(10)]
+        method = dataclasses.replace(
+            GUPTA_2010, name="backward", directions=("backward",), n_shuffles=50
+        )
+        result = detect_pairwise_order_replay(
+            track, trains, (1.0, 1.1), rates, pairwise_order_method=method, rng=9
+        )
+        tested = pairwise_order_significance(
+            track,
+            trains,
+            (1.0, 1.1),
+            rates,
+            direction="backward",
+            n_shuffles=50,
+            rng=template_stream(9, "backward"),
+        )
+        assert result.score == -tested.observed.score
+        for null, test in tested.shuffles.items():
+            # (-score - mean(-null)) / std(null) is minus the backward z.
+            signed = -test.null_scores
+            expected = (result.score - signed.mean()) / signed.std()
+            assert result.z_scores[null] == pytest.approx(expected)
+            assert result.z_scores[null] == -test.z_score
 
     def test_random_events_are_rarely_replay(self):
         """Per test about alpha; over two directions at most about 2 alpha."""
@@ -605,6 +729,9 @@ class TestDetection:
         )
         assert result.p_value == expected.p_value
         assert result.score == expected.observed.score
+        assert result.z_scores == {
+            null: test.z_score for null, test in expected.shuffles.items()
+        }
 
     def test_fewer_than_three_active_cells_are_not_replay(self, track):
         rates = _rates(track, [[1], [2], [3]])
@@ -637,6 +764,16 @@ class TestDetection:
                 {"left": rates},
                 pairwise_order_method=GUPTA_2010,
                 template="right",
+            )
+
+    def test_an_empty_mapping_of_rate_maps_is_refused(self, track):
+        with pytest.raises(ValueError, match="empty mapping"):
+            detect_pairwise_order_replay(
+                track,
+                [np.array([1.0])] * 3,
+                (1.0, 1.1),
+                {},
+                pairwise_order_method=GUPTA_2010,
             )
 
 
@@ -691,6 +828,9 @@ class TestCompare:
                 expected.p_value,
                 expected.template,
             )
+            # One z-score column per null.
+            for null in GUPTA_2010.nulls:
+                assert row[f"z_score[{null}]"] == expected.z_scores[null]
 
     def test_a_search_too_large_is_an_error_row(self, track):
         rates = _rates(track, [[2 * k, 2 * k + 10] for k in range(5)] * 4)

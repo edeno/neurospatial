@@ -5056,7 +5056,10 @@ SOULA_2023 = ReplayMethod(
         "code does; with the line on bin centers the two then agree.",
         "Time bins without spikes have no posterior in nelpy: set to zero "
         "here (empty_time_bins='zero') and left out of the line and of the "
-        "mean band mass, as in the code.",
+        "mean band mass, for the event and each shuffle alike. The co-author's "
+        "code leaves them out of the event's score only; in its shuffles a "
+        "time bin without spikes enters the line fit at MAP bin 0 (see "
+        "HARVEY_2023_LINE). Not reproduced.",
         "At least five active pyramidal cells with a peak rate of at least 1 "
         "Hz and a peak-to-mean ratio of 1.5: pass those cells' spike counts. "
         "Events with more than 50% of their time bins without spikes are "
@@ -5097,7 +5100,14 @@ HARVEY_2023_LINE = dataclasses.replace(
         "which the paper does not state.",
         "Time bins without spikes have no posterior in nelpy: set to zero "
         "here (empty_time_bins='zero') and left out of the line and of the "
-        "mean band mass, as in the code.",
+        "mean band mass, for the event and each shuffle, which the paper "
+        "scores alike. The code leaves them out of the event's score only: "
+        "its weighted correlation, run between the event's score and the "
+        "shuffles (trajectory_score_bst), sets the event's missing "
+        "posterior to 0 in place, so in each shuffle a time bin without "
+        "spikes enters the line fit at MAP bin 0 (it still adds no band "
+        "mass, and the mean is still over the time bins with spikes). Not "
+        "reproduced.",
         "At least 5 active pyramidal cells with a peak rate of at least 1 Hz "
         "and a peak-to-mean ratio of 1 (1.5 and at least 100 running spikes "
         "in the code): pass those cells' spike counts. Events with more than "
@@ -5118,7 +5128,6 @@ CHANG_2025 = ReplayMethod(
         "https://doi.org/10.1038/s41586-024-08340-w"
     ),
     score=weighted_correlation,
-    score_options={"row_normalization": "none"},
     nulls=("column_cycle",),
     n_shuffles=1000,
     alpha=0.05,
@@ -5150,14 +5159,18 @@ CHANG_2025 = ReplayMethod(
         "template_choice='smallest_p', not corrected for the two "
         "trajectories, as in the paper.",
         "The decoder is joint over position and trajectory with a uniform "
-        "prior, so each trajectory's posterior matrix is its share of the "
-        "joint posterior: pass decode_jointly(...) as the event with both "
-        "trajectories' rate maps. The weighted correlation uses the share "
-        "as weights (row_normalization='none'), so time bins the trajectory "
-        "explains less weigh less. Each time bin weighted equally "
-        "(score_options={}) is the code's separate decode of each "
-        "trajectory: with a uniform prior, a share renormalized per time bin "
-        "is that trajectory's own posterior.",
+        "prior: pass decode_jointly(...) as the event with both "
+        "trajectories' rate maps. The paper does not say how 'the posterior "
+        "probability matrix of each trajectory' is weighted; the code "
+        "(replayHSEseq_decoding_CA1_slidingwin_linfittingR2.m) takes the "
+        "trajectory's rows of the joint posterior and normalizes each time "
+        "bin to sum to 1 before the weighted correlation, for the event and "
+        "its shuffles, so every time bin weighs the same. That is followed "
+        "(the default row_normalization='per_time_bin'); with a uniform "
+        "prior it equals a separate decode of the trajectory. The other "
+        "reading, the trajectory's share of the joint posterior as weights, "
+        "so that time bins it explains less weigh less, is "
+        "score_options={'row_normalization': 'none'}.",
         "Each candidate event was 'divided into 10-ms non-overlapping bins'. "
         "Time bins without spikes are set to zero (empty_time_bins='zero'), "
         "as the code shifts only time bins with spikes; the paper does not "
@@ -5174,7 +5187,7 @@ CHANG_2025 = ReplayMethod(
         "side, 100 log-spaced speeds of 100 to 10,000 cm/s in both "
         "directions, mean band mass over the time bins with spikes), which "
         "one method cannot express (it tests one score). Nearest variant: "
-        "dataclasses.replace(CHANG_2025, n_shuffles=500, score_options={}, "
+        "dataclasses.replace(CHANG_2025, n_shuffles=500, "
         "null_options={'column_cycle': {'exclude_zero_shift': True}}) on 20 "
         "ms windows stepped by 10 ms (sum adjacent 10 ms counts and decode "
         "with dt=0.02), still without the line test.",
@@ -5280,7 +5293,9 @@ MABOUDI_2018 = ReplayMethod(
         "reproduced by default.",
         "Lines: 35,000 drawn at random over every slope (n_lines=35000, "
         "seeded by line_seed=0), the same for the event and its shuffles, as "
-        "in the code; the code draws new lines for each event, here every "
+        "in the code, and about the code's center point, one bin past the "
+        "center of the event's image of time bins by position bins on both "
+        "axes; the code draws new lines for each event, here every "
         "event with the same numbers of time and position bins gets the "
         "same lines. Positions along a line are exact; the code rounds them "
         "to bins. For the dense grid of Davidson et al., which cannot miss "
@@ -5506,8 +5521,10 @@ GUPTA_2010 = PairwiseOrderMethod(
         "Shuffles: 300 permutations of the scored spikes' times (each spike "
         "keeps its cell; the paper 'randomly shuffled the spike times', and "
         "a uniform redraw is the other reading) and 300 permutations of the "
-        "cells' field sets across every cell given (the cell-identity "
-        "shuffle of Davidson et al. 2009). Replay when the score is greater "
+        "field sets among the cells with a field on the template, active or "
+        "not; cells without a field stay unscored (the cell-identity "
+        "shuffle of Davidson et al. 2009, which shuffled among spatially "
+        "tuned units only). Replay when the score is greater "
         "than 95% of both sets: p = (k + 1) / 301 < 0.05 for each, ties "
         "counted against the event.",
         "The 80 cm limit on the distance between the two spikes' field "

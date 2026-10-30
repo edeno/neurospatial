@@ -195,6 +195,22 @@ def test_analytical_threshold_refuses_a_percentile() -> None:
             {"component_threshold": "bin_shuffle", "percentile": 95.0, "n_shuffles": 0},
             "n_shuffles must be a positive integer",
         ),
+        (
+            {
+                "component_threshold": "bin_shuffle",
+                "percentile": 95.0,
+                "n_shuffles": 20.0,
+            },
+            "n_shuffles must be a positive integer",
+        ),
+        (
+            {
+                "component_threshold": "bin_shuffle",
+                "percentile": 95.0,
+                "n_shuffles": True,
+            },
+            "n_shuffles must be a positive integer",
+        ),
     ],
 )
 def test_invalid_threshold_options(options: dict, message: str) -> None:

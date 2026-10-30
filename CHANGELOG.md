@@ -37,6 +37,29 @@
 - `n_shuffles`, `n_rate_subsamples`, `min_events` and
   `ReactivationWindows.count` refuse floats such as `20.0`.
 
+### Reactivation assembly fixes
+
+**Fixes**
+
+- `detect_assemblies(n_shuffles=20.0)` raises the documented "positive
+  integer" `ValueError` instead of a `TypeError` from inside the surrogate
+  loop.
+- `pairwise_activation` with `unit_ids=` and `template_unit_ids=` names the
+  caller's column and its label in the constant-neuron warning, not its
+  position in template order.
+- `explained_variance_reactivation(control_correlations=[c],
+  control_unit_ids=[labels])` accepts one control's labels in a one-item
+  list, as it does for several controls.
+
+**Documentation**
+
+- The `tracy_widom` threshold is described as Peyrache et al.'s heuristic
+  margin `n ** (-2/3)`, not the null spread of the largest eigenvalue,
+  which also shrinks with the number of time bins (Johnstone 2001).
+- `null_reactivation_data(kind="cell_identity")` permutes each unit's rate
+  with its spikes, so it does not calibrate the rate confound.
+- Four numbers in "Comparing reactivation methods" corrected from a rerun.
+
 ### Replay checks from Tingley & Peyrache (2020)
 
 **New**
@@ -55,7 +78,8 @@
   compared, the rule of `explained_variance_reactivation(unit_groups=)`, so
   a burst split across two clusters of one tetrode cannot score as a
   sequence. Each spike train keeps its group in both shuffles, and
-  `n_pairs` counts only the compared pairs.
+  `n_pairs` counts only the compared pairs. A missing group (None, NaN or
+  infinite) is refused, since NaN would compare unequal to every group.
 - `rank_order_correlation` and `rank_order_significance` take
   `multi_field_cells="keep" | "exclude"` and `place_fields=`. Tingley &
   Peyrache note that cells with several place fields have no single place
@@ -199,8 +223,12 @@ and Chang et al. (2025) as recipes in `neurospatial.replay.methods`.
   approach"): that score against 1,000 column cycles, with at least 5
   active cells and at most half the time bins empty.
 - `CHANG_2025`: the signed weighted correlation of each T-maze
-  trajectory's share of a joint decode in 10 ms bins, two-sided (2.5th and
-  97.5th percentiles), keeping the trajectory with the smallest p-value.
+  trajectory's posterior from a joint decode in 10 ms bins, two-sided (2.5th
+  and 97.5th percentiles), keeping the trajectory with the smallest p-value.
+  Each time bin is normalized to sum to 1 over the trajectory's bins, as
+  the authors' code does where the paper is silent;
+  `score_options={"row_normalization": "none"}` weighs each time bin by
+  the trajectory's share of the joint posterior instead.
   The code's second line-fit test (p < 0.025), 20 ms windows stepped by 10
   ms and 500 shuffles are in its notes, with the nearest variant.
 - `pairwise_bias_matrix(spike_times, interval, *, unit_ids=None)`,
@@ -275,6 +303,50 @@ Several replay papers test a whole data set, not each event:
 - `decode_intervals` bins disjoint intervals in one pass and decodes them
   together, about 70 times faster, with the same posteriors to round-off.
 
+**Fixes**
+
+- `dataset_values` refuses a method that counts spikes or active cells,
+  such as `FAROOQ_2019` (`n_active_cells >= 5`), when `spike_counts` is not
+  given. Null data sets measured on the moment tables used to fill
+  `n_active_cells` with the MAP range instead. The `FAROOQ_2019_*` notes
+  now pass `spike_counts`.
+- `template_correlation_test` refuses a template or reference that is
+  constant over the cells they share. Its correlation is undefined, and
+  the NaN statistic used to be reported with the smallest p. A shuffle
+  without a correlation (tied reference values on every shared cell) now
+  counts as at least as extreme, so it can no longer shrink p.
+- `dataset_test(statistic=...)` refuses a statistic that is not finite on
+  a null data set. Such data sets counted neither as at least as extreme
+  nor as less, which made p too small. `dataset_test` also refuses
+  `null_table` rows without a `dataset`. They formed an extra null data
+  set with `statistic=`, which could give p > 1, and a cryptic indexing
+  error with `criteria=`.
+- The moment-table path of `dataset_values` weighs every time bin alike,
+  as the per-time-bin weighted correlation does. It used to weigh each row
+  by its mass. With rows that sum to 1 only within `DecodingResult`'s
+  tolerance, the score could then differ from `detect_replay`'s by about
+  1e-7.
+- `SILVA_2015_RANK_ORDER` pooled tests compare absolute correlations, as
+  Silva et al.'s Online Methods state ("The absolute values of spike
+  correlations ... were compared"): `columns=("abs_score",)`, where it held
+  the signed `"score"`. A recipe column the library's tables do not hold
+  (`abs_score`, Grosmark's `quality`, Stella's `step`) is now made by an
+  `assign` given in that recipe's notes; `abs_score` is always `|score|`.
+
+**Documentation**
+
+- `FAROOQ_2019_POISSON` and `STELLA_2019_JITTER` notes make, decode and
+  measure one surrogate data set at a time. `decode_intervals` holds every
+  time bin's posterior and counts at once, and 500 copies of 38,820 frames
+  in one call would need about 270 GB. The Farooq runtime now includes
+  about 3 hours of `dataset_values`. The `decode_intervals` docstring and
+  the replay guide state the memory.
+- The `FAROOQ_2019_*` notes say to pass only frames with at least 5 active
+  cells: `dataset_test` does not apply `FAROOQ_2019`'s `n_active_cells`
+  criterion.
+- `shuffle_events` and `ShuffledDataset` state that `"pseudo_event"` keeps
+  each event's own counts next to rows drawn from the pool.
+
 ### Reactivation recipes
 
 **New**
@@ -282,8 +354,9 @@ Several replay papers test a whole data set, not each event:
 - `detect_assemblies(..., component_threshold=)` chooses the eigenvalue
   threshold that sets the number of assemblies. `"marchenko_pastur"` (the
   default, unchanged) is the analytical edge; `"tracy_widom"` adds
-  `n ** (-2/3)`, the finite-sample spread of the largest eigenvalue
-  (Peyrache et al., 2010); `"bin_shuffle"` and `"circular_shift"` take a
+  `n ** (-2/3)`, the heuristic margin of Peyrache et al. (2010), which for
+  typical recordings sits many null standard deviations above the edge;
+  `"bin_shuffle"` and `"circular_shift"` take a
   percentile of the largest eigenvalue of surrogate matrices whose neurons
   are shuffled or rotated in time (Lopes-dos-Santos et al., 2013).
   Surrogate thresholds need `percentile=`, because the paper gives no single
@@ -421,7 +494,9 @@ papers define.
   units from different groups: tetrodes, as Kudrimoti et al. (1999) and
   Tatsuno et al. (2006) did, or regions for cross-region pairs (Lansink et
   al., 2009). `pair_mask=` selects pairs by any other rule, such as waveform
-  similarity (Giri et al., 2024). `n_pairs` counts the pairs used.
+  similarity (Giri et al., 2024). `n_pairs` counts the pairs used. A
+  missing or NaN group is refused, since NaN compares unequal to every
+  group and would pair those units as if on different tetrodes.
 - `control_correlations=` takes a list of control periods and partials out
   all of them, as in Kudrimoti et al.'s second experiment. REV is NaN with
   several controls. Tatsuno et al. (2006) and Giri et al. (2019) instead
@@ -465,7 +540,10 @@ papers define.
   instead of the dense grid. At a 3 cm band the dense grid is slow with
   empty time bins: a 200 ms event on a 200 cm track in 2 cm bins took 139 s
   for 5000 shuffles, against 3.5 s with 35,000 random lines. The sinogram
-  then holds one score per line.
+  then holds one score per line. When no drawn line is both within
+  `min_speed` to `max_speed` and on the track, it raises a `ValueError`
+  that counts the lines failing each condition, instead of an
+  `IndexError`.
 - The `column_cycle` null takes `null_options={"column_cycle":
   {"exclude_zero_shift": True}}`, and `shuffle_posterior_circular` takes
   `exclude_zero_shift=True`, to draw shifts of 1 to n_bins - 1 bins, as
@@ -610,14 +688,17 @@ computes this score and applies the published test.
   combinations is refused.
 - `pairwise_order_significance()`: the score against 300 permutations of
   the scored spikes' times (each cell keeps its spikes' count) and 300
-  permutations of the cells' field sets across every cell given, each
-  re-maximized; p = (k + 1) / (n + 1) per null, and the event must beat
-  both.
+  permutations of the field sets among the cells with a field, active or
+  not, each re-maximized; cells without a field stay unscored, so they
+  change neither the score nor its shuffles. p = (k + 1) / (n + 1) per
+  null, and the event must beat both.
 - `PairwiseOrderMethod`, `detect_pairwise_order_replay()` and the recipe
   `GUPTA_2010`: every template (pass a mapping of rate maps, one per lap)
   is tested forward and backward, and the test with the smallest p-value
   is reported, without a correction, as in the paper; the score is negative
-  for a backward sequence. At least 3 active cells. The recipe's notes list
+  for a backward sequence, and so are its `z_scores`, one per null (the
+  `z_score[...]` columns of `compare_replay_methods`). At least 3 active
+  cells. The recipe's notes list
   the readings taken where the paper is silent and the steps not applied
   (the session scan for events, the 80 cm detection limit, which the paper
   dropped for significance, and the merging of central-stem replays).

@@ -585,7 +585,11 @@ class ShuffledDataset(ResultMixin):
     spike_counts : tuple of NDArray[np.int64] or None
         Each event's spike counts, as shuffled (permuted with the rows by
         ``"time_bin_permutation"``, or as decoded by a null that decodes
-        again); None when no counts were given.
+        again); None when no counts were given. ``"pseudo_event"`` draws
+        posterior rows from other events, which carry no counts, so its
+        counts are the real event's, unchanged: they give the event's
+        active cells and time bins without spikes, but do not decode to the
+        drawn rows.
     null : str
         The null that made the data set.
 
@@ -713,8 +717,9 @@ def dataset_values(
         al.'s (2019) space-bin shuffle ("circularly shifted by a random
         amount between 1 and track length minus 1").
     spike_counts : sequence of arrays or None
-        Each event's spike counts, (n_time_bins, n_cells): for criteria on
-        active cells or spikes, empty time bins and the nulls that decode
+        Each event's spike counts, (n_time_bins, n_cells): needed for
+        criteria on active cells or spikes (such as ``FAROOQ_2019``'s
+        ``n_active_cells >= 5``), empty time bins and the nulls that decode
         again.
     encoding_models, dt, prior
         The decoding inputs of the nulls that decode again (see
@@ -760,7 +765,8 @@ def dataset_values(
         for a null that acts on each event, ``n_datasets`` is not a positive
         integer, a quantity is not a scalar of TrajectoryMetrics, an event is
         not a DecodingResult with times, ``spike_counts`` does not have one
-        entry per event, the inputs a null needs are missing, or decoding
+        entry per event or is missing for a method that counts spikes or
+        active cells, the inputs a null needs are missing, or decoding
         the counts does not reproduce an event's posterior.
 
     See Also
@@ -1028,6 +1034,17 @@ def _replay_values(
             f"TrajectoryMetrics; choose from {scalars}."
         )
     variant, labels = _measuring_method(method, quantities)
+    if counts is None and _counts_spikes(variant):
+        raise ValueError(
+            _format_error(
+                f"{operation}: method {method.name!r} needs spike_counts.",
+                why="it drops or zeroes time bins without spikes, counts the "
+                "event's spikes, or counts the cells active in the event or in "
+                "each time bin",
+                fix="pass spike_counts, one (n_time_bins, n_cells) array per "
+                "event, such as the counts decode_intervals returns",
+            )
+        )
     options_of = _null_options_of(null, null_options, operation)
     track_length = _track_length_or_nan(env)
     columns = list(dict.fromkeys(labels.values()))
@@ -1157,6 +1174,22 @@ def _measuring_method(
     for label, quantity in labels.items():
         first.setdefault(quantity, label)
     return variant, {label: quantity for quantity, label in first.items()}
+
+
+def _counts_spikes(method: ReplayMethod) -> bool:
+    """Whether ``detect_replay`` needs spike counts to apply ``method``."""
+    segmentation = method.segmentation
+    return (
+        method.empty_time_bins != "keep"
+        or any(
+            criterion.quantity in ("n_active_cells", "active_fraction", "n_spikes")
+            for criterion in method.criteria
+        )
+        or (
+            segmentation is not None
+            and segmentation.min_active_cells_per_time_bin is not None
+        )
+    )
 
 
 def _measure(
@@ -1650,9 +1683,10 @@ class _MomentTables:
         constant["duration"] = float(self.times[-1] - self.times[0])
         constant["track_length"] = self.tables["track_length"]
 
-        # The weighted correlation, as _weighted_correlations computes it.
+        # The weighted correlation, as _weighted_correlations computes it on
+        # rows normalized per time bin: every row with mass weighs 1.
         times = self.times - (self.times.min() + self.times.max()) / 2.0
-        mass = self.mass[rows]  # (n_datasets, n_time)
+        mass = (self.mass[rows] > 0).astype(np.float64)  # (n_datasets, n_time)
         mean = self.mean[rows, shifts]
         variance = self.variance[rows, shifts]
         total = mass.sum(axis=1)
@@ -2015,6 +2049,10 @@ def shuffle_events(
         event's posterior rows and its spike-count rows together, so a
         null that decodes again afterwards decodes the permuted counts
         (Grosmark & Buzsáki's time-bin-shuffle surrogate).
+        ``"pseudo_event"`` keeps each event's counts unchanged next to
+        posterior rows drawn from the pool, so the counts no longer decode
+        to the rows; ``dataset_values`` uses them the same way, for the
+        event's active cells and time bins without spikes.
     n_datasets : int, default=1
         Null data sets.
     null_options, spike_counts, encoding_models, dt, prior, pseudo_event_pool
@@ -2163,9 +2201,11 @@ def dataset_test(
     ------
     ValueError
         If both or neither of ``criteria`` and ``statistic`` are given; if
-        ``null`` lacks a ``dataset`` column or ``observed`` holds several
-        data sets; if a table lacks a criterion's column, or a data set has
-        no events; or if ``alternative`` is invalid.
+        ``null`` lacks a ``dataset`` column, has rows without one, or
+        ``observed`` holds several data sets; if a table lacks a criterion's
+        column, or a data set has no events; if ``statistic`` is not finite
+        on the observed data set or on a null data set; or if
+        ``alternative`` is invalid.
 
     See Also
     --------
@@ -2239,6 +2279,17 @@ def dataset_test(
         )
     if len(observed) == 0:
         raise ValueError(f"{operation}: observed has no events.")
+    n_unlabeled = int(null_table["dataset"].isna().sum())
+    if n_unlabeled:
+        raise ValueError(
+            _format_error(
+                f"{operation}: {n_unlabeled} rows of null_table have no dataset.",
+                why="each row must belong to one null data set; rows without "
+                "one cannot be counted in any data set's statistic",
+                fix="set dataset on every row (for null_events copies, from "
+                "copy_index), or drop the rows that belong to no data set",
+            )
+        )
     import pandas as pd
 
     codes, names = pd.factorize(null_table["dataset"], sort=True)
@@ -2283,6 +2334,22 @@ def dataset_test(
             raise ValueError(
                 f"{operation}: the observed statistic is not finite "
                 f"({observed_statistic}); it cannot be compared with the null."
+            )
+        undefined = ~np.isfinite(null_statistics).reshape(n_datasets, -1).all(axis=1)
+        if undefined.any():
+            raise ValueError(
+                _format_error(
+                    f"{operation}: the statistic is not finite for "
+                    f"{int(undefined.sum())} of {n_datasets} null data sets "
+                    f"(first: dataset {names[np.flatnonzero(undefined)[0]]}).",
+                    why="a null data set without a statistic is neither at "
+                    "least as extreme as the observed one nor less, and "
+                    "leaving it out would make p too small",
+                    fix="make the statistic defined on every data set, such "
+                    "as a mean that skips events without a score "
+                    "(table['score'].abs().mean() does), or decide how such "
+                    "events count before testing",
+                )
             )
         greater = np.sum(null_statistics >= observed_statistic, axis=0)
         less = np.sum(null_statistics <= observed_statistic, axis=0)
@@ -2683,7 +2750,9 @@ def template_correlation_test(
     ValueError
         If the two sequences differ in length, a pair of templates differs
         in its number of cells or shares fewer than three cells with values
-        in both, or ``n_shuffles`` is not a positive integer.
+        in both, a template or its reference is constant over the shared
+        cells (no rank correlation), or ``n_shuffles`` is not a positive
+        integer.
 
     See Also
     --------
@@ -2695,7 +2764,10 @@ def template_correlation_test(
     running template holds place cells, the sleep template the cells
     active in sleep). A shuffle permutes the reference values among the
     cells of the reference template, a random order of its cells, and the
-    correlation is again over the cells in both. Liu et al. also mention a
+    correlation is again over the cells in both. A shuffle that puts tied
+    reference values on every shared cell has no correlation; it counts as
+    at least as extreme as the observed statistic on either side, and is
+    NaN in ``null_statistics``. Liu et al. also mention a
     Wilcoxon signed-rank test of the real correlation against the shuffled
     ones; its result is not reported, and a one-sample test of 1,000
     shuffles against one value does not test their hypothesis, so it is
@@ -2754,7 +2826,19 @@ def template_correlation_test(
                 f"{operation}: template {unit} shares {int(both.sum())} cells with "
                 "its reference; a rank correlation needs at least three."
             )
-        observed.append(_spearman_rows(y[both][None, :], x[both])[0])
+        correlation = _spearman_rows(y[both][None, :], x[both])[0]
+        if not np.isfinite(correlation):
+            raise ValueError(
+                _format_error(
+                    f"{operation}: the correlation of template {unit} with its "
+                    "reference is not defined.",
+                    why="one of the two templates has the same value on every "
+                    "cell they share, so the cells have no rank order",
+                    fix="leave this unit out, or give templates whose shared "
+                    "cells differ in value",
+                )
+            )
+        observed.append(correlation)
         order = np.argsort(generator.random((n_shuffles, in_reference.size)), axis=1)
         permuted = np.tile(y, (n_shuffles, 1))
         permuted[:, in_reference] = y[in_reference][order]
@@ -2764,8 +2848,10 @@ def template_correlation_test(
         values, shuffled = np.abs(values), np.abs(shuffled)
     statistic = float(np.mean(values))
     null = shuffled.mean(axis=1)
-    greater = int(np.sum(null >= statistic))
-    less = int(np.sum(null <= statistic))
+    # A shuffle without a correlation counts as at least as extreme.
+    undefined = np.isnan(null)
+    greater = int(np.sum(undefined | (null >= statistic)))
+    less = int(np.sum(undefined | (null <= statistic)))
     p_greater = (1.0 + greater) / (1.0 + n_shuffles)
     p_less = (1.0 + less) / (1.0 + n_shuffles)
     p_value = (
@@ -2843,7 +2929,10 @@ class DatasetTestRecipe:
     quantities : tuple of str
         Quantities to measure besides the method's criteria.
     columns : tuple of str
-        The per-event values a pooled test compares.
+        The per-event values a pooled test compares. ``"abs_score"`` is
+        ``|score|``, made with ``table.assign(abs_score=table["score"].abs())``;
+        the notes say how to make any other column the library's tables do
+        not hold.
     distribution : tuple of {"ks", "rank_sum", "levene"}
         The pooled tests.
     alternative : {"greater", "less", "two-sided"}
@@ -2981,6 +3070,12 @@ _FAROOQ_NOTES = (
     "Frames pooled over animals (n = 38,820 in Fig. 1, 38,220 on p. e7), "
     "each running direction decoded and analysed on its own (p. e3); whether "
     "a frame counts once per direction in the pooled matrix is not stated.",
+    "Frames are events of 100 to 800 ms 'that contained activation of at "
+    "least 5 distinct neurons' (p. e2). dataset_values reports FAROOQ_2019's "
+    "n_active_cells but dataset_test does not apply it, so pass only the "
+    "frames: keep = [np.sum(c.sum(axis=0) > 0) >= 5 for c in counts], with "
+    "the counts of the cells that reading counts (FAROOQ_2019's notes), and "
+    "make surrogate data sets from these frames' intervals.",
 )
 
 SILVA_2015_MATRIX = DatasetTestRecipe(
@@ -3052,7 +3147,7 @@ SILVA_2015_RANK_ORDER = DatasetTestRecipe(
     n_datasets=5000,
     shared=True,
     criteria=(CriterionGrid("score", ">", np.array([0.5, 0.6, 0.7]), absolute=True),),
-    columns=("score",),
+    columns=("abs_score",),
     distribution=("levene", "rank_sum", "ks"),
     alternative="greater",
     p_value_rule="monte_carlo",
@@ -3065,9 +3160,13 @@ SILVA_2015_RANK_ORDER = DatasetTestRecipe(
         "dataset_test(real, null, criteria=recipe.criteria) for both templates "
         "pooled (Fig. 1d, top); for the larger |r| of the two templates "
         "(bottom), group each table by (dataset, event) and take the maximum "
-        "|score| first. distribution_test(..., column='score' or the maximum, "
-        "test='levene', 'rank_sum' or 'ks', alternative='greater' for the "
-        "one-tailed tests).",
+        "|score| first. The pooled tests compare absolute correlations ('The "
+        "absolute values of spike correlations between original and shuffled "
+        "data sets were compared', Online Methods): distribution_test(real"
+        ".assign(abs_score=real.score.abs()), null.assign(abs_score=null.score"
+        ".abs()), column='abs_score', test='levene', 'rank_sum' or 'ks', "
+        "alternative='greater' for the one-tailed tests), or the maximum "
+        "abs_score per (dataset, event).",
         "'5,000 shuffled templates' is read as one permutation of cell "
         "identities per shuffled data set, shared by every event (shared=True); "
         "a per-event p-value is the same either way, a count over events is "
@@ -3107,8 +3206,9 @@ GROSMARK_2016_SURROGATES = DatasetTestRecipe(
         "z-scored against its shuffles; np.std, ddof = 0, where MATLAB's std "
         "has ddof = 1, a factor sqrt(200 / 199)), |r| and the reconstruction "
         "quality, the median over time bins of the largest posterior value "
-        "(np.median(event.posterior.max(axis=1)); event_properties gives the "
-        "mean).",
+        "(event_properties gives the mean): table.assign(abs_score=table.score"
+        ".abs(), quality=[np.median(e.posterior.max(axis=1)) for e in events]) "
+        "on each compare_replay_methods table, rows in event order.",
         "The test is not named in the legend; a rank-sum test of observed "
         "events against the pooled surrogate events is a reading (the "
         "supplement's other between-condition tests are rank-sum tests).",
@@ -3142,10 +3242,11 @@ FAROOQ_2019_TIME_BIN = DatasetTestRecipe(
     notes=(
         "Fig. 1E (Pre-Run vs tPre-Run): 500 data sets with each frame's "
         "decoded time bins permuted. Calls: pre = dataset_values(env, frames, replay_method="
-        "FAROOQ_2019, quantities=('max_map_jump',)); dataset_test(pre, "
-        "dataset_values(env, frames, replay_method=FAROOQ_2019, null='time_bin_permutation', "
-        "n_datasets=500, quantities=('max_map_jump',), rng=0), criteria=recipe"
-        ".criteria); recipe.paper_p_value(result).",
+        "FAROOQ_2019, spike_counts=counts, quantities=('max_map_jump',)); "
+        "dataset_test(pre, dataset_values(env, frames, replay_method=FAROOQ_2019, "
+        "null='time_bin_permutation', n_datasets=500, spike_counts=counts, "
+        "quantities=('max_map_jump',), rng=0), criteria=recipe.criteria); "
+        "recipe.paper_p_value(result).",
         "Fig. 1G (Poisson vs tPoisson): one Poisson data set, then this test on it.",
         *_FAROOQ_NOTES,
     ),
@@ -3159,21 +3260,30 @@ FAROOQ_2019_POISSON = dataclasses.replace(
     notes=(
         "Fig. 1F (Pre-Run vs 500 rate-matched Poisson data sets): each cell "
         "fires as a Poisson process at its mean rate over every frame of the "
-        "sleep (p. e4). Calls: pois = null_events(spikes, frame_intervals, "
-        "kind='rate_poisson', n_copies=500, rng=1); pe, pc = decode_intervals("
-        "env, pois.spike_times, pois.intervals, maps, dt=0.02); pv = "
-        "dataset_values(env, pe, replay_method=FAROOQ_2019, quantities=('max_map_jump',))"
-        ".assign(dataset=lambda t: pois.copy_index[t.event]); dataset_test(pre, "
-        "pv, criteria=recipe.criteria).",
+        "sleep (p. e4). Calls, one data set at a time: tables = []; for k, "
+        "seed in enumerate(np.random.SeedSequence(1).spawn(500)): pois = "
+        "null_events(spikes, frame_intervals, kind='rate_poisson', "
+        "rng=np.random.default_rng(seed)); pe, pc = decode_intervals(env, "
+        "pois.spike_times, pois.intervals, maps, dt=0.02); tables.append("
+        "dataset_values(env, pe, replay_method=FAROOQ_2019, spike_counts=pc, "
+        "quantities=('max_map_jump',)).assign(dataset=k)); then "
+        "dataset_test(pre, pd.concat(tables), criteria=recipe.criteria).",
         "Fig. 1H compares the mean |r| of Pre-Run, tPre-Run, Poisson and "
         "tPoisson frames by rank-sum tests; the SEMs suggest one shuffled data "
-        "set (n = 38,820), not 500 pooled (a reading): distribution_test(pre, "
-        "one_set, column='abs_score', test='rank_sum').",
-        "Runtime: decode_intervals decodes the 500 x 38,820 surrogate frames in "
-        "one matrix product per block of 50,000 time bins: about 10 minutes "
-        "(0.16 s per 5,000 frames measured) rather than the 12 hours one "
-        "decode per frame takes. null_events itself takes about 0.2 ms per "
-        "frame, about an hour here.",
+        "set (n = 38,820), not 500 pooled (a reading): distribution_test(pre"
+        ".assign(abs_score=pre.score.abs()), one_set.assign(abs_score="
+        "one_set.score.abs()), column='abs_score', test='rank_sum').",
+        "Memory and runtime: decode_intervals holds every time bin's posterior "
+        "and counts at once, so decoding all 500 x 38,820 surrogate frames of "
+        "10 time bins in one call would need about 270 GB (72 bins, 100 "
+        "cells); "
+        "one data set at a time needs about 0.5 GB. Decoding all 500 takes about 10 minutes "
+        "(0.16 s per 5,000 frames measured, one matrix product per block of "
+        "50,000 time bins) rather than the 12 hours one decode per frame "
+        "takes; dataset_values measures each frame with detect_replay, about "
+        "0.5 ms per frame, so about 3 hours; null_events takes about 0.2 ms "
+        "per frame, about an hour. The data sets are independent and can run "
+        "in parallel.",
         *_FAROOQ_NOTES,
     ),
 )
@@ -3260,13 +3370,18 @@ STELLA_2019_JITTER = DatasetTestRecipe(
     p_value_rule="test",
     decoding={"time_bin": 0.008},
     notes=(
-        "Calls (per session, 8 ms windows): jit = null_events(spikes, "
-        "selected_intervals, kind='spike_time_uniform', n_copies=500, rng=0); "
-        "je, jc = decode_intervals(env, jit.spike_times, jit.intervals, maps, "
-        "dt=0.008); obs = event_properties(env, selected_events); nul = "
-        "event_properties(env, je); distribution_test(obs, nul, column="
-        "'mean_peak_probability', test='ks'); the mean step is "
-        "map_path_length / (n_time_bins - 1).",
+        "Calls (per session, 8 ms windows), one copy at a time so that only "
+        "one copy's posteriors are held: nul = []; for seed in "
+        "np.random.SeedSequence(0).spawn(500): jit = null_events(spikes, "
+        "selected_intervals, kind='spike_time_uniform', "
+        "rng=np.random.default_rng(seed)); je, _ = decode_intervals(env, "
+        "jit.spike_times, jit.intervals, maps, dt=0.008); "
+        "nul.append(event_properties(env, je)); then obs = "
+        "event_properties(env, selected_events); distribution_test(obs, "
+        "pd.concat(nul), column='mean_peak_probability', test='ks'); the mean "
+        "step per table is t.assign(step=t.map_path_length / (t.n_time_bins - "
+        "1)). Decoding all 279,000 copies in one call would hold every 8 ms "
+        "bin's posterior at once.",
         "500 copies per event is inferred from 279,000 shuffled and 558 "
         "original events (Fig. 2B-C); the KS side is not stated (two-sided "
         "here).",

@@ -281,6 +281,16 @@ class TestPairSelection:
         with pytest.raises(ValueError, match="one group per unit"):
             explained_variance_reactivation(corr, corr, unit_groups=np.arange(15))
 
+    @pytest.mark.parametrize("missing", [np.nan, None])
+    def test_missing_groups_are_refused(self, tetrode_session, missing) -> None:
+        corr = pairwise_correlations(tetrode_session["run"])
+        groups = np.arange(16, dtype=object if missing is None else float)
+        groups[[3, 7]] = missing
+        with pytest.raises(
+            ValueError, match=r"missing or non-finite group for units \[3, 7\]"
+        ):
+            explained_variance_reactivation(corr, corr, unit_groups=groups)
+
     def test_selection_leaving_too_few_pairs_is_nan(self, tetrode_session) -> None:
         corr = pairwise_correlations(tetrode_session["run"])
         with pytest.warns(UserWarning, match="valid pairs after pair selection"):
@@ -383,6 +393,19 @@ class TestSeveralControls:
             corr["a"], corr["b"], control_correlations=[corr["c"], corr["d"]]
         )
         assert_allclose(reordered.partial_correlation, expected.partial_correlation)
+        # One control in a one-item list takes its labels the same way.
+        listed = explained_variance_reactivation(
+            corr["a"],
+            corr["b"],
+            control_correlations=[pairwise_correlations(counts["d"][:, order])],
+            template_unit_ids=labels,
+            match_unit_ids=labels,
+            control_unit_ids=[labels[order]],
+        )
+        alone = explained_variance_reactivation(
+            corr["a"], corr["b"], control_correlations=corr["d"]
+        )
+        assert_allclose(listed.partial_correlation, alone.partial_correlation)
         with pytest.raises(ValueError, match="one label array per control"):
             explained_variance_reactivation(
                 corr["a"],
