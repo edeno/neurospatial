@@ -227,7 +227,9 @@ class BinConnections(ReadOnlyState):
         Finite, non-negative navigation distances, distinct from the flux
         distances used by finite-volume faces at track junctions.
     is_open : ndarray of bool, shape (n_all_pairs,)
-        False where a wall closes the edge between the pair's bins.
+        False where a wall, or the arena's outline (a slit, hole or concave
+        corner between the parts of the two cells their bins stand for),
+        closes the edge between the pair's bins.
     closed_by : ndarray of intp, shape (n_all_pairs,)
         Index into the arena's ``walls`` of the wall that closes each pair:
         the one covering most of the edge the pair's cells share, or for

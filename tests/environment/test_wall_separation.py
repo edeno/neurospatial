@@ -314,3 +314,139 @@ def test_a_distant_part_of_the_arena_does_not_close_a_local_opening():
             )
         distances.append(float(np.ravel(env.distance_between(bins=[0, 1]))[0]))
     np.testing.assert_allclose(distances, [1.0, 1.0])
+
+
+def _geodesic(polygon, start, end):
+    """Shortest path length from ``start`` to ``end`` inside ``polygon``.
+
+    Computed independently of the bins: the shortest path inside a polygon
+    bends only at its vertices, so it is the shortest path through the
+    straight legs between the two ends and the vertices the polygon covers.
+    """
+    rings = [
+        shapely.get_coordinates(ring)[:-1]
+        for ring in shapely.get_rings(shapely.get_parts(polygon))
+    ]
+    points = np.vstack([start, end, *rings])
+    graph = nx.Graph()
+    for i in range(len(points)):
+        for j in range(i + 1, len(points)):
+            if polygon.covers(LineString(points[[i, j]])):
+                graph.add_edge(i, j, length=np.linalg.norm(points[i] - points[j]))
+    return nx.shortest_path_length(graph, 0, 1, weight="length")
+
+
+def _thin_wall_floor(bin_size, offset, *, hole=False):
+    """A 100 x 40 floor with a wall a quarter of a bin thick and a gap above it.
+
+    The wall's left side lies ``offset`` bins right of a cell face near the
+    middle. It rises from the bottom edge (a slit of the outline) or from
+    5 above it (a hole), to 30.
+    """
+    left = bin_size * (round(50 / bin_size) + offset)
+    wall = box(left, 5.0 if hole else 0.0, left + bin_size / 4, 30.0)
+    return box(0, 0, 100, 40).difference(wall), left
+
+
+def _across(env, left, bin_size, y):
+    """The bins on either side of the wall at height ``y``."""
+    a, b = (int(i) for i in env.bin_at([[left - bin_size, y], [left + bin_size, y]]))
+    assert a >= 0 and b >= 0
+    return a, b
+
+
+@pytest.mark.parametrize("hole", [False, True], ids=["slit", "hole"])
+@pytest.mark.parametrize("offset", [0.0, 0.3, 0.5, 0.75])
+@pytest.mark.parametrize("bin_size", [1.0, 2.0, 3.0])
+def test_a_wall_thinner_than_a_bin_is_not_crossed(bin_size, offset, hole):
+    """Bins on either side of a thin wall connect only around its end.
+
+    The wall lies inside a cell, starts on a face (offset 0), or has a cell
+    center on its side (offset 0.5). The geodesic distance between bins on
+    either side must follow the shortest path around the wall's end,
+    computed in the floor polygon itself, up to the corners the steps
+    between bin centers can cut (two bins). The corridor beside the wall and
+    the gap above it keep their straight distances.
+    """
+    floor, left = _thin_wall_floor(bin_size, offset, hole=hole)
+    env = Environment.from_polygon(floor, bin_size=bin_size)
+    a, b = _across(env, left, bin_size, 10.0)
+    around = _geodesic(floor, env.bin_centers[a], env.bin_centers[b])
+    assert env.distance_between(bins=[a, b]) >= around - 2 * bin_size
+    c, d = _across(env, left, bin_size, 35.0)
+    assert env.distance_between(bins=[c, d]) == pytest.approx(
+        np.linalg.norm(env.bin_centers[c] - env.bin_centers[d])
+    )
+    up = int(env.bin_at([[left - bin_size, 25.0]])[0])
+    assert env.distance_between(bins=[a, up]) == pytest.approx(
+        np.linalg.norm(env.bin_centers[a] - env.bin_centers[up])
+    )
+
+
+@pytest.mark.parametrize("wall_fit", ["snap", "split"])
+def test_a_thin_slit_is_not_crossed_with_either_wall_fit(wall_fit):
+    """A slit of the outline is not a declared wall, so neither fit moves it."""
+    floor, left = _thin_wall_floor(2.0, 0.15)
+    env = Environment.from_polygon(floor, bin_size=2.0, wall_fit=wall_fit)
+    a, b = _across(env, left, 2.0, 5.0)
+    around = _geodesic(floor, env.bin_centers[a], env.bin_centers[b])
+    assert env.distance_between(bins=[a, b]) >= around - 4.0
+
+
+@pytest.mark.parametrize("wall_fit", ["snap", "split"])
+def test_a_declared_wall_inside_a_bin_is_not_crossed(wall_fit):
+    """A declared wall line through a column of bins is fitted, then closes."""
+    outline = box(0, 0, 100, 40)
+    wall = LineString([(50.3, 0.0), (50.3, 30.0)])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        env = Environment.from_polygon(
+            outline,
+            bin_size=2.0,
+            arena=OpenArena(outline, walls={"w": wall}),
+            wall_fit=wall_fit,
+        )
+    a, b = (int(i) for i in env.bin_at([[49.0, 5.0], [52.0, 5.0]]))
+    floor = outline.difference(wall.buffer(1e-6))
+    around = _geodesic(floor, env.bin_centers[a], env.bin_centers[b])
+    assert env.distance_between(bins=[a, b]) >= around - 4.0
+
+
+@pytest.mark.parametrize("angle", [0.3, 1.1])
+def test_a_thin_wall_in_a_rotated_arena_is_not_crossed(angle):
+    """A rotated environment keeps the closures; a rotated floor gets them too.
+
+    Rotating the environment checks the closures in the source frame, with
+    rounding bounds; building on a rotated floor puts the slanted wall
+    across axis-aligned cells.
+    """
+    floor, left = _thin_wall_floor(2.0, 0.3)
+    turn = rotate_2d(angle, center=(50.0, 20.0))
+    upright = Environment.from_polygon(floor, bin_size=2.0)
+    a, b = _across(upright, left, 2.0, 10.0)
+    np.testing.assert_allclose(
+        upright.apply_transform(turn).distance_between(bins=[a, b]),
+        upright.distance_between(bins=[a, b]),
+    )
+    slanted = shapely.affinity.rotate(
+        floor, angle, origin=(50.0, 20.0), use_radians=True
+    )
+    env = Environment.from_polygon(slanted, bin_size=2.0)
+    ends = turn(np.array([[left - 2.0, 10.0], [left + 2.5, 10.0]]))
+    a, b = (int(i) for i in env.bin_at(ends))
+    around = _geodesic(slanted, env.bin_centers[a], env.bin_centers[b])
+    assert env.distance_between(bins=[a, b]) >= around - 4.0
+
+
+@pytest.mark.parametrize("left", [48.5, 50.0, 51.5])
+def test_a_thin_wall_between_hexagons_is_not_crossed(left):
+    floor = box(0, 0, 100, 40).difference(box(left, 0, left + 0.5, 30))
+    rng = np.random.default_rng(0)
+    samples = rng.uniform((0, 0), (100, 40), (20000, 2))
+    samples = samples[shapely.contains_xy(floor, samples[:, 0], samples[:, 1])]
+    env = Environment.from_samples(
+        samples, bin_size=3.0, layout="hexagonal", arena=OpenArena(floor)
+    )
+    a, b = (int(i) for i in env.bin_at([[left - 3.0, 10.0], [left + 3.5, 10.0]]))
+    around = _geodesic(floor, env.bin_centers[a], env.bin_centers[b])
+    assert env.distance_between(bins=[a, b]) >= around - 6.0

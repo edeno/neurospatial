@@ -83,6 +83,23 @@ def _box_with_wall():
     )
 
 
+def test_enclosing_walls_are_the_floor_and_walls_geometry_moves_in():
+    """The walker's walls are geometry's movement enclosure, oriented."""
+    from neurospatial.geometry import movement_enclosure
+
+    env = _box_with_wall()
+    floor, walls = movement_enclosure(env.binning, env.arena)
+    assert floor.equals(env.arena.polygonal_domain())
+    assert [list(wall.coords) for wall in walls] == [[(50.0, 0.0), (50.0, 70.0)]]
+    enclosing = Walls.enclosing(env)
+    assert enclosing is not None
+    np.testing.assert_array_equal(enclosing.one_sided, [True] * 4 + [False])
+    # Inside is on the left of every outline segment: its normal points in.
+    middles = enclosing.starts[:4] + enclosing.vectors[:4] / 2
+    inward = middles + enclosing.normals[:4]
+    assert env.contains(inward).all()
+
+
 def _rotated_box():
     from shapely import affinity
 

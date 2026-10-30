@@ -11,12 +11,15 @@ in the environment:
   are joined by that straight segment; bins on two segments are joined
   through the track node the segments share.
 - On planar cells (grids, hexagons, triangles, clipped or wall-split cells)
-  the route is the shortest path between the two centers inside the two
-  bins' cells, cut to the arena's outline and kept off its walls. When the
-  two cells meet only at a point, or not at all inside the arena, the cells
-  of the bins neighboring both are added. The region is shrunk by a hair
-  (a millionth of a cell width) so that no route grazes the outline, where
-  a position's bin is decided by rounding.
+  the route is the shortest path between the two centers inside the parts
+  of the two bins' cells that each bin stands for (the piece inside the
+  arena holding its center, :func:`~neurospatial.geometry.center_pieces`),
+  kept off the arena's walls. Neighboring bins' pieces meet along part of
+  their shared side or at a shared corner, so the route passes there. The
+  pieces are widened, and the walls thickened, by geometry's on-boundary
+  tolerance (:func:`~neurospatial.geometry.coordinate_roundoff`), so pieces
+  that meet at a single corner, or that a rotation moved apart by rounding,
+  still join, and every waypoint is a position the environment holds.
 - Other bins (N-D grids) are joined by straight lines, which stay inside
   their two closed cells.
 """
@@ -34,10 +37,12 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial.environment import Environment
-from neurospatial.geometry import cell_polygons, track_junctions
-
-# Fraction of a cell width by which a route stays away from the outline.
-_CLEARANCE = 1e-6
+from neurospatial.geometry import (
+    cell_polygons,
+    center_pieces,
+    coordinate_roundoff,
+    track_junctions,
+)
 
 
 class LapRouter:
@@ -170,77 +175,46 @@ class _CellRouter:
 
     def __init__(self, env: Environment) -> None:
         self.env = env
-        self.cells = cell_polygons(env.binning)
-        self.domain = env.arena.polygonal_domain()
-        self.clearance = _CLEARANCE * float(np.sqrt(np.min(env.bin_sizes)))
-        walls = env.arena.walls
-        self.walls = shapely.union_all(list(walls)) if walls else None
-        # Routes keep this far from walls in every try.
-        self.wall_strips = (
-            None
-            if self.walls is None
-            else self.walls.buffer(self.clearance, quad_segs=1)
+        self.cells = np.asarray(cell_polygons(env.binning), dtype=object)
+        self.domain = env.arena.polygonal_domain() if env.arena.domain_known else None
+        # Rounding of a position on the outline, at the environment's scale.
+        reference = float(np.max(np.abs(env.bin_centers)))
+        self.tolerance = float(
+            coordinate_roundoff(np.array([[reference]]), reference)[0]
         )
-        self.supports: dict[int, shapely.Geometry] = {}
-        self.routes: dict[tuple[int, int], NDArray[np.float64]] = {}
+        walls = env.arena.walls
+        self.walls = (
+            shapely.union_all(list(walls)).buffer(self.tolerance, quad_segs=1)
+            if walls
+            else None
+        )
+        self.routes: dict[tuple[int, int], NDArray[np.float64] | None] = {}
 
-    def support(self, index: int) -> shapely.Geometry:
-        """The part of a bin's cell inside the arena's outline."""
-        if index not in self.supports:
-            cell = self.cells[index]
-            self.supports[index] = (
-                cell if self.domain is None else cell.intersection(self.domain)
-            )
-        return self.supports[index]
-
-    def region(self, bins: Sequence[int], clearance: float) -> shapely.Geometry:
-        """The bins' cells inside the outline, shrunk off it and off walls.
-
-        A negative ``clearance`` grows the cells instead.
-        """
-        union = shapely.union_all([self.support(i) for i in bins])
-        region = union.buffer(-clearance, join_style="mitre")
-        if self.walls is not None and self.walls.intersects(union):
-            region = region.difference(self.wall_strips)
+    def region(self, a: int, b: int) -> shapely.Geometry:
+        """The two bins' pieces, widened by the tolerance and off the walls."""
+        cells = self.cells[[a, b]]
+        if self.domain is not None:
+            cells = center_pieces(cells, self.env.bin_centers[[a, b]], self.domain)
+        region = shapely.union_all(cells).buffer(self.tolerance, join_style="mitre")
+        if self.walls is not None and self.walls.intersects(region):
+            region = region.difference(self.walls)
         shapely.prepare(region)
         return region
 
     def route(self, a: int, b: int) -> NDArray[np.float64] | None:
         """Waypoints from bin ``a``'s center to bin ``b``'s center, or None.
 
-        None means every route between the two bins leaves the environment.
+        None means every route between the two bins leaves the environment,
+        such as across a bridge between separate parts of a combined
+        environment.
         """
         if (b, a) in self.routes:
-            return self.routes[b, a][::-1]
+            reverse = self.routes[b, a]
+            return None if reverse is None else reverse[::-1]
         if (a, b) not in self.routes:
             start, end = self.env.bin_centers[[a, b]]
-            # Cells that meet only at a point (a corner no third bin covers)
-            # come apart when shrunk. The second try adds the bins neighboring
-            # both. The last tries keep the closed cells, then grow them by the
-            # clearance, for cells and an outline that a rotation moved apart
-            # at that point by rounding; either route is accepted only if the
-            # environment holds every bend.
-            for with_shared, clearance, verify_contains in (
-                (False, self.clearance, False),
-                (True, self.clearance, False),
-                (False, 0.0, True),
-                (False, -self.clearance, True),
-            ):
-                bins = [a, b, *self.shared(a, b)] if with_shared else [a, b]
-                route = _shortest_route(self.region(bins, clearance), start, end)
-                if route is not None and (
-                    not verify_contains or np.all(self.env.contains(route))
-                ):
-                    break
-            else:
-                return None
-            self.routes[a, b] = route
+            self.routes[a, b] = _shortest_route(self.region(a, b), start, end)
         return self.routes[a, b]
-
-    def shared(self, a: int, b: int) -> list[int]:
-        """The bins neighboring both ``a`` and ``b``, in index order."""
-        graph = self.env.connectivity
-        return sorted(set(graph[a]) & set(graph[b]))
 
 
 def _shortest_route(

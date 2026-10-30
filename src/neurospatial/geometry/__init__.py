@@ -20,6 +20,7 @@ from neurospatial.geometry._arena import mapped_geometry as mapped_geometry
 from neurospatial.geometry._arena import outline_declared as outline_declared
 from neurospatial.geometry._arena import segment_distance as segment_distance
 from neurospatial.geometry._arena_fit import apply_walls as apply_walls
+from neurospatial.geometry._arena_fit import center_pieces as center_pieces
 from neurospatial.geometry._arena_fit import fit_walls as fit_walls
 from neurospatial.geometry._arena_fit import infer_arena as infer_arena
 from neurospatial.geometry._arena_fit import validate_arena as validate_arena
@@ -46,6 +47,9 @@ from neurospatial.geometry._boundaries import boundary_geometry as boundary_geom
 from neurospatial.geometry._boundaries import boundary_view as boundary_view
 from neurospatial.geometry._boundaries import clear_segments as clear_segments
 from neurospatial.geometry._boundaries import line_of_sight_clear as line_of_sight_clear
+from neurospatial.geometry._boundaries import (
+    movement_enclosure as movement_enclosure,
+)
 from neurospatial.geometry._boundaries import (
     physical_clear_segments as physical_clear_segments,
 )
@@ -134,6 +138,9 @@ from neurospatial.geometry._locators import SubsetLocator as SubsetLocator
 from neurospatial.geometry._locators import TransformedLocator as TransformedLocator
 from neurospatial.geometry._locators import (
     _nearest_lowest_index as _nearest_lowest_index,
+)
+from neurospatial.geometry._locators import (
+    coordinate_roundoff as coordinate_roundoff,
 )
 from neurospatial.geometry._lookup import locate as locate
 from neurospatial.geometry._lookup import (

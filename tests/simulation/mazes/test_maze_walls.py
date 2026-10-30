@@ -9,12 +9,13 @@ stops only at opaque walls.
 
 import numpy as np
 import pytest
+import shapely
 from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.encoding import border_score
 from neurospatial.encoding._physical_border import border_geometry
-from neurospatial.geometry import boundary_geometry, wall_hit_bins
+from neurospatial.geometry import boundary_geometry, cell_polygons, wall_hit_bins
 from neurospatial.ops.visibility import compute_viewed_location
 from neurospatial.simulation import mazes
 
@@ -165,3 +166,28 @@ def test_a_square_box_is_walled():
     env = mazes.make_square_maze(bin_size=4.0).env_2d
     assert env.arena.outline == "wall"
     assert env.arena.polygon.equals(box(*env.arena.polygon.bounds))
+
+
+@pytest.mark.parametrize(
+    ("factory", "bin_size"),
+    [("make_hampton_court_maze", 8.0), ("make_repeated_t_maze", 5.0)],
+)
+def test_bins_coarser_than_the_walls_do_not_join_through_them(factory, bin_size):
+    """Partitions thinner than a bin still separate the alleys beside them.
+
+    Each open pair of bins must be joined inside the floor by the parts of
+    their two cells, without passing through a third bin: the part of the
+    two cells on the floor that holds one center also holds the other.
+    """
+    env = getattr(mazes, factory)(bin_size=bin_size, include_track=False).env_2d
+    floor = env.arena.polygonal_domain()
+    cells = np.asarray(cell_polygons(env.binning), dtype=object)
+    centers = shapely.points(env.bin_centers)
+    pairs = env.edge_pairs
+    whole = shapely.covers(floor, cells)
+    for u, v in pairs[~(whole[pairs[:, 0]] & whole[pairs[:, 1]])]:
+        joined = shapely.union_all([cells[u], cells[v]]).intersection(floor)
+        # Absorb rounding where the two cells meet.
+        parts = shapely.get_parts(joined.buffer(1e-9))
+        (part,) = parts[shapely.covers(parts, centers[u])]
+        assert part.covers(centers[v]), (u, v)

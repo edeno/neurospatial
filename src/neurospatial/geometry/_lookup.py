@@ -11,7 +11,8 @@ from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._arena import EgocentricSurround
+from neurospatial.geometry._arena import EgocentricSurround, contains_with_error
+from neurospatial.geometry._locators import coordinate_roundoff, locate_within
 
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
@@ -79,8 +80,52 @@ def locate(
     indices = np.full(len(positions), -1, dtype=np.intp)
     if np.any(inside):
         indices[inside] = binning.locator.locate(positions[inside], indexes)
+    _locate_on_boundary(binning, arena, positions, inside, indices, indexes)
     _snap_outline_slivers(binning, arena, positions, inside, indices)
     return indices
+
+
+def _locate_on_boundary(
+    binning: Binning,
+    arena: Arena,
+    positions: NDArray[np.float64],
+    inside: NDArray[np.bool_],
+    indices: NDArray[np.intp],
+    indexes: LookupIndexes | None,
+) -> None:
+    """Give positions on the arena's outline, within rounding, a bin.
+
+    A position computed onto a slanted outline can round to just outside
+    it. Within :func:`coordinate_roundoff` of the outline it is on it, so
+    inside, and takes the bin whose cell it is within that distance of, by
+    the locator's rule for points on faces. A position the arena holds
+    exactly keeps the locator's exact answer, so one inside a cell removed
+    by ``subset`` stays outside. Updates ``inside`` and ``indices`` in
+    place.
+    """
+    edge = np.flatnonzero(~inside & np.all(np.isfinite(positions), axis=1))
+    if not len(edge):
+        return
+    bounds = arena.domain_bounds()
+    geometry = binning.bins.centers if bounds is None else bounds
+    reference = float(np.max(np.abs(geometry), initial=0.0))
+    tolerance = coordinate_roundoff(positions[edge], reference)
+    if bounds is not None:
+        # Only points this close to the domain's box can be on its outline.
+        edge = edge[
+            np.all(
+                (positions[edge] >= bounds[0] - tolerance[:, None])
+                & (positions[edge] <= bounds[1] + tolerance[:, None]),
+                axis=1,
+            )
+        ]
+        tolerance = coordinate_roundoff(positions[edge], reference)
+    error = np.repeat(tolerance[:, None], positions.shape[1], axis=1)
+    near = contains_with_error(arena, positions[edge], error)
+    inside[edge] |= near
+    edge, error = edge[near], error[near]
+    if len(edge):
+        indices[edge] = locate_within(binning.locator, positions[edge], error, indexes)
 
 
 def _snap_outline_slivers(

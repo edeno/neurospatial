@@ -15,7 +15,7 @@ import shapely
 from numpy.typing import NDArray
 from shapely.ops import unary_union
 
-from neurospatial.geometry._locators import _coordinate_roundoff
+from neurospatial.geometry import coordinate_roundoff, movement_enclosure
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -73,7 +73,7 @@ class Walls:
         # A walker inside the walls has coordinates no larger than theirs.
         reference = float(np.max(np.abs(np.concatenate([starts, ends])), initial=0.0))
         self.tolerance = float(
-            _coordinate_roundoff(np.array([[reference]]), reference)[0]
+            coordinate_roundoff(np.array([[reference]]), reference)[0]
         )
         # Distance a walker can travel before it could come within
         # ``tolerance`` of a wall.
@@ -112,25 +112,21 @@ class Walls:
     def enclosing(cls, env: Environment) -> Walls | None:
         """What keeps an animal inside ``env``: its outline and internal walls.
 
-        The outline is the arena's polygon when it is known, else the outline
-        of the bins; None when neither is planar geometry (bins that are not
-        2-D areas, such as a track's lengths). Outline segments are one-sided,
-        open toward the inside.
+        The floor and walls are geometry's
+        :func:`~neurospatial.geometry.movement_enclosure`; None when the
+        floor is not planar geometry (bins that are not 2-D areas, such as a
+        track's lengths). Outline segments are one-sided, open toward the
+        inside.
         """
-        from neurospatial.geometry import materialize_cells
-
-        arena = env.arena
-        domain = arena.polygonal_domain() if arena.domain_known else None
-        if domain is None:
-            bins = env.binning.bins
-            if bins.n_dims != 2 or not bins.has_measure_dim(2):
-                return None
-            domain = unary_union(list(materialize_cells(env.binning)))
+        enclosure = movement_enclosure(env.binning, env.arena)
+        if enclosure is None:
+            return None
+        floor, walls = enclosure
         # Counter-clockwise outlines and clockwise holes: the inside is on
         # the left of every outline segment.
-        rings = shapely.get_rings(shapely.get_parts(shapely.orient_polygons(domain)))
+        rings = shapely.get_rings(shapely.get_parts(shapely.orient_polygons(floor)))
         outline = cls._segments(rings)
-        inner = cls._merged_segments(list(arena.walls))
+        inner = cls._merged_segments(walls)
         one_sided = np.repeat([True, False], [len(outline[0]), len(inner[0])])
         return cls(
             np.concatenate([outline[0], inner[0]]),

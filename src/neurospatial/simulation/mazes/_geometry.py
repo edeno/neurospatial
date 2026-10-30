@@ -17,7 +17,6 @@ True
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -378,42 +377,3 @@ def widest_corridor(
         if walkable.contains(middle):
             widths.append(2.0 * walkable.boundary.distance(middle))
     return float(max(widths))
-
-
-def warn_if_bins_bridge_walls(
-    bin_size: float, wall_thickness: float, maze: str
-) -> None:
-    """Warn when bins are too coarse to keep a maze's thinnest wall.
-
-    A 2-D maze keeps the bins whose centers lie on the floor and joins
-    neighbouring bins. A wall wider than one bin always drops a row of bins;
-    a wall no wider than a bin can drop none, joining the corridors on either
-    side.
-
-    Parameters
-    ----------
-    bin_size : float
-        Spatial bin size in cm.
-    wall_thickness : float
-        Thickness of the maze's thinnest wall between corridors, in cm.
-    maze : str
-        Name of the maze, for the message.
-
-    Examples
-    --------
-    >>> import warnings
-    >>> with warnings.catch_warnings(record=True) as caught:
-    ...     warnings.simplefilter("always")
-    ...     warn_if_bins_bridge_walls(4.0, 3.1, "Hampton Court maze")
-    >>> len(caught)
-    1
-    """
-    if bin_size >= wall_thickness:
-        warnings.warn(
-            f"bin_size={bin_size} cm is not smaller than the {wall_thickness:.1f} cm "
-            f"walls of the {maze}, so bins on either side of a wall can join and "
-            "let paths pass through it. Use bin_size below "
-            f"{wall_thickness:.1f} cm to keep every wall.",
-            UserWarning,
-            stacklevel=3,
-        )

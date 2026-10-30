@@ -655,8 +655,12 @@ class OpenArena(_CappedContainment, ReadOnlyState):
     def _near(
         self, query: NDArray[np.float64], allowance: NDArray[np.float64]
     ) -> NDArray[np.bool_]:
-        distance = shapely.distance(self.polygon, shapely.points(query))
-        return np.asarray(distance <= np.hypot.reduce(allowance, axis=1))
+        # The prepared polygon answers a distance bound faster than distance.
+        return np.asarray(
+            shapely.dwithin(
+                self.polygon, shapely.points(query), np.hypot.reduce(allowance, axis=1)
+            )
+        )
 
     def domain_bounds(self) -> NDArray[np.float64]:
         """Bound the stored polygon."""

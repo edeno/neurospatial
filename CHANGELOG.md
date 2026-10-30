@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Walls thinner than a bin keep the bins beside them apart
+
+A slit, hole or concave corner of the arena's outline that lay inside one
+of two neighboring cells, rather than on the side they share, left the two
+bins connected. A 0.5 cm wall in 2 cm bins gave a geodesic distance of 4 cm
+between bins on either side instead of the ~54 cm path around its end, and
+paths, smoothing and decoding passed through it. Environments whose
+outline has no such feature are unchanged.
+
+**Fixes**
+
+- Each bin stands for the piece of its cell inside the arena that holds
+  its center, and two neighboring bins stay connected only where their
+  pieces meet along their shared side (or, for corner neighbors, at their
+  shared corner). This applies to grids, hexagons, rebinned grids and
+  rotated environments. Among the built-in mazes it closes one diagonal
+  pair in the Hamlet maze at 2 cm bins (two at 4 cm) and one in the rat
+  HexMaze, all corner cuts through a third bin; at 8 cm bins the Hampton
+  Court maze no longer has 197 neighbor pairs across its partitions.
+- A position computed onto a slanted outline that rounds a few units in the
+  last place outside it is now inside (`Environment.contains`, `bin_at`
+  and every lookup). Lookup, ray casts and the simulated walker share one
+  on-boundary tolerance, so `simulate_trajectory_ou` no longer needs its
+  own rule for a `start_position` on a wall.
+- Lap trajectories between planar cells follow the shortest route inside
+  the two bins' pieces. On the Hampton Court maze 12 of 771 diagonal steps
+  along the outline lengthen by up to 0.09 cm, because they no longer cut
+  through a third bin; other seeded laps move by at most 3e-6 cm.
+
+**Removed**
+
+- The Hampton Court and repeated T-maze factories no longer warn that
+  `bin_size` is coarser than their thinnest wall: bins can no longer join
+  through it.
+
 ### Faster simulations and validation
 
 A cleanup of `neurospatial.simulation` shares work that does not depend on

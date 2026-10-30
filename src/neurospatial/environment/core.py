@@ -1658,7 +1658,10 @@ class Environment(Generic[_C]):
         topology alone do not establish which off-track points are inside.
         Without one, ``contains``, ``bin_at`` and every other position lookup
         raise NotImplementedError with the code to rebuild the track. Every
-        layout reuses bin lookup and checks for the -1 sentinel.
+        layout reuses bin lookup and checks for the -1 sentinel. A point on
+        the arena's outline is inside, including one computed onto a
+        slanted outline that rounds a few units in the last place outside
+        it.
 
         Examples
         --------

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 import shapely
 from numpy.typing import NDArray
+from shapely.geometry import LineString, MultiPolygon, Polygon
 from shapely.ops import unary_union
 
 from neurospatial._exceptions import CartesianOnlyError, _format_error
@@ -27,6 +28,7 @@ from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
+    coordinate_roundoff,
 )
 from neurospatial.geometry._lookup import locate, locate_outline_points
 from neurospatial.geometry._polygon import materialize_cells
@@ -473,6 +475,37 @@ def physical_walls(arena: Arena, *, blocking: Blocking) -> shapely.Geometry:
     return unary_union(_physical_boundaries(arena, blocking))
 
 
+def movement_enclosure(
+    binning: Binning, arena: Arena
+) -> tuple[Polygon | MultiPolygon, list[LineString]] | None:
+    """The floor positions lie on and the walls on it that block movement.
+
+    The floor is the closed region that position lookup accepts: the
+    arena's polygonal domain when it is known, else the union of the planar
+    cells. The walls are the arena's named walls that block movement (every
+    physical kind does). A simulated animal moves inside the floor's outline
+    and never crosses a wall.
+
+    Returns
+    -------
+    tuple of (Polygon or MultiPolygon, list of LineString), or None
+        None when neither the domain nor the bins are planar 2-D areas, such
+        as a track's lengths.
+    """
+    floor = arena.polygonal_domain() if arena.domain_known else None
+    if floor is None:
+        bins = binning.bins
+        if bins.n_dims != 2 or not bins.has_measure_dim(2):
+            return None
+        floor = unary_union(list(materialize_cells(binning)))
+    walls = [
+        wall
+        for wall, kind in zip(arena.walls, arena.wall_kinds, strict=True)
+        if blocks(kind, "movement")
+    ]
+    return floor, walls
+
+
 def valid_observers(
     binning: Binning,
     arena: Arena,
@@ -517,9 +550,10 @@ def _ray_segments(
     return valid, selected, end
 
 
-def _start_allowance(starts: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Eight ULPs of each start coordinate, as a distance, shape (n_segments,)."""
-    return np.asarray(np.hypot.reduce(8 * np.spacing(np.abs(starts)), axis=1))
+def _reference(walls: shapely.Geometry) -> float:
+    """Largest coordinate magnitude of ``walls``; zero when there are none."""
+    bounds = np.asarray(shapely.bounds(walls), dtype=np.float64)
+    return float(np.max(np.abs(np.nan_to_num(bounds)), initial=0.0))
 
 
 def _start_departures(
@@ -527,6 +561,7 @@ def _start_departures(
     starts: NDArray[np.float64],
     ends: NDArray[np.float64],
     interior: Interior | None,
+    reference: float,
 ) -> tuple[NDArray[np.bool_], NDArray[np.float64]]:
     """Find segments that start on a wall and leave it into the domain.
 
@@ -538,8 +573,8 @@ def _start_departures(
     decides the side from the wall arrangement alone, without a length scale.
     Zero-thickness walls inside the domain are therefore left on either side.
     ``interior=None`` means only wall lines are known, so any departure counts.
-    Start contacts allow the same eight ULPs of the start coordinates as
-    terminal cue contacts allow at the cue.
+    A start within :func:`coordinate_roundoff` of a wall, the one
+    on-boundary tolerance, is on it.
 
     Parameters
     ----------
@@ -549,6 +584,8 @@ def _start_departures(
         Oriented segment endpoints.
     interior : callable or None
         Maps points of shape (n_points, 2) to closed-domain membership.
+    reference : float
+        Largest coordinate magnitude of the walls.
 
     Returns
     -------
@@ -565,7 +602,7 @@ def _start_departures(
         return departs, later
     origins = shapely.points(starts)
     distance = shapely.distance(parts, origins[owners])
-    at_start = distance <= _start_allowance(starts)[owners]
+    at_start = distance <= coordinate_roundoff(starts, reference)[owners]
     touches = np.zeros(n_segments, dtype=bool)
     touches[owners[at_start]] = True
     along = np.zeros(n_segments, dtype=bool)
@@ -607,13 +644,15 @@ def _segment_hits(
         shapely.shortest_line(shapely.points(starts), intersections), -1
     )
     hits = np.column_stack((shapely.get_x(nearest), shapely.get_y(nearest)))
+    reference = _reference(walls)
     with np.errstate(invalid="ignore"):
         rows = np.flatnonzero(
-            np.hypot.reduce(hits - starts, axis=1) <= _start_allowance(starts)
+            np.hypot.reduce(hits - starts, axis=1)
+            <= coordinate_roundoff(starts, reference)
         )
     if len(rows):
         departs, later = _start_departures(
-            intersections[rows], starts[rows], ends[rows], interior
+            intersections[rows], starts[rows], ends[rows], interior, reference
         )
         hits[rows[departs]] = later[departs]
     return hits
@@ -779,6 +818,7 @@ class SightWalls:
         #: Wall segments, shape (n_segments, 2, 2).
         self.segments = segments[np.any(segments[:, 0] != segments[:, 1], axis=1)]
         self.tree = shapely.STRtree(shapely.linestrings(self.segments))
+        self.reference = float(np.max(np.abs(self.segments), initial=0.0))
 
     def clear(
         self,
@@ -833,7 +873,7 @@ class SightWalls:
             )
             own_wall = (
                 np.hypot.reduce(coordinates - observer, axis=1)
-                <= _start_allowance(observer.reshape(1, 2))[0]
+                <= coordinate_roundoff(observer.reshape(1, 2), self.reference)[0]
             )
             rows = np.unique(owners[own_wall])
             if len(rows):
@@ -842,6 +882,7 @@ class SightWalls:
                     np.broadcast_to(observer, (len(rows), 2)),
                     terminal[rows],
                     interior,
+                    self.reference,
                 )
                 departing = np.zeros(len(terminal), dtype=bool)
                 departing[rows[departs]] = True
