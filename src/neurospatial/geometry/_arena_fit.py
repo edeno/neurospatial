@@ -711,8 +711,9 @@ def _closing_walls(
 def apply_walls(binning: Binning, arena: Arena) -> Binning:
     """Close the neighbor pairs whose shared edge walls or the outline block.
 
-    Cells that touch only outside the arena's outline, across a slit or a
-    concave corner, are closed first. Only the part of a shared edge inside
+    Bins that meet only outside the arena's outline, across a slit, a hole
+    or a concave corner, even one thinner than a bin, are closed first (see
+    :func:`_close_outside_outline`). Only the part of a shared edge inside
     the arena counts: a bin at a slanted
     outline sticks out past it, where no wall can be. Cells that meet only at
     a corner close when the corner touches a wall or the line between their
@@ -881,15 +882,58 @@ def _outline_is_the_grid(binning: Binning, arena: Arena) -> bool:
         return False
 
 
-def _close_outside_outline(binning: Binning, arena: Arena) -> Binning:
-    """Close the pairs whose cells touch only outside the arena's outline.
+def _center_pieces(
+    cells: NDArray[np.object_],
+    centers: NDArray[np.float64],
+    domain: Polygon | MultiPolygon,
+) -> NDArray[np.object_]:
+    """The part of each cell inside ``domain`` that its bin's center lies in.
 
-    Two bins whose centers are inside can meet across a slit or a concave
-    corner of the outline, where an animal cannot pass. A pair stays open
-    when part of its shared side, longer than rounding, lies inside the
-    arena, or when the arena reaches its shared corner. Pairs whose cells do
-    not touch at all, such as bridges between parts of a combined
-    environment, are left to the rules that made them.
+    A wall or slit of the outline thinner than a cell can cut the cell's part
+    inside the arena into pieces that an animal cannot pass between inside
+    the cell. The bin stands for the piece holding its center; a center
+    rounded onto or just off the outline takes the nearest piece. Empty
+    where no part of the cell is inside.
+
+    Parameters
+    ----------
+    cells : ndarray of shapely.Polygon, shape (n_cells,)
+    centers : ndarray of float64, shape (n_cells, 2)
+    domain : Polygon or MultiPolygon
+
+    Returns
+    -------
+    ndarray of shapely geometry, shape (n_cells,)
+    """
+    pieces = np.full(len(cells), shapely.Polygon(), dtype=object)
+    parts, owners = shapely.get_parts(
+        shapely.intersection(cells, domain), return_index=True
+    )
+    areal = shapely.area(parts) > 0
+    parts, owners = parts[areal], owners[areal]
+    if not len(parts):
+        return pieces
+    gap = shapely.distance(parts, shapely.points(centers[owners]))
+    # Per cell, its pieces ordered nearest first; the first one is kept.
+    order = np.lexsort((gap, owners))
+    first = order[np.r_[True, owners[order][1:] != owners[order][:-1]]]
+    pieces[owners[first]] = parts[first]
+    return pieces
+
+
+def _close_outside_outline(binning: Binning, arena: Arena) -> Binning:
+    """Close the pairs whose bins meet only outside the arena's outline.
+
+    Each bin stands for the piece of its cell inside the arena that holds its
+    center (see :func:`_center_pieces`). Two bins whose centers are inside
+    can still be kept apart by a slit, a hole or a concave corner of the
+    outline, where an animal cannot pass, even one thinner than a bin that
+    lies inside one of the two cells rather than on the side they share. A
+    pair stays open when the two pieces meet along part of their shared
+    side longer than rounding, or, for cells that share only a corner, both
+    reach that corner. Pairs whose cells do not touch at all, such as
+    bridges between parts of a combined environment, are left to the rules
+    that made them.
     """
     if (
         binning.bins.n_dims != 2
@@ -900,7 +944,7 @@ def _close_outside_outline(binning: Binning, arena: Arena) -> Binning:
         or arena.polygonal_domain() is None
     ):
         return binning
-    cells, _, _, domain, errors = _wall_geometry(binning, arena)
+    cells, _, centers, domain, errors = _wall_geometry(binning, arena)
     if domain is None:
         return binning
     cell_array = np.asarray(cells, dtype=object)
@@ -912,6 +956,10 @@ def _close_outside_outline(binning: Binning, arena: Arena) -> Binning:
     if not len(candidates):
         return binning
     u, v = pairs[candidates].T
+    pieces = cell_array.copy()
+    cut = np.flatnonzero(~covered)
+    cut = cut[np.isin(cut, pairs[candidates])]
+    pieces[cut] = _center_pieces(cell_array[cut], centers[cut], domain)
     contact = shapely.intersection(
         shapely.boundary(cell_array[u]), shapely.boundary(cell_array[v])
     )
@@ -924,11 +972,26 @@ def _close_outside_outline(binning: Binning, arena: Arena) -> Binning:
     )
     if errors is not None:
         tolerance += errors[u] + errors[v]
+    # Each stretch of the shared side inside the arena borders one piece of
+    # each cell: it is open when it borders both bins' own pieces.
+    stretches, rows = shapely.get_parts(
+        shapely.intersection(contact, domain), return_index=True
+    )
+    lengths = shapely.length(stretches)
+    middles = shapely.line_interpolate_point(
+        stretches[lengths > 0], 0.5, normalized=True
+    )
+    rows, lengths = rows[lengths > 0], lengths[lengths > 0]
+    meets = (shapely.distance(middles, pieces[u[rows]]) <= tolerance[rows]) & (
+        shapely.distance(middles, pieces[v[rows]]) <= tolerance[rows]
+    )
+    opening = np.bincount(rows[meets], lengths[meets], minlength=len(candidates))
     side = shapely.length(contact) > 0
     inside = np.where(
         side,
-        shapely.length(shapely.intersection(contact, domain)) > tolerance,
-        shapely.distance(contact, domain) <= tolerance,
+        opening > tolerance,
+        (shapely.distance(contact, pieces[u]) <= tolerance)
+        & (shapely.distance(contact, pieces[v]) <= tolerance),
     )
     keep = np.ones(len(pairs), dtype=bool)
     keep[candidates] = inside | shapely.is_empty(contact)

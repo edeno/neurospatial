@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import shapely
 from shapely.geometry import Point, box
 
 from neurospatial import Environment
@@ -48,14 +49,30 @@ def _assert_coarse_oracle(env, coarse, factor):
 
 
 def _meet_inside(domain, edges, a, b):
-    """Whether lattice cells ``a`` and ``b`` share a corner or side in ``domain``."""
+    """Whether lattice cells ``a`` and ``b`` share a corner or side in ``domain``.
+
+    Each cell takes part through the piece of it inside ``domain`` that
+    holds its center: a hole can leave a cell a second piece that reaches
+    the other cell only through a third one.
+    """
     (x, y), (p, q) = a, b
     first = box(edges[0][x], edges[1][y], edges[0][x + 1], edges[1][y + 1])
     second = box(edges[0][p], edges[1][q], edges[0][p + 1], edges[1][q + 1])
+    pieces = [
+        min(
+            (
+                part
+                for part in shapely.get_parts(cell.intersection(domain))
+                if part.area > 0
+            ),
+            key=cell.centroid.distance,
+        )
+        for cell in (first, second)
+    ]
     contact = first.boundary.intersection(second.boundary)
     if contact.length > 0:
-        return contact.intersection(domain).length > 0
-    return domain.covers(contact)
+        return contact.intersection(pieces[0]).intersection(pieces[1]).length > 0
+    return pieces[0].covers(contact) and pieces[1].covers(contact)
 
 
 def _assert_masked_connectivity(env, coarse, *, diagonal):
