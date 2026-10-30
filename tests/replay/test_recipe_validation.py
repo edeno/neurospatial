@@ -463,7 +463,29 @@ class TestSegmentationValidation:
                 relative_to={"min_peak_probability": "chance"},
             )
 
-    def test_replay_segments_still_names_itself(self, env, sweep):
+    def test_replay_segments_still_names_itself_in_errors(self, env, sweep):
         posterior, times = sweep
         with pytest.raises(ValueError, match=r"replay_segments\(\): max_jump"):
             replay_segments(env, posterior, times, max_jump=-5.0)
+
+
+class TestResultEquality:
+    def test_every_replay_result_compares_equal_only_to_itself(self):
+        import neurospatial.replay as replay
+
+        results = [name for name in replay.__all__ if name.endswith("Result")]
+        assert "WeightedCorrelationResult" in results
+        by_value = [
+            name
+            for name in results
+            if getattr(replay, name).__eq__ is not object.__eq__
+        ]
+        assert by_value == []
+
+    def test_equal_scores_are_distinct_results(self, env, sweep):
+        posterior, times = sweep
+        first = weighted_correlation(env, posterior, times)
+        second = weighted_correlation(env, posterior, times)
+        assert first.score == second.score
+        assert first == first
+        assert first != second
