@@ -980,10 +980,14 @@ def compare_reactivation_methods(
         order, for example waveform similarity below 0.8 (Giri et al. 2024).
         Combined with each method's ``pairs`` rule.
     rng : numpy.random.Generator, int, or None
-        Seed or generator for ICA, bootstraps and shuffles. Each method,
-        match window and component draws from its own stream, derived from
-        ``rng`` and the method's name, so adding, removing or reordering
-        methods does not change the other methods' results.
+        Seed or generator for ICA, bootstraps, shuffles and rate
+        subsamples. Each method draws from its own streams, derived from
+        ``rng`` and the method's name: one for pattern detection and one
+        per match window for its bootstrap, shuffles or subsamples, so
+        adding, removing or reordering methods does not change the other
+        methods' results. A method's components share its streams: they
+        are detected together, and each bin's cell-identity shuffles are
+        shared by the components.
 
     Returns
     -------
@@ -2900,6 +2904,13 @@ LIU_2023_EV = ReactivationMethod(
         "two cells across all theta cycles in the recorded session' "
         "(Materials and methods, Coactivity and reactivation analysis, p. "
         "13). Pass the task's theta cycles as template_events.",
+        "Counts, not rates: the paper says 'binned firing rates', but the "
+        "lab's code counts each unit's spikes in each theta cycle and each "
+        "SWR (neurocode CofiringCoefficient.m: 'count the spikes emitted by "
+        "each unit in each interval'), and so does this recipe. Theta "
+        "cycles vary in length, so counts per cycle share a duration "
+        "component that raises every pair correlation alike; dividing by "
+        "the cycle's duration would remove it and give a different r.",
         "SWR bins in sleep: 'C, CPRE, and CPOST refer to the cofiring matrix "
         "and the correlation matrices across SWRs in pre- and post-task "
         "sleep'; the lab's code counts spikes per SWR (neurocode "
