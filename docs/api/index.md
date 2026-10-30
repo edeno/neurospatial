@@ -215,6 +215,23 @@ Detecting the candidate events (ripples, population bursts) is not included.
   spikes; `compare_replay_methods(spike_times=...)` compares them with the
   decoded methods and runs Chenani 2019, which tests an epoch's events
   together
+- `best_sequence_match()`, `sequence_matching_index()`: Template matching of
+  firing order without decoding: Lee & Wilson's (2002) best (x, y) match of
+  an event's letters, with the probability over the orderings of its
+  letters, and Ji & Wilson's (2007) matching index with its exact p-value;
+  `burst_onset_times()` and `spike_words()` cut spike trains into letters
+  and words
+- `detect_template_match_replay()`, `TemplateMatchMethod`: Apply the
+  template-matching recipes (`LEE_WILSON_2002`, `JI_WILSON_2007`) to an
+  event; `compare_replay_methods(spike_times=...)` compares them with the
+  other methods, and `template_match_dataset_test()` runs the papers'
+  data-set tests (binomial counts of pairs, triplets and low-probability
+  words; chance and template-shuffle significance of replaying frames)
+- `recurring_spike_sequences()`, `recurring_sequences_significance()`,
+  `surrogate_spike_trains()`, `RecurringSequenceMethod`: Spike sequences
+  that recur within a session, tested against interval-shuffle, jitter,
+  across-train and theta-phase surrogates (Nádasdy et al. 1999,
+  `NADASDY_1999`; session level, no per-event verdict)
 - `shuffle_cell_identity()`, `shuffle_spike_counts_circular()`,
   `shuffle_spike_counts_uniform()`, `shuffle_place_fields_circular()`,
   `shuffle_place_fields_circular_2d()`, `shuffle_posterior_circular()`,
