@@ -14,6 +14,7 @@ from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
 from neurospatial.simulation._lap_routes import LapRouter
 from neurospatial.simulation._walls import Walls
+from neurospatial.simulation.models.base import _check_positive
 
 #: Default exploration speed, in centimeters per second: the RatInABox
 #: default (0.08 m/s; George et al. 2024).
@@ -23,23 +24,8 @@ _DEFAULT_OU_SPEED_CM_PER_S = 8.0
 _SAMPLE_COUNT_RTOL = 1e-9
 
 
-def _require_finite(
-    checks: list[tuple[str, float, bool]], why: str | None = None
-) -> None:
-    """Refuse a value that is not finite, or not positive (or non-negative).
-
-    ``checks`` holds ``(name, value, positive)``; ``positive`` False allows 0.
-    """
-    for name, value, positive in checks:
-        if not np.isfinite(value) or (value <= 0 if positive else value < 0):
-            bound = "positive" if positive else "non-negative"
-            raise ValueError(
-                _format_error(
-                    f"{name} must be finite and {bound}, got {value}.",
-                    why=why,
-                    fix=f"pass a finite {bound} {name}",
-                )
-            )
+#: Units of a running speed, named in errors.
+_SPEED_UNITS = "the environment's units per second"
 
 
 def _sample_count(duration: float, step: float, step_name: str, call: str) -> int:
@@ -363,21 +349,21 @@ def simulate_trajectory_ou(
         )
     if speed_std is None:
         speed_std = speed_mean / 2
-    _require_finite(
-        [
-            ("duration", duration, True),
-            ("dt", dt, True),
-            ("speed_mean", speed_mean, True),
-            ("speed_std", speed_std, False),
-            ("coherence_time", coherence_time, True),
-            ("rotational_velocity_std", rotational_velocity_std, False),
-            (
-                "rotational_velocity_coherence_time",
-                rotational_velocity_coherence_time,
-                True,
-            ),
-        ]
-    )
+    for name, value, allow_zero, units in (
+        ("duration", duration, False, "seconds"),
+        ("dt", dt, False, "seconds"),
+        ("speed_mean", speed_mean, False, _SPEED_UNITS),
+        ("speed_std", speed_std, True, _SPEED_UNITS),
+        ("coherence_time", coherence_time, False, "seconds"),
+        ("rotational_velocity_std", rotational_velocity_std, True, "radians/s"),
+        (
+            "rotational_velocity_coherence_time",
+            rotational_velocity_coherence_time,
+            False,
+            "seconds",
+        ),
+    ):
+        _check_positive(name, value, allow_zero=allow_zero, units=units)
     modes = ("reflect", "periodic", "stop")
     if boundary_mode not in modes:
         raise ValueError(
@@ -773,15 +759,14 @@ def simulate_trajectory_sinusoidal(
             problem="not a metric length unit, so the default 10 cm/s",
             placeholder="running speed",
         )
-    _require_finite(
-        [
-            ("duration", duration, True),
-            ("sampling_frequency", sampling_frequency, True),
-            ("speed", speed, True),
-            *([] if period is None else [("period", period, True)]),
-            ("pause_duration", pause_duration, False),
-        ]
-    )
+    for name, value, allow_zero, units in (
+        ("duration", duration, False, "seconds"),
+        ("sampling_frequency", sampling_frequency, False, "Hz"),
+        ("speed", speed, False, _SPEED_UNITS),
+        *([] if period is None else [("period", period, False, "seconds")]),
+        ("pause_duration", pause_duration, True, "seconds"),
+    ):
+        _check_positive(name, value, allow_zero=allow_zero, units=units)
 
     # The motion runs along the track between its two far ends, in the
     # environment's coordinates.
@@ -1211,15 +1196,16 @@ def _simulate_trajectory_laps(
             )
     if speed_std is None:
         speed_std = 0.2 * speed_mean
-    _require_finite(
-        [
-            *([] if duration is None else [("duration", duration, True)]),
-            ("sampling_frequency", sampling_frequency, True),
-            ("speed_mean", speed_mean, True),
-            ("speed_std", speed_std, False),
-            ("pause_duration", pause_duration, False),
-        ]
-    )
+    # With a duration the speeds only weight the traversal times: no units.
+    speed_units = _SPEED_UNITS if duration is None else None
+    for name, value, allow_zero, units in (
+        *([] if duration is None else [("duration", duration, False, "seconds")]),
+        ("sampling_frequency", sampling_frequency, False, "Hz"),
+        ("speed_mean", speed_mean, False, speed_units),
+        ("speed_std", speed_std, True, speed_units),
+        ("pause_duration", pause_duration, True, "seconds"),
+    ):
+        _check_positive(name, value, allow_zero=allow_zero, units=units)
     if (
         not isinstance(n_laps, (int, np.integer))
         or isinstance(n_laps, bool)
