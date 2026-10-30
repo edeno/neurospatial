@@ -957,6 +957,18 @@ visited get no mass), and decode the null events with the same prior.
   `encoding_models` and the animal's speed rule as `valid_time_bins`. The
   table reports each quantity and its p-value, such as `mean_spread` and
   `p_value[mean_spread]`.
+- **A narrow line band.** `MABOUDI_2018` fits the line within 3 cm, so it
+  searches 35,000 random lines (`score_options["n_lines"]`) rather than the
+  dense grid, which is slow at that band. Set `line_seed` in
+  `score_options` to repeat the same lines.
+- **Spike pairs without decoding.** `GUPTA_2010` scores every pair of
+  spikes less than 80 ms apart by whether the two cells fire in the order
+  of their place fields. Pass `spike_times=`, and pass one set of rate maps
+  per lap direction as a mapping in `encoding_models`, in bins of about
+  3.5 cm for the paper's field rule. Each template is tested forward and
+  backward, and the smallest p-value is reported without correction, as in
+  the paper. `unit_groups=` on `detect_pairwise_order_replay` leaves out
+  pairs of cells on the same tetrode.
 - **Mazes with arms.** `ArmReplayMethod` recipes (`WU_FOSTER_2014`,
   `BERNERS_LEE_2021`) classify replay per arm: pass `arms=` to
   `compare_replay_methods`.
