@@ -121,8 +121,8 @@ def event_properties(
     ------
     ValueError
         If ``events`` is empty or an event has no ``times``; if
-        ``spike_counts`` does not have one entry per event with one row per
-        time bin, or has negative or non-integer counts; or if a joint
+        ``spike_counts`` does not have one entry per event of shape
+        (n_time_bins, n_cells), or has negative or non-integer counts; or if a joint
         decode's templates are on different environments without
         ``template=``, or ``template`` is not one of its templates.
 
@@ -173,8 +173,17 @@ def event_properties(
         counts = None
         if spike_counts is not None:
             counts = np.asarray(spike_counts[index])
-            if counts.ndim == 1:
-                counts = counts[:, np.newaxis]
+            if counts.ndim != 2:
+                raise ValueError(
+                    _format_error(
+                        f"{operation}: spike_counts[{index}] has shape "
+                        f"{counts.shape}, but the active cells are counted per "
+                        "cell.",
+                        why="spike counts summed over cells cannot count active "
+                        "cells: every spike would count as one cell",
+                        fix="pass (n_time_bins, n_cells) counts, one column per cell",
+                    )
+                )
             if len(counts) != len(posterior):
                 raise ValueError(
                     f"{operation}: spike_counts[{index}] has {len(counts)} rows "

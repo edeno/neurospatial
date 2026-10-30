@@ -234,7 +234,21 @@ def _weighted_correlations(
     NDArray[np.float64], shape (n_events,)
         The correlation of each event; NaN where time or position does not
         vary under the weights.
+
+    Notes
+    -----
+    Times and positions are centered on the middle of their range first, so
+    an offset such as the time since the session started adds no round-off.
+    A weighted variance below ``eps * range**2`` (a standard deviation below
+    about 1.5e-8 of the range) is round-off, not variation: with all of the
+    mass in one time bin, for example, it is about ``(eps * range)**2`` and
+    its sign is arbitrary, so it counts as no variation.
     """
+    times = times - (times.min() + times.max()) / 2.0
+    positions = positions - (positions.min() + positions.max()) / 2.0
+    eps = np.finfo(np.float64).eps
+    min_var_time = eps * float(np.ptp(times)) ** 2
+    min_var_position = eps * float(np.ptp(positions)) ** 2
     total = weights.sum(axis=(1, 2))
     time_mass = weights.sum(axis=2) / total[:, None]  # (n_events, n_time)
     position_mass = weights.sum(axis=1) / total[:, None]  # (n_events, n_bins)
@@ -250,4 +264,5 @@ def _weighted_correlations(
     # Round so that scores equal in exact arithmetic compare equal: a shuffle
     # tied with the event then counts as a tie in the Monte Carlo p-value.
     rounded = np.clip(np.round(correlation, _SCORE_DECIMALS), -1.0, 1.0)
-    return np.where((var_time > 0) & (var_position > 0), rounded, np.nan)
+    varies = (var_time > min_var_time) & (var_position > min_var_position)
+    return np.where(varies, rounded, np.nan)
