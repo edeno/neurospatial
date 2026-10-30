@@ -561,11 +561,14 @@ class ReactivationMethod:
         pair of control and match windows, each unit's spikes are subsampled
         so it fires at the same rate in both
         (:func:`~neurospatial.reactivation.equalize_firing_rates`), this
-        many times; EV, REV, the partial correlation and its p-value are the
-        medians over the subsamples ("median Pearson's r … median p … for
-        100 different random subsamples"), and ``value`` is computed from
-        them. None (default) uses every spike. Needs ``rest_bins="fixed"``
-        and is not combined with ``test="pair_bootstrap"``.
+        many times ("median Pearson's r … median p … for 100 different
+        random subsamples"). The row reports the subsample whose
+        ``statistic`` is the median (the lower of the middle two for an
+        even number): ``value`` is the median of the statistic, and EV,
+        REV, the partial correlation, its p-value and the verdict all come
+        from that one subsample, so they agree with each other. None
+        (default) uses every spike. Needs ``rest_bins="fixed"`` and is not
+        combined with ``test="pair_bootstrap"``.
     notes : tuple of str
         Each value's source in the paper and the choices it leaves open.
 
@@ -1537,23 +1540,15 @@ def _explained_variance_rows(
                 control_counts,
                 pair_rule,
                 method.n_rate_subsamples,
+                method.statistic,
                 stream(index, 1),
             )
-        explained = summary["explained_variance"]
-        reversed_ = summary["reversed_explained_variance"]
-        values = {
-            "explained_variance": explained,
-            "ev_minus_rev": explained - reversed_,
-            "ev_rev_contrast": ev_rev_contrast(explained, reversed_),
-            "partial_correlation": summary["partial_correlation"],
-            "semipartial_correlation": summary["semipartial_correlation"],
-        }
         row: dict[str, Any] = {
             **_window_columns(index, window),
             "statistic": method.statistic,
-            "value": values[method.statistic],
-            "explained_variance": explained,
-            "reversed_explained_variance": reversed_,
+            "value": _ev_statistics(summary)[method.statistic],
+            "explained_variance": summary["explained_variance"],
+            "reversed_explained_variance": summary["reversed_explained_variance"],
             "partial_correlation": summary["partial_correlation"],
             "semipartial_correlation": summary["semipartial_correlation"],
             "n_pairs": summary["n_pairs"],
@@ -1649,20 +1644,39 @@ def _ev_summary(
     }
 
 
+def _ev_statistics(summary: dict[str, float]) -> dict[str, float]:
+    """Each EV statistic a method can report, from an :func:`_ev_summary`."""
+    explained = summary["explained_variance"]
+    reversed_ = summary["reversed_explained_variance"]
+    return {
+        "explained_variance": explained,
+        "ev_minus_rev": explained - reversed_,
+        "ev_rev_contrast": ev_rev_contrast(explained, reversed_),
+        "partial_correlation": summary["partial_correlation"],
+        "semipartial_correlation": summary["semipartial_correlation"],
+    }
+
+
 def _rate_equalized_ev_summary(
     template_correlations: NDArray[np.float64],
     match_counts: NDArray[np.float64],
     control_counts: list[NDArray[np.float64]],
     pair_rule: NDArray[np.bool_],
     n_subsamples: int,
+    statistic: str,
     generator: np.random.Generator,
 ) -> dict[str, float]:
-    """:func:`_ev_summary` medians over rate-equalizing subsamples.
+    """:func:`_ev_summary` of the median rate-equalizing subsample.
 
     In each subsample, every (control window, match window) pair gets its
     own draw of :func:`equalize_firing_rates`, so each unit fires at one
     rate in both windows of the pair; the template is not subsampled (Giri
-    et al. 2019).
+    et al. 2019). The subsamples are ordered by ``statistic``, and the one
+    at the median (the lower of the middle two for an even number) is
+    returned whole, so its EV, REV, partial correlation and p-value agree
+    with each other and with ``statistic``. Separate medians of each would
+    not: the median EV is not the squared median partial correlation, nor
+    the median of EV - REV the difference of the medians.
 
     Parameters
     ----------
@@ -1676,15 +1690,16 @@ def _rate_equalized_ev_summary(
         Pairs the method may use.
     n_subsamples : int
         Number of subsamples.
+    statistic : str
+        The method's statistic, which orders the subsamples.
     generator : numpy.random.Generator
         Source of the subsamples.
 
     Returns
     -------
     dict
-        The keys of :func:`_ev_summary`: medians over subsamples of the
-        statistics, NaN where no subsample defines one; ``n_pairs`` is the
-        fewest over subsamples.
+        The keys of :func:`_ev_summary`, from the median subsample over
+        those that define ``statistic``; the first subsample when none does.
     """
     draws = []
     for _ in range(n_subsamples):
@@ -1693,25 +1708,12 @@ def _rate_equalized_ev_summary(
             control, match = equalize_firing_rates(counts, match_counts, rng=generator)
             periods.append((_pair_correlations(match), _pair_correlations(control)))
         draws.append(_ev_summary(template_correlations, periods, pair_rule))
-    summary = {
-        key: _nanmedian([draw[key] for draw in draws])
-        for key in (
-            "explained_variance",
-            "reversed_explained_variance",
-            "partial_correlation",
-            "semipartial_correlation",
-            "p_value",
-        )
-    }
-    summary["n_pairs"] = min(draw["n_pairs"] for draw in draws)
-    return summary
-
-
-def _nanmedian(values: Sequence[float]) -> float:
-    """Median over the defined values, NaN when none is (no warning)."""
-    array = np.asarray(values, dtype=np.float64)
-    finite = array[np.isfinite(array)]
-    return float(np.median(finite)) if finite.size else np.nan
+    values = np.array([_ev_statistics(draw)[statistic] for draw in draws])
+    defined = np.flatnonzero(np.isfinite(values))
+    if not defined.size:
+        return draws[0]
+    ordered = defined[np.argsort(values[defined], kind="stable")]
+    return draws[int(ordered[(ordered.size - 1) // 2])]
 
 
 def _missing() -> Any:
@@ -2536,7 +2538,9 @@ GIRI_2019 = ReactivationMethod(
         "all sessions, Fig. 1c-e), not the 15-min windows. "
         "dataclasses.replace(GIRI_2019, n_rate_subsamples=100) applies it to "
         "every pair of PRE and POST windows, where equal rates and equal "
-        "counts are the same, and reports medians over the subsamples. "
+        "counts are the same, and reports the subsample with the median EV "
+        "(the paper took separate medians of r and p, which can come from "
+        "different subsamples). "
         "Which spikes were removed is not stated; here a uniform random "
         "subset of each unit's spikes in the window that fires more.",
     ),
