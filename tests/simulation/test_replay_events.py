@@ -386,6 +386,8 @@ class TestDegradation:
             ({"drop_fraction": -0.1}, "drop_fraction must be a fraction"),
             ({"drop_fraction": 1.5}, "drop_fraction must be a fraction"),
             ({"drop_fraction": np.nan}, "drop_fraction must be a fraction"),
+            ({"drop_fraction": True}, "drop_fraction must be a fraction"),
+            ({"drop_fraction": "0.5"}, "drop_fraction must be a fraction"),
             ({"n_noise_spikes": -1}, "n_noise_spikes must be a non-negative"),
             ({"n_noise_spikes": 2.5}, "n_noise_spikes must be a non-negative"),
             ({"n_noise_spikes": True}, "n_noise_spikes must be a non-negative"),
