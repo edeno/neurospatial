@@ -404,7 +404,7 @@ def mean_pairwise_bias(
            [ 0.333,  0.   ]])
     """
     operation = "mean_pairwise_bias()"
-    times, labels, n_units = _sorted_spikes(spike_times, operation)
+    times, labels, n_units = _sorted_spikes(spike_times)
     bounds = np.asarray(intervals, dtype=np.float64)
     if (
         bounds.ndim != 2
@@ -738,11 +738,12 @@ def _check_test(
 
 
 def _sorted_spikes(
-    spike_times: Any, operation: str, interval: tuple[float, float] | None = None
+    spike_times: Any, interval: tuple[float, float] | None = None
 ) -> tuple[NDArray[np.float64], NDArray[np.intp], int]:
     """Every spike's time and unit, in time order, and the number of units.
 
     With ``interval``, only the spikes at ``start <= t < stop``.
+    :func:`~neurospatial._spikes.as_spike_trains` refuses NaN and Inf.
     """
     from neurospatial._spikes import as_spike_trains
 
@@ -750,11 +751,6 @@ def _sorted_spikes(
     if interval is not None:
         trains = _spikes_in(trains, *interval)
     times, labels = _pooled_spikes(trains, np.arange(len(trains)), "all_spikes")
-    if not np.isfinite(times).all():
-        raise ValueError(
-            f"{operation}: spike_times holds NaN or Inf; pass finite spike "
-            "times in seconds."
-        )
     order = np.argsort(times, kind="stable")
     return times[order], labels[order], len(trains)
 
@@ -763,9 +759,7 @@ def _event_spikes(
     spike_times: Any, interval: Any, operation: str
 ) -> tuple[NDArray[np.float64], NDArray[np.intp], int]:
     """The event's spikes, in time order, with their units."""
-    return _sorted_spikes(
-        spike_times, operation, _validated_interval(interval, operation)
-    )
+    return _sorted_spikes(spike_times, _validated_interval(interval, operation))
 
 
 def _skew_bias(
