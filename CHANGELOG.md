@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+### Rank-order correlation of replay events
+
+`rank_order_correlation(env, spike_times, (start, stop), rates)` is the
+Spearman correlation between each active cell's place-field position and when
+it fired in a candidate event (Foster & Wilson 2006; Diba & Buzsáki 2007). It
+needs no decoding. `rank_order_significance(...)` tests it against cell-order
+permutations, two-sided by default so forward and reverse sequences count
+alike.
+
+- `spike_statistic` chooses when each cell fired:
+  - `"median"` (default; Tirole et al. 2022), which Takigawa et al. (2024)
+    found holds the false-positive rate near 5%;
+  - `"first"` (Diba & Buzsáki 2007);
+  - `"mean"` (Chenani et al. 2019);
+  - `"all_spikes"` (Silva et al. 2015). Takigawa et al. found a
+    false-positive rate near 17% with it when significance came from the
+    analytic p-value; the cell-order permutation test keeps a cell's spikes
+    together and holds its rate.
+- `field_order` places each field at its peak (default) or at the
+  rate-weighted center of its rate map (Chenani et al. 2019).
+- Cells without a field (no finite positive rate) or without a spike in the
+  event are left out. With fewer than `min_active_cells` (default 5) the
+  correlation is NaN.
+- The result reports the analytic Spearman p-value. It is exact for up to 9
+  pairs and uses the t-approximation of Foster & Wilson (2006) above that
+  (MATLAB's `corr` also uses the exact distribution for small samples). The
+  permutation test's z-score approximates the spatial similarity index of
+  Chenani et al. (2019).
+- Negative rates and a rate result computed on another environment are
+  refused.
+- The score is Spearman's rho computed on ranks. The `replay_RankOrder.m`
+  function of the RnR_methods toolbox correlates sort indices instead, so its
+  value depends on how cells are numbered; scores here will differ from it.
+
 ### Test any replay score against shuffles; weighted correlation
 
 `replay_significance(env, posterior, times, score=..., nulls=...)` replaces
