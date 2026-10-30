@@ -100,7 +100,7 @@ DEFAULTS: dict[type, dict[str, Any]] = {
         "min_peak_rate": None,
         "min_template_cells": None,
         "max_isi": None,
-        "max_gap": None,
+        "word_gap": None,
         "match_order": "interruptions_first",
         "trial_probability": None,
         "exact_max_letters": 10,
@@ -140,7 +140,7 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
         {
             "statistic": "best_match",
             "max_isi": 0.05,
-            "max_gap": 0.1,
+            "word_gap": 0.1,
             "trial_probability": 1 / 24,
             "alpha": 1 / 24,
             "p_comparison": "<=",
