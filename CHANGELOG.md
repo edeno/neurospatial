@@ -13,6 +13,14 @@
   p-value, and rethresholding the table's p-value gave wrong verdicts. Rerun
   `compare_replay_methods` with `dataclasses.replace(method, alpha=...)`
   instead.
+- `detect_trajectory_radon(wrap=True, zero_rows="line_median")`: a time
+  bin without spikes no longer adds mass where its band crosses a loop's
+  seam. Each whole lap a band covers held a constant mass of 1, the total
+  of a decoded row, so a row without mass gained a full lap. A uniform
+  posterior with an empty time bin scored 0.26 instead of its band share
+  0.0625, and an event without spikes scored 1.0. Laps now hold the time
+  bin's own total, and a posterior with no mass in any time bin is
+  refused. Scores of fully decoded events are unchanged.
 
 ### Reactivation recipes: review fixes
 
