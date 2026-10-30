@@ -1436,7 +1436,11 @@ def _check_component_threshold(
         )
     if percentile is not None and not 0.0 < float(percentile) < 100.0:
         raise ValueError(f"{call}: percentile must be in (0, 100), got {percentile}.")
-    if isinstance(n_shuffles, bool) or int(n_shuffles) != n_shuffles or n_shuffles < 1:
+    if (
+        isinstance(n_shuffles, bool)
+        or not isinstance(n_shuffles, (int, np.integer))
+        or n_shuffles < 1
+    ):
         raise ValueError(
             f"{call}: n_shuffles must be a positive integer, got {n_shuffles!r}."
         )
