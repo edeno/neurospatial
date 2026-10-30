@@ -1465,6 +1465,12 @@ def _explained_variance_rows(
     stream: Any,
 ) -> list[dict[str, Any]]:
     """One row per match window of an EV method."""
+    n_units = len(session.trains)
+    if pair_rule.size < 3:
+        raise _MethodError(
+            f"EV needs at least 3 pairs of units; {n_units} units hold "
+            f"{pair_rule.size} pair{'s' * (pair_rule.size != 1)}"
+        )
     template_correlations = _pair_correlations(_template_counts(method, session))
     control_counts = []
     control_events = []

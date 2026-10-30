@@ -476,6 +476,24 @@ def test_a_period_shorter_than_a_window_is_an_error_row(reactivated) -> None:
     assert (table.loc[table["method"] == "peyrache_2010", "error"] == "").all()
 
 
+def test_two_units_are_an_error_row_for_every_measure() -> None:
+    """Two units hold one pair: EV and pattern methods report it in rows."""
+    rng = np.random.default_rng(0)
+    trains = [np.sort(rng.uniform(0, 3600, 3000)) for _ in range(2)]
+    table = compare_reactivation_methods(
+        trains,
+        [[1200.0, 2400.0]],
+        [[2400.0, 3600.0]],
+        [[0.0, 1200.0]],
+        reactivation_methods=[PEYRACHE_FAST, PENNARTZ_2004],
+        rng=0,
+    )
+    errors = table.set_index("method")["error"]
+    assert "at least 3 pairs" in errors["pennartz_2004"]
+    assert "2 units hold 1 pair" in errors["pennartz_2004"]
+    assert "at least 3 neurons" in errors["peyrache_2010"]
+
+
 def test_input_errors(reactivated) -> None:
     spike_times, template, match, control = reactivated
     with pytest.raises(ValueError, match="need control_epochs"):
