@@ -48,6 +48,7 @@ from neurospatial.replay.pairwise_order import (
     _FieldSearchTooLargeError,
     detect_pairwise_order_replay,
 )
+from neurospatial.replay.recurring_sequences import NADASDY_1999
 from neurospatial.replay.significance import (
     _ALTERNATIVES,
     _COUNT_CHANGING_NULLS,
@@ -55,6 +56,12 @@ from neurospatial.replay.significance import (
     _NULLS,
     _ROW_MOVING_NULLS,
     _checked_null_options,
+)
+from neurospatial.replay.template_match import (
+    JI_WILSON_2007,
+    LEE_WILSON_2002,
+    TemplateMatchMethod,
+    detect_template_match_replay,
 )
 from neurospatial.replay.trajectory import (
     _SCORE_DECIMALS,
@@ -86,11 +93,14 @@ __all__ = [
     "HARVEY_2023",
     "IGATA_2021",
     "JADHAV_2016",
+    "JI_WILSON_2007",
     "KARLSSON_FRANK_2009",
+    "LEE_WILSON_2002",
     "LIU_2023",
     "MALLORY_2025",
     "MICHON_2019",
     "MUESSIG_2019",
+    "NADASDY_1999",
     "OLAFSDOTTIR_2015",
     "OLAFSDOTTIR_2016",
     "OLAFSDOTTIR_2017",
@@ -1260,8 +1270,10 @@ class ReplayDetectionResult(ResultMixin):
         The method's name.
     is_replay : bool
         For a :class:`ReplayMethod`, a rank-order method with a p-value
-        test and a pairwise-order method: True when the event meets every criterion and, for a method
-        with shuffles, its largest p-value is below ``alpha``. For the
+        test, a pairwise-order method and a template-matching method: True
+        when the event meets every criterion and, for a method with a
+        test, its largest p-value is below ``alpha`` (at or below it for a
+        template-matching method with ``p_comparison="<="``). For the
         pooled-SSI test (``test="pooled_ssi"``): True when the score
         exceeds the ``1 - alpha`` quantile of the epoch's pooled shuffles;
         ``p_value`` is reported but not used. For an arm method: True when
@@ -2905,7 +2917,11 @@ def compare_replay_methods(
     ],
     *,
     replay_methods: Sequence[
-        ReplayMethod | RankOrderMethod | PairwiseOrderMethod | ArmReplayMethod
+        ReplayMethod
+        | RankOrderMethod
+        | PairwiseOrderMethod
+        | ArmReplayMethod
+        | TemplateMatchMethod
     ],
     spike_counts: Sequence[NDArray[np.int64]] | None = None,
     encoding_models: Any = None,
@@ -2946,6 +2962,9 @@ def compare_replay_methods(
         the spikes over the same window, on every template of a mapping of
         rate maps in each of its directions, and reports the test with the
         smallest p-value; it ignores ``template``.
+        A :class:`~neurospatial.replay.TemplateMatchMethod` scores the same
+        window's spikes as a rank-order method does (see
+        :func:`~neurospatial.replay.detect_template_match_replay`).
     spike_counts : sequence of arrays or None
         Each event's spike counts, shape (n_time_bins, n_cells), for methods
         that need them (see :func:`detect_replay`).
@@ -2962,7 +2981,7 @@ def compare_replay_methods(
         :func:`detect_replay`).
     spike_times : array, sequence of arrays, or spike group, optional
         The session's spike times, one train per row of
-        ``encoding_models``, for rank-order and pairwise-order methods.
+        ``encoding_models``, for rank-order, pairwise-order and template-matching methods.
     arms : Mapping[str, NDArray[np.intp]] or None
         Each arm's bins from the junction outward, for arm methods.
     rng : numpy.random.Generator, int, or None
@@ -3029,7 +3048,7 @@ def compare_replay_methods(
         ``valid_time_bins`` does not have one entry per event, or an entry
         does not have one row per time bin of its event; if a method
         draws pseudo-events or weighted column cycles from joint decodes; or
-        if a rank-order or pairwise-order method is given without
+        if a rank-order, pairwise-order or template-matching method is given without
         ``spike_times``, ``encoding_models`` or ``dt``.
 
     Warns
@@ -3165,7 +3184,7 @@ def compare_replay_methods(
     spike_methods = [
         m
         for m in replay_methods
-        if isinstance(m, (RankOrderMethod, PairwiseOrderMethod))
+        if isinstance(m, (RankOrderMethod, PairwiseOrderMethod, TemplateMatchMethod))
     ]
     if spike_methods:
         missing = [
@@ -3222,7 +3241,11 @@ def compare_replay_methods(
 
     def stream_for(
         index: int,
-        method: ReplayMethod | RankOrderMethod | PairwiseOrderMethod | ArmReplayMethod,
+        method: ReplayMethod
+        | RankOrderMethod
+        | PairwiseOrderMethod
+        | ArmReplayMethod
+        | TemplateMatchMethod,
     ) -> Any:
         return np.random.default_rng(
             np.random.SeedSequence(
@@ -3330,7 +3353,11 @@ def _compare_row(
     env: Environment | Mapping[str, Environment],
     event: DecodingResult | JointDecodingResult | Mapping[str, DecodingResult],
     times: NDArray[np.float64],
-    method: ReplayMethod | RankOrderMethod | PairwiseOrderMethod | ArmReplayMethod,
+    method: ReplayMethod
+    | RankOrderMethod
+    | PairwiseOrderMethod
+    | ArmReplayMethod
+    | TemplateMatchMethod,
     *,
     spike_counts: NDArray[np.int64] | None,
     encoding_models: Any,
@@ -3365,6 +3392,27 @@ def _compare_row(
             env, event.posterior, times, arms=arms, arm_replay_method=method
         )
         return {**verdict.summary(), "error": ""}
+    if isinstance(method, TemplateMatchMethod):
+        assert dt is not None
+        centers = np.asarray(times, dtype=np.float64)
+        matched = detect_template_match_replay(
+            env,
+            spike_times,
+            (centers[0] - dt / 2, centers[-1] + dt / 2),
+            encoding_models,
+            template_match_method=method,
+            template=None
+            if isinstance(encoding_models, Mapping)
+            and method.template_choice is not None
+            else template,
+            rng=rng,
+        )
+        error = (
+            ""
+            if np.isfinite(matched.score)
+            else f"fewer than {method.min_active_cells} active template cells"
+        )
+        return {**matched.summary(), "error": error}
     if isinstance(method, RankOrderMethod) and pooled is not None:
         verdict, error = pooled
         return {**verdict.summary(), "error": error}
@@ -3465,7 +3513,11 @@ def _compare_row(
 def _fail_criteria_of_error_rows(
     table: pd.DataFrame,
     replay_methods: Sequence[
-        ReplayMethod | RankOrderMethod | PairwiseOrderMethod | ArmReplayMethod
+        ReplayMethod
+        | RankOrderMethod
+        | PairwiseOrderMethod
+        | ArmReplayMethod
+        | TemplateMatchMethod
     ],
 ) -> pd.DataFrame:
     """Set every criterion of a row's method to False on rows with an error.
@@ -3487,7 +3539,10 @@ def _fail_criteria_of_error_rows(
             for column in table.columns
             if column.startswith("passes[") and table.loc[mine, column].notna().any()
         }
-        if isinstance(method, (ReplayMethod, RankOrderMethod, PairwiseOrderMethod)):
+        if isinstance(
+            method,
+            (ReplayMethod, RankOrderMethod, PairwiseOrderMethod, TemplateMatchMethod),
+        ):
             columns |= {f"passes[{c.label}]" for c in method.criteria}
         for column in sorted(columns):
             if column not in table:
@@ -5144,10 +5199,17 @@ BERNERS_LEE_2021 = ArmReplayMethod(
 )
 
 PUBLISHED_METHODS: tuple[
-    ReplayMethod | RankOrderMethod | PairwiseOrderMethod | ArmReplayMethod, ...
+    ReplayMethod
+    | RankOrderMethod
+    | PairwiseOrderMethod
+    | ArmReplayMethod
+    | TemplateMatchMethod,
+    ...,
 ] = (
+    LEE_WILSON_2002,
     FOSTER_WILSON_2006,
     DIBA_BUZSAKI_2007,
+    JI_WILSON_2007,
     DAVIDSON_2009,
     KARLSSON_FRANK_2009,
     GUPTA_2010,
@@ -5182,4 +5244,8 @@ PUBLISHED_METHODS: tuple[
     MALLORY_2025,
     WIDLOSKI_FOSTER_2025,
 )
-"""Every published method recipe in this module."""
+"""Every published per-event method recipe in this module.
+
+``NADASDY_1999`` (a :class:`~neurospatial.replay.RecurringSequenceMethod`)
+is a session-level test with no per-event verdict and is left out.
+"""
