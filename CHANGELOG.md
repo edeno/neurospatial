@@ -41,6 +41,39 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
   counts. The Bendor-lab code zeroes the original event's empty time bins in
   shuffles that move them, which is not reproduced.
 
+### Calibrating replay methods on comparison tables
+
+New `neurospatial.replay.calibration` summarizes the table of
+`compare_replay_methods`:
+
+- `event_properties(env, events, spike_counts=, template=, dt=)` measures
+  each event:
+  - time bins, duration, and with `dt` the window duration;
+  - mean peak posterior;
+  - mean posterior spread, which does not depend on bin size;
+  - MAP path length;
+  - `map_range_fraction`, the fraction of the track's length the MAP
+    position spans;
+  - active cells, spikes, spikes per active cell, and the fraction of empty
+    time bins.
+
+  A joint decode is summed over templates on one environment, or measured
+  on one template's share with `template=`.
+- `detection_rates(table, properties=, by=, groups=, errors=)` gives each
+  method's share of events called replay, with an exact binomial interval.
+  On null data this is the false-positive rate; on simulated replays, the
+  sensitivity.
+  - It can be split by bins of event properties (`by=`) and by table
+    columns such as the kind of null data or the session (`groups=`).
+    Every combination is reported.
+  - An event that falls in no bin is refused rather than dropped.
+  - Events a method could not score count as not replay by default, so
+    every method's rate covers the same events. `errors="exclude"` gives
+    the rate among the events each method scored.
+- `method_agreement(table, groups=, errors=)` counts, for every pair of
+  methods, how often both, one or neither called an event replay, with raw
+  agreement and Cohen's kappa.
+
 ### Berners-Lee et al. (2021) arm replay
 
 `BERNERS_LEE_2021` follows the authors' code
