@@ -57,7 +57,9 @@ from neurospatial.replay._compare import (
     _compare,
     _criterion_label,
 )
+from neurospatial.replay.criteria import _TRAJECTORY_SCALARS
 from neurospatial.replay.methods import (
+    _SPIKE_QUANTITIES,
     FAROOQ_2019,
     GROSMARK_2016,
     SILVA_2015,
@@ -117,9 +119,7 @@ _SHAREABLE_NULLS = (
 # detect_replay.
 _FAST_QUANTITIES = (
     "score",
-    "n_active_cells",
-    "active_fraction",
-    "n_spikes",
+    *_SPIKE_QUANTITIES,
     "n_time_bins",
     "duration",
     "track_length",
@@ -976,7 +976,6 @@ def _replay_values(
     """The table of :func:`dataset_values` for a decoded method."""
     import pandas as pd
 
-    from neurospatial.replay.methods import _criterion_quantities
     from neurospatial.replay.trajectory import _reusing_replay_lines
 
     if null is not None and null not in _NULLS:
@@ -997,18 +996,11 @@ def _replay_values(
         )
     decoded = _decoded_events(env, events, operation)
     counts = _event_counts(spike_counts, decoded, operation)
-    scalars = [
-        name
-        for name in _criterion_quantities()
-        if name not in ("score", "n_active_cells", "active_fraction", "n_spikes")
-        and not name.startswith("segment")
-        and name not in ("template_fraction",)
-    ]
-    unknown = [name for name in quantities if name not in scalars]
+    unknown = [name for name in quantities if name not in _TRAJECTORY_SCALARS]
     if unknown:
         raise ValueError(
             f"{operation}: quantities {unknown} are not scalars of "
-            f"TrajectoryMetrics; choose from {scalars}."
+            f"TrajectoryMetrics; choose from {list(_TRAJECTORY_SCALARS)}."
         )
     variant, labels = _measuring_method(method, quantities)
     if counts is None and _counts_spikes(variant):
@@ -1161,10 +1153,7 @@ def _counts_spikes(method: ReplayMethod) -> bool:
     segmentation = method.segmentation
     return (
         method.empty_time_bins != "keep"
-        or any(
-            criterion.quantity in ("n_active_cells", "active_fraction", "n_spikes")
-            for criterion in method.criteria
-        )
+        or any(criterion.quantity in _SPIKE_QUANTITIES for criterion in method.criteria)
         or (
             segmentation is not None
             and segmentation.min_active_cells_per_time_bin is not None

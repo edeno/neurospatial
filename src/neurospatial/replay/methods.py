@@ -54,6 +54,7 @@ from neurospatial.replay._compare import (
 from neurospatial.replay.arms import ArmReplayMethod
 from neurospatial.replay.circular import fit_circular_sequence
 from neurospatial.replay.correlation import weighted_correlation
+from neurospatial.replay.criteria import _TRAJECTORY_SCALARS
 from neurospatial.replay.pairwise_order import (
     PairwiseOrderMethod,
 )
@@ -146,6 +147,8 @@ __all__ = [
 ]
 
 _OPERATION = "detect_replay()"
+# Criterion quantities read from the event's spike counts.
+_SPIKE_QUANTITIES = ("n_active_cells", "active_fraction", "n_spikes")
 # Criterion quantities read from the tested segment of ReplaySegmentsResult.
 _SEGMENT_QUANTITIES = {
     "segment_duration": "durations",
@@ -165,47 +168,20 @@ _SEGMENT_OPTION_SCALES = {
 # Criterion quantities that compare the templates of a joint decode.
 _TEMPLATE_QUANTITIES = ("template_fraction", "segment_template_fraction")
 _TEMPLATE_CHOICES = (None, "most_posterior", "sum", "smallest_p", "max_score")
-
-
-# TrajectoryMetrics scalars a shuffle does not change, or that need spike counts.
+# Every quantity a criterion of a ReplayMethod can test.
+_CRITERION_QUANTITIES = (
+    "score",
+    *_SPIKE_QUANTITIES,
+    *_SEGMENT_QUANTITIES,
+    *_TEMPLATE_QUANTITIES,
+    *_TRAJECTORY_SCALARS,
+)
+# TrajectoryMetrics scalars a shuffle does not change, or that need spike
+# counts; tested_quantities can test the others.
 _UNTESTED_QUANTITIES = ("n_time_bins", "duration", "track_length", "empty_fraction")
-
-
-def _testable_quantities() -> tuple[str, ...]:
-    """The quantities ``ReplayMethod.tested_quantities`` can test against nulls."""
-    from typing import get_type_hints
-
-    from neurospatial.replay.criteria import TrajectoryMetrics
-
-    hints = get_type_hints(TrajectoryMetrics)
-    return tuple(
-        item.name
-        for item in dataclasses.fields(TrajectoryMetrics)
-        if hints[item.name] in (int, float) and item.name not in _UNTESTED_QUANTITIES
-    )
-
-
-def _criterion_quantities() -> tuple[str, ...]:
-    """The quantities a criterion of a :class:`ReplayMethod` can test."""
-    from typing import get_type_hints
-
-    from neurospatial.replay.criteria import TrajectoryMetrics
-
-    hints = get_type_hints(TrajectoryMetrics)
-    scalars = [
-        item.name
-        for item in dataclasses.fields(TrajectoryMetrics)
-        if hints[item.name] in (int, float)
-    ]
-    return (
-        "score",
-        "n_active_cells",
-        "active_fraction",
-        "n_spikes",
-        *_SEGMENT_QUANTITIES,
-        *_TEMPLATE_QUANTITIES,
-        *scalars,
-    )
+_TESTABLE_QUANTITIES = tuple(
+    name for name in _TRAJECTORY_SCALARS if name not in _UNTESTED_QUANTITIES
+)
 
 
 @dataclass(frozen=True)
@@ -719,15 +695,16 @@ class ReplayMethod:
         object.__setattr__(self, "criteria", tuple(self.criteria))
         object.__setattr__(self, "notes", tuple(self.notes))
         self._check_score()
-        quantities = _criterion_quantities()
-        unknown = sorted({c.quantity for c in self.criteria} - set(quantities))
+        unknown = sorted(
+            {c.quantity for c in self.criteria} - set(_CRITERION_QUANTITIES)
+        )
         if unknown:
             raise ValueError(
                 _format_error(
                     f"ReplayMethod {self.name!r}: criteria test {unknown}, which "
                     "are not quantities of an event.",
                     why="a criterion compares one number per event with its threshold",
-                    fix=f"use one of {list(quantities)}",
+                    fix=f"use one of {list(_CRITERION_QUANTITIES)}",
                 )
             )
         labels = [c.label for c in self.criteria]
@@ -972,8 +949,7 @@ class ReplayMethod:
         tested = self.tested_quantities
         if not tested:
             return
-        testable = _testable_quantities()
-        unknown = sorted(set(tested) - set(testable))
+        unknown = sorted(set(tested) - set(_TESTABLE_QUANTITIES))
         if unknown:
             raise ValueError(
                 _format_error(
@@ -984,7 +960,7 @@ class ReplayMethod:
                     "segmentation is not run on shuffles, n_time_bins, duration "
                     "and track_length are the same in every shuffle, and "
                     "empty_fraction needs spike counts",
-                    fix=f"use one of {list(testable)}",
+                    fix=f"use one of {list(_TESTABLE_QUANTITIES)}",
                 )
             )
         tails = {
@@ -2259,16 +2235,7 @@ def detect_replay(
         n_shuffles_used = min(used) if used else None
 
     needs_metrics = any(
-        c.quantity
-        not in (
-            "score",
-            "n_active_cells",
-            "active_fraction",
-            "n_spikes",
-            *_SEGMENT_QUANTITIES,
-            *_TEMPLATE_QUANTITIES,
-        )
-        for c in replay_method.criteria
+        c.quantity in _TRAJECTORY_SCALARS for c in replay_method.criteria
     )
     metrics = (
         trajectory_metrics(track_env, posterior, times, spike_counts=counts)

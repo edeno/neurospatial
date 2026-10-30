@@ -37,6 +37,25 @@ if TYPE_CHECKING:
 
 _OPERATION = "trajectory_metrics()"
 _METRICS = ("geodesic", "euclidean")
+# The per-event scalars of TrajectoryMetrics, which criteria, tested
+# quantities and data-set values name.
+_TRAJECTORY_SCALARS = (
+    "n_time_bins",
+    "duration",
+    "track_length",
+    "max_map_jump",
+    "max_mean_jump",
+    "mean_mean_jump",
+    "map_range",
+    "mean_range",
+    "start_to_end_map_distance",
+    "start_to_end_mean_distance",
+    "map_path_length",
+    "dispersion",
+    "mean_spread",
+    "mean_peak_probability",
+    "empty_fraction",
+)
 # The bin graph's edge lengths, kept with the environment: every scored
 # shuffle of an event looks up geodesic distances between its MAP bins.
 _BIN_GRAPH: CacheKey[csr_array] = CacheKey("replay bin graph")
@@ -228,26 +247,12 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of the event's scalar metrics."""
-        return {
-            "metric": self.metric,
-            "units": self.units,
-            "n_time_bins": self.n_time_bins,
-            "duration": self.duration,
-            "track_length": self.track_length,
-            "max_map_jump": self.max_map_jump,
-            "max_mean_jump": self.max_mean_jump,
-            "mean_mean_jump": self.mean_mean_jump,
-            "map_range": self.map_range,
-            "mean_range": self.mean_range,
-            "start_to_end_map_distance": self.start_to_end_map_distance,
-            "start_to_end_mean_distance": self.start_to_end_mean_distance,
-            "map_path_length": self.map_path_length,
-            "dispersion": self.dispersion,
-            "mean_spread": self.mean_spread,
-            "mean_peak_probability": self.mean_peak_probability,
-            "well_decoded_fraction": self.well_decoded_fraction(),
-            "empty_fraction": self.empty_fraction,
-        }
+        values: dict[str, Any] = {"metric": self.metric, "units": self.units}
+        values.update({name: getattr(self, name) for name in _TRAJECTORY_SCALARS})
+        # Kept before empty_fraction, the last scalar.
+        values["well_decoded_fraction"] = self.well_decoded_fraction()
+        values["empty_fraction"] = values.pop("empty_fraction")
+        return values
 
 
 def trajectory_metrics(
