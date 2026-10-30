@@ -82,6 +82,26 @@ other seeded simulations give the same spikes as before.
   `grid_spacing` used to build grid cells with NaN spacing.
 - Head-direction and boundary-vector `ground_truth` report a preferred
   direction of exactly −π as +π, the package's (−π, π] convention.
+### Simulate replay events with a known path
+
+`neurospatial.simulation.simulate_replay_event(env, rates, kind=..., speed=...)`
+simulates a candidate event whose content is known, so replay methods can be
+compared against the truth. A position moves along a track, and each cell
+fires as an inhomogeneous Poisson process at its rate map there (times
+`rate_gain`).
+
+- `kind="sweep"`: constant speed.
+- `kind="stationary"`: a fixed position, which fools a line fit but not the
+  weighted correlation (van der Meer et al. 2020).
+- `kind="jump"`: two sweep fragments, `jump_distance` apart (default a quarter
+  of the track).
+- `kind="random"`: a new position every 20 ms, a null event.
+
+The path never enters the gaps a linearized track leaves between segments.
+The result holds each cell's spike times and the path, in track and
+environment coordinates. The path and the spikes draw from separate seed
+streams.
+
 ### Line and monotonic replay fits follow their papers
 
 `fit_linear_trajectory` and `fit_isotonic_trajectory` now compute the
