@@ -481,10 +481,12 @@ def pairwise_order_significance(
           shuffled the spike times for each event"; redrawing times
           uniformly over the event is another reading, which changes the
           number of nearby pairs.
-        - ``"cell_identity"``: permute the cells' sets of fields across
-          every cell given, active or not, with or without a field, so each
-          spike train takes another cell's fields (Davidson et al. 2009's
-          cell-identity shuffle, which Gupta et al. cite).
+        - ``"cell_identity"``: permute the sets of fields among the cells
+          with a field, active or not, so each spike train of a cell with a
+          field takes another such cell's fields. Cells without a field
+          stay unscored, so adding them changes neither the score nor its
+          shuffles. Davidson et al. (2009), whose cell-identity shuffle
+          Gupta et al. cite, shuffled among spatially tuned units only.
     n_shuffles : int, default=300
         Shuffles per null (Gupta et al. 2010: 300). A p-value is at least
         ``1 / (n_shuffles + 1)``.
@@ -1156,9 +1158,14 @@ def _significance(
             weights = _order_weights(
                 first, second, signs * compared, event.cell, n_active
             )
-            draws = np.argsort(generator.random((n_shuffles, len(fields))), axis=1)
+            # Field sets move among the cells with a field; the others stay
+            # fieldless and unscored.
+            with_field = np.flatnonzero([f.size > 0 for f in fields])
+            source = np.arange(len(fields))
+            draws = np.argsort(generator.random((n_shuffles, with_field.size)), axis=1)
             for k, draw in enumerate(draws):
-                shuffled = [fields[draw[unit]] for unit in event.active_units]
+                source[with_field] = with_field[draw]
+                shuffled = [fields[source[unit]] for unit in event.active_units]
                 null_scores[k] = _searched(weights, shuffled, sign, operation)[0]
         tests[null] = ShuffleTestResult(
             observed_score=float(observed.score),

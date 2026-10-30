@@ -302,24 +302,96 @@ class TestNulls:
         )
         observed_weights = calls[0][0][0]
         active = [u for u, train in enumerate(trains) if len(train)]
-        every_field_set = [tuple(c) for c in centers]
+        assert not centers[4] and 4 in active  # an active cell without a field
+        field_sets = [tuple(c) for c in centers if len(c)]
         null = result.shuffles["cell_identity"].null_scores
         silent_field_taken = 0
         for k, ((weights, fields, _), _) in enumerate(calls[1:]):
             np.testing.assert_array_equal(weights, observed_weights)
             given = [tuple(f) for f in fields]
-            # The active cells take distinct cells' field sets, any cell's.
-            remaining = list(every_field_set)
-            for field_set in given:
-                remaining.remove(field_set)
+            # Active cells with a field take distinct field sets of cells
+            # with a field; cells without a field stay without one.
+            remaining = list(field_sets)
+            for unit, field_set in zip(active, given, strict=True):
+                if centers[unit]:
+                    remaining.remove(field_set)
+                else:
+                    assert field_set == ()
             shuffled_centers = [[] for _ in trains]
             for unit, field_set in zip(active, given, strict=True):
                 shuffled_centers[unit] = list(field_set)
             assert null[k] == _brute_force(trains, shuffled_centers, 0.08)
             silent_field_taken += (155.0,) in given
         assert len(calls) == 31
-        # Fields of every cell given are drawn, not only the active cells'.
+        # A silent cell's fields are drawn too, not only the active cells'.
         assert silent_field_taken > 0
+
+    def test_cells_without_a_field_change_neither_null(self, track, event):
+        """Fieldless cells, silent or active, leave every shuffle unchanged."""
+        rates, trains, centers = event
+        with_field = [u for u, c in enumerate(centers) if len(c)]
+        field_only = pairwise_order_significance(
+            track,
+            [trains[u] for u in with_field],
+            (1.0, 1.15),
+            rates[with_field],
+            n_shuffles=50,
+            rng=3,
+        )
+        # The fixture's two fieldless cells (one active), and 20 silent ones.
+        padded = pairwise_order_significance(
+            track,
+            [*trains, *[np.array([])] * 20],
+            (1.0, 1.15),
+            np.vstack([rates, np.zeros((20, track.n_bins))]),
+            n_shuffles=50,
+            rng=3,
+        )
+        assert padded.observed.score == field_only.observed.score
+        for null in ("spike_time_permutation", "cell_identity"):
+            np.testing.assert_array_equal(
+                padded.shuffles[null].null_scores,
+                field_only.shuffles[null].null_scores,
+            )
+
+    def test_each_null_alone_holds_alpha_with_fieldless_cells(self):
+        """Random firing order, with silent and active cells without a field.
+
+        Cells without a field once joined the cell-identity pool, which made
+        most shuffles score 0 and called about a third of these events
+        significant at alpha = 0.05.
+        """
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [200.0, 0.0]], bin_size=3.5, units="cm"
+        )
+        x = env.bin_centers[:, 0]
+        rng = np.random.default_rng(0)
+        n_events = 300
+        rejected = dict.fromkeys(("spike_time_permutation", "cell_identity"), 0)
+        for seed in range(n_events):
+            centers = rng.uniform(10.0, 190.0, 12)
+            rates = np.vstack(
+                [
+                    20.0 * np.exp(-0.5 * ((x - centers[:, None]) / 5.0) ** 2),
+                    np.zeros((42, env.n_bins)),
+                ]
+            )
+            trains = [
+                *[
+                    np.sort(rng.uniform(0.0, 0.15, rng.integers(1, 4)))
+                    for _ in range(12)
+                ],
+                *[np.sort(rng.uniform(0.0, 0.15, 3)) for _ in range(6)],
+                *[np.array([])] * 36,
+            ]
+            result = pairwise_order_significance(
+                env, trains, (0.0, 0.15), rates, n_shuffles=100, rng=seed
+            )
+            for null, test in result.shuffles.items():
+                rejected[null] += test.p_value < 0.05
+        # Binomial(300, 0.05) lies in [6, 30] with probability above 99%.
+        for null, count in rejected.items():
+            assert 6 <= count <= 30, (null, count)
 
     def test_nulls_do_not_depend_on_each_other(self, track, event):
         rates, trains, _ = event

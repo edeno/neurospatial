@@ -575,9 +575,10 @@ computes this score and applies the published test.
   combinations is refused.
 - `pairwise_order_significance()`: the score against 300 permutations of
   the scored spikes' times (each cell keeps its spikes' count) and 300
-  permutations of the cells' field sets across every cell given, each
-  re-maximized; p = (k + 1) / (n + 1) per null, and the event must beat
-  both.
+  permutations of the field sets among the cells with a field, active or
+  not, each re-maximized; cells without a field stay unscored, so they
+  change neither the score nor its shuffles. p = (k + 1) / (n + 1) per
+  null, and the event must beat both.
 - `PairwiseOrderMethod`, `detect_pairwise_order_replay()` and the recipe
   `GUPTA_2010`: every template (pass a mapping of rate maps, one per lap)
   is tested forward and backward, and the test with the smallest p-value
