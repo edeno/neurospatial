@@ -197,8 +197,8 @@ Detecting the candidate events (ripples, population bursts) is not included.
   methods (`neurospatial.replay.methods`: Davidson 2009, Karlsson & Frank
   2009, Pfeiffer & Foster 2013 and 2015, Wikenheiser & Redish 2013,
   Ólafsdóttir 2015, 2016 and 2017, Silva 2015, Ambrose 2016, Grosmark
-  2016, Jadhav 2016, Tang 2017, Wu 2017, Yamamoto & Tonegawa 2017, Carey
-  2019, Farooq 2019, Michon 2019, Muessig 2019, Shin 2019, Igata 2021,
+  2016, Jadhav 2016, Tang 2017, Wu 2017, Yamamoto & Tonegawa 2017,
+  Maboudi 2018, Carey 2019, Farooq 2019, Michon 2019, Muessig 2019, Shin 2019, Igata 2021,
   Bush 2022, Tirole 2022, Berners-Lee 2022, Widloski & Foster 2022,
   Harvey 2023, Liu 2023, Mallory 2025, Widloski & Foster 2025) to decoded events, including joint decodes over running
   directions, and compare their verdicts; `ReplaySegmentation` sets how

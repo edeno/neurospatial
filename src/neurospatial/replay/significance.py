@@ -74,6 +74,7 @@ _COUNT_CHANGING_NULLS = ("spike_train_circular", "spike_time_uniform")
 # The options each null takes in null_options, with their defaults.
 _NULL_OPTIONS: Mapping[str, Mapping[str, Any]] = MappingProxyType(
     {
+        "column_cycle": MappingProxyType({"exclude_zero_shift": False}),
         "column_cycle_weighted": MappingProxyType({"edge_exclusion": 0.0}),
         "unit_identity": MappingProxyType({"active_only": False}),
     }
@@ -325,6 +326,10 @@ def replay_significance(
     null_options : Mapping[str, Mapping[str, Any]] or None, default=None
         Options of the nulls run, by null name:
 
+        - ``"column_cycle"``: ``exclude_zero_shift=True`` draws each time
+          bin's shift from 1 to ``n_bins - 1`` bins, so no time bin stays in
+          place, as nelpy does (Maboudi et al. 2018); the default draws
+          every circular shift, 0 included.
         - ``"column_cycle_weighted"``: ``edge_exclusion``, the distance in
           the environment's units within which no peak lands at either end
           of the track, for example
@@ -376,8 +381,9 @@ def replay_significance(
         and for the column-cycle and time-bin nulls the zeroed rows move with
         their rows (under the weighted column cycle a zeroed row stays
         zero). Needs ``spike_counts`` and a score that accepts rows
-        without mass, such as :func:`weighted_correlation`; pass the
-        posterior as decoded, not zeroed. Not available with
+        without mass, such as :func:`weighted_correlation` or
+        :func:`detect_trajectory_radon` with ``zero_rows="line_median"``;
+        pass the posterior as decoded, not zeroed. Not available with
         ``"pseudo_event"``, whose pool rows carry no spike counts.
     n_shuffles : int, default=1000
         Shuffles per null. A p-value is at least ``1 / (n_shuffles + 1)``,
@@ -681,7 +687,11 @@ def replay_significance(
 
     if "column_cycle" in run:
         shifted = shuffle_posterior_circular(
-            track_env, posterior, n_shuffles=n_shuffles, rng=generator
+            track_env,
+            posterior,
+            n_shuffles=n_shuffles,
+            rng=generator,
+            **options_of["column_cycle"],
         )
         null_scores["column_cycle"] = scorer.scores(shifted, n_shuffles)
 
@@ -1240,12 +1250,15 @@ def _checked_null_options(
             f"{owner}: the edge_exclusion of column_cycle_weighted must be a "
             f"finite distance >= 0 in the environment's units, got {edge!r}."
         )
-    active_only = checked.get("unit_identity", {}).get("active_only", False)
-    if not isinstance(active_only, (bool, np.bool_)):
-        raise ValueError(
-            f"{owner}: the active_only of unit_identity must be True or False, "
-            f"got {active_only!r}."
-        )
+    for name, option in (
+        ("unit_identity", "active_only"),
+        ("column_cycle", "exclude_zero_shift"),
+    ):
+        flag = checked.get(name, {}).get(option, False)
+        if not isinstance(flag, (bool, np.bool_)):
+            raise ValueError(
+                f"{owner}: the {option} of {name} must be True or False, got {flag!r}."
+            )
     return checked
 
 
@@ -1529,7 +1542,17 @@ def _scorer_for(
     ] = {
         detect_trajectory_radon: (
             _RadonScorer,
-            ("band", "max_speed", "min_speed", "wrap", "line_ends"),
+            (
+                "band",
+                "max_speed",
+                "min_speed",
+                "wrap",
+                "line_ends",
+                "off_track",
+                "zero_rows",
+                "n_lines",
+                "line_seed",
+            ),
         ),
         weighted_correlation: (_WeightedCorrelationScorer, ("row_normalization",)),
         fit_circular_sequence: (_CircularSequenceScorer, ()),
@@ -1579,6 +1602,10 @@ class _RadonScorer(_Scorer):
         min_speed: float = 0.0,
         wrap: bool = False,
         line_ends: str = "any",
+        off_track: str = "band_median",
+        zero_rows: str = "refuse",
+        n_lines: int | None = None,
+        line_seed: int = 0,
     ) -> None:
         self.lines, self.posterior = _prepare_replay_lines(
             env,
@@ -1589,6 +1616,10 @@ class _RadonScorer(_Scorer):
             min_speed=min_speed,
             wrap=wrap,
             line_ends=line_ends,
+            off_track=off_track,
+            zero_rows=zero_rows,
+            n_lines=n_lines,
+            line_seed=line_seed,
             operation=_OPERATION,
         )
 
