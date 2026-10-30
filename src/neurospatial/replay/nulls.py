@@ -918,7 +918,8 @@ def shuffle_spike_counts_uniform(
     shuffle_spike_counts_circular : Shift each cell's counts in time,
         keeping its spike intervals.
     neurospatial.replay.replay_significance : Runs this shuffle as the
-        ``"spike_time_uniform"`` null, and refuses overlapping time bins.
+        ``"spike_time_uniform"`` null, and refuses time bins that overlap
+        or leave gaps.
     neurospatial.replay.null_events : ``kind="spike_time_uniform"`` makes
         the same null events from spike times.
 

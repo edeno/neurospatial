@@ -529,7 +529,10 @@ class ReplayMethod:
     segmentation : ReplaySegmentation or None
         How the event is cut into trajectory segments. When given, the
         score, the shuffles and the criteria apply to the tested segment's
-        rows, and the event is not replay without a segment.
+        rows, and the event is not replay without a segment. A method with
+        a score and a segmentation cannot use ``"spike_train_circular"`` or
+        ``"spike_time_uniform"``: they would move spikes over the segment's
+        rows only, not over the event.
     units : str or None
         Units of the method's distance thresholds, such as ``"cm"``;
         :func:`detect_replay` refuses an environment in other units. None
@@ -776,6 +779,23 @@ class ReplayMethod:
                     "cannot be dropped",
                     fix="use empty_time_bins='zero', which zeroes each "
                     "shuffle's own time bins without spikes, or 'keep'",
+                )
+            )
+        if spreading and self.score is not None and self.segmentation is not None:
+            raise ValueError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: a segmentation cannot be used "
+                    f"with the {spreading} null"
+                    f"{'s' if len(spreading) > 1 else ''} when the method has a "
+                    "score.",
+                    why="the score is tested on the segment's rows, so these "
+                    "nulls would move each cell's spikes over the segment only "
+                    "(with rows='trajectory', over rows that are not even "
+                    "adjacent), not over the event",
+                    fix="leave out the segmentation and test the whole event, "
+                    "use nulls that do not spread spikes across time bins "
+                    "(such as 'place_field_circular' or 'column_cycle'), or "
+                    "test the segment's detection with score=None",
                 )
             )
         if self.alternative not in _ALTERNATIVES:
