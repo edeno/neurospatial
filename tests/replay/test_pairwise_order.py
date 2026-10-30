@@ -544,6 +544,28 @@ class TestUnitGroups:
         with pytest.raises(ValueError, match="one group per cell"):
             pairwise_order_score(track, trains, (1.0, 1.15), rates, unit_groups=groups)
 
+    @pytest.mark.parametrize(
+        "missing",
+        [
+            np.nan,
+            np.inf,
+            None,
+            pytest.param(np.float32(np.nan), id="float32-nan"),
+        ],
+    )
+    def test_missing_groups_are_refused(self, track, event, missing):
+        """NaN differs from itself, so NaN-group cells would all be compared."""
+        rates, trains, _, _ = event
+        groups = np.array([missing, missing, *range(8)], dtype=object)
+        with pytest.raises(ValueError, match=r"non-finite group for cells \[0, 1\]"):
+            pairwise_order_score(track, trains, (1.0, 1.15), rates, unit_groups=groups)
+        if missing is not None:
+            floats = np.array([missing, missing, *range(8)], dtype=np.float64)
+            with pytest.raises(ValueError, match="missing or non-finite"):
+                pairwise_order_significance(
+                    track, trains, (1.0, 1.15), rates, unit_groups=floats
+                )
+
 
 def _place_code(n_cells=30):
     env = Environment.linear_track(

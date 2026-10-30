@@ -20,7 +20,8 @@
   compared, the rule of `explained_variance_reactivation(unit_groups=)`, so
   a burst split across two clusters of one tetrode cannot score as a
   sequence. Each spike train keeps its group in both shuffles, and
-  `n_pairs` counts only the compared pairs.
+  `n_pairs` counts only the compared pairs. A missing group (None, NaN or
+  infinite) is refused, since NaN would compare unequal to every group.
 - `rank_order_correlation` and `rank_order_significance` take
   `multi_field_cells="keep" | "exclude"` and `place_fields=`. Tingley &
   Peyrache note that cells with several place fields have no single place

@@ -326,9 +326,9 @@ def pairwise_order_score(
         "center", not defined there) or its peak bin.
     unit_groups : array-like, shape (n_cells,), optional
         Group of each cell, such as its tetrode or shank, in the order of
-        ``spike_times``. Only pairs of spikes from cells in different groups
-        are compared, the rule of
-        ``explained_variance_reactivation(unit_groups=)``. See Notes.
+        ``spike_times``; None, NaN and infinite groups are refused. Only
+        pairs of spikes from cells in different groups are compared, the
+        rule of ``explained_variance_reactivation(unit_groups=)``. See Notes.
 
     Returns
     -------
@@ -344,9 +344,10 @@ def pairwise_order_score(
         ``spike_times`` and one column per bin, has negative rates, or is a
         rate result computed on another environment, if ``interval`` is not
         a finite ``(start, stop)`` with ``start < stop``, if an option is
-        out of range, if ``unit_groups`` does not hold one group per cell,
-        or if the active cells' fields give more than 65,536 combinations of
-        one field per cell to search.
+        out of range, if ``unit_groups`` does not hold one group per cell
+        or holds a missing group (None, NaN or infinite), or if the active
+        cells' fields give more than 65,536 combinations of one field per
+        cell to search.
 
     See Also
     --------
@@ -950,6 +951,30 @@ def _event_spikes(
                     "different groups, so every cell needs a group",
                     fix="pass the tetrode or shank of each cell, in the order of "
                     "spike_times",
+                )
+            )
+        missing = np.array(
+            [
+                group is None
+                or (
+                    isinstance(group, (float, complex, np.inexact))
+                    and not np.isfinite(group)
+                )
+                for group in groups.tolist()
+            ],
+            dtype=bool,
+        )
+        if missing.any():
+            raise ValueError(
+                _format_error(
+                    f"{operation}: unit_groups has a missing or non-finite group "
+                    f"for cells {np.flatnonzero(missing).tolist()}.",
+                    why="NaN compares unequal to every group, itself included, "
+                    "so cells with NaN groups would all be compared as if on "
+                    "different tetrodes",
+                    fix="give every cell its tetrode or shank, or leave cells "
+                    "whose group is unknown out of spike_times and "
+                    "encoding_models",
                 )
             )
     in_event = [train[(train >= start) & (train < stop)] for train in trains]
