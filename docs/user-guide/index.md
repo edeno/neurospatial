@@ -12,6 +12,7 @@ Each route explains the analysis choices and how to interpret the figures.
 | Compare conditions or trials | [Place fields on outbound and inbound runs](workflows.md#place-fields-on-outbound-and-inbound-runs) | One environment, identical analysis settings, matched unit IDs and observed time in each condition |
 | Classify candidate spatial cells | [Cell classification](neuroscience-metrics.md) | Threshold screens versus shuffle evidence |
 | Summarize a population: coverage, remapping, assemblies and reactivation | [Population analysis](population-analysis.md) | Which units passed a spatial screen, bins visited in every condition and one unit selection across periods |
+| Test candidate events for replay and compare published methods | [Comparing replay methods](replay-methods.md) | Each method's false-positive rate on several kinds of null data, by event cells and duration |
 | Evaluate decoding on new data | [Held-out decoding](workflows.md#decode-held-out-laps) | Separate training/test periods and locations visited during training |
 | Segment laps and quantify movement | [Trajectory and behavioral analysis](trajectory-and-behavioral-analysis.md) | Tracking gaps and invalid positions |
 | Measure speed, heading or position-based features around events | [Behavior around events](behavior-around-events.md) | Tracking dropouts inside event windows and angle features declared circular |
@@ -28,6 +29,7 @@ Each route explains the analysis choices and how to interpret the figures.
 - **[Alignment & Transforms](alignment.md)**: Transforming spatial representations
 - **[Spatial Analysis](spatial-analysis.md)**: Trajectory analysis, movement patterns, and field operations
 - **[Population Analysis](population-analysis.md)**: Coverage, remapping, cell assemblies, reactivation and decoding across many units
+- **[Comparing Replay Methods](replay-methods.md)**: Published replay tests on the same events, their false-positive rates on null data, and comparison at a matched rate
 - **[Performance & Caching](performance.md)**: Memory management, optimization, and benchmarks
 - **[Complete Workflows](workflows.md)**: End-to-end analysis examples
 - **[Interoperability](interoperability.md)**: Recording holders, SpikeTrains, BayesianDecoder, and pynapple / NWB adapters
