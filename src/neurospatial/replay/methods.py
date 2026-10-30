@@ -313,6 +313,16 @@ class ReplayCriterion:
         return bool(_COMPARISONS[self.comparison](value, threshold))
 
 
+def _active_cell_criteria(
+    min_active_cells: int, min_active_fraction: float | None = None
+) -> tuple[ReplayCriterion, ...]:
+    """A spike-based method's active-cell thresholds, as criteria."""
+    criteria = [ReplayCriterion("n_active_cells", ">=", min_active_cells)]
+    if min_active_fraction is not None:
+        criteria.append(ReplayCriterion("active_fraction", ">=", min_active_fraction))
+    return tuple(criteria)
+
+
 @dataclass(frozen=True)
 class ReplaySegmentation:
     """How a method cuts an event into trajectory segments before testing it.
@@ -1265,12 +1275,7 @@ class RankOrderMethod:
     @property
     def criteria(self) -> tuple[ReplayCriterion, ...]:
         """The active-cell thresholds, as criteria."""
-        criteria = [ReplayCriterion("n_active_cells", ">=", self.min_active_cells)]
-        if self.min_active_fraction is not None:
-            criteria.append(
-                ReplayCriterion("active_fraction", ">=", self.min_active_fraction)
-            )
-        return tuple(criteria)
+        return _active_cell_criteria(self.min_active_cells, self.min_active_fraction)
 
 
 # Every kind of replay method compare_replay_methods applies.
