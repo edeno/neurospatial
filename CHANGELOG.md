@@ -126,6 +126,10 @@ default lap route all changed.
   nearest bin.
 - Each unit draws its spikes from its own `SeedSequence` child. Runs with
   `seed=0` and `seed=1` used to share spike trains shifted by one unit.
+- `generate_population_spikes` casts the rays of boundary-vector cells on
+  the same walls once per population instead of once per cell. 30 cells
+  over 5 min at 100 Hz in a circular arena take 9 s instead of 4.5 min,
+  with identical rates and spikes.
 
 **Trajectories**
 

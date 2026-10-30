@@ -626,6 +626,105 @@ class TestBoundaryVectorCellModel:
             self._west_cell(walled_box, **kwargs)
 
 
+class TestSharedRayDistances:
+    """A population casts its rays once; the rates do not change."""
+
+    @pytest.fixture(scope="class")
+    def cells(self, walled_box):
+        from neurospatial.simulation.models import BoundaryVectorCellModel
+
+        return [
+            BoundaryVectorCellModel(
+                walled_box, preferred_distance=d, preferred_direction=a
+            )
+            for d, a in [(2.0, 0.0), (5.0, 1.5), (10.0, -2.0)]
+        ]
+
+    @pytest.fixture(scope="class")
+    def samples(self):
+        rng = np.random.default_rng(11)
+        n = 200
+        return np.arange(n) / 50.0, rng.uniform(1, 99, (n, 2))
+
+    @staticmethod
+    def _count_casts(monkeypatch):
+        from neurospatial.simulation._walls import Walls
+
+        calls = []
+        cast = Walls.ray_distances
+
+        def counting(self, positions, directions):
+            calls.append(len(positions))
+            return cast(self, positions, directions)
+
+        monkeypatch.setattr(Walls, "ray_distances", counting)
+        return calls
+
+    def test_population_spikes_cast_rays_once(self, cells, samples, monkeypatch):
+        from neurospatial.simulation import generate_population_spikes
+
+        times, positions = samples
+        separate = [
+            generate_poisson_spikes_for(cell, times, positions, seed)
+            for cell, seed in zip(
+                cells, np.random.SeedSequence(4).spawn(3), strict=True
+            )
+        ]
+        calls = self._count_casts(monkeypatch)
+        shared = generate_population_spikes(
+            cells, times, positions, seed=4, show_progress=False
+        )
+        assert len(calls) == 1
+        for alone, together in zip(separate, shared, strict=True):
+            np.testing.assert_array_equal(alone, together)
+
+    def test_shared_rays_follow_new_positions(self, cells, samples, monkeypatch):
+        """A different or edited positions array is never given stale rays."""
+        from neurospatial.simulation.models.boundary_cells import (
+            _shared_ray_distances,
+        )
+
+        times, positions = samples
+        moved = positions[::-1].copy()
+        expected = [
+            cell.firing_rate(times, p) for cell in cells for p in (positions, moved)
+        ]
+        calls = self._count_casts(monkeypatch)
+        with _shared_ray_distances():
+            got = [
+                cell.firing_rate(times, p) for cell in cells for p in (positions, moved)
+            ]
+            edited = positions.copy()
+            first = cells[0].firing_rate(times, edited)
+            edited[:] = moved
+            second = cells[0].firing_rate(times, edited)
+        assert len(calls) == 2
+        for e, g in zip(expected, got, strict=True):
+            np.testing.assert_array_equal(e, g)
+        np.testing.assert_array_equal(first, expected[0])
+        np.testing.assert_array_equal(second, expected[1])
+
+    def test_rays_are_not_kept_after_the_population(self, cells, samples, monkeypatch):
+        """Outside a population call every rate casts its own rays, so no
+        distances outlive the call."""
+        from neurospatial.simulation import generate_population_spikes
+
+        times, positions = samples
+        generate_population_spikes(cells, times, positions, seed=4, show_progress=False)
+        calls = self._count_casts(monkeypatch)
+        cells[0].firing_rate(times, positions)
+        cells[1].firing_rate(times, positions)
+        assert len(calls) == 2
+
+
+def generate_poisson_spikes_for(cell, times, positions, sequence):
+    """One cell's spikes, seeded as generate_population_spikes seeds that cell."""
+    from neurospatial.simulation import generate_poisson_spikes
+
+    rate = cell.firing_rate(times, positions)
+    return generate_poisson_spikes(rate, times, seed=int(sequence.generate_state(1)[0]))
+
+
 class TestGridCellModel:
     """Tests for GridCellModel."""
 

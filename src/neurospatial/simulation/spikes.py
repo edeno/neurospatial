@@ -11,6 +11,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._validation import validate_finite
 from neurospatial.simulation.models.base import NeuralModel
+from neurospatial.simulation.models.boundary_cells import _shared_ray_distances
 
 logger = logging.getLogger(__name__)
 
@@ -454,23 +455,26 @@ def generate_population_spikes(
         desc="Generating spikes",
         disable=not show_progress,
     )
-    for i, model in iterator:
-        rates = np.asarray(
-            model.firing_rate(times, positions, headings=headings), dtype=np.float64
-        )
-        _check_model_rates(
-            rates, i, model, times, positions, headings, derived_headings=derived
-        )
-        spikes = generate_poisson_spikes(
-            rates,
-            times,
-            refractory_period=refractory_period,
-            seed=_seed_int(model_seeds[i]),
-        )
-        spike_trains.append(spikes)
-        iterator.set_postfix(
-            {"n_spikes": len(spikes), "rate": f"{len(spikes) / duration:.1f} Hz"}
-        )
+    # Boundary-vector cells on the same walls cast their rays once.
+    with _shared_ray_distances():
+        for i, model in iterator:
+            rates = np.asarray(
+                model.firing_rate(times, positions, headings=headings),
+                dtype=np.float64,
+            )
+            _check_model_rates(
+                rates, i, model, times, positions, headings, derived_headings=derived
+            )
+            spikes = generate_poisson_spikes(
+                rates,
+                times,
+                refractory_period=refractory_period,
+                seed=_seed_int(model_seeds[i]),
+            )
+            spike_trains.append(spikes)
+            iterator.set_postfix(
+                {"n_spikes": len(spikes), "rate": f"{len(spikes) / duration:.1f} Hz"}
+            )
 
     if show_progress and models:
         total_spikes = sum(len(st) for st in spike_trains)
