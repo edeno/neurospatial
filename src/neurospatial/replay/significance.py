@@ -819,7 +819,7 @@ def _scorer_for(
     batched: dict[
         Callable[..., Any], tuple[Callable[..., _Scorer], tuple[str, ...]]
     ] = {
-        detect_trajectory_radon: (_RadonScorer, ("band", "max_speed")),
+        detect_trajectory_radon: (_RadonScorer, ("band", "max_speed", "min_speed")),
         weighted_correlation: (_WeightedCorrelationScorer, ("row_normalization",)),
     }
     if score in batched:
@@ -864,9 +864,16 @@ class _RadonScorer(_Scorer):
         *,
         band: float | None = None,
         max_speed: float | None = None,
+        min_speed: float = 0.0,
     ) -> None:
         self.lines, self.posterior = _prepare_replay_lines(
-            env, posterior, times, band=band, max_speed=max_speed, operation=_OPERATION
+            env,
+            posterior,
+            times,
+            band=band,
+            max_speed=max_speed,
+            min_speed=min_speed,
+            operation=_OPERATION,
         )
 
     def observe(self) -> Any:
