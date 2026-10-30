@@ -38,8 +38,22 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from neurospatial.decoding import DecodingResult
-    from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
+
+__all__ = [
+    "DAVIDSON_2009",
+    "KARLSSON_FRANK_2009",
+    "MICHON_2019",
+    "PUBLISHED_METHODS",
+    "SILVA_2015",
+    "TIROLE_2022",
+    "WU_2017",
+    "ReplayCriterion",
+    "ReplayDetectionResult",
+    "ReplayMethod",
+    "compare_replay_methods",
+    "detect_replay",
+]
 
 _OPERATION = "detect_replay()"
 _DECODING_NULLS = ("unit_identity", "spike_train_circular", "place_field_circular")
@@ -191,6 +205,33 @@ class ReplayMethod:
                 f"ReplayMethod {self.name!r}: empty_time_bins must be 'keep', "
                 f"'drop' or 'zero', got {self.empty_time_bins!r}."
             )
+        from neurospatial.replay.significance import _NULLS
+
+        unknown = [name for name in self.nulls if name not in _NULLS]
+        if unknown:
+            raise ValueError(
+                f"ReplayMethod {self.name!r}: unknown nulls {unknown}; choose "
+                f"from {list(_NULLS)}."
+            )
+        if self.alternative not in ("greater", "less", "two-sided"):
+            raise ValueError(
+                f"ReplayMethod {self.name!r}: alternative must be 'greater', "
+                f"'less' or 'two-sided', got {self.alternative!r}."
+            )
+        if not 0 < self.alpha < 1:
+            raise ValueError(
+                f"ReplayMethod {self.name!r}: alpha must be in (0, 1), got "
+                f"{self.alpha!r}."
+            )
+        if isinstance(self.n_shuffles, bool) or int(self.n_shuffles) < 1:
+            raise ValueError(
+                f"ReplayMethod {self.name!r}: n_shuffles must be a positive "
+                f"integer, got {self.n_shuffles!r}."
+            )
+
+    def __hash__(self) -> int:
+        """Hash by name and reference; the option mappings are not hashable."""
+        return hash((self.name, self.reference))
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
@@ -242,6 +283,25 @@ class ReplayDetectionResult(ResultMixin):
     criteria: Mapping[str, bool]
     values: Mapping[str, float]
 
+    def __post_init__(self) -> None:
+        """Freeze the mappings."""
+        object.__setattr__(self, "criteria", MappingProxyType(dict(self.criteria)))
+        object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
+
+    def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
+        """Rebuild through the constructor; the read-only mappings cannot pickle."""
+        return (
+            type(self),
+            (
+                self.method,
+                self.is_replay,
+                self.score,
+                self.p_value,
+                dict(self.criteria),
+                dict(self.values),
+            ),
+        )
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
@@ -254,15 +314,16 @@ class ReplayDetectionResult(ResultMixin):
 
 
 def detect_replay(
-    env: Environment,
+    env: Environment | Mapping[str, Environment],
     posterior: NDArray[np.float64],
     times: NDArray[np.float64],
     *,
-    method: ReplayMethod,
+    replay_method: ReplayMethod,
     spike_counts: NDArray[np.int64] | None = None,
-    encoding_models: NDArray[np.float64] | SpatialRatesResult | None = None,
+    encoding_models: Any = None,
     dt: float | None = None,
-    prior: NDArray[np.float64] | None = None,
+    prior: Any = None,
+    template: str | None = None,
     pseudo_event_pool: NDArray[np.float64] | None = None,
     rng: np.random.Generator | int | None = None,
 ) -> ReplayDetectionResult:
@@ -270,22 +331,27 @@ def detect_replay(
 
     Parameters
     ----------
-    env : Environment
-        The environment the posterior was decoded on.
+    env : Environment or Mapping[str, Environment]
+        The environment the posterior was decoded on; for one template's
+        share of a joint decode over separate tracks, the mapping of
+        environments passed to :func:`~neurospatial.decoding.decode_jointly`,
+        with ``template`` naming the share.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
         The event's posterior, as decoded.
     times : NDArray[np.float64], shape (n_time_bins,)
         Center time of each posterior row, in seconds.
-    method : ReplayMethod
+    replay_method : ReplayMethod
         The method, for example ``neurospatial.replay.methods.DAVIDSON_2009``.
     spike_counts : NDArray[np.int64] or None, shape (n_time_bins, n_neurons)
         The event's spike counts. Needed by methods that drop or zero time
         bins without spikes, count active cells, or decode shuffled counts.
-    encoding_models, dt, prior
+    encoding_models, dt, prior, template
         The decoding inputs, for the nulls that decode again (see
-        :func:`~neurospatial.replay.replay_significance`).
+        :func:`~neurospatial.replay.replay_significance`), including one
+        template's share of a joint decode (``template=``).
     pseudo_event_pool : NDArray[np.float64] or None
-        Posterior rows of other candidate events, for the pseudo-event null.
+        Posterior rows of the session's candidate events, for the
+        pseudo-event null.
     rng : np.random.Generator, int, or None
         Random number generator or seed.
 
@@ -319,36 +385,51 @@ def detect_replay(
     ... )
     >>> posterior = np.zeros((20, env.n_bins))
     >>> posterior[np.arange(20), np.arange(20)] = 1.0  # 4 cm per time bin
-    >>> result = detect_replay(env, posterior, np.arange(20) * 0.02, method=SILVA_2015)
+    >>> result = detect_replay(
+    ...     env, posterior, np.arange(20) * 0.02, replay_method=SILVA_2015
+    ... )
     >>> result.is_replay, round(result.score, 2)
     (True, 1.0)
     """
     from neurospatial.replay.criteria import trajectory_metrics
     from neurospatial.replay.significance import replay_significance
 
+    if isinstance(env, Mapping):
+        if template is None:
+            raise ValueError(
+                _format_error(
+                    f"{_OPERATION}: a mapping of environments needs template=.",
+                    why="the posterior is one template's share of a joint "
+                    "decode, scored on that template's environment",
+                    fix="pass template=name, the share's key in env",
+                )
+            )
+        track_env = env[template]
+    else:
+        track_env = env
     posterior = np.asarray(posterior, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
     counts = None if spike_counts is None else np.asarray(spike_counts)
     if counts is not None and counts.ndim == 1:
         counts = counts[:, np.newaxis]
-    needs_counts = method.empty_time_bins != "keep" or any(
-        c.quantity == "n_active_cells" for c in method.criteria
+    needs_counts = replay_method.empty_time_bins != "keep" or any(
+        c.quantity == "n_active_cells" for c in replay_method.criteria
     )
     if needs_counts and counts is None:
         raise ValueError(
             _format_error(
-                f"{_OPERATION}: method {method.name!r} needs spike_counts.",
+                f"{_OPERATION}: method {replay_method.name!r} needs spike_counts.",
                 why="it drops or zeroes time bins without spikes, or counts "
                 "the cells active in the event",
                 fix="pass the event's spike_counts, one row per posterior row",
             )
         )
-    if method.empty_time_bins == "drop":
+    if replay_method.empty_time_bins == "drop":
         assert counts is not None
         keep = counts.sum(axis=1) > 0
         posterior, times, counts = posterior[keep], times[keep], counts[keep]
 
-    options = dict(method.score_options)
+    options = dict(replay_method.score_options)
     if "n_samples_per_time_bin" in options:
         options["n_samples"] = int(options.pop("n_samples_per_time_bin")) * len(
             posterior
@@ -356,50 +437,53 @@ def detect_replay(
 
     score = np.nan
     p_value = np.nan
-    if method.score is not None and method.nulls:
+    if replay_method.score is not None and replay_method.nulls:
         # The test needs the counts only to decode shuffles again or to zero
         # empty time bins; given without the rate maps they would be refused.
-        decodes = any(name in _DECODING_NULLS for name in method.nulls)
+        decodes = any(name in _DECODING_NULLS for name in replay_method.nulls)
         result = replay_significance(
-            env,
+            env if decodes else track_env,
             posterior,
             times,
-            score=method.score,
+            score=replay_method.score,
             score_options=options,
-            nulls=method.nulls,
+            nulls=replay_method.nulls,
             spike_counts=counts
-            if decodes or method.empty_time_bins == "zero"
+            if decodes or replay_method.empty_time_bins == "zero"
             else None,
             encoding_models=encoding_models if decodes else None,
             dt=dt if decodes else None,
             prior=prior,
+            template=template if decodes else None,
             pseudo_event_pool=pseudo_event_pool,
-            alternative=method.alternative,
-            use_absolute=method.use_absolute,
-            empty_time_bins="zero" if method.empty_time_bins == "zero" else "keep",
-            n_shuffles=method.n_shuffles,
+            alternative=replay_method.alternative,
+            use_absolute=replay_method.use_absolute,
+            empty_time_bins="zero"
+            if replay_method.empty_time_bins == "zero"
+            else "keep",
+            n_shuffles=replay_method.n_shuffles,
             rng=rng,
         )
         score, p_value = float(result.observed.score), float(result.p_value)
-    elif method.score is not None:
+    elif replay_method.score is not None:
         scored = posterior
-        if method.empty_time_bins == "zero":
+        if replay_method.empty_time_bins == "zero":
             assert counts is not None
             scored = np.where(counts.sum(axis=1)[:, None] == 0, 0.0, posterior)
-        score = float(method.score(env, scored, times, **options).score)
+        score = float(replay_method.score(track_env, scored, times, **options).score)
 
     needs_metrics = any(
-        c.quantity not in ("score", "n_active_cells") for c in method.criteria
-    ) or any(c.relative_to for c in method.criteria)
+        c.quantity not in ("score", "n_active_cells") for c in replay_method.criteria
+    ) or any(c.relative_to for c in replay_method.criteria)
     metrics = (
-        trajectory_metrics(env, posterior, times, spike_counts=counts)
+        trajectory_metrics(track_env, posterior, times, spike_counts=counts)
         if needs_metrics
         else None
     )
     track_length = metrics.track_length if metrics is not None else np.nan
     passes: dict[str, bool] = {}
     values: dict[str, float] = {}
-    for criterion in method.criteria:
+    for criterion in replay_method.criteria:
         if criterion.quantity == "score":
             value = score
         elif criterion.quantity == "n_active_cells":
@@ -409,66 +493,75 @@ def detect_replay(
             value = float(getattr(metrics, criterion.quantity))
         values[criterion.label] = value
         passes[criterion.label] = criterion.evaluate(value, track_length)
-    significant = bool(p_value < method.alpha) if method.nulls else True
+    significant = bool(p_value < replay_method.alpha) if replay_method.nulls else True
     return ReplayDetectionResult(
-        method=method.name,
+        method=replay_method.name,
         is_replay=significant and all(passes.values()),
         score=score,
         p_value=p_value,
-        criteria=MappingProxyType(passes),
-        values=MappingProxyType(values),
+        criteria=passes,
+        values=values,
     )
 
 
 def compare_replay_methods(
-    env: Environment,
+    env: Environment | Mapping[str, Environment],
     events: Sequence[DecodingResult],
     *,
-    methods: Sequence[ReplayMethod],
+    replay_methods: Sequence[ReplayMethod],
     spike_counts: Sequence[NDArray[np.int64]] | None = None,
-    encoding_models: NDArray[np.float64] | SpatialRatesResult | None = None,
+    encoding_models: Any = None,
     dt: float | None = None,
-    prior: NDArray[np.float64] | None = None,
+    prior: Any = None,
+    template: str | None = None,
     rng: np.random.Generator | int | None = None,
 ) -> pd.DataFrame:
     """Apply several published replay methods to several decoded events.
 
     Parameters
     ----------
-    env : Environment
-        The environment the events were decoded on.
+    env : Environment or Mapping[str, Environment]
+        The environment the events were decoded on, or the mapping of
+        environments of a joint decode (see :func:`detect_replay`).
     events : sequence of DecodingResult
         The decoded candidate events, each with ``times``.
-    methods : sequence of ReplayMethod
+    replay_methods : sequence of ReplayMethod
         The methods to compare.
     spike_counts : sequence of arrays or None
         Each event's spike counts, for methods that need them.
-    encoding_models, dt, prior
-        The decoding inputs, for the nulls that decode again.
-    rng : np.random.Generator, int, or None
-        Random number generator or seed, shared by every test in order.
+    encoding_models, dt, prior, template
+        The decoding inputs, for the nulls that decode again (see
+        :func:`detect_replay`).
+    rng : numpy.random.Generator, int, or None
+        Random number generator or seed for the shuffles. Each (event, method)
+        pair draws from its own stream, derived from ``rng``, the event's
+        position and the method's name, so adding, removing or reordering
+        methods does not change the other pairs' results.
 
     Returns
     -------
     pandas.DataFrame
         One row per (event, method): ``event``, ``method``, ``is_replay``,
-        ``score``, ``p_value`` and one ``passes[...]`` column per criterion.
-        The pseudo-event null draws each event's shuffles from the other
-        events' posterior rows.
+        ``score``, ``p_value``, one ``passes[...]`` column per criterion, and
+        ``error``, empty unless the event has fewer than two time bins left
+        to score (after the method drops time bins without spikes), in which
+        case ``is_replay`` is False and the score and p-value are NaN. The pseudo-event null draws
+        from the posterior rows of every event, as Davidson et al. (2009) and
+        Michon et al. (2019) drew from the complete set of candidate events.
 
     Raises
     ------
     ValueError
-        If an event has no ``times``, if ``spike_counts`` does not have one
-        entry per event, or for anything :func:`detect_replay` refuses.
+        If an event has no ``times``, or if ``spike_counts`` does not have one
+        entry per event.
 
     See Also
     --------
     detect_replay : One method on one event.
     """
-    import pandas as pd
+    import zlib
 
-    from neurospatial.stats import _ensure_rng
+    import pandas as pd
 
     if spike_counts is not None and len(spike_counts) != len(events):
         raise ValueError(
@@ -485,27 +578,52 @@ def compare_replay_methods(
                     "decode_position(env, counts, rates, dt=dt, times=grid)",
                 )
             )
-    generator = _ensure_rng(rng)
+    pool = None
+    if any("pseudo_event" in method.nulls for method in replay_methods):
+        pool = np.vstack([event.posterior for event in events])
+    entropy = (
+        int(rng.integers(2**63))
+        if isinstance(rng, np.random.Generator)
+        else np.random.SeedSequence(rng).entropy
+    )
     rows = []
     for index, event in enumerate(events):
-        pool = None
-        if any("pseudo_event" in method.nulls for method in methods):
-            others = [e.posterior for j, e in enumerate(events) if j != index]
-            pool = np.vstack(others) if others else None
-        for method in methods:
+        for method in replay_methods:
+            stream = np.random.default_rng(
+                np.random.SeedSequence(
+                    entropy, spawn_key=(index, zlib.crc32(method.name.encode()))
+                )
+            )
+            counts = None if spike_counts is None else np.asarray(spike_counts[index])
+            usable = np.asarray(event.times)
+            if method.empty_time_bins == "drop" and counts is not None:
+                usable = usable[counts.reshape(len(usable), -1).sum(axis=1) > 0]
+            if np.unique(usable).size < 2:
+                rows.append(
+                    {
+                        "event": index,
+                        "method": method.name,
+                        "is_replay": False,
+                        "score": np.nan,
+                        "p_value": np.nan,
+                        "error": "fewer than two time bins to score",
+                    }
+                )
+                continue
             result = detect_replay(
                 env,
                 event.posterior,
                 np.asarray(event.times),
-                method=method,
-                spike_counts=None if spike_counts is None else spike_counts[index],
+                replay_method=method,
+                spike_counts=counts,
                 encoding_models=encoding_models,
                 dt=dt,
                 prior=prior,
+                template=template,
                 pseudo_event_pool=pool,
-                rng=generator,
+                rng=stream,
             )
-            rows.append({"event": index, **result.summary()})
+            rows.append({"event": index, **result.summary(), "error": ""})
     return pd.DataFrame(rows)
 
 
@@ -523,10 +641,14 @@ DAVIDSON_2009 = ReplayMethod(
     nulls=("column_cycle", "unit_identity", "pseudo_event"),
     n_shuffles=1500,
     alpha=0.01,
+    decoding={"time_bin": 0.02},
     notes=(
         "Band of 15 cm and speeds up to 30 m/s, as in detect_trajectory_radon.",
         "Significant when the p-value of every null is below 0.01.",
-        "Decoding settings are not recorded here.",
+        "The paper decoded position x direction jointly in 20 ms windows and "
+        "summed over direction; decode the same way to match it.",
+        "Candidate events of at least 100 ms; event selection is not applied here.",
+        "Pseudo-events draw from the complete set of candidate events.",
     ),
 )
 
@@ -549,6 +671,10 @@ KARLSSON_FRANK_2009 = ReplayMethod(
         "of position on time; R² against 10,000 shuffles of time-bin order.",
         "Time bins without spikes cannot be decoded and are dropped.",
         "At least 5 active place cells; place-cell selection is not applied here.",
+        "The paper regresses on bin number; whether the remaining bins are "
+        "renumbered after dropping is not stated. Here they keep their times.",
+        "The paper's p-value is the share of shuffles with a larger R² (no "
+        "+1); here it is (k + 1) / (n + 1).",
     ),
 )
 
@@ -571,6 +697,11 @@ WU_2017 = ReplayMethod(
         "Linear regression of the MAP position on time over time bins with "
         "at least one spike; R² against 1,000 shuffles of decoded positions "
         "in time.",
+        "At least 4 active template cells (single-field place cells); the "
+        "template-cell selection is not applied here.",
+        "Dropped time bins keep their times; the paper regresses on time-bin "
+        "number and does not say whether bins are renumbered.",
+        "The paper's p-value has no +1; here it is (k + 1) / (n + 1).",
     ),
 )
 
@@ -612,8 +743,8 @@ MICHON_2019 = ReplayMethod(
     decoding={"time_bin": 0.01},
     notes=(
         "Weighted isotonic regression of the MAP position, score = mean MAP "
-        "probability x R², against 500 pseudo-events from the other "
-        "candidate events.",
+        "probability x R², against 500 pseudo-events drawn from the complete "
+        "set of candidate events.",
         "The paper fits each arm of the maze separately; restrict the "
         "posterior to one arm to match it.",
         "Clusterless decoding in the paper; any decode can be scored here.",
@@ -638,10 +769,15 @@ TIROLE_2022 = ReplayMethod(
     decoding={"time_bin": 0.02, "position_bin": 10.0},
     notes=(
         "Weighted correlation of the posterior with time bins without spikes "
-        "set to zero, tested as |r| against three shuffles; significant when "
-        "above the 95th percentile of all three.",
+        "set to zero, against three shuffles; significant when above the 95th "
+        "percentile of all three. The paper does not say |r|; the Bendor-lab "
+        "code (weighted_correlation.m) returns abs(r).",
         "The paper normalizes the posterior across both tracks: pass one "
-        "track's share of decode_jointly(...).joint(name).",
+        "track's share, decode_jointly(...).joint(name), with every track's "
+        "rate maps as encoding_models and template=name, so shuffles are "
+        "decoded jointly too.",
+        "Candidate events of 100-750 ms with at least 5 time bins; event "
+        "selection is not applied here.",
         "Events split in halves at the multi-unit minimum (tested at "
         "p < 0.025) are not included; split the event first.",
         "The Bendor-lab code zeroes the original event's empty time bins in "
