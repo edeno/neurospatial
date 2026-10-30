@@ -82,6 +82,33 @@ other seeded simulations give the same spikes as before.
   `grid_spacing` used to build grid cells with NaN spacing.
 - Head-direction and boundary-vector `ground_truth` report a preferred
   direction of exactly −π as +π, the package's (−π, π] convention.
+### Circular-track replay score
+
+- `fit_circular_sequence(env, posterior, times)` scores a decoded event on a
+  circular track as Wikenheiser & Redish (2013) did: the circular mean of
+  each time bin's posterior, the steps between successive time bins taken
+  the short way around the loop, and a line fit to their cumulative sum on
+  time. A sequence that runs through the point where the loop's linear
+  position starts again is scored whole; a line along the linear position
+  breaks there. `CircularSequenceResult` holds the R² (the score), the
+  replay speed around the loop in environment units per second (`slope`,
+  whose sign is the direction relative to the track's `edge_order`), the
+  slope in radians per second, and each time bin's decoded and cumulative
+  angle. A decode that never moves has R² NaN.
+- A circular track is a track whose `edge_order` runs once around a loop,
+  head to tail, with no `edge_spacing`: `Environment.from_graph` on a cycle
+  graph. Other environments are refused with how to build one.
+- The paper leaves several choices unstated; the docstring lists the
+  readings made here (steps wrapped to (−π, π], one fitted point per time
+  bin starting at 0, regression on time rather than bin number, R² as the
+  tested statistic).
+- `replay_significance` scores `fit_circular_sequence` shuffles in batches,
+  about 100 times faster than one call per shuffle (10,000 time-bin
+  permutations of a 15-bin event in under 0.1 s).
+- New `ReplayCriterion` quantity `"n_spikes"`: the event's total spike count
+  over all cells, for the "at least 5 spikes" candidate rule of Wikenheiser
+  & Redish. It accepts spike counts summed over cells.
+
 ### Replay scoring robustness
 
 - Rank-order field peaks and centers ignore bins outside a rate result's
