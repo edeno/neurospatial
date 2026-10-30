@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Reactivation assembly fixes
+
+**Fixes**
+
+- `detect_assemblies(n_shuffles=20.0)` raises the documented "positive
+  integer" `ValueError` instead of a `TypeError` from inside the surrogate
+  loop.
+- `pairwise_activation` with `unit_ids=` and `template_unit_ids=` names the
+  caller's column and its label in the constant-neuron warning, not its
+  position in template order.
+- `explained_variance_reactivation(control_correlations=[c],
+  control_unit_ids=[labels])` accepts one control's labels in a one-item
+  list, as it does for several controls.
+
+**Documentation**
+
+- The `tracy_widom` threshold is described as Peyrache et al.'s heuristic
+  margin `n ** (-2/3)`, not the null spread of the largest eigenvalue,
+  which also shrinks with the number of time bins (Johnstone 2001).
+- `null_reactivation_data(kind="cell_identity")` permutes each unit's rate
+  with its spikes, so it does not calibrate the rate confound.
+- Four numbers in "Comparing reactivation methods" corrected from a rerun.
+
 ### Replay checks from Tingley & Peyrache (2020)
 
 **New**
@@ -247,8 +270,9 @@ Several replay papers test a whole data set, not each event:
 - `detect_assemblies(..., component_threshold=)` chooses the eigenvalue
   threshold that sets the number of assemblies. `"marchenko_pastur"` (the
   default, unchanged) is the analytical edge; `"tracy_widom"` adds
-  `n ** (-2/3)`, the finite-sample spread of the largest eigenvalue
-  (Peyrache et al., 2010); `"bin_shuffle"` and `"circular_shift"` take a
+  `n ** (-2/3)`, the heuristic margin of Peyrache et al. (2010), which for
+  typical recordings sits many null standard deviations above the edge;
+  `"bin_shuffle"` and `"circular_shift"` take a
   percentile of the largest eigenvalue of surrogate matrices whose neurons
   are shuffled or rotated in time (Lopes-dos-Santos et al., 2013).
   Surrogate thresholds need `percentile=`, because the paper gives no single
