@@ -325,8 +325,9 @@ def detect_template_match_replay(
         index), the p-value, the active-cell criterion and, with several
         templates, the tested ``template``. With fewer active template
         cells than the method's ``min_active_cells`` the score and p-value
-        are NaN and the event is not replay. ``n_shuffles_used`` is None:
-        the p-values are exact.
+        are NaN and the event has no verdict: it is not replay, its
+        criterion is False and ``error`` says why. ``n_shuffles_used`` is
+        None: the p-values are exact.
 
     Raises
     ------
@@ -516,8 +517,13 @@ def _verdict(
         )
         n_active = index.n_active_cells
         score, p_value = index.score, index.match_probability
+    error = (
+        ""
+        if np.isfinite(score)
+        else f"fewer than {method.min_active_cells} active template cells"
+    )
     criterion = method.criteria[0]
-    passes = criterion.evaluate(float(n_active), np.nan)
+    passes = not error and criterion.evaluate(float(n_active), np.nan)
     return ReplayDetectionResult(
         method=method.name,
         is_replay=bool(passes and _passes(p_value, method.alpha, method.p_comparison)),
@@ -527,6 +533,7 @@ def _verdict(
         values={criterion.label: float(n_active)},
         template=template,
         n_shuffles_used=None,
+        error=error,
     )
 
 

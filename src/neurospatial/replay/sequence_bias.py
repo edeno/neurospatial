@@ -589,9 +589,10 @@ def detect_bias_sequence_replay(
     ReplayDetectionResult
         ``score`` is the signed similarity, ``p_value`` its shuffle test,
         ``criteria`` the active-unit rule (over every unit given), and
-        ``n_shuffles_used`` the shuffles with a defined similarity. The
-        verdict is False when the similarity is undefined (no pair active
-        in both).
+        ``n_shuffles_used`` the shuffles with a defined similarity. When
+        the similarity is undefined (no pair active in both), the event has
+        no verdict: it is not replay, its criterion is False and ``error``
+        says why.
 
     Raises
     ------
@@ -628,8 +629,14 @@ def detect_bias_sequence_replay(
         rng=rng,
     )
     n_active = float(tested.n_active_cells)
+    error = (
+        ""
+        if np.isfinite(tested.similarity)
+        else "bias similarity undefined: no pair of cells fired in both the "
+        "event and the template"
+    )
     criterion = method.criteria[0]
-    passes = {criterion.label: criterion.evaluate(n_active, np.nan)}
+    passes = {criterion.label: not error and criterion.evaluate(n_active, np.nan)}
     null = tested.null_similarities
     defined = null[np.isfinite(null)]
     z_score = (
@@ -646,6 +653,7 @@ def detect_bias_sequence_replay(
         values={criterion.label: n_active},
         n_shuffles_used=int(defined.size),
         z_scores={"spike_label_permutation": z_score},
+        error=error,
     )
 
 
