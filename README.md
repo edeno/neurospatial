@@ -13,12 +13,12 @@ be easy to discover, behave as a scientist reasonably expects, and produce
 scientifically correct, interpretable results. Clear assumptions, consistent
 interfaces, and useful error messages are part of that experience.
 
-The long-term goal is to encompass the operations of spatial neuroscience in a
-coherent workflow, from recorded data and environment definition through analysis,
-statistical evaluation, visualization, and export. Spatial discretization and
-connectivity graphs provide a shared foundation for these operations. See the
+The long-term goal is a shared foundation for spatial neuroscience: define an
+environment once, save and share it, and use it for behavior, neural analysis,
+simulation and visualization, with methods that scientists can trust and
+compare. See the [project vision](docs/vision.md) for the goals and the
 [design principles](docs/contributing.md#design-principles) for how we evaluate
-changes toward this goal.
+changes toward them.
 
 ## Key Features
 

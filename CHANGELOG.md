@@ -250,6 +250,12 @@ default lap route all changed.
   east edge passes through a column of bin centers now departs one sample
   earlier.
 
+### Project vision
+
+- Added a project vision page with the long-term goals and
+  what is out of scope, linked from the README, the documentation home page
+  and the contributor guide.
+
 ### Spatial information of very small rates
 
 - Skaggs spatial information (`spatial_information`,

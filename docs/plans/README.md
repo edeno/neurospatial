@@ -10,6 +10,12 @@ work from historical checkboxes and remaining proposals.
 
 ## Active Plans
 
+The [proposed next delivery steps](continuous-behavior/NEXT_STEPS.md) connect the
+project vision to remaining continuous-behavior work: environment state
+selection, visual and movement access, exploration history, and ordered routes.
+The proposal adds concrete completion checks without changing existing task
+statuses.
+
 | Plan committed | Area | Plan | Tasks | Notes |
 | --- | --- | --- | --- | --- |
 | 2026-10-14 | Continuous behavior and neural analysis | [continuous-behavior/PLAN.md](continuous-behavior/PLAN.md) | [continuous-behavior/TASKS.md](continuous-behavior/TASKS.md) | **Partially implemented (reviewed 2026-10-20).** Six workstreams: observation support, environment contracts, exploration/crossings, ordered paths, continuous events/features, and conditioned neural comparisons. Delivered: area 1 (#112, #114, #120), area 5 except interval states (#118), and area 6 same-environment comparisons (#119). Area 2 is partly covered by environment stages A–E. Areas 3–4 have not started. `break_before` reaches every function that takes `max_gap` (#121). Statistical/null-model frameworks remain outside scope. |
@@ -38,6 +44,9 @@ work from historical checkboxes and remaining proposals.
 
 ## Planning Backlog
 
+- [Model inputs and package interfaces](package-interfaces/NOTES.md) — direction
+  notes from 2026-10-29: reusable regressors and RL features with optional model
+  consumers, POT solver benchmarking, and exploratory PyVista mesh exchange.
 - [Encoder setup consolidation](encoder-setup/PLAN.md) — committed
   2026-10-14; preserves the eight entry points while sharing private setup.
   Implemented in PR #111 (merged 2026-10-19; status reviewed 2026-10-20). The

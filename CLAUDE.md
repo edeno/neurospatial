@@ -13,9 +13,8 @@ main figure, and show how to use the reader's own recording. Introduce package
 terms when they are needed for the analysis.
 
 Scientific correctness is part of usability: the obvious path must preserve the
-meaning of the analysis and behave as a scientist expects. The long-term goal is
-coherent workflows covering spatial neuroscience, from recorded data through
-analysis, visualization and export. Apply the
+meaning of the analysis and behave as a scientist expects. The long-term goals
+are in the [project vision](docs/vision.md). Apply the
 [design principles](docs/contributing.md#design-principles) to every change:
 
 - Start from the scientific task and familiar experimental vocabulary.
@@ -27,10 +26,14 @@ analysis, visualization and export. Apply the
   scientific choice when no default is defensible.
 - Preserve time support, coordinate frames, physical units and unit identity
   across operations. Keep missing observations (NaN) distinct from zero activity.
+- Keep what a result needs to be reproduced: input selections, exclusions,
+  parameters, versions and random seeds.
 - Make outputs interpretable and errors actionable: say what failed, why, and
   how to fix it.
 - When changing analysis behavior, test scientific invariants and the complete
-  workflow, not only that a call completes.
+  workflow, not only that a call completes. Check numerics independently of the
+  code under test, and state what a method estimates and the limits of its
+  validation.
 
 ## Commands
 

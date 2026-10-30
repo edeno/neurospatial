@@ -16,6 +16,9 @@ activity, evaluating statistical evidence, simulating experiments, visualizing
 results, and exporting them. Grow this coverage through workflows that work
 together and preserve scientific meaning across steps.
 
+The [project vision](vision.md) sets out the long-term goals these principles
+serve.
+
 Use these principles when designing and reviewing changes:
 
 - **Start with the scientific task.** Describe what the scientist has and wants
@@ -26,15 +29,23 @@ Use these principles when designing and reviewing changes:
   change the scientific question and there is no defensible default. Preserve
   the distinction between missing observations and measured zero activity;
   expose how recording gaps, analysis windows, and insufficient coverage affect
-  the result.
+  the result. State what a method estimates; where a method supports inference,
+  respect temporal dependence and independent experimental units.
 - **Make the interface learnable across domains.** Keep names, argument order,
   units, shapes, and result methods consistent. Moving from one neuron to a
   population or from encoding to decoding should reuse what the scientist has
   already learned. Follow the existing public API contracts when extending them.
+  Support adoption of individual components through interoperable inputs and
+  outputs.
 - **Preserve meaning between operations.** Keep timestamps, coordinate frames,
   spatial support, and unit identities aligned through filtering, analysis,
   plotting, and export. Validate incompatible inputs and explain how to fix
   them instead of silently guessing an alignment or conversion.
+  Comparisons should account for spatial correspondence, behavioral sampling,
+  and changes in environmental state or experimental conditions.
+- **Make analyses reproducible.** Preserve the input references, selections,
+  exclusions, parameters, versions, and random seeds needed to explain and
+  reproduce results alongside the environment information.
 - **Make results and recovery understandable.** Label plots and tables with
   quantities and units, avoid relying on color alone, and expose the assumptions
   needed to interpret a result. Distinguish descriptive metrics and candidate
@@ -45,7 +56,10 @@ Use these principles when designing and reviewing changes:
   examples. Test scientific invariants and relevant edge cases, including gaps,
   empty data, and mismatched identities, rather than checking only that a call
   completes. Judge added functionality by whether scientists can use it correctly
-  alongside existing operations.
+  alongside existing operations, with practical memory and runtime on realistic
+  recordings. Check numerics independently of the code under test, so that two
+  pieces sharing one mistake cannot confirm each other, and state the limits of
+  each validation claim.
 
 ## Getting Started
 
