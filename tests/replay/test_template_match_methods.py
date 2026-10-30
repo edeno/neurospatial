@@ -319,6 +319,25 @@ class TestLeeDatasetTest:
         )
         assert low["z_score_upper"] > low["z_score"]
 
+    def test_a_tie_never_helps_a_match_in_the_shuffles(self, track):
+        """Four cells fire at the same time in each word. Ties are ordered
+        against the template, so no word matches it, nor any shuffled
+        template: every shuffle's Z equals the observed Z.
+        """
+        env, rates = track
+        onsets = 1.0 + 0.5 * np.arange(30)
+        spikes = [onsets.copy() for _ in range(4)]
+        intervals = np.column_stack([onsets, onsets + 0.05])
+        method = dataclasses.replace(LEE_WILSON_2002, n_shuffles=100)
+        result = template_match_dataset_test(
+            env, spikes, intervals, rates[:4], template_match_method=method, rng=0
+        )
+        low = result.groups_table().set_index("group").loc["low_probability"]
+        assert (low["n_trials"], low["n_matches"]) == (30, 0)
+        np.testing.assert_array_equal(
+            result.shuffle_statistics, np.full(100, result.observed_statistic)
+        )
+
     def test_several_templates_need_their_own_words(self, track):
         env, rates = track
         spikes, intervals = _session([[0, 1, 2, 3]])

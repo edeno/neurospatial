@@ -31,6 +31,7 @@ from neurospatial.replay.sequence_match import (
     _dense,
     _event_letters,
     _exact_distribution,
+    _firing_order,
     _index_test_size,
     _inversion_p_values,
     _is_count,
@@ -928,11 +929,20 @@ def _binomial_tests(
 
 @dataclass
 class _Word:
-    """One word: its letters' cells (in firing order) and template."""
+    """One word: its letters' cells and times, and its template."""
 
     template: str | None
     units: NDArray[np.intp]
+    times: NDArray[np.float64]
     n_distinct: int
+
+    def letter_ranks(self, ranks: NDArray[np.intp]) -> NDArray[np.intp]:
+        """The letters' template ranks in firing order, ties ordered against ``ranks``.
+
+        Re-sorted for each template, real or shuffled, so a tie never helps a
+        match.
+        """
+        return ranks[self.units[_firing_order(self.units, self.times, ranks)]]
 
 
 class _Distributions:
@@ -999,7 +1009,7 @@ def _word_keys(
     for n in np.unique(lengths[lengths >= 2]):
         members = np.flatnonzero(lengths == n)
         rows = np.stack(
-            [_dense(ranks[words[i].template][words[i].units]) for i in members]
+            [_dense(words[i].letter_ranks(ranks[words[i].template])) for i in members]
         )
         keys[members] = _match_keys(rows, match_order)
     return keys
@@ -1020,8 +1030,10 @@ def _word_groups_test(
     words = []
     for name, rows in events.items():
         for start, stop in rows:
-            units, _ = _event_letters(trains, ranks[name], start, stop, method.max_isi)
-            words.append(_Word(name, units, int(np.unique(units).size)))
+            units, times = _event_letters(
+                trains, ranks[name], start, stop, method.max_isi
+            )
+            words.append(_Word(name, units, times, int(np.unique(units).size)))
     distributions = _Distributions(method, rng)
     groups, p_values, sizes = _word_outcomes(words, ranks, distributions)
     chance = {_PAIR: 0.5, _TRIPLET: 1.0 / 6.0, _LOW: probability}

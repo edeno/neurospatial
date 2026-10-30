@@ -979,8 +979,18 @@ def _event_letters(
         times.append(onset)
     letter_units = np.concatenate([np.empty(0, dtype=np.intp), *units])
     letter_times = np.concatenate([np.empty(0), *times])
-    order = np.lexsort((-ranks[letter_units], letter_times))
+    order = _firing_order(letter_units, letter_times, ranks)
     return letter_units[order], letter_times[order]
+
+
+def _firing_order(
+    units: NDArray[np.intp], times: NDArray[np.float64], ranks: NDArray[np.intp]
+) -> NDArray[np.intp]:
+    """Letters in time order; letters at the same time against the template.
+
+    Tied letters go in decreasing template rank, so a tie never helps a match.
+    """
+    return np.lexsort((-ranks[units], times))
 
 
 def _all_permutations(n: int) -> NDArray[np.int8]:

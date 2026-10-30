@@ -464,7 +464,9 @@ fields, scored from spikes without decoding, as recipes that
   Wilson's binomial Z of pairs, triplets and low-probability words (their
   35 of 270 gives Z = 7.2) with 1000 template shuffles, and Ji & Wilson's
   chance and template-shuffle significance of the number of replaying
-  frames, reassigning frames to templates on every shuffle.
+  frames, reassigning frames to templates on every shuffle. Letters at the
+  same time are ordered against each shuffled template as against the real
+  one, so a tie never helps a match in the shuffles either.
 - `recurring_spike_sequences()`, `recurring_sequences_significance()`,
   `surrogate_spike_trains()` and `RecurringSequenceMethod` with
   `NADASDY_1999`: the session-level search for recurring spike sequences of
