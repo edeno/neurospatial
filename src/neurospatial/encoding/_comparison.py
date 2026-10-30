@@ -661,15 +661,9 @@ shape (n_units, n_bins)
         >>> dataset["correlation"].sel(unit_id=9).item()  # doctest: +SKIP
         0.9
         """
-        try:
-            import xarray as xr
-        except ImportError as exc:
-            raise ImportError(
-                "to_xarray() requires the optional 'xarray' dependency, which "
-                "is not installed. Install it with "
-                "'pip install neurospatial[xarray]' or 'pip install xarray'."
-            ) from exc
-        from neurospatial._results import software_version, units_attr
+        from neurospatial._results import import_xarray, software_version, units_attr
+
+        xr = import_xarray()
 
         unit_dim, bin_dim = "unit_id", "bin"
         per_bin = {

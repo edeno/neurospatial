@@ -534,6 +534,25 @@ def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> An
     return aligned
 
 
+def import_xarray() -> Any:
+    """Import the optional ``xarray`` dependency for a ``to_xarray()`` export.
+
+    Raises
+    ------
+    ImportError
+        If ``xarray`` is not installed, naming how to install it.
+    """
+    try:
+        import xarray as xr
+    except ImportError as exc:
+        raise ImportError(
+            "to_xarray() requires the optional 'xarray' dependency, which "
+            "is not installed. Install it with "
+            "'pip install neurospatial[xarray]' or 'pip install xarray'."
+        ) from exc
+    return xr
+
+
 def software_version() -> str:
     """Return the installed ``neurospatial`` version string.
 
@@ -766,14 +785,7 @@ def build_population_dataset(
     ImportError
         If ``xarray`` is not installed.
     """
-    try:
-        import xarray as xr
-    except ImportError as exc:
-        raise ImportError(
-            "to_xarray() requires the optional 'xarray' dependency, which "
-            "is not installed. Install it with "
-            "'pip install neurospatial[xarray]' or 'pip install xarray'."
-        ) from exc
+    xr = import_xarray()
 
     if env is not None and bin_centers is not None:
         raise ValueError(

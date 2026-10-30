@@ -255,8 +255,53 @@ def _align_true_positions(
     return aligned, run_ids
 
 
+class _DecodeRecordMixin:
+    """Spike-window provenance and xarray metadata of a decode result."""
+
+    env: Environment
+    times: NDArray[np.float64] | None
+    spike_window: NDArray[np.float64] | None
+
+    if TYPE_CHECKING:
+
+        @property
+        def n_time_bins(self) -> int: ...
+
+    @property
+    def spike_window_assumed(self) -> bool:
+        """True when spikes were assumed recorded wherever position was.
+
+        No ``spike_window`` was passed. The population-silence warning catches
+        one common violation of this assumption; it cannot establish recording
+        coverage.
+        """
+        return self.spike_window is None
+
+    def _time_coord(self) -> NDArray[Any]:
+        """The xarray ``time`` coordinate: ``times``, or the row index without."""
+        if self.times is None:
+            return np.arange(self.n_time_bins)
+        # xarray indexes may retain their input even after a deep Dataset
+        # copy, so give the index its own writable timestamp storage.
+        return np.array(self.times, copy=True)
+
+    def _xarray_attrs(self) -> dict[str, Any]:
+        """Units, environment fingerprint, version and spike-window attrs."""
+        from neurospatial._results import env_fingerprint, software_version, units_attr
+
+        attrs: dict[str, Any] = {
+            **units_attr(self.env),
+            "env": env_fingerprint(self.env),
+            "software_version": software_version(),
+            "spike_window_assumed": int(self.spike_window_assumed),
+        }
+        if self.spike_window is not None:
+            attrs["spike_window"] = self.spike_window.ravel()
+        return attrs
+
+
 @dataclass(frozen=True, repr=False, eq=False)
-class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
+class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
     """Container for Bayesian decoding results.
 
     Stores the posterior distribution over positions for each time bin,
@@ -419,16 +464,6 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
             object.__setattr__(obj, name, value)
         obj._own_and_validate()
         return obj
-
-    @property
-    def spike_window_assumed(self) -> bool:
-        """True when spikes were assumed recorded wherever position was.
-
-        No ``spike_window`` was passed. The population-silence warning catches
-        one common violation of this assumption; it cannot establish recording
-        coverage.
-        """
-        return self.spike_window is None
 
     @property
     def _decoded_rows(self) -> NDArray[np.bool_]:
@@ -1035,35 +1070,12 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
         --------
         to_dataframe : Export point estimates and entropy to a DataFrame.
         """
-        try:
-            import xarray as xr
-        except ImportError as exc:
-            raise ImportError(
-                "to_xarray() requires the optional 'xarray' dependency, which "
-                "is not installed. Install it with "
-                "'pip install neurospatial[xarray]' or 'pip install xarray'."
-            ) from exc
 
-        from neurospatial._results import (
-            _bin_center_coords,
-            env_fingerprint,
-            software_version,
-            units_attr,
-        )
+        from neurospatial._results import _bin_center_coords, import_xarray
 
-        n_time = self.posterior.shape[0]
+        xr = import_xarray()
         n_bins = self.posterior.shape[1]
-
-        # times defaults to None; fall back to a positional integer index
-        # rather than passing None into the coord (which would raise).
-        if self.times is not None:
-            # xarray indexes may retain their input even after a deep Dataset
-            # copy, so give the index its own writable timestamp storage.
-            time_coord: NDArray[Any] = np.array(self.times, copy=True)
-        else:
-            time_coord = np.arange(n_time)
-
-        coords: dict[str, Any] = {"time": time_coord, "bin": np.arange(n_bins)}
+        coords: dict[str, Any] = {"time": self._time_coord(), "bin": np.arange(n_bins)}
         coords.update(_bin_center_coords(self.env, n_bins))
 
         data_vars: dict[str, Any] = {
@@ -1072,18 +1084,9 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
             "map_bin": (("time",), np.asarray(self.map_bin)),
         }
 
-        attrs: dict[str, Any] = {
-            **units_attr(self.env),
-            "env": env_fingerprint(self.env),
-            "software_version": software_version(),
-            "spike_window_assumed": int(self.spike_window_assumed),
-        }
-        if self.spike_window is not None:
-            attrs["spike_window"] = self.spike_window.ravel()
-
-        return xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs).copy(
-            deep=True
-        )
+        return xr.Dataset(
+            data_vars=data_vars, coords=coords, attrs=self._xarray_attrs()
+        ).copy(deep=True)
 
     def error_against(
         self,
@@ -1212,7 +1215,7 @@ class DecodingResult(ReadOnlyArraysMixin, ResultMixin):
 
 
 @dataclass(frozen=True, repr=False, eq=False)
-class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
+class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
     """Per-time decode reductions, without the full posterior.
 
     Memory-safe sibling of :class:`DecodingResult`. Produced by
@@ -1413,16 +1416,6 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
         return _read_only(_bin_positions(self.env, self.map_bin))
 
     @property
-    def spike_window_assumed(self) -> bool:
-        """True when spikes were assumed recorded wherever position was.
-
-        No ``spike_window`` was passed. The population-silence warning catches
-        one common violation of this assumption; it cannot establish recording
-        coverage.
-        """
-        return self.spike_window is None
-
-    @property
     def n_time_bins(self) -> int:
         """Number of decoded time bins.
 
@@ -1432,10 +1425,6 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
             Length of the per-time reduction arrays.
         """
         return int(self.map_bin.shape[0])
-
-    def _dim_names(self) -> list[str]:
-        """Coordinate column names matching ``DecodingResult.to_dataframe``."""
-        return _coord_dim_names(self.env)
 
     def to_dataframe(self) -> pd.DataFrame:
         """Convert to a tidy DataFrame, one row per time bin.
@@ -1467,7 +1456,7 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
 
         data["map_bin"] = self.map_bin
 
-        dim_names = self._dim_names()
+        dim_names = _coord_dim_names(self.env)
         for i, name in enumerate(dim_names):
             data[f"map_{name}"] = self.map_position[:, i]
         for i, name in enumerate(dim_names):
@@ -1571,7 +1560,7 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
             ax.set_ylabel("Posterior entropy (bits)")
             ax.set_title("Posterior entropy over time")
         elif quantity == "map":
-            for i, name in enumerate(self._dim_names()):
+            for i, name in enumerate(_coord_dim_names(self.env)):
                 ax.plot(
                     x, broken(self.map_position[:, i]), label=f"map_{name}", **kwargs
                 )
@@ -1609,31 +1598,11 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
         ImportError
             If ``xarray`` is not installed (optional dependency).
         """
-        try:
-            import xarray as xr
-        except ImportError as exc:
-            raise ImportError(
-                "to_xarray() requires the optional 'xarray' dependency, which "
-                "is not installed. Install it with "
-                "'pip install neurospatial[xarray]' or 'pip install xarray'."
-            ) from exc
 
-        from neurospatial._results import (
-            env_fingerprint,
-            software_version,
-            units_attr,
-        )
+        from neurospatial._results import import_xarray
 
-        n_time = self.n_time_bins
-
-        if self.times is not None:
-            # Index arrays need independent storage before Dataset creation;
-            # Dataset.copy(deep=True) can retain pandas-backed index buffers.
-            time_coord: NDArray[Any] = np.array(self.times, copy=True)
-        else:
-            time_coord = np.arange(n_time)
-
-        dim_names = self._dim_names()
+        xr = import_xarray()
+        dim_names = _coord_dim_names(self.env)
         data_vars: dict[str, Any] = {
             "map_bin": (("time",), np.asarray(self.map_bin)),
             "posterior_entropy": (
@@ -1647,17 +1616,8 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
         for i, name in enumerate(dim_names):
             data_vars[f"mean_{name}"] = (("time",), self.mean_position[:, i])
 
-        attrs: dict[str, Any] = {
-            **units_attr(self.env),
-            "env": env_fingerprint(self.env),
-            "software_version": software_version(),
-            "spike_window_assumed": int(self.spike_window_assumed),
-        }
-        if self.spike_window is not None:
-            attrs["spike_window"] = self.spike_window.ravel()
-
         return xr.Dataset(
             data_vars=data_vars,
-            coords={"time": time_coord},
-            attrs=attrs,
+            coords={"time": self._time_coord()},
+            attrs=self._xarray_attrs(),
         ).copy(deep=True)
