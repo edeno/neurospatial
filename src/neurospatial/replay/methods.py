@@ -1185,8 +1185,11 @@ def detect_replay(
     from neurospatial.decoding import JointDecodingResult
     from neurospatial.replay.criteria import template_fractions, trajectory_metrics
     from neurospatial.replay.significance import (
+        _conditional_rows,
+        _takes_rng,
         _UndefinedNullError,
         _UndefinedScoreError,
+        _uses_joint_weights,
         replay_significance,
     )
 
@@ -1470,6 +1473,17 @@ def detect_replay(
         options["n_samples"] = int(options.pop("n_samples_per_time_bin")) * len(
             posterior
         )
+    # A template's share of a joint decode is scored as the posterior given
+    # the template, unless the score is built for joint weights.
+    share = joint is not None and template is not None
+    condition = (
+        share
+        and replay_method.score is not None
+        and not _uses_joint_weights(replay_method.score, options)
+    )
+
+    def conditioned(rows: NDArray[np.float64]) -> NDArray[np.float64]:
+        return _conditional_rows(rows) if condition else rows
 
     if replay_method.score is not None and replay_method.nulls:
         # The test needs the counts only to decode shuffles again or to zero
@@ -1478,7 +1492,8 @@ def detect_replay(
         try:
             result = replay_significance(
                 env if decodes else track_env,
-                posterior,
+                # Nulls that decode again condition the share themselves.
+                posterior if decodes else conditioned(posterior),
                 times,
                 score=replay_method.score,
                 score_options=options,
@@ -1518,10 +1533,13 @@ def detect_replay(
             score, p_value = float(result.observed.score), float(result.p_value)
             n_shuffles_used = min(result.n_shuffles_used.values())
     elif replay_method.score is not None:
-        scored = posterior
+        scored = conditioned(posterior)
         if replay_method.empty_time_bins == "zero":
             assert counts is not None
-            scored = np.where(counts.sum(axis=1)[:, None] == 0, 0.0, posterior)
+            scored = np.where(counts.sum(axis=1)[:, None] == 0, 0.0, scored)
+        if _takes_rng(replay_method.score) and "rng" not in options:
+            # A sampled score draws from the method's seed, as it does in a test.
+            options["rng"] = int(np.random.default_rng(rng).integers(2**63 - 1))
         score = float(replay_method.score(track_env, scored, times, **options).score)
 
     if _verdict_uses_score(replay_method) and not np.isfinite(score):
@@ -1952,15 +1970,14 @@ def _rank_order_verdict(
         _field_positions,
         _permuted_correlations,
         _result,
+        _supported_rates,
     )
     from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
     operation = "detect_rank_order_replay()"
     # Validates the rates against env, then keeps the template cells' maps.
     _field_positions(env, encoding_models, method.field_order, operation)
-    rates = np.asarray(
-        getattr(encoding_models, "firing_rates", encoding_models), dtype=np.float64
-    )
+    rates = _supported_rates(encoding_models)
     if method.min_peak_rate is not None:
         peak = np.where(np.isfinite(rates), rates, 0.0).max(axis=1)
         rates = np.where((peak >= method.min_peak_rate)[:, None], rates, np.nan)
@@ -2038,7 +2055,7 @@ def _pooled_ssi_verdicts(
     from scipy import stats
 
     from neurospatial._spikes import as_spike_trains
-    from neurospatial.replay.rank_order import _field_positions
+    from neurospatial.replay.rank_order import _field_positions, _supported_rates
 
     operation = "compare_replay_methods()"
     if isinstance(encoding_models, Mapping):
@@ -2066,7 +2083,7 @@ def _pooled_ssi_verdicts(
             template_env = env
         position = _field_positions(template_env, models, method.field_order, operation)
         if method.min_peak_rate is not None:
-            rates = np.asarray(getattr(models, "firing_rates", models), dtype=float)
+            rates = _supported_rates(models)
             peak = np.where(np.isfinite(rates), rates, 0.0).max(axis=1)
             position = np.where(peak >= method.min_peak_rate, position, np.nan)
         positions.append(position)
@@ -2356,6 +2373,24 @@ def compare_replay_methods(
                     "decode_position(env, counts, rates, dt=dt, times=grid)",
                 )
             )
+        event = events[index]
+        expected = env[template] if isinstance(env, Mapping) and template else env
+        if (
+            not isinstance(event, JointDecodingResult)
+            and not isinstance(expected, Mapping)
+            and getattr(event, "env", None) is not None
+        ):
+            mismatch = _environment_mismatch(expected, event.env)
+            if mismatch is not None:
+                raise ValueError(
+                    _format_error(
+                        f"compare_replay_methods(): event {index} was decoded "
+                        f"on an environment that differs from env in {mismatch}.",
+                        why="distances, jumps and positions would be read on "
+                        "bins the event was not decoded on",
+                        fix="pass the environment the events were decoded on",
+                    )
+                )
         n_time_bins = len(np.asarray(times))
         if spike_counts is not None:
             shape = np.shape(spike_counts[index])
