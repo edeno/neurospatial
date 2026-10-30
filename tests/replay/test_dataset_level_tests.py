@@ -19,6 +19,7 @@ from neurospatial.replay import (
     dataset_test,
     dataset_values,
     distribution_test,
+    rank_order_significance,
     relative_rank_template,
     shuffle_events,
     shuffle_posterior_circular,
@@ -627,7 +628,13 @@ class TestRankOrderValues:
     def test_cell_order_shuffles_are_rank_order_significance_draws(
         self, track, session
     ):
-        """Per event, the shuffled correlations are permutations of the fields."""
+        """Per event, the shuffled correlations are rank_order_significance's.
+
+        Each event's 4,000 null correlations and the 4,000 shuffles of
+        ``rank_order_significance`` (other seeds) are two samples of one
+        distribution: a two-sample KS test does not reject for any of four
+        events, a sweep among them.
+        """
         rates, trains, intervals, _, _ = session
         method = SILVA_2015_RANK_ORDER.method
         null = dataset_values(
@@ -635,11 +642,26 @@ class TestRankOrderValues:
             intervals,
             replay_method=method,
             null="cell_order",
-            n_datasets=300,
+            n_datasets=4000,
             spike_times=trains,
             encoding_models=rates,
             rng=0,
         )
+        for event in range(4):
+            significance = rank_order_significance(
+                track,
+                trains,
+                intervals[event],
+                rates,
+                spike_statistic=method.spike_statistic,
+                min_active_cells=method.min_active_cells,
+                n_shuffles=4000,
+                rng=1,
+            )
+            ours = null.loc[null["event"] == event, "score"].to_numpy()
+            theirs = np.asarray(significance.shuffle.null_scores)
+            assert np.isfinite(ours).all() and np.isfinite(theirs).all()
+            assert stats.ks_2samp(ours, theirs).pvalue > 0.01, event
         real = dataset_values(
             track,
             intervals,
