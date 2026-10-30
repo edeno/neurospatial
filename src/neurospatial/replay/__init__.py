@@ -102,9 +102,10 @@ detect_pairwise_order_replay, PairwiseOrderMethod : Pairwise firing-order test
 detect_arm_replay, ArmReplayMethod : Single-arm and joint-arm replay on a maze
 detect_bias_sequence_replay, BiasSequenceMethod : Pairwise-bias sequence test
     of an event's spikes against a template (Liu et al. 2023)
-event_properties, detection_rates, method_agreement : Calibrate methods on a
-    comparison table: rates (false positives on null data) by event
-    property, with confidence intervals, and agreement between methods
+event_properties, detection_rates, method_agreement, score_agreement :
+    Calibrate methods on a comparison table: rates (false positives on null
+    data) by event property, with confidence intervals, and agreement
+    between methods' verdicts and scores
 null_events, simulated_null_events, decode_intervals : Events without replay
     (cell-identity, spike-shift, uniform-spike-time and rate-matched
     Poisson copies of real events, or
@@ -204,6 +205,7 @@ from neurospatial.replay.calibration import (
     matched_alpha,
     method_agreement,
     null_events,
+    score_agreement,
     simulated_null_events,
 )
 from neurospatial.replay.circular import (
@@ -341,6 +343,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "matched_alpha",
     "method_agreement",
     "null_events",
+    "score_agreement",
     "simulated_null_events",
     "detect_replay",
     # Data-set-level tests

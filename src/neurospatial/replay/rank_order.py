@@ -260,9 +260,10 @@ def rank_order_correlation(
     binomial spread of the count across sets of 100 events
     (``rankOrder_falsePositive_tests.m``): per event, p < 0.05 for about
     5.4% of random orders of 10 cells, 8.3% of 4 or 5 cells and 33% of 3
-    cells, while an exact permutation test, such as
-    :func:`rank_order_significance` or ``analytic_p_value`` for up to 9
-    pairs, stays at or below 5% for every number of cells. The
+    cells, while a permutation test, such as the Monte Carlo cell-order
+    shuffles of :func:`rank_order_significance` or the exact
+    ``analytic_p_value`` for up to 9 pairs, stays at or below 5% for every
+    number of cells. The
     ``replay_RankOrder.m`` function in their RnR_methods toolbox correlates
     sort indices, not ranks; this function computes Spearman's rho.
 

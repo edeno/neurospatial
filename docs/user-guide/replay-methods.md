@@ -5,7 +5,7 @@ of population activity) and decoded them with place fields from running.
 Which events are replay? Published methods answer this differently. Each
 combines a score for how well the decoded positions follow a path, shuffles
 that say how large a score arises by chance, and thresholds. On the same
-events, methods often disagree (Tingley & Peyrache 2020), and their
+events, their scores correlate weakly (Tingley & Peyrache 2020), and their
 false-positive rates differ even at the same α (Takigawa et al. 2024). Before
 you interpret a replay rate, know how much it depends on the method.
 
@@ -243,6 +243,45 @@ little with them, because it accepts the stationary events and rejects the
 random ones. Agreement depends on the mix of events: on your recording it
 tells you how much the choice of method changes which events you analyze.
 
+Verdicts depend on each method's shuffles and α. Tingley & Peyrache (2020,
+Fig. 3) compared the scores instead: the correlation, across events, of two
+methods' scores, computed per session and averaged. `score_agreement` gives
+it for every pair of methods (pass `groups=["session"]` for one value per
+session).
+
+<!-- docs-test: run -->
+```python
+from neurospatial.replay import score_agreement
+
+signed = score_agreement(table)
+unsigned = score_agreement(table, absolute=True)
+print(
+    signed[["first", "second"]]
+    .assign(signed=signed["correlation"], absolute=unsigned["correlation"])
+    .round(2)
+    .to_string()
+)
+```
+
+Some scores are signed: the weighted correlations of `TIROLE_2022` and
+`SILVA_2015` and the rank-order correlation of `DIBA_BUZSAKI_2007` are
+negative for a reverse sweep. The line fit of `DAVIDSON_2009` and the R² of
+`WU_2017` are not. A signed score against an unsigned one measures whether
+the sign follows the unsigned score, not whether the methods agree: with
+forward and reverse events in similar numbers it is near 0 however well
+they agree. `WU_2017` and `TIROLE_2022` correlate at 0.21 with signs and
+0.97 without. Pass `absolute=True` for such pairs, and keep the signs
+between two signed scores, which then also agree on direction (0.89 to
+0.97 here). Tingley & Peyrache correlated the signed weighted correlation
+with the unsigned Radon line fit (R = 0.194), so part of that low value can
+come from the signs alone. `DAVIDSON_2009`'s line fit correlates weakly
+with every other score even without signs, because it scores stationary
+events as high as sweeps. Tingley & Peyrache also asked how each score
+holds up as an event degrades (their Fig. 4): `simulate_replay_event(...,
+drop_fraction=..., n_noise_spikes=...)` removes a share of a simulated
+event's spikes and adds spikes at random cells and times, so you can score
+such events with every method and compare.
+
 ## False positives on null data
 
 A false-positive rate needs events known to contain no replay. No single
@@ -269,6 +308,14 @@ own candidate events in four ways:
   activity rather than the event's burst. Grosmark & Buzsáki estimated the
   rates separately for each behavioral epoch and running direction: call
   `null_events` once per group of events.
+
+The last two kinds also measure a confound that Tingley & Peyrache (2020,
+p. 7) raise: in a population burst after silence, cells that fire faster
+are more likely to fire first. When a cell's k spikes are placed uniformly
+in an event of length T, its first spike comes at T/(k + 1) on average, so
+the cells that fire more fire first. A rank-order test of first spikes that
+calls these events replay is reading the order of the cells' spike counts or
+rates, not a sequence.
 
 Here we make two copies of each sweep for the first three kinds, which
 keep each event's spike counts. Each kind is decoded like the real events and scored in its own
@@ -345,9 +392,14 @@ More real events, not more copies, narrow them.
 
 ## Rates depend on the event
 
-A single false-positive rate hides how it depends on the event: chance
-replay is more common in events with few active cells (Tingley & Peyrache
-2020). `event_properties` measures each event: active cells, spikes,
+A single false-positive rate hides how it depends on the event. Tingley &
+Peyrache (2020) showed it for one test: random firing orders pass a
+parametric rank-correlation test more often when few cells fire (the
+expected rate is a third with 3 cells, 8% with 5 and 5% with 10; see the
+notes of `FOSTER_WILSON_2006`). A cell-order permutation test holds its
+rate on random orders whatever the number of cells, but other methods, and
+other kinds of null data, can depend on other properties of the event.
+`event_properties` measures each event: active cells, spikes,
 duration, posterior sharpness and the path of the decoded position.
 `detection_rates(by=...)` breaks rates down by any of them.
 
@@ -616,6 +668,229 @@ event by event against 200 place-field shuffles (about an hour per class
 and epoch), parallelize over data sets with seeds from
 `np.random.SeedSequence(seed).spawn(100)`.
 
+## Before and after a task
+
+Replay is often compared between sleep before a task (PRE) and after it
+(POST). Excitability and firing rates change between the two, and Tingley &
+Peyrache (2020, p. 7) point out that this can change the share of events
+called replay by chance, the false-positive rate. So compare each epoch's
+share of replay events with a false-positive rate measured on null events
+made from that epoch's own events, not with α and not with the other
+epoch.
+
+In this simulation the two epochs hold the same content, 8 sweeps and 16
+stationary events each, but cells fire at their running rate in PRE and at
+4 times it in POST. The null events are uniform-spike-time copies, which
+keep each event's spike counts and so carry its epoch's excitability. The
+rank-order method is scored on them exactly as on the real events.
+
+<!-- docs-test: run -->
+```python
+rank_order = dataclasses.replace(DIBA_BUZSAKI_2007, n_shuffles=200)
+
+
+def simulate_epoch(rate_gain, seed):
+    """8 sweeps and 16 stationary events, 2 s apart."""
+    epoch_rng = np.random.default_rng(seed)
+    trains = [[] for _ in range(40)]
+    epoch_intervals = []
+    for index, kind in enumerate(["sweep"] * 8 + ["stationary"] * 16):
+        speed = {}
+        if kind == "sweep":
+            direction = epoch_rng.choice([-1, 1])
+            speed["speed"] = float(direction * epoch_rng.uniform(400, 800))
+        event = simulate_replay_event(
+            env,
+            rates,
+            kind=kind,
+            duration=float(epoch_rng.uniform(0.08, 0.2)),
+            rate_gain=rate_gain,
+            seed=100 * seed + index,
+            **speed,
+        )
+        start = 2.0 * index
+        for cell, train in enumerate(event.spike_times):
+            trains[cell].append(np.asarray(train) + start)
+        epoch_intervals.append((start, start + event.duration))
+    return [np.concatenate(parts) for parts in trains], np.asarray(epoch_intervals)
+
+
+def score_epoch(spike_times, epoch_intervals):
+    decoded, epoch_counts = decode_intervals(
+        env, spike_times, epoch_intervals, rates, dt=dt
+    )
+    return compare_replay_methods(
+        env,
+        decoded,
+        replay_methods=[rank_order],
+        spike_counts=epoch_counts,
+        spike_times=spike_times,
+        encoding_models=rates,
+        dt=dt,
+        rng=0,
+    )
+
+
+epoch_rows = []
+for epoch, rate_gain, seed in [("PRE", 1.0, 7), ("POST", 4.0, 8)]:
+    epoch_spikes, epoch_intervals = simulate_epoch(rate_gain, seed)
+    epoch_table = score_epoch(epoch_spikes, epoch_intervals)
+    epoch_null = null_events(
+        epoch_spikes, epoch_intervals, kind="spike_time_uniform", n_copies=4, rng=seed
+    )
+    epoch_null_table = score_epoch(epoch_null.spike_times, epoch_null.intervals)
+    null_rate = detection_rates(epoch_null_table)["rate"].item()
+    own = detection_rates(epoch_table, expected_rate=null_rate, alternative="greater")
+    nominal = detection_rates(
+        epoch_table, expected_rate=rank_order.alpha, alternative="greater"
+    )
+    epoch_rows.append(
+        {
+            "epoch": epoch,
+            "n_replay": own["n_replay"].item(),
+            "rate": own["rate"].item(),
+            "null_rate": null_rate,
+            "p_vs_null": own["p_value"].item(),
+            "p_vs_alpha": nominal["p_value"].item(),
+        }
+    )
+print(pd.DataFrame(epoch_rows).round(3).to_string(index=False))
+```
+
+`DIBA_BUZSAKI_2007` calls 3% of the PRE null events replay but 12.5% of the
+POST ones, above its α of 0.1. With four times the spikes, the copies of a
+sweep keep more of the order of which cells fire most, as in the null data
+above. Tested against α, PRE's 5 of 24 events are not more than chance
+(p = 0.085); against PRE's own null rate they are (p = 0.001). In five of
+six repetitions with other seeds the PRE null rate was lower too (2 to 6%
+against 5 to 15%).
+
+Two limits remain. Both epochs hold 8 sweeps, yet POST calls twice the
+share of events replay: excitability changes how many real sequences a
+method detects as well, and no null rate corrects that. Compare epochs on
+events with similar properties (`event_properties`,
+`detection_rates(by=...)`). And the binomial test takes the null rate as
+known, although it is estimated, here from 96 copies of 24 events; make the
+null events from many real events.
+
+## Time-bin size
+
+Replay studies decode candidate events in time bins of about 10 to 50 ms.
+Tingley & Peyrache (2020, p. 8) note that no study had varied the bin size
+systematically, and that it can change what template-based methods detect.
+Here the same 24 events are decoded again in 20 and 40 ms bins and scored by
+the three methods that score the decoded posterior alone (the 10 ms rows come
+from the first table).
+
+<!-- docs-test: run -->
+```python
+decoded_names = ["davidson_2009", "wu_2017", "silva_2015"]
+decoded_methods = [method for method in methods if method.name in decoded_names]
+binned_tables = [table[table["method"].isin(decoded_names)].assign(bin_ms=10)]
+for bin_size in (0.02, 0.04):  # s
+    binned_events, binned_counts = decode_intervals(
+        env, rest_spikes, intervals, rates, dt=bin_size
+    )
+    binned = compare_replay_methods(
+        env,
+        binned_events,
+        replay_methods=decoded_methods,
+        spike_counts=binned_counts,
+        encoding_models=rates,
+        dt=bin_size,
+        rng=0,
+    )
+    binned["kind"] = kinds[binned["event"]]
+    binned_tables.append(binned.assign(bin_ms=round(1000 * bin_size)))
+by_bin_size = pd.concat(binned_tables, ignore_index=True)
+
+bin_rates = detection_rates(by_bin_size, groups=["bin_ms", "kind"])
+print(
+    bin_rates.pivot_table(index=["method", "bin_ms"], columns="kind", values="rate")
+    .round(2)
+)
+verdicts = by_bin_size.pivot_table(
+    index=["method", "event"], columns="bin_ms", values="is_replay"
+)
+print("events whose verdict changes:")
+print((verdicts.nunique(axis=1) > 1).groupby("method").sum().to_string())
+```
+
+The verdicts of 16 of the 24 events change with the bin size under
+`DAVIDSON_2009` and `WU_2017`, and of 7 under `SILVA_2015`, in different
+directions:
+
+- In 20 ms bins `DAVIDSON_2009` calls fewer stationary events replay (1 of 6
+  instead of 5) but also fewer sweeps (5 of 12 instead of 11), and `WU_2017`
+  fewer random events (1 of 6 instead of 4).
+- In 40 ms bins these events have 2 to 5 time bins, too few for these
+  shuffle tests. A time-bin permutation of n bins has n! orders, and an
+  order and its reverse give the same R², so with 4 bins about one shuffle
+  in 12 scores as high as the event and `WU_2017`'s p-value stays near or
+  above 1/12, above its α. With 2 or 3 bins a line passes close to most of
+  the posterior, and many of `DAVIDSON_2009`'s column-cycle shuffles score
+  as high as the event (about 0.99). Neither method detects any event.
+- `SILVA_2015` has no shuffles. With fewer time bins its jump and |r|
+  thresholds pass more easily: it detects 11 of 12 sweeps in 20 ms bins,
+  against 8 in 10 ms bins, and 4 of 6 random events in 40 ms bins.
+
+Choose the bin size before looking at the verdicts, use a recipe's own when
+reproducing a paper (`method.decoding`), and report how many time bins your
+events have.
+
+The bin size changes the decoded position itself, not only the tests.
+Tingley & Peyrache's supplement gives an example: two place cells, one
+firing at f1 = 50 Hz in its field and one at f2 = 25 Hz in another, each
+fire one spike in the same time bin. With equal rates outside the fields,
+the Poisson likelihood of the first field over the second is
+(f1/f2) exp(-τ (f1 - f2)) for a bin of τ seconds. It decodes to the first
+cell's field when τ is shorter than τ* = ln(f1/f2) / (f1 - f2) = 27.7 ms
+and to the second cell's field when τ is longer, as the supplement's 20 and
+50 ms bins show.
+
+<!-- docs-test: run -->
+```python
+from neurospatial import Environment
+from neurospatial.decoding import decode_position
+
+two_cell_track = Environment.linear_track(
+    endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
+)
+track_x = two_cell_track.bin_centers[:, 0]
+f1, f2 = 50.0, 25.0  # Hz, in each cell's field
+two_cells = np.full((2, two_cell_track.n_bins), 0.5)  # Hz, outside the fields
+two_cells[0, (track_x > 20) & (track_x < 30)] = f1
+two_cells[1, (track_x > 70) & (track_x < 80)] = f2
+one_spike_each = np.array([[1, 1]])
+
+
+def decoded_at(bin_size):
+    """Most likely position, in cm, of one spike from each cell."""
+    decoded = decode_position(two_cell_track, one_spike_each, two_cells, dt=bin_size)
+    return decoded.map_position[0, 0]
+
+
+print(f"20 ms bin: {decoded_at(0.02):.0f} cm; 50 ms bin: {decoded_at(0.05):.0f} cm")
+bin_sizes = np.arange(10, 50.5, 0.5) / 1000  # s
+flip = bin_sizes[np.argmax([decoded_at(b) > 50.0 for b in bin_sizes])]
+print(
+    f"flips between {1000 * flip - 0.5:.1f} and {1000 * flip:.1f} ms; "
+    f"ln(f1/f2) / (f1 - f2) = {1000 * np.log(f1 / f2) / (f1 - f2):.1f} ms"
+)
+```
+
+The decode flips from the 50 Hz cell's field to the 25 Hz cell's field
+between 27.5 and 28 ms, as the formula predicts. Both cells carry the same
+information about position; which one wins depends on their rates and the
+bin size.
+
+The decoder also weighs each position by a prior. Tingley & Peyrache's
+equation uses the normalized occupancy map, P(x) (their code's `placeBayes`
+uses a constant prior instead), while `decode_position` and
+`decode_intervals` default to a prior uniform over space. To decode with
+the occupancy map, pass `prior=rates.occupancy` (seconds per bin; bins never
+visited get no mass), and decode the null events with the same prior.
+
 ## Using your own recording
 
 - **Rate maps.** Estimate them from running only, e.g.
@@ -699,6 +974,11 @@ and epoch), parallelize over data sets with seeds from
   dt=dt)`. Liu et al. report the share of significant post-task events
   minus the share in pre-task sleep: run both sets of events and subtract
   their `detection_rates`.
+- **Cells with several place fields.** A cell with two fields has no
+  single place in a rank order; Tingley & Peyrache note such cells are
+  typically excluded. Pass `multi_field_cells="exclude"` to
+  `rank_order_correlation` or `rank_order_significance` (with
+  `place_fields=` for rate maps given as an array).
 - **Firing order without decoding.** `LEE_WILSON_2002` and
   `JI_WILSON_2007` test whether the cells fire in the order of their
   fields, from the spike times and rate maps alone (pass `spike_times=` as
@@ -714,7 +994,9 @@ and epoch), parallelize over data sets with seeds from
   verdict.
 - **Several sessions.** Score each session's events in its own call, add a
   `session` column, and pass it as `groups=` to `detection_rates`,
-  `method_agreement` and `matched_alpha`.
+  `method_agreement` and `matched_alpha`. `score_agreement(table,
+  groups=["session"])` gives one correlation per session, which Tingley &
+  Peyrache averaged.
 
 ## References
 

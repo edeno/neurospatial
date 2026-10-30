@@ -5337,6 +5337,15 @@ FOSTER_WILSON_2006 = RankOrderMethod(
         "Rank-order correlation between cell number, in order of field "
         "peaks, and time, with its probability from Numerical Recipes "
         "(the t-distribution for every sample size); P < 0.05.",
+        "That p-value is not calibrated for few cells. When each cell fires "
+        "once, in a random order, it calls a third of events replay with 3 "
+        "cells (rho = 1 or -1 gives P = 0), 1/12 with 4 or 5 cells and "
+        "about 5.4% with 10, the rates behind Tingley & Peyrache's (2020) "
+        "simulation with MATLAB's corr. A permutation test holds the rate: "
+        "dataclasses.replace(FOSTER_WILSON_2006, test='cell_order'), "
+        "rank_order_significance, or RankOrderResult.analytic_p_value "
+        "(exact up to 9 pairs). Exactly, no event of 3 or 4 cells reaches "
+        "P < 0.05, since the smallest two-sided P is 2 / n!.",
         "The paper does not say which spikes it correlated. Every spike is "
         "used here; Takigawa et al. (2024) group Foster & Wilson with "
         "analyses of whole proto-events rather than of all spikes, so first "
