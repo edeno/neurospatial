@@ -495,8 +495,8 @@ class TestNullOptions:
                 name="x",
                 reference="y",
                 score=weighted_correlation,
-                nulls=("column_cycle",),
-                null_options={"column_cycle": {"edge_exclusion": 10.0}},
+                nulls=("time_bin_permutation",),
+                null_options={"time_bin_permutation": {"edge_exclusion": 10.0}},
             )
 
     def test_a_method_refuses_options_of_nulls_it_does_not_run(self):

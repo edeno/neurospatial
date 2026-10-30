@@ -74,6 +74,7 @@ _COUNT_CHANGING_NULLS = ("spike_train_circular", "spike_time_uniform")
 # The options each null takes in null_options, with their defaults.
 _NULL_OPTIONS: Mapping[str, Mapping[str, Any]] = MappingProxyType(
     {
+        "column_cycle": MappingProxyType({"exclude_zero_shift": False}),
         "column_cycle_weighted": MappingProxyType({"edge_exclusion": 0.0}),
         "unit_identity": MappingProxyType({"active_only": False}),
     }
@@ -325,6 +326,10 @@ def replay_significance(
     null_options : Mapping[str, Mapping[str, Any]] or None, default=None
         Options of the nulls run, by null name:
 
+        - ``"column_cycle"``: ``exclude_zero_shift=True`` draws each time
+          bin's shift from 1 to ``n_bins - 1`` bins, so no time bin stays in
+          place, as nelpy does (Maboudi et al. 2018); the default draws
+          every circular shift, 0 included.
         - ``"column_cycle_weighted"``: ``edge_exclusion``, the distance in
           the environment's units within which no peak lands at either end
           of the track, for example
@@ -681,7 +686,11 @@ def replay_significance(
 
     if "column_cycle" in run:
         shifted = shuffle_posterior_circular(
-            track_env, posterior, n_shuffles=n_shuffles, rng=generator
+            track_env,
+            posterior,
+            n_shuffles=n_shuffles,
+            rng=generator,
+            **options_of["column_cycle"],
         )
         null_scores["column_cycle"] = scorer.scores(shifted, n_shuffles)
 
@@ -1240,12 +1249,15 @@ def _checked_null_options(
             f"{owner}: the edge_exclusion of column_cycle_weighted must be a "
             f"finite distance >= 0 in the environment's units, got {edge!r}."
         )
-    active_only = checked.get("unit_identity", {}).get("active_only", False)
-    if not isinstance(active_only, (bool, np.bool_)):
-        raise ValueError(
-            f"{owner}: the active_only of unit_identity must be True or False, "
-            f"got {active_only!r}."
-        )
+    for name, option in (
+        ("unit_identity", "active_only"),
+        ("column_cycle", "exclude_zero_shift"),
+    ):
+        flag = checked.get(name, {}).get(option, False)
+        if not isinstance(flag, (bool, np.bool_)):
+            raise ValueError(
+                f"{owner}: the {option} of {name} must be True or False, got {flag!r}."
+            )
     return checked
 
 

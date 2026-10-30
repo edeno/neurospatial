@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Maboudi et al. (2018) replay recipe
+
+- The `column_cycle` null takes `null_options={"column_cycle":
+  {"exclude_zero_shift": True}}`, and `shuffle_posterior_circular` takes
+  `exclude_zero_shift=True`, to draw shifts of 1 to n_bins - 1 bins, as
+  nelpy does. The default still draws every shift, 0 included.
+
 ### Walls thinner than a bin keep the bins beside them apart
 
 A slit, hole or concave corner of the arena's outline that lay inside one
