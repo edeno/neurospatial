@@ -99,22 +99,43 @@ class ReplaySegmentsResult(ReadOnlyArraysMixin, ResultMixin):
     segments: NDArray[np.int64]
     start_times: NDArray[np.float64]
     end_times: NDArray[np.float64]
-    durations: NDArray[np.float64]
-    time_bin_counts: NDArray[np.int64]
     dispersions: NDArray[np.float64]
     start_to_end_distances: NDArray[np.float64]
     path_lengths: NDArray[np.float64]
     trajectory_time_bins: NDArray[np.bool_]
-    longest: int | None
     method: str
     jump_rule: str
     metric: str
     units: str | None
-    n_time_bins: int
 
     def __post_init__(self) -> None:
         """Own read-only copies of the arrays."""
         self._own_arrays()
+
+    @property
+    def durations(self) -> NDArray[np.float64]:
+        """``end_times - start_times``, shape (n_segments,)."""
+        durations = self.end_times - self.start_times
+        durations.flags.writeable = False
+        return durations
+
+    @property
+    def time_bin_counts(self) -> NDArray[np.int64]:
+        """Rows each segment spans, ``stop - start``, shape (n_segments,)."""
+        counts = np.diff(self.segments, axis=1)[:, 0]
+        counts.flags.writeable = False
+        return counts
+
+    @property
+    def longest(self) -> int | None:
+        """Index of the segment spanning the most time bins; None without segments."""
+        counts = self.time_bin_counts
+        return int(np.argmax(counts)) if len(counts) else None
+
+    @property
+    def n_time_bins(self) -> int:
+        """Number of time bins in the event."""
+        return len(self.trajectory_time_bins)
 
     @property
     def n_segments(self) -> int:
@@ -629,24 +650,19 @@ def replay_segments(
     for start, stop in bounds[~keep]:
         on_trajectory[start:stop] = False
     bounds, starts, stops = bounds[keep], starts[keep], stops[keep]
-    counts = counts[keep]
 
     return ReplaySegmentsResult(
         segments=bounds,
         start_times=times[starts],
         end_times=times[stops - 1],
-        durations=durations[keep],
-        time_bin_counts=counts,
         dispersions=dispersions[keep],
         start_to_end_distances=distance(starts, stops - 1),
         path_lengths=path_lengths[keep],
         trajectory_time_bins=on_trajectory,
-        longest=int(np.argmax(counts)) if len(counts) else None,
         method=method,
         jump_rule=jump_rule,
         metric=metrics.metric,
         units=metrics.units,
-        n_time_bins=n_time_bins,
     )
 
 
