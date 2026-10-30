@@ -22,10 +22,10 @@ from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import is_integer_at_least, validate_choice
 from neurospatial.replay._compare import _compare
+from neurospatial.replay._inputs import _STEP_WHY, _posterior_times
 from neurospatial.replay.criteria import (
     _bin_distance_lookup,
     _check_metric,
-    _increasing_times,
     _trajectory_metrics,
 )
 
@@ -540,7 +540,9 @@ def replay_segments(
         metric=metric,
         operation=_OPERATION,
     )
-    times = _increasing_times(times, metrics.n_time_bins, _OPERATION)
+    times = _posterior_times(
+        times, metrics.n_time_bins, _OPERATION, why=_STEP_WHY, increasing=True
+    )
     n_time_bins = metrics.n_time_bins
     distance = _distance_function(env, metrics, method)
     jumps = metrics.map_jumps if method == "map" else metrics.mean_jumps

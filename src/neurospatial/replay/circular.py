@@ -30,12 +30,9 @@ import numpy as np
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.replay._inputs import _FIT_WHY, _posterior_times, _probability_rows
 from neurospatial.replay.significance import _Scorer
-from neurospatial.replay.trajectory import (
-    _SCORE_DECIMALS,
-    _require_probability_rows,
-    _require_times,
-)
+from neurospatial.replay.trajectory import _SCORE_DECIMALS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -322,8 +319,10 @@ class _CircularSequenceScorer(_Scorer):
                 f"the environment has {env.n_bins} bins. Pass the posterior "
                 "decoded on this environment, with one column per bin."
             )
-        self.posterior = _require_probability_rows(posterior, _OPERATION)
-        self.times = _require_times(times, len(self.posterior), _OPERATION)
+        self.posterior = _probability_rows(posterior, _OPERATION, sums="one")
+        self.times = _posterior_times(
+            times, len(self.posterior), _OPERATION, why=_FIT_WHY, distinct=True
+        )
 
     def observe(self) -> CircularSequenceResult:
         decoded = _decoded_angles(self.posterior[np.newaxis], self.angles)
