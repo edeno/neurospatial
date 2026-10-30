@@ -21,7 +21,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ResultMixin
+from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial.replay.correlation import (
     WeightedCorrelationResult,
     _track_bin_centers,
@@ -100,6 +100,14 @@ class ReplaySignificanceResult(ResultMixin):
     alternative: str
     use_absolute: bool
 
+    def __post_init__(self) -> None:
+        """Freeze the mapping of shuffle tests."""
+        object.__setattr__(self, "shuffles", MappingProxyType(dict(self.shuffles)))
+
+    def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
+        """Rebuild through the constructor; the read-only mapping cannot pickle."""
+        return reduce_through_constructor(self)
+
     @property
     def n_shuffles_used(self) -> Mapping[str, int]:
         """Shuffles with a defined score per null: those its p-value counts.
@@ -117,12 +125,18 @@ class ReplaySignificanceResult(ResultMixin):
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result.
 
-        Each null adds its p-value, ``{null}_p_value``, and the shuffles it
-        counts, ``{null}_n_shuffles_used``.
+        Starts with the observed result's ``summary()``, or only its
+        ``score`` for a custom score whose result has no ``summary()``. Each
+        null adds its p-value, ``{null}_p_value``, and the shuffles it counts,
+        ``{null}_n_shuffles_used``.
         """
+        summarize = getattr(self.observed, "summary", None)
+        observed = (
+            summarize() if callable(summarize) else {"score": self.observed.score}
+        )
         used = self.n_shuffles_used
         return {
-            **self.observed.summary(),
+            **observed,
             "p_value": self.p_value,
             **{f"{name}_p_value": test.p_value for name, test in self.shuffles.items()},
             **{f"{name}_n_shuffles_used": used[name] for name in self.shuffles},
@@ -595,7 +609,7 @@ def replay_significance(
         )
     return ReplaySignificanceResult(
         observed=observed_result,
-        shuffles=MappingProxyType(shuffles),
+        shuffles=shuffles,
         p_value=max(test.p_value for test in shuffles.values()),
         alternative=alternative,
         use_absolute=use_absolute,
