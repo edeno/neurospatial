@@ -55,6 +55,10 @@ from neurospatial.geometry import (
     require_cartesian,
     valid_observers,
 )
+from neurospatial.geometry._boundaries import (
+    analysis_interior,
+    physical_footprint_interior,
+)
 from neurospatial.ops.boundary_vectors import boundary_directions, nearest_boundary
 from neurospatial.simulation._walls import Walls
 from neurospatial.simulation.models.base import (
@@ -492,6 +496,19 @@ class BoundaryVectorCellModel:
         terms: NDArray[np.float64] = radial * self._angular
         return terms
 
+    def _on_floor(self, points: NDArray[np.float64]) -> NDArray[np.bool_]:
+        """Whether ``points``, shape (n, 2), lie where this cell's walls bound.
+
+        The region geometry's ray casts test a ray leaving a wall against:
+        the declared footprints, or the bins for ``'analysis'``.
+        """
+        if self.boundary_source == "analysis":
+            return analysis_interior(self.env.binning, self.env.arena)(points)
+        interior = physical_footprint_interior(self.env.arena)
+        return (
+            np.ones(len(points), dtype=bool) if interior is None else interior(points)
+        )
+
     @property
     def requires_headings(self) -> bool:
         """False: the drive is summed over allocentric directions."""
@@ -534,7 +551,7 @@ class BoundaryVectorCellModel:
                 self.env.binning, self.env.arena, positions, self.boundary_source
             )
             return observed, self._walls.ray_distances(
-                positions[observed], self._directions
+                positions[observed], self._directions, self._on_floor
             )
 
         # Cells on the same walls share the rays cast from the same positions.

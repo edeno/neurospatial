@@ -653,9 +653,9 @@ class TestSharedRayDistances:
         calls = []
         cast = Walls.ray_distances
 
-        def counting(self, positions, directions):
+        def counting(self, positions, directions, inside=None):
             calls.append(len(positions))
-            return cast(self, positions, directions)
+            return cast(self, positions, directions, inside)
 
         monkeypatch.setattr(Walls, "ray_distances", counting)
         return calls
