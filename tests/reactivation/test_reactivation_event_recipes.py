@@ -245,7 +245,10 @@ def test_a_window_without_events_is_an_error_row(
         warnings.simplefilter("ignore")
         table = _compare(
             data,
-            [dataclasses.replace(OLIVA_2020_EV, name="other", rest_bins="fixed"), method],
+            [
+                dataclasses.replace(OLIVA_2020_EV, name="other", rest_bins="fixed"),
+                method,
+            ],
             match_events=match_events,
         )
     failed = table[table["method"] == method.name]
@@ -540,6 +543,8 @@ def test_simulated_session_returns_its_bursts_as_events() -> None:
         (EL_GABY_2021, {"member_threshold": None}, "needs a finite member_threshold"),
         (HARVEY_2023_ASSEMBLY, {"member_threshold": 2.0}, "member_threshold=None"),
         (OLIVA_2020_ASSEMBLY, {"min_events": 10}, "min_events must be"),
+        (EL_GABY_2021, {"min_events": 200.0}, "min_events must be"),
+        (EL_GABY_2021, {"min_events": True}, "min_events must be"),
         (
             OLIVA_2020_ASSEMBLY,
             {"statistic": "event_response_difference"},

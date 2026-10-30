@@ -136,6 +136,8 @@ class TestReactivationWindows:
             ({"length": 10.0, "anchor": "middle"}, "anchor must be"),
             ({"length": 10.0, "clock": "sleep"}, "clock must be"),
             ({"length": 10.0, "count": 0}, "count must be a positive"),
+            ({"length": 10.0, "count": 2.0}, "count must be a positive"),
+            ({"length": 10.0, "count": True}, "count must be a positive"),
         ],
     )
     def test_invalid_options(self, options: dict, message: str) -> None:
@@ -157,6 +159,8 @@ class TestReactivationWindows:
         ({"test": "cell_identity_shuffle"}, "does not fit measure"),
         ({"percentile": 99.0}, "do not apply to explained_variance methods"),
         ({"n_shuffles": 0}, "n_shuffles must be a positive integer"),
+        ({"n_shuffles": 20.0}, "n_shuffles must be a positive integer"),
+        ({"n_shuffles": True}, "n_shuffles must be a positive integer"),
         ({"alpha": 1.0}, r"alpha must be in \(0, 1\)"),
     ],
 )

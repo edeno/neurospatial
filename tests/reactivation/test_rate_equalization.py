@@ -263,6 +263,7 @@ def test_rate_subsampled_tables_are_seeded() -> None:
     [
         (GIRI_2019, 0, "positive integer"),
         (GIRI_2019, 2.5, "positive integer"),
+        (GIRI_2019, 100.0, "positive integer"),
         (GIRI_2019, True, "positive integer"),
         (PEYRACHE_2010, 10, "only to EV methods"),
         (EL_GABY_2021, 10, "only to EV methods"),
