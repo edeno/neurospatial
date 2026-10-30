@@ -295,7 +295,7 @@ def detection_rates(
         closed on the left. Every event must fall in a bin.
     groups : sequence of str, default=()
         Columns of ``table`` to break rates down by their values, such as
-        ``("null_kind",)``.
+        ``("null_kind",)``. A missing value forms its own group.
     errors : {"not_replay", "exclude"}, default="not_replay"
         Events a method could not score (rows with an ``error``):
         ``"not_replay"`` counts them as not replay, so every method's rate
@@ -323,7 +323,10 @@ def detection_rates(
         method) pair within its ``groups``; if a ``by`` key is in neither
         ``table`` nor ``properties``, has fewer than two edges, or leaves
         events outside its bins (NaN, out of range, or absent from
-        ``properties``); or if ``errors`` or ``confidence`` is invalid.
+        ``properties``); if ``properties`` lacks the ``groups`` of a
+        table that numbers its events again in each group, or repeats a
+        (``groups``, ``event``) key; or if ``errors`` or ``confidence`` is
+        invalid.
 
     See Also
     --------
@@ -369,7 +372,7 @@ def detection_rates(
         if name in data:
             values = data[name]
         elif properties is not None and name in properties:
-            values = data["event"].map(properties[name])
+            values = _property_values(data, properties, name, groups, operation)
         else:
             raise ValueError(
                 _format_error(
@@ -395,12 +398,20 @@ def detection_rates(
             )
         data[name] = binned
         keys.append(name)
-    levels = [list(dict.fromkeys(data[key])) for key in ["method", *groups]] + [
-        list(data[name].cat.categories) for name in (by or {})
-    ]
-    frames = dict(iter(data.groupby(keys, observed=True, sort=False)))
+    # Group on integer codes, so a missing groups value (NaN or None) forms
+    # its own group, as in matched_alpha, and is found again below.
+    levels = {}
+    for key in ["method", *groups]:
+        codes, uniques = pd.factorize(data[key], use_na_sentinel=False)
+        data[f"_code[{key}]"] = codes
+        levels[key] = list(uniques)
+    for name in by or {}:
+        data[f"_code[{name}]"] = data[name].cat.codes
+        levels[name] = list(data[name].cat.categories)
+    coded = [f"_code[{key}]" for key in keys]
+    frames = dict(iter(data.groupby(coded, sort=False)))
     rows = []
-    for group in itertools.product(*levels):
+    for group in itertools.product(*(range(len(levels[key])) for key in keys)):
         frame = frames.get(group, data.iloc[:0])
         failed = frame["_error"]
         calls = frame["is_replay"] & ~failed
@@ -413,7 +424,7 @@ def detection_rates(
             rate, low, high = n_replay / n_events, interval.low, interval.high
         else:
             rate = low = high = np.nan
-        row = dict(zip(keys, group, strict=True))
+        row = {key: levels[key][code] for key, code in zip(keys, group, strict=True)}
         row.update(
             n_events=n_events,
             n_replay=n_replay,
@@ -424,6 +435,60 @@ def detection_rates(
         )
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def _property_values(
+    data: pd.DataFrame,
+    properties: pd.DataFrame,
+    name: str,
+    groups: Sequence[str],
+    operation: str,
+) -> pd.Series:
+    """Each table row's event property.
+
+    Joined on ``[*groups, "event"]`` when ``properties`` has the ``groups``
+    (an index without the name ``event`` is the event), and otherwise on
+    the index, as the event, when each event number names one event of the
+    table.
+    """
+    import pandas as pd
+
+    available = {*properties.columns, *properties.index.names}
+    missing = [key for key in groups if key not in available]
+    if not groups or missing:
+        if groups and data.duplicated(subset=["event", "method"]).any():
+            raise ValueError(
+                _format_error(
+                    f"{operation}: properties lacks {missing} as columns or "
+                    "index levels, and the table numbers its events again in "
+                    f"each group of {list(groups)}.",
+                    why="events are numbered within each compare_replay_methods "
+                    "call, so the event number alone does not say which call's "
+                    "event a property belongs to",
+                    fix="add the groups columns to each call's properties before "
+                    "concatenating them, e.g. event_properties(env, events)"
+                    ".assign(session='s1')",
+                )
+            )
+        return data["event"].map(properties[name])
+    join = [*groups, "event"]
+    named = [level for level in properties.index.names if level is not None]
+    flat = properties.reset_index(level=named) if named else properties
+    if "event" not in flat:
+        flat = flat.rename_axis("event").reset_index()
+    flat = flat[[*join, name]]
+    repeated = flat.duplicated(subset=join)
+    if repeated.any():
+        raise ValueError(
+            _format_error(
+                f"{operation}: properties has {int(repeated.sum())} repeated "
+                f"{join} keys.",
+                why="each event needs one value of each property",
+                fix="pass one row per event and group",
+            )
+        )
+    joined = data[join].merge(flat, on=join, how="left")
+    return pd.Series(joined[name].to_numpy(), index=data.index, name=name)
 
 
 def method_agreement(
@@ -446,7 +511,8 @@ def method_agreement(
         or several concatenated with ``groups`` columns that tell their
         events apart.
     groups : sequence of str, default=()
-        Columns of ``table`` that, with ``event``, identify an event.
+        Columns of ``table`` that, with ``event``, identify an event. A
+        missing value forms its own group.
     errors : {"not_replay", "exclude"}, default="not_replay"
         Events a method could not score count as not replay, or leave the
         pair's events (see :func:`detection_rates`).
