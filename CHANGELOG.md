@@ -183,6 +183,15 @@ Several replay papers test a whole data set, not each event:
   have its lower rate. With periods of equal length each unit's counts are
   equal exactly. Pair correlations grow with firing rate, so this separates
   more co-firing after the task from more firing (Tingley & Peyrache 2020).
+- `ReactivationMethod(n_rate_subsamples=)` applies that control inside
+  `compare_reactivation_methods`: each pair of control and match windows is
+  subsampled this many times, and EV, REV, the partial correlation and its
+  p-value are the medians over subsamples, as Giri et al. reported them. On
+  a simulated session whose assembly members only fire more after the task,
+  Kudrimoti's EV falls from 0.11-0.13 to the level of a session without the
+  rate change; with real reactivation it stays above 0.7. `GIRI_2019` keeps
+  its main analysis; its notes say where the paper applied the control
+  (`dataclasses.replace(GIRI_2019, n_rate_subsamples=100)`).
 
 ### Reactivation measures
 

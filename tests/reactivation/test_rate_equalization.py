@@ -2,10 +2,25 @@
 
 from __future__ import annotations
 
+import dataclasses
+import zlib
+
 import numpy as np
 import pytest
 
-from neurospatial.reactivation import equalize_firing_rates
+from neurospatial.decoding import bin_spikes_in_time
+from neurospatial.reactivation import (
+    GIRI_2019,
+    KUDRIMOTI_1999,
+    PEYRACHE_2010,
+    ReactivationMethod,
+    ReactivationWindows,
+    compare_reactivation_methods,
+    equalize_firing_rates,
+    explained_variance_reactivation,
+    pairwise_correlations,
+    simulated_reactivation_session,
+)
 
 # ---------------------------------------------------------------------------
 # equalize_firing_rates
@@ -95,3 +110,168 @@ def test_subsamples_are_seeded() -> None:
 def test_refuses_counts_it_cannot_subsample(before, after, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         equalize_firing_rates(before, after)
+
+
+# ---------------------------------------------------------------------------
+# ReactivationMethod(n_rate_subsamples=...)
+# ---------------------------------------------------------------------------
+
+GROUPS = {"tetrode": np.arange(30) // 3}
+KUDRIMOTI_ONE_WINDOW = dataclasses.replace(
+    KUDRIMOTI_1999, match_windows=ReactivationWindows(length=600.0, count=1)
+)
+EQUALIZED = dataclasses.replace(
+    KUDRIMOTI_ONE_WINDOW, name="kudrimoti_equalized", n_rate_subsamples=10
+)
+
+
+def _values(session, seed: int):
+    table = compare_reactivation_methods(
+        session.spike_times,
+        session.template_epochs,
+        session.match_epochs,
+        session.control_epochs,
+        reactivation_methods=[KUDRIMOTI_ONE_WINDOW, EQUALIZED],
+        unit_groups=GROUPS,
+        rng=seed,
+    )
+    return table.set_index("method")
+
+
+@pytest.fixture(scope="module")
+def tables():
+    sessions = {
+        "rate_change": {"reactivation": 0.0, "rate_change": 1.0},
+        "no_reactivation": {"reactivation": 0.0},
+        "reactivated": {"rate_change": 1.0},
+    }
+    return {
+        name: [
+            _values(
+                simulated_reactivation_session(duration=600.0, rng=seed, **options),
+                seed,
+            )
+            for seed in range(3)
+        ]
+        for name, options in sessions.items()
+    }
+
+
+def test_equal_rates_bring_a_rate_change_to_the_null_level(tables) -> None:
+    """Members fire twice as much after the task without firing together:
+    EV with every spike calls it reactivation; with equal rates it falls to
+    the EV of the same simulation without the rate change."""
+    for changed, null in zip(
+        tables["rate_change"], tables["no_reactivation"], strict=True
+    ):
+        assert changed.loc["kudrimoti_1999", "value"] > 0.05
+        assert changed.loc["kudrimoti_1999", "is_reactivated"]
+        equalized = changed.loc["kudrimoti_equalized", "value"]
+        assert equalized < 0.02
+        assert abs(equalized - null.loc["kudrimoti_equalized", "value"]) < 0.01
+        assert not changed.loc["kudrimoti_equalized", "is_reactivated"]
+
+
+def test_equal_rates_keep_real_reactivation(tables) -> None:
+    """With assembly events after the task and the rate change, EV stays far
+    above the null level after equalizing (lower, since the subsample also
+    removes spikes of the co-firing)."""
+    for table in tables["reactivated"]:
+        equalized = table.loc["kudrimoti_equalized", "value"]
+        assert 0.5 < equalized < table.loc["kudrimoti_1999", "value"]
+        assert table.loc["kudrimoti_equalized", "is_reactivated"]
+
+
+def test_values_are_medians_over_subsamples_of_ev_averaged_over_controls() -> None:
+    """Recompute two control windows' rate-equalized EV with the public
+    functions and the method's documented random stream."""
+    session = simulated_reactivation_session(duration=600.0, rng=3, rate_change=0.5)
+    method = ReactivationMethod(
+        name="two_controls",
+        reference="test",
+        measure="explained_variance",
+        bin_size=0.1,
+        control_windows=ReactivationWindows(length=300.0),
+        n_rate_subsamples=5,
+    )
+    table = compare_reactivation_methods(
+        session.spike_times,
+        session.template_epochs,
+        session.match_epochs,
+        session.control_epochs,
+        reactivation_methods=[method],
+        rng=11,
+    )
+
+    def counts(epochs):
+        return bin_spikes_in_time(session.spike_times, dt=0.1, epochs=epochs)[0]
+
+    template = pairwise_correlations(counts(session.template_epochs))
+    match = counts(session.match_epochs).astype(float)
+    controls = [counts([[0.0, 300.0]]), counts([[300.0, 600.0]])]
+    generator = np.random.default_rng(
+        np.random.SeedSequence(
+            table.attrs["rng_entropy"],
+            spawn_key=(zlib.crc32(b"two_controls"), 0, 1),
+        )
+    )
+    explained, reversed_ = [], []
+    for _ in range(5):
+        draws = []
+        for control in controls:
+            new_control, new_match = equalize_firing_rates(
+                control.astype(float), match, rng=generator
+            )
+            draws.append(
+                explained_variance_reactivation(
+                    template,
+                    pairwise_correlations(new_match),
+                    control_correlations=pairwise_correlations(new_control),
+                )
+            )
+        explained.append(np.mean([d.explained_variance for d in draws]))
+        reversed_.append(np.mean([d.reversed_explained_variance for d in draws]))
+    row = table.iloc[0]
+    assert row["n_control_windows"] == 2
+    np.testing.assert_allclose(row["explained_variance"], np.median(explained))
+    np.testing.assert_allclose(row["reversed_explained_variance"], np.median(reversed_))
+
+
+def test_rate_subsampled_tables_are_seeded() -> None:
+    session = simulated_reactivation_session(duration=600.0, rng=0, rate_change=1.0)
+
+    def table(seed):
+        return compare_reactivation_methods(
+            session.spike_times,
+            session.template_epochs,
+            session.match_epochs,
+            session.control_epochs,
+            reactivation_methods=[EQUALIZED],
+            unit_groups=GROUPS,
+            rng=seed,
+        )
+
+    first, again, other = table(5), table(5), table(6)
+    assert first["value"].iloc[0] == again["value"].iloc[0]
+    assert first["value"].iloc[0] != other["value"].iloc[0]
+
+
+@pytest.mark.parametrize(
+    ("base", "value", "message"),
+    [
+        (GIRI_2019, 0, "positive integer"),
+        (GIRI_2019, 2.5, "positive integer"),
+        (GIRI_2019, True, "positive integer"),
+        (PEYRACHE_2010, 10, "only to EV methods"),
+        (
+            dataclasses.replace(KUDRIMOTI_1999, test="pair_bootstrap"),
+            10,
+            "pair bootstrap",
+        ),
+    ],
+)
+def test_recipe_refuses_rate_subsamples_it_cannot_apply(
+    base, value, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        dataclasses.replace(base, n_rate_subsamples=value)
