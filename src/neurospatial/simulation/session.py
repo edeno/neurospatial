@@ -13,6 +13,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._results import read_only_copy
 from neurospatial._validation import is_positive_integer, validate_finite_scalar
+from neurospatial.ops.boundary_vectors import nearest_boundary
 from neurospatial.simulation._seeds import _stream_seeds
 
 if TYPE_CHECKING:
@@ -408,13 +409,24 @@ UNIFORM_WALL_INSET = 0.4
 def _bin_depths(env: Environment) -> NDArray[np.float64] | None:
     """Each bin's distance to the nearest wall, shape (n_bins,), or None.
 
-    The distance is measured to the nearest boundary bin's center plus half
-    that bin's length, the distance from the bin center to the boundary
-    bin's outer edge. None when the bins have no known outline (point bins
-    without cells) or no boundary.
+    In 2-D it is the exact distance from the bin center to the edge of the
+    bins or a wall between them (``nearest_boundary`` with
+    ``boundary_source='analysis'``), so a declared internal wall counts. In
+    other dimensions it is measured to the nearest boundary bin's center
+    plus half that bin's length, the distance from the bin center to the
+    boundary bin's outer edge. None when the bins have no known outline
+    (point bins without cells) or no boundary.
     """
     from scipy.spatial import cKDTree
 
+    if env.n_dims == 2:
+        try:
+            distances, _ = nearest_boundary(
+                env, env.bin_centers, boundary_source="analysis"
+            )
+        except NotImplementedError:
+            return None
+        return distances
     try:
         boundary = env.boundary_bins
     except NotImplementedError:

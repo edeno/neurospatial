@@ -468,6 +468,32 @@ class TestSimulateSession:
         assert centers[vertical, 1].max() > 85.0
         assert centers[horizontal, 0].max() > 85.0
 
+    def test_uniform_centers_keep_clear_of_an_internal_wall(self):
+        """A declared wall inside the arena is a wall for field placement too.
+
+        The 70 cm wall splits most of a 100 cm box into two 50 cm wide
+        halves. Bins 1 cm from the wall used to count as 35 cm deep, so six
+        of 40 centers sat within 5 cm of it; now centers keep clear of it as
+        of the outline, and both halves get fields.
+        """
+        from shapely.geometry import LineString, Point, box
+
+        from neurospatial.geometry import OpenArena
+
+        outline = box(0, 0, 100, 100)
+        wall = LineString([(50, 0), (50, 70)])
+        env = Environment.from_polygon(
+            outline,
+            bin_size=2.0,
+            units="cm",
+            arena=OpenArena(outline, walls=(wall,)),
+        )
+        centers = self._uniform_centers(env, 40)
+        assert len(np.unique(centers, axis=0)) == 40
+        assert min(wall.distance(Point(center)) for center in centers) >= 9.0
+        assert (centers[:, 0] < 50).sum() >= 10
+        assert (centers[:, 0] > 50).sum() >= 10
+
     def test_uniform_centers_run_to_the_end_of_every_plus_maze_arm(self):
         from neurospatial.simulation.mazes import make_plus_maze
 
