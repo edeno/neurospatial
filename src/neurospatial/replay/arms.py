@@ -122,6 +122,22 @@ class ArmReplayMethod:
         object.__setattr__(self, "decoding", MappingProxyType(dict(self.decoding)))
         object.__setattr__(self, "notes", tuple(self.notes))
         prefix = f"ArmReplayMethod {self.name!r}"
+        for name in (
+            "peak_threshold",
+            "smoothing_sigma",
+            "min_duration",
+            "min_coverage",
+            "min_abs_correlation",
+            "joint_min_abs_correlation",
+            "merge_max_gap",
+        ):
+            value = getattr(self, name)
+            if value is None and name == "merge_max_gap":
+                continue
+            if isinstance(value, bool) or not isinstance(
+                value, (int, float, np.integer, np.floating)
+            ):
+                raise ValueError(f"{prefix}: {name} must be a number, got {value!r}.")
         for name in ("peak_threshold", "smoothing_sigma", "min_duration"):
             value = getattr(self, name)
             if not (np.isfinite(value) and value >= 0):
