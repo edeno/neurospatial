@@ -35,6 +35,8 @@ Pairwise Reactivation
 ---------------------
 pairwise_correlations : Compute pairwise correlations between neurons
     Extract upper triangle of correlation matrix.
+pairwise_activation : Co-firing per time bin, weighted by template correlations
+    The full-matrix reactivation strength of Tingley & Peyrache (2020).
 
 explained_variance_reactivation : Explained variance reactivation analysis
     Partial correlation of template and match pair correlations controlling
@@ -103,6 +105,7 @@ from neurospatial.reactivation.assemblies import (
     detect_assemblies,
     explained_variance_reactivation,
     marchenko_pastur_threshold,
+    pairwise_activation,
     pairwise_correlations,
 )
 from neurospatial.reactivation.calibration import (
@@ -172,6 +175,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "explained_variance_contributions",
     "ev_rev_contrast",
     "pairwise_correlations",
+    "pairwise_activation",
     # Published methods
     "EventResponse",
     "ReactivationMethod",

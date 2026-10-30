@@ -472,6 +472,7 @@ neurospatial.reactivation.explained_variance_contributions(template_correlations
 neurospatial.reactivation.explained_variance_reactivation(template_correlations, match_correlations, *, control_correlations=None, unit_groups=None, pair_mask=None, template_unit_ids=None, match_unit_ids=None, control_unit_ids=None)
 neurospatial.reactivation.marchenko_pastur_threshold(n_neurons, n_time_bins)
 neurospatial.reactivation.null_reactivation_data(spike_times, match_epochs, *, kind, rng=None)
+neurospatial.reactivation.pairwise_activation(spike_counts, template_correlations, *, z_score_input=True, unit_ids=None, template_unit_ids=None)
 neurospatial.reactivation.pairwise_correlations(spike_counts)
 neurospatial.reactivation.reactivation_detection_rates(table, *, groups=(), confidence=0.95)
 neurospatial.reactivation.simulated_reactivation_session(*, n_units=30, n_assemblies=3, assembly_size=5, duration=1200.0, rate=2.0, event_rate=1.0, reactivation=1.0, rate_change=0.0, burst_rate=0.5, burst_gain=5.0, rng=None)

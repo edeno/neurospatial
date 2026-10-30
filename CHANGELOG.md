@@ -268,6 +268,14 @@ Several replay papers test a whole data set, not each event:
   rate change; with real reactivation it stays above 0.7. `GIRI_2019` keeps
   its main analysis; its notes say where the paper applied the control
   (`dataclasses.replace(GIRI_2019, n_rate_subsamples=100)`).
+- `pairwise_activation(spike_counts, template_correlations, *,
+  z_score_input=, unit_ids=, template_unit_ids=)` is the reactivation
+  strength of Tingley & Peyrache (2020) in its simplest case: each bin's
+  z-scored population vector projected on the template's whole correlation
+  matrix with a zero diagonal (the "cell-pair coherogram" of their
+  supplement). Its mean over a period is the sum over neuron pairs of the
+  products of the two periods' correlations, which the tests check against
+  `np.corrcoef`; a rank-one template gives `assembly_activation`.
 
 ### Reactivation measures
 
