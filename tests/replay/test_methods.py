@@ -1897,8 +1897,12 @@ class TestChenani:
         assert not table["is_replay"].any()
         assert table["error"].str.contains("fewer than 20").all()
 
-    def test_negative_ssi_is_never_replay(self, epoch):
-        """The same bursts in reverse order score -sqrt(11) on outbound."""
+    def test_reverse_order_counts_only_through_a_matching_template(self, epoch):
+        """The replayed bursts in reverse order score -sqrt(11) on outbound.
+
+        Negative SSIs are never significant; with an inbound template whose
+        fields run the other way, the same bursts score +sqrt(11) there.
+        """
         env, templates, trains, events = epoch
         reversed_trains = [train.copy() for train in trains]
         for event in range(5):
@@ -1906,17 +1910,66 @@ class TestChenani:
             for k, cell in enumerate(range(8, 20)):
                 spikes = reversed_trains[cell]
                 spikes[np.isclose(spikes, start + 0.01 * k)] = start + 0.11 - 0.01 * k
+        options = {
+            "replay_methods": [CHENANI_2019],
+            "spike_times": reversed_trains,
+            "dt": DT,
+            "rng": 0,
+        }
+        outbound_only = compare_replay_methods(
+            env, events, encoding_models={"outbound": templates["outbound"]}, **options
+        )
+        assert (outbound_only.iloc[:5]["score"] < 0).all()
+        assert not outbound_only.iloc[:5]["is_replay"].any()
+        both = compare_replay_methods(
+            env,
+            events,
+            encoding_models={
+                "outbound": templates["outbound"],
+                "inbound": templates["outbound"][::-1],
+            },
+            **options,
+        )
+        np.testing.assert_allclose(both.iloc[:5]["score"], np.sqrt(11))
+        assert both.iloc[:5]["is_replay"].all()
+        assert (both.iloc[:5]["template"] == "inbound").all()
+
+    def test_exactly_20_bursts_make_an_epoch(self, epoch):
+        table = self._table(epoch, events=epoch[3][:20])
+        assert (table["error"] == "").all()
+        assert table.iloc[:5]["is_replay"].all()
+
+    def test_templates_may_hold_different_cells(self, epoch):
+        """Cells without an inbound field are left out of that template."""
+        env, templates, trains, events = epoch
+        inbound = templates["inbound"].copy()
+        inbound[:20] = np.nan
         table = compare_replay_methods(
             env,
             events,
             replay_methods=[CHENANI_2019],
-            spike_times=reversed_trains,
-            encoding_models={"outbound": templates["outbound"]},
+            spike_times=trains,
+            encoding_models={"outbound": templates["outbound"], "inbound": inbound},
             dt=DT,
             rng=0,
         )
-        assert (table.iloc[:5]["score"] < 0).all()
-        assert not table.iloc[:5]["is_replay"].any()
+        assert table.iloc[:5]["is_replay"].all()
+        assert (table.iloc[:5]["template"] == "outbound").all()
+
+    def test_a_burst_without_order_is_explained(self, epoch):
+        env, templates, trains, events = epoch
+        flat = [train.copy() for train in trains]
+        for cell in range(8, 20):
+            flat[cell][np.isclose(flat[cell] // 1, 10.0)] = 10.05
+        table = self._table((env, templates, flat, events))
+        row = table.iloc[0]
+        assert np.isnan(row["score"]) and not row["is_replay"]
+        assert "no variation" in row["error"]
+        assert row["template"] is None or np.isnan(row["template"])
+
+    def test_a_named_template_must_exist(self, epoch):
+        with pytest.raises(ValueError, match="'sideways' is not one of"):
+            self._table(epoch, template="sideways")
 
     def test_needs_five_active_cells(self, epoch):
         env, templates, trains, events = epoch
@@ -1947,6 +2000,14 @@ class TestChenani:
             ({"test": "pooled_ssi", "alternative": "two-sided"}, "one-sided"),
             ({"test": "pooled_ssi", "spike_statistic": "all_spikes"}, "one-sided"),
             ({"test": "cell_order", "min_epoch_events": 20}, "only to test="),
+            (
+                {
+                    "test": "pooled_ssi",
+                    "alternative": "greater",
+                    "min_active_fraction": 0.5,
+                },
+                "min_active_fraction",
+            ),
         ],
     )
     def test_invalid_pooled_settings(self, kwargs, match):
@@ -1962,4 +2023,17 @@ class TestChenani:
         assert (CHENANI_2019.test, CHENANI_2019.alternative) == (
             "pooled_ssi",
             "greater",
+        )
+
+
+def test_compare_refuses_duplicate_method_names(place_code):
+    import dataclasses
+
+    env, rates = place_code
+    decoded, _ = _decoded(env, rates, "random", seed=8)
+    with pytest.raises(ValueError, match="names must be unique"):
+        compare_replay_methods(
+            env,
+            [decoded],
+            replay_methods=[SILVA_2015, dataclasses.replace(SILVA_2015, criteria=())],
         )
