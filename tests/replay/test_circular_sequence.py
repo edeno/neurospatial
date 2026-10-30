@@ -12,6 +12,9 @@ import pytest
 from neurospatial import Environment
 from neurospatial.replay import (
     CircularSequenceResult,
+    ReplayCriterion,
+    ReplayMethod,
+    detect_replay,
     fit_circular_sequence,
     fit_linear_trajectory,
     replay_significance,
@@ -308,3 +311,80 @@ class TestSignificance:
         assert 5 <= np.sum(p_values < 0.05) <= 35
         # Not only the tail: the p-values are spread over (0, 1].
         assert 0.4 < np.median(p_values) < 0.6
+
+
+def _n_spikes_method(threshold):
+    return ReplayMethod(
+        name="wikenheiser_redish_like",
+        reference="test",
+        score=fit_circular_sequence,
+        nulls=("time_bin_permutation",),
+        n_shuffles=199,
+        empty_time_bins="drop",
+        criteria=(
+            ReplayCriterion("n_active_cells", ">=", 3),
+            ReplayCriterion("n_spikes", ">=", threshold),
+        ),
+    )
+
+
+class TestNSpikesCriterion:
+    def test_counts_every_spike_in_the_event(self, loop):
+        """Three cells, 5 spikes over the event: passes >= 5, fails >= 6."""
+        posterior, times = _seam_sweep(loop, n_time_bins=12)
+        counts = np.zeros((12, 3), dtype=int)
+        counts[[0, 3, 5, 8, 11], [0, 1, 2, 0, 1]] = 1
+        posterior[counts.sum(axis=1) == 0] = 1 / loop.n_bins  # empty: the prior
+        passing = detect_replay(
+            loop,
+            posterior,
+            times,
+            replay_method=_n_spikes_method(5),
+            spike_counts=counts,
+            rng=0,
+        )
+        assert passing.values["n_spikes >= 5"] == 5.0
+        assert passing.criteria["n_spikes >= 5"]
+        assert passing.criteria["n_active_cells >= 3"]
+        failing = detect_replay(
+            loop,
+            posterior,
+            times,
+            replay_method=_n_spikes_method(6),
+            spike_counts=counts,
+            rng=0,
+        )
+        assert failing.values["n_spikes >= 6"] == 5.0
+        assert not failing.criteria["n_spikes >= 6"]
+        assert not failing.is_replay
+        # The criterion alone separates the verdicts: same score and p-value.
+        assert failing.p_value == passing.p_value
+
+    def test_counts_several_spikes_per_cell_and_summed_counts(self, loop):
+        """A cell with 4 spikes counts 4 spikes, also from summed counts."""
+        posterior, times = _seam_sweep(loop, n_time_bins=6)
+        counts = np.zeros((6, 2), dtype=int)
+        counts[1, 0] = 4
+        counts[4, 1] = 2
+        method = ReplayMethod(
+            name="spikes",
+            reference="test",
+            score=fit_circular_sequence,
+            criteria=(ReplayCriterion("n_spikes", ">=", 5),),
+        )
+        for given in (counts, counts.sum(axis=1)):
+            result = detect_replay(
+                loop, posterior, times, replay_method=method, spike_counts=given
+            )
+            assert result.values["n_spikes >= 5"] == 6.0
+
+    def test_needs_spike_counts(self, loop):
+        posterior, times = _seam_sweep(loop)
+        method = ReplayMethod(
+            name="spikes",
+            reference="test",
+            score=fit_circular_sequence,
+            criteria=(ReplayCriterion("n_spikes", ">=", 5),),
+        )
+        with pytest.raises(ValueError, match="needs spike_counts"):
+            detect_replay(loop, posterior, times, replay_method=method)
