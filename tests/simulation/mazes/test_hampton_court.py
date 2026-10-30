@@ -190,8 +190,3 @@ def test_custom_dims_scale_the_frame():
 def test_frame_too_small_for_the_galleries_raises():
     with pytest.raises(ValueError, match="cannot hold 18 x 14 galleries"):
         make_hampton_court_maze(HamptonCourtDims(frame_width=150.0))
-
-
-def test_bins_coarser_than_the_walls_warn():
-    with pytest.warns(UserWarning, match="walls of the Hampton Court maze"):
-        make_hampton_court_maze(bin_size=4.0, include_track=False)

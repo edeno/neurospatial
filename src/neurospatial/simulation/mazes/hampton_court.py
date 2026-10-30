@@ -71,7 +71,6 @@ from neurospatial.simulation.mazes._base import (
     refuse,
     warn_if_bins_too_coarse,
 )
-from neurospatial.simulation.mazes._geometry import warn_if_bins_bridge_walls
 
 _Cell = tuple[int, int]
 
@@ -194,9 +193,9 @@ def make_hampton_court_maze(
         Maze dimensions. If None, uses Small's 8 x 6 ft frame and 4-in
         galleries.
     bin_size : float, optional
-        Spatial bin size in cm (default: 2.0). Keep it below the partition
-        thickness (3.1 cm at the default dimensions); larger bins can bridge
-        a partition and join neighbouring galleries, and trigger a warning.
+        Spatial bin size in cm (default: 2.0). Bins on either side of a
+        partition thinner than a bin (3.1 cm at the default dimensions) are
+        not joined through it.
     include_track : bool, optional
         Whether to create the linearized track graph (default: True).
 
@@ -254,11 +253,6 @@ def make_hampton_court_maze(
     """
     if dims is None:
         dims = HamptonCourtDims()
-    pitch_x, pitch_y = _pitch(dims)
-    warn_if_bins_bridge_walls(
-        bin_size, min(pitch_x, pitch_y) - dims.corridor_width, "Hampton Court maze"
-    )
-
     galleries = _gallery_graph()
     floor = _floor_polygon(galleries, dims)
     env_2d = Environment.from_polygon(

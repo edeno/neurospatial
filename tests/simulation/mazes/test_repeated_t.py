@@ -219,8 +219,3 @@ def test_long_arm_not_longer_than_arm_raises():
 def test_food_box_longer_than_the_alley_raises():
     with pytest.raises(ValueError, match="does not fit"):
         RepeatedTDims(food_box_depth=50.0)
-
-
-def test_bins_coarser_than_the_walls_warn():
-    with pytest.warns(UserWarning, match="walls of the repeated T-maze"):
-        make_repeated_t_maze(bin_size=3.0, include_track=False)

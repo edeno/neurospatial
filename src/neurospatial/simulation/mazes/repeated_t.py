@@ -97,7 +97,6 @@ from neurospatial.simulation.mazes._geometry import (
     make_corridor_polygon,
     single_floor,
     union_polygons,
-    warn_if_bins_bridge_walls,
 )
 
 _N_CHOICES = 6
@@ -215,9 +214,9 @@ def make_repeated_t_maze(
     dims : RepeatedTDims, optional
         Maze dimensions. If None, uses the dimensions written on the figure.
     bin_size : float, optional
-        Spatial bin size in cm (default: 2.0). Keep it below the thinnest
-        wall (2.1 cm at the default dimensions); larger bins can bridge it
-        and trigger a warning.
+        Spatial bin size in cm (default: 2.0). Bins on either side of a
+        wall thinner than a bin (2.1 cm at the default dimensions) are not
+        joined through it.
     include_track : bool, optional
         Whether to create the linearized track graph (default: True).
 
@@ -268,8 +267,6 @@ def make_repeated_t_maze(
     """
     if dims is None:
         dims = RepeatedTDims()
-    thinnest_wall = min(dims.wall_thickness, dims.long_arm_length - dims.arm_length)
-    warn_if_bins_bridge_walls(bin_size, thinnest_wall, "repeated T-maze")
 
     positions, edges = _layout(dims)
     alleys = [
