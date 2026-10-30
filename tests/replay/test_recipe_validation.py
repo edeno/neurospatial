@@ -237,3 +237,37 @@ class TestPickling:
             for clone in _round_trips(method):
                 assert type(clone) is type(method)
                 _assert_same_fields(clone, method)
+
+
+class TestCriterionValidation:
+    @pytest.mark.parametrize("threshold", [np.nan, np.inf, "0.5", True, None])
+    def test_threshold_must_be_a_finite_number(self, threshold):
+        with pytest.raises(ValueError, match="threshold must be a finite number"):
+            ReplayCriterion("score", ">", threshold)
+
+    def test_numpy_thresholds_are_accepted(self):
+        assert ReplayCriterion("score", ">", np.float32(0.5)).label == "score > 0.5"
+        assert ReplayCriterion("n_active_cells", ">=", np.int64(5)).threshold == 5
+
+    @pytest.mark.parametrize("absolute", ["no", 1, None])
+    def test_absolute_must_be_a_bool(self, absolute):
+        with pytest.raises(ValueError, match="absolute must be True or False"):
+            ReplayCriterion("score", ">", 0.5, absolute=absolute)
+
+    def test_criteria_with_one_label_are_refused(self):
+        # 2.0 and 2.000001 both print as "n_active_cells >= 2"; one would
+        # overwrite the other's verdict, so the result depended on order.
+        low = ReplayCriterion("n_active_cells", ">=", 2.0)
+        high = ReplayCriterion("n_active_cells", ">=", 2.000001)
+        assert low.label == high.label
+        for criteria in ((low, high), (high, low), (low, low)):
+            with pytest.raises(ValueError, match="more than once"):
+                ReplayMethod("x", "y", score=weighted_correlation, criteria=criteria)
+
+    def test_criteria_with_distinct_labels_are_kept(self):
+        criteria = (
+            ReplayCriterion("score", ">", 0.5, absolute=True),
+            ReplayCriterion("score", ">", 0.5),
+        )
+        method = ReplayMethod("x", "y", score=weighted_correlation, criteria=criteria)
+        assert method.criteria == criteria

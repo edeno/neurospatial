@@ -148,7 +148,27 @@ class ReplayCriterion:
     absolute: bool = False
 
     def __post_init__(self) -> None:
-        """Refuse unknown comparisons and scales."""
+        """Refuse unknown comparisons and scales, and non-numeric thresholds."""
+        threshold = self.threshold
+        if (
+            isinstance(threshold, bool)
+            or not isinstance(threshold, (int, float, np.integer, np.floating))
+            or not np.isfinite(threshold)
+        ):
+            raise ValueError(
+                _format_error(
+                    f"ReplayCriterion {self.quantity!r}: threshold must be a "
+                    f"finite number, got {threshold!r}.",
+                    why="an event is compared with the threshold, and a NaN "
+                    "threshold fails every event",
+                    fix="give the paper's threshold as a number, such as 0.5",
+                )
+            )
+        if not isinstance(self.absolute, (bool, np.bool_)):
+            raise ValueError(
+                f"ReplayCriterion {self.quantity!r}: absolute must be True or "
+                f"False, got {self.absolute!r}."
+            )
         if self.comparison not in _COMPARISONS:
             raise ValueError(
                 f"ReplayCriterion: comparison must be one of "
@@ -457,6 +477,20 @@ class ReplayMethod:
         object.__setattr__(self, "nulls", tuple(self.nulls))
         object.__setattr__(self, "criteria", tuple(self.criteria))
         object.__setattr__(self, "notes", tuple(self.notes))
+        labels = [c.label for c in self.criteria]
+        repeated = sorted({label for label in labels if labels.count(label) > 1})
+        if repeated:
+            raise ValueError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: criteria {repeated} appear "
+                    "more than once.",
+                    why="each criterion's verdict and value are reported under "
+                    "its label, so criteria with one label would overwrite "
+                    "each other",
+                    fix="keep one criterion per label; two thresholds on one "
+                    "quantity in one direction reduce to the stricter one",
+                )
+            )
         if self.score is None and any(c.quantity == "score" for c in self.criteria):
             raise ValueError(
                 f"ReplayMethod {self.name!r}: a method without a score cannot "
