@@ -77,11 +77,13 @@ def _every_field_method() -> ReplayMethod:
         alpha=0.01,
         alternative="two-sided",
         use_absolute=True,
-        empty_time_bins="zero",
+        tested_quantities={"dispersion": "two-sided"},
+        empty_time_bins="drop",
         criteria=(
             ReplayCriterion("max_map_jump", "<", 0.4, relative_to="track_length"),
         ),
-        segmentation=_every_field_segmentation(),
+        # A score with tested quantities tests the longest segment.
+        segmentation=dataclasses.replace(_every_field_segmentation(), choose="longest"),
         units="cm",
         template_choice="most_posterior",
         exclude_end_distance=5.0,
@@ -117,6 +119,8 @@ def _detection_result() -> ReplayDetectionResult:
         segments=segments,
         segment=0,
         template="a",
+        tested_values={"mean_spread": 2.0},
+        tested_p_values={"mean_spread": 0.01},
     )
 
 
@@ -202,6 +206,8 @@ class TestPickling:
             assert clone.template == "a"
             assert dict(clone.criteria) == dict(result.criteria)
             assert dict(clone.values) == dict(result.values)
+            assert dict(clone.tested_values) == dict(result.tested_values)
+            assert dict(clone.tested_p_values) == dict(result.tested_p_values)
             np.testing.assert_array_equal(
                 clone.segments.segments, result.segments.segments
             )

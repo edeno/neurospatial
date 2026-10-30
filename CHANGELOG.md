@@ -83,6 +83,35 @@ other seeded simulations give the same spikes as before.
 - Head-direction and boundary-vector `ground_truth` report a preferred
   direction of exactly −π as +π, the package's (−π, π] convention.
 
+### Widloski & Foster (2025): trajectory quantities tested against shuffles
+
+- `WIDLOSKI_FOSTER_2025`: the candidates of `WIDLOSKI_FOSTER_2022`, each
+  decoded again 100 times with the rate maps permuted across all place
+  cells (`"unit_identity"`). Its mean posterior spread and its mean
+  center-of-mass jump must each have p = (k + 1) / 101 < 0.05 against the
+  shuffles, as in the authors' per-event test. The notes say why leaving
+  out zero jumps, as the code does, does not change the p-value, and that
+  the bugs found in the deposited code are in the session-level chance
+  script, not in this test.
+- `ReplayMethod.tested_quantities` tests scalar `TrajectoryMetrics` of the
+  tested rows against every null, in a stated tail, such as
+  `{"mean_spread": "less", "mean_mean_jump": "less"}`. Each quantity's
+  p-value is the largest over the nulls, and the event's `p_value` is the
+  largest over the quantities and the score's test. Every test draws the
+  same shuffles from one seed. A shuffle is the tested rows shuffled or
+  decoded again; the segmentation is not run on it. With
+  `choose="any"`, the segments that meet the segment criteria are tested
+  from the longest down and the first significant one is reported.
+  `empty_time_bins="zero"`, `template_choice="max_score"` and a score
+  with `choose="any"` are refused.
+- `ReplayDetectionResult.tested_values` and `tested_p_values`; `summary()`
+  and `compare_replay_methods` add each quantity's value and
+  `p_value[quantity]` columns.
+- `TrajectoryMetrics.mean_spread` and `mean_mean_jump`: the mean posterior
+  spread over time bins and the mean center-of-mass jump between
+  consecutive time bins (NaN with one time bin). They are also criterion
+  quantities.
+
 ### More published replay recipes
 
 Twelve more recipes in `neurospatial.replay.methods`, each with the paper's

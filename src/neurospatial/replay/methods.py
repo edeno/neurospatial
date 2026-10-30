@@ -93,6 +93,7 @@ __all__ = [
     "TANG_2017",
     "TIROLE_2022",
     "WIDLOSKI_FOSTER_2022",
+    "WIDLOSKI_FOSTER_2025",
     "WIKENHEISER_REDISH_2013",
     "WU_2017",
     "WU_FOSTER_2014",
@@ -133,6 +134,24 @@ _COMPARISONS: dict[str, Callable[[float, float], bool]] = {
     ">": operator.gt,
     ">=": operator.ge,
 }
+
+
+# TrajectoryMetrics scalars a shuffle does not change, or that need spike counts.
+_UNTESTED_QUANTITIES = ("n_time_bins", "duration", "track_length", "empty_fraction")
+
+
+def _testable_quantities() -> tuple[str, ...]:
+    """The quantities ``ReplayMethod.tested_quantities`` can test against nulls."""
+    from typing import get_type_hints
+
+    from neurospatial.replay.criteria import TrajectoryMetrics
+
+    hints = get_type_hints(TrajectoryMetrics)
+    return tuple(
+        item.name
+        for item in dataclasses.fields(TrajectoryMetrics)
+        if hints[item.name] in (int, float) and item.name not in _UNTESTED_QUANTITIES
+    )
 
 
 def _criterion_quantities() -> tuple[str, ...]:
@@ -512,6 +531,31 @@ class ReplayMethod:
     use_absolute : bool or None
         Test the absolute score; None uses the default of
         :func:`~neurospatial.replay.replay_significance`.
+    tested_quantities : Mapping[str, {"less", "greater", "two-sided"}]
+        Scalar :class:`~neurospatial.replay.TrajectoryMetrics` of the tested
+        rows, each tested against every null in the given tail, such as
+        ``{"mean_spread": "less", "mean_mean_jump": "less"}`` (Widloski &
+        Foster 2025: the event's posterior is sharper and steps less than
+        its shuffles'). Each quantity's p-value is ``(k + 1) / (n + 1)``
+        over the ``n`` shuffles of a null, ``k`` of them at least as extreme
+        as the event, and the largest over the nulls; the event's
+        ``p_value`` is the largest over the quantities and the score's
+        test, so every test must reject. Every test draws the same shuffles
+        from one seed. The quantities are computed on the rows the score
+        would use: the tested segment's rows (``segmentation.rows``), less
+        the time bins ``empty_time_bins="drop"`` drops. Shuffles are those
+        rows shuffled or decoded again; the segmentation is not run on
+        them. With a segmentation and no score, this test replaces the
+        segment-detection test, and with ``choose="any"`` the segments that
+        meet the ``segment_*`` criteria are tested from the longest down,
+        and the first whose quantities are significant is reported (the
+        longest when none is). Needs nulls. Quantities a shuffle does not
+        change (``n_time_bins``, ``duration``, ``track_length``) and
+        ``empty_fraction``, which needs the spike counts, cannot be tested;
+        ``empty_time_bins="zero"`` (a zeroed time bin has no position),
+        ``template_choice="max_score"`` and, with a score, a segmentation
+        with ``choose="any"`` are refused. Empty for a method that tests
+        no quantity.
     empty_time_bins : {"keep", "drop", "zero"}
         Time bins without spikes: keep them, drop them with their times
         (Karlsson & Frank 2009; Wu et al. 2017), or set their posterior to
@@ -597,6 +641,9 @@ class ReplayMethod:
     alpha: float = 0.05
     alternative: Literal["greater", "less", "two-sided"] = "greater"
     use_absolute: bool | None = None
+    tested_quantities: Mapping[str, Literal["less", "greater", "two-sided"]] = field(
+        default_factory=dict
+    )
     empty_time_bins: Literal["keep", "drop", "zero"] = "keep"
     criteria: tuple[ReplayCriterion, ...] = ()
     segmentation: ReplaySegmentation | None = None
@@ -614,6 +661,9 @@ class ReplayMethod:
             self, "score_options", MappingProxyType(dict(self.score_options))
         )
         object.__setattr__(self, "decoding", MappingProxyType(dict(self.decoding)))
+        object.__setattr__(
+            self, "tested_quantities", MappingProxyType(dict(self.tested_quantities))
+        )
         given: Any = self.nulls  # one name is one null, as in replay_significance
         object.__setattr__(
             self, "nulls", (given,) if isinstance(given, str) else tuple(given)
@@ -659,13 +709,18 @@ class ReplayMethod:
                 f"ReplayMethod {self.name!r}: a method without a score cannot "
                 "threshold one."
             )
-        if self.score is None and self.nulls and self.segmentation is None:
+        if (
+            self.score is None
+            and self.nulls
+            and self.segmentation is None
+            and not self.tested_quantities
+        ):
             raise ValueError(
                 _format_error(
                     f"ReplayMethod {self.name!r}: a method without a score or a "
                     "segmentation has nothing to test against shuffles.",
-                    fix="give a score, or a segmentation whose detection is "
-                    "tested (Igata et al. 2021)",
+                    fix="give a score, tested_quantities, or a segmentation "
+                    "whose detection is tested (Igata et al. 2021)",
                 )
             )
         segment_criteria = [
@@ -677,7 +732,12 @@ class ReplayMethod:
                 "describe a segment, but the method has no segmentation; give "
                 "it a ReplaySegmentation or use event-level quantities."
             )
-        if self.score is None and self.segmentation is not None and self.nulls:
+        if (
+            self.score is None
+            and self.segmentation is not None
+            and self.nulls
+            and not self.tested_quantities
+        ):
             # The detection test scores 0 or 1 against shuffles at least as
             # extreme, with the event's time-bin rules applied to each shuffle.
             if self.alternative != "greater" or self.use_absolute is not None:
@@ -720,6 +780,7 @@ class ReplayMethod:
             )
         if self.template_choice == "max_score":
             self._check_max_score()
+        self._check_tested_quantities()
         if self.template_choice == "sum":
             refused = [
                 c.label for c in self.criteria if c.quantity in _TEMPLATE_QUANTITIES
@@ -872,6 +933,74 @@ class ReplayMethod:
                     "use template_choice='smallest_p'",
                 )
             )
+
+    def _check_tested_quantities(self) -> None:
+        """Refuse quantities a shuffle test cannot compare, and unsupported settings."""
+        tested = self.tested_quantities
+        if not tested:
+            return
+        testable = _testable_quantities()
+        unknown = sorted(set(tested) - set(testable))
+        if unknown:
+            raise ValueError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: tested_quantities names "
+                    f"{unknown}, which a shuffle test cannot compare.",
+                    why="each tested quantity is a scalar of TrajectoryMetrics "
+                    "computed again on every shuffled posterior; the "
+                    "segmentation is not run on shuffles, n_time_bins, duration "
+                    "and track_length are the same in every shuffle, and "
+                    "empty_fraction needs spike counts",
+                    fix=f"use one of {list(testable)}",
+                )
+            )
+        tails = {
+            name: tail for name, tail in tested.items() if tail not in _ALTERNATIVES
+        }
+        if tails:
+            raise ValueError(
+                f"ReplayMethod {self.name!r}: tested_quantities tails must be "
+                f"one of {list(_ALTERNATIVES)}, got {tails}."
+            )
+        refusals = (
+            (
+                not self.nulls,
+                "tested_quantities need nulls",
+                "each quantity is compared with its value in shuffled events",
+                "give nulls, such as ('unit_identity',)",
+            ),
+            (
+                self.empty_time_bins == "zero",
+                "tested_quantities cannot be used with empty_time_bins='zero'",
+                "a zeroed time bin has no decoded position, so its spread and "
+                "jumps are undefined",
+                "use empty_time_bins='drop' or 'keep'",
+            ),
+            (
+                self.template_choice == "max_score",
+                "tested_quantities cannot be used with template_choice='max_score'",
+                "it tests the largest score over separately decoded templates, "
+                "not the quantities of one template",
+                "use template_choice='smallest_p'",
+            ),
+            (
+                self.score is not None
+                and self.segmentation is not None
+                and self.segmentation.choose == "any",
+                "tested_quantities with a score cannot be used with "
+                "segmentation choose='any'",
+                "the segment would be chosen by the quantities' test alone, "
+                "leaving out the score's",
+                "use choose='longest', or leave out the score",
+            ),
+        )
+        for applies, message, why, fix in refusals:
+            if applies:
+                raise ValueError(
+                    _format_error(
+                        f"ReplayMethod {self.name!r}: {message}.", why=why, fix=fix
+                    )
+                )
 
     def _check_score(self) -> None:
         """Refuse a score that is not callable or does not take score_options."""
@@ -1134,7 +1263,8 @@ class ReplayDetectionResult(ResultMixin):
     score : float
         The method's score (NaN for a criteria-only method).
     p_value : float
-        The largest p-value over the method's nulls (NaN without shuffles).
+        The largest p-value over the method's nulls (NaN without shuffles),
+        and over its tested quantities (NaN when one is undefined).
     criteria : Mapping[str, bool]
         Whether each criterion holds, keyed by its label.
     values : Mapping[str, float]
@@ -1160,7 +1290,15 @@ class ReplayDetectionResult(ResultMixin):
         Shuffles the p-value counts: the method's ``n_shuffles`` less those
         whose score is undefined (NaN), the smallest over its nulls; for a
         pooled SSI method, the epoch's pooled shuffles. None when no
-        shuffle was scored.
+        shuffle was scored. With tested quantities, the smallest over them
+        and the score's test.
+    tested_values : Mapping[str, float]
+        For a method with ``tested_quantities``, the event's value of each
+        tested quantity (NaN when it was not tested, such as without a
+        segment); empty for other methods.
+    tested_p_values : Mapping[str, float]
+        Each tested quantity's p-value, the largest over the nulls; the
+        same keys as ``tested_values``.
     """
 
     method: str
@@ -1173,11 +1311,13 @@ class ReplayDetectionResult(ResultMixin):
     segment: int | None = None
     template: str | None = None
     n_shuffles_used: int | None = None
+    tested_values: Mapping[str, float] = field(default_factory=dict)
+    tested_p_values: Mapping[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Freeze the mappings."""
-        object.__setattr__(self, "criteria", MappingProxyType(dict(self.criteria)))
-        object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
+        for name in ("criteria", "values", "tested_values", "tested_p_values"):
+            object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
@@ -1189,7 +1329,9 @@ class ReplayDetectionResult(ResultMixin):
         ``n_shuffles_used`` is NaN when no shuffle was scored. A joint
         decode adds the tested ``template``. A method with a segmentation
         adds ``n_segments`` and the tested segment's ``segment_start_time``
-        and ``segment_end_time`` (NaN without one).
+        and ``segment_end_time`` (NaN without one). A method with tested
+        quantities adds each quantity's value under its name, such as
+        ``mean_spread``, and its p-value, ``p_value[mean_spread]``.
         """
         values: dict[str, Any] = {
             "method": self.method,
@@ -1200,6 +1342,8 @@ class ReplayDetectionResult(ResultMixin):
             if self.n_shuffles_used is None
             else self.n_shuffles_used,
             **{f"passes[{label}]": ok for label, ok in self.criteria.items()},
+            **self.tested_values,
+            **{f"p_value[{name}]": p for name, p in self.tested_p_values.items()},
         }
         if self.template is not None:
             values["template"] = self.template
@@ -1298,17 +1442,22 @@ def detect_replay(
     rng : np.random.Generator, int, or None
         Random number generator or seed. With ``template_choice``
         ``"smallest_p"`` or ``"max_score"``, each template draws from its
-        own stream, derived from ``rng`` and the template's name.
+        own stream, derived from ``rng`` and the template's name. With
+        ``tested_quantities``, one seed drawn from ``rng`` starts the
+        score's test and each quantity's, so all draw the same shuffles.
 
     Returns
     -------
     ReplayDetectionResult
         The verdict, score, p-value and each criterion; for a method with
-        a segmentation, the segments and the tested segment; and for
-        several templates, the tested template. An event whose score is
-        undefined (NaN, such as the R² of a decoded position that does not
-        change) gets no verdict: ``is_replay`` and every criterion are
-        False, and the score and p-value are NaN.
+        a segmentation, the segments and the tested segment; for several
+        templates, the tested template; and for a method with
+        ``tested_quantities``, each quantity's value and p-value. An event
+        whose score is undefined (NaN, such as the R² of a decoded position
+        that does not change) gets no verdict: ``is_replay`` and every
+        criterion are False, and the score and p-value are NaN. A tested
+        quantity that is undefined (such as the mean jump of one time bin)
+        makes the p-value NaN, and the event is not replay.
 
     Raises
     ------
@@ -1627,6 +1776,35 @@ def detect_replay(
     # Rows of the event still tested, to cut a per-time-bin prior with them.
     n_event_rows = len(posterior)
     kept_rows = np.arange(n_event_rows)
+    quantities = replay_method.tested_quantities
+    untested = dict.fromkeys(quantities, np.nan)
+    quantity_test: _QuantityTest | None = None
+    score_seed = None
+    if quantities:
+        # The score's test and every quantity's test start from one seed, so
+        # they draw the same shuffles; a sampled score gets its own seed.
+        generator = np.random.default_rng(rng)
+        rng = shuffle_seed = int(generator.integers(2**63 - 1))
+        score_seed = int(generator.integers(2**63 - 1))
+        event_posterior, event_times, event_counts = posterior, times, counts
+
+        def test_quantities(rows: NDArray[np.intp]) -> _QuantityTest:
+            """The method's quantities on the event's ``rows``, against its nulls."""
+            return _quantity_test(
+                replay_method,
+                env,
+                track_env,
+                event_posterior[rows],
+                event_times[rows],
+                spike_counts=None if event_counts is None else event_counts[rows],
+                encoding_models=encoding_models,
+                dt=dt,
+                prior=_prior_rows(prior, rows, n_event_rows),
+                template=template,
+                pseudo_event_pool=pseudo_event_pool,
+                seed=shuffle_seed,
+            )
+
     track_length = (
         _track_length(track_env, f"method {replay_method.name!r}")
         if any(c.relative_to for c in replay_method.criteria)
@@ -1647,7 +1825,8 @@ def detect_replay(
             if "chance" in segmentation.relative_to.values()
             else None,
         )
-        if replay_method.score is None and replay_method.nulls:
+        if replay_method.score is None and replay_method.nulls and not quantities:
+            # The segment-detection test (Igata et al. 2021).
             if valid_time_bins is not None and any(
                 name in _ROW_MOVING_NULLS for name in replay_method.nulls
             ):
@@ -1694,7 +1873,30 @@ def detect_replay(
                 segment=None,
                 template=template,
                 n_shuffles_used=n_shuffles_used,
+                tested_values=untested,
+                tested_p_values=untested,
             )
+        if quantities and segmentation.choose == "any":
+            # Test the segments that meet the segment criteria from the
+            # longest down; report the first significant one, else the longest.
+            passing = np.flatnonzero(
+                _segment_passes(replay_method, segments, track_length)
+            )
+            order = passing[
+                np.argsort(-segments.time_bin_counts[passing], kind="stable")
+            ]
+            for candidate in order:
+                candidate_rows = _segment_rows(segmentation, segments, int(candidate))
+                if replay_method.empty_time_bins == "drop":
+                    assert counts is not None
+                    candidate_rows = candidate_rows[
+                        counts[candidate_rows].sum(axis=1) > 0
+                    ]
+                found = test_quantities(candidate_rows)
+                if quantity_test is None or found.p_value < replay_method.alpha:
+                    segment, quantity_test = int(candidate), found
+                if found.p_value < replay_method.alpha:
+                    break
         rows = segments.rows(segment)
         if joint is not None and not summed:
             on_trajectory = segments.trajectory_time_bins[rows]
@@ -1705,9 +1907,7 @@ def detect_replay(
             event_values["segment_template_fraction"] = masses[tested] / sum(
                 masses.values()
             )
-        tested_rows = np.arange(rows.start, rows.stop)
-        if segmentation.rows == "trajectory":
-            tested_rows = tested_rows[segments.trajectory_time_bins[rows]]
+        tested_rows = _segment_rows(segmentation, segments, segment)
         posterior, times = posterior[tested_rows], times[tested_rows]
         counts = None if counts is None else counts[tested_rows]
         kept_rows = kept_rows[tested_rows]
@@ -1726,6 +1926,15 @@ def detect_replay(
         options["n_samples"] = int(options.pop("n_samples_per_time_bin")) * len(
             posterior
         )
+    if (
+        score_seed is not None
+        and replay_method.score is not None
+        and _takes_rng(replay_method.score)
+        and "rng" not in options
+    ):
+        # Seeded here, so the score's test does not draw the seed from the
+        # shuffles' stream and draws the same shuffles as the quantities'.
+        options["rng"] = score_seed
     # A template's share of a joint decode is scored as the posterior given
     # the template, unless the score is built for joint weights.
     share = joint is not None and template is not None
@@ -1786,6 +1995,8 @@ def detect_replay(
                 segments=segments,
                 segment=segment,
                 template=template,
+                tested_values=untested,
+                tested_p_values=untested,
             )
         else:
             score, p_value = float(result.observed.score), float(result.p_value)
@@ -1822,7 +2033,21 @@ def detect_replay(
             segments=segments,
             segment=segment,
             template=template,
+            tested_values=untested,
+            tested_p_values=untested,
         )
+    if quantities:
+        if quantity_test is None:
+            quantity_test = test_quantities(kept_rows)
+        # Every test must reject: the largest p-value, NaN when one is NaN.
+        tests = [quantity_test.p_value] + (
+            [] if replay_method.score is None else [p_value]
+        )
+        p_value = float(np.max(tests))
+        used = [
+            n for n in (quantity_test.n_shuffles_used, n_shuffles_used) if n is not None
+        ]
+        n_shuffles_used = min(used) if used else None
 
     needs_metrics = any(
         c.quantity
@@ -1869,6 +2094,8 @@ def detect_replay(
         segment=segment,
         template=template,
         n_shuffles_used=n_shuffles_used,
+        tested_values={} if quantity_test is None else quantity_test.values,
+        tested_p_values={} if quantity_test is None else quantity_test.p_values,
     )
 
 
@@ -2145,6 +2372,109 @@ def _segment_detection_p_value(
         rng=rng,
     )
     return float(result.p_value), min(result.n_shuffles_used.values())
+
+
+def _segment_rows(
+    segmentation: ReplaySegmentation, segments: ReplaySegmentsResult, segment: int
+) -> NDArray[np.intp]:
+    """The event rows of a segment that its test uses (``segmentation.rows``)."""
+    rows = segments.rows(segment)
+    tested_rows = np.arange(rows.start, rows.stop)
+    if segmentation.rows == "trajectory":
+        tested_rows = tested_rows[segments.trajectory_time_bins[rows]]
+    return tested_rows
+
+
+def _trajectory_quantity(
+    env: Environment,
+    posterior: NDArray[np.float64],
+    times: NDArray[np.float64],
+    *,
+    quantity: str,
+) -> SimpleNamespace:
+    """One scalar of :func:`trajectory_metrics`, as a score to test."""
+    from neurospatial.replay.criteria import trajectory_metrics
+
+    metrics = trajectory_metrics(env, posterior, times)
+    return SimpleNamespace(score=float(getattr(metrics, quantity)))
+
+
+@dataclass(frozen=True)
+class _QuantityTest:
+    """A method's tested quantities on one event's rows, against its nulls."""
+
+    values: dict[str, float]
+    p_values: dict[str, float]
+    n_shuffles_used: int | None
+
+    @property
+    def p_value(self) -> float:
+        """The largest p-value over the quantities; NaN when one is NaN."""
+        return float(np.max(list(self.p_values.values())))
+
+
+def _quantity_test(
+    replay_method: ReplayMethod,
+    env: Environment | Mapping[str, Environment],
+    track_env: Environment,
+    posterior: NDArray[np.float64],
+    times: NDArray[np.float64],
+    *,
+    spike_counts: NDArray[np.int64] | None,
+    encoding_models: Any,
+    dt: float | None,
+    prior: Any,
+    template: str | None,
+    pseudo_event_pool: NDArray[np.float64] | None,
+    seed: int,
+) -> _QuantityTest:
+    """Test each of the method's ``tested_quantities`` against its nulls.
+
+    Each quantity is tested with :func:`replay_significance` from ``seed``,
+    so every quantity, and the score's test from the same seed, sees the
+    same shuffles. A quantity undefined on the event (such as the mean jump
+    of one time bin), or on every shuffle of a null, has a NaN p-value.
+    """
+    from neurospatial.replay.significance import (
+        _UndefinedNullError,
+        _UndefinedScoreError,
+        replay_significance,
+    )
+
+    decodes = any(name in _DECODING_NULLS for name in replay_method.nulls)
+    values: dict[str, float] = {}
+    p_values: dict[str, float] = {}
+    used = []
+    for quantity, tail in replay_method.tested_quantities.items():
+        try:
+            result = replay_significance(
+                env if decodes else track_env,
+                posterior,
+                times,
+                score=_trajectory_quantity,
+                score_options={"quantity": quantity},
+                nulls=replay_method.nulls,
+                null_options=replay_method.null_options,
+                spike_counts=spike_counts if decodes else None,
+                encoding_models=encoding_models if decodes else None,
+                dt=dt if decodes else None,
+                prior=prior,
+                template=template if decodes else None,
+                pseudo_event_pool=pseudo_event_pool,
+                alternative=tail,
+                use_absolute=False,
+                n_shuffles=replay_method.n_shuffles,
+                rng=seed,
+            )
+        except _UndefinedScoreError:
+            values[quantity], p_values[quantity] = np.nan, np.nan
+        except _UndefinedNullError as error:
+            values[quantity], p_values[quantity] = error.score, np.nan
+        else:
+            values[quantity] = float(result.observed.score)
+            p_values[quantity] = float(result.p_value)
+            used.append(min(result.n_shuffles_used.values()))
+    return _QuantityTest(values, p_values, min(used) if used else None)
 
 
 def detect_rank_order_replay(
@@ -2630,7 +2960,9 @@ def compare_replay_methods(
         One row per (event, method): ``event``, ``method``, ``is_replay``,
         ``score``, ``p_value``, ``n_shuffles_used`` (the shuffles the
         p-value counts, smallest over the method's nulls; NaN for methods
-        without shuffles), one ``passes[...]`` column per criterion,
+        without shuffles), one ``passes[...]`` column per criterion, each
+        tested quantity's value and ``p_value[...]`` for methods with
+        ``tested_quantities`` (NaN for the others),
         ``n_segments``, ``segment_start_time`` and ``segment_end_time`` for
         methods with a segmentation (NaN for the others), ``template`` for
         joint and separately decoded templates (the template tested or
@@ -2641,7 +2973,9 @@ def compare_replay_methods(
         time bins left to score (``"fewer than two time bins with spikes to
         score"`` for a method that drops or zeroes time bins without
         spikes), a null whose every shuffle has an undefined score (the
-        score is kept, the p-value is NaN), an undefined score of a method
+        score is kept, the p-value is NaN), a tested quantity undefined on
+        the event or on every shuffle of a null (the p-value is NaN), an
+        undefined score of a method
         whose verdict uses it, through nulls or a score criterion (for
         example the R² of a decoded position that does not change; score
         and p-value are
@@ -3069,6 +3403,15 @@ def _compare_row(
     )
     if undefined:
         error = "score undefined (e.g. the decoded position does not change)"
+    elif (
+        method.tested_quantities
+        and np.isnan(result.p_value)
+        and (method.segmentation is None or result.segment is not None)
+    ):
+        error = (
+            "a tested quantity is undefined (e.g. the mean jump of one time "
+            "bin), or every shuffle of a null has an undefined value"
+        )
     elif method.nulls and np.isfinite(result.score) and np.isnan(result.p_value):
         error = "every shuffle of a null has an undefined score"
     else:
@@ -3640,6 +3983,77 @@ WIDLOSKI_FOSTER_2022 = ReplayMethod(
         "candidate events; applied to event windows, sequences that cross a "
         "window's edge are cut. Pass windows that hold the whole sequence.",
         "No per-event shuffle test in the 2022 paper.",
+    ),
+)
+
+WIDLOSKI_FOSTER_2025 = dataclasses.replace(
+    WIDLOSKI_FOSTER_2022,
+    name="widloski_foster_2025",
+    reference=(
+        "Widloski, J., & Foster, D. J. (2025). Replay without sharp wave "
+        "ripples in a spatial memory task. Nature Communications, 16, 10287. "
+        "https://doi.org/10.1038/s41467-025-65181-5"
+    ),
+    nulls=("unit_identity",),
+    n_shuffles=100,
+    alpha=0.05,
+    tested_quantities={"mean_spread": "less", "mean_mean_jump": "less"},
+    decoding={
+        "time_bin": 0.08,
+        "time_step": 0.005,
+        "position_bin": 2.0,
+        "rate_map_smoothing_sd": 8.0,
+        "prior": "uniform",
+    },
+    notes=(
+        "Candidate events are found as in Widloski & Foster (2022), which "
+        "the paper cites for the procedure (Methods, p. 11): time bins are "
+        "kept when the animal is slower than 5 cm/s, the posterior spread is "
+        "below 10 cm and the center-of-mass jump is below 20 cm (pass the "
+        "speed rule as valid_time_bins); subsequences are merged across gaps "
+        "below 50 ms and 20 cm; a candidate lasts more than 100 ms and has a "
+        "dispersion above 12 cm. The deposited code gives each time bin the "
+        "jump to the next one, so a jump rejects the earlier bin.",
+        "Each candidate is decoded again 100 times with the rate maps of all "
+        "decoding place cells permuted across cells "
+        "(load_replayEvents_cellIDshuffle_sameEvents.m, randperm over every "
+        "place cell: the unit_identity null with active_only=False). Its mean "
+        "posterior spread over every time bin of the merged segment, and its "
+        "mean center-of-mass jump over consecutive time bins, are compared "
+        "with the shuffles'. The segmentation is not run on the shuffles.",
+        "Each p-value is (k + 1) / 101, k the shuffles at least as small as "
+        "the event, and both must be below 0.05. The code counts strictly "
+        "smaller shuffles and keeps p <= 0.05, and the paper states p < "
+        "0.05; with 100 shuffles all three readings allow at most 4 smaller "
+        "shuffles.",
+        "The code leaves out zero jumps, between overlapping windows with "
+        "the same spike counts. These decode to the same posterior under any "
+        "permutation, so they are zero in the event and in every shuffle, "
+        "and leaving them out rescales every mean alike: the p-value does "
+        "not change. The code also counts the last jump twice (padding for "
+        "the per-bin jump rule); that is not reproduced.",
+        "The paper prints the spread as a product of the x and y deviations, "
+        "which has units of area against a 10 cm threshold. The deposited "
+        "compute_imageSpread.m takes the exponent as an argument, but the "
+        "decoder that calls it is not deposited; the isotropic spread of "
+        "TrajectoryMetrics is used, as in WIDLOSKI_FOSTER_2022.",
+        "The bugs in load_replayEvents_cellIDshuffle.m (shuffled jumps "
+        "computed from the p-value vector, l. 137, which makes every jump "
+        "test pass; the wrong segment's time bins, l. 123) are in the "
+        "session-level script that repeats the whole detection on cell-ID "
+        "shuffles to count replays expected by chance (Supplementary "
+        "Fig. 3C-D), not in the per-event test used for the published "
+        "replays; they are not reproduced.",
+        "The code tests every candidate. detect_replay reports one segment "
+        "per window: the segments that meet the duration and dispersion "
+        "criteria are tested from the longest down, and the first whose "
+        "spread and jump are both significant is reported. Pass windows "
+        "that hold the whole sequence, since the method scans the whole "
+        "stopping period and a sequence that crosses a window's edge is cut.",
+        "Decoding: 80 ms windows stepped by 5 ms, all of the session's place "
+        "cells, 2 cm square bins and a uniform prior; rate maps from running "
+        "faster than 10 cm/s, smoothed with an 8 cm SD Gaussian. Pass "
+        "dt=0.08 so the shuffles are decoded with the windows' duration.",
     ),
 )
 
@@ -4651,5 +5065,6 @@ PUBLISHED_METHODS: tuple[ReplayMethod | RankOrderMethod | ArmReplayMethod, ...] 
     HARVEY_2023,
     LIU_2023,
     MALLORY_2025,
+    WIDLOSKI_FOSTER_2025,
 )
 """Every published method recipe in this module."""
