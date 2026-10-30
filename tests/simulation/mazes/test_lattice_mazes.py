@@ -1,75 +1,22 @@
 """Integration tests for structured lattice mazes (Panel d from Wijnen et al. 2024).
 
-These tests verify that all lattice mazes (Crossword, Honeycomb, Hamlet)
-and the complex Rat HexMaze work correctly together and share consistent interfaces.
+These tests verify that all lattice mazes (Crossword, Honeycomb, Hamlet) and
+the complex Rat HexMaze behave as their sources describe; their shared
+interface is tested in test_maze_interface.py.
 """
 
 import numpy as np
-import pytest
 
 from neurospatial.simulation.mazes import (
     CrosswordDims,
     HamletDims,
     HoneycombDims,
-    MazeEnvironments,
     RatHexmazeDims,
     make_crossword_maze,
     make_hamlet_maze,
     make_honeycomb_maze,
     make_rat_hexmaze,
 )
-
-# Parametrize over all lattice maze factories
-LATTICE_MAZES = [
-    ("crossword", make_crossword_maze, CrosswordDims),
-    ("honeycomb", make_honeycomb_maze, HoneycombDims),
-    ("hamlet", make_hamlet_maze, HamletDims),
-    ("rat_hexmaze", make_rat_hexmaze, RatHexmazeDims),
-]
-
-
-class TestLatticeMazesCommonInterface:
-    """Test that all lattice mazes share a consistent interface."""
-
-    @pytest.mark.parametrize("name,factory,dims_cls", LATTICE_MAZES)
-    def test_returns_maze_environments(self, name, factory, dims_cls):
-        """All factories return MazeEnvironments."""
-        maze = factory(bin_size=4.0)
-        assert isinstance(maze, MazeEnvironments)
-
-    @pytest.mark.parametrize("name,factory,dims_cls", LATTICE_MAZES)
-    def test_env_2d_has_units_cm(self, name, factory, dims_cls):
-        """All 2D environments have units='cm'."""
-        maze = factory(bin_size=4.0)
-        assert maze.env_2d.units == "cm"
-
-    @pytest.mark.parametrize("name,factory,dims_cls", LATTICE_MAZES)
-    def test_env_2d_has_bins(self, name, factory, dims_cls):
-        """All 2D environments have bins."""
-        maze = factory(bin_size=4.0)
-        assert maze.env_2d.n_bins > 0
-
-    @pytest.mark.parametrize("name,factory,dims_cls", LATTICE_MAZES)
-    def test_env_track_exists(self, name, factory, dims_cls):
-        """All lattice mazes have track graphs."""
-        maze = factory(bin_size=4.0)
-        assert maze.env_track is not None
-
-    @pytest.mark.parametrize("name,factory,dims_cls", LATTICE_MAZES)
-    def test_track_graph_is_connected(self, name, factory, dims_cls):
-        """All track graphs are connected."""
-        import networkx as nx
-
-        maze = factory(bin_size=4.0)
-        graph = maze.env_track.connectivity
-        assert nx.is_connected(graph)
-
-    @pytest.mark.parametrize("name,factory,dims_cls", LATTICE_MAZES)
-    def test_dims_is_frozen_dataclass(self, name, factory, dims_cls):
-        """All Dims classes are frozen dataclasses."""
-        import dataclasses
-
-        assert dataclasses.is_dataclass(dims_cls)
 
 
 class TestCrosswordMaze:

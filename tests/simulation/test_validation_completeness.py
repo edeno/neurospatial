@@ -41,19 +41,18 @@ def _session(n_bins=4):
 def test_missing_correlation_cannot_pass_and_can_be_plotted():
     """A two-bin map has a peak but insufficient bins for field correlation."""
     with pytest.warns(UserWarning, match="No cells could be fully validated"):
-        result = validate_simulation(
-            _session(2), method="binned", bandwidth=0.0, show_plots=True
-        )
+        result = validate_simulation(_session(2), method="binned", bandwidth=0.0)
+    assert result.center_errors[0] == 0.0
+    assert np.isnan(result.correlations[0])
+    assert result.passed is False
+    assert result.unit_status == ("not_evaluable",)
+    assert result.skip_reasons == ("insufficient_finite_bins",)
+    assert result.n_evaluated == 0
+    ax = result.plot()
     try:
-        assert result["center_errors"][0] == 0.0
-        assert np.isnan(result["correlations"][0])
-        assert result["passed"] is False
-        assert result["unit_status"] == ("not_evaluable",)
-        assert result["skip_reasons"] == ("insufficient_finite_bins",)
-        assert result["n_evaluated"] == 0
-        assert result["plots"].axes[2].collections[0].get_offsets().shape == (0, 2)
+        assert ax.collections[0].get_offsets().shape == (0, 2)
     finally:
-        plt.close(result["plots"])
+        plt.close(ax.figure)
 
 
 def test_partial_report_preserves_requested_labels_and_spike_counts():
@@ -71,32 +70,32 @@ def test_partial_report_preserves_requested_labels_and_spike_counts():
             19: {"center": session.env.bin_centers[0]},
         },
     )
-    with pytest.warns(UserWarning, match="19: skipping field-correlation"):
+    with pytest.warns(
+        UserWarning, match=r"Units \[19\]: ground truth has no place field"
+    ):
         result = validate_simulation(
             session,
             unit_ids=[19, 7, 11],
             method="binned",
             bandwidth=0.0,
-            show_plots=True,
         )
+    np.testing.assert_array_equal(result.unit_ids, [19, 7, 11])
+    np.testing.assert_array_equal(result.spike_counts, [len(train), 0, len(train)])
+    assert result.unit_status == ("not_evaluable", "not_evaluable", "passed")
+    assert result.skip_reasons == ("unsupported_ground_truth", "no_spikes", None)
+    assert result.n_selected == 3
+    assert result.n_evaluated == 1
+    assert result.passed is False
+    assert "Cells selected: 3 (of 3 total)" in result.report()
+    assert "Cells fully evaluated: 1" in result.report()
+    ax = result.plot()
     try:
-        np.testing.assert_array_equal(result["unit_ids"], [19, 7, 11])
-        np.testing.assert_array_equal(
-            result["spike_counts"], [len(train), 0, len(train)]
-        )
-        assert result["unit_status"] == ("not_evaluable", "not_evaluable", "passed")
-        assert result["skip_reasons"] == ("unsupported_ground_truth", "no_spikes", None)
-        assert result["n_selected"] == 3
-        assert result["n_evaluated"] == 1
-        assert result["passed"] is False
-        assert "Cells selected: 3 (of 3 total)" in result["summary"]
-        assert "Cells fully evaluated: 1" in result["summary"]
         np.testing.assert_allclose(
-            result["plots"].axes[2].collections[0].get_offsets(),
-            [[result["center_errors"][2], result["correlations"][2]]],
+            ax.collections[0].get_offsets(),
+            [[result.center_errors[2], result.correlations[2]]],
         )
     finally:
-        plt.close(result["plots"])
+        plt.close(ax.figure)
 
 
 @pytest.mark.parametrize(
@@ -115,31 +114,131 @@ def test_degenerate_rate_maps_are_not_evaluable(monkeypatch, field, reason):
     )
     with pytest.warns(UserWarning, match="No cells could be fully validated"):
         result = validate_simulation(_session())
-    assert result["passed"] is False
-    assert result["unit_status"] == ("not_evaluable",)
-    assert result["skip_reasons"] == (reason,)
+    assert result.passed is False
+    assert result.unit_status == ("not_evaluable",)
+    assert result.skip_reasons == (reason,)
 
 
 def test_complete_report_can_pass_or_fail_recovery_thresholds():
     session = _session()
     passed = validate_simulation(session, method="binned", bandwidth=0.0)
-    assert passed["passed"] is True
-    assert passed["unit_status"] == ("passed",)
-    assert passed["n_evaluated"] == passed["n_selected"] == 1
-    assert passed["skip_reasons"] == (None,)
+    assert passed.passed is True
+    assert passed.unit_status == ("passed",)
+    assert passed.n_evaluated == passed.n_selected == 1
+    assert passed.skip_reasons == (None,)
 
     failed = validate_simulation(
         session, method="binned", bandwidth=0.0, min_correlation=0.999
     )
-    assert failed["passed"] is False
-    assert failed["unit_status"] == ("failed",)
-    assert failed["skip_reasons"] == (None,)
-    assert failed["n_evaluated"] == 1
+    assert failed.passed is False
+    assert failed.unit_status == ("failed",)
+    assert failed.skip_reasons == (None,)
+    assert failed.n_evaluated == 1
 
 
 def test_empty_selection_cannot_pass():
     with pytest.warns(UserWarning, match="0 selected"):
         result = validate_simulation(_session(), unit_ids=[])
-    assert result["passed"] is False
-    assert result["n_selected"] == result["n_evaluated"] == 0
-    assert result["unit_status"] == result["skip_reasons"] == ()
+    assert result.passed is False
+    assert result.n_selected == result.n_evaluated == 0
+    assert result.unit_status == result.skip_reasons == ()
+
+
+def test_report_of_an_empty_selection_states_the_fixed_limit():
+    with pytest.warns(UserWarning, match="0 selected"):
+        result = validate_simulation(_session(), unit_ids=[], max_center_error=5.0)
+    assert result.max_center_error == 5.0
+    report = result.report()
+    assert "Threshold: 5.00" in report
+    assert "Overall: FAILED" in report
+
+
+def test_default_rule_has_no_fixed_limit():
+    result = validate_simulation(_session(), method="binned", bandwidth=0.0)
+    assert result.max_center_error is None
+    assert "x each cell's true field width" in result.report()
+
+
+def _polar_session():
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 40.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 8,
+        units="cm",
+    )
+    times = np.arange(200) * 0.1
+    positions = np.column_stack(
+        [np.linspace(1.0, 39.0, 200), np.linspace(-3.0, 3.0, 200)]
+    )
+    model = PlaceCellModel(env, center=[20.0, 0.5], width=5.0)
+    return SimulationSession(
+        env=env,
+        spike_times=[times[::7]],
+        unit_ids=np.array([0]),
+        times=times,
+        positions=positions,
+        models=[model],
+        ground_truth={0: model.ground_truth},
+        metadata={},
+    )
+
+
+@pytest.mark.parametrize("call", ["validate_simulation", "plot_session_summary"])
+def test_polar_sessions_are_refused_with_the_function_named(call):
+    """Rate maps and centre errors need allocentric Cartesian positions."""
+    from neurospatial import CartesianOnlyError
+    from neurospatial.simulation import validation
+
+    with pytest.raises(CartesianOnlyError, match=rf"{call}\(\).*\n.*\n.*allocentric"):
+        getattr(validation, call)(_polar_session())
+
+
+def _with_border_unit(session):
+    """``session`` plus a second unit, label 3, whose ground truth is a border cell."""
+    return replace(
+        session,
+        unit_ids=np.array([11, 3]),
+        spike_times=[session.spike_times[0], session.spike_times[0]],
+        models=session.models * 2,
+        ground_truth={
+            11: session.ground_truth[11],
+            3: {"cell_type": "border", "preferred_distance": 0.0},
+        },
+    )
+
+
+def test_units_that_are_not_place_cells_do_not_decide_the_verdict():
+    session = _with_border_unit(_session())
+    with pytest.warns(UserWarning, match="not place fields"):
+        result = validate_simulation(session, method="binned", bandwidth=0.0)
+    assert result.unit_status == ("passed", "excluded")
+    assert result.skip_reasons == (None, "not_a_place_field")
+    assert (result.n_evaluated, result.n_excluded) == (1, 1)
+    assert result.passed is True
+    report = result.report()
+    assert "Cells excluded (not place cells): 1" in report
+    assert "Cells not evaluable: 0" in report
+    assert report.count("Passed: True") == 2
+    assert "Overall: PASSED" in report
+    assert result.summary()["n_excluded"] == 1
+
+
+def test_a_selection_of_only_excluded_units_cannot_pass():
+    session = _with_border_unit(_session())
+    with pytest.warns(UserWarning, match="No cells could be fully validated"):
+        result = validate_simulation(session, unit_ids=[3])
+    assert result.unit_status == ("excluded",)
+    assert result.passed is False
+    report = result.report()
+    assert report.count("Passed: False") == 2
+    assert "Overall: FAILED" in report
+
+
+def test_an_unevaluable_place_unit_blocks_a_pass_beside_excluded_units():
+    session = _with_border_unit(_session())
+    session = replace(session, spike_times=[np.array([]), session.spike_times[1]])
+    with pytest.warns(UserWarning, match="No cells could be fully validated"):
+        result = validate_simulation(session)
+    assert result.unit_status == ("not_evaluable", "excluded")
+    assert result.passed is False

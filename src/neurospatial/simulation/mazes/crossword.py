@@ -35,7 +35,7 @@ https://doi.org/10.1038/nn.3843
 
 Wijnen, K., Genzel, L., & van der Meij, J. (2024). Rodent maze studies: from
 following simple rules to complex map learning. Brain Structure and Function,
-229(4), 823-841. https://doi.org/10.1007/s00429-024-02771-x
+229(4), 823–841. https://doi.org/10.1007/s00429-024-02771-x
 
 Examples
 --------
@@ -66,10 +66,17 @@ from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    refuse,
+    warn_if_bins_too_coarse,
+)
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
+    single_floor,
     union_polygons,
 )
 
@@ -131,6 +138,25 @@ class CrosswordDims(MazeDims):
     corridor_width: float = 5.0
     box_size: float = 16.0
 
+    def __post_init__(self) -> None:
+        check_lengths(self, "grid_spacing", "corridor_width", "box_size")
+        if self.corridor_width >= self.grid_spacing:
+            refuse(
+                self,
+                ("grid_spacing", "corridor_width"),
+                "makes parallel tracks touch, so they merge into one floor",
+                "Use a corridor_width below grid_spacing.",
+            )
+        # A box half box_size from its track's end must stay clear of the
+        # parallel track one grid_spacing away.
+        if self.box_size / 2.0 + self.corridor_width / 2.0 >= self.grid_spacing:
+            refuse(
+                self,
+                ("box_size", "corridor_width", "grid_spacing"),
+                "makes each start box reach the parallel track beside it",
+                "Use a box_size below 2 * grid_spacing - corridor_width.",
+            )
+
 
 def make_crossword_maze(
     dims: CrosswordDims | None = None,
@@ -191,7 +217,8 @@ def make_crossword_maze(
       an estimate.
     - cap_west, cap_east, cap_north, cap_south_left, cap_south_right: the
       plastic caps at the ends of the five protruding tracks, one of which
-      holds the day's reward (role ``"reward_port"``). Each region is a point
+      holds the day's reward (role ``"reward_port"``, port_type
+      ``"plastic_cap"``). Each region is a point
       half a track width back from the track's end; the cap size is not
       published.
 
@@ -239,7 +266,7 @@ def make_crossword_maze(
             x - half_box, y - half_box, x + half_box, y + half_box
         )
 
-    floor = union_polygons([*tracks, *boxes.values()])
+    floor = single_floor(union_polygons([*tracks, *boxes.values()]), dims)
     env_2d = Environment.from_polygon(
         polygon=floor,
         bin_size=bin_size,
@@ -257,13 +284,23 @@ def make_crossword_maze(
         landmarks.append(Landmark(name, "point", center, {"role": "start_box"}))
     for name, site in _cap_sites(dims).items():
         region_builder.add(name, point=site)
-        landmarks.append(Landmark(name, "point", site, {"role": "reward_port"}))
+        landmarks.append(
+            Landmark(
+                name, "point", site, {"role": "reward_port", "port_type": "plastic_cap"}
+            )
+        )
     env_2d = env_2d.with_regions(region_builder).with_landmarks(Landmarks(landmarks))
 
     env_track = None
     if include_track:
         env_track = _create_crossword_track_graph(dims, bin_size)
 
+    warn_if_bins_too_coarse(
+        env_2d,
+        maze="crossword maze",
+        bin_size=bin_size,
+        narrowest_corridor=dims.corridor_width,
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 

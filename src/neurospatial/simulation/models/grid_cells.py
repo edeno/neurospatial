@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._units import default_length
+from neurospatial.geometry import require_cartesian
+from neurospatial.simulation.models.base import (
+    _check_angle,
+    _check_point,
+    _check_positive,
+    _check_rates,
+    _model_inputs,
+)
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -18,6 +27,7 @@ if TYPE_CHECKING:
 GRID_SPACING_CM = 41.0
 
 
+@dataclass(frozen=True, eq=False)
 class GridCellModel:
     """Periodic hexagonal grid pattern model (2D only).
 
@@ -27,7 +37,7 @@ class GridCellModel:
     Parameters
     ----------
     env : Environment
-        The spatial environment (must be 2D).
+        The spatial environment (must be 2D and allocentric Cartesian).
     grid_spacing : float, optional
         Distance between grid peaks in environment units. This is the
         characteristic spatial scale of the grid pattern. If None, 41 cm
@@ -43,8 +53,8 @@ class GridCellModel:
         Different grid cells have different orientations, creating
         diverse representations across the population.
     phase_offset : NDArray[np.float64], shape (2,), optional
-        Spatial phase offset in (x, y) coordinates (default: [0.0, 0.0]).
-        Controls the position of grid vertices. Different phase offsets
+        Spatial phase offset in (x, y) coordinates (default: [0.0, 0.0]):
+        the position of one firing field. Different phase offsets
         create complementary grid representations.
     max_rate : float, optional
         Peak firing rate in Hz (default: 20.0). An illustrative value; it is
@@ -56,18 +66,29 @@ class GridCellModel:
     Attributes
     ----------
     ground_truth : dict[str, Any]
-        Contains 'grid_spacing', 'grid_orientation', 'phase_offset',
-        'max_rate', 'baseline_rate'.
+        The values the model fires with: 'cell_type', 'grid_spacing',
+        'grid_orientation', 'phase_offset', 'max_rate', 'baseline_rate'.
+        Every parameter is also an attribute holding the argument as passed
+        (``phase_offset`` as a read-only float array), so ``grid_spacing``
+        and ``phase_offset`` read None when left to their defaults.
+        ``dataclasses.replace`` builds a new model as the constructor would.
 
     Raises
     ------
     ValueError
-        If environment is not 2D (grid cells require 2D space).
+        If the environment is not 2D (grid cells require 2D space); if
+        ``grid_spacing`` is not finite and positive, ``grid_orientation`` is
+        not finite, or ``phase_offset`` is not two finite coordinates; if a
+        rate is not finite, is negative, or ``baseline_rate`` exceeds
+        ``max_rate``; or if ``grid_spacing`` is None and ``env.units`` is not
+        a metric length unit.
+    CartesianOnlyError
+        If the environment holds egocentric polar coordinates.
 
     Notes
     -----
-    The hexagonal grid pattern is generated using three plane waves
-    at 60° intervals (Fuhs & Touretzky 2006):
+    The hexagonal grid pattern is the mean of three plane waves at 60°
+    intervals (Solstad, Moser & Einevoll 2006):
 
     .. math::
         g(x) = (1/3) * \\sum_{i=1}^{3} \\cos(k_i \\cdot (x - phase\\_offset))
@@ -76,11 +97,13 @@ class GridCellModel:
 
     .. math::
         k_{magnitude} = 4\\pi / (\\sqrt{3} * grid\\_spacing)
-        k_1 = k_{magnitude} * [\\cos(\\theta), \\sin(\\theta)]
-        k_2 = k_{magnitude} * [\\cos(\\theta + 60°), \\sin(\\theta + 60°)]
-        k_3 = k_{magnitude} * [\\cos(\\theta + 120°), \\sin(\\theta + 120°)]
+        k_1 = k_{magnitude} * [\\cos(\\alpha), \\sin(\\alpha)]
+        k_2 = k_{magnitude} * [\\cos(\\alpha + 60°), \\sin(\\alpha + 60°)]
+        k_3 = k_{magnitude} * [\\cos(\\alpha + 120°), \\sin(\\alpha + 120°)]
 
-    The final firing rate is:
+    with ``α = grid_orientation - 30°``, which points the field lattice
+    along ``grid_orientation`` (see ``firing_rate``). The final firing rate
+    is:
 
     .. math::
         rate(x) = baseline + (max\\_rate - baseline) * \\max(0, g(x))
@@ -97,20 +120,18 @@ class GridCellModel:
     For realistic populations, create multiple GridCellModel instances with
     spacing ratios of approximately √2 between scales.
 
-    **Performance**: Grid pattern computation is O(n_positions) with low
-    constant factor (3 cosine evaluations per position). Much faster than
-    geodesic distance metrics in PlaceCellModel.
-
-    **Numerical Stability**: The cosine gratings are bounded [-1, 1], so
-    grid_pattern is bounded [-1, 1]. After rectification (max(0, g(x))),
-    the pattern is bounded [0, 1], preventing overflow/underflow.
+    **Range**: the mean of the three cosines lies in [-0.5, 1]: it is 1 at
+    a field and -0.5 at the points farthest from the fields. After
+    rectification, ``max(0, g(x))`` lies in [0, 1], so the rate lies
+    between ``baseline_rate`` and ``max_rate``.
 
     References
     ----------
-    - Hafting et al. (2005). "Microstructure of a spatial map in the
-      entorhinal cortex." Nature 436(7052): 801-806.
-    - Fuhs & Touretzky (2006). "A spin glass model of path integration
-      in rat medial entorhinal cortex." Journal of Neuroscience.
+    - Hafting, T., Fyhn, M., Molden, S., Moser, M.-B., & Moser, E. I.
+      (2005). Microstructure of a spatial map in the entorhinal cortex.
+      Nature, 436(7052), 801-806.
+    - Solstad, T., Moser, E. I., & Einevoll, G. T. (2006). From grid cells
+      to place cells: a mathematical model. Hippocampus, 16(12), 1026-1031.
 
     Examples
     --------
@@ -129,7 +150,7 @@ class GridCellModel:
     >>> positions, times = simulate_trajectory_ou(
     ...     env, duration=60.0, seed=42, speed_units="cm"
     ... )
-    >>> rates = gc.firing_rate(positions)
+    >>> rates = gc.firing_rate(times, positions)
     >>> rates.shape == positions.shape[:1]
     True
     >>> bool(np.all(rates >= gc.baseline_rate))
@@ -146,18 +167,19 @@ class GridCellModel:
     4
     """
 
-    def __init__(
-        self,
-        env: Environment,
-        *,
-        grid_spacing: float | None = None,
-        grid_orientation: float = 0.0,
-        phase_offset: NDArray[np.float64] | None = None,
-        max_rate: float = 20.0,
-        baseline_rate: float = 0.01,
-    ) -> None:
-        """Initialize grid cell model."""
-        # Validate 2D environment
+    env: Environment = field(repr=False)
+    _: KW_ONLY
+    grid_spacing: float | None = None
+    grid_orientation: float = 0.0
+    phase_offset: NDArray[np.float64] | None = None
+    max_rate: float = 20.0
+    baseline_rate: float = 0.01
+    _grid_spacing: float = field(init=False, repr=False)
+    _phase_offset: NDArray[np.float64] = field(init=False, repr=False)
+    _wave_vectors: NDArray[np.float64] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        env = self.env
         if env.n_dims != 2:
             raise ValueError(
                 f"GridCellModel only works for 2D environments. "
@@ -165,69 +187,81 @@ class GridCellModel:
                 f"Grid cells exhibit hexagonal spatial periodicity that "
                 f"requires exactly 2 spatial dimensions."
             )
-
-        if grid_spacing is None:
-            grid_spacing = default_length(
+        require_cartesian(
+            env.coordinate_system,
+            "GridCellModel()",
+            why="A grid cell's hexagonal lattice lies in the animal's "
+            "allocentric (x, y) plane, not in (distance, angle) coordinates.",
+            fix="simulate on the allocentric environment the animal moves in",
+        )
+        spacing = self.grid_spacing
+        if spacing is None:
+            spacing = default_length(
                 env, GRID_SPACING_CM, name="grid_spacing", call="GridCellModel()"
             )
+        _check_positive("grid_spacing", spacing)
+        _check_angle("grid_orientation", self.grid_orientation)
+        phase = _check_point(
+            "phase_offset",
+            [0.0, 0.0] if self.phase_offset is None else self.phase_offset,
+            2,
+        )
+        _check_rates(self.max_rate, self.baseline_rate)
 
-        # Validate parameters
-        if grid_spacing <= 0:
-            msg = f"grid_spacing must be positive (got {grid_spacing})"
-            raise ValueError(msg)
+        # Three wave vectors at 60° intervals. The field lattice lies 30°
+        # from the first wave (see firing_rate Notes), so the waves start at
+        # grid_orientation - 30° to put the lattice at grid_orientation.
+        k_magnitude = (4.0 * np.pi) / (np.sqrt(3.0) * spacing)
+        angles = np.array([0.0, np.pi / 3.0, 2.0 * np.pi / 3.0])
+        angles += self.grid_orientation - np.pi / 6.0
+        wave_vectors = k_magnitude * np.column_stack([np.cos(angles), np.sin(angles)])
+        wave_vectors.setflags(write=False)
+        if self.grid_spacing is not None:
+            object.__setattr__(self, "grid_spacing", float(spacing))
+        if self.phase_offset is not None:
+            object.__setattr__(self, "phase_offset", phase)
+        for name, value in (
+            ("_grid_spacing", float(spacing)),
+            ("_phase_offset", phase),
+            ("grid_orientation", float(self.grid_orientation)),
+            ("max_rate", float(self.max_rate)),
+            ("baseline_rate", float(self.baseline_rate)),
+            ("_wave_vectors", wave_vectors),
+        ):
+            object.__setattr__(self, name, value)
 
-        if max_rate <= 0:
-            msg = f"max_rate must be positive (got {max_rate})"
-            raise ValueError(msg)
-
-        if baseline_rate < 0:
-            msg = f"baseline_rate must be non-negative (got {baseline_rate})"
-            raise ValueError(msg)
-
-        if baseline_rate >= max_rate:
-            msg = (
-                f"baseline_rate ({baseline_rate}) must be less than "
-                f"max_rate ({max_rate})"
-            )
-            raise ValueError(msg)
-
-        self.env = env
-        self.grid_spacing = grid_spacing
-        self.grid_orientation = grid_orientation
-        self.max_rate = max_rate
-        self.baseline_rate = baseline_rate
-
-        # Default phase offset at origin
-        if phase_offset is None:
-            self.phase_offset = np.array([0.0, 0.0])
-        else:
-            self.phase_offset = np.asarray(phase_offset, dtype=np.float64)
-            # Validate phase_offset shape
-            if self.phase_offset.shape != (2,):
-                msg = (
-                    f"phase_offset must be shape (2,), "
-                    f"got shape {self.phase_offset.shape}"
-                )
-                raise ValueError(msg)
+    @property
+    def requires_headings(self) -> bool:
+        """False: a grid cell's rate depends on position only."""
+        return False
 
     def firing_rate(
         self,
+        times: NDArray[np.float64],
         positions: NDArray[np.float64],
-        times: NDArray[np.float64] | None = None,
+        *,
+        headings: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
         """Compute hexagonal grid firing rate.
 
         Parameters
         ----------
+        times : NDArray[np.float64], shape (n_time,)
+            Sample times in seconds; the rate does not depend on them.
         positions : NDArray[np.float64], shape (n_time, 2)
             Position coordinates in 2D space.
-        times : NDArray[np.float64], shape (n_time,), optional
-            Time points (not used for grid cells, included for protocol).
+        headings : NDArray[np.float64], shape (n_time,), optional
+            Unused; accepted for the ``NeuralModel`` interface.
 
         Returns
         -------
         firing_rate : NDArray[np.float64], shape (n_time,)
-            Firing rate in Hz at each position.
+            Firing rate in Hz at each position; NaN for a missing position.
+
+        Raises
+        ------
+        ValueError
+            If ``positions`` is not one row of 2 coordinates per time.
 
         Notes
         -----
@@ -263,7 +297,7 @@ class GridCellModel:
         >>> env = env.with_metadata(units="cm")
         >>> gc = GridCellModel(env, grid_spacing=40.0)
         >>> positions = np.array([[50.0, 50.0], [55.0, 50.0]])
-        >>> rates = gc.firing_rate(positions)
+        >>> rates = gc.firing_rate(np.array([0.0, 0.1]), positions)
         >>> rates.shape == (2,)
         True
         >>> bool(np.all(rates >= gc.baseline_rate))
@@ -271,39 +305,20 @@ class GridCellModel:
         >>> bool(np.all(rates <= gc.max_rate))
         True
         """
-        # Ensure positions are 2D array
-        if positions.ndim == 1:
-            positions = positions.reshape(1, -1)
-
-        # Relative positions from phase offset
-        rel_pos = positions - self.phase_offset
-
-        # Wave vector magnitude for hexagonal grid
-        # k = 4π / (√3 * λ) where λ is grid spacing
-        k_magnitude = (4.0 * np.pi) / (np.sqrt(3.0) * self.grid_spacing)
-
-        # Three wave vectors at 60° intervals. The field lattice lies 30°
-        # from the first wave (see Notes), so the waves start at
-        # grid_orientation - 30° to put the lattice at grid_orientation.
-        angles = np.array([0.0, np.pi / 3.0, 2.0 * np.pi / 3.0])  # 0°, 60°, 120°
-        angles += self.grid_orientation - np.pi / 6.0
-
-        # Compute wave vectors: k_i = k_magnitude * [cos(angle_i), sin(angle_i)]
-        wave_vectors = k_magnitude * np.column_stack([np.cos(angles), np.sin(angles)])
-
-        # Compute grid pattern as the mean of three cosine gratings.
-        # g(x) = (1/3) * Σ cos(k_i · x). Vectorized over wave vectors:
-        # rel_pos @ wave_vectors.T has shape (n_time, 3) giving each phase
-        # k_i · x, and the mean over axis 1 averages the three gratings.
-        grid_pattern = np.cos(rel_pos @ wave_vectors.T).mean(axis=1)
+        _times, positions = _model_inputs(
+            times, positions, 2, call="GridCellModel.firing_rate()"
+        )
+        # The mean of three cosine gratings, g(x) = (1/3) Σ cos(k_i · x):
+        # rel_pos @ wave_vectors.T has shape (n_time, 3), each phase k_i · x.
+        rel_pos = positions - self._phase_offset
+        grid_pattern = np.cos(rel_pos @ self._wave_vectors.T).mean(axis=1)
 
         # Rectify: only positive parts contribute to firing
         grid_pattern = np.maximum(0.0, grid_pattern)
-
-        # Scale to firing rate range
-        rates = self.baseline_rate + (self.max_rate - self.baseline_rate) * grid_pattern
-
-        return np.asarray(rates, dtype=np.float64)
+        rates: NDArray[np.float64] = (
+            self.baseline_rate + (self.max_rate - self.baseline_rate) * grid_pattern
+        )
+        return rates
 
     @property
     def ground_truth(self) -> dict[str, Any]:
@@ -313,17 +328,19 @@ class GridCellModel:
         -------
         parameters : dict[str, Any]
             Contains:
+            - 'cell_type': 'grid'
             - 'grid_spacing': float - distance between peaks
             - 'grid_orientation': float - field lattice angle in radians,
               from +x counterclockwise, modulo pi/3
-            - 'phase_offset': NDArray - spatial phase offset
+            - 'phase_offset': NDArray - spatial phase offset (read-only)
             - 'max_rate': float - peak firing rate
             - 'baseline_rate': float - baseline firing rate
         """
         return {
-            "grid_spacing": self.grid_spacing,
+            "cell_type": "grid",
+            "grid_spacing": self._grid_spacing,
             "grid_orientation": self.grid_orientation,
-            "phase_offset": self.phase_offset,
+            "phase_offset": self._phase_offset,
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,
         }

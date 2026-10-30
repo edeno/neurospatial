@@ -2,6 +2,254 @@
 
 ## [Unreleased]
 
+### Simulations produce what they say and refuse what they cannot simulate
+
+A review of `neurospatial.simulation` found sessions whose ground truth
+did not match the spikes they produced:
+
+- Sinusoidal sessions fed linear distance to 2-D place cells, so most cells
+  stayed silent.
+- `border_cell_session` put every place field on the wall, and every border
+  cell in a session was the same cell.
+- `validate_simulation` compared geodesic cells against a Euclidean field and
+  crashed on mixed sessions.
+- Laps on a track not aligned with x stood still.
+- Negative rates became silence.
+- `add_modulation` halved the rate at any depth and put spikes at the wrong
+  phase.
+
+These now behave as documented or raise with a message saying what to fix.
+Every model shares one call signature and is immutable. Seeded simulations
+give different numbers than before: OU headings, per-unit seeds and the
+default lap route all changed.
+
+**Breaking changes**
+
+- Every neural model takes `firing_rate(times, positions, *, headings=None)`
+  and has a `requires_headings` property. Head-direction cells used to take
+  headings first, and spatial-view and object-vector cells took `positions`
+  first. `generate_population_spikes` no longer special-cases model types.
+  When a model needs headings and none are passed, it uses the movement
+  direction, held through stops. A custom model written to the
+  `NeuralModel` protocol can now receive headings.
+- Models are frozen dataclasses with read-only arrays. Assigning `center`
+  or `preferred_direction` after construction used to leave the rates
+  unchanged while `ground_truth` reported the new value.
+- A model's attributes are its constructor arguments, and a parameter left
+  to its default reads None: `PlaceCellModel(env, seed=1).center` and
+  `.width` are None. `ground_truth` holds the values the model fires with,
+  such as the drawn center, the default width in `env.units` and a
+  boundary-vector cell's default tolerance; read them there. So
+  `dataclasses.replace` and pickling build exactly the model the
+  constructor builds: `replace(model, seed=2)` draws again,
+  `replace(model, env=env_in_metres, center=...)` expresses the default
+  width in metres, and a boundary-vector cell's default
+  `distance_tolerance` follows a replaced `preferred_distance`. These used
+  to keep the first model's resolved values. `seed` is now an attribute.
+  A model that draws a parameter with `seed=None` draws a seed from the
+  operating system first and keeps it there, so `replace(model,
+  max_rate=30)` and pickling keep the drawn center or direction instead of
+  drawing again.
+  `ground_truth` always includes `cell_type` and every parameter needed to
+  rebuild the model (for example place `metric`).
+- Object-vector cells: `distance_width` is now `distance_tolerance` and
+  `direction_kappa` is now `direction_concentration`, the names used by
+  boundary-vector and head-direction cells.
+- `simulate_session` takes model parameter names (`grid_spacing`,
+  `grid_orientation`, `distance_tolerance`, `preferred_distance`, ...)
+  instead of `spacing`, `orientation`, `border_width` and `distance`. It
+  refuses a parameter for a cell type the session does not simulate, which
+  it used to drop silently. In `border_cell_session`, `border_width` is
+  replaced by `distance_tolerance`.
+- `validate_simulation` returns a `SimulationValidationResult` with
+  `summary()`, `summary_table()`, `report()` and `plot(ax=None)`, instead of
+  a dict; `show_plots` is removed.
+- `SimulationSession` holds read-only arrays, tuples of spike trains and
+  models, and read-only mappings. It refuses positions that do not match
+  the environment's dimensions, times that do not increase, spike times
+  outside the session and non-integer unit ids.
+- Maze dimension names say what they measure:
+  - `corridor_width` replaces `width` in the T, Y, plus, linear, repeated-T
+    and repeated-Y mazes, and `arm_width` in the radial maze;
+  - the W-maze's `width`/`height` are now `outer_arm_spacing`/`arm_length`;
+  - Hampton Court's `width`/`height` are now `frame_width`/`frame_depth`.
+
+  `port_type` names the reward hardware on every port. Sungod's
+  home/center/arm labels moved to `location`, and its track end nodes are
+  named after their ports (`arm_port_k`). `make_star_graph` is removed.
+
+**Sessions and validation**
+
+- Sinusoidal trajectories return positions in environment coordinates,
+  shape `(n_time, env.n_dims)`. They pause exactly at the track ends for
+  `pause_duration`; the old pauses began short of the ends and lasted
+  2–5 s regardless of `pause_duration`.
+- Each border cell fires along its own wall. Border cells are short-range
+  boundary-vector cells with a preferred direction drawn per cell and a
+  preferred distance of 0–8 cm. That range puts field centres at the
+  8.8 cm mean that Høydal et al. (2019) report.
+- Uniform field centres give every cell its own bin, spread over arenas of
+  any shape. They are laid out by farthest-point sampling along the bins,
+  over the bins that keep 40% of their local half-width from the walls: 20%
+  of the side in a square arena, the middle of each corridor in a maze. A
+  bin that touches a wall is never one of them, also on hexagonal and
+  triangular-mesh layouts, whose corner bins have only wall bins as
+  neighbors. Cells beyond those bins take bins nearer the walls one at a
+  time, so adding a cell adds one center and moves none. The
+  old layout snapped a grid over the bounding box to the nearest bins, so
+  an L-shaped arena gave 50 cells 27 distinct centres and a plus maze gave
+  20 cells 16, none in the outer part of any arm. It also left the last
+  column empty, and mixed sessions put every place cell at low x. More
+  cells than bins now raise instead of sharing centres.
+  `linear_track_session` spreads fields over the whole track, not just
+  40–160 cm of 200 cm.
+- `grid_cell_session` draws the trajectory, the grid phases and the spikes
+  from separate seed streams. It used one seed for all three, which
+  correlated unit 0's spikes with the path.
+- `validate_simulation` builds each cell's true field with the cell's own
+  metric. A geodesic cell that was recovered correctly scored r = 0.79
+  against a Euclidean field and failed. Units that are not place cells are
+  listed as `excluded` and do not count toward the verdict, so a border or
+  mixed session passes when its place cells are recovered; before, they
+  raised. A place unit that cannot be evaluated still blocks a pass, and a
+  selection with no evaluated place unit cannot pass.
+- `SimulationValidationResult.max_center_error` holds a fixed center-error
+  limit, so `report()` states it even for an empty selection, which used to
+  raise `IndexError`.
+- `validate_simulation` and `plot_session_summary` refuse a session on an
+  egocentric polar environment up front, with `CartesianOnlyError` naming
+  the function. The error used to come from `compute_spatial_rate` inside
+  them, and only when a unit had spikes.
+- `plot_session_summary` draws 1-D sessions, such as
+  `linear_track_session`, as position against time with a rate curve per
+  cell; it used to raise `IndexError`. Rate maps are drawn by
+  `Environment.plot_field` in physical units, with unsupported bins shown as
+  missing, where 2-D grids used to be labelled in bin indices. 3-D sessions
+  raise `NotImplementedError` pointing to the fastplotlib 3-D field plot.
+- `SimulationSession` compares and hashes by identity, like the models.
+  `==` between two sessions used to raise, because it compared their arrays
+  element by element.
+
+**Cell models and spikes**
+
+- Model parameters are validated when the model is built. NaN, negative
+  rates, `baseline_rate > max_rate`, a field centre or width of the wrong
+  dimension and unknown metrics are refused. `firing_rate` refuses
+  positions whose width differs from the environment's.
+  `generate_poisson_spikes` raises on negative rates; it used to clip them
+  to 0.
+- Spatial view cells give NaN, not baseline, where position or heading is
+  missing or the animal is outside the walls. `fov=` now requires the
+  preferred location to be inside the field of view, with or without
+  `require_visibility`; before, it had no effect without
+  `require_visibility`. Visibility with `boundary_source="analysis"` is
+  about 70 times faster.
+- `add_modulation` keeps a spike with probability
+  `(1 + d cos(2πft − φ)) / (1 + d)`:
+  - spikes concentrate at phase `modulation_phase`, where they used to sit
+    at −`modulation_phase`;
+  - the rate at the preferred phase equals the input rate;
+  - the kept fraction, 1/(1+d), goes smoothly to 1 as the depth goes to 0.
+
+  To keep the mean rate, modulate the rate before `generate_poisson_spikes`.
+- Head-direction `mean_vector_length` includes the baseline rate (κ = 2,
+  20 Hz peak, 5 Hz baseline: 0.335, not 0.698). `tuning_width` is NaN when
+  the curve never falls to half its peak, instead of π.
+- Grid cells refuse polar environments. Geodesic object-vector cells refuse
+  an object outside the environment; it used to be moved silently to the
+  nearest bin.
+- Each unit draws its spikes from its own `SeedSequence` child. Runs with
+  `seed=0` and `seed=1` used to share spike trains shifted by one unit.
+- `generate_population_spikes` casts the rays of boundary-vector cells on
+  the same walls once per population instead of once per cell. 30 cells
+  over 5 min at 100 Hz in a circular arena take 9 s instead of 4.5 min,
+  with identical rates and spikes.
+
+**Trajectories**
+
+- Default laps run between the two bins farthest apart, so a north–south
+  track works, along the shortest route by distance. A route of fewest
+  steps zigzagged across a circular arena: 133 cm against 108 cm across a
+  100 cm diameter.
+- Lap pause samples have `lap_id = -1` and `direction = "pause"`, and lap
+  boundaries no longer repeat a sample.
+- OU headings use the exact integral of the turning rate. At `dt = 0.1` s
+  the old update overstated heading variance by 17%. In 3-D, each step
+  turns the heading by a von Mises-Fisher angle, so its correlation is
+  `exp(-t/τ)` at any `dt`. At lag τ the old Euler step gave 0.48 at
+  `dt = τ`, not 0.37.
+- Default speeds are 8 cm/s (OU) and 10 cm/s (sinusoidal), expressed in
+  `env.units`.
+- Sinusoidal trajectories on a circular track run once around the loop and
+  back. A track with several joined loops or a loop with arms (Hamlet,
+  crossword, honeycomb, Hampton Court, rat hexmaze) raises and points to
+  `simulate_trajectory_laps(outbound_path=...)`; it used to cover a quarter
+  of the track. A track in separate pieces raises too; it used to run back
+  and forth on one piece only.
+- Periodic OU walks wrap at the sides of the region the environment
+  covers, inside both its arena and its bins. With 3 cm bins on a 100 cm
+  box they wrapped at the grid's ±1 cm overhang and left 5% of samples
+  outside the arena.
+- Unknown `boundary_mode` values, `periodic` on an environment that is not a
+  rectangular box, durations shorter than one sample and non-finite or
+  non-integer lap settings raise.
+- A fast walker no longer stalls in sharp wall corners.
+
+**Mazes**
+
+- Every maze's dimensions are checked when built: negative, NaN or
+  overlapping sizes raise with the limit they break. Before, a negative
+  side length built a normal box, and a short T-maze arm swapped the wells.
+- `make_watermaze` refuses a platform that does not fit in the pool.
+- The square maze's NE/NW/SE/SW regions are quadrants, as in the watermaze;
+  they were single points.
+- Mazes warn when the bin size splits the maze into pieces or leaves a
+  reward region without a bin.
+- `MazeEnvironments` is frozen.
+- Estimated sizes are marked as estimates in the maze guide.
+- Square-maze and watermaze quadrants give each bin to exactly one quadrant
+  (see the next section). Before, the default square maze counted 256
+  quadrant bins for 225 bins and the watermaze 4556 for 4405, and quadrant
+  visit times from `detect_region_visits` summed to 688 s in a 600 s session.
+
+### Regions that share an edge split its bins
+
+- A bin center or position exactly on a region's edge belongs to the region
+  when nudging it a hair north-east (37° from east, a fixed fraction of the
+  region's coordinate size) would move it inside. Regions that share an
+  edge, such as quadrants or maze arms cut along a line, now partition the
+  bins and positions on it; before, an edge center was in every region it
+  touched. A rectangle holds its south and west edges but not its north and
+  east edges, like a bin `[a, b)`, so a box drawn through a row of bin
+  centers covers as many bins as fit in its area. The rim of a point region's
+  `point_radius` disc follows the same rule. Interior points are unchanged,
+  and a region drawn as an environment's arena outline still holds every bin
+  of an environment built from that outline.
+- Where the nudge north-east would leave the space a point can occupy, the
+  point is nudged south-west instead, so a position on an arena's wall is in
+  the quadrant beside it. For bins that space is the environment, and a bin
+  center's nudge never leaves it, so bins follow the north-east rule.
+  `points_in_any_region` and `regions_containing_points` know no
+  environment and use the union of the polygon regions passed (all of
+  them, also those not named in `region_names`): a position on that union's
+  outline is in a region, and a lone box holds its whole edge. Without
+  this, tracking clipped to the square maze's walls lost its samples on the
+  north and east walls from every quadrant.
+- One rule decides membership everywhere: `bins_in_region`, `region_mask`,
+  `region_membership`, `subset(region_names=...)`, `subset(polygon=...)`,
+  `regions_to_mask`, `distance_to(region=...)`, `points_in_any_region`,
+  `regions_containing_points`, and the behavior analyses built on them
+  (`detect_region_visits`, `segment_trials`, `detect_runs_between_regions`,
+  decision and VTE analyses). `detect_region_visits` accepts quadrants
+  together instead of refusing them as overlapping.
+- `include_boundary=` is removed from all of these. Passing it raises
+  `TypeError`.
+- `point_radius` must be positive; a disc of radius 0 holds no position.
+- Seeded results can shift where bin centers lay on a region's north or
+  east edge: in the segmentation snapshots, a run leaving a source box whose
+  east edge passes through a column of bin centers now departs one sample
+  earlier.
+
 ### Spatial information of very small rates
 
 - Skaggs spatial information (`spatial_information`,

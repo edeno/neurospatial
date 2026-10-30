@@ -68,7 +68,7 @@ https://doi.org/10.1007/s00018-023-04784-x
 
 Wijnen, K., Genzel, L., & van der Meij, J. (2024). Rodent maze studies: from
 following simple rules to complex map learning. Brain Structure and Function,
-229(4), 823-841. https://doi.org/10.1007/s00429-024-02771-x
+229(4), 823–841. https://doi.org/10.1007/s00429-024-02771-x
 
 Examples
 --------
@@ -99,9 +99,17 @@ from shapely.geometry import box as shapely_box
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_count,
+    check_lengths,
+    refuse,
+    warn_if_bins_too_coarse,
+)
 from neurospatial.simulation.mazes._geometry import (
     make_corridor_polygon,
+    single_floor,
     union_polygons,
 )
 
@@ -176,6 +184,37 @@ class HamletDims(MazeDims):
     agora_wall_thickness: float = 3.0
     n_arms: int = 5
 
+    def __post_init__(self) -> None:
+        check_lengths(
+            self,
+            "ring_radius",
+            "split_radius",
+            "house_radius",
+            "corridor_width",
+            "house_width",
+            "house_depth",
+            "agora_wall_thickness",
+        )
+        check_count(self, "n_arms", 3, "the central ring needs at least three sides")
+        if not self.ring_radius < self.split_radius < self.house_radius:
+            refuse(
+                self,
+                ("ring_radius", "split_radius", "house_radius"),
+                "does not place the ring, the splits and the houses in order "
+                "out from the centre",
+                "Use ring_radius < split_radius < house_radius.",
+            )
+        # The radial alley runs from the ring to the split.
+        if self.split_radius - self.ring_radius <= self.corridor_width:
+            refuse(
+                self,
+                ("ring_radius", "split_radius", "corridor_width"),
+                "makes each radial alley no longer than it is wide, so its "
+                "split overlaps the ring",
+                "Use split_radius - ring_radius greater than corridor_width.",
+            )
+        _agora_polygon(self, _node_positions(self)[0])
+
 
 def make_hamlet_maze(
     dims: HamletDims | None = None,
@@ -208,12 +247,6 @@ def make_hamlet_maze(
         Contains:
         - env_2d: 2D polygon-based environment
         - env_track: 1D linearized track environment (if include_track=True)
-
-    Raises
-    ------
-    ValueError
-        If the agora's wall is not positive or leaves no agora inside the
-        ring.
 
     Notes
     -----
@@ -313,7 +346,7 @@ def make_hamlet_maze(
         make_corridor_polygon((0.0, 0.0), tuple(end), dims.corridor_width)
         for end in _agora_exits(dims, ring)
     ]
-    floor = union_polygons([alleys, agora, *exits, *houses])
+    floor = single_floor(union_polygons([alleys, agora, *exits, *houses]), dims)
 
     env_2d = Environment.from_polygon(
         polygon=floor,
@@ -342,6 +375,12 @@ def make_hamlet_maze(
     if include_track:
         env_track = _create_hamlet_track_graph(dims, bin_size)
 
+    warn_if_bins_too_coarse(
+        env_2d,
+        maze="Hamlet maze",
+        bin_size=bin_size,
+        narrowest_corridor=dims.corridor_width,
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 
@@ -373,12 +412,13 @@ def _agora_polygon(dims: HamletDims, ring: NDArray[np.float64]) -> Polygon:
     """The agora: the ring's inside, within its wall."""
     inset = dims.corridor_width / 2 + dims.agora_wall_thickness
     agora = Polygon(ring).buffer(-inset, join_style="mitre")
-    if dims.agora_wall_thickness <= 0 or agora.is_empty:
-        raise ValueError(
-            f"HamletDims(agora_wall_thickness={dims.agora_wall_thickness}) leaves "
-            f"no walled agora inside a ring of radius {dims.ring_radius} cm with "
-            f"{dims.corridor_width} cm alleys. Use a positive agora_wall_thickness "
-            "smaller than the space inside the ring."
+    if agora.is_empty:
+        refuse(
+            dims,
+            ("ring_radius", "corridor_width", "agora_wall_thickness"),
+            "leaves no walled agora inside the ring of alleys",
+            "Use a thinner agora_wall_thickness, narrower alleys or a larger "
+            "ring_radius.",
         )
     return agora
 

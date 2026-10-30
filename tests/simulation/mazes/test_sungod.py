@@ -53,8 +53,11 @@ class TestPorts:
         assert list(landmarks) == PORTS
         assert {lm.kind for lm in landmarks.values()} == {"point"}
         assert {lm.metadata["role"] for lm in landmarks.values()} == {"reward_port"}
-        port_types = [landmarks[name].metadata["port_type"] for name in PORTS]
-        assert port_types == ["home", "center", "center"] + ["arm"] * 8
+        assert {landmarks[name].metadata["port_type"] for name in PORTS} == {
+            "liquid_port"
+        }
+        locations = [landmarks[name].metadata["location"] for name in PORTS]
+        assert locations == ["home", "center", "center"] + ["arm"] * 8
         assert landmarks["center_port_left"].metadata["side"] == "left"
         assert landmarks["center_port_right"].metadata["side"] == "right"
         assert [landmarks[name].metadata["arm"] for name in ARM_PORTS] == list(
@@ -113,7 +116,7 @@ class TestPorts:
 
     def test_each_arm_port_is_at_the_far_end_of_its_arm(self, maze):
         graph = maze.env_track.binning.linearization.graph
-        ends = np.array([graph.nodes[f"arm_{k}_end"]["pos"] for k in range(1, 9)])
+        ends = np.array([graph.nodes[f"arm_port_{k}"]["pos"] for k in range(1, 9)])
         for k, name in enumerate(ARM_PORTS):
             distances = np.linalg.norm(ends - maze.env_2d.landmarks[name].data, axis=1)
             assert distances.argmin() == k, name

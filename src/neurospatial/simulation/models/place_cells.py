@@ -1,17 +1,29 @@
 """Place cell models for simulating spatial firing patterns."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
+from dataclasses import KW_ONLY, dataclass, field
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._units import default_length
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops._types import DistanceMetric
 from neurospatial.ops.distance import distance_field
-from neurospatial.simulation.models.base import geodesic_lookup_bins
+from neurospatial.simulation.models.base import (
+    _check_metric,
+    _check_point,
+    _check_rates,
+    _draw_rng,
+    _model_inputs,
+    _read_only,
+    geodesic_lookup_bins,
+)
 
 #: Default place field width (Gaussian standard deviation) in centimeters,
 #: derived from the median rat CA1 open-field field size of Mizuseki et al.
@@ -31,12 +43,14 @@ TRACK_PLACE_FIELD_WIDTH_CM = 17.5
 TRACK_PLACE_FIELD_PEAK_HZ = 14.5
 
 
+@dataclass(frozen=True, eq=False)
 class PlaceCellModel:
     """Gaussian place field model.
 
-    Generalizes existing place field simulation to work with neurospatial's
-    N-D environments. Supports both Euclidean and geodesic distance metrics,
-    as well as conditional firing (direction-selective, speed-gated, etc.).
+    A place field in an N-D environment, with Euclidean or geodesic
+    distances to its center and an optional firing gate (direction-selective,
+    speed-gated, etc.). The model is immutable: ``dataclasses.replace(model,
+    width=5.0)`` builds a new one exactly as the constructor would.
 
     Parameters
     ----------
@@ -44,10 +58,11 @@ class PlaceCellModel:
         The spatial environment.
     center : NDArray[np.float64], shape (n_dims,), optional
         Place field center in continuous coordinates.
-        If None, randomly chosen from env.bin_centers.
+        If None, randomly chosen from env.bin_centers with ``seed``.
     width : float | NDArray[np.float64], optional
         Place field width (standard deviation of Gaussian), in environment
-        units. Can be scalar (isotropic) or array (anisotropic per dimension).
+        units. Can be scalar (isotropic) or one value per dimension
+        (anisotropic), shape (n_dims,).
         If None, 11.1 cm expressed in ``env.units``: the size of a median
         rat CA1 open-field place field (see Notes). It does not depend on the
         environment's bins. An environment without metric length units
@@ -62,52 +77,55 @@ class PlaceCellModel:
     metric : {'euclidean', 'geodesic'}, optional
         Method for computing distance from positions to field center.
 
-        - 'euclidean': Straight-line distance (default). Fast but ignores
-          barriers. Use for open field environments or when performance matters.
+        - 'euclidean': Straight-line distance (default); ignores barriers.
+          Use for open field environments.
           On an egocentric polar environment, ``center`` and positions are
           ``(distance, angle)`` rows and the distance between them is measured
           in the animal's plane, ``(d cos(angle), d sin(angle))``, so ``width``
           is a length; a per-axis ``width`` is refused there.
-        - 'geodesic': Path distance through environment connectivity graph.
-          Biologically accurate for complex environments with barriers/walls.
-          ~100x slower than euclidean.
+        - 'geodesic': Path distance through environment connectivity graph,
+          for environments with barriers/walls. The distance field is
+          computed once, at construction.
     condition : Callable[[NDArray, NDArray], NDArray[bool]] | None, optional
-        Optional condition function: (positions, times) → bool mask.
-        Allows direction-selective, speed-gated, or context-dependent firing.
+        Optional condition function: (positions, times) → bool mask, one
+        entry per sample. Where the mask is False the rate is 0.
 
         Common patterns:
 
         - Direction-selective: ``lambda pos, t: np.gradient(pos[:, 0]) > 0``
         - Speed-gated: ``lambda pos, t: compute_speed(t, pos) > threshold``
         - Region-specific: ``lambda pos, t: (pos[:, 0] > x_min) & (pos[:, 0] < x_max)``
-        - Trial-type: ``lambda pos, t: trial_labels[t] == "correct"``
+        - Trial-type: ``lambda pos, t: is_correct_trial``, where
+          ``is_correct_trial`` is a bool array with one entry per sample
     seed : int | None, optional
-        Random seed for reproducible random center selection.
+        Random seed for reproducible random center selection. When None
+        and the center is drawn, the model draws a seed from the operating
+        system and keeps it in ``seed``, so ``dataclasses.replace`` and
+        pickling keep the drawn center.
 
     Attributes
     ----------
-    env : Environment
-        The spatial environment.
-    center : NDArray[np.float64], shape (n_dims,)
-        Place field center coordinates.
-    width : float | NDArray[np.float64]
-        Place field width(s).
-    max_rate : float
-        Peak firing rate in Hz.
-    baseline_rate : float
-        Baseline firing rate in Hz.
-    metric : str
-        Distance metric used ('euclidean' or 'geodesic').
-    condition : Callable | None
-        Condition function for gated firing.
+    ground_truth : dict[str, Any]
+        The values the model fires with: read the drawn ``center`` and the
+        default ``width`` here. Every parameter is also an attribute holding
+        the argument as passed (``center`` and a per-dimension ``width`` as
+        read-only float arrays), so ``center`` and ``width`` read None when
+        left to their defaults.
 
     Raises
     ------
     ValueError
-        If ``width`` contains a non-finite value (NaN or +/-inf), or if any
-        ``width`` value is not strictly positive. ``width`` is the Gaussian
-        standard deviation of the place field, so a zero or negative width
-        gives an undefined (0/0) firing rate at the field center.
+        If ``center`` is not ``n_dims`` finite coordinates; if ``width`` is
+        not finite and strictly positive (it is the Gaussian standard
+        deviation, so a zero width gives an undefined 0/0 rate at the
+        center), or a per-dimension ``width`` does not have ``n_dims``
+        entries; if a rate is not finite, is negative, or ``baseline_rate``
+        exceeds ``max_rate``; if ``metric`` is unknown; if a per-dimension
+        ``width`` is combined with ``metric='geodesic'``; or if ``width`` is
+        None and ``env.units`` is not a metric length unit.
+    CartesianOnlyError
+        If ``metric='geodesic'`` or a per-dimension ``width`` is used on an
+        egocentric polar environment.
 
     Examples
     --------
@@ -130,7 +148,7 @@ class PlaceCellModel:
     >>> positions, times = simulate_trajectory_ou(
     ...     env, duration=10.0, seed=42, speed_units="cm"
     ... )
-    >>> rates = pc.firing_rate(positions)
+    >>> rates = pc.firing_rate(times, positions)
     >>> rates.shape[0] == len(times)
     True
     >>> bool(rates.max() > 0.0)  # Should have some firing
@@ -150,7 +168,7 @@ class PlaceCellModel:
     ...     width=10.0,
     ...     condition=rightward_only,
     ... )
-    >>> rates_directional = pc_directional.firing_rate(positions, times)
+    >>> rates_directional = pc_directional.firing_rate(times, positions)
 
     Multiple place cells tiling the environment:
 
@@ -160,7 +178,9 @@ class PlaceCellModel:
     ... ]
     >>>
     >>> # Compute all firing rates
-    >>> all_rates = np.column_stack([pc.firing_rate(positions) for pc in place_cells])
+    >>> all_rates = np.column_stack(
+    ...     [pc.firing_rate(times, positions) for pc in place_cells]
+    ... )
     >>> all_rates.shape[0] == len(times)  # (n_time, n_cells)
     True
     >>> all_rates.shape[1] == len(place_cells)
@@ -174,7 +194,7 @@ class PlaceCellModel:
     ...     width=10.0,
     ...     metric="geodesic",
     ... )
-    >>> rates_geodesic = pc_geodesic.firing_rate(positions)
+    >>> rates_geodesic = pc_geodesic.firing_rate(times, positions)
 
     See Also
     --------
@@ -195,9 +215,9 @@ class PlaceCellModel:
     peak, ``σ = 75 / (2 √(2 ln 10)) = 17.5 cm``) and a 14.5 Hz peak; pass
     those values to model a track.
 
-    **Geodesic Distance**: For geodesic metric, the distance field is precomputed
-    in ``__init__`` using graph shortest paths. This makes subsequent firing rate
-    computations fast (O(1) lookup per position) but adds initialization cost.
+    **Geodesic Distance**: For geodesic metric, the distance field is
+    computed at construction from graph shortest paths, and each rate looks
+    up its position's bin in it.
 
     **Condition Function**: The condition function receives the full trajectory
     and should return a boolean mask. It's called once per firing_rate() invocation,
@@ -210,99 +230,106 @@ class PlaceCellModel:
         Hippocampus, 22(8), 1659-1680.
     """
 
-    def __init__(
-        self,
-        env: Environment,
-        *,
-        center: NDArray[np.float64] | None = None,
-        width: float | NDArray[np.float64] | None = None,
-        max_rate: float = PLACE_FIELD_PEAK_HZ,
-        baseline_rate: float = 0.01,
-        metric: DistanceMetric = "euclidean",
-        condition: Callable[
-            [NDArray[np.float64], NDArray[np.float64] | None], NDArray[np.bool_]
-        ]
-        | None = None,
-        seed: int | None = None,
-    ) -> None:
-        self.env = env
-        self.max_rate = max_rate
-        self.baseline_rate = baseline_rate
-        self.metric = metric
-        self.condition = condition
+    env: Environment = field(repr=False)
+    _: KW_ONLY
+    center: NDArray[np.float64] | None = None
+    width: float | NDArray[np.float64] | None = None
+    max_rate: float = PLACE_FIELD_PEAK_HZ
+    baseline_rate: float = 0.01
+    metric: DistanceMetric = "euclidean"
+    condition: (
+        Callable[[NDArray[np.float64], NDArray[np.float64]], NDArray[np.bool_]] | None
+    ) = None
+    seed: int | None = None
+    _center: NDArray[np.float64] = field(init=False, repr=False)
+    _width: float | NDArray[np.float64] = field(init=False, repr=False)
+    _center_place: NDArray[np.float64] = field(init=False, repr=False)
+    _distance_field: NDArray[np.float64] | None = field(init=False, repr=False)
 
-        # Initialize random number generator for center selection
-        rng = np.random.default_rng(seed)
-
-        # Set center
-        if center is None:
-            # Randomly choose from bin centers
-            center_idx = rng.integers(0, env.n_bins)
-            self.center = env.bin_centers[center_idx].copy()
+    def __post_init__(self) -> None:
+        env = self.env
+        _check_rates(self.max_rate, self.baseline_rate)
+        _check_metric(self.metric, "PlaceCellModel()")
+        object.__setattr__(self, "max_rate", float(self.max_rate))
+        object.__setattr__(self, "baseline_rate", float(self.baseline_rate))
+        if self.center is None:
+            center_idx = _draw_rng(self).integers(0, env.n_bins)
+            center = _read_only(env.bin_centers[center_idx])
         else:
-            self.center = np.asarray(center, dtype=np.float64)
-
-        # Distances are measured between places: on an egocentric polar
-        # environment, (distance, angle) rows are placed in the animal's plane.
-        self._embed = env.coordinate_system.cartesian_embedding
-        self._center_place = self._embed(self.center[None, :])[0]
-        polar = env.coordinate_kind == "polar"
+            center = _check_point("center", self.center, env.n_dims)
+            object.__setattr__(self, "center", center)
+        object.__setattr__(self, "_center", center)
 
         # A field's size belongs to the cell, not to the analysis bins.
-        self.width: float | NDArray[np.float64] = (
+        width_given = (
             default_length(
                 env, PLACE_FIELD_WIDTH_CM, name="width", call="PlaceCellModel()"
             )
-            if width is None
-            else width
+            if self.width is None
+            else self.width
+        )
+        width_check = np.asarray(width_given, dtype=np.float64)
+        if not np.all(np.isfinite(width_check)) or np.any(width_check <= 0.0):
+            raise ValueError(
+                _format_error(
+                    f"width must be finite and strictly positive, got {width_given!r}.",
+                    why="width is the Gaussian standard deviation of the place "
+                    "field; a zero or negative width gives an undefined (0/0) "
+                    "firing rate at the field center.",
+                    fix="pass the field's standard deviation in the "
+                    "environment's units, e.g. width=10.0",
+                )
+            )
+        if width_check.ndim > 0 and width_check.shape != (env.n_dims,):
+            raise ValueError(
+                _format_error(
+                    f"A per-dimension width needs {env.n_dims} values, one per "
+                    f"dimension, got shape {width_check.shape}.",
+                    fix="pass one width for an isotropic field, or "
+                    f"{env.n_dims} widths in the order of the environment's axes",
+                )
+            )
+        width: float | NDArray[np.float64]
+        if width_check.ndim == 0 or env.n_dims == 1:
+            width = float(width_check.reshape(-1)[0])
+        else:
+            width = _read_only(width_check)
+            if env.coordinate_kind == "polar":
+                require_cartesian(
+                    env.coordinate_system,
+                    "PlaceCellModel(width=<one per axis>)",
+                    why="A per-axis width scales distance and angle separately, "
+                    "but the field is a Gaussian of the physical distance "
+                    "between places.",
+                    fix="give one width in the environment's length units, for "
+                    "example the distance-axis width",
+                    example="neurospatial.simulation.PlaceCellModel(env, "
+                    "center=center, width=float(width[0]))",
+                )
+            if self.metric == "geodesic":
+                raise ValueError(
+                    _format_error(
+                        "A per-dimension width is not supported with "
+                        "metric='geodesic'.",
+                        why="a geodesic distance is one path length through "
+                        "the bins, with no per-axis components.",
+                        fix="pass one width, or metric='euclidean'",
+                    )
+                )
+        if self.width is not None:
+            object.__setattr__(self, "width", width)
+        object.__setattr__(self, "_width", width)
+
+        # Distances are measured between places: on an egocentric polar
+        # environment, (distance, angle) rows are placed in the animal's plane.
+        object.__setattr__(
+            self,
+            "_center_place",
+            env.coordinate_system.cartesian_embedding(center[None, :])[0],
         )
 
-        # Reject non-positive width: width is the Gaussian standard deviation,
-        # so width <= 0 makes the field undefined (0/0 -> NaN at the center,
-        # silently producing zero spikes downstream).
-        width_check = np.asarray(self.width, dtype=np.float64)
-        if not np.all(np.isfinite(width_check)):
-            msg = (
-                f"width must be finite and positive, got {self.width!r}. "
-                "width is the Gaussian standard deviation of the place field."
-            )
-            raise ValueError(msg)
-        if np.any(width_check <= 0.0):
-            msg = (
-                f"width must be strictly positive, got {self.width!r}. "
-                "width is the Gaussian standard deviation of the place field; "
-                "a zero or negative width gives an undefined (0/0) firing rate "
-                "at the field center."
-            )
-            raise ValueError(msg)
-
-        if polar and width_check.ndim > 0 and width_check.size > 1:
-            require_cartesian(
-                env.coordinate_system,
-                "PlaceCellModel(width=<one per axis>)",
-                why="A per-axis width scales distance and angle separately, but "
-                "the field is a Gaussian of the physical distance between places.",
-                fix="give one width in the environment's length units, for "
-                "example the distance-axis width",
-                example="neurospatial.simulation.PlaceCellModel(env, "
-                "center=center, width=float(width[0]))",
-            )
-
-        # Validate width compatibility with distance metric
-        if metric == "geodesic":
-            width_arr = np.asarray(self.width)
-            if width_arr.ndim > 0 and len(width_arr) > 1:
-                msg = (
-                    "Anisotropic width (array-like) is not supported with "
-                    "metric='geodesic'. Geodesic distance is a scalar "
-                    "(path length through graph) without directional components. "
-                    "Use scalar width or metric='euclidean'."
-                )
-                raise ValueError(msg)
-
-        # Precompute distance field for geodesic metric
-        self._distance_field: NDArray[np.float64] | None
-        if metric == "geodesic":
+        distances: NDArray[np.float64] | None = None
+        if self.metric == "geodesic":
             require_cartesian(
                 env.coordinate_system,
                 "PlaceCellModel(metric='geodesic')",
@@ -310,42 +337,44 @@ class PlaceCellModel:
                 "Cartesian positions in the environment's bins.",
                 fix="simulate on the allocentric environment the animal moves in",
             )
-            # Find bin containing the center
-            # Always use contains check first to avoid errors
-            # Note: contains() returns ndarray, so we need [0] for single point
-            center_bin = int(geodesic_lookup_bins(env, self.center[None, :])[0])
+            center_bin = int(geodesic_lookup_bins(env, center[None, :])[0])
+            distances = distance_field(env.connectivity, sources=[center_bin])
+            distances.setflags(write=False)
+        object.__setattr__(self, "_distance_field", distances)
 
-            # Compute distance field from center bin
-            # Ensure center_bin is valid
-            if 0 <= center_bin < env.n_bins:
-                self._distance_field = distance_field(
-                    env.connectivity,
-                    sources=[center_bin],
-                )
-            else:
-                msg = f"Invalid center bin index: {center_bin}. Must be in range [0, {env.n_bins})"
-                raise ValueError(msg)
-        else:
-            self._distance_field = None
+    @property
+    def requires_headings(self) -> bool:
+        """False: a place cell's rate depends on position only."""
+        return False
 
     def firing_rate(
         self,
+        times: NDArray[np.float64],
         positions: NDArray[np.float64],
-        times: NDArray[np.float64] | None = None,
+        *,
+        headings: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
         """Compute Gaussian place field firing rate.
 
         Parameters
         ----------
+        times : NDArray[np.float64], shape (n_time,)
+            Sample times in seconds, passed to ``condition``.
         positions : NDArray[np.float64], shape (n_time, n_dims)
             Position coordinates in the same units as the environment.
-        times : NDArray[np.float64], shape (n_time,), optional
-            Time points in seconds. Used for condition functions.
+        headings : NDArray[np.float64], shape (n_time,), optional
+            Unused; accepted for the ``NeuralModel`` interface.
 
         Returns
         -------
         firing_rate : NDArray[np.float64], shape (n_time,)
-            Firing rate in Hz at each position/time point.
+            Firing rate in Hz at each sample; NaN for a missing position.
+
+        Raises
+        ------
+        ValueError
+            If ``positions`` is not one row of ``env.n_dims`` coordinates per
+            time, or ``condition`` does not return one value per sample.
 
         Notes
         -----
@@ -357,71 +386,54 @@ class PlaceCellModel:
 
         3. Apply condition mask if provided (multiply rates by mask)
 
-        For geodesic distance:
-
-        - Map positions to bins: the containing bin, or the nearest bin
-          center for a position outside
-        - Precompute distance field from center bin (done in __init__)
-        - Lookup distances (O(1) per position)
+        For geodesic distance, each position takes its containing bin, or
+        the nearest bin center for a position outside, and reads the
+        distance field computed at construction.
         """
-        # Compute distances
-        if self.metric == "euclidean":
+        times, positions = _model_inputs(
+            times, positions, self.env.n_dims, call="PlaceCellModel.firing_rate()"
+        )
+        if isinstance(self._width, np.ndarray):
+            # Anisotropic (Cartesian only, so the center is its own place): the
+            # distance in standard-deviation units, sqrt(sum_i ((x_i - c_i) / w_i)^2).
+            sigmas = np.linalg.norm(
+                (positions - self._center_place) / self._width, axis=1
+            )
+        elif self.metric == "euclidean":
             # Straight-line distance between places (in the animal's plane on
             # an egocentric polar environment).
-            distances = np.linalg.norm(
-                self._embed(np.asarray(positions, dtype=np.float64))
-                - self._center_place,
-                axis=1,
-            )
-
-        elif self.metric == "geodesic":
-            # Graph-based distance (path through connectivity)
+            embedded = self.env.coordinate_system.cartesian_embedding(positions)
+            sigmas = np.linalg.norm(embedded - self._center_place, axis=1) / self._width
+        else:
+            assert self._distance_field is not None
             bin_indices = geodesic_lookup_bins(self.env, positions)
-
-            # Lookup distances from precomputed field
-            if self._distance_field is None:
-                raise RuntimeError(
-                    "Distance field not initialized for geodesic metric. "
-                    "This is an internal error - please report this bug."
-                )
             # A missing position has no distance, so its rate stays NaN.
             distances = np.where(
                 bin_indices >= 0, self._distance_field[bin_indices], np.nan
             )
+            sigmas = distances / self._width
 
-        # Note: No else needed - Literal type ensures all cases covered
-
-        # Convert width to array for anisotropic case
-        width = np.asarray(self.width)
-
-        if width.ndim > 0 and len(width) > 1:
-            # Anisotropic: each dimension has its own width. Build an
-            # effective distance already expressed in standard-deviation
-            # units: d_sigma = sqrt(sum_i ((x_i - c_i) / width_i)^2).
-            diff = positions - self.center
-            normalized_diff = diff / width
-            distances = np.linalg.norm(normalized_diff, axis=1)
-            # `distances` is now in sigma units, so the Gaussian divisor is 1.0.
-            sigma_divisor = 1.0
-        else:
-            # Isotropic: `distances` (set above) is a raw Euclidean distance,
-            # so divide by the scalar width to convert to sigma units.
-            sigma_divisor = float(width)
-
-        # Compute Gaussian firing rate:
-        #   rate = baseline + (max - baseline) * exp(-0.5 * (d / sigma)^2)
         # Far from the field the exponential underflows to 0 (and an
         # unreachable geodesic distance, inf, gives exactly 0), so the rate
         # settles on the baseline without any clipping.
-        gaussian = np.exp(-0.5 * (distances / sigma_divisor) ** 2)
-        rates = self.baseline_rate + (self.max_rate - self.baseline_rate) * gaussian
+        gaussian = np.exp(-0.5 * sigmas**2)
+        rates: NDArray[np.float64] = (
+            self.baseline_rate + (self.max_rate - self.baseline_rate) * gaussian
+        )
 
-        # Apply condition mask if provided
         if self.condition is not None:
-            mask = self.condition(positions, times)
+            mask = np.asarray(self.condition(positions, times))
+            if mask.shape != rates.shape:
+                raise ValueError(
+                    _format_error(
+                        f"PlaceCellModel condition returned shape {mask.shape} "
+                        f"for {len(times)} samples.",
+                        fix="return one bool per sample from condition("
+                        "positions, times)",
+                    )
+                )
             rates = rates * mask.astype(np.float64)
-
-        return rates  # type: ignore[no-any-return]
+        return rates
 
     @property
     def ground_truth(self) -> dict[str, Any]:
@@ -432,10 +444,14 @@ class PlaceCellModel:
         parameters : dict[str, Any]
             Dictionary with keys:
 
+            - 'cell_type': 'place'
             - 'center': NDArray[np.float64] - field center coordinates
+              (read-only)
             - 'width': float | NDArray[np.float64] - field width
             - 'max_rate': float - peak firing rate in Hz
             - 'baseline_rate': float - baseline firing rate in Hz
+            - 'metric': str - distance metric
+            - 'condition': Callable | None - firing gate
 
         Examples
         --------
@@ -454,8 +470,11 @@ class PlaceCellModel:
         20.0
         """
         return {
-            "center": self.center,
-            "width": self.width,
+            "cell_type": "place",
+            "center": self._center,
+            "width": self._width,
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,
+            "metric": self.metric,
+            "condition": self.condition,
         }

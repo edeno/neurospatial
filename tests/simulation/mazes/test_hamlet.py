@@ -316,7 +316,10 @@ class TestEnvironments:
         with pytest.warns(UserWarning, match="slanted wall of the Hamlet maze"):
             make_hamlet_maze(bin_size=2.2, include_track=False)
 
-    @pytest.mark.parametrize("thickness", [0.0, 20.0])
-    def test_agora_wall_must_leave_an_agora(self, thickness):
-        with pytest.raises(ValueError, match="no walled agora"):
-            make_hamlet_maze(HamletDims(agora_wall_thickness=thickness))
+    @pytest.mark.parametrize(
+        ("thickness", "match"),
+        [(0.0, "is not a length"), (20.0, "no walled agora")],
+    )
+    def test_agora_wall_must_leave_an_agora(self, thickness, match):
+        with pytest.raises(ValueError, match=match):
+            HamletDims(agora_wall_thickness=thickness)

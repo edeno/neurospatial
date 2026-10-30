@@ -1389,14 +1389,14 @@ class TestEgocentricRateConvention:
             env=env,
             object_positions=object_positions,
             preferred_distance=10.0,
-            distance_width=4.0,
+            distance_tolerance=4.0,
             preferred_direction=preferred_direction,
-            direction_kappa=4.0,
+            direction_concentration=4.0,
             max_rate=25.0,
             baseline_rate=0.1,
             metric="euclidean",
         )
-        rates = model.firing_rate(positions, headings=movement)
+        rates = model.firing_rate(times, positions, headings=movement)
         # Independent seed from the trajectory RNG so spike-acceptance uniforms
         # are not correlated with the simulated state.
         spike_times = generate_poisson_spikes(rates, times, seed=99)

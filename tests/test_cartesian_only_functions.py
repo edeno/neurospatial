@@ -61,6 +61,7 @@ from neurospatial.regions import Regions
 from neurospatial.simulation import (
     BorderCellModel,
     BoundaryVectorCellModel,
+    GridCellModel,
     ObjectVectorCellModel,
     PlaceCellModel,
     SpatialViewCellModel,
@@ -360,6 +361,10 @@ def _polar_regions_env(env: Environment) -> Environment:
             "BorderCellModel()",
         ),
         (
+            lambda env: GridCellModel(env, grid_spacing=10.0),
+            "GridCellModel()",
+        ),
+        (
             lambda env: BoundaryVectorCellModel(
                 env,
                 preferred_distance=5.0,
@@ -374,7 +379,7 @@ def _polar_regions_env(env: Environment) -> Environment:
                 env,
                 object_positions=np.array([[10.0, 0.0]]),
                 preferred_distance=5.0,
-                distance_width=2.0,
+                distance_tolerance=2.0,
             ),
             "ObjectVectorCellModel()",
         ),

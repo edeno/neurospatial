@@ -49,7 +49,6 @@ def test_every_maze_is_classified():
         "make_buffered_line",
         "make_circular_arena",
         "make_corridor_polygon",
-        "make_star_graph",
     }
     assert factories == set(ELEVATED) | set(WALLED)
 

@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from neurospatial.simulation.models.boundary_cells import BORDER_DISTANCE_TOLERANCE_CM
 from neurospatial.simulation.models.place_cells import (
     TRACK_PLACE_FIELD_PEAK_HZ,
     TRACK_PLACE_FIELD_WIDTH_CM,
 )
 
 if TYPE_CHECKING:
+    from neurospatial.simulation.models import NeuralModel
     from neurospatial.simulation.session import SimulationSession
 
 
@@ -81,15 +82,16 @@ def open_field_session(
     >>> len(spike_times)
     3
 
-    Validate neurospatial's place field detection:
+    Validate neurospatial's place field detection. Three minutes cross every
+    field often enough to recover it (5 cm bins keep the example fast):
 
     >>> from neurospatial.simulation import open_field_session, validate_simulation
     >>> session = open_field_session(
-    ...     duration=5.0, n_place_cells=3, seed=42
-    ... )  # doctest: +SKIP
-    >>> report = validate_simulation(session)  # doctest: +SKIP
-    >>> "passed" in report and "center_errors" in report  # doctest: +SKIP
-    True
+    ...     duration=180.0, bin_size=5.0, n_place_cells=3, seed=0
+    ... )
+    >>> report = validate_simulation(session)
+    >>> report.unit_status
+    ('passed', 'passed', 'passed')
 
     Visualize session summary:
 
@@ -126,9 +128,10 @@ def open_field_session(
 
     **Coverage**:
 
-    Place field centers are uniformly distributed across the arena using
-    coverage='uniform' to ensure representative spatial sampling. This is
-    ideal for testing place field detection algorithms.
+    Each place cell has its own field center, spread over the arena with
+    coverage='uniform' and kept 20% of the side from every wall, where the
+    animal samples well. This is ideal for testing place field detection
+    algorithms.
     """
     # Import here to avoid circular dependencies
     from neurospatial.environment import Environment
@@ -266,7 +269,7 @@ def linear_track_session(
     ...     duration=60.0, n_place_cells=3, n_laps=6, seed=42
     ... )
     >>> report = validate_simulation(session)
-    >>> print(f"Validation: {report['passed']}")
+    >>> print(f"Validation: {report.passed}")
     Validation: True
 
     See Also
@@ -469,7 +472,8 @@ def tmaze_alternation_session(
     The track of ``make_t_maze()``: a 100 cm stem from ``start`` to the
     ``junction`` and two perpendicular 50 cm arms ending at ``well_left`` and
     ``well_right``, with 10 cm corridors and 2 cm bins (200 cm of track).
-    ``session.env`` carries those regions.
+    These sizes are estimates read from a published figure, not a measured
+    apparatus (see ``TMazeDims``). ``session.env`` carries those regions.
 
     **Trajectory**:
 
@@ -485,8 +489,8 @@ def tmaze_alternation_session(
 
     **Trial Metadata**:
 
-    The metadata['trial_choices'] field contains a list of strings
-    indicating the choice on each trial: ['left', 'right', 'left', ...].
+    The metadata["trial_choices"] field contains a tuple of strings
+    indicating the choice on each trial: ("left", "right", "left", ...).
     This allows analysis of choice-dependent neural activity.
 
     **Coverage**:
@@ -511,7 +515,8 @@ def tmaze_alternation_session(
         msg = f"n_place_cells must be positive, got {n_place_cells}"
         raise ValueError(msg)
 
-    # The published T-maze track: a 100 cm stem and two 50 cm arms.
+    # The default T-maze track (sizes estimated from a figure; see TMazeDims):
+    # a 100 cm stem and two 50 cm arms.
     dims = TMazeDims()
     env = make_t_maze(dims, bin_size=2.0).env_track
     assert env is not None
@@ -560,37 +565,32 @@ def tmaze_alternation_session(
         show_progress=False,  # Disable progress bar for convenience function
     )
 
-    # Add trial_choices to metadata
-    session.metadata["trial_choices"] = trial_choices
-
-    return session
+    return replace(
+        session, metadata={**session.metadata, "trial_choices": trial_choices}
+    )
 
 
 def border_cell_session(
     *,
-    border_width: float = BORDER_DISTANCE_TOLERANCE_CM,
     duration: float = 180.0,
     arena_shape: str = "square",
     arena_size: float = 100.0,
     bin_size: float = 2.0,
     n_border_cells: int = 30,
     n_place_cells: int = 20,
+    distance_tolerance: float | None = None,
     seed: int | None = None,
 ) -> SimulationSession:
     """Generate session with border and place cells.
 
-    Creates a walled square arena with a mix of border cells (fire along the
-    walls) and place cells (fire in specific locations). This is a
-    convenience function for simulating recordings that include both
-    wall-responsive and place-responsive neurons.
+    Creates a walled square arena with a mix of border cells (each fires
+    along the walls in its own preferred direction) and place cells (fire in
+    specific locations). This is a convenience function for simulating
+    recordings that include both wall-responsive and place-responsive
+    neurons.
 
     Parameters
     ----------
-    border_width : float, optional
-        Standard deviation in cm of each border cell's distance tuning
-        (``BorderCellModel(distance_tolerance=...)``): how far from the walls
-        the cells fire (default: 9.8, derived from mouse border fields; see
-        ``BorderCellModel``).
     duration : float, optional
         Session duration in seconds (default: 180.0).
     arena_shape : str, optional
@@ -603,9 +603,14 @@ def border_cell_session(
         Number of border cells (default: 30).
     n_place_cells : int, optional
         Number of place cells (default: 20).
+    distance_tolerance : float | None, optional
+        Standard deviation in cm of every border cell's distance tuning
+        (``BoundaryVectorCellModel(distance_tolerance=...)``). None (default)
+        uses the model's rule, ``preferred_distance / 12 + 8`` cm.
     seed : int | None, optional
-        Random seed for reproducibility (default: None). The trajectory and
-        the spikes draw from independent streams spawned from it.
+        Random seed for reproducibility (default: None). The trajectory, the
+        cells' tuning and the spikes draw from independent streams spawned
+        from it.
 
     Returns
     -------
@@ -614,16 +619,16 @@ def border_cell_session(
         - env: Walled square arena (``Environment.from_polygon``), units="cm"
         - positions: Trajectory from OU random walk
         - times: Time points matching trajectory
-        - spike_times: Poisson spikes for each cell (border + place)
-        - models: BorderCellModel and PlaceCellModel instances
-        - ground_truth: True parameters for each cell
+        - spike_times: Poisson spikes for each cell (border, then place)
+        - models: BoundaryVectorCellModel and PlaceCellModel instances
+        - ground_truth: Each model's ``ground_truth``, by unit label
         - metadata: Session configuration
 
     Raises
     ------
     ValueError
-        If duration, n_border_cells, n_place_cells or border_width are not
-        positive.
+        If duration, n_border_cells or n_place_cells are not positive, or
+        distance_tolerance is not positive.
     ValueError
         If bin_size >= arena_size or bin_size <= 0.
     ValueError
@@ -634,23 +639,17 @@ def border_cell_session(
     Quick start for testing:
 
     >>> from neurospatial.simulation import border_cell_session
-    >>> session = border_cell_session(
-    ...     border_width=5.0, duration=5.0, n_border_cells=3, n_place_cells=2
-    ... )
-    >>> env = session.env
+    >>> session = border_cell_session(duration=5.0, n_border_cells=3, n_place_cells=2)
     >>> len(session.spike_times)
     5
 
-    Check cell type distribution:
+    Each unit's ground truth says what it is:
 
-    >>> from neurospatial.simulation.models import BorderCellModel, PlaceCellModel
     >>> session = border_cell_session(
-    ...     border_width=5.0, duration=5.0, n_border_cells=3, n_place_cells=2, seed=42
+    ...     duration=5.0, n_border_cells=3, n_place_cells=2, seed=42
     ... )
-    >>> n_border = sum(isinstance(m, BorderCellModel) for m in session.models)
-    >>> n_place = sum(isinstance(m, PlaceCellModel) for m in session.models)
-    >>> print(f"Border cells: {n_border}, Place cells: {n_place}")
-    Border cells: 3, Place cells: 2
+    >>> [truth["cell_type"] for truth in session.ground_truth.values()]
+    ['boundary_vector', 'boundary_vector', 'boundary_vector', 'place', 'place']
 
     Visualize session summary:
 
@@ -660,7 +659,7 @@ def border_cell_session(
     ... )
     >>> import matplotlib.pyplot as plt  # doctest: +SKIP
     >>> session = border_cell_session(  # doctest: +SKIP
-    ...     border_width=5.0, duration=5.0, n_border_cells=3, n_place_cells=2, seed=42
+    ...     duration=60.0, n_border_cells=3, n_place_cells=3, seed=42
     ... )
     >>> fig, axes = plot_session_summary(session)  # doctest: +SKIP
     >>> plt.show()  # doctest: +SKIP
@@ -671,7 +670,7 @@ def border_cell_session(
     validate_simulation : Validate detected vs ground truth fields
     plot_session_summary : Visualize session summary
     open_field_session : Open field with only place cells
-    BoundaryVectorCellModel : Cells tuned to a wall at a distance and direction
+    BoundaryVectorCellModel : The border cells' model
 
     Notes
     -----
@@ -683,11 +682,17 @@ def border_cell_session(
     - Border cells: 30
     - Place cells: 20
 
-    **Mixed Cell Types**:
+    **Border cells** are boundary vector cells with short preferred
+    distances, as in ``simulate_session(cell_type='border')``: each fires
+    along the walls that lie in its own preferred allocentric direction,
+    drawn uniformly from [-pi, pi), at its own preferred distance, drawn
+    uniformly from [0, 8] cm (field centers 6.5-10.9 cm from the wall, as
+    in mouse border cells; see ``simulate_session`` Notes). A direction
+    toward a corner fires along both walls of that corner.
 
-    Border cells (``BorderCellModel``) fire as a function of the distance to
-    the nearest wall, highest along the walls. Border cells are created
-    first, followed by place cells.
+    **Place cells** have the default ``PlaceCellModel`` fields, centered on
+    the interior layout of ``simulate_session(coverage='uniform')``. Border
+    cells are units ``0 .. n_border_cells - 1``, place cells follow.
 
     **Trajectory**:
 
@@ -700,8 +705,13 @@ def border_cell_session(
     from shapely.geometry import box
 
     from neurospatial.environment import Environment
-    from neurospatial.simulation.models import BorderCellModel, PlaceCellModel
-    from neurospatial.simulation.session import SimulationSession
+    from neurospatial.simulation.models import PlaceCellModel
+    from neurospatial.simulation.session import (
+        SimulationSession,
+        _border_cells,
+        _field_centers,
+        _stream_seeds,
+    )
     from neurospatial.simulation.spikes import generate_population_spikes
     from neurospatial.simulation.trajectory import simulate_trajectory_ou
 
@@ -733,64 +743,32 @@ def border_cell_session(
         box(0.0, 0.0, arena_size, arena_size), bin_size=bin_size, units="cm"
     )
 
-    # Independent streams for the trajectory and the spikes.
-    trajectory_seed, spike_seed = np.random.SeedSequence(seed).spawn(2)
+    # Independent streams for the trajectory, the cells' tuning and the spikes.
+    trajectory_seed, field_seed, spike_seed = _stream_seeds(seed, 3)
     positions, times = simulate_trajectory_ou(
-        env,
-        duration=duration,
-        speed_units="cm",
-        seed=int(trajectory_seed.generate_state(1)[0]),
+        env, duration=duration, speed_units="cm", seed=trajectory_seed
     )
 
-    # Create models: border cells first, then place cells
-    # Use uniform coverage for field centers
-    total_cells = n_border_cells + n_place_cells
-    step = max(1, env.n_bins // total_cells)
-    field_centers = env.bin_centers[::step][:total_cells]
+    rng = np.random.default_rng(field_seed)
+    border_params = (
+        {} if distance_tolerance is None else {"distance_tolerance": distance_tolerance}
+    )
+    models = _border_cells(env, n_border_cells, rng, border_params)
+    models.extend(
+        PlaceCellModel(env, center=center)
+        for center in _field_centers(env, n_place_cells, "uniform", rng)
+    )
 
-    models: list = []
-    ground_truth = {}
-
-    for i in range(n_border_cells):
-        model = BorderCellModel(env, distance_tolerance=border_width)
-        models.append(model)
-        ground_truth[i] = {"cell_type": "border", **model.ground_truth}
-
-    # Create place cells using field centers
-    for i in range(n_place_cells):
-        cell_idx = n_border_cells + i
-        center = (
-            field_centers[cell_idx]
-            if cell_idx < len(field_centers)
-            else field_centers[i % len(field_centers)]
-        )
-        place_model = PlaceCellModel(env, center=center)
-        models.append(place_model)
-        # Store ground truth for place cell
-        ground_truth[cell_idx] = {
-            "cell_type": "place",
-            "center": center.tolist(),
-            "width": float(place_model.width),
-            "max_rate": float(place_model.max_rate),
-            "baseline_rate": float(place_model.baseline_rate),
-        }
-
-    # Generate spikes for all cells
     spike_times = generate_population_spikes(
-        models,
-        times,
-        positions,
-        seed=int(spike_seed.generate_state(1)[0]),
-        show_progress=False,
+        models, times, positions, seed=spike_seed, show_progress=False
     )
 
-    # Create metadata
     metadata = {
         "duration": duration,
         "arena_shape": arena_shape,
         "arena_size": arena_size,
         "bin_size": bin_size,
-        "border_width": border_width,
+        "distance_tolerance": distance_tolerance,
         "n_border_cells": n_border_cells,
         "n_place_cells": n_place_cells,
         "cell_type": "mixed_border_place",
@@ -799,19 +777,16 @@ def border_cell_session(
         "seed": seed,
     }
 
-    # Create and return session
-    session = SimulationSession(
+    return SimulationSession(
         env=env,
         positions=positions,
         times=times,
         spike_times=spike_times,
-        unit_ids=np.arange(len(spike_times), dtype=np.int64),
+        unit_ids=np.arange(len(models), dtype=np.int64),
         models=models,
-        ground_truth=ground_truth,
+        ground_truth={i: model.ground_truth for i, model in enumerate(models)},
         metadata=metadata,
     )
-
-    return session
 
 
 def grid_cell_session(
@@ -842,7 +817,9 @@ def grid_cell_session(
     n_grid_cells : int, optional
         Number of grid cells (default: 40).
     seed : int | None, optional
-        Random seed for reproducibility (default: None).
+        Random seed for reproducibility (default: None). The trajectory, the
+        cells' phases and orientations, and the spikes draw from independent
+        streams spawned from it.
 
     Returns
     -------
@@ -853,7 +830,7 @@ def grid_cell_session(
         - times: Time points matching trajectory
         - spike_times: Poisson spikes for each grid cell
         - models: GridCellModel instances
-        - ground_truth: True parameters for each cell
+        - ground_truth: Each model's ``ground_truth``, by unit label
         - metadata: Session configuration
 
     Raises
@@ -933,7 +910,7 @@ def grid_cell_session(
     # Import here to avoid circular dependencies
     from neurospatial.environment import Environment
     from neurospatial.simulation.models import GridCellModel
-    from neurospatial.simulation.session import SimulationSession
+    from neurospatial.simulation.session import SimulationSession, _stream_seeds
     from neurospatial.simulation.spikes import generate_population_spikes
     from neurospatial.simulation.trajectory import simulate_trajectory_ou
 
@@ -970,53 +947,33 @@ def grid_cell_session(
     env = Environment.from_samples(arena_data, bin_size=bin_size)
     env = env.with_metadata(units="cm")
 
-    # Generate trajectory using OU process
+    # Independent streams for the trajectory, the cells' phases and
+    # orientations, and the spikes.
+    trajectory_seed, field_seed, spike_seed = _stream_seeds(seed, 3)
     positions, times = simulate_trajectory_ou(
-        env, duration=duration, speed_units="cm", seed=seed
+        env, duration=duration, speed_units="cm", seed=trajectory_seed
     )
 
-    # Create grid cell models with random phases
-    # Sample phase offsets uniformly from environment
-    rng = np.random.default_rng(seed)
+    # Phases from bin centers spread over the arena, in a random order, and
+    # random orientations.
+    rng = np.random.default_rng(field_seed)
     step = max(1, env.n_bins // n_grid_cells)
     # Copy: shuffling a view would permute the environment's own bin centers.
     phase_centers = env.bin_centers[::step][:n_grid_cells].copy()
-
-    # Shuffle to randomize phase distribution
     rng.shuffle(phase_centers)
-
-    # Generate random orientations for grid cells
     orientations = rng.uniform(0, np.pi / 3, size=n_grid_cells)
-
-    models: list = []
-    ground_truth = {}
-
-    for i in range(n_grid_cells):
-        # Use phase_center from shuffled list
-        phase = phase_centers[i] if i < len(phase_centers) else phase_centers[0]
-
-        # Create grid cell with specified spacing, random phase and orientation
-        model = GridCellModel(
+    models: list[NeuralModel] = [
+        GridCellModel(
             env,
             grid_spacing=grid_spacing,
-            phase_offset=phase,
+            phase_offset=phase_centers[i % len(phase_centers)],
             grid_orientation=orientations[i],
         )
-        models.append(model)
+        for i in range(n_grid_cells)
+    ]
 
-        # Store ground truth
-        ground_truth[i] = {
-            "cell_type": "grid",
-            "grid_spacing": float(grid_spacing),
-            "phase_offset": phase.tolist(),
-            "orientation": float(model.grid_orientation),
-            "max_rate": float(model.max_rate),
-            "baseline_rate": float(model.baseline_rate),
-        }
-
-    # Generate spikes for all cells
     spike_times = generate_population_spikes(
-        models, times, positions, seed=seed, show_progress=False
+        models, times, positions, seed=spike_seed, show_progress=False
     )
 
     # Create metadata
@@ -1033,16 +990,13 @@ def grid_cell_session(
         "seed": seed,
     }
 
-    # Create and return session
-    session = SimulationSession(
+    return SimulationSession(
         env=env,
         positions=positions,
         times=times,
         spike_times=spike_times,
-        unit_ids=np.arange(len(spike_times), dtype=np.int64),
+        unit_ids=np.arange(len(models), dtype=np.int64),
         models=models,
-        ground_truth=ground_truth,
+        ground_truth={i: model.ground_truth for i, model in enumerate(models)},
         metadata=metadata,
     )
-
-    return session

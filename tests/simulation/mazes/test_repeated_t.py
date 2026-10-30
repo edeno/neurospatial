@@ -70,7 +70,7 @@ def test_returns_maze_environments_in_cm(maze):
 def test_default_dims_are_the_figures_numbers():
     # Tolman & Nyswander (1927) Fig. 5: 4-in alleys, 16-in and 18-in segments.
     dims = RepeatedTDims()
-    assert dims.width == pytest.approx(4 * INCH)
+    assert dims.corridor_width == pytest.approx(4 * INCH)
     assert dims.arm_length == pytest.approx(16 * INCH)
     assert dims.long_arm_length == pytest.approx(18 * INCH)
 
@@ -119,7 +119,7 @@ def test_choice_points_are_one_segment_plus_an_alley_width_apart(maze):
 
 def test_blind_alleys_and_goal_arm_are_16_inches_along_their_walls(maze, track_graph):
     dims = RepeatedTDims()
-    half = dims.width / 2
+    half = dims.corridor_width / 2
     lengths = {}
     for k, name in enumerate(BLINDS, start=1):
         choice = _point(maze, f"choice_{k}")
@@ -149,7 +149,9 @@ def test_blind_alley_4_ends_a_partition_short_of_alley_1(maze, floor, track_grap
     dims = RepeatedTDims()
     choice_1, choice_4 = _point(maze, "choice_1"), _point(maze, "choice_4")
     end = _dead_end_near(track_graph, choice_4, _point(maze, "blind_4"))
-    assert end[0] - choice_1[0] == pytest.approx(dims.width / 2 + dims.wall_thickness)
+    assert end[0] - choice_1[0] == pytest.approx(
+        dims.corridor_width / 2 + dims.wall_thickness
+    )
     across = LineString([(choice_1[0], end[1]), end])
     assert not floor.contains(across)
 
@@ -172,7 +174,7 @@ def test_start_box_is_7_5_by_6_inches_before_choice_1(maze, track_graph):
     )
     # The box ends one stem length and half an alley short of choice point 1.
     assert _point(maze, "choice_1")[0] - x1 == pytest.approx(
-        dims.start_stem_length + dims.width / 2
+        dims.start_stem_length + dims.corridor_width / 2
     )
     # The landmark is the box's centre, where the track starts.
     centre = region.data.centroid.coords[0]
@@ -185,7 +187,9 @@ def test_food_box_is_the_end_of_the_last_alley(maze, floor, track_graph):
     region = maze.env_2d.regions["food_box"]
     x0, y0, x1, y1 = region.data.bounds
     assert region.kind == "polygon"
-    assert (x1 - x0, y1 - y0) == pytest.approx((dims.food_box_depth, dims.width))
+    assert (x1 - x0, y1 - y0) == pytest.approx(
+        (dims.food_box_depth, dims.corridor_width)
+    )
     assert floor.covers(region.data)
     # It closes the alley from choice point 6: Fig. 5's F at the far end.
     choice_6 = _point(maze, "choice_6")
@@ -208,13 +212,13 @@ def test_include_track_false_has_no_track():
 
 
 def test_long_arm_not_longer_than_arm_raises():
-    with pytest.raises(ValueError, match="makes alleys touch"):
-        make_repeated_t_maze(RepeatedTDims(long_arm_length=40.64))
+    with pytest.raises(ValueError, match="so the alleys touch"):
+        RepeatedTDims(long_arm_length=40.64)
 
 
 def test_food_box_longer_than_the_alley_raises():
     with pytest.raises(ValueError, match="does not fit"):
-        make_repeated_t_maze(RepeatedTDims(food_box_depth=50.0))
+        RepeatedTDims(food_box_depth=50.0)
 
 
 def test_bins_coarser_than_the_walls_warn():

@@ -177,7 +177,7 @@ fig, axes = plt.subplots(2, 3, figsize=(12, 6), sharex=True, sharey=True)
 for row, (model, label, ax) in enumerate(zip(models, unit_ids, axes.flat, strict=True)):
     ax.plot(
         env.bin_centers[:, 0],
-        model.firing_rate(env.bin_centers),
+        model.firing_rate(np.zeros(len(env.bin_centers)), env.bin_centers),
         color=OKABE_ITO[1],
         ls="--",
         label="Known rate",
@@ -223,19 +223,19 @@ report = validate_simulation(
 def print_unit_report(validation):
     """Show each unit's recovery measurements, including unavailable results."""
     print("Unit  Spikes  Peak error (cm)  Correlation  Status          Reason")
-    for row, label in enumerate(validation["unit_ids"]):
+    for row, label in enumerate(validation.unit_ids):
         print(
-            f"{label:4d}  {validation['spike_counts'][row]:6d}  "
-            f"{validation['center_errors'][row]:15.2f}  "
-            f"{validation['correlations'][row]:11.3f}  "
-            f"{validation['unit_status'][row]:14s}  "
-            f"{validation['skip_reasons'][row] or '-'}"
+            f"{label:4d}  {validation.spike_counts[row]:6d}  "
+            f"{validation.center_errors[row]:15.2f}  "
+            f"{validation.correlations[row]:11.3f}  "
+            f"{validation.unit_status[row]:14s}  "
+            f"{validation.skip_reasons[row] or '-'}"
         )
     print(
         f"Units with both measurements: "
-        f"{validation['n_evaluated']} / {validation['n_selected']}"
+        f"{validation.n_evaluated} / {validation.n_selected}"
     )
-    print(f"Every selected unit passed both criteria: {validation['passed']}")
+    print(f"Every selected unit passed both criteria: {validation.passed}")
 
 
 print_unit_report(report)

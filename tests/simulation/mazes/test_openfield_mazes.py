@@ -1,7 +1,8 @@
 """Integration tests for open-field mazes (Panel c from Wijnen et al. 2024).
 
 These tests verify that all open-field mazes (Watermaze, Barnes, Cheeseboard,
-Radial Arm) work correctly together and share consistent interfaces.
+Radial Arm) behave as their sources describe; their shared interface is tested
+in test_maze_interface.py.
 """
 
 import pytest
@@ -9,57 +10,12 @@ import pytest
 from neurospatial.simulation.mazes import (
     BarnesDims,
     CheeseboardDims,
-    MazeEnvironments,
-    RadialArmDims,
     WatermazeDims,
     make_barnes_maze,
     make_cheeseboard_maze,
     make_radial_arm_maze,
     make_watermaze,
 )
-
-# Parametrize over all open-field maze factories
-OPENFIELD_MAZES = [
-    ("watermaze", make_watermaze, WatermazeDims),
-    ("barnes", make_barnes_maze, BarnesDims),
-    ("cheeseboard", make_cheeseboard_maze, CheeseboardDims),
-    ("radial_arm", make_radial_arm_maze, RadialArmDims),
-]
-
-
-class TestOpenFieldMazesCommonInterface:
-    """Test that all open-field mazes share a consistent interface."""
-
-    @pytest.mark.parametrize("name,factory,dims_cls", OPENFIELD_MAZES)
-    def test_returns_maze_environments(self, name, factory, dims_cls):
-        """All factories return MazeEnvironments."""
-        maze = factory(bin_size=4.0)
-        assert isinstance(maze, MazeEnvironments)
-
-    @pytest.mark.parametrize("name,factory,dims_cls", OPENFIELD_MAZES)
-    def test_env_2d_has_units_cm(self, name, factory, dims_cls):
-        """All 2D environments have units='cm'."""
-        maze = factory(bin_size=4.0)
-        assert maze.env_2d.units == "cm"
-
-    @pytest.mark.parametrize("name,factory,dims_cls", OPENFIELD_MAZES)
-    def test_env_2d_has_bins(self, name, factory, dims_cls):
-        """All 2D environments have bins."""
-        maze = factory(bin_size=4.0)
-        assert maze.env_2d.n_bins > 0
-
-    @pytest.mark.parametrize("name,factory,dims_cls", OPENFIELD_MAZES)
-    def test_has_regions(self, name, factory, dims_cls):
-        """All open-field mazes have regions defined."""
-        maze = factory(bin_size=4.0)
-        assert len(maze.env_2d.regions) > 0
-
-    @pytest.mark.parametrize("name,factory,dims_cls", OPENFIELD_MAZES)
-    def test_dims_is_frozen_dataclass(self, name, factory, dims_cls):
-        """All Dims classes are frozen dataclasses."""
-        import dataclasses
-
-        assert dataclasses.is_dataclass(dims_cls)
 
 
 class TestCircularMazes:

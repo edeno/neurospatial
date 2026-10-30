@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import pearsonr
+
+from neurospatial._exceptions import _format_error
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 
 #: Default center-error limit, in true field widths (Gaussian standard
 #: deviations), calibrated by simulation; see ``validate_simulation`` Notes.
@@ -17,15 +22,18 @@ CENTER_ERROR_WIDTHS = 1.5
 MIN_FIELD_CORRELATION = 0.9
 
 if TYPE_CHECKING:
+    import pandas as pd
+    from matplotlib.axes import Axes
     from matplotlib.figure import Figure
 
     from neurospatial.simulation.session import SimulationSession
 
 
 def _select_unit_indices(
-    session: SimulationSession, unit_ids: list[int] | None
+    session: SimulationSession, unit_ids: list[int] | None, operation: str
 ) -> list[int]:
-    """Resolve unit labels to aligned spike/model rows."""
+    """Resolve unit labels to aligned spike/model rows of an allocentric session."""
+    from neurospatial.geometry import require_cartesian
     from neurospatial.simulation.session import SimulationSession
 
     if not isinstance(session, SimulationSession):
@@ -34,6 +42,14 @@ def _select_unit_indices(
             "Why: validation and plotting need the simulator's ground truth.\n"
             "Fix: pass the holder returned by simulate_session() or open_field_session()."
         )
+    require_cartesian(
+        session.env.coordinate_system,
+        operation,
+        why="It estimates each unit's rate map from the session's positions "
+        "with compute_spatial_rate, which needs the animal's allocentric "
+        "positions, and measures field centers as straight-line distances.",
+        fix="simulate the session on the allocentric environment the animal moves in",
+    )
     if unit_ids is None:
         return list(range(len(session.unit_ids)))
     valid_ids = session.unit_ids.tolist()
@@ -47,11 +63,255 @@ def _select_unit_indices(
     return [valid_ids.index(label) for label in unit_ids]
 
 
-def _field_width(truth: dict[str, Any]) -> float:
+def _field_width(truth: Mapping[str, Any]) -> float:
     """A ground truth's place field width (the largest axis), or NaN."""
     if "width" not in truth:
         return np.nan
     return float(np.max(np.atleast_1d(np.asarray(truth["width"], dtype=float))))
+
+
+def _nan_stat(values: NDArray[np.float64], stat: Any) -> float:
+    """``stat`` of the finite values, or NaN when there are none."""
+    finite = values[np.isfinite(values)]
+    return float(stat(finite)) if finite.size else float("nan")
+
+
+@dataclass(frozen=True, repr=False, eq=False)
+class SimulationValidationResult(ReadOnlyArraysMixin, ResultMixin):
+    """Recovery of simulated place fields, returned by ``validate_simulation``.
+
+    One entry per selected unit, in the requested order. A place unit is
+    evaluated when both its center error and its field correlation could be
+    measured; it passes when both meet their thresholds. Units whose ground
+    truth is not a place cell (border, grid and other cells of mixed
+    sessions) are excluded: they are listed but do not count toward any
+    verdict. Arrays are read-only.
+
+    Attributes
+    ----------
+    unit_ids : NDArray[np.int64], shape (n_selected,)
+        Unit labels, in the requested order.
+    center_errors : NDArray[np.float64], shape (n_selected,)
+        Distance from the peak of the estimated rate map to the true field
+        center, in environment units. NaN when it could not be measured.
+    correlations : NDArray[np.float64], shape (n_selected,)
+        Pearson correlation between the estimated and true rate maps over
+        bins where both are finite. NaN when it could not be measured.
+    max_center_errors : NDArray[np.float64], shape (n_selected,)
+        Center-error limit applied to each unit, in environment units.
+    spike_counts : NDArray[np.int64], shape (n_selected,)
+        Number of simulated spikes of each unit.
+    unit_status : tuple[str, ...]
+        For each unit: ``'passed'`` or ``'failed'`` for an evaluated place
+        unit, ``'not_evaluable'`` for a place unit whose metrics could not
+        be measured, and ``'excluded'`` for a unit that is not a place cell.
+    skip_reasons : tuple[str | None, ...]
+        Why a unit is not evaluated (for example ``'no_spikes'``, or
+        ``'not_a_place_field'`` for an excluded unit), or None for an
+        evaluated unit.
+    min_correlation : float
+        Correlation threshold applied to every unit.
+    center_error_rule : str
+        How ``max_center_errors`` was set: ``'1.5 x true field width'`` by
+        default, or ``'fixed'`` for a ``max_center_error`` passed by the
+        caller.
+    max_center_error : float | None
+        The fixed center-error limit passed by the caller, in environment
+        units, or None when each unit's limit follows its field width.
+    method : str
+        Rate-map estimator used for the detected fields.
+    units : str | None
+        Environment length units of the center errors.
+    n_session_units : int
+        Number of units in the validated session, selected or not.
+    """
+
+    unit_ids: NDArray[np.int64]
+    center_errors: NDArray[np.float64]
+    correlations: NDArray[np.float64]
+    max_center_errors: NDArray[np.float64]
+    spike_counts: NDArray[np.int64]
+    unit_status: tuple[str, ...]
+    skip_reasons: tuple[str | None, ...]
+    min_correlation: float
+    center_error_rule: str
+    max_center_error: float | None
+    method: str
+    units: str | None
+    n_session_units: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "unit_status", tuple(self.unit_status))
+        object.__setattr__(self, "skip_reasons", tuple(self.skip_reasons))
+        self._own_arrays()
+
+    @property
+    def n_selected(self) -> int:
+        """Number of selected units."""
+        return len(self.unit_ids)
+
+    @property
+    def n_evaluated(self) -> int:
+        """Number of place units with both metrics measured."""
+        return sum(status in ("passed", "failed") for status in self.unit_status)
+
+    @property
+    def n_excluded(self) -> int:
+        """Number of selected units that are not place cells."""
+        return self.unit_status.count("excluded")
+
+    @property
+    def passed(self) -> bool:
+        """True when at least one place unit was evaluated and every place unit passed.
+
+        Excluded units do not count. A place unit that could not be evaluated
+        blocks a pass, and a selection with no evaluated place unit cannot
+        pass.
+        """
+        place = [status for status in self.unit_status if status != "excluded"]
+        return bool(place) and all(status == "passed" for status in place)
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics.
+
+        Means and extremes are over the units where each metric was
+        measured; NaN when it was measured for none.
+        """
+        return {
+            "n_selected": self.n_selected,
+            "n_evaluated": self.n_evaluated,
+            "n_excluded": self.n_excluded,
+            "n_passed": self.unit_status.count("passed"),
+            "passed": self.passed,
+            "mean_center_error": _nan_stat(self.center_errors, np.mean),
+            "largest_center_error": _nan_stat(self.center_errors, np.max),
+            "mean_correlation": _nan_stat(self.correlations, np.mean),
+            "smallest_correlation": _nan_stat(self.correlations, np.min),
+        }
+
+    def summary_table(self) -> pd.DataFrame:
+        """One row per unit, indexed by ``unit_id``.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``center_error``, ``correlation``, ``max_center_error``,
+            ``spike_count``, ``status`` and ``skip_reason``. ``df.attrs``
+            holds ``method``, ``units``, ``min_correlation`` and
+            ``center_error_rule``.
+        """
+        import pandas as pd
+
+        df = pd.DataFrame(
+            {
+                "center_error": self.center_errors,
+                "correlation": self.correlations,
+                "max_center_error": self.max_center_errors,
+                "spike_count": self.spike_counts,
+                "status": list(self.unit_status),
+                "skip_reason": list(self.skip_reasons),
+            },
+            index=pd.Index(np.array(self.unit_ids), name="unit_id"),
+        )
+        df.attrs.update(
+            method=self.method,
+            units=self.units,
+            min_correlation=self.min_correlation,
+            center_error_rule=self.center_error_rule,
+        )
+        return df
+
+    def report(self) -> str:
+        """Human-readable summary of the validation.
+
+        Returns
+        -------
+        str
+            Counts of selected, evaluated, unevaluable and excluded units,
+            the mean and extreme center errors and correlations with their
+            thresholds, and the overall verdict. Each metric's verdict, like
+            the overall one, is over the place units only and needs at least
+            one of them.
+        """
+        stats = self.summary()
+        units = self.units or "units"
+        place = np.array(self.unit_status, dtype=object) != "excluded"
+        errors = self.center_errors[place]
+        correlations = self.correlations[place]
+        errors_pass = bool(place.any()) and bool(
+            np.all(np.isfinite(errors) & (errors <= self.max_center_errors[place]))
+        )
+        corrs_pass = bool(place.any()) and bool(
+            np.all(np.isfinite(correlations) & (correlations >= self.min_correlation))
+        )
+        threshold = (
+            f"{CENTER_ERROR_WIDTHS:g} x each cell's true field width"
+            if self.max_center_error is None
+            else f"{self.max_center_error:.2f}"
+        )
+        error_std = _nan_stat(self.center_errors, np.std)
+        corr_std = _nan_stat(self.correlations, np.std)
+        return f"""Validation Results:
+===================
+Cells selected: {self.n_selected} (of {self.n_session_units} total)
+Cells fully evaluated: {self.n_evaluated}
+Cells not evaluable: {self.unit_status.count("not_evaluable")}
+Cells excluded (not place cells): {self.n_excluded}
+
+Center Errors ({units}):
+  Mean: {stats["mean_center_error"]:.2f} ± {error_std:.2f}
+  Max:  {stats["largest_center_error"]:.2f}
+  Threshold: {threshold}
+  Passed: {errors_pass}
+
+Field Correlations:
+  Mean: {stats["mean_correlation"]:.3f} ± {corr_std:.3f}
+  Min:  {stats["smallest_correlation"]:.3f}
+  Threshold: {self.min_correlation:.3f}
+  Passed: {corrs_pass}
+
+Overall: {"PASSED" if self.passed else "FAILED"}
+"""
+
+    def plot(self, ax: Axes | None = None) -> Axes:
+        """Center error against field correlation for each evaluated unit.
+
+        Passed units are drawn in one color and failed units in another;
+        the dashed lines mark the correlation threshold and, when every unit
+        has the same limit, the center-error limit.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on; a new figure's axes when None.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes drawn on.
+        """
+        import matplotlib.pyplot as plt
+
+        if ax is None:
+            _, ax = plt.subplots()
+        status = np.array(self.unit_status, dtype=object)
+        evaluated = (status == "passed") | (status == "failed")
+        ax.scatter(
+            self.center_errors[evaluated],
+            self.correlations[evaluated],
+            c=np.where(status[evaluated] == "passed", "tab:blue", "tab:red"),
+        )
+        ax.axhline(self.min_correlation, color="k", linestyle="--", alpha=0.5)
+        limits = np.unique(self.max_center_errors[np.isfinite(self.max_center_errors)])
+        if limits.size == 1:
+            ax.axvline(limits[0], color="k", linestyle="--", alpha=0.5)
+        ax.set_xlabel(f"Center error ({self.units or 'units'})")
+        ax.set_ylabel("Field correlation")
+        ax.set_title(
+            f"{self.n_evaluated} of {self.n_selected} units evaluated, "
+            f"{self.summary()['n_passed']} passed"
+        )
+        return ax
 
 
 def validate_simulation(
@@ -61,9 +321,8 @@ def validate_simulation(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     max_center_error: float | None = None,
     min_correlation: float | None = None,
-    show_plots: bool = False,
     **kwargs: Any,
-) -> dict[str, Any]:
+) -> SimulationValidationResult:
     """Validate simulation by comparing detected place fields to ground truth.
 
     Computes place fields from spike data and compares detected field centers
@@ -87,101 +346,57 @@ def validate_simulation(
     min_correlation : float | None, optional
         Minimum acceptable correlation between detected and true fields.
         If None, 0.9. Calibrated; see Notes.
-    show_plots : bool, optional
-        If True, creates diagnostic plots (default: False).
     **kwargs
         Additional parameters passed to ``compute_spatial_rate()``.
 
     Returns
     -------
-    results : dict[str, Any]
-        Dictionary containing:
-
-        - 'center_errors': NDArray[np.float64], shape (n_cells,)
-            Euclidean distance between detected and true centers (in env units).
-        - 'correlations': NDArray[np.float64], shape (n_cells,)
-            Pearson correlation between detected and true rate maps.
-        - 'unit_ids': NDArray[np.int64], shape (n_cells,)
-            Unit labels aligned with the metric arrays, in requested order.
-        - 'spike_counts': NDArray[np.int64], shape (n_cells,)
-            Number of simulated spikes for each selected unit.
-        - 'unit_status': tuple[str, ...]
-            Per-unit outcome: 'passed', 'failed', or 'not_evaluable'. A unit is
-            evaluable only when both metrics are finite.
-        - 'skip_reasons': tuple[str | None, ...]
-            Reason an outcome is not evaluable, or None for evaluated units.
-        - 'n_selected', 'n_evaluated': int
-            Number of selected units and number with both metrics finite.
-        - 'summary': str
-            Human-readable summary of validation results.
-        - 'passed': bool
-            True only for a nonempty selection in which every selected unit
-            has both metrics finite and meets both specified thresholds.
-        - 'max_center_errors': NDArray[np.float64], shape (n_cells,)
-            Center-error limit applied to each selected unit.
-        - 'plots': Figure | None
-            Matplotlib figure with diagnostic plots (only if show_plots=True).
+    SimulationValidationResult
+        Per-unit center errors, field correlations, limits, spike counts,
+        status and skip reasons, with ``n_evaluated``, ``n_excluded``,
+        ``passed``, ``summary()``, ``summary_table()``, ``report()`` and
+        ``plot()``. Units that are not place cells are ``'excluded'`` and do
+        not count toward the verdict. ``passed`` is True only when at least
+        one place unit was selected and every selected place unit has both
+        metrics measured and meets both thresholds.
 
     Raises
     ------
     ValueError
         If unit_ids contains unknown labels.
-    ValueError
-        If ground_truth is missing or incomplete.
+    CartesianOnlyError
+        If the session's environment is egocentric polar: rate maps need the
+        animal's allocentric positions.
+
+    Warns
+    -----
+    UserWarning
+        If no selected unit could be evaluated, if a selected unit is not a
+        place cell (its ground truth ``cell_type`` is not ``'place'``;
+        excluded as ``'not_a_place_field'``), or if a place unit's ground
+        truth has no ``'center'`` or ``'width'``
+        (``'unsupported_ground_truth'``).
 
     Examples
     --------
-    Validate a simulated session:
+    Validate a one-minute linear-track session of three place cells:
 
-    >>> import numpy as np  # doctest: +SKIP
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.simulation import (
-    ...     simulate_session,
-    ...     validate_simulation,
-    ... )  # doctest: +SKIP
-    >>>
-    >>> # Create environment
-    >>> data = np.random.uniform(0, 100, (1000, 2))  # doctest: +SKIP
-    >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-    >>> env = env.with_metadata(units="cm")  # doctest: +SKIP
-    >>>
-    >>> # Simulate session with place cells
-    >>> session = simulate_session(  # doctest: +SKIP
-    ...     env,
-    ...     duration=5.0,
-    ...     n_cells=3,
-    ...     cell_type="place",
-    ...     seed=42,
-    ...     show_progress=False,
+    >>> from neurospatial.simulation import linear_track_session, validate_simulation
+    >>> session = linear_track_session(
+    ...     duration=60.0, n_place_cells=3, n_laps=6, seed=42
     ... )
-    >>>
-    >>> # Validate detected vs true place fields
-    >>> results = validate_simulation(session)  # doctest: +SKIP
-    >>> print(results["summary"])  # doctest: +SKIP
-    Validation Results:
-    ...
-    >>> print(f"All cells passed: {results['passed']}")  # doctest: +SKIP
-    All cells passed: True
+    >>> result = validate_simulation(session)
+    >>> result.n_evaluated, result.passed
+    (3, True)
+    >>> table = result.summary_table()
+    >>> list(table.columns)
+    ['center_error', 'correlation', 'max_center_error', 'spike_count', 'status', 'skip_reason']
 
-    Validate with custom thresholds:
+    A stricter fixed limit applies to every cell:
 
-    >>> results = validate_simulation(  # doctest: +SKIP
-    ...     session,
-    ...     max_center_error=5.0,  # Maximum 5 cm error
-    ...     min_correlation=0.8,  # Minimum 0.8 correlation
-    ... )
-    >>> print(
-    ...     f"Mean center error: {results['center_errors'].mean():.2f} cm"
-    ... )  # doctest: +SKIP
-    Mean center error: 3.45 cm
-
-    Validate specific cells with diagnostic plots:
-
-    >>> results = validate_simulation(  # doctest: +SKIP
-    ...     session,
-    ...     unit_ids=[0, 1, 2],  # Only first 3 cells
-    ...     show_plots=True,
-    ... )  # results['plots'] contains matplotlib figure
+    >>> strict = validate_simulation(session, max_center_error=0.5)
+    >>> strict.summary_table().attrs["center_error_rule"]
+    'fixed'
 
     See Also
     --------
@@ -193,10 +408,17 @@ def validate_simulation(
     -----
     **Validation Workflow**:
 
-    1. For each cell, compute place field from spike data using specified method
+    1. For each place cell, compute place field from spike data using
+       specified method. Units whose ground truth ``cell_type`` is not
+       ``'place'`` (border, grid and other cells of mixed sessions) are
+       excluded: listed, but not part of any verdict.
     2. Detect field center as peak of computed rate map
     3. Compare detected center to ground truth center (Euclidean distance)
-    4. Compute correlation between detected and true rate maps
+    4. Compute correlation between detected and true rate maps. The true map
+       is rebuilt from the ground truth's ``center``, ``width`` and
+       ``metric``, so a geodesic cell is compared with its geodesic field. A
+       firing ``condition`` is not applied: its effect on the map depends on
+       the trajectory.
     5. Aggregate statistics and determine pass/fail based on thresholds
 
     **Default Thresholds**:
@@ -222,7 +444,11 @@ def validate_simulation(
     Missing metrics remain NaN and prevent an overall pass; a partial
     report is not evidence that every selected unit was recovered. Inspect
     ``unit_status``, ``skip_reasons``, and ``spike_counts`` to distinguish failed
-    recovery from units that could not be evaluated.
+    recovery from units that could not be evaluated. A place unit whose
+    ground truth lacks ``center`` or ``width`` (``'unsupported_ground_truth'``)
+    also blocks a pass: it is declared a place cell, so a pass would claim
+    a recovery that was never checked. Deselect it with ``unit_ids`` if it is
+    not meant to be validated.
 
     **Method Selection**:
 
@@ -232,14 +458,14 @@ def validate_simulation(
     """
     # Import here to avoid circular dependency
     from neurospatial.encoding import compute_spatial_rate
+    from neurospatial.simulation.models import PlaceCellModel
 
-    cell_indices = _select_unit_indices(session, unit_ids)
+    cell_indices = _select_unit_indices(session, unit_ids, "validate_simulation()")
     env = session.env
     spike_times = session.spike_times
     positions = session.positions
     times = session.times
     ground_truth = session.ground_truth
-    n_cells = len(spike_times)
 
     # Thresholds: by default each cell's center error is judged against its
     # own true field width (calibrated; see Notes).
@@ -247,7 +473,7 @@ def validate_simulation(
         center_error_limits = np.array(
             [
                 CENTER_ERROR_WIDTHS
-                * _field_width(ground_truth.get(int(session.unit_ids[index]), {}))
+                * _field_width(ground_truth[int(session.unit_ids[index])])
                 for index in cell_indices
             ]
         )
@@ -258,7 +484,7 @@ def validate_simulation(
         min_correlation = MIN_FIELD_CORRELATION
 
     # Keep unavailable metrics missing, with diagnostics aligned to unit labels.
-    selected_unit_ids = session.unit_ids[cell_indices].copy()
+    selected_unit_ids = session.unit_ids[cell_indices]
     spike_counts = np.array(
         [len(spike_times[index]) for index in cell_indices], dtype=np.int64
     )
@@ -267,7 +493,21 @@ def validate_simulation(
     skip_reasons: list[str | None] = [None] * len(cell_indices)
 
     # Validate each cell
+    not_place: dict[int, str] = {}
+    unsupported: list[int] = []
     for i, cell_idx in enumerate(cell_indices):
+        cell_key = int(session.unit_ids[cell_idx])
+        gt = ground_truth[cell_key]
+        cell_type = gt.get("cell_type", "place")
+        if cell_type != "place":
+            not_place[cell_key] = str(cell_type)
+            skip_reasons[i] = "not_a_place_field"
+            continue
+        if "center" not in gt or "width" not in gt:
+            unsupported.append(cell_key)
+            skip_reasons[i] = "unsupported_ground_truth"
+            continue
+
         train = spike_times[cell_idx]
 
         # Skip cells with no spikes (cannot compute place field)
@@ -298,63 +538,23 @@ def validate_simulation(
         )
         detected_center = env.bin_centers[peak_bin]
 
-        # Get ground truth center
-        cell_key = int(session.unit_ids[cell_idx])
-        if cell_key not in ground_truth:
-            raise ValueError(
-                f"ground_truth missing for unit_id {cell_key}. "
-                f"Available keys: {list(ground_truth.keys())}.\n"
-                "Fix: supply ground_truth keyed by every selected session.unit_ids label."
-            )
-
-        gt = ground_truth[cell_key]
-        if "center" not in gt:
-            raise ValueError(
-                f"Ground truth for {cell_key} missing 'center' field. "
-                f"Available fields: {list(gt.keys())}"
-            )
-
-        true_center = np.asarray(gt["center"])
-
         # Compute center error (Euclidean distance)
-        center_error = float(np.linalg.norm(detected_center - true_center))
+        center_error = float(np.linalg.norm(detected_center - np.asarray(gt["center"])))
         center_errors[i] = center_error
         if not np.isfinite(center_error):
             skip_reasons[i] = "nonfinite_center_error"
             continue
 
-        # The true field's shape at each bin. Pearson correlation ignores a
-        # field's offset and positive scale, so the shape needs only the
-        # center and width: a unit Gaussian on a zero baseline.
-        if "width" in gt:
-            from neurospatial.simulation.models import PlaceCellModel
-
-            true_field = PlaceCellModel(
-                env,
-                center=true_center,
-                width=gt["width"],
-                max_rate=1.0,
-                baseline_rate=0.0,
-            ).firing_rate(env.bin_centers)
-        else:
-            # Field-correlation validation is only implemented for place cells
-            # (it reconstructs the ground-truth field from a Gaussian place
-            # model). Cells whose ground truth lacks the place field 'width'
-            # are skipped with a NaN correlation; warn so the skip is visible
-            # rather than silent.
-            import warnings
-
-            warnings.warn(
-                f"{cell_key}: skipping field-correlation validation because its "
-                f"ground truth lacks the place field 'width'; correlation set "
-                f"to NaN. Field correlation is only "
-                f"implemented for place cells. Available ground-truth fields: "
-                f"{sorted(gt.keys())}.",
-                UserWarning,
-                stacklevel=2,
-            )
-            skip_reasons[i] = "unsupported_ground_truth"
-            continue
+        # The true field's shape at each bin, rebuilt with the simulated
+        # cell's own distance metric. Pearson correlation ignores a field's
+        # offset and positive scale, so a unit field on a zero baseline has
+        # the same correlation as the cell's own rates.
+        true_field = PlaceCellModel(
+            env,
+            **{key: gt[key] for key in ("center", "width", "metric") if key in gt},
+            max_rate=1.0,
+            baseline_rate=0.0,
+        ).firing_rate(np.zeros(env.n_bins), env.bin_centers)
 
         # Compute correlation between detected and true fields
         # Correlation needs at least three jointly finite, nonconstant bins.
@@ -375,149 +575,67 @@ def validate_simulation(
             if not np.isfinite(corr):
                 skip_reasons[i] = "undefined_correlation"
 
-    # Histograms summarize available metrics; pass/fail requires full coverage.
-    finite_errors = np.isfinite(center_errors)
-    finite_corrs = np.isfinite(correlations)
-    evaluated = finite_errors & finite_corrs
-    valid_errors = center_errors[finite_errors]
-    valid_corrs = correlations[finite_corrs]
-    n_selected = len(cell_indices)
-    n_evaluated = int(np.count_nonzero(evaluated))
+    import warnings
 
-    # Check if any cells could be validated
-    if n_evaluated == 0:
-        import warnings
-
+    if not_place:
         warnings.warn(
-            f"No cells could be fully validated ({n_selected} selected). "
+            f"Units {sorted(not_place)} are not place fields (cell types "
+            f"{sorted(set(not_place.values()))}); validate_simulation compares "
+            "place fields only, so they are excluded from the verdict "
+            "('not_a_place_field').",
+            UserWarning,
+            stacklevel=2,
+        )
+    if unsupported:
+        warnings.warn(
+            f"Units {unsupported}: ground truth has no place field 'center' and "
+            "'width' to compare with, so they are marked not evaluable "
+            "('unsupported_ground_truth').",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    evaluated = np.isfinite(center_errors) & np.isfinite(correlations)
+    meets_thresholds = (center_errors <= center_error_limits) & (
+        correlations >= min_correlation
+    )
+    unit_status = tuple(
+        "excluded"
+        if reason == "not_a_place_field"
+        else "not_evaluable"
+        if not complete
+        else "passed"
+        if meets
+        else "failed"
+        for reason, complete, meets in zip(
+            skip_reasons, evaluated, meets_thresholds, strict=True
+        )
+    )
+    if not evaluated.any():
+        warnings.warn(
+            f"No cells could be fully validated ({len(cell_indices)} selected). "
             "Inspect skip_reasons and spike_counts for unavailable metrics.",
             UserWarning,
             stacklevel=2,
         )
 
-    mean_error = float(np.mean(valid_errors)) if len(valid_errors) > 0 else np.nan
-    std_error = float(np.std(valid_errors)) if len(valid_errors) > 0 else np.nan
-    max_error = float(np.max(valid_errors)) if len(valid_errors) > 0 else np.nan
-    mean_corr = float(np.mean(valid_corrs)) if len(valid_corrs) > 0 else np.nan
-    std_corr = float(np.std(valid_corrs)) if len(valid_corrs) > 0 else np.nan
-    min_corr = float(np.min(valid_corrs)) if len(valid_corrs) > 0 else np.nan
-
-    # An empty or incomplete metric array cannot satisfy a recovery criterion.
-    errors_pass = bool(
-        n_selected and np.all(finite_errors & (center_errors <= center_error_limits))
+    return SimulationValidationResult(
+        unit_ids=selected_unit_ids,
+        center_errors=center_errors,
+        correlations=correlations,
+        max_center_errors=center_error_limits,
+        spike_counts=spike_counts,
+        unit_status=unit_status,
+        skip_reasons=tuple(skip_reasons),
+        min_correlation=float(min_correlation),
+        center_error_rule="fixed"
+        if max_center_error is not None
+        else f"{CENTER_ERROR_WIDTHS:g} x true field width",
+        max_center_error=None if max_center_error is None else float(max_center_error),
+        method=method,
+        units=env.units,
+        n_session_units=len(session.unit_ids),
     )
-    corrs_pass = bool(
-        n_selected and np.all(finite_corrs & (correlations >= min_correlation))
-    )
-    passed = bool(errors_pass and corrs_pass)
-    meets_thresholds = (center_errors <= center_error_limits) & (
-        correlations >= min_correlation
-    )
-    unit_status = tuple(
-        "not_evaluable" if not complete else "passed" if meets else "failed"
-        for complete, meets in zip(evaluated, meets_thresholds, strict=True)
-    )
-
-    # Generate summary string
-    units = env.units if env.units else "units"
-    threshold_text = (
-        f"{CENTER_ERROR_WIDTHS:g} x each cell's true field width"
-        if max_center_error is None
-        else f"{max_center_error:.2f}"
-    )
-    summary = f"""Validation Results:
-===================
-Cells selected: {n_selected} (of {n_cells} total)
-Cells fully evaluated: {n_evaluated}
-Cells not evaluable: {n_selected - n_evaluated}
-
-Center Errors ({units}):
-  Mean: {mean_error:.2f} ± {std_error:.2f}
-  Max:  {max_error:.2f}
-  Threshold: {threshold_text}
-  Passed: {errors_pass}
-
-Field Correlations:
-  Mean: {mean_corr:.3f} ± {std_corr:.3f}
-  Min:  {min_corr:.3f}
-  Threshold: {min_correlation:.3f}
-  Passed: {corrs_pass}
-
-Overall: {"✓ PASSED" if passed else "✗ FAILED"}
-"""
-
-    # Create results dict
-    results = {
-        "center_errors": center_errors,
-        "correlations": correlations,
-        "unit_ids": selected_unit_ids,
-        "spike_counts": spike_counts,
-        "unit_status": unit_status,
-        "skip_reasons": tuple(skip_reasons),
-        "n_selected": n_selected,
-        "n_evaluated": n_evaluated,
-        "summary": summary,
-        "passed": passed,
-        "max_center_errors": center_error_limits,
-    }
-
-    # Optionally create diagnostic plots
-    if show_plots:
-        import matplotlib.pyplot as plt
-
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-
-        # Plot 1: Center error histogram
-        ax = axes[0, 0]
-        ax.hist(valid_errors, bins=20, edgecolor="black", alpha=0.7)
-        if max_center_error is not None:
-            ax.axvline(max_center_error, color="r", linestyle="--", label="Threshold")
-        ax.set_xlabel(f"Center Error ({units})")
-        ax.set_ylabel("Count")
-        ax.set_title("Center Error Distribution")
-        ax.legend()
-
-        # Plot 2: Correlation histogram
-        ax = axes[0, 1]
-        ax.hist(valid_corrs, bins=20, edgecolor="black", alpha=0.7)
-        ax.axvline(min_correlation, color="r", linestyle="--", label="Threshold")
-        ax.set_xlabel("Correlation")
-        ax.set_ylabel("Count")
-        ax.set_title("Field Correlation Distribution")
-        ax.legend()
-
-        # Plot 3: Error vs Correlation scatter
-        ax = axes[1, 0]
-        ax.scatter(center_errors[evaluated], correlations[evaluated], alpha=0.6)
-        ax.axhline(min_correlation, color="r", linestyle="--", alpha=0.5)
-        if max_center_error is not None:
-            ax.axvline(max_center_error, color="r", linestyle="--", alpha=0.5)
-        ax.set_xlabel(f"Center Error ({units})")
-        ax.set_ylabel("Correlation")
-        ax.set_title("Error vs Correlation")
-        ax.grid(True, alpha=0.3)
-
-        # Plot 4: Text summary
-        ax = axes[1, 1]
-        ax.axis("off")
-        ax.text(
-            0.1,
-            0.9,
-            summary,
-            transform=ax.transAxes,
-            verticalalignment="top",
-            fontfamily="monospace",
-            fontsize=9,
-        )
-
-        fig.suptitle("Simulation Validation Report", fontsize=14, fontweight="bold")
-        plt.tight_layout()
-
-        results["plots"] = fig
-    else:
-        results["plots"] = None
-
-    return results
 
 
 def plot_session_summary(
@@ -555,42 +673,37 @@ def plot_session_summary(
         If session is not a SimulationSession instance.
     ValueError
         If unit_ids contains unknown labels.
+    CartesianOnlyError
+        If the session's environment is egocentric polar: rate maps need the
+        animal's allocentric positions.
+    NotImplementedError
+        If the environment is 3-D. A flat panel would stack bins at different
+        heights; plot each rate map with
+        ``env.plot_field(rates, backend='fastplotlib')`` instead.
 
     Examples
     --------
     Basic usage with default cells:
 
-    >>> import numpy as np  # doctest: +SKIP
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.simulation import (
-    ...     simulate_session,
-    ...     plot_session_summary,
-    ... )  # doctest: +SKIP
-    >>>
-    >>> # Create environment
-    >>> data = np.random.uniform(0, 100, (1000, 2))  # doctest: +SKIP
-    >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-    >>> env = env.with_metadata(units="cm")  # doctest: +SKIP
-    >>>
-    >>> # Simulate session
-    >>> session = simulate_session(  # doctest: +SKIP
-    ...     env, duration=5.0, n_cells=3, seed=42, show_progress=False
-    ... )
-    >>>
-    >>> # Plot summary
-    >>> fig, axes = plot_session_summary(session)  # doctest: +SKIP
-    ... # Figure shows: trajectory, rate maps for first 6 cells, raster plot
+    >>> import matplotlib.pyplot as plt
+    >>> from neurospatial.simulation import open_field_session, plot_session_summary
+    >>> session = open_field_session(duration=30.0, n_place_cells=8, seed=42)
+    >>> fig, axes = plot_session_summary(session)
+    >>> [ax.get_title() for ax in axes[2:8]]
+    ['Cell 0', 'Cell 1', 'Cell 2', 'Cell 3', 'Cell 4', 'Cell 5']
+    >>> plt.close(fig)
 
-    Plot specific cells:
+    Plot specific cells, by label:
 
-    >>> fig, axes = plot_session_summary(
-    ...     session, unit_ids=[0, 5, 10, 15]
-    ... )  # doctest: +SKIP
-    ... # Shows rate maps for cells 0, 5, 10, 15 only
+    >>> fig, axes = plot_session_summary(session, unit_ids=[0, 5, 7])
+    >>> [ax.get_title() for ax in axes[2:5]]
+    ['Cell 0', 'Cell 5', 'Cell 7']
+    >>> plt.close(fig)
 
     Custom figure size:
 
-    >>> fig, axes = plot_session_summary(session, figsize=(12, 8))  # doctest: +SKIP
+    >>> fig, axes = plot_session_summary(session, figsize=(12, 8))
+    >>> plt.close(fig)
 
     See Also
     --------
@@ -603,9 +716,12 @@ def plot_session_summary(
 
     The figure uses a 4×3 grid layout:
 
-    - Row 0, Cols 0-1: Trajectory plot with color-coded time
+    - Row 0, Cols 0-1: Trajectory colored by time; for a 1-D environment,
+      position against time
     - Row 0, Col 2: Session metadata (duration, n_cells, cell_type)
-    - Rows 1-2: Rate maps for up to 6 cells (2×3 grid)
+    - Rows 1-2: Rate maps for up to 6 cells (2×3 grid), drawn by
+      ``Environment.plot_field``: a heat map over the bins in 2-D, a rate
+      curve along the track in 1-D
     - Row 3: Raster plot showing spike times for all cells
 
     **Rate Map Computation**:
@@ -625,7 +741,7 @@ def plot_session_summary(
     # Import here to avoid circular dependency
     from neurospatial.encoding import compute_spatial_rate
 
-    cell_indices = _select_unit_indices(session, unit_ids)
+    cell_indices = _select_unit_indices(session, unit_ids, "plot_session_summary()")
     if unit_ids is None:
         cell_indices = cell_indices[:6]
     elif len(cell_indices) > 6:
@@ -639,6 +755,20 @@ def plot_session_summary(
         cell_indices = cell_indices[:6]
 
     env = session.env
+    if env.n_dims > 2:
+        raise NotImplementedError(
+            _format_error(
+                f"plot_session_summary() draws 1-D and 2-D sessions; this "
+                f"environment is {env.n_dims}-D.",
+                why="a flat panel of a 3-D rate map would draw bins at "
+                "different heights on top of each other, so each color would "
+                "hide the rates beneath it.",
+                fix="plot each unit's rate map in 3-D with "
+                "env.plot_field(rates, backend='fastplotlib'), using rates "
+                "from compute_spatial_rate(env, spike_times, session.times, "
+                "session.positions).firing_rate",
+            )
+        )
     positions = session.positions
     times = session.times
     spike_trains = session.spike_times
@@ -646,7 +776,7 @@ def plot_session_summary(
 
     # Create figure with GridSpec for flexible layout
     fig = plt.figure(figsize=figsize)
-    gs = GridSpec(4, 3, figure=fig, hspace=0.3, wspace=0.3)
+    gs = GridSpec(4, 3, figure=fig, hspace=0.5, wspace=0.3)
 
     # Row 0, Cols 0-1: Trajectory
     ax_traj = fig.add_subplot(gs[0, :2])
@@ -663,27 +793,29 @@ def plot_session_summary(
     # Row 3: Raster plot (spans all columns)
     ax_raster = fig.add_subplot(gs[3, :])
 
-    # Plot 1: Trajectory with color-coded time
-    # Use scatter plot for color-mapped trajectory
-    scatter = ax_traj.scatter(
-        positions[:, 0],
-        positions[:, 1],
-        c=times,
-        cmap="viridis",
-        s=1,
-        alpha=0.5,
-    )
-    ax_traj.set_xlabel(f"X ({env.units or 'units'})")
-    ax_traj.set_ylabel(f"Y ({env.units or 'units'})")
+    # Plot 1: Trajectory, colored by time; on a 1-D track, position over time.
+    length_units = env.units or "units"
+    if env.n_dims == 1:
+        scatter = ax_traj.scatter(
+            times, positions[:, 0], c=times, cmap="viridis", s=1, alpha=0.5
+        )
+        ax_traj.set_xlabel("Time (s)")
+        ax_traj.set_ylabel(f"Position ({length_units})")
+    else:
+        scatter = ax_traj.scatter(
+            positions[:, 0], positions[:, 1], c=times, cmap="viridis", s=1, alpha=0.5
+        )
+        ax_traj.set_xlabel(f"X ({length_units})")
+        ax_traj.set_ylabel(f"Y ({length_units})")
+        ax_traj.set_aspect("equal")
     ax_traj.set_title("Trajectory", fontweight="bold")
-    ax_traj.set_aspect("equal")
     plt.colorbar(scatter, ax=ax_traj, label="Time (s)", fraction=0.046, pad=0.04)
 
     # Plot 2: Session metadata
     ax_info.axis("off")
     metadata = session.metadata
     info_text = f"""Session Info:
-Duration: {times[-1]:.1f} s
+Duration: {times[-1] - times[0]:.1f} s
 Bins: {env.n_bins}
 Cells: {n_cells}
 Type: {metadata.get("cell_type", "mixed")}
@@ -733,41 +865,8 @@ Traj: {metadata.get("trajectory_method", "ou")}
                 dtype=np.float64,
             )
 
-            # Plot as 2D heatmap if possible
-            grid_shape = env.grid_shape
-
-            # Check if rate_map matches full grid (no inactive bins)
-            if grid_shape is not None and len(rate_map) == np.prod(grid_shape):
-                # Can reshape directly
-                rate_map_2d = rate_map.reshape(grid_shape)
-
-                im = ax.imshow(
-                    rate_map_2d.T,
-                    origin="lower",
-                    aspect="equal",
-                    cmap="viridis",
-                    interpolation="nearest",
-                )
-                ax.set_title(f"Cell {cell_id}", fontsize=10)
-                ax.set_xlabel("X bin")
-                ax.set_ylabel("Y bin")
-                plt.colorbar(im, ax=ax, label="Rate (Hz)", fraction=0.046, pad=0.04)
-            else:
-                # Has inactive bins - use scatter plot instead
-                scatter = ax.scatter(
-                    env.bin_centers[:, 0],
-                    env.bin_centers[:, 1],
-                    c=rate_map,
-                    cmap="viridis",
-                    s=10,
-                )
-                ax.set_title(f"Cell {cell_id}", fontsize=10)
-                ax.set_xlabel(f"X ({env.units or 'units'})")
-                ax.set_ylabel(f"Y ({env.units or 'units'})")
-                ax.set_aspect("equal")
-                plt.colorbar(
-                    scatter, ax=ax, label="Rate (Hz)", fraction=0.046, pad=0.04
-                )
+            env.plot_field(rate_map, ax=ax, colorbar_label="Rate (Hz)")
+            ax.set_title(f"Cell {cell_id}", fontsize=10)
 
     # Hide unused rate map subplots
     for i in range(len(cell_indices), len(axes_rates)):

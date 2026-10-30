@@ -43,10 +43,10 @@ positions, times = simulate_trajectory_ou(
     env, duration=300.0, speed_units="cm", seed=1
 )
 place_cell = PlaceCellModel(
-    env, center=np.array([50.0, 50.0]), width=15.0, max_rate=30.0, seed=1
+    env, center=np.array([50.0, 50.0]), width=15.0, max_rate=30.0
 )
-firing_rate_hz = place_cell.firing_rate(positions, times)
-spike_times = generate_poisson_spikes(firing_rate_hz, times, seed=1)
+firing_rate_hz = place_cell.firing_rate(times, positions)
+spike_times = generate_poisson_spikes(firing_rate_hz, times, seed=2)
 
 # 3. Estimate the place field: a boundary-aware, smoothed firing-rate map.
 result = compute_spatial_rate(env, spike_times, times, positions, bandwidth=8.0)
@@ -73,7 +73,7 @@ numbers, then plot the map:
 ```python
 # Scalar headline metrics include peak_firing_rate, spatial_information and sparsity.
 print(result.summary())
-# -> a dict of scalars, e.g. ~1378 bins, peak firing rate ~12 Hz,
+# -> a dict of scalars, e.g. ~1383 bins, peak firing rate ~22 Hz,
 #    spatial_information in bits/spike and ~300 s shared occupancy (exact values vary).
 
 # Where the cell fires most, and how spatially informative it is.

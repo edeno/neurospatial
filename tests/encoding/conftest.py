@@ -117,7 +117,7 @@ def allocentric_field_spikes(ou_env, ou_10min, obj):
 
     times, positions, _ = ou_10min
     model = PlaceCellModel(ou_env, center=obj[0] + [20, 0], width=6, max_rate=10)
-    return generate_poisson_spikes(model.firing_rate(positions), times, seed=3)
+    return generate_poisson_spikes(model.firing_rate(times, positions), times, seed=3)
 
 
 @pytest.fixture(scope="session")
@@ -129,13 +129,13 @@ def egocentric_ovc_spikes(ou_env, ou_10min, obj):
         ou_env,
         object_positions=obj,
         preferred_distance=20,
-        distance_width=5,
+        distance_tolerance=5,
         preferred_direction=0.0,
         direction_frame="egocentric",
         max_rate=10,
     )
     return generate_poisson_spikes(
-        model.firing_rate(positions, headings=headings), times, seed=5
+        model.firing_rate(times, positions, headings=headings), times, seed=5
     )
 
 
@@ -145,7 +145,7 @@ def strong_field_spikes(ou_2min_env, ou_2min, obj):
 
     times, positions, _ = ou_2min
     model = PlaceCellModel(ou_2min_env, center=obj[0] + [20, 0], width=10, max_rate=20)
-    return generate_poisson_spikes(model.firing_rate(positions), times, seed=3)
+    return generate_poisson_spikes(model.firing_rate(times, positions), times, seed=3)
 
 
 @pytest.fixture
@@ -897,7 +897,7 @@ def grid_and_hexless():
     """A grid cell and a cell whose grid score passes 0.4 without a hexagonal ring.
 
     100 cm box, 2.5 cm bins, 10 minutes. The second cell fires on a
-    smoothed-noise map: its rate map scores 0.50 but its autocorrelogram has
+    smoothed-noise map: its rate map scores 0.52 but its autocorrelogram has
     no hexagonal first ring of peaks, so it has no grid spacing.
     """
     from types import SimpleNamespace
@@ -926,7 +926,7 @@ def grid_and_hexless():
     )
     grid = GridCellModel(
         env, grid_spacing=45.0, max_rate=10.0, baseline_rate=1.0
-    ).firing_rate(positions)
+    ).firing_rate(times, positions)
     rng = np.random.default_rng(0)
     noise = [rng.normal(size=(40, 40)) for _ in range(3)][2]
     noise = gaussian_filter(noise, 4.0, mode="wrap")
@@ -939,6 +939,6 @@ def grid_and_hexless():
         positions=positions,
         trains=[
             generate_poisson_spikes(grid, times, seed=21),
-            generate_poisson_spikes(hexless, times, seed=102),
+            generate_poisson_spikes(hexless, times, seed=7),
         ],
     )

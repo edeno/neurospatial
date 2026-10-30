@@ -141,16 +141,19 @@ def _nearest_bin_query(
 def regions_to_mask(
     env: RegionMaskConsumer,
     regions: str | list[str | Region] | Region | Mapping[str, Region],
-    *,
-    include_boundary: bool = True,
 ) -> NDArray[np.bool_]:
     """Select the environment bins that one or more regions cover.
 
     A point region covers the one bin that contains the point. A polygon
-    region covers the bins whose centers lie inside it. Every region query
-    (``Environment.bins_in_region``, ``region_mask``, ``region_membership``,
-    ``distance_to(region=...)`` and ``subset(region_names=...)``) uses this
-    same rule, so they agree on every layout.
+    region covers the bins whose centers lie inside it. A center exactly on
+    the polygon's edge is covered when nudging it a hair north-east would move
+    it inside, so polygons that share an edge, such as quadrants, split the
+    bins on it and never cover a bin twice; a rectangle holds the centers on
+    its south and west edges but not on its north and east edges. Every region
+    query (``Environment.bins_in_region``, ``region_mask``,
+    ``region_membership``, ``distance_to(region=...)`` and
+    ``subset(region_names=...)``) uses this same rule, so they agree on every
+    layout.
 
     Parameters
     ----------
@@ -160,10 +163,6 @@ def regions_to_mask(
         Region(s) to select. A name refers to an entry in ``env.regions``;
         Region objects, and the values of a mapping such as a Regions builder,
         are used directly.
-    include_boundary : bool, default=True
-        For polygon regions, count a bin whose center lies exactly on the
-        polygon's edge as inside (``shapely.covers``); with False only centers
-        strictly inside count (``shapely.contains``). Point regions ignore it.
 
     Returns
     -------
@@ -175,7 +174,7 @@ def regions_to_mask(
     RegionNotFoundError
         If a region name is not in ``env.regions`` (a ``KeyError``).
     TypeError
-        If ``regions`` has an invalid type or ``include_boundary`` is not a bool.
+        If ``regions`` has an invalid type.
     ValueError
         If a point region has a different number of coordinates than the
         bins, or a polygon region is used with bins that are not 2-D.
@@ -220,7 +219,6 @@ def regions_to_mask(
         named_regions=env.regions,
         binning=env.binning,
         arena=env.arena,
-        include_boundary=include_boundary,
     )
 
 
@@ -307,7 +305,6 @@ def _regions_mask(
     named_regions: Mapping[str, Region],
     binning: Binning,
     arena: Arena,
-    include_boundary: bool,
 ) -> NDArray[np.bool_]:
     """Union of the bins covered by regions or by names in ``named_regions``."""
     from neurospatial._exceptions import RegionNotFoundError
@@ -335,15 +332,10 @@ def _regions_mask(
             "regions must be str, list[str], Region, or a mapping of names to "
             f"Region values; got {type(regions).__name__}."
         )
-    if not isinstance(include_boundary, bool):
-        raise TypeError(
-            f"include_boundary must be a bool, got {type(include_boundary).__name__}."
-        )
     masks = region_bin_masks(
         resolved,
         binning=binning,
         arena=arena,
-        include_boundary=include_boundary,
         indexes=CallIndexes(),
     )
     return np.asarray(masks.any(axis=1), dtype=np.bool_)

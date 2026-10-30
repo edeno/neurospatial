@@ -81,12 +81,12 @@ class TestMakeWMaze:
         maze = make_w_maze(dims=dims, include_track=False)
         polygon = maze.env_2d.arena.polygon
 
-        expected_x = [-dims.width / 2, 0.0, dims.width / 2]
+        expected_x = [-dims.outer_arm_spacing / 2, 0.0, dims.outer_arm_spacing / 2]
         for i, x in enumerate(expected_x, start=1):
             well = maze.env_2d.regions[f"well_{i}"]
             assert well.kind == "point"
             np.testing.assert_allclose(
-                well.data, [x, dims.height - dims.corridor_width / 2]
+                well.data, [x, dims.arm_length - dims.corridor_width / 2]
             )
             # Half a corridor width from the arm's end and side walls.
             assert polygon.contains(Point(well.data))
@@ -180,7 +180,7 @@ class TestMakeWMaze:
         """Custom dimensions should be respected."""
         from neurospatial.simulation.mazes.w_maze import WMazeDims, make_w_maze
 
-        dims = WMazeDims(width=150.0, height=100.0, corridor_width=15.0)
+        dims = WMazeDims(outer_arm_spacing=150.0, arm_length=100.0, corridor_width=15.0)
         maze = make_w_maze(dims=dims)
 
         # Check that bin_centers span approximately the expected range
@@ -188,10 +188,10 @@ class TestMakeWMaze:
         x_extent = bin_centers[:, 0].max() - bin_centers[:, 0].min()
         y_extent = bin_centers[:, 1].max() - bin_centers[:, 1].min()
 
-        # Y should be roughly 100 cm (height)
+        # Y should be roughly 100 cm (arm_length)
         assert y_extent > 80  # Longer than default 80
 
-        # X should be roughly 150 cm (width)
+        # X should be roughly 150 cm (outer_arm_spacing)
         assert x_extent > 100  # Wider than default
 
     def test_none_dims_uses_defaults(self):
@@ -250,15 +250,15 @@ class TestWMazeTrackGraph:
         leaf_positions = track.bin_centers[leaves]
         np.testing.assert_allclose(
             np.sort(leaf_positions[:, 0]),
-            [-dims.width / 2, 0.0, dims.width / 2],
+            [-dims.outer_arm_spacing / 2, 0.0, dims.outer_arm_spacing / 2],
             atol=1.0,
         )
-        np.testing.assert_allclose(leaf_positions[:, 1], dims.height, atol=1.0)
+        np.testing.assert_allclose(leaf_positions[:, 1], dims.arm_length, atol=1.0)
 
         # The base spans only the outer-arm junctions.
         base = track.bin_centers[np.abs(track.bin_centers[:, 1]) < 1e-9]
-        assert base[:, 0].min() >= -dims.width / 2 - 1e-9
-        assert base[:, 0].max() <= dims.width / 2 + 1e-9
+        assert base[:, 0].min() >= -dims.outer_arm_spacing / 2 - 1e-9
+        assert base[:, 0].max() <= dims.outer_arm_spacing / 2 + 1e-9
 
     def test_track_wells_stay_on_their_own_arms(self):
         """Each well on the linearized track lies where it does in 2-D."""

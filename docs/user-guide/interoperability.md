@@ -177,10 +177,12 @@ that geometry's own hand-checked boundary and outside points.
 ## Simulator attributes feed analyses
 
 A `SimulationSession` carries `env`, `spike_times`, `unit_ids`, `times`,
-`positions`, `models`, integer-label `ground_truth` and `metadata`. Its field
-bindings are frozen; spike arrays, labels and models must align one-to-one.
-Unit labels also select the ground truth for validation and the rate panels
-for plotting.
+`positions`, `models`, integer-label `ground_truth` and `metadata`. It is
+immutable: its arrays are read-only, `spike_times` and `models` are tuples, and
+`ground_truth` and `metadata` are read-only mappings; build a changed session
+with `dataclasses.replace`. Spike arrays, labels and models must align
+one-to-one. Unit labels also select the ground truth for validation and the
+rate panels for plotting.
 
 <!-- docs-test: run -->
 ```python
@@ -193,10 +195,15 @@ rates = compute_spatial_rates(
 )
 assert set(sim.ground_truth) == set(sim.unit_ids)
 print(rates.summary_table().index.tolist())
-validation = validate_simulation(sim, unit_ids=[0, 2, 4])
+validation = validate_simulation(sim, unit_ids=[0, 3, 4])
+print(validation.summary_table()[["center_error", "correlation", "status"]])
+assert validation.unit_status == ("failed", "passed", "failed")
 ```
 
-`plot_session_summary(sim, unit_ids=[1, 3])` uses the same label selection.
+`validate_simulation` returns one row per selected unit; one minute is too
+short to recover every field, so units 0 and 4 fail the default center-error
+limit here. `plot_session_summary(sim, unit_ids=[1, 3])` uses the same label
+selection.
 Analysis functions take arrays; the validation and summary plot functions
 need the simulator holder because it carries simulation-specific data.
 

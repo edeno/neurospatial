@@ -132,73 +132,6 @@ class TestRegionMembership:
         # Original environment regions should be unchanged
         assert len(env.regions) == 0
 
-    def test_region_membership_include_boundary_true(self):
-        """Test region_membership with include_boundary=True.
-
-        Notes
-        -----
-        Tests that bins on region boundaries are included when
-        include_boundary=True (uses shapely.covers).
-        """
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("rect", polygon=box(-5, -5, 5, 5))
-        env = env.with_regions(region_builder)
-
-        membership_with_boundary = env.region_membership(include_boundary=True)
-
-        # Should include boundary bins
-        assert membership_with_boundary.shape == (env.n_bins, 1)
-        n_bins_with_boundary = membership_with_boundary.sum()
-
-        # At least some bins should be included
-        assert n_bins_with_boundary > 0
-
-    def test_region_membership_include_boundary_false(self):
-        """Test region_membership with include_boundary=False.
-
-        Notes
-        -----
-        Tests that bins on region boundaries are excluded when
-        include_boundary=False (uses shapely.contains).
-        """
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("rect", polygon=box(-5, -5, 5, 5))
-        env = env.with_regions(region_builder)
-
-        membership_without_boundary = env.region_membership(include_boundary=False)
-
-        # Should have same shape
-        assert membership_without_boundary.shape == (env.n_bins, 1)
-
-        # May have fewer bins than with boundary=True
-        # (but not guaranteed depending on bin center alignment)
-        n_bins_without_boundary = membership_without_boundary.sum()
-        assert n_bins_without_boundary >= 0
-
-    def test_region_membership_boundary_comparison(self):
-        """Test that include_boundary affects membership counts.
-
-        Notes
-        -----
-        Tests that include_boundary=True includes >= bins than
-        include_boundary=False.
-        """
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("rect", polygon=box(-5, -5, 5, 5))
-        env = env.with_regions(region_builder)
-
-        with_boundary = env.region_membership(include_boundary=True)
-        without_boundary = env.region_membership(include_boundary=False)
-
-        # With boundary should include >= bins
-        assert with_boundary.sum() >= without_boundary.sum()
-
     def test_region_membership_point_regions(self):
         """Each point-region column marks the one bin that contains its point."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
@@ -230,25 +163,6 @@ class TestRegionMembership:
         assert env.region_membership(regions={}).shape == (env.n_bins, 0)
         with pytest.raises(TypeError, match="takes a mapping of names to regions"):
             env.region_membership(regions=[])
-
-    def test_region_membership_invalid_include_boundary_type(self):
-        """Test region_membership raises TypeError for invalid include_boundary.
-
-        Notes
-        -----
-        Tests that passing non-bool include_boundary raises TypeError.
-        """
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("rect", polygon=box(-5, -5, 5, 5))
-        env = env.with_regions(region_builder)
-
-        with pytest.raises(TypeError, match="include_boundary must be a bool"):
-            env.region_membership(include_boundary="True")
-
-        with pytest.raises(TypeError, match="include_boundary must be a bool"):
-            env.region_membership(include_boundary=1)
 
     def test_polygon_region_rejects_3d_publication(self, simple_3d_env):
         """Test polygon dimensions are checked before publication.

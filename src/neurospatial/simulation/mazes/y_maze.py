@@ -8,7 +8,7 @@ than revisiting the same arm consecutively.
 
 The arms point at 270° (down), 30° (up-right) and 150° (up-left), so the
 single arm points down as in the Y-maze drawn in Wijnen et al. (2024),
-Brain Struct Funct 229:823-841, doi:10.1007/s00429-024-02771-x, Fig. 1a.
+Brain Struct Funct 229(4), 823–841, doi:10.1007/s00429-024-02771-x, Fig. 1a.
 Y-maze sizes vary between labs; the 50 cm arms and 10 cm width are
 figure-consistent defaults, not a published apparatus.
 
@@ -48,10 +48,17 @@ import numpy as np
 
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    check_longer_than_wide,
+    warn_if_bins_too_coarse,
+)
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
+    single_floor,
     union_polygons,
 )
 
@@ -70,9 +77,10 @@ class YMazeDims(MazeDims):
     Attributes
     ----------
     arm_length : float
-        Length of each arm in cm, from the junction centre to the arm's far
-        end wall. Default is 50.0.
-    width : float
+        Length of each arm's centreline in cm, from the junction centre,
+        where the arms' centrelines meet, to the arm's far end wall, as in
+        the T, plus and W mazes. Default is 50.0.
+    corridor_width : float
         Width of all corridors in cm. Default is 10.0.
 
     Examples
@@ -80,16 +88,20 @@ class YMazeDims(MazeDims):
     >>> dims = YMazeDims()
     >>> dims.arm_length
     50.0
-    >>> dims.width
+    >>> dims.corridor_width
     10.0
 
-    >>> custom = YMazeDims(arm_length=75.0, width=15.0)
+    >>> custom = YMazeDims(arm_length=75.0, corridor_width=15.0)
     >>> custom.arm_length
     75.0
     """
 
     arm_length: float = 50.0
-    width: float = 10.0
+    corridor_width: float = 10.0
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "arm_length", "corridor_width")
+        check_longer_than_wide(self, "arm_length", "arm")
 
 
 def _arm_endpoints(dims: YMazeDims) -> list[tuple[float, float]]:
@@ -162,7 +174,7 @@ def make_y_maze(
 
     Create with custom dimensions:
 
-    >>> dims = YMazeDims(arm_length=80.0, width=15.0)
+    >>> dims = YMazeDims(arm_length=80.0, corridor_width=15.0)
     >>> maze = make_y_maze(dims=dims, bin_size=4.0)
     >>> "center" in maze.env_2d.regions
     True
@@ -185,12 +197,12 @@ def make_y_maze(
 
     # Square-ended corridors, so each arm ends exactly arm_length from centre
     arm_polygons = [
-        make_corridor_polygon(start=center_pos, end=endpoint, width=dims.width)
+        make_corridor_polygon(start=center_pos, end=endpoint, width=dims.corridor_width)
         for endpoint in arm_endpoints
     ]
 
     # Union all corridors into single polygon
-    y_polygon = union_polygons(arm_polygons)
+    y_polygon = single_floor(union_polygons(arm_polygons), dims)
 
     # Create 2D environment
     env_2d = Environment.from_polygon(
@@ -206,7 +218,8 @@ def make_y_maze(
     region_builder.add("center", point=center_pos)
     for i, endpoint in enumerate(arm_endpoints, start=1):
         region_builder.add(
-            f"arm{i}_end", point=corridor_end_point(center_pos, endpoint, dims.width)
+            f"arm{i}_end",
+            point=corridor_end_point(center_pos, endpoint, dims.corridor_width),
         )
     env_2d = env_2d.with_regions(region_builder)
 
@@ -215,6 +228,9 @@ def make_y_maze(
     if include_track:
         env_track = _create_y_maze_track_graph(dims, bin_size)
 
+    warn_if_bins_too_coarse(
+        env_2d, maze="Y-maze", bin_size=bin_size, narrowest_corridor=dims.corridor_width
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 
@@ -254,7 +270,7 @@ def _create_y_maze_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,  # No spacing between edges
         bin_size=bin_size,
-        track_width=dims.width,
+        track_width=dims.corridor_width,
         name="y_maze_1d",
     )
     env_track = env_track.with_metadata(units="cm")

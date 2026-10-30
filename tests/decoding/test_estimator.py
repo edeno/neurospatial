@@ -75,7 +75,7 @@ def _make_sim(
             max_rate=30.0,
             seed=int(rng.integers(0, 2**31)),
         )
-        rates = cell.firing_rate(positions, times)
+        rates = cell.firing_rate(times, positions)
         spikes = generate_poisson_spikes(rates, times, seed=int(rng.integers(0, 2**31)))
         spike_times.append(spikes)
 
@@ -114,7 +114,7 @@ def _make_linear_sim(
     spikes: list[np.ndarray] = []
     for i in range(6):
         cell = PlaceCellModel(env, center=centers[i], width=15.0, max_rate=30.0, seed=i)
-        rates = cell.firing_rate(positions, times)
+        rates = cell.firing_rate(times, positions)
         spikes.append(
             generate_poisson_spikes(rates, times, seed=int(rng.integers(0, 2**31)))
         )
@@ -517,7 +517,8 @@ def test_held_out_maze_geodesic_accuracy() -> None:
     spikes = [
         generate_poisson_spikes(
             PlaceCellModel(env, center=c, width=8.0, max_rate=25.0, seed=i).firing_rate(
-                positions, times
+                times,
+                positions,
             ),
             times,
             seed=100 + i,

@@ -28,6 +28,11 @@ was captured again when each approach to the goal became its own row.
 ``compute_decision_analysis`` was captured again when decision boundaries
 began to use the geodesic distance of the path module (the shortest path
 inside the environment between bin centers) instead of the bin graph.
+``detect_runs_between_regions``, ``segment_trials`` and
+``running_direction_labels`` were captured again when a bin center on a
+region's edge began to belong to the region only where a nudge north-east
+moves it inside: the column of centers at x = 10 lies on the source box's east
+edge, so it left the source and the run departs one sample (0.1 s) earlier.
 """
 
 import json

@@ -20,13 +20,34 @@ if TYPE_CHECKING:
     from neurospatial.regions.core import Region
 
 
+# A point exactly on a region's edge belongs to the region it would enter if
+# nudged a hair in this direction: north-east, 0.65 rad (about 37°)
+# counterclockwise from east, so not along an axis-aligned, diagonal or
+# hexagonal (30°, 60°) edge.
+_TIE_ANGLE = 0.65
+TIE_DIRECTION = np.array([np.cos(_TIE_ANGLE), np.sin(_TIE_ANGLE)])
+# The nudge, as a fraction of the polygon's largest coordinate magnitude:
+# far above float64 rounding there (2**-52), far below any drawn feature.
+_TIE_STEP = 2.0**-30
+# Where the nudge along TIE_DIRECTION leaves the domain, the first of these
+# turns of it that stays inside is used: the opposite (south-west), then
+# the two across it, then the four diagonals between. Any corner of the
+# domain wider than 45° takes one of them.
+_FALLBACK_TURNS = np.pi * np.array([1.0, 0.5, -0.5, 0.25, -0.25, 0.75, -0.75])
+
+
 def polygon_bin_mask(
     polygon: shapely.geometry.base.BaseGeometry,
     centers: NDArray[np.float64],
-    *,
-    include_boundary: bool = True,
 ) -> NDArray[np.bool_]:
-    """Select the bins whose centers lie inside a polygon.
+    """Select the bins whose centers lie in a polygon, edges half-open.
+
+    A center inside the polygon is in it. A center exactly on its edge is in
+    it when nudging the center a hair north-east (along
+    :data:`TIE_DIRECTION`) moves it inside. Polygons that share edges
+    therefore split the centers on those edges, each to one polygon, and a
+    rectangle holds its south and west edges but not its north and east
+    edges, as a bin ``[a, b)`` holds ``a``.
 
     Parameters
     ----------
@@ -35,26 +56,18 @@ def polygon_bin_mask(
         the centers as given; :func:`region_bin_masks` also tests polar
         centers moved by whole turns.
     centers : ndarray of float64, shape (n_bins, 2)
-        Bin centers.
-    include_boundary : bool, default=True
-        Count a center exactly on the polygon's edge as inside.
+        Bin centers, or any 2-D points.
 
     Returns
     -------
     ndarray of bool, shape (n_bins,)
-        True for each bin whose center is inside.
+        True for each bin whose center is in the polygon.
 
     Raises
     ------
-    TypeError
-        If ``include_boundary`` is not a bool.
     ValueError
         If ``centers`` are not 2-D coordinates.
     """
-    if not isinstance(include_boundary, bool):
-        raise TypeError(
-            f"include_boundary must be a bool, got {type(include_boundary).__name__}."
-        )
     if centers.shape[1] != 2:
         raise ValueError(
             _format_error(
@@ -64,10 +77,119 @@ def polygon_bin_mask(
                 fix="use a point region, or select bins with a boolean mask",
             )
         )
-    # For a point, intersects is covers. The _xy predicates take raw
-    # coordinates and prepare the polygon, so no Point objects are built.
-    predicate = shapely.intersects_xy if include_boundary else shapely.contains_xy
-    return np.asarray(predicate(polygon, centers[:, 0], centers[:, 1]), dtype=np.bool_)
+    return polygon_point_mask(polygon, centers, domain=None)
+
+
+def polygon_point_mask(
+    polygon: shapely.geometry.base.BaseGeometry,
+    points: NDArray[np.float64],
+    *,
+    domain: shapely.geometry.base.BaseGeometry | None,
+) -> NDArray[np.bool_]:
+    """Select the 2-D points in a polygon, edges half-open within a domain.
+
+    A point exactly on the polygon's edge is in it when nudging it a hair
+    along :data:`TIE_DIRECTION` (north-east) moves it inside. Where that
+    nudge leaves ``domain``, the point is nudged instead in the first of
+    the :data:`_FALLBACK_TURNS` of that direction that stays in ``domain``,
+    starting with south-west. The choice of nudge depends on the point and
+    the domain only, never on the polygon, so polygons that tile the domain
+    still split every point of it, edges and outline included, one to each.
+
+    Parameters
+    ----------
+    polygon : shapely geometry
+        Area in the same 2-D coordinates as ``points``.
+    points : ndarray of float64, shape (n_points, 2)
+        Points to test.
+    domain : shapely geometry or None
+        The space the points can occupy, such as the union of the regions
+        that tile an arena. None nudges every edge point north-east, which
+        is the rule for bin centers: a center's nudge stays inside its own
+        bin, so it never leaves the environment.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_points,)
+        True for each point in the polygon.
+    """
+    # The _xy predicates are exact, take raw coordinates and prepare the
+    # polygon, so no Point objects are built. For a point, intersects is
+    # covers: inside or on the edge.
+    x, y = points[:, 0], points[:, 1]
+    inside = np.asarray(shapely.intersects_xy(polygon, x, y), dtype=np.bool_)
+    covered = np.flatnonzero(inside)
+    on_edge = covered[~shapely.contains_xy(polygon, x[covered], y[covered])]
+    if on_edge.size:
+        directions = (
+            np.broadcast_to(TIE_DIRECTION, (on_edge.size, 2))
+            if domain is None
+            else _tie_directions(points[on_edge], domain)
+        )
+        step = _TIE_STEP * float(np.max(np.abs(polygon.bounds)))
+        nudged = points[on_edge] + step * directions
+        inside[on_edge] = shapely.contains_xy(polygon, nudged[:, 0], nudged[:, 1])
+    return inside
+
+
+def _tie_directions(
+    points: NDArray[np.float64], domain: shapely.geometry.base.BaseGeometry
+) -> NDArray[np.float64]:
+    """Direction in which to nudge each point so that it stays in ``domain``.
+
+    :data:`TIE_DIRECTION` where that nudge stays in ``domain``, otherwise its
+    first turn in :data:`_FALLBACK_TURNS` that does, shape (n_points, 2). A
+    point at the tip of a corner of the domain no nudge enters keeps
+    :data:`TIE_DIRECTION`.
+    """
+    step = _TIE_STEP * float(np.max(np.abs(domain.bounds)))
+    directions = np.tile(TIE_DIRECTION, (len(points), 1))
+    nudged = points + step * TIE_DIRECTION
+    left = np.flatnonzero(~shapely.contains_xy(domain, nudged[:, 0], nudged[:, 1]))
+    for turn in _FALLBACK_TURNS:
+        if not left.size:
+            break
+        angle = _TIE_ANGLE + turn
+        direction = np.array([np.cos(angle), np.sin(angle)])
+        nudged = points[left] + step * direction
+        enters = shapely.contains_xy(domain, nudged[:, 0], nudged[:, 1])
+        directions[left[enters]] = direction
+        left = left[~enters]
+    return directions
+
+
+def disc_mask(
+    center: NDArray[np.float64], radius: float, points: NDArray[np.float64]
+) -> NDArray[np.bool_]:
+    """Select the points in a disc, by the half-open rule of polygons.
+
+    A point closer to ``center`` than ``radius`` is in the disc. A point
+    exactly on the rim is in it when nudging it a hair along
+    :data:`TIE_DIRECTION` moves it inside, as for a polygon's edge: the rim
+    facing away from north-east is held, the rest is not.
+
+    Parameters
+    ----------
+    center : ndarray of float64, shape (2,)
+        Center of the disc.
+    radius : float
+        Radius of the disc, positive, in the units of the points.
+    points : ndarray of float64, shape (n_points, 2)
+        Points to test.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_points,)
+        True for each point in the disc.
+    """
+    offsets = points - center
+    distance = np.hypot(offsets[:, 0], offsets[:, 1])
+    # Moving along TIE_DIRECTION from the rim enters the disc exactly when it
+    # points toward the center.
+    entering = offsets @ TIE_DIRECTION < 0
+    return np.asarray(
+        (distance < radius) | ((distance == radius) & entering), dtype=np.bool_
+    )
 
 
 def region_bin_mask(
@@ -75,15 +197,16 @@ def region_bin_mask(
     *,
     binning: Binning,
     arena: Arena,
-    include_boundary: bool = True,
     indexes: LookupIndexes | None = None,
 ) -> NDArray[np.bool_]:
     """Select the bins a region covers.
 
     A point region covers the one bin that contains the point (none when the
     point is outside the environment). A polygon region covers the bins whose
-    centers lie inside it; ``include_boundary`` decides a center exactly on
-    the edge. Every region query of an environment uses this rule.
+    centers lie in it, with a center exactly on the edge decided by the
+    half-open rule of :func:`polygon_bin_mask`, so polygons that share edges
+    split the bins between them. Every region query of an environment uses
+    this rule.
 
     Both are read in the bins' own coordinates. For polar
     ``(distance, angle)`` bins, angles are compared modulo a full turn: a
@@ -99,9 +222,6 @@ def region_bin_mask(
         Bins and their point locator.
     arena : Arena
         Continuous domain; a point outside a known domain covers no bin.
-    include_boundary : bool, default=True
-        For polygon regions, count a center on the edge as inside. Point
-        regions ignore it.
     indexes : LookupIndexes, optional
         Keeps the locator's search structures, usually the environment's
         analysis cache. None builds them for this call only.
@@ -113,8 +233,6 @@ def region_bin_mask(
 
     Raises
     ------
-    TypeError
-        If ``include_boundary`` is not a bool.
     ValueError
         If a point region has a different number of coordinates than the bins,
         or a polygon region is used with bins that are not 2-D.
@@ -123,7 +241,6 @@ def region_bin_mask(
         [region],
         binning=binning,
         arena=arena,
-        include_boundary=include_boundary,
         indexes=indexes,
     )[:, 0]
 
@@ -133,7 +250,6 @@ def region_bin_masks(
     *,
     binning: Binning,
     arena: Arena,
-    include_boundary: bool = True,
     indexes: LookupIndexes | None = None,
 ) -> NDArray[np.bool_]:
     """Select the bins each of several regions covers, by one rule.
@@ -148,9 +264,6 @@ def region_bin_masks(
         Bins and their point locator.
     arena : Arena
         Continuous domain; a point outside a known domain covers no bin.
-    include_boundary : bool, default=True
-        For polygon regions, count a center on the edge as inside. Point
-        regions ignore it.
     indexes : LookupIndexes, optional
         Keeps the locator's search structures, usually the environment's
         analysis cache. None builds them for this call only.
@@ -162,30 +275,21 @@ def region_bin_masks(
 
     Raises
     ------
-    TypeError
-        If ``include_boundary`` is not a bool.
     ValueError
         If a point region has a different number of coordinates than the bins,
         or a polygon region is used with bins that are not 2-D.
     """
-    if not isinstance(include_boundary, bool):
-        raise TypeError(
-            f"include_boundary must be a bool, got {type(include_boundary).__name__}."
-        )
     n_bins, n_dims = binning.bins.n_bins, binning.bins.n_dims
     centers = binning.bins.centers
     masks = np.zeros((n_bins, len(regions)), dtype=np.bool_)
     for column, region in enumerate(regions):
         if region.kind == "polygon":
-            masks[:, column] = polygon_bin_mask(
-                region.data, centers, include_boundary=include_boundary
-            )
+            masks[:, column] = polygon_bin_mask(region.data, centers)
             if arena.coordinate_kind == "polar":
                 for turns in _polygon_turns(region.data, centers):
                     masks[:, column] |= polygon_bin_mask(
                         region.data,
                         centers + np.array([0.0, turns * 2 * np.pi]),
-                        include_boundary=include_boundary,
                     )
             continue
         point = np.asarray(region.data, dtype=np.float64).reshape(1, -1)

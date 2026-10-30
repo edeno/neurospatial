@@ -42,10 +42,19 @@ from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_count,
+    check_lengths,
+    check_longer_than_wide,
+    refuse,
+    warn_if_bins_too_coarse,
+)
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
+    single_floor,
     union_polygons,
 )
 
@@ -65,13 +74,14 @@ class WMazeDims(MazeDims):
 
     Attributes
     ----------
-    width : float
-        Distance in cm between the centrelines of the two outer arms. The
-        outer footprint is ``width + corridor_width`` wide. Default is 69.0.
-    height : float
-        Length in cm of each arm's centreline, from the base centreline to the
-        arm's far end. The outer footprint is ``height + corridor_width / 2``
-        tall. Default is 72.5.
+    outer_arm_spacing : float
+        Distance in cm between the centrelines of the two outer arms; the
+        arms are spaced evenly across it. The outer footprint is
+        ``outer_arm_spacing + corridor_width`` wide. Default is 69.0.
+    arm_length : float
+        Length in cm of each arm's centreline, from the junction centre on
+        the base centreline to the arm's far end. The outer footprint is
+        ``arm_length + corridor_width / 2`` tall. Default is 72.5.
     corridor_width : float
         Width of all track sections in cm. Default is 7.0.
     n_wells : int
@@ -80,24 +90,39 @@ class WMazeDims(MazeDims):
     Examples
     --------
     >>> dims = WMazeDims()
-    >>> dims.width + dims.corridor_width  # outer footprint, cm
+    >>> dims.outer_arm_spacing + dims.corridor_width  # outer footprint, cm
     76.0
-    >>> dims.height + dims.corridor_width / 2
+    >>> dims.arm_length + dims.corridor_width / 2
     76.0
     >>> dims.n_wells
     3
 
-    >>> custom = WMazeDims(width=150.0, height=100.0, corridor_width=15.0)
-    >>> custom.width
+    >>> custom = WMazeDims(
+    ...     outer_arm_spacing=150.0, arm_length=100.0, corridor_width=15.0
+    ... )
+    >>> custom.outer_arm_spacing
     150.0
-    >>> custom.height
+    >>> custom.arm_length
     100.0
     """
 
-    width: float = 69.0
-    height: float = 72.5
+    outer_arm_spacing: float = 69.0
+    arm_length: float = 72.5
     corridor_width: float = 7.0
     n_wells: int = 3
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "outer_arm_spacing", "arm_length", "corridor_width")
+        check_count(self, "n_wells", 2, "a W maze needs at least two arms")
+        check_longer_than_wide(self, "arm_length", "arm")
+        if self.outer_arm_spacing / (self.n_wells - 1) <= self.corridor_width:
+            refuse(
+                self,
+                ("outer_arm_spacing", "n_wells", "corridor_width"),
+                "puts neighbouring arms no farther apart than a corridor is "
+                "wide, so they merge into one",
+                "Use an outer_arm_spacing greater than (n_wells - 1) * corridor_width.",
+            )
 
 
 def make_w_maze(
@@ -135,10 +160,11 @@ def make_w_maze(
     -----
     The maze is positioned with the base centreline at y=0:
 
-    - Arm centrelines are at x = -width/2, 0, +width/2 and run from y = 0 to
-      y = height.
+    - Arm centrelines are at x = -outer_arm_spacing/2, 0,
+      +outer_arm_spacing/2 and run from y = 0 to y = arm_length.
     - The base corridor spans the outer edges of the outer arms, from
-      x = -(width + corridor_width)/2 to +(width + corridor_width)/2.
+      x = -(outer_arm_spacing + corridor_width)/2 to
+      +(outer_arm_spacing + corridor_width)/2.
 
     Each food well is a landmark in ``env_2d.landmarks`` with role
     ``"reward_port"``, and a point region of the same name:
@@ -170,7 +196,7 @@ def make_w_maze(
 
     Create with custom dimensions:
 
-    >>> dims = WMazeDims(width=150.0, height=100.0, corridor_width=15.0)
+    >>> dims = WMazeDims(outer_arm_spacing=150.0, arm_length=100.0, corridor_width=15.0)
     >>> maze = make_w_maze(dims=dims, bin_size=4.0)
     >>> "well_1" in maze.env_2d.regions
     True
@@ -188,8 +214,8 @@ def make_w_maze(
     if dims is None:
         dims = WMazeDims()
 
-    # Key positions (base centreline at y=0, arms extend upward to y=height)
-    half_width = dims.width / 2.0
+    # Key positions (base centreline at y=0, arms extend up to y=arm_length)
+    half_width = dims.outer_arm_spacing / 2.0
     half_corridor = dims.corridor_width / 2.0
 
     # The base corridor reaches the outer edges of the outer arms, so the
@@ -200,19 +226,19 @@ def make_w_maze(
         width=dims.corridor_width,
     )
 
-    # Vertical arms at evenly spaced x positions across the width
+    # Vertical arms evenly spaced between the outer arms
     arm_x_positions = np.linspace(-half_width, half_width, dims.n_wells)
     arm_polygons = [
         make_corridor_polygon(
             start=(x_pos, 0.0),
-            end=(x_pos, dims.height),
+            end=(x_pos, dims.arm_length),
             width=dims.corridor_width,
         )
         for x_pos in arm_x_positions
     ]
 
     # Union all corridors into single polygon
-    w_polygon = union_polygons([base_polygon, *arm_polygons])
+    w_polygon = single_floor(union_polygons([base_polygon, *arm_polygons]), dims)
 
     # Create 2D environment
     env_2d = Environment.from_polygon(
@@ -229,7 +255,7 @@ def make_w_maze(
     landmarks = []
     for i, x_pos in enumerate(arm_x_positions, start=1):
         well_pos = corridor_end_point(
-            (float(x_pos), 0.0), (float(x_pos), dims.height), dims.corridor_width
+            (float(x_pos), 0.0), (float(x_pos), dims.arm_length), dims.corridor_width
         )
         region_builder.add(f"well_{i}", point=well_pos)
         landmarks.append(
@@ -247,6 +273,9 @@ def make_w_maze(
     if include_track:
         env_track = _create_w_maze_track_graph(dims, bin_size)
 
+    warn_if_bins_too_coarse(
+        env_2d, maze="W-maze", bin_size=bin_size, narrowest_corridor=dims.corridor_width
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 
@@ -272,13 +301,13 @@ def _create_w_maze_track_graph(
     Environment
         1D linearized environment representing the W-maze track.
     """
-    half_width = dims.width / 2.0
+    half_width = dims.outer_arm_spacing / 2.0
     arm_x_positions = np.linspace(-half_width, half_width, dims.n_wells)
 
     graph = nx.Graph()
     for i, x_pos in enumerate(arm_x_positions, start=1):
         graph.add_node(f"junction_{i}", pos=(float(x_pos), 0.0))
-        graph.add_node(f"well_{i}", pos=(float(x_pos), dims.height))
+        graph.add_node(f"well_{i}", pos=(float(x_pos), dims.arm_length))
 
     # Base edges between neighbouring junctions, then one edge up each arm
     edge_order = [

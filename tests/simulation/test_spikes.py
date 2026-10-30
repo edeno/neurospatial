@@ -262,15 +262,57 @@ class TestGeneratePoissonSpikes:
         with pytest.raises(ValueError, match="firing_rate"):
             generate_poisson_spikes(firing_rate, times, seed=42)
 
-    def test_finite_rate_negative_still_floored(self):
-        """A finite negative rate does not raise and produces zero spikes there."""
-        # All-negative finite rates: valid input, floored at 0 -> no spikes.
-        firing_rate = np.full(1000, -5.0)
+    def test_negative_rate_raises(self):
+        """A negative rate is a bug in the rate, not zero activity."""
+        firing_rate = np.full(1000, 2.0)
+        firing_rate[300] = -5.0
         times = np.linspace(0, 1, 1000)
 
-        spikes = generate_poisson_spikes(firing_rate, times, seed=42)
+        with pytest.raises(ValueError, match="non-negative") as caught:
+            generate_poisson_spikes(firing_rate, times, seed=42)
+        assert "index 300" in str(caught.value)
 
-        assert len(spikes) == 0
+    def test_interspike_intervals_are_exponential(self):
+        """Without a refractory period, a constant rate is a Poisson process."""
+        from scipy import stats
+
+        rate = 20.0
+        times = np.linspace(0.0, 500.0, 50_001)
+        spikes = generate_poisson_spikes(
+            np.full(times.shape, rate), times, refractory_period=0.0, seed=1
+        )
+        assert len(spikes) / 500.0 == pytest.approx(rate, rel=0.03)
+        isis = np.diff(spikes)
+        assert stats.kstest(isis, "expon", args=(0.0, 1.0 / rate)).pvalue > 0.01
+
+    @pytest.mark.parametrize("rate", [50.0, 200.0])
+    def test_refractory_rate_is_dead_time_corrected(self, rate):
+        """Each kept spike is followed by a dead time τ: rate r / (1 + r τ)."""
+        tau = 0.002
+        times = np.linspace(0.0, 200.0, 200_001)
+        spikes = generate_poisson_spikes(
+            np.full(times.shape, rate), times, refractory_period=tau, seed=2
+        )
+        realized = len(spikes) / 200.0
+        assert realized == pytest.approx(rate / (1 + rate * tau), rel=0.03)
+        assert realized < 0.97 * rate or rate * tau < 0.03
+
+
+class _HeadingRecorder:
+    """A model whose rate is constant and which keeps the headings it is given."""
+
+    requires_headings = True
+
+    def __init__(self):
+        self.headings = None
+
+    def firing_rate(self, times, positions, *, headings=None):
+        self.headings = headings
+        return np.full(len(times), 5.0)
+
+    @property
+    def ground_truth(self):
+        return {"cell_type": "recorder"}
 
 
 class TestGeneratePopulationSpikes:
@@ -291,7 +333,7 @@ class TestGeneratePopulationSpikes:
 
         # Generate spikes (no progress bar for tests)
         spike_trains = generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
+            place_cells, times, positions, seed=7, show_progress=False
         )
 
         # Should return list of spike arrays
@@ -310,41 +352,44 @@ class TestGeneratePopulationSpikes:
         )
 
         spike_trains = generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
+            place_cells, times, positions, seed=7, show_progress=False
         )
 
         assert len(spike_trains) == n_cells
 
-    def test_spike_trains_are_independent(self, simple_2d_env):
-        """Test that different cells produce different spike trains."""
-        n_cells = 5
-        # Use higher firing rates to ensure spikes are generated
-        place_cells = [
-            PlaceCellModel(simple_2d_env, width=20.0, max_rate=30.0, seed=i)
-            for i in range(n_cells)
-        ]
+    def test_identical_cells_fire_independently(self):
+        """Identical rates give uncorrelated trains: each unit has its own stream."""
+        times = np.linspace(0.0, 200.0, 20_001)
+        positions = np.zeros((len(times), 2))
+        models = [_ConstantModel(20.0) for _ in range(4)]
 
-        positions, times = simulate_trajectory_ou(
-            simple_2d_env,
-            duration=30.0,
-            seed=42,  # Longer duration,
-            speed_units="cm",
+        trains = generate_population_spikes(
+            models, times, positions, seed=0, show_progress=False
         )
 
-        spike_trains = generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
+        edges = np.arange(0.0, 200.0 + 0.5, 0.5)
+        counts = np.array([np.histogram(t, edges)[0] for t in trains])
+        n_bins = counts.shape[1]
+        correlation = np.corrcoef(counts)[np.triu_indices(len(models), k=1)]
+        # Null standard deviation of a correlation is ~1/sqrt(n_bins).
+        assert np.all(np.abs(correlation) < 4 / np.sqrt(n_bins))
+
+    def test_seeds_do_not_share_streams(self):
+        """Seed 1 is not seed 0 shifted by one unit."""
+        times = np.linspace(0.0, 20.0, 2_001)
+        positions = np.zeros((len(times), 2))
+        models = [_ConstantModel(20.0) for _ in range(3)]
+
+        run0, run1 = (
+            generate_population_spikes(
+                models, times, positions, seed=seed, show_progress=False
+            )
+            for seed in (0, 1)
         )
 
-        # Check that at least some cells generate spikes
-        total_spikes = sum(len(st) for st in spike_trains)
-        assert total_spikes > 0, "No spikes generated"
-
-        # Check that not all spike trains have the same count
-        # (very unlikely with different place field centers)
-        spike_counts = [len(st) for st in spike_trains]
-        unique_counts = set(spike_counts)
-        # At least some variation (or at least some cells fired)
-        assert len(unique_counts) > 1 or max(spike_counts) > 0
+        for a in run0:
+            for b in run1:
+                assert not np.array_equal(a, b)
 
     def test_reproducibility_with_seed(self, simple_2d_env):
         """Test that same seed produces same spike trains."""
@@ -358,10 +403,10 @@ class TestGeneratePopulationSpikes:
         )
 
         spike_trains1 = generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
+            place_cells, times, positions, seed=7, show_progress=False
         )
         spike_trains2 = generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
+            place_cells, times, positions, seed=7, show_progress=False
         )
 
         # Check that all spike trains are identical
@@ -379,7 +424,7 @@ class TestGeneratePopulationSpikes:
         )
 
         spike_trains = generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
+            place_cells, times, positions, seed=7, show_progress=False
         )
 
         # Check all spikes are within [times[0], times[-1]]
@@ -400,7 +445,7 @@ class TestGeneratePopulationSpikes:
 
         # Generate without progress bar
         generate_population_spikes(
-            place_cells, times, positions, seed=42, show_progress=False
+            place_cells, times, positions, seed=7, show_progress=False
         )
 
         # Check no progress bar output (this is approximate test)
@@ -425,7 +470,7 @@ class TestGeneratePopulationSpikes:
             times,
             positions,
             refractory_period=refractory_period,
-            seed=42,
+            seed=7,
             show_progress=False,
         )
 
@@ -435,26 +480,33 @@ class TestGeneratePopulationSpikes:
                 isis = np.diff(spike_times)
                 assert np.all(isis >= refractory_period - 1e-10)
 
-    def test_head_direction_model_derives_headings(self):
-        """HeadDirectionCellModel should work without explicit headings."""
-        model = HeadDirectionCellModel(
-            preferred_direction=0.0,
-            max_rate=50.0,
-            baseline_rate=5.0,
-        )
+    def test_derived_heading_of_a_northward_path_is_north(self):
+        """Without headings, a model that needs them sees the movement direction."""
+        recorder = _HeadingRecorder()
         times = np.linspace(0.0, 1.0, 101)
-        positions = np.column_stack([times, np.zeros_like(times)])
+        positions = np.column_stack([np.zeros_like(times), 10.0 * times])
 
-        spike_trains = generate_population_spikes(
-            [model],
-            times,
-            positions,
-            seed=42,
-            show_progress=False,
+        generate_population_spikes(
+            [recorder], times, positions, seed=7, show_progress=False
         )
 
-        assert len(spike_trains) == 1
-        assert isinstance(spike_trains[0], np.ndarray)
+        np.testing.assert_allclose(recorder.headings, np.pi / 2, atol=1e-9)
+
+    def test_head_direction_cell_fires_for_the_movement_direction(self):
+        """A North cell fires on a northward path, a South cell does not."""
+        times = np.linspace(0.0, 2.0, 201)
+        positions = np.column_stack([np.zeros_like(times), 10.0 * times])
+        north, south = (
+            HeadDirectionCellModel(preferred_direction=d, max_rate=50.0)
+            for d in (np.pi / 2, -np.pi / 2)
+        )
+
+        trains = generate_population_spikes(
+            [north, south], times, positions, seed=7, show_progress=False
+        )
+
+        assert len(trains[0]) > 60  # ~100 expected at 50 Hz for 2 s
+        assert len(trains[1]) < 3
 
     def test_head_direction_model_holds_heading_through_stops(self):
         """Derived headings carry the last movement direction through a stop.
@@ -462,29 +514,23 @@ class TestGeneratePopulationSpikes:
         The path stands still for 1 s, runs East for 1 s, stands still for 1 s
         and runs North for 1 s (100 Hz). The smoothed speed is exactly zero in
         the middle of each stop, where heading_from_velocity has no heading.
-        The simulated cell instead fires with the last direction of movement
-        (East), and the leading stop takes the first one (East).
+        The simulated cell instead sees the last direction of movement (East),
+        and the leading stop takes the first one (East).
         """
-        from neurospatial.simulation.spikes import _compute_model_firing_rate
-
-        model = HeadDirectionCellModel(
-            preferred_direction=np.pi / 2, max_rate=50.0, baseline_rate=5.0
-        )
+        recorder = _HeadingRecorder()
         times = np.arange(400) / 100  # s
         x = 10.0 * np.clip(times - 1.0, 0.0, 1.0)  # cm
         y = 10.0 * np.clip(times - 3.0, 0.0, 1.0)  # cm
         positions = np.column_stack([x, y])
 
-        rates = _compute_model_firing_rate(model, positions, times, None)
-
-        assert np.isfinite(rates).all()
-        east_rate = model.firing_rate(np.array([0.0]))[0]
-        np.testing.assert_allclose(rates[:50], east_rate, rtol=1e-12)  # leading stop
-        np.testing.assert_allclose(rates[245:255], east_rate, rtol=1e-12)  # mid-stop
-        spike_trains = generate_population_spikes(
-            [model], times, positions, seed=42, show_progress=False
+        generate_population_spikes(
+            [recorder], times, positions, seed=7, show_progress=False
         )
-        assert len(spike_trains) == 1
+
+        assert np.isfinite(recorder.headings).all()
+        np.testing.assert_allclose(recorder.headings[:50], 0.0, atol=1e-12)
+        np.testing.assert_allclose(recorder.headings[245:255], 0.0, atol=1e-12)
+        np.testing.assert_allclose(recorder.headings[-10:], np.pi / 2, atol=1e-9)
 
     def test_head_direction_model_still_path_needs_headings(self):
         """A path that never moves has no movement direction to derive."""
@@ -511,56 +557,165 @@ class TestGeneratePopulationSpikes:
         assert "never moves" in str(caught.value)
         assert "headings=" in str(caught.value)
 
-    def test_head_direction_model_uses_explicit_headings(self):
-        """Explicit headings should be passed to HeadDirectionCellModel."""
-        model = HeadDirectionCellModel(
-            preferred_direction=np.pi / 2,
-            max_rate=50.0,
-            baseline_rate=5.0,
-        )
-        times = np.linspace(0.0, 1.0, 101)
-        positions = np.column_stack([times, np.zeros_like(times)])
+    def test_explicit_headings_override_the_movement_direction(self):
+        """The path runs East but the head points North: the North cell fires."""
+        times = np.linspace(0.0, 2.0, 201)
+        positions = np.column_stack([10.0 * times, np.zeros_like(times)])
         headings = np.full(len(times), np.pi / 2)
+        north, east = (
+            HeadDirectionCellModel(preferred_direction=d, max_rate=50.0)
+            for d in (np.pi / 2, 0.0)
+        )
 
-        spike_trains = generate_population_spikes(
-            [model],
+        trains = generate_population_spikes(
+            [north, east],
             times,
             positions,
             headings=headings,
-            seed=42,
+            seed=7,
             show_progress=False,
         )
 
-        assert len(spike_trains) == 1
-        assert isinstance(spike_trains[0], np.ndarray)
+        assert len(trains[0]) > 60
+        assert len(trains[1]) < 3
+
+    def test_spatial_view_cell_without_headings_uses_movement(self):
+        """A spatial view cell needs headings; the population supplies them."""
+        from shapely.geometry import box
+
+        from neurospatial import Environment
+        from neurospatial.simulation.models import SpatialViewCellModel
+
+        env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
+        times = np.linspace(0.0, 2.0, 201)
+        positions = np.column_stack([20.0 + 10.0 * times, np.full_like(times, 50.0)])
+        east_wall = SpatialViewCellModel(
+            env, preferred_view_location=[100.0, 50.0], max_rate=40.0
+        )
+
+        derived = generate_population_spikes(
+            [east_wall], times, positions, seed=7, show_progress=False
+        )
+        given = generate_population_spikes(
+            [east_wall],
+            times,
+            positions,
+            headings=np.zeros(len(times)),
+            seed=7,
+            show_progress=False,
+        )
+
+        np.testing.assert_array_equal(derived[0], given[0])
+        assert len(derived[0]) > 40
+
+    def test_missing_position_names_the_model_and_input(self, simple_2d_env):
+        """A NaN rate names the unit and the missing input, not firing_rate."""
+        times = np.linspace(0.0, 1.0, 11)
+        positions = np.full((11, 2), 50.0)
+        positions[4] = np.nan
+        models = [
+            _ConstantModel(1.0),
+            PlaceCellModel(simple_2d_env, center=[50.0, 50.0], width=10.0),
+        ]
+
+        with pytest.raises(ValueError, match=r"Model 1 \(PlaceCellModel\)") as caught:
+            generate_population_spikes(
+                models, times, positions, seed=7, show_progress=False
+            )
+        assert "1 have a missing (NaN) position" in str(caught.value)
+        assert "t = 0.4 s" in str(caught.value)
+
+    def test_missing_heading_names_the_input(self):
+        times = np.linspace(0.0, 1.0, 11)
+        positions = np.zeros((11, 2))
+        headings = np.zeros(11)
+        headings[[2, 3]] = np.nan
+
+        with pytest.raises(ValueError, match="2 have a missing heading"):
+            generate_population_spikes(
+                [HeadDirectionCellModel(preferred_direction=0.0)],
+                times,
+                positions,
+                headings=headings,
+                seed=7,
+                show_progress=False,
+            )
+
+
+class _ConstantModel:
+    """A cell firing at the same rate everywhere."""
+
+    requires_headings = False
+
+    def __init__(self, rate):
+        self.rate = rate
+
+    def firing_rate(self, times, positions, *, headings=None):
+        return np.full(len(times), self.rate)
+
+    @property
+    def ground_truth(self):
+        return {"cell_type": "constant", "max_rate": self.rate}
+
+
+def _circular_mean(angles):
+    return float(np.angle(np.mean(np.exp(1j * angles))))
 
 
 class TestAddModulation:
     """Tests for rhythmic spike modulation."""
 
-    def test_modulation_reduces_spike_count(self):
-        """Test that modulation thins spike train."""
-        # Create spike train with uniform distribution
-        spike_times = np.linspace(0, 10, 500)  # 50 Hz
+    @pytest.fixture(scope="class")
+    def dense_train(self):
+        """200,000 spikes spread uniformly over 100 s (800 theta cycles)."""
+        return np.sort(np.random.default_rng(11).uniform(0.0, 100.0, 200_000))
 
-        # Apply strong modulation
-        modulated = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
+    @pytest.mark.parametrize("phase", [0.0, np.pi / 2, np.pi, -np.pi / 2])
+    def test_kept_spikes_concentrate_at_the_preferred_phase(self, dense_train, phase):
+        """φ = 0 keeps cosine peaks, φ = π/2 sine peaks, and so on."""
+        freq = 8.0
+        kept = add_modulation(
+            dense_train,
+            modulation_freq=freq,
             modulation_depth=0.8,
-            seed=42,
+            modulation_phase=phase,
+            seed=3,
+        )
+        oscillation_phase = 2 * np.pi * freq * kept
+        error = np.angle(np.exp(1j * (_circular_mean(oscillation_phase) - phase)))
+        assert abs(error) < 0.02
+
+    @pytest.mark.parametrize("depth", [1e-6, 0.25, 0.5, 1.0])
+    def test_kept_fraction_is_one_over_one_plus_depth(self, dense_train, depth):
+        """Thinning keeps 1 / (1 + d) of the spikes; all of them as d -> 0."""
+        kept = add_modulation(
+            dense_train, modulation_freq=8.0, modulation_depth=depth, seed=4
+        )
+        assert len(kept) / len(dense_train) == pytest.approx(1 / (1 + depth), abs=0.005)
+
+    def test_preferred_phase_keeps_the_input_rate(self, dense_train):
+        """Every spike at the preferred phase is kept, so its rate is unchanged."""
+        freq, phase = 8.0, np.pi
+        kept = add_modulation(
+            dense_train,
+            modulation_freq=freq,
+            modulation_depth=0.5,
+            modulation_phase=phase,
+            seed=5,
         )
 
-        # Should reduce spike count
-        assert len(modulated) < len(spike_times)
-        # Modulated spikes should be subset of original
-        assert all(t in spike_times for t in modulated)
+        def near_preferred(spikes):
+            offset = np.angle(np.exp(1j * (2 * np.pi * freq * spikes - phase)))
+            return np.abs(offset) < 0.05
+
+        assert near_preferred(kept).sum() == pytest.approx(
+            near_preferred(dense_train).sum(), rel=0.01
+        )
 
     def test_zero_modulation_depth_returns_all_spikes(self):
         """Test that zero modulation depth keeps all spikes."""
         spike_times = np.linspace(0, 5, 200)
 
-        # Zero modulation should keep all spikes
         modulated = add_modulation(
             spike_times,
             modulation_freq=8.0,
@@ -568,217 +723,66 @@ class TestAddModulation:
             seed=42,
         )
 
-        # Should keep all spikes
         np.testing.assert_array_equal(modulated, spike_times)
 
-    def test_phase_preference(self):
-        """Test that modulation creates phase preference."""
-        # Generate many spikes over multiple cycles
-        spike_times = np.linspace(0, 10, 5000)  # Dense sampling
-        modulation_freq = 8.0  # 8 Hz theta
+    def test_modulated_spikes_are_a_sorted_subset(self):
+        spike_times = np.linspace(0, 5, 300)
 
-        # Apply modulation with zero phase
         modulated = add_modulation(
-            spike_times,
-            modulation_freq=modulation_freq,
-            modulation_depth=0.9,
-            modulation_phase=0.0,
-            seed=42,
+            spike_times, modulation_freq=8.0, modulation_depth=0.5, seed=42
         )
 
-        # Compute phases of modulated spikes
-        phases = (2 * np.pi * modulation_freq * modulated) % (2 * np.pi)
-
-        # Mean resultant length should be high (indicates phase locking)
-        mean_cos = np.mean(np.cos(phases))
-        mean_sin = np.mean(np.sin(phases))
-        mean_resultant_length = np.sqrt(mean_cos**2 + mean_sin**2)
-
-        # Should be phase-locked (MRL > 0.3 indicates moderate to strong locking)
-        assert mean_resultant_length > 0.3
-
-    def test_different_modulation_depths(self):
-        """Test that higher modulation depth removes more spikes on average."""
-        spike_times = np.linspace(0, 10, 2000)  # More spikes for clearer signal
-
-        # Very low modulation
-        modulated_low = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.1,  # Very weak modulation
-            seed=42,
-        )
-
-        # Very high modulation
-        modulated_high = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.95,  # Very strong modulation
-            seed=42,
-        )
-
-        # With larger depth difference and more spikes, high depth should
-        # reliably remove more spikes than low depth
-        assert len(modulated_high) < len(modulated_low)
+        assert np.all(np.diff(modulated) >= 0)
+        assert np.isin(modulated, spike_times).all()
 
     def test_reproducibility_with_seed(self):
         """Test that same seed produces same modulated spikes."""
         spike_times = np.linspace(0, 5, 300)
 
         modulated1 = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.5,
-            seed=42,
+            spike_times, modulation_freq=8.0, modulation_depth=0.5, seed=42
         )
         modulated2 = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.5,
-            seed=42,
+            spike_times, modulation_freq=8.0, modulation_depth=0.5, seed=42
         )
 
         np.testing.assert_array_equal(modulated1, modulated2)
 
-    def test_different_seeds_produce_different_results(self):
-        """Test that different seeds produce different results."""
-        spike_times = np.linspace(0, 5, 300)
-
-        modulated1 = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.5,
-            seed=42,
-        )
-        modulated2 = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.5,
-            seed=43,
-        )
-
-        # Should be different
-        assert not np.array_equal(modulated1, modulated2)
-
-    def test_modulated_spikes_sorted(self):
-        """Test that modulated spikes remain sorted."""
-        spike_times = np.linspace(0, 5, 300)
-
-        modulated = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.5,
-            seed=42,
-        )
-
-        # Should be sorted
-        assert np.all(np.diff(modulated) >= 0)
-
     def test_empty_spike_train(self):
         """Test with empty spike train."""
-        spike_times = np.array([])
-
         modulated = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.5,
-            seed=42,
+            np.array([]), modulation_freq=8.0, modulation_depth=0.5, seed=42
         )
 
         assert len(modulated) == 0
 
-    def test_modulation_phase_shift(self):
-        """Test that modulation phase affects which spikes are kept."""
-        spike_times = np.linspace(0, 10, 1000)
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"modulation_depth": 1.5}, "modulation_depth must be in"),
+            ({"modulation_depth": -0.1}, "modulation_depth must be in"),
+            ({"modulation_depth": np.nan}, "modulation_depth must be in"),
+            ({"modulation_freq": -8.0}, "modulation_freq must be a finite positive"),
+            ({"modulation_freq": 0.0}, "modulation_freq must be a finite positive"),
+            ({"modulation_freq": np.nan}, "modulation_freq must be a finite positive"),
+            ({"modulation_phase": np.nan}, "modulation_phase must be a finite"),
+        ],
+    )
+    @pytest.mark.parametrize("n_spikes", [0, 100])
+    def test_invalid_parameters_raise(self, kwargs, match, n_spikes):
+        """Refused even for an empty train; NaN would otherwise delete every spike."""
+        params = {"modulation_freq": 8.0, **kwargs}
+        with pytest.raises(ValueError, match=match):
+            add_modulation(np.linspace(0, 5, n_spikes), **params)
 
-        # Same modulation, different phase
-        modulated_phase0 = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.7,
-            modulation_phase=0.0,
-            seed=42,
-        )
-
-        modulated_phase_pi = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=0.7,
-            modulation_phase=np.pi,
-            seed=42,
-        )
-
-        # Different phases should keep different spikes
-        # (though some overlap is expected)
-        assert not np.array_equal(modulated_phase0, modulated_phase_pi)
-
-    def test_full_modulation_depth(self):
-        """Test behavior with maximum modulation depth."""
-        spike_times = np.linspace(0, 10, 1000)
-
-        # Full modulation (depth = 1.0)
-        modulated = add_modulation(
-            spike_times,
-            modulation_freq=8.0,
-            modulation_depth=1.0,
-            seed=42,
-        )
-
-        # Should still have some spikes (at preferred phases)
-        assert len(modulated) > 0
-        # But should be significantly reduced
-        assert len(modulated) < len(spike_times) * 0.7
-
-    def test_invalid_modulation_depth_too_high(self):
-        """Test that modulation depth > 1 raises ValueError."""
-        spike_times = np.linspace(0, 5, 100)
-
-        with pytest.raises(ValueError, match="modulation_depth must be in range"):
-            add_modulation(spike_times, modulation_freq=8.0, modulation_depth=1.5)
-
-    def test_invalid_modulation_depth_negative(self):
-        """Test that negative modulation depth raises ValueError."""
-        spike_times = np.linspace(0, 5, 100)
-
-        with pytest.raises(ValueError, match="modulation_depth must be in range"):
-            add_modulation(spike_times, modulation_freq=8.0, modulation_depth=-0.1)
-
-    def test_invalid_modulation_freq_negative(self):
-        """Test that negative frequency raises ValueError."""
-        spike_times = np.linspace(0, 5, 100)
-
-        with pytest.raises(ValueError, match="modulation_freq must be positive"):
-            add_modulation(spike_times, modulation_freq=-8.0)
-
-    def test_invalid_modulation_freq_zero(self):
-        """Test that zero frequency raises ValueError."""
-        spike_times = np.linspace(0, 5, 100)
-
-        with pytest.raises(ValueError, match="modulation_freq must be positive"):
-            add_modulation(spike_times, modulation_freq=0.0)
-
-    def test_single_spike(self):
-        """Test modulation with single spike."""
-        spike_times = np.array([1.0])
-
-        modulated = add_modulation(
-            spike_times, modulation_freq=8.0, modulation_depth=0.5, seed=42
-        )
-
-        # Should return either 1 spike or 0 spikes
-        assert len(modulated) in [0, 1]
-        if len(modulated) == 1:
-            assert modulated[0] == spike_times[0]
-
-    def test_high_frequency_modulation(self):
-        """Test that high frequency modulation works correctly."""
-        spike_times = np.linspace(0, 1, 1000)
-
-        # 100 Hz modulation (many cycles in 1 second)
-        modulated = add_modulation(
-            spike_times, modulation_freq=100.0, modulation_depth=0.5, seed=42
-        )
-
-        # Should modulate spikes (not keep all or remove all)
-        assert len(modulated) < len(spike_times)
-        assert len(modulated) > 0
+    @pytest.mark.parametrize(
+        ("spike_times", "match"),
+        [
+            (np.array([0.1, np.nan, 0.3]), "spike_times"),
+            (np.array([0.3, 0.1, 0.2]), "sorted"),
+            (np.zeros((2, 2)), "1-D"),
+        ],
+    )
+    def test_invalid_spike_times_raise(self, spike_times, match):
+        with pytest.raises(ValueError, match=match):
+            add_modulation(spike_times, modulation_freq=8.0)

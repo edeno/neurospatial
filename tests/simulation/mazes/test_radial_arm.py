@@ -148,7 +148,7 @@ class TestMakeRadialArmMaze:
 
         dims = RadialArmDims()
         assert 2 * dims.center_radius == 35.5
-        assert (dims.arm_length, dims.arm_width, dims.n_arms) == (76.0, 9.0, 8)
+        assert (dims.arm_length, dims.corridor_width, dims.n_arms) == (76.0, 9.0, 8)
 
         polygon = make_radial_arm_maze(include_track=False).env_2d.arena.polygon
         reach = dims.center_radius + dims.arm_length
@@ -157,7 +157,7 @@ class TestMakeRadialArmMaze:
         assert polygon.bounds[2] == pytest.approx(reach)
         middle = dims.center_radius + dims.arm_length / 2
         section = polygon.intersection(LineString([(middle, -20.0), (middle, 20.0)]))
-        assert section.length == pytest.approx(dims.arm_width)
+        assert section.length == pytest.approx(dims.corridor_width)
 
     def test_track_arm_ends_agree_with_the_food_cups(self):
         """Track leaves are the arm ends, named like the cups there."""

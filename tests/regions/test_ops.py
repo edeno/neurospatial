@@ -56,9 +56,10 @@ def box_and_well(square, well):
     return Regions([square["box"], well["well"]])
 
 
-# Interior, two edge points and an exterior point of the 10 x 10 square.
+# Interior, west-edge, east-edge and exterior points of the 10 x 10 square.
 EDGE_PROBES = np.array([[5.0, 5.0], [0.0, 5.0], [10.0, 5.0], [15.0, 15.0]])
-EDGE_EXPECTED = {True: [True, True, True, False], False: [True, False, False, False]}
+# A square alone holds its whole edge: no other region lies beyond it.
+EDGE_EXPECTED = [True, True, True, False]
 
 
 class PixelsToCm:
@@ -192,41 +193,27 @@ class TestPolygonMembership:
         assert_array_equal(mask, [True, False])
 
 
-@pytest.mark.parametrize("include_boundary", [True, False])
-class TestIncludeBoundary:
-    """Edge positions count only with ``include_boundary=True``, in every output."""
+class TestEdges:
+    """Edge positions follow one rule, in every output."""
 
-    def test_any(self, square, include_boundary):
+    def test_any(self, square):
+        assert_array_equal(points_in_any_region(EDGE_PROBES, square), EDGE_EXPECTED)
+
+    def test_dataframe(self, square):
+        df = regions_containing_points(EDGE_PROBES, square)
+        assert_array_equal(df["box"].to_numpy(), EDGE_EXPECTED)
+
+    def test_list(self, square):
+        result = regions_containing_points(EDGE_PROBES, square, return_dataframe=False)
+        assert result == [["box"] if hit else [] for hit in EDGE_EXPECTED]
+
+    def test_point_region_rim(self, well):
+        # Exactly 5 cm from (50, 50) by 3-4-5 triangles: the rim is held where
+        # a nudge north-east moves the position toward the well.
         mask = points_in_any_region(
-            EDGE_PROBES, square, include_boundary=include_boundary
+            np.array([[47.0, 46.0], [53.0, 54.0]]), well, point_radius=5.0
         )
-        assert_array_equal(mask, EDGE_EXPECTED[include_boundary])
-
-    def test_dataframe(self, square, include_boundary):
-        df = regions_containing_points(
-            EDGE_PROBES, square, include_boundary=include_boundary
-        )
-        assert_array_equal(df["box"].to_numpy(), EDGE_EXPECTED[include_boundary])
-
-    def test_list(self, square, include_boundary):
-        result = regions_containing_points(
-            EDGE_PROBES,
-            square,
-            return_dataframe=False,
-            include_boundary=include_boundary,
-        )
-        expected = [["box"] if hit else [] for hit in EDGE_EXPECTED[include_boundary]]
-        assert result == expected
-
-    def test_point_region_rim(self, well, include_boundary):
-        # (53, 54) is exactly 5 cm from (50, 50): a 3-4-5 triangle.
-        mask = points_in_any_region(
-            np.array([[53.0, 54.0]]),
-            well,
-            point_radius=5.0,
-            include_boundary=include_boundary,
-        )
-        assert_array_equal(mask, [include_boundary])
+        assert_array_equal(mask, [True, False])
 
 
 class TestPointRegions:
@@ -244,11 +231,9 @@ class TestPointRegions:
         assert points_in_any_region(positions, well, point_radius=5.0)[0]
         assert not points_in_any_region(positions, well, point_radius=2.0)[0]
 
-    def test_zero_radius_matches_only_the_point(self, well):
-        mask = points_in_any_region(
-            np.array([[50.0, 50.0], [50.0001, 50.0]]), well, point_radius=0.0
-        )
-        assert_array_equal(mask, [True, False])
+    def test_zero_radius_is_refused(self, well):
+        with pytest.raises(ValueError, match=r"point_radius must be positive"):
+            points_in_any_region(np.array([[50.0, 50.0]]), well, point_radius=0.0)
 
     @pytest.mark.parametrize(
         "query",

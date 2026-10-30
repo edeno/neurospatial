@@ -110,17 +110,18 @@ print("Uncovered positions, rounded to 10 cm:",
       np.unique(np.round(gap_positions, -1)))
 print("Uncovered bins the animal never visited:",
       int((~rates.spatial_support[coverage.uncovered_bins]).sum()))
-assert np.isclose(coverage.coverage_fraction, 0.94, atol=0.006)
+assert np.isclose(coverage.coverage_fraction, 1.0, atol=0.006)
 assert np.isclose(coverage.fields_per_place_cell, 1.0, atol=0.06)
 ```
 
-With all 25 maps the track looks fully covered, but only because the detector
-found fields in the flat maps of the untuned units. The 20 screened place cells
-cover 94% of the bins with one field each. The gaps are the two ends of the
-track, where no simulated place cell has its field. Every gap bin was visited,
-so these are locations without a field, not locations without data. In your
-own recording, check `rates.spatial_support` the same way: coverage counts an
-unvisited bin as a gap.
+Both sets cover the whole track, but the 25 maps give 25 fields: the detector
+also found fields in the flat maps of the untuned units. Screen first, so
+that noise neither adds fields nor fills gaps. The 20 screened place cells
+cover every bin with one field each, because the simulated fields tile the
+track from end to end. In your own recording a gap is either a location
+without a field or a location without data; check `rates.spatial_support` at
+`coverage.uncovered_bins` as above, because coverage counts an unvisited bin
+as a gap.
 
 `population_coverage` detects fields with `detect_place_fields` (field edge at
 20% of the peak rate by default, set with `threshold=`). Pass the smoothing
@@ -133,7 +134,7 @@ how many fields include each bin:
 density = field_density_map(coverage.place_fields, env.n_bins)
 covered = density[coverage.covered_bins]
 print(f"Fields per covered bin: median {np.median(covered):.0f}, max {covered.max()}")
-assert covered.max() == 12
+assert covered.max() == 7
 
 fig, ax = plt.subplots(figsize=(8, 2.5))
 plot_population_coverage(env, coverage, show_field_count=True, ax=ax)
@@ -141,8 +142,8 @@ plt.show()
 ```
 
 `plot_population_coverage` draws the same count from the coverage result:
-how many place fields include each position, zero at both ends and up to twelve
-overlapping fields in between. Dashed lines mark the uncovered bins, and the
+how many place fields include each position, here six at a typical position
+and up to seven. Dashed lines mark the uncovered bins, and the
 title gives the coverage fraction. A location covered by several fields is
 represented redundantly; a location covered by none is decoded poorly, if at
 all. For an open-field arena, the same call draws a map and marks
@@ -162,6 +163,8 @@ the sorter's labels as `unit_ids=` so each result knows which cell each row
 is.
 
 ```python
+from dataclasses import replace
+
 from neurospatial.encoding import (
     field_overlap,
     population_vector_correlation,
@@ -175,14 +178,13 @@ change_time = 120.0
 moves = np.arange(16) % 2 == 1  # odd-numbered units remap
 spike_times = []
 for unit, cell in enumerate(session.models):
-    rate = cell.firing_rate(positions)
+    rate = cell.firing_rate(times, positions)
     if moves[unit]:
-        # Move the field 80 cm, wrapping around within 20-180 cm.
-        new_center = 20.0 + (cell.center - 20.0 + 80.0) % 160.0
-        moved = PlaceCellModel(
-            env, center=new_center, width=cell.width, max_rate=cell.max_rate
-        )
-        rate = np.where(times < change_time, rate, moved.firing_rate(positions))
+        # Move the field 80 cm, wrapping around within 20-180 cm; replace()
+        # keeps every other argument of the cell.
+        new_center = 20.0 + (cell.ground_truth["center"] - 20.0 + 80.0) % 160.0
+        moved = replace(cell, center=new_center)
+        rate = np.where(times < change_time, rate, moved.firing_rate(times, positions))
     spike_times.append(generate_poisson_spikes(rate, times, seed=200 + unit))
 unit_ids = np.arange(len(spike_times))  # your sorter's unit labels
 
@@ -220,8 +222,8 @@ map_similarity = rate_map_correlations(np.vstack([before, after]))
 per_cell = np.diag(map_similarity[:n_units, n_units:])
 print("Map correlation, cells that kept their field:", np.round(per_cell[~moves], 2))
 print("Map correlation, cells that moved their field:", np.round(per_cell[moves], 2))
-assert per_cell[~moves].min() >= 0.99 - 0.006  # 0.99-1.00
-assert -0.476 <= per_cell[moves].min() <= per_cell[moves].max() <= -0.404
+assert per_cell[~moves].min() >= 0.98 - 0.006  # 0.98-1.00
+assert -0.486 <= per_cell[moves].min() <= per_cell[moves].max() <= -0.294
 
 # Identical maps with one flat location: the flat one is NaN, the rest are 1.
 demo = np.array([[1.0, 2.0, 5.0], [3.0, 2.0, 1.0], [2.0, 2.0, 4.0]])
@@ -232,7 +234,7 @@ pv = population_vector_correlation(maps["before"], maps["after"])  # (n_bins,)
 defined = np.isfinite(pv)
 print(f"Population-vector correlation per location: median {np.median(pv[defined]):.2f} "
       f"({(~defined).sum()} of {pv.size} locations undefined)")
-assert np.isclose(np.median(pv[defined]), 0.22, atol=0.006)
+assert np.isclose(np.median(pv[defined]), 0.29, atol=0.006)
 assert np.array_equal(defined, shared)  # undefined only where a condition lacks data
 
 # Units are paired by label: listing the cells in another order changes nothing.
@@ -252,9 +254,9 @@ print(f"Rows in another order, paired by position: median {np.median(by_position
 assert np.isclose(np.median(by_position), -0.1, atol=0.06)
 ```
 
-The cells that kept their field have map correlations of 0.99-1.00, and the
-cells that moved have correlations of -0.47 to -0.41: you can read off which
-cells remapped. The median population-vector correlation of 0.22 says the
+The cells that kept their field have map correlations of 0.98-1.00, and the
+cells that moved have correlations of -0.48 to -0.30: you can read off which
+cells remapped. The median population-vector correlation of 0.29 says the
 population code changed substantially even though half the cells kept their
 fields, because a moved field lowers the correlation both where it was and
 where it went. An unchanged map gives values near 1 and a completely new map
@@ -314,12 +316,12 @@ overlap = np.array([
 ])
 print("Field overlap, cells that kept their field:", np.round(overlap[~moves], 2))
 print("Field overlap, cells that moved their field:", np.round(overlap[moves], 2))
-assert 0.894 <= overlap[~moves].min() <= overlap[~moves].max() <= 1.0 + 1e-9  # Jaccard is at most 1
+assert 0.834 <= overlap[~moves].min() <= overlap[~moves].max() <= 1.0 + 1e-9  # Jaccard is at most 1
 assert (overlap[moves] == 0).all()
 ```
 
 Cells that kept their field share most of their field bins (overlap
-0.90-0.97), and cells that moved share none. Neither per-cell measure detects
+0.84-0.99), and cells that moved share none. Neither per-cell measure detects
 a cell that keeps its field but changes its peak rate (rate remapping): field
 overlap ignores rates, and a correlation ignores a change of scale. Compare
 in-field rates for that; the per-location `population_vector_correlation` does
@@ -378,7 +380,7 @@ for unit, assembly in enumerate(assembly_of):
             env, center=field_centers[[assembly]], width=8.0,
             max_rate=15.0, baseline_rate=0.5,
         )
-        run_rate = cell.firing_rate(positions)
+        run_rate = cell.firing_rate(times, positions)
     else:
         run_rate = np.ones(len(times))
     spike_times.append(np.concatenate([
@@ -524,7 +526,7 @@ assert post.min() > 1.0 > 0.1 > np.abs(pre).max()  # co-firing only after the ta
 # Reproducibility pins for this seed:
 assert 19.9 <= in_events.min() <= in_events.max() <= 23.9
 assert np.allclose(otherwise, 0.09, atol=0.02)
-assert 1.54 <= post.min() <= post.max() <= 1.70
+assert 1.52 <= post.min() <= post.max() <= 1.71
 
 # The columns of rest counts in another order give the same activation.
 order = np.random.default_rng(3).permutation(n_units)

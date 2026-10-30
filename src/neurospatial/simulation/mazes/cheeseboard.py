@@ -74,7 +74,13 @@ from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    refuse,
+    warn_if_bins_too_coarse,
+)
 from neurospatial.simulation.mazes._geometry import make_circular_arena
 
 
@@ -124,6 +130,32 @@ class CheeseboardDims(MazeDims):
     reward_radius: float = 1.25
     rim_margin: float = 4.0
 
+    def __post_init__(self) -> None:
+        check_lengths(self, "diameter", "grid_spacing", "reward_radius")
+        check_lengths(self, "rim_margin", allow_zero=True)
+        if self.rim_margin < self.reward_radius:
+            refuse(
+                self,
+                ("rim_margin", "reward_radius"),
+                "lets wells closer to the rim than their radius, so they run "
+                "off the board",
+                "Use a rim_margin of at least reward_radius.",
+            )
+        if self.rim_margin >= self.diameter / 2.0:
+            refuse(
+                self,
+                ("rim_margin", "diameter"),
+                "leaves no room for wells on the board",
+                "Use a rim_margin below half the diameter.",
+            )
+        if self.grid_spacing <= 2.0 * self.reward_radius:
+            refuse(
+                self,
+                ("grid_spacing", "reward_radius"),
+                "puts neighbouring wells so close that they overlap",
+                "Use a grid_spacing greater than twice reward_radius.",
+            )
+
 
 def make_cheeseboard_maze(
     dims: CheeseboardDims | None = None,
@@ -159,7 +191,8 @@ def make_cheeseboard_maze(
     from the rim get a well.
 
     Every food well is a landmark in ``env_2d.landmarks`` with role
-    ``"reward_port"`` and a point region of the same name at its centre:
+    ``"reward_port"`` and ``port_type`` ``"food_well"``, and a point region
+    of the same name at its centre:
 
     - well_i_j: the well in lattice column i and row j, counted from 0 at the
       lowest x and y. With the defaults ``well_7_7`` is the centre well.
@@ -245,6 +278,7 @@ def make_cheeseboard_maze(
                         center,
                         metadata={
                             "role": "reward_port",
+                            "port_type": "food_well",
                             "diameter": 2.0 * dims.reward_radius,
                         },
                     )
@@ -255,4 +289,7 @@ def make_cheeseboard_maze(
     # No track graph for open field
     env_track = None
 
+    warn_if_bins_too_coarse(
+        env_2d, maze="cheeseboard maze", bin_size=bin_size, narrowest_corridor=None
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)

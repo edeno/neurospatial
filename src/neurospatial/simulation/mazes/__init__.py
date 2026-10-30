@@ -1,7 +1,7 @@
 """Standard maze environments for spatial navigation research.
 
-The layouts follow Figure 1 of Wijnen et al. 2024 (Brain Structure &
-Function, doi:10.1007/s00429-024-02771-x). The dimensions come from the
+The layouts follow Figure 1 of Wijnen et al. 2024 (Brain Structure and
+Function 229(4), 823–841, doi:10.1007/s00429-024-02771-x). The dimensions come from the
 papers that describe each apparatus, cited in each factory's docstring, and
 estimates are marked there. All dimensions in centimeters.
 
@@ -14,7 +14,7 @@ Simple Corridor Mazes (Panel a):
 - Small Hex Maze: Berke-lab triangular hex maze with movable barriers
 
 Repeated Alleyway Mazes (Panel b):
-- Repeated Y-Maze: Sequential Y-junctions with Warner-Warden design
+- Repeated Y-Maze: Sequential Y-junctions, the Warner-Warden unit maze
 - Repeated T-Maze: Tolman & Nyswander six-unit T maze
 - Hampton Court Maze: Small's (1901) rat version of the hedge maze
 
@@ -58,7 +58,6 @@ from neurospatial.simulation.mazes._geometry import (
     make_buffered_line,
     make_circular_arena,
     make_corridor_polygon,
-    make_star_graph,
     union_polygons,
 )
 from neurospatial.simulation.mazes.barnes import (
@@ -196,7 +195,6 @@ __all__ = [
     "make_repeated_y_maze",
     "make_small_hex_maze",
     "make_square_maze",
-    "make_star_graph",
     "make_sungod_maze",
     "make_t_maze",
     "make_w_maze",

@@ -159,7 +159,6 @@ def _bins_in_region(
     binning: Binning,
     arena: Arena,
     cache: AnalysisCache,
-    include_boundary: bool,
 ) -> NDArray[np.intp]:
     """Indices of the bins the named region covers, in increasing order."""
     if region_name not in regions:
@@ -170,7 +169,6 @@ def _bins_in_region(
         regions[region_name],
         binning=binning,
         arena=arena,
-        include_boundary=include_boundary,
         indexes=cache,
     )
     return np.flatnonzero(mask).astype(np.intp, copy=False)
@@ -182,7 +180,6 @@ def _region_membership(
     binning: Binning,
     arena: Arena,
     cache: AnalysisCache,
-    include_boundary: bool = True,
 ) -> NDArray[np.bool_]:
     """Membership of every bin in every region, ``(n_bins, n_regions)``."""
     if not isinstance(regions, Mapping):
@@ -201,14 +198,9 @@ def _region_membership(
             )
         )
     values = _region_values(regions)
-    if not isinstance(include_boundary, bool):
-        raise TypeError(
-            f"include_boundary must be a bool, got {type(include_boundary).__name__}"
-        )
     return region_bin_masks(
         values,
         binning=binning,
         arena=arena,
-        include_boundary=include_boundary,
         indexes=cache,
     )

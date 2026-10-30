@@ -1,8 +1,8 @@
 """Every region query covers the same bins, by one rule, on every layout.
 
 A point region covers the bin that contains the point; a polygon region covers
-the bins whose centers lie inside it, with ``include_boundary`` deciding a
-center on the edge.
+the bins whose centers lie inside it, and a center exactly on its edge when
+nudging it a hair north-east moves it inside.
 """
 
 from __future__ import annotations
@@ -103,49 +103,46 @@ def _containing_bin(env: Environment, point: np.ndarray) -> int:
     return int(env.bin_at(point[np.newaxis])[0])
 
 
-def _consumers(env: Environment, name: str, include_boundary: bool) -> dict:
+def _consumers(env: Environment, name: str) -> dict:
     """The bins each region query reports for ``name``."""
     column = list(env.regions).index(name)
-    membership = env.region_membership(include_boundary=include_boundary)
+    membership = env.region_membership()
     return {
-        "bins_in_region": env.bins_in_region(name, include_boundary=include_boundary),
-        "region_mask": np.flatnonzero(
-            env.region_mask(name, include_boundary=include_boundary)
-        ),
+        "bins_in_region": env.bins_in_region(name),
+        "region_mask": np.flatnonzero(env.region_mask(name)),
         "region_membership": np.flatnonzero(membership[:, column]),
-        "regions_to_mask": np.flatnonzero(
-            regions_to_mask(env, name, include_boundary=include_boundary)
-        ),
+        "regions_to_mask": np.flatnonzero(regions_to_mask(env, name)),
     }
 
 
-@pytest.mark.parametrize("include_boundary", [True, False])
 @pytest.mark.parametrize("name", ["reward", "zone"])
-def test_region_queries_agree_on_every_layout(env_with_regions, name, include_boundary):
+def test_region_queries_agree_on_every_layout(env_with_regions, name):
     env = env_with_regions
-    reported = _consumers(env, name, include_boundary)
+    reported = _consumers(env, name)
     reference = reported.pop("bins_in_region")
-    # Track centers all lie on the zone's lower edge, so only its interior is empty.
-    assert reference.size > 0 or not include_boundary
+    # Track centers lie on the zone's south edge, which the zone holds.
+    assert reference.size > 0
     for consumer, bins in reported.items():
         np.testing.assert_array_equal(bins, reference, err_msg=consumer)
 
 
-@pytest.mark.parametrize("include_boundary", [True, False])
-def test_polygon_region_matches_an_independent_shapely_oracle(
-    env_with_regions, include_boundary
-):
-    """The polygon column is shapely's covers (or contains) on the bin centers."""
+def test_polygon_region_matches_an_independent_shapely_oracle(env_with_regions):
+    """Inside by shapely's contains, plus edge centers whose nudge is inside."""
     env = env_with_regions
     polygon = env.regions["zone"].data
-    predicate = shapely.covers if include_boundary else shapely.contains
-    expected = np.flatnonzero(predicate(polygon, shapely.points(env.bin_centers)))
-    np.testing.assert_array_equal(
-        env.bins_in_region("zone", include_boundary=include_boundary), expected
+    centers = shapely.points(env.bin_centers)
+    lo, hi = env.bin_centers.min(axis=0), env.bin_centers.max(axis=0)
+    # A nudge north-east, far smaller than the bins but resolvable here.
+    nudge = 1e-6 * np.abs(np.r_[lo, hi]).max() * np.array([1.0, 0.75])
+    on_edge = shapely.touches(polygon, centers)
+    nudged = shapely.points(env.bin_centers + nudge)
+    expected = np.flatnonzero(
+        shapely.contains(polygon, centers)
+        | (on_edge & shapely.contains(polygon, nudged))
     )
+    np.testing.assert_array_equal(env.bins_in_region("zone"), expected)
     np.testing.assert_array_equal(
-        np.flatnonzero(regions_to_mask(env, "zone", include_boundary=include_boundary)),
-        expected,
+        np.flatnonzero(regions_to_mask(env, "zone")), expected
     )
 
 
@@ -178,19 +175,64 @@ def test_point_region_outside_the_environment_covers_no_bin():
     assert not env.region_membership().any()
 
 
-def test_polygon_edge_through_centers_follows_include_boundary():
-    """A center exactly on the polygon's edge counts only with include_boundary."""
+def test_box_through_centers_holds_its_south_and_west_edges():
+    """Centers on a box's south and west edges are in it; north and east not."""
     edges = np.arange(0.0, 11.0, 2.0)  # centers 1, 3, 5, 7, 9
     env = Environment.from_grid_mask(np.ones((5, 5), dtype=bool), (edges, edges))
     regions = Regions()
     regions.add("zone", polygon=box(3.0, 3.0, 7.0, 7.0))
     env = env.with_regions(regions)
 
-    with_edge = env.bin_centers[env.bins_in_region("zone")]
-    interior = env.bin_centers[env.bins_in_region("zone", include_boundary=False)]
+    np.testing.assert_array_equal(
+        env.bin_centers[env.bins_in_region("zone")],
+        [[3.0, 3.0], [3.0, 5.0], [5.0, 3.0], [5.0, 5.0]],
+    )
 
-    assert len(with_edge) == 9  # centers 3, 5, 7 in x and y
-    np.testing.assert_array_equal(interior, [[5.0, 5.0]])
+
+def test_boxes_that_share_edges_partition_the_bins():
+    """Four boxes meeting on a row and column of centers cover each bin once."""
+    edges = np.arange(0.0, 11.0, 2.0)  # centers 1, 3, 5, 7, 9
+    env = Environment.from_grid_mask(np.ones((5, 5), dtype=bool), (edges, edges))
+    regions = Regions()
+    corners = {"sw": (0.0, 0.0), "se": (5.0, 0.0), "nw": (0.0, 5.0), "ne": (5.0, 5.0)}
+    for name, (x0, y0) in corners.items():
+        regions.add(name, polygon=box(x0, y0, x0 + 5.0, y0 + 5.0))
+    env = env.with_regions(regions)
+    membership = env.region_membership()
+    np.testing.assert_array_equal(membership.sum(axis=1), 1)
+    # The center (5, 5) is on all four boxes: it goes to the north-east one.
+    (center,) = np.flatnonzero((env.bin_centers == 5.0).all(axis=1))
+    assert membership[center].tolist() == [False, False, False, True]
+
+
+@pytest.mark.parametrize("layout", ["polygon", "mesh"])
+def test_arena_outline_region_keeps_every_bin(layout):
+    """A region drawn as the arena's outline covers the whole environment."""
+    env = _LAYOUTS[layout]()
+    regions = Regions()
+    regions.add("arena", polygon=env.arena.polygon)
+    env = env.with_regions(regions)
+    assert env.region_mask("arena").all()
+
+
+def test_outline_region_through_edge_centers_covers_its_area():
+    """Edge bins of a region drawn along the outermost centers go to one side.
+
+    Bins centered on the region's outline are half outside it. The region
+    holds those on its south and west edges, so it covers as many bins as fit
+    in its area.
+    """
+    lattice = np.arange(0.0, 31.0, 1.0)
+    samples = np.stack(np.meshgrid(lattice, lattice), axis=-1).reshape(-1, 2)
+    env = Environment.from_samples(samples, bin_size=2.0)
+    np.testing.assert_array_equal(np.unique(env.bin_centers), np.arange(0, 31, 2))
+    regions = Regions()
+    regions.add("arena", polygon=box(0.0, 0.0, 30.0, 30.0))
+    env = env.with_regions(regions)
+    covered = env.bin_centers[env.bins_in_region("arena")]
+    assert len(covered) * 2.0**2 == 30.0**2
+    assert covered.min() == 0.0
+    assert covered.max() == 28.0
 
 
 def test_subset_by_region_keeps_exactly_the_region_bins(subset_env):
@@ -211,30 +253,18 @@ def test_subset_by_polygon_matches_the_polygon_region(subset_env):
     )
 
 
-@pytest.mark.parametrize("include_boundary", [True, False])
-def test_subset_follows_include_boundary(include_boundary):
-    """subset(region_names=) and subset(polygon=) use the rule's boundary choice."""
+def test_subset_uses_the_edge_rule():
+    """subset(region_names=) and subset(polygon=) split edge centers alike."""
     edges = np.arange(0.0, 11.0, 2.0)  # centers 1, 3, 5, 7, 9
     env = Environment.from_grid_mask(np.ones((5, 5), dtype=bool), (edges, edges))
     zone = box(3.0, 3.0, 7.0, 7.0)  # edges through the centers at 3 and 7
     regions = Regions()
     regions.add("zone", polygon=zone)
     env = env.with_regions(regions)
-    expected = env.bin_centers[
-        env.bins_in_region("zone", include_boundary=include_boundary)
-    ]
-    for sub in (
-        env.subset(region_names=["zone"], include_boundary=include_boundary),
-        env.subset(polygon=zone, include_boundary=include_boundary),
-    ):
+    expected = env.bin_centers[env.bins_in_region("zone")]
+    for sub in (env.subset(region_names=["zone"]), env.subset(polygon=zone)):
         np.testing.assert_array_equal(sub.bin_centers, expected)
-    assert len(expected) == (9 if include_boundary else 1)
-
-
-def test_subset_refuses_include_boundary_with_a_mask():
-    env = _LAYOUTS["grid"]()
-    with pytest.raises(ValueError, match=r"include_boundary= with mask=[\s\S]*Fix:"):
-        env.subset(mask=np.ones(env.n_bins, dtype=bool), include_boundary=False)
+    assert len(expected) == 4
 
 
 def test_polygon_region_in_a_1d_environment_raises_with_fix():

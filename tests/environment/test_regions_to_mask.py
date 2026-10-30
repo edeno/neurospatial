@@ -6,7 +6,7 @@ discrete environment bins (the dual of mask_to_polygon).
 Tests cover:
 - Basic polygon rasterization
 - Multiple regions
-- Different include_boundary behaviors
+- Bin centers on a polygon's edge
 - Input validation and error handling
 """
 
@@ -123,50 +123,19 @@ class TestRegionsToMaskBasic:
 
 
 class TestRegionsToMaskBoundary:
-    """Test boundary inclusion behavior."""
+    """Bin centers on a polygon's edge follow the half-open rule."""
 
-    def test_include_boundary_true(self):
-        """Test that bins on boundary are included when include_boundary=True."""
+    def test_centers_on_the_south_and_west_edges_are_in(self):
         data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Create polygon with boundary exactly on bin center
-        # Bin centers are at 1, 3, 5, 7, 9 (with bin_size=2)
-        regions = Regions()
-        regions.add("test", polygon=box(3, 3, 7, 7))
-
-        mask_include = regions_to_mask(env, regions, include_boundary=True)
-
-        # Bins with centers at (3,3), (3,5), (3,7) etc should be included
-        boundary_bin = env.bin_at(np.array([[3.0, 5.0]]))
-        assert mask_include[boundary_bin[0]]
-
-    def test_include_boundary_false(self):
-        """Test that bins on boundary are excluded when include_boundary=False."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
+        env = Environment.from_samples(data, bin_size=2.0)  # centers 0, 2, ..., 10
 
         regions = Regions()
-        regions.add("test", polygon=box(3, 3, 7, 7))
+        regions.add("test", polygon=box(2, 2, 6, 6))
 
-        mask_exclude = regions_to_mask(env, regions, include_boundary=False)
-        mask_include = regions_to_mask(env, regions, include_boundary=True)
-
-        # Excluding boundary should give <= bins than including boundary
-        assert np.sum(mask_exclude) <= np.sum(mask_include)
-
-    def test_boundary_default_is_true(self):
-        """Test that default behavior includes boundary."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        regions = Regions()
-        regions.add("test", polygon=box(3, 3, 7, 7))
-
-        mask_default = regions_to_mask(env, regions)
-        mask_explicit = regions_to_mask(env, regions, include_boundary=True)
-
-        np.testing.assert_array_equal(mask_default, mask_explicit)
+        np.testing.assert_array_equal(
+            env.bin_centers[regions_to_mask(env, regions)],
+            [[2.0, 2.0], [2.0, 4.0], [4.0, 2.0], [4.0, 4.0]],
+        )
 
 
 class TestRegionsToMaskEdgeCases:
@@ -245,17 +214,6 @@ class TestRegionsToMaskInputValidation:
 
         with pytest.raises(TypeError):
             regions_to_mask(env, 123)  # Invalid type
-
-    def test_invalid_boundary_type(self):
-        """Test that invalid include_boundary type raises TypeError."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        regions = Regions()
-        regions.add("test", polygon=box(3, 3, 7, 7))
-
-        with pytest.raises(TypeError):
-            regions_to_mask(env, regions, include_boundary="yes")  # Should be bool
 
 
 class TestRegionsToMaskDuality:

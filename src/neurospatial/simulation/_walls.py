@@ -23,6 +23,10 @@ if TYPE_CHECKING:
 # of one chunk of ray distances to about 4 million elements each.
 _INTERSECTIONS_PER_CHUNK = 4_000_000
 
+# Mirrors of one step before a blocked walker waits: 32 turn a step out of a
+# corner as sharp as 180 / 32, about 6 degrees.
+_MAX_BOUNCES = 32
+
 
 class Walls:
     """Straight wall segments.
@@ -97,18 +101,19 @@ class Walls:
         """What keeps an animal inside ``env``: its outline and internal walls.
 
         The outline is the arena's polygon when it is known, else the outline
-        of the bins; None when neither is planar geometry. Outline segments
-        are one-sided, open toward the inside.
+        of the bins; None when neither is planar geometry (bins that are not
+        2-D areas, such as a track's lengths). Outline segments are one-sided,
+        open toward the inside.
         """
         from neurospatial.geometry import materialize_cells
 
         arena = env.arena
         domain = arena.polygonal_domain() if arena.domain_known else None
         if domain is None:
-            try:
-                domain = unary_union(list(materialize_cells(env.binning)))
-            except ValueError:
+            bins = env.binning.bins
+            if bins.n_dims != 2 or not bins.has_measure_dim(2):
                 return None
+            domain = unary_union(list(materialize_cells(env.binning)))
         # Counter-clockwise outlines and clockwise holes: the inside is on
         # the left of every outline segment.
         rings = shapely.get_rings(shapely.get_parts(shapely.orient_polygons(domain)))
@@ -223,21 +228,25 @@ class Walls:
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Take one step without crossing a wall; return position and heading.
 
-        A step that would cross a wall is mirrored about it, up to twice (a
-        corner); a walker still blocked, or one in ``"stop"`` mode, stays put.
-        A walker starting on a wall leaves it toward an open side.
+        A step that would cross a wall is mirrored about it, and again about
+        each wall the mirrored step meets, up to :data:`_MAX_BOUNCES` times:
+        in a corner of angle ``a`` the mirrors alternate between its two
+        sides and turn the step by ``2 a`` per pair, so a step heading into
+        a corner as sharp as about 6 degrees turns out of it. A walker still
+        blocked, or one in ``"stop"`` mode, stays put. A walker starting on a
+        wall leaves it toward an open side.
         """
         length = float(np.linalg.norm(step))
         if length < self.clearance:
             self.clearance -= length
             return position + step, unit
-        for _bounce in range(3):
+        for bounce in range(_MAX_BOUNCES + 1):
             wall = self.first_hit(position, step)
             if wall is None:
                 moved = position + step
                 self._set_clearance(moved)
                 return moved, unit
-            if boundary_mode == "stop":
+            if boundary_mode == "stop" or bounce == _MAX_BOUNCES:
                 break
             # Mirror about the wall: keep the component along it, reverse the
             # component into it.

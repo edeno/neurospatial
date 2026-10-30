@@ -243,9 +243,11 @@ def detect_region_visits(
         Environment containing the named polygon regions.
     region_names : sequence of str
         Nonempty, unique region names. Bin-center membership follows
-        ``regions_to_mask`` with boundaries included. Selected regions may
-        not share active bins; ambiguous membership raises rather than using
-        the order of names as a priority rule.
+        ``regions_to_mask``: regions that only share edges, such as
+        quadrants, split the bins on those edges and never share a bin.
+        Selected regions that overlap in area may not share active bins;
+        ambiguous membership raises rather than using the order of names as
+        a priority rule.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are

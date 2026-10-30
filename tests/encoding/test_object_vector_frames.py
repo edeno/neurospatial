@@ -57,7 +57,7 @@ def test_allocentric_direction_follows_the_room_axes(
     model = PlaceCellModel(
         ou_env, center=obj[0] + np.asarray(field_offset), width=6, max_rate=10
     )
-    spikes = generate_poisson_spikes(model.firing_rate(positions), times, seed=3)
+    spikes = generate_poisson_spikes(model.firing_rate(times, positions), times, seed=3)
     result = encoding.compute_object_vector_rate(ou_env, spikes, times, positions, obj)
     error = np.angle(np.exp(1j * (result.preferred_direction() - expected)))
     assert abs(error) <= np.pi / 6

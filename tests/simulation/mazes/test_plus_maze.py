@@ -37,7 +37,7 @@ class TestMakePlusMaze:
         """env_2d should have a plus-shaped spatial extent."""
         from neurospatial.simulation.mazes.plus_maze import PlusMazeDims, make_plus_maze
 
-        dims = PlusMazeDims(arm_length=45.0, width=10.0)
+        dims = PlusMazeDims(arm_length=45.0, corridor_width=10.0)
         maze = make_plus_maze(dims=dims)
 
         # Get spatial extent from bin_centers
@@ -110,7 +110,7 @@ class TestMakePlusMaze:
         """Regions should be at expected positions for plus maze geometry."""
         from neurospatial.simulation.mazes.plus_maze import PlusMazeDims, make_plus_maze
 
-        dims = PlusMazeDims(arm_length=45.0, width=10.0)
+        dims = PlusMazeDims(arm_length=45.0, corridor_width=10.0)
         maze = make_plus_maze(dims=dims)
 
         # Get regions
@@ -133,7 +133,7 @@ class TestMakePlusMaze:
 
         # Arm ends are centred in each arm's end square, half a corridor
         # width back from the far end wall.
-        d = dims.arm_length - dims.width / 2
+        d = dims.arm_length - dims.corridor_width / 2
         np.testing.assert_allclose(north_end.data, [0.0, d])
         np.testing.assert_allclose(south_end.data, [0.0, -d])
         np.testing.assert_allclose(east_end.data, [d, 0.0])
@@ -142,7 +142,9 @@ class TestMakePlusMaze:
         for region in (north_end, south_end, east_end, west_end):
             point = Point(region.data)
             assert polygon.contains(point)
-            assert polygon.boundary.distance(point) == pytest.approx(dims.width / 2)
+            assert polygon.boundary.distance(point) == pytest.approx(
+                dims.corridor_width / 2
+            )
 
     def test_default_footprint_is_twice_the_arm_length(self):
         """Arms reach arm_length from the centre: a 90 x 90 cm footprint."""
@@ -234,7 +236,7 @@ class TestMakePlusMaze:
         """Custom dimensions should be respected."""
         from neurospatial.simulation.mazes.plus_maze import PlusMazeDims, make_plus_maze
 
-        dims = PlusMazeDims(arm_length=60.0, width=15.0)
+        dims = PlusMazeDims(arm_length=60.0, corridor_width=15.0)
         maze = make_plus_maze(dims=dims)
 
         # Check that bin_centers span approximately the expected range
@@ -288,7 +290,7 @@ class TestPlusMazeTrackGraph:
         """Track should cover the full plus maze extent."""
         from neurospatial.simulation.mazes.plus_maze import PlusMazeDims, make_plus_maze
 
-        dims = PlusMazeDims(arm_length=45.0, width=10.0)
+        dims = PlusMazeDims(arm_length=45.0, corridor_width=10.0)
         maze = make_plus_maze(dims=dims, include_track=True)
         assert maze.env_track is not None
 

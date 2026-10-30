@@ -201,6 +201,7 @@ class TestPorts:
             assert landmarks[name].kind == "point"
             assert dict(landmarks[name].metadata) == {
                 "role": "reward_port",
+                "port_type": "liquid_port",
                 "port": letter,
                 "hex": hex_id,
             }

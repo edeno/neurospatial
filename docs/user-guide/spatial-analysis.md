@@ -981,7 +981,6 @@ def subset(
     mask: NDArray[np.bool_] | None = None,
     region_names: Sequence[str] | None = None,
     polygon: shapely.Polygon | None = None,
-    include_boundary: bool = True,
     invert: bool = False,
     name: str | None = None,
 ) -> Environment:
@@ -994,14 +993,11 @@ def subset(
         Boolean mask of bins to keep. True = keep, False = discard.
     region_names : Sequence[str], optional
         Keep the bins these named regions cover: the bin containing a point
-        region, or the bins whose centers lie inside a polygon region or on
-        its edge.
+        region, or the bins whose centers lie in a polygon region.
     polygon : shapely.Polygon, optional
-        Keep bins whose centers lie inside this polygon or on its edge
-        (2D only).
-    include_boundary : bool, default=True
-        For polygons, keep bins whose centers lie exactly on the edge; with
-        False keep only centers strictly inside. Refused with ``mask=``.
+        Keep bins whose centers lie in this polygon (2D only). A center
+        exactly on the edge is kept when nudging it north-east moves it
+        inside, as for ``bins_in_region``.
     invert : bool, default=False
         If True, keep the complement of the selection.
     name : str, optional
@@ -1313,8 +1309,6 @@ Determine which bins belong to which regions (supports multiple membership).
 def region_membership(
     self,
     regions: Regions | None = None,
-    *,
-    include_boundary: bool = True,
 ) -> NDArray[np.bool_]:
     """
     Get boolean membership matrix for bins in regions.
@@ -1324,9 +1318,6 @@ def region_membership(
     regions : Regions, optional
         Regions to test membership for. If None, uses self.regions.
         Default is None.
-    include_boundary : bool, optional
-        If True, bins on region boundaries are considered members.
-        If False, only bins strictly inside regions. Default is True.
 
     Returns
     -------
@@ -1339,7 +1330,9 @@ def region_membership(
 
 !!! note "Boolean Matrix"
     Returns a 2D boolean array `(n_bins, n_regions)`, NOT a 1D region index array.
-    This allows bins to belong to multiple overlapping regions.
+    This allows bins to belong to multiple overlapping regions. Regions that
+    only share an edge never share a bin: a bin center on the shared edge goes
+    to the region a nudge north-east would enter.
 
 **Example:**
 
@@ -1390,9 +1383,6 @@ custom_regions = Regions()
 custom_regions.add('area1', polygon=poly1)
 custom_regions.add('area2', polygon=poly2)
 membership_custom = env.region_membership(regions=custom_regions)
-
-# Strict interior membership (exclude boundaries)
-membership_strict = env.region_membership(include_boundary=False)
 
 # Convert to 1D region index (for non-overlapping regions)
 # Assigns first matching region, -1 for no membership

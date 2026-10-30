@@ -3,7 +3,7 @@
 This module provides utility functions for creating maze geometries:
 - Corridor polygons from line segments
 - Circular arenas
-- Star-topology track graphs
+- The union of corridor pieces into one floor
 
 All dimensions are in centimeters (cm) by convention.
 
@@ -19,11 +19,14 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
-import networkx as nx
 import numpy as np
-from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 from shapely.ops import unary_union
+
+if TYPE_CHECKING:
+    from neurospatial.simulation.mazes._base import MazeDims
 
 
 def make_corridor_polygon(
@@ -190,9 +193,9 @@ def make_circular_arena(
 
 
 def union_polygons(
-    polygons: Sequence[Polygon],
+    polygons: Sequence[Polygon | MultiPolygon],
     simplify_tolerance: float | None = None,
-) -> Polygon:
+) -> Polygon | MultiPolygon:
     """Combine multiple polygons into a single geometry.
 
     Performs a union of all polygons, optionally simplifying the result
@@ -200,16 +203,18 @@ def union_polygons(
 
     Parameters
     ----------
-    polygons : Sequence[Polygon]
-        List of Shapely Polygons to combine.
+    polygons : Sequence[Polygon or MultiPolygon]
+        Shapely polygons to combine.
     simplify_tolerance : float, optional
         If provided, simplify the result with this tolerance.
         Useful for cleaning up small geometric artifacts.
 
     Returns
     -------
-    Polygon
-        Combined polygon (may be MultiPolygon if inputs don't overlap).
+    Polygon or MultiPolygon
+        The combined geometry: a Polygon when the pieces join, a
+        MultiPolygon when some do not touch the others. Use
+        :func:`single_floor` to require one connected floor.
 
     Raises
     ------
@@ -235,91 +240,85 @@ def union_polygons(
     return result
 
 
-def make_star_graph(
-    center: tuple[float, float],
-    arm_endpoints: Sequence[tuple[float, float]],
-    spacing: float | None = None,
-) -> nx.Graph:
-    """Create a star-topology track graph.
-
-    Creates a graph with a central node connected to each arm endpoint.
-    Optionally adds intermediate nodes along each arm at regular spacing.
+def single_floor(geometry: Polygon | MultiPolygon, dims: MazeDims) -> Polygon:
+    """Return a maze's floor as one polygon, or refuse dimensions that split it.
 
     Parameters
     ----------
-    center : tuple[float, float]
-        Position (x, y) of the central node.
-    arm_endpoints : Sequence[tuple[float, float]]
-        List of (x, y) positions for arm endpoints.
-    spacing : float, optional
-        If provided, add intermediate nodes along arms at this spacing.
-        Nodes are placed from center outward.
+    geometry : Polygon or MultiPolygon
+        The union of the maze's corridors, rooms and boxes.
+    dims : MazeDims
+        The dimensions the floor was built from, named in the error.
 
     Returns
     -------
-    nx.Graph
-        NetworkX graph with:
-        - Node attributes: 'pos' (2D position tuple)
-        - Edge attributes: 'distance' (Euclidean distance)
+    Polygon
+        ``geometry`` itself when it is one connected piece.
+
+    Raises
+    ------
+    ValueError
+        If the pieces do not join into one floor.
 
     Examples
     --------
-    >>> graph = make_star_graph(
-    ...     center=(0, 0),
-    ...     arm_endpoints=[(50, 0), (-50, 0), (0, 50), (0, -50)],
-    ... )
-    >>> graph.number_of_nodes()
-    5
-    >>> graph.number_of_edges()
-    4
-    >>> "center" in graph.nodes()
-    True
+    >>> from neurospatial.simulation.mazes._base import MazeDims
+    >>> floor = union_polygons([make_corridor_polygon((0, 0), (100, 0), width=10)])
+    >>> single_floor(floor, MazeDims()).area
+    1000.0
     """
-    graph = nx.Graph()
+    if isinstance(geometry, Polygon) and not geometry.is_empty:
+        return geometry
+    n_pieces = len(getattr(geometry, "geoms", ()))
+    raise ValueError(
+        f"{dims!r} builds a maze floor in {n_pieces} separate pieces, so an "
+        "animal could not walk between them. Choose dimensions whose "
+        "corridors, rooms and boxes meet."
+    )
 
-    # Add center node
-    graph.add_node("center", pos=center)
 
-    center_arr = np.array(center)
+def compass_quadrants(floor: Polygon) -> dict[str, Polygon]:
+    """Split an origin-centred floor into its NE, NW, SE and SW quarters.
 
-    for i, endpoint in enumerate(arm_endpoints):
-        endpoint_arr = np.array(endpoint)
-        arm_direction = endpoint_arr - center_arr
-        arm_length = np.linalg.norm(arm_direction)
+    Each quadrant is the part of ``floor`` on one side of both the
+    north-south and the east-west line through the origin, with north +y
+    and east +x. Together they cover the floor without overlapping, and
+    they share their edges, so region membership puts each bin or position
+    on a dividing line in exactly one of them.
 
-        if arm_length == 0:
-            raise ValueError(f"Arm endpoint {i} is at the same position as center")
+    Parameters
+    ----------
+    floor : Polygon
+        An open-field floor centred on the origin, in cm.
 
-        endpoint_name = f"arm_{i}_end"
+    Returns
+    -------
+    dict of str to Polygon
+        ``{"NE": ..., "NW": ..., "SE": ..., "SW": ...}``.
 
-        if spacing is None or spacing >= arm_length:
-            # Simple case: just center and endpoint
-            graph.add_node(endpoint_name, pos=tuple(endpoint_arr))
-            graph.add_edge("center", endpoint_name, distance=arm_length)
-        else:
-            # Add intermediate nodes
-            unit_dir = arm_direction / arm_length
-
-            # How many intermediate nodes?
-            n_segments = int(np.ceil(arm_length / spacing))
-            actual_spacing = arm_length / n_segments
-
-            prev_node = "center"
-            for seg_idx in range(1, n_segments):
-                # Position along arm
-                pos = center_arr + unit_dir * (seg_idx * actual_spacing)
-                node_name = f"arm_{i}_node_{seg_idx}"
-                graph.add_node(node_name, pos=tuple(pos))
-                graph.add_edge(prev_node, node_name, distance=actual_spacing)
-                prev_node = node_name
-
-            # Add endpoint
-            graph.add_node(endpoint_name, pos=tuple(endpoint_arr))
-            # Distance from last intermediate to endpoint
-            last_dist = arm_length - (n_segments - 1) * actual_spacing
-            graph.add_edge(prev_node, endpoint_name, distance=last_dist)
-
-    return graph
+    Examples
+    --------
+    >>> from shapely.geometry import box
+    >>> quadrants = compass_quadrants(box(-15.0, -15.0, 15.0, 15.0))
+    >>> quadrants["NE"].bounds
+    (0.0, 0.0, 15.0, 15.0)
+    """
+    reach = float(np.max(np.abs(floor.bounds)))
+    quadrants = {}
+    for name, (sign_x, sign_y) in {
+        "NE": (1, 1),
+        "NW": (-1, 1),
+        "SE": (1, -1),
+        "SW": (-1, -1),
+    }.items():
+        quarter = box(
+            min(0.0, sign_x * reach),
+            min(0.0, sign_y * reach),
+            max(0.0, sign_x * reach),
+            max(0.0, sign_y * reach),
+        )
+        quadrants[name] = floor.intersection(quarter)
+    return quadrants
 
 
 def corridor_width(corridor: Polygon) -> float:

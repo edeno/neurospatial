@@ -15,7 +15,7 @@ Barnes, "in her original study, utilized a circular platform (122 cm in
 diameter) with 18 circular holes (9.5 cm in diameter) evenly spaced around the
 periphery." That account does not give the distance from the rim to the
 holes; the 12 cm default is an estimate read from the Barnes maze drawn in Wijnen et al.
-(2024), Brain Struct Funct 229:823-841, doi:10.1007/s00429-024-02771-x,
+(2024), Brain Struct Funct 229(4), 823–841, doi:10.1007/s00429-024-02771-x,
 Fig. 1c, where the hole centres lie at about 0.8 of the platform radius.
 
 Gawel et al. (2018) also describe where the apparatus puts the animal and its
@@ -53,7 +53,14 @@ from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_count,
+    check_lengths,
+    refuse,
+    warn_if_bins_too_coarse,
+)
 from neurospatial.simulation.mazes._geometry import make_circular_arena
 
 
@@ -103,6 +110,34 @@ class BarnesDims(MazeDims):
     hole_radius: float = 4.75
     hole_inset: float = 12.0
 
+    def __post_init__(self) -> None:
+        check_lengths(self, "diameter", "hole_radius", "hole_inset")
+        check_count(
+            self,
+            "n_holes",
+            2,
+            "a Barnes maze needs the escape hole and at least one other hole",
+        )
+        if self.hole_inset < self.hole_radius:
+            refuse(
+                self,
+                ("hole_inset", "hole_radius"),
+                "puts each hole's centre closer to the rim than the hole's "
+                "radius, so the holes run off the platform",
+                "Use a hole_inset of at least hole_radius.",
+            )
+        # Neighbouring holes on the ring are 2 r sin(pi / n_holes) apart.
+        ring_radius = self.diameter / 2.0 - self.hole_inset
+        if ring_radius * np.sin(np.pi / self.n_holes) <= self.hole_radius:
+            refuse(
+                self,
+                ("diameter", "n_holes", "hole_radius", "hole_inset"),
+                "puts the holes so close together on their ring, "
+                f"{ring_radius:.4g} cm from the centre, that neighbouring holes "
+                "overlap",
+                "Use fewer or smaller holes, or a smaller hole_inset.",
+            )
+
 
 def make_barnes_maze(
     dims: BarnesDims | None = None,
@@ -145,7 +180,10 @@ def make_barnes_maze(
     - Angles: 2π * i / n_holes for i = 0, 1, ..., n_holes-1
 
     Every hole is a landmark in ``env_2d.landmarks`` with a region of the
-    same name: a circle of the hole's diameter (9.5 cm by default).
+    same name: a circle of the hole's diameter (9.5 cm by default). With
+    bins coarser than about 6.7 cm (the hole's radius times sqrt(2)), a
+    hole's circle can hold no bin centre; the maze then warns, naming a bin
+    size that covers every hole.
 
     - escape_hole: the hole above the escape box, the hole at
       ``escape_hole_index``. Landmark role ``"escape_hole"``.
@@ -264,4 +302,7 @@ def make_barnes_maze(
     # No track graph for open field
     env_track = None
 
+    warn_if_bins_too_coarse(
+        env_2d, maze="Barnes maze", bin_size=bin_size, narrowest_corridor=None
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)

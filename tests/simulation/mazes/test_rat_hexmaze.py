@@ -213,8 +213,8 @@ class TestDims:
 
     @pytest.mark.parametrize("n_modules", [0, 5])
     def test_rejects_unsupported_module_counts(self, n_modules):
-        with pytest.raises(ValueError, match="n_modules must be 1, 2, 3 or 4"):
-            make_rat_hexmaze(RatHexmazeDims(n_modules=n_modules))
+        with pytest.raises(ValueError, match="Use n_modules 1, 2, 3 or 4"):
+            RatHexmazeDims(n_modules=n_modules)
 
     def test_corridor_width_sets_the_track_width(self):
         maze = make_rat_hexmaze(RatHexmazeDims(corridor_width=14.0), bin_size=8.0)

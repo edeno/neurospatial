@@ -99,7 +99,11 @@ class TestMakeCheeseboardMaze:
         assert all(name.startswith("well_") for name in env.landmarks)
         for name, lm in env.landmarks.items():
             assert lm.kind == "point"
-            assert dict(lm.metadata) == {"role": "reward_port", "diameter": 2.5}
+            assert dict(lm.metadata) == {
+                "role": "reward_port",
+                "port_type": "food_well",
+                "diameter": 2.5,
+            }
             np.testing.assert_array_equal(lm.data, env.regions[name].data)
         np.testing.assert_array_equal(env.landmarks["well_7_7"].data, [0.0, 0.0])
         np.testing.assert_array_equal(env.landmarks["well_8_7"].data, [7.5, 0.0])

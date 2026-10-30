@@ -131,7 +131,7 @@ def load_all_neurons():
     ]
     return {
         f"unit_{i}": generate_poisson_spikes(
-            cell.firing_rate(positions), times, seed=i
+            cell.firing_rate(times, positions), times, seed=i
         )
         for i, cell in enumerate(cells)
     }

@@ -3957,7 +3957,7 @@ class TestSpatialRateRecovery:
             max_rate=self.MAX_RATE,
             baseline_rate=0.1,
         )
-        rates = model.firing_rate(positions)
+        rates = model.firing_rate(times, positions)
         spike_times = generate_poisson_spikes(rates, times, seed=42)
         return env, spike_times, times, positions
 
@@ -4024,7 +4024,7 @@ class TestSpatialRateNaNPositionHandling:
             env, center=self.TRUE_CENTER, width=5.0, max_rate=30.0, baseline_rate=0.1
         )
         spike_times = generate_poisson_spikes(
-            model.firing_rate(positions), times, seed=7
+            model.firing_rate(times, positions), times, seed=7
         )
 
         clean = compute_spatial_rate(

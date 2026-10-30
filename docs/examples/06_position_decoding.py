@@ -194,14 +194,13 @@ if np.any(~decoder.spatial_support):
 
 # %% [markdown]
 # All 51 track bins have enough training occupancy, all test positions lie in
-# those bins, and all 599 test intervals have measurable errors. Yet the 95th
-# percentile error is 98 cm, almost the full track length. Missing spatial
-# coverage does not explain that large tail. Inspect the learned place fields
-# and position traces next.
+# those bins, and all 599 test intervals have measurable errors. The 95th
+# percentile error is 6 cm, three spatial bins, so large errors are rare.
+# Inspect the learned place fields and position traces next.
 #
-# The three example fields below are strongest in the track interior. The
-# simulated population's field centers are between 20 and 80 cm, so the ends
-# have weak firing even though the animal spent enough time there.
+# The three example fields below lie at different places along the track. The
+# simulated population's field centers are evenly spaced from one end of the
+# track to the other, so every location has neurons that fire there.
 
 # %%
 fig, ax = plt.subplots()
@@ -247,16 +246,17 @@ fig.tight_layout()
 plt.show()
 
 # %% [markdown]
-# In this run, the MAP sometimes jumps to the opposite track end while the
-# animal is near an end. With weak firing at both ends, intervals with no
-# population spikes can favor the wrong end. The decoder treats time bins
-# separately, so no movement prior discourages that jump. Enough occupancy to
-# estimate a field does not guarantee informative spikes for decoding.
+# In this run, the MAP follows the tracked position closely. One of the 599
+# test intervals is the exception: no neuron fired in it, so it carries no
+# evidence about position, and its estimate is 70 cm off. The decoder treats
+# time bins separately, so no movement prior keeps such an estimate near its
+# neighbors. With fewer neurons, lower rates or parts of the track without
+# fields, such intervals become common.
 #
 # The next plot shows the first 30 s of test estimates in centimeters and the
 # error distribution for the full test period. The median of 2 cm and 95th
-# percentile of 98 cm describe different parts of that distribution; report
-# both rather than allowing the median to hide the large errors.
+# percentile of 6 cm describe the bulk of that distribution, and the largest
+# error lies far beyond both; report the tail as well as the median.
 
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))

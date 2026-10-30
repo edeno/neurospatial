@@ -20,10 +20,10 @@ in diameter", and the platform is "usually about 10-15 cm in diameter and thus
 between 1/50th and 1/100th of the surface area of the pool". The default
 150 cm pool and 15 cm platform lie in those ranges.
 
-The platform sits by default in the centre of the NE quadrant, which by the
-usual convention is halfway between the pool centre and the wall along the
-quadrant's diagonal; that placement is a convention, not taken from Morris
-(1984) (UNVERIFIED). North is +y and east is +x.
+The platform sits by default in the centre of the NE quadrant, halfway
+between the pool centre and the wall along the quadrant's diagonal. The
+NE-quadrant-centre placement is a common convention; Morris (1984) does not
+specify it. North is +y and east is +x.
 
 The quadrants are quarters of the pool for probe trials, in which "the
 escape platform is removed from the pool" and "a well-trained rat will swim
@@ -53,13 +53,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from shapely.geometry import box
 
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
-from neurospatial.simulation.mazes._geometry import make_circular_arena
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    refuse,
+    warn_if_bins_too_coarse,
+)
+from neurospatial.simulation.mazes._geometry import (
+    compass_quadrants,
+    make_circular_arena,
+)
 
 
 @dataclass(frozen=True)
@@ -96,6 +104,16 @@ class WatermazeDims(MazeDims):
     pool_diameter: float = 150.0
     platform_radius: float = 7.5
 
+    def __post_init__(self) -> None:
+        check_lengths(self, "pool_diameter", "platform_radius")
+        if 2.0 * self.platform_radius >= self.pool_diameter:
+            refuse(
+                self,
+                ("pool_diameter", "platform_radius"),
+                "makes the platform no smaller than the pool",
+                "Use a platform_radius below half the pool_diameter.",
+            )
+
 
 def make_watermaze(
     dims: WatermazeDims | None = None,
@@ -119,7 +137,8 @@ def make_watermaze(
         Position (x, y) of the platform center in cm. If None, defaults to
         the centre of the NE quadrant, halfway between the pool centre and the
         wall along the NE diagonal: ``(R / (2 * sqrt(2)), R / (2 * sqrt(2)))``
-        with ``R = pool_diameter / 2``.
+        with ``R = pool_diameter / 2``. The whole platform must lie in the
+        pool: its centre at most ``R - platform_radius`` from the pool centre.
 
     Returns
     -------
@@ -127,6 +146,11 @@ def make_watermaze(
         Contains:
         - env_2d: 2D circular environment
         - env_track: None (open field has no track topology)
+
+    Raises
+    ------
+    ValueError
+        If the platform does not fit in the pool at ``platform_position``.
 
     Notes
     -----
@@ -141,10 +165,13 @@ def make_watermaze(
       and a circular region of the platform's diameter, for platform
       crossings and time in the platform zone.
     - NE, NW, SE, SW: the pool's quarters, bounded by the north-south and
-      east-west lines through its centre (NE is x > 0, y > 0). They are
-      regions only, for quadrant occupancy in probe trials; together they
-      cover the pool without overlapping. A bin whose centre lies exactly on
-      a dividing line belongs to both quadrants it touches.
+      east-west lines through its centre. They are regions only, for
+      quadrant occupancy in probe trials. Together they cover the pool
+      without overlapping, and every bin is in exactly one quadrant: a bin
+      whose centre lies exactly on a dividing line counts as east of the
+      north-south line and north of the east-west line, so NE holds the
+      bins with x >= 0 and y >= 0 and SW those with x < 0 and y < 0
+      (see :meth:`~neurospatial.Environment.bins_in_region`).
 
     Examples
     --------
@@ -189,6 +216,16 @@ def make_watermaze(
     # Default platform position: centre of the NE quadrant
     if platform_position is None:
         platform_position = (c, c)
+    platform_x, platform_y = (float(v) for v in platform_position)
+    distance = np.hypot(platform_x, platform_y)
+    if not np.isfinite(distance) or distance + dims.platform_radius > radius:
+        raise ValueError(
+            f"platform_position={platform_position!r} puts the "
+            f"{dims.platform_radius} cm-radius platform where it does not fit in "
+            f"the pool, {radius} cm in radius around (0, 0): its centre must be at "
+            f"most {radius - dims.platform_radius:.4g} cm from the pool centre. "
+            "Move the platform toward the centre or use a smaller platform_radius."
+        )
 
     # Create circular pool polygon
     pool_polygon = make_circular_arena(
@@ -205,7 +242,7 @@ def make_watermaze(
     )
     env_2d = env_2d.with_metadata(units="cm")
 
-    platform_center = (float(platform_position[0]), float(platform_position[1]))
+    platform_center = (platform_x, platform_y)
     region_builder = Regions()
     region_builder.add(
         "platform",
@@ -215,19 +252,8 @@ def make_watermaze(
     )
 
     # Each quadrant is the pool's quarter on one side of both axes
-    for name, (sign_x, sign_y) in {
-        "NE": (1, 1),
-        "NW": (-1, 1),
-        "SE": (1, -1),
-        "SW": (-1, -1),
-    }.items():
-        quarter = box(
-            min(0.0, sign_x * radius),
-            min(0.0, sign_y * radius),
-            max(0.0, sign_x * radius),
-            max(0.0, sign_y * radius),
-        )
-        region_builder.add(name, polygon=pool_polygon.intersection(quarter))
+    for name, quadrant in compass_quadrants(pool_polygon).items():
+        region_builder.add(name, polygon=quadrant)
 
     platform = Landmark(
         "platform", "point", platform_center, metadata={"role": "platform"}
@@ -237,4 +263,7 @@ def make_watermaze(
     # No track graph for open field
     env_track = None
 
+    warn_if_bins_too_coarse(
+        env_2d, maze="watermaze", bin_size=bin_size, narrowest_corridor=None
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)

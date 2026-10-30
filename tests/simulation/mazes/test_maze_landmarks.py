@@ -9,25 +9,27 @@ import numpy as np
 import pytest
 import shapely
 
-import neurospatial.simulation.mazes as mazes
 from neurospatial.simulation.mazes import MAZE_LANDMARK_ROLES
 
-MAKERS = sorted(
-    name
-    for name in dir(mazes)
-    if name.startswith("make_")
-    and (name.endswith("maze") or name == "make_linear_track")
-)
 
-
-@pytest.fixture(scope="module", params=MAKERS)
-def maze(request):
-    return getattr(mazes, request.param)()
+@pytest.fixture
+def maze(default_maze):
+    return default_maze
 
 
 def test_landmark_roles_are_known(maze):
     roles = {lm.metadata.get("role") for lm in maze.env_2d.landmarks.values()}
     assert roles <= MAZE_LANDMARK_ROLES
+
+
+# The reward hardware a port landmark's ``port_type`` may name.
+PORT_TYPES = {"food_well", "food_cup", "plastic_cap", "liquid_port"}
+
+
+def test_every_reward_port_names_its_hardware(maze):
+    for name, lm in maze.env_2d.landmarks.items():
+        if lm.metadata["role"] == "reward_port":
+            assert lm.metadata["port_type"] in PORT_TYPES, name
 
 
 def test_each_apparatus_landmark_has_a_region_around_it(maze):

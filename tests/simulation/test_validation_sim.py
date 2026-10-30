@@ -7,34 +7,16 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from neurospatial.simulation import PlaceCellModel, SimulationSession, simulate_session
-from neurospatial.simulation.validation import validate_simulation
-
-
-def test_select_by_label(simple_2d_env):
-    session = simulate_session(
-        simple_2d_env, duration=60, n_cells=5, seed=0, width=12, show_progress=False
-    )
-    full = validate_simulation(session)
-    selected = validate_simulation(session, unit_ids=[0, 2, 4])
-    for key in ("center_errors", "correlations"):
-        np.testing.assert_array_equal(selected[key], full[key][[0, 2, 4]])
-
-    labels = np.array([7, 11, 19, 23, 31], dtype=np.int64)
-    relabeled = replace(
-        session,
-        unit_ids=labels,
-        ground_truth={
-            int(label): session.ground_truth[i] for i, label in enumerate(labels)
-        },
-    )
-    reordered = validate_simulation(relabeled, unit_ids=[31, 7, 19])
-    for key in ("center_errors", "correlations"):
-        np.testing.assert_array_equal(reordered[key], full[key][[4, 0, 2]])
-    with pytest.raises(ValueError, match=r"99.*Valid labels:.*7.*11.*\n.*\nFix:"):
-        validate_simulation(relabeled, unit_ids=[99])
-    with pytest.raises(TypeError):
-        validate_simulation(env=session.env)
+from neurospatial.simulation import (
+    PlaceCellModel,
+    SimulationSession,
+    border_cell_session,
+    simulate_session,
+)
+from neurospatial.simulation.validation import (
+    SimulationValidationResult,
+    validate_simulation,
+)
 
 
 def test_plot_session_summary_labels(simple_2d_env):
@@ -70,345 +52,220 @@ def test_plot_session_summary_labels(simple_2d_env):
     plt.close(fig)
 
 
-class TestValidateSimulation:
-    """Tests for validate_simulation() function."""
+@pytest.fixture(scope="module")
+def place_session(connected_arena_env):
+    """Five 12 cm place fields over three minutes: every cell is recovered."""
+    return simulate_session(
+        connected_arena_env,
+        duration=180.0,
+        n_cells=5,
+        cell_type="place",
+        width=12.0,
+        max_rate=20.0,
+        seed=0,
+        show_progress=False,
+    )
 
-    def test_validate_simulation_with_session(self, simple_2d_env):
-        """validate_simulation() should accept SimulationSession."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
-        # Create session with place cells
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=3,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
+@pytest.fixture(scope="module")
+def place_report(place_session):
+    return validate_simulation(place_session)
 
-        # Validate
-        result = validate_simulation(session)
 
-        # Check return structure
-        assert isinstance(result, dict)
-        assert "center_errors" in result
-        assert "correlations" in result
-        assert "summary" in result
-        assert "passed" in result
-
-    def test_validate_simulation_returns_all_fields(self, simple_2d_env):
-        """validate_simulation() should return all required fields."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=5,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
-
-        result = validate_simulation(session)
-
-        # Required fields
-        assert "center_errors" in result
-        assert "correlations" in result
-        assert "summary" in result
-        assert "passed" in result
-
-        # Check types
-        assert isinstance(result["center_errors"], np.ndarray)
-        assert isinstance(result["correlations"], np.ndarray)
-        assert isinstance(result["summary"], str)
-        assert isinstance(result["passed"], bool)
-
-    def test_validate_simulation_center_errors(self, simple_2d_env):
-        """validate_simulation() should compute center errors for each cell."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=3,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
-
-        result = validate_simulation(session)
-
-        # Should have one error per cell
-        assert len(result["center_errors"]) == 3
-
-        # Non-NaN errors are non-negative and finite.
-        #
-        # NOTE: we deliberately do *not* bound the center error by a small
-        # multiple of the bin size here. The place-cell simulator places
-        # ground-truth field centers along the arena boundary (y = 0), where
-        # the Ornstein-Uhlenbeck trajectory spends little time. The detected
-        # peak (argmax of the smoothed rate map) therefore lands tens of cm
-        # away from the true center, and observed center errors run ~50-80 cm
-        # for this 100x100 cm / bin_size=2 arena -- far above 2-3 bin sizes.
-        # The field *shape* is still recovered well (see the correlation test).
-        valid_errors = result["center_errors"][~np.isnan(result["center_errors"])]
-        assert np.all(valid_errors >= 0)
-        assert np.all(np.isfinite(valid_errors))
-
-    def test_validate_simulation_correlations(self, simple_2d_env):
-        """validate_simulation() should compute correlations between true and detected fields."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=3,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-            # 12 cm fields: a 30 s walk crosses them (6 cm default fields fire
-            # 0, 0 and 1 spikes here).
-            width=12.0,
-        )
-
-        result = validate_simulation(session)
-
-        # Should have one correlation per cell
-        assert len(result["correlations"]) == 3
-
-        # Non-NaN correlations should be between -1 and 1
-        valid_corrs = result["correlations"][~np.isnan(result["correlations"])]
-        assert np.all(valid_corrs >= -1)
-        assert np.all(valid_corrs <= 1)
-
-        # At least one cell must recover its field shape above noise. We assert
-        # on the *best* cell, not the mean: field-shape correlation from a short
-        # (30 s) Poisson session is inherently noisy for a 3-cell population, so
-        # the mean is not a stable target. A regression that broke field-shape
-        # recovery entirely would leave only chance-level correlations (~0) and
-        # fail here. With seed=42 the best cell recovers ~0.47, so the 0.3 bar
-        # clears chance by a wide margin while tolerating the short-session
-        # noise. (For an end-to-end recovery threshold see
-        # test_place_field_detection_accuracy in test_integration.py, which uses
-        # a longer session.)
-        assert valid_corrs.max() > 0.3
-
-    def test_validate_simulation_summary_string(self, simple_2d_env):
-        """validate_simulation() should generate summary string."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=3,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
-
-        result = validate_simulation(session)
-
-        # Summary should contain key statistics
-        assert "mean" in result["summary"].lower()
-        assert "error" in result["summary"].lower()
-        assert "correlation" in result["summary"].lower()
-
-    def test_validate_simulation_pass_fail(self, simple_2d_env):
-        """validate_simulation() should determine pass/fail."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=3,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
-
-        result = validate_simulation(session)
-
-        # Should return boolean
-        assert isinstance(result["passed"], bool)
-
-    def test_validate_simulation_with_thresholds(self, simple_2d_env):
-        """validate_simulation() should accept custom thresholds."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=3,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
-
-        # Use strict thresholds
-        result = validate_simulation(
-            session,
-            max_center_error=5.0,  # cm
-            min_correlation=0.9,
-        )
-
-        # Check that thresholds are applied
-        assert "passed" in result
-
-    def test_validate_simulation_with_unit_ids(self, simple_2d_env):
-        """validate_simulation() should validate only specific cells."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=5,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
-
-        # Validate only cells 0, 2, 4
-        result = validate_simulation(session, unit_ids=[0, 2, 4])
-
-        # Should only have 3 errors/correlations
-        assert len(result["center_errors"]) == 3
-        assert len(result["correlations"]) == 3
-
-    def test_validate_simulation_empty_spike_trains(self, simple_2d_env):
-        """validate_simulation() should handle cells with no spikes."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=5.0,  # Very short, may have empty trains
-            n_cells=3,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
-
-        # Should not crash even if some cells have no spikes
-        result = validate_simulation(session)
-
-        assert "center_errors" in result
-        assert "correlations" in result
-
-    def test_validate_simulation_show_plots_false(self, simple_2d_env):
-        """validate_simulation() with show_plots=False should not return plots."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=3,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
-
-        result = validate_simulation(session, show_plots=False)
-
-        # Should not have 'plots' key
-        assert "plots" not in result or result.get("plots") is None
-
-    def test_validate_simulation_show_plots_true(self, simple_2d_env):
-        """validate_simulation() with show_plots=True should return matplotlib figure."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=3,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-            # 12 cm fields: a 30 s walk crosses them (6 cm default fields fire
-            # 0, 0 and 1 spikes here).
-            width=12.0,
-        )
-
-        result = validate_simulation(session, show_plots=True)
-
-        # Should have 'plots' key with figure
-        assert "plots" in result
-        assert result["plots"] is not None
-
-    def test_validate_simulation_place_field_method(self, simple_2d_env):
-        """validate_simulation() should accept place field computation method."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=3,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
-
-        # Use binned method
-        result = validate_simulation(session, method="binned")
-
-        assert "center_errors" in result
-
-    def test_validate_simulation_reproducible(self, simple_2d_env):
-        """validate_simulation() should produce same results on same session."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=3,
-            cell_type="place",
-            seed=42,
-            show_progress=False,
-        )
-
-        result1 = validate_simulation(session)
-        result2 = validate_simulation(session)
-
-        # Results should be identical
+def test_select_by_label(place_session, place_report):
+    """unit_ids select by label, in the requested order, after relabelling too."""
+    session, full = place_session, place_report
+    assert full.n_evaluated == 5
+    labels = np.array([7, 11, 19, 23, 31], dtype=np.int64)
+    relabeled = replace(
+        session,
+        unit_ids=labels,
+        ground_truth={
+            int(label): session.ground_truth[i] for i, label in enumerate(labels)
+        },
+    )
+    reordered = validate_simulation(relabeled, unit_ids=[31, 7, 19])
+    np.testing.assert_array_equal(reordered.unit_ids, [31, 7, 19])
+    for key in ("center_errors", "correlations"):
         np.testing.assert_array_equal(
-            result1["center_errors"], result2["center_errors"]
+            getattr(reordered, key), getattr(full, key)[[4, 0, 2]]
         )
-        np.testing.assert_array_equal(result1["correlations"], result2["correlations"])
+    with pytest.raises(ValueError, match=r"99.*Valid labels:.*7.*11.*\n.*\nFix:"):
+        validate_simulation(relabeled, unit_ids=[99])
+    with pytest.raises(TypeError):
+        validate_simulation(env=session.env)
+
+
+class TestValidateSimulation:
+    """Tests for validate_simulation() on a session whose cells can be evaluated."""
+
+    def test_returns_a_frozen_result_with_read_only_arrays(self, place_report):
+        from dataclasses import FrozenInstanceError
+
+        assert isinstance(place_report, SimulationValidationResult)
+        assert place_report.n_selected == 5
+        assert place_report.n_evaluated == 5
+        for array in (
+            place_report.center_errors,
+            place_report.correlations,
+            place_report.max_center_errors,
+            place_report.spike_counts,
+            place_report.unit_ids,
+        ):
+            assert array.shape == (5,)
+            with pytest.raises(ValueError, match="read-only"):
+                array[0] = 0
+        with pytest.raises(FrozenInstanceError):
+            place_report.min_correlation = 0.0  # type: ignore[misc]
+
+    def test_center_error_is_the_distance_from_the_rate_peak_to_the_center(
+        self, place_session, place_report
+    ):
+        from neurospatial.encoding import compute_spatial_rate
+
+        env = place_session.env
+        for row, model in enumerate(place_session.models):
+            rate = compute_spatial_rate(
+                env,
+                place_session.spike_times[row],
+                place_session.times,
+                place_session.positions,
+            ).firing_rate
+            peak = env.bin_centers[np.nanargmax(rate)]
+            assert place_report.center_errors[row] == pytest.approx(
+                np.linalg.norm(peak - model.ground_truth["center"])
+            )
+        # A recovered 12 cm field peaks within one field width of its center.
+        assert np.all(place_report.center_errors <= 12.0)
+
+    def test_recovered_fields_correlate_with_the_true_fields(self, place_report):
+        assert np.all(place_report.correlations > 0.9)
+        assert np.all(place_report.correlations <= 1.0)
+
+    def test_status_follows_both_thresholds(self, place_session, place_report):
+        np.testing.assert_allclose(place_report.max_center_errors, 1.5 * 12.0)
+        assert place_report.unit_status == ("passed",) * 5
+        assert place_report.passed
+
+        strict = validate_simulation(
+            place_session, max_center_error=0.0, min_correlation=0.5
+        )
+        expected = tuple(
+            "passed" if error == 0.0 else "failed" for error in strict.center_errors
+        )
+        assert strict.unit_status == expected
+        assert "failed" in expected
+        assert not strict.passed
+        np.testing.assert_array_equal(strict.max_center_errors, 0.0)
+        impossible = validate_simulation(place_session, min_correlation=1.01)
+        assert impossible.unit_status == ("failed",) * 5
+
+    def test_summary_and_summary_table_follow_the_result_conventions(
+        self, place_report
+    ):
+        summary = place_report.summary()
+        assert summary["n_selected"] == summary["n_evaluated"] == 5
+        assert summary["passed"] is True
+        assert summary["mean_center_error"] == pytest.approx(
+            np.mean(place_report.center_errors)
+        )
+        assert all(np.isscalar(value) for value in summary.values())
+
+        table = place_report.summary_table()
+        assert table.index.name == "unit_id"
+        np.testing.assert_array_equal(table.index, place_report.unit_ids)
+        assert list(table.columns) == [
+            "center_error",
+            "correlation",
+            "max_center_error",
+            "spike_count",
+            "status",
+            "skip_reason",
+        ]
+        assert table.attrs["method"] == "diffusion_kde"
+        assert table.attrs["units"] == "cm"
+        assert table.attrs["min_correlation"] == 0.9
+        assert "SimulationValidationResult(n_selected=5" in repr(place_report)
+
+    def test_report_text_states_the_counts_and_verdict(self, place_report):
+        text = place_report.report()
+        assert "Cells selected: 5 (of 5 total)" in text
+        assert "Cells fully evaluated: 5" in text
+        assert "Threshold: 1.5 x each cell's true field width" in text
+        assert "Overall: PASSED" in text
+
+    def test_plot_draws_each_evaluated_unit(self, place_report):
+        import matplotlib.pyplot as plt
+
+        ax = place_report.plot()
+        try:
+            np.testing.assert_allclose(
+                ax.collections[0].get_offsets(),
+                np.column_stack(
+                    [place_report.center_errors, place_report.correlations]
+                ),
+            )
+        finally:
+            plt.close(ax.figure)
+
+    def test_unit_ids_select_and_order_units(self, place_session, place_report):
+        selected = validate_simulation(place_session, unit_ids=[4, 0, 2])
+        np.testing.assert_array_equal(selected.unit_ids, [4, 0, 2])
+        np.testing.assert_array_equal(
+            selected.center_errors, place_report.center_errors[[4, 0, 2]]
+        )
+        assert selected.n_session_units == 5
+
+    def test_a_silent_unit_is_not_evaluable(self, place_session):
+        trains = list(place_session.spike_times)
+        trains[1] = np.array([])
+        session = replace(place_session, spike_times=trains)
+        report = validate_simulation(session)
+        assert report.unit_status[1] == "not_evaluable"
+        assert report.skip_reasons[1] == "no_spikes"
+        assert report.spike_counts[1] == 0
+        assert report.n_evaluated == 4
+        assert not report.passed
+
+    def test_binned_method_evaluates_cells(self, place_session):
+        report = validate_simulation(place_session, method="binned")
+        assert report.n_evaluated == 5
+        assert report.summary_table().attrs["method"] == "binned"
+
+    def test_validate_simulation_reproducible(self, place_session, place_report):
+        again = validate_simulation(place_session)
+        assert np.all(np.isfinite(place_report.center_errors))
+        assert np.all(np.isfinite(place_report.correlations))
+        np.testing.assert_array_equal(again.center_errors, place_report.center_errors)
+        np.testing.assert_array_equal(again.correlations, place_report.correlations)
 
     def test_validate_simulation_invalid_session_type(self):
-        """validate_simulation() should raise error for invalid input."""
-        with pytest.raises((TypeError, ValueError)):
+        with pytest.raises(TypeError, match="SimulationSession"):
             validate_simulation("not a session")
 
-    def test_validate_simulation_missing_ground_truth(self, simple_2d_env):
-        """validate_simulation() should raise error if ground_truth missing."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
-
-        session = simulate_session(
-            simple_2d_env,
-            duration=30.0,
-            n_cells=3,
-            seed=42,
-            show_progress=False,
-        )
-
+    def test_session_without_ground_truth_is_refused(self, place_session):
         with pytest.raises(ValueError, match="ground_truth"):
-            validate_simulation(replace(session, ground_truth={}))
+            replace(place_session, ground_truth={})
 
 
-def test_default_center_error_threshold(simple_2d_env):
+def test_default_center_error_threshold(connected_arena_env):
     """The default limit is 1.5 true field widths, whatever the bins."""
     session = simulate_session(
-        simple_2d_env,
-        duration=10.0,
-        n_cells=1,
+        connected_arena_env,
+        duration=180.0,
+        n_cells=2,
         cell_type="place",
         seed=0,
         show_progress=False,
     )
 
     result = validate_simulation(session)
-    np.testing.assert_allclose(result["max_center_errors"], [1.5 * 11.1])
-    assert "1.5 x each cell's true field width" in result["summary"]
+    assert result.n_evaluated == 2
+    np.testing.assert_allclose(result.max_center_errors, [1.5 * 11.1] * 2)
+    assert "1.5 x each cell's true field width" in result.report()
+    assert result.summary_table().attrs["center_error_rule"] == (
+        "1.5 x true field width"
+    )
 
 
 def test_detected_center_ignores_unresolved_bins():
@@ -449,7 +306,84 @@ def test_detected_center_ignores_unresolved_bins():
     assert np.isnan(field).any()
     assert np.isnan(field[np.argmax(field)])
     result = validate_simulation(session, method="binned", bandwidth=0.0)
-    assert result["center_errors"][0] == 0.0
+    assert result.center_errors[0] == 0.0
+
+
+def test_true_field_is_the_simulated_field(hairpin_track_env):
+    """Geodesic place cells are compared with their own geodesic fields.
+
+    On a hairpin, a Euclidean field centered on one arm also covers the other
+    arm 1 cm away, which the simulated geodesic cell never fires on.
+    """
+    from scipy.stats import pearsonr
+
+    from neurospatial.encoding import compute_spatial_rate
+
+    env = hairpin_track_env
+    session = simulate_session(
+        env,
+        duration=120.0,
+        n_cells=3,
+        trajectory_method="laps",
+        n_laps=12,
+        metric="geodesic",
+        width=15.0,
+        max_rate=30.0,
+        seed=0,
+        show_progress=False,
+    )
+    report = validate_simulation(session)
+    assert report.n_evaluated == 3
+    for row, model in enumerate(session.models):
+        detected = compute_spatial_rate(
+            env, session.spike_times[row], session.times, session.positions
+        ).firing_rate
+        truth = model.firing_rate(np.zeros(env.n_bins), env.bin_centers)
+        both = np.isfinite(detected) & np.isfinite(truth)
+        expected = pearsonr(detected[both], truth[both])[0]
+        assert report.correlations[row] == pytest.approx(expected, rel=1e-12)
+
+
+def test_mixed_sessions_validate_their_place_cells(connected_arena_env):
+    """Border and grid units are excluded; place units are evaluated."""
+    session = simulate_session(
+        connected_arena_env,
+        duration=120.0,
+        n_cells=5,
+        cell_type="mixed",
+        width=15.0,
+        max_rate=30.0,
+        seed=0,
+        show_progress=False,
+    )
+    cell_types = [session.ground_truth[int(u)]["cell_type"] for u in session.unit_ids]
+    with pytest.warns(UserWarning, match="not place fields"):
+        report = validate_simulation(session)
+    for cell_type, status, reason in zip(
+        cell_types, report.unit_status, report.skip_reasons, strict=True
+    ):
+        if cell_type == "place":
+            assert status in {"passed", "failed"} and reason is None
+        else:
+            assert (status, reason) == ("excluded", "not_a_place_field")
+    assert report.n_evaluated == cell_types.count("place") == 3
+    assert report.n_excluded == 2
+    place_status = [s for s in report.unit_status if s != "excluded"]
+    assert report.passed == all(s == "passed" for s in place_status)
+
+
+@pytest.mark.slow
+def test_border_session_passes_on_its_recovered_place_cells():
+    """Border cells cannot fail a session whose place cells are all recovered."""
+    session = border_cell_session(
+        duration=300.0, n_border_cells=3, n_place_cells=4, seed=0
+    )
+    with pytest.warns(UserWarning, match="not place fields"):
+        report = validate_simulation(session)
+    assert report.unit_status[:3] == ("excluded",) * 3
+    assert report.unit_status[3:] == ("passed",) * 4
+    assert report.passed
+    assert "Overall: PASSED" in report.report()
 
 
 def test_default_center_error_threshold_on_hairpin(hairpin_track_env):
@@ -472,11 +406,82 @@ def test_default_center_error_threshold_on_hairpin(hairpin_track_env):
     )
 
     result = validate_simulation(session)
-    np.testing.assert_allclose(result["max_center_errors"], [22.5])
+    np.testing.assert_allclose(result.max_center_errors, [22.5])
 
 
 class TestPlotSessionSummary:
     """Tests for plot_session_summary() function."""
+
+    def test_one_dimensional_session_plots_position_and_rate_curves(self):
+        """A 1-D track shows position against time and each cell's rate curve."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.simulation import linear_track_session
+        from neurospatial.simulation.validation import plot_session_summary
+
+        session = linear_track_session(duration=30, n_place_cells=3, n_laps=4, seed=0)
+        fig, axes = plot_session_summary(session)
+        try:
+            trajectory = axes[0]
+            assert trajectory.get_xlabel() == "Time (s)"
+            assert trajectory.get_ylabel() == "Position (cm)"
+            offsets = trajectory.collections[0].get_offsets()
+            np.testing.assert_array_equal(offsets[:, 0], session.times)
+            np.testing.assert_array_equal(offsets[:, 1], session.positions[:, 0])
+            for ax, unit in zip(axes[2:5], session.unit_ids, strict=True):
+                assert ax.get_title() == f"Cell {unit}"
+                assert ax.get_xlabel() == "Position (cm)"
+                assert ax.get_ylabel() == "Rate (Hz)"
+                (curve,) = ax.get_lines()
+                np.testing.assert_array_equal(
+                    curve.get_xdata(), session.env.bin_centers[:, 0]
+                )
+        finally:
+            plt.close(fig)
+
+    def test_three_dimensional_session_is_refused(self):
+        """A 3-D rate map has no faithful 2-D panel; the error names the 3-D plot."""
+        from neurospatial import Environment
+        from neurospatial.simulation.validation import plot_session_summary
+
+        grid = np.stack(
+            np.meshgrid(*[np.arange(0.0, 20.0, 2.0)] * 3, indexing="ij"), axis=-1
+        ).reshape(-1, 3)
+        env = Environment.from_samples(grid, bin_size=4.0, units="cm")
+        model = PlaceCellModel(env, center=[10.0, 10.0, 10.0], width=4.0)
+        times = np.arange(len(grid)) * 0.1
+        session = SimulationSession(
+            env=env,
+            spike_times=[times[::5]],
+            unit_ids=np.array([0]),
+            times=times,
+            positions=grid,
+            models=[model],
+            ground_truth={0: model.ground_truth},
+            metadata={},
+        )
+        with pytest.raises(
+            NotImplementedError, match=r"3-D.*\nWhy:.*\nFix:.*fastplotlib"
+        ):
+            plot_session_summary(session)
+
+    def test_duration_is_the_recorded_span(self, place_session):
+        """A recording that starts at 100 s lasts times[-1] - times[0]."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.simulation.validation import plot_session_summary
+
+        shifted = replace(
+            place_session,
+            times=place_session.times + 100.0,
+            spike_times=[train + 100.0 for train in place_session.spike_times],
+        )
+        span = shifted.times[-1] - shifted.times[0]
+        fig, axes = plot_session_summary(shifted, unit_ids=[0])
+        try:
+            assert f"Duration: {span:.1f} s" in axes[1].texts[0].get_text()
+        finally:
+            plt.close(fig)
 
     def test_plot_session_summary_returns_tuple(self, simple_2d_env):
         """plot_session_summary() should return (fig, axes) tuple."""
@@ -727,32 +732,21 @@ class TestPlotSessionSummary:
         plt.close(fig)
 
 
-def test_field_correlation_needs_only_center_and_width(simple_2d_env):
+def test_field_correlation_needs_only_center_and_width(place_session, place_report):
     """Pearson correlation ignores the true field's baseline and peak rate."""
-    session = simulate_session(
-        simple_2d_env,
-        duration=30,
-        n_cells=3,
-        seed=0,
-        show_progress=False,
-        max_rate=20.0,
-        baseline_rate=0.01,
-        width=6.0,
-    )
     shape_only = replace(
-        session,
+        place_session,
         ground_truth={
             label: {"center": truth["center"], "width": truth["width"]}
-            for label, truth in session.ground_truth.items()
+            for label, truth in place_session.ground_truth.items()
         },
     )
-    full = validate_simulation(session)
+    assert place_report.n_evaluated == 5
     np.testing.assert_allclose(
-        validate_simulation(shape_only)["correlations"],
-        full["correlations"],
+        validate_simulation(shape_only).correlations,
+        place_report.correlations,
         rtol=1e-12,
     )
-    assert np.isfinite(full["correlations"]).any()
 
 
 @pytest.mark.slow
@@ -762,9 +756,9 @@ def test_default_thresholds_separate_correct_from_misspecified_fields():
 
     session = open_field_session(duration=600.0, n_place_cells=4, seed=0)
     report = validate_simulation(session)
-    assert report["unit_status"] == ("passed",) * 4
+    assert report.unit_status == ("passed",) * 4
     widths = np.array([session.ground_truth[int(u)]["width"] for u in session.unit_ids])
-    np.testing.assert_allclose(report["max_center_errors"], 1.5 * widths)
+    np.testing.assert_allclose(report.max_center_errors, 1.5 * widths)
 
     def with_truth(change):
         truth = {label: change(t) for label, t in session.ground_truth.items()}
@@ -773,6 +767,6 @@ def test_default_thresholds_separate_correct_from_misspecified_fields():
     moved = with_truth(
         lambda t: {**t, "center": np.asarray(t["center"]) + np.array([t["width"], 0.0])}
     )
-    assert moved["unit_status"] == ("failed",) * 4
+    assert moved.unit_status == ("failed",) * 4
     widened = with_truth(lambda t: {**t, "width": 3 * t["width"]})
-    assert widened["unit_status"] == ("failed",) * 4
+    assert widened.unit_status == ("failed",) * 4

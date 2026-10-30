@@ -494,7 +494,7 @@ place_cell = PlaceCellModel(
 )
 
 # Generate spikes
-firing_rates = place_cell.firing_rate(positions, times)
+firing_rates = place_cell.firing_rate(times, positions)
 # Seed spikes apart from the trajectory so spike draws do not track position.
 spike_times = generate_poisson_spikes(firing_rates, times, seed=1)
 

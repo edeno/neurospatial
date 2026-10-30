@@ -73,7 +73,13 @@ from shapely.geometry import Polygon
 from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_count,
+    check_lengths,
+    warn_if_bins_too_coarse,
+)
 
 
 @dataclass(frozen=True)
@@ -115,6 +121,17 @@ class HoneycombDims(MazeDims):
     platform_side: float = 11.5
     gap: float = 1.0
     n_rings: int = 3
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "platform_side")
+        check_lengths(self, "gap", allow_zero=True)
+        check_count(
+            self,
+            "n_rings",
+            1,
+            "the maze needs at least one ring of platforms around the centre "
+            "to step to",
+        )
 
     @property
     def spacing(self) -> float:
@@ -249,6 +266,9 @@ def make_honeycomb_maze(
     if include_track:
         env_track = _create_honeycomb_track_graph(dims, bin_size)
 
+    warn_if_bins_too_coarse(
+        env_2d, maze="honeycomb maze", bin_size=bin_size, narrowest_corridor=None
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 
@@ -412,22 +432,8 @@ def _create_honeycomb_track_graph(
                     distance=distance,
                 )
 
-    # Create edge order for linearization
-    # We'll use a breadth-first traversal starting from the center
-    edge_order = []
-    visited_edges = set()
-
-    def add_edges_from_node(node: str) -> None:
-        """Add all unvisited edges from a node to edge_order."""
-        for neighbor in graph.neighbors(node):
-            edge = tuple(sorted([node, neighbor]))
-            if edge not in visited_edges:
-                visited_edges.add(edge)
-                edge_order.append(edge)
-                add_edges_from_node(neighbor)
-
-    # Start from center platform
-    add_edges_from_node("platform_0")
+    # Linearize breadth-first outward from the central platform.
+    edge_order = list(nx.edge_bfs(graph, "platform_0"))
 
     # The platforms are the walkable surface, so the track is as wide as a
     # platform corner to corner: every point of a platform lies within one

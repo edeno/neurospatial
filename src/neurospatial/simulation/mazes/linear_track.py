@@ -35,7 +35,13 @@ from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    refuse,
+    warn_if_bins_too_coarse,
+)
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
@@ -53,25 +59,36 @@ class LinearTrackDims(MazeDims):
     ----------
     length : float
         Length of the track in cm, end wall to end wall. Default is 150.0.
-    width : float
+    corridor_width : float
         Width of the corridor in cm. Default is 10.0, wider than the 6 cm
-        track of Kim & Frank (2009); pass ``width=6.0`` to match it.
+        track of Kim & Frank (2009); pass ``corridor_width=6.0`` to match it.
 
     Examples
     --------
     >>> dims = LinearTrackDims()
     >>> dims.length
     150.0
-    >>> dims.width
+    >>> dims.corridor_width
     10.0
 
-    >>> custom = LinearTrackDims(length=200.0, width=15.0)
+    >>> custom = LinearTrackDims(length=200.0, corridor_width=15.0)
     >>> custom.length
     200.0
     """
 
     length: float = 150.0
-    width: float = 10.0
+    corridor_width: float = 10.0
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "length", "corridor_width")
+        if self.length <= self.corridor_width:
+            refuse(
+                self,
+                ("length", "corridor_width"),
+                "makes the track no longer than it is wide, so the wells, half a "
+                "corridor width in from each end, meet or pass each other",
+                "Use a length greater than corridor_width.",
+            )
 
 
 def make_linear_track(
@@ -106,14 +123,14 @@ def make_linear_track(
     -----
     The track is centered at the origin:
     - X-axis: from -length/2 to +length/2
-    - Y-axis: from -width/2 to +width/2
+    - Y-axis: from -corridor_width/2 to +corridor_width/2
 
     Each food well is a landmark in ``env_2d.landmarks`` with role
     ``"reward_port"``, and a point region of the same name. Both sit in the
     end square of the track, half a track width back from the end wall:
 
-    - well_left: Point at left end (-length/2 + width/2, 0)
-    - well_right: Point at right end (+length/2 - width/2, 0)
+    - well_left: Point at left end (-length/2 + corridor_width/2, 0)
+    - well_right: Point at right end (+length/2 - corridor_width/2, 0)
 
     The regions are points because Kim & Frank (2009) do not give the wells'
     size. They scored well visits with "a circle with a 15-cm radius" around
@@ -133,7 +150,7 @@ def make_linear_track(
 
     Create with custom dimensions:
 
-    >>> dims = LinearTrackDims(length=200.0, width=12.0)
+    >>> dims = LinearTrackDims(length=200.0, corridor_width=12.0)
     >>> maze = make_linear_track(dims=dims, bin_size=4.0)
     >>> "well_left" in maze.env_2d.regions
     True
@@ -157,7 +174,7 @@ def make_linear_track(
     # Create polygon for 2D environment (horizontal corridor)
     start = (-half_length, 0.0)
     end = (half_length, 0.0)
-    polygon = make_corridor_polygon(start=start, end=end, width=dims.width)
+    polygon = make_corridor_polygon(start=start, end=end, width=dims.corridor_width)
 
     # Create 2D environment
     env_2d = Environment.from_polygon(
@@ -171,8 +188,8 @@ def make_linear_track(
 
     # One food well at each end; Kim & Frank (2009) do not give its size
     wells = {
-        "well_left": corridor_end_point(end, start, dims.width),
-        "well_right": corridor_end_point(start, end, dims.width),
+        "well_left": corridor_end_point(end, start, dims.corridor_width),
+        "well_right": corridor_end_point(start, end, dims.corridor_width),
     }
     region_builder = Regions()
     for name, position in wells.items():
@@ -195,6 +212,12 @@ def make_linear_track(
     if include_track:
         env_track = _create_linear_track_graph(dims, bin_size)
 
+    warn_if_bins_too_coarse(
+        env_2d,
+        maze="linear track",
+        bin_size=bin_size,
+        narrowest_corridor=dims.corridor_width,
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 
@@ -238,7 +261,7 @@ def _create_linear_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,  # No spacing between edges (just one edge)
         bin_size=bin_size,
-        track_width=dims.width,
+        track_width=dims.corridor_width,
         name="linear_track_1d",
     )
     env_track = env_track.with_metadata(units="cm")

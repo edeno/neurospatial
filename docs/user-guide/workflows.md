@@ -447,7 +447,7 @@ assert env.bin_at([50.0, 50.0]) != -1, "Place cell center must be inside env!"
 # Step 3: Generate spike train for a simulated place cell
 # (In real experiments, load your spike timestamps here.)
 cell = PlaceCellModel(env, center=np.array([50.0, 50.0]), width=12.0, max_rate=20.0)
-rates = cell.firing_rate(positions, times)
+rates = cell.firing_rate(times, positions)
 spike_times = generate_poisson_spikes(rates, times, seed=1)
 
 print(f"Total spikes: {len(spike_times)}")
@@ -959,7 +959,7 @@ def record_session(seed):
     )
     # Seed the spikes differently from the trajectory.
     spikes = generate_poisson_spikes(
-        place_cell.firing_rate(positions), times, seed=seed + 100
+        place_cell.firing_rate(times, positions), times, seed=seed + 100
     )
     return times, positions, spikes
 
@@ -1166,7 +1166,7 @@ trains = [
     generate_poisson_spikes(
         PlaceCellModel(
             env, center=center, width=12, max_rate=15, baseline_rate=0.5
-        ).firing_rate(positions, times),
+        ).firing_rate(times, positions),
         times,
         seed=10 + i,
     )

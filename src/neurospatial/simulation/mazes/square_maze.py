@@ -32,7 +32,13 @@ from shapely.geometry import box
 
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    warn_if_bins_too_coarse,
+)
+from neurospatial.simulation.mazes._geometry import compass_quadrants
 
 
 @dataclass(frozen=True)
@@ -66,6 +72,9 @@ class SquareMazeDims(MazeDims):
 
     side_length: float = 30.0
 
+    def __post_init__(self) -> None:
+        check_lengths(self, "side_length")
+
 
 def make_square_maze(
     dims: SquareMazeDims | None = None,
@@ -97,17 +106,25 @@ def make_square_maze(
     - X range: -side_length/2 to +side_length/2
     - Y range: -side_length/2 to +side_length/2
 
-    Regions:
-    - center: Center of the arena at (0, 0)
-    - NE: Northeast corner region
-    - NW: Northwest corner region
-    - SE: Southeast corner region
-    - SW: Southwest corner region
+    North is +y and east is +x. Regions:
 
-    The corner regions are useful for:
-    - Analyzing thigmotaxis (wall-following behavior)
-    - Measuring time spent in corners vs center
-    - Studying spatial preferences
+    - center: a point at the centre of the box, (0, 0), covering the one
+      bin there.
+    - NE, NW, SE, SW: the box's quarters, bounded by the north-south and
+      east-west lines through its centre, with the same meaning as the
+      watermaze's quadrants, for quadrant occupancy and spatial preference.
+      Together they cover the box without overlapping, and every bin is in
+      exactly one quadrant. With an odd number of bins across, a row and a
+      column of bin centres lie on the dividing lines; a centre on a line
+      counts as east of the north-south line and north of the east-west
+      line, so NE holds the bins with x >= 0 and y >= 0 and SW those with
+      x < 0 and y < 0 (see :meth:`~neurospatial.Environment.bins_in_region`).
+      The default 15 x 15 grid has 64 bins in NE, 56 in NW and SE, and 49 in
+      SW.
+
+    For thigmotaxis (wall-following), measure how far the animal is from the
+    walls with :func:`neurospatial.behavior.distance_to_boundary` or
+    :func:`neurospatial.ops.nearest_boundary` rather than a region.
 
     Examples
     --------
@@ -132,8 +149,8 @@ def make_square_maze(
 
     >>> dims = SquareMazeDims(side_length=100.0)
     >>> maze = make_square_maze(dims=dims)
-    >>> "NE" in maze.env_2d.regions
-    True
+    >>> maze.env_2d.regions["NE"].data.bounds  # the north-east quarter, cm
+    (0.0, 0.0, 50.0, 50.0)
 
     See Also
     --------
@@ -163,15 +180,16 @@ def make_square_maze(
     region_builder = Regions()
     region_builder.add("center", point=(0.0, 0.0))
 
-    # Add corner regions at quarter positions (like watermaze quadrants)
-    quarter = half_side / 2.0
-    region_builder.add("NE", point=(quarter, quarter))
-    region_builder.add("NW", point=(-quarter, quarter))
-    region_builder.add("SE", point=(quarter, -quarter))
-    region_builder.add("SW", point=(-quarter, -quarter))
+    # Each quadrant is the box's quarter on one side of both axes, as in
+    # the watermaze
+    for name, quadrant in compass_quadrants(square_polygon).items():
+        region_builder.add(name, polygon=quadrant)
     env_2d = env_2d.with_regions(region_builder)
 
     # No track graph for open field
     env_track = None
 
+    warn_if_bins_too_coarse(
+        env_2d, maze="square maze", bin_size=bin_size, narrowest_corridor=None
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)

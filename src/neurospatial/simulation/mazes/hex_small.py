@@ -69,7 +69,11 @@ from shapely.ops import unary_union
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    warn_if_bins_too_coarse,
+)
 from neurospatial.simulation.mazes._geometry import widest_corridor
 
 # Hexes per row from the top port down, and the hex ids in each row from left
@@ -347,7 +351,8 @@ def make_small_hex_maze(
     - port_B: hex 2, bottom left corner
     - port_C: hex 3, bottom right corner
 
-    Each landmark's metadata also names its ``port`` letter and ``hex``.
+    Each landmark's metadata also gives its ``port_type``,
+    ``"liquid_port"``, and names its ``port`` letter and ``hex``.
 
     Examples
     --------
@@ -355,7 +360,7 @@ def make_small_hex_maze(
     >>> maze.env_2d.landmarks["port_A"].data.round(1)  # top corner
     array([ 0. , 78.8])
     >>> dict(maze.env_2d.landmarks["port_A"].metadata)
-    {'role': 'reward_port', 'port': 'A', 'hex': 1}
+    {'role': 'reward_port', 'port_type': 'liquid_port', 'port': 'A', 'hex': 1}
     >>> maze.env_2d.regions["port_A"].kind  # the port hex
     'polygon'
 
@@ -429,7 +434,12 @@ def make_small_hex_maze(
                 name,
                 "point",
                 center + apothem * center / np.linalg.norm(center),
-                {"role": "reward_port", "port": name[-1], "hex": hex_id},
+                {
+                    "role": "reward_port",
+                    "port_type": "liquid_port",
+                    "port": name[-1],
+                    "hex": hex_id,
+                },
             )
         )
     env_2d = env_2d.with_regions(regions).with_landmarks(Landmarks(landmarks))
@@ -438,6 +448,12 @@ def make_small_hex_maze(
     if include_track:
         env_track = _create_hex_track_graph(dims, centroids, floor, bin_size)
 
+    warn_if_bins_too_coarse(
+        env_2d,
+        maze="small hex maze",
+        bin_size=bin_size,
+        narrowest_corridor=dims.hex_side,
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 

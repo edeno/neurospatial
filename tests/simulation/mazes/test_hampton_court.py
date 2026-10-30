@@ -59,8 +59,8 @@ def test_returns_maze_environments_in_cm(maze):
 def test_default_dims_are_smalls_published_numbers():
     # Small (1901, p. 208): "6 by 8 feet", galleries 4 inches wide.
     dims = HamptonCourtDims()
-    assert dims.width == pytest.approx(8 * FEET)
-    assert dims.height == pytest.approx(6 * FEET)
+    assert dims.frame_width == pytest.approx(8 * FEET)
+    assert dims.frame_depth == pytest.approx(6 * FEET)
     assert dims.corridor_width == pytest.approx(4 * INCH)
 
 
@@ -152,8 +152,8 @@ def test_central_enclosure_is_the_goal_box(maze, floor):
     assert region.kind == "polygon"
     # Five by six galleries of the plan's 18 x 14 grid, all open floor.
     dims = HamptonCourtDims()
-    pitch_x = (dims.width - dims.corridor_width) / 17
-    pitch_y = (dims.height - dims.corridor_width) / 13
+    pitch_x = (dims.frame_width - dims.corridor_width) / 17
+    pitch_y = (dims.frame_depth - dims.corridor_width) / 13
     x0, y0, x1, y1 = region.data.bounds
     assert (x1 - x0, y1 - y0) == pytest.approx(
         (4 * pitch_x + dims.corridor_width, 5 * pitch_y + dims.corridor_width)
@@ -180,7 +180,7 @@ def test_include_track_false_has_no_track():
 
 
 def test_custom_dims_scale_the_frame():
-    dims = HamptonCourtDims(width=200.0, height=150.0, corridor_width=8.0)
+    dims = HamptonCourtDims(frame_width=200.0, frame_depth=150.0, corridor_width=8.0)
     floor = make_hampton_court_maze(dims, include_track=False).env_2d.arena
     np.testing.assert_allclose(
         floor.polygonal_domain().bounds, (-100, -75, 100, 75), atol=1e-9
@@ -189,7 +189,7 @@ def test_custom_dims_scale_the_frame():
 
 def test_frame_too_small_for_the_galleries_raises():
     with pytest.raises(ValueError, match="cannot hold 18 x 14 galleries"):
-        make_hampton_court_maze(HamptonCourtDims(width=150.0))
+        make_hampton_court_maze(HamptonCourtDims(frame_width=150.0))
 
 
 def test_bins_coarser_than_the_walls_warn():

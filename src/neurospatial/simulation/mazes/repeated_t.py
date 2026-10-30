@@ -54,7 +54,7 @@ https://doi.org/10.1037/h0072851
 
 Wijnen, K., Genzel, L., & van der Meij, J. (2024). Rodent maze studies: from
 following simple rules to complex map learning. Brain Structure and Function,
-229, 823.
+229(4), 823–841.
 https://doi.org/10.1007/s00429-024-02771-x
 
 Examples
@@ -84,10 +84,18 @@ from shapely.geometry import box
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_lengths,
+    check_longer_than_wide,
+    refuse,
+    warn_if_bins_too_coarse,
+)
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_corridor_polygon,
+    single_floor,
     union_polygons,
     warn_if_bins_bridge_walls,
 )
@@ -104,14 +112,19 @@ class RepeatedTDims(MazeDims):
 
     Attributes
     ----------
-    width : float
+    corridor_width : float
         Width of every alley in cm. Default is 10.16 (4 in, from the figure).
     arm_length : float
-        Length of each alley segment in cm. Default is 40.64 (16 in, from the
-        figure).
+        Length of each alley segment in cm, measured as the figure labels
+        it: along the alley's walls, from the side wall of the alley it
+        leaves to the side wall of the next alley (or to its end), so it
+        excludes the half widths of the alleys at each end. Neighbouring
+        choice points are ``arm_length + corridor_width`` apart centre to
+        centre. Default is 40.64 (16 in, from the figure).
     long_arm_length : float
         Length of the two segments that join choice points 4, 5 and 6, in
-        cm. Default is 45.72 (18 in, from the figure). It must exceed
+        cm, measured along the walls like ``arm_length``. Default is 45.72
+        (18 in, from the figure). It must exceed
         ``arm_length``: the difference is the wall between blind alley 6 and
         the alley to choice point 3.
     wall_thickness : float
@@ -134,14 +147,14 @@ class RepeatedTDims(MazeDims):
     Examples
     --------
     >>> dims = RepeatedTDims()
-    >>> dims.width, dims.arm_length, dims.long_arm_length
+    >>> dims.corridor_width, dims.arm_length, dims.long_arm_length
     (10.16, 40.64, 45.72)
 
-    >>> RepeatedTDims(arm_length=50.0).arm_length
-    50.0
+    >>> RepeatedTDims(arm_length=36.0).arm_length
+    36.0
     """
 
-    width: float = 10.16
+    corridor_width: float = 10.16
     arm_length: float = 40.64
     long_arm_length: float = 45.72
     wall_thickness: float = 2.1
@@ -149,6 +162,45 @@ class RepeatedTDims(MazeDims):
     start_box_width: float = 19.05
     start_box_depth: float = 15.24
     food_box_depth: float = 13.97
+
+    def __post_init__(self) -> None:
+        check_lengths(
+            self,
+            "corridor_width",
+            "arm_length",
+            "long_arm_length",
+            "wall_thickness",
+            "start_stem_length",
+            "start_box_width",
+            "start_box_depth",
+            "food_box_depth",
+        )
+        check_longer_than_wide(self, "arm_length", "alley segment")
+        if self.long_arm_length <= self.arm_length:
+            refuse(
+                self,
+                ("long_arm_length", "arm_length"),
+                "leaves no wall between blind alley 6 and the alley to choice "
+                "point 3, so the alleys touch",
+                "Use a long_arm_length greater than arm_length.",
+            )
+        # Blind alley 4 runs back toward alley 1 and stops wall_thickness
+        # short of it, so it is arm_length - wall_thickness long.
+        if self.arm_length - self.wall_thickness <= self.corridor_width:
+            refuse(
+                self,
+                ("arm_length", "wall_thickness", "corridor_width"),
+                "leaves blind alley 4, arm_length - wall_thickness long, no "
+                "longer than it is wide",
+                "Use a wall_thickness below arm_length - corridor_width.",
+            )
+        if self.food_box_depth >= self.arm_length:
+            refuse(
+                self,
+                ("food_box_depth", "arm_length"),
+                "does not fit the food box in the last alley",
+                "Use a food_box_depth below arm_length.",
+            )
 
 
 def make_repeated_t_maze(
@@ -175,13 +227,6 @@ def make_repeated_t_maze(
         Contains:
         - env_2d: the alleys and the start and food boxes
         - env_track: alley centrelines as a track graph (if include_track)
-
-    Raises
-    ------
-    ValueError
-        If ``long_arm_length`` does not exceed ``arm_length`` or
-        ``wall_thickness`` is not positive, so that alleys would touch, or
-        if ``food_box_depth`` is not between 0 and ``arm_length``.
 
     Notes
     -----
@@ -224,33 +269,23 @@ def make_repeated_t_maze(
     if dims is None:
         dims = RepeatedTDims()
     thinnest_wall = min(dims.wall_thickness, dims.long_arm_length - dims.arm_length)
-    if thinnest_wall <= 0:
-        raise ValueError(
-            f"RepeatedTDims(long_arm_length={dims.long_arm_length}, "
-            f"arm_length={dims.arm_length}, wall_thickness={dims.wall_thickness}) "
-            "makes alleys touch. Use long_arm_length greater than arm_length "
-            "and a positive wall_thickness."
-        )
-    if not 0 < dims.food_box_depth < dims.arm_length:
-        raise ValueError(
-            f"RepeatedTDims(food_box_depth={dims.food_box_depth}) does not fit "
-            f"in the last alley, {dims.arm_length} cm long. Use a food_box_depth "
-            "between 0 and arm_length."
-        )
     warn_if_bins_bridge_walls(bin_size, thinnest_wall, "repeated T-maze")
 
     positions, edges = _layout(dims)
     alleys = [
-        make_corridor_polygon(positions[u], positions[v], dims.width) for u, v in edges
+        make_corridor_polygon(positions[u], positions[v], dims.corridor_width)
+        for u, v in edges
     ]
-    stem_end = positions["choice_1"][0] - dims.width / 2.0 - dims.start_stem_length
+    stem_end = (
+        positions["choice_1"][0] - dims.corridor_width / 2.0 - dims.start_stem_length
+    )
     start_box = box(
         stem_end - dims.start_box_depth,
         -dims.start_box_width / 2.0,
         stem_end,
         dims.start_box_width / 2.0,
     )
-    maze_polygon = union_polygons([*alleys, start_box])
+    maze_polygon = single_floor(union_polygons([*alleys, start_box]), dims)
 
     # Put the origin at the centre of the maze's bounding box.
     min_x, min_y, max_x, max_y = maze_polygon.bounds
@@ -271,7 +306,7 @@ def make_repeated_t_maze(
 
     # The food box is the end of the last alley, which runs in +x.
     end_x, end_y = positions["food_box"]
-    half = dims.width / 2.0
+    half = dims.corridor_width / 2.0
     boxes = {
         "start_box": translate(start_box, -offset[0], -offset[1]),
         "food_box": box(end_x - dims.food_box_depth, end_y - half, end_x, end_y + half),
@@ -283,7 +318,7 @@ def make_repeated_t_maze(
         regions.add(f"choice_{k}", point=positions[f"choice_{k}"])
     for k in range(1, _N_CHOICES + 1):
         end = corridor_end_point(
-            positions[f"choice_{k}"], positions[f"blind_{k}"], dims.width
+            positions[f"choice_{k}"], positions[f"blind_{k}"], dims.corridor_width
         )
         regions.add(f"blind_{k}", point=end)
     regions.add("food_box", polygon=boxes["food_box"])
@@ -301,6 +336,12 @@ def make_repeated_t_maze(
             dims, bin_size, positions, edges
         )
 
+    warn_if_bins_too_coarse(
+        env_2d,
+        maze="repeated T-maze",
+        bin_size=bin_size,
+        narrowest_corridor=dims.corridor_width,
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 
@@ -308,7 +349,7 @@ def _layout(
     dims: RepeatedTDims,
 ) -> tuple[dict[str, tuple[float, float]], list[tuple[str, str]]]:
     """Track nodes (choice point 1 at the origin) and edges in running order."""
-    w, half = dims.width, dims.width / 2.0
+    w, half = dims.corridor_width, dims.corridor_width / 2.0
     arm, long_arm = dims.arm_length, dims.long_arm_length
     near = arm + w  # centre-to-centre distance across one 16-in segment
     far = long_arm + w  # ... across one 18-in segment
@@ -385,7 +426,7 @@ def _create_repeated_t_maze_track_graph(
         edge_order=edges,
         edge_spacing=0.0,
         bin_size=bin_size,
-        track_width=dims.width,
+        track_width=dims.corridor_width,
         name="repeated_t_maze_1d",
     )
     return env_track.with_metadata(units="cm")

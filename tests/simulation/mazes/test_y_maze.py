@@ -37,7 +37,7 @@ class TestMakeYMaze:
         """env_2d should have a Y-shaped spatial extent."""
         from neurospatial.simulation.mazes.y_maze import YMazeDims, make_y_maze
 
-        dims = YMazeDims(arm_length=50.0, width=10.0)
+        dims = YMazeDims(arm_length=50.0, corridor_width=10.0)
         maze = make_y_maze(dims=dims)
 
         polygon = maze.env_2d.arena.polygon
@@ -65,7 +65,7 @@ class TestMakeYMaze:
         # A horizontal cut through the down arm at half its length.
         y = -dims.arm_length / 2
         section = polygon.intersection(LineString([(-100.0, y), (100.0, y)]))
-        assert section.length == pytest.approx(dims.width)
+        assert section.length == pytest.approx(dims.corridor_width)
 
     def test_env_2d_has_center_region(self):
         """env_2d should have a 'center' region at origin."""
@@ -118,7 +118,7 @@ class TestMakeYMaze:
 
         # Arm ends are centred in each arm's end square, half a corridor width
         # back from the far end: arm 1 down (270°), arm 2 at 30°, arm 3 at 150°.
-        distance = dims.arm_length - dims.width / 2
+        distance = dims.arm_length - dims.corridor_width / 2
         polygon = maze.env_2d.arena.polygon
         for region, angle in ((arm1_end, 270), (arm2_end, 30), (arm3_end, 150)):
             expected = distance * np.array(
@@ -127,7 +127,9 @@ class TestMakeYMaze:
             np.testing.assert_allclose(region.data, expected, atol=1e-9)
             point = Point(region.data)
             assert polygon.contains(point)
-            assert polygon.boundary.distance(point) == pytest.approx(dims.width / 2)
+            assert polygon.boundary.distance(point) == pytest.approx(
+                dims.corridor_width / 2
+            )
 
     def test_track_regions_stay_where_they_are_in_2d(self):
         """Each region on the linearized track lies where it does in 2-D."""
@@ -246,7 +248,7 @@ class TestMakeYMaze:
         """Custom dimensions should be respected."""
         from neurospatial.simulation.mazes.y_maze import YMazeDims, make_y_maze
 
-        dims = YMazeDims(arm_length=80.0, width=15.0)
+        dims = YMazeDims(arm_length=80.0, corridor_width=15.0)
         maze = make_y_maze(dims=dims)
 
         # Check that bin_centers span approximately the expected range

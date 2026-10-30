@@ -342,6 +342,7 @@ Generate synthetic spatial data, neural activity, and spike trains for testing a
   distance and direction)
 - `GridCellModel`: Hexagonal grid cell model (2D only)
 - `SimulationSession`: Complete simulation session dataclass
+- `SimulationValidationResult`: Per-unit recovery of simulated place fields
 
 **Key Functions:**
 
@@ -351,7 +352,8 @@ Generate synthetic spatial data, neural activity, and spike trains for testing a
 - `generate_poisson_spikes()`: Generate spikes from firing rates
 - `generate_population_spikes()`: Generate spikes for neuron populations
 - `simulate_session()`: One-call workflow for complete sessions
-- `validate_simulation()`: Compare detected fields to ground truth
+- `validate_simulation()`: Compare detected place fields to ground truth
+  (returns a `SimulationValidationResult`)
 - `open_field_session()`, `linear_track_session()`, etc.: Pre-configured examples
 
 **See Also:**
@@ -367,9 +369,10 @@ pynwb.
 
 **Simulator holder** ([neurospatial.simulation.session](neurospatial/simulation/session.md)):
 
-- `SimulationSession`: Frozen attributes `env`, `spike_times`, `unit_ids`,
-  `times`, `positions`, `models`, integer-label `ground_truth`, and `metadata`.
-  Pass attributes explicitly to analyses.
+- `SimulationSession`: Immutable attributes `env`, `spike_times` (a tuple of
+  read-only arrays), `unit_ids`, `times`, `positions`, `models`, integer-label
+  `ground_truth`, and `metadata` (read-only mappings). Pass attributes
+  explicitly to analyses.
 - `validate_simulation(sim, *, unit_ids=...)` and
   `plot_session_summary(sim, *, unit_ids=...)` select simulation units by label.
 

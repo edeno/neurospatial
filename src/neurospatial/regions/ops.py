@@ -9,10 +9,33 @@ them first:
   contain it: a boolean DataFrame with one column per region (the default), or
   a list of region names per position.
 
-A position is in a polygon region when it lies inside the polygon (on its edge
-too, with the default ``include_boundary=True``). A point region, such as a
-reward well, has no area, so a position counts as in it only within a radius
-you choose with ``point_radius``, in the regions' units.
+A position is in a polygon region when it lies inside the polygon. A point
+region, such as a reward well, has no area, so a position counts as in it only
+within a radius you choose with ``point_radius``, in the regions' units.
+
+A position exactly on a polygon region's edge is in the region when nudging
+it a hair north-east would move it inside. Regions that share an edge, such
+as the four quadrants of an open field, therefore split the positions on
+that edge, each to one region. These functions know no environment, so the
+union of the polygon regions passed is the space a position can occupy:
+where the nudge north-east would leave that union, as on an arena's north
+or east wall, the position is nudged the other way, south-west, instead (at
+a corner where that leaves too, the first of six further directions that
+stays inside).
+Every position the polygons cover is in at least one of them, and in
+exactly one when they tile the space, so tracking clipped to the arena's
+walls keeps its wall samples in the quadrants. A position on an edge with no
+other region beyond it, such as the north edge of a lone box, is in that
+region; membership on an edge therefore depends on the other polygon
+regions in ``regions``, all of them, also those not named in
+``region_names``. A position exactly ``point_radius`` from a point region is
+in it when nudging it north-east moves it toward the point.
+
+``env.bins_in_region`` applies the same rule to bin centers with the
+environment as the space: a bin center's nudge north-east stays in its own
+bin, so a bin is in a region when that nudge enters it. Where regions tile
+the environment, as the quadrants of an arena built from its outline do, a
+bin and a position at its center are in the same region.
 
 Both functions accept a ``transform`` that maps the positions into the regions'
 coordinates first: any callable that maps an ``(n, 2)`` array to an ``(n, 2)``
@@ -51,7 +74,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
 from neurospatial._validation import validate_finite_scalar
-from neurospatial.geometry._region_bins import polygon_bin_mask
+from neurospatial.geometry._region_bins import disc_mask, polygon_point_mask
 
 from .core import Region
 
@@ -229,6 +252,16 @@ def _check_regions(selected: Sequence[Region], point_radius: float | None) -> No
     validate_finite_scalar(
         point_radius, name="point_radius", positive=False, none_allowed=True
     )
+    if point_radius is not None and point_radius <= 0:
+        raise ValueError(
+            _format_error(
+                f"point_radius must be positive, got {point_radius}.",
+                why="a point region is a disc of radius point_radius; a disc "
+                "of radius 0 has no area, so no position would be in it.",
+                fix="pass the radius of the place, for example "
+                "point_radius=5.0 for a 5 cm reward well",
+            )
+        )
     for region in selected:
         if region.n_dims != 2:
             raise ValueError(
@@ -258,24 +291,40 @@ def _check_regions(selected: Sequence[Region], point_radius: float | None) -> No
         )
 
 
+def _polygon_domain(
+    regions: Mapping[str, Region],
+) -> shapely.geometry.base.BaseGeometry | None:
+    """Return the union of the polygon regions, prepared; None when there are none.
+
+    Positions on a polygon's edge are split between the polygons on either
+    side within this union, and an edge on its outline is held.
+    """
+    polygons = [region.data for region in regions.values() if region.kind == "polygon"]
+    if not polygons:
+        return None
+    domain = shapely.union_all(polygons)
+    shapely.prepare(domain)
+    return domain
+
+
 def _region_mask(
     positions: NDArray[np.float64],
     region: Region,
     *,
     point_radius: float | None,
-    include_boundary: bool,
+    domain: shapely.geometry.base.BaseGeometry | None,
 ) -> NDArray[np.bool_]:
     """Return which of ``(n_positions, 2)`` positions lie in ``region``.
 
     A point region is a disc of radius ``point_radius`` (required by
-    :func:`_check_regions`); ``include_boundary`` keeps its rim.
+    :func:`_check_regions`) whose rim follows the half-open rule of
+    :func:`~neurospatial.geometry.polygon_bin_mask`. A polygon's edges
+    follow that rule within ``domain``, from :func:`_polygon_domain`.
     """
     if region.kind == "point":
         assert point_radius is not None  # enforced by _check_regions
-        offsets = positions - region.data
-        distance = np.hypot(offsets[:, 0], offsets[:, 1])
-        return distance <= point_radius if include_boundary else distance < point_radius
-    return polygon_bin_mask(region.data, positions, include_boundary=include_boundary)
+        return disc_mask(region.data, point_radius, positions)
+    return polygon_point_mask(region.data, positions, domain=domain)
 
 
 def points_in_any_region(
@@ -284,7 +333,6 @@ def points_in_any_region(
     *,
     transform: SpatialTransform | None = None,
     point_radius: float | None = None,
-    include_boundary: bool = True,
 ) -> NDArray[np.bool_]:
     """Return whether each position lies in at least one region.
 
@@ -294,7 +342,10 @@ def points_in_any_region(
         Positions in the regions' coordinates, or in the input space of
         ``transform`` when it is given. Every row must be finite.
     regions : Mapping[str, Region]
-        Regions to test against; all of them are used.
+        Regions to test against; all of them are used. A position on a
+        polygon's edge goes to the polygon a nudge north-east enters, or,
+        where that nudge leaves every polygon, the one a nudge south-west
+        enters, so positions on the outline of their union are in a region.
     transform : SpatialTransform, optional
         Maps ``(n, 2)`` positions into the regions' coordinates, for example
         pixels to cm.
@@ -303,10 +354,6 @@ def points_in_any_region(
         position counts as in it (Euclidean distance), for example the radius
         of a reward well. Required when ``regions`` holds a point region,
         because a point has no area; not used for polygons.
-    include_boundary : bool, default=True
-        Count positions on a polygon's edge, or exactly ``point_radius`` from a
-        point region, as inside. If False, only strictly interior positions
-        count.
 
     Returns
     -------
@@ -319,7 +366,7 @@ def points_in_any_region(
         If ``positions`` is not ``(n_positions, 2)`` or has a NaN or infinite
         row; if ``transform`` changes the shape or returns non-finite rows; if
         a point region is not 2-D; if ``regions`` holds a point region and
-        ``point_radius`` is None; or if ``point_radius`` is negative or not
+        ``point_radius`` is None; or if ``point_radius`` is not positive and
         finite.
 
     See Also
@@ -331,25 +378,32 @@ def points_in_any_region(
     >>> import numpy as np
     >>> from shapely.geometry import box
     >>> from neurospatial import Regions
-    >>> from neurospatial.regions import points_in_any_region
+    >>> from neurospatial.regions import points_in_any_region, regions_containing_points
     >>> regions = Regions()
     >>> _ = regions.add("start_box", polygon=box(0.0, 0.0, 20.0, 20.0))
     >>> positions = np.array([[10.0, 10.0], [20.0, 5.0], [50.0, 50.0]])  # cm
     >>> points_in_any_region(positions, regions)
     array([ True,  True, False])
-    >>> points_in_any_region(positions, regions, include_boundary=False)
-    array([ True, False, False])
+
+    (20, 5) lies on the box's east edge. With no other region beyond that
+    edge, the box holds it; a region beside the box would take it, so boxes
+    side by side split their shared edges:
+
+    >>> _ = regions.add("next_box", polygon=box(20.0, 0.0, 40.0, 20.0))
+    >>> regions_containing_points([[20.0, 5.0]], regions, return_dataframe=False)
+    [['next_box']]
 
     A point region needs a radius:
 
     >>> _ = regions.add("reward_well", point=(80.0, 80.0))
-    >>> points_in_any_region([[83.0, 84.0]], regions, point_radius=5.0)
+    >>> points_in_any_region([[82.0, 83.0]], regions, point_radius=5.0)
     array([ True])
     """
     transformed = _prepare_positions(positions, transform)
     selected = list(regions.values())
     _check_regions(selected, point_radius)
 
+    domain = _polygon_domain(regions)
     mask = np.zeros(len(transformed), dtype=bool)
     for region in selected:
         # Test only the positions no earlier region contains.
@@ -360,7 +414,7 @@ def points_in_any_region(
             transformed[outside],
             region,
             point_radius=point_radius,
-            include_boundary=include_boundary,
+            domain=domain,
         )
     return mask
 
@@ -374,7 +428,6 @@ def regions_containing_points(
     region_names: Sequence[str] | None = ...,
     return_dataframe: Literal[True] = ...,
     point_radius: float | None = ...,
-    include_boundary: bool = ...,
 ) -> pd.DataFrame: ...
 
 
@@ -387,7 +440,6 @@ def regions_containing_points(
     region_names: Sequence[str] | None = ...,
     return_dataframe: Literal[False],
     point_radius: float | None = ...,
-    include_boundary: bool = ...,
 ) -> list[list[str]]: ...
 
 
@@ -400,7 +452,6 @@ def regions_containing_points(
     region_names: Sequence[str] | None = ...,
     return_dataframe: bool,
     point_radius: float | None = ...,
-    include_boundary: bool = ...,
 ) -> pd.DataFrame | list[list[str]]: ...
 
 
@@ -412,7 +463,6 @@ def regions_containing_points(
     region_names: Sequence[str] | None = None,
     return_dataframe: bool = True,
     point_radius: float | None = None,
-    include_boundary: bool = True,
 ) -> pd.DataFrame | list[list[str]]:
     """Return which regions contain each position.
 
@@ -422,7 +472,11 @@ def regions_containing_points(
         Positions in the regions' coordinates, or in the input space of
         ``transform`` when it is given. Every row must be finite.
     regions : Mapping[str, Region]
-        Regions to test against.
+        Regions to test against. A position on a polygon's edge goes to the
+        polygon a nudge north-east enters, or, where that nudge leaves every
+        polygon in ``regions`` (selected in ``region_names`` or not), the
+        one a nudge south-west enters. Regions that tile an arena therefore
+        give every position in it, walls included, exactly one region.
     transform : SpatialTransform, optional
         Maps ``(n, 2)`` positions into the regions' coordinates, for example
         pixels to cm.
@@ -438,10 +492,6 @@ def regions_containing_points(
         position counts as in it (Euclidean distance), for example the radius
         of a reward well. Required when a selected region is a point region,
         because a point has no area; not used for polygons.
-    include_boundary : bool, default=True
-        Count positions on a polygon's edge, or exactly ``point_radius`` from a
-        point region, as inside. If False, only strictly interior positions
-        count.
 
     Returns
     -------
@@ -464,7 +514,7 @@ def regions_containing_points(
         ``(n_positions, 2)`` or has a NaN or infinite row; if ``transform``
         changes the shape or returns non-finite rows; if a selected point
         region is not 2-D; if a selected region is a point region and
-        ``point_radius`` is None; or if ``point_radius`` is negative or not
+        ``point_radius`` is None; or if ``point_radius`` is not positive and
         finite.
 
     See Also
@@ -516,12 +566,13 @@ def regions_containing_points(
     transformed = _prepare_positions(positions, transform)
     _check_regions(selected, point_radius)
 
+    domain = _polygon_domain(regions)
     masks = {
         region.name: _region_mask(
             transformed,
             region,
             point_radius=point_radius,
-            include_boundary=include_boundary,
+            domain=domain,
         )
         for region in selected
     }

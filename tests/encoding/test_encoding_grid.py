@@ -273,7 +273,7 @@ class TestFFTAutocorrelationNeedsRectangularCells:
         )
         model = PlaceCellModel(env, center=[5.0, -5.0], width=5.0, max_rate=15.0)
         spike_times = generate_poisson_spikes(
-            model.firing_rate(positions), times, seed=5
+            model.firing_rate(times, positions), times, seed=5
         )
         result = compute_spatial_rate(env, spike_times, times, positions)
 
@@ -431,7 +431,8 @@ class TestFFTAutocorrelationLagsArePhysical:
         )
         env = env_from(positions)
         rate = GridCellModel(env, grid_spacing=40.0, max_rate=20.0).firing_rate(
-            positions
+            times,
+            positions,
         )
         spike_times = generate_poisson_spikes(rate, times, seed=seed + 1)
         return env, spike_times, times, positions

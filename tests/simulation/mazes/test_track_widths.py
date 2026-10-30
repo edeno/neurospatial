@@ -8,13 +8,11 @@ track.
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 import pytest
 from shapely.geometry import box
 
-from neurospatial.simulation import mazes, simulate_session
+from neurospatial.simulation import simulate_session
 from neurospatial.simulation.mazes._geometry import corridor_width, widest_corridor
 
 _TRACK_MAZES = [
@@ -36,24 +34,23 @@ _TRACK_MAZES = [
 ]
 
 
-def _track(name: str):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # mesh and size advisories
-        return getattr(mazes, name)().env_track
+@pytest.fixture
+def track(default_maze):
+    return default_maze.env_track
 
 
-@pytest.mark.parametrize("name", _TRACK_MAZES)
-def test_every_maze_track_has_a_width(name):
-    track = _track(name)
+@pytest.mark.parametrize("maze_name", _TRACK_MAZES, indirect=True)
+def test_every_maze_track_has_a_width(track):
     assert track.arena.domain_known
     assert track.arena.width > 0
 
 
 @pytest.mark.parametrize(
-    "name", ["make_small_hex_maze", "make_sungod_maze", "make_honeycomb_maze"]
+    "maze_name",
+    ["make_small_hex_maze", "make_sungod_maze", "make_honeycomb_maze"],
+    indirect=True,
 )
-def test_mazes_without_one_corridor_width_simulate_and_look_up(name):
-    track = _track(name)
+def test_mazes_without_one_corridor_width_simulate_and_look_up(track):
     session = simulate_session(
         track,
         duration=5.0,
@@ -72,8 +69,8 @@ def test_mazes_without_one_corridor_width_simulate_and_look_up(name):
     assert track.bin_at(np.array([[1000.0, 1000.0]]))[0] == -1
 
 
-def test_honeycomb_track_is_one_platform_wide():
-    track = _track("make_honeycomb_maze")
+@pytest.mark.parametrize("maze_name", ["make_honeycomb_maze"], indirect=True)
+def test_honeycomb_track_is_one_platform_wide(track):
     # Platforms are hexagons 11.5 cm along each side, which is their corner
     # radius, so a platform is 23 cm corner to corner.
     assert track.arena.width == pytest.approx(2 * 11.5)

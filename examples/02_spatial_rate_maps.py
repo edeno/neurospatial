@@ -98,7 +98,7 @@ model = PlaceCellModel(
     metric="euclidean",
 )
 spike_times = generate_poisson_spikes(
-    model.firing_rate(positions, times), times, refractory_period=0.002, seed=203
+    model.firing_rate(times, positions), times, refractory_period=0.002, seed=203
 )
 
 # %%

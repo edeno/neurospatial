@@ -160,3 +160,19 @@ class TestEnvironments:
         fine = make_honeycomb_maze(bin_size=1.0, include_track=False)
         coarse = make_honeycomb_maze(bin_size=5.0, include_track=False)
         assert fine.env_2d.n_bins > coarse.env_2d.n_bins
+
+
+class TestLargeMazes:
+    def test_twelve_rings_build_their_track(self):
+        """A large honeycomb linearizes without recursing once per edge."""
+        dims = HoneycombDims(n_rings=12)
+        maze = make_honeycomb_maze(dims, bin_size=10.0)
+        graph = maze.env_track.binning.linearization.graph
+        n_platforms = 1 + 3 * 12 * 13
+        assert graph.number_of_nodes() == n_platforms
+        # Each platform pair facing across a side is one edge.
+        assert graph.number_of_edges() == 3 * 12 * (3 * 12 + 1)
+
+    def test_track_is_linearized_breadth_first_from_the_centre(self, maze, track_graph):
+        edge_order = maze.env_track.binning.linearization.edge_order
+        assert list(edge_order) == list(nx.edge_bfs(track_graph, "platform_0"))

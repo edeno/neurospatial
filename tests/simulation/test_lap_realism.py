@@ -40,21 +40,10 @@ def box_laps(box_env):
     return simulate_trajectory_laps(box_env, n_laps=3, seed=1, return_metadata=True)
 
 
-def _pause_mask(metadata):
-    """True for the pause samples that end every lap but the last."""
-    lap_ids = metadata["lap_ids"]
-    paused = np.zeros(lap_ids.size, dtype=bool)
-    for lap in np.unique(lap_ids)[:-1]:
-        paused[np.flatnonzero(lap_ids == lap)[-PAUSE_SAMPLES:]] = True
-    return paused
-
-
 def _moving_steps(metadata):
-    """True for steps whose two samples are outside pauses and not a lap start."""
-    paused = _pause_mask(metadata)
-    lap_start = np.zeros(paused.size, dtype=bool)
-    lap_start[metadata["lap_boundaries"]] = True
-    return ~paused[:-1] & ~paused[1:] & ~lap_start[1:]
+    """True for steps whose two samples belong to one traversal."""
+    lap_ids = metadata["lap_ids"]
+    return (lap_ids[:-1] == lap_ids[1:]) & (lap_ids[1:] >= 0)
 
 
 def _steps(positions):
@@ -84,22 +73,47 @@ def test_path_is_smooth(box_laps):
 
 
 def test_pauses_only_at_lap_ends(box_laps):
-    positions, _times, metadata = box_laps
-    zero_steps = np.flatnonzero(_steps(positions) == 0)
+    """The animal stands still only during pauses, for exactly pause_duration."""
+    positions, times, metadata = box_laps
+    still = _steps(positions) == 0
     # Step i joins samples i and i + 1. The pause before the lap starting at
-    # boundary b fills samples [b - PAUSE_SAMPLES, b) at the previous lap's end,
-    # and the next lap starts there, so its zero steps are [b - PAUSE_SAMPLES - 1, b).
+    # boundary b fills samples [b - PAUSE_SAMPLES, b) at the previous lap's
+    # last position, so its still steps are [b - PAUSE_SAMPLES - 1, b - 1).
     boundaries = metadata["lap_boundaries"][1:]
-    at_lap_end = np.any(
-        (zero_steps[:, None] >= boundaries - PAUSE_SAMPLES - 1)
-        & (zero_steps[:, None] < boundaries),
-        axis=1,
-    )
-    assert np.all(at_lap_end)
-    # Every lap end but the last holds still for the whole pause.
+    expected = np.zeros_like(still)
     for boundary in boundaries:
-        pause_steps = _steps(positions)[boundary - PAUSE_SAMPLES - 1 : boundary]
-        assert np.all(pause_steps == 0)
+        expected[boundary - PAUSE_SAMPLES - 1 : boundary - 1] = True
+    np.testing.assert_array_equal(still, expected)
+    # Held from arrival at the well to the last pause sample: 0.5 s.
+    for boundary in boundaries:
+        held = times[boundary - 1] - times[boundary - PAUSE_SAMPLES - 1]
+        assert held == pytest.approx(0.5)
+
+
+def test_pause_samples_are_labelled_as_pauses(box_laps):
+    """Directional occupancy from the labels counts only running samples."""
+    positions, _times, metadata = box_laps
+    paused = metadata["direction"] == "pause"
+    np.testing.assert_array_equal(paused, metadata["lap_ids"] == -1)
+    assert paused.sum() == 2 * PAUSE_SAMPLES
+    assert set(np.unique(metadata["direction"])) == {"outbound", "inbound", "pause"}
+    # Every running sample but a lap's last moves on to the next sample.
+    running = _moving_steps(metadata)
+    assert np.all(_steps(positions)[running] > 0)
+    # Laps start at their boundaries and alternate direction.
+    starts = metadata["lap_boundaries"]
+    np.testing.assert_array_equal(metadata["lap_ids"][starts], [0, 1, 2])
+    np.testing.assert_array_equal(
+        metadata["direction"][starts], ["outbound", "inbound", "outbound"]
+    )
+
+
+def test_no_sample_repeats_at_a_lap_boundary_without_pauses(box_env):
+    positions, _times, metadata = simulate_trajectory_laps(
+        box_env, n_laps=4, pause_duration=0.0, seed=1, return_metadata=True
+    )
+    assert np.all(_steps(positions) > 0)
+    assert not np.any(metadata["direction"] == "pause")
 
 
 def test_laps_stay_inside_environment(box_env, box_laps):
@@ -170,6 +184,94 @@ def test_default_speed_needs_metric_units():
     assert "not a metric length unit" in str(error.value)
     positions, _times = simulate_trajectory_laps(env, n_laps=3, seed=1, speed_mean=20.0)
     assert np.all(env.bin_at(positions) >= 0)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: Environment.from_polygon(box(0, 0, 2, 100), bin_size=2, units="cm"),
+        lambda: Environment.from_polygon(box(0, 0, 100, 2), bin_size=2, units="cm"),
+        lambda: Environment.from_polygon(
+            shapely.affinity.rotate(box(0, 0, 100, 4), 45, origin=(0, 0)),
+            bin_size=2,
+            units="cm",
+        ),
+    ],
+    ids=["north_south", "east_west", "diagonal"],
+)
+def test_default_laps_run_the_length_of_a_strip_in_any_direction(build):
+    """The default route joins the two bins farthest apart, whatever the axis."""
+    env = build()
+    positions, _times = simulate_trajectory_laps(env, n_laps=2, seed=1)
+    assert np.all(env.bin_at(positions) >= 0)
+    # Bin centers 1 cm in from each end of the 100 cm strip.
+    length = np.linalg.norm(positions - positions[0], axis=1).max()
+    assert length == pytest.approx(98.0, abs=4.0)
+    np.testing.assert_allclose(positions[-1], positions[0])
+
+
+def test_default_laps_run_stem_to_arm_on_a_t_maze():
+    """The default route on a T-maze is the longest: the stem's foot to an arm."""
+    env = _t_maze_track()
+    positions, _times = simulate_trajectory_laps(env, n_laps=1, seed=1)
+    linear = env.to_linear(positions)
+    assert np.all(np.diff(linear) >= 0) or np.all(np.diff(linear) <= 0)
+    assert positions[0, 1] == pytest.approx(env.bin_centers[:, 1].min())
+    assert abs(positions[-1, 0]) == pytest.approx(np.abs(env.bin_centers[:, 0]).max())
+
+
+def test_default_route_across_a_circular_arena_is_nearly_straight():
+    """The default lap is the shortest distance across the arena, not fewest steps.
+
+    On a grid whose bins neighbor diagonally, a route of fewest steps can
+    zigzag; the shortest by distance runs within the 8% that an octile path
+    can exceed the straight line.
+    """
+    env = Environment.from_polygon(
+        shapely.Point(0, 0).buffer(50, quad_segs=64), bin_size=2, units="cm"
+    )
+    positions, _times = simulate_trajectory_laps(env, n_laps=1, seed=1)
+    run = np.sum(np.linalg.norm(np.diff(positions, axis=0), axis=1))
+    straight = np.linalg.norm(positions[-1] - positions[0])
+    assert straight > 95.0  # across the arena
+    assert run <= (np.sqrt(4 - 2 * np.sqrt(2))) * straight * (1 + 1e-9)
+
+
+def test_an_environment_of_one_bin_has_no_default_route():
+    env = Environment.from_polygon(box(0, 0, 2, 2), bin_size=2, units="cm")
+    assert env.n_bins == 1
+    with pytest.raises(ValueError, match="one bin") as error:
+        simulate_trajectory_laps(env, n_laps=2)
+    assert "outbound_path" in str(error.value)
+
+
+def test_routes_that_never_move_are_refused(box_env):
+    with pytest.raises(ValueError, match="never move"):
+        simulate_trajectory_laps(box_env, n_laps=2, outbound_path=[3, 3])
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("speed_mean", np.nan),
+        ("speed_mean", 0.0),
+        ("speed_std", -1.0),
+        ("speed_std", np.inf),
+        ("sampling_frequency", np.inf),
+        ("sampling_frequency", 0.0),
+        ("pause_duration", np.nan),
+        ("pause_duration", -0.5),
+    ],
+)
+def test_invalid_lap_timing_is_refused(box_env, option, value):
+    with pytest.raises(ValueError, match=f"{option} must be finite"):
+        simulate_trajectory_laps(box_env, n_laps=2, **{option: value})
+
+
+@pytest.mark.parametrize("n_laps", [2.5, True, 0, -1, np.float64(2.0)])
+def test_n_laps_must_be_a_positive_integer(box_env, n_laps):
+    with pytest.raises(ValueError, match="n_laps must be a positive integer"):
+        simulate_trajectory_laps(box_env, n_laps=n_laps)
 
 
 def test_custom_path_must_be_chain_of_neighbors(box_env):

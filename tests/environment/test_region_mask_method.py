@@ -8,7 +8,7 @@ Tests cover:
 - Multiple region names (union)
 - Single Region object
 - Regions container
-- Different include_boundary behaviors
+- Bin centers on a polygon's edge
 - Input validation and error handling
 - Feature parity with regions_to_mask() function
 """
@@ -130,51 +130,19 @@ class TestRegionMaskBasic:
 
 
 class TestRegionMaskBoundary:
-    """Test boundary inclusion behavior."""
+    """Bin centers on a polygon's edge follow the half-open rule."""
 
-    def test_include_boundary_true(self):
-        """Test that bins on boundary are included when include_boundary=True."""
+    def test_centers_on_the_south_and_west_edges_are_in(self):
         data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
+        env = Environment.from_samples(data, bin_size=2.0)  # centers 0, 2, ..., 10
         region_builder = Regions(env.regions.values())
-        region_builder.add("test", polygon=box(3, 3, 7, 7))
+        region_builder.add("test", polygon=box(2, 2, 6, 6))
         env = env.with_regions(region_builder)
 
-        mask_include = env.region_mask("test", include_boundary=True)
-
-        # Bins with centers at (3,3), (3,5), (3,7) etc should be included
-        boundary_bin = env.bin_at(np.array([[3.0, 5.0]]))
-        assert mask_include[boundary_bin[0]]
-
-    def test_include_boundary_false(self):
-        """Test that bins on boundary are excluded when include_boundary=False."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        region_builder = Regions(env.regions.values())
-        region_builder.add("test", polygon=box(3, 3, 7, 7))
-        env = env.with_regions(region_builder)
-
-        mask_exclude = env.region_mask("test", include_boundary=False)
-        mask_include = env.region_mask("test", include_boundary=True)
-
-        # Excluding boundary should give <= bins than including boundary
-        assert np.sum(mask_exclude) <= np.sum(mask_include)
-
-    def test_boundary_default_is_true(self):
-        """Test that default behavior includes boundary."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        region_builder = Regions(env.regions.values())
-        region_builder.add("test", polygon=box(3, 3, 7, 7))
-        env = env.with_regions(region_builder)
-
-        mask_default = env.region_mask("test")
-        mask_explicit = env.region_mask("test", include_boundary=True)
-
-        np.testing.assert_array_equal(mask_default, mask_explicit)
+        np.testing.assert_array_equal(
+            env.bin_centers[env.region_mask("test")],
+            [[2.0, 2.0], [2.0, 4.0], [4.0, 2.0], [4.0, 4.0]],
+        )
 
 
 class TestRegionMaskEdgeCases:
@@ -275,18 +243,6 @@ class TestRegionMaskInputValidation:
         with pytest.raises(TypeError):
             env.region_mask(123)  # Invalid type
 
-    def test_invalid_boundary_type(self):
-        """Test that invalid include_boundary type raises TypeError."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        region_builder = Regions(env.regions.values())
-        region_builder.add("test", polygon=box(3, 3, 7, 7))
-        env = env.with_regions(region_builder)
-
-        with pytest.raises(TypeError):
-            env.region_mask("test", include_boundary="yes")  # Should be bool
-
 
 class TestRegionMaskFeatureParity:
     """Test feature parity with regions_to_mask() free function."""
@@ -358,24 +314,6 @@ class TestRegionMaskFeatureParity:
 
         # Function version
         mask_function = regions_to_mask(env, regions)
-
-        # Should be identical
-        np.testing.assert_array_equal(mask_method, mask_function)
-
-    def test_matches_regions_to_mask_boundary_false(self):
-        """Test that region_mask matches regions_to_mask with include_boundary=False."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        region_builder = Regions(env.regions.values())
-        region_builder.add("test", polygon=box(3, 3, 7, 7))
-        env = env.with_regions(region_builder)
-
-        # Method version
-        mask_method = env.region_mask("test", include_boundary=False)
-
-        # Function version
-        mask_function = regions_to_mask(env, "test", include_boundary=False)
 
         # Should be identical
         np.testing.assert_array_equal(mask_method, mask_function)

@@ -10,17 +10,17 @@ diagonally.
 This maze is used to study sequential decision-making, working memory across
 multiple choice points, and the ability to learn complex spatial strategies.
 
-The design follows Warden's (1929) repeated Y-mazes (the Warner-Warden maze),
-built from modular units whose dead ends first split into two short corridors,
-so an animal cannot see that a corridor ends before entering it (Wijnen et
-al., 2024). Warden's dimensions are not reproduced here: the 10.16 cm (4 in)
+The design follows the Warner-Warden unit maze as Warden (1931) describes
+it and Wijnen et al. (2024) draw it: modular units whose dead ends first split
+into two short corridors, so an animal cannot see that a corridor ends before
+entering it (Wijnen et al., 2024). Warden's dimensions are not reproduced here: the 10.16 cm (4 in)
 corridor width is an estimate, the alley width typical of rat mazes of the
 period (e.g. Small 1901; Tolman & Nyswander 1927), and the arm lengths are
 placeholders. The origin is the centre of the maze's bounding box.
 
 The rat enters from an entrance box and runs to a food box. Warden's 1929
-papers were not available to check (UNVERIFIED); Warden (1931, pp. 458-462)
-describes the Warner-Warden unit maze with an "entrance compartment" and a
+papers, which introduced the maze, were not available to check; Warden (1931,
+pp. 458-462) describes the Warner-Warden unit maze with an "entrance compartment" and a
 "food box", separated from the maze by doors, and "whole-wheat bread and milk"
 as food, but gives neither box's size. The two boxes are therefore landmarks
 with point regions at the ends of the first and last arms.
@@ -44,7 +44,7 @@ Psychology, 36(1), 177-178.
 
 Wijnen, K., Genzel, L., & van der Meij, J. (2024). Rodent maze studies: from
 following simple rules to complex map learning. Brain Structure and Function,
-229, 823. https://doi.org/10.1007/s00429-024-02771-x
+229(4), 823–841. https://doi.org/10.1007/s00429-024-02771-x
 
 Examples
 --------
@@ -72,8 +72,20 @@ from shapely.affinity import translate
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
-from neurospatial.simulation.mazes._geometry import make_buffered_line, union_polygons
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_count,
+    check_lengths,
+    check_longer_than_wide,
+    refuse,
+    warn_if_bins_too_coarse,
+)
+from neurospatial.simulation.mazes._geometry import (
+    make_buffered_line,
+    single_floor,
+    union_polygons,
+)
 
 
 @dataclass(frozen=True)
@@ -90,10 +102,18 @@ class RepeatedYDims(MazeDims):
     n_junctions : int
         Number of Y-junctions in series. Default is 4.
     arm_length : float
-        Length of each arm in the Y-junction in cm. Default is 25.0.
+        Length of each arm's centreline in cm, from the junction centre to
+        the centre of the arm's rounded end. Arms that join neighbouring
+        junctions meet end to end, so those junctions are
+        ``2 * arm_length`` apart along the corridor; an arm with a free end
+        reaches ``arm_length + corridor_width / 2`` from its junction.
+        Default is 25.0, a placeholder.
     fork_length : float
-        Length of the small fork arms at each terminal in cm. Default is 12.0.
-    width : float
+        Length of each fork arm's centreline in cm, from the terminal arm's
+        end to the centre of the fork arm's rounded end, which reaches
+        ``fork_length + corridor_width / 2``. Default is 12.0, a
+        placeholder.
+    corridor_width : float
         Width of all corridors in cm. Default is 10.16 (4 in; an estimate,
         since Warden's alley width is not reproduced here).
 
@@ -106,10 +126,10 @@ class RepeatedYDims(MazeDims):
     25.0
     >>> dims.fork_length
     12.0
-    >>> dims.width
+    >>> dims.corridor_width
     10.16
 
-    >>> custom = RepeatedYDims(n_junctions=6, arm_length=30.0, width=10.0)
+    >>> custom = RepeatedYDims(n_junctions=6, arm_length=30.0, corridor_width=10.0)
     >>> custom.n_junctions
     6
     """
@@ -117,7 +137,27 @@ class RepeatedYDims(MazeDims):
     n_junctions: int = 4
     arm_length: float = 25.0
     fork_length: float = 12.0
-    width: float = 10.16
+    corridor_width: float = 10.16
+
+    def __post_init__(self) -> None:
+        check_lengths(self, "arm_length", "fork_length", "corridor_width")
+        check_count(self, "n_junctions", 1, "the maze needs at least one Y-junction")
+        check_longer_than_wide(self, "arm_length", "arm")
+        check_longer_than_wide(self, "fork_length", "fork arm")
+        # Junctions two apart point the same way, 4 arm_length cos(30 deg)
+        # apart, so their forks' facing tips, fork_length cos(30 deg) out from
+        # each terminal arm, touch unless that gap exceeds a corridor width.
+        if (
+            self.n_junctions >= 3
+            and self.fork_length
+            >= 2.0 * self.arm_length - self.corridor_width / np.sqrt(3.0)
+        ):
+            refuse(
+                self,
+                ("arm_length", "fork_length", "corridor_width"),
+                "makes the forks of junctions that point the same way touch",
+                "Use a fork_length below 2 * arm_length - corridor_width / sqrt(3).",
+            )
 
 
 def make_repeated_y_maze(
@@ -247,7 +287,7 @@ def make_repeated_y_maze(
                 make_buffered_line(
                     start=tuple(junction_pos),
                     end=tuple(arm_end),
-                    width=dims.width,
+                    width=dims.corridor_width,
                 )
             )
 
@@ -272,14 +312,14 @@ def make_repeated_y_maze(
             make_buffered_line(
                 start=tuple(terminal_tip),
                 end=tuple(fork_left_end),
-                width=dims.width,
+                width=dims.corridor_width,
             )
         )
         polygons.append(
             make_buffered_line(
                 start=tuple(terminal_tip),
                 end=tuple(fork_right_end),
-                width=dims.width,
+                width=dims.corridor_width,
             )
         )
 
@@ -302,7 +342,7 @@ def make_repeated_y_maze(
         regions[f"junction_{junction_idx + 1}"] = junction_pos.copy()
 
     # Union all corridors and put the origin at the centre of the bounding box
-    maze_polygon = union_polygons(polygons)
+    maze_polygon = single_floor(union_polygons(polygons), dims)
     min_x, min_y, max_x, max_y = maze_polygon.bounds
     offset = np.array([(min_x + max_x) / 2.0, (min_y + max_y) / 2.0])
     maze_polygon = translate(maze_polygon, -offset[0], -offset[1])
@@ -331,6 +371,12 @@ def make_repeated_y_maze(
     if include_track:
         env_track = _create_repeated_y_track_graph(dims, bin_size, offset)
 
+    warn_if_bins_too_coarse(
+        env_2d,
+        maze="repeated Y-maze",
+        bin_size=bin_size,
+        narrowest_corridor=dims.corridor_width,
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 
@@ -466,7 +512,7 @@ def _create_repeated_y_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,
         bin_size=bin_size,
-        track_width=dims.width,
+        track_width=dims.corridor_width,
         name="repeated_y_maze_1d",
     )
     env_track = env_track.with_metadata(units="cm")

@@ -53,11 +53,19 @@ from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MazeDims,
+    MazeEnvironments,
+    check_count,
+    check_lengths,
+    refuse,
+    warn_if_bins_too_coarse,
+)
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_circular_arena,
     make_corridor_polygon,
+    single_floor,
     union_polygons,
 )
 
@@ -79,9 +87,12 @@ class RadialArmDims(MazeDims):
         Radius of the central platform in cm. Default is 17.75 (35.5 cm
         diameter).
     arm_length : float
-        Length of each arm from the edge of the central platform to the arm's
-        far end in cm. Default is 76.0.
-    arm_width : float
+        Length of each arm in cm along its centreline, from the edge of the
+        central platform to the arm's far end, the length Zoladek & Roberts
+        (1978) give. Unlike the T, Y, plus and W mazes, it excludes the
+        platform: an arm's end lies ``center_radius + arm_length`` from the
+        maze centre. Default is 76.0.
+    corridor_width : float
         Width of each arm corridor in cm. Default is 9.0.
     n_arms : int
         Number of arms radiating from the center. Default is 8 (standard
@@ -99,7 +110,7 @@ class RadialArmDims(MazeDims):
     35.5
     >>> dims.arm_length
     76.0
-    >>> dims.arm_width
+    >>> dims.corridor_width
     9.0
     >>> dims.n_arms
     8
@@ -113,10 +124,50 @@ class RadialArmDims(MazeDims):
 
     center_radius: float = 17.75
     arm_length: float = 76.0
-    arm_width: float = 9.0
+    corridor_width: float = 9.0
     n_arms: int = 8
     food_cup_length: float = 7.5
     food_cup_width: float = 5.0
+
+    def __post_init__(self) -> None:
+        check_lengths(
+            self,
+            "center_radius",
+            "arm_length",
+            "corridor_width",
+            "food_cup_length",
+            "food_cup_width",
+        )
+        check_count(self, "n_arms", 2, "a radial maze needs at least two arms")
+        # Neighbouring arms' facing sides cross where they are half an arm
+        # width apart, corridor_width / 2 / sin(pi / n_arms) from the centre;
+        # the arms are separate where they leave the platform only if that
+        # point lies on the platform.
+        widest = 2.0 * self.center_radius * np.sin(np.pi / self.n_arms)
+        if self.corridor_width >= widest:
+            refuse(
+                self,
+                ("center_radius", "corridor_width", "n_arms"),
+                "makes neighbouring arms overlap where they leave the central "
+                "platform, so they merge into one",
+                f"Use a corridor_width below {widest:.4g} cm "
+                "(2 * center_radius * sin(pi / n_arms)), fewer arms or a "
+                "larger center_radius.",
+            )
+        if self.food_cup_length > self.arm_length:
+            refuse(
+                self,
+                ("food_cup_length", "arm_length"),
+                "makes the food cup longer than the arm it is fixed to",
+                "Use a food_cup_length no longer than arm_length.",
+            )
+        if self.food_cup_width > self.corridor_width:
+            refuse(
+                self,
+                ("food_cup_width", "corridor_width"),
+                "makes the food cup wider than the arm it sits in",
+                "Use a food_cup_width no wider than corridor_width.",
+            )
 
 
 def make_radial_arm_maze(
@@ -172,7 +223,8 @@ def make_radial_arm_maze(
     along the arm; the cup is laid with its length along the arm, as they
     give the arms' "76 cm long x 9 cm wide", so the 5 cm side fits across
     the 9 cm arm. With bins much larger than the cup, a cup's region may
-    cover no bin centre.
+    cover no bin centre; the maze then warns, naming a bin size that covers
+    every cup.
 
     Track Graph Topology:
 
@@ -242,7 +294,7 @@ def make_radial_arm_maze(
         arm_polygon = make_corridor_polygon(
             start=start_pos,
             end=end_pos,
-            width=dims.arm_width,
+            width=dims.corridor_width,
         )
         arm_polygons.append(arm_polygon)
 
@@ -260,7 +312,7 @@ def make_radial_arm_maze(
         )
 
     # Union center and all arms into single polygon
-    radial_polygon = union_polygons([center_polygon, *arm_polygons])
+    radial_polygon = single_floor(union_polygons([center_polygon, *arm_polygons]), dims)
 
     # Create 2D environment
     env_2d = Environment.from_polygon(
@@ -294,6 +346,12 @@ def make_radial_arm_maze(
     if include_track:
         env_track = _create_radial_arm_track_graph(dims, bin_size)
 
+    warn_if_bins_too_coarse(
+        env_2d,
+        maze="radial arm maze",
+        bin_size=bin_size,
+        narrowest_corridor=dims.corridor_width,
+    )
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 
@@ -339,7 +397,7 @@ def _create_radial_arm_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,  # No spacing between edges
         bin_size=bin_size,
-        track_width=dims.arm_width,
+        track_width=dims.corridor_width,
         name="radial_arm_maze_1d",
     )
     env_track = env_track.with_metadata(units="cm")

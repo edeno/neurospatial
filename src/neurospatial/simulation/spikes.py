@@ -2,15 +2,16 @@
 
 import logging
 import warnings
-from typing import Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from tqdm.auto import tqdm
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._validation import validate_finite
 from neurospatial.simulation.models.base import NeuralModel
+from neurospatial.simulation.models.boundary_cells import _shared_ray_distances
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +26,13 @@ def generate_poisson_spikes(
     """Generate Poisson spike train from firing rate time series.
 
     Implements an inhomogeneous Poisson process with absolute refractory period.
-    Generalizes existing spike generation to handle time-varying rates.
 
     Parameters
     ----------
     firing_rate : NDArray[np.float64], shape (n_time,)
-        Firing rate in Hz, held constant on each following sampling interval.
-        The final sample has no following interval and contributes no spikes.
+        Non-negative firing rate in Hz, held constant on each following
+        sampling interval. The final sample has no following interval and
+        contributes no spikes.
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds. Must be strictly increasing. Non-uniform
         spacing is supported: each interval contributes its own width to
@@ -53,8 +54,9 @@ def generate_poisson_spikes(
     ValueError
         If ``firing_rate`` and ``times`` do not have the same length.
     ValueError
-        If ``firing_rate`` contains non-finite values (NaN or inf), or if
-        ``times`` contains non-finite values (NaN or inf).
+        If ``firing_rate`` contains non-finite values (NaN or inf) or
+        negative values, or if ``times`` contains non-finite values (NaN or
+        inf).
     ValueError
         If ``times`` is not strictly increasing (i.e. any interval has
         zero or negative width).
@@ -86,11 +88,12 @@ def generate_poisson_spikes(
     matching biological absolute refractory period dynamics.
 
     With ``refractory_period=0``, this is an exact piecewise-constant Poisson
-    process. A positive refractory period removes candidates and therefore
-    lowers the realized firing rate relative to the supplied candidate rate.
+    process. A positive refractory period ``τ`` removes candidates and
+    therefore lowers the realized firing rate: for a constant rate ``r`` it
+    is ``r / (1 + r τ)``, as each kept spike is followed by a dead time ``τ``
+    and then an exponential wait of mean ``1 / r``.
 
-    **Performance**: O(n + k log k) for n time points and k candidate spikes. For typical
-    simulations (60s @ 100 Hz = 6000 points), runs in <50ms.
+    The cost is O(n + k log k) for n time points and k candidate spikes.
 
     Examples
     --------
@@ -115,7 +118,7 @@ def generate_poisson_spikes(
     >>> positions, times = simulate_trajectory_ou(
     ...     env, duration=60.0, seed=42, speed_units="cm"
     ... )
-    >>> rates = pc.firing_rate(positions)
+    >>> rates = pc.firing_rate(times, positions)
     >>>
     >>> # Generate spikes
     >>> spike_times = generate_poisson_spikes(rates, times, seed=42)
@@ -165,6 +168,21 @@ def generate_poisson_spikes(
         )
 
     firing_rate = validate_finite(firing_rate, name="firing_rate")
+    negative = np.flatnonzero(firing_rate < 0)
+    if len(negative):
+        first = int(negative[0])
+        raise ValueError(
+            _format_error(
+                f"firing_rate must be non-negative, got {len(negative)} negative "
+                f"value(s); the first is {float(firing_rate[first])!r} Hz at index {first}.",
+                why="a Poisson rate is an expected number of spikes per second, "
+                "which cannot be below zero.",
+                fix="check how the rate was computed (for example a baseline "
+                "above the peak, or a modulation deeper than the rate); clip it "
+                "with np.clip(rate, 0, None) only if the negative values are "
+                "rounding noise",
+            )
+        )
 
     if not np.all(np.isfinite(times)):
         n_bad = int(np.sum(~np.isfinite(times)))
@@ -190,7 +208,7 @@ def generate_poisson_spikes(
     # Counts, rather than Bernoulli occupancy, retain Poisson multiplicities.
     # Uniform conditional event times give the exact process for the specified
     # piecewise-constant rate, including nonuniform sampling intervals.
-    counts = rng.poisson(np.maximum(firing_rate[:-1], 0.0) * bin_dt)
+    counts = rng.poisson(firing_rate[:-1] * bin_dt)
     interval_ids = np.repeat(np.arange(len(bin_dt)), counts)
     candidate_spikes = (
         times[interval_ids] + rng.random(len(interval_ids)) * bin_dt[interval_ids]
@@ -234,8 +252,9 @@ def generate_population_spikes(
 ) -> list[NDArray[np.float64]]:
     """Generate spike trains for population of neurons.
 
-    Processes multiple neural models in parallel with progress tracking.
-    Each neuron gets an independent spike train based on its firing rate model.
+    Each model's rate is computed along the trajectory and turned into an
+    independent Poisson spike train, one model after another, with optional
+    progress tracking.
 
     Parameters
     ----------
@@ -243,29 +262,32 @@ def generate_population_spikes(
         List of neural models (PlaceCellModel, BorderCellModel, GridCellModel, etc.).
         Each model must implement the NeuralModel protocol.
     times : NDArray[np.float64], shape (n_time,)
-        Time points in seconds (must be uniformly spaced).
+        Strictly increasing time points in seconds; the spacing may vary.
     positions : NDArray[np.float64], shape (n_time, n_dims)
         Position trajectory in continuous coordinates.
     headings : NDArray[np.float64], shape (n_time,), optional
-        Head direction in radians. Required for spatial-view models and
-        directional object-vector models. For head-direction models, headings
-        are used when provided; otherwise they are the direction of the
-        smoothed velocity, held at the last direction of movement through
-        stops (samples before the first movement take the first direction).
-        A trajectory that never moves then raises ``ValueError``.
+        Head direction in radians (0 = East, +pi/2 = North), passed to every
+        model. When None and a model needs headings (``requires_headings``:
+        head-direction and spatial-view cells, egocentric object-vector
+        cells), the head is assumed to point where the animal moves: the
+        heading is the direction of the smoothed velocity, held at the last
+        direction of movement through stops (samples before the first
+        movement take the first direction). A trajectory that never moves
+        then raises ``ValueError``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
-        time. Entry 0 is ignored. Used only to derive head-direction models'
-        headings, so the velocity is never smoothed across a break; the held
+        time. Entry 0 is ignored. Used only to derive the headings of models
+        that need them, so the velocity is never smoothed across a break; the held
         direction never carries over a break: each recording starts with its
         own first direction of movement. Not allowed together with
         ``headings``.
     refractory_period : float, optional
         Refractory period for each neuron in seconds (default: 2ms).
     seed : int | None, optional
-        Random seed for reproducibility. Each neuron gets a derived seed
-        (seed + i) to ensure independence while maintaining reproducibility.
+        Random seed for reproducibility. Each neuron's spikes come from its
+        own child of ``np.random.SeedSequence(seed)``, so the trains are
+        independent and no two seeds share a stream.
     show_progress : bool, optional
         Show progress bar during spike generation (default: True).
         Set to False for quiet operation in scripts or tests.
@@ -279,8 +301,11 @@ def generate_population_spikes(
     Raises
     ------
     ValueError
-        If a head-direction model has no ``headings`` and the trajectory never
+        If a model needs headings, none are given and the trajectory never
         moves, so no movement direction can be derived.
+    ValueError
+        If a model's rate is not finite at some sample: the message names
+        the model and whether positions or headings are missing there.
     ValueError
         If ``break_before`` is not a Boolean array with one entry per sample,
         or is passed together with ``headings``.
@@ -381,24 +406,22 @@ def generate_population_spikes(
     - Number of spikes generated for current cell
     - Mean firing rate for current cell
 
-    **Reproducibility**: Each model gets a derived seed (seed + i) to ensure:
+    **Reproducibility**: ``np.random.SeedSequence(seed).spawn(len(models))``
+    gives every model its own stream, so trains are independent across
+    neurons, the same ``seed`` reproduces them, and runs with different seeds
+    share no stream.
 
-    - Independent spike trains across neurons
-    - Reproducible results with same seed
-    - Consistent behavior across runs
-
-    **Performance**: For 50 cells × 6000 time points, runs in ~5 seconds.
-    Use ``show_progress=False`` in tight loops or tests to avoid overhead.
+    **Headings**: without ``headings``, models that need one see the
+    direction of movement, which assumes the animal faces where it goes.
+    Pass measured head directions to simulate a head that turns
+    independently of the path.
     """
-    # Initialize random seed handling
+    from neurospatial._observation import validate_break_before
     from neurospatial._validation import validate_times_positions
 
     times, positions = validate_times_positions(
         times, positions, call="generate_population_spikes"
     )
-    from neurospatial._exceptions import _format_error
-    from neurospatial._observation import validate_break_before
-
     breaks = validate_break_before(
         break_before, len(times), call="generate_population_spikes"
     )
@@ -412,101 +435,124 @@ def generate_population_spikes(
                 fix="pass headings, or break_before to derive them, not both.",
             )
         )
-    base_seed = seed
+    if len(times) < 2:
+        # No sampling interval, so no spike can occur.
+        return [np.array([], dtype=np.float64) for _ in models]
+    derived = headings is None and any(model.requires_headings for model in models)
+    if derived:
+        headings = _held_movement_heading(times, positions, break_before=breaks)
 
-    # Pre-allocate spike trains list
+    model_seeds: list[np.random.SeedSequence | None] = (
+        [None] * len(models)
+        if seed is None
+        else list(np.random.SeedSequence(seed).spawn(len(models)))
+    )
+    duration = float(times[-1] - times[0])
     spike_trains = []
-
-    # Create progress bar
     iterator = tqdm(
         enumerate(models),
         total=len(models),
         desc="Generating spikes",
         disable=not show_progress,
     )
+    # Boundary-vector cells on the same walls cast their rays once.
+    with _shared_ray_distances():
+        for i, model in iterator:
+            rates = np.asarray(
+                model.firing_rate(times, positions, headings=headings),
+                dtype=np.float64,
+            )
+            _check_model_rates(
+                rates, i, model, times, positions, headings, derived_headings=derived
+            )
+            spikes = generate_poisson_spikes(
+                rates,
+                times,
+                refractory_period=refractory_period,
+                seed=_seed_int(model_seeds[i]),
+            )
+            spike_trains.append(spikes)
+            iterator.set_postfix(
+                {"n_spikes": len(spikes), "rate": f"{len(spikes) / duration:.1f} Hz"}
+            )
 
-    # Generate spikes for each model
-    for i, model in iterator:
-        # Compute firing rates for this model
-        rates = _compute_model_firing_rate(
-            model, positions, times, headings, break_before=breaks
-        )
-
-        # Generate spikes with derived seed for reproducibility
-        model_seed = None if base_seed is None else base_seed + i
-        spikes = generate_poisson_spikes(
-            rates, times, refractory_period=refractory_period, seed=model_seed
-        )
-
-        spike_trains.append(spikes)
-
-        # Update progress bar with cell-specific stats
-        mean_rate = len(spikes) / times[-1] if len(times) > 0 else 0.0
-        iterator.set_postfix(
-            {
-                "n_spikes": len(spikes),
-                "rate": f"{mean_rate:.1f} Hz",
-            }
-        )
-
-    # Print summary after completion
-    if show_progress:
+    if show_progress and models:
         total_spikes = sum(len(st) for st in spike_trains)
-        avg_spikes_per_cell = total_spikes / len(models) if len(models) > 0 else 0.0
-        duration = times[-1] if len(times) > 0 else 1.0
-        mean_rate = total_spikes / (len(models) * duration) if len(models) > 0 else 0.0
-
         logger.info(
             "Generated %d cells, %d total spikes "
             "(avg %.0f spikes/cell), mean rate %.1f Hz",
             len(models),
             total_spikes,
-            avg_spikes_per_cell,
-            mean_rate,
+            total_spikes / len(models),
+            total_spikes / (len(models) * duration),
         )
 
     return spike_trains
 
 
-def _compute_model_firing_rate(
+def _seed_int(sequence: np.random.SeedSequence | None) -> int | None:
+    """An integer seed drawn from ``sequence``, or None for fresh entropy."""
+    return None if sequence is None else int(sequence.generate_state(1)[0])
+
+
+def _check_model_rates(
+    rates: NDArray[np.float64],
+    index: int,
     model: NeuralModel,
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
     *,
-    break_before: NDArray[np.bool_] | None = None,
-) -> NDArray[np.float64]:
-    """Compute firing rates for models with different input conventions."""
-    from neurospatial.simulation.models.head_direction_cells import (
-        HeadDirectionCellModel,
-    )
-    from neurospatial.simulation.models.object_vector_cells import (
-        ObjectVectorCellModel,
-    )
-    from neurospatial.simulation.models.spatial_view_cells import SpatialViewCellModel
+    derived_headings: bool,
+) -> None:
+    """Refuse a model's rates that are not one finite rate per sample.
 
-    model_any: Any = model
-
-    if isinstance(model_any, HeadDirectionCellModel):
-        if headings is None:
-            if len(times) < 2:
-                return np.zeros(len(times), dtype=np.float64)
-            headings = _held_movement_heading(
-                times, positions, break_before=break_before
-            )
-        rates = model_any.firing_rate(headings, positions=positions, times=times)
-    elif isinstance(model_any, SpatialViewCellModel | ObjectVectorCellModel):
-        rates = model_any.firing_rate(positions, times, headings=headings)
-    else:
-        rates = model_any.firing_rate(positions, times)
-
-    rates = np.asarray(rates, dtype=np.float64)
-    if len(rates) != len(times):
+    The error names the model and says which input is missing where the rate
+    is undefined.
+    """
+    name = f"Model {index} ({type(model).__name__})"
+    if rates.shape != times.shape:
         raise ValueError(
-            f"Model {type(model).__name__}.firing_rate returned {len(rates)} rates "
-            f"for {len(times)} time points."
+            _format_error(
+                f"{name}.firing_rate returned shape {rates.shape} for "
+                f"{len(times)} time points.",
+                fix="return one rate in Hz per sample, shape (n_time,)",
+            )
         )
-    return rates
+    undefined = ~np.isfinite(rates)
+    if not undefined.any():
+        return
+    first = int(np.flatnonzero(undefined)[0])
+    no_position = undefined & ~np.all(np.isfinite(positions), axis=1)
+    no_heading = np.zeros_like(undefined)
+    if headings is not None and model.requires_headings:
+        no_heading = undefined & ~np.isfinite(headings) & ~no_position
+    other = undefined & ~no_position & ~no_heading
+    causes = []
+    if no_position.any():
+        causes.append(f"{int(no_position.sum())} have a missing (NaN) position")
+    if no_heading.any():
+        source = "derived from the velocity" if derived_headings else "given"
+        causes.append(f"{int(no_heading.sum())} have a missing heading ({source})")
+    if other.any():
+        causes.append(
+            f"{int(other.sum())} have a position where the model has no "
+            "defined input, such as outside the walls of a wall-driven cell"
+        )
+    raise ValueError(
+        _format_error(
+            f"{name} has no defined firing rate at {int(undefined.sum())} of "
+            f"{len(times)} samples (first at t = {times[first]:g} s): "
+            + "; ".join(causes)
+            + ".",
+            why="a missing input is not zero activity, so no spikes can be "
+            "drawn there without inventing a rate.",
+            fix="simulate only samples with a finite position (and heading, "
+            "for a model that needs one) inside the environment, for example "
+            "by interpolating short tracking gaps or splitting the recording "
+            "at long ones",
+        )
+    )
 
 
 def _held_movement_heading(
@@ -517,7 +563,7 @@ def _held_movement_heading(
 ) -> NDArray[np.float64]:
     """Movement direction at every sample, held through stops.
 
-    A simulated head-direction cell needs a heading at every sample, including
+    A simulated cell that needs headings needs one at every sample, including
     where the animal is still and its movement direction is not defined. The
     last defined direction is held forward through each stop, and samples
     before a recording's first movement take that recording's first defined
@@ -562,7 +608,6 @@ def _held_movement_heading(
     >>> print(f"{held[9]:.3f} {held[20]:.3f}")
     0.000 1.571
     """
-    from neurospatial._exceptions import _format_error
     from neurospatial.behavior import heading_from_velocity
 
     with warnings.catch_warnings():
@@ -594,7 +639,7 @@ def _held_movement_heading(
         first_t, last_t = times[starts[r]], times[ends[r] - 1]
         raise ValueError(
             _format_error(
-                "Cannot derive head direction for HeadDirectionCellModel: no "
+                "Cannot derive headings for the models that need them: no "
                 f"movement direction is defined in recording {r + 1} (samples "
                 f"{starts[r]} to {ends[r] - 1}, {first_t:g} to {last_t:g} s), "
                 "because it never moves or no interval between its samples is "
@@ -621,25 +666,30 @@ def add_modulation(
 ) -> NDArray[np.float64]:
     """Add rhythmic modulation to spike train (e.g., theta oscillation).
 
-    Implements non-homogeneous thinning to create phase-locked firing patterns.
-    This simulates the tendency of neurons to fire at specific phases of ongoing
-    oscillations, common in hippocampus (theta), cortex (gamma), and other regions.
+    Thins the spike train so that the kept spikes lock to a phase of an
+    oscillation, as neurons fire at preferred phases of ongoing rhythms such
+    as hippocampal theta or cortical gamma.
 
     Parameters
     ----------
     spike_times : NDArray[np.float64], shape (n_spikes,)
-        Original spike times in seconds.
+        Original spike times in seconds, finite and sorted in ascending order.
     modulation_freq : float
         Modulation frequency in Hz (e.g., 8 Hz for hippocampal theta,
         40 Hz for cortical gamma).
     modulation_depth : float, optional
         Modulation strength from 0 (no modulation) to 1 (full modulation).
         Default: 0.5 (moderate modulation).
+
         - 0.0: No modulation, all spikes kept
-        - 0.5: Moderate phase locking
-        - 1.0: Strong phase locking, spikes at anti-preferred phases removed
+        - 0.5: The anti-preferred phase keeps a third as many spikes as the
+          preferred phase
+        - 1.0: No spikes at the anti-preferred phase
     modulation_phase : float, optional
-        Phase offset in radians (default: 0.0). Controls preferred firing phase.
+        Preferred oscillation phase in radians (default: 0.0): the kept
+        spikes concentrate where ``2π · modulation_freq · t`` (mod 2π) equals
+        it.
+
         - 0.0: Spikes preferred at cosine peaks
         - π/2: Spikes preferred at sine peaks
         - π: Spikes preferred at cosine troughs
@@ -652,34 +702,37 @@ def add_modulation(
         Spike times after rhythmic modulation (subset of original spikes).
         Spikes are kept in sorted order.
 
+    Raises
+    ------
+    ValueError
+        If ``modulation_freq`` is not finite and positive,
+        ``modulation_depth`` is not in [0, 1], ``modulation_phase`` is not
+        finite, or ``spike_times`` is not a 1-D array of finite times in
+        ascending order.
+
     Notes
     -----
-    **Algorithm (non-homogeneous thinning)**:
+    **Algorithm (thinning)**: each spike at time ``t`` is kept with
+    probability
 
-    1. Compute phase of each spike:
+        p(t) = (1 + d cos(2π f t - φ)) / (1 + d),
 
-       phase[i] = 2π * freq * spike_times[i] + phase_offset
+    with ``d = modulation_depth``, ``f = modulation_freq`` and
+    ``φ = modulation_phase``. At the preferred phase ``p = 1``, so the rate
+    there equals the input rate; at the anti-preferred phase
+    ``p = (1 - d) / (1 + d)``. ``p`` changes continuously with ``d`` and is 1
+    everywhere at ``d = 0``.
 
-    2. Compute acceptance probability based on cosine modulation:
+    **Mean rate**: averaged over the oscillation, thinning keeps ``1 / (1 + d)``
+    of the spikes, so the mean rate falls by that factor (two thirds of the
+    spikes at ``d = 0.5``). To modulate a cell without changing its mean
+    rate, modulate the rate itself before drawing spikes,
+    ``generate_poisson_spikes(rate * (1 + d * np.cos(2 * np.pi * f * times - φ)), times)``.
 
-       p_accept[i] = (1 + depth * cos(phase[i])) / 2
-
-       This ensures:
-       - p_accept ∈ [0, 1] for all phases
-       - At preferred phase (cos = 1): p = (1 + depth) / 2
-       - At anti-preferred phase (cos = -1): p = (1 - depth) / 2
-
-    3. Randomly keep or discard each spike based on acceptance probability
-
-    **Biological Motivation**: Many neurons show phase-locked firing to local
-    field potential oscillations. Examples:
-
-    - Hippocampal place cells preferentially fire on theta trough (~180°)
-    - Interneurons often fire on theta peak (0°)
-    - Cortical neurons show gamma phase locking (30-80 Hz)
-
-    **Performance**: O(n) time complexity for n spikes. Typical processing
-    time <10ms for 1000 spikes.
+    **Biological Motivation**: Many neurons fire phase-locked to local field
+    potential oscillations. Hippocampal pyramidal cells fire most near the
+    trough of theta recorded in the CA1 pyramidal layer (Buzsáki 2002), and
+    cortical neurons lock to gamma (30-80 Hz).
 
     Examples
     --------
@@ -705,21 +758,22 @@ def add_modulation(
     >>> positions, times = simulate_trajectory_ou(
     ...     env, duration=60.0, seed=42, speed_units="cm"
     ... )
-    >>> rates = pc.firing_rate(positions)
-    >>> spike_times = generate_poisson_spikes(rates, times, seed=42)
+    >>> rates = pc.firing_rate(times, positions)
+    >>> spike_times = generate_poisson_spikes(rates, times, seed=7)
     >>>
-    >>> # Add theta modulation (8 Hz, moderate depth)
-    >>> if len(spike_times) > 0:
-    ...     theta_modulated = add_modulation(
-    ...         spike_times,
-    ...         modulation_freq=8.0,
-    ...         modulation_depth=0.7,
-    ...         seed=42,
-    ...     )
-    ...     # Modulation reduces spike count
-    ...     assert len(theta_modulated) < len(spike_times)
-    ...     # Modulated spikes are subset of original
-    ...     assert all(t in spike_times for t in theta_modulated)
+    >>> # Add theta modulation (8 Hz, preferred phase at the theta trough)
+    >>> theta_modulated = add_modulation(
+    ...     spike_times,
+    ...     modulation_freq=8.0,
+    ...     modulation_depth=0.7,
+    ...     modulation_phase=np.pi,
+    ...     seed=42,
+    ... )
+    >>> bool(np.isin(theta_modulated, spike_times).all())  # a subset
+    True
+    >>> # About 1 / (1 + 0.7) = 59% of the spikes are kept
+    >>> bool(0.5 < len(theta_modulated) / len(spike_times) < 0.7)
+    True
 
     Compare modulation depths:
 
@@ -742,45 +796,57 @@ def add_modulation(
 
     References
     ----------
-    O'Keefe & Recce (1993), Hippocampus - Theta phase precession
-    Buzsáki (2002), Neuron - Theta oscillations review
+    Buzsáki, G. (2002). Theta oscillations in the hippocampus. Neuron, 33(3),
+        325-340.
     """
-    # Handle empty spike train
-    if len(spike_times) == 0:
-        return np.array([], dtype=np.float64)
-
-    # Validate parameters
-    if not 0.0 <= modulation_depth <= 1.0:
+    if not (np.isfinite(modulation_freq) and modulation_freq > 0.0):
         raise ValueError(
-            f"modulation_depth must be in range [0, 1], got {modulation_depth}"
+            _format_error(
+                f"modulation_freq must be a finite positive frequency in Hz, got "
+                f"{modulation_freq!r}.",
+                fix="pass the oscillation frequency, e.g. modulation_freq=8.0 "
+                "for theta",
+            )
+        )
+    if not (np.isfinite(modulation_depth) and 0.0 <= modulation_depth <= 1.0):
+        raise ValueError(
+            _format_error(
+                f"modulation_depth must be in [0, 1], got {modulation_depth!r}.",
+                fix="pass 0 for no modulation up to 1 for no spikes at the "
+                "anti-preferred phase",
+            )
+        )
+    if not np.isfinite(modulation_phase):
+        raise ValueError(
+            _format_error(
+                f"modulation_phase must be a finite angle in radians, got "
+                f"{modulation_phase!r}.",
+                fix="pass the preferred phase, e.g. modulation_phase=np.pi for "
+                "the trough",
+            )
+        )
+    spike_times = np.asarray(spike_times, dtype=np.float64)
+    if spike_times.ndim != 1:
+        raise ValueError(
+            _format_error(
+                f"spike_times must be 1-D, got shape {spike_times.shape}.",
+                fix="pass one neuron's spike times in seconds",
+            )
+        )
+    spike_times = validate_finite(spike_times, name="spike_times")
+    if np.any(np.diff(spike_times) < 0):
+        raise ValueError(
+            _format_error(
+                "spike_times must be sorted in ascending order.",
+                fix="pass np.sort(spike_times)",
+            )
         )
 
-    if modulation_freq <= 0.0:
-        raise ValueError(
-            f"modulation_freq must be positive (Hz), got {modulation_freq}"
-        )
-
-    # Special case: zero modulation depth means no modulation (keep all spikes)
-    if modulation_depth == 0.0:
-        return np.array(spike_times, dtype=np.float64, copy=True)
-
-    # Initialize random number generator
     rng = np.random.default_rng(seed)
-
-    # Compute phase of each spike time
-    # phase = 2π * frequency * time + phase_offset
-    phases = 2 * np.pi * modulation_freq * spike_times + modulation_phase
-
-    # Compute acceptance probability using cosine modulation
-    # p_accept = (1 + depth * cos(phase)) / 2
-    # This ensures p ∈ [0, 1] for all phases
-    acceptance_prob = (1.0 + modulation_depth * np.cos(phases)) / 2.0
-
-    # Thin spikes: keep spike if random value < acceptance probability
-    random_values = rng.random(len(spike_times))
-    keep_mask = random_values < acceptance_prob
-
-    # Return modulated spikes (already sorted since input is sorted)
-    modulated_spikes = spike_times[keep_mask]
-
+    phases = 2 * np.pi * modulation_freq * spike_times - modulation_phase
+    acceptance_prob = (1.0 + modulation_depth * np.cos(phases)) / (
+        1.0 + modulation_depth
+    )
+    keep_mask = rng.random(len(spike_times)) < acceptance_prob
+    modulated_spikes: NDArray[np.float64] = spike_times[keep_mask]
     return modulated_spikes

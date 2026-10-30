@@ -91,7 +91,7 @@ def _make_linear_track_sim(
             max_rate=30.0,
             seed=int(rng.integers(0, 2**31)),
         )
-        rates = cell.firing_rate(positions, times)
+        rates = cell.firing_rate(times, positions)
         spikes = generate_poisson_spikes(rates, times, seed=int(rng.integers(0, 2**31)))
         spike_times.append(spikes)
 
