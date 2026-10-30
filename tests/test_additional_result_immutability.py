@@ -32,6 +32,7 @@ from neurospatial.reactivation.assemblies import (
     AssemblyDetectionResult,
     AssemblyPattern,
 )
+from neurospatial.replay.circular import CircularSequenceResult
 from neurospatial.replay.trajectory import IsotonicFitResult, RadonDetectionResult
 from neurospatial.stats.circular import CircularBasisResult
 from neurospatial.stats.shuffle import ShuffleTestResult
@@ -167,6 +168,16 @@ CASES = [
             "eigenvalues": np.ones(2),
             "threshold": 0.5,
             "unit_ids": np.array([5, 9]),
+        },
+    ),
+    (
+        CircularSequenceResult,
+        {
+            "slope": 1.0,
+            "angular_slope": 0.1,
+            "r_squared": 1.0,
+            "decoded_angles": np.zeros(2),
+            "cumulative_angles": np.zeros(2),
         },
     ),
     (

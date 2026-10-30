@@ -23,6 +23,11 @@ fit_isotonic_trajectory : Monotonic fit (Michon et al. 2019)
     Weighted isotonic fit of the MAP positions, scored by the mean MAP
     probability times R².
 
+fit_circular_sequence : Circular-track fit (Wikenheiser & Redish 2013)
+    R² of a line through the cumulative decoded path around a loop, from
+    each time bin's circular mean, so sequences that cross the start of the
+    loop's linear position are scored whole.
+
 Criteria Metrics
 ----------------
 trajectory_metrics : Per-event metrics thresholded by criteria-based detection
@@ -98,6 +103,8 @@ Result Containers
 -----------------
 RadonDetectionResult, LinearFitResult, IsotonicFitResult, WeightedCorrelationResult
     The fitted trajectory or correlation, and its ``score``.
+CircularSequenceResult
+    The circular-track fit: replay speed around the loop and its ``score``.
 TrajectoryMetrics
     Per-time-bin arrays and per-event scalars of one event.
 ReplaySegmentsResult
@@ -122,6 +129,10 @@ from neurospatial.replay.calibration import (
     method_agreement,
     null_events,
     simulated_null_events,
+)
+from neurospatial.replay.circular import (
+    CircularSequenceResult,
+    fit_circular_sequence,
 )
 from neurospatial.replay.correlation import (
     WeightedCorrelationResult,
@@ -194,6 +205,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "simulated_null_events",
     "detect_replay",
     # Result containers
+    "CircularSequenceResult",
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
@@ -205,6 +217,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "WeightedCorrelationResult",
     # Trajectory scores
     "detect_trajectory_radon",
+    "fit_circular_sequence",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",
     "weighted_correlation",

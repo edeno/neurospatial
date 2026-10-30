@@ -166,6 +166,8 @@ Detecting the candidate events (ripples, population bursts) is not included.
   `detect_trajectory_radon()`: Fit replay trajectories along a track
   (Michon et al. 2019; Karlsson & Frank 2009 and Wu et al. 2017; Davidson
   et al. 2009); slopes are in environment units per second
+- `fit_circular_sequence()`: Fit the decoded path around a circular track,
+  through the start of its linear position (Wikenheiser & Redish 2013)
 - `weighted_correlation()`: Posterior-weighted correlation of time and
   position (Wu & Foster 2014)
 - `trajectory_metrics()`, `template_fractions()`: Per-event metrics that
