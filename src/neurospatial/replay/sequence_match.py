@@ -119,7 +119,7 @@ class SpikeWordsResult(ReadOnlyArraysMixin, ResultMixin):
     ----------
     intervals : NDArray[np.float64], shape (n_words, 2)
         Each word's ``(start, stop)`` in seconds: its first letter, and its
-        last letter plus ``max_gap / 2`` (cut at the end of its epoch). A
+        last letter plus ``word_gap / 2`` (cut at the end of its epoch). A
         word's interval holds exactly its letters, and intervals do not
         overlap, so they can be passed as candidate events to
         :func:`~neurospatial.replay.detect_template_match_replay` or
@@ -133,7 +133,7 @@ class SpikeWordsResult(ReadOnlyArraysMixin, ResultMixin):
         are in time order, ties by cell index.
     max_isi : float
         The burst interval, in seconds.
-    max_gap : float
+    word_gap : float
         The gap, in seconds, above which a word ends.
 
     See Also
@@ -146,7 +146,7 @@ class SpikeWordsResult(ReadOnlyArraysMixin, ResultMixin):
     letter_units: NDArray[np.intp]
     letter_times: NDArray[np.float64]
     max_isi: float
-    max_gap: float
+    word_gap: float
 
     def __post_init__(self) -> None:
         """Own read-only copies of the arrays."""
@@ -175,7 +175,7 @@ class SpikeWordsResult(ReadOnlyArraysMixin, ResultMixin):
             },
             index=pd.RangeIndex(self.n_words, name="word"),
         )
-        table.attrs.update(max_isi=self.max_isi, max_gap=self.max_gap)
+        table.attrs.update(max_isi=self.max_isi, word_gap=self.word_gap)
         return table
 
     def summary(self) -> dict[str, Any]:
@@ -184,7 +184,7 @@ class SpikeWordsResult(ReadOnlyArraysMixin, ResultMixin):
             "n_words": self.n_words,
             "n_letters": int(self.letter_times.size),
             "max_isi": self.max_isi,
-            "max_gap": self.max_gap,
+            "word_gap": self.word_gap,
         }
 
 
@@ -192,7 +192,7 @@ def spike_words(
     spike_times: Any,
     *,
     max_isi: float,
-    max_gap: float,
+    word_gap: float,
     cells: NDArray[np.bool_] | None = None,
     epochs: NDArray[np.float64] | None = None,
 ) -> SpikeWordsResult:
@@ -201,9 +201,9 @@ def spike_words(
     Each cell's burst (spikes less than ``max_isi`` apart) becomes one
     letter at its first spike, and an isolated spike a letter of its own.
     The letters of all ``cells`` are merged in time and the string is split
-    between adjacent letters more than ``max_gap`` apart. Lee & Wilson
+    between adjacent letters more than ``word_gap`` apart. Lee & Wilson
     parsed each template's cells separately (``cells=``), within slow-wave
-    sleep (``epochs=``), with ``max_isi=0.05`` and ``max_gap=0.1``.
+    sleep (``epochs=``), with ``max_isi=0.05`` and ``word_gap=0.1``.
 
     Parameters
     ----------
@@ -212,8 +212,8 @@ def spike_words(
     max_isi : float
         Interspike interval, in seconds, below which a spike joins its
         cell's burst (see :func:`burst_onset_times`).
-    max_gap : float
-        A word ends where the next letter is more than ``max_gap`` seconds
+    word_gap : float
+        A word ends where the next letter is more than ``word_gap`` seconds
         later (a gap equal to it within 1 ns of round-off stays in the word).
         Must be positive and at least ``max_isi``, as in the paper.
     cells : NDArray[np.bool_] of shape (n_cells,), optional
@@ -235,7 +235,7 @@ def spike_words(
     Raises
     ------
     ValueError
-        If ``max_isi`` is negative, ``max_gap`` is not positive or is below
+        If ``max_isi`` is negative, ``word_gap`` is not positive or is below
         ``max_isi``, ``cells`` is not one boolean per cell, or ``epochs`` is
         not sorted, non-overlapping ``(start, stop)`` rows with
         ``start < stop``.
@@ -251,7 +251,7 @@ def spike_words(
     >>> import numpy as np
     >>> from neurospatial.replay import spike_words
     >>> spikes = [np.array([1.0, 1.02, 1.4]), np.array([1.06, 1.45])]
-    >>> words = spike_words(spikes, max_isi=0.05, max_gap=0.1)
+    >>> words = spike_words(spikes, max_isi=0.05, word_gap=0.1)
     >>> words.words_table()[["n_letters", "n_distinct_letters"]].to_numpy().tolist()
     [[2, 2], [2, 2]]
     >>> words.intervals.round(3).tolist()
@@ -261,15 +261,15 @@ def spike_words(
 
     operation = "spike_words()"
     _check_seconds(max_isi, "max_isi", operation, allow_zero=True)
-    _check_seconds(max_gap, "max_gap", operation, allow_zero=False)
-    if max_isi > max_gap:
+    _check_seconds(word_gap, "word_gap", operation, allow_zero=False)
+    if max_isi > word_gap:
         raise ValueError(
             _format_error(
-                f"{operation}: max_isi ({max_isi:g} s) is larger than max_gap "
-                f"({max_gap:g} s).",
+                f"{operation}: max_isi ({max_isi:g} s) is larger than word_gap "
+                f"({word_gap:g} s).",
                 why="a burst would then span gaps that end words (Lee & Wilson "
-                "2002 require max_isi <= max_gap)",
-                fix="use max_isi <= max_gap, e.g. max_isi=0.05, max_gap=0.1",
+                "2002 require max_isi <= word_gap)",
+                fix="use max_isi <= word_gap, e.g. max_isi=0.05, word_gap=0.1",
             )
         )
     trains = _sorted_trains(as_spike_trains(spike_times))
@@ -298,12 +298,12 @@ def spike_words(
         epoch_id = index
         epoch_stop = bounds[index, 1]
     new_word = np.ones(times.size, dtype=bool)
-    new_word[1:] = ~_at_most(np.diff(times), max_gap) | (np.diff(epoch_id) != 0)
+    new_word[1:] = ~_at_most(np.diff(times), word_gap) | (np.diff(epoch_id) != 0)
     word_ids = np.cumsum(new_word) - 1
     first = np.flatnonzero(new_word)
     last = np.r_[first[1:] - 1, times.size - 1] if first.size else first
     intervals = np.column_stack(
-        [times[first], np.minimum(times[last] + max_gap / 2, epoch_stop[last])]
+        [times[first], np.minimum(times[last] + word_gap / 2, epoch_stop[last])]
     ).reshape(-1, 2)
     return SpikeWordsResult(
         intervals=intervals,
@@ -311,7 +311,7 @@ def spike_words(
         letter_units=letter_units,
         letter_times=times,
         max_isi=float(max_isi),
-        max_gap=float(max_gap),
+        word_gap=float(word_gap),
     )
 
 

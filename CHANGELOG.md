@@ -560,8 +560,11 @@ fields, scored from spikes without decoding, as recipes that
   best (x, y) match to the field order is tested against every ordering of
   its letters (exact up to 10 letters, then 100,000 random orderings). It
   reproduces the paper's example (325789A: a (6, 0) match, p = 13/5040).
-  `burst_onset_times()` and `spike_words()` cut spike trains into letters
-  and words whose intervals can be scored as candidate events.
+  `burst_onset_times()` and `spike_words(spike_times, *, max_isi,
+  word_gap)` cut spike trains into letters and words whose intervals can
+  be scored as candidate events. The gap that ends a word is `word_gap`,
+  not `max_gap`, which elsewhere names the calibrated interval-gap
+  tolerance (default 1 s).
 - `sequence_matching_index()` scores an event as Ji & Wilson (2007) did:
   one firing time per active cell (the peak of its spikes smoothed with a
   180 ms Gaussian) and the matching index of their order, with an exact

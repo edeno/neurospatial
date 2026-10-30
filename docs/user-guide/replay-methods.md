@@ -1004,7 +1004,7 @@ visited get no mass), and decode the null events with the same prior.
   drew their conclusions from counts of matching events over a data set:
   run `template_match_dataset_test` for those. Lee & Wilson's events are
   words cut from sleep spikes, one template's cells at a time:
-  `spike_words(spike_times, max_isi=0.05, max_gap=0.1, cells=template_cells,
+  `spike_words(spike_times, max_isi=0.05, word_gap=0.1, cells=template_cells,
   epochs=sws).intervals`. `NADASDY_1999` asks a different question, whether
   spike sequences recur within one session more often than in surrogate
   trains (`recurring_sequences_significance`), and has no per-event
