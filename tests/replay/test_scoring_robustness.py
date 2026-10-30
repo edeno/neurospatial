@@ -15,9 +15,10 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.decoding import DecodingResult, decode_position
+from neurospatial.decoding import DecodingResult, decode_jointly, decode_position
 from neurospatial.replay import (
     ReplayMethod,
+    ReplaySegmentation,
     compare_replay_methods,
     decode_intervals,
     detect_replay,
@@ -37,6 +38,7 @@ from neurospatial.replay.methods import (
     TIROLE_2022,
     WIDLOSKI_FOSTER_2022,
     WU_2017,
+    ReplayCriterion,
 )
 
 DT = 0.02
@@ -315,6 +317,92 @@ class TestTimeVaryingPrior:
         assert results[1].p_value == results[0].p_value
         assert results[1].score == results[0].score
 
+    def test_the_kept_rows_of_a_varying_prior_are_used(self, track):
+        """Another cut would not reproduce the event's posterior, and raise."""
+        env, rates = track
+        rng = np.random.default_rng(1)
+        counts = rng.poisson(0.6, size=(12, N_CELLS))
+        counts[3] = 0
+        prior = rng.uniform(0.2, 1.0, size=(12, env.n_bins))
+        event = _event(env, rates, counts, prior=prior)
+        result = detect_replay(
+            env,
+            event.posterior,
+            event.times,
+            replay_method=_few(OLAFSDOTTIR_2017),
+            spike_counts=counts,
+            encoding_models=rates,
+            dt=DT,
+            prior=prior,
+            rng=0,
+        )
+        assert np.isfinite(result.p_value)
+
+    def test_the_prior_is_cut_to_the_tested_segment(self, track):
+        env, rates = track
+        rng = np.random.default_rng(2)
+        counts = np.vstack([rng.poisson(0.6, size=(3, N_CELLS)), _sweep_counts(10)])
+        prior = rng.uniform(0.2, 1.0, size=(len(counts), env.n_bins))
+        event = _event(env, rates, counts, prior=prior)
+        method = ReplayMethod(
+            name="segment_then_shuffle",
+            reference="test",
+            score=weighted_correlation,
+            nulls=("place_field_circular",),
+            n_shuffles=30,
+            segmentation=ReplaySegmentation(
+                options={"max_jump": 20.0, "min_time_bins": 5}
+            ),
+        )
+        result = detect_replay(
+            env,
+            event.posterior,
+            event.times,
+            replay_method=method,
+            spike_counts=counts,
+            encoding_models=rates,
+            dt=DT,
+            prior=prior,
+            rng=0,
+        )
+        assert result.segment is not None
+        rows = result.segments.rows(result.segment)
+        assert rows.stop - rows.start < len(counts)
+        assert np.isfinite(result.p_value)
+
+    def test_a_mapping_of_priors_is_cut_for_a_joint_decode(self, track):
+        env, rates = track
+        rng = np.random.default_rng(3)
+        counts = rng.poisson(0.6, size=(12, N_CELLS))
+        counts[3] = 0
+        maps = {"out": rates, "in": rates[::-1]}
+        priors = {name: rng.uniform(0.2, 1.0, size=(12, env.n_bins)) for name in maps}
+        times = DT * (np.arange(12) + 0.5)
+        joint = decode_jointly(env, counts, maps, dt=DT, times=times, prior=priors)
+        # A share of the joint posterior, scored as Tirole et al. (2022) did.
+        method = ReplayMethod(
+            name="joint_share",
+            reference="test",
+            score=weighted_correlation,
+            score_options={"row_normalization": "none"},
+            nulls=("place_field_circular",),
+            n_shuffles=30,
+            empty_time_bins="drop",
+        )
+        result = detect_replay(
+            env,
+            joint,
+            times,
+            replay_method=method,
+            spike_counts=counts,
+            encoding_models=maps,
+            dt=DT,
+            prior=priors,
+            template="out",
+            rng=0,
+        )
+        assert np.isfinite(result.p_value)
+
 
 def _parity_score(env, posterior, times):
     """A score that is undefined when the first row peaks at an even bin."""
@@ -508,4 +596,104 @@ def test_no_warnings_leak_without_undefined_shuffles(track):
             replay_methods=[_few(KARLSSON_FRANK_2009)],
             spike_counts=[counts],
             rng=0,
+        )
+
+
+class TestScopedNoVerdict:
+    """An undefined score withholds the verdict only where the verdict uses it."""
+
+    def test_criteria_that_do_not_read_the_score_still_decide(self, track):
+        env, rates = track
+        event = _event(env, rates, _stationary_counts())
+        method = ReplayMethod(
+            name="stays_put",
+            reference="test",
+            score=fit_linear_trajectory,
+            score_options={"method": "map"},
+            criteria=(ReplayCriterion("max_map_jump", "<", 5.0),),
+        )
+        result = detect_replay(env, event.posterior, event.times, replay_method=method)
+        assert np.isnan(result.score)
+        assert result.is_replay
+        thresholded = dataclasses.replace(
+            method,
+            name="thresholded",
+            criteria=(*method.criteria, ReplayCriterion("score", ">", 0.5)),
+        )
+        table = compare_replay_methods(
+            env, [event], replay_methods=[method, thresholded], rng=0
+        ).set_index("method")
+        assert table.loc["stays_put", "error"] == ""
+        assert table.loc["stays_put", "is_replay"]
+        assert table.loc["thresholded", "error"].startswith("score undefined")
+
+
+def _defined_only_unshuffled(original):
+    def score(env, posterior, times):
+        value = 0.5 if np.array_equal(posterior, original) else np.nan
+        return SimpleNamespace(score=value, summary=lambda: {"score": value})
+
+    return score
+
+
+class TestUndefinedNull:
+    def test_a_null_without_defined_shuffles_is_an_error_row(self, track):
+        env, rates = track
+        event = _event(env, rates, _sweep_counts())
+        method = ReplayMethod(
+            name="custom",
+            reference="test",
+            score=_defined_only_unshuffled(event.posterior),
+            nulls=("column_cycle",),
+            n_shuffles=20,
+        )
+        result = detect_replay(
+            env, event.posterior, event.times, replay_method=method, rng=0
+        )
+        assert result.score == 0.5 and np.isnan(result.p_value)
+        assert not result.is_replay
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            row = compare_replay_methods(
+                env, [event], replay_methods=[method], rng=0
+            ).iloc[0]
+        assert row["error"] == "every shuffle of a null has an undefined score"
+
+
+def test_n_shuffles_used_is_the_smallest_over_the_nulls(track, monkeypatch):
+    from neurospatial.replay import significance
+
+    env, rates = track
+    event = _event(env, rates, _sweep_counts())
+
+    def fake(*args, **kwargs):
+        return SimpleNamespace(
+            observed=SimpleNamespace(score=0.9),
+            p_value=0.01,
+            n_shuffles_used={"column_cycle": 10, "pseudo_event": 7},
+        )
+
+    monkeypatch.setattr(significance, "replay_significance", fake)
+    method = ReplayMethod(
+        name="two_nulls",
+        reference="test",
+        score=weighted_correlation,
+        nulls=("column_cycle", "pseudo_event"),
+        n_shuffles=10,
+    )
+    result = detect_replay(
+        env,
+        event.posterior,
+        event.times,
+        replay_method=method,
+        pseudo_event_pool=event.posterior,
+        rng=0,
+    )
+    assert result.n_shuffles_used == 7
+
+
+def test_a_score_without_a_readable_signature_is_refused_when_made():
+    with pytest.raises(TypeError, match="cannot read the signature"):
+        ReplayMethod(
+            name="builtin", reference="test", score=max, nulls=("column_cycle",)
         )
