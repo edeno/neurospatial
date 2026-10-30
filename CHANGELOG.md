@@ -263,6 +263,12 @@ Several replay papers test a whole data set, not each event:
   by its mass. With rows that sum to 1 only within `DecodingResult`'s
   tolerance, the score could then differ from `detect_replay`'s by about
   1e-7.
+- `SILVA_2015_RANK_ORDER` pooled tests compare absolute correlations, as
+  Silva et al.'s Online Methods state ("The absolute values of spike
+  correlations ... were compared"): `columns=("abs_score",)`, where it held
+  the signed `"score"`. A recipe column the library's tables do not hold
+  (`abs_score`, Grosmark's `quality`, Stella's `step`) is now made by an
+  `assign` given in that recipe's notes; `abs_score` is always `|score|`.
 
 ### Reactivation recipes
 

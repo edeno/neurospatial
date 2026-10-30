@@ -2921,7 +2921,10 @@ class DatasetTestRecipe:
     quantities : tuple of str
         Quantities to measure besides the method's criteria.
     columns : tuple of str
-        The per-event values a pooled test compares.
+        The per-event values a pooled test compares. ``"abs_score"`` is
+        ``|score|``, made with ``table.assign(abs_score=table["score"].abs())``;
+        the notes say how to make any other column the library's tables do
+        not hold.
     distribution : tuple of {"ks", "rank_sum", "levene"}
         The pooled tests.
     alternative : {"greater", "less", "two-sided"}
@@ -3130,7 +3133,7 @@ SILVA_2015_RANK_ORDER = DatasetTestRecipe(
     n_datasets=5000,
     shared=True,
     criteria=(CriterionGrid("score", ">", np.array([0.5, 0.6, 0.7]), absolute=True),),
-    columns=("score",),
+    columns=("abs_score",),
     distribution=("levene", "rank_sum", "ks"),
     alternative="greater",
     p_value_rule="monte_carlo",
@@ -3143,9 +3146,13 @@ SILVA_2015_RANK_ORDER = DatasetTestRecipe(
         "dataset_test(real, null, criteria=recipe.criteria) for both templates "
         "pooled (Fig. 1d, top); for the larger |r| of the two templates "
         "(bottom), group each table by (dataset, event) and take the maximum "
-        "|score| first. distribution_test(..., column='score' or the maximum, "
-        "test='levene', 'rank_sum' or 'ks', alternative='greater' for the "
-        "one-tailed tests).",
+        "|score| first. The pooled tests compare absolute correlations ('The "
+        "absolute values of spike correlations between original and shuffled "
+        "data sets were compared', Online Methods): distribution_test(real"
+        ".assign(abs_score=real.score.abs()), null.assign(abs_score=null.score"
+        ".abs()), column='abs_score', test='levene', 'rank_sum' or 'ks', "
+        "alternative='greater' for the one-tailed tests), or the maximum "
+        "abs_score per (dataset, event).",
         "'5,000 shuffled templates' is read as one permutation of cell "
         "identities per shuffled data set, shared by every event (shared=True); "
         "a per-event p-value is the same either way, a count over events is "
@@ -3185,8 +3192,9 @@ GROSMARK_2016_SURROGATES = DatasetTestRecipe(
         "z-scored against its shuffles; np.std, ddof = 0, where MATLAB's std "
         "has ddof = 1, a factor sqrt(200 / 199)), |r| and the reconstruction "
         "quality, the median over time bins of the largest posterior value "
-        "(np.median(event.posterior.max(axis=1)); event_properties gives the "
-        "mean).",
+        "(event_properties gives the mean): table.assign(abs_score=table.score"
+        ".abs(), quality=[np.median(e.posterior.max(axis=1)) for e in events]) "
+        "on each compare_replay_methods table, rows in event order.",
         "The test is not named in the legend; a rank-sum test of observed "
         "events against the pooled surrogate events is a reading (the "
         "supplement's other between-condition tests are rank-sum tests).",
@@ -3247,8 +3255,9 @@ FAROOQ_2019_POISSON = dataclasses.replace(
         "pv, criteria=recipe.criteria).",
         "Fig. 1H compares the mean |r| of Pre-Run, tPre-Run, Poisson and "
         "tPoisson frames by rank-sum tests; the SEMs suggest one shuffled data "
-        "set (n = 38,820), not 500 pooled (a reading): distribution_test(pre, "
-        "one_set, column='abs_score', test='rank_sum').",
+        "set (n = 38,820), not 500 pooled (a reading): distribution_test(pre"
+        ".assign(abs_score=pre.score.abs()), one_set.assign(abs_score="
+        "one_set.score.abs()), column='abs_score', test='rank_sum').",
         "Runtime: decode_intervals decodes the 500 x 38,820 surrogate frames in "
         "one matrix product per block of 50,000 time bins: about 10 minutes "
         "(0.16 s per 5,000 frames measured) rather than the 12 hours one "
@@ -3345,8 +3354,8 @@ STELLA_2019_JITTER = DatasetTestRecipe(
         "je, jc = decode_intervals(env, jit.spike_times, jit.intervals, maps, "
         "dt=0.008); obs = event_properties(env, selected_events); nul = "
         "event_properties(env, je); distribution_test(obs, nul, column="
-        "'mean_peak_probability', test='ks'); the mean step is "
-        "map_path_length / (n_time_bins - 1).",
+        "'mean_peak_probability', test='ks'); the mean step per table is "
+        "t.assign(step=t.map_path_length / (t.n_time_bins - 1)).",
         "500 copies per event is inferred from 279,000 shuffled and 558 "
         "original events (Fig. 2B-C); the KS side is not stated (two-sided "
         "here).",

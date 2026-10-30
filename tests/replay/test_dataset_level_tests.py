@@ -876,6 +876,51 @@ def test_recipes_hold_their_values():
     assert hash(SILVA_2015_MATRIX) == hash(dataclasses.replace(SILVA_2015_MATRIX))
 
 
+def test_recipe_columns_the_tables_lack_are_made_as_the_notes_say():
+    """Silva compared absolute correlations; derived columns have a recipe."""
+    assert SILVA_2015_RANK_ORDER.columns == ("abs_score",)
+    derived = {"abs_score", "quality", "step"}
+    for recipe in DATASET_RECIPES:
+        notes = " ".join(recipe.notes)
+        for column in derived.intersection(recipe.columns):
+            assert f"assign({column}=" in notes or f", {column}=" in notes, (
+                recipe.name,
+                column,
+            )
+
+
+def test_silva_pooled_tests_run_on_absolute_correlations(track, session):
+    """The rank-order recipe's documented pooled tests, on simulated events.
+
+    The sweeps beat shuffled cell orders in |r|: the one-tailed rank-sum
+    and KS tests reject.
+    """
+    rates, trains, intervals, _, _ = session
+    recipe = SILVA_2015_RANK_ORDER
+    common = {"spike_times": trains, "encoding_models": rates}
+    real = dataset_values(track, intervals, replay_method=recipe.method, **common)
+    null = dataset_values(
+        track,
+        intervals,
+        replay_method=recipe.method,
+        null=recipe.null,
+        shared=recipe.shared,
+        n_datasets=100,
+        rng=0,
+        **common,
+    )
+    (column,) = recipe.columns
+    for table in (real, null):
+        table[column] = table["score"].abs()
+    for test in recipe.distribution:
+        side = "two-sided" if test == "levene" else recipe.alternative
+        result = distribution_test(
+            real, null, column=column, test=test, alternative=side
+        )
+        if test != "levene":
+            assert result.p_value < 0.01, test
+
+
 @pytest.mark.parametrize("n_axes", [0, 1, 2])
 def test_plot_returns_the_axes(n_axes):
     import matplotlib
