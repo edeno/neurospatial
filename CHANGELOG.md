@@ -94,7 +94,10 @@ default lap route all changed.
 - `validate_simulation` builds each cell's true field with the cell's own
   metric. A geodesic cell that was recovered correctly scored r = 0.79
   against a Euclidean field and failed. Units that are not place cells are
-  reported as not evaluable instead of raising.
+  listed as `excluded` and do not count toward the verdict, so a border or
+  mixed session passes when its place cells are recovered; before, they
+  raised. A place unit that cannot be evaluated still blocks a pass, and a
+  selection with no evaluated place unit cannot pass.
 - `SimulationSession` compares and hashes by identity, like the models.
   `==` between two sessions used to raise, because it compared their arrays
   element by element.

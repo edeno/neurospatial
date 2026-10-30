@@ -7,7 +7,12 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from neurospatial.simulation import PlaceCellModel, SimulationSession, simulate_session
+from neurospatial.simulation import (
+    PlaceCellModel,
+    SimulationSession,
+    border_cell_session,
+    simulate_session,
+)
 from neurospatial.simulation.validation import (
     SimulationValidationResult,
     validate_simulation,
@@ -340,7 +345,7 @@ def test_true_field_is_the_simulated_field(hairpin_track_env):
 
 
 def test_mixed_sessions_validate_their_place_cells(connected_arena_env):
-    """Border and grid units are not evaluable; place units are evaluated."""
+    """Border and grid units are excluded; place units are evaluated."""
     session = simulate_session(
         connected_arena_env,
         duration=120.0,
@@ -360,9 +365,25 @@ def test_mixed_sessions_validate_their_place_cells(connected_arena_env):
         if cell_type == "place":
             assert status in {"passed", "failed"} and reason is None
         else:
-            assert (status, reason) == ("not_evaluable", "not_a_place_field")
+            assert (status, reason) == ("excluded", "not_a_place_field")
     assert report.n_evaluated == cell_types.count("place") == 3
-    assert not report.passed
+    assert report.n_excluded == 2
+    place_status = [s for s in report.unit_status if s != "excluded"]
+    assert report.passed == all(s == "passed" for s in place_status)
+
+
+@pytest.mark.slow
+def test_border_session_passes_on_its_recovered_place_cells():
+    """Border cells cannot fail a session whose place cells are all recovered."""
+    session = border_cell_session(
+        duration=300.0, n_border_cells=3, n_place_cells=4, seed=0
+    )
+    with pytest.warns(UserWarning, match="not place fields"):
+        report = validate_simulation(session)
+    assert report.unit_status[:3] == ("excluded",) * 3
+    assert report.unit_status[3:] == ("passed",) * 4
+    assert report.passed
+    assert "Overall: PASSED" in report.report()
 
 
 def test_default_center_error_threshold_on_hairpin(hairpin_track_env):

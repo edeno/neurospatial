@@ -70,10 +70,12 @@ def _nan_stat(values: NDArray[np.float64], stat: Any) -> float:
 class SimulationValidationResult(ReadOnlyArraysMixin, ResultMixin):
     """Recovery of simulated place fields, returned by ``validate_simulation``.
 
-    One entry per selected unit, in the requested order. A unit is
+    One entry per selected unit, in the requested order. A place unit is
     evaluated when both its center error and its field correlation could be
-    measured; it passes when both meet their thresholds. Arrays are
-    read-only.
+    measured; it passes when both meet their thresholds. Units whose ground
+    truth is not a place cell (border, grid and other cells of mixed
+    sessions) are excluded: they are listed but do not count toward any
+    verdict. Arrays are read-only.
 
     Attributes
     ----------
@@ -90,10 +92,13 @@ class SimulationValidationResult(ReadOnlyArraysMixin, ResultMixin):
     spike_counts : NDArray[np.int64], shape (n_selected,)
         Number of simulated spikes of each unit.
     unit_status : tuple[str, ...]
-        ``'passed'``, ``'failed'`` or ``'not_evaluable'`` for each unit.
+        For each unit: ``'passed'`` or ``'failed'`` for an evaluated place
+        unit, ``'not_evaluable'`` for a place unit whose metrics could not
+        be measured, and ``'excluded'`` for a unit that is not a place cell.
     skip_reasons : tuple[str | None, ...]
-        Why a unit is not evaluable (for example ``'no_spikes'``), or None
-        for an evaluated unit.
+        Why a unit is not evaluated (for example ``'no_spikes'``, or
+        ``'not_a_place_field'`` for an excluded unit), or None for an
+        evaluated unit.
     min_correlation : float
         Correlation threshold applied to every unit.
     center_error_rule : str
@@ -133,15 +138,24 @@ class SimulationValidationResult(ReadOnlyArraysMixin, ResultMixin):
 
     @property
     def n_evaluated(self) -> int:
-        """Number of units with both metrics measured."""
-        return sum(status != "not_evaluable" for status in self.unit_status)
+        """Number of place units with both metrics measured."""
+        return sum(status in ("passed", "failed") for status in self.unit_status)
+
+    @property
+    def n_excluded(self) -> int:
+        """Number of selected units that are not place cells."""
+        return self.unit_status.count("excluded")
 
     @property
     def passed(self) -> bool:
-        """True only for a nonempty selection in which every unit passed."""
-        return bool(self.unit_status) and all(
-            status == "passed" for status in self.unit_status
-        )
+        """True when at least one place unit was evaluated and every place unit passed.
+
+        Excluded units do not count. A place unit that could not be evaluated
+        blocks a pass, and a selection with no evaluated place unit cannot
+        pass.
+        """
+        place = [status for status in self.unit_status if status != "excluded"]
+        return bool(place) and all(status == "passed" for status in place)
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics.
@@ -152,7 +166,8 @@ class SimulationValidationResult(ReadOnlyArraysMixin, ResultMixin):
         return {
             "n_selected": self.n_selected,
             "n_evaluated": self.n_evaluated,
-            "n_passed": sum(status == "passed" for status in self.unit_status),
+            "n_excluded": self.n_excluded,
+            "n_passed": self.unit_status.count("passed"),
             "passed": self.passed,
             "mean_center_error": _nan_stat(self.center_errors, np.mean),
             "largest_center_error": _nan_stat(self.center_errors, np.max),
@@ -198,19 +213,22 @@ class SimulationValidationResult(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         str
-            Counts of selected, evaluated and unevaluable units, the mean and
-            extreme center errors and correlations with their thresholds,
-            and the overall verdict.
+            Counts of selected, evaluated, unevaluable and excluded units,
+            the mean and extreme center errors and correlations with their
+            thresholds, and the overall verdict. Each metric's verdict, like
+            the overall one, is over the place units only and needs at least
+            one of them.
         """
         stats = self.summary()
         units = self.units or "units"
-        center = np.isfinite(self.center_errors)
-        correlation = np.isfinite(self.correlations)
-        errors_pass = self.n_selected > 0 and bool(
-            np.all(center & (self.center_errors <= self.max_center_errors))
+        place = np.array(self.unit_status, dtype=object) != "excluded"
+        errors = self.center_errors[place]
+        correlations = self.correlations[place]
+        errors_pass = bool(place.any()) and bool(
+            np.all(np.isfinite(errors) & (errors <= self.max_center_errors[place]))
         )
-        corrs_pass = self.n_selected > 0 and bool(
-            np.all(correlation & (self.correlations >= self.min_correlation))
+        corrs_pass = bool(place.any()) and bool(
+            np.all(np.isfinite(correlations) & (correlations >= self.min_correlation))
         )
         threshold = (
             f"{CENTER_ERROR_WIDTHS:g} x each cell's true field width"
@@ -223,7 +241,8 @@ class SimulationValidationResult(ReadOnlyArraysMixin, ResultMixin):
 ===================
 Cells selected: {self.n_selected} (of {self.n_session_units} total)
 Cells fully evaluated: {self.n_evaluated}
-Cells not evaluable: {self.n_selected - self.n_evaluated}
+Cells not evaluable: {self.unit_status.count("not_evaluable")}
+Cells excluded (not place cells): {self.n_excluded}
 
 Center Errors ({units}):
   Mean: {stats["mean_center_error"]:.2f} ± {error_std:.2f}
@@ -262,7 +281,7 @@ Overall: {"PASSED" if self.passed else "FAILED"}
         if ax is None:
             _, ax = plt.subplots()
         status = np.array(self.unit_status, dtype=object)
-        evaluated = status != "not_evaluable"
+        evaluated = (status == "passed") | (status == "failed")
         ax.scatter(
             self.center_errors[evaluated],
             self.correlations[evaluated],
@@ -320,10 +339,12 @@ def validate_simulation(
     -------
     SimulationValidationResult
         Per-unit center errors, field correlations, limits, spike counts,
-        status and skip reasons, with ``n_evaluated``, ``passed``,
-        ``summary()``, ``summary_table()``, ``report()`` and ``plot()``.
-        ``passed`` is True only for a nonempty selection in which every
-        selected unit has both metrics measured and meets both thresholds.
+        status and skip reasons, with ``n_evaluated``, ``n_excluded``,
+        ``passed``, ``summary()``, ``summary_table()``, ``report()`` and
+        ``plot()``. Units that are not place cells are ``'excluded'`` and do
+        not count toward the verdict. ``passed`` is True only when at least
+        one place unit was selected and every selected place unit has both
+        metrics measured and meets both thresholds.
 
     Raises
     ------
@@ -334,9 +355,10 @@ def validate_simulation(
     -----
     UserWarning
         If no selected unit could be evaluated, if a selected unit is not a
-        place cell (its ground truth ``cell_type`` is not ``'place'``; marked
-        ``'not_a_place_field'``), or if a place unit's ground truth has no
-        ``'center'`` or ``'width'`` (``'unsupported_ground_truth'``).
+        place cell (its ground truth ``cell_type`` is not ``'place'``;
+        excluded as ``'not_a_place_field'``), or if a place unit's ground
+        truth has no ``'center'`` or ``'width'``
+        (``'unsupported_ground_truth'``).
 
     Examples
     --------
@@ -371,8 +393,8 @@ def validate_simulation(
 
     1. For each place cell, compute place field from spike data using
        specified method. Units whose ground truth ``cell_type`` is not
-       ``'place'`` (border, grid and other cells of mixed sessions) are not
-       evaluable.
+       ``'place'`` (border, grid and other cells of mixed sessions) are
+       excluded: listed, but not part of any verdict.
     2. Detect field center as peak of computed rate map
     3. Compare detected center to ground truth center (Euclidean distance)
     4. Compute correlation between detected and true rate maps. The true map
@@ -405,7 +427,11 @@ def validate_simulation(
     Missing metrics remain NaN and prevent an overall pass; a partial
     report is not evidence that every selected unit was recovered. Inspect
     ``unit_status``, ``skip_reasons``, and ``spike_counts`` to distinguish failed
-    recovery from units that could not be evaluated.
+    recovery from units that could not be evaluated. A place unit whose
+    ground truth lacks ``center`` or ``width`` (``'unsupported_ground_truth'``)
+    also blocks a pass: it is declared a place cell, so a pass would claim
+    a recovery that was never checked. Deselect it with ``unit_ids`` if it is
+    not meant to be validated.
 
     **Method Selection**:
 
@@ -538,7 +564,7 @@ def validate_simulation(
         warnings.warn(
             f"Units {sorted(not_place)} are not place fields (cell types "
             f"{sorted(set(not_place.values()))}); validate_simulation compares "
-            "place fields only, so they are marked not evaluable "
+            "place fields only, so they are excluded from the verdict "
             "('not_a_place_field').",
             UserWarning,
             stacklevel=2,
@@ -557,8 +583,16 @@ def validate_simulation(
         correlations >= min_correlation
     )
     unit_status = tuple(
-        "not_evaluable" if not complete else "passed" if meets else "failed"
-        for complete, meets in zip(evaluated, meets_thresholds, strict=True)
+        "excluded"
+        if reason == "not_a_place_field"
+        else "not_evaluable"
+        if not complete
+        else "passed"
+        if meets
+        else "failed"
+        for reason, complete, meets in zip(
+            skip_reasons, evaluated, meets_thresholds, strict=True
+        )
     )
     if not evaluated.any():
         warnings.warn(

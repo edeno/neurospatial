@@ -142,3 +142,53 @@ def test_empty_selection_cannot_pass():
     assert result.passed is False
     assert result.n_selected == result.n_evaluated == 0
     assert result.unit_status == result.skip_reasons == ()
+
+
+def _with_border_unit(session):
+    """``session`` plus a second unit, label 3, whose ground truth is a border cell."""
+    return replace(
+        session,
+        unit_ids=np.array([11, 3]),
+        spike_times=[session.spike_times[0], session.spike_times[0]],
+        models=session.models * 2,
+        ground_truth={
+            11: session.ground_truth[11],
+            3: {"cell_type": "border", "preferred_distance": 0.0},
+        },
+    )
+
+
+def test_units_that_are_not_place_cells_do_not_decide_the_verdict():
+    session = _with_border_unit(_session())
+    with pytest.warns(UserWarning, match="not place fields"):
+        result = validate_simulation(session, method="binned", bandwidth=0.0)
+    assert result.unit_status == ("passed", "excluded")
+    assert result.skip_reasons == (None, "not_a_place_field")
+    assert (result.n_evaluated, result.n_excluded) == (1, 1)
+    assert result.passed is True
+    report = result.report()
+    assert "Cells excluded (not place cells): 1" in report
+    assert "Cells not evaluable: 0" in report
+    assert report.count("Passed: True") == 2
+    assert "Overall: PASSED" in report
+    assert result.summary()["n_excluded"] == 1
+
+
+def test_a_selection_of_only_excluded_units_cannot_pass():
+    session = _with_border_unit(_session())
+    with pytest.warns(UserWarning, match="No cells could be fully validated"):
+        result = validate_simulation(session, unit_ids=[3])
+    assert result.unit_status == ("excluded",)
+    assert result.passed is False
+    report = result.report()
+    assert report.count("Passed: False") == 2
+    assert "Overall: FAILED" in report
+
+
+def test_an_unevaluable_place_unit_blocks_a_pass_beside_excluded_units():
+    session = _with_border_unit(_session())
+    session = replace(session, spike_times=[np.array([]), session.spike_times[1]])
+    with pytest.warns(UserWarning, match="No cells could be fully validated"):
+        result = validate_simulation(session)
+    assert result.unit_status == ("not_evaluable", "excluded")
+    assert result.passed is False
