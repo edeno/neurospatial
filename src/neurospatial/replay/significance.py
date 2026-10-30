@@ -198,7 +198,6 @@ class ReplaySignificanceResult(ResultMixin):
 
     observed: Any
     shuffles: Mapping[str, ShuffleTestResult]
-    p_value: float
     alternative: str
     use_absolute: bool
     template: str | None = None
@@ -210,6 +209,11 @@ class ReplaySignificanceResult(ResultMixin):
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mapping cannot pickle."""
         return reduce_through_constructor(self)
+
+    @property
+    def p_value(self) -> float:
+        """The largest p-value among ``shuffles``: every null must reject."""
+        return max(test.p_value for test in self.shuffles.values())
 
     @property
     def n_shuffles_used(self) -> Mapping[str, int]:
@@ -859,7 +863,6 @@ def replay_significance(
     return ReplaySignificanceResult(
         observed=observed_result,
         shuffles=shuffles,
-        p_value=max(test.p_value for test in shuffles.values()),
         alternative=alternative,
         use_absolute=use_absolute,
     )
@@ -1050,7 +1053,6 @@ def _max_over_templates(
     return ReplaySignificanceResult(
         observed=results[best].observed,
         shuffles=shuffles,
-        p_value=max(test.p_value for test in shuffles.values()),
         alternative="greater",
         use_absolute=use_absolute,
         template=best,
