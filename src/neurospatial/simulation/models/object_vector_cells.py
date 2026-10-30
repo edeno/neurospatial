@@ -92,12 +92,12 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._results import read_only_copy
 from neurospatial._units import default_length
+from neurospatial._validation import validate_choice
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import distance_field
 from neurospatial.ops.egocentric import compute_egocentric_bearing
 from neurospatial.simulation.models.base import (
     _check_angle,
-    _check_metric,
     _check_positive,
     _check_rates,
     _model_headings,
@@ -303,14 +303,12 @@ class ObjectVectorCellModel:
             ),
             fix="simulate on the allocentric environment the animal moves in",
         )
-        if self.direction_frame not in ("allocentric", "egocentric"):
-            raise ValueError(
-                _format_error(
-                    f"Unknown direction_frame={self.direction_frame!r}.",
-                    why="Why: direction tuning needs an allocentric or egocentric reference frame",
-                    fix='pass direction_frame="allocentric" or direction_frame="egocentric"',
-                )
-            )
+        validate_choice(
+            self.direction_frame,
+            ("allocentric", "egocentric"),
+            name="direction_frame",
+            owner=call,
+        )
         objects = read_only_copy(self.object_positions, np.float64)
         if objects.ndim != 2 or objects.shape[1] != 2 or len(objects) == 0:
             raise ValueError(
@@ -352,18 +350,15 @@ class ObjectVectorCellModel:
             "direction_concentration", self.direction_concentration, units=None
         )
         _check_rates(self.max_rate, self.baseline_rate)
-        _check_metric(self.metric, call)
-
-        valid_selectivities = ("any", "nearest", "specific")
-        if self.object_selectivity not in valid_selectivities:
-            raise ValueError(
-                _format_error(
-                    f"object_selectivity must be one of {valid_selectivities}, "
-                    f"got {self.object_selectivity!r}.",
-                    fix="pass 'any' for a field at every object, 'nearest' for "
-                    "the closest object, or 'specific' with specific_object_index",
-                )
-            )
+        validate_choice(
+            self.metric, ("euclidean", "geodesic"), name="metric", owner=call
+        )
+        validate_choice(
+            self.object_selectivity,
+            ("any", "nearest", "specific"),
+            name="object_selectivity",
+            owner=call,
+        )
         index = self.specific_object_index
         if self.object_selectivity == "specific" and (
             index is None or not (0 <= index < len(objects))

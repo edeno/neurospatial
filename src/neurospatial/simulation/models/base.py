@@ -310,19 +310,6 @@ def _check_angle(name: str, value: float) -> None:
         )
 
 
-def _check_metric(metric: str, call: str) -> None:
-    """Refuse a distance metric other than Euclidean or geodesic."""
-    if metric not in ("euclidean", "geodesic"):
-        raise ValueError(
-            _format_error(
-                f"{call} got metric={metric!r}.",
-                why="distances are straight lines ('euclidean') or shortest "
-                "paths through the environment's bins ('geodesic').",
-                fix="pass metric='euclidean' or metric='geodesic'",
-            )
-        )
-
-
 def _check_point(name: str, value: ArrayLike, n_dims: int) -> NDArray[np.float64]:
     """One finite point of ``n_dims`` coordinates, as a read-only array."""
     point = read_only_copy(value, np.float64)
