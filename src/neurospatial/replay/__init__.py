@@ -67,6 +67,11 @@ burst_onset_times, spike_words : Letters and words of Lee & Wilson (2002)
 detect_template_match_replay, TemplateMatchMethod : Published template tests
 template_match_dataset_test : The papers' data-set tests (binomial counts
     of matches, chance and template-shuffle significance)
+recurring_spike_sequences, recurring_sequences_significance : Sequences that
+    recur within a session, against surrogate spike trains (Nádasdy et al.
+    1999); RecurringSequenceMethod records the test
+surrogate_spike_trains : Interval-shuffle, jitter, across-train and
+    theta-phase surrogates
 
 Published Methods
 -----------------
@@ -94,7 +99,8 @@ neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
     TANG_2017, YAMAMOTO_TONEGAWA_2017, CAREY_2019, CHENANI_2019,
     FAROOQ_2019, MICHON_2019, MUESSIG_2019, SHIN_2019, IGATA_2021,
     BERNERS_LEE_2021, BUSH_2022, TIROLE_2022, BERNERS_LEE_2022,
-    WIDLOSKI_FOSTER_2022, HARVEY_2023, LIU_2023, MALLORY_2025)
+    WIDLOSKI_FOSTER_2022, HARVEY_2023, LIU_2023, MALLORY_2025) and the
+    session-level NADASDY_1999
 
 Significance
 ------------
@@ -187,6 +193,14 @@ from neurospatial.replay.rank_order import (
     rank_order_correlation,
     rank_order_significance,
 )
+from neurospatial.replay.recurring_sequences import (
+    RecurringSequenceMethod,
+    RecurringSequencesResult,
+    RecurringSequencesSignificanceResult,
+    recurring_sequences_significance,
+    recurring_spike_sequences,
+    surrogate_spike_trains,
+)
 from neurospatial.replay.segments import ReplaySegmentsResult, replay_segments
 from neurospatial.replay.sequence_match import (
     MatchingIndexResult,
@@ -227,6 +241,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "compare_replay_methods",
     "detect_arm_replay",
     "detect_rank_order_replay",
+    "RecurringSequenceMethod",
     "TemplateMatchMethod",
     "detect_template_match_replay",
     "template_match_dataset_test",
@@ -249,6 +264,8 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "RadonDetectionResult",
     "RankOrderResult",
     "RankOrderSignificanceResult",
+    "RecurringSequencesResult",
+    "RecurringSequencesSignificanceResult",
     "ReplaySegmentsResult",
     "ReplaySignificanceResult",
     "SequenceMatchResult",
@@ -276,6 +293,9 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "burst_onset_times",
     "sequence_matching_index",
     "spike_words",
+    "recurring_sequences_significance",
+    "recurring_spike_sequences",
+    "surrogate_spike_trains",
     # Shuffles
     "shuffle_cell_identity",
     "shuffle_place_fields_circular",

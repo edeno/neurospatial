@@ -40,6 +40,7 @@ from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
 from neurospatial.replay.circular import fit_circular_sequence
 from neurospatial.replay.correlation import weighted_correlation
+from neurospatial.replay.recurring_sequences import NADASDY_1999
 from neurospatial.replay.significance import (
     _ALTERNATIVES,
     _COUNT_CHANGING_NULLS,
@@ -90,6 +91,7 @@ __all__ = [
     "MALLORY_2025",
     "MICHON_2019",
     "MUESSIG_2019",
+    "NADASDY_1999",
     "OLAFSDOTTIR_2015",
     "OLAFSDOTTIR_2016",
     "OLAFSDOTTIR_2017",
@@ -4653,4 +4655,8 @@ PUBLISHED_METHODS: tuple[
     LIU_2023,
     MALLORY_2025,
 )
-"""Every published method recipe in this module."""
+"""Every published per-event method recipe in this module.
+
+``NADASDY_1999`` (a :class:`~neurospatial.replay.RecurringSequenceMethod`)
+is a session-level test with no per-event verdict and is left out.
+"""
