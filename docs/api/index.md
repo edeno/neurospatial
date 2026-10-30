@@ -172,6 +172,10 @@ Detecting the candidate events (ripples, population bursts) is not included.
   criteria-based replay detection thresholds (jumps, spread, range, path
   length, dispersion, coverage, empty time bins) and the directional
   fraction of a joint decode
+- `replay_segments()`: Cut an event into segments in which the decoded
+  position moves smoothly, by the jump, gap, merge and duration rules of
+  Pfeiffer & Foster, Igata et al., Carey et al., Widloski & Foster and
+  Mallory et al.; keep the longest or all
 - `replay_significance()`: Test any replay score against column-cycle,
   unit-identity and pseudo-event shuffles; significant when every null
   rejects the event

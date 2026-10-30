@@ -416,25 +416,47 @@ def trajectory_metrics(
     >>> round(metrics.well_decoded_fraction(), 2)  # 6 of 10 bins
     0.6
     """
+    return _trajectory_metrics(
+        env,
+        posterior,
+        times,
+        spike_counts=spike_counts,
+        metric=metric,
+        operation=_OPERATION,
+    )
+
+
+def _trajectory_metrics(
+    env: Environment,
+    posterior: NDArray[np.float64],
+    times: NDArray[np.float64],
+    *,
+    spike_counts: NDArray[np.int64] | None,
+    metric: Literal["geodesic", "euclidean"] | None,
+    operation: str,
+) -> TrajectoryMetrics:
+    """:func:`trajectory_metrics`, naming ``operation`` in its errors."""
     from neurospatial.decoding import map_bin, mean_position
     from neurospatial.environment import _track_extents
     from neurospatial.geometry import require_cartesian
 
     if metric is not None and metric not in _METRICS:
         raise ValueError(
-            f"{_OPERATION}: metric must be one of {_METRICS} or None, got {metric!r}."
+            f"{operation}: metric must be one of {_METRICS} or None, got {metric!r}."
         )
     require_cartesian(
         env.coordinate_system,
-        _OPERATION,
+        operation,
         why="replay is decoded over allocentric positions, and distances "
         "between (distance, angle) bins are not path lengths",
         fix="decode the event on the allocentric environment the animal ran in",
     )
-    raw = _posterior_rows(posterior, env.n_bins)
-    times = _increasing_times(times, len(raw))
+    raw = _posterior_rows(posterior, env.n_bins, operation)
+    times = _increasing_times(times, len(raw), operation)
     empty_time_bins = (
-        None if spike_counts is None else _empty_time_bins(spike_counts, len(raw))
+        None
+        if spike_counts is None
+        else _empty_time_bins(spike_counts, len(raw), operation)
     )
     extents = _track_extents(env)
     if metric is None:
@@ -445,8 +467,8 @@ def trajectory_metrics(
     rows = np.arange(len(raw))
     centers = np.asarray(env.bin_centers, dtype=np.float64)
     means = mean_position(env, posterior)
-    map_distances = _bin_distances(env, bins, metric)
-    map_jumps = map_distances[:-1, 1:].diagonal().copy()
+    between, rows_of = _bin_distance_lookup(env, bins, metric)
+    map_jumps = between[rows_of[:-1], rows_of[1:]]
     mean_jumps = np.linalg.norm(np.diff(means, axis=0), axis=1)
     squared = np.sum((centers[None, :, :] - means[:, None, :]) ** 2, axis=2)
     spread = np.sqrt(np.sum(posterior * squared, axis=1))
@@ -482,7 +504,7 @@ def trajectory_metrics(
         max_mean_jump=_max_or_nan(mean_jumps),
         map_range=map_range,
         mean_range=mean_range,
-        start_to_end_map_distance=float(map_distances[0, -1]),
+        start_to_end_map_distance=float(between[rows_of[0], rows_of[-1]]),
         start_to_end_mean_distance=float(np.linalg.norm(means[-1] - means[0])),
         map_path_length=float(np.sum(map_jumps)),
         dispersion=float(np.sqrt(np.mean(np.sum(deviations**2, axis=1)))),
@@ -493,7 +515,7 @@ def trajectory_metrics(
     )
 
 
-def _posterior_rows(posterior: Any, n_bins: int) -> NDArray[np.float64]:
+def _posterior_rows(posterior: Any, n_bins: int, operation: str) -> NDArray[np.float64]:
     """Check rows of finite, non-negative mass in (0, 1]."""
     from neurospatial.decoding import _ROW_SUM_TOLERANCE
 
@@ -501,7 +523,7 @@ def _posterior_rows(posterior: Any, n_bins: int) -> NDArray[np.float64]:
     if values.ndim != 2 or values.shape[1] != n_bins or len(values) == 0:
         raise ValueError(
             _format_error(
-                f"{_OPERATION}: posterior must have shape (n_time_bins, "
+                f"{operation}: posterior must have shape (n_time_bins, "
                 f"{n_bins}) with at least one time bin, one column per "
                 f"environment bin, got {values.shape}.",
                 fix="pass the posterior decoded on this environment",
@@ -529,7 +551,7 @@ def _posterior_rows(posterior: Any, n_bins: int) -> NDArray[np.float64]:
         )
     raise ValueError(
         _format_error(
-            f"{_OPERATION} needs each posterior row to be a probability mass "
+            f"{operation} needs each posterior row to be a probability mass "
             f"over the bins, or one template's share of one, but "
             f"{int(np.sum(bad))} of {len(values)} rows are not: "
             f"{'; '.join(problems)}.",
@@ -565,13 +587,15 @@ def _along_track(
     return along
 
 
-def _increasing_times(times: Any, n_time_bins: int) -> NDArray[np.float64]:
+def _increasing_times(
+    times: Any, n_time_bins: int, operation: str
+) -> NDArray[np.float64]:
     """Check one finite time per posterior row, strictly increasing."""
     values: NDArray[np.float64] = np.asarray(times, dtype=np.float64)
     if values.shape != (n_time_bins,) or not np.isfinite(values).all():
         raise ValueError(
             _format_error(
-                f"{_OPERATION}: times must hold one finite time per posterior "
+                f"{operation}: times must hold one finite time per posterior "
                 f"row ({n_time_bins}), got shape {values.shape}"
                 + ("" if values.shape != (n_time_bins,) else " with NaN or Inf")
                 + ".",
@@ -583,8 +607,7 @@ def _increasing_times(times: Any, n_time_bins: int) -> NDArray[np.float64]:
     if np.any(np.diff(values) <= 0):
         raise ValueError(
             _format_error(
-                f"{_OPERATION}: times must increase from one posterior row to "
-                "the next.",
+                f"{operation}: times must increase from one posterior row to the next.",
                 why="a jump is the step from one time bin to the next, so the "
                 "rows must be in time order",
                 fix="sort the rows: order = np.argsort(times); posterior, "
@@ -594,38 +617,44 @@ def _increasing_times(times: Any, n_time_bins: int) -> NDArray[np.float64]:
     return values
 
 
-def _empty_time_bins(spike_counts: Any, n_time_bins: int) -> NDArray[np.bool_]:
+def _empty_time_bins(
+    spike_counts: Any, n_time_bins: int, operation: str
+) -> NDArray[np.bool_]:
     """True for each time bin without spikes."""
     counts = np.asarray(spike_counts, dtype=np.float64)
     if counts.ndim != 2 or len(counts) != n_time_bins:
         raise ValueError(
             _format_error(
-                f"{_OPERATION}: spike_counts must have shape (n_time_bins, "
+                f"{operation}: spike_counts must have shape (n_time_bins, "
                 f"n_neurons) with {n_time_bins} rows, got {counts.shape}.",
                 fix="pass the spike counts the event was decoded from, one row "
                 "per posterior row",
             )
         )
     if not np.isfinite(counts).all() or np.any(counts < 0):
-        raise ValueError(f"{_OPERATION}: spike_counts must be finite and non-negative.")
+        raise ValueError(f"{operation}: spike_counts must be finite and non-negative.")
     empty: NDArray[np.bool_] = counts.sum(axis=1) == 0
     return empty
 
 
-def _bin_distances(
+def _bin_distance_lookup(
     env: Environment, bins: NDArray[np.int64], metric: str
-) -> NDArray[np.float64]:
-    """Distance between every pair of ``bins``, shape ``(len(bins), len(bins))``."""
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+    """Distances between the distinct ``bins``, and each entry's row in them.
+
+    The distance between ``bins[i]`` and ``bins[j]`` is
+    ``between[rows_of[i], rows_of[j]]``. Only distinct bins are paired, so
+    a long event costs no more than its distinct MAP bins.
+    """
     from neurospatial.ops import pairwise_distances
 
-    unique, inverse = np.unique(bins, return_inverse=True)
+    unique, rows_of = np.unique(bins, return_inverse=True)
     if metric == "geodesic":
         between = pairwise_distances(env.connectivity, unique)
     else:
         points = env.bin_centers[unique]
         between = np.linalg.norm(points[:, None, :] - points[None, :, :], axis=-1)
-    distances: NDArray[np.float64] = between[inverse[:, None], inverse[None, :]]
-    return distances
+    return between, rows_of
 
 
 def _max_or_nan(values: NDArray[np.float64]) -> float:
