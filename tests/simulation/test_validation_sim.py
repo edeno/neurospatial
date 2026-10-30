@@ -412,6 +412,59 @@ def test_default_center_error_threshold_on_hairpin(hairpin_track_env):
 class TestPlotSessionSummary:
     """Tests for plot_session_summary() function."""
 
+    def test_one_dimensional_session_plots_position_and_rate_curves(self):
+        """A 1-D track shows position against time and each cell's rate curve."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.simulation import linear_track_session
+        from neurospatial.simulation.validation import plot_session_summary
+
+        session = linear_track_session(duration=30, n_place_cells=3, n_laps=4, seed=0)
+        fig, axes = plot_session_summary(session)
+        try:
+            trajectory = axes[0]
+            assert trajectory.get_xlabel() == "Time (s)"
+            assert trajectory.get_ylabel() == "Position (cm)"
+            offsets = trajectory.collections[0].get_offsets()
+            np.testing.assert_array_equal(offsets[:, 0], session.times)
+            np.testing.assert_array_equal(offsets[:, 1], session.positions[:, 0])
+            for ax, unit in zip(axes[2:5], session.unit_ids, strict=True):
+                assert ax.get_title() == f"Cell {unit}"
+                assert ax.get_xlabel() == "Position (cm)"
+                assert ax.get_ylabel() == "Rate (Hz)"
+                (curve,) = ax.get_lines()
+                np.testing.assert_array_equal(
+                    curve.get_xdata(), session.env.bin_centers[:, 0]
+                )
+        finally:
+            plt.close(fig)
+
+    def test_three_dimensional_session_is_refused(self):
+        """A 3-D rate map has no faithful 2-D panel; the error names the 3-D plot."""
+        from neurospatial import Environment
+        from neurospatial.simulation.validation import plot_session_summary
+
+        grid = np.stack(
+            np.meshgrid(*[np.arange(0.0, 20.0, 2.0)] * 3, indexing="ij"), axis=-1
+        ).reshape(-1, 3)
+        env = Environment.from_samples(grid, bin_size=4.0, units="cm")
+        model = PlaceCellModel(env, center=[10.0, 10.0, 10.0], width=4.0)
+        times = np.arange(len(grid)) * 0.1
+        session = SimulationSession(
+            env=env,
+            spike_times=[times[::5]],
+            unit_ids=np.array([0]),
+            times=times,
+            positions=grid,
+            models=[model],
+            ground_truth={0: model.ground_truth},
+            metadata={},
+        )
+        with pytest.raises(
+            NotImplementedError, match=r"3-D.*\nWhy:.*\nFix:.*fastplotlib"
+        ):
+            plot_session_summary(session)
+
     def test_duration_is_the_recorded_span(self, place_session):
         """A recording that starts at 100 s lasts times[-1] - times[0]."""
         import matplotlib.pyplot as plt

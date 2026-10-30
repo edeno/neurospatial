@@ -105,6 +105,12 @@ default lap route all changed.
   egocentric polar environment up front, with `CartesianOnlyError` naming
   the function. The error used to come from `compute_spatial_rate` inside
   them, and only when a unit had spikes.
+- `plot_session_summary` draws 1-D sessions, such as
+  `linear_track_session`, as position against time with a rate curve per
+  cell; it used to raise `IndexError`. Rate maps are drawn by
+  `Environment.plot_field` in physical units, with unsupported bins shown as
+  missing, where 2-D grids used to be labelled in bin indices. 3-D sessions
+  raise `NotImplementedError` pointing to the fastplotlib 3-D field plot.
 - `SimulationSession` compares and hashes by identity, like the models.
   `==` between two sessions used to raise, because it compared their arrays
   element by element.

@@ -10,6 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import pearsonr
 
+from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 
 #: Default center-error limit, in true field widths (Gaussian standard
@@ -675,6 +676,10 @@ def plot_session_summary(
     CartesianOnlyError
         If the session's environment is egocentric polar: rate maps need the
         animal's allocentric positions.
+    NotImplementedError
+        If the environment is 3-D. A flat panel would stack bins at different
+        heights; plot each rate map with
+        ``env.plot_field(rates, backend='fastplotlib')`` instead.
 
     Examples
     --------
@@ -711,9 +716,12 @@ def plot_session_summary(
 
     The figure uses a 4×3 grid layout:
 
-    - Row 0, Cols 0-1: Trajectory plot with color-coded time
+    - Row 0, Cols 0-1: Trajectory colored by time; for a 1-D environment,
+      position against time
     - Row 0, Col 2: Session metadata (duration, n_cells, cell_type)
-    - Rows 1-2: Rate maps for up to 6 cells (2×3 grid)
+    - Rows 1-2: Rate maps for up to 6 cells (2×3 grid), drawn by
+      ``Environment.plot_field``: a heat map over the bins in 2-D, a rate
+      curve along the track in 1-D
     - Row 3: Raster plot showing spike times for all cells
 
     **Rate Map Computation**:
@@ -747,6 +755,20 @@ def plot_session_summary(
         cell_indices = cell_indices[:6]
 
     env = session.env
+    if env.n_dims > 2:
+        raise NotImplementedError(
+            _format_error(
+                f"plot_session_summary() draws 1-D and 2-D sessions; this "
+                f"environment is {env.n_dims}-D.",
+                why="a flat panel of a 3-D rate map would draw bins at "
+                "different heights on top of each other, so each color would "
+                "hide the rates beneath it.",
+                fix="plot each unit's rate map in 3-D with "
+                "env.plot_field(rates, backend='fastplotlib'), using rates "
+                "from compute_spatial_rate(env, spike_times, session.times, "
+                "session.positions).firing_rate",
+            )
+        )
     positions = session.positions
     times = session.times
     spike_trains = session.spike_times
@@ -754,7 +776,7 @@ def plot_session_summary(
 
     # Create figure with GridSpec for flexible layout
     fig = plt.figure(figsize=figsize)
-    gs = GridSpec(4, 3, figure=fig, hspace=0.3, wspace=0.3)
+    gs = GridSpec(4, 3, figure=fig, hspace=0.5, wspace=0.3)
 
     # Row 0, Cols 0-1: Trajectory
     ax_traj = fig.add_subplot(gs[0, :2])
@@ -771,20 +793,22 @@ def plot_session_summary(
     # Row 3: Raster plot (spans all columns)
     ax_raster = fig.add_subplot(gs[3, :])
 
-    # Plot 1: Trajectory with color-coded time
-    # Use scatter plot for color-mapped trajectory
-    scatter = ax_traj.scatter(
-        positions[:, 0],
-        positions[:, 1],
-        c=times,
-        cmap="viridis",
-        s=1,
-        alpha=0.5,
-    )
-    ax_traj.set_xlabel(f"X ({env.units or 'units'})")
-    ax_traj.set_ylabel(f"Y ({env.units or 'units'})")
+    # Plot 1: Trajectory, colored by time; on a 1-D track, position over time.
+    length_units = env.units or "units"
+    if env.n_dims == 1:
+        scatter = ax_traj.scatter(
+            times, positions[:, 0], c=times, cmap="viridis", s=1, alpha=0.5
+        )
+        ax_traj.set_xlabel("Time (s)")
+        ax_traj.set_ylabel(f"Position ({length_units})")
+    else:
+        scatter = ax_traj.scatter(
+            positions[:, 0], positions[:, 1], c=times, cmap="viridis", s=1, alpha=0.5
+        )
+        ax_traj.set_xlabel(f"X ({length_units})")
+        ax_traj.set_ylabel(f"Y ({length_units})")
+        ax_traj.set_aspect("equal")
     ax_traj.set_title("Trajectory", fontweight="bold")
-    ax_traj.set_aspect("equal")
     plt.colorbar(scatter, ax=ax_traj, label="Time (s)", fraction=0.046, pad=0.04)
 
     # Plot 2: Session metadata
@@ -841,41 +865,8 @@ Traj: {metadata.get("trajectory_method", "ou")}
                 dtype=np.float64,
             )
 
-            # Plot as 2D heatmap if possible
-            grid_shape = env.grid_shape
-
-            # Check if rate_map matches full grid (no inactive bins)
-            if grid_shape is not None and len(rate_map) == np.prod(grid_shape):
-                # Can reshape directly
-                rate_map_2d = rate_map.reshape(grid_shape)
-
-                im = ax.imshow(
-                    rate_map_2d.T,
-                    origin="lower",
-                    aspect="equal",
-                    cmap="viridis",
-                    interpolation="nearest",
-                )
-                ax.set_title(f"Cell {cell_id}", fontsize=10)
-                ax.set_xlabel("X bin")
-                ax.set_ylabel("Y bin")
-                plt.colorbar(im, ax=ax, label="Rate (Hz)", fraction=0.046, pad=0.04)
-            else:
-                # Has inactive bins - use scatter plot instead
-                scatter = ax.scatter(
-                    env.bin_centers[:, 0],
-                    env.bin_centers[:, 1],
-                    c=rate_map,
-                    cmap="viridis",
-                    s=10,
-                )
-                ax.set_title(f"Cell {cell_id}", fontsize=10)
-                ax.set_xlabel(f"X ({env.units or 'units'})")
-                ax.set_ylabel(f"Y ({env.units or 'units'})")
-                ax.set_aspect("equal")
-                plt.colorbar(
-                    scatter, ax=ax, label="Rate (Hz)", fraction=0.046, pad=0.04
-                )
+            env.plot_field(rate_map, ax=ax, colorbar_label="Rate (Hz)")
+            ax.set_title(f"Cell {cell_id}", fontsize=10)
 
     # Hide unused rate map subplots
     for i in range(len(cell_indices), len(axes_rates)):
