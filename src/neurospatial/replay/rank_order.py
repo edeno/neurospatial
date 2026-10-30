@@ -19,6 +19,7 @@ from scipy import stats
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.replay.significance import _ALTERNATIVES
+from neurospatial.replay.trajectory import _SCORE_DECIMALS
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -52,9 +53,10 @@ class RankOrderResult(ReadOnlyArraysMixin, ResultMixin):
         theirs. MATLAB's ``corr``, used in the Bendor-lab analyses, also
         uses the exact distribution for small samples.
         ``spike_statistic="all_spikes"`` breaks the independence (a cell's
-        spikes share one field position): Takigawa et al. (2024) found about 17% false positives with every
-        spike when spikes were permuted one by one, which, like this
-        p-value, treats them as independent. Use
+        spikes share one field position): Takigawa et al. (2024) found
+        about 17% false positives with every spike when spikes were
+        permuted one by one, which, like this p-value, treats them as
+        independent. Use
         :func:`rank_order_significance` instead.
     n_active_cells : int
         Cells with a place field that fired at least once in the event.
@@ -407,7 +409,9 @@ def rank_order_significance(
         # Ties in rho differ by rounding between spearmanr and the matrix
         # formula of the shuffles.
         p_value=compute_shuffle_pvalue(
-            round(observed.score, 12), np.round(null, 12), tail=alternative
+            round(observed.score, _SCORE_DECIMALS),
+            np.round(null, _SCORE_DECIMALS),
+            tail=alternative,
         ),
         z_score=compute_shuffle_zscore(observed.score, null),
         shuffle_type="cell_order",
@@ -561,7 +565,11 @@ def _spearman_p_value(
     permuted = x_ranks[orders] - x_ranks.mean()
     t_dev = t_ranks - t_ranks.mean()
     rho = (permuted @ t_dev) / np.sqrt((permuted[0] ** 2).sum() * (t_dev**2).sum())
-    return float(np.mean(np.abs(np.round(rho, 12)) >= round(abs(score), 12)))
+    return float(
+        np.mean(
+            np.abs(np.round(rho, _SCORE_DECIMALS)) >= round(abs(score), _SCORE_DECIMALS)
+        )
+    )
 
 
 def _permuted_correlations(

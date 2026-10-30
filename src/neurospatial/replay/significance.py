@@ -63,6 +63,15 @@ class _UndefinedScoreError(ValueError):
     """The event's own score is undefined (NaN), so it cannot be tested."""
 
 
+class _UndefinedNullError(ValueError):
+    """Every shuffle of a null has an undefined score, so it gives no p-value."""
+
+    def __init__(self, message: str, *, score: float, null: str) -> None:
+        super().__init__(message)
+        self.score = score
+        self.null = null
+
+
 @dataclass(frozen=True, repr=False, eq=False)
 class ReplaySignificanceResult(ResultMixin):
     """A decoded event's replay score tested against shuffled events.
@@ -580,7 +589,7 @@ def replay_significance(
         defined = np.isfinite(statistic)
         n_used = int(defined.sum())
         if n_used == 0:
-            raise ValueError(
+            raise _UndefinedNullError(
                 _format_error(
                     f"{_OPERATION}: all {n_shuffles} {name} shuffles have an "
                     "undefined (NaN) score.",
@@ -588,7 +597,9 @@ def replay_significance(
                     "this null left none to compare with",
                     fix=f"leave {name} out of nulls, or check that the score is "
                     "defined on shuffled versions of this event",
-                )
+                ),
+                score=float(observed_result.score),
+                null=name,
             )
         if n_used < n_shuffles:
             warnings.warn(
