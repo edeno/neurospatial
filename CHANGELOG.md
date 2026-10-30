@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### Spike-train, place-field and time-bin nulls
+
+`replay_significance` gains three nulls, run when named in `nulls=`:
+
+- `"spike_train_circular"`: each cell's spike counts are shifted circularly in
+  time within the event and decoded again. This keeps each cell's spikes and
+  breaks the order in which cells fire (Tirole et al. 2022; the "temporal
+  shuffle" of Maboudi et al. 2018).
+- `"place_field_circular"`: each rate map is shifted circularly along the track
+  and the event decoded again (Grosmark & Buzsáki 2016; Tirole et al. 2022).
+  Each map moves only over its supported bins, so bins without training data
+  stay excluded.
+- `"time_bin_permutation"`: the posterior's time bins are put in random order
+  (Karlsson & Frank 2009; Takigawa et al. 2024).
+
+Tirole et al. (2022) call an event significant when it beats
+`nulls=["spike_train_circular", "place_field_circular", "column_cycle"]`.
+With `nulls=None` the default is still the three nulls of Davidson et al.
+(2009) whose inputs are given, so existing results do not change. Use the
+nulls together. On events with no sequence, one null that decodes again, or
+the column cycle, rejects more often than its nominal rate, because a
+shuffled decode is flatter than the event's own posterior. Requiring all of
+Tirole's three to reject brings the rate back to about nominal.
+
+New `shuffle_spike_counts_circular(spike_counts)` yields the shifted counts
+on their own. It and the place-field and column-cycle shuffles shift each
+cell or time bin independently, by a shift drawn uniformly from all shifts.
+The Bendor-lab code's `ceil(rand * n)` gives the same distribution.
+`shuffle_place_fields_circular` now leaves bins without a rate for every cell
+in place and shifts each field over the other bins.
+
 ### Rank-order correlation of replay events
 
 `rank_order_correlation(env, spike_times, (start, stop), rates)` is the
