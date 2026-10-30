@@ -42,7 +42,7 @@ import contextlib
 import dataclasses
 import warnings
 import zlib
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -1033,10 +1033,13 @@ def compare_reactivation_methods(
           both periods) and ``n_member_pairs``.
         - ``p_value``, ``n_shuffles_used`` and ``is_reactivated`` (the
           method's within-session verdict; missing for methods without
-          one), and ``error``: why a method could not be applied (for
-          example a period shorter than one window, or a window without
-          events or with fewer than ``min_events``), with the other
-          columns missing.
+          one), and ``error``: why a method could not be applied, with
+          the other columns missing. A failure of the template or control
+          period (for example a period shorter than one window) is one row
+          of the method; a match window that fails (for example one
+          without events or with fewer than ``min_events``) is a row of
+          that window, with its window columns, and the method's other
+          windows keep their rows.
 
         Columns that do not apply to a method are NaN. ``table.attrs``
         holds ``rng_entropy``, the seed the streams derive from: passing it
@@ -1500,6 +1503,30 @@ def _window_columns(index: int, window: NDArray[np.float64]) -> dict[str, Any]:
     }
 
 
+def _match_window_rows(
+    method: ReactivationMethod,
+    session: _Session,
+    window_rows: Callable[[int, NDArray[np.float64]], list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """Rows of each match window; a window that fails is its own error row.
+
+    ``window_rows(index, window)`` gives the rows of one match window. A
+    window that cannot be analysed (for example one without events) gives
+    one row with its window columns and ``error``, and the other windows'
+    rows are kept. The template and control periods are analysed before,
+    once for every window, so a failure there fails the whole method.
+    """
+    rows: list[dict[str, Any]] = []
+    for index, window in enumerate(
+        _windows_or_error(method.match_windows, session.match, "match")
+    ):
+        try:
+            rows.extend(window_rows(index, window))
+        except _MethodError as failure:
+            rows.append({**_window_columns(index, window), "error": str(failure)})
+    return rows
+
+
 def _explained_variance_rows(
     method: ReactivationMethod,
     session: _Session,
@@ -1527,10 +1554,8 @@ def _explained_variance_rows(
     ) and n_controls != 1:
         needs = method.test if method.test is not None else method.statistic
         raise _MethodError(f"{needs} needs one control window, got {n_controls}")
-    rows = []
-    for index, window in enumerate(
-        _windows_or_error(method.match_windows, session.match, "match")
-    ):
+
+    def window_rows(index: int, window: NDArray[np.float64]) -> list[dict[str, Any]]:
         match_counts, n_match_events = _rest_counts(method, session, window, "match")
         if method.n_rate_subsamples is None:
             match_correlations = _pair_correlations(match_counts)
@@ -1593,8 +1618,9 @@ def _explained_variance_rows(
                 row["is_reactivated"] = lower > 0
             else:
                 row["is_reactivated"] = _missing()
-        rows.append(row)
-    return rows
+        return [row]
+
+    return _match_window_rows(method, session, window_rows)
 
 
 def _ev_summary(
@@ -1895,20 +1921,24 @@ def _assembly_rows(
         if method.zscore_over == "all_periods"
         else None
     )
+    if method.event_response is not None:
+        # Every match window is compared with the control window's events.
+        _check_min_events(
+            method,
+            len(_events_in(session.events["control_events"], control_window)),
+            "control",
+        )
     n_components = len(patterns)
     all_weights = np.array([pattern.weights for pattern, _ in patterns])
-    rows: list[dict[str, Any]] = []
-    for index, window in enumerate(
-        _windows_or_error(method.match_windows, session.match, "match")
-    ):
+
+    def window_rows(index: int, window: NDArray[np.float64]) -> list[dict[str, Any]]:
         window_columns = {
             **_window_columns(index, window),
             "statistic": method.statistic,
             "n_components": n_components,
         }
         if not n_components:
-            rows.append(window_columns)
-            continue
+            return [window_columns]
         match_samples = _period_samples(method, session.trains, window)
         control_z, match_z, included = _z_scored(
             method, control_samples, match_samples, template_samples
@@ -1948,6 +1978,7 @@ def _assembly_rows(
                 (control_window, control_samples.times, control_activation),
                 (window, match_samples.times, match_activation),
             )
+        rows: list[dict[str, Any]] = []
         for component, (pattern, region) in enumerate(patterns):
             row = {
                 **window_columns,
@@ -1990,7 +2021,9 @@ def _assembly_rows(
                 row["match_fraction_above_shuffle"] = match_shares[component]
                 row["n_shuffles_used"] = method.n_shuffles
             rows.append(row)
-    return rows
+        return rows
+
+    return _match_window_rows(method, session, window_rows)
 
 
 def _event_response_columns(
@@ -2246,10 +2279,8 @@ def _member_cofiring_rows(
     control_counts, n_control_events = _rest_counts(
         method, session, control_windows[0], "control"
     )
-    rows: list[dict[str, Any]] = []
-    for index, window in enumerate(
-        _windows_or_error(method.match_windows, session.match, "match")
-    ):
+
+    def window_rows(index: int, window: NDArray[np.float64]) -> list[dict[str, Any]]:
         match_counts, n_match_events = _rest_counts(method, session, window, "match")
         window_columns = {
             **_window_columns(index, window),
@@ -2259,8 +2290,8 @@ def _member_cofiring_rows(
             "n_match_events": n_match_events,
         }
         if not patterns:
-            rows.append(window_columns)
-            continue
+            return [window_columns]
+        rows: list[dict[str, Any]] = []
         for component, (pattern, region) in enumerate(patterns):
             cofiring = assembly_member_cofiring(control_counts, match_counts, pattern)
             rows.append(
@@ -2275,7 +2306,9 @@ def _member_cofiring_rows(
                     "n_member_pairs": cofiring.n_member_pairs,
                 }
             )
-    return rows
+        return rows
+
+    return _match_window_rows(method, session, window_rows)
 
 
 def _activation_rate(

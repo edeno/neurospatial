@@ -127,9 +127,12 @@ for note in KUDRIMOTI_1999.notes:
 each of its windows and returns one row per method, window of rest after
 and assembly pattern. `value` is the method's statistic; `is_reactivated` is
 its within-session verdict, missing for methods that tested across sessions
-or patterns instead. Each method draws from its own random stream, derived
-from `rng` and its name, so adding or removing methods does not change the
-others.
+or patterns instead. A method that cannot be applied has an `error` row:
+one for the method when its task or rest before fails (for example a
+period shorter than one window), or one for each window of rest after that
+fails (for example one without events), keeping the method's other
+windows. Each method draws from its own random stream, derived from `rng`
+and its name, so adding or removing methods does not change the others.
 
 <!-- docs-test: run -->
 ```python
