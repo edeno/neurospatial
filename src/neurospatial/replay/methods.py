@@ -33,7 +33,7 @@ from numpy.typing import NDArray
 
 from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ResultMixin
+from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
 from neurospatial.replay.correlation import weighted_correlation
 from neurospatial.replay.trajectory import (
@@ -312,16 +312,7 @@ class ReplaySegmentation:
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
-        return (
-            type(self),
-            (
-                dict(self.options),
-                dict(self.relative_to),
-                self.choose,
-                self.min_active_cells_per_time_bin,
-                self.rows,
-            ),
-        )
+        return reduce_through_constructor(self)
 
     def resolved_options(
         self, env: Environment, *, n_decoded_bins: int | None = None
@@ -579,28 +570,7 @@ class ReplayMethod:
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
-        return (
-            type(self),
-            (
-                self.name,
-                self.reference,
-                self.score,
-                dict(self.score_options),
-                self.nulls,
-                self.n_shuffles,
-                self.alpha,
-                self.alternative,
-                self.use_absolute,
-                self.empty_time_bins,
-                self.criteria,
-                self.segmentation,
-                self.units,
-                self.template_choice,
-                self.exclude_end_distance,
-                dict(self.decoding),
-                self.notes,
-            ),
-        )
+        return reduce_through_constructor(self)
 
 
 @dataclass(frozen=True)
@@ -833,20 +803,7 @@ class ReplayDetectionResult(ResultMixin):
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
-        return (
-            type(self),
-            (
-                self.method,
-                self.is_replay,
-                self.score,
-                self.p_value,
-                dict(self.criteria),
-                dict(self.values),
-                self.segments,
-                self.segment,
-                self.template,
-            ),
-        )
+        return reduce_through_constructor(self)
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result.

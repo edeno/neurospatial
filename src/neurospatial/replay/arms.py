@@ -23,6 +23,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._results import reduce_through_constructor
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -162,28 +163,8 @@ class ArmReplayMethod:
         return hash((self.name, self.reference))
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
-        """Rebuild through the constructor; the read-only mapping cannot pickle."""
-        return (
-            type(self),
-            (
-                self.name,
-                self.reference,
-                self.peak_threshold,
-                self.smoothing_sigma,
-                self.min_duration,
-                self.min_coverage,
-                self.min_abs_correlation,
-                self.joint_min_abs_correlation,
-                self.subregions,
-                self.merge_max_gap,
-                self.coverage,
-                self.joint,
-                self.joint_same_sign,
-                self.arm_fallback,
-                dict(self.decoding),
-                self.notes,
-            ),
-        )
+        """Rebuild through the constructor; the read-only mappings cannot pickle."""
+        return reduce_through_constructor(self)
 
 
 def detect_arm_replay(
