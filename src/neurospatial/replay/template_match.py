@@ -23,6 +23,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import validate_alpha
+from neurospatial.replay.calibration import _checked_intervals
 from neurospatial.replay.sequence_match import (
     _FIELD_ORDERS,
     _MATCH_ORDERS,
@@ -64,6 +65,9 @@ __all__ = [
     "detect_template_match_replay",
     "template_match_dataset_test",
 ]
+
+# Where event windows usually come from, offered when they are invalid.
+_INTERVALS_EXAMPLE = "spike_words(...).intervals"
 
 _STATISTICS = ("best_match", "matching_index")
 # Lee & Wilson's trial groups and the chance probability of a match in each;
@@ -860,33 +864,10 @@ def template_match_dataset_test(
                 fix="pass the frames as an array of shape (n_frames, 2)",
             )
         )
-    frames = _checked_intervals(intervals, operation, "intervals")
+    frames = _checked_intervals(
+        intervals, operation, allow_empty=True, example=_INTERVALS_EXAMPLE
+    )
     return _frame_test(method, ranks, trains, frames, generator)
-
-
-def _checked_intervals(
-    intervals: Any, operation: str, name: str
-) -> NDArray[np.float64]:
-    values = np.asarray(intervals, dtype=np.float64)
-    if values.size == 0:
-        return values.reshape(0, 2)
-    if (
-        values.ndim != 2
-        or values.shape[1] != 2
-        or not np.isfinite(values).all()
-        or np.any(values[:, 0] >= values[:, 1])
-    ):
-        raise ValueError(
-            _format_error(
-                f"{operation}: {name} must be finite (start, stop) rows in seconds "
-                f"with start < stop, got shape {values.shape}.",
-                why="each row is one event, and spikes at start <= t < stop belong "
-                "to it",
-                fix="pass an array of shape (n_events, 2), such as "
-                "spike_words(...).intervals",
-            )
-        )
-    return values
 
 
 def _template_intervals(
@@ -898,7 +879,11 @@ def _template_intervals(
                 f"{operation}: intervals is a mapping but encoding_models is one "
                 "set of rate maps; pass an array of shape (n_events, 2)."
             )
-        return {None: _checked_intervals(intervals, operation, "intervals")}
+        return {
+            None: _checked_intervals(
+                intervals, operation, allow_empty=True, example=_INTERVALS_EXAMPLE
+            )
+        }
     if not isinstance(intervals, Mapping) or set(intervals) != set(names):
         given = list(intervals) if isinstance(intervals, Mapping) else "an array"
         raise ValueError(
@@ -911,7 +896,13 @@ def _template_intervals(
             )
         )
     return {
-        name: _checked_intervals(intervals[name], operation, f"intervals[{name!r}]")
+        name: _checked_intervals(
+            intervals[name],
+            operation,
+            name=f"intervals[{name!r}]",
+            allow_empty=True,
+            example=_INTERVALS_EXAMPLE,
+        )
         for name in names
     }
 
