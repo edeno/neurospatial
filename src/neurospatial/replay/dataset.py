@@ -585,7 +585,11 @@ class ShuffledDataset(ResultMixin):
     spike_counts : tuple of NDArray[np.int64] or None
         Each event's spike counts, as shuffled (permuted with the rows by
         ``"time_bin_permutation"``, or as decoded by a null that decodes
-        again); None when no counts were given.
+        again); None when no counts were given. ``"pseudo_event"`` draws
+        posterior rows from other events, which carry no counts, so its
+        counts are the real event's, unchanged: they give the event's
+        active cells and time bins without spikes, but do not decode to the
+        drawn rows.
     null : str
         The null that made the data set.
 
@@ -2045,6 +2049,10 @@ def shuffle_events(
         event's posterior rows and its spike-count rows together, so a
         null that decodes again afterwards decodes the permuted counts
         (Grosmark & Buzsáki's time-bin-shuffle surrogate).
+        ``"pseudo_event"`` keeps each event's counts unchanged next to
+        posterior rows drawn from the pool, so the counts no longer decode
+        to the rows; ``dataset_values`` uses them the same way, for the
+        event's active cells and time bins without spikes.
     n_datasets : int, default=1
         Null data sets.
     null_options, spike_counts, encoding_models, dt, prior, pseudo_event_pool
@@ -3062,6 +3070,12 @@ _FAROOQ_NOTES = (
     "Frames pooled over animals (n = 38,820 in Fig. 1, 38,220 on p. e7), "
     "each running direction decoded and analysed on its own (p. e3); whether "
     "a frame counts once per direction in the pooled matrix is not stated.",
+    "Frames are events of 100 to 800 ms 'that contained activation of at "
+    "least 5 distinct neurons' (p. e2). dataset_values reports FAROOQ_2019's "
+    "n_active_cells but dataset_test does not apply it, so pass only the "
+    "frames: keep = [np.sum(c.sum(axis=0) > 0) >= 5 for c in counts], with "
+    "the counts of the cells that reading counts (FAROOQ_2019's notes), and "
+    "make surrogate data sets from these frames' intervals.",
 )
 
 SILVA_2015_MATRIX = DatasetTestRecipe(
@@ -3246,23 +3260,30 @@ FAROOQ_2019_POISSON = dataclasses.replace(
     notes=(
         "Fig. 1F (Pre-Run vs 500 rate-matched Poisson data sets): each cell "
         "fires as a Poisson process at its mean rate over every frame of the "
-        "sleep (p. e4). Calls: pois = null_events(spikes, frame_intervals, "
-        "kind='rate_poisson', n_copies=500, rng=1); pe, pc = decode_intervals("
-        "env, pois.spike_times, pois.intervals, maps, dt=0.02); pv = "
+        "sleep (p. e4). Calls, one data set at a time: tables = []; for k, "
+        "seed in enumerate(np.random.SeedSequence(1).spawn(500)): pois = "
+        "null_events(spikes, frame_intervals, kind='rate_poisson', "
+        "rng=np.random.default_rng(seed)); pe, pc = decode_intervals(env, "
+        "pois.spike_times, pois.intervals, maps, dt=0.02); tables.append("
         "dataset_values(env, pe, replay_method=FAROOQ_2019, spike_counts=pc, "
-        "quantities=('max_map_jump',)).assign(dataset=lambda t: "
-        "pois.copy_index[t.event]); dataset_test(pre, "
-        "pv, criteria=recipe.criteria).",
+        "quantities=('max_map_jump',)).assign(dataset=k)); then "
+        "dataset_test(pre, pd.concat(tables), criteria=recipe.criteria).",
         "Fig. 1H compares the mean |r| of Pre-Run, tPre-Run, Poisson and "
         "tPoisson frames by rank-sum tests; the SEMs suggest one shuffled data "
         "set (n = 38,820), not 500 pooled (a reading): distribution_test(pre"
         ".assign(abs_score=pre.score.abs()), one_set.assign(abs_score="
         "one_set.score.abs()), column='abs_score', test='rank_sum').",
-        "Runtime: decode_intervals decodes the 500 x 38,820 surrogate frames in "
-        "one matrix product per block of 50,000 time bins: about 10 minutes "
-        "(0.16 s per 5,000 frames measured) rather than the 12 hours one "
-        "decode per frame takes. null_events itself takes about 0.2 ms per "
-        "frame, about an hour here.",
+        "Memory and runtime: decode_intervals holds every time bin's posterior "
+        "and counts at once, so decoding all 500 x 38,820 surrogate frames of "
+        "10 time bins in one call would need about 270 GB (72 bins, 100 "
+        "cells); "
+        "one data set at a time needs about 0.5 GB. Decoding all 500 takes about 10 minutes "
+        "(0.16 s per 5,000 frames measured, one matrix product per block of "
+        "50,000 time bins) rather than the 12 hours one decode per frame "
+        "takes; dataset_values measures each frame with detect_replay, about "
+        "0.5 ms per frame, so about 3 hours; null_events takes about 0.2 ms "
+        "per frame, about an hour. The data sets are independent and can run "
+        "in parallel.",
         *_FAROOQ_NOTES,
     ),
 )
@@ -3349,13 +3370,18 @@ STELLA_2019_JITTER = DatasetTestRecipe(
     p_value_rule="test",
     decoding={"time_bin": 0.008},
     notes=(
-        "Calls (per session, 8 ms windows): jit = null_events(spikes, "
-        "selected_intervals, kind='spike_time_uniform', n_copies=500, rng=0); "
-        "je, jc = decode_intervals(env, jit.spike_times, jit.intervals, maps, "
-        "dt=0.008); obs = event_properties(env, selected_events); nul = "
-        "event_properties(env, je); distribution_test(obs, nul, column="
-        "'mean_peak_probability', test='ks'); the mean step per table is "
-        "t.assign(step=t.map_path_length / (t.n_time_bins - 1)).",
+        "Calls (per session, 8 ms windows), one copy at a time so that only "
+        "one copy's posteriors are held: nul = []; for seed in "
+        "np.random.SeedSequence(0).spawn(500): jit = null_events(spikes, "
+        "selected_intervals, kind='spike_time_uniform', "
+        "rng=np.random.default_rng(seed)); je, _ = decode_intervals(env, "
+        "jit.spike_times, jit.intervals, maps, dt=0.008); "
+        "nul.append(event_properties(env, je)); then obs = "
+        "event_properties(env, selected_events); distribution_test(obs, "
+        "pd.concat(nul), column='mean_peak_probability', test='ks'); the mean "
+        "step per table is t.assign(step=t.map_path_length / (t.n_time_bins - "
+        "1)). Decoding all 279,000 copies in one call would hold every 8 ms "
+        "bin's posterior at once.",
         "500 copies per event is inferred from 279,000 shuffled and 558 "
         "original events (Fig. 2B-C); the KS side is not stated (two-sided "
         "here).",

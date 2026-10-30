@@ -270,6 +270,20 @@ Several replay papers test a whole data set, not each event:
   (`abs_score`, Grosmark's `quality`, Stella's `step`) is now made by an
   `assign` given in that recipe's notes; `abs_score` is always `|score|`.
 
+**Documentation**
+
+- `FAROOQ_2019_POISSON` and `STELLA_2019_JITTER` notes make, decode and
+  measure one surrogate data set at a time. `decode_intervals` holds every
+  time bin's posterior and counts at once, and 500 copies of 38,820 frames
+  in one call would need about 270 GB. The Farooq runtime now includes
+  about 3 hours of `dataset_values`. The `decode_intervals` docstring and
+  the replay guide state the memory.
+- The `FAROOQ_2019_*` notes say to pass only frames with at least 5 active
+  cells: `dataset_test` does not apply `FAROOQ_2019`'s `n_active_cells`
+  criterion.
+- `shuffle_events` and `ShuffledDataset` state that `"pseudo_event"` keeps
+  each event's own counts next to rows drawn from the pool.
+
 ### Reactivation recipes
 
 **New**

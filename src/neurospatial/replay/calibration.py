@@ -1920,6 +1920,12 @@ def decode_intervals(
     many surrogate events of a data-set-level test.
     Overlapping intervals, or a prior per time bin, are decoded one interval
     at a time.
+
+    Every time bin's counts and posterior are returned, and held at once:
+    about ``n_time_bins * (n_cells + n_bins) * 8`` bytes. For hundreds of
+    surrogate copies of a session's events, decode and measure one copy at
+    a time (one :func:`null_events` call per copy, each with its own seed)
+    rather than all copies in one call.
     """
     from neurospatial.decoding import bin_spikes_in_time, decode_position
 
