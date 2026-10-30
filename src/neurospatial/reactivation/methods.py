@@ -148,7 +148,7 @@ def _is_count(value: Any) -> bool:
     return (
         isinstance(value, (int, np.integer))
         and not isinstance(value, bool)
-        and value >= 1
+        and bool(value >= 1)
     )
 
 
