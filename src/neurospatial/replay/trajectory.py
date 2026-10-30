@@ -45,9 +45,6 @@ fit_linear_trajectory
     Fit linear trajectory with optional Monte Carlo uncertainty.
 detect_trajectory_radon
     Fit the replay line holding the most posterior mass (Davidson et al. 2009).
-replay_trajectory_significance
-    Test a replay line's score against column-cycle, unit-identity and
-    pseudo-event shuffles.
 
 Result Dataclasses
 ------------------
@@ -57,8 +54,6 @@ LinearFitResult
     Container for linear regression results.
 RadonDetectionResult
     Container for Radon transform detection results.
-ReplaySignificanceResult
-    Container for a replay line and its shuffle tests.
 """
 
 from __future__ import annotations
@@ -72,13 +67,11 @@ from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Iterator
 
     from numpy.typing import NDArray
 
-    from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
-    from neurospatial.stats.shuffle import ShuffleTestResult
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -137,6 +130,11 @@ class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
         """Own read-only copies of fitted positions and residuals."""
         self._own_arrays()
 
+    @property
+    def score(self) -> float:
+        """The replay score of this fit: its R²."""
+        return self.r_squared
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {"r_squared": self.r_squared, "direction": self.direction}
@@ -194,6 +192,11 @@ class LinearFitResult(ResultMixin):
     r_squared: float
     slope_std: float | None
 
+    @property
+    def score(self) -> float:
+        """The replay score of this fit: its R²."""
+        return self.r_squared
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
@@ -248,7 +251,7 @@ class RadonDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     See Also
     --------
     detect_trajectory_radon : Function that produces this result.
-    replay_trajectory_significance : Test the score against shuffles.
+    neurospatial.replay.replay_significance : Test the score against shuffles.
     fit_linear_trajectory : Line fit to the decoded positions.
 
     Examples
@@ -279,50 +282,6 @@ class RadonDetectionResult(ReadOnlyArraysMixin, ResultMixin):
             "start_position": self.start_position,
             "score": self.score,
             "band": self.band,
-        }
-
-
-@dataclass(frozen=True, repr=False, eq=False)
-class ReplaySignificanceResult(ResultMixin):
-    """A replay line and its replay score tested against shuffles.
-
-    :func:`replay_trajectory_significance` fits the replay line of Davidson,
-    Kloosterman and Wilson (2009) and compares its replay score with the best
-    score found in each of up to three kinds of shuffled data.
-
-    Attributes
-    ----------
-    trajectory : RadonDetectionResult
-        The best line through the event: speed, start position and replay
-        score.
-    shuffles : Mapping[str, ShuffleTestResult]
-        One shuffle test per null that was run, keyed ``"column_cycle"``,
-        ``"unit_identity"`` and ``"pseudo_event"``. Each holds the observed
-        score, the best score of every shuffle and the Monte Carlo p-value
-        ``(k + 1) / (n + 1)``.
-    p_value : float
-        The largest p-value among ``shuffles``. Davidson et al. call an event
-        significant replay when this is below 0.01, with all three shuffles
-        run.
-
-    See Also
-    --------
-    replay_trajectory_significance : Function that produces this result.
-    detect_trajectory_radon : The line fit alone.
-    """
-
-    trajectory: RadonDetectionResult
-    shuffles: Mapping[str, ShuffleTestResult]
-    p_value: float
-
-    def summary(self) -> dict[str, Any]:
-        """Flat dict of scalar headline metrics for this result."""
-        return {
-            "speed": self.trajectory.speed,
-            "start_position": self.trajectory.start_position,
-            "score": self.trajectory.score,
-            "p_value": self.p_value,
-            **{f"{name}_p_value": test.p_value for name, test in self.shuffles.items()},
         }
 
 
@@ -937,7 +896,7 @@ def detect_trajectory_radon(
     position lies within ``band`` of it, and the best trajectory gives the
     replay speed, start position and replay score. The search uses the whole
     posterior rather than one decoded position per time bin. Test the score
-    against shuffles with :func:`replay_trajectory_significance`.
+    against shuffles with :func:`~neurospatial.replay.replay_significance`.
 
     Parameters
     ----------
@@ -981,7 +940,7 @@ def detect_trajectory_radon(
     See Also
     --------
     RadonDetectionResult : Container for the detected trajectory.
-    replay_trajectory_significance : Test the replay score against shuffles.
+    neurospatial.replay.replay_significance : Test the replay score against shuffles.
     fit_linear_trajectory : For parametric linear fits.
     fit_isotonic_trajectory : For monotonic trajectory fits.
 
@@ -1168,269 +1127,6 @@ def _best_line(
         sinogram=sinogram,
         sinogram_speeds=lines.speeds,
         sinogram_start_positions=lines.start_positions,
-    )
-
-
-def replay_trajectory_significance(
-    env: Environment,
-    posterior: NDArray[np.float64],
-    times: NDArray[np.float64],
-    *,
-    band: float | None = None,
-    max_speed: float | None = None,
-    spike_counts: NDArray[np.int64] | None = None,
-    encoding_models: NDArray[np.float64] | SpatialRatesResult | None = None,
-    dt: float | None = None,
-    prior: NDArray[np.float64] | None = None,
-    pseudo_event_pool: NDArray[np.float64] | None = None,
-    n_shuffles: int = 1500,
-    rng: np.random.Generator | int | None = None,
-) -> ReplaySignificanceResult:
-    """Test whether a decoded event replays a constant-speed trajectory.
-
-    Implements the replay test of Davidson, Kloosterman and Wilson (2009):
-    the replay score of the best trajectory (:func:`detect_trajectory_radon`)
-    is compared with the best score found, by the same search, in each of
-    ``n_shuffles`` shuffled versions of the event. Davidson et al. used three
-    shuffles, each controlling for a different way a high score can arise
-    without replay:
-
-    - ``"column_cycle"`` (always run): each time bin's posterior is shifted
-      circularly along the track by a random distance, which keeps each
-      decoded distribution but breaks the alignment of positions along a
-      trajectory.
-    - ``"unit_identity"`` (run when ``spike_counts``, ``encoding_models`` and
-      ``dt`` are given): spike trains are reassigned to randomly permuted
-      units' rate maps and decoded again, which keeps the spiking dynamics
-      (bursts, sequential firing) but breaks the place code.
-    - ``"pseudo_event"`` (run when ``pseudo_event_pool`` is given): each time
-      bin's posterior is replaced by one drawn at random from other candidate
-      events, which keeps the decoder's bias toward particular locations.
-
-    Parameters
-    ----------
-    env : Environment
-        The environment the posterior was decoded on: a 1-D environment or a
-        linearized track.
-    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
-        Posterior probability mass over spatial bins for each time bin of the
-        event. Each row must sum to 1.
-    times : NDArray[np.float64], shape (n_time_bins,)
-        Center time of each posterior row, in seconds, strictly increasing.
-    band, max_speed : float or None, default=None
-        Half-width of the band around a trajectory and largest speed
-        searched, in environment units (per second); None means 15 cm and
-        30 m/s. See :func:`detect_trajectory_radon`.
-    spike_counts : NDArray[np.int64] or None, shape (n_time_bins, n_neurons)
-        Spike counts of the event, one row per posterior row. With
-        ``encoding_models`` and ``dt``, runs the unit-identity shuffle.
-    encoding_models : array of shape (n_neurons, n_bins), SpatialRatesResult, or None
-        The rate maps ``posterior`` was decoded with, as passed to
-        :func:`~neurospatial.decoding.decode_position`.
-    dt : float or None
-        Time-bin duration in seconds that ``posterior`` was decoded with.
-    prior : NDArray[np.float64] or None
-        The prior ``posterior`` was decoded with, if not the default.
-    pseudo_event_pool : NDArray[np.float64] or None, shape (n_pool, n_bins)
-        Posterior rows of the session's other candidate events, stacked. Runs
-        the pseudo-event shuffle: each pseudo-event draws its time bins at
-        random, with replacement, from these rows. Leave out the tested
-        event's own rows.
-    n_shuffles : int, default=1500
-        Shuffles per null, the number of Davidson et al. A p-value is at least
-        ``1 / (n_shuffles + 1)``.
-    rng : np.random.Generator, int, or None, default=None
-        Random number generator or seed; the nulls draw from it in the order
-        listed above. Pass a seed for a reproducible result.
-
-    Returns
-    -------
-    ReplaySignificanceResult
-        The detected trajectory, one shuffle test per null run, and the
-        largest of their p-values.
-
-    Raises
-    ------
-    ValueError
-        For the inputs :func:`detect_trajectory_radon` refuses; if only some
-        of ``spike_counts``, ``encoding_models`` and ``dt`` are given; if
-        decoding ``spike_counts`` with ``encoding_models``, ``dt`` and
-        ``prior`` does not reproduce ``posterior``; if ``pseudo_event_pool``
-        does not hold probability rows with one column per bin; or if
-        ``n_shuffles`` is not a positive integer.
-
-    See Also
-    --------
-    detect_trajectory_radon : The trajectory search alone.
-    neurospatial.replay.shuffle_posterior_circular : The column-cycle shuffle.
-    neurospatial.replay.shuffle_cell_identity : The unit-identity shuffle.
-
-    Notes
-    -----
-    Every shuffle is searched over the same trajectories as the observed
-    event, so the test accounts for the search. The p-values are
-    ``(k + 1) / (n + 1)``, where ``k`` counts shuffles scoring at least the
-    observed score (a Monte Carlo p-value; Davison and Hinkley 1997).
-    Davidson et al. performed 1500 of each shuffle, called an event
-    significant replay when all three p-values were below 0.01, and reported
-    the largest; ``p_value`` is the largest among the nulls run here. The
-    column-cycle shift is a whole number of bins along the track. The
-    unit-identity null decodes the shuffled counts the way ``posterior`` was
-    decoded, which is checked by decoding the unshuffled counts first. The
-    cost grows with ``n_shuffles``, the number of time bins, the track
-    length divided by ``band`` and ``max_speed`` times the event duration
-    divided by ``band``.
-
-    References
-    ----------
-    Davidson, T. J., Kloosterman, F., & Wilson, M. A. (2009). Hippocampal
-    replay of extended experience. *Neuron*, 63(4), 497-507.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.replay import replay_trajectory_significance
-    >>>
-    >>> env = Environment.linear_track(
-    ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
-    ... )
-    >>> times = np.arange(25) * 0.02
-    >>> posterior = np.zeros((25, env.n_bins))
-    >>> posterior[np.arange(25), 2 * np.arange(25)] = 1.0  # 4 cm per 20 ms
-    >>> result = replay_trajectory_significance(
-    ...     env, posterior, times, n_shuffles=199, rng=0
-    ... )
-    >>> print(f"{result.trajectory.speed:.0f} cm/s, p = {result.p_value:.3f}")
-    202 cm/s, p = 0.005
-    """
-    from types import MappingProxyType
-
-    from neurospatial.replay.nulls import (
-        shuffle_cell_identity,
-        shuffle_posterior_circular,
-    )
-    from neurospatial.stats import _ensure_rng
-    from neurospatial.stats.shuffle import (
-        ShuffleTestResult,
-        compute_shuffle_pvalue,
-        compute_shuffle_zscore,
-    )
-
-    operation = "replay_trajectory_significance()"
-    if (
-        isinstance(n_shuffles, bool)
-        or not isinstance(n_shuffles, (int, np.integer))
-        or n_shuffles < 1
-    ):
-        raise ValueError(
-            f"{operation} needs n_shuffles to be a positive integer, got "
-            f"{n_shuffles!r}. Davidson et al. used 1500 per null."
-        )
-    lines, posterior = _prepare_replay_lines(
-        env,
-        posterior,
-        times,
-        band=band,
-        max_speed=max_speed,
-        operation=operation,
-    )
-    unit_inputs = {
-        "spike_counts": spike_counts,
-        "encoding_models": encoding_models,
-        "dt": dt,
-    }
-    missing = [name for name, value in unit_inputs.items() if value is None]
-    if 0 < len(missing) < len(unit_inputs):
-        raise ValueError(
-            _format_error(
-                f"{operation}: the unit-identity shuffle needs spike_counts, "
-                f"encoding_models and dt, but {', '.join(missing)} "
-                f"{'is' if len(missing) == 1 else 'are'} missing.",
-                why="the shuffle decodes the event's spike counts again with "
-                "permuted rate maps, as the posterior was decoded",
-                fix="pass all three (and prior if the decode used one), or none "
-                "to skip this shuffle",
-            )
-        )
-    if pseudo_event_pool is not None:
-        pool = np.asarray(pseudo_event_pool, dtype=np.float64)
-        if pool.ndim != 2 or pool.shape[1] != env.n_bins or len(pool) == 0:
-            raise ValueError(
-                _format_error(
-                    f"{operation}: pseudo_event_pool has shape {pool.shape}, "
-                    f"but needs (n_pool, {env.n_bins}): posterior rows of other "
-                    "candidate events on this environment.",
-                    why="each pseudo-event draws its time bins from these rows",
-                    fix="stack the posteriors of the session's other candidate "
-                    "events, e.g. np.vstack([r.posterior for r in others])",
-                )
-            )
-        pool = _require_probability_rows(pool, operation)
-
-    trajectory = _best_line(lines, posterior)
-    observed = trajectory.score
-    generator = _ensure_rng(rng)
-    nulls: dict[str, NDArray[np.float64]] = {}
-
-    shifted = shuffle_posterior_circular(
-        env, posterior, n_shuffles=n_shuffles, rng=generator
-    )
-    nulls["column_cycle"] = lines.best_scores_of(shifted, n_shuffles)
-
-    if spike_counts is not None and encoding_models is not None and dt is not None:
-        from neurospatial.decoding.posterior import decode_position
-
-        counts = np.asarray(spike_counts)
-        decoded = decode_position(
-            env, counts, encoding_models, dt=dt, prior=prior
-        ).posterior
-        if decoded.shape != posterior.shape or not np.allclose(
-            decoded, posterior, rtol=1e-5, atol=1e-7
-        ):
-            raise ValueError(
-                _format_error(
-                    f"{operation}: decoding spike_counts with encoding_models, "
-                    "dt and prior does not reproduce posterior.",
-                    why="the unit-identity null decodes permuted counts; it is "
-                    "a valid null only if it decodes them the way the posterior "
-                    "was decoded",
-                    fix="pass the counts, rate maps (or rate result), dt and "
-                    "prior that produced posterior",
-                )
-            )
-        models = getattr(encoding_models, "firing_rates", encoding_models)
-        permuted = (
-            decode_position(
-                env, shuffled, encoding_models, dt=dt, prior=prior
-            ).posterior
-            for shuffled, _ in shuffle_cell_identity(
-                counts, np.asarray(models), n_shuffles=n_shuffles, rng=generator
-            )
-        )
-        nulls["unit_identity"] = lines.best_scores_of(permuted, n_shuffles)
-
-    if pseudo_event_pool is not None:
-        draws = generator.integers(len(pool), size=(n_shuffles, len(posterior)))
-        nulls["pseudo_event"] = lines.best_scores_of(
-            (pool[rows] for rows in draws), n_shuffles
-        )
-
-    shuffles = {
-        name: ShuffleTestResult(
-            observed_score=observed,
-            null_scores=scores,
-            p_value=compute_shuffle_pvalue(observed, scores, tail="greater"),
-            z_score=compute_shuffle_zscore(observed, scores),
-            shuffle_type=name,
-            n_shuffles=n_shuffles,
-        )
-        for name, scores in nulls.items()
-    }
-    return ReplaySignificanceResult(
-        trajectory=trajectory,
-        shuffles=MappingProxyType(shuffles),
-        p_value=max(test.p_value for test in shuffles.values()),
     )
 
 
@@ -1795,9 +1491,7 @@ __all__ = [
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
-    "ReplaySignificanceResult",
     "detect_trajectory_radon",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",
-    "replay_trajectory_significance",
 ]
