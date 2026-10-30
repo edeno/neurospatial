@@ -286,13 +286,19 @@ def geodesic_lookup_bins(
     Returns
     -------
     NDArray[np.intp], shape (n_time,)
-        Bin index per position, or -1 for a missing position.
+        Bin index per position, or -1 for a missing position; read-only
+        inside ``_population_cache()``.
     """
-    bins = np.array(env.bin_at(positions), dtype=np.intp)
-    outside = (bins < 0) & np.all(np.isfinite(positions), axis=1)
-    if outside.any():
-        bins[outside] = env.nearest_bin(positions[outside])
-    return bins
+
+    def lookup() -> NDArray[np.intp]:
+        bins = np.array(env.bin_at(positions), dtype=np.intp)
+        outside = (bins < 0) & np.all(np.isfinite(positions), axis=1)
+        if outside.any():
+            bins[outside] = env.nearest_bin(positions[outside])
+        return bins
+
+    # Cells on the same environment share the bins of one trajectory.
+    return _shared(("geodesic_lookup_bins", env, _digest(positions)), lookup)
 
 
 def _draw_rng(model: Any) -> np.random.Generator:

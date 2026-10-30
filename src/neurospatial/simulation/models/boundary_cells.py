@@ -249,8 +249,12 @@ class BorderCellModel:
         _times, positions = _model_inputs(
             times, positions, 2, call="BorderCellModel.firing_rate()"
         )
-        distances, _directions = nearest_boundary(
-            self.env, positions, boundary_source=self.boundary_source
+        # Cells on the same walls share the distances from the same positions.
+        distances = _shared(
+            ("nearest_wall", self.env, self.boundary_source, _digest(positions)),
+            lambda: nearest_boundary(
+                self.env, positions, boundary_source=self.boundary_source
+            )[0],
         )
         tuning = np.exp(
             -0.5
