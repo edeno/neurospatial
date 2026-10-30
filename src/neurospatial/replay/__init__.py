@@ -59,6 +59,9 @@ detect_arm_replay, ArmReplayMethod : Single-arm and joint-arm replay on a maze
 event_properties, detection_rates, method_agreement : Calibrate methods on a
     comparison table: rates (false positives on null data) by event
     property, with confidence intervals, and agreement between methods
+null_events, simulated_null_events, decode_intervals : Events without replay
+    (cell-identity, spike-shift and Poisson copies of real events, or
+    simulated random and stationary events) to measure false positives
 neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
     DIBA_BUZSAKI_2007, DAVIDSON_2009, KARLSSON_FRANK_2009,
     PFEIFFER_FOSTER_2013, WU_FOSTER_2014, PFEIFFER_FOSTER_2015, SILVA_2015, AMBROSE_2016,
@@ -100,9 +103,13 @@ Monte Carlo p-value helpers and temporal shuffles
 
 from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
 from neurospatial.replay.calibration import (
+    NullSpikeData,
+    decode_intervals,
     detection_rates,
     event_properties,
     method_agreement,
+    null_events,
+    simulated_null_events,
 )
 from neurospatial.replay.correlation import (
     WeightedCorrelationResult,
@@ -163,9 +170,13 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "detect_arm_replay",
     "detect_rank_order_replay",
     # Calibration and comparison
+    "NullSpikeData",
+    "decode_intervals",
     "detection_rates",
     "event_properties",
     "method_agreement",
+    "null_events",
+    "simulated_null_events",
     "detect_replay",
     # Result containers
     "IsotonicFitResult",
