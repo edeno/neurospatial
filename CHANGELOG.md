@@ -95,6 +95,26 @@ other seeded simulations give the same spikes as before.
 - `shuffle_spike_counts_uniform(spike_counts)` spreads each cell's spikes in
   an event uniformly over its time bins, keeping the cell's count: the
   "spike jittering" of Stella et al. (2019) on equal time bins.
+- `replay_significance(nulls="spike_time_uniform")` redraws each cell's
+  spikes uniformly over the event and decodes the event again (Stella et
+  al. 2019). It needs the decoding inputs, refuses time bins closer than
+  `dt` (overlapping windows share spikes), and with `empty_time_bins="zero"`
+  each shuffle zeroes its own empty time bins.
+- `replay_significance(nulls="column_cycle_weighted")` runs Farooq et al.'s
+  weighted circular shift, with peaks drawn from
+  `pseudo_event_pool.mean(axis=0)`. Its edge exclusion is set with the new
+  `null_options={"column_cycle_weighted": {"edge_exclusion": 10.0}}`.
+  `ReplayMethod` has a matching `null_options` field, checked when the
+  method is made (known nulls of the method, options they take) and
+  forwarded by `detect_replay`; `compare_replay_methods` builds the pool
+  for it as for the pseudo-event null.
+- `ReplayMethod` refuses `empty_time_bins="drop"` with
+  `"spike_train_circular"` or `"spike_time_uniform"`: after the drop they
+  would spread spikes over the kept time bins only, and their shuffles have
+  new empty time bins that cannot be dropped. Use `"zero"`.
+- The `time_bin_permutation` docs say it is the "time swap" of Silva et al.
+  (2015) and Maboudi et al. (2018) and the "time-bin shuffle" of Grosmark &
+  Buzsáki (2016) and Farooq et al. (2019).
 
 ### Replay scoring robustness
 

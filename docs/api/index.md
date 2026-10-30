@@ -178,8 +178,11 @@ Detecting the candidate events (ripples, population bursts) is not included.
   Mallory et al.; keep the longest or all
 - `replay_significance()`: Test any replay score against shuffles:
   column-cycle, unit-identity and pseudo-event (the default), spike-train
-  and place-field circular shifts, and time-bin permutation; significant
-  when every null run rejects the event
+  and place-field circular shifts, time-bin permutation (the "time swap"),
+  spike times redrawn uniformly in the event (`"spike_time_uniform"`,
+  Stella et al. 2019) and the weighted column cycle
+  (`"column_cycle_weighted"`, Farooq et al. 2019; options through
+  `null_options=`); significant when every null run rejects the event
 - `rank_order_correlation()`, `rank_order_significance()`: Spearman
   correlation of field order and firing order in an event, with a
   cell-order permutation test; needs no decoding
