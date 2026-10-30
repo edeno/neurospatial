@@ -2714,11 +2714,13 @@ OLIVA_2020_ASSEMBLY = dataclasses.replace(
     reference=OLIVA_2020_EV.reference,
     bin_size=0.02,
     smoothing_bandwidth=0.01,
+    zscore_over="all_periods",
     notes=(
         "20 ms bins: 'spike trains of each neuron were binned in 20-ms "
-        "intervals for the whole session and z-scored' (Methods, Cell "
-        "assembly analysis); 'for the whole session' is read as the "
-        "social-learning trials passed as template_epochs.",
+        "intervals for the whole session and z-scored firing rates were "
+        "calculated for each bin' (Methods, Cell assembly analysis). "
+        "Detection uses the social-learning trials passed as "
+        "template_epochs.",
         "Smoothing: 'Spike trains were convolved with a Gaussian kernel (SD = "
         "10 ms)'. Whether detection used the smoothed or the binned trains is "
         "not clear; here detection uses the 20 ms counts and R(t) the "
@@ -2731,8 +2733,13 @@ OLIVA_2020_ASSEMBLY = dataclasses.replace(
         "Statistic: 'Reactivation strength of an assembly was defined as the "
         "difference in its average expression strength during post-sleep "
         "minus that during pre-sleep'. Over all sleep or only SWRs is not "
-        "stated; pass the sleep (or NREM) epochs. Each period is z-scored on "
-        "its own, as in VAN_DE_VEN_2016.",
+        "stated; pass the sleep (or NREM) epochs.",
+        "Z-scoring: R(t) multiplies 'the convolved z-scored firing rate', "
+        "and the rates were z-scored 'for the whole session', read here as "
+        "the template, control and match periods together "
+        "(zscore_over='all_periods'), as in HARVEY_2023_ASSEMBLY, whose code "
+        "(Fernández-Ruiz lab) z-scores over the whole session. "
+        "VAN_DE_VEN_2016 z-scores each period on its own.",
         "No per-pattern test in the text.",
     ),
 )
