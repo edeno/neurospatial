@@ -76,10 +76,14 @@ def _draw(name: str, data: np.ndarray, rng, n: int = 5) -> list[np.ndarray]:
     function = getattr(nulls if hasattr(nulls, name) else shuffle, name)
     if name == "shuffle_place_fields_circular_2d":
         return list(function(_grid_env(), data, n_shuffles=n, rng=rng))
+    if name == "shuffle_posterior_weighted_circular":
+        weights = np.ones(data.shape[1])
+        return list(function(track_for(data), data, weights, n_shuffles=n, rng=rng))
     if name in (
         "shuffle_time_bins",
         "shuffle_time_bins_coherent",
         "shuffle_spike_counts_circular",
+        "shuffle_spike_counts_uniform",
     ):
         return list(function(data, n_shuffles=n, rng=rng))
     return list(function(track_for(data), data, n_shuffles=n, rng=rng))
@@ -90,6 +94,7 @@ GENERATOR_INPUTS = {
     "shuffle_time_bins": _counts(10, 5),
     "shuffle_time_bins_coherent": _counts(10, 5),
     "shuffle_spike_counts_circular": _counts(10, 5),
+    "shuffle_spike_counts_uniform": _counts(10, 5),
     "shuffle_cell_identity": _counts(10, 5),
     "shuffle_place_fields_circular": _rows(3, 8),
     "shuffle_place_fields_circular_2d": _rows(3, 36),
@@ -109,6 +114,9 @@ DEGENERATE_INPUTS = [
     ("shuffle_time_bins_coherent", "empty", np.zeros((0, 3), np.int64), "unchanged"),
     ("shuffle_time_bins_coherent", "single_time_bin", _counts(1, 3), "unchanged"),
     ("shuffle_cell_identity", "single_neuron", _counts(5, 1), "unchanged"),
+    ("shuffle_spike_counts_uniform", "empty", np.zeros((0, 3), np.int64), "unchanged"),
+    ("shuffle_spike_counts_uniform", "single_time_bin", _counts(1, 3), "unchanged"),
+    ("shuffle_spike_counts_uniform", "single_neuron", _counts(5, 1), "counts"),
     ("shuffle_place_fields_circular", "single_bin", _rows(2, 1), "unchanged"),
     ("shuffle_place_fields_circular", "single_neuron", _rows(1, 4), "same_values"),
     ("shuffle_posterior_circular", "empty", np.zeros((0, 5)), "unchanged"),

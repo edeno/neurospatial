@@ -82,6 +82,20 @@ other seeded simulations give the same spikes as before.
   `grid_spacing` used to build grid cells with NaN spacing.
 - Head-direction and boundary-vector `ground_truth` report a preferred
   direction of exactly −π as +π, the package's (−π, π] convention.
+### New replay nulls
+
+- `shuffle_posterior_weighted_circular(env, posterior, peak_weights,
+  edge_exclusion=)` is now the weighted circular shift of Farooq et al.
+  (2019): each time bin's peak is moved to a position drawn from
+  `peak_weights` (the session's mean decoded posterior) and the whole row
+  is rolled there; no peak lands within `edge_exclusion` (a distance along
+  the track; Farooq used 10 cm) of either end. The old function drew its
+  shifts uniformly, weighted nothing, and limited them only for peaks that
+  started near an end; `edge_buffer` is gone.
+- `shuffle_spike_counts_uniform(spike_counts)` spreads each cell's spikes in
+  an event uniformly over its time bins, keeping the cell's count: the
+  "spike jittering" of Stella et al. (2019) on equal time bins.
+
 ### Replay scoring robustness
 
 - Rank-order field peaks and centers ignore bins outside a rate result's
