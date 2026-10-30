@@ -5056,7 +5056,10 @@ SOULA_2023 = ReplayMethod(
         "code does; with the line on bin centers the two then agree.",
         "Time bins without spikes have no posterior in nelpy: set to zero "
         "here (empty_time_bins='zero') and left out of the line and of the "
-        "mean band mass, as in the code.",
+        "mean band mass, for the event and each shuffle alike. The co-author's "
+        "code leaves them out of the event's score only; in its shuffles a "
+        "time bin without spikes enters the line fit at MAP bin 0 (see "
+        "HARVEY_2023_LINE). Not reproduced.",
         "At least five active pyramidal cells with a peak rate of at least 1 "
         "Hz and a peak-to-mean ratio of 1.5: pass those cells' spike counts. "
         "Events with more than 50% of their time bins without spikes are "

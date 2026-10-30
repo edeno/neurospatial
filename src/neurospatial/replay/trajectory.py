@@ -3028,7 +3028,7 @@ class _ReplayLines:
             on_track = (position >= self.track_start) & (position <= self.track_end)
             # A trajectory is monotonic: on the track at both ends means on
             # it throughout.
-            placed = (
+            placed = np.asarray(
                 on_track[:, 0] & on_track[:, -1]
                 if self.line_ends == "on_track"
                 else on_track.any(axis=1)
