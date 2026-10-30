@@ -85,6 +85,20 @@ other seeded simulations give the same spikes as before.
 
 ### Widloski & Foster (2025): trajectory quantities tested against shuffles
 
+- `ReplayMethod.tested_quantities` tests scalar `TrajectoryMetrics` of the
+  tested rows against every null, in a stated tail, such as
+  `{"mean_spread": "less", "mean_mean_jump": "less"}`. Each quantity's
+  p-value is the largest over the nulls, and the event's `p_value` is the
+  largest over the quantities and the score's test. Every test draws the
+  same shuffles from one seed. A shuffle is the tested rows shuffled or
+  decoded again; the segmentation is not run on it. With
+  `choose="any"`, the segments that meet the segment criteria are tested
+  from the longest down and the first significant one is reported.
+  `empty_time_bins="zero"`, `template_choice="max_score"` and a score
+  with `choose="any"` are refused.
+- `ReplayDetectionResult.tested_values` and `tested_p_values`; `summary()`
+  and `compare_replay_methods` add each quantity's value and
+  `p_value[quantity]` columns.
 - `TrajectoryMetrics.mean_spread` and `mean_mean_jump`: the mean posterior
   spread over time bins and the mean center-of-mass jump between
   consecutive time bins (NaN with one time bin). They are also criterion

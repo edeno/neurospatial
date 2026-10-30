@@ -333,7 +333,8 @@ def trajectory_metrics(
       isotropic second central moment is used.
     - ``mean_spread`` and ``mean_mean_jump``: Widloski & Foster (2025)
       tested the mean posterior spread and the mean center-of-mass jump of
-      each candidate against cell-identity shuffles.
+      each candidate against cell-identity shuffles (see
+      ``ReplayMethod.tested_quantities``).
     - ``dispersion``: Widloski & Foster (2022) ``compute_sequenceDispersion.m``,
       > 12 cm, the root-mean-square distance of the posterior means from
       their average. The paper prints the mean of these distances instead.

@@ -25,6 +25,7 @@ DEFAULTS: dict[type, dict[str, Any]] = {
         "alpha": 0.05,
         "alternative": "greater",
         "use_absolute": None,
+        "tested_quantities": {},
         "empty_time_bins": "keep",
         "criteria": (),
         "segmentation": None,
@@ -617,7 +618,7 @@ def _plain(name: str, value: Any) -> Any:
             "min_active_cells_per_time_bin": value.min_active_cells_per_time_bin,
             "rows": value.rows,
         }
-    if name in ("score_options", "decoding"):
+    if name in ("score_options", "decoding", "tested_quantities"):
         return dict(value)
     if name == "null_options":
         return {null: dict(options) for null, options in value.items()}
