@@ -11,7 +11,8 @@
   or the session). On events without replay (null data) this is the
   method's false-positive rate; on simulated replays, its sensitivity.
 - :func:`method_agreement` counts how often every pair of methods agree,
-  with Cohen's kappa.
+  with Cohen's kappa, and :func:`score_agreement` correlates their scores
+  across events.
 - :func:`matched_alpha` finds each method's alpha that holds its
   false-positive rate on null data to a target (Takigawa et al. 2024), and
   :func:`apply_alpha` gives a table's verdicts at those alphas.
@@ -76,6 +77,7 @@ __all__ = [
     "matched_alpha",
     "method_agreement",
     "null_events",
+    "score_agreement",
     "simulated_null_events",
 ]
 
@@ -629,19 +631,24 @@ def method_agreement(
     See Also
     --------
     detection_rates : Each method's rate.
+    score_agreement : How closely the methods' scores correlate.
 
     Notes
     -----
     This compares verdicts. Tingley & Peyrache (2020, Fig. 3) compared
-    scores instead: the correlation, across one session's events, of two
-    methods' scores, averaged over sessions and templates. The weighted
-    correlation correlated with the rank-order score at R = 0.126, with the
-    Radon line-fit integral (the line-fit score) at R = 0.194 and with the
-    Radon line's slope at R = 0.43; the rank-order score correlated with
-    neither the integral (R = 0.003) nor the slope (R = 0.07). Their
-    rank-order score correlates the two orders' sorting indices (MATLAB's
-    ``sort`` outputs, which list cell numbers) rather than ranks, so it
-    depends on how the cells are numbered.
+    scores instead (:func:`score_agreement`): the correlation, across one
+    session's events, of two methods' scores, averaged over sessions and
+    templates. The weighted correlation correlated with the rank-order
+    score at R = 0.126, with the Radon line-fit integral (the line-fit
+    score) at R = 0.194 and with the Radon line's slope at R = 0.43; the
+    rank-order score correlated with neither the integral (R = 0.003) nor
+    the slope (R = 0.07). The weighted correlation is signed and the
+    integral is not, which alone keeps their correlation near 0 when
+    forward and reverse events are equally common (see
+    :func:`score_agreement`). Their rank-order score correlates the two
+    orders' sorting indices (MATLAB's ``sort`` outputs, which list cell
+    numbers) rather than ranks, so it depends on how the cells are
+    numbered.
 
     Examples
     --------
@@ -703,6 +710,135 @@ def method_agreement(
             }
         )
     return pd.DataFrame(rows)
+
+
+def score_agreement(
+    table: pd.DataFrame,
+    *,
+    groups: Sequence[str] = (),
+    absolute: bool = False,
+) -> pd.DataFrame:
+    """How closely every pair of methods' scores correlate across events.
+
+    The Pearson correlation, across events, between two methods' scores:
+    the comparison of Tingley & Peyrache (2020, Fig. 3). Unlike
+    :func:`method_agreement`, it compares the scores, not the verdicts, so
+    it does not depend on the methods' shuffles or thresholds.
+
+    Parameters
+    ----------
+    table : pandas.DataFrame
+        The table of :func:`~neurospatial.replay.compare_replay_methods`,
+        or several concatenated with ``groups`` columns that tell their
+        events apart.
+    groups : sequence of str, default=()
+        Columns of ``table`` to compute the correlations in separately,
+        such as ``("session",)``. A missing value forms its own group.
+    absolute : bool, default=False
+        Correlate the absolute values of the scores. Use it when a signed
+        score (a weighted or rank-order correlation, negative for reverse
+        order) is compared with an unsigned one (line fit, R²).
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per pair of methods, in the table's method order, and per
+        group: ``first``, ``second``, the ``groups`` columns, ``n_events``
+        (events with a finite score from both) and ``correlation``.
+        ``correlation`` is NaN with fewer than 3 such events or when either
+        score is constant over them.
+
+    Raises
+    ------
+    ValueError
+        If ``table`` lacks the ``event``, ``method``, ``score`` or
+        ``groups`` columns, or repeats an (event, method) pair within its
+        ``groups``.
+
+    See Also
+    --------
+    method_agreement : How often the methods' verdicts agree.
+
+    Notes
+    -----
+    Tingley & Peyrache computed the correlation in each session and
+    template and reported its mean: pass ``groups=("session",)`` and
+    average ``correlation``.
+
+    Scores enter as the table reports them. Correlating a signed score with
+    an unsigned one measures whether the sign follows the unsigned score,
+    not whether the methods agree: if forward and reverse events are equally
+    common and the direction is unrelated to the unsigned score, the
+    correlation is near 0 even when both methods rank every sequence above
+    every other event (the covariance of ``s * |x|`` with ``y``, for a sign
+    ``s`` of mean 0 independent of ``|x|`` and ``y``, is 0). Pass
+    ``absolute=True`` for such pairs, and keep the signs when both scores
+    are signed and you ask whether the methods agree on direction.
+
+    A score's scale differs between methods (line-fit mass, R², rho), and a
+    Pearson correlation measures only a linear relation; read it with a
+    scatter plot of the two scores. Events a method could not score (NaN
+    scores) are left out of that method's pairs; events with an ``error``
+    but a score, such as an undefined p-value, are kept.
+
+    Examples
+    --------
+    A signed score (``"wc"``) that agrees with an unsigned one
+    (``"line_fit"``) on which events are strong, with half the events
+    reversed:
+
+    >>> import pandas as pd
+    >>> from neurospatial.replay import score_agreement
+    >>> table = pd.DataFrame(
+    ...     {
+    ...         "event": [0, 0, 1, 1, 2, 2, 3, 3],
+    ...         "method": ["line_fit", "wc"] * 4,
+    ...         "score": [0.9, 0.8, 0.9, -0.8, 0.3, 0.1, 0.3, -0.1],
+    ...     }
+    ... )
+    >>> print(round(score_agreement(table)["correlation"].item(), 6))
+    0.0
+    >>> print(round(score_agreement(table, absolute=True)["correlation"].item(), 6))
+    1.0
+    """
+    import pandas as pd
+
+    operation = "score_agreement()"
+    data = _checked_table(table, groups, operation, values="score")
+    data["score"] = data["score"].astype(float)
+    if absolute:
+        data["score"] = data["score"].abs()
+    methods = list(dict.fromkeys(data["method"]))
+    grouped = (
+        data.groupby(list(groups), sort=False, dropna=False) if groups else [((), data)]
+    )
+    rows = []
+    for key, frame in grouped:
+        scores = frame.pivot(index="event", columns="method", values="score")
+        scores = scores.reindex(columns=methods)
+        for first, second in itertools.combinations(methods, 2):
+            a = scores[first].to_numpy()
+            b = scores[second].to_numpy()
+            both = np.isfinite(a) & np.isfinite(b)
+            rows.append(
+                {
+                    "first": first,
+                    "second": second,
+                    **dict(zip(groups, key, strict=True)),
+                    "n_events": int(both.sum()),
+                    "correlation": _pearson(a[both], b[both]),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _pearson(a: NDArray[np.float64], b: NDArray[np.float64]) -> float:
+    """Pearson correlation; NaN with fewer than 3 values or a constant one."""
+    if a.size < 3 or np.all(a == a[0]) or np.all(b == b[0]):
+        return np.nan
+    a = a - a.mean()
+    b = b - b.mean()
+    return float(np.sum(a * b) / np.sqrt(np.sum(a**2) * np.sum(b**2)))
 
 
 def matched_alpha(
@@ -1204,18 +1340,26 @@ def _check_verdicts(
 
 
 def _checked_table(
-    table: pd.DataFrame, groups: Sequence[str], operation: str
+    table: pd.DataFrame,
+    groups: Sequence[str],
+    operation: str,
+    *,
+    values: str = "is_replay",
 ) -> pd.DataFrame:
-    """A copy with an ``_error`` column, checked to be a comparison table."""
+    """A copy with an ``_error`` column, checked to be a comparison table.
+
+    ``values`` is the column the caller summarizes, ``is_replay`` (which
+    must be boolean) or ``score``.
+    """
     import pandas as pd
 
-    missing = [c for c in ("event", "method", "is_replay", *groups) if c not in table]
+    missing = [c for c in ("event", "method", values, *groups) if c not in table]
     if missing:
         raise ValueError(
             f"{operation}: table lacks columns {missing}; pass the table of "
             "compare_replay_methods(), with any groups columns added."
         )
-    if not pd.api.types.is_bool_dtype(table["is_replay"]):
+    if values == "is_replay" and not pd.api.types.is_bool_dtype(table["is_replay"]):
         raise ValueError(
             f"{operation}: table's is_replay must be boolean, got "
             f"{table['is_replay'].dtype}."

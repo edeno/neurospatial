@@ -212,9 +212,10 @@ Detecting the candidate events (ripples, population bursts) is not included.
   without replay (cell-identity, spike-shift, uniform-spike-time and
   rate-matched Poisson copies of real events,
   simulated random and stationary events) for false-positive rates
-- `event_properties()`, `detection_rates()`, `method_agreement()`: Calibrate
-  methods on a comparison table: rates by event property with confidence
-  intervals (false positives on null data), and agreement between methods
+- `event_properties()`, `detection_rates()`, `method_agreement()`,
+  `score_agreement()`: Calibrate methods on a comparison table: rates by
+  event property with confidence intervals (false positives on null data),
+  and agreement between methods' verdicts and scores
 - `matched_alpha()`, `apply_alpha()`: Each method's α that holds its
   false-positive rate on null data to a target (Takigawa et al. 2024), and
   a comparison table's verdicts at those α

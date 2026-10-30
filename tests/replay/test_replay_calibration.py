@@ -8,7 +8,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import pytest
-from scipy.stats import binomtest
+from scipy.stats import binomtest, pearsonr
 
 from neurospatial import Environment
 from neurospatial.decoding import (
@@ -27,10 +27,12 @@ from neurospatial.replay import (
     matched_alpha,
     method_agreement,
     null_events,
+    score_agreement,
     simulated_null_events,
 )
 from neurospatial.replay.methods import (
     CHENANI_2019,
+    DAVIDSON_2009,
     DIBA_BUZSAKI_2007,
     FOSTER_WILSON_2006,
     IGATA_2021,
@@ -402,6 +404,157 @@ class TestMethodAgreement:
         dropped = method_agreement(table, errors="exclude").iloc[0]
         assert (counted["n_events"], counted["n_first_only"]) == (3, 1)
         assert (dropped["n_events"], dropped["agreement"]) == (2, 1.0)
+
+
+def _score_table(scores, **columns):
+    """A comparison table from {method: [score per event]}."""
+    rows = [
+        {"event": event, "method": method, "is_replay": False, "score": score}
+        for method, values in scores.items()
+        for event, score in enumerate(values)
+    ]
+    table = pd.DataFrame(rows)
+    for name, values in columns.items():
+        table[name] = table["event"].map(dict(enumerate(values)))
+    return table
+
+
+class TestScoreAgreement:
+    def test_matches_scipy_pearson_over_events_both_scored(self):
+        rng = np.random.default_rng(7)
+        a, b, c = rng.normal(size=(3, 12))
+        b = a + 0.5 * b
+        c[3] = np.nan  # method c could not score event 3
+        result = score_agreement(_score_table({"a": a, "b": b, "c": c}))
+        result = result.set_index(["first", "second"])
+        assert list(result.index) == [("a", "b"), ("a", "c"), ("b", "c")]
+        assert result.loc[("a", "b"), "n_events"] == 12
+        assert result.loc[("a", "b"), "correlation"] == pytest.approx(
+            pearsonr(a, b).statistic
+        )
+        kept = np.arange(12) != 3
+        assert result.loc[("b", "c"), "n_events"] == 11
+        assert result.loc[("b", "c"), "correlation"] == pytest.approx(
+            pearsonr(b[kept], c[kept]).statistic
+        )
+
+    def test_signed_against_unsigned_score_by_hand(self):
+        """Mirrored signs cancel: r = 0 signed, 1 with absolute values."""
+        line_fit = [0.9, 0.9, 0.3, 0.3, 0.6, 0.6]
+        signed = [0.8, -0.8, 0.2, -0.2, 0.5, -0.5]  # |signed| = line_fit - 0.1
+        table = _score_table({"line_fit": line_fit, "wc": signed})
+        # Deviations of line_fit pair up with +s and -s, so their products cancel.
+        assert score_agreement(table)["correlation"].item() == pytest.approx(
+            0.0, abs=1e-12
+        )
+        absolute = score_agreement(table, absolute=True)["correlation"].item()
+        assert absolute == pytest.approx(pearsonr(line_fit, np.abs(signed)).statistic)
+        assert absolute == pytest.approx(1.0)
+
+    def test_groups_give_one_correlation_each(self):
+        """Sessions numbered from 0 are correlated separately, NaN its own group."""
+        table = pd.concat(
+            [
+                _score_table(
+                    {"a": [1.0, 2.0, 3.0, 4.0], "b": [1.0, 3.0, 2.0, 5.0]},
+                    session=["s1"] * 4,
+                ),
+                _score_table(
+                    {"a": [1.0, 2.0, 3.0], "b": [3.0, 2.0, 1.0]},
+                    session=["s2"] * 3,
+                ),
+                _score_table(
+                    {"a": [1.0, 2.0, 3.0], "b": [1.0, 2.0, 4.0]},
+                    session=[None] * 3,
+                ),
+            ]
+        )
+        with pytest.raises(ValueError, match="repeats"):
+            score_agreement(table)
+        result = score_agreement(table, groups=["session"])
+        assert result["session"].iloc[:2].tolist() == ["s1", "s2"]
+        assert result["session"].isna().tolist() == [False, False, True]
+        assert result["n_events"].tolist() == [4, 3, 3]
+        assert result["correlation"].tolist() == pytest.approx(
+            [
+                pearsonr([1, 2, 3, 4], [1, 3, 2, 5]).statistic,
+                -1.0,
+                pearsonr([1, 2, 3], [1, 2, 4]).statistic,
+            ]
+        )
+
+    def test_undefined_correlations_are_nan(self):
+        two_events = _score_table({"a": [1.0, 2.0], "b": [2.0, 1.0]})
+        # 0.1 is not exact in binary: its mean differs from it by round-off.
+        constant = _score_table({"a": [0.1, 0.1, 0.1], "b": [1.0, 2.0, 4.0]})
+        unscored = _score_table({"a": [1.0, 2.0, 3.0], "b": [np.nan] * 3})
+        for table, n_events in ((two_events, 2), (constant, 3), (unscored, 0)):
+            row = score_agreement(table).iloc[0]
+            assert row["n_events"] == n_events
+            assert np.isnan(row["correlation"])
+
+    def test_needs_a_score_column(self):
+        with pytest.raises(ValueError, match="score"):
+            score_agreement(_table({"a": [True], "b": [False]}))
+
+
+def test_signed_score_hides_agreement_on_forward_and_reverse_sweeps(track):
+    """Simulated sweeps both ways: the sign, not the fit, drives the signed r."""
+    x = track.bin_centers[:, 0]
+    rates = 0.5 + 25.0 * np.exp(
+        -0.5 * ((x - np.linspace(0.0, 100.0, 20)[:, None]) / 8.0) ** 2
+    )
+    rng = np.random.default_rng(0)
+    trains = [[] for _ in range(20)]
+    intervals, direction = [], []
+    for index in range(40):
+        sign = 1 if index % 2 == 0 else -1
+        event = simulate_replay_event(
+            track,
+            rates,
+            kind="sweep",
+            speed=sign * float(rng.uniform(250.0, 500.0)),
+            rate_gain=4.0,
+            seed=index,
+        )
+        start = 2.0 * index
+        for cell, train in enumerate(event.spike_times):
+            trains[cell].append(np.asarray(train) + start)
+        intervals.append((start, start + event.duration))
+        direction.append(sign)
+    trains = [np.concatenate(parts) for parts in trains]
+    events, counts = decode_intervals(
+        track, trains, np.asarray(intervals), rates, dt=DT
+    )
+    methods = [
+        SILVA_2015,  # weighted correlation, signed
+        dataclasses.replace(WU_2017, n_shuffles=10),  # R², unsigned
+        # Line fit: posterior mass near the best line, unsigned.
+        dataclasses.replace(DAVIDSON_2009, nulls=("column_cycle",), n_shuffles=10),
+    ]
+    table = compare_replay_methods(
+        track,
+        events,
+        replay_methods=methods,
+        spike_counts=counts,
+        encoding_models=rates,
+        dt=DT,
+        rng=0,
+    )
+    weighted = table.loc[table["method"] == SILVA_2015.name, "score"].to_numpy()
+    assert np.array_equal(np.sign(weighted), direction)
+    signed = score_agreement(table).set_index(["first", "second"])["correlation"]
+    absolute = score_agreement(table, absolute=True).set_index(["first", "second"])[
+        "correlation"
+    ]
+    unsigned = (WU_2017.name, DAVIDSON_2009.name)
+    for other in unsigned:
+        pair = (SILVA_2015.name, other)
+        assert abs(signed[pair]) < 0.3
+        assert absolute[pair] > 0.5
+    # Two unsigned scores are unchanged by taking absolute values.
+    assert signed[unsigned] == pytest.approx(absolute[unsigned])
+    assert signed[unsigned] > 0.5
 
 
 def test_false_positive_rates_on_simulated_events(track):

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Replay methods against Tingley & Peyrache (2020)
+
+**New**
+
+- `score_agreement(table, *, groups=(), absolute=False)`: the Pearson
+  correlation, across events, of every pair of methods' scores in a
+  `compare_replay_methods` table (Tingley & Peyrache 2020, Fig. 3), per
+  `groups` value. `absolute=True` correlates |score|: a signed score
+  (weighted or rank-order correlation) and an unsigned one (line fit, R²)
+  correlate near 0 when forward and reverse events are equally common,
+  however well the methods agree.
+
+**Documentation**
+
+- Corrected citations of Tingley & Peyrache (2020): R = 0.43 is the
+  weighted correlation against the Radon slope; against the Radon integral
+  (the line-fit score) it is 0.194, and against the rank-order score
+  0.126. Their false-positive simulation varied only the number of cells
+  (random orders, parametric p); the dependence on firing rates is argued,
+  not simulated.
+- `FOSTER_WILSON_2006` notes give the false-positive rate of its
+  t-distribution p-value under random orders (1/3 with 3 cells, 1/12 with
+  4 or 5, about 5.4% with 10) and the calibrated permutation and exact
+  alternatives. The recipe still uses the paper's test.
+
 ### Fernández-Ruiz-lab replay methods
 
 Replay tests of Harvey et al. (2023), Soula et al. (2023), Liu et al. (2023)

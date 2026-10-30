@@ -243,6 +243,41 @@ little with them, because it accepts the stationary events and rejects the
 random ones. Agreement depends on the mix of events: on your recording it
 tells you how much the choice of method changes which events you analyze.
 
+Verdicts depend on each method's shuffles and α. Tingley & Peyrache (2020,
+Fig. 3) compared the scores instead: the correlation, across events, of two
+methods' scores, computed per session and averaged. `score_agreement` gives
+it for every pair of methods (pass `groups=["session"]` for one value per
+session).
+
+<!-- docs-test: run -->
+```python
+from neurospatial.replay import score_agreement
+
+signed = score_agreement(table)
+unsigned = score_agreement(table, absolute=True)
+print(
+    signed[["first", "second"]]
+    .assign(signed=signed["correlation"], absolute=unsigned["correlation"])
+    .round(2)
+    .to_string()
+)
+```
+
+Some scores are signed: the weighted correlations of `TIROLE_2022` and
+`SILVA_2015` and the rank-order correlation of `DIBA_BUZSAKI_2007` are
+negative for a reverse sweep. The line fit of `DAVIDSON_2009` and the R² of
+`WU_2017` are not. A signed score against an unsigned one measures whether
+the sign follows the unsigned score, not whether the methods agree: with
+forward and reverse events in similar numbers it is near 0 however well
+they agree. `WU_2017` and `TIROLE_2022` correlate at 0.21 with signs and
+0.97 without. Pass `absolute=True` for such pairs, and keep the signs
+between two signed scores, which then also agree on direction (0.89 to
+0.97 here). Tingley & Peyrache correlated the signed weighted correlation
+with the unsigned Radon line fit (R = 0.194), so part of that low value can
+come from the signs alone. `DAVIDSON_2009`'s line fit correlates weakly
+with every other score even without signs, because it scores stationary
+events as high as sweeps.
+
 ## False positives on null data
 
 A false-positive rate needs events known to contain no replay. No single
