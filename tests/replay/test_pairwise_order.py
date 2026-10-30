@@ -41,10 +41,11 @@ def _rates(env, field_bins):
     return rates
 
 
-def _brute_force(trains, centers, lag, sign=1.0):
+def _brute_force(trains, centers, lag, sign=1.0, groups=None):
     """Largest score over one field per cell, from a double loop over spikes.
 
-    ``centers[u]`` lists cell ``u``'s field centers (empty for none).
+    ``centers[u]`` lists cell ``u``'s field centers (empty for none). With
+    ``groups``, pairs of spikes from cells in one group are skipped.
     """
     spikes = [
         (t, u) for u, train in enumerate(trains) for t in train if len(centers[u])
@@ -55,6 +56,8 @@ def _brute_force(trains, centers, lag, sign=1.0):
         position = dict(zip(scored, choice, strict=True))
         total = 0.0
         for (ti, ui), (tj, uj) in itertools.combinations(spikes, 2):
+            if groups is not None and groups[ui] == groups[uj]:
+                continue
             if abs(tj - ti) < lag:
                 total += np.sign(tj - ti) * np.sign(position[uj] - position[ui])
         best = max(best, sign * total)
@@ -329,6 +332,145 @@ class TestNulls:
             alone.shuffles["cell_identity"].null_scores,
         )
         assert both.p_value == max(t.p_value for t in both.shuffles.values())
+
+
+class TestUnitGroups:
+    """Only pairs of spikes from cells in different groups are compared."""
+
+    @pytest.fixture
+    def event(self, track):
+        """Ten cells on four tetrodes, two with two fields, one without."""
+        field_bins = [[1], [3, 12], [5], [7], [], [9], [11, 2], [13], [15], [17]]
+        rng = np.random.default_rng(21)
+        trains = [np.sort(rng.uniform(1.0, 1.15, rng.poisson(3))) for _ in field_bins]
+        trains[4] = np.array([1.05, 1.06])  # active without a field
+        centers = [sorted(10.0 * b + 5.0 for b in bins) for bins in field_bins]
+        tetrodes = np.array(["a", "a", "a", "b", "b", "c", "c", "c", "d", "d"])
+        return _rates(track, field_bins), trains, centers, tetrodes
+
+    def test_score_and_pairs_match_a_hand_filtered_count(self, track, event):
+        rates, trains, centers, tetrodes = event
+        for direction, sign in (("forward", 1.0), ("backward", -1.0)):
+            result = pairwise_order_score(
+                track,
+                trains,
+                (1.0, 1.15),
+                rates,
+                direction=direction,
+                unit_groups=tetrodes,
+            )
+            assert result.score == _brute_force(
+                trains, centers, 0.08, sign, groups=tetrodes
+            )
+        spikes = [(t, u) for u, train in enumerate(trains) for t in train]
+        n_pairs = sum(
+            bool(
+                abs(tj - ti) < 0.08
+                and len(centers[ui]) > 0
+                and len(centers[uj]) > 0
+                and tetrodes[ui] != tetrodes[uj]
+            )
+            for (ti, ui), (tj, uj) in itertools.combinations(spikes, 2)
+        )
+        assert result.n_pairs == n_pairs
+        everything = pairwise_order_score(track, trains, (1.0, 1.15), rates)
+        assert n_pairs < everything.n_pairs
+
+    def test_one_group_per_cell_changes_nothing(self, track, event):
+        rates, trains, _, _ = event
+        kwargs = {"n_shuffles": 25, "rng": 3}
+        grouped = pairwise_order_significance(
+            track, trains, (1.0, 1.15), rates, unit_groups=np.arange(10), **kwargs
+        )
+        plain = pairwise_order_significance(track, trains, (1.0, 1.15), rates, **kwargs)
+        assert grouped.observed.summary() == plain.observed.summary()
+        for null in plain.shuffles:
+            np.testing.assert_array_equal(
+                grouped.shuffles[null].null_scores, plain.shuffles[null].null_scores
+            )
+
+    def test_one_group_for_every_cell_compares_nothing(self, track, event):
+        rates, trains, _, _ = event
+        result = pairwise_order_score(
+            track, trains, (1.0, 1.15), rates, unit_groups=["a"] * 10
+        )
+        assert (result.score, result.n_pairs) == (0, 0)
+
+    def test_spike_time_permutation_keeps_each_trains_group(
+        self, track, event, monkeypatch
+    ):
+        """A shuffled spike counts with the group of the cell it now belongs to."""
+        rates, trains, centers, tetrodes = event
+        calls = _recorded(monkeypatch, "_order_weights")
+        result = pairwise_order_significance(
+            track,
+            trains,
+            (1.0, 1.15),
+            rates,
+            nulls=["spike_time_permutation"],
+            n_shuffles=15,
+            unit_groups=tetrodes,
+            rng=4,
+        )
+        active = [u for u, train in enumerate(trains) if len(train)]
+        scored = [u for u in active if centers[u]]
+        times = np.sort(np.concatenate([trains[u] for u in scored]))
+        null = result.shuffles["spike_time_permutation"].null_scores
+        for k, (args, _) in enumerate(calls[1:]):
+            shuffled = [[] for _ in trains]
+            for t, label in zip(times, args[3], strict=True):
+                shuffled[active[label]].append(t)
+            assert null[k] == _brute_force(shuffled, centers, 0.08, groups=tetrodes)
+
+    def test_cell_identity_moves_fields_not_groups(self, track, event, monkeypatch):
+        rates, trains, _, tetrodes = event
+        calls = _recorded(monkeypatch, "_best_assignment")
+        result = pairwise_order_significance(
+            track,
+            trains,
+            (1.0, 1.15),
+            rates,
+            nulls=["cell_identity"],
+            n_shuffles=15,
+            unit_groups=tetrodes,
+            rng=5,
+        )
+        active = [u for u, train in enumerate(trains) if len(train)]
+        null = result.shuffles["cell_identity"].null_scores
+        for k, ((_, fields, _), _) in enumerate(calls[1:]):
+            shuffled_centers = [[] for _ in trains]
+            for unit, field_set in zip(active, fields, strict=True):
+                shuffled_centers[unit] = list(field_set)
+            assert null[k] == _brute_force(
+                trains, shuffled_centers, 0.08, groups=tetrodes
+            )
+
+    def test_detection_compares_only_pairs_across_groups(self):
+        env, rates = _place_code()
+        trains = _sweep(30, np.random.default_rng(6))
+        tetrodes = np.arange(30) // 4
+        result = detect_pairwise_order_replay(
+            env,
+            trains,
+            (0.9, 1.2),
+            rates,
+            pairwise_order_method=GUPTA_2010,
+            unit_groups=tetrodes,
+            rng=0,
+        )
+        forward = pairwise_order_score(
+            env, trains, (0.9, 1.2), rates, unit_groups=tetrodes
+        )
+        assert result.score == forward.score
+        assert result.is_replay
+        plain = pairwise_order_score(env, trains, (0.9, 1.2), rates)
+        assert forward.score < plain.score
+
+    @pytest.mark.parametrize("groups", [np.zeros(9), np.zeros((10, 1))])
+    def test_one_group_per_cell_is_required(self, track, event, groups):
+        rates, trains, _, _ = event
+        with pytest.raises(ValueError, match="one group per cell"):
+            pairwise_order_score(track, trains, (1.0, 1.15), rates, unit_groups=groups)
 
 
 def _place_code(n_cells=30):

@@ -7,11 +7,14 @@ import pickle
 
 import numpy as np
 import pytest
+from scipy import stats
 
 from neurospatial import Environment
 from neurospatial.decoding import bin_spikes_in_time, decode_position
 from neurospatial.replay import (
     detect_trajectory_radon,
+    rank_order_correlation,
+    rank_order_significance,
     replay_significance,
     weighted_correlation,
 )
@@ -217,6 +220,181 @@ class TestWithReplayMethods:
         assert line.score > 0.5
         assert abs(line.speed) < 200.0
         assert abs(correlation.score) < 0.5
+
+
+def _multiset_difference(larger, smaller):
+    """Values of ``larger`` left after removing each value of ``smaller`` once."""
+    values, counts = np.unique(larger, return_counts=True)
+    removed = np.searchsorted(values, smaller)
+    assert np.array_equal(values[removed], smaller), "smaller is not contained"
+    np.subtract.at(counts, removed, 1)
+    assert np.all(counts >= 0), "smaller is not contained"
+    return np.repeat(values, counts)
+
+
+class TestDegradation:
+    """Removed rate-map spikes and added noise spikes (Tingley & Peyrache 2020)."""
+
+    def test_no_degradation_leaves_the_event_unchanged(self, place_code):
+        env, rates = place_code
+        default = simulate_replay_event(env, rates, speed=600.0, seed=3)
+        explicit = simulate_replay_event(
+            env, rates, speed=600.0, drop_fraction=0.0, n_noise_spikes=0, seed=3
+        )
+        for a, b in zip(default.spike_times, explicit.spike_times, strict=True):
+            np.testing.assert_array_equal(a, b)
+        assert default.n_dropped_spikes == 0
+        assert default.n_noise_spikes == 0
+
+    @pytest.mark.parametrize("fraction", [0.25, 0.5, 1.0])
+    def test_removes_that_fraction_of_the_rate_map_spikes(self, place_code, fraction):
+        env, rates = place_code
+        clean = simulate_replay_event(env, rates, speed=600.0, rate_gain=3.0, seed=4)
+        dropped = simulate_replay_event(
+            env, rates, speed=600.0, rate_gain=3.0, drop_fraction=fraction, seed=4
+        )
+        n_clean = sum(train.size for train in clean.spike_times)
+        n_left = sum(train.size for train in dropped.spike_times)
+        # Nearest whole spike, half rounding up.
+        expected = int(np.floor(fraction * n_clean + 0.5))
+        assert dropped.n_dropped_spikes == expected
+        assert n_clean - n_left == expected
+        # Every remaining spike is one of the cell's own rate-map spikes.
+        for full, kept in zip(clean.spike_times, dropped.spike_times, strict=True):
+            _multiset_difference(full, kept)
+
+    def test_removal_draws_from_all_cells_together(self, place_code):
+        """Each spike is equally likely to go, so cells lose spikes in proportion."""
+        env, rates = place_code
+        lost = np.zeros(len(rates))
+        total = np.zeros(len(rates))
+        for seed in range(40):
+            clean = simulate_replay_event(
+                env, rates, kind="random", rate_gain=4.0, seed=seed
+            )
+            half = simulate_replay_event(
+                env, rates, kind="random", rate_gain=4.0, drop_fraction=0.5, seed=seed
+            )
+            sizes = np.array([t.size for t in clean.spike_times])
+            lost += sizes - np.array([t.size for t in half.spike_times])
+            total += sizes
+        assert lost.sum() / total.sum() == pytest.approx(0.5, abs=0.01)
+        # Cells with many spikes lose about half of them, not a fixed number.
+        busy = total >= 60
+        assert busy.sum() >= 10
+        np.testing.assert_allclose(lost[busy] / total[busy], 0.5, atol=0.2)
+
+    def test_adds_noise_spikes_uniformly_over_cells_and_time(self, place_code):
+        env, rates = place_code
+        clean = simulate_replay_event(env, rates, kind="stationary", seed=5)
+        n_noise = 20_000
+        noisy = simulate_replay_event(
+            env, rates, kind="stationary", n_noise_spikes=n_noise, seed=5
+        )
+        assert noisy.n_noise_spikes == n_noise
+        added = [
+            _multiset_difference(full, base)
+            for full, base in zip(noisy.spike_times, clean.spike_times, strict=True)
+        ]
+        per_cell = np.array([a.size for a in added])
+        assert per_cell.sum() == n_noise
+        # Uniform over the 40 cells (chi-square) and over the event (KS).
+        assert stats.chisquare(per_cell).pvalue > 1e-3
+        times = np.concatenate(added)
+        assert times.min() >= 0.0
+        assert times.max() < noisy.duration
+        assert stats.kstest(times / noisy.duration, "uniform").pvalue > 1e-3
+        for train in noisy.spike_times:
+            assert np.all(np.diff(train) >= 0)
+
+    def test_noise_spikes_do_not_depend_on_the_removal(self, place_code):
+        """Removal acts on the rate-map spikes; the noise spikes are kept whole."""
+        env, rates = place_code
+        common = {"speed": 600.0, "rate_gain": 3.0, "seed": 6}
+        clean = simulate_replay_event(env, rates, **common)
+        noise_only = simulate_replay_event(env, rates, n_noise_spikes=50, **common)
+        dropped = simulate_replay_event(env, rates, drop_fraction=0.6, **common)
+        both = simulate_replay_event(
+            env, rates, n_noise_spikes=50, drop_fraction=0.6, **common
+        )
+        n_clean = sum(t.size for t in clean.spike_times)
+        assert both.n_dropped_spikes == int(np.floor(0.6 * n_clean + 0.5))
+        for a, b, c, d in zip(
+            noise_only.spike_times,
+            clean.spike_times,
+            both.spike_times,
+            dropped.spike_times,
+            strict=True,
+        ):
+            noise = _multiset_difference(a, b)
+            np.testing.assert_array_equal(_multiset_difference(c, d), noise)
+
+    def test_seed_repeats_the_degraded_event(self, place_code):
+        env, rates = place_code
+        kwargs = {"speed": 600.0, "drop_fraction": 0.3, "n_noise_spikes": 30}
+        first = simulate_replay_event(env, rates, seed=8, **kwargs)
+        second = simulate_replay_event(env, rates, seed=8, **kwargs)
+        other = simulate_replay_event(env, rates, seed=9, **kwargs)
+        for a, b in zip(first.spike_times, second.spike_times, strict=True):
+            np.testing.assert_array_equal(a, b)
+        assert any(
+            a.size != b.size or not np.array_equal(a, b)
+            for a, b in zip(first.spike_times, other.spike_times, strict=True)
+        )
+
+    def test_summary_reports_the_degradation(self, place_code):
+        env, rates = place_code
+        event = simulate_replay_event(
+            env, rates, speed=600.0, drop_fraction=0.5, n_noise_spikes=7, seed=0
+        )
+        summary = event.summary()
+        assert summary["drop_fraction"] == 0.5
+        assert summary["n_noise_spikes"] == 7
+        assert summary["n_dropped_spikes"] == event.n_dropped_spikes
+        assert summary["n_spikes"] == sum(t.size for t in event.spike_times)
+
+    def test_rank_order_detection_falls_as_noise_rises(self, place_code):
+        """A sensitivity curve in the manner of Tingley & Peyrache's Fig. 4."""
+        env, rates = place_code
+
+        def detection_rate(**kwargs):
+            hits = 0
+            for seed in range(20):
+                event = simulate_replay_event(
+                    env, rates, speed=800.0, rate_gain=2.0, seed=seed, **kwargs
+                )
+                spikes, interval = list(event.spike_times), (0.0, event.duration)
+                # Too few active cells to correlate is a missed event.
+                if np.isnan(rank_order_correlation(env, spikes, interval, rates).score):
+                    continue
+                test = rank_order_significance(
+                    env, spikes, interval, rates, n_shuffles=200, rng=seed
+                )
+                hits += test.p_value < 0.05
+            return hits / 20
+
+        by_noise = [detection_rate(n_noise_spikes=n) for n in (0, 100, 400)]
+        assert by_noise[0] >= 0.9
+        assert by_noise[0] > by_noise[1] > by_noise[2]
+        assert by_noise[2] <= 0.5
+        by_removal = [detection_rate(drop_fraction=f) for f in (0.0, 0.9)]
+        assert by_removal[0] - by_removal[1] >= 0.4
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"drop_fraction": -0.1}, "drop_fraction must be a fraction"),
+            ({"drop_fraction": 1.5}, "drop_fraction must be a fraction"),
+            ({"drop_fraction": np.nan}, "drop_fraction must be a fraction"),
+            ({"n_noise_spikes": -1}, "n_noise_spikes must be a non-negative"),
+            ({"n_noise_spikes": 2.5}, "n_noise_spikes must be a non-negative"),
+            ({"n_noise_spikes": True}, "n_noise_spikes must be a non-negative"),
+        ],
+    )
+    def test_settings_out_of_range_are_refused(self, place_code, kwargs, match):
+        env, rates = place_code
+        with pytest.raises(ValueError, match=match):
+            simulate_replay_event(env, rates, kind="stationary", **kwargs)
 
 
 class TestRefusals:
