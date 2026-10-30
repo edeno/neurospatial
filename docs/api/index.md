@@ -190,6 +190,8 @@ Detecting the candidate events (ripples, population bursts) is not included.
   Mallory 2025) to decoded events, including joint decodes over running
   directions, and compare their verdicts; `ReplaySegmentation` sets how
   criteria-based methods find the trajectory segment
+- `detect_arm_replay()`, `ArmReplayMethod`: Single-arm and joint-arm replay
+  on a multi-arm maze (Wu & Foster 2014)
 - `detect_rank_order_replay()`, `RankOrderMethod`: Apply published
   rank-order tests (Foster & Wilson 2006, Diba & Buzsáki 2007) to an event's
   spikes; `compare_replay_methods(spike_times=...)` compares them with the
