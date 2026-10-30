@@ -82,7 +82,7 @@ and random events). It then:
 - compares the methods at a matched false-positive rate;
 - shows how to run the same steps on your own recording.
 
-The guide shows where methods fail differently. Davidson et al.'s line fit
+The guide shows where methods fail differently. Davidson et al.'s line search
 calls stationary and spike-shift events replay. Correlation and rank-order
 tests call short, jumpy random events replay.
 
@@ -492,8 +492,9 @@ fires as an inhomogeneous Poisson process at its rate map there (times
 `rate_gain`).
 
 - `kind="sweep"`: constant speed.
-- `kind="stationary"`: a fixed position, which fools a line fit but not the
-  weighted correlation (van der Meer et al. 2020).
+- `kind="stationary"`: a fixed position, which fools Davidson et al.'s line
+  search (`detect_trajectory_radon`) but not the weighted correlation (van der
+  Meer et al. 2020) or the R² of `fit_linear_trajectory`.
 - `kind="jump"`: two sweep fragments, `jump_distance` apart (default a quarter
   of the track).
 - `kind="random"`: a new position every 20 ms, a null event.
