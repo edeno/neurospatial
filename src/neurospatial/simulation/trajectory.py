@@ -766,9 +766,7 @@ def simulate_trajectory_sinusoidal(
     # The motion runs along the track between its two far ends, in the
     # environment's coordinates.
     waypoints = _track_end_to_end(env, call)
-    waypoint_distances = np.concatenate(
-        [[0.0], np.cumsum(np.linalg.norm(np.diff(waypoints, axis=0), axis=1))]
-    )
+    waypoint_distances = _arc_lengths(waypoints)
     track_length = float(waypoint_distances[-1])
 
     # Compute period if not provided
@@ -794,13 +792,35 @@ def simulate_trajectory_sinusoidal(
     # Distance along the track: d = L/2 + L/2 sin(2π motion_time / period)
     distance = track_length / 2 * (1 + np.sin(2 * np.pi * motion_time / period))
 
-    positions = np.column_stack(
+    positions = _interpolate_along(waypoints, waypoint_distances, distance)
+    return positions, times
+
+
+def _arc_lengths(points: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Distance along the polyline ``points`` to each of its points, shape (n_points,).
+
+    ``points`` has shape (n_points, n_dims); the first distance is 0.
+    """
+    steps = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    return np.concatenate([[0.0], np.cumsum(steps)])
+
+
+def _interpolate_along(
+    points: NDArray[np.float64],
+    arc_lengths: NDArray[np.float64],
+    distances: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Positions at ``distances`` along the polyline ``points``, shape (n, n_dims).
+
+    ``arc_lengths`` is ``_arc_lengths(points)``; each coordinate is
+    interpolated linearly between the points.
+    """
+    return np.column_stack(
         [
-            np.interp(distance, waypoint_distances, waypoints[:, dim])
-            for dim in range(env.n_dims)
+            np.interp(distances, arc_lengths, points[:, dim])
+            for dim in range(points.shape[1])
         ]
     )
-    return positions, times
 
 
 def _longest_bin_path(env: Environment, call: str) -> list[int]:
@@ -1276,12 +1296,7 @@ def _simulate_trajectory_laps(
         )
     ]
     # Distance run from the start of each route to each of its waypoints.
-    route_distances = [
-        np.concatenate(
-            [[0.0], np.cumsum(np.linalg.norm(np.diff(route, axis=0), axis=1))]
-        )
-        for route in routes
-    ]
+    route_distances = [_arc_lengths(route) for route in routes]
     if all(distances[-1] == 0 for distances in route_distances):
         raise ValueError(
             _format_error(
@@ -1376,13 +1391,9 @@ def _simulate_trajectory_laps(
         if continues:
             interpolation_points = interpolation_points[1:]
         n_samples = len(interpolation_points)
-
-        # Interpolate each dimension separately
-        lap_positions = np.zeros((n_samples, env.n_dims))
-        for dim in range(env.n_dims):
-            lap_positions[:, dim] = np.interp(
-                interpolation_points, cumulative_distances, path_positions[:, dim]
-            )
+        lap_positions = _interpolate_along(
+            path_positions, cumulative_distances, interpolation_points
+        )
 
         all_positions.append(lap_positions)
         all_lap_ids.extend([lap_idx] * n_samples)
