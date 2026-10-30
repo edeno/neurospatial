@@ -230,10 +230,10 @@ def geodesic_lookup_bins(
     NDArray[np.intp], shape (n_time,)
         Bin index per position, or -1 for a missing position.
     """
-    bins = np.asarray(env.nearest_bin(positions), dtype=np.intp)
-    inside = env.contains(positions)
-    if inside.any():
-        bins[inside] = env.bin_at(positions[inside])
+    bins = np.array(env.bin_at(positions), dtype=np.intp)
+    outside = (bins < 0) & np.all(np.isfinite(positions), axis=1)
+    if outside.any():
+        bins[outside] = env.nearest_bin(positions[outside])
     return bins
 
 
