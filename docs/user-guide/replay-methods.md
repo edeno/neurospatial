@@ -305,6 +305,14 @@ own candidate events in four ways:
   rates separately for each behavioral epoch and running direction: call
   `null_events` once per group of events.
 
+The last two kinds also measure a confound that Tingley & Peyrache (2020,
+p. 7) raise: in a population burst after silence, cells that fire faster
+are more likely to fire first. When a cell's k spikes are placed uniformly
+in an event of length T, its first spike comes at T/(k + 1) on average, so
+the cells that fire more fire first. A rank-order test of first spikes that
+calls these events replay is reading the order of the cells' spike counts or
+rates, not a sequence.
+
 Here we make two copies of each sweep for the first three kinds, which
 keep each event's spike counts. Each kind is decoded like the real events and scored in its own
 `compare_replay_methods` call, because the pseudo-event shuffle draws from
