@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.stats import pearsonr
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
@@ -458,6 +457,8 @@ def validate_simulation(
     - 'binned': Simple binning without smoothing (noisy but unbiased)
     """
     # Import here to avoid circular dependency
+    from scipy.stats import pearsonr
+
     from neurospatial.encoding import compute_spatial_rates
     from neurospatial.simulation.models import PlaceCellModel
 
