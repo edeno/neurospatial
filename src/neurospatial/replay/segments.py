@@ -24,7 +24,6 @@ from neurospatial._validation import is_integer_at_least, validate_choice
 from neurospatial.replay._compare import _compare
 from neurospatial.replay._inputs import _STEP_WHY, _posterior_times
 from neurospatial.replay.criteria import (
-    _bin_distance_lookup,
     _check_metric,
     _trajectory_metrics,
 )
@@ -532,7 +531,7 @@ def replay_segments(
     min_time_bins = checked["min_time_bins"]
     min_dispersion = checked["min_dispersion"]
 
-    metrics = _trajectory_metrics(
+    metrics, map_distances = _trajectory_metrics(
         env,
         posterior,
         times,
@@ -544,7 +543,7 @@ def replay_segments(
         times, metrics.n_time_bins, _OPERATION, why=_STEP_WHY, increasing=True
     )
     n_time_bins = metrics.n_time_bins
-    distance = _distance_function(env, metrics, method)
+    distance = _distance_function(metrics, method, map_distances)
     jumps = metrics.map_jumps if method == "map" else metrics.mean_jumps
 
     valid = (
@@ -669,10 +668,16 @@ def _valid_time_bins(
     return valid
 
 
-def _distance_function(env: Environment, metrics: Any, method: str) -> Any:
+def _distance_function(
+    metrics: Any,
+    method: str,
+    map_distances: tuple[NDArray[np.float64], NDArray[np.intp]],
+) -> Any:
     """Distance between the decoded positions of time bins ``first`` and ``second``.
 
-    MAP positions use the event's metric; posterior means are Euclidean.
+    MAP positions use the event's metric, read from ``map_distances``, the
+    :func:`_bin_distance_lookup` of the MAP bins; posterior means are
+    Euclidean.
     """
     if method == "expected":
         means = metrics.mean_positions
@@ -686,7 +691,7 @@ def _distance_function(env: Environment, metrics: Any, method: str) -> Any:
             )
 
         return between_means
-    between, rows_of = _bin_distance_lookup(env, metrics.map_bins, metrics.metric)
+    between, rows_of = map_distances
 
     def between_map_bins(
         first: NDArray[np.intp], second: NDArray[np.intp]

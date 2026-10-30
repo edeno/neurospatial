@@ -238,9 +238,6 @@ def _weighted_correlations(
     """
     times = times - (times.min() + times.max()) / 2.0
     positions = positions - (positions.min() + positions.max()) / 2.0
-    eps = np.finfo(np.float64).eps
-    min_var_time = eps * float(np.ptp(times)) ** 2
-    min_var_position = eps * float(np.ptp(positions)) ** 2
     total = weights.sum(axis=(1, 2))
     time_mass = weights.sum(axis=2) / total[:, None]  # (n_events, n_time)
     position_mass = weights.sum(axis=1) / total[:, None]  # (n_events, n_bins)
@@ -251,10 +248,44 @@ def _weighted_correlations(
     covariance = np.einsum("et,etb,eb->e", time_dev, weights, position_dev) / total
     var_time = np.einsum("et,et->e", time_mass, time_dev**2)
     var_position = np.einsum("eb,eb->e", position_mass, position_dev**2)
+    return _finish_correlation(
+        covariance,
+        var_time,
+        var_position,
+        float(np.ptp(times)),
+        float(np.ptp(positions)),
+    )
+
+
+def _finish_correlation(
+    covariance: NDArray[np.float64],
+    var_time: NDArray[np.float64],
+    var_position: NDArray[np.float64],
+    time_range: float,
+    position_range: float,
+) -> NDArray[np.float64]:
+    """The weighted correlation from its weighted moments, rounded.
+
+    Parameters
+    ----------
+    covariance, var_time, var_position : NDArray[np.float64], shape (n_events,)
+        Weighted covariance of time and position, and their variances.
+    time_range, position_range : float
+        The range of the times and of the positions, which bounds the
+        variance that counts as round-off (see :func:`_weighted_correlations`).
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_events,)
+        The correlation rounded to ``_SCORE_DECIMALS`` and held to [-1, 1];
+        NaN where time or position does not vary under the weights.
+    """
+    eps = np.finfo(np.float64).eps
     with np.errstate(invalid="ignore", divide="ignore"):
         correlation = covariance / np.sqrt(var_time * var_position)
     # Round so that scores equal in exact arithmetic compare equal: a shuffle
     # tied with the event then counts as a tie in the Monte Carlo p-value.
     rounded = np.clip(np.round(correlation, _SCORE_DECIMALS), -1.0, 1.0)
-    varies = (var_time > min_var_time) & (var_position > min_var_position)
-    return np.where(varies, rounded, np.nan)
+    varies = (var_time > eps * time_range**2) & (var_position > eps * position_range**2)
+    finished: NDArray[np.float64] = np.where(varies, rounded, np.nan)
+    return finished

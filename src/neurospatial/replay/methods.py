@@ -66,6 +66,7 @@ from neurospatial.replay.significance import (
     _COUNT_CHANGING_NULLS,
     _DECODING_NULLS,
     _NULLS,
+    _POOL_NULLS,
     _ROW_MOVING_NULLS,
     _checked_null_options,
 )
@@ -3406,7 +3407,7 @@ def compare_replay_methods(
         name in method.nulls
         for method in replay_methods
         if isinstance(method, ReplayMethod)
-        for name in ("pseudo_event", "column_cycle_weighted")
+        for name in _POOL_NULLS
     ):
         if any(isinstance(event, (JointDecodingResult, Mapping)) for event in events):
             raise ValueError(
@@ -3461,35 +3462,41 @@ def compare_replay_methods(
             )
             for event_verdicts, verdict in zip(pooled, verdicts, strict=True):
                 event_verdicts[method.name] = verdict
+    from neurospatial.replay.significance import _checking_pool_once
+
     rows = []
-    for index, event in enumerate(events):
-        compared = _CompareEvent(
-            env=env,
-            event=event,
-            times=np.asarray(event_times[index]),
-            window=None if windows is None else windows[index],
-            spike_counts=None
-            if spike_counts is None
-            else np.asarray(spike_counts[index]),
-            valid_time_bins=None if valid_time_bins is None else valid_time_bins[index],
-            spike_times=spike_times,
-            encoding_models=encoding_models,
-            dt=dt,
-            prior=prior,
-            template=template,
-            arms=arms,
-            template_bias=template_bias,
-            pool=pool,
-            pooled=pooled[index],
-        )
-        for method in replay_methods:
-            stream = stream_for(index, method)
-            # A shuffle test's warning names the event and method it is about.
-            with _warnings_with_context(
-                f"compare_replay_methods(): event {index}, method {method.name!r}"
-            ):
-                result = method._compare(compared, stream)
-            rows.append({"event": index, **result.summary()})
+    # Every event and method tests against the same pool: check it once.
+    with _checking_pool_once(pool):
+        for index, event in enumerate(events):
+            compared = _CompareEvent(
+                env=env,
+                event=event,
+                times=np.asarray(event_times[index]),
+                window=None if windows is None else windows[index],
+                spike_counts=None
+                if spike_counts is None
+                else np.asarray(spike_counts[index]),
+                valid_time_bins=None
+                if valid_time_bins is None
+                else valid_time_bins[index],
+                spike_times=spike_times,
+                encoding_models=encoding_models,
+                dt=dt,
+                prior=prior,
+                template=template,
+                arms=arms,
+                template_bias=template_bias,
+                pool=pool,
+                pooled=pooled[index],
+            )
+            for method in replay_methods:
+                stream = stream_for(index, method)
+                # A shuffle test's warning names the event and method it is about.
+                with _warnings_with_context(
+                    f"compare_replay_methods(): event {index}, method {method.name!r}"
+                ):
+                    result = method._compare(compared, stream)
+                rows.append({"event": index, **result.summary()})
     table = pd.DataFrame(rows)
     table.attrs["rng_entropy"] = entropy
     return table
@@ -3520,8 +3527,6 @@ def _separate_times(
             )
         )
     return arrays[0]
-
-
 
 
 # --------------------------------------------------------------------------

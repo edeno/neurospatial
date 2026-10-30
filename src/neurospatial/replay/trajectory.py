@@ -64,6 +64,8 @@ RegressionLineScoreResult
 
 from __future__ import annotations
 
+import contextlib
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -1928,6 +1930,27 @@ def detect_trajectory_radon(
 _LINE_ENDS = ("any", "on_track")
 _OFF_TRACK = ("band_median", "bin_median")
 _ZERO_ROWS = ("refuse", "line_median")
+# Inside _reusing_replay_lines(): the key and lines of the latest search.
+_REUSED_LINES: ContextVar[list[Any] | None] = ContextVar("_REUSED_LINES", default=None)
+
+
+@contextlib.contextmanager
+def _reusing_replay_lines() -> Iterator[None]:
+    """Reuse the latest line search for searches of the same geometry.
+
+    Building a search's scoring operators costs far more than scoring one
+    posterior with them. A caller that scores many posteriors of one event
+    one call at a time, such as :func:`dataset_values` measuring an event's
+    shuffles with :func:`detect_replay`, runs those calls inside this
+    block: a :func:`detect_trajectory_radon` search with the same bins,
+    times and options as the one before it then reuses its lines and
+    operators. Only the latest search is kept, and only inside the block.
+    """
+    token = _REUSED_LINES.set([])
+    try:
+        yield
+    finally:
+        _REUSED_LINES.reset(token)
 
 
 def _require_closed_loop(env: Environment, operation: str) -> None:
@@ -1939,7 +1962,7 @@ def _require_closed_loop(env: Environment, operation: str) -> None:
     only without ``edge_spacing``: a gap between segments would count as
     loop length at every corner but not at the seam.
     """
-    linearization = env.binning.linearization
+    linearization = env._binning.linearization
     if linearization is None:
         problem = "it is not a track built from a graph, so it has no loop"
     else:
@@ -2119,11 +2142,23 @@ def _prepare_replay_lines(
                 "environment's units",
             )
         )
+    elapsed = times - times[0]
+    reused = _REUSED_LINES.get()
+    key = None
+    if reused is not None:
+        arrays = (starts, stops, order, elapsed)
+        key = (
+            *(np.asarray(values).tobytes() for values in arrays),
+            *(band, speed_bound, min_speed, wrap, line_ends, off_track),
+            *(zero_rows, n_lines, line_seed),
+        )
+        if reused and reused[0] == key:
+            return reused[1], posterior
     lines = _ReplayLines(
         starts,
         stops,
         order,
-        times - times[0],
+        elapsed,
         float(band),
         speed_bound,
         operation,
@@ -2135,6 +2170,8 @@ def _prepare_replay_lines(
         n_lines=None if n_lines is None else int(n_lines),
         line_seed=int(line_seed),
     )
+    if reused is not None:
+        reused[:] = [key, lines]
     return lines, posterior
 
 
@@ -2301,6 +2338,7 @@ class _ReplayLines:
         )
         self.on_bin_positions = on_track_positions[on_bin]
         self._blocks: list[_LineBlock] | None = None
+        self._blocks_events = 0
         # Speeds and start positions: the grid's two axes, or each line's.
         self.speeds, self.start_positions = (
             self._grid(n_on_track, spacing, operation)
@@ -2783,9 +2821,11 @@ class _ReplayLines:
 
         Blocks keep their nonzeros, and their scores for ``n_events`` events,
         within the memory budgets. They are kept between calls when all of
-        them fit ``_CACHED_NONZEROS``.
+        them fit ``_CACHED_NONZEROS``, and reused for calls with at most the
+        events they were sized for: an event scored alone and then its
+        shuffles in batches builds the blocks again for the batches.
         """
-        if self._blocks is not None:
+        if self._blocks is not None and n_events <= self._blocks_events:
             yield from self._blocks
             return
         # On the grid a block is whole speeds, with every start position.
@@ -2816,7 +2856,7 @@ class _ReplayLines:
                     built = None
             yield block
         if built is not None:
-            self._blocks = built
+            self._blocks, self._blocks_events = built, n_events
 
     def _band_terms(
         self, positions: NDArray[np.float64], time: NDArray[np.intp]
