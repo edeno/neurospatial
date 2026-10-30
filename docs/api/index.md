@@ -168,6 +168,10 @@ Detecting the candidate events (ripples, population bursts) is not included.
   et al. 2009); slopes are in environment units per second
 - `weighted_correlation()`: Posterior-weighted correlation of time and
   position (Wu & Foster 2014)
+- `trajectory_metrics()`, `template_fractions()`: Per-event metrics that
+  criteria-based replay detection thresholds (jumps, spread, range, path
+  length, dispersion, coverage, empty time bins) and the directional
+  fraction of a joint decode
 - `replay_significance()`: Test any replay score against column-cycle,
   unit-identity and pseudo-event shuffles; significant when every null
   rejects the event

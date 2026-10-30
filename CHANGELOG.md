@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+### Per-event metrics for criteria-based replay detection
+
+`trajectory_metrics(env, posterior, times)` computes every per-event quantity
+that published replay criteria threshold, each under its own name, so you can
+apply a paper's criteria exactly or compare several. It works on 1-D tracks,
+linearized tracks and mazes, and 2-D arenas. Distances between bins are
+geodesic on tracks (through the junctions of a maze) and straight-line in an
+arena, where paths along the bin grid are longer; `metric=` overrides this.
+
+- Per time bin: MAP bin and position, the posterior mass in the MAP bin,
+  posterior mean, `map_jumps` (Pfeiffer & Foster 2013; Silva et al. 2015;
+  Igata et al. 2021), `mean_jumps` (Pfeiffer & Foster 2015; Widloski & Foster
+  2022), and the posterior `spread`, the square root of its second central
+  moment (Widloski & Foster 2022).
+- Per event: largest jumps, MAP and mean range along the track (Mallory et
+  al. 2025 code; Berners-Lee et al. 2021), start-to-end distance, MAP path
+  length (Igata's "cumulative distance"), dispersion of the posterior means,
+  mean peak probability (Stella et al. 2019 "decoding confidence"), duration,
+  track length, and, with `spike_counts=`, the fraction of time bins without
+  spikes (Harvey et al. 2023). `well_decoded_fraction(threshold=5)` is the
+  coverage of Wu & Foster (2014). `summary()` returns the scalars.
+- The posterior may be one template's share of a joint decode,
+  `result.joint(name)`, whose rows sum to less than 1. Positions, jumps and
+  spread use each row rescaled to 1; peak probability and coverage use the
+  mass as given, so `well_decoded_fraction(chance_bins=2 * env.n_bins)`
+  reproduces the Mallory et al. (2025) code's coverage.
+- Widloski & Foster (2022) print a spread formula whose square root has units
+  of area, which a threshold in cm cannot apply to, and their deposited code
+  does not compute the posterior spread; the second central moment the paper
+  describes in words is used.
+- `dispersion` is the root-mean-square distance of the posterior means from
+  their average, as in the Widloski & Foster (2022) code; the paper prints a
+  mean of distances.
+- Ranges and track length skip the spacing between track segments. Ranges
+  are NaN on a branched maze, where positions along the track jump between
+  arms, and track-only quantities are NaN in an arena.
+
+`template_fractions(result)` gives the share of a jointly decoded event
+(`decode_jointly`) in each template (Ambrose et al. 2016, eq. 1).
+`exclude_end_distance=10.0` leaves out bins within 10 cm of either track end
+first, as the Mallory et al. (2025) code does; their |left − right| > 0.33
+criterion is the larger fraction exceeding 0.665.
+
 ### Simulate replay events with a known path
 
 `neurospatial.simulation.simulate_replay_event(env, rates, kind=..., speed=...)`

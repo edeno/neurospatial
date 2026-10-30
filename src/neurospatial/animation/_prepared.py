@@ -28,7 +28,7 @@ from neurospatial.animation._tracks import (
     track_position,
     track_segments,
 )
-from neurospatial.environment._queries import track_extents
+from neurospatial.environment import _track_extents
 
 if TYPE_CHECKING:
     from neurospatial.animation.scene import Animation, AnimationField
@@ -376,7 +376,7 @@ class PreparedScene:
         # fastplotlib's [ and ] keys do.
         self.window_seconds = scene.window_seconds
         self.track_env = scene.env if scene.track is None else scene.track
-        self.track_extents = track_extents(self.track_env)
+        self.track_extents = _track_extents(self.track_env)
         # The track's mesh rows: their edges, and each bin's row.
         self.track_rows = (
             None if self.track_extents is None else _track_rows(*self.track_extents)

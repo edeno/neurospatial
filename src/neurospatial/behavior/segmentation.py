@@ -2913,9 +2913,9 @@ def trajectory_similarity(
     if method not in valid_methods:
         raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
     if method == "correlation":
-        from neurospatial.environment._queries import require_track_extents
+        from neurospatial.environment import _require_track_extents
 
-        starts, stops = require_track_extents(
+        starts, stops = _require_track_extents(
             env,
             "trajectory_similarity(method='correlation')",
             alternative="for a 2-D or 3-D path use method='dtw' or "
