@@ -2192,9 +2192,11 @@ def dataset_test(
     ------
     ValueError
         If both or neither of ``criteria`` and ``statistic`` are given; if
-        ``null`` lacks a ``dataset`` column or ``observed`` holds several
-        data sets; if a table lacks a criterion's column, or a data set has
-        no events; or if ``alternative`` is invalid.
+        ``null`` lacks a ``dataset`` column, has rows without one, or
+        ``observed`` holds several data sets; if a table lacks a criterion's
+        column, or a data set has no events; if ``statistic`` is not finite
+        on the observed data set or on a null data set; or if
+        ``alternative`` is invalid.
 
     See Also
     --------
@@ -2268,6 +2270,17 @@ def dataset_test(
         )
     if len(observed) == 0:
         raise ValueError(f"{operation}: observed has no events.")
+    n_unlabeled = int(null_table["dataset"].isna().sum())
+    if n_unlabeled:
+        raise ValueError(
+            _format_error(
+                f"{operation}: {n_unlabeled} rows of null_table have no dataset.",
+                why="each row must belong to one null data set; rows without "
+                "one cannot be counted in any data set's statistic",
+                fix="set dataset on every row (for null_events copies, from "
+                "copy_index), or drop the rows that belong to no data set",
+            )
+        )
     import pandas as pd
 
     codes, names = pd.factorize(null_table["dataset"], sort=True)
@@ -2312,6 +2325,22 @@ def dataset_test(
             raise ValueError(
                 f"{operation}: the observed statistic is not finite "
                 f"({observed_statistic}); it cannot be compared with the null."
+            )
+        undefined = ~np.isfinite(null_statistics).reshape(n_datasets, -1).all(axis=1)
+        if undefined.any():
+            raise ValueError(
+                _format_error(
+                    f"{operation}: the statistic is not finite for "
+                    f"{int(undefined.sum())} of {n_datasets} null data sets "
+                    f"(first: dataset {names[np.flatnonzero(undefined)[0]]}).",
+                    why="a null data set without a statistic is neither at "
+                    "least as extreme as the observed one nor less, and "
+                    "leaving it out would make p too small",
+                    fix="make the statistic defined on every data set, such "
+                    "as a mean that skips events without a score "
+                    "(table['score'].abs().mean() does), or decide how such "
+                    "events count before testing",
+                )
             )
         greater = np.sum(null_statistics >= observed_statistic, axis=0)
         less = np.sum(null_statistics <= observed_statistic, axis=0)

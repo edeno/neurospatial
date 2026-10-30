@@ -252,6 +252,12 @@ Several replay papers test a whole data set, not each event:
   the NaN statistic used to be reported with the smallest p. A shuffle
   without a correlation (tied reference values on every shared cell) now
   counts as at least as extreme, so it can no longer shrink p.
+- `dataset_test(statistic=...)` refuses a statistic that is not finite on
+  a null data set. Such data sets counted neither as at least as extreme
+  nor as less, which made p too small. `dataset_test` also refuses
+  `null_table` rows without a `dataset`. They formed an extra null data
+  set with `statistic=`, which could give p > 1, and a cryptic indexing
+  error with `criteria=`.
 
 ### Reactivation recipes
 

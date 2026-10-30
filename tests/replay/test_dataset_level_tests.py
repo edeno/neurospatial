@@ -194,6 +194,40 @@ class TestDatasetTest:
         two_tailed = dataclasses.replace(recipe, p_value_rule="percentile_two_tailed")
         assert two_tailed.paper_p_value(result) == pytest.approx(2 * expected)
 
+    def test_refuses_an_undefined_null_statistic(self):
+        """Five null data sets whose events have no score: no mean to compare.
+
+        Leaving them out of both counts would give p = 1/2 where the four
+        defined data sets alone give 1.
+        """
+        observed = pd.DataFrame({"score": [0.3, 0.4, 0.5]})
+        null = pd.DataFrame(
+            {
+                "dataset": np.repeat(np.arange(9), 3),
+                "score": np.r_[np.full(15, np.nan), np.full(12, 0.9)],
+            }
+        )
+        with pytest.raises(ValueError, match="not finite for 5 of 9 null data sets"):
+            dataset_test(observed, null, statistic=lambda t: t["score"].mean())
+
+    @pytest.mark.parametrize("kind", ["criteria", "statistic"])
+    def test_refuses_missing_data_set_labels(self, kind):
+        """Rows without a data set would form an extra null data set."""
+        observed = pd.DataFrame({"score": [0.9, 0.1, 0.1]})
+        null = pd.DataFrame(
+            {
+                "dataset": [0, 0, 0, 1, 1, 1, np.nan, np.nan, np.nan],
+                "score": [0.9, 0.9, 0.1, 0.1, 0.1, 0.1, 0.9, 0.9, 0.9],
+            }
+        )
+        options = (
+            {"criteria": [CriterionGrid("score", ">", 0.5)]}
+            if kind == "criteria"
+            else {"statistic": lambda t: (t["score"] > 0.5).mean()}
+        )
+        with pytest.raises(ValueError, match="3 rows of null_table have no dataset"):
+            dataset_test(observed, null, **options)
+
     def test_statistic_and_criteria_are_exclusive(self):
         table = pd.DataFrame({"dataset": [0], "score": [1.0]})
         with pytest.raises(ValueError, match="exactly one of criteria and statistic"):
@@ -768,7 +802,9 @@ class TestTemplateCorrelation:
         run = [np.arange(6.0), np.arange(8.0)]
         if constant == "reference":
             sleep[0], run[0] = run[0], np.full(6, 2.0)
-        with pytest.raises(ValueError, match="template 0 with its reference is not defined"):
+        with pytest.raises(
+            ValueError, match="template 0 with its reference is not defined"
+        ):
             template_correlation_test(sleep, run, n_shuffles=99, rng=0)
 
     def test_undefined_shuffles_count_as_at_least_as_extreme(self):
