@@ -73,7 +73,10 @@ _DECODING_NULLS = (
 _COUNT_CHANGING_NULLS = ("spike_train_circular", "spike_time_uniform")
 # The options each null takes in null_options, with their defaults.
 _NULL_OPTIONS: Mapping[str, Mapping[str, Any]] = MappingProxyType(
-    {"column_cycle_weighted": MappingProxyType({"edge_exclusion": 0.0})}
+    {
+        "column_cycle_weighted": MappingProxyType({"edge_exclusion": 0.0}),
+        "unit_identity": MappingProxyType({"active_only": False}),
+    }
 )
 _ALTERNATIVES = ("greater", "less", "two-sided")
 
@@ -314,12 +317,16 @@ def replay_significance(
         always, ``"unit_identity"`` with the decoding inputs and
         ``"pseudo_event"`` with a pool.
     null_options : Mapping[str, Mapping[str, Any]] or None, default=None
-        Options of the nulls run, by null name. Only
-        ``"column_cycle_weighted"`` takes one: ``edge_exclusion``, the
-        distance in the environment's units within which no peak lands at
-        either end of the track, for example
-        ``{"column_cycle_weighted": {"edge_exclusion": 10.0}}`` (Farooq et
-        al. 2019, in cm).
+        Options of the nulls run, by null name:
+
+        - ``"column_cycle_weighted"``: ``edge_exclusion``, the distance in
+          the environment's units within which no peak lands at either end
+          of the track, for example
+          ``{"column_cycle_weighted": {"edge_exclusion": 10.0}}`` (Farooq
+          et al. 2019, in cm).
+        - ``"unit_identity"``: ``active_only=True`` permutes only the cells
+          that fire in the event among themselves (Bush et al. 2022);
+          the default permutes every cell.
     spike_counts : NDArray[np.int64] or None, shape (n_time_bins, n_neurons)
         Spike counts of the event, one row per posterior row, for the nulls
         that decode again.
@@ -691,7 +698,11 @@ def replay_significance(
         permuted = (
             shuffled
             for shuffled, _ in shuffle_cell_identity(
-                counts, decoder.first_rates, n_shuffles=n_shuffles, rng=generator
+                counts,
+                decoder.first_rates,
+                **options_of.get("unit_identity", {}),
+                n_shuffles=n_shuffles,
+                rng=generator,
             )
         )
         null_scores["unit_identity"] = scorer.scores(map(decode, permuted), n_shuffles)
@@ -1221,6 +1232,12 @@ def _checked_null_options(
         raise ValueError(
             f"{owner}: the edge_exclusion of column_cycle_weighted must be a "
             f"finite distance >= 0 in the environment's units, got {edge!r}."
+        )
+    active_only = checked.get("unit_identity", {}).get("active_only", False)
+    if not isinstance(active_only, (bool, np.bool_)):
+        raise ValueError(
+            f"{owner}: the active_only of unit_identity must be True or False, "
+            f"got {active_only!r}."
         )
     return checked
 
