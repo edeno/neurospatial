@@ -11,13 +11,16 @@ import dataclasses
 import zlib
 
 import numpy as np
+import pandas as pd
 import pytest
 from replay_helpers import sweeps_and_jumps
+from scipy import stats
 
 from neurospatial import Environment
 from neurospatial.replay import (
     compare_replay_methods,
     detect_replay,
+    detection_rates,
     null_events,
     replay_significance,
 )
@@ -46,6 +49,22 @@ def test_null_events_name_each_copy():
     )
     np.testing.assert_array_equal(null.copy_index, np.tile([0, 1, 2], 2))
     np.testing.assert_array_equal(null.source_events, np.repeat([0, 1], 3))
+
+
+def test_detection_rates_test_against_a_chance_rate():
+    table = pd.DataFrame(
+        {
+            "event": np.tile(np.arange(60), 2),
+            "method": np.repeat(["a", "b"], 60),
+            "is_replay": np.r_[np.arange(60) < 9, np.arange(60) < 1],
+        }
+    )
+    rates = detection_rates(table, expected_rate=0.05, alternative="greater")
+    for row, n_replay in zip(rates.itertuples(), (9, 1), strict=True):
+        assert row.p_value == pytest.approx(
+            stats.binomtest(n_replay, 60, 0.05, alternative="greater").pvalue
+        )
+    assert "p_value" not in detection_rates(table)
 
 
 def test_compare_table_reports_values_and_z_scores(track, session):

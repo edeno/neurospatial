@@ -294,11 +294,15 @@ def detection_rates(
     groups: Sequence[str] = (),
     errors: Literal["not_replay", "exclude"] = "not_replay",
     confidence: float = 0.95,
+    expected_rate: float | None = None,
+    alternative: Literal["two-sided", "greater", "less"] = "two-sided",
 ) -> pd.DataFrame:
     """Each method's share of events called replay, with a confidence interval.
 
     On events without replay (null data) the rate is the method's
-    false-positive rate; on simulated replays, its sensitivity.
+    false-positive rate; on simulated replays, its sensitivity. With
+    ``expected_rate``, each rate is also tested against a rate expected by
+    chance, such as the share of events with p < 0.05 against 0.05.
 
     Parameters
     ----------
@@ -332,6 +336,16 @@ def detection_rates(
         scored. ``n_errors`` counts them either way.
     confidence : float, default=0.95
         Level of the Clopper-Pearson (exact binomial) interval.
+    expected_rate : float or None, default=None
+        A rate in (0, 1) to test each stratum's rate against with an exact
+        binomial test, ``scipy.stats.binomtest(n_replay, n_events,
+        expected_rate)``. Grosmark & Buzsáki (2016, Figs. S5C and S7B)
+        compared the share of events with p < 0.05 with 5% by a chi-square
+        test of proportions; the exact binomial test is its exact form, and
+        the p-values differ slightly.
+    alternative : {"two-sided", "greater", "less"}, default="two-sided"
+        Side of the binomial test: ``"greater"`` asks whether more events
+        are called replay than ``expected_rate`` predicts.
 
     Returns
     -------
@@ -339,7 +353,8 @@ def detection_rates(
         One row per method and stratum, in every combination: ``method``,
         one column per ``groups`` and ``by`` key (the bin, as an interval),
         ``n_events``, ``n_replay``, ``rate``, ``ci_low``, ``ci_high`` and
-        ``n_errors``. ``rate`` and the interval are NaN without events.
+        ``n_errors``; with ``expected_rate``, the binomial ``p_value``.
+        ``rate``, the interval and ``p_value`` are NaN without events.
 
     Raises
     ------
@@ -351,8 +366,8 @@ def detection_rates(
         events outside its bins (NaN, out of range, or absent from
         ``properties``); if ``properties`` lacks the ``groups`` of a
         table that numbers its events again in each group, or repeats a
-        (``groups``, ``event``) key; or if ``errors`` or ``confidence`` is
-        invalid.
+        (``groups``, ``event``) key; or if ``errors``, ``confidence``,
+        ``expected_rate`` or ``alternative`` is invalid.
 
     See Also
     --------
@@ -374,6 +389,16 @@ def detection_rates(
     >>> rates = detection_rates(table)
     >>> rates[["method", "n_events", "n_replay"]].to_dict("records")
     [{'method': 'a', 'n_events': 3, 'n_replay': 2}, {'method': 'b', 'n_events': 3, 'n_replay': 1}]
+
+    Against a chance rate: 9 of 100 events with p < 0.05 is more than the
+    5% expected, but not significantly (two-sided exact binomial test).
+
+    >>> table = pd.DataFrame(
+    ...     {"event": range(100), "method": "a", "is_replay": [True] * 9 + [False] * 91}
+    ... )
+    >>> row = detection_rates(table, expected_rate=0.05).iloc[0]
+    >>> print(f"{row['rate']:.2f}, p = {row['p_value']:.3f}")
+    0.09, p = 0.100
     """
     import pandas as pd
     from scipy.stats import binomtest
@@ -386,6 +411,21 @@ def detection_rates(
     if not 0 < confidence < 1:
         raise ValueError(
             f"{operation}: confidence must be in (0, 1), got {confidence}."
+        )
+    if expected_rate is not None and not (
+        isinstance(expected_rate, (int, float, np.integer, np.floating))
+        and not isinstance(expected_rate, bool)
+        and 0 < expected_rate < 1
+    ):
+        raise ValueError(
+            f"{operation}: expected_rate must be a rate in (0, 1) or None, got "
+            f"{expected_rate!r}; for the share of p < 0.05 events by chance, "
+            "pass 0.05."
+        )
+    if alternative not in ("two-sided", "greater", "less"):
+        raise ValueError(
+            f"{operation}: alternative must be 'two-sided', 'greater' or "
+            f"'less', got {alternative!r}."
         )
     data = _checked_table(table, groups, operation)
     keys = ["method", *groups]
@@ -459,6 +499,19 @@ def detection_rates(
             ci_high=high,
             n_errors=int(failed.sum()),
         )
+        if expected_rate is not None:
+            row["p_value"] = (
+                float(
+                    binomtest(
+                        n_replay,
+                        n_events,
+                        float(expected_rate),
+                        alternative=alternative,
+                    ).pvalue
+                )
+                if n_events
+                else np.nan
+            )
         rows.append(row)
     return pd.DataFrame(rows)
 
