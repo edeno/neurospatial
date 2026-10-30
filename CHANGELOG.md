@@ -2,6 +2,644 @@
 
 ## [Unreleased]
 
+### Replay calibration: review fixes
+
+**Fixed**
+
+- `matched_alpha` and `apply_alpha` refuse a `ReplayMethod` with
+  `tested_quantities` and a segmentation with `choose="any"`, such as
+  `WIDLOSKI_FOSTER_2025`. It reports the longest segment that is replay at
+  its alpha, so at another alpha it can report another segment with another
+  p-value, and rethresholding the table's p-value gave wrong verdicts. Rerun
+  `compare_replay_methods` with `dataclasses.replace(method, alpha=...)`
+  instead.
+- `detect_trajectory_radon(wrap=True, zero_rows="line_median")`: a time
+  bin without spikes no longer adds mass where its band crosses a loop's
+  seam. Each whole lap a band covers held a constant mass of 1, the total
+  of a decoded row, so a row without mass gained a full lap. A uniform
+  posterior with an empty time bin scored 0.26 instead of its band share
+  0.0625, and an event without spikes scored 1.0. Laps now hold the time
+  bin's own total, and a posterior with no mass in any time bin is
+  refused. Scores of fully decoded events are unchanged.
+
+### Reactivation recipes: review fixes
+
+**New**
+
+- `ReactivationWindows(allow_shorter=True)` makes a period shorter than one
+  window a single window of all of it. `HARVEY_2023_ASSEMBLY` and
+  `LIU_2023_ASSEMBLY` use it, so a sleep period of less than an hour is used
+  whole, as in the labs' code, instead of giving an error row.
+
+**Changed**
+
+- `OLIVA_2020_ASSEMBLY` z-scores the task and both rest periods together
+  (`zscore_over="all_periods"`), following the paper's "binned in 20-ms
+  intervals for the whole session and z-scored". Its values change.
+- With `n_rate_subsamples`, a row reports the subsample whose statistic is
+  the median (the lower middle one for an even count). EV, REV, the partial
+  correlation, its p-value and the verdict come from that subsample and
+  agree with each other; before, each was a separate median.
+- With `detection_units` by region, a region that cannot be detected in (for
+  example one with fewer than 3 units) is left out with a warning instead of
+  removing every pattern of the method.
+
+**Fixed**
+
+- A control or match window with no event starting inside it is an error row
+  of that method; before, it raised and lost every method's rows. An empty
+  `(0, 2)` events array is accepted.
+- An EV method on fewer than 3 pairs of units is an error row instead of
+  raising.
+- An `EventResponse` response or baseline window that holds no lag of the
+  method's R(t) step is refused when the method is built, instead of giving
+  NaN rows.
+- `n_shuffles`, `n_rate_subsamples`, `min_events` and
+  `ReactivationWindows.count` refuse floats such as `20.0`.
+- A match window that cannot be analysed (for example one without events)
+  is an error row of that window, with its `window`, `window_start`,
+  `window_stop` and `window_duration`; the method's other windows keep their
+  rows. Before, one failed window replaced all of the method's rows with a
+  single error row without window identity.
+- `compare_reactivation_methods` names pattern members by the IDs a spike
+  group carries (a dict, `SpikeTrains` or `TsGroup`); before, they were
+  renumbered by position. A `unit_ids` that differs from the group's IDs is
+  refused.
+
+### Reactivation assembly fixes
+
+**Fixes**
+
+- `detect_assemblies(n_shuffles=20.0)` raises the documented "positive
+  integer" `ValueError` instead of a `TypeError` from inside the surrogate
+  loop.
+- `pairwise_activation` with `unit_ids=` and `template_unit_ids=` names the
+  caller's column and its label in the constant-neuron warning, not its
+  position in template order.
+- `explained_variance_reactivation(control_correlations=[c],
+  control_unit_ids=[labels])` accepts one control's labels in a one-item
+  list, as it does for several controls.
+
+**Documentation**
+
+- The `tracy_widom` threshold is described as Peyrache et al.'s heuristic
+  margin `n ** (-2/3)`, not the null spread of the largest eigenvalue,
+  which also shrinks with the number of time bins (Johnstone 2001).
+- `null_reactivation_data(kind="cell_identity")` permutes each unit's rate
+  with its spikes, so it does not calibrate the rate confound.
+- Four numbers in "Comparing reactivation methods" corrected from a rerun.
+
+### Replay checks from Tingley & Peyrache (2020)
+
+**New**
+
+- `simulate_replay_event(..., drop_fraction=0.0, n_noise_spikes=0)`:
+  degrade a simulated event as in Tingley & Peyrache's Fig. 4. A fraction
+  of the rate-map spikes is removed, chosen without replacement from all
+  cells together, then noise spikes are added to uniformly drawn cells at
+  uniform times. Each draws from its own seeded stream, and the defaults
+  leave the event unchanged bit for bit. `ReplayEventSimulation` records
+  `drop_fraction`, `n_dropped_spikes` and `n_noise_spikes`, also in
+  `summary()`.
+- `pairwise_order_score`, `pairwise_order_significance` and
+  `detect_pairwise_order_replay` take `unit_groups=`, one group (tetrode or
+  shank) per cell: only pairs of spikes from cells in different groups are
+  compared, the rule of `explained_variance_reactivation(unit_groups=)`, so
+  a burst split across two clusters of one tetrode cannot score as a
+  sequence. Each spike train keeps its group in both shuffles, and
+  `n_pairs` counts only the compared pairs. A missing group (None, NaN or
+  infinite) is refused, since NaN would compare unequal to every group.
+- `rank_order_correlation` and `rank_order_significance` take
+  `multi_field_cells="keep" | "exclude"` and `place_fields=`. Tingley &
+  Peyrache note that cells with several place fields have no single place
+  in the order and are typically excluded. `"exclude"` leaves out each cell
+  with more than one field, found by `detect_place_fields` with the rate
+  result's `bandwidth`, or given as `place_fields=` (required for rate maps
+  given as an array). `RankOrderResult` records `multi_field_cells` and
+  `excluded_units`, and `summary()` reports `n_excluded_cells`. The default
+  `"keep"` leaves results unchanged.
+- `score_agreement(table, *, groups=(), absolute=False)`: the Pearson
+  correlation, across events, of every pair of methods' scores in a
+  `compare_replay_methods` table (Tingley & Peyrache 2020, Fig. 3), per
+  `groups` value. `absolute=True` correlates |score|: a signed score
+  (weighted or rank-order correlation) and an unsigned one (line fit, R²)
+  correlate near 0 when forward and reverse events are equally common,
+  however well the methods agree.
+
+**Changed**
+
+- `rank_order_correlation` notes that Tingley & Peyrache's 5-12% false
+  positives are for random 10-cell sequences in sets of 100 events and
+  come from MATLAB's parametric p-value (about 5.4% per event at 10 cells,
+  8.3% at 4-5, 33% at 3); a permutation test stays at or below 5%.
+- `neurospatial.simulation.replay` no longer cites Tingley & Peyrache, or
+  Takigawa et al. (2024), for stationary or scattered control events,
+  which neither studied.
+
+**Documentation**
+
+- Corrected citations of Tingley & Peyrache (2020): R = 0.43 is the
+  weighted correlation against the Radon slope; against the Radon integral
+  (the line-fit score) it is 0.194, and against the rank-order score
+  0.126. Their false-positive simulation varied only the number of cells
+  (random orders, parametric p); the dependence on firing rates is argued,
+  not simulated.
+- `FOSTER_WILSON_2006` notes give the false-positive rate of its
+  t-distribution p-value under random orders (1/3 with 3 cells, 1/12 with
+  4 or 5, about 5.4% with 10) and the calibrated permutation and exact
+  alternatives. The recipe still uses the paper's test.
+- The "Comparing replay methods" guide gains
+  executed sections: score agreement with and without signs; PRE and POST
+  epochs tested against each epoch's own null rate, since excitability
+  changes the false-positive rate; the same events decoded in 10, 20 and
+  40 ms bins, with the supplement's two-cell example (the decode flips at
+  ln(f1/f2) / (f1 - f2), 27.7 ms for 50 and 25 Hz) and how to pass an
+  occupancy prior; and how the uniform-time and Poisson nulls measure the
+  confound that faster cells fire first.
+
+### Event-based reactivation recipes
+
+Several labs count spikes per sharp-wave ripple (SWR) or theta cycle, or
+follow assemblies around SWR onsets. The reactivation recipes now do too.
+
+**New**
+
+- `ReactivationMethod(template_bins="events", rest_bins="events")` counts the
+  spikes of each event, from its start to its stop, as one bin: theta cycles
+  in the task, SWRs in rest. `compare_reactivation_methods` takes the events
+  as `template_events=`, `control_events=` and `match_events=` (`(start,
+  stop)` rows; a period uses the events starting in its window; events may
+  touch but not overlap, and events shorter than a bin are kept).
+  `min_events=` refuses a window with fewer events (an `error` row), and
+  `ReactivationMethod.needs_events` names the event arguments a recipe uses.
+  Counts per event share a duration component that raises every pair
+  correlation alike; the recipes' notes and the guide say so.
+- `measure="member_cofiring"` and `assembly_member_cofiring(control_counts,
+  match_counts, pattern)`: the Pearson correlation of every pair of a
+  pattern's members in each period, their means over the pairs defined in
+  both, and the difference (El-Gaby et al., 2021).
+- `detect_assemblies(..., member_rule=, member_threshold=)` chooses the
+  members: `"abs_z"` (the default, as before), `"positive_z"` (signed
+  weights above mean + `member_threshold` SD, El-Gaby et al. 2021),
+  `"otsu"` (Otsu's split of the absolute weights, Harvey et al. 2023) or
+  `"inverse_sqrt_n"` (weights above 1/√N, Robinson et al. 2026).
+  `z_threshold=` is renamed `member_threshold=`.
+- `assembly_event_response(times, activation, event_times, window, *,
+  response_window=, baseline_window=, reduce=)`: R(t) averaged around events,
+  each event's mean over a response window, and a signed-rank test against a
+  baseline window. Recipes take it as `event_response=EventResponse(...)`,
+  with `zscore_over="control_and_match"` (or `"all_periods"`) to z-score rest
+  before and after together, `activation_step=` for sliding bins or the
+  sampling of smoothed spikes, statistics `"event_response_difference"` and
+  `"event_response_ratio"`, `test="event_modulation"`, and the share of
+  events whose response is z > `significant_z`.
+- `ReactivationMethod(detection_units="each_region" |
+  "each_region_and_cross_region")` detects patterns in each region's units,
+  and across regions keeping patterns with members in at least two
+  (`region` column).
+- EV recipes take `statistic="partial_correlation"` (the correlation of the
+  residuals of the task and post-task pair correlations regressed on the
+  pre-task ones), `"semipartial_correlation"` (only the post-task side
+  residualized; new `ExplainedVarianceResult.semipartial_correlation`) and
+  `"ev_rev_contrast"`; `ev_rev_contrast(ev, rev)` returns (EV − REV) /
+  (EV + REV) (Karaba et al. 2024; no Karaba recipe, its methods supplement
+  was not read).
+- `explained_variance_contributions(...)`: EV with every pair minus EV
+  without each pair, and each unit's mean over its pairs (Oliva et al.
+  2020). `assembly_similarity(patterns, reference_patterns)`: absolute
+  cosine similarity and each pattern's best match (El-Gaby et al. 2021).
+- Recipes, every value quoted in their `notes` with the choices the papers
+  leave open: `OLIVA_2020_EV` (100 ms task bins, one bin per SWR, EV − REV),
+  `OLIVA_2020_ASSEMBLY` (20 ms, Gaussian SD 10 ms), `EL_GABY_2021` (25 ms
+  ICA, signed members above mean + 2 SD, member-pair correlations over
+  SWRs, at least 200 SWRs), `HARVEY_2023_ASSEMBLY` (25 ms ICA, Otsu members,
+  spikes smoothed by 25 / √12 ms every 2 ms, first NREM hour, peak of the
+  SWR-triggered mean 0–50 ms), `LIU_2023_EV` and `LIU_2023_PAIRWISE` (theta
+  cycles and SWRs as bins; EV and the semipartial correlation),
+  `LIU_2023_ASSEMBLY` (25 ms, members above mean + 2 SD, last and first NREM
+  hour, mean R(t) 0–100 ms after SWR onsets), `CHANG_2025_ASSEMBLY` (50 ms
+  bins every 10 ms, members above mean + 3 SD, (POST − PRE) / PRE, signed-rank
+  test against −500 to −100 ms), `ROBINSON_2026_PAIRWISE` (the partial
+  correlation) and `ROBINSON_2026_ASSEMBLY` (per region and across regions,
+  members above 1/√N, share of SWRs with z > 1.96). Robinson et al. was read
+  from the bioRxiv preprint.
+- `simulated_reactivation_session()` returns its rest bursts as
+  `control_events` and `match_events`.
+
+**Documentation**
+
+- The "Comparing reactivation methods" guide
+  compares the event-based recipes, shows how event lengths raise pair
+  correlations, and shows that a rate change without co-firing raises the
+  SWR responses of the assembly recipes more than reactivation does.
+
+### Fernández-Ruiz-lab replay methods
+
+Replay tests of Harvey et al. (2023), Soula et al. (2023), Liu et al. (2023)
+and Chang et al. (2025) as recipes in `neurospatial.replay.methods`.
+
+**New**
+
+- `regression_line_score(env, posterior, times, *, band=None,
+  wrap_band=False)`: the mean posterior mass within `band` of the
+  least-squares line through each time bin's MAP position, over the time
+  bins with posterior mass (a zeroed row is left out of the line and the
+  mean); returns `RegressionLineScoreResult` (score, slope, intercept, R²).
+  The default band is 10.5 cm, the papers' 21 cm read as the full width;
+  `wrap_band=True` wraps it around the track ends as the authors' nelpy
+  code does. `replay_significance` scores its shuffles in batches.
+- `SOULA_2023` and `HARVEY_2023_LINE` (Harvey et al.'s "alternative
+  approach"): that score against 1,000 column cycles, with at least 5
+  active cells and at most half the time bins empty.
+- `CHANG_2025`: the signed weighted correlation of each T-maze
+  trajectory's posterior from a joint decode in 10 ms bins, two-sided (2.5th
+  and 97.5th percentiles), keeping the trajectory with the smallest p-value.
+  Each time bin is normalized to sum to 1 over the trajectory's bins, as
+  the authors' code does where the paper is silent;
+  `score_options={"row_normalization": "none"}` weighs each time bin by
+  the trajectory's share of the joint posterior instead.
+  The code's second line-fit test (p < 0.025), 20 ms windows stepped by 10
+  ms and 500 shuffles are in its notes, with the nearest variant.
+- `pairwise_bias_matrix(spike_times, interval, *, unit_ids=None)`,
+  `mean_pairwise_bias(spike_times, intervals)`,
+  `bias_similarity(template_bias, event_bias)` and
+  `bias_similarity_significance(...)` (`PairwiseBiasResult`,
+  `BiasSimilarityResult`): skew-bias matrices `S = 2 B - 1` of firing
+  order (Roth 2016; Drieu et al. 2018), their mean over many events such
+  as theta cycles, the cosine between two over the pairs both define, and
+  its test against the event's spikes with permuted cell labels. Liu et
+  al. print `2B - 2`; their stated range [-1, 1] and the lab's code give
+  `2B - 1`.
+- `BiasSequenceMethod`, `detect_bias_sequence_replay()` and
+  `LIU_2023_BIAS` (100 label permutations, `|cosine|` at alpha 0.05):
+  `compare_replay_methods(..., template_bias=...)` runs it with the other
+  methods, and `matched_alpha`/`apply_alpha` take it.
+
+**Changed**
+
+- `HARVEY_2023`'s notes point to `HARVEY_2023_LINE` for the paper's
+  alternative line score.
+
+### Data-set-level replay tests
+
+Several replay papers test a whole data set, not each event:
+`neurospatial.replay.dataset` runs their tests.
+
+**New**
+
+- `dataset_values(env, events, *, replay_method, null=None, n_datasets=1,
+  shared=False, quantities=(), ...)`: each event's score and criterion
+  quantities (raw, such as `max_map_jump` in cm) for the real data set, or
+  for `n_datasets` null data sets that shuffle every event once with a
+  `replay_significance` null (or `"cell_order"` for a rank-order method),
+  measured by the same method. `shared=True` draws one template shuffle
+  (cell identities or shifted rate maps) per data set for every event.
+  For the column-cycle, weighted column-cycle and time-bin nulls with a
+  weighted correlation, per-event moment tables make each shuffle a gather:
+  1,000 events x 5,000 data sets in about 2 s, equal to measuring each
+  shuffle with `detect_replay` to 1e-12.
+- `dataset_test(observed, null_table, *, criteria=None, statistic=None,
+  alternative="greater")` with `CriterionGrid` thresholds: the share of
+  events passing every criterion at each point of a grid against the null
+  data sets, p = (1 + k) / (1 + K) at each point (Silva et al. 2015's
+  significance matrix; `DatasetTestResult.plot()` draws it), and the
+  `percentile` from which Farooq et al.'s and Liu et al.'s `1 - percentile
+  / 100` follows.
+- `distribution_test(observed, null_table, *, column, test="ks" | "rank_sum" |
+  "levene", alternative)`: real events against pooled null events, the side
+  stated in terms of the values (`"greater"` is scipy's `ks_2samp`
+  `alternative="less"`).
+- `shuffle_events()`: null data sets as decoded events, with spike counts
+  permuted along with the rows, for controls analysed with their own
+  per-event shuffles (Silva's time swap, Grosmark's surrogates).
+- `relative_rank_template()` and `template_correlation_test()`: Liu et al.
+  (2019)'s sleep template and its test against shuffled running templates.
+- Recipes with every value and the papers' open choices:
+  `SILVA_2015_MATRIX`, `SILVA_2015_RANK_ORDER`, `GROSMARK_2016_SURROGATES`,
+  `FAROOQ_2019_TIME_BIN`, `FAROOQ_2019_POISSON`, `FAROOQ_2019_SPACE_BIN`,
+  `FAROOQ_2019_WEIGHTED`, `LIU_2019_TEMPLATES`, `STELLA_2019_JITTER`,
+  `XU_2019_ROTATION`; `paper_p_value()` applies a paper's own p rule.
+- `NullSpikeData.copy_index`: which copy of its real event each null event
+  is, so copy `k` of every event forms null data set `k`.
+- `detection_rates(..., expected_rate=, alternative=)`: an exact binomial
+  `p_value` of each rate against a chance rate (Grosmark & Buzsáki's share
+  of p < 0.05 events against 5%).
+- `compare_replay_methods` tables add `value[<criterion>]`, the value each
+  criterion was compared on, and `z_score[<null>]`, the score's z-score
+  against each null (rZ of Grosmark & Buzsáki with `use_absolute=True`);
+  `ReplayDetectionResult.z_scores` holds them.
+- `matched_alpha` and `apply_alpha` take `PairwiseOrderMethod`.
+- `decode_intervals` bins disjoint intervals in one pass and decodes them
+  together, about 70 times faster, with the same posteriors to round-off.
+
+**Fixes**
+
+- `dataset_values` refuses a method that counts spikes or active cells,
+  such as `FAROOQ_2019` (`n_active_cells >= 5`), when `spike_counts` is not
+  given. Null data sets measured on the moment tables used to fill
+  `n_active_cells` with the MAP range instead. The `FAROOQ_2019_*` notes
+  now pass `spike_counts`.
+- `template_correlation_test` refuses a template or reference that is
+  constant over the cells they share. Its correlation is undefined, and
+  the NaN statistic used to be reported with the smallest p. A shuffle
+  without a correlation (tied reference values on every shared cell) now
+  counts as at least as extreme, so it can no longer shrink p.
+- `dataset_test(statistic=...)` refuses a statistic that is not finite on
+  a null data set. Such data sets counted neither as at least as extreme
+  nor as less, which made p too small. `dataset_test` also refuses
+  `null_table` rows without a `dataset`. They formed an extra null data
+  set with `statistic=`, which could give p > 1, and a cryptic indexing
+  error with `criteria=`.
+- The moment-table path of `dataset_values` weighs every time bin alike,
+  as the per-time-bin weighted correlation does. It used to weigh each row
+  by its mass. With rows that sum to 1 only within `DecodingResult`'s
+  tolerance, the score could then differ from `detect_replay`'s by about
+  1e-7.
+- `SILVA_2015_RANK_ORDER` pooled tests compare absolute correlations, as
+  Silva et al.'s Online Methods state ("The absolute values of spike
+  correlations ... were compared"): `columns=("abs_score",)`, where it held
+  the signed `"score"`. A recipe column the library's tables do not hold
+  (`abs_score`, Grosmark's `quality`, Stella's `step`) is now made by an
+  `assign` given in that recipe's notes; `abs_score` is always `|score|`.
+- `dataset_values` and `shuffle_events` draw the `"time_bin_permutation"`
+  and `"pseudo_event"` nulls on any environment, such as a 2-D open field.
+  They used to require a linearized track, which only the column-cycle
+  nulls and a score along the track (a weighted correlation) need; those
+  are still refused off a track.
+- `dataset_values` and `shuffle_events` refuse an event decoded on an
+  environment whose bins or connectivity differ from `env`, as
+  `compare_replay_methods` does. They used to read its posterior on `env`'s
+  bins: a decode on a 100 cm track passed with a 1,000 cm track of as many
+  bins reported jumps ten times too long.
+
+**Documentation**
+
+- `FAROOQ_2019_POISSON` and `STELLA_2019_JITTER` notes make, decode and
+  measure one surrogate data set at a time. `decode_intervals` holds every
+  time bin's posterior and counts at once, and 500 copies of 38,820 frames
+  in one call would need about 270 GB. The Farooq runtime now includes
+  about 3 hours of `dataset_values`. The `decode_intervals` docstring and
+  the replay guide state the memory.
+- The `FAROOQ_2019_*` notes say to pass only frames with at least 5 active
+  cells: `dataset_test` does not apply `FAROOQ_2019`'s `n_active_cells`
+  criterion.
+- `shuffle_events` and `ShuffledDataset` state that `"pseudo_event"` keeps
+  each event's own counts next to rows drawn from the pool.
+
+### Reactivation recipes
+
+**New**
+
+- `detect_assemblies(..., component_threshold=)` chooses the eigenvalue
+  threshold that sets the number of assemblies. `"marchenko_pastur"` (the
+  default, unchanged) is the analytical edge; `"tracy_widom"` adds
+  `n ** (-2/3)`, the heuristic margin of Peyrache et al. (2010), which for
+  typical recordings sits many null standard deviations above the edge;
+  `"bin_shuffle"` and `"circular_shift"` take a
+  percentile of the largest eigenvalue of surrogate matrices whose neurons
+  are shuffled or rotated in time (Lopes-dos-Santos et al., 2013).
+  Surrogate thresholds need `percentile=`, because the paper gives no single
+  value (it used the 95th and the 99th), and take `n_shuffles=` (default
+  1000, the authors' code) and `rng=`. Circular shifts keep each neuron's
+  autocorrelation, so neurons whose rates drift slowly, which the
+  Marchenko-Pastur edge calls assemblies, are not. The result records
+  `component_threshold` and `surrogate_max_eigenvalues`.
+- `ReactivationMethod` records a published reactivation analysis: the
+  measure (explained variance or assembly patterns), the time bin, which
+  pairs count, how the control and match periods are cut into windows
+  (`ReactivationWindows`: length, step, from the start or end, and
+  concatenated or clock time), the statistic and the within-session test.
+  Unlike the replay recipes, the bin size is applied, because binning is part
+  of the statistic. Every value is quoted from the paper in the recipe's
+  `notes`, with the choices the paper leaves open.
+- `compare_reactivation_methods(spike_times, template_epochs, match_epochs,
+  control_epochs, *, reactivation_methods, unit_ids=, unit_groups=,
+  pair_mask=, rng=)` applies several recipes to one session and returns one
+  row per (method, match window, component): EV, REV, the partial
+  correlation and its p-value for EV methods; mean activation strength
+  before and after, the share of bins above the control's percentile or
+  above each bin's cell-identity shuffles, and activation rates for
+  assembly methods; `is_reactivated` for methods with a within-session test
+  and `error` for a method that cannot be applied. Each method draws from
+  its own random stream, and `table.attrs["rng_entropy"]` reproduces the
+  table.
+- Recipes in `PUBLISHED_REACTIVATION_METHODS`: `KUDRIMOTI_1999` (100 ms,
+  pairs on different tetrodes, last 10 min of rest before, three 10-min
+  blocks after, partial-correlation t test), `PENNARTZ_2004` (50 ms, all
+  pairs, 10-min clock windows, EV - REV), `TATSUNO_2006` (250 ms, 15-min
+  segments, EV averaged over every control segment), `LANSINK_2009` (50 ms,
+  cross-region pairs, 20-min blocks of concatenated rest, 10,000 pair-triplet
+  bootstrap: reactivated when the 2.5th percentile of EV - REV is above 0),
+  `PEYRACHE_2010` (100 ms, PCA, mean R(t) after minus before, share of bins
+  above the 99th percentile of rest before and of 1000 per-bin cell-identity
+  shuffles), `VAN_DE_VEN_2016` (25 ms, ICA, R(t) on spike trains smoothed with
+  a Gaussian of 25 ms / sqrt(12), activations above 5), `GIRI_2019` and
+  `GIRI_2024` (250 ms, 15-min windows sliding by 5 min, EV averaged over the
+  windows of rest before; pairs on different shanks, or chosen by
+  `pair_mask=`). Tang et al. (2017) is not a recipe: its cross-regional PCA
+  of a rectangular matrix is not specified.
+- `null_reactivation_data(spike_times, match_epochs, *, kind, rng)` replaces
+  the spikes of the match period: `"cell_identity"` gives each unit another
+  unit's spikes (the period keeps its own co-firing), `"circular_shift"`
+  rotates each unit's spikes within each epoch, and `"rate_poisson"` draws
+  Poisson spikes at each unit's rate. The published methods call none of
+  them reactivation in the tests.
+- `simulated_reactivation_session(...)` simulates rest, a task and rest with
+  assemblies that fire together during the task and, by `reactivation`,
+  during rest after it; rest has population bursts. `rate_change` raises the
+  members' rates after the task without any co-firing: the published EV
+  methods call this reactivation in every simulated session, and assembly
+  activation rises too, the rate confound of Tingley & Peyrache (2020).
+- `reactivation_detection_rates(table, *, groups=, confidence=)` gives each
+  method's share of rows called reactivated with a Clopper-Pearson interval,
+  and the mean of its statistic for methods without a within-session test.
+
+**Documentation**
+
+- New guide, "Comparing reactivation methods":
+  the published recipes on one simulated session, what each reports, their
+  values on three kinds of null data and on a session without reactivation,
+  the rate-change confound that every published method calls reactivation,
+  the choice of assembly threshold, and how to run the recipes on your own
+  recording.
+
+### Reactivation checks from Tingley & Peyrache (2020)
+
+**New**
+
+- `equalize_firing_rates(control_counts, match_counts, *, rng=)` is the rate
+  control of Giri et al. (2019): for each unit, the period in which it fires
+  more per bin loses spikes chosen uniformly at random until both periods
+  have its lower rate. With periods of equal length each unit's counts are
+  equal exactly. Pair correlations grow with firing rate, so this separates
+  more co-firing after the task from more firing (Tingley & Peyrache 2020).
+- `ReactivationMethod(n_rate_subsamples=)` applies that control inside
+  `compare_reactivation_methods`: each pair of control and match windows is
+  subsampled this many times, and EV, REV, the partial correlation and its
+  p-value are the medians over subsamples, as Giri et al. reported them. On
+  a simulated session whose assembly members only fire more after the task,
+  Kudrimoti's EV falls from 0.11-0.13 to the level of a session without the
+  rate change; with real reactivation it stays above 0.7. `GIRI_2019` keeps
+  its main analysis; its notes say where the paper applied the control
+  (`dataclasses.replace(GIRI_2019, n_rate_subsamples=100)`).
+- `pairwise_activation(spike_counts, template_correlations, *,
+  z_score_input=, unit_ids=, template_unit_ids=)` is the reactivation
+  strength of Tingley & Peyrache (2020) in its simplest case: each bin's
+  z-scored population vector projected on the template's whole correlation
+  matrix with a zero diagonal (the "cell-pair coherogram" of their
+  supplement). Its mean over a period is the sum over neuron pairs of the
+  products of the two periods' correlations, which the tests check against
+  `np.corrcoef`; a rank-one template gives `assembly_activation`.
+
+**Documentation**
+
+- The "Comparing reactivation methods" guide
+  applies both of Tingley & Peyrache's rate controls to sessions with and
+  without reactivation and a rate change. Equal rates bring the rate-change
+  EV to the null level and keep real reactivation. Bins of 5 s also stop
+  the rate-change session being called reactivated, but only because 240
+  bins estimate each correlation too poorly to see it; the member-pair
+  excess is unchanged and real EV halves. The guide also compares EV and
+  assembly differences at 50, 100 and 250 ms (the assembly rate confound
+  grows with the bin) and follows reactivation in time with
+  `pairwise_activation`.
+
+### Reactivation measures
+
+The pattern and pair-correlation reactivation measures now compute what the
+papers define.
+
+**Breaking**
+
+- `reactivation_strength` is removed. It returned the mean activation
+  strength R(t) in the match period divided by its mean in the template
+  period, a ratio that neither Peyrache et al. (2009, 2010) nor any other
+  paper uses. `assembly_reactivation(control_counts, match_counts, pattern,
+  *, percentile=99.0, control_unit_ids=None, match_unit_ids=None)` returns
+  an `AssemblyReactivationResult` with the published comparisons of rest
+  after a task with rest before it: `mean_activation_difference`, the mean
+  R(t) after minus before (the "reactivation strength" of van de Ven et al.
+  2016; Peyrache et al. 2009, Fig. 2c), and
+  `fraction_above_control_threshold`, the share of post-task bins above the
+  99th percentile of the pre-task R(t) (Peyrache et al., 2010). Each period
+  is z-scored on its own, so the period means equal `w @ C @ w - 1`. The
+  name avoids "reactivation strength", which Peyrache et al. use for R(t)
+  itself.
+- `ExplainedVarianceResult` gains `p_value` and `n_controls`.
+
+**New**
+
+- `explained_variance_reactivation(..., unit_groups=)` uses only pairs of
+  units from different groups: tetrodes, as Kudrimoti et al. (1999) and
+  Tatsuno et al. (2006) did, or regions for cross-region pairs (Lansink et
+  al., 2009). `pair_mask=` selects pairs by any other rule, such as waveform
+  similarity (Giri et al., 2024). `n_pairs` counts the pairs used. A
+  missing or NaN group is refused, since NaN compares unequal to every
+  group and would pair those units as if on different tetrodes.
+- `control_correlations=` takes a list of control periods and partials out
+  all of them, as in Kudrimoti et al.'s second experiment. REV is NaN with
+  several controls. Tatsuno et al. (2006) and Giri et al. (2019) instead
+  averaged single-control EVs over control blocks; the docstring shows how.
+- `p_value`: the two-sided t test of the partial correlation with
+  `n_pairs - 2 - n_controls` degrees of freedom. Kudrimoti et al. report a
+  per-session p-value without naming the test, so this test is inferred. It
+  treats pairs that share cells as independent and is anticonservative.
+
+**Documentation**
+
+- REV is credited to Pennartz et al. (2004), who introduced it as a control
+  for EV; Kudrimoti et al. (1999) have none.
+- The EV docstring notes that Kudrimoti's split-half check (one half of
+  running as the control for the other) is not 0 in expectation: with three
+  equally noisy measurements of one correlation structure the partial
+  correlation is rho / (1 + rho).
+- The population-analysis and workflow guides use `assembly_reactivation`,
+  show different-tetrode pairs and report the p-value with its caveat.
+
+### Maboudi et al. (2018) replay recipe
+
+- `MABOUDI_2018`: mean posterior mass within 3 cm of the best of 35,000
+  random lines, against 5000 column-cycle shuffles at p < 0.01, with at
+  least 4 time bins and 4 active cells. The notes list each difference
+  from the authors' code (nelpy's `score_Davidson_final_bst_fast`) and how
+  to reproduce the code as run.
+- `detect_trajectory_radon(..., off_track="bin_median")` scores a time bin
+  where the line leaves the track by the median of its single-bin masses,
+  as Maboudi et al. did; the default, `"band_median"`, is Davidson et al.'s
+  median over a band's mass and is unchanged.
+- `detect_trajectory_radon(..., zero_rows="line_median")` accepts all-zero
+  posterior rows (time bins without spikes, zeroed by
+  `empty_time_bins="zero"`) and scores each by the median of the line's
+  band mass over its on-track time bins with spikes, the paper's rule. The
+  authors' code computes that median but never adds it, so its empty time
+  bins score 0; dropping them reproduces it. The default, `"refuse"`,
+  still refuses such rows.
+- `detect_trajectory_radon(..., n_lines=35000)` searches lines drawn at
+  random over every slope, as nelpy draws them (seeded by `line_seed`),
+  instead of the dense grid. At a 3 cm band the dense grid is slow with
+  empty time bins: a 200 ms event on a 200 cm track in 2 cm bins took 139 s
+  for 5000 shuffles, against 3.5 s with 35,000 random lines. The sinogram
+  then holds one score per line. When no drawn line is both within
+  `min_speed` to `max_speed` and on the track, it raises a `ValueError`
+  that counts the lines failing each condition, instead of an
+  `IndexError`.
+- The `column_cycle` null takes `null_options={"column_cycle":
+  {"exclude_zero_shift": True}}`, and `shuffle_posterior_circular` takes
+  `exclude_zero_shift=True`, to draw shifts of 1 to n_bins - 1 bins, as
+  nelpy does. The default still draws every shift, 0 included.
+
+### Template matching
+
+Three published tests of whether cells fire in the order of their place
+fields, scored from spikes without decoding, as recipes that
+`compare_replay_methods` compares with the decoded and rank-order methods.
+
+- `best_sequence_match()` scores an event as Lee & Wilson (2002) did: each
+  template cell's burst (spikes < 50 ms apart) is a letter, and the word's
+  best (x, y) match to the field order is tested against every ordering of
+  its letters (exact up to 10 letters, then 100,000 random orderings). It
+  reproduces the paper's example (325789A: a (6, 0) match, p = 13/5040).
+  `burst_onset_times()` and `spike_words(spike_times, *, max_isi,
+  word_gap)` cut spike trains into letters and words whose intervals can
+  be scored as candidate events. The gap that ends a word is `word_gap`,
+  not `max_gap`, which elsewhere names the calibrated interval-gap
+  tolerance (default 1 s).
+- `sequence_matching_index()` scores an event as Ji & Wilson (2007) did:
+  one firing time per active cell (the peak of its spikes smoothed with a
+  180 ms Gaussian) and the matching index of their order, with an exact
+  p-value for every number of cells. It reproduces Supplementary Table 1,
+  except that the paper's sampled 14-cell cutoff (30 opposite pairs) is
+  p = 0.0505 exactly, so those frames are not replay here.
+- `TemplateMatchMethod`, `detect_template_match_replay()` and the recipes
+  `LEE_WILSON_2002` (p <= 1/24, inclusive) and `JI_WILSON_2007` (p < 0.05,
+  the template with the larger index) in `PUBLISHED_METHODS`.
+  `matched_alpha` and `apply_alpha` take them; their p-values are exact and
+  discrete, so matched alphas move in steps.
+- `template_match_dataset_test()` runs the papers' data-set tests: Lee &
+  Wilson's binomial Z of pairs, triplets and low-probability words (their
+  35 of 270 gives Z = 7.2) with 1000 template shuffles, and Ji & Wilson's
+  chance and template-shuffle significance of the number of replaying
+  frames, reassigning frames to templates on every shuffle. Letters at the
+  same time are ordered against each shuffled template as against the real
+  one, so a tie never helps a match in the shuffles either. Exact
+  probabilities score each distinct word once and share a computation
+  between a pattern and its mirror, so shuffles of ten-letter words with
+  repeated cells take about a minute rather than hours (still exact).
+- `recurring_spike_sequences()`, `recurring_sequences_significance()`,
+  `surrogate_spike_trains()` and `RecurringSequenceMethod` with
+  `NADASDY_1999`: the session-level search for recurring spike sequences of
+  Nádasdy et al. (1999). The recipe compares with across-train surrogates,
+  the paper's test in all five rats, so it runs on sleep without theta
+  peaks; interval-shuffle, 0-50 ms jitter and theta-phase surrogates, the
+  paper's one-rat check during running, can be added. Across-train
+  surrogates give every cell the same rate, so add `"isi_shuffle"` when
+  the cells' rates differ. The paper leaves the match
+  tolerance, extra spikes and the smallest sequence unstated; the readings
+  are in the recipe's notes. A cell's template spikes each need their own
+  spike of that cell in a repeat, so one spike cannot match two of them. It has no per-event verdict and is not in
+  `PUBLISHED_METHODS`; the paper's joint-probability-map comparison of
+  sleep and running is not implemented.
+
 ### Walls thinner than a bin keep the bins beside them apart
 
 A slit, hole or concave corner of the arena's outline that lay inside one
@@ -82,6 +720,1086 @@ other seeded simulations give the same spikes as before.
   `grid_spacing` used to build grid cells with NaN spacing.
 - Head-direction and boundary-vector `ground_truth` report a preferred
   direction of exactly −π as +π, the package's (−π, π] convention.
+
+### Pairwise-order replay test (Gupta et al. 2010)
+
+Gupta et al. (2010) detected replay without decoding: every pair of spikes
+less than 80 ms apart adds +1 when the two cells fire in the order of their
+place fields along the lap and -1 against it. `neurospatial.replay` now
+computes this score and applies the published test.
+
+**New**
+
+- `pairwise_order_score()`: the summed pair score of one event on one
+  template, forward or backward, with the number of pairs compared, the
+  active cells and the field each cell takes. Fields are runs of bins above
+  5% of the highest rate of any cell, merged across one-bin gaps, placed at
+  their rate-weighted center (or peak). A cell with several fields takes,
+  for all its spikes, the field that makes the score largest, found
+  exactly; an event whose multi-field cells give more than 65,536
+  combinations is refused.
+- `pairwise_order_significance()`: the score against 300 permutations of
+  the scored spikes' times (each cell keeps its spikes' count) and 300
+  permutations of the field sets among the cells with a field, active or
+  not, each re-maximized; cells without a field stay unscored, so they
+  change neither the score nor its shuffles. p = (k + 1) / (n + 1) per
+  null, and the event must beat both.
+- `PairwiseOrderMethod`, `detect_pairwise_order_replay()` and the recipe
+  `GUPTA_2010`: every template (pass a mapping of rate maps, one per lap)
+  is tested forward and backward, and the test with the smallest p-value
+  is reported, without a correction, as in the paper; the score is negative
+  for a backward sequence, and so are its `z_scores`, one per null (the
+  `z_score[...]` columns of `compare_replay_methods`). At least 3 active
+  cells. The recipe's notes list
+  the readings taken where the paper is silent and the steps not applied
+  (the session scan for events, the 80 cm detection limit, which the paper
+  dropped for significance, and the merging of central-stem replays).
+- `compare_replay_methods()` runs pairwise-order methods with the
+  rank-order ones, from `spike_times`, `encoding_models` and `dt`; an event
+  whose field search is too large gets an `error` row.
+
+### Widloski & Foster (2025): trajectory quantities tested against shuffles
+
+- `WIDLOSKI_FOSTER_2025`: the candidates of `WIDLOSKI_FOSTER_2022`, each
+  decoded again 100 times with the rate maps permuted across all place
+  cells (`"unit_identity"`). Its mean posterior spread and its mean
+  center-of-mass jump must each have p = (k + 1) / 101 < 0.05 against the
+  shuffles, as in the authors' per-event test. The notes say why leaving
+  out zero jumps, as the code does, does not change the p-value, and that
+  the bugs found in the deposited code are in the session-level chance
+  script, not in this test.
+- `ReplayMethod.tested_quantities` tests scalar `TrajectoryMetrics` of the
+  tested rows against every null, in a stated tail, such as
+  `{"mean_spread": "less", "mean_mean_jump": "less"}`. Each quantity's
+  p-value is the largest over the nulls, and the event's `p_value` is the
+  largest over the quantities and the score's test. Every test draws the
+  same shuffles from one seed. A shuffle is the tested rows shuffled or
+  decoded again; the segmentation is not run on it. With
+  `choose="any"`, the segments that meet the segment criteria are tested
+  from the longest down and the first significant one is reported.
+  `empty_time_bins="zero"`, `template_choice="max_score"` and a score
+  with `choose="any"` are refused.
+- `ReplayDetectionResult.tested_values` and `tested_p_values`; `summary()`
+  and `compare_replay_methods` add each quantity's value and
+  `p_value[quantity]` columns.
+- `TrajectoryMetrics.mean_spread` and `mean_mean_jump`: the mean posterior
+  spread over time bins and the mean center-of-mass jump between
+  consecutive time bins (NaN with one time bin). They are also criterion
+  quantities.
+
+### More published replay recipes
+
+Twelve more recipes in `neurospatial.replay.methods`, each with the paper's
+values, its decoding settings for reference, and notes on every value the
+paper leaves open and the reading taken here:
+
+- `WIKENHEISER_REDISH_2013`: `fit_circular_sequence` on a circular track
+  against time-bin permutations (10,000, Karlsson & Frank's count; the
+  paper gives none), time bins without spikes dropped, at least 3 active
+  cells and 5 spikes.
+- `OLAFSDOTTIR_2015`: line search with a 20 cm band at 2-50 m/s against
+  1,000 cell-identity shuffles, p < 0.05, at least 7 active cells; time
+  bins without spikes kept (not stated; the lab's later rule, dropping
+  them, is one `dataclasses.replace` away).
+- `OLAFSDOTTIR_2016`: `OLAFSDOTTIR_2017` with p < 0.2, kept empty time
+  bins, at least 15% of the place cells active, and the running direction
+  with the smaller p-value (`template_choice="smallest_p"`).
+- `JADHAV_2016`, `TANG_2017`, `SHIN_2019`: Karlsson & Frank's sampled
+  regression on the four W-track trajectories, keeping the trajectory with
+  the smallest p-value; 500, 10,000 and 1,500 shuffles, at least 4, 5 and
+  5 active cells.
+- `YAMAMOTO_TONEGAWA_2017`: Davidson's line search against 2,000
+  column-cycle shuffles at p < 0.05. The paper states little else; the
+  notes list each value taken from Davidson et al.
+- `FAROOQ_2019`: the signed weighted correlation against 500 time-bin
+  permutations, two-sided at 0.05, at least 5 active cells.
+- `MUESSIG_2019`: line search with a 12.5 cm half-width band (the paper's
+  "25 cm wide"), speeds from 0 to 25 m/s, wrapping around a square track
+  (`wrap=True`), the largest score over clockwise and counterclockwise
+  decodes in the event and in each of 500 cell-identity shuffles
+  (`template_choice="max_score"`).
+- `BUSH_2022`: line search with a 15 cm half-width band (the paper's "30cm"
+  width read as the full width; the notes give the 30 cm half-width
+  reading) at 1-50 m/s on
+  time bins with spikes, against 100 shuffles of the active cells'
+  identities (`null_options={"unit_identity": {"active_only": True}}`), at
+  least 5 active cells and 15% of the cells.
+- `HARVEY_2023`: |weighted correlation| with empty time bins zeroed,
+  against 1,000 column-cycle shuffles, at least 5 active cells and at most
+  half the time bins empty (`"empty_fraction"`).
+- `LIU_2023`: line search with a 22.5 cm band over lines that start and
+  end on the track (`line_ends="on_track"`, as the authors' code), against
+  500 column-cycle shuffles.
+- `KARLSSON_FRANK_2009` notes that Carr et al. (2012) used it, and
+  `WU_2017` that Mou et al. (2022) did.
+- The user guide's replay page names the recipes that choose among
+  templates and how to build a closed-loop track for the circular ones.
+
+### New replay nulls
+
+- The `unit_identity` null takes `null_options={"unit_identity":
+  {"active_only": True}}` to permute only the cells active in the event
+  (Bush et al. 2022: "shuffled the identity of active cells within each
+  event"), and `shuffle_cell_identity(..., active_only=True)` does the
+  same. The default still permutes every cell.
+
+- `shuffle_posterior_weighted_circular(env, posterior, peak_weights,
+  edge_exclusion=)` is now the weighted circular shift of Farooq et al.
+  (2019): each time bin's peak is moved to a position drawn from
+  `peak_weights` (the session's mean decoded posterior) and the whole row
+  is rolled there; no peak lands within `edge_exclusion` (a distance along
+  the track; Farooq used 10 cm) of either end. The old function drew its
+  shifts uniformly, weighted nothing, and limited them only for peaks that
+  started near an end; `edge_buffer` is gone.
+- `shuffle_spike_counts_uniform(spike_counts)` spreads each cell's spikes in
+  an event uniformly over its time bins, keeping the cell's count: the
+  "spike jittering" of Stella et al. (2019) on equal time bins.
+- `replay_significance(nulls="spike_time_uniform")` redraws each cell's
+  spikes uniformly over the event and decodes the event again (Stella et
+  al. 2019). It needs the decoding inputs, refuses time bins closer than
+  `dt` (overlapping windows share spikes) or further apart (a gap is part
+  of the event that could receive no spikes; `"spike_train_circular"`
+  refuses gaps too, since a shift by one time bin would then not be one
+  time step), and with `empty_time_bins="zero"` each shuffle zeroes its own
+  empty time bins.
+- `replay_significance(nulls="column_cycle_weighted")` runs Farooq et al.'s
+  weighted circular shift, with peaks drawn from
+  `pseudo_event_pool.mean(axis=0)`. Its edge exclusion is set with the new
+  `null_options={"column_cycle_weighted": {"edge_exclusion": 10.0}}`.
+  `ReplayMethod` has a matching `null_options` field, checked when the
+  method is made (known nulls of the method, options they take) and
+  forwarded by `detect_replay`; `compare_replay_methods` builds the pool
+  for it as for the pseudo-event null.
+- `ReplayMethod` refuses `empty_time_bins="drop"` with
+  `"spike_train_circular"` or `"spike_time_uniform"`: after the drop they
+  would spread spikes over the kept time bins only, and their shuffles have
+  new empty time bins that cannot be dropped. Use `"zero"`. A method with a
+  score also refuses them with a `segmentation`: the score is tested on the
+  segment's rows, so they would move spikes within the segment only. A
+  segment-detection test (`score=None`) still draws them over the event.
+- `null_events(kind="poisson")` is renamed `kind="spike_time_uniform"`: it
+  keeps each cell's count and redraws the spike times, Stella et al.'s
+  spike jittering, not the papers' Poisson surrogate. The new
+  `kind="rate_poisson"` is that surrogate: each cell's count in a null
+  event is Poisson(rate x duration), with the cell's rate pooled over all
+  `intervals` (as in nelpy), so it does not keep the event's own count.
+  Grosmark & Buzsáki estimated rates per behavioral epoch and running
+  direction: call `null_events` once per group.
+- The `time_bin_permutation` docs say it is the "time swap" of Silva et al.
+  (2015) and Maboudi et al. (2018) and the "time-bin shuffle" of Grosmark &
+  Buzsáki (2016) and Farooq et al. (2019).
+
+**Breaking changes**
+
+- `shuffle_posterior_weighted_circular` takes a new positional
+  `peak_weights` argument after `posterior` and no longer takes
+  `edge_buffer`: pass the session's mean decoded posterior, and
+  `edge_exclusion=` for the distance kept from the track's ends.
+- `null_events(kind="poisson")` is now `kind="spike_time_uniform"` (see
+  above); `kind="poisson"` is refused.
+
+### Template choices
+
+- `ReplayMethod(template_choice="smallest_p")` tests every template of an
+  event, as `detect_replay(..., template=name)` would, with the method's
+  score, nulls and criteria, and reports the template with the smallest
+  p-value and its verdict (Jadhav et al. 2016; Tang et al. 2017; Shin et
+  al. 2019: the replayed trajectory of the four W-track trajectories;
+  Ólafsdóttir et al. 2016: the running direction with the lower p). As in
+  those papers, the p-value is not corrected for the number of templates,
+  so with `k` templates an event without replay is called replay up to
+  `1 - (1 - alpha)**k` of the time. A tie goes to the first template in the
+  decode's order. The event can be a joint decode or the templates decoded
+  separately; the method needs nulls.
+- `ReplayMethod(template_choice="max_score")` follows Muessig et al.
+  (2019): for templates decoded separately (each with `decode_position` on
+  its own rate maps), the event's score is the largest over the templates,
+  and each shuffle's score is the largest over the templates' shuffles,
+  each template shuffled independently, not yoked to the template that
+  fits the event best (Silva et al. 2015). Comparing the event's largest
+  score with one template's shuffles instead calls about `1 - (1 -
+  alpha)**2` of random events replay with two templates; the maximum
+  inside every shuffle keeps the rate at `alpha`. The method needs a score
+  and nulls with `alternative="greater"`, and refuses a segmentation,
+  template criteria and the pseudo-event null.
+- Separately decoded templates are passed as a mapping of template name to
+  posterior to `detect_replay` and `replay_significance`, or to
+  `DecodingResult` in `compare_replay_methods`, with `encoding_models` (and
+  optionally `prior` or `env`) keyed alike. `replay_significance` then tests
+  the largest score over the templates, and its result's new `template`
+  attribute names the template with the largest score.
+- Each template tested by either choice draws from its own random stream,
+  derived from `rng` and the template's name, so results are reproducible
+  and do not depend on the order of the templates. `compare_replay_methods`
+  records the chosen template in its `template` column.
+
+### Line search options
+
+- `detect_trajectory_radon(..., wrap=True)` searches lines on a closed-loop
+  track, such as a circular or square track (Muessig et al. 2019): positions
+  are read along the track modulo the loop's length, so a line and its band
+  wrap across the seam where the end of the track meets its start, and a
+  sweep across the seam scores as it would anywhere else on the loop. The
+  track must be a loop built with `Environment.from_graph`, whose last
+  segment in `edge_order` ends at the node where the first starts, with no
+  `edge_spacing` (a gap would count as loop length at each corner but not
+  at the seam); an open track, a loop with `edge_spacing`, a band of half
+  the loop or more, and `line_ends="on_track"` are refused.
+- `detect_trajectory_radon(..., line_ends="on_track")` searches only lines
+  that are on the track at the event's first and last time bins (Liu et al.
+  2023, after `FindReplayScore` of ayalab1/neurocode), so the speed is
+  bounded by the track's length over the event's duration; `max_speed=None`
+  then sets no further bound. Band beyond an end of the track holds the
+  time bin's median posterior density, and each time bin's band mass is
+  capped at 1. The default, `line_ends="any"`, is the search of Davidson et
+  al. (2009) and is unchanged.
+- `replay_significance` takes both options in `score_options` and scores
+  shuffles with the same line family.
+
+### Circular-track replay score
+
+- `fit_circular_sequence(env, posterior, times)` scores a decoded event on a
+  circular track as Wikenheiser & Redish (2013) did: the circular mean of
+  each time bin's posterior, the steps between successive time bins taken
+  the short way around the loop, and a line fit to their cumulative sum on
+  time. A sequence that runs through the point where the loop's linear
+  position starts again is scored whole; a line along the linear position
+  breaks there. `CircularSequenceResult` holds the R² (the score), the
+  replay speed around the loop in environment units per second (`slope`,
+  whose sign is the direction relative to the track's `edge_order`), the
+  slope in radians per second, and each time bin's decoded and cumulative
+  angle. A decode that never moves has R² NaN.
+- A circular track is a track whose `edge_order` runs once around a loop,
+  head to tail, with no `edge_spacing`: `Environment.from_graph` on a cycle
+  graph. Other environments are refused with how to build one.
+- The paper leaves several choices unstated; the docstring lists the
+  readings made here (steps wrapped to (−π, π], one fitted point per time
+  bin starting at 0, regression on time rather than bin number, R² as the
+  tested statistic).
+- `replay_significance` scores `fit_circular_sequence` shuffles in batches,
+  about 100 times faster than one call per shuffle (10,000 time-bin
+  permutations of a 15-bin event in under 0.1 s).
+- New `ReplayCriterion` quantity `"n_spikes"`: the event's total spike count
+  over all cells, for the "at least 5 spikes" candidate rule of Wikenheiser
+  & Redish. It accepts spike counts summed over cells.
+
+### Replay scoring robustness
+
+- Rank-order field peaks and centers ignore bins outside a rate result's
+  `spatial_support`: a finite rate where the animal never went could place
+  a field there and reverse the event's correlation.
+- The exact Spearman bound `2 / n!` no longer overflows for 171 or more
+  spike-time pairs (`FOSTER_WILSON_2006` with every spike).
+- One template's share of a joint decode is scored as the posterior given
+  the template (rows divided by their sums) for every score except the
+  weighted correlation with `row_normalization="none"`, which uses the
+  joint weights; `WU_2017` or a line search with `template=` refused the
+  share's rows, which sum to the template's probability. Nulls that decode
+  again condition each shuffle the same way.
+- A sampled score of a method without shuffles draws from the method's
+  seed, so `rng` and `table.attrs["rng_entropy"]` reproduce it.
+- `compare_replay_methods` refuses an event decoded on an environment that
+  differs from `env`; distances were read on the wrong bins.
+
+- `detect_replay`, `compare_replay_methods` and `event_properties` compare
+  environments with the same check as decoding: coordinate system, units,
+  cells and connectivity. `event_properties` used to measure an event on
+  the `env` it was given without comparing it to the decode's environment,
+  and a track paired with a 2-D arena of as many bins failed with a
+  broadcasting error.
+
+- An event whose score is undefined, such as the R² of a decoded position
+  that never changes, no longer stops `compare_replay_methods` for every
+  event. When the method's verdict uses the score (through its nulls or a
+  score criterion), `detect_replay` gives it no verdict (`is_replay` and
+  every criterion False, score and p-value NaN), and the table row has the
+  `error` "score undefined (e.g. the decoded position does not change)".
+  Criteria that do not read the score still decide otherwise. An event
+  whose score is defined but whose every shuffle of one null is undefined
+  also gets no verdict, with the `error` "every shuffle of a null has an
+  undefined score", instead of stopping the run.
+- The weighted correlation treats a variance at round-off level as no
+  variation. With all of the posterior mass in one time bin, it used to
+  return 0 or NaN depending on the bin's time. A method that drops or zeroes
+  time bins without spikes now gets the `error` "fewer than two time bins
+  with spikes to score" for an event with fewer than two.
+- Shuffles whose score is undefined are still left out of the p-value, and
+  now also out of the z-score: one undefined shuffle no longer makes
+  `compute_shuffle_zscore` NaN. `ReplaySignificanceResult.n_shuffles_used`
+  gives the shuffles each null counts. `ReplayDetectionResult` and the
+  `compare_replay_methods` table have `n_shuffles_used`, the smallest over the
+  method's nulls (NaN without shuffles). The warning names the null, and from
+  `compare_replay_methods` also the event and the method.
+- Spike counts summed over cells, shape `(n_time_bins,)`, are refused by
+  `event_properties` and by `detect_replay` methods that count active cells;
+  they counted every event as one active cell.
+- A prior with one row per time bin is cut with the time bins a method tests
+  (its segment, or the time bins with spikes) before the shuffles decode
+  again.
+- In `compare_replay_methods`: rows with an `error` have every `passes[...]`
+  of their method False instead of NaN; spike counts and `valid_time_bins`
+  must have one row per time bin of their event, for every method;
+  `table.attrs["rng_entropy"]` holds the seed of the run, so passing it as
+  `rng` reproduces a run made with `rng=None`; and a pooled SSI method whose
+  threshold lies beyond the SSI grid says so in `error`.
+- `replay_significance` refuses a custom score whose signature cannot be
+  read, instead of running it without the seeded `rng`.
+  read, instead of running it without the seeded `rng`; `ReplayMethod`
+  refuses it when the method is made.
+
+### Replay recipe validation
+
+- `ReplaySignificanceResult` can be pickled and deep-copied; its
+  `shuffles` stay read-only. Its `summary()` works for a custom `score=`
+  whose result has only a `score`.
+- `ReplayMethod`, `ReplaySegmentation`, `ArmReplayMethod` and
+  `ReplayDetectionResult` pickle every field by name, so no setting is
+  reset when a copy is rebuilt.
+- `ReplayCriterion` refuses a threshold that is not a finite number (NaN,
+  a string, a bool) and an `absolute` that is not True or False.
+- `ReplayMethod` refuses two criteria with the same label, such as
+  thresholds 2.0 and 2.000001 on one quantity: results are keyed by label,
+  so one criterion overwrote the other and the verdict depended on their
+  order.
+- `ReplayMethod` checks its settings when it is made rather than partway
+  through `detect_replay`:
+  - a method without nulls, criteria or a segmentation is refused, since
+    it would call every event replay;
+  - criteria must test a quantity of an event: `"score"`,
+    `"n_active_cells"`, `"active_fraction"`, a `segment_*` or template
+    quantity, or a scalar of `TrajectoryMetrics`. A typo, a per-time-bin
+    array such as `"map_jumps"` or a method name is refused;
+  - `score` must be callable, and `score_options` must be options it
+    takes;
+  - `n_shuffles` must be an integer (NumPy integers included), not 2.5 or
+    `"99"`;
+  - `nulls="column_cycle"` is one null, as in `replay_significance`, and a
+    null named twice is refused.
+- `ReplaySegmentation` ties each `relative_to` scale to the options it
+  fits: `"track_length"` to the distances `max_jump`, `max_spread`,
+  `merge_max_distance` and `min_dispersion`, and `"chance"` to
+  `min_peak_probability`. `relative_to={"max_jump": "chance"}` gave a
+  maximum jump of the distance over `n_bins`. Option values are checked
+  as `replay_segments` checks them (a negative `max_jump`, an unknown
+  `method`, a non-integer `min_time_bins`) when the segmentation is made.
+- `WeightedCorrelationResult`, `LinearFitResult` and
+  `RankOrderSignificanceResult` compare equal only to themselves, like
+  every other replay result. Compare their fields to compare values.
+- `ArmReplayMethod` refuses a bool or a string for its numeric settings;
+  `peak_threshold=True` passed as 1.
+
+### Published replay methods as comparable recipes
+
+`neurospatial.replay.methods` holds published replay tests as explicit
+recipes, `ReplayMethod`. Each records:
+
+- the score and its options;
+- the shuffles, number of shuffles, α and test side;
+- how time bins without spikes are handled;
+- the criteria thresholds;
+- the paper's decoding settings, for reference;
+- notes on choices the paper leaves open and on reference-code bugs not
+  reproduced.
+
+The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
+`WU_2017`, `MICHON_2019` and `TIROLE_2022`.
+
+- `detect_replay(env, posterior, times, replay_method=...)` applies one
+  method to one decoded event. It returns `ReplayDetectionResult`: the
+  verdict, score, largest p-value and each criterion.
+- `compare_replay_methods(env, events, replay_methods=...)` applies several
+  methods to several decoded events and returns a table with one row per
+  (event, method). The pseudo-event null draws from every candidate event, as
+  Davidson et al. (2009) and Michon et al. (2019) did. Each (event, method)
+  pair has its own random stream, so adding or reordering methods does not
+  change the other results. An event with fewer than two time bins to score
+  gets a row with an `error`, and `is_replay` is False.
+- `replay_significance` and `detect_replay` test one template's share of a
+  joint decode: pass the share, `decode_jointly(...).joint(name)`, every
+  template's rate maps as `encoding_models` and `template=name`. Shuffled
+  counts and rate maps are then decoded jointly too, as Tirole et al. (2022)
+  normalized the posterior across both tracks.
+- Methods are compared on the same decoded posterior, so differences come from
+  the replay test alone. Decoding settings are recorded, not enforced.
+- New `replay_significance(..., empty_time_bins="zero")` sets the posterior of
+  time bins without spikes to zero in the event and in every shuffle, as the
+  Bendor-lab analyses do. Each shuffle zeroes the time bins empty in its own
+  counts. The Bendor-lab code zeroes the original event's empty time bins in
+  shuffles that move them, which is not reproduced.
+
+### Null data for replay false-positive rates
+
+New functions in `neurospatial.replay` make events without replay, to
+measure each method's false-positive rate on several kinds of null data:
+
+- `null_events(spike_times, intervals, kind=, n_copies=, cells=)` copies
+  real candidate events and breaks their order in one of four ways. Only
+  the `cells` you select are randomized, for example the decoder's place
+  cells; the rest keep their spikes:
+  - `"cell_identity"`: spike trains reassigned to cells at random
+    (Takigawa et al. 2024);
+  - `"spike_shift"`: each cell's spikes shifted circularly within the
+    event;
+  - `"spike_time_uniform"`: each cell keeps its count, with spikes placed
+    at random (Stella et al. 2019);
+  - `"rate_poisson"`: each cell's count is drawn from its mean rate over
+    all the intervals, with spikes placed at random (the Poisson surrogates
+    of Silva et al. 2015, Grosmark & Buzsáki 2016 and Farooq et al. 2019);
+    the event's own counts are not kept.
+
+  Overlapping intervals are refused: their shared spikes would be copied
+  into two null events.
+- `simulated_null_events(env, encoding_models, n_events=, kind=)`
+  simulates random or stationary events. Stationary events are placed at
+  random along the track.
+- The notes say what each kind keeps and breaks, and which methods' own
+  shuffles each kind repeats. A null that repeats a method's own shuffle
+  underestimates that method's false-positive rate (Takigawa et al. 2024).
+  Score null events in their own `compare_replay_methods` call.
+- Both return `NullSpikeData`: spike trains laid out like a session, one
+  interval per null event. Decode them exactly as the real events, for
+  example with the new `decode_intervals`.
+- `decode_intervals(env, spike_times, intervals, encoding_models, dt=)`
+  decodes each interval in non-overlapping time bins of width `dt`.
+
+### User guide: Comparing replay methods
+
+A new guide, `docs/user-guide/replay-methods.md`, applies five published
+replay methods to the same decoded events (simulated sweeps, stationary
+and random events). It then:
+
+- measures each method's false-positive rate on cell-identity, spike-shift
+  and uniform-spike-time copies of the events, broken down by active cells;
+- compares the methods at a matched false-positive rate;
+- shows how to run the same steps on your own recording.
+
+The guide shows where methods fail differently. Davidson et al.'s line search
+calls stationary and spike-shift events replay. Correlation and rank-order
+tests call short, jumpy random events replay.
+
+### Replay methods at a matched false-positive rate
+
+Methods with the same nominal α call different shares of null events
+replay. Takigawa et al. (2024) compared methods at the α that gives each
+one the same false-positive rate. Two new functions in
+`neurospatial.replay` do this. It is one option among several and is not
+the default.
+
+- `matched_alpha(null_table, replay_methods=, target=0.05)` finds, for each
+  method, the largest α at which at most `target` of the null events are
+  called replay. It also reports the method's rate at its own α. The α is
+  computed exactly from the p-values, not read off a grid, so the rate never
+  exceeds the target. `groups=` matches each kind of null data or each
+  session separately. Warnings say when the matched α is the smallest
+  p-value the shuffles can give, `1 / (n_shuffles + 1)` or twice that for
+  a two-sided test (run more shuffles), when there are too
+  few null events for the target, and when no α holds the rate: then α is
+  NaN.
+- `apply_alpha(table, alpha=, replay_methods=)` gives the table's verdicts
+  at new α values from its p-values and criteria, without running the
+  shuffles again. The verdicts are the same as running the method with
+  `dataclasses.replace(method, alpha=...)` and the same `rng`.
+- Only methods that test a p-value against α can be matched. Methods
+  without shuffles, the arm methods and Chenani et al.'s pooled SSI test
+  are refused, with their names. So is a rank-order method that chose
+  among several templates (Diba & Buzsáki 2007 with both running
+  directions): it picks among the templates that pass at its α, so its
+  rows change with α.
+- Both functions refuse a table whose verdicts do not follow from the
+  given methods' p-values, criteria and α.
+
+### Calibrating replay methods on comparison tables
+
+New `neurospatial.replay.calibration` summarizes the table of
+`compare_replay_methods`:
+
+- `event_properties(env, events, spike_counts=, template=, dt=)` measures
+  each event:
+  - time bins, duration, and with `dt` the window duration;
+  - mean peak posterior;
+  - mean posterior spread, which does not depend on bin size;
+  - MAP path length;
+  - `map_range_fraction`, the fraction of the track's length the MAP
+    position spans;
+  - active cells, spikes, spikes per active cell, and the fraction of empty
+    time bins.
+
+  A joint decode is summed over templates on one environment, or measured
+  on one template's share with `template=`.
+- `detection_rates(table, properties=, by=, groups=, errors=)` gives each
+  method's share of events called replay, with an exact binomial interval.
+  On null data this is the false-positive rate; on simulated replays, the
+  sensitivity.
+  - It can be split by bins of event properties (`by=`) and by table
+    columns such as the kind of null data or the session (`groups=`).
+    Every combination is reported. A missing `groups` value forms its own
+    group, as in `matched_alpha` and `method_agreement`.
+  - `properties=` joins on the `groups` and `event` when it has the
+    `groups` columns. Several concatenated tables each number their events
+    from 0, so their properties must have the `groups` columns; without
+    them they are refused rather than joined to another table's events.
+  - An event that falls in no bin is refused rather than dropped.
+  - Events a method could not score count as not replay by default, so
+    every method's rate covers the same events. `errors="exclude"` gives
+    the rate among the events each method scored.
+- `method_agreement(table, groups=, errors=)` counts, for every pair of
+  methods, how often both, one or neither called an event replay, with raw
+  agreement and Cohen's kappa.
+
+### Berners-Lee et al. (2021) arm replay
+
+`BERNERS_LEE_2021` follows the authors' code
+(`make_singleandjointreplay_fromPosterior.m`).
+
+- **Subregions.** Every run of an arm's smoothed peak posterior that stays
+  above 4 × chance for at least 11 windows becomes a subregion; runs fewer
+  than 11 steps apart merge.
+- **Single-arm replays** need |weighted correlation| > 0.3 and a posterior
+  mean covering more than half the arm.
+- **Joint replays.** The strongest pair of single-arm replays with
+  |weighted correlation| above 0.3 is reported. The paper's non-overlap
+  condition is not checked, as in the code. Without a pair, the strongest
+  single-arm replay is reported.
+- **Fallback.** Without either, an arm that stayed above threshold is still
+  an arm-replay, as the paper defines it. `criteria["sequence"]` is False
+  for these, and in simulations they made up 40–70% of single-arm
+  outcomes.
+- **Checked against the code.** A port of the authors' code, with its
+  merge corrected, gives the same outcome on all 24,000 simulated events.
+- **Code quirks not reproduced:** the code drops the end of a chain of
+  three or more merged runs, and pads each event by 20 ms on each side.
+  Both are documented in the notes.
+
+`ArmReplayMethod` gains the options this needs:
+
+- `subregions="runs"` with `merge_max_gap` (inclusive);
+- `coverage="mean_range"`;
+- `joint="strongest_pair"`;
+- `joint_same_sign`, which now works with either joint rule;
+- `arm_fallback`.
+
+### Single-arm and joint-arm replay on a maze: Wu & Foster (2014)
+
+On a maze, a replay may run along one arm or cross the junction into
+another.
+
+- New `detect_arm_replay(env, posterior, times, arms=...,
+  arm_replay_method=...)` classifies one decoded event. `arms` maps each arm
+  to its bins, ordered from the junction outward; contiguity and
+  orientation are checked. The result's `template`
+  names the replayed arm (`"left"`), several arms (`"center,left"`), or a
+  pair (`"center+left"`).
+- `ArmReplayMethod` records the thresholds.
+- `WU_FOSTER_2014` follows the paper:
+  - Each arm's subregion lies around the largest peak of its peak
+    posterior, smoothed with a 10 ms Gaussian, while that peak stays above
+    5 × chance.
+  - A single arm is a replay when its subregion lasts at least 50 ms,
+    covers more than 50% of the arm, and has |weighted correlation| > 0.5.
+  - A pair of arms is a joint replay when its subregion, along the path
+    through the junction, has |weighted correlation| > 0.5, both arms meet
+    the length and coverage rules, and both arms' correlations have the
+    joint's sign along the path.
+  - Exclusivity follows the paper: a joint replay is reported only when no
+    other pair is one, and single-arm replays only when no pair is one.
+- `compare_replay_methods(..., arms=)` includes arm methods in the
+  comparison table.
+
+### Ólafsdóttir et al. (2017) line-fit recipe; minimum speed in the line search
+
+- `OLAFSDOTTIR_2017`: the replay line search with a 30 cm band, speeds of
+  2–50 m/s in either direction, and time bins without spikes dropped. The
+  event is tested against 100 rate-map rotations decoded again, at
+  p < 0.025, with more than 5 and at least 15% of the place cells active.
+  The notes give where this differs from the paper: zero shifts are kept,
+  the 97.5th-percentile rule differs by one shuffle from p < 0.025, and
+  off-track time bins take Davidson's median rather than 0.
+- `detect_trajectory_radon(..., min_speed=)` leaves out trajectories slower
+  than `min_speed`, in either direction. Their sinogram entries are NaN.
+  Shuffle tests via `replay_significance` use the same search. A
+  `min_speed` above every searched speed is refused.
+
+### Weighted-correlation recipes: Ambrose 2016, Grosmark 2016, Berners-Lee 2022
+
+Three more recipes score the posterior's weighted correlation:
+
+- `AMBROSE_2016`: |weighted correlation| > 0.6. The paper's Monte Carlo
+  test was a robustness check, not the definition; the notes describe it.
+- `GROSMARK_2016`: |r| against 1,000 circular place-field shuffles, decoded
+  again, with at least max(5, 10% of the cells) active. The paper gives no
+  per-event α or test side; 0.05 on |r| is read from Fig. S5C.
+- `BERNERS_LEE_2022`: |weighted correlation| > 0.6 and a maximum MAP jump
+  below 0.4 of the track. Both are computed on the posterior summed over
+  the two running directions of a joint decode. The paper's significance
+  test is on event counts, not per event, and is not applied.
+
+New `ReplayMethod(template_choice="sum")` tests the posterior summed over a
+joint decode's templates. The templates must share one environment, and
+nulls that decode again cannot be used.
+
+New criterion quantity `active_fraction`: active cells over the columns of
+`spike_counts`.
+
+### Chenani et al. (2019): rank-order replay against the epoch's shuffles
+
+`CHENANI_2019` follows the authors' MIT code (`testsession.m`,
+`rankseq.m`, `checktempshuffle.m`) and the paper.
+
+- **Score.** Each place cell's mean spike time is ranked against a template
+  for each running direction, ordered by place-field centers. The score is
+  the spatial similarity index of the cells the event and template share:
+  rho divided by the standard deviation of rho over random orders,
+  `rho * sqrt(n - 1)`.
+- **Test.** The event is replay when its larger index over the two
+  directions exceeds the 95% quantile of the larger indices of 100
+  cell-order shuffles of every event in the epoch. The quantile is taken on
+  the code's 0.01 grid.
+- **Limits.** Negative indices are never significant. Bursts need at least
+  5 active cells, and epochs with fewer than 20 such bursts are excluded.
+- **Running it.** The threshold pools every event of an epoch, so the new
+  `RankOrderMethod(test="pooled_ssi")` runs in `compare_replay_methods`,
+  one epoch per call; `detect_rank_order_replay` refuses it.
+- **Checked.**
+  - On 150 epochs of random-order bursts (5,095 bursts), 4.4% ± 0.3% passed
+    at α = 0.05.
+  - A port of the authors' code agrees on every verdict for 1,018 simulated
+    bursts. The port corrects `testsession.m`, which puts only each event's
+    first shuffle into the null and so passes every burst.
+- `compare_replay_methods` refuses duplicate method names.
+
+### Rank-order replay recipes
+
+New `RankOrderMethod` records a published rank-order test, and
+`detect_rank_order_replay(env, spike_times, interval, encoding_models,
+rank_order_method=...)` applies it to one event. Each method records:
+
+- which spike times count, and how fields are ordered;
+- which cells form the template, by peak rate (`min_peak_rate`);
+- the fewest active template cells, as a count and as a fraction;
+- the t-distribution test of rho, or a number of cell-order permutations,
+  with the test's side and α;
+- with one set of rate maps per running direction, how the tested template
+  is chosen (`template_choice`).
+
+The recipes are:
+
+- `FOSTER_WILSON_2006`: every spike against its cell's field peak, with
+  Numerical Recipes' t-distribution p below 0.05, and a third of the
+  ≥ 5 Hz probe cells active. The paper does not say which spikes it used,
+  and the notes give the alternatives.
+- `DIBA_BUZSAKI_2007`: first spikes, 500 cell-order permutations, and a
+  correlation more extreme than 95% of the shuffles in either direction (a
+  two-sided p below 0.10). At least 5 and at least 30% of the ≥ 5 Hz
+  template cells must be active. With both directions' templates, the
+  template on which the event is replay with more active cells is reported.
+
+`compare_replay_methods(..., spike_times=)` puts rank-order and decoded
+methods in one table. A rank-order method scores each event's spikes from
+the first decoding window's start to the last window's end.
+
+`rank_order_significance` now counts shuffles whose correlation ties the
+event's as at least as extreme. The event's rho and the shuffles' rho are
+computed by different formulas and could differ by rounding, so ties were
+missed on events with few cells and p-values came out too small.
+
+### Replay recipes on joint decodes; Mallory et al. (2025)
+
+`MALLORY_2025` follows the authors' code (`filter_candidate_events.m`,
+`load_replay_criterion.m`) and the bioRxiv methods.
+
+- Each event is decoded jointly over the two running directions.
+- The tested direction is the one holding the most posterior, with 20 cm
+  left out at each track end.
+- Its longest smooth segment is kept, then rejected if the other direction
+  holds more posterior over it. The score and metrics use only the
+  segment's trajectory time bins, as the code does.
+- A Python port of the code agrees with the recipe on 288 of 300 simulated
+  events. The 12 differences come from the code's handling of low-peak
+  bins at run edges, documented in `replay_segments`.
+- The event must then meet these criteria:
+  - more than 66.5% of the posterior in the tested direction;
+  - |weighted correlation| > 0.6;
+  - maximum MAP jump < 40% of the track;
+  - MAP range > 20% of the track;
+  - at least 10 active cells.
+- The code's halved merge distance is not reproduced.
+
+Supporting changes:
+
+- `detect_replay` and `compare_replay_methods` take an event's
+  `JointDecodingResult` as the posterior. `template=` names the tested
+  template, or the method's new `template_choice="most_posterior"` picks
+  it, leaving out `exclude_end_distance` at each track end.
+- `ReplayDetectionResult.template` records the tested template, and the
+  comparison table has a `template` column.
+- In `compare_replay_methods`, methods with a `template_choice` choose each
+  event's template; `template=` applies to the other methods.
+- `detect_replay` refuses an `env` that is not the environment the joint
+  decode used.
+- New `ReplaySegmentation(rows="trajectory")` scores and measures only the
+  tested segment's trajectory time bins.
+- `replay_segments` counts a lone time bin between merged pieces as
+  trajectory only with `jump_rule="drop_earlier"` (the Widloski & Foster
+  code); with `"between"`, as in the Mallory code, it is off the
+  trajectory.
+- New criterion quantities `template_fraction` and
+  `segment_template_fraction` compare the templates over the event and over
+  the tested segment's trajectory time bins.
+- `n_active_cells` counts the cells active anywhere in the event, also for
+  methods that test a segment.
+- Options relative to chance count the bins of every template of a joint
+  decode.
+
+### Criteria-based replay recipes test a trajectory segment
+
+Five more recipes follow criteria-based papers: `PFEIFFER_FOSTER_2013`,
+`PFEIFFER_FOSTER_2015`, `CAREY_2019`, `IGATA_2021` and
+`WIDLOSKI_FOSTER_2022`. Each cuts the event into trajectory segments with
+`replay_segments` and tests one segment.
+
+- New `ReplaySegmentation`, the `segmentation=` of a `ReplayMethod`, holds:
+  - the `replay_segments` options, with options given relative to the track
+    length or to chance (`1 / env.n_bins`);
+  - which segment is tested: `choose="longest"` (Pfeiffer & Foster; Igata)
+    or `choose="any"`, the longest segment that meets the criteria (Carey;
+    Widloski & Foster);
+  - Carey's active-cell rule, `min_active_cells_per_time_bin`.
+- Options relative to chance count the bins of every template on one
+  template's share of a joint decode.
+- The score, the shuffles and the criteria apply to the tested segment.
+  Without a segment, the event is not replay.
+- With a segmentation, time bins without spikes are invalid rows under
+  `empty_time_bins="drop"` or `"zero"`, so no jump is measured across them;
+  "drop" then removes them from the tested segment.
+- New criterion quantities describe the tested segment:
+  `segment_duration`, `segment_time_bin_count`, `segment_dispersion`,
+  `segment_start_to_end_distance` and `segment_path_length`.
+- A segmentation method without a score can still be tested against
+  shuffles: each shuffle scores 1 when it has a segment that meets the
+  criteria, so p is the share of shuffles that have one (Igata et al.
+  2021).
+- `ReplayDetectionResult` has `segments` and `segment`, and its `summary()`
+  and the `compare_replay_methods` table add `n_segments`,
+  `segment_start_time` and `segment_end_time`.
+- `detect_replay(..., valid_time_bins=)` and
+  `compare_replay_methods(..., valid_time_bins=)` pass time bins that cannot
+  be on a trajectory, such as Widloski & Foster's running bins, to the
+  segmentation. Methods without a segmentation ignore them.
+- `ReplayMethod(units=)` names the units of a recipe's distance thresholds;
+  `detect_replay` refuses an environment in other units. The new recipes are
+  in cm.
+- `ReplayCriterion` treats a value within 1e-9 of its threshold as equal to
+  it, as `replay_segments` does. A segment of 21 time bins on 5 ms steps
+  therefore lasts 100 ms and fails a strict 100 ms test, whatever the
+  floating-point rounding of its times.
+
+### Cut a candidate event into replayed trajectories
+
+`replay_segments(env, posterior, times, max_jump=...)` finds the part of a
+decoded candidate event in which the decoded position moves in small steps,
+the segment that criteria-based replay detection then scores. One function
+covers the published rules through its parameters, so the rules can be
+compared on the same events; the docstring lists each paper's settings.
+
+- Split where the MAP or posterior-mean position jumps `max_jump` or more.
+  `jump_rule="between"` loses no time bin (Pfeiffer & Foster 2013, 2015;
+  Carey et al. 2019; the Mallory et al. 2025 code); `"drop_earlier"` also
+  rejects the bin before the jump, as the Widloski & Foster (2022) code
+  does.
+- `max_gap_bins=1` lets a segment skip one time bin (Igata et al. 2021).
+- Reject time bins by posterior spread (`max_spread`, Widloski & Foster
+  2022) or peak probability (`min_peak_probability`, Igata et al. 2021 and
+  the Mallory code), merge neighboring segments separated by less than
+  `merge_max_time_gap` and `merge_max_distance` (Widloski & Foster 2022),
+  and drop segments by `min_duration`, `min_time_bins` or `min_dispersion`.
+- `valid_time_bins` marks rows that cannot be on a trajectory, such as bins
+  with too few active cells (Carey et al. 2019) or at running speed
+  (Widloski & Foster 2022). They split segments without a jump being
+  measured across them, and merging can bridge them.
+- A piece of one time bin has no step and is not a segment; as in the
+  Widloski and Mallory code it is dropped before merging, so a lone outlier
+  does not keep its neighbors apart.
+- `method="expected"` uses the posterior mean, as `fit_isotonic_trajectory`
+  and `confusion_matrix` name it.
+- `ReplaySegmentsResult` holds each segment's rows, times, duration,
+  dispersion, start-to-end distance and path length, the trajectory time
+  bins, and the `longest` segment; `posterior[result.rows()]` selects it.
+- The Mallory et al. (2025) code merges segments within half its intended
+  distance, because it divides a threshold already in bins by the bin size
+  again; the intended threshold is used. Pfeiffer & Foster's "10 steps" are
+  11 time bins.
+- Works on tracks, mazes and 2-D arenas, and on one template's share of a
+  joint decode.
+
+### Per-event metrics for criteria-based replay detection
+
+`trajectory_metrics(env, posterior, times)` computes every per-event quantity
+that published replay criteria threshold, each under its own name, so you can
+apply a paper's criteria exactly or compare several. It works on 1-D tracks,
+linearized tracks and mazes, and 2-D arenas. Distances between bins are
+geodesic on tracks (through the junctions of a maze) and straight-line in an
+arena, where paths along the bin grid are longer; `metric=` overrides this.
+
+- Per time bin: MAP bin and position, the posterior mass in the MAP bin,
+  posterior mean, `map_jumps` (Pfeiffer & Foster 2013; Silva et al. 2015;
+  Igata et al. 2021), `mean_jumps` (Pfeiffer & Foster 2015; Widloski & Foster
+  2022), and the posterior `spread`, the square root of its second central
+  moment (Widloski & Foster 2022).
+- Per event: largest jumps, MAP and mean range along the track (Mallory et
+  al. 2025 code; Berners-Lee et al. 2021), start-to-end distance, MAP path
+  length (Igata's "cumulative distance"), dispersion of the posterior means,
+  mean peak probability (Stella et al. 2019 "decoding confidence"), duration,
+  track length, and, with `spike_counts=`, the fraction of time bins without
+  spikes (Harvey et al. 2023). `well_decoded_fraction(threshold=5)` is the
+  coverage of Wu & Foster (2014). `summary()` returns the scalars.
+- The posterior may be one template's share of a joint decode,
+  `result.joint(name)`, whose rows sum to less than 1. Positions, jumps and
+  spread use each row rescaled to 1; peak probability and coverage use the
+  mass as given, so `well_decoded_fraction(chance_bins=2 * env.n_bins)`
+  reproduces the Mallory et al. (2025) code's coverage.
+- Widloski & Foster (2022) print a spread formula whose square root has units
+  of area, which a threshold in cm cannot apply to, and their deposited code
+  does not compute the posterior spread; the second central moment the paper
+  describes in words is used.
+- `dispersion` is the root-mean-square distance of the posterior means from
+  their average, as in the Widloski & Foster (2022) code; the paper prints a
+  mean of distances.
+- Ranges and track length skip the spacing between track segments. Ranges
+  are NaN on a branched maze, where positions along the track jump between
+  arms, and track-only quantities are NaN in an arena.
+
+`template_fractions(result)` gives the share of a jointly decoded event
+(`decode_jointly`) in each template (Ambrose et al. 2016, eq. 1).
+`exclude_end_distance=20.0` leaves out bins within 20 cm of either track end
+first, as the Mallory et al. (2025) code does (10 bins of 2 cm); their |left − right| > 0.33
+criterion is the larger fraction exceeding 0.665.
+
+### Simulate replay events with a known path
+
+`neurospatial.simulation.simulate_replay_event(env, rates, kind=..., speed=...)`
+simulates a candidate event whose content is known, so replay methods can be
+compared against the truth. A position moves along a track, and each cell
+fires as an inhomogeneous Poisson process at its rate map there (times
+`rate_gain`).
+
+- `kind="sweep"`: constant speed.
+- `kind="stationary"`: a fixed position, which fools Davidson et al.'s line
+  search (`detect_trajectory_radon`) but not the weighted correlation (van der
+  Meer et al. 2020) or the R² of `fit_linear_trajectory`.
+- `kind="jump"`: two sweep fragments, `jump_distance` apart (default a quarter
+  of the track).
+- `kind="random"`: a new position every 20 ms, a null event.
+
+The path never enters the gaps a linearized track leaves between segments.
+The result holds each cell's spike times and the path, in track and
+environment coordinates. The path and the spikes draw from separate seed
+streams.
+
+### Line and monotonic replay fits follow their papers
+
+`fit_linear_trajectory` and `fit_isotonic_trajectory` now compute the
+published scores, so their R² and scores can be compared with the papers
+and with the other replay scores.
+
+**`fit_linear_trajectory`**
+
+- `method="sample"` (default) follows Karlsson & Frank (2009). It draws
+  positions from each time bin's posterior and fits one least-squares line
+  through all the sampled points. `r_squared` is the R² of that line, so a
+  wide posterior lowers it. Before, a line was fit to each sampled sequence
+  separately and R² was computed from the posterior mean positions.
+- `n_samples` is now the total number of samples (default 10,000). Karlsson &
+  Frank drew 10,000 per decoded time bin; pass
+  `n_samples=10000 * n_decoded_time_bins` to match them.
+- New `spike_counts=` leaves out time bins without spikes, which cannot be
+  decoded (Karlsson & Frank 2009; Wu et al. 2017).
+- New `allocation=` sets how the samples are split among the time bins
+  sampled. `"equal"` (default) gives each the same number (Karlsson & Frank).
+  `"spikes"` gives each a random share in proportion to its spike count, as
+  the Jadhav-lab replay code does. The two weight time bins differently, so
+  their R² differ. With many samples the R² approaches the square of
+  `weighted_correlation` with those weights.
+- In `replay_significance`, `spike_counts` in `score_options` is refused with
+  nulls that move time bins (time-bin permutation, spike-train shift,
+  pseudo-events), because the counts would stay with the original rows.
+  Drop the spike-free time bins and their times before testing instead.
+- New `n_resamples=` (default 1) repeats the sampled fit. Slope, intercept
+  and R² are means over resamples, as in the Jadhav-lab code (500
+  resamples). `slope_std` is the standard deviation of the slope over
+  resamples, or None for a single resample. It shows how much the fit
+  changes between random draws, not how uncertain the replay speed is.
+- `method="map"` fits a line through the MAP positions (Wu et al. 2017).
+  With `spike_counts`, time bins without spikes are left out.
+- Fits that would have points at fewer than two times are refused, with
+  the reason and a fix.
+
+**`fit_isotonic_trajectory`**
+
+- Follows Michon et al. (2019). It fits the MAP positions (now the default
+  `method`) by isotonic regression, weighting each time bin by the posterior
+  probability of its MAP bin.
+- `score` is now Michon et al.'s score, the mean MAP probability times R²,
+  instead of R². `IsotonicFitResult` gains `mean_map_probability`, and
+  `summary()` reports both. Increasing and decreasing fits are both tried
+  and the one with the higher score is kept.
+- `r_squared` uses the same weights as the fit. Michon et al. do not say
+  whether R² is weighted; this is a choice made here.
+- `method="expected"` (posterior mean positions) is still available as a
+  variant not in Michon et al., with the same weights.
+
+### Spike-train, place-field and time-bin nulls
+
+`replay_significance` gains three nulls, run when named in `nulls=`:
+
+- `"spike_train_circular"`: each cell's spike counts are shifted circularly in
+  time within the event and decoded again. This keeps each cell's spikes and
+  breaks the order in which cells fire (Tirole et al. 2022; the "temporal
+  shuffle" of Maboudi et al. 2018).
+- `"place_field_circular"`: each rate map is shifted circularly along the track
+  and the event decoded again (Grosmark & Buzsáki 2016; Tirole et al. 2022).
+  Each map moves only over its supported bins, so bins without training data
+  stay excluded.
+- `"time_bin_permutation"`: the posterior's time bins are put in random order
+  (Karlsson & Frank 2009; Takigawa et al. 2024).
+
+Tirole et al. (2022) call an event significant when it beats
+`nulls=["spike_train_circular", "place_field_circular", "column_cycle"]`.
+With `nulls=None` the default is still the three nulls of Davidson et al.
+(2009) whose inputs are given, so existing results do not change. Use the
+nulls together. On events with no sequence, one null that decodes again, or
+the column cycle, rejects more often than its nominal rate, because a
+shuffled decode is flatter than the event's own posterior. Requiring all of
+Tirole's three to reject brings the rate back to about nominal.
+
+New `shuffle_spike_counts_circular(spike_counts)` yields the shifted counts
+on their own. It and the place-field and column-cycle shuffles shift each
+cell or time bin independently, by a shift drawn uniformly from all shifts.
+The Bendor-lab code's `ceil(rand * n)` gives the same distribution.
+`shuffle_place_fields_circular` now leaves bins where any cell's rate is NaN
+in place and shifts each field over the other bins.
+
+### Rank-order correlation of replay events
+
+`rank_order_correlation(env, spike_times, (start, stop), rates)` is the
+Spearman correlation between each active cell's place-field position and when
+it fired in a candidate event (Foster & Wilson 2006; Diba & Buzsáki 2007). It
+needs no decoding. `rank_order_significance(...)` tests it against cell-order
+permutations, two-sided by default so forward and reverse sequences count
+alike.
+
+- `spike_statistic` chooses when each cell fired:
+  - `"median"` (default; Tirole et al. 2022), which Takigawa et al. (2024)
+    found holds the false-positive rate near 5%;
+  - `"first"` (Diba & Buzsáki 2007);
+  - `"mean"` (Chenani et al. 2019);
+  - `"all_spikes"` (Silva et al. 2015). Takigawa et al. found a
+    false-positive rate near 17% with it when significance came from the
+    analytic p-value; the cell-order permutation test keeps a cell's spikes
+    together and holds its rate.
+- `field_order` places each field at its peak (default) or at the
+  rate-weighted center of its rate map (Chenani et al. 2019).
+- Cells without a field (no finite positive rate) or without a spike in the
+  event are left out. With fewer than `min_active_cells` (default 5) the
+  correlation is NaN.
+- The result reports the analytic Spearman p-value. It is exact for up to 9
+  pairs and uses the t-approximation of Foster & Wilson (2006) above that
+  (MATLAB's `corr` also uses the exact distribution for small samples). The
+  permutation test's z-score approximates the spatial similarity index of
+  Chenani et al. (2019).
+- Negative rates and a rate result computed on another environment are
+  refused.
+- The score is Spearman's rho computed on ranks. The `replay_RankOrder.m`
+  function of the RnR_methods toolbox correlates sort indices instead, so its
+  value depends on how cells are numbered; scores here will differ from it.
+
+### Test any replay score against shuffles; weighted correlation
+
+`replay_significance(env, posterior, times, score=..., nulls=...)` replaces
+`replay_trajectory_significance`. It tests any replay score against
+shuffle nulls, by default the column-cycle, unit-identity and pseudo-event
+nulls of Davidson et al. (2009), rescoring every shuffle with the same score
+and search. It reports each null's Monte Carlo p-value and
+the largest, since an event is significant only when every null rejects it.
+
+- `score` is the score function itself. The default is
+  `detect_trajectory_radon` (Davidson et al. 2009).
+  `weighted_correlation` (new), `fit_linear_trajectory`,
+  `fit_isotonic_trajectory` and any function returning a result with a
+  `score` also work. Options go in `score_options`, for example
+  `{"band": 10.0}`.
+- `nulls=` chooses the nulls. By default, the column-cycle, unit-identity
+  and pseudo-event nulls are run, each when its inputs are given, as before.
+- `alternative=` (`"greater"`, `"less"`, `"two-sided"`) and `use_absolute=`
+  set what counts as extreme. By default the weighted correlation is tested
+  as |r|, as Grosmark & Buzsáki (2016) and Tirole et al. (2022) do, so reverse
+  replay counts; the other scores are tested as they are.
+- Weighted correlations are rounded to 12 decimals, like the replay line
+  score, so shuffles tied with the event count as ties.
+- A score passed as `functools.partial(detect_trajectory_radon, band=10.0)`
+  still takes the fast batched path. A score that takes `rng` (such as
+  `fit_linear_trajectory`) gets a seed derived from `rng`, so seeded results
+  repeat.
+- The default `n_shuffles` is now 1000 (Tirole et al. 2022); pass 1500 for
+  Davidson et al.'s count.
+- `ReplaySignificanceResult.trajectory` is now `observed`, the score's own
+  result. It also records `alternative` and `use_absolute`.
+- New `weighted_correlation(env, posterior, times)`: the posterior-weighted
+  correlation between time and position (Wu & Foster 2014). It is signed:
+  positive for sweeps toward larger track positions. With
+  `row_normalization="per_time_bin"` (default) every time bin weighs the same.
+  With `"none"`, rows keep their mass, for one template's share of a
+  `decode_jointly` posterior.
+- `LinearFitResult` and `IsotonicFitResult` gain `score` (their R²), so every
+  trajectory score reads the same way.
+
+### Decode several sets of rate maps in one posterior
+
+`decode_jointly(env, spike_counts, {"outbound": ..., "inbound": ...}, dt=dt)`
+decodes several sets of rate maps together, such as each running direction or
+each of two tracks. The posterior sums to 1 over the bins of every set, so
+`JointDecodingResult.template_probability` gives, for each time bin, the
+probability that each set generated the spikes. `conditional[name]` is the
+usual posterior within one set, and `joint(name)` its share of the joint
+posterior.
+
+- This is the decode behind Ambrose et al. (2016) and Mallory et al. (2025),
+  who concatenate the two running-direction maps, and Tirole et al. (2022),
+  who normalize across two tracks.
+- By default the prior is uniform over space across all sets, so each set's
+  prior is proportional to the space its environment covers: equal for two
+  directions on one track, and proportional to length for two tracks.
+  Separate environments must then have units, the same units and the same
+  measure (length or area); otherwise pass `prior=` weights on one scale.
+- Each set's bins without training support, or with a NaN rate, are excluded
+  from that set only. Their prior weight moves to the set's other bins, so a
+  direction with less training coverage does not start with less prior
+  probability.
+
+### Replay and reactivation have their own subpackages
+
+Replay scoring and reactivation are now separate from decoding:
+
+- `neurospatial.replay` holds the replay trajectory scores, the replay test
+  and the shuffles used to build their nulls.
+- `neurospatial.reactivation` holds cell assemblies and pairwise
+  reactivation.
+
+`neurospatial.decoding` keeps decoding, position estimates and decoding
+accuracy. The move itself changes no behavior; the entries above describe
+changes to the scores and shuffles.
+
+**Breaking changes**
+
+| Old import | New import |
+| --- | --- |
+| `neurospatial.decoding.detect_trajectory_radon`, `fit_linear_trajectory`, `fit_isotonic_trajectory` and their results (`RadonDetectionResult`, `LinearFitResult`, `IsotonicFitResult`) | `neurospatial.replay` |
+| `neurospatial.decoding.replay_trajectory_significance` | `neurospatial.replay.replay_significance`, returning `ReplaySignificanceResult` (see above) |
+| `neurospatial.stats.shuffle_cell_identity`, `shuffle_place_fields_circular`, `shuffle_place_fields_circular_2d`, `shuffle_posterior_circular`, `shuffle_posterior_weighted_circular` | `neurospatial.replay` |
+| `neurospatial.decoding.detect_assemblies`, `assembly_activation`, `reactivation_strength`, `marchenko_pastur_threshold`, `pairwise_correlations`, `explained_variance_reactivation` and their results (`AssemblyPattern`, `AssemblyDetectionResult`, `ExplainedVarianceResult`) | `neurospatial.reactivation` |
+
+The modules moved too: `neurospatial.decoding.trajectory` is now
+`neurospatial.replay.trajectory`, and `neurospatial.decoding.assemblies` is now
+`neurospatial.reactivation.assemblies`.
 
 ### Simulations produce what they say and refuse what they cannot simulate
 

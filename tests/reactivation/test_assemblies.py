@@ -1,4 +1,4 @@
-"""Tests for neurospatial.decoding.assemblies module.
+"""Tests for neurospatial.reactivation.assemblies module.
 
 Tests cover cell assembly detection, activation computation, and reactivation analysis.
 """
@@ -11,16 +11,16 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial.decoding.assemblies import (
+from neurospatial.reactivation.assemblies import (
     AssemblyDetectionResult,
     AssemblyPattern,
     ExplainedVarianceResult,
     assembly_activation,
+    assembly_reactivation,
     detect_assemblies,
     explained_variance_reactivation,
     marchenko_pastur_threshold,
     pairwise_correlations,
-    reactivation_strength,
 )
 
 # =============================================================================
@@ -296,7 +296,7 @@ class TestDetectAssemblies:
         assert len(result.patterns) == 0
         assert result.activations.shape == (random_spike_counts.shape[0], 0)
 
-    def test_z_threshold_affects_membership(self) -> None:
+    def test_member_threshold_affects_membership(self) -> None:
         """Weak participants are members at a low cutoff only; core cells at both."""
         rng = np.random.default_rng(1)
         counts = rng.poisson(1.0, (4000, 60)).astype(np.float64)
@@ -308,8 +308,8 @@ class TestDetectAssemblies:
             if k == 0:  # cells 30 and 31 join assembly 0 weakly
                 counts[np.ix_(events, [30, 31])] += rng.poisson(1.0, (200, 2))
 
-        def members(z_threshold: float) -> list[list[int]]:
-            result = detect_assemblies(counts, z_threshold=z_threshold, rng=0)
+        def members(member_threshold: float) -> list[list[int]]:
+            result = detect_assemblies(counts, member_threshold=member_threshold, rng=0)
             return sorted(p.member_indices.tolist() for p in result.patterns)
 
         core = [[0, 1, 2, 3], [10, 11, 12, 13], [20, 21, 22, 23]]
@@ -679,12 +679,12 @@ class TestPairwiseCorrelations:
 
 
 # =============================================================================
-# Tests for reactivation_strength
+# Tests for assembly_reactivation
 # =============================================================================
 
 
-class TestReactivationStrength:
-    """Mean activation strength in the match period over the template period."""
+class TestAssemblyReactivationBasics:
+    """Mean activation strength after the task minus before it."""
 
     @staticmethod
     def _period(seed: int, n_time: int, drive: float) -> np.ndarray:
@@ -700,65 +700,68 @@ class TestReactivationStrength:
             np.r_[np.full(5, 1 / np.sqrt(5)), np.zeros(15)], np.arange(5), 0.2
         )
 
-    def test_identical_periods_give_one(
+    def test_identical_periods_give_zero_difference(
         self, spike_counts_with_assemblies: np.ndarray
     ) -> None:
         result = detect_assemblies(spike_counts_with_assemblies, rng=42)
         for pattern in result.patterns:
-            strength = reactivation_strength(
+            comparison = assembly_reactivation(
                 spike_counts_with_assemblies, spike_counts_with_assemblies, pattern
             )
-            assert_allclose(strength, 1.0, rtol=1e-12)
+            assert comparison.mean_activation_difference == 0.0
+            # About 1% of a period's bins exceed its own 99th percentile.
+            assert comparison.fraction_above_control_threshold <= 0.01
 
-    def test_equals_ratio_of_mean_assembly_activation(self, pattern) -> None:
-        template, match = self._period(0, 2000, 0.5), self._period(1, 1500, 0.3)
+    def test_equals_difference_of_mean_assembly_activation(self, pattern) -> None:
+        pre, post = self._period(0, 2000, 0.0), self._period(1, 1500, 0.3)
         expected = (
-            assembly_activation(match, pattern).mean()
-            / assembly_activation(template, pattern).mean()
+            assembly_activation(post, pattern).mean()
+            - assembly_activation(pre, pattern).mean()
         )
         assert_allclose(
-            reactivation_strength(template, match, pattern), expected, rtol=1e-12
+            assembly_reactivation(pre, post, pattern).mean_activation_difference,
+            expected,
+            rtol=1e-12,
         )
 
     def test_coactivation_after_but_not_before(self, pattern) -> None:
-        """Members firing together only after the task: strength pre ~0, post ~1."""
-        run = self._period(0, 3000, 0.5)
-        pre = self._period(1, 3000, 0.0)
-        post = self._period(2, 3000, 0.5)
-        strength_pre = reactivation_strength(run, pre, pattern)
-        strength_post = reactivation_strength(run, post, pattern)
-        mean_run = assembly_activation(run, pattern).mean()
-        noise_floor = np.sqrt(2 / 3000) / mean_run
-        assert abs(strength_pre) < 4 * noise_floor
-        assert abs(strength_post - 1.0) < 0.1
-
-    def test_scaling_counts_leaves_strength_unchanged(
-        self, template_counts: np.ndarray, assembly_pattern: AssemblyPattern
-    ) -> None:
-        """Each period is z-scored on its own, so a gain change is not reactivation."""
-        strength = reactivation_strength(
-            template_counts, 3.0 * template_counts, assembly_pattern
-        )
-        assert_allclose(strength, 1.0, rtol=1e-12)
-
-    def test_no_template_coactivation_is_nan(self, pattern) -> None:
-        anti = self._period(4, 2000, 0.0)
-        anti[:, 1] = anti[:, 0].max() - anti[:, 0]  # members 0 and 1 in opposition
-        with pytest.warns(UserWarning, match="ratio is undefined"):
-            strength = reactivation_strength(anti, self._period(5, 2000, 0.5), pattern)
-        assert np.isnan(strength)
+        """Members co-firing after the task only: positive difference."""
+        pre, post = self._period(1, 3000, 0.0), self._period(2, 3000, 0.5)
+        result = assembly_reactivation(pre, post, pattern)
+        noise = np.sqrt(2 / 3000)
+        assert abs(result.control_mean_activation) < 4 * noise
+        assert result.mean_activation_difference > 10 * noise
+        assert result.fraction_above_control_threshold > 0.1
 
     def test_neuron_constant_in_one_period_is_excluded(self, pattern) -> None:
-        template, match = self._period(0, 2000, 0.5), self._period(1, 2000, 0.5)
-        template[:, 3] = 0.0  # member 3 silent in the template period
+        pre, post = self._period(0, 2000, 0.5), self._period(1, 2000, 0.5)
+        pre[:, 3] = 0.0  # member 3 silent before the task
         with pytest.warns(
-            UserWarning, match=r"units \[3\] .* template_counts.* excluded"
+            UserWarning, match=r"units \[3\] .* control_counts.* excluded"
         ):
-            strength = reactivation_strength(template, match, pattern)
+            result = assembly_reactivation(pre, post, pattern)
         keep = np.arange(20) != 3
         reduced = AssemblyPattern(pattern.weights[keep], np.arange(4), 0.2)
-        expected = reactivation_strength(template[:, keep], match[:, keep], reduced)
-        assert_allclose(strength, expected, rtol=1e-12)
+        expected = assembly_reactivation(pre[:, keep], post[:, keep], reduced)
+        assert_allclose(
+            list(result.summary().values()),
+            list(expected.summary().values()),
+            rtol=1e-12,
+        )
+
+    def test_mismatched_neuron_count_raises(self, pattern) -> None:
+        with pytest.raises(ValueError, match="All must match"):
+            assembly_reactivation(
+                self._period(0, 100, 0.1), self._period(1, 100, 0.1)[:, :19], pattern
+            )
+
+    def test_summary_is_flat_scalars(self, pattern) -> None:
+        result = assembly_reactivation(
+            self._period(0, 500, 0.1), self._period(1, 500, 0.4), pattern
+        )
+        summary = result.summary()
+        assert next(iter(summary)) == "mean_activation_difference"
+        assert all(np.isscalar(value) for value in summary.values())
 
 
 # =============================================================================
@@ -867,7 +870,9 @@ class TestExplainedVarianceReactivation:
         corr1 = np.array([0.1, np.nan, np.nan, np.nan, np.nan])
         corr2 = np.array([0.1, np.nan, np.nan, np.nan, np.nan])
 
-        with pytest.warns(UserWarning, match="valid pairs after removing NaN"):
+        with pytest.warns(
+            UserWarning, match="valid pairs after pair selection and removing NaN"
+        ):
             result = explained_variance_reactivation(corr1, corr2)
 
         assert np.isnan(result.explained_variance)
@@ -1188,8 +1193,8 @@ class TestExplainedVarianceControlAndREV:
         assert np.isnan(result.reversed_explained_variance)
 
 
-class TestReactivationStrengthNoCoactivation:
-    """A match period without co-activation reports about 0, not a ratio near 1."""
+class TestAssemblyReactivationNoCoactivation:
+    """A match period without co-activation has a mean activation near 0."""
 
     def test_match_without_shared_drive_is_near_zero(
         self,
@@ -1202,13 +1207,14 @@ class TestReactivationStrengthNoCoactivation:
         match_counts = np.broadcast_to(baseline, template_counts.shape).copy()
         match_counts += 0.05 * rng.standard_normal(template_counts.shape)
 
-        strength = reactivation_strength(
-            template_counts, match_counts, assembly_pattern
-        )
+        result = assembly_reactivation(template_counts, match_counts, assembly_pattern)
 
-        mean_template = assembly_activation(template_counts, assembly_pattern).mean()
-        noise_floor = np.sqrt(2 / template_counts.shape[0]) / mean_template
-        assert abs(strength) < 4 * noise_floor
+        noise_floor = np.sqrt(2 / template_counts.shape[0])
+        assert abs(result.match_mean_activation) < 4 * noise_floor
+        assert_allclose(
+            result.control_mean_activation,
+            assembly_activation(template_counts, assembly_pattern).mean(),
+        )
 
 
 class TestDetectAssembliesShortRecording:
@@ -1315,10 +1321,10 @@ class TestCountsMustBeObserved:
             "detect_assemblies": lambda c: detect_assemblies(c, rng=0),
             "assembly_activation": lambda c: assembly_activation(c, pattern),
             "pairwise_correlations": pairwise_correlations,
-            "reactivation_strength (template)": lambda c: reactivation_strength(
+            "assembly_reactivation (control)": lambda c: assembly_reactivation(
                 c, np.nan_to_num(c), pattern
             ),
-            "reactivation_strength (match)": lambda c: reactivation_strength(
+            "assembly_reactivation (match)": lambda c: assembly_reactivation(
                 np.nan_to_num(c), c, pattern
             ),
         }
@@ -1329,8 +1335,8 @@ class TestCountsMustBeObserved:
             "detect_assemblies",
             "assembly_activation",
             "pairwise_correlations",
-            "reactivation_strength (template)",
-            "reactivation_strength (match)",
+            "assembly_reactivation (control)",
+            "assembly_reactivation (match)",
         ],
     )
     def test_nan_bins_raise_with_columns_and_bin_count(

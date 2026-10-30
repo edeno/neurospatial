@@ -620,10 +620,12 @@ src/neurospatial/
 ├── environment/    # Environments, trajectories, fields, queries, and plots
 ├── layout/         # Grid, hexagonal, graph, polygon, mask, and mesh layouts
 ├── encoding/       # Place, grid, border, directional, view, and egocentric coding
-├── decoding/       # Bayesian decoding, summaries, trajectories, and assemblies
+├── decoding/       # Bayesian decoding, posterior summaries, and decoding accuracy
+├── replay/         # Replay trajectory scores, replay shuffles, and significance tests
+├── reactivation/   # Cell assemblies and pairwise reactivation
 ├── behavior/       # Segmentation, navigation, decisions, rewards, and VTE
 ├── events/         # Peri-event alignment, detection, intervals, and regressors
-├── stats/          # Circular statistics, shuffles, and surrogate data
+├── stats/          # Circular statistics, temporal shuffles, p-values, and surrogates
 ├── simulation/     # Mazes, trajectories, neural models, spikes, and validation
 ├── io/             # Environment files plus NWB and pynapple interoperability
 ├── animation/      # Field animation: viewers, overlays, and video/HTML export

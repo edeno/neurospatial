@@ -24,7 +24,7 @@ from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._sampling import sample_at_times
 from neurospatial.animation._scene_rendering import SceneRenderer
 from neurospatial.animation.overlays import VideoData
-from neurospatial.environment._queries import track_extents
+from neurospatial.environment import _track_extents
 
 
 @pytest.fixture
@@ -622,7 +622,7 @@ def test_track_mesh_rows_follow_the_track_and_leave_segment_spacing_empty():
         track, AnimationField(values, [0.0, 0.1, 0.2]), window_seconds=1.0
     )
     window = PreparedScene(scene).track_window(scene.fields["field"], 0.15)
-    starts, stops = track_extents(track)
+    starts, stops = _track_extents(track)
     # Four bins and the spacing between the two segments, bottom to top.
     np.testing.assert_allclose(window.track_edges, [0, 1, 2, 3.5, 4.5, 5.5])
     np.testing.assert_allclose(window.time_edges, [0.0, 0.1, 0.2])

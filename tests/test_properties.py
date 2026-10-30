@@ -2043,7 +2043,7 @@ class TestShufflePreservationProperties:
         build a deterministic ``(spike_counts, encoding_models)`` pair
         from the seed and verify the yielded tuple's invariants.
         """
-        from neurospatial.stats.shuffle import shuffle_cell_identity
+        from neurospatial.replay.nulls import shuffle_cell_identity
 
         rng = np.random.default_rng(seed)
         spike_counts = rng.integers(0, 11, size=(n_time, n_neurons), dtype=np.int64)
@@ -2086,7 +2086,7 @@ class TestShufflePreservationProperties:
         Shape, dtype, and the per-neuron sum (= integrated firing rate)
         must be exactly preserved.
         """
-        from neurospatial.stats.shuffle import shuffle_place_fields_circular
+        from neurospatial.replay.nulls import shuffle_place_fields_circular
 
         per_neuron_totals = encoding_models.sum(axis=1)
         for shuffled in shuffle_place_fields_circular(
@@ -2126,7 +2126,7 @@ class TestShufflePreservationProperties:
         original total (modulo float roundoff) and the shape/dtype must
         be preserved.
         """
-        from neurospatial.stats.shuffle import shuffle_posterior_circular
+        from neurospatial.replay.nulls import shuffle_posterior_circular
 
         # Normalize so rows sum to 1 (the precondition for "posterior").
         posterior = raw_posterior / raw_posterior.sum(axis=1, keepdims=True)

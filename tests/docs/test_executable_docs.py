@@ -19,7 +19,9 @@ RUN_ALL = {
     "README.md": False,
     "docs/getting-started/quickstart.md": False,
     "docs/user-guide/population-analysis.md": False,
+    "docs/user-guide/reactivation-methods.md": False,
     "docs/user-guide/regions.md": False,
+    "docs/user-guide/replay-methods.md": False,
 }
 OPT_IN = (
     "docs/getting-started/core-concepts.md",

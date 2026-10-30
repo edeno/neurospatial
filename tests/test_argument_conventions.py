@@ -119,6 +119,8 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     ("translate_3d", "tx"),
     ("translate_3d", "ty"),
     ("translate_3d", "tz"),
+    # The control period of a reactivation comparison (rest before the task).
+    ("compare_reactivation_methods", "control_epochs"),
     # Covariance of the fitted coefficients, for the Wald test.
     ("circular_basis_metrics", "cov_matrix"),
     # Observations and fits drawn over the tuning curve or scatter.
@@ -191,14 +193,15 @@ REQUIRED_DATA_NAMES = {
     *("times", "t", "positions", "position", "points"),
     *("position_bins", "position_bins1", "position_bins2"),
     *("headings", "heading", "nose", "tail", "speeds", "lfp", "signals"),
-    *("spike_times", "spike_counts", "template_counts", "match_counts"),
+    *("spike_times", "spike_counts", "control_counts", "match_counts"),
     *("targets", "ego_points", "object_positions", "cue_positions"),
     *("goal", "goal_bins", "start", "subgoals", "regions", "region_names"),
     *("angles", "angles1", "angles2", "angle", "linear_values", "phases"),
     # Events, intervals, trials and labels.
     *("event_times", "events", "reference_events", "start_events", "stop_events"),
     *("event_types", "entry_time", "reward_times", "lap_times", "crossing_times"),
-    *("intervals", "epochs", "windows", "trials", "trial_labels"),
+    *("interval", "intervals", "epochs", "windows", "trials", "trial_labels"),
+    *("template_epochs", "match_epochs"),
     *("laps", "runs", "visits", "labels", "direction_labels", "voronoi_labels"),
     # The window of each event, by position in the canonical events order
     # f(spike_times, event_times, window, *, bin_size).
@@ -211,11 +214,15 @@ REQUIRED_DATA_NAMES = {
     *("occupancy", "joint_counts", "autocorr_2d", "rate_map"),
     *("field_bins", "field_bins_1", "field_bins_2", "field_bins_i", "field_bins_j"),
     *("encoding_models", "models", "pattern", "posterior", "log_likelihood"),
+    *("patterns", "reference_patterns", "activation"),
+    *("explained_variance", "reversed_explained_variance"),
+    *("templates", "reference_templates"),
     *("source_probs", "decoded_positions", "actual_positions", "actual_bins"),
     *("template_correlations", "match_correlations", "rates"),
+    *("template_bias", "event_bias"),
     *("observed", "null_scores", "beta_sin", "beta_cos", "cov_matrix"),
     *("vte_index", "z_head_sweep", "z_speed_inv", "head_sweeps"),
-    *("result", "expected_bins"),
+    *("result", "expected_bins", "table", "null_table"),
     # Calibration measurements and the components of a transform.
     *("landmarks_px", "landmarks_cm", "p1_px", "p2_px", "known_length_cm"),
     *("data_px", "data_cm", "src", "dst", "frame_size_px", "frame_height_px"),
@@ -232,6 +239,8 @@ REQUIRED_DATA_ARGUMENTS = {
     ("field_density_map", "n_bins"),
     ("marchenko_pastur_threshold", "n_neurons"),
     ("marchenko_pastur_threshold", "n_time_bins"),
+    # The session's mean posterior that each shuffled peak is drawn from.
+    ("shuffle_posterior_weighted_circular", "peak_weights"),
 }
 
 

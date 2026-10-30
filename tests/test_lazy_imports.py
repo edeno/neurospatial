@@ -20,6 +20,8 @@ import neurospatial as ns
 _EXPECTED_SUBMODULES = (
     "encoding",
     "decoding",
+    "replay",
+    "reactivation",
     "behavior",
     "events",
     "ops",

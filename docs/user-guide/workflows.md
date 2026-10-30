@@ -1130,13 +1130,13 @@ import numpy as np
 from shapely.geometry import box
 
 from neurospatial import Environment, compute_spatial_rates, decode_position
-from neurospatial.decoding import (
+from neurospatial.decoding import bin_spikes_in_time
+from neurospatial.reactivation import (
     assembly_activation,
-    bin_spikes_in_time,
+    assembly_reactivation,
     detect_assemblies,
     explained_variance_reactivation,
     pairwise_correlations,
-    reactivation_strength,
 )
 from neurospatial.simulation import (
     PlaceCellModel,
@@ -1217,15 +1217,18 @@ for pattern in assemblies.patterns:
     print("Thresholded core member IDs:", pattern.member_unit_ids.tolist())
     activation = assembly_activation(counts["match"], pattern, unit_ids=selected_ids)
     assert len(activation) == len(centers_by_period["match"])
-    strength = reactivation_strength(
-        counts["template"],
+    comparison = assembly_reactivation(
+        counts["control"],
         counts["match"],
         pattern,
-        template_unit_ids=selected_ids,
+        control_unit_ids=selected_ids,
         match_unit_ids=selected_ids,
     )
     print("Mean activation strength in the match period:", activation.mean())
-    print("Match-over-template mean activation strength (effect size):", strength)
+    print(
+        "Match minus control mean activation strength (effect size):",
+        comparison.mean_activation_difference,
+    )
 correlations = {
     period: pairwise_correlations(matrix) for period, matrix in counts.items()
 }
@@ -1238,9 +1241,10 @@ reactivation = explained_variance_reactivation(
     control_unit_ids=selected_ids,
 )
 print(
-    "EV, controlled REV (effect sizes):",
+    "EV, controlled REV (effect sizes), pair-level p-value:",
     reactivation.explained_variance,
     reactivation.reversed_explained_variance,
+    reactivation.p_value,
 )
 assert np.isfinite(reactivation.explained_variance) and np.isfinite(
     reactivation.reversed_explained_variance
@@ -1251,15 +1255,15 @@ assert np.isfinite(reactivation.explained_variance) and np.isfinite(
 with calibrated p-values. If no dimension passes, the result has no patterns
 and a warning says so. Pattern `member_indices` are positions in the
 selected unit order; `member_unit_ids` gives the original labels, and passing
-`unit_ids=` to `assembly_activation`, or `template_unit_ids=` and
-`match_unit_ids=` to `reactivation_strength`, matches the count columns to the
+`unit_ids=` to `assembly_activation`, or `control_unit_ids=` and
+`match_unit_ids=` to `assembly_reactivation`, matches the count columns to the
 pattern's weights by label. The same per-period labels given to
 `explained_variance_reactivation` match each pair correlation to the same two
 cells in every period. A pattern can have no core members at the default absolute-weight
 z-score cutoff, even when its dimension passes the reference: with `k`
 equally weighted members among `n` units, the members' z-score is
 sqrt((n - k) / k), only 1.4 for 3 members of the 9 units here. Pass a lower
-`z_threshold=` for small recordings. PCA also mixes assemblies of similar
+`member_threshold=` for small recordings. PCA also mixes assemblies of similar
 strength within one pattern; use the default `method="ica"` to separate
 them.
 
@@ -1267,19 +1271,21 @@ them.
 activation strength R(t), the pattern-weighted sum of products of pairs of
 z-scored counts: about 0 when the cells fire independently, large when cells
 with large weights fire together. A single cell's burst alone does not raise
-it, and its values are not tail probabilities. `reactivation_strength`
-divides the pattern's mean activation strength in the match period by its
-mean in the template period, each period z-scored on its own: about 0 for
-independent firing in the match period, 1 for the template's level of
-co-firing. It is an effect size; compare it with a control period or a
-shuffle null rather than with 1.
+it, and its values are not tail probabilities. `assembly_reactivation`
+subtracts the pattern's mean activation strength in the control period from
+its mean in the match period, each period z-scored on its own (the
+reactivation strength of van de Ven et al. 2016), and reports the share of
+match bins above the control's 99th percentile (Peyrache et al., 2010). Both
+are effect sizes; compare them across patterns or sessions, or with a shuffle
+null.
 
-Controlled EV is `r(template, match | control)^2`, while controlled REV
-is `r(template, control | match)^2`, swapping the pre- and post-behavior
-periods. EV > REV is an effect-size comparison,
-not calibrated reactivation significance. Report control choice, preprocessing,
-unit selection and a separately justified null when a significance claim is
-needed.
+Controlled EV is `r(template, match | control)^2` (Kudrimoti et al., 1999),
+while controlled REV is `r(template, control | match)^2`, swapping the pre-
+and post-behavior periods (Pennartz et al., 2004). EV > REV is an effect-size
+comparison, not calibrated reactivation significance, and `p_value` treats
+pairs that share cells as independent, so it overstates the evidence. Report
+control choice, preprocessing, unit selection and a separately justified null
+when a significance claim is needed.
 
 ## Workflow 7: One Event Cohort Across a Gapped Recording
 

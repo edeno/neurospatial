@@ -35,6 +35,10 @@ bin_spikes_in_time : Bin spike times into a count matrix on a regular time grid
 decode_position : Decode precomputed spike counts with encoding models
     Decode position from spike counts using encoding models (place fields).
 
+decode_jointly : Decode several sets of rate maps in one posterior
+    For example both running directions, or two tracks; returns a
+    :class:`JointDecodingResult` with the probability of each set.
+
 log_poisson_likelihood : Compute log-likelihood under Poisson model
     Numerically stable log-likelihood computation.
 
@@ -73,53 +77,9 @@ decoding_correlation : Weighted correlation
 confusion_matrix : Confusion matrix between bins
     Spatial confusion analysis.
 
-Trajectory Analysis
--------------------
-fit_isotonic_trajectory : Monotonic trajectory fitting
-    Isotonic regression on posterior sequence.
-
-fit_linear_trajectory : Linear trajectory fitting
-    Linear regression with optional Monte Carlo uncertainty.
-
-detect_trajectory_radon : Replay line fit (Davidson et al. 2009)
-    The constant-speed line holding the most posterior mass within a band.
-
-replay_trajectory_significance : Replay line significance
-    Test the replay score against column-cycle, unit-identity and
-    pseudo-event shuffles.
-
-Cell Assembly Detection
------------------------
-detect_assemblies : Detect cell assemblies from population spike counts
-    ICA/PCA/NMF-based detection of coordinated neural ensembles.
-
-assembly_activation : Compute activation strength of an assembly
-    Activation strength R(t): co-firing of the pattern's neurons per time bin.
-
-pairwise_correlations : Compute pairwise correlations between neurons
-    Extract upper triangle of correlation matrix.
-
-explained_variance_reactivation : Explained variance reactivation analysis
-    Measure how template correlations predict match correlations.
-
-reactivation_strength : Compare assembly activation between periods
-    Mean activation strength in a match period over a template period.
-
-marchenko_pastur_threshold : Random matrix theory significance threshold
-    Upper bound of eigenvalue distribution for random correlations.
-
-AssemblyPattern : Single assembly pattern with weights and members
-    Frozen dataclass with neuron weights and member indices.
-
-AssemblyDetectionResult : Results from assembly detection
-    Contains patterns, activations, eigenvalues, and metadata.
-
-ExplainedVarianceResult : Results from explained variance analysis
-    Contains EV, reversed EV, partial correlation, and n_pairs.
-
-Shuffle controls and Poisson surrogates live under :mod:`neurospatial.stats`
-(``neurospatial.stats.shuffle`` and ``neurospatial.stats.surrogates``); import
-them from there.
+Replay scores and their shuffles live in :mod:`neurospatial.replay`, cell
+assemblies and reactivation in :mod:`neurospatial.reactivation`, and general
+shuffle controls and Poisson surrogates in :mod:`neurospatial.stats`.
 
 Examples
 --------
@@ -171,10 +131,9 @@ neurospatial.Environment : Spatial discretization
 Notes
 -----
 Functions that need the environment's bins take it first, for example
-``decode_session(env, spike_times, times, positions)``, ``map_bin(env,
-posterior)`` and ``fit_linear_trajectory(env, posterior, ...)``. Functions that
-do not, such as :func:`posterior_entropy`, :func:`normalize_to_posterior` and
-:func:`detect_assemblies`, take no environment. :class:`BayesianDecoder` is an immutable estimator: ``fit`` returns a
+``decode_session(env, spike_times, times, positions)`` and ``map_bin(env,
+posterior)``. Functions that do not, such as :func:`posterior_entropy` and
+:func:`normalize_to_posterior`, take no environment. :class:`BayesianDecoder` is an immutable estimator: ``fit`` returns a
 new fitted decoder. Result containers are frozen and their arrays read-only.
 
 A posterior holds a probability mass per bin. The MAP bin and credible
@@ -183,19 +142,10 @@ not win only by holding more space. Likelihoods are combined in log space for
 numerical stability.
 """
 
+from neurospatial.decoding._result import _ROW_SUM_TOLERANCE as _ROW_SUM_TOLERANCE
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
 from neurospatial.decoding._time_bins import bin_spikes_in_time
-from neurospatial.decoding.assemblies import (
-    AssemblyDetectionResult,
-    AssemblyPattern,
-    ExplainedVarianceResult,
-    assembly_activation,
-    detect_assemblies,
-    explained_variance_reactivation,
-    marchenko_pastur_threshold,
-    pairwise_correlations,
-    reactivation_strength,
-)
+from neurospatial.decoding.estimates import _density_mode as _density_mode
 from neurospatial.decoding.estimates import (
     credible_region,
     map_bin,
@@ -204,6 +154,7 @@ from neurospatial.decoding.estimates import (
     posterior_entropy,
 )
 from neurospatial.decoding.estimator import BayesianDecoder
+from neurospatial.decoding.joint import JointDecodingResult, decode_jointly
 from neurospatial.decoding.likelihood import log_poisson_likelihood
 from neurospatial.decoding.metrics import (
     confusion_matrix,
@@ -217,16 +168,6 @@ from neurospatial.decoding.posterior import (
     normalize_to_posterior,
 )
 from neurospatial.decoding.session import decode_session, decode_session_summary
-from neurospatial.decoding.trajectory import (
-    IsotonicFitResult,
-    LinearFitResult,
-    RadonDetectionResult,
-    ReplaySignificanceResult,
-    detect_trajectory_radon,
-    fit_isotonic_trajectory,
-    fit_linear_trajectory,
-    replay_trajectory_significance,
-)
 
 # =============================================================================
 # Public API exports
@@ -238,19 +179,11 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Immutable fit/predict estimator
     "BayesianDecoder",
     # Result containers
-    "AssemblyDetectionResult",
-    "AssemblyPattern",
     "DecodingResult",
     "DecodingSummary",
-    "ExplainedVarianceResult",
-    "IsotonicFitResult",
-    "LinearFitResult",
-    "RadonDetectionResult",
-    "ReplaySignificanceResult",
+    "JointDecodingResult",
     # Spike-time binning
     "bin_spikes_in_time",
-    # Cell assembly detection
-    "assembly_activation",
     # Metrics
     "confusion_matrix",
     "credible_region",
@@ -260,25 +193,16 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Core decoding
     "decode_position",
     "decode_position_summary",
+    "decode_jointly",
     "decoding_correlation",
     "decoding_error",
-    "detect_assemblies",
-    # Trajectory analysis
-    "detect_trajectory_radon",
-    "explained_variance_reactivation",
-    "fit_isotonic_trajectory",
-    "fit_linear_trajectory",
     # Likelihood
     "log_poisson_likelihood",
     # Estimates
     "map_bin",
     "posterior_entropy",
     "map_position",
-    "marchenko_pastur_threshold",
     "mean_position",
     "median_decoding_error",
     "normalize_to_posterior",
-    "pairwise_correlations",
-    "reactivation_strength",
-    "replay_trajectory_significance",
 ]

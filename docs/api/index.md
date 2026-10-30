@@ -142,17 +142,14 @@ Bayesian decoding of position from spike counts.
 - `decode_position()`: Single-step or sequential Bayesian decoder
 - `decode_session()`: End-to-end decode of a full session (encode +
   decode) returning a `DecodingResult`
+- `decode_jointly()`: Decode several sets of rate maps (running directions,
+  tracks) in one posterior; returns a `JointDecodingResult` with each set's
+  probability per time bin
 - `decode_position_summary()` / `decode_session_summary()`:
   Memory-safe, streaming decoders that return per-time summaries
   (MAP / mean / entropy / peak) without materializing the full
   `(n_time, n_bins)` posterior — for long sessions / thousands of units
 - `decoding_error()`, `median_decoding_error()`: Accuracy metrics
-- `fit_isotonic_trajectory()`, `fit_linear_trajectory()`,
-  `detect_trajectory_radon()`: Fit replay trajectories along a track; slopes
-  are in environment units per second
-- `replay_trajectory_significance()`: Davidson et al. (2009) replay test,
-  the replay score against column-cycle, unit-identity and pseudo-event
-  shuffles
 
 **Key Classes:**
 
@@ -160,7 +157,125 @@ Bayesian decoding of position from spike counts.
 - `DecodingSummary`: Per-time decode summary (MAP / mean / entropy /
   peak) from the memory-safe summary decoders
 
-### [neurospatial.decoding.assemblies](neurospatial/decoding/assemblies.md)
+### [neurospatial.replay](neurospatial/replay/index.md)
+
+Score decoded candidate replay events and test them against shuffles.
+Detecting the candidate events (ripples, population bursts) is not included.
+
+- `fit_isotonic_trajectory()`, `fit_linear_trajectory()`,
+  `detect_trajectory_radon()`: Fit replay trajectories along a track
+  (Michon et al. 2019; Karlsson & Frank 2009 and Wu et al. 2017; Davidson
+  et al. 2009); slopes are in environment units per second
+- `fit_circular_sequence()`: Fit the decoded path around a circular track,
+  through the start of its linear position (Wikenheiser & Redish 2013)
+- `weighted_correlation()`: Posterior-weighted correlation of time and
+  position (Wu & Foster 2014)
+- `regression_line_score()`: Posterior mass within a band of the
+  least-squares line through each time bin's most likely position (Harvey
+  et al. 2023; Soula et al. 2023)
+- `trajectory_metrics()`, `template_fractions()`: Per-event metrics that
+  criteria-based replay detection thresholds (jumps, spread, range, path
+  length, dispersion, coverage, empty time bins) and the directional
+  fraction of a joint decode
+- `replay_segments()`: Cut an event into segments in which the decoded
+  position moves smoothly, by the jump, gap, merge and duration rules of
+  Pfeiffer & Foster, Igata et al., Carey et al., Widloski & Foster and
+  Mallory et al.; keep the longest or all
+- `replay_significance()`: Test any replay score against shuffles:
+  column-cycle, unit-identity and pseudo-event (the default), spike-train
+  and place-field circular shifts, time-bin permutation (the "time swap"),
+  spike times redrawn uniformly in the event (`"spike_time_uniform"`,
+  Stella et al. 2019) and the weighted column cycle
+  (`"column_cycle_weighted"`, Farooq et al. 2019; options through
+  `null_options=`); significant when every null run rejects the event
+- `rank_order_correlation()`, `rank_order_significance()`: Spearman
+  correlation of field order and firing order in an event, with a
+  cell-order permutation test; `multi_field_cells="exclude"` leaves out
+  cells with several place fields; needs no decoding
+- `pairwise_order_score()`, `pairwise_order_significance()`: Firing order
+  of every pair of spikes less than 80 ms apart against the cells'
+  place-field order, summed (Gupta et al. 2010), with spike-time and
+  cell-identity shuffles; cells with several fields take their best field;
+  `unit_groups=` compares only cells on different tetrodes or shanks;
+  needs no decoding
+- `detect_replay()`, `compare_replay_methods()`: Apply published replay
+  methods (`neurospatial.replay.methods`: Davidson 2009, Karlsson & Frank
+  2009, Pfeiffer & Foster 2013 and 2015, Wikenheiser & Redish 2013,
+  Ólafsdóttir 2015, 2016 and 2017, Silva 2015, Ambrose 2016, Grosmark
+  2016, Jadhav 2016, Tang 2017, Wu 2017, Yamamoto & Tonegawa 2017,
+  Maboudi 2018, Carey 2019, Farooq 2019, Michon 2019, Muessig 2019, Shin 2019, Igata 2021,
+  Bush 2022, Tirole 2022, Berners-Lee 2022, Widloski & Foster 2022,
+  Harvey 2023 (weighted correlation and regression line), Liu 2023,
+  Soula 2023, Mallory 2025, Chang 2025, Widloski & Foster 2025) to decoded
+  events, including joint decodes over running
+  directions, and compare their verdicts; `ReplaySegmentation` sets how
+  criteria-based methods find the trajectory segment
+- `null_events()`, `simulated_null_events()`, `decode_intervals()`: Events
+  without replay (cell-identity, spike-shift, uniform-spike-time and
+  rate-matched Poisson copies of real events,
+  simulated random and stationary events) for false-positive rates
+- `event_properties()`, `detection_rates()`, `method_agreement()`,
+  `score_agreement()`: Calibrate methods on a comparison table: rates by
+  event property with confidence intervals (false positives on null data),
+  and agreement between methods' verdicts and scores
+- `matched_alpha()`, `apply_alpha()`: Each method's α that holds its
+  false-positive rate on null data to a target (Takigawa et al. 2024), and
+  a comparison table's verdicts at those α
+- `dataset_values()`, `dataset_test()`, `CriterionGrid`: Data-set-level
+  replay tests: per-event values of the real data set and of null data
+  sets measured by one method, and a Monte Carlo test of the share of
+  events passing a grid of thresholds, such as Silva et al.'s (2015)
+  significance matrix, with `DatasetTestResult.plot()`;
+  `distribution_test()` compares real and pooled null events' values (KS,
+  rank-sum, Levene, side stated in terms of the values);
+  `shuffle_events()` gives shuffled data sets as events;
+  `relative_rank_template()` and `template_correlation_test()` run Liu et
+  al.'s (2019) template test; `neurospatial.replay.dataset` holds the
+  papers' tests as recipes (`SILVA_2015_MATRIX`, `SILVA_2015_RANK_ORDER`,
+  `GROSMARK_2016_SURROGATES`, `FAROOQ_2019_*`, `LIU_2019_TEMPLATES`,
+  `STELLA_2019_JITTER`, `XU_2019_ROTATION`)
+- `detect_arm_replay()`, `ArmReplayMethod`: Single-arm and joint-arm replay
+  on a multi-arm maze (Wu & Foster 2014; Berners-Lee et al. 2021)
+- `detect_rank_order_replay()`, `RankOrderMethod`: Apply published
+  rank-order tests (Foster & Wilson 2006, Diba & Buzsáki 2007) to an event's
+  spikes; `compare_replay_methods(spike_times=...)` compares them with the
+  decoded methods and runs Chenani 2019, which tests an epoch's events
+  together
+- `best_sequence_match()`, `sequence_matching_index()`: Template matching of
+  firing order without decoding: Lee & Wilson's (2002) best (x, y) match of
+  an event's letters, with the probability over the orderings of its
+  letters, and Ji & Wilson's (2007) matching index with its exact p-value;
+  `burst_onset_times()` and `spike_words()` cut spike trains into letters
+  and words
+- `detect_template_match_replay()`, `TemplateMatchMethod`: Apply the
+  template-matching recipes (`LEE_WILSON_2002`, `JI_WILSON_2007`) to an
+  event; `compare_replay_methods(spike_times=...)` compares them with the
+  other methods, and `template_match_dataset_test()` runs the papers'
+  data-set tests (binomial counts of pairs, triplets and low-probability
+  words; chance and template-shuffle significance of replaying frames)
+- `recurring_spike_sequences()`, `recurring_sequences_significance()`,
+  `surrogate_spike_trains()`, `RecurringSequenceMethod`: Spike sequences
+  that recur within a session, tested against interval-shuffle, jitter,
+  across-train and theta-phase surrogates (Nádasdy et al. 1999,
+  `NADASDY_1999`; session level, no per-event verdict)
+- `detect_pairwise_order_replay()`, `PairwiseOrderMethod`: Apply the
+  pairwise-order test of Gupta et al. 2010 (`GUPTA_2010`) to an event's
+  spikes on every template (such as each lap), forward and backward;
+  `compare_replay_methods(spike_times=...)` runs it with the other methods
+- `pairwise_bias_matrix()`, `mean_pairwise_bias()`, `bias_similarity()`,
+  `bias_similarity_significance()`: Skew-bias matrices of firing order for
+  an event or averaged over many (such as theta cycles), and the cosine
+  between two against permuted cell labels (Liu et al. 2023, after Drieu
+  et al. 2018); `detect_bias_sequence_replay()`, `BiasSequenceMethod` and
+  `LIU_2023_BIAS` apply the published test, and
+  `compare_replay_methods(template_bias=...)` runs it with the other methods
+- `shuffle_cell_identity()`, `shuffle_spike_counts_circular()`,
+  `shuffle_spike_counts_uniform()`, `shuffle_place_fields_circular()`,
+  `shuffle_place_fields_circular_2d()`, `shuffle_posterior_circular()`,
+  `shuffle_posterior_weighted_circular()`: Replay shuffles;
+  `replay_significance(nulls=...)` runs them by name
+
+### [neurospatial.reactivation](neurospatial/reactivation/index.md)
 
 Population covariance and reactivation analyses take count matrices with the
 same units in the template, match and control periods. Pass each period's
@@ -174,12 +289,45 @@ by position:
   cells) in each bin of a chosen period; descriptive rather than a
   calibrated bin-level significance test
 - `pairwise_correlations()`: Upper-triangle neuron-pair correlations
-- `explained_variance_reactivation()`: EV and controlled REV effect sizes;
-  pass an explicit baseline control and avoid treating EV > REV as a p-value
-- `reactivation_strength()`: Mean activation strength in the match period
-  over the template period; an effect size rather than a significance verdict
+- `pairwise_activation()`: co-firing in each bin weighted by every pair's
+  template correlation, the full-matrix reactivation strength of Tingley &
+  Peyrache (2020); its mean over a period is the inner product of the two
+  periods' pair correlations
+- `explained_variance_reactivation()`: EV (Kudrimoti et al., 1999) and REV
+  (Pennartz et al., 2004) effect sizes over all pairs or selected pairs
+  (`unit_groups=` for different tetrodes or regions, `pair_mask=`), with one
+  or several control periods and a pair-level p-value that is
+  anticonservative because pairs share cells
+- `assembly_reactivation()`: A pattern's mean activation strength after a
+  task minus before it (van de Ven et al., 2016) and the share of post-task
+  bins above the pre-task 99th percentile (Peyrache et al., 2010); effect
+  sizes rather than significance verdicts
+- `detect_assemblies(component_threshold=...)`: Marchenko-Pastur (default),
+  Tracy-Widom, bin-shuffle or circular-shift eigenvalue thresholds
+- `ReactivationMethod`, `ReactivationWindows`, `EventResponse`,
+  `PUBLISHED_REACTIVATION_METHODS` and `compare_reactivation_methods()`:
+  published EV, assembly and member co-firing analyses (Kudrimoti 1999 to
+  Robinson 2026) as recipes with their bin sizes, pair rules, windows and
+  tests, applied to one session's spike times; spikes counted in fixed bins
+  or one bin per event (SWRs, theta cycles), and assemblies followed around
+  SWR onsets
+- `detect_assemblies(member_rule=...)`: members by absolute or signed weight
+  z-scores, Otsu's split or weights above 1/√N
+- `assembly_member_cofiring()`: correlations of a pattern's members in two
+  periods (El-Gaby et al., 2021); `assembly_similarity()`: absolute cosine
+  similarity and best matches between sessions' patterns
+- `assembly_event_response()`: R(t) averaged around events such as SWR
+  onsets, each event's response and a signed-rank test against a baseline
+- `explained_variance_contributions()`: each pair's and unit's share of EV
+  (Oliva et al., 2020); `ev_rev_contrast()`: (EV − REV) / (EV + REV)
+- `null_reactivation_data()`, `simulated_reactivation_session()` and
+  `reactivation_detection_rates()`: data without reactivation, a simulated
+  session with a rate-change confound, and verdict rates with exact intervals
+- `equalize_firing_rates()`: subsample spikes so each unit fires at one rate
+  before and after the task, the rate control of Giri et al. (2019)
 
-See the [complete public workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).
+See [Comparing reactivation methods](../user-guide/reactivation-methods.md) and
+the [complete public workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).
 
 ### [neurospatial.behavior](neurospatial/behavior/index.md)
 
@@ -280,8 +428,8 @@ Circular statistics, surrogates, and shuffle controls.
 
 - `stats.circular`: Rayleigh test, circular mean / variance / R,
   circular-circular and circular-linear correlations, circular basis
-- `stats.shuffle`: Position / cell / posterior shuffles with
-  reproducibility helpers
+- `stats.shuffle`: Temporal, trial and spike-train shuffles and Monte Carlo
+  p-values; replay shuffles are in `neurospatial.replay`
 - `stats.surrogates`: Poisson and inhomogeneous-Poisson surrogates,
   jittered-spike controls
 
@@ -333,6 +481,10 @@ Generate synthetic spatial data, neural activity, and spike trains for testing a
 - `simulation.session`: High-level session simulation API
 - `simulation.validation`: Automated validation against ground truth
 - `simulation.examples`: Pre-configured example sessions
+- `simulation.replay`: `simulate_replay_event()`, a candidate replay event
+  with a known path (sweep, stationary, jump or random), for comparing replay
+  methods; `drop_fraction=` and `n_noise_spikes=` degrade it to measure
+  each method's sensitivity (Tingley & Peyrache 2020)
 
 **Key Classes:**
 

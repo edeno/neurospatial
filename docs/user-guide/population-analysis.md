@@ -13,9 +13,10 @@ build on each other, so run them in order.
 
 ## Where these live
 
-Population tools are in two subpackages. Spatial-map summaries are with the
-encoding tools; co-firing, reactivation and decoding work on spike counts in
-time bins and are with the decoding tools.
+Population tools are in three subpackages. Spatial-map summaries are with the
+encoding tools. Co-firing and reactivation work on spike counts in time bins
+and are in `neurospatial.reactivation`; decoding is in `neurospatial.decoding`,
+which also bins the spike counts.
 
 | Question | Functions | Import from |
 | --- | --- | --- |
@@ -23,7 +24,7 @@ time bins and are with the decoding tools.
 | How much of the environment is covered, and by how many place cells? | `population_coverage`, `plot_population_coverage`, `field_density_map`, `count_place_cells` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
 | Does the map change between conditions? | `population_vector_correlation`, `rate_map_correlations`, `field_overlap` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
 | Spike counts in time bins | `bin_spikes_in_time` | `neurospatial.decoding` |
-| Which cells fire together, and does that pattern return during rest? | `pairwise_correlations`, `detect_assemblies`, `marchenko_pastur_threshold`, `assembly_activation`, `reactivation_strength`, `explained_variance_reactivation` | `neurospatial.decoding` (defined in `neurospatial.decoding.assemblies`) |
+| Which cells fire together, and does that pattern return during rest? | `pairwise_correlations`, `detect_assemblies`, `marchenko_pastur_threshold`, `assembly_activation`, `assembly_reactivation`, `explained_variance_reactivation` | `neurospatial.reactivation` (defined in `neurospatial.reactivation.assemblies`) |
 | What position does the population encode? | `decode_position`, `decode_session`, `BayesianDecoder` | `neurospatial.decoding` |
 
 ## How much of the track does the population cover?
@@ -414,13 +415,13 @@ order of `np.triu_indices(n_units, k=1)`. Those are column positions; map them
 through `unit_ids` to name the cells:
 
 ```python
-from neurospatial.decoding import (
+from neurospatial.reactivation import (
     assembly_activation,
+    assembly_reactivation,
     detect_assemblies,
     explained_variance_reactivation,
     marchenko_pastur_threshold,
     pairwise_correlations,
-    reactivation_strength,
 )
 
 run_correlations = pairwise_correlations(counts["run"])
@@ -446,7 +447,7 @@ dimensions whose eigenvalues exceed the Marchenko-Pastur threshold: the
 largest eigenvalue expected if the units were independent, given the number of
 units and time bins. ICA then separates the kept dimensions into patterns of
 neuron weights, and units whose weight stands out (absolute weight more than
-2 standard deviations above the mean, set with `z_threshold=`) are listed as
+2 standard deviations above the mean, set with `member_threshold=`) are listed as
 core members. Pass the column labels as `unit_ids=`: each pattern then names
 its members by label (`member_unit_ids`), and later calls can match the
 columns of other periods to the pattern's weights by label.
@@ -505,28 +506,31 @@ for k, pattern in enumerate(assemblies.patterns):
     starts = 180.0 + replay_starts[assembly]
     centers = bin_times["post_rest"][:, None]
     in_event = ((centers >= starts) & (centers < starts + 0.1)).any(axis=1)
-    strength_pre = reactivation_strength(
-        counts["run"], counts["pre_rest"], pattern,
-        template_unit_ids=unit_ids, match_unit_ids=unit_ids,
-    )
-    strength_post = reactivation_strength(
-        counts["run"], counts["post_rest"], pattern,
-        template_unit_ids=unit_ids, match_unit_ids=unit_ids,
+    comparison = assembly_reactivation(
+        counts["pre_rest"], counts["post_rest"], pattern,
+        control_unit_ids=unit_ids, match_unit_ids=unit_ids,
     )
     print(f"Pattern {k}: activation {activation[in_event].mean():.1f} during "
           f"its events vs {activation[~in_event].mean():.2f} otherwise; "
           f"bins above 5: pre {np.mean(activation_pre > 5):.1%}, "
           f"post {np.mean(activation > 5):.1%}; "
-          f"strength pre {strength_pre:.2f}, post {strength_post:.2f}")
+          f"mean pre {comparison.control_mean_activation:.2f}, "
+          f"post {comparison.match_mean_activation:.2f}, "
+          f"difference {comparison.mean_activation_difference:.2f}; "
+          f"post bins above the pre 99th percentile: "
+          f"{comparison.fraction_above_control_threshold:.1%}")
     reactivated.append((activation[in_event].mean(), activation[~in_event].mean(),
-                        strength_pre, strength_post))
-in_events, otherwise, pre, post = np.array(reactivated).T
-print(f"Mean strength over patterns: pre {pre.mean():.2f}, post {post.mean():.2f}")
-assert post.min() > 1.0 > 0.1 > np.abs(pre).max()  # co-firing only after the task
+                        comparison.control_mean_activation,
+                        comparison.mean_activation_difference,
+                        comparison.fraction_above_control_threshold))
+in_events, otherwise, pre_mean, difference, above = np.array(reactivated).T
+assert np.abs(pre_mean).max() < 0.1  # no co-firing before the task
+assert difference.min() > 0.5 and above.min() > 0.02  # co-firing after it
 # Reproducibility pins for this seed:
 assert 19.9 <= in_events.min() <= in_events.max() <= 23.9
 assert np.allclose(otherwise, 0.09, atol=0.02)
-assert 1.52 <= post.min() <= post.max() <= 1.71
+assert 1.0 <= difference.min() <= difference.max() <= 1.3
+assert 0.039 <= above.min() <= above.max() <= 0.045
 
 # The columns of rest counts in another order give the same activation.
 order = np.random.default_rng(3).permutation(n_units)
@@ -546,35 +550,42 @@ rest. With real data you do not know the replay times; align the activation
 to sharp-wave ripples or to rest epochs instead, and compare with pre-task
 rest. For independent cells R(t) averages 0 with a standard deviation of at
 most about 1.4, but spike counts give heavier tails, so the cutoff of 5 is
-descriptive, not a p-value; build a null for your recording, such as
-activation strengths after shuffling each unit's counts in time.
+descriptive, not a p-value.
 
-`reactivation_strength` returns a pattern's mean activation strength in the
-rest period divided by its mean during running (Peyrache et al., 2009), with
-each period z-scored on its own. A period's mean activation strength is the
-pattern's co-firing beyond independent firing, so the ratio is about 0 when
-the cells fire independently and 1 when they co-fire as much as during
-running. Before the task it stays within 0.1 of 0 (the bursts were
-independent). After the task it is 1.5 to 1.7: the synchronized bursts make
-the members co-fire more than running did, when they shared only a place
-field. With no co-firing the ratio is 0 up to noise of about
-sqrt(2 / n_rest_bins) divided by the running mean activation strength,
-about 0.06 here. Because each period is standardized on its own, a change of
-gain does not change the ratio, but independent spikes added to the members
-dilute their correlation and lower it, so compare post-task rest with
-pre-task rest rather than reading one value alone. Each period's column
-labels go to their own argument, `template_unit_ids=` for running and
-`match_unit_ids=` for rest; here both periods were binned from one list of
-spike trains, so they get the same labels. Pass both or neither: labels for
-only one period raise.
+`assembly_reactivation` makes that comparison with the two published
+statistics. Its `mean_activation_difference` is the pattern's mean activation
+strength in post-task rest minus its mean in pre-task rest: van de Ven et al.
+(2016) call this difference the pattern's reactivation strength, and Peyrache
+et al. (2009) compare the same two averages. A period's mean activation
+strength is the pattern's co-firing beyond independent firing, so it stays
+near 0 before the task (the bursts were independent), and the difference is
+1.0 to 1.3. Its `fraction_above_control_threshold` is the share
+of post-task bins whose activation strength exceeds the 99th percentile of the
+pre-task bins (Peyrache et al., 2010); without reactivation it is about 1%,
+and here it is about 4%. Each period is z-scored on its own, so a change of
+gain does not change either statistic, but independent spikes added to the
+members dilute their correlation and lower it. Peyrache et al. call R(t)
+itself the "reactivation strength"; this guide calls R(t) the activation
+strength to keep the two apart. Neither statistic is a p-value: for a claim,
+compare across patterns or sessions (van de Ven et al. tested the differences
+of a set of patterns against 0) or build a null for your recording, such as
+activation strengths after shuffling each unit's counts in time. van de Ven et
+al. computed R(t) on spike trains smoothed with a Gaussian kernel of standard
+deviation 25 ms / sqrt(12) instead of on binned counts. Each period's column
+labels go to their own argument, `control_unit_ids=` for pre-task rest and
+`match_unit_ids=` for post-task rest; here both periods were binned from one
+list of spike trains, so they get the same labels. Pass both or neither:
+labels for only one period raise.
 
 The explained-variance measure asks whether the whole correlation structure of
 running returns during rest. It correlates the pairwise correlations of
 running with those of post-task rest, controlling for the correlations that
-were already present before the task. The reversed measure (REV) swaps the
-two rest periods: it measures how much the running correlations resemble
-pre-task rest, controlling for post-task rest. Reactivation predicts EV larger
-than REV.
+were already present before the task (Kudrimoti et al., 1999): EV is the
+squared partial correlation of the running and post-task pair correlations,
+controlling for the pre-task ones. The reversed measure (REV), introduced by
+Pennartz et al. (2004) as a control, swaps the two rest periods: it measures
+how much the running correlations resemble pre-task rest, controlling for
+post-task rest. Reactivation predicts EV larger than REV.
 
 Each correlation must be compared with the correlation of the same two cells
 in the other periods. Pass each period's column labels (`template_unit_ids=`,
@@ -596,7 +607,8 @@ reactivation = explained_variance_reactivation(
     control_unit_ids=unit_ids,
 )
 print(f"EV = {reactivation.explained_variance:.2f}, "
-      f"REV = {reactivation.reversed_explained_variance:.3f}, over {reactivation.n_pairs} pairs")
+      f"REV = {reactivation.reversed_explained_variance:.3f}, over {reactivation.n_pairs} pairs, "
+      f"p = {reactivation.p_value:.1e}")
 assert np.isclose(reactivation.explained_variance, 0.74, atol=0.006)
 assert np.isclose(reactivation.reversed_explained_variance, 0.011, atol=0.0006)
 
@@ -614,12 +626,40 @@ assert np.isclose(reordered.explained_variance, reactivation.explained_variance)
 
 EV (0.74) is far above REV (0.011): the correlation structure of running
 reappears after the task and was absent before it, which is what we planted.
-EV and REV are effect sizes. To claim reactivation in a real recording, compare against a
-null built for your data (for example, EV computed after shuffling unit
-identities or using other rest epochs) and report the control period, the bin
-size and the unit selection. Without `control_correlations` there is no
-period to swap, so `reversed_explained_variance` is NaN and EV alone says
+EV and REV are effect sizes. `p_value` tests the partial correlation with the
+t test on `n_pairs - 3` degrees of freedom; Kudrimoti et al. report such a
+p-value per session without naming the test, so this test is our inference.
+It treats the 378 pairs as independent although they share 28 cells, so it
+overstates the evidence. To claim reactivation in a real recording, compare
+EV with REV across sessions (Pennartz et al. used a Wilcoxon signed-rank
+test) or against a null built for your data, and report the control period,
+the bin size and the unit selection. Without `control_correlations` there is
+no period to swap, so `reversed_explained_variance` is NaN and EV alone says
 nothing about direction.
+
+Cells recorded on the same tetrode share spike-sorting errors, which correlate
+their counts in every period. Kudrimoti et al. (1999) therefore used only
+pairs of cells on different tetrodes; pass each unit's tetrode as
+`unit_groups=` to do the same, or tetrode, shank or region for cross-region
+pairs (Lansink et al., 2009). `pair_mask=` selects pairs by any other rule,
+such as waveform similarity. Pass several control periods as a list to
+partial out all of them, as Kudrimoti et al. did with pre-task sleep and a
+familiar part of the track.
+
+```python
+tetrode_of_unit = np.arange(n_units) % 7  # 7 tetrodes of 4 units
+different_tetrodes = explained_variance_reactivation(
+    run_correlations,
+    rest_correlations["post_rest"],
+    control_correlations=rest_correlations["pre_rest"],
+    unit_groups=tetrode_of_unit,
+)
+print(f"Different-tetrode pairs: {different_tetrodes.n_pairs} of 378, "
+      f"EV = {different_tetrodes.explained_variance:.2f}, "
+      f"p = {different_tetrodes.p_value:.1e}")
+assert different_tetrodes.n_pairs == 378 - 7 * 6
+assert different_tetrodes.explained_variance > 0.5
+```
 
 ## What position does the population encode?
 
@@ -712,13 +752,14 @@ Checks before you interpret the numbers:
   periods and keep `unit_ids` with every result; a different selection per
   period compares different cells. Pass the labels as `unit_ids=` to
   `compute_spatial_rates`, `detect_assemblies` and `assembly_activation`, and
-  as `template_unit_ids=` and `match_unit_ids=` to `reactivation_strength`
-  (plus `control_unit_ids=` for `explained_variance_reactivation`), so cells
+  as `control_unit_ids=` and `match_unit_ids=` to `assembly_reactivation`
+  (plus `template_unit_ids=` for `explained_variance_reactivation`), so cells
   are matched by label. Without labels these calls pair cells by column
   position, so every count matrix must share one column order.
 - **Screens, not verdicts.** The information cutoff, the Marchenko-Pastur
-  threshold, the membership cutoff, activation strength above 5, and EV versus REV are
-  descriptive. Use `spatial_cell_type_significance` labels or
+  threshold, the membership cutoff, activation strength above 5, the share
+  of bins above the pre-task 99th percentile, EV versus REV and the
+  pair-level EV p-value are descriptive. Use `spatial_cell_type_significance` labels or
   `is_place_cell(..., criterion="shuffle")` for cell-type decisions and a
   null built for your recording for reactivation claims.
 - **Missing is not zero.** Unvisited bins stay NaN in rate maps; compare

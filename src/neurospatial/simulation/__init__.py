@@ -6,6 +6,8 @@ This subpackage provides tools for:
   head-direction, object-vector and spatial-view cells)
 - Spike train generation (Poisson process with refractory periods)
 - High-level session simulation with validation helpers
+- Replay events with a known path, such as sweeps, stationary and random
+  events, to test replay methods (``simulate_replay_event``)
 - Pre-built maze environments (via mazes submodule)
 
 Examples
@@ -66,6 +68,10 @@ from neurospatial.simulation.models import (
     PlaceCellModel,
     SpatialViewCellModel,
 )
+from neurospatial.simulation.replay import (
+    ReplayEventSimulation,
+    simulate_replay_event,
+)
 from neurospatial.simulation.session import SimulationSession, simulate_session
 
 # Spike generation
@@ -96,6 +102,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "NeuralModel",
     "ObjectVectorCellModel",
     "PlaceCellModel",
+    "ReplayEventSimulation",
     "SimulationSession",
     "SimulationValidationResult",
     "SpatialViewCellModel",
@@ -117,4 +124,5 @@ __all__ = [  # noqa: RUF022 - organized by category
     "simulate_trajectory_laps",
     "simulate_trajectory_ou",
     "simulate_trajectory_sinusoidal",
+    "simulate_replay_event",
 ]
