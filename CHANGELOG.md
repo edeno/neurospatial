@@ -110,6 +110,13 @@ other seeded simulations give the same spikes as before.
     `"99"`;
   - `nulls="column_cycle"` is one null, as in `replay_significance`, and a
     null named twice is refused.
+- `ReplaySegmentation` ties each `relative_to` scale to the options it
+  fits: `"track_length"` to the distances `max_jump`, `max_spread`,
+  `merge_max_distance` and `min_dispersion`, and `"chance"` to
+  `min_peak_probability`. `relative_to={"max_jump": "chance"}` gave a
+  maximum jump of the distance over `n_bins`. Option values are checked
+  as `replay_segments` checks them (a negative `max_jump`, an unknown
+  `method`, a non-integer `min_time_bins`) when the segmentation is made.
 
 ### Published replay methods as comparable recipes
 
