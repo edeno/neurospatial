@@ -2457,6 +2457,7 @@ class _ReplayLines:
         )
         self.on_bin_positions = on_track_positions[on_bin]
         self._blocks: list[_LineBlock] | None = None
+        self._blocks_events = 0
         # Speeds and start positions: the grid's two axes, or each line's.
         self.speeds, self.start_positions = (
             self._grid(n_on_track, spacing, operation)
@@ -2939,9 +2940,11 @@ class _ReplayLines:
 
         Blocks keep their nonzeros, and their scores for ``n_events`` events,
         within the memory budgets. They are kept between calls when all of
-        them fit ``_CACHED_NONZEROS``.
+        them fit ``_CACHED_NONZEROS``, and reused for calls with at most the
+        events they were sized for: an event scored alone and then its
+        shuffles in batches builds the blocks again for the batches.
         """
-        if self._blocks is not None:
+        if self._blocks is not None and n_events <= self._blocks_events:
             yield from self._blocks
             return
         # On the grid a block is whole speeds, with every start position.
@@ -2972,7 +2975,7 @@ class _ReplayLines:
                     built = None
             yield block
         if built is not None:
-            self._blocks = built
+            self._blocks, self._blocks_events = built, n_events
 
     def _band_terms(
         self, positions: NDArray[np.float64], time: NDArray[np.intp]
