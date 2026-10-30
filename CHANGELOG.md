@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+### Fernández-Ruiz-lab replay methods
+
+Replay tests of Harvey et al. (2023), Soula et al. (2023), Liu et al. (2023)
+and Chang et al. (2025) as recipes in `neurospatial.replay.methods`.
+
+**New**
+
+- `regression_line_score(env, posterior, times, *, band=None,
+  wrap_band=False)`: the mean posterior mass within `band` of the
+  least-squares line through each time bin's MAP position, over the time
+  bins with posterior mass (a zeroed row is left out of the line and the
+  mean); returns `RegressionLineScoreResult` (score, slope, intercept, R²).
+  The default band is 10.5 cm, the papers' 21 cm read as the full width;
+  `wrap_band=True` wraps it around the track ends as the authors' nelpy
+  code does. `replay_significance` scores its shuffles in batches.
+- `SOULA_2023` and `HARVEY_2023_LINE` (Harvey et al.'s "alternative
+  approach"): that score against 1,000 column cycles, with at least 5
+  active cells and at most half the time bins empty.
+- `CHANG_2025`: the signed weighted correlation of each T-maze
+  trajectory's share of a joint decode in 10 ms bins, two-sided (2.5th and
+  97.5th percentiles), keeping the trajectory with the smallest p-value.
+  The code's second line-fit test (p < 0.025), 20 ms windows stepped by 10
+  ms and 500 shuffles are in its notes, with the nearest variant.
+- `pairwise_bias_matrix(spike_times, interval, *, unit_ids=None)`,
+  `mean_pairwise_bias(spike_times, intervals)`,
+  `bias_similarity(template_bias, event_bias)` and
+  `bias_similarity_significance(...)` (`PairwiseBiasResult`,
+  `BiasSimilarityResult`): skew-bias matrices `S = 2 B - 1` of firing
+  order (Roth 2016; Drieu et al. 2018), their mean over many events such
+  as theta cycles, the cosine between two over the pairs both define, and
+  its test against the event's spikes with permuted cell labels. Liu et
+  al. print `2B - 2`; their stated range [-1, 1] and the lab's code give
+  `2B - 1`.
+- `BiasSequenceMethod`, `detect_bias_sequence_replay()` and
+  `LIU_2023_BIAS` (100 label permutations, `|cosine|` at alpha 0.05):
+  `compare_replay_methods(..., template_bias=...)` runs it with the other
+  methods, and `matched_alpha`/`apply_alpha` take it.
+
+**Changed**
+
+- `HARVEY_2023`'s notes point to `HARVEY_2023_LINE` for the paper's
+  alternative line score.
+
 ### Data-set-level replay tests
 
 Several replay papers test a whole data set, not each event:

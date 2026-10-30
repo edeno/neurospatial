@@ -31,9 +31,15 @@ from neurospatial.replay.correlation import (
     weighted_correlation,
 )
 from neurospatial.replay.trajectory import (
+    _TRACK_ALTERNATIVE,
+    RegressionLineScoreResult,
     _best_line,
     _prepare_replay_lines,
+    _regression_line_scores,
+    _require_probability_rows,
+    _require_times,
     detect_trajectory_radon,
+    regression_line_score,
 )
 
 if TYPE_CHECKING:
@@ -1555,6 +1561,7 @@ def _scorer_for(
             ),
         ),
         weighted_correlation: (_WeightedCorrelationScorer, ("row_normalization",)),
+        regression_line_score: (_RegressionLineScorer, ("band", "wrap_band")),
         fit_circular_sequence: (_CircularSequenceScorer, ()),
     }
     if score in batched:
@@ -1677,6 +1684,63 @@ class _WeightedCorrelationScorer(_Scorer):
             out[filled : filled + len(batch)] = _weighted_correlations(
                 np.stack(batch), self.times, self.positions
             )
+        return out
+
+
+class _RegressionLineScorer(_Scorer):
+    _BATCH = 256
+
+    def __init__(
+        self,
+        env: Environment,
+        posterior: Any,
+        times: Any,
+        *,
+        band: float | None = None,
+        wrap_band: bool = False,
+    ) -> None:
+        from neurospatial.environment import _require_track_extents
+
+        # Validates the inputs and resolves the default band.
+        self.observed = regression_line_score(
+            env, posterior, times, band=band, wrap_band=wrap_band
+        )
+        starts, stops = _require_track_extents(
+            env, _OPERATION, alternative=_TRACK_ALTERNATIVE
+        )
+        self.order = np.argsort(starts, kind="stable")  # as in _track_positions
+        self.starts, self.stops = starts[self.order], stops[self.order]
+        self.posterior = np.asarray(posterior, dtype=np.float64)
+        self.times = _require_times(times, len(self.posterior), _OPERATION)
+
+    def observe(self) -> RegressionLineScoreResult:
+        return self.observed
+
+    def _score_batch(self, batch: list[NDArray[np.float64]]) -> NDArray[np.float64]:
+        return _regression_line_scores(
+            np.stack(batch),
+            self.times,
+            self.starts,
+            self.stops,
+            self.observed.band,
+            self.observed.wrap_band,
+        )[0]
+
+    def scores(
+        self, posteriors: Iterable[NDArray[np.float64]], n_shuffles: int
+    ) -> NDArray[np.float64]:
+        out = np.empty(n_shuffles)
+        batch: list[NDArray[np.float64]] = []
+        filled = 0
+        for shuffled in posteriors:
+            rows = _require_probability_rows(shuffled, _OPERATION, allow_zero_rows=True)
+            batch.append(rows[:, self.order])
+            if len(batch) == self._BATCH:
+                out[filled : filled + len(batch)] = self._score_batch(batch)
+                filled += len(batch)
+                batch = []
+        if batch:
+            out[filled : filled + len(batch)] = self._score_batch(batch)
         return out
 
 
