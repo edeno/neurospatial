@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
-import operator
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType, SimpleNamespace
@@ -38,10 +37,14 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial._stacklevel import _warnings_with_context
+from neurospatial.replay._compare import (
+    _check_criterion_settings,
+    _compare,
+    _criterion_label,
+)
 from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
 from neurospatial.replay.circular import fit_circular_sequence
 from neurospatial.replay.correlation import weighted_correlation
@@ -160,12 +163,6 @@ _SEGMENT_OPTION_SCALES = {
 # Criterion quantities that compare the templates of a joint decode.
 _TEMPLATE_QUANTITIES = ("template_fraction", "segment_template_fraction")
 _TEMPLATE_CHOICES = (None, "most_posterior", "sum", "smallest_p", "max_score")
-_COMPARISONS: dict[str, Callable[[float, float], bool]] = {
-    "<": operator.lt,
-    "<=": operator.le,
-    ">": operator.gt,
-    ">=": operator.ge,
-}
 
 
 # TrajectoryMetrics scalars a shuffle does not change, or that need spike counts.
@@ -271,28 +268,23 @@ class ReplayCriterion:
                     fix="give the paper's threshold as a number, such as 0.5",
                 )
             )
-        if not isinstance(self.absolute, (bool, np.bool_)):
-            raise ValueError(
-                f"ReplayCriterion {self.quantity!r}: absolute must be True or "
-                f"False, got {self.absolute!r}."
-            )
-        if self.comparison not in _COMPARISONS:
-            raise ValueError(
-                f"ReplayCriterion: comparison must be one of "
-                f"{list(_COMPARISONS)}, got {self.comparison!r}."
-            )
-        if self.relative_to not in (None, "track_length"):
-            raise ValueError(
-                f"ReplayCriterion: relative_to must be None or 'track_length', "
-                f"got {self.relative_to!r}."
-            )
+        _check_criterion_settings(
+            f"ReplayCriterion {self.quantity!r}",
+            self.comparison,
+            self.relative_to,
+            self.absolute,
+        )
 
     @property
     def label(self) -> str:
         """A readable form, such as ``"|score| > 0.6"``."""
-        name = f"|{self.quantity}|" if self.absolute else self.quantity
-        scale = " x track_length" if self.relative_to else ""
-        return f"{name} {self.comparison} {self.threshold:g}{scale}"
+        return _criterion_label(
+            self.quantity,
+            self.comparison,
+            absolute=self.absolute,
+            relative_to=self.relative_to,
+            threshold=self.threshold,
+        )
 
     def evaluate(self, value: float, track_length: float) -> bool:
         """Whether ``value`` meets this criterion; False when either is NaN.
@@ -302,15 +294,14 @@ class ReplayCriterion:
         :func:`~neurospatial.replay.replay_segments`, so that rounding in
         times such as ``t0 + 0.005 * k`` does not flip a strict test.
         """
+        return bool(self._passes(value, track_length))
+
+    def _passes(self, values: Any, track_length: float) -> NDArray[np.bool_]:
+        """:meth:`evaluate` elementwise over ``values``."""
         threshold = self.threshold * (track_length if self.relative_to else 1.0)
-        value = abs(value) if self.absolute else value
-        if not (np.isfinite(value) and np.isfinite(threshold)):
-            return False
-        if abs(value - threshold) <= ABSOLUTE_TOLERANCE + RELATIVE_TOLERANCE * abs(
-            threshold
-        ):
-            value = threshold
-        return bool(_COMPARISONS[self.comparison](value, threshold))
+        return _compare(
+            np.abs(values) if self.absolute else values, self.comparison, threshold
+        )
 
 
 @dataclass(frozen=True)
@@ -2330,7 +2321,7 @@ def _segment_passes(
     for criterion in replay_method.criteria:
         if criterion.quantity in _SEGMENT_QUANTITIES:
             values = getattr(segments, _SEGMENT_QUANTITIES[criterion.quantity])
-            ok &= [criterion.evaluate(float(v), track_length) for v in values]
+            ok &= criterion._passes(values, track_length)
     return ok
 
 

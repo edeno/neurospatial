@@ -44,9 +44,9 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.replay._compare import _tolerance
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -1009,9 +1009,7 @@ def matched_alpha(
         if getattr(method, "p_comparison", "<") == "<=" and p_values.size > allowed:
             # p <= alpha (equal within round-off) would pass this event too:
             # the largest alpha that does not lies just below it.
-            alpha = max(
-                alpha - 2 * (ABSOLUTE_TOLERANCE + RELATIVE_TOLERANCE * alpha), 0.0
-            )
+            alpha = max(alpha - 2 * float(_tolerance(alpha)), 0.0)
         problem = None
         if alpha == 0.0:
             alpha = np.nan

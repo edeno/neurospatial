@@ -18,9 +18,9 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.replay._compare import _compare
 from neurospatial.replay.criteria import (
     _bin_distance_lookup,
     _check_metric,
@@ -551,11 +551,11 @@ def replay_segments(
     )
     accepted = valid.copy()
     if max_spread is not None:
-        accepted &= _below(metrics.spread, max_spread)
+        accepted &= _compare(metrics.spread, "<", max_spread)
     if min_peak_probability is not None:
-        accepted &= _above(metrics.peak_probability, min_peak_probability)
+        accepted &= _compare(metrics.peak_probability, ">", min_peak_probability)
     if jump_rule == "drop_earlier":
-        accepted[:-1] &= _below(jumps, max_jump) & valid[1:]
+        accepted[:-1] &= _compare(jumps, "<", max_jump) & valid[1:]
 
     # The bin each time bin's segment continues to: the earliest accepted
     # bin within reach, or -1. Writing the farthest offset first lets the
@@ -565,7 +565,7 @@ def replay_segments(
         earlier = np.arange(n_time_bins - offset)
         later = earlier + offset
         reach = accepted[earlier] & accepted[later]
-        reach[reach] = _below(distance(earlier[reach], later[reach]), max_jump)
+        reach[reach] = _compare(distance(earlier[reach], later[reach]), "<", max_jump)
         successor[earlier[reach]] = later[reach]
 
     on_trajectory = np.zeros(n_time_bins, dtype=bool)
@@ -594,8 +594,8 @@ def replay_segments(
     ):
         last = bounds[:-1, 1] - 1
         first = bounds[1:, 0]
-        join = _below(times[first] - times[last], merge_max_time_gap) & _below(
-            distance(last, first), merge_max_distance
+        join = _compare(times[first] - times[last], "<", merge_max_time_gap) & _compare(
+            distance(last, first), "<", merge_max_distance
         )
         bounds = np.column_stack(
             [bounds[np.r_[True, ~join], 0], bounds[np.r_[~join, True], 1]]
@@ -607,7 +607,9 @@ def replay_segments(
             span = np.searchsorted(bounds[:, 0], lone, side="right") - 1
             inside = (span >= 0) & (lone < bounds[np.maximum(span, 0), 1])
             lone = lone[inside]
-            on_trajectory[lone[_below(distance(lone, lone + 1), max_jump)]] = True
+            on_trajectory[lone[_compare(distance(lone, lone + 1), "<", max_jump)]] = (
+                True
+            )
 
     starts, stops = bounds[:, 0], bounds[:, 1]
     durations = times[stops - 1] - times[starts]
@@ -617,11 +619,11 @@ def replay_segments(
     )
     keep = np.ones(len(bounds), dtype=bool)
     if min_duration is not None:
-        keep &= _at_least(durations, min_duration)
+        keep &= _compare(durations, ">=", min_duration)
     if min_time_bins is not None:
         keep &= counts >= min_time_bins
     if min_dispersion is not None:
-        keep &= _at_least(dispersions, min_dispersion)
+        keep &= _compare(dispersions, ">=", min_dispersion)
     for start, stop in bounds[~keep]:
         on_trajectory[start:stop] = False
     bounds, starts, stops = bounds[keep], starts[keep], stops[keep]
@@ -721,29 +723,6 @@ def _per_segment(
     steps = distance(bins[:-1][same], bins[1:][same])
     path_lengths = np.bincount(segment[:-1][same], weights=steps, minlength=n_segments)
     return dispersions, path_lengths.astype(np.float64)
-
-
-def _tolerance(threshold: float) -> float:
-    """Distance from ``threshold`` within which a value counts as equal."""
-    return ABSOLUTE_TOLERANCE + RELATIVE_TOLERANCE * abs(threshold)
-
-
-def _below(values: NDArray[np.float64], threshold: float) -> NDArray[np.bool_]:
-    """Strictly below ``threshold``; a value equal within tolerance is not."""
-    below: NDArray[np.bool_] = values < threshold - _tolerance(threshold)
-    return below
-
-
-def _above(values: NDArray[np.float64], threshold: float) -> NDArray[np.bool_]:
-    """Strictly above ``threshold``; a value equal within tolerance is not."""
-    above: NDArray[np.bool_] = values > threshold + _tolerance(threshold)
-    return above
-
-
-def _at_least(values: NDArray[np.float64], threshold: float) -> NDArray[np.bool_]:
-    """At or above ``threshold``, counting values equal within tolerance."""
-    reached: NDArray[np.bool_] = values >= threshold - _tolerance(threshold)
-    return reached
 
 
 def _checked_options(

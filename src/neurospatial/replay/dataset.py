@@ -44,12 +44,15 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.replay._compare import (
+    _check_criterion_settings,
+    _compare,
+    _criterion_label,
+)
 from neurospatial.replay.correlation import weighted_correlation
 from neurospatial.replay.methods import (
-    _COMPARISONS,
     FAROOQ_2019,
     GROSMARK_2016,
     SILVA_2015,
@@ -92,13 +95,6 @@ __all__ = [
     "template_correlation_test",
 ]
 
-# Elementwise comparisons of CriterionGrid.
-_ARRAY_COMPARISONS: dict[str, Callable[[Any, Any], Any]] = {
-    "<": np.less,
-    "<=": np.less_equal,
-    ">": np.greater,
-    ">=": np.greater_equal,
-}
 # Nulls that shuffle the decoded posterior of each event.
 _POSTERIOR_NULLS = (
     "column_cycle",
@@ -213,27 +209,19 @@ class CriterionGrid:
             )
         thresholds.flags.writeable = False
         object.__setattr__(self, "thresholds", thresholds)
-        if self.comparison not in _COMPARISONS:
-            raise ValueError(
-                f"{prefix}: comparison must be one of {list(_COMPARISONS)}, got "
-                f"{self.comparison!r}."
-            )
-        if self.relative_to not in (None, "track_length"):
-            raise ValueError(
-                f"{prefix}: relative_to must be None or 'track_length', got "
-                f"{self.relative_to!r}."
-            )
-        if not isinstance(self.absolute, (bool, np.bool_)):
-            raise ValueError(
-                f"{prefix}: absolute must be True or False, got {self.absolute!r}."
-            )
+        _check_criterion_settings(
+            prefix, self.comparison, self.relative_to, self.absolute
+        )
 
     @property
     def label(self) -> str:
         """A readable form without the thresholds, such as ``"|score| >"``."""
-        name = f"|{self.quantity}|" if self.absolute else self.quantity
-        scale = " x track_length" if self.relative_to else ""
-        return f"{name} {self.comparison}{scale}"
+        return _criterion_label(
+            self.quantity,
+            self.comparison,
+            absolute=self.absolute,
+            relative_to=self.relative_to,
+        )
 
     def passes(self, table: pd.DataFrame) -> NDArray[np.bool_]:
         """Whether each row of ``table`` passes each threshold.
@@ -278,19 +266,7 @@ class CriterionGrid:
             else np.ones(len(values))
         )
         thresholds = np.atleast_1d(self.thresholds)[None, :] * scale[:, None]
-        values = np.broadcast_to(values[:, None], thresholds.shape)
-        with np.errstate(invalid="ignore"):
-            close = np.abs(values - thresholds) <= ABSOLUTE_TOLERANCE + (
-                RELATIVE_TOLERANCE * np.abs(thresholds)
-            )
-            compared = np.where(close, thresholds, values)
-            result = _ARRAY_COMPARISONS[self.comparison](compared, thresholds)
-        passed: NDArray[np.bool_] = (
-            np.asarray(result, dtype=bool)
-            & np.isfinite(values)
-            & np.isfinite(thresholds)
-        )
-        return passed
+        return _compare(values[:, None], self.comparison, thresholds)
 
 
 # --------------------------------------------------------------------------
