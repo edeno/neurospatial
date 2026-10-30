@@ -2039,7 +2039,7 @@ def test_compare_refuses_duplicate_method_names(place_code):
         compare_replay_methods(
             env,
             [decoded],
-            replay_methods=[SILVA_2015, dataclasses.replace(SILVA_2015, criteria=())],
+            replay_methods=[SILVA_2015, dataclasses.replace(SILVA_2015, notes=())],
         )
 
 
