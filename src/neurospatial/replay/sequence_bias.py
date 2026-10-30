@@ -29,7 +29,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
+from neurospatial.replay.rank_order import (
+    _pooled_spikes,
+    _spikes_in,
+    _validated_interval,
+)
 from neurospatial.replay.significance import _ALTERNATIVES
 
 if TYPE_CHECKING:
@@ -292,7 +297,7 @@ def pairwise_bias_matrix(
     """
     operation = "pairwise_bias_matrix()"
     times, labels, n_units = _event_spikes(spike_times, interval, operation)
-    ids = _unit_ids(unit_ids, n_units, operation)
+    ids = resolve_unit_ids(unit_ids, n_units, context=operation)
     bias, counts = _skew_bias(times, labels, n_units)
     return PairwiseBiasResult(bias=bias, n_spikes=counts, unit_ids=ids)
 
@@ -682,24 +687,6 @@ def _check_test(
         )
 
 
-def _interval(interval: Any, operation: str) -> tuple[float, float]:
-    from neurospatial.replay.rank_order import _validated_interval
-
-    return _validated_interval(interval, operation)
-
-
-def _unit_ids(unit_ids: Any, n_units: int, operation: str) -> NDArray[Any]:
-    if unit_ids is None:
-        return np.arange(n_units)
-    ids = np.asarray(unit_ids)
-    if ids.shape != (n_units,):
-        raise ValueError(
-            f"{operation}: unit_ids has shape {ids.shape} but spike_times has "
-            f"{n_units} units; pass one label per spike train."
-        )
-    return ids
-
-
 def _sorted_spikes(
     spike_times: Any, operation: str, interval: tuple[float, float] | None = None
 ) -> tuple[NDArray[np.float64], NDArray[np.intp], int]:
@@ -708,7 +695,6 @@ def _sorted_spikes(
     With ``interval``, only the spikes at ``start <= t < stop``.
     """
     from neurospatial._spikes import as_spike_trains
-    from neurospatial.replay.rank_order import _pooled_spikes, _spikes_in
 
     trains = as_spike_trains(spike_times)
     if interval is not None:
@@ -727,7 +713,9 @@ def _event_spikes(
     spike_times: Any, interval: Any, operation: str
 ) -> tuple[NDArray[np.float64], NDArray[np.intp], int]:
     """The event's spikes, in time order, with their units."""
-    return _sorted_spikes(spike_times, operation, _interval(interval, operation))
+    return _sorted_spikes(
+        spike_times, operation, _validated_interval(interval, operation)
+    )
 
 
 def _skew_bias(
