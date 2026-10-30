@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Replay recipe validation
+
+- `ReplaySignificanceResult` can be pickled and deep-copied; its
+  `shuffles` stay read-only. Its `summary()` works for a custom `score=`
+  whose result has only a `score`.
+- `ReplayMethod`, `ReplaySegmentation`, `ArmReplayMethod` and
+  `ReplayDetectionResult` pickle every field by name, so no setting is
+  reset when a copy is rebuilt.
+
 ### Published replay methods as comparable recipes
 
 `neurospatial.replay.methods` holds published replay tests as explicit

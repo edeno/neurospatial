@@ -20,7 +20,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ResultMixin
+from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial.replay.correlation import (
     WeightedCorrelationResult,
     _track_bin_centers,
@@ -94,10 +94,26 @@ class ReplaySignificanceResult(ResultMixin):
     alternative: str
     use_absolute: bool
 
+    def __post_init__(self) -> None:
+        """Freeze the mapping of shuffle tests."""
+        object.__setattr__(self, "shuffles", MappingProxyType(dict(self.shuffles)))
+
+    def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
+        """Rebuild through the constructor; the read-only mapping cannot pickle."""
+        return reduce_through_constructor(self)
+
     def summary(self) -> dict[str, Any]:
-        """Flat dict of scalar headline metrics for this result."""
+        """Flat dict of scalar headline metrics for this result.
+
+        Starts with the observed result's ``summary()``, or only its
+        ``score`` for a custom score whose result has no ``summary()``.
+        """
+        summarize = getattr(self.observed, "summary", None)
+        observed = (
+            summarize() if callable(summarize) else {"score": self.observed.score}
+        )
         return {
-            **self.observed.summary(),
+            **observed,
             "p_value": self.p_value,
             **{f"{name}_p_value": test.p_value for name, test in self.shuffles.items()},
             "alternative": self.alternative,
@@ -533,7 +549,7 @@ def replay_significance(
         )
     return ReplaySignificanceResult(
         observed=observed_result,
-        shuffles=MappingProxyType(shuffles),
+        shuffles=shuffles,
         p_value=max(test.p_value for test in shuffles.values()),
         alternative=alternative,
         use_absolute=use_absolute,
