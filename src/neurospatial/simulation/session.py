@@ -484,17 +484,14 @@ def _spread_bins(
     points the layout of ``n`` points is the first ``n`` of the layout of
     ``n + 1``: adding a cell adds one center and moves none.
     """
-    from scipy.sparse import coo_array
     from scipy.sparse.csgraph import dijkstra
+
+    from neurospatial.behavior._environment_paths import _bin_graph
 
     deepest = int(candidates[np.argmax(depths[candidates])])
     if n_points == 1:
         return np.array([deepest])
-    pairs = env.edge_pairs
-    graph = coo_array(
-        (env.binning.connections.pair_distances, (pairs[:, 0], pairs[:, 1])),
-        shape=(env.n_bins, env.n_bins),
-    ).tocsr()
+    graph = _bin_graph(env)
 
     def distances_from(bin_index: int) -> NDArray[np.float64]:
         return np.asarray(dijkstra(graph, directed=False, indices=bin_index))
