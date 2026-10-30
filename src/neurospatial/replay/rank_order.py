@@ -685,7 +685,8 @@ def _spearman_p_value(
 ) -> float:
     """Two-sided Spearman p-value: exact for few pairs, else the t-approximation."""
     import math
-    from itertools import permutations
+
+    from neurospatial.replay.sequence_match import _all_permutations
 
     n = x.size
     if n > _EXACT_MAX_PAIRS:
@@ -693,12 +694,15 @@ def _spearman_p_value(
         # distinct values is rarer than 2 / n!, computed in log space because
         # n! overflows a float from n = 171 (the bound then underflows to 0).
         return max(approximate, 2.0 * math.exp(-math.lgamma(n + 1)))
-    x_ranks = stats.rankdata(x)
-    t_ranks = stats.rankdata(times)
-    orders = np.array(list(permutations(range(n))), dtype=np.intp)
-    permuted = x_ranks[orders] - x_ranks.mean()
-    t_dev = t_ranks - t_ranks.mean()
-    rho = (permuted @ t_dev) / np.sqrt((permuted[0] ** 2).sum() * (t_dev**2).sum())
+    orders = _all_permutations(n)
+    # Blocks of orderings bound the memory of the rank arrays (n = 9 has 362,880).
+    block = _BLOCK_VALUES // (8 * n)
+    rho = np.concatenate(
+        [
+            _spearman_rows(x[orders[start : start + block]], times)
+            for start in range(0, len(orders), block)
+        ]
+    )
     return float(
         np.mean(
             np.abs(np.round(rho, _SCORE_DECIMALS)) >= round(abs(score), _SCORE_DECIMALS)
@@ -706,24 +710,35 @@ def _spearman_p_value(
     )
 
 
+def _spearman_rows(
+    x: NDArray[np.float64], values: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Spearman correlation of each row of ``x``, shape (n_rows, n), with ``values``.
+
+    Average ranks for ties; NaN where a row, or ``values``, does not vary.
+    """
+    v_ranks = stats.rankdata(values)
+    v_dev = v_ranks - v_ranks.mean()
+    x_ranks = stats.rankdata(x, axis=1)
+    x_dev = x_ranks - x_ranks.mean(axis=1, keepdims=True)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        rho = (x_dev @ v_dev) / np.sqrt((x_dev**2).sum(axis=1) * (v_dev**2).sum())
+    varies = (np.ptp(x, axis=1) > 0) & (np.ptp(values) > 0)
+    return np.where(varies, rho, np.nan)
+
+
 def _permuted_correlations(
     pairs: _EventPairs, permutations: NDArray[np.intp]
 ) -> NDArray[np.float64]:
     """Spearman correlation under each permutation of the active cells' fields."""
-    t_ranks = stats.rankdata(pairs.times)
-    t_dev = t_ranks - t_ranks.mean()
     correlations = np.empty(len(permutations))
     # Rank the pairs in blocks of shuffles to bound memory with many spikes.
     block = max(1, _BLOCK_VALUES // max(pairs.cell.size, 1))
     for start in range(0, len(permutations), block):
         chunk = permutations[start : start + block]
-        x = pairs.field_positions[chunk][:, pairs.cell]  # (n_chunk, n_pairs)
-        x_ranks = stats.rankdata(x, axis=1)
-        x_dev = x_ranks - x_ranks.mean(axis=1, keepdims=True)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            correlations[start : start + block] = (x_dev @ t_dev) / np.sqrt(
-                (x_dev**2).sum(axis=1) * (t_dev**2).sum()
-            )
+        correlations[start : start + block] = _spearman_rows(
+            pairs.field_positions[chunk][:, pairs.cell], pairs.times
+        )
     return correlations
 
 

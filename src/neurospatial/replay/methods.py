@@ -2769,12 +2769,11 @@ def _pooled_ssi_verdicts(
     streams: list[np.random.Generator],
 ) -> list[tuple[ReplayDetectionResult, str]]:
     """Each event's verdict under the epoch-pooled SSI test (Chenani 2019)."""
-    from scipy import stats
-
     from neurospatial._spikes import as_spike_trains
     from neurospatial.replay.rank_order import (
         _pooled_spikes,
         _require_same_cells,
+        _spearman_rows,
         _spikes_by_window,
         _template_fields,
         _template_items,
@@ -2805,13 +2804,7 @@ def _pooled_ssi_verdicts(
         n = int(known.sum())
         if n < 2:
             return np.full(times.shape[0], np.nan)
-        field_dev = stats.rankdata(field[known]) - (n + 1) / 2
-        time_ranks = stats.rankdata(times[:, known], axis=1)
-        time_dev = time_ranks - time_ranks.mean(axis=1, keepdims=True)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            rho = (time_dev @ field_dev) / np.sqrt(
-                (time_dev**2).sum(axis=1) * (field_dev**2).sum()
-            )
+        rho = _spearman_rows(times[:, known], field[known])
         # testsession.m rounds rho to 1e-5 before scaling it.
         return np.round(rho, 5) * np.sqrt(n - 1)
 

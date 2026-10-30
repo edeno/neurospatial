@@ -57,6 +57,7 @@ from neurospatial.replay.methods import (
     ReplayCriterion,
     ReplayMethod,
 )
+from neurospatial.replay.rank_order import _spearman_rows
 from neurospatial.replay.significance import _ALTERNATIVES, _DECODING_NULLS
 
 if TYPE_CHECKING:
@@ -1981,25 +1982,6 @@ def _permuted_rank_scores(
         keep = finite[k][cell_of]
         scores[k] = _spearman_rows(fields[k][cell_of][keep][None, :], times[keep])[0]
     return scores, n_active
-
-
-def _spearman_rows(
-    x: NDArray[np.float64], values: NDArray[np.float64]
-) -> NDArray[np.float64]:
-    """Spearman correlation of each row of ``x`` with ``values``.
-
-    Average ranks for ties; NaN where a row, or ``values``, does not vary.
-    """
-    from scipy import stats
-
-    v_ranks = stats.rankdata(values)
-    v_dev = v_ranks - v_ranks.mean()
-    x_ranks = stats.rankdata(x, axis=1)
-    x_dev = x_ranks - x_ranks.mean(axis=1, keepdims=True)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        rho = (x_dev @ v_dev) / np.sqrt((x_dev**2).sum(axis=1) * (v_dev**2).sum())
-    varies = (np.ptp(x, axis=1) > 0) & (np.ptp(values) > 0)
-    return np.where(varies, rho, np.nan)
 
 
 # --------------------------------------------------------------------------
