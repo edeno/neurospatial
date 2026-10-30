@@ -66,6 +66,10 @@ from neurospatial.simulation.models import (
     PlaceCellModel,
     SpatialViewCellModel,
 )
+from neurospatial.simulation.replay import (
+    ReplayEventSimulation,
+    simulate_replay_event,
+)
 from neurospatial.simulation.session import SimulationSession, simulate_session
 
 # Spike generation
@@ -96,6 +100,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "NeuralModel",
     "ObjectVectorCellModel",
     "PlaceCellModel",
+    "ReplayEventSimulation",
     "SimulationSession",
     "SimulationValidationResult",
     "SpatialViewCellModel",
@@ -117,4 +122,5 @@ __all__ = [  # noqa: RUF022 - organized by category
     "simulate_trajectory_laps",
     "simulate_trajectory_ou",
     "simulate_trajectory_sinusoidal",
+    "simulate_replay_event",
 ]
