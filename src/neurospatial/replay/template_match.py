@@ -23,7 +23,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import validate_alpha
-from neurospatial.replay.calibration import _checked_intervals
+from neurospatial.replay._inputs import _checked_intervals
 from neurospatial.replay.sequence_match import (
     _FIELD_ORDERS,
     _MATCH_ORDERS,

@@ -1909,7 +1909,7 @@ def _event_windows(
         and len(events)
         and not hasattr(events[0], "posterior")
     ):
-        from neurospatial.replay.calibration import _checked_intervals
+        from neurospatial.replay._inputs import _checked_intervals
 
         windows = _checked_intervals(events, operation)
         return [(float(a), float(b)) for a, b in windows]
@@ -2632,7 +2632,7 @@ def relative_rank_template(
     from scipy import stats
 
     from neurospatial._spikes import as_spike_trains
-    from neurospatial.replay.calibration import _checked_intervals
+    from neurospatial.replay._inputs import _checked_intervals
 
     operation = "relative_rank_template()"
     statistics: dict[str, Callable[..., Any]] = {
