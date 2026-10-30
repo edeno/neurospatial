@@ -8,7 +8,9 @@ to one decoded event and :func:`compare_replay_methods` applies several
 methods to several events, so the same data can be scored the way each lab
 scored it. :class:`RankOrderMethod` records a rank-order test, which scores
 the event's spikes rather than a decoded posterior
-(:func:`detect_rank_order_replay`).
+(:func:`detect_rank_order_replay`), and
+:class:`~neurospatial.replay.ArmReplayMethod` a test for replay of single
+arms and pairs of arms on a maze.
 
 A recipe records the paper's decoding settings (time-bin and position-bin
 sizes) for reference but does not decode: methods are compared on the same
@@ -32,6 +34,7 @@ from numpy.typing import NDArray
 from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin
+from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
 from neurospatial.replay.correlation import weighted_correlation
 from neurospatial.replay.trajectory import (
     detect_trajectory_radon,
@@ -67,6 +70,7 @@ __all__ = [
     "TIROLE_2022",
     "WIDLOSKI_FOSTER_2022",
     "WU_2017",
+    "WU_FOSTER_2014",
     "RankOrderMethod",
     "ReplayCriterion",
     "ReplayDetectionResult",
@@ -806,6 +810,9 @@ class ReplayDetectionResult(ResultMixin):
         The tested template of a joint decode, chosen or given as
         ``template=``; None for an event decoded on one set of rate maps and
         for a joint decode's summed posterior (``template_choice="sum"``).
+        For an arm method (:func:`~neurospatial.replay.detect_arm_replay`),
+        the replayed arm, arms (``"center,left"``) or pair
+        (``"center+left"``); None without a replay.
     """
 
     method: str
@@ -1912,7 +1919,7 @@ def compare_replay_methods(
     env: Environment | Mapping[str, Environment],
     events: Sequence[DecodingResult | JointDecodingResult],
     *,
-    replay_methods: Sequence[ReplayMethod | RankOrderMethod],
+    replay_methods: Sequence[ReplayMethod | RankOrderMethod | ArmReplayMethod],
     spike_counts: Sequence[NDArray[np.int64]] | None = None,
     encoding_models: Any = None,
     dt: float | None = None,
@@ -1920,6 +1927,7 @@ def compare_replay_methods(
     template: str | None = None,
     valid_time_bins: Sequence[NDArray[np.bool_]] | None = None,
     spike_times: Any = None,
+    arms: Mapping[str, NDArray[np.intp]] | None = None,
     rng: np.random.Generator | int | None = None,
 ) -> pd.DataFrame:
     """Apply several published replay methods to several decoded events.
@@ -1933,8 +1941,10 @@ def compare_replay_methods(
         The decoded candidate events, each with ``times``: a decode on one
         set of rate maps, or a joint decode over several templates (see
         :func:`detect_replay`).
-    replay_methods : sequence of ReplayMethod or RankOrderMethod
-        The methods to compare. A rank-order method scores each event's
+    replay_methods : sequence of ReplayMethod, RankOrderMethod or ArmReplayMethod
+        The methods to compare. An arm method classifies each event's
+        posterior as a single-arm or joint-arm replay on ``arms`` (see
+        :func:`~neurospatial.replay.detect_arm_replay`). A rank-order method scores each event's
         spikes over the event's decoding windows, from the first window's
         start to the last window's end (``times[0] - dt / 2`` to
         ``times[-1] + dt / 2``), against ``encoding_models``: with a mapping
@@ -1955,6 +1965,8 @@ def compare_replay_methods(
     spike_times : array, sequence of arrays, or spike group, optional
         The session's spike times, one train per row of
         ``encoding_models``, for rank-order methods.
+    arms : Mapping[str, NDArray[np.intp]] or None
+        Each arm's bins from the junction outward, for arm methods.
     rng : numpy.random.Generator, int, or None
         Random number generator or seed for the shuffles. Each (event, method)
         pair draws from its own stream, derived from ``rng``, the event's
@@ -1968,7 +1980,8 @@ def compare_replay_methods(
         ``score``, ``p_value``, one ``passes[...]`` column per criterion,
         ``n_segments``, ``segment_start_time`` and ``segment_end_time`` for
         methods with a segmentation (NaN for the others), ``template`` for
-        joint decodes, and ``error``. ``error`` says why an event has no
+        joint decodes and for the arm or pair an arm method found, and
+        ``error``. ``error`` says why an event has no
         verdict, and ``is_replay`` is then False: fewer than two time bins
         left to score (after the method drops time bins without spikes), an
         undefined rank-order correlation (too few active template cells, or
@@ -2035,6 +2048,23 @@ def compare_replay_methods(
                 "dataclasses.replace(method, name='diba_alpha_0.05', alpha=0.05)",
             )
         )
+    if any(isinstance(m, ArmReplayMethod) for m in replay_methods):
+        if arms is None:
+            raise ValueError(
+                _format_error(
+                    "compare_replay_methods(): arm methods need arms=.",
+                    why="they classify replay per arm and per pair of arms",
+                    fix="pass arms={'center': bins, 'left': bins, ...} with each "
+                    "arm's bins from the junction outward",
+                )
+            )
+        if isinstance(env, Mapping) or any(
+            isinstance(event, JointDecodingResult) for event in events
+        ):
+            raise ValueError(
+                "compare_replay_methods(): arm methods take events decoded on "
+                "one environment, not joint decodes or a mapping of environments."
+            )
     rank_methods = [m for m in replay_methods if isinstance(m, RankOrderMethod)]
     if rank_methods:
         missing = [
@@ -2087,7 +2117,9 @@ def compare_replay_methods(
         else np.random.SeedSequence(rng).entropy
     )
 
-    def stream_for(index: int, method: ReplayMethod | RankOrderMethod) -> Any:
+    def stream_for(
+        index: int, method: ReplayMethod | RankOrderMethod | ArmReplayMethod
+    ) -> Any:
         return np.random.default_rng(
             np.random.SeedSequence(
                 entropy, spawn_key=(index, zlib.crc32(method.name.encode()))
@@ -2115,6 +2147,30 @@ def compare_replay_methods(
     for index, event in enumerate(events):
         for method in replay_methods:
             stream = stream_for(index, method)
+            if isinstance(method, ArmReplayMethod):
+                assert arms is not None and not isinstance(env, Mapping)
+                assert not isinstance(event, JointDecodingResult)
+                if np.unique(np.asarray(event_times[index])).size < 2:
+                    rows.append(
+                        {
+                            "event": index,
+                            "method": method.name,
+                            "is_replay": False,
+                            "score": np.nan,
+                            "p_value": np.nan,
+                            "error": "fewer than two time bins to score",
+                        }
+                    )
+                    continue
+                verdict = detect_arm_replay(
+                    env,
+                    event.posterior,
+                    np.asarray(event_times[index]),
+                    arms=arms,
+                    arm_replay_method=method,
+                )
+                rows.append({"event": index, **verdict.summary(), "error": ""})
+                continue
             if isinstance(method, RankOrderMethod) and method.name in pooled_verdicts:
                 verdict, error = pooled_verdicts[method.name][index]
                 rows.append({"event": index, **verdict.summary(), "error": error})
@@ -2902,12 +2958,61 @@ CHENANI_2019 = RankOrderMethod(
     ),
 )
 
-PUBLISHED_METHODS: tuple[ReplayMethod | RankOrderMethod, ...] = (
+WU_FOSTER_2014 = ArmReplayMethod(
+    name="wu_foster_2014",
+    reference=(
+        "Wu, X., & Foster, D. J. (2014). Hippocampal replay captures the "
+        "unique topological structure of a novel environment. Journal of "
+        "Neuroscience, 34(19), 6459-6469."
+    ),
+    peak_threshold=5.0,
+    smoothing_sigma=0.01,
+    min_duration=0.05,
+    min_coverage=0.5,
+    min_abs_correlation=0.5,
+    joint_min_abs_correlation=0.5,
+    decoding={"time_bin": 0.01, "position_bin": 1.85},
+    notes=(
+        "Subregions around the largest peak of each arm's MAP function "
+        "(largest posterior over the arm's bins, smoothed with a 10 ms SD "
+        "Gaussian) above 5 / (bins of the whole maze); single-arm replay "
+        "when at least 50 ms long (five 10 ms time bins of the smoothed "
+        "run), more than 50% of the arm represented and |weighted "
+        "correlation| > 0.5.",
+        "Joint subregions span the two single-arm subregions over both "
+        "arms' bins; replay when |weighted correlation| > 0.5, both arms "
+        "meet the length and coverage rules and their correlations have the "
+        "joint subregion's sign along the path. A single-arm replay counts "
+        "only if no pair is a replay, a joint replay only if no other pair "
+        "is.",
+        "Positions along a pair run from one arm's end through the junction "
+        "to the other's. Fig. 1A lays the center arm out end to junction "
+        "and the side arms junction to end, and Fig. 2C draws right-left "
+        "replays as V shapes on that axis, which could never pass a "
+        "same-sign rule there; the path reading is the one consistent with "
+        "the reported right-left replays.",
+        "Unstated choices: the posterior is not renormalized within an arm; "
+        "the smoothing pads with zeros at the event's edges and is truncated "
+        "at 4 SD; the first time bin of the largest peak wins a tie; several "
+        "single-arm replays in one event are all reported.",
+        "No per-event shuffle: 5,000 place-field shifts tested the number "
+        "of replays in a session. Candidate events (not applied here): spike "
+        "density of place cells in 10 ms bins smoothed with a 15 ms SD, "
+        "above its mean with a peak above 2 SD, while the rat ran slower "
+        "than 5 cm/s. Fields were smoothed per arm (SD 5 bins); cells with "
+        "peak rate above 1 Hz and spikes wider than 0.34 ms. "
+        "Directionality (> 0.3) of a joint position x direction decode was "
+        "a separate analysis.",
+    ),
+)
+
+PUBLISHED_METHODS: tuple[ReplayMethod | RankOrderMethod | ArmReplayMethod, ...] = (
     FOSTER_WILSON_2006,
     DIBA_BUZSAKI_2007,
     DAVIDSON_2009,
     KARLSSON_FRANK_2009,
     PFEIFFER_FOSTER_2013,
+    WU_FOSTER_2014,
     PFEIFFER_FOSTER_2015,
     SILVA_2015,
     AMBROSE_2016,

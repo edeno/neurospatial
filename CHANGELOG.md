@@ -121,6 +121,33 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
   counts. The Bendor-lab code zeroes the original event's empty time bins in
   shuffles that move them, which is not reproduced.
 
+### Single-arm and joint-arm replay on a maze: Wu & Foster (2014)
+
+On a maze, a replay may run along one arm or cross the junction into
+another.
+
+- New `detect_arm_replay(env, posterior, times, arms=...,
+  arm_replay_method=...)` classifies one decoded event. `arms` maps each arm
+  to its bins, ordered from the junction outward; contiguity and
+  orientation are checked. The result's `template`
+  names the replayed arm (`"left"`), several arms (`"center,left"`), or a
+  pair (`"center+left"`).
+- `ArmReplayMethod` records the thresholds.
+- `WU_FOSTER_2014` follows the paper:
+  - Each arm's subregion lies around the largest peak of its peak
+    posterior, smoothed with a 10 ms Gaussian, while that peak stays above
+    5 × chance.
+  - A single arm is a replay when its subregion lasts at least 50 ms,
+    covers more than 50% of the arm, and has |weighted correlation| > 0.5.
+  - A pair of arms is a joint replay when its subregion, along the path
+    through the junction, has |weighted correlation| > 0.5, both arms meet
+    the length and coverage rules, and both arms' correlations have the
+    joint's sign along the path.
+  - Exclusivity follows the paper: a joint replay is reported only when no
+    other pair is one, and single-arm replays only when no pair is one.
+- `compare_replay_methods(..., arms=)` includes arm methods in the
+  comparison table.
+
 ### Ólafsdóttir et al. (2017) line-fit recipe; minimum speed in the line search
 
 - `OLAFSDOTTIR_2017`: the replay line search with a 30 cm band, speeds of
