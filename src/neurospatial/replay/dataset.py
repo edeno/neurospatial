@@ -1875,7 +1875,12 @@ def _rank_order_values(
                     min_active_cells=method.min_active_cells,
                     operation=operation,
                 )
-                observed = _result(pairs, method.spike_statistic, method.field_order)
+                observed = _result(
+                    pairs,
+                    method.spike_statistic,
+                    method.field_order,
+                    analytic_p_value=False,
+                )
                 scores = np.array([observed.score])
                 active = np.array([observed.n_active_cells])
                 datasets = np.zeros(1, dtype=np.intp)

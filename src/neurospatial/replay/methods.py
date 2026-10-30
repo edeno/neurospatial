@@ -2700,7 +2700,9 @@ def _rank_order_verdict(
         min_active_cells=method.min_active_cells,
         operation=operation,
     )
-    observed = _result(pairs, method.spike_statistic, method.field_order)
+    observed = _result(
+        pairs, method.spike_statistic, method.field_order, analytic_p_value=False
+    )
     score = float(observed.score)
     p_value = np.nan
     n_shuffles_used = None

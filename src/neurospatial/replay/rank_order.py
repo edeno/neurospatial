@@ -571,15 +571,25 @@ def _event_pairs(
 
 
 def _result(
-    pairs: _EventPairs, spike_statistic: str, field_order: str
+    pairs: _EventPairs,
+    spike_statistic: str,
+    field_order: str,
+    *,
+    analytic_p_value: bool = True,
 ) -> RankOrderResult:
+    """The event's correlation; ``analytic_p_value=False`` leaves the p-value NaN.
+
+    The exact p-value enumerates every ordering of up to 9 pairs, so callers
+    that test the score otherwise skip it.
+    """
     score, p_value = np.nan, np.nan
     if pairs.times.size:
         x = pairs.field_positions[pairs.cell]
         if np.ptp(x) > 0 and np.ptp(pairs.times) > 0:
             test = stats.spearmanr(x, pairs.times)
             score = float(test.statistic)
-            p_value = _spearman_p_value(x, pairs.times, score, float(test.pvalue))
+            if analytic_p_value:
+                p_value = _spearman_p_value(x, pairs.times, score, float(test.pvalue))
     return RankOrderResult(
         score=score,
         analytic_p_value=p_value,
