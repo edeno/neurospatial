@@ -27,12 +27,9 @@ reproduced, are listed in each recipe's ``notes``.
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import inspect
-import operator
-import warnings
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType, SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias
@@ -40,9 +37,20 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, reduce_through_constructor
+from neurospatial._stacklevel import _warnings_with_context
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_alpha,
+    validate_choice,
+    validate_integer_at_least,
+)
+from neurospatial.replay._compare import (
+    _check_criterion_settings,
+    _compare,
+    _criterion_label,
+)
 from neurospatial.replay.arms import ArmReplayMethod
 from neurospatial.replay.circular import fit_circular_sequence
 from neurospatial.replay.correlation import weighted_correlation
@@ -73,6 +81,7 @@ from neurospatial.replay.trajectory import (
     fit_linear_trajectory,
     regression_line_score,
 )
+from neurospatial.stats._utils import _entropy, _name_key, _stream
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -156,12 +165,6 @@ _SEGMENT_OPTION_SCALES = {
 # Criterion quantities that compare the templates of a joint decode.
 _TEMPLATE_QUANTITIES = ("template_fraction", "segment_template_fraction")
 _TEMPLATE_CHOICES = (None, "most_posterior", "sum", "smallest_p", "max_score")
-_COMPARISONS: dict[str, Callable[[float, float], bool]] = {
-    "<": operator.lt,
-    "<=": operator.le,
-    ">": operator.gt,
-    ">=": operator.ge,
-}
 
 
 # TrajectoryMetrics scalars a shuffle does not change, or that need spike counts.
@@ -267,28 +270,23 @@ class ReplayCriterion:
                     fix="give the paper's threshold as a number, such as 0.5",
                 )
             )
-        if not isinstance(self.absolute, (bool, np.bool_)):
-            raise ValueError(
-                f"ReplayCriterion {self.quantity!r}: absolute must be True or "
-                f"False, got {self.absolute!r}."
-            )
-        if self.comparison not in _COMPARISONS:
-            raise ValueError(
-                f"ReplayCriterion: comparison must be one of "
-                f"{list(_COMPARISONS)}, got {self.comparison!r}."
-            )
-        if self.relative_to not in (None, "track_length"):
-            raise ValueError(
-                f"ReplayCriterion: relative_to must be None or 'track_length', "
-                f"got {self.relative_to!r}."
-            )
+        _check_criterion_settings(
+            f"ReplayCriterion {self.quantity!r}",
+            self.comparison,
+            self.relative_to,
+            self.absolute,
+        )
 
     @property
     def label(self) -> str:
         """A readable form, such as ``"|score| > 0.6"``."""
-        name = f"|{self.quantity}|" if self.absolute else self.quantity
-        scale = " x track_length" if self.relative_to else ""
-        return f"{name} {self.comparison} {self.threshold:g}{scale}"
+        return _criterion_label(
+            self.quantity,
+            self.comparison,
+            absolute=self.absolute,
+            relative_to=self.relative_to,
+            threshold=self.threshold,
+        )
 
     def evaluate(self, value: float, track_length: float) -> bool:
         """Whether ``value`` meets this criterion; False when either is NaN.
@@ -298,15 +296,14 @@ class ReplayCriterion:
         :func:`~neurospatial.replay.replay_segments`, so that rounding in
         times such as ``t0 + 0.005 * k`` does not flip a strict test.
         """
+        return bool(self._passes(value, track_length))
+
+    def _passes(self, values: Any, track_length: float) -> NDArray[np.bool_]:
+        """:meth:`evaluate` elementwise over ``values``."""
         threshold = self.threshold * (track_length if self.relative_to else 1.0)
-        value = abs(value) if self.absolute else value
-        if not (np.isfinite(value) and np.isfinite(threshold)):
-            return False
-        if abs(value - threshold) <= ABSOLUTE_TOLERANCE + RELATIVE_TOLERANCE * abs(
-            threshold
-        ):
-            value = threshold
-        return bool(_COMPARISONS[self.comparison](value, threshold))
+        return _compare(
+            np.abs(values) if self.absolute else values, self.comparison, threshold
+        )
 
 
 def _shuffle_p_floor(n_shuffles: int, alternative: str) -> float:
@@ -457,22 +454,17 @@ class ReplaySegmentation:
             _threshold(
                 name, self.options[name], minimum="zero", operation="ReplaySegmentation"
             )
-        if self.choose not in ("longest", "any"):
-            raise ValueError(
-                f"ReplaySegmentation: choose must be 'longest' or 'any', got "
-                f"{self.choose!r}."
-            )
-        if self.rows not in ("segment", "trajectory"):
-            raise ValueError(
-                f"ReplaySegmentation: rows must be 'segment' or 'trajectory', "
-                f"got {self.rows!r}."
-            )
+        validate_choice(
+            self.choose, ("longest", "any"), name="choose", owner="ReplaySegmentation"
+        )
+        validate_choice(
+            self.rows,
+            ("segment", "trajectory"),
+            name="rows",
+            owner="ReplaySegmentation",
+        )
         cells = self.min_active_cells_per_time_bin
-        if cells is not None and (
-            isinstance(cells, bool)
-            or not isinstance(cells, (int, np.integer))
-            or cells < 1
-        ):
+        if cells is not None and not is_integer_at_least(cells, 1):
             raise ValueError(
                 "ReplaySegmentation: min_active_cells_per_time_bin must be a "
                 f"positive integer or None, got {cells!r}."
@@ -806,16 +798,18 @@ class ReplayMethod:
                     "and empty-time-bin rules do not apply to its shuffles; "
                     "use nulls that keep the time bins in place."
                 )
-        if self.empty_time_bins not in ("keep", "drop", "zero"):
-            raise ValueError(
-                f"ReplayMethod {self.name!r}: empty_time_bins must be 'keep', "
-                f"'drop' or 'zero', got {self.empty_time_bins!r}."
-            )
-        if self.template_choice not in _TEMPLATE_CHOICES:
-            raise ValueError(
-                f"ReplayMethod {self.name!r}: template_choice must be one of "
-                f"{list(_TEMPLATE_CHOICES)}, got {self.template_choice!r}."
-            )
+        validate_choice(
+            self.empty_time_bins,
+            ("keep", "drop", "zero"),
+            name="empty_time_bins",
+            owner=f"ReplayMethod {self.name!r}",
+        )
+        validate_choice(
+            self.template_choice,
+            _TEMPLATE_CHOICES,
+            name="template_choice",
+            owner=f"ReplayMethod {self.name!r}",
+        )
         if self.template_choice == "smallest_p" and not self.nulls:
             raise ValueError(
                 _format_error(
@@ -907,25 +901,16 @@ class ReplayMethod:
                     "test the segment's detection with score=None",
                 )
             )
-        if self.alternative not in _ALTERNATIVES:
-            raise ValueError(
-                f"ReplayMethod {self.name!r}: alternative must be one of "
-                f"{list(_ALTERNATIVES)}, got {self.alternative!r}."
-            )
-        if not 0 < self.alpha < 1:
-            raise ValueError(
-                f"ReplayMethod {self.name!r}: alpha must be in (0, 1), got "
-                f"{self.alpha!r}."
-            )
-        if (
-            isinstance(self.n_shuffles, bool)
-            or not isinstance(self.n_shuffles, (int, np.integer))
-            or self.n_shuffles < 1
-        ):
-            raise ValueError(
-                f"ReplayMethod {self.name!r}: n_shuffles must be a positive "
-                f"integer, got {self.n_shuffles!r}."
-            )
+        validate_choice(
+            self.alternative,
+            _ALTERNATIVES,
+            name="alternative",
+            owner=f"ReplayMethod {self.name!r}",
+        )
+        validate_alpha(self.alpha, owner=f"ReplayMethod {self.name!r}")
+        validate_integer_at_least(
+            self.n_shuffles, 1, name="n_shuffles", owner=f"ReplayMethod {self.name!r}"
+        )
         if not (self.nulls or self.criteria or self.segmentation is not None):
             raise ValueError(
                 _format_error(
@@ -1103,11 +1088,7 @@ class ReplayMethod:
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
-        rebuild, (cls, state) = reduce_through_constructor(self)
-        state["null_options"] = {
-            name: dict(options) for name, options in self.null_options.items()
-        }
-        return rebuild, (cls, state)
+        return reduce_through_constructor(self)
 
     @property
     def _compare_needs(self) -> _CompareNeeds | None:
@@ -1280,11 +1261,9 @@ class RankOrderMethod:
             "template_choice": (None, "most_active"),
         }
         for field_name, allowed in choices.items():
-            if getattr(self, field_name) not in allowed:
-                raise ValueError(
-                    f"{prefix}: {field_name} must be one of {list(allowed)}, got "
-                    f"{getattr(self, field_name)!r}."
-                )
+            validate_choice(
+                getattr(self, field_name), allowed, name=field_name, owner=prefix
+            )
         if self.test == "t_distribution" and self.alternative != "two-sided":
             raise ValueError(
                 f"{prefix}: the t-distribution test of rho is two-sided; use "
@@ -1311,8 +1290,7 @@ class RankOrderMethod:
             raise ValueError(
                 f"{prefix}: min_epoch_events applies only to test='pooled_ssi'."
             )
-        if not 0 < self.alpha < 1:
-            raise ValueError(f"{prefix}: alpha must be in (0, 1), got {self.alpha!r}.")
+        validate_alpha(self.alpha, owner=prefix)
         for field_name, minimum in (
             ("min_active_cells", 3),
             ("n_shuffles", 1),
@@ -1321,15 +1299,7 @@ class RankOrderMethod:
             value = getattr(self, field_name)
             if value is None and field_name == "min_epoch_events":
                 continue
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, np.integer))
-                or value < minimum
-            ):
-                raise ValueError(
-                    f"{prefix}: {field_name} must be an integer of at least "
-                    f"{minimum}, got {value!r}."
-                )
+            validate_integer_at_least(value, minimum, name=field_name, owner=prefix)
         for field_name, upper in (
             ("min_active_fraction", 1.0),
             ("min_peak_rate", None),
@@ -2509,7 +2479,7 @@ def _segment_passes(
     for criterion in replay_method.criteria:
         if criterion.quantity in _SEGMENT_QUANTITIES:
             values = getattr(segments, _SEGMENT_QUANTITIES[criterion.quantity])
-            ok &= [criterion.evaluate(float(v), track_length) for v in values]
+            ok &= criterion._passes(values, track_length)
     return ok
 
 
@@ -3370,8 +3340,6 @@ def compare_replay_methods(
     Davidson et al. (2009) and Michon et al. (2019) drew from the complete
     set of candidate events.
     """
-    import zlib
-
     import pandas as pd
 
     for name, per_event in (
@@ -3524,11 +3492,7 @@ def compare_replay_methods(
                 if not isinstance(event, (JointDecodingResult, Mapping))
             ]
         )
-    entropy = (
-        int(rng.integers(2**63))
-        if isinstance(rng, np.random.Generator)
-        else np.random.SeedSequence(rng).entropy
-    )
+    entropy = _entropy(rng)
 
     def stream_for(
         index: int,
@@ -3539,11 +3503,7 @@ def compare_replay_methods(
         | TemplateMatchMethod
         | BiasSequenceMethod,
     ) -> Any:
-        return np.random.default_rng(
-            np.random.SeedSequence(
-                entropy, spawn_key=(index, zlib.crc32(method.name.encode()))
-            )
-        )
+        return _stream(entropy, index, _name_key(method.name))
 
     windows = (
         None
@@ -3627,19 +3587,6 @@ def _separate_times(
     return arrays[0]
 
 
-@contextlib.contextmanager
-def _warnings_with_context(context: str) -> Iterator[None]:
-    """Re-emit the warnings raised in the block with ``context`` in front."""
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        yield
-    for caught_warning in caught:
-        # Frames: this generator, contextlib's __exit__, the caller, its caller.
-        warnings.warn(
-            f"{context}: {caught_warning.message}",
-            caught_warning.category,
-            stacklevel=4,
-        )
 
 
 # --------------------------------------------------------------------------

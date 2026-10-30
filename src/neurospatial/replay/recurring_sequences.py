@@ -13,7 +13,6 @@ behavioral template and gives no per-event verdict.
 
 from __future__ import annotations
 
-import zlib
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
@@ -28,12 +27,15 @@ from neurospatial._results import (
     read_only_copy,
     reduce_through_constructor,
 )
+from neurospatial._validation import validate_alpha
 from neurospatial.replay.sequence_match import (
     _check_seconds,
     _is_count,
     _onsets,
     _sorted_trains,
 )
+from neurospatial.stats._utils import _entropy, _name_key, _stream
+from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -599,8 +601,7 @@ class RecurringSequenceMethod:
                     f"{prefix}: {field_name} must be an integer of at least "
                     f"{minimum}, got {value!r}."
                 )
-        if not 0 < self.alpha < 1:
-            raise ValueError(f"{prefix}: alpha must be in (0, 1), got {self.alpha!r}.")
+        validate_alpha(self.alpha, owner=prefix)
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -657,10 +658,7 @@ class RecurringSequencesSignificanceResult(ResultMixin):
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
-        rebuild, (cls, state) = reduce_through_constructor(self)
-        state["surrogate_counts"] = dict(self.surrogate_counts)
-        state["p_values"] = dict(self.p_values)
-        return rebuild, (cls, state)
+        return reduce_through_constructor(self)
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
@@ -788,17 +786,11 @@ def recurring_sequences_significance(
     }
     onsets = [_onsets(train, method.burst_isi) for train in trains]
     observed = _search(onsets, int(reference_unit), **options)
-    entropy = (
-        int(rng.integers(2**63))
-        if isinstance(rng, np.random.Generator)
-        else np.random.SeedSequence(rng).entropy
-    )
+    entropy = _entropy(rng)
     counts: dict[str, NDArray[np.int64]] = {}
     p_values: dict[str, float] = {}
     for kind in method.surrogates:
-        stream = np.random.default_rng(
-            np.random.SeedSequence(entropy, spawn_key=(zlib.crc32(kind.encode()),))
-        )
+        stream = _stream(entropy, _name_key(kind))
         kind_counts = np.array(
             [
                 _search(
@@ -811,8 +803,8 @@ def recurring_sequences_significance(
             dtype=np.int64,
         )
         counts[kind] = kind_counts
-        p_values[kind] = float(
-            (np.sum(kind_counts >= observed.n_recurring) + 1) / (kind_counts.size + 1)
+        p_values[kind] = compute_shuffle_pvalue(
+            observed.n_recurring, kind_counts.astype(np.float64), tail="greater"
         )
     p_value = max(p_values.values())
     return RecurringSequencesSignificanceResult(

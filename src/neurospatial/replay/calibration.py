@@ -44,9 +44,11 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import validate_choice, validate_integer_at_least
+from neurospatial.replay._compare import _tolerance
+from neurospatial.replay._inputs import _checked_intervals
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -424,10 +426,7 @@ def detection_rates(
     from scipy.stats import binomtest
 
     operation = "detection_rates()"
-    if errors not in _ERRORS:
-        raise ValueError(
-            f"{operation}: errors must be one of {_ERRORS}, got {errors!r}."
-        )
+    validate_choice(errors, _ERRORS, name="errors", owner=operation)
     if not 0 < confidence < 1:
         raise ValueError(
             f"{operation}: confidence must be in (0, 1), got {confidence}."
@@ -671,10 +670,7 @@ def method_agreement(
     import pandas as pd
 
     operation = "method_agreement()"
-    if errors not in _ERRORS:
-        raise ValueError(
-            f"{operation}: errors must be one of {_ERRORS}, got {errors!r}."
-        )
+    validate_choice(errors, _ERRORS, name="errors", owner=operation)
     data = _checked_table(table, groups, operation)
     if errors == "exclude":
         data = data[~data["_error"]]
@@ -1007,9 +1003,7 @@ def matched_alpha(
             # A method that passes p <= alpha (equal within round-off) would
             # pass this event too: the largest alpha that does not lies just
             # below it.
-            alpha = max(
-                alpha - 2 * (ABSOLUTE_TOLERANCE + RELATIVE_TOLERANCE * alpha), 0.0
-            )
+            alpha = max(alpha - 2 * float(_tolerance(alpha)), 0.0)
         problem = None
         if alpha == 0.0:
             alpha = np.nan
@@ -1597,11 +1591,8 @@ def null_events(
     from neurospatial._spikes import as_spike_trains
 
     operation = "null_events()"
-    if kind not in _NULL_KINDS:
-        raise ValueError(
-            f"{operation}: kind must be one of {_NULL_KINDS}, got {kind!r}."
-        )
-    _positive_count(n_copies, "n_copies", operation)
+    validate_choice(kind, _NULL_KINDS, name="kind", owner=operation)
+    validate_integer_at_least(n_copies, 1, name="n_copies", owner=operation)
     windows = _checked_intervals(intervals, operation)
     ordered = windows[np.argsort(windows[:, 0], kind="stable")]
     overlaps = np.flatnonzero(ordered[1:, 0] < ordered[:-1, 1])
@@ -1769,11 +1760,8 @@ def simulated_null_events(
     from neurospatial.simulation import simulate_replay_event
 
     operation = "simulated_null_events()"
-    if kind not in _SIMULATED_KINDS:
-        raise ValueError(
-            f"{operation}: kind must be one of {_SIMULATED_KINDS}, got {kind!r}."
-        )
-    _positive_count(n_events, "n_events", operation)
+    validate_choice(kind, _SIMULATED_KINDS, name="kind", owner=operation)
+    validate_integer_at_least(n_events, 1, name="n_events", owner=operation)
     generator = np.random.default_rng(rng)
     seeds = generator.integers(2**63, size=n_events)
     starts_, stops_ = _require_track_extents(
@@ -1973,29 +1961,3 @@ def _decode_intervals_together(
         )
         counts[slot] = all_counts[first:last].copy()
     return events, counts
-
-
-def _positive_count(value: Any, name: str, operation: str) -> None:
-    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 1:
-        raise ValueError(
-            f"{operation}: {name} must be a positive integer, got {value!r}."
-        )
-
-
-def _checked_intervals(intervals: Any, operation: str) -> NDArray[np.float64]:
-    windows = np.asarray(intervals, dtype=np.float64)
-    if (
-        windows.ndim != 2
-        or windows.shape[1] != 2
-        or len(windows) == 0
-        or not np.all(np.isfinite(windows))
-        or np.any(windows[:, 1] <= windows[:, 0])
-    ):
-        raise ValueError(
-            _format_error(
-                f"{operation}: intervals must be finite (start, stop) rows with "
-                f"start < stop, got shape {windows.shape}.",
-                fix="pass an array of shape (n_events, 2) in seconds",
-            )
-        )
-    return windows

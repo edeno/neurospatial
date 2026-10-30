@@ -76,6 +76,32 @@ def _private_values(env, events, method, *, fast, **options):
     return _dataset_values(env, events, method, fast=fast, **{**defaults, **options})
 
 
+def test_criterion_grid_matches_replay_criterion_at_the_threshold():
+    """Values within round-off of a threshold compare as equal; NaN fails."""
+    values = np.array([0.1 - 1e-12, 0.1 + 1e-12, 0.1 - 1e-6, np.nan, -0.3])
+    thresholds = np.array([0.1, 0.3])
+    table = pd.DataFrame({"q": values, "track_length": [1.0, 1.0, 1.0, 1.0, 3.0]})
+    for comparison, absolute, relative_to in itertools.product(
+        ("<", "<=", ">", ">="), (False, True), (None, "track_length")
+    ):
+        grid = CriterionGrid(
+            "q", comparison, thresholds, absolute=absolute, relative_to=relative_to
+        )
+        expected = [
+            [
+                ReplayCriterion(
+                    "q", comparison, threshold, relative_to, absolute
+                ).evaluate(value, track_length)
+                for threshold in thresholds
+            ]
+            for value, track_length in zip(values, table["track_length"], strict=True)
+        ]
+        np.testing.assert_array_equal(grid.passes(table), expected)
+    assert not ReplayCriterion("q", ">", 0.1).evaluate(0.1 + 1e-12, np.nan)
+    assert ReplayCriterion("q", "<=", 0.1).evaluate(0.1 + 1e-12, np.nan)
+    assert not ReplayCriterion("q", "<", 0.1).evaluate(np.nan, np.nan)
+
+
 class TestDatasetTest:
     def test_reproduces_a_hand_built_grid_count_and_p(self):
         """Shares, counts and p of a 2 x 2 grid, checked by hand."""

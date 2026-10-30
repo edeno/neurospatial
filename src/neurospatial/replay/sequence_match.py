@@ -26,9 +26,9 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.replay._compare import _tolerance
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -1187,11 +1187,6 @@ def _random_orderings(
     n: int, n_samples: int, rng: np.random.Generator
 ) -> NDArray[np.intp]:
     return np.argsort(rng.random((n_samples, n)), axis=1)
-
-
-def _tolerance(threshold: float) -> float:
-    """Round-off within which a value counts as equal to ``threshold``."""
-    return ABSOLUTE_TOLERANCE + RELATIVE_TOLERANCE * abs(threshold)
 
 
 def _at_most(value: Any, threshold: float) -> Any:

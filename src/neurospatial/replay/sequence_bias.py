@@ -30,6 +30,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import validate_alpha
 from neurospatial.replay.significance import _ALTERNATIVES
 
 if TYPE_CHECKING:
@@ -194,12 +195,7 @@ class BiasSequenceMethod:
         prefix = f"BiasSequenceMethod {self.name!r}"
         object.__setattr__(self, "notes", tuple(self.notes))
         _check_test(prefix, self.n_shuffles, self.alternative, self.use_absolute)
-        if (
-            isinstance(self.alpha, bool)
-            or not isinstance(self.alpha, (int, float, np.integer, np.floating))
-            or not 0 < self.alpha < 1
-        ):
-            raise ValueError(f"{prefix}: alpha must be in (0, 1), got {self.alpha!r}.")
+        validate_alpha(self.alpha, owner=prefix)
         value = self.min_active_cells
         if (
             isinstance(value, bool)

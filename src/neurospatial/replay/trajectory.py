@@ -71,6 +71,7 @@ import numpy as np
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.replay._inputs import _FIT_WHY, _posterior_times, _probability_rows
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -416,7 +417,7 @@ def _track_positions(
     ValueError
         If ``env`` is neither 1-D nor a linearized track, if ``posterior`` is
         not 2-D, if it does not have one column per bin, or if a row is not a
-        probability mass (see :func:`_require_probability_rows`).
+        probability mass (see :func:`_probability_rows`).
     """
     from neurospatial.environment import _require_track_extents
 
@@ -432,80 +433,13 @@ def _track_positions(
             f"has {env.n_bins} bins. Pass the posterior decoded on this "
             "environment, with one column per bin."
         )
-    posterior = _require_probability_rows(
-        posterior, operation, allow_zero_rows=allow_zero_rows
+    posterior = _probability_rows(
+        posterior, operation, sums="one_or_zero" if allow_zero_rows else "one"
     )
     # A stable sort keeps bins that are already in track order in place, so
     # sampling below draws the same bins as it would in bin numbering.
     order = np.argsort(starts, kind="stable")
     return posterior[:, order], starts[order], stops[order]
-
-
-def _require_probability_rows(
-    posterior: NDArray[Any], operation: str, *, allow_zero_rows: bool = False
-) -> NDArray[np.float64]:
-    """Refuse rows that are not a probability mass over the bins.
-
-    Parameters
-    ----------
-    posterior : NDArray, shape (n_time_bins, n_bins)
-        Posterior mass per bin.
-    operation : str
-        The calling function, for the refusal message.
-    allow_zero_rows : bool, default=False
-        Accept rows that are all zero, the time bins without spikes that
-        ``empty_time_bins="zero"`` zeroes.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_time_bins, n_bins)
-        The posterior as float64.
-
-    Raises
-    ------
-    ValueError
-        If a row holds NaN or Inf, a negative entry, or does not sum to 1
-        within the tolerance a ``DecodingResult`` accepts (``1e-6``, which
-        covers float32 rounding).
-    """
-    from neurospatial.decoding import _ROW_SUM_TOLERANCE
-
-    posterior = np.asarray(posterior, dtype=np.float64)
-    finite = np.isfinite(posterior).all(axis=1)
-    negative = finite & (posterior < 0).any(axis=1)
-    sums = posterior.sum(axis=1)
-    unnormalized = finite & ~negative & (np.abs(sums - 1.0) > _ROW_SUM_TOLERANCE)
-    if allow_zero_rows:
-        unnormalized &= sums != 0
-    bad = ~finite | negative | unnormalized
-    if not np.any(bad):
-        return posterior
-    problems = []
-    if np.any(~finite):
-        problems.append(f"{int(np.sum(~finite))} contain NaN or Inf")
-    if np.any(negative):
-        problems.append(f"{int(np.sum(negative))} have negative entries")
-    if np.any(unnormalized):
-        worst = sums[unnormalized][np.argmax(np.abs(sums[unnormalized] - 1.0))]
-        problems.append(
-            f"{int(np.sum(unnormalized))} do not sum to 1 (worst row sums to "
-            f"{worst:.6g}, |row sum - 1| = {abs(worst - 1.0):.2g})"
-        )
-    raise ValueError(
-        _format_error(
-            f"{operation} needs each posterior row to be a probability mass "
-            f"over the bins, but {int(np.sum(bad))} of {len(posterior)} rows "
-            f"are not: {'; '.join(problems)}.",
-            why="a row with NaN has no decoded position but would be read as "
-            "the track start (bin 0), and a row that does not sum to 1 weighs "
-            "its time bin more or less than the others (a sampled fit draws "
-            "the missing mass at the track start)",
-            fix="drop undecodable time bins together with their times, "
-            "keep = np.isfinite(posterior).all(axis=1); posterior, times = "
-            "posterior[keep], times[keep]; renormalize rows that only lack "
-            "mass with posterior / posterior.sum(axis=1, keepdims=True)",
-        )
-    )
 
 
 def _map_bins(
@@ -701,7 +635,9 @@ def fit_isotonic_trajectory(
     posterior, starts, stops = _track_positions(
         env, posterior, "fit_isotonic_trajectory()"
     )
-    times = _require_times(times, len(posterior), "fit_isotonic_trajectory()")
+    times = _posterior_times(
+        times, len(posterior), "fit_isotonic_trajectory()", why=_FIT_WHY, distinct=True
+    )
     positions = _decoded_positions(posterior, starts, stops, method)
     weights = posterior[np.arange(len(posterior)), _map_bins(posterior, starts, stops)]
 
@@ -981,7 +917,9 @@ def fit_linear_trajectory(
         raise ValueError(f"method must be 'sample' or 'map', got {method!r}")
     operation = "fit_linear_trajectory()"
     posterior, starts, stops = _track_positions(env, posterior, operation)
-    times = _require_times(times, len(posterior), operation)
+    times = _posterior_times(
+        times, len(posterior), operation, why=_FIT_WHY, distinct=True
+    )
     spikes = (
         None
         if spike_counts is None
@@ -1231,7 +1169,9 @@ def regression_line_score(
     posterior, starts, stops = _track_positions(
         env, posterior, operation, allow_zero_rows=True
     )
-    times = _require_times(times, len(posterior), operation)
+    times = _posterior_times(
+        times, len(posterior), operation, why=_FIT_WHY, distinct=True
+    )
     if band is None:
         band = default_length(env, _REGRESSION_BAND_CM, name="band", call=operation)
     if not (np.isfinite(band) and band > 0):
@@ -1593,63 +1533,6 @@ def _pooled_lines(
         where=~stationary,
     )
     return slopes, intercepts, r_squared
-
-
-def _require_times(
-    times: NDArray[np.float64], n_time_bins: int, operation: str
-) -> NDArray[np.float64]:
-    """Check one finite time per posterior row, with at least two distinct.
-
-    Parameters
-    ----------
-    times : NDArray[np.float64], shape (n_time_bins,)
-        Time of each posterior row, in seconds.
-    n_time_bins : int
-        Number of posterior rows.
-    operation : str
-        The calling function, for the refusal message.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_time_bins,)
-        ``times`` as float64.
-
-    Raises
-    ------
-    ValueError
-        If ``times`` is not 1-D with one entry per row, holds NaN or Inf, or
-        has a single distinct value.
-    """
-    times = np.asarray(times, dtype=np.float64)
-    if times.ndim != 1 or len(times) != n_time_bins:
-        raise ValueError(
-            _format_error(
-                f"{operation}: times has {times.size} entries in shape "
-                f"{times.shape}, but posterior has {n_time_bins} rows.",
-                why="each posterior row is the decode at one time",
-                fix="pass one time per posterior row, in seconds, with shape "
-                "(n_time_bins,); drop the times of any rows you dropped",
-            )
-        )
-    if not np.all(np.isfinite(times)):
-        raise ValueError(
-            _format_error(
-                f"{operation}: times contains NaN or Inf at "
-                f"{int(np.sum(~np.isfinite(times)))} of {n_time_bins} rows.",
-                why="a fit along time needs the time of every posterior row",
-                fix="drop those rows from both posterior and times",
-            )
-        )
-    if np.ptp(times) == 0:
-        raise ValueError(
-            _format_error(
-                f"{operation} needs at least two distinct times, but every "
-                "time bin has the same time.",
-                why="a line through identical times has no slope",
-                fix="pass the center time of each posterior row, in seconds",
-            )
-        )
-    return times
 
 
 def _fit_lines(
@@ -2177,17 +2060,15 @@ def _prepare_replay_lines(
                 fix="leave out events without spikes, or score them as not replay",
             )
         )
-    times = _require_times(times, len(posterior), operation)
-    if np.any(np.diff(times) <= 0):
-        raise ValueError(
-            _format_error(
-                f"{operation} needs strictly increasing times.",
-                why="a trajectory's position at each time bin depends on the "
-                "time since the first",
-                fix="sort the posterior rows and their times together by time, "
-                "and drop rows with duplicate times",
-            )
-        )
+    times = _posterior_times(
+        times,
+        len(posterior),
+        operation,
+        why="a trajectory's position at each time bin depends on the time "
+        "since the first",
+        distinct=True,
+        increasing=True,
+    )
     if band is None:
         band = default_length(env, _DAVIDSON_BAND_CM, name="band", call=operation)
     # Trajectories that start and end on the track are bounded by it, and

@@ -21,6 +21,12 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import is_integer_at_least, validate_choice
+from neurospatial.replay._inputs import (
+    _STEP_WHY,
+    _posterior_times,
+    _probability_rows,
+)
 
 if TYPE_CHECKING:
     from neurospatial.decoding import JointDecodingResult
@@ -206,11 +212,7 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
             )
         if chance_bins is None:
             chance_bins = len(self.max_posterior)
-        elif (
-            isinstance(chance_bins, bool)
-            or not isinstance(chance_bins, (int, np.integer))
-            or chance_bins < 1
-        ):
+        elif not is_integer_at_least(chance_bins, 1):
             raise ValueError(
                 "well_decoded_fraction(): chance_bins must be a positive "
                 f"number of bins, such as 2 * env.n_bins, got {chance_bins!r}."
@@ -445,10 +447,7 @@ def trajectory_metrics(
 
 def _check_metric(metric: Any, operation: str) -> None:
     """Refuse a distance metric other than geodesic, Euclidean or None."""
-    if metric is not None and metric not in _METRICS:
-        raise ValueError(
-            f"{operation}: metric must be one of {_METRICS} or None, got {metric!r}."
-        )
+    validate_choice(metric, (*_METRICS, None), name="metric", owner=operation)
 
 
 def _trajectory_metrics(
@@ -473,8 +472,18 @@ def _trajectory_metrics(
         "between (distance, angle) bins are not path lengths",
         fix="decode the event on the allocentric environment the animal ran in",
     )
-    raw = _posterior_rows(posterior, env.n_bins, operation)
-    times = _increasing_times(times, len(raw), operation)
+    raw = np.asarray(posterior, dtype=np.float64)
+    if raw.ndim != 2 or raw.shape[1] != env.n_bins or len(raw) == 0:
+        raise ValueError(
+            _format_error(
+                f"{operation}: posterior must have shape (n_time_bins, "
+                f"{env.n_bins}) with at least one time bin, one column per "
+                f"environment bin, got {raw.shape}.",
+                fix="pass the posterior decoded on this environment",
+            )
+        )
+    raw = _probability_rows(raw, operation, sums="at_most_one")
+    times = _posterior_times(times, len(raw), operation, why=_STEP_WHY, increasing=True)
     empty_time_bins = (
         None
         if spike_counts is None
@@ -539,55 +548,6 @@ def _trajectory_metrics(
     )
 
 
-def _posterior_rows(posterior: Any, n_bins: int, operation: str) -> NDArray[np.float64]:
-    """Check rows of finite, non-negative mass in (0, 1]."""
-    from neurospatial.decoding import _ROW_SUM_TOLERANCE
-
-    values = np.asarray(posterior, dtype=np.float64)
-    if values.ndim != 2 or values.shape[1] != n_bins or len(values) == 0:
-        raise ValueError(
-            _format_error(
-                f"{operation}: posterior must have shape (n_time_bins, "
-                f"{n_bins}) with at least one time bin, one column per "
-                f"environment bin, got {values.shape}.",
-                fix="pass the posterior decoded on this environment",
-            )
-        )
-    finite = np.isfinite(values).all(axis=1)
-    negative = finite & (values < 0).any(axis=1)
-    sums = values.sum(axis=1)
-    empty = finite & ~negative & (sums <= 0)
-    excess = finite & ~negative & (sums > 1.0 + _ROW_SUM_TOLERANCE)
-    bad = ~finite | negative | empty | excess
-    if not np.any(bad):
-        return values
-    problems = []
-    if np.any(~finite):
-        problems.append(f"{int(np.sum(~finite))} contain NaN or Inf")
-    if np.any(negative):
-        problems.append(f"{int(np.sum(negative))} have negative entries")
-    if np.any(empty):
-        problems.append(f"{int(np.sum(empty))} have no mass")
-    if np.any(excess):
-        problems.append(
-            f"{int(np.sum(excess))} sum to more than 1 (largest "
-            f"{float(np.max(sums[excess])):.6g})"
-        )
-    raise ValueError(
-        _format_error(
-            f"{operation} needs each posterior row to be a probability mass "
-            f"over the bins, or one template's share of one, but "
-            f"{int(np.sum(bad))} of {len(values)} rows are not: "
-            f"{'; '.join(problems)}.",
-            why="a row without mass, or with NaN, has no decoded position, and "
-            "a row summing to more than 1 is not a probability",
-            fix="drop undecodable time bins together with their times, "
-            "keep = np.isfinite(posterior).all(axis=1) & (posterior.sum(axis=1) "
-            "> 0); posterior, times = posterior[keep], times[keep]",
-        )
-    )
-
-
 def _along_track(
     env: Environment, starts: NDArray[np.float64], stops: NDArray[np.float64]
 ) -> NDArray[np.float64] | None:
@@ -609,36 +569,6 @@ def _along_track(
     along = np.empty_like(starts)
     along[order] = np.cumsum(lengths) - lengths / 2
     return along
-
-
-def _increasing_times(
-    times: Any, n_time_bins: int, operation: str
-) -> NDArray[np.float64]:
-    """Check one finite time per posterior row, strictly increasing."""
-    values: NDArray[np.float64] = np.asarray(times, dtype=np.float64)
-    if values.shape != (n_time_bins,) or not np.isfinite(values).all():
-        raise ValueError(
-            _format_error(
-                f"{operation}: times must hold one finite time per posterior "
-                f"row ({n_time_bins}), got shape {values.shape}"
-                + ("" if values.shape != (n_time_bins,) else " with NaN or Inf")
-                + ".",
-                why="jumps and the duration compare consecutive time bins",
-                fix="pass the center time of each posterior row, in seconds; "
-                "drop the times of any rows you dropped",
-            )
-        )
-    if np.any(np.diff(values) <= 0):
-        raise ValueError(
-            _format_error(
-                f"{operation}: times must increase from one posterior row to the next.",
-                why="a jump is the step from one time bin to the next, so the "
-                "rows must be in time order",
-                fix="sort the rows: order = np.argsort(times); posterior, "
-                "times = posterior[order], times[order]",
-            )
-        )
-    return values
 
 
 def _empty_time_bins(

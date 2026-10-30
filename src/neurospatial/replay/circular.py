@@ -28,14 +28,12 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import numpy as np
 
+from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.replay._inputs import _FIT_WHY, _posterior_times, _probability_rows
 from neurospatial.replay.significance import _Scorer
-from neurospatial.replay.trajectory import (
-    _SCORE_DECIMALS,
-    _require_probability_rows,
-    _require_times,
-)
+from neurospatial.replay.trajectory import _SCORE_DECIMALS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -322,8 +320,10 @@ class _CircularSequenceScorer(_Scorer):
                 f"the environment has {env.n_bins} bins. Pass the posterior "
                 "decoded on this environment, with one column per bin."
             )
-        self.posterior = _require_probability_rows(posterior, _OPERATION)
-        self.times = _require_times(times, len(self.posterior), _OPERATION)
+        self.posterior = _probability_rows(posterior, _OPERATION, sums="one")
+        self.times = _posterior_times(
+            times, len(self.posterior), _OPERATION, why=_FIT_WHY, distinct=True
+        )
 
     def observe(self) -> CircularSequenceResult:
         decoded = _decoded_angles(self.posterior[np.newaxis], self.angles)
@@ -491,8 +491,8 @@ def _cumulative_angles(decoded: NDArray[np.float64]) -> NDArray[np.float64]:
     NDArray[np.float64], shape (..., n_time_bins)
         0 at the first time bin, then the running sum of the steps.
     """
-    # pi - ((pi - step) mod 2 pi) lies in (-pi, pi]: a half-loop step is +pi.
-    steps = np.pi - np.mod(np.pi - np.diff(decoded, axis=-1), 2 * np.pi)
+    # A half-loop step is +pi.
+    steps = wrap_angle(np.diff(decoded, axis=-1))
     cumulative: NDArray[np.float64] = np.concatenate(
         [np.zeros((*decoded.shape[:-1], 1)), np.cumsum(steps, axis=-1)], axis=-1
     )

@@ -44,12 +44,20 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_choice,
+    validate_integer_at_least,
+)
+from neurospatial.replay._compare import (
+    _check_criterion_settings,
+    _compare,
+    _criterion_label,
+)
 from neurospatial.replay.correlation import weighted_correlation
 from neurospatial.replay.methods import (
-    _COMPARISONS,
     FAROOQ_2019,
     GROSMARK_2016,
     SILVA_2015,
@@ -58,6 +66,8 @@ from neurospatial.replay.methods import (
     ReplayMethod,
 )
 from neurospatial.replay.significance import _ALTERNATIVES, _DECODING_NULLS
+from neurospatial.stats._utils import _entropy, _stream
+from neurospatial.stats.shuffle import _tail_p_values
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -91,13 +101,6 @@ __all__ = [
     "template_correlation_test",
 ]
 
-# Elementwise comparisons of CriterionGrid.
-_ARRAY_COMPARISONS: dict[str, Callable[[Any, Any], Any]] = {
-    "<": np.less,
-    "<=": np.less_equal,
-    ">": np.greater,
-    ">=": np.greater_equal,
-}
 # Nulls that shuffle the decoded posterior of each event.
 _POSTERIOR_NULLS = (
     "column_cycle",
@@ -212,27 +215,19 @@ class CriterionGrid:
             )
         thresholds.flags.writeable = False
         object.__setattr__(self, "thresholds", thresholds)
-        if self.comparison not in _COMPARISONS:
-            raise ValueError(
-                f"{prefix}: comparison must be one of {list(_COMPARISONS)}, got "
-                f"{self.comparison!r}."
-            )
-        if self.relative_to not in (None, "track_length"):
-            raise ValueError(
-                f"{prefix}: relative_to must be None or 'track_length', got "
-                f"{self.relative_to!r}."
-            )
-        if not isinstance(self.absolute, (bool, np.bool_)):
-            raise ValueError(
-                f"{prefix}: absolute must be True or False, got {self.absolute!r}."
-            )
+        _check_criterion_settings(
+            prefix, self.comparison, self.relative_to, self.absolute
+        )
 
     @property
     def label(self) -> str:
         """A readable form without the thresholds, such as ``"|score| >"``."""
-        name = f"|{self.quantity}|" if self.absolute else self.quantity
-        scale = " x track_length" if self.relative_to else ""
-        return f"{name} {self.comparison}{scale}"
+        return _criterion_label(
+            self.quantity,
+            self.comparison,
+            absolute=self.absolute,
+            relative_to=self.relative_to,
+        )
 
     def passes(self, table: pd.DataFrame) -> NDArray[np.bool_]:
         """Whether each row of ``table`` passes each threshold.
@@ -277,19 +272,7 @@ class CriterionGrid:
             else np.ones(len(values))
         )
         thresholds = np.atleast_1d(self.thresholds)[None, :] * scale[:, None]
-        values = np.broadcast_to(values[:, None], thresholds.shape)
-        with np.errstate(invalid="ignore"):
-            close = np.abs(values - thresholds) <= ABSOLUTE_TOLERANCE + (
-                RELATIVE_TOLERANCE * np.abs(thresholds)
-            )
-            compared = np.where(close, thresholds, values)
-            result = _ARRAY_COMPARISONS[self.comparison](compared, thresholds)
-        passed: NDArray[np.bool_] = (
-            np.asarray(result, dtype=bool)
-            & np.isfinite(values)
-            & np.isfinite(thresholds)
-        )
-        return passed
+        return _compare(values[:, None], self.comparison, thresholds)
 
 
 # --------------------------------------------------------------------------
@@ -897,7 +880,7 @@ def _dataset_values(
 ) -> pd.DataFrame:
     """:func:`dataset_values`, with the moment-table fast path optional."""
     operation = "dataset_values()"
-    _positive_integer(n_datasets, "n_datasets", operation)
+    validate_integer_at_least(n_datasets, 1, name="n_datasets", owner=operation)
     if null is None and (n_datasets != 1 or shared):
         raise ValueError(
             f"{operation}: n_datasets and shared apply to null data sets; with "
@@ -965,18 +948,6 @@ def _dataset_values(
     table.attrs["null"] = null
     table.attrs["method"] = method.name
     return table
-
-
-def _entropy(rng: np.random.Generator | int | None) -> int:
-    """The entropy every random stream of a call derives from."""
-    if isinstance(rng, np.random.Generator):
-        return int(rng.integers(2**63))
-    return int(np.random.SeedSequence(rng).entropy)  # type: ignore[arg-type]
-
-
-def _stream(entropy: int, *key: int) -> np.random.Generator:
-    """A random stream derived from the table's entropy and ``key``."""
-    return np.random.default_rng(np.random.SeedSequence(entropy, spawn_key=key))
 
 
 # Spawn keys of the random streams: per event, shared draws, real events.
@@ -1938,7 +1909,7 @@ def _event_windows(
         and len(events)
         and not hasattr(events[0], "posterior")
     ):
-        from neurospatial.replay.calibration import _checked_intervals
+        from neurospatial.replay._inputs import _checked_intervals
 
         windows = _checked_intervals(events, operation)
         return [(float(a), float(b)) for a, b in windows]
@@ -2128,11 +2099,8 @@ def shuffle_events(
     [0, 1, 2, 3, 4]
     """
     operation = "shuffle_events()"
-    _positive_integer(n_datasets, "n_datasets", operation)
-    if null not in _EVENT_NULLS:
-        raise ValueError(
-            f"{operation}: null must be one of {list(_EVENT_NULLS)}, got {null!r}."
-        )
+    validate_integer_at_least(n_datasets, 1, name="n_datasets", owner=operation)
+    validate_choice(null, _EVENT_NULLS, name="null", owner=operation)
     from neurospatial.decoding import DecodingResult
 
     decoded = _decoded_events(env, events, operation)
@@ -2293,11 +2261,7 @@ def dataset_test(
                 fix="pass criteria=[CriterionGrid(...)] or statistic=lambda table: ...",
             )
         )
-    if alternative not in _ALTERNATIVES:
-        raise ValueError(
-            f"{operation}: alternative must be one of {_ALTERNATIVES}, got "
-            f"{alternative!r}."
-        )
+    validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=operation)
     if "dataset" not in null_table:
         raise ValueError(
             _format_error(
@@ -2391,15 +2355,7 @@ def dataset_test(
         below = np.sum(null_statistics < observed_statistic, axis=0)
         n_observed = len(observed)
         labels, thresholds = (), ()
-    p_greater = (1.0 + greater) / (1.0 + n_datasets)
-    p_less = (1.0 + less) / (1.0 + n_datasets)
-    p_value = (
-        p_greater
-        if alternative == "greater"
-        else p_less
-        if alternative == "less"
-        else np.minimum(2.0 * np.minimum(p_greater, p_less), 1.0)
-    )
+    p_value = _tail_p_values(greater, less, n_datasets, alternative)
     percentile = 100.0 * below / n_datasets
 
     def scalar_or_array(values: Any) -> Any:
@@ -2547,13 +2503,8 @@ def distribution_test(
 
     operation = "distribution_test()"
     tests = ("ks", "rank_sum", "levene")
-    if test not in tests:
-        raise ValueError(f"{operation}: test must be one of {tests}, got {test!r}.")
-    if alternative not in _ALTERNATIVES:
-        raise ValueError(
-            f"{operation}: alternative must be one of {_ALTERNATIVES}, got "
-            f"{alternative!r}."
-        )
+    validate_choice(test, tests, name="test", owner=operation)
+    validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=operation)
     if test == "levene" and alternative != "two-sided":
         raise ValueError(
             _format_error(
@@ -2680,7 +2631,7 @@ def relative_rank_template(
     from scipy import stats
 
     from neurospatial._spikes import as_spike_trains
-    from neurospatial.replay.calibration import _checked_intervals
+    from neurospatial.replay._inputs import _checked_intervals
 
     operation = "relative_rank_template()"
     statistics: dict[str, Callable[..., Any]] = {
@@ -2688,16 +2639,10 @@ def relative_rank_template(
         "first": np.min,
         "median": np.median,
     }
-    if spike_statistic not in statistics:
-        raise ValueError(
-            f"{operation}: spike_statistic must be one of {list(statistics)}, got "
-            f"{spike_statistic!r}."
-        )
-    if (
-        isinstance(min_active_cells, bool)
-        or not isinstance(min_active_cells, (int, np.integer))
-        or min_active_cells < 2
-    ):
+    validate_choice(
+        spike_statistic, tuple(statistics), name="spike_statistic", owner=operation
+    )
+    if not is_integer_at_least(min_active_cells, 2):
         raise ValueError(
             f"{operation}: min_active_cells must be an integer of at least 2, got "
             f"{min_active_cells!r}; a relative rank needs two active cells."
@@ -2828,12 +2773,8 @@ def template_correlation_test(
     """
 
     operation = "template_correlation_test()"
-    _positive_integer(n_shuffles, "n_shuffles", operation)
-    if alternative not in _ALTERNATIVES:
-        raise ValueError(
-            f"{operation}: alternative must be one of {_ALTERNATIVES}, got "
-            f"{alternative!r}."
-        )
+    validate_integer_at_least(n_shuffles, 1, name="n_shuffles", owner=operation)
+    validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=operation)
     if len(templates) != len(reference_templates) or not len(templates):
         raise ValueError(
             f"{operation}: templates and reference_templates must pair one to one "
@@ -2887,15 +2828,7 @@ def template_correlation_test(
     undefined = np.isnan(null)
     greater = int(np.sum(undefined | (null >= statistic)))
     less = int(np.sum(undefined | (null <= statistic)))
-    p_greater = (1.0 + greater) / (1.0 + n_shuffles)
-    p_less = (1.0 + less) / (1.0 + n_shuffles)
-    p_value = (
-        p_greater
-        if alternative == "greater"
-        else p_less
-        if alternative == "less"
-        else min(2.0 * min(p_greater, p_less), 1.0)
-    )
+    p_value = _tail_p_values(greater, less, n_shuffles, alternative)
     return DatasetTestResult(
         statistic=statistic,
         null_statistics=null,
@@ -2905,13 +2838,6 @@ def template_correlation_test(
         n_datasets=n_shuffles,
         n_observed=len(templates),
     )
-
-
-def _positive_integer(value: Any, name: str, operation: str) -> None:
-    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 1:
-        raise ValueError(
-            f"{operation}: {name} must be a positive integer, got {value!r}."
-        )
 
 
 # --------------------------------------------------------------------------
@@ -3029,11 +2955,7 @@ class DatasetTestRecipe:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
         from neurospatial._results import reduce_through_constructor
 
-        rebuild, (cls, state) = reduce_through_constructor(self)
-        state["null_options"] = {
-            name: dict(options) for name, options in self.null_options.items()
-        }
-        return rebuild, (cls, state)
+        return reduce_through_constructor(self)
 
     def paper_p_value(self, result: DatasetTestResult) -> float | NDArray[np.float64]:
         """The p-value by the paper's own rule.

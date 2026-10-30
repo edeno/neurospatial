@@ -22,10 +22,16 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, reduce_through_constructor
+from neurospatial._validation import is_integer_at_least
+from neurospatial.replay._inputs import (
+    _CORRELATION_WHY,
+    _FIT_WHY,
+    _posterior_times,
+    _probability_rows,
+)
 from neurospatial.replay.correlation import (
     WeightedCorrelationResult,
     _track_bin_centers,
-    _validated_times,
     _validated_weights,
     _weighted_correlations,
     weighted_correlation,
@@ -36,11 +42,10 @@ from neurospatial.replay.trajectory import (
     _best_line,
     _prepare_replay_lines,
     _regression_line_scores,
-    _require_probability_rows,
-    _require_times,
     detect_trajectory_radon,
     regression_line_score,
 )
+from neurospatial.stats._utils import _entropy, _name_key, _stream
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -562,11 +567,7 @@ def replay_significance(
             n_shuffles=n_shuffles,
             rng=rng,
         )
-    if (
-        isinstance(n_shuffles, bool)
-        or not isinstance(n_shuffles, (int, np.integer))
-        or n_shuffles < 1
-    ):
+    if not is_integer_at_least(n_shuffles, 1):
         raise ValueError(
             f"{_OPERATION} needs n_shuffles to be a positive integer, got "
             f"{n_shuffles!r}. Davidson et al. used 1500 per null, Tirole et al. "
@@ -1075,19 +1076,8 @@ def _template_streams(
     A template's stream does not depend on the other templates or their
     order.
     """
-    import zlib
-
-    entropy = (
-        int(rng.integers(2**63))
-        if isinstance(rng, np.random.Generator)
-        else np.random.SeedSequence(rng).entropy
-    )
-    return {
-        name: np.random.default_rng(
-            np.random.SeedSequence(entropy, spawn_key=(zlib.crc32(name.encode()),))
-        )
-        for name in names
-    }
+    entropy = _entropy(rng)
+    return {name: _stream(entropy, _name_key(name)) for name in names}
 
 
 def _zero_empty_rows(
@@ -1455,8 +1445,6 @@ def _supported_rates(
 
 
 def _validated_pool(pool: Any, env: Environment) -> NDArray[np.float64]:
-    from neurospatial.replay.trajectory import _require_probability_rows
-
     rows = np.asarray(pool, dtype=np.float64)
     if rows.ndim != 2 or rows.shape[1] != env.n_bins or len(rows) == 0:
         raise ValueError(
@@ -1469,7 +1457,7 @@ def _validated_pool(pool: Any, env: Environment) -> NDArray[np.float64]:
                 "events, e.g. np.vstack([r.posterior for r in others])",
             )
         )
-    return _require_probability_rows(rows, _OPERATION)
+    return _probability_rows(rows, _OPERATION, sums="one")
 
 
 def _unwrap_partial(
@@ -1654,7 +1642,9 @@ class _WeightedCorrelationScorer(_Scorer):
         self.posterior = np.asarray(posterior, dtype=np.float64)
         self.row_normalization = row_normalization
         self.weights = _validated_weights(self.posterior, env.n_bins, row_normalization)
-        self.times = _validated_times(times, len(self.weights))
+        self.times = _posterior_times(
+            times, len(self.weights), _OPERATION, why=_CORRELATION_WHY
+        )
 
     def observe(self) -> WeightedCorrelationResult:
         score = _weighted_correlations(self.weights[None], self.times, self.positions)
@@ -1711,7 +1701,9 @@ class _RegressionLineScorer(_Scorer):
         self.order = np.argsort(starts, kind="stable")  # as in _track_positions
         self.starts, self.stops = starts[self.order], stops[self.order]
         self.posterior = np.asarray(posterior, dtype=np.float64)
-        self.times = _require_times(times, len(self.posterior), _OPERATION)
+        self.times = _posterior_times(
+            times, len(self.posterior), _OPERATION, why=_FIT_WHY, distinct=True
+        )
 
     def observe(self) -> RegressionLineScoreResult:
         return self.observed
@@ -1733,7 +1725,7 @@ class _RegressionLineScorer(_Scorer):
         batch: list[NDArray[np.float64]] = []
         filled = 0
         for shuffled in posteriors:
-            rows = _require_probability_rows(shuffled, _OPERATION, allow_zero_rows=True)
+            rows = _probability_rows(shuffled, _OPERATION, sums="one_or_zero")
             batch.append(rows[:, self.order])
             if len(batch) == self._BATCH:
                 out[filled : filled + len(batch)] = self._score_batch(batch)

@@ -455,7 +455,7 @@ class TestSegmentationValidation:
         ],
     )
     def test_option_values_are_checked_when_made(self, options, match):
-        with pytest.raises(ValueError, match=f"ReplaySegmentation: .*{match}"):
+        with pytest.raises(ValueError, match=rf"ReplaySegmentation\b.*{match}"):
             ReplaySegmentation(options)
 
     def test_an_option_relative_to_chance_may_exceed_one(self):

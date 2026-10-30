@@ -17,6 +17,8 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin
+from neurospatial._validation import validate_choice
+from neurospatial.replay._inputs import _CORRELATION_WHY, _posterior_times
 from neurospatial.replay.trajectory import _SCORE_DECIMALS
 
 if TYPE_CHECKING:
@@ -151,7 +153,7 @@ def weighted_correlation(
     """
     positions = _track_bin_centers(env, _OPERATION)
     weights = _validated_weights(posterior, env.n_bins, row_normalization)
-    times = _validated_times(times, len(weights))
+    times = _posterior_times(times, len(weights), _OPERATION, why=_CORRELATION_WHY)
     return WeightedCorrelationResult(
         score=float(_weighted_correlations(weights[None], times, positions)[0]),
         row_normalization=row_normalization,
@@ -173,11 +175,12 @@ def _validated_weights(
     posterior: Any, n_bins: int, row_normalization: str
 ) -> NDArray[np.float64]:
     """Check the posterior and apply the row normalization."""
-    if row_normalization not in _ROW_NORMALIZATIONS:
-        raise ValueError(
-            f"{_OPERATION}: row_normalization must be one of "
-            f"{_ROW_NORMALIZATIONS}, got {row_normalization!r}."
-        )
+    validate_choice(
+        row_normalization,
+        _ROW_NORMALIZATIONS,
+        name="row_normalization",
+        owner=_OPERATION,
+    )
     weights = np.asarray(posterior, dtype=np.float64)
     if weights.ndim != 2 or weights.shape[1] != n_bins:
         raise ValueError(
@@ -202,17 +205,6 @@ def _validated_weights(
         with np.errstate(invalid="ignore", divide="ignore"):
             weights = np.where(row_mass[:, None] > 0, weights / row_mass[:, None], 0.0)
     return weights
-
-
-def _validated_times(times: Any, n_time: int) -> NDArray[np.float64]:
-    """Check one finite time per posterior row."""
-    values: NDArray[np.float64] = np.asarray(times, dtype=np.float64)
-    if values.shape != (n_time,) or not np.isfinite(values).all():
-        raise ValueError(
-            f"{_OPERATION}: times must hold one finite time per posterior row "
-            f"({n_time}), got shape {values.shape}."
-        )
-    return values
 
 
 def _weighted_correlations(
