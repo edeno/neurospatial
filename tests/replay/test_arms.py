@@ -13,7 +13,7 @@ from neurospatial.replay import (
     compare_replay_methods,
     detect_arm_replay,
 )
-from neurospatial.replay.methods import WU_FOSTER_2014
+from neurospatial.replay.methods import BERNERS_LEE_2021, WU_FOSTER_2014
 
 DT = 0.01
 
@@ -280,3 +280,173 @@ class TestArmReviewCases:
         )
         assert not table["is_replay"].iloc[0]
         assert table["error"].iloc[0] == "fewer than two time bins to score"
+
+
+STEP = 0.005
+
+
+def _sweep(arm_bins, n_rows, reverse=False):
+    """Rows visiting an arm's bins in order (or reversed) over n_rows."""
+    order = np.linspace(0, len(arm_bins) - 1, n_rows).round().astype(int)
+    bins = np.asarray(arm_bins)[order]
+    return bins[::-1] if reverse else bins
+
+
+def _bl(maze, posterior, method=BERNERS_LEE_2021):
+    env, arms = maze
+    return detect_arm_replay(
+        env,
+        posterior,
+        np.arange(len(posterior)) * STEP,
+        arms=arms,
+        arm_replay_method=method,
+    )
+
+
+class TestBernersLee:
+    def test_a_path_through_the_junction_is_a_joint_replay(self, y_maze):
+        env, arms = y_maze
+        rows = np.r_[_sweep(arms["center"], 15, reverse=True), _sweep(arms["left"], 15)]
+        result = _bl(y_maze, np.eye(env.n_bins)[rows])
+        assert result.is_replay and result.template == "center+left"
+
+    def test_the_joint_sign_is_not_checked(self, y_maze):
+        """Left outward, then center inward: a sawtooth along the path.
+
+        Berners-Lee et al. report the pair; with Wu & Foster's same-sign
+        rule switched on, it is not a joint replay.
+        """
+        import dataclasses
+
+        env, arms = y_maze
+        rows = np.r_[_sweep(arms["left"], 15), _sweep(arms["center"], 15, reverse=True)]
+        posterior = np.eye(env.n_bins)[rows]
+        bl = _bl(y_maze, posterior)
+        assert bl.template == "left+center"
+        signed = _bl(
+            y_maze,
+            posterior,
+            dataclasses.replace(BERNERS_LEE_2021, name="signed", joint_same_sign=True),
+        )
+        assert not signed.criteria["left+center: same sign as joint"]
+        assert signed.template in ("left", "center")
+
+    def test_the_strongest_of_several_pairs_is_reported(self, y_maze):
+        """Center inward, then left and right outward together."""
+        env, arms = y_maze
+        posterior = np.zeros((30, env.n_bins))
+        posterior[np.arange(15), _sweep(arms["center"], 15, reverse=True)] = 1.0
+        posterior[np.arange(15, 30), _sweep(arms["left"], 15)] = 0.7
+        posterior[np.arange(15, 30), _sweep(arms["right"], 15)[::-1]] = 0.3
+        result = _bl(y_maze, posterior)
+        assert result.template == "center+left"
+        assert result.score == pytest.approx(result.values["center+left: |wc| > 0.3"])
+
+    def test_the_strongest_single_arm_replay_is_reported(self, y_maze):
+        """Clean right and noisier left sweeps outward at the same time.
+
+        Running outward from the junction together, they form no joint
+        replay (|wc| about 0.08 along the path), so the stronger arm wins.
+        """
+        env, arms = y_maze
+        posterior = np.zeros((20, env.n_bins))
+        posterior[np.arange(20), _sweep(arms["right"], 20)] = 0.5
+        posterior[np.arange(20), _sweep(arms["left"], 20)] = 0.35
+        posterior[:, arms["left"][5]] += 0.15
+        result = _bl(y_maze, posterior)
+        assert result.criteria["left: |wc| > 0.3"]
+        assert not result.criteria["left+right: |wc| > 0.3"]
+        assert result.template == "right"
+
+    def test_a_chain_of_three_runs_merges_whole(self, y_maze):
+        """Two short dropouts split a left sweep in three; all merge."""
+        env, arms = y_maze
+        posterior = np.full((45, env.n_bins), 1.0 / env.n_bins)
+        posterior[:12] = np.eye(env.n_bins)[_sweep(arms["left"][:4], 12)]
+        posterior[16:28] = np.eye(env.n_bins)[_sweep(arms["left"][4:7], 12)]
+        posterior[32:44] = np.eye(env.n_bins)[_sweep(arms["left"][7:], 12)]
+        result = _bl(y_maze, posterior)
+        assert result.values["left: coverage > 0.5"] == pytest.approx(0.9)
+        assert result.values["left: duration >= 0.055"] > 0.2
+
+    def test_a_fallback_arm_replay_is_flagged(self, y_maze):
+        env, arms = y_maze
+        result = _bl(y_maze, np.eye(env.n_bins)[_sweep(arms["left"][:4], 15)])
+        assert result.is_replay and not result.criteria["sequence"]
+        sweep = _bl(y_maze, np.eye(env.n_bins)[_sweep(arms["right"], 20)])
+        assert sweep.criteria["sequence"]
+
+    def test_only_pair_tests_each_arms_strongest_run(self, y_maze):
+        """A hold on the left arm, then a clean sweep along it."""
+        import dataclasses
+
+        env, arms = y_maze
+        posterior = np.full((40, env.n_bins), 1.0 / env.n_bins)
+        posterior[:12] = np.eye(env.n_bins)[arms["left"][3]]
+        posterior[25:] = np.eye(env.n_bins)[_sweep(arms["left"], 15)]
+        method = dataclasses.replace(
+            BERNERS_LEE_2021,
+            name="runs_only_pair",
+            joint="only_pair",
+            arm_fallback=False,
+        )
+        result = _bl(y_maze, posterior, method)
+        assert result.template == "left"
+
+    def test_runs_merge_across_short_gaps(self, y_maze):
+        """A sweep along the left arm with a 25 ms dropout in the middle."""
+        import dataclasses
+
+        env, arms = y_maze
+        posterior = np.full((29, env.n_bins), 1.0 / env.n_bins)
+        posterior[:12] = np.eye(env.n_bins)[_sweep(arms["left"][:6], 12)]
+        posterior[17:] = np.eye(env.n_bins)[_sweep(arms["left"][6:], 12)]
+        merged = _bl(y_maze, posterior)
+        apart = _bl(
+            y_maze,
+            posterior,
+            dataclasses.replace(BERNERS_LEE_2021, name="apart", merge_max_gap=None),
+        )
+        assert merged.values["left: coverage > 0.5"] == pytest.approx(0.9)
+        assert merged.criteria["left: coverage > 0.5"]
+        assert apart.values["left: coverage > 0.5"] <= 0.5
+
+    def test_an_arm_above_threshold_is_still_an_arm_replay(self, y_maze):
+        """The posterior sits on four bins of the left arm for 75 ms."""
+        env, arms = y_maze
+        rows = _sweep(arms["left"][:4], 15)
+        result = _bl(y_maze, np.eye(env.n_bins)[rows])
+        assert not result.criteria["left: coverage > 0.5"]
+        assert result.is_replay and result.template == "left"
+
+    def test_equally_strong_fallback_runs_give_no_replay(self, y_maze):
+        """The same short sweep on the left and right arms at once."""
+        env, arms = y_maze
+        posterior = np.zeros((15, env.n_bins))
+        posterior[np.arange(15), _sweep(arms["left"][:4], 15)] = 0.5
+        posterior[np.arange(15), _sweep(arms["right"][:4], 15)] = 0.5
+        result = _bl(y_maze, posterior)
+        assert result.values["left: |wc| > 0.3"] == pytest.approx(
+            result.values["right: |wc| > 0.3"]
+        )
+        assert result.values["left: |wc| > 0.3"] > 0.3
+        assert not result.is_replay
+
+    def test_merging_needs_runs(self):
+        with pytest.raises(ValueError, match="merge_max_gap"):
+            ArmReplayMethod(name="x", reference="y", merge_max_gap=0.05)
+
+    def test_recipe_matches_the_code(self):
+        method = BERNERS_LEE_2021
+        assert (method.peak_threshold, method.smoothing_sigma) == (4.0, 0.005)
+        assert (method.min_duration, method.merge_max_gap) == (0.055, 0.05)
+        assert (method.min_abs_correlation, method.joint_min_abs_correlation) == (
+            0.3,
+            0.3,
+        )
+        assert (method.subregions, method.coverage, method.joint) == (
+            "runs",
+            "mean_range",
+            "strongest_pair",
+        )
+        assert not method.joint_same_sign and method.arm_fallback
