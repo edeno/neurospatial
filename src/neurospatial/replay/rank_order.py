@@ -18,6 +18,7 @@ from scipy import stats
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.replay.significance import _ALTERNATIVES
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -26,7 +27,6 @@ if TYPE_CHECKING:
 
 _SPIKE_STATISTICS = ("first", "median", "mean", "all_spikes")
 _FIELD_ORDERS = ("peak", "center")
-_ALTERNATIVES = ("greater", "less", "two-sided")
 # Largest number of (shuffle, pair) values ranked at once.
 _BLOCK_VALUES = 2_000_000
 

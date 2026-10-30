@@ -37,6 +37,12 @@ from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
 from neurospatial.replay.correlation import weighted_correlation
+from neurospatial.replay.significance import (
+    _ALTERNATIVES,
+    _DECODING_NULLS,
+    _NULLS,
+    _ROW_MOVING_NULLS,
+)
 from neurospatial.replay.trajectory import (
     detect_trajectory_radon,
     fit_isotonic_trajectory,
@@ -84,9 +90,6 @@ __all__ = [
 ]
 
 _OPERATION = "detect_replay()"
-_DECODING_NULLS = ("unit_identity", "spike_train_circular", "place_field_circular")
-# Nulls whose shuffled rows no longer match the event's valid time bins.
-_ROW_MOVING_NULLS = ("pseudo_event", "spike_train_circular", "time_bin_permutation")
 # Criterion quantities read from the tested segment of ReplaySegmentsResult.
 _SEGMENT_QUANTITIES = {
     "segment_duration": "durations",
@@ -655,8 +658,6 @@ class ReplayMethod:
                 f"ReplayMethod {self.name!r}: segment_template_fraction needs a "
                 "segmentation; give the method a ReplaySegmentation."
             )
-        from neurospatial.replay.significance import _NULLS
-
         unknown = [name for name in self.nulls if name not in _NULLS]
         if unknown:
             raise ValueError(
@@ -670,10 +671,10 @@ class ReplayMethod:
                 "than once; name each null once and set the number of shuffles "
                 "per null with n_shuffles."
             )
-        if self.alternative not in ("greater", "less", "two-sided"):
+        if self.alternative not in _ALTERNATIVES:
             raise ValueError(
-                f"ReplayMethod {self.name!r}: alternative must be 'greater', "
-                f"'less' or 'two-sided', got {self.alternative!r}."
+                f"ReplayMethod {self.name!r}: alternative must be one of "
+                f"{list(_ALTERNATIVES)}, got {self.alternative!r}."
             )
         if not 0 < self.alpha < 1:
             raise ValueError(
@@ -843,7 +844,7 @@ class RankOrderMethod:
             "spike_statistic": _SPIKE_STATISTICS,
             "field_order": _FIELD_ORDERS,
             "test": ("t_distribution", "cell_order", "pooled_ssi"),
-            "alternative": ("greater", "less", "two-sided"),
+            "alternative": _ALTERNATIVES,
             "template_choice": (None, "most_active"),
         }
         for field_name, allowed in choices.items():
