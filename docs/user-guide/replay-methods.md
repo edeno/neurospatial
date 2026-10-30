@@ -140,11 +140,11 @@ in different ways:
 
 | Recipe | Score | How chance is judged |
 |---|---|---|
-| `DAVIDSON_2009` | Line fit: posterior mass near the best line | Column-cycle, cell-identity and pseudo-event shuffles; every p below 0.01 |
-| `WU_2017` | Weighted correlation of position and time | Time-bin permutation, p < 0.05 |
-| `TIROLE_2022` | Weighted correlation | Spike-train, place-field and position-bin circular shifts; every p below 0.05 |
+| `DAVIDSON_2009` | Line fit: posterior mass within 15 cm of the best line | Column-cycle, cell-identity and pseudo-event shuffles; every p below 0.01 |
+| `WU_2017` | Linear regression (R²) of the most likely position on time, in time bins with spikes | Time-bin permutation, p < 0.05; at least 4 active cells |
+| `TIROLE_2022` | Weighted correlation of position and time | Spike-train, place-field and position-bin circular shifts; every p below 0.05; at least 5 active cells |
 | `SILVA_2015` | Weighted correlation | No shuffles: \|r\| > 0.6 and no decoded jump over 40% of the track |
-| `DIBA_BUZSAKI_2007` | Rank order of the cells' spikes vs. their place fields | Cell-order shuffle, p < 0.1 |
+| `DIBA_BUZSAKI_2007` | Rank order of the cells' spikes vs. their place fields | Cell-order shuffle, p < 0.1; at least 5 active cells and 30% of the cells |
 
 Methods are compared on the same decoded events, so differences come from
 the test alone. A recipe's `decoding` attribute records the paper's
@@ -172,8 +172,10 @@ for method in methods:
 
 `compare_replay_methods` applies every method to every event and returns one
 row per (event, method). Each row holds the verdict `is_replay`, the score,
-the p-value, and whether each criterion passed. Rank-order methods work on
-the spikes, so they also need the spike times, the rate maps and `dt`. Each
+the p-value, and whether each criterion passed. Shuffles that change the
+spikes or the rate maps decode again (Davidson's cell-identity shuffle,
+Tirole's spike-train and place-field shifts), so they need the spike counts,
+the rate maps and `dt`; rank-order methods also need the spike times. Each
 (event, method) pair gets its own random stream from `rng`, so results are
 reproducible and do not change when you add or remove methods.
 
@@ -198,28 +200,31 @@ by_kind = detection_rates(table, groups=["kind"])
 print(by_kind.pivot(index="method", columns="kind", values="rate").round(2))
 ```
 
-Every method except `SILVA_2015` detects 11 of the 12 sweeps; Silva's
-threshold on the jump between decoded positions rejects a few more. On the
-events without a path, the methods fail in opposite ways:
+Every method except `SILVA_2015` detects 11 of the 12 sweeps; Silva's two
+thresholds reject 4 of them (three fail |r| > 0.6 and three the 40% jump
+limit). On the events without a path, the methods fail in opposite ways:
 
 - `DAVIDSON_2009` calls five of the six stationary events replay. Its line
   search includes lines of zero speed, and all three of its shuffles spread
   the posterior across the track, so any event whose posterior stays in one
-  place beats them. The correlation scores need position to change with
-  time, so they reject stationary events.
-- The correlation and rank-order methods call most random events replay.
-  A random event jumps to a new position every 20 ms, so an 80 to 180 ms
-  event visits only 4 to 9 positions. With that few, a correlation as high
-  as a sweep's often arises by chance, and shuffles that move each 10 ms
-  time bin (or each cell) independently treat the event as having more
-  independent points than it does. Davidson's line must hold posterior mass
-  in most time bins and Silva's jump threshold rejects large jumps, so both
-  reject these events.
+  place beats them. The correlation and regression scores need position to
+  change with time, so they reject all but one stationary event.
+- The rank-order test calls most random events replay, and the correlation
+  and regression methods call four of six. Six events give a noisy rate: in
+  a simulation of 60 such events, `WU_2017` and `TIROLE_2022` called 12 to
+  15% replay, still above their α, and `DIBA_BUZSAKI_2007` 60%. A random
+  event holds each position for 20 ms, two 10 ms time bins, so it has about
+  half as many independent positions as time bins. Shuffles that move each
+  time bin independently assume every bin is independent, so they
+  underestimate how often a high correlation arises by chance. The rank-order
+  test also treats each cell as independent, although cells with
+  overlapping fields fire together. `DAVIDSON_2009` rejects these events,
+  which look like its own column-cycle shuffle, and Silva's jump threshold
+  rejects them too.
 
 Neither failure is a bug: each test answers a narrower question than "is
-this a trajectory?". Short events with few distinct positions are hard for
-every correlation test, which is one reason rates must be broken down by
-event duration and cell count.
+this a trajectory?". This is why a false-positive rate must be measured on
+several kinds of events without replay, and broken down by event properties.
 
 `method_agreement` counts how often every pair of methods give the same
 verdict, and Cohen's kappa, the agreement beyond what their rates predict.
@@ -229,6 +234,12 @@ verdict, and Cohen's kappa, the agreement beyond what their rates predict.
 agreement = method_agreement(table)
 print(agreement[["first", "second", "agreement", "kappa"]].round(2).to_string())
 ```
+
+`WU_2017`, `TIROLE_2022` and `DIBA_BUZSAKI_2007` agree closely (kappa above
+0.8), including on the random events they all accept. `DAVIDSON_2009` agrees
+little with them, because it accepts the stationary events and rejects the
+random ones. Agreement depends on the mix of events: on your recording it
+tells you how much the choice of method changes which events you analyze.
 
 ## False positives on null data
 
@@ -280,6 +291,9 @@ print(false_positives.pivot(index="method", columns="null_kind", values="rate").
 
 fig, ax = plt.subplots(figsize=(7, 3))
 names = [method.name for method in methods]
+for x, method in enumerate(methods):
+    if method is not SILVA_2015:  # Silva has no shuffles, so no α
+        ax.hlines(method.alpha, x - 0.4, x + 0.4, color="gray", linestyle=":")
 for offset, (null_kind, rows) in enumerate(false_positives.groupby("null_kind")):
     rows = rows.set_index("method").loc[names]
     x = np.arange(len(names)) + 0.25 * (offset - 1)
@@ -297,8 +311,10 @@ fig.tight_layout()
 ```
 
 The figure shows each method's false-positive rate on each kind of null data,
-with 95% confidence intervals. With 24 null events per kind, the intervals
-are wide. Use more copies (`n_copies`) and more events for a real estimate.
+with 95% confidence intervals; the dotted lines mark each method's α. The 24
+null events of each kind come from 12 sweeps, and copies of one sweep share
+its spikes, so they are not independent and these intervals are too narrow.
+More real events, not more copies, narrow them.
 
 - `DAVIDSON_2009` calls none of the cell-identity copies replay, which its
   own cell-identity shuffle repeats, but a third to a half of the spike-shift
@@ -306,8 +322,11 @@ are wide. Use more copies (`n_copies`) and more events for a real estimate.
   stays in the part of the track the sweep covered. As with stationary
   events, its shuffles test only that the posterior is concentrated
   somewhere.
-- `WU_2017` calls 12% of the cell-identity copies replay at α = 0.05;
-  `TIROLE_2022` and `DIBA_BUZSAKI_2007` stay near or below their α.
+- `WU_2017` calls 12% of the cell-identity copies replay at α = 0.05, and
+  `TIROLE_2022` stays near its α. `DIBA_BUZSAKI_2007` calls 17% of the
+  spike-shift and Poisson copies replay at α = 0.1: those copies keep which
+  cells fire, and in a sweep that covers part of the track those cells'
+  fields still lie along it.
 - `SILVA_2015` has no shuffles, and its thresholds keep its rate low on
   every kind.
 
@@ -360,7 +379,7 @@ matched = matched_alpha(
     replay_methods=tested,
     target=0.05,
 )
-print(matched.round(3).to_string())
+print(matched.round(4).to_string())
 
 at_matched = apply_alpha(
     table[table["method"].isin(names)],
@@ -383,15 +402,32 @@ print(other_rates.pivot(index="method", columns="null_kind", values="rate").roun
 
 `published_rate` is each method's false-positive rate at its own α, and
 `alpha` and `rate` are the matched α and the rate there. A method whose rate
-was above the target gets a smaller α (`WU_2017`, 0.015), and a
-conservative one a larger α (`DAVIDSON_2009`, about 0.18).
+was above the target gets a smaller α (`WU_2017`, 0.015;
+`DIBA_BUZSAKI_2007`, just below its 0.1), and a conservative one a larger α
+(`DAVIDSON_2009`, about 0.18).
 
-Matching holds the rate on one kind of null data only. The last table
-applies the matched α to the other kinds: `DAVIDSON_2009`, now at α = 0.18,
-calls nearly every spike-shift and Poisson copy replay. Use matching as one
-way to compare methods, together with the rates on several kinds of null
-data and on simulated replay. The `alpha` column of `matched_alpha` is NaN
-for a method no α can hold to the target, and a warning says why.
+These α values only illustrate the procedure. With 24 null events and a
+target of 0.05, at most one null event may pass, so each matched α is set by
+one or two null p-values. `matched_alpha` warns when there are too few null
+events for any to pass; aim for `target * n_events` of at least 10, from
+many real events.
+
+The second table is the answer to the third question. At the matched α,
+`DAVIDSON_2009` detects every sweep but also every stationary event and two
+of six random events, while `WU_2017` calls fewer random events replay than
+at its own α.
+
+Matching holds the rate on one kind of null data only, and here it was done
+on cell-identity copies, which `DAVIDSON_2009`'s own cell-identity shuffle
+and the rank-order cell-order test already repeat. Those methods look
+conservative on these copies, so they get a larger α. Takigawa et al.
+matched on cell-identity copies for methods without such a shuffle. The last
+table applies the matched α to the other kinds: `DAVIDSON_2009`, now at
+α = 0.18, calls nearly every spike-shift and Poisson copy replay. Match on
+null data that none of the compared methods repeats, and report the rates
+on the other kinds and on simulated replay with it. The `alpha` column of
+`matched_alpha` is NaN for a method no α can hold to the target, and a
+warning says why.
 
 ## Using your own recording
 
@@ -400,14 +436,23 @@ for a method no α can hold to the target, and a warning says why.
   min_speed=...)`. Unsupported bins are NaN, which the decoder treats as
   outside the track.
 - **Candidate events.** Pass your event intervals in seconds, on the same
-  clock as the spike times, to `decode_intervals`. Decode in the time bins
-  the methods expect (`method.decoding`).
+  clock as the spike times. `decode_intervals` decodes them in
+  non-overlapping time bins with one set of rate maps. Several papers
+  decoded overlapping windows (`method.decoding`, e.g. 20 ms windows stepped
+  by 10 ms for `WU_2017`): for those, bin each interval with
+  `neurospatial.decoding.bin_spikes_in_time` and decode with
+  `decode_position`, the same way for real and null events.
 - **Shuffles.** Keep each recipe's published `n_shuffles`. Give `rng` a
   fixed seed and report it.
-- **Two running directions or two tracks.** Decode with one rate-map set per
-  direction (`neurospatial.decoding.decode_jointly`) and pass the joint
-  result as the event. Recipes such as `MALLORY_2025` and `BERNERS_LEE_2022`
-  choose or sum the templates as their papers did.
+- **Two running directions or two tracks.** Decode each event's spike
+  counts with one rate-map set per direction
+  (`decode_jointly(env, counts, {"outbound": ..., "inbound": ...}, dt=dt,
+  times=...)`) and pass the joint result as the event, with the mapping of
+  rate maps as `encoding_models`. Recipes such as `MALLORY_2025` and
+  `BERNERS_LEE_2022` choose or sum the templates as their papers did; for
+  other methods, pass `template=` to test one. A method with the
+  pseudo-event shuffle (`DAVIDSON_2009`) cannot draw from joint decodes:
+  pass it the summed posterior, as its recipe notes say.
 - **Mazes with arms.** `ArmReplayMethod` recipes (`WU_FOSTER_2014`,
   `BERNERS_LEE_2021`) classify replay per arm: pass `arms=` to
   `compare_replay_methods`.
