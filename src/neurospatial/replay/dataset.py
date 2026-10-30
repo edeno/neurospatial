@@ -111,6 +111,8 @@ _EVENT_NULLS = _POSTERIOR_NULLS + _DECODING_NULLS
 _SHAREABLE_NULLS = ("unit_identity", "place_field_circular", "cell_order")
 # Posterior nulls whose shuffles are a row order and a circular shift per row.
 _ROLLING_NULLS = ("column_cycle", "column_cycle_weighted", "time_bin_permutation")
+# Posterior nulls that shift rows along a track, so need a linearized track.
+_COLUMN_CYCLE_NULLS = ("column_cycle", "column_cycle_weighted")
 # Quantities the moment-table fast path computes; the others go through
 # detect_replay.
 _FAST_QUANTITIES = (
@@ -686,7 +688,11 @@ def dataset_values(
         ``"spike_train_circular"``, ``"place_field_circular"`` or
         ``"spike_time_uniform"``), or ``"cell_order"`` for a rank-order
         method: the field positions permuted among the event's active
-        template cells. Spike-level surrogate data sets (rate-matched
+        template cells. The column-cycle nulls shift each row along the
+        track, so need a 1-D environment or a linearized track;
+        ``"time_bin_permutation"`` and ``"pseudo_event"`` keep the bins as
+        numbered and work on any environment, such as an open-field arena.
+        Spike-level surrogate data sets (rate-matched
         Poisson, jitter) are made with
         :func:`~neurospatial.replay.null_events` instead; measure them with
         ``null=None`` and set ``dataset`` from their ``copy_index``.
@@ -766,7 +772,8 @@ def dataset_values(
         integer, a quantity is not a scalar of TrajectoryMetrics, an event is
         not a DecodingResult with times, ``spike_counts`` does not have one
         entry per event or is missing for a method that counts spikes or
-        active cells, the inputs a null needs are missing, or decoding
+        active cells, the inputs a null needs are missing, a column-cycle
+        null or a score along the track is used off a track, or decoding
         the counts does not reproduce an event's posterior.
 
     See Also
@@ -1344,7 +1351,7 @@ class _NullContext:
             env = self.env
             positions = _track_bin_centers(env, "dataset_values()")
             extents = _track_extents(env)
-            assert extents is not None  # the posterior nulls need a track
+            assert extents is not None  # _track_bin_centers refused other envs
             starts, stops = (np.asarray(values) for values in extents)
             between, _ = _bin_distance_lookup(env, np.arange(env.n_bins), "geodesic")
             self._environment_tables = {
@@ -1390,13 +1397,17 @@ class _NullContext:
         context.options = options
         context.n_datasets = n_datasets
         context.entropy = entropy
-        if null in _POSTERIOR_NULLS:
+        if null in _COLUMN_CYCLE_NULLS:
             context.order = _track_order(
                 env,
                 np.asarray(events[0].posterior),
                 operation,
                 _POSTERIOR_SHUFFLE_ALTERNATIVE,
             )
+        else:
+            # The other nulls (permuting time bins, drawing pool rows) need
+            # no order along a track: the bins keep their numbering.
+            context.order = np.arange(env.n_bins)
         if null in ("pseudo_event", "column_cycle_weighted"):
             pool = (
                 np.vstack([np.asarray(event.posterior) for event in events])
@@ -2052,7 +2063,8 @@ def shuffle_events(
         ``"pseudo_event"`` keeps each event's counts unchanged next to
         posterior rows drawn from the pool, so the counts no longer decode
         to the rows; ``dataset_values`` uses them the same way, for the
-        event's active cells and time bins without spikes.
+        event's active cells and time bins without spikes. Only the
+        column-cycle nulls need a 1-D environment or a linearized track.
     n_datasets : int, default=1
         Null data sets.
     null_options, spike_counts, encoding_models, dt, prior, pseudo_event_pool
