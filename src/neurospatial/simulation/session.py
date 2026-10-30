@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import read_only_copy
+from neurospatial._validation import is_positive_integer, validate_finite_scalar
 from neurospatial.simulation._seeds import _stream_seeds
 
 if TYPE_CHECKING:
@@ -266,6 +267,31 @@ class SimulationSession:
             field.name: _thawed(getattr(self, field.name)) for field in fields(self)
         }
         return _rebuild_session, (state,)
+
+
+def _require_positive(
+    name: str, value: object, *, count: bool = False, units: str = ""
+) -> None:
+    """Refuse a count that is not a positive integer, or a value not finite and positive.
+
+    ``units`` follows the requirement in the message, e.g. ``" (seconds)"``.
+    """
+    if count:
+        if is_positive_integer(value):
+            return
+    else:
+        try:
+            validate_finite_scalar(value, name=name, positive=True)
+            return
+        except ValueError:
+            pass
+    requirement = "an integer" if count else "finite"
+    raise ValueError(
+        _format_error(
+            f"{name} must be positive and {requirement}{units}, got {value!r}.",
+            fix=f"pass a positive {'whole' if count else 'finite'} number as {name}",
+        )
+    )
 
 
 def _simulated_session(
@@ -689,7 +715,8 @@ def simulate_session(
     ValueError
         If grid cells requested but environment is not 2D.
     ValueError
-        If ``n_cells`` or ``duration`` is not positive.
+        If ``n_cells`` is not a positive integer or ``duration`` is not
+        finite and positive.
     ValueError
         If a model parameter applies only to a cell type the session does
         not simulate (for example ``grid_spacing`` with
@@ -818,12 +845,8 @@ def simulate_session(
             f"Grid cells require 2D environment, but environment has {env.n_dims} dimensions"
         )
 
-    # Validate n_cells and duration
-    if n_cells <= 0:
-        raise ValueError(f"n_cells must be positive, got {n_cells}")
-
-    if duration <= 0:
-        raise ValueError(f"duration must be positive (seconds), got {duration}")
+    _require_positive("n_cells", n_cells, count=True)
+    _require_positive("duration", duration, units=" (seconds)")
 
     # Model parameters go to the cell types that take them; the rest are
     # trajectory parameters.

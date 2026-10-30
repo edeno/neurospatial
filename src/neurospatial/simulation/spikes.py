@@ -9,7 +9,7 @@ from tqdm.auto import tqdm
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
-from neurospatial._validation import validate_finite
+from neurospatial._validation import validate_finite, validate_finite_scalar
 from neurospatial.simulation._seeds import _stream_seeds
 from neurospatial.simulation.models.base import NeuralModel
 from neurospatial.simulation.models.boundary_cells import _shared_ray_distances
@@ -159,8 +159,7 @@ def generate_poisson_spikes(
             "firing_rate and times must be 1-D arrays, got "
             f"firing_rate.shape={firing_rate.shape}, times.shape={times.shape}."
         )
-    if not np.isfinite(refractory_period) or refractory_period < 0:
-        raise ValueError("refractory_period must be finite and non-negative.")
+    validate_finite_scalar(refractory_period, name="refractory_period", positive=False)
 
     if len(firing_rate) != len(times):
         raise ValueError(

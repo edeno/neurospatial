@@ -11,10 +11,23 @@ from neurospatial.simulation.models.place_cells import (
     TRACK_PLACE_FIELD_PEAK_HZ,
     TRACK_PLACE_FIELD_WIDTH_CM,
 )
+from neurospatial.simulation.session import _require_positive
 
 if TYPE_CHECKING:
+    from neurospatial.environment import Environment
     from neurospatial.simulation.models import NeuralModel
     from neurospatial.simulation.session import SimulationSession
+
+
+def _square_arena(arena_size: float, bin_size: float) -> Environment:
+    """A square arena of side ``arena_size`` cm, binned from a grid of samples."""
+    from neurospatial.environment import Environment
+
+    n_points_per_dim = max(20, int(arena_size / bin_size) + 1)
+    x = np.linspace(0, arena_size, n_points_per_dim)
+    xx, yy = np.meshgrid(x, x)
+    samples = np.column_stack([xx.ravel(), yy.ravel()])
+    return Environment.from_samples(samples, bin_size=bin_size, units="cm")
 
 
 def open_field_session(
@@ -67,7 +80,8 @@ def open_field_session(
     Raises
     ------
     ValueError
-        If duration, arena_size, bin_size, or n_place_cells are non-positive.
+        If duration, arena_size or bin_size is not finite and positive, or
+        n_place_cells is not a positive integer.
     ValueError
         If bin_size >= arena_size (would create too few bins).
 
@@ -134,41 +148,20 @@ def open_field_session(
     algorithms.
     """
     # Import here to avoid circular dependencies
-    from neurospatial.environment import Environment
     from neurospatial.simulation.session import simulate_session
 
-    # Validate parameters
-    if duration <= 0:
-        msg = f"duration must be positive (seconds), got {duration}"
-        raise ValueError(msg)
-    if arena_size <= 0:
-        msg = f"arena_size must be positive (cm), got {arena_size}"
-        raise ValueError(msg)
-    if bin_size <= 0:
-        msg = f"bin_size must be positive (cm), got {bin_size}"
-        raise ValueError(msg)
+    _require_positive("duration", duration, units=" (seconds)")
+    _require_positive("arena_size", arena_size, units=" (cm)")
+    _require_positive("bin_size", bin_size, units=" (cm)")
     if bin_size >= arena_size:
         msg = (
             f"bin_size ({bin_size} cm) must be smaller than "
             f"arena_size ({arena_size} cm)"
         )
         raise ValueError(msg)
-    if n_place_cells <= 0:
-        msg = f"n_place_cells must be positive, got {n_place_cells}"
-        raise ValueError(msg)
+    _require_positive("n_place_cells", n_place_cells, count=True)
 
-    # Create square arena environment
-    # Generate 2D data that spans the arena with appropriate resolution
-    # Use n_points based on bin_size to ensure proper discretization
-    n_points_per_dim = max(20, int(arena_size / bin_size) + 1)
-    x = np.linspace(0, arena_size, n_points_per_dim)
-    y = np.linspace(0, arena_size, n_points_per_dim)
-    xx, yy = np.meshgrid(x, y)
-    arena_data = np.column_stack([xx.ravel(), yy.ravel()])
-
-    # Create environment from data
-    env = Environment.from_samples(arena_data, bin_size=bin_size)
-    env = env.with_metadata(units="cm")
+    env = _square_arena(arena_size, bin_size)
 
     # Simulate session with place cells and OU trajectory
     session = simulate_session(
@@ -241,7 +234,8 @@ def linear_track_session(
     Raises
     ------
     ValueError
-        If duration, track_length, bin_size, n_place_cells, or n_laps are non-positive.
+        If duration, track_length or bin_size is not finite and positive, or
+        n_place_cells or n_laps is not a positive integer.
     ValueError
         If bin_size >= track_length (would create too few bins).
     ValueError
@@ -316,27 +310,16 @@ def linear_track_session(
     from neurospatial.environment import Environment
     from neurospatial.simulation.session import simulate_session
 
-    # Validate parameters
-    if duration <= 0:
-        msg = f"duration must be positive, got {duration}"
-        raise ValueError(msg)
-    if track_length <= 0:
-        msg = f"track_length must be positive, got {track_length}"
-        raise ValueError(msg)
-    if bin_size <= 0:
-        msg = f"bin_size must be positive, got {bin_size}"
-        raise ValueError(msg)
+    _require_positive("duration", duration)
+    _require_positive("track_length", track_length)
+    _require_positive("bin_size", bin_size)
     if bin_size >= track_length:
         msg = (
             f"bin_size ({bin_size}) must be smaller than track_length ({track_length})"
         )
         raise ValueError(msg)
-    if n_place_cells <= 0:
-        msg = f"n_place_cells must be positive, got {n_place_cells}"
-        raise ValueError(msg)
-    if n_laps <= 0:
-        msg = f"n_laps must be positive, got {n_laps}"
-        raise ValueError(msg)
+    _require_positive("n_place_cells", n_place_cells, count=True)
+    _require_positive("n_laps", n_laps, count=True)
 
     # Create 1D linear track environment
     # Generate 1D data that spans the track with appropriate resolution
@@ -408,7 +391,8 @@ def tmaze_alternation_session(
     Raises
     ------
     ValueError
-        If duration, n_trials, or n_place_cells are non-positive.
+        If duration is not finite and positive, or n_trials or n_place_cells
+        is not a positive integer.
     ValueError
         If duration is non-finite or too short for two samples per trial
         and fixed 0.5 s pauses between the ``n_trials`` trials.
@@ -504,16 +488,9 @@ def tmaze_alternation_session(
     from neurospatial.simulation.mazes import TMazeDims, make_t_maze
     from neurospatial.simulation.session import simulate_session
 
-    # Validate parameters
-    if duration <= 0:
-        msg = f"duration must be positive, got {duration}"
-        raise ValueError(msg)
-    if n_trials <= 0:
-        msg = f"n_trials must be positive, got {n_trials}"
-        raise ValueError(msg)
-    if n_place_cells <= 0:
-        msg = f"n_place_cells must be positive, got {n_place_cells}"
-        raise ValueError(msg)
+    _require_positive("duration", duration)
+    _require_positive("n_trials", n_trials, count=True)
+    _require_positive("n_place_cells", n_place_cells, count=True)
 
     # The default T-maze track (sizes estimated from a figure; see TMazeDims):
     # a 100 cm stem and two 50 cm arms.
@@ -627,8 +604,9 @@ def border_cell_session(
     Raises
     ------
     ValueError
-        If duration, n_border_cells or n_place_cells are not positive, or
-        distance_tolerance is not positive.
+        If duration is not finite and positive, n_border_cells or
+        n_place_cells is not a positive integer, or distance_tolerance is not
+        positive.
     ValueError
         If bin_size >= arena_size or bin_size <= 0.
     ValueError
@@ -714,25 +692,14 @@ def border_cell_session(
     )
     from neurospatial.simulation.trajectory import simulate_trajectory_ou
 
-    # Validate parameters
-    if duration <= 0:
-        msg = f"duration must be positive, got {duration}"
-        raise ValueError(msg)
-    if arena_size <= 0:
-        msg = f"arena_size must be positive, got {arena_size}"
-        raise ValueError(msg)
-    if bin_size <= 0:
-        msg = f"bin_size must be positive, got {bin_size}"
-        raise ValueError(msg)
+    _require_positive("duration", duration)
+    _require_positive("arena_size", arena_size)
+    _require_positive("bin_size", bin_size)
     if bin_size >= arena_size:
         msg = f"bin_size ({bin_size}) must be smaller than arena_size ({arena_size})"
         raise ValueError(msg)
-    if n_border_cells <= 0:
-        msg = f"n_border_cells must be positive, got {n_border_cells}"
-        raise ValueError(msg)
-    if n_place_cells <= 0:
-        msg = f"n_place_cells must be positive, got {n_place_cells}"
-        raise ValueError(msg)
+    _require_positive("n_border_cells", n_border_cells, count=True)
+    _require_positive("n_place_cells", n_place_cells, count=True)
     if arena_shape != "square":
         msg = f"Only 'square' arena_shape is currently supported, got {arena_shape!r}"
         raise ValueError(msg)
@@ -829,7 +796,8 @@ def grid_cell_session(
     Raises
     ------
     ValueError
-        If duration, arena_size, grid_spacing, or n_grid_cells are non-positive.
+        If duration, arena_size or grid_spacing is not finite and positive,
+        or n_grid_cells is not a positive integer.
     ValueError
         If grid_spacing >= arena_size (would create too few fields).
 
@@ -901,44 +869,25 @@ def grid_cell_session(
     creates a realistic population of grid cells from the same module.
     """
     # Import here to avoid circular dependencies
-    from neurospatial.environment import Environment
     from neurospatial.simulation._seeds import _stream_seeds
     from neurospatial.simulation.models import GridCellModel
     from neurospatial.simulation.session import _simulated_session
     from neurospatial.simulation.trajectory import simulate_trajectory_ou
 
-    # Validate parameters
-    if duration <= 0:
-        msg = f"duration must be positive, got {duration}"
-        raise ValueError(msg)
-    if arena_size <= 0:
-        msg = f"arena_size must be positive, got {arena_size}"
-        raise ValueError(msg)
-    if grid_spacing <= 0:
-        msg = f"grid_spacing must be positive, got {grid_spacing}"
-        raise ValueError(msg)
+    _require_positive("duration", duration)
+    _require_positive("arena_size", arena_size)
+    _require_positive("grid_spacing", grid_spacing)
     if grid_spacing >= arena_size:
         msg = (
             f"grid_spacing ({grid_spacing}) must be smaller than "
             f"arena_size ({arena_size})"
         )
         raise ValueError(msg)
-    if n_grid_cells <= 0:
-        msg = f"n_grid_cells must be positive, got {n_grid_cells}"
-        raise ValueError(msg)
+    _require_positive("n_grid_cells", n_grid_cells, count=True)
 
-    # Create square arena environment (similar to open_field_session)
-    # Use bin_size = grid_spacing / 5 for good resolution of grid structure
+    # Bins of a fifth of the grid spacing resolve the grid structure.
     bin_size = max(1.0, grid_spacing / 5.0)
-    n_points_per_dim = max(20, int(arena_size / bin_size) + 1)
-    x = np.linspace(0, arena_size, n_points_per_dim)
-    y = np.linspace(0, arena_size, n_points_per_dim)
-    xx, yy = np.meshgrid(x, y)
-    arena_data = np.column_stack([xx.ravel(), yy.ravel()])
-
-    # Create environment from data
-    env = Environment.from_samples(arena_data, bin_size=bin_size)
-    env = env.with_metadata(units="cm")
+    env = _square_arena(arena_size, bin_size)
 
     # Independent streams for the trajectory, the cells' phases and
     # orientations, and the spikes.
