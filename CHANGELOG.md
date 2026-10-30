@@ -126,15 +126,22 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
 New functions in `neurospatial.replay` make events without replay, to
 measure each method's false-positive rate on several kinds of null data:
 
-- `null_events(spike_times, intervals, kind=, n_copies=)` copies real
-  candidate events and breaks their order in one of three ways:
+- `null_events(spike_times, intervals, kind=, n_copies=, cells=)` copies
+  real candidate events and breaks their order in one of three ways. Only
+  the `cells` you select are randomized, for example the decoder's place
+  cells; the rest keep their spikes:
   - `"cell_identity"`: spike trains reassigned to cells at random
     (Takigawa et al. 2024);
   - `"spike_shift"`: each cell's spikes shifted circularly within the
     event;
   - `"poisson"`: each cell keeps its count, with spikes placed at random.
 - `simulated_null_events(env, encoding_models, n_events=, kind=)`
-  simulates random or stationary events.
+  simulates random or stationary events. Stationary events are placed at
+  random along the track.
+- The notes say what each kind keeps and breaks, and which methods' own
+  shuffles each kind repeats. A null that repeats a method's own shuffle
+  underestimates that method's false-positive rate (Takigawa et al. 2024).
+  Score null events in their own `compare_replay_methods` call.
 - Both return `NullSpikeData`: spike trains laid out like a session, one
   interval per null event. Decode them exactly as the real events, for
   example with the new `decode_intervals`.
