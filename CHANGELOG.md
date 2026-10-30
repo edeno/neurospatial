@@ -138,7 +138,12 @@ New `neurospatial.replay.calibration` summarizes the table of
   sensitivity.
   - It can be split by bins of event properties (`by=`) and by table
     columns such as the kind of null data or the session (`groups=`).
-    Every combination is reported.
+    Every combination is reported. A missing `groups` value forms its own
+    group, as in `matched_alpha` and `method_agreement`.
+  - `properties=` joins on the `groups` and `event` when it has the
+    `groups` columns. Several concatenated tables each number their events
+    from 0, so their properties must have the `groups` columns; without
+    them they are refused rather than joined to another table's events.
   - An event that falls in no bin is refused rather than dropped.
   - Events a method could not score count as not replay by default, so
     every method's rate covers the same events. `errors="exclude"` gives

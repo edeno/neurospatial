@@ -167,6 +167,101 @@ class TestDetectionRates:
         assert rates.loc["a", "ci_high"] == pytest.approx(interval.high)
         assert rates.loc["b", "rate"] == 0.0
 
+    def test_confidence_level_and_interval_ends(self):
+        table = _table(
+            {
+                "some": [True] * 3 + [False] * 17,
+                "none": [False] * 20,
+                "all": [True] * 20,
+            }
+        )
+        rates = detection_rates(table, confidence=0.8).set_index("method")
+        interval = binomtest(3, 20).proportion_ci(0.8, method="exact")
+        assert rates.loc["some", "ci_low"] == pytest.approx(interval.low)
+        assert rates.loc["some", "ci_high"] == pytest.approx(interval.high)
+        wider = detection_rates(table).set_index("method")
+        assert wider.loc["some", "ci_low"] < interval.low
+        assert rates.loc["none", "ci_low"] == 0.0
+        assert rates.loc["none", "ci_high"] < 1.0
+        assert rates.loc["all", "ci_high"] == 1.0
+        assert rates.loc["all", "ci_low"] > 0.0
+
+    def test_a_missing_group_is_its_own_group(self):
+        """As in matched_alpha: events with a NaN group are counted."""
+        table = _table(
+            {"a": [True, False, True, True], "b": [False] * 4},
+            session=["s1", "s1", np.nan, np.nan],
+        )
+        rates = detection_rates(table, groups=["session"])
+        assert rates["n_events"].tolist() == [2, 2, 2, 2]
+        assert rates["n_replay"].tolist() == [1, 2, 0, 0]
+        assert rates["session"].isna().tolist() == [False, True, False, True]
+        agreement = method_agreement(table, groups=["session"]).iloc[0]
+        assert agreement["n_events"] == 4 and agreement["n_first_only"] == 3
+
+    def test_properties_join_on_groups_and_event(self):
+        """Two sessions number their events from 0; each keeps its own cells."""
+        table = pd.concat(
+            [
+                _table({"a": [True, False]}, session=["s1", "s1"]),
+                _table({"a": [False, True]}, session=["s2", "s2"]),
+            ]
+        )
+        properties = pd.concat(
+            [
+                pd.DataFrame(
+                    {"n_active_cells": [4, 12]}, index=pd.Index([0, 1], name="event")
+                ).assign(session="s1"),
+                pd.DataFrame(
+                    {"n_active_cells": [12, 4]}, index=pd.Index([0, 1], name="event")
+                ).assign(session="s2"),
+            ]
+        )
+        rates = detection_rates(
+            table,
+            properties=properties,
+            by={"n_active_cells": [0, 10, np.inf]},
+            groups=["session"],
+        )
+        few = rates[rates["n_active_cells"].astype(str) == "[0.0, 10.0)"]
+        # s1's event 0 (4 cells) is replay; s2's event 1 (4 cells) is replay.
+        assert few["n_replay"].tolist() == [1, 1]
+        assert few["n_events"].tolist() == [1, 1]
+        # The same properties as columns join alike.
+        flat = detection_rates(
+            table,
+            properties=properties.reset_index(),
+            by={"n_active_cells": [0, 10, np.inf]},
+            groups=["session"],
+        )
+        pd.testing.assert_frame_equal(flat, rates)
+
+    def test_properties_without_the_groups_are_refused(self):
+        table = pd.concat(
+            [
+                _table({"a": [True, False]}, session=["s1", "s1"]),
+                _table({"a": [False, True]}, session=["s2", "s2"]),
+            ]
+        )
+        properties = pd.DataFrame(
+            {"n_active_cells": [4, 12]}, index=pd.Index([0, 1], name="event")
+        )
+        with pytest.raises(ValueError, match=r"lacks \['session'\]"):
+            detection_rates(
+                table,
+                properties=properties,
+                by={"n_active_cells": [0, 10, np.inf]},
+                groups=["session"],
+            )
+        repeated = pd.concat([properties, properties]).assign(session="s1")
+        with pytest.raises(ValueError, match="repeated"):
+            detection_rates(
+                table,
+                properties=repeated,
+                by={"n_active_cells": [0, 10, np.inf]},
+                groups=["session"],
+            )
+
     def test_errors_count_as_not_replay_unless_excluded(self):
         table = _table(
             {"a": [True, False, True, True]},
