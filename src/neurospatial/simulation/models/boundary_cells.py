@@ -40,10 +40,6 @@ George, T. M., Rastogi, M., de Cothi, W., Clopath, C., Stachenfeld, K., &
 
 from __future__ import annotations
 
-import hashlib
-from collections.abc import Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -64,9 +60,11 @@ from neurospatial.simulation._walls import Walls
 from neurospatial.simulation.models.base import (
     _check_angle,
     _check_positive,
+    _digest,
     _draw_rng,
     _model_inputs,
     _set_rates,
+    _shared,
     _tuned_rate,
 )
 
@@ -88,39 +86,6 @@ BVC_PREFERRED_DISTANCE_CM = 17.5
 # angular resolution (``dtheta``) RatInABox's BoundaryVectorCells integrate
 # over (George et al. 2024).
 _N_RAYS = 180
-
-# Ray distances shared by the boundary-vector cells of one population, keyed
-# by the digests of the walls and rays and of the positions they were cast
-# from; None outside ``_shared_ray_distances()``.
-_RAY_DISTANCES: ContextVar[dict[tuple[bytes, bytes], NDArray[np.float64]] | None] = (
-    ContextVar("_RAY_DISTANCES", default=None)
-)
-
-
-@contextmanager
-def _shared_ray_distances() -> Iterator[None]:
-    """Let boundary-vector cells reuse each other's ray distances in the block.
-
-    Ray distances depend on the walls, the ray directions and the positions,
-    not on a cell's tuning, so every cell of a population on the same walls
-    needs the same ones. Inside the block each set is cast once; the
-    distances are dropped when the block ends.
-    """
-    token = _RAY_DISTANCES.set({})
-    try:
-        yield
-    finally:
-        _RAY_DISTANCES.reset(token)
-
-
-def _digest(*arrays: NDArray[Any]) -> bytes:
-    """A digest of the arrays' dtypes, shapes and contents."""
-    digest = hashlib.blake2b(digest_size=16)
-    for array in arrays:
-        contiguous = np.ascontiguousarray(array)
-        digest.update(f"{contiguous.dtype.str}{contiguous.shape}".encode())
-        digest.update(contiguous.tobytes())
-    return digest.digest()
 
 
 def _require_walls(
@@ -519,22 +484,6 @@ class BoundaryVectorCellModel:
         terms: NDArray[np.float64] = radial * self._angular
         return terms
 
-    def _ray_distances(self, positions: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Distance to the first wall along every ray, shape (n_time, n_rays).
-
-        Inside ``_shared_ray_distances()``, cells on the same walls reuse the
-        distances already cast from the same positions.
-        """
-        shared = _RAY_DISTANCES.get()
-        if shared is None:
-            return self._walls.ray_distances(positions, self._directions)
-        key = (self._rays_key, _digest(positions))
-        if key not in shared:
-            distances = self._walls.ray_distances(positions, self._directions)
-            distances.setflags(write=False)
-            shared[key] = distances
-        return shared[key]
-
     @property
     def requires_headings(self) -> bool:
         """False: the drive is summed over allocentric directions."""
@@ -576,7 +525,12 @@ class BoundaryVectorCellModel:
         )
         drive = np.full(len(positions), np.nan)
         if observed.any():
-            distances = self._ray_distances(positions[observed])
+            # Cells on the same walls share the rays cast from the same positions.
+            origins = positions[observed]
+            distances = _shared(
+                ("boundary_vector_rays", self._rays_key, _digest(origins)),
+                lambda: self._walls.ray_distances(origins, self._directions),
+            )
             drive[observed] = self._drive_terms(distances).sum(axis=1)
         return _tuned_rate(self, drive / self._reference_drive)
 

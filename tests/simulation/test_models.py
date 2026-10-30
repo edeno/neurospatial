@@ -680,9 +680,7 @@ class TestSharedRayDistances:
 
     def test_shared_rays_follow_new_positions(self, cells, samples, monkeypatch):
         """A different or edited positions array is never given stale rays."""
-        from neurospatial.simulation.models.boundary_cells import (
-            _shared_ray_distances,
-        )
+        from neurospatial.simulation.models.base import _population_cache
 
         times, positions = samples
         moved = positions[::-1].copy()
@@ -690,7 +688,7 @@ class TestSharedRayDistances:
             cell.firing_rate(times, p) for cell in cells for p in (positions, moved)
         ]
         calls = self._count_casts(monkeypatch)
-        with _shared_ray_distances():
+        with _population_cache():
             got = [
                 cell.firing_rate(times, p) for cell in cells for p in (positions, moved)
             ]
