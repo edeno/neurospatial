@@ -4,6 +4,23 @@
 
 ### Maboudi et al. (2018) replay recipe
 
+- `detect_trajectory_radon(..., off_track="bin_median")` scores a time bin
+  where the line leaves the track by the median of its single-bin masses,
+  as Maboudi et al. did; the default, `"band_median"`, is Davidson et al.'s
+  median over a band's mass and is unchanged.
+- `detect_trajectory_radon(..., zero_rows="line_median")` accepts all-zero
+  posterior rows (time bins without spikes, zeroed by
+  `empty_time_bins="zero"`) and scores each by the median of the line's
+  band mass over its on-track time bins with spikes, the paper's rule. The
+  authors' code computes that median but never adds it, so its empty time
+  bins score 0; dropping them reproduces it. The default, `"refuse"`,
+  still refuses such rows.
+- `detect_trajectory_radon(..., n_lines=35000)` searches lines drawn at
+  random over every slope, as nelpy draws them (seeded by `line_seed`),
+  instead of the dense grid. At a 3 cm band the dense grid is slow with
+  empty time bins: a 200 ms event on a 200 cm track in 2 cm bins took 139 s
+  for 5000 shuffles, against 3.5 s with 35,000 random lines. The sinogram
+  then holds one score per line.
 - The `column_cycle` null takes `null_options={"column_cycle":
   {"exclude_zero_shift": True}}`, and `shuffle_posterior_circular` takes
   `exclude_zero_shift=True`, to draw shifts of 1 to n_bins - 1 bins, as

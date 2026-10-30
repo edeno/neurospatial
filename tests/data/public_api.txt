@@ -488,7 +488,7 @@ neurospatial.replay.detect_arm_replay(env, posterior, times, *, arms, arm_replay
 neurospatial.replay.detect_pairwise_order_replay(env, spike_times, interval, encoding_models, *, pairwise_order_method, template=None, rng=None)
 neurospatial.replay.detect_rank_order_replay(env, spike_times, interval, encoding_models, *, rank_order_method, template=None, rng=None)
 neurospatial.replay.detect_replay(env, posterior, times, *, replay_method, spike_counts=None, encoding_models=None, dt=None, prior=None, template=None, pseudo_event_pool=None, valid_time_bins=None, rng=None)
-neurospatial.replay.detect_trajectory_radon(env, posterior, times, *, band=None, max_speed=None, min_speed=0.0, wrap=False, line_ends='any')
+neurospatial.replay.detect_trajectory_radon(env, posterior, times, *, band=None, max_speed=None, min_speed=0.0, wrap=False, line_ends='any', off_track='band_median', zero_rows='refuse', n_lines=None, line_seed=0)
 neurospatial.replay.detection_rates(table, *, properties=None, by=None, groups=(), errors='not_replay', confidence=0.95)
 neurospatial.replay.event_properties(env, events, *, spike_counts=None, template=None, dt=None)
 neurospatial.replay.fit_circular_sequence(env, posterior, times)

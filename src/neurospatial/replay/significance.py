@@ -381,8 +381,9 @@ def replay_significance(
         and for the column-cycle and time-bin nulls the zeroed rows move with
         their rows (under the weighted column cycle a zeroed row stays
         zero). Needs ``spike_counts`` and a score that accepts rows
-        without mass, such as :func:`weighted_correlation`; pass the
-        posterior as decoded, not zeroed. Not available with
+        without mass, such as :func:`weighted_correlation` or
+        :func:`detect_trajectory_radon` with ``zero_rows="line_median"``;
+        pass the posterior as decoded, not zeroed. Not available with
         ``"pseudo_event"``, whose pool rows carry no spike counts.
     n_shuffles : int, default=1000
         Shuffles per null. A p-value is at least ``1 / (n_shuffles + 1)``,
@@ -1541,7 +1542,17 @@ def _scorer_for(
     ] = {
         detect_trajectory_radon: (
             _RadonScorer,
-            ("band", "max_speed", "min_speed", "wrap", "line_ends"),
+            (
+                "band",
+                "max_speed",
+                "min_speed",
+                "wrap",
+                "line_ends",
+                "off_track",
+                "zero_rows",
+                "n_lines",
+                "line_seed",
+            ),
         ),
         weighted_correlation: (_WeightedCorrelationScorer, ("row_normalization",)),
         fit_circular_sequence: (_CircularSequenceScorer, ()),
@@ -1591,6 +1602,10 @@ class _RadonScorer(_Scorer):
         min_speed: float = 0.0,
         wrap: bool = False,
         line_ends: str = "any",
+        off_track: str = "band_median",
+        zero_rows: str = "refuse",
+        n_lines: int | None = None,
+        line_seed: int = 0,
     ) -> None:
         self.lines, self.posterior = _prepare_replay_lines(
             env,
@@ -1601,6 +1616,10 @@ class _RadonScorer(_Scorer):
             min_speed=min_speed,
             wrap=wrap,
             line_ends=line_ends,
+            off_track=off_track,
+            zero_rows=zero_rows,
+            n_lines=n_lines,
+            line_seed=line_seed,
             operation=_OPERATION,
         )
 
