@@ -282,8 +282,9 @@ def compass_quadrants(floor: Polygon) -> dict[str, Polygon]:
 
     Each quadrant is the part of ``floor`` on one side of both the
     north-south and the east-west line through the origin, with north +y
-    and east +x (NE is x >= 0, y >= 0). Together they cover the floor
-    without overlapping.
+    and east +x. Together they cover the floor without overlapping, and
+    they share their edges, so region membership puts each bin or position
+    on a dividing line in exactly one of them.
 
     Parameters
     ----------

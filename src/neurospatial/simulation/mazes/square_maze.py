@@ -111,11 +111,16 @@ def make_square_maze(
     - center: a point at the centre of the box, (0, 0), covering the one
       bin there.
     - NE, NW, SE, SW: the box's quarters, bounded by the north-south and
-      east-west lines through its centre (NE is x > 0, y > 0), with the same
-      meaning as the watermaze's quadrants. Together they cover the box
-      without overlapping, for quadrant occupancy and spatial preference. A
-      bin whose centre lies exactly on a dividing line belongs to both
-      quadrants it touches.
+      east-west lines through its centre, with the same meaning as the
+      watermaze's quadrants, for quadrant occupancy and spatial preference.
+      Together they cover the box without overlapping, and every bin is in
+      exactly one quadrant. With an odd number of bins across, a row and a
+      column of bin centres lie on the dividing lines; a centre on a line
+      counts as east of the north-south line and north of the east-west
+      line, so NE holds the bins with x >= 0 and y >= 0 and SW those with
+      x < 0 and y < 0 (see :meth:`~neurospatial.Environment.bins_in_region`).
+      The default 15 x 15 grid has 64 bins in NE, 56 in NW and SE, and 49 in
+      SW.
 
     For thigmotaxis (wall-following), measure how far the animal is from the
     walls with :func:`neurospatial.behavior.distance_to_boundary` or

@@ -172,6 +172,10 @@ default lap route all changed.
   reward region without a bin.
 - `MazeEnvironments` is frozen.
 - Estimated sizes are marked as estimates in the maze guide.
+- Square-maze and watermaze quadrants give each bin to exactly one quadrant
+  (see the next section). Before, the default square maze counted 256
+  quadrant bins for 225 bins and the watermaze 4556 for 4405, and quadrant
+  visit times from `detect_region_visits` summed to 688 s in a 600 s session.
 
 ### Regions that share an edge split its bins
 

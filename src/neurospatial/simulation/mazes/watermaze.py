@@ -165,10 +165,13 @@ def make_watermaze(
       and a circular region of the platform's diameter, for platform
       crossings and time in the platform zone.
     - NE, NW, SE, SW: the pool's quarters, bounded by the north-south and
-      east-west lines through its centre (NE is x > 0, y > 0). They are
-      regions only, for quadrant occupancy in probe trials; together they
-      cover the pool without overlapping. A bin whose centre lies exactly on
-      a dividing line belongs to both quadrants it touches.
+      east-west lines through its centre. They are regions only, for
+      quadrant occupancy in probe trials. Together they cover the pool
+      without overlapping, and every bin is in exactly one quadrant: a bin
+      whose centre lies exactly on a dividing line counts as east of the
+      north-south line and north of the east-west line, so NE holds the
+      bins with x >= 0 and y >= 0 and SW those with x < 0 and y < 0
+      (see :meth:`~neurospatial.Environment.bins_in_region`).
 
     Examples
     --------
