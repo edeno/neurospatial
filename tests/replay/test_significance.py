@@ -877,3 +877,78 @@ def test_spike_counts_in_score_options_are_refused_with_row_moving_nulls():
         rng=0,
     )
     assert set(result.shuffles) == {"column_cycle"}
+
+
+class TestZeroEmptyTimeBins:
+    """empty_time_bins="zero": each shuffle zeroes its own empty time bins."""
+
+    @pytest.fixture
+    def one_spike(self):
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=10.0, units="cm"
+        )
+        x = env.bin_centers[:, 0]
+        rates = (1.0 + 20.0 * np.exp(-0.5 * ((x - 50.0) / 10.0) ** 2))[None]
+        counts = np.zeros((10, 1), dtype=np.int64)
+        counts[[2, 6], 0] = 1
+        from neurospatial.decoding import decode_position
+
+        posterior = decode_position(env, counts, rates, dt=0.02).posterior
+        return env, rates, counts, posterior
+
+    def test_each_shuffle_zeroes_the_time_bins_empty_in_its_counts(self, one_spike):
+        env, rates, counts, posterior = one_spike
+        seen = []
+
+        def record(env, posterior, times):
+            empty = np.flatnonzero(posterior.sum(axis=1) == 0)
+            seen.append(tuple(empty))
+            return weighted_correlation(env, posterior, times, row_normalization="none")
+
+        replay_significance(
+            env,
+            posterior,
+            np.arange(10) * 0.02,
+            score=record,
+            nulls="spike_train_circular",
+            spike_counts=counts,
+            encoding_models=rates,
+            dt=0.02,
+            empty_time_bins="zero",
+            use_absolute=True,
+            n_shuffles=30,
+            rng=0,
+        )
+        observed, shuffles = seen[0], seen[1:]
+        assert observed == tuple(i for i in range(10) if i not in (2, 6))
+        assert all(len(empty) == 8 for empty in shuffles)
+        assert len(set(shuffles)) > 1  # the spike, and the kept row, move
+
+    def test_needs_spike_counts(self, one_spike):
+        env, _, _, posterior = one_spike
+        with pytest.raises(ValueError, match="needs spike_counts"):
+            replay_significance(
+                env,
+                posterior,
+                np.arange(10) * 0.02,
+                score=weighted_correlation,
+                empty_time_bins="zero",
+                n_shuffles=5,
+            )
+
+    def test_refused_with_pseudo_events(self, one_spike):
+        env, rates, counts, posterior = one_spike
+        with pytest.raises(ValueError, match="cannot be used with the pseudo_event"):
+            replay_significance(
+                env,
+                posterior,
+                np.arange(10) * 0.02,
+                score=weighted_correlation,
+                nulls="pseudo_event",
+                spike_counts=counts,
+                encoding_models=rates,
+                dt=0.02,
+                pseudo_event_pool=posterior,
+                empty_time_bins="zero",
+                n_shuffles=5,
+            )
