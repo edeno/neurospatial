@@ -1720,7 +1720,7 @@ class _MomentTables:
         including NaN criterion values where a thresholded score is
         undefined.
         """
-        from neurospatial.replay.trajectory import _SCORE_DECIMALS
+        from neurospatial.replay.correlation import _finish_correlation
 
         rows, shifts = draws
         n_datasets, n_time = rows.shape
@@ -1754,16 +1754,12 @@ class _MomentTables:
         covariance = np.sum(time_dev * mass * deviation, axis=1) / total
         var_time = np.sum(time_mass * time_dev**2, axis=1)
         var_position = np.sum(mass * (variance + deviation**2), axis=1) / total
-        eps = np.finfo(np.float64).eps
-        with np.errstate(invalid="ignore", divide="ignore"):
-            correlation = covariance / np.sqrt(var_time * var_position)
-        varies = (var_time > eps * float(np.ptp(times)) ** 2) & (
-            var_position > eps * float(np.ptp(self.tables["positions"])) ** 2
-        )
-        score = np.where(
-            varies,
-            np.clip(np.round(correlation, _SCORE_DECIMALS), -1.0, 1.0),
-            np.nan,
+        score = _finish_correlation(
+            covariance,
+            var_time,
+            var_position,
+            float(np.ptp(times)),
+            float(np.ptp(self.tables["positions"])),
         )
         values: dict[str, NDArray[np.float64]] = {"score": score}
         if "n_active_cells" in constant:
