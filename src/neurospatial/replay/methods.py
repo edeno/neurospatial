@@ -1072,11 +1072,7 @@ class ReplayMethod:
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
-        rebuild, (cls, state) = reduce_through_constructor(self)
-        state["null_options"] = {
-            name: dict(options) for name, options in self.null_options.items()
-        }
-        return rebuild, (cls, state)
+        return reduce_through_constructor(self)
 
 
 @dataclass(frozen=True)

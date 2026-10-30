@@ -131,7 +131,9 @@ def reduce_through_constructor(
 
     A ``MappingProxyType`` cannot be pickled, so pickle, copy and deepcopy
     rebuild the object through its constructor, which freezes the mappings
-    again. Every field is passed by name, so a field added later is kept.
+    again. A read-only mapping field, and read-only mappings among its
+    values (such as per-null option mappings), are passed as dicts. Every
+    field is passed by name, so a field added later is kept.
 
     Parameters
     ----------
@@ -144,11 +146,20 @@ def reduce_through_constructor(
         ``(rebuild, (type(obj), fields))`` for ``__reduce__``.
     """
     state = {
-        item.name: dict(value) if isinstance(value, MappingProxyType) else value
+        item.name: _unfrozen(getattr(obj, item.name), nested=True)
         for item in fields(obj)
-        for value in (getattr(obj, item.name),)
     }
     return _rebuild_dataclass, (type(obj), state)
+
+
+def _unfrozen(value: Any, *, nested: bool) -> Any:
+    """A read-only mapping as a dict, its read-only mapping values too if nested."""
+    if not isinstance(value, MappingProxyType):
+        return value
+    return {
+        key: _unfrozen(item, nested=False) if nested else item
+        for key, item in value.items()
+    }
 
 
 _ResultT = TypeVar("_ResultT")

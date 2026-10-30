@@ -2956,11 +2956,7 @@ class DatasetTestRecipe:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
         from neurospatial._results import reduce_through_constructor
 
-        rebuild, (cls, state) = reduce_through_constructor(self)
-        state["null_options"] = {
-            name: dict(options) for name, options in self.null_options.items()
-        }
-        return rebuild, (cls, state)
+        return reduce_through_constructor(self)
 
     def paper_p_value(self, result: DatasetTestResult) -> float | NDArray[np.float64]:
         """The p-value by the paper's own rule.

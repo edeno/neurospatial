@@ -658,10 +658,7 @@ class RecurringSequencesSignificanceResult(ResultMixin):
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
-        rebuild, (cls, state) = reduce_through_constructor(self)
-        state["surrogate_counts"] = dict(self.surrogate_counts)
-        state["p_values"] = dict(self.p_values)
-        return rebuild, (cls, state)
+        return reduce_through_constructor(self)
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
