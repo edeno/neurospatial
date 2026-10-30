@@ -179,7 +179,7 @@ class TestRippleDetectionScopeOut:
 
     def test_replay_docstrings_point_to_ripple_detection(self) -> None:
         """Decoding replay (trajectory) docstrings mention ripple_detection."""
-        import neurospatial.decoding.trajectory as trajectory
+        import neurospatial.replay.trajectory as trajectory
 
         module_doc = inspect.getdoc(trajectory) or ""
         assert "ripple_detection" in module_doc

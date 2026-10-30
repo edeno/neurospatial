@@ -13,9 +13,10 @@ build on each other, so run them in order.
 
 ## Where these live
 
-Population tools are in two subpackages. Spatial-map summaries are with the
-encoding tools; co-firing, reactivation and decoding work on spike counts in
-time bins and are with the decoding tools.
+Population tools are in three subpackages. Spatial-map summaries are with the
+encoding tools. Co-firing and reactivation work on spike counts in time bins
+and are in `neurospatial.reactivation`; decoding is in `neurospatial.decoding`,
+which also bins the spike counts.
 
 | Question | Functions | Import from |
 | --- | --- | --- |
@@ -23,7 +24,7 @@ time bins and are with the decoding tools.
 | How much of the environment is covered, and by how many place cells? | `population_coverage`, `plot_population_coverage`, `field_density_map`, `count_place_cells` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
 | Does the map change between conditions? | `population_vector_correlation`, `rate_map_correlations`, `field_overlap` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
 | Spike counts in time bins | `bin_spikes_in_time` | `neurospatial.decoding` |
-| Which cells fire together, and does that pattern return during rest? | `pairwise_correlations`, `detect_assemblies`, `marchenko_pastur_threshold`, `assembly_activation`, `reactivation_strength`, `explained_variance_reactivation` | `neurospatial.decoding` (defined in `neurospatial.decoding.assemblies`) |
+| Which cells fire together, and does that pattern return during rest? | `pairwise_correlations`, `detect_assemblies`, `marchenko_pastur_threshold`, `assembly_activation`, `reactivation_strength`, `explained_variance_reactivation` | `neurospatial.reactivation` (defined in `neurospatial.reactivation.assemblies`) |
 | What position does the population encode? | `decode_position`, `decode_session`, `BayesianDecoder` | `neurospatial.decoding` |
 
 ## How much of the track does the population cover?
@@ -414,7 +415,7 @@ order of `np.triu_indices(n_units, k=1)`. Those are column positions; map them
 through `unit_ids` to name the cells:
 
 ```python
-from neurospatial.decoding import (
+from neurospatial.reactivation import (
     assembly_activation,
     detect_assemblies,
     explained_variance_reactivation,

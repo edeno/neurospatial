@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Replay and reactivation have their own subpackages
+
+Replay scoring and reactivation are now separate from decoding:
+
+- `neurospatial.replay` holds the replay trajectory scores, the replay test
+  and the shuffles used to build their nulls.
+- `neurospatial.reactivation` holds cell assemblies and pairwise
+  reactivation.
+
+`neurospatial.decoding` keeps decoding, position estimates and decoding
+accuracy. The functions behave exactly as before; only their import paths
+changed.
+
+**Breaking changes**
+
+| Old import | New import |
+| --- | --- |
+| `neurospatial.decoding.detect_trajectory_radon`, `fit_linear_trajectory`, `fit_isotonic_trajectory`, `replay_trajectory_significance` and their results (`RadonDetectionResult`, `LinearFitResult`, `IsotonicFitResult`, `ReplaySignificanceResult`) | `neurospatial.replay` |
+| `neurospatial.stats.shuffle_cell_identity`, `shuffle_place_fields_circular`, `shuffle_place_fields_circular_2d`, `shuffle_posterior_circular`, `shuffle_posterior_weighted_circular` | `neurospatial.replay` |
+| `neurospatial.decoding.detect_assemblies`, `assembly_activation`, `reactivation_strength`, `marchenko_pastur_threshold`, `pairwise_correlations`, `explained_variance_reactivation` and their results (`AssemblyPattern`, `AssemblyDetectionResult`, `ExplainedVarianceResult`) | `neurospatial.reactivation` |
+
+The modules moved too: `neurospatial.decoding.trajectory` is now
+`neurospatial.replay.trajectory`, and `neurospatial.decoding.assemblies` is now
+`neurospatial.reactivation.assemblies`.
+
 ### Simulations produce what they say and refuse what they cannot simulate
 
 A review of `neurospatial.simulation` found sessions whose ground truth

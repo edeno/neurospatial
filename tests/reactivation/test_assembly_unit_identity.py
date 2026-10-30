@@ -17,7 +17,7 @@ import re
 import numpy as np
 import pytest
 
-from neurospatial.decoding.assemblies import (
+from neurospatial.reactivation.assemblies import (
     AssemblyDetectionResult,
     AssemblyPattern,
     assembly_activation,
