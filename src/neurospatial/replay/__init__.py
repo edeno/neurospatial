@@ -65,7 +65,8 @@ event_properties, detection_rates, method_agreement : Calibrate methods on a
     comparison table: rates (false positives on null data) by event
     property, with confidence intervals, and agreement between methods
 null_events, simulated_null_events, decode_intervals : Events without replay
-    (cell-identity, spike-shift and Poisson copies of real events, or
+    (cell-identity, spike-shift, uniform-spike-time and rate-matched
+    Poisson copies of real events, or
     simulated random and stationary events) to measure false positives
 matched_alpha, apply_alpha : Each method's alpha that holds its
     false-positive rate on null data to a target, and verdicts at it
@@ -79,19 +80,24 @@ neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
 Significance
 ------------
 replay_significance : Test any replay score against shuffled events
-    Six nulls: column-cycle, unit-identity and pseudo-event (the default,
+    Eight nulls: column-cycle, unit-identity and pseudo-event (the default,
     Davidson et al. 2009), spike-train and place-field circular shifts,
-    and time-bin permutation; the event is significant when every null
-    run rejects it.
+    time-bin permutation (the "time swap" or "time-bin shuffle" of Silva
+    et al. 2015, Grosmark & Buzsáki 2016, Maboudi et al. 2018 and Farooq
+    et al. 2019), spike times redrawn uniformly in the event (Stella et
+    al. 2019) and the weighted column cycle (Farooq et al. 2019); the
+    event is significant when every null run rejects it.
 
 Shuffles
 --------
 shuffle_cell_identity : Permute which spike train goes with which rate map
 shuffle_spike_counts_circular : Shift each cell's counts in time within an event
+shuffle_spike_counts_uniform : Spread each cell's spikes uniformly over an event
 shuffle_place_fields_circular : Circularly shift each 1-D rate map
 shuffle_place_fields_circular_2d : Circularly shift each 2-D rate map
 shuffle_posterior_circular : Shift each time bin's posterior along the track
-shuffle_posterior_weighted_circular : Posterior shift with edge control
+shuffle_posterior_weighted_circular : Shift each time bin's peak to a position
+    drawn from the session's mean posterior (Farooq et al. 2019)
 
 Result Containers
 -----------------
@@ -154,6 +160,7 @@ from neurospatial.replay.nulls import (
     shuffle_posterior_circular,
     shuffle_posterior_weighted_circular,
     shuffle_spike_counts_circular,
+    shuffle_spike_counts_uniform,
 )
 from neurospatial.replay.rank_order import (
     RankOrderResult,
@@ -230,4 +237,5 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "shuffle_posterior_circular",
     "shuffle_posterior_weighted_circular",
     "shuffle_spike_counts_circular",
+    "shuffle_spike_counts_uniform",
 ]

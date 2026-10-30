@@ -82,6 +82,47 @@ other seeded simulations give the same spikes as before.
   `grid_spacing` used to build grid cells with NaN spacing.
 - Head-direction and boundary-vector `ground_truth` report a preferred
   direction of exactly −π as +π, the package's (−π, π] convention.
+### New replay nulls
+
+- `shuffle_posterior_weighted_circular(env, posterior, peak_weights,
+  edge_exclusion=)` is now the weighted circular shift of Farooq et al.
+  (2019): each time bin's peak is moved to a position drawn from
+  `peak_weights` (the session's mean decoded posterior) and the whole row
+  is rolled there; no peak lands within `edge_exclusion` (a distance along
+  the track; Farooq used 10 cm) of either end. The old function drew its
+  shifts uniformly, weighted nothing, and limited them only for peaks that
+  started near an end; `edge_buffer` is gone.
+- `shuffle_spike_counts_uniform(spike_counts)` spreads each cell's spikes in
+  an event uniformly over its time bins, keeping the cell's count: the
+  "spike jittering" of Stella et al. (2019) on equal time bins.
+- `replay_significance(nulls="spike_time_uniform")` redraws each cell's
+  spikes uniformly over the event and decodes the event again (Stella et
+  al. 2019). It needs the decoding inputs, refuses time bins closer than
+  `dt` (overlapping windows share spikes), and with `empty_time_bins="zero"`
+  each shuffle zeroes its own empty time bins.
+- `replay_significance(nulls="column_cycle_weighted")` runs Farooq et al.'s
+  weighted circular shift, with peaks drawn from
+  `pseudo_event_pool.mean(axis=0)`. Its edge exclusion is set with the new
+  `null_options={"column_cycle_weighted": {"edge_exclusion": 10.0}}`.
+  `ReplayMethod` has a matching `null_options` field, checked when the
+  method is made (known nulls of the method, options they take) and
+  forwarded by `detect_replay`; `compare_replay_methods` builds the pool
+  for it as for the pseudo-event null.
+- `ReplayMethod` refuses `empty_time_bins="drop"` with
+  `"spike_train_circular"` or `"spike_time_uniform"`: after the drop they
+  would spread spikes over the kept time bins only, and their shuffles have
+  new empty time bins that cannot be dropped. Use `"zero"`.
+- `null_events(kind="poisson")` is renamed `kind="spike_time_uniform"`: it
+  keeps each cell's count and redraws the spike times, Stella et al.'s
+  spike jittering, not the papers' Poisson surrogate. The new
+  `kind="rate_poisson"` is that surrogate: each cell's count in a null
+  event is Poisson(rate x duration), with the cell's rate pooled over all
+  `intervals` (as in nelpy), so it does not keep the event's own count.
+  Grosmark & Buzsáki estimated rates per behavioral epoch and running
+  direction: call `null_events` once per group.
+- The `time_bin_permutation` docs say it is the "time swap" of Silva et al.
+  (2015) and Maboudi et al. (2018) and the "time-bin shuffle" of Grosmark &
+  Buzsáki (2016) and Farooq et al. (2019).
 ### Template choices
 
 - `ReplayMethod(template_choice="smallest_p")` tests every template of an
@@ -314,14 +355,19 @@ New functions in `neurospatial.replay` make events without replay, to
 measure each method's false-positive rate on several kinds of null data:
 
 - `null_events(spike_times, intervals, kind=, n_copies=, cells=)` copies
-  real candidate events and breaks their order in one of three ways. Only
+  real candidate events and breaks their order in one of four ways. Only
   the `cells` you select are randomized, for example the decoder's place
   cells; the rest keep their spikes:
   - `"cell_identity"`: spike trains reassigned to cells at random
     (Takigawa et al. 2024);
   - `"spike_shift"`: each cell's spikes shifted circularly within the
     event;
-  - `"poisson"`: each cell keeps its count, with spikes placed at random.
+  - `"spike_time_uniform"`: each cell keeps its count, with spikes placed
+    at random (Stella et al. 2019);
+  - `"rate_poisson"`: each cell's count is drawn from its mean rate over
+    all the intervals, with spikes placed at random (the Poisson surrogates
+    of Silva et al. 2015, Grosmark & Buzsáki 2016 and Farooq et al. 2019);
+    the event's own counts are not kept.
 
   Overlapping intervals are refused: their shared spikes would be copied
   into two null events.
@@ -345,7 +391,7 @@ replay methods to the same decoded events (simulated sweeps, stationary
 and random events). It then:
 
 - measures each method's false-positive rate on cell-identity, spike-shift
-  and Poisson copies of the events, broken down by active cells;
+  and uniform-spike-time copies of the events, broken down by active cells;
 - compares the methods at a matched false-positive rate;
 - shows how to run the same steps on your own recording.
 

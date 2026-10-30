@@ -124,7 +124,12 @@ class TestStatsShuffleBasicFunctionality:
         posterior = raw / raw.sum(axis=1, keepdims=True)
 
         for shuffled in shuffle_posterior_weighted_circular(
-            track_for(posterior), posterior, edge_buffer=2, n_shuffles=5, rng=42
+            track_for(posterior),
+            posterior,
+            posterior.mean(axis=0),
+            edge_exclusion=2.0,
+            n_shuffles=5,
+            rng=42,
         ):
             assert_allclose(shuffled.sum(axis=1), 1.0)
 

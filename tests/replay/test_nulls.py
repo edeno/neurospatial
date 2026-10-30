@@ -440,155 +440,105 @@ class TestShufflePosteriorCircular:
 
 
 class TestShufflePosteriorWeightedCircular:
-    """Tests for shuffle_posterior_weighted_circular (edge-aware circular shift)."""
+    """Farooq et al. (2019): each row's peak lands at a weighted position."""
 
     @pytest.fixture
-    def posterior(self) -> np.ndarray:
-        """Sample normalized posterior: (10 time bins, 20 spatial bins).
+    def peaked(self) -> np.ndarray:
+        """Rows with one clear peak each, at different positions, on 20 bins."""
+        rows = np.full((5, 20), 0.01)
+        rows[np.arange(5), [0, 4, 9, 15, 19]] = 0.5
+        return rows / rows.sum(axis=1, keepdims=True)
 
-        Create a posterior with clear edge structure - higher probability
-        mass near the center to test edge effect mitigation.
-        """
-        rng = np.random.default_rng(42)
-        raw = rng.random((10, 20))
-        # Add some center-biased structure
-        center = 10
-        for i in range(raw.shape[0]):
-            raw[i, :] += np.exp(-((np.arange(20) - center) ** 2) / 20)
-        # Normalize each row to sum to 1
-        return raw / raw.sum(axis=1, keepdims=True)
-
-    def test_yields_correct_number_of_shuffles(self, posterior: np.ndarray) -> None:
-        """Should yield exactly n_shuffles arrays."""
-
-        n_shuffles = 10
+    def test_rows_are_circular_shifts_along_the_track(self, peaked):
         shuffles = list(
             shuffle_posterior_weighted_circular(
-                track_for(posterior), posterior, n_shuffles=n_shuffles, rng=42
+                track_for(peaked), peaked, np.ones(20), n_shuffles=10, rng=42
             )
         )
-        assert len(shuffles) == n_shuffles
-
-    def test_preserves_normalization(self, posterior: np.ndarray) -> None:
-        """Each row should still sum to 1.0 after shuffle."""
-
-        for shuffled in shuffle_posterior_weighted_circular(
-            track_for(posterior), posterior, n_shuffles=10, rng=42
-        ):
-            row_sums = shuffled.sum(axis=1)
-            assert np.allclose(row_sums, 1.0), f"Row sums should be 1.0, got {row_sums}"
-
-    def test_preserves_row_values(self, posterior: np.ndarray) -> None:
-        """Each row should contain same values (multiset) as original."""
-
-        for shuffled in shuffle_posterior_weighted_circular(
-            track_for(posterior), posterior, n_shuffles=10, rng=42
-        ):
-            for i in range(posterior.shape[0]):
-                original_sorted = sorted(posterior[i, :].tolist())
-                shuffled_sorted = sorted(shuffled[i, :].tolist())
-                assert np.allclose(shuffled_sorted, original_sorted), (
-                    f"Row {i} values changed"
+        assert len(shuffles) == 10
+        for shuffled in shuffles:
+            for row, original in zip(shuffled, peaked, strict=True):
+                assert any(
+                    np.array_equal(row, np.roll(original, shift)) for shift in range(20)
                 )
 
-    def test_rows_are_circular_shifts(self, posterior: np.ndarray) -> None:
-        """Each row should be a circular shift of the original."""
-
-        for shuffled in shuffle_posterior_weighted_circular(
-            track_for(posterior), posterior, n_shuffles=10, rng=42
-        ):
-            for i in range(posterior.shape[0]):
-                orig = posterior[i, :]
-                shuf = shuffled[i, :]
-                n_bins = len(orig)
-                is_shift = any(
-                    np.allclose(shuf, np.roll(orig, shift)) for shift in range(n_bins)
+    def test_peaks_are_drawn_from_the_weights(self, peaked):
+        """A skewed weight vector: peak frequencies match its normalized mass."""
+        weights = np.linspace(0.0, 1.0, 20) ** 2
+        n_shuffles = 2000
+        peaks = np.concatenate(
+            [
+                np.argmax(shuffled, axis=1)
+                for shuffled in shuffle_posterior_weighted_circular(
+                    track_for(peaked), peaked, weights, n_shuffles=n_shuffles, rng=1
                 )
-                assert is_shift, f"Row {i} is not a circular shift"
+            ]
+        )
+        frequencies = np.bincount(peaks, minlength=20) / peaks.size
+        expected = weights / weights.sum()
+        # 10,000 draws: the standard error of each frequency is below 0.005.
+        np.testing.assert_allclose(frequencies, expected, atol=0.015)
+        assert frequencies[0] == 0.0  # a bin without weight is never a peak
 
-    def test_edge_buffer_restricts_shifts(self, posterior: np.ndarray) -> None:
-        """With edge_buffer, shifts near boundaries should be restricted.
-
-        When the MAP position is near an edge, the shift is limited so the
-        MAP bin does not wrap to the other end. The rest of the row is still
-        rolled circularly, so mass in other bins can wrap.
-        """
-
-        # Create a posterior with clear edge positions
-        # First row: peak at bin 2 (near left edge)
-        # Last row: peak at bin 17 (near right edge with 20 bins)
-        edge_posterior = np.zeros((3, 20), dtype=np.float64)
-        edge_posterior[0, 2] = 0.8  # Near left edge (within edge_buffer=5)
-        edge_posterior[1, 10] = 0.8  # Center (not restricted)
-        edge_posterior[2, 17] = 0.8  # Near right edge (within edge_buffer=5)
-        # Add small uniform noise and normalize
-        edge_posterior += 0.01
-        edge_posterior /= edge_posterior.sum(axis=1, keepdims=True)
-
-        # With edge_buffer=5, time bins with MAP near edges should have
-        # restricted shifts to avoid wrapping to the opposite side
-        maps = []
+    def test_peaks_never_land_within_the_edge_exclusion(self, peaked):
+        """1 cm bins: an exclusion of 3 cm leaves out three bins at each end."""
+        peaks = set()
         for shuffled in shuffle_posterior_weighted_circular(
-            track_for(edge_posterior),
-            edge_posterior,
-            edge_buffer=5,
-            n_shuffles=100,
-            rng=42,
+            track_for(peaked),
+            peaked,
+            np.ones(20),
+            edge_exclusion=3.0,
+            n_shuffles=200,
+            rng=2,
         ):
-            assert shuffled.shape == edge_posterior.shape
-            assert np.allclose(shuffled.sum(axis=1), 1.0)
-            maps.append(np.argmax(shuffled, axis=1))
-        maps = np.array(maps)
+            peaks |= set(np.argmax(shuffled, axis=1).tolist())
+        assert peaks == set(range(3, 17))
 
-        # As documented for 20 bins and edge_buffer=5: the MAP at bin 2 moves
-        # within [0, 11], the MAP at bin 17 within [10, 19], and every bin of
-        # those ranges is reached; the center MAP can go anywhere.
-        assert set(maps[:, 0]) == set(range(0, 12))
-        assert set(maps[:, 2]) == set(range(10, 20))
-        assert len(set(maps[:, 1])) > 12
+    def test_edge_exclusion_is_a_distance_along_the_track(self, peaked):
+        """The same exclusion leaves out fewer bins of a longer bin size."""
+        from neurospatial import Environment
 
-    def test_edge_buffer_zero_allows_full_shifts(self, posterior: np.ndarray) -> None:
-        """With edge_buffer=0, should behave like standard circular shuffle."""
-
-        # With edge_buffer=0, any shift should be possible
-        shifts = set()
-        for shuffled in shuffle_posterior_weighted_circular(
-            track_for(posterior), posterior, edge_buffer=0, n_shuffles=10, rng=42
-        ):
-            assert shuffled.shape == posterior.shape
-            assert np.allclose(shuffled.sum(axis=1), 1.0)
-            for row, original in zip(shuffled, posterior, strict=True):
-                shifts |= {
-                    shift
-                    for shift in range(len(original))
-                    if np.allclose(row, np.roll(original, shift))
-                }
-        # Rows do move, by shifts spread over the whole track.
-        assert len(shifts) > posterior.shape[1] // 2
-
-    def test_edge_buffer_larger_than_half_bins(self) -> None:
-        """Should handle edge_buffer larger than n_bins/2.
-
-        When edge_buffer is very large relative to n_bins, the allowed
-        shift range becomes very restricted.
-        """
-
-        # Small posterior (5 bins), large edge_buffer (4)
-        small = np.array(
-            [[0.2, 0.2, 0.2, 0.2, 0.2], [0.1, 0.2, 0.4, 0.2, 0.1]], dtype=np.float64
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [40.0, 0.0]], bin_size=2.0, units="cm"
         )
         peaks = set()
         for shuffled in shuffle_posterior_weighted_circular(
-            track_for(small), small, edge_buffer=4, n_shuffles=20, rng=42
+            env, peaked, np.ones(20), edge_exclusion=3.0, n_shuffles=200, rng=2
         ):
-            assert shuffled.shape == small.shape
-            assert np.allclose(shuffled.sum(axis=1), 1.0)
-            assert any(
-                np.allclose(shuffled[1], np.roll(small[1], shift)) for shift in range(5)
+            peaks |= set(np.argmax(shuffled, axis=1).tolist())
+        # Centers at 1, 3, 5, ... cm: only the first and last are within 3 cm.
+        assert peaks == set(range(1, 19))
+
+    def test_a_row_without_mass_stays_zero(self, peaked):
+        posterior = peaked.copy()
+        posterior[2] = 0.0
+        for shuffled in shuffle_posterior_weighted_circular(
+            track_for(posterior), posterior, np.ones(20), n_shuffles=5, rng=0
+        ):
+            np.testing.assert_array_equal(shuffled[2], 0.0)
+
+    @pytest.mark.parametrize(
+        ("weights", "edge_exclusion", "match"),
+        [
+            (np.ones(19), 0.0, "one finite, non-negative weight per bin"),
+            (np.r_[-1.0, np.ones(19)], 0.0, "one finite, non-negative"),
+            (np.r_[np.nan, np.ones(19)], 0.0, "one finite, non-negative"),
+            (np.ones(20), -1.0, "edge_exclusion must be a finite distance"),
+            (np.r_[1.0, np.zeros(18), 1.0], 2.0, "has weight"),
+            (np.ones(20), 10.0, "has weight"),
+        ],
+    )
+    def test_refuses_weights_without_a_landing_bin(
+        self, peaked, weights, edge_exclusion, match
+    ):
+        with pytest.raises(ValueError, match=match):
+            shuffle_posterior_weighted_circular(
+                track_for(peaked),
+                peaked,
+                weights,
+                edge_exclusion=edge_exclusion,
+                n_shuffles=1,
             )
-            peaks.add(int(np.argmax(shuffled[1])))
-        # The buffer covers the whole track, so shifts are unrestricted.
-        assert peaks == set(range(5))
 
 
 # =============================================================================
@@ -624,10 +574,22 @@ class TestCircularShiftsRunAlongTrack:
         values[:, 3:8] = [1.0, 3.0, 5.0, 3.0, 1.0]
         values /= values.sum(axis=1, keepdims=True)
 
-        original = list(getattr(shuffle, name)(env, values, n_shuffles=5, rng=7))
-        renumbered = list(
-            getattr(shuffle, name)(shuffled_env, values[:, order], n_shuffles=5, rng=7)
-        )
+        # The weighted shift also takes peak weights and an edge exclusion,
+        # both of which must follow the bins along the track.
+        weights = np.linspace(1.0, 2.0, env.n_bins)
+        weighted = name == "shuffle_posterior_weighted_circular"
+        options = {"edge_exclusion": 12.0} if weighted else {}
+
+        def draw(on_env, rows, peak_weights):
+            extra = (peak_weights,) if weighted else ()
+            return list(
+                getattr(shuffle, name)(
+                    on_env, rows, *extra, n_shuffles=5, rng=7, **options
+                )
+            )
+
+        original = draw(env, values, weights)
+        renumbered = draw(shuffled_env, values[:, order], weights[order])
 
         for first, second in zip(original, renumbered, strict=True):
             np.testing.assert_array_equal(second, first[:, order])
@@ -665,8 +627,13 @@ class TestCircularShiftsRunAlongTrack:
         )
         values = np.full((2, disc.n_bins), 1.0 / disc.n_bins)
 
+        extra = (
+            (np.ones(disc.n_bins),)
+            if name == "shuffle_posterior_weighted_circular"
+            else ()
+        )
         with pytest.raises(ValueError, match="needs a position along a track"):
-            getattr(shuffle, name)(disc, values, n_shuffles=1, rng=0)
+            getattr(shuffle, name)(disc, values, *extra, n_shuffles=1, rng=0)
 
 
 class TestShuffleSpikeCountsCircular:
@@ -720,3 +687,60 @@ def test_place_field_shift_skips_bins_without_a_rate():
         for row in shuffled:
             rotations = [np.roll(np.arange(2.0, 10.0), k) for k in range(8)]
             assert any(np.array_equal(row[1:9], r) for r in rotations)
+
+
+class TestShuffleSpikeCountsUniform:
+    """Each cell's spikes spread uniformly over the event (Stella et al. 2019)."""
+
+    def test_each_cell_keeps_its_count_in_the_event(self):
+        from neurospatial.replay import shuffle_spike_counts_uniform
+
+        counts = np.random.default_rng(0).poisson(1.0, (12, 6))
+        for shuffled in shuffle_spike_counts_uniform(counts, n_shuffles=20, rng=1):
+            assert shuffled.dtype == counts.dtype
+            np.testing.assert_array_equal(shuffled.sum(axis=0), counts.sum(axis=0))
+
+    def test_counts_are_multinomial_over_the_time_bins(self):
+        """Seven spikes in ten bins: mean 0.7, variance 0.63, covariance -0.07.
+
+        All seven spikes start in one bin, so a shuffle that kept the bins
+        (or only rotated them) would have a variance of 4.41 and no spikes
+        in nine bins out of ten.
+        """
+        from neurospatial.replay import shuffle_spike_counts_uniform
+
+        counts = np.zeros((10, 1), dtype=np.int64)
+        counts[3] = 7
+        draws = np.array(
+            [
+                shuffled[:, 0]
+                for shuffled in shuffle_spike_counts_uniform(
+                    counts, n_shuffles=20000, rng=2
+                )
+            ]
+        )
+        np.testing.assert_allclose(draws.mean(axis=0), 0.7, atol=0.03)
+        np.testing.assert_allclose(draws.var(axis=0), 0.63, atol=0.04)
+        covariance = np.cov(draws[:, 0], draws[:, 1])[0, 1]
+        assert covariance == pytest.approx(-0.07, abs=0.02)
+
+    def test_cells_are_spread_independently(self):
+        """Two cells with all spikes in one bin end up in different bins."""
+        from neurospatial.replay import shuffle_spike_counts_uniform
+
+        counts = np.zeros((8, 2), dtype=np.int64)
+        counts[0] = 1
+        same = [
+            np.argmax(shuffled[:, 0]) == np.argmax(shuffled[:, 1])
+            for shuffled in shuffle_spike_counts_uniform(counts, n_shuffles=4000, rng=3)
+        ]
+        # Independent cells share a bin with probability 1/8.
+        assert np.mean(same) == pytest.approx(1 / 8, abs=0.02)
+
+    def test_refuses_counts_that_are_not_a_count_matrix(self):
+        from neurospatial.replay import shuffle_spike_counts_uniform
+
+        with pytest.raises(ValueError, match="must be 2-D"):
+            next(shuffle_spike_counts_uniform(np.ones(5, dtype=int), n_shuffles=1))
+        with pytest.raises(ValueError, match="non-negative"):
+            next(shuffle_spike_counts_uniform(-np.ones((3, 2), dtype=int)))

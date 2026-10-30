@@ -232,6 +232,8 @@ REQUIRED_DATA_ARGUMENTS = {
     ("field_density_map", "n_bins"),
     ("marchenko_pastur_threshold", "n_neurons"),
     ("marchenko_pastur_threshold", "n_time_bins"),
+    # The session's mean posterior that each shuffled peak is drawn from.
+    ("shuffle_posterior_weighted_circular", "peak_weights"),
 }
 
 

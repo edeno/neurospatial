@@ -41,9 +41,11 @@ from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
 from neurospatial.replay.correlation import weighted_correlation
 from neurospatial.replay.significance import (
     _ALTERNATIVES,
+    _COUNT_CHANGING_NULLS,
     _DECODING_NULLS,
     _NULLS,
     _ROW_MOVING_NULLS,
+    _checked_null_options,
 )
 from neurospatial.replay.trajectory import (
     _SCORE_DECIMALS,
@@ -481,6 +483,13 @@ class ReplayMethod:
         a single name is one null. Empty for a method without a per-event
         shuffle test. A method needs nulls, criteria or a segmentation:
         without any, it would call every event replay.
+    null_options : Mapping[str, Mapping[str, Any]]
+        Options of the method's nulls, by null name, passed to
+        :func:`~neurospatial.replay.replay_significance`, such as
+        ``{"column_cycle_weighted": {"edge_exclusion": 10.0}}`` (Farooq et
+        al. 2019; a distance in the method's ``units``). Checked when the
+        method is made: each name must be one of ``nulls`` and each option
+        one the null takes.
     n_shuffles : int
         Shuffles per null.
     alpha : float
@@ -496,6 +505,12 @@ class ReplayMethod:
         zero (the Bendor-lab code). With a ``segmentation``, "drop" and
         "zero" also make them invalid time bins, so no jump is measured
         across them, and "drop" removes them from the tested segment.
+        "drop" cannot be used with the nulls that move spikes to other time
+        bins (``"spike_train_circular"`` and ``"spike_time_uniform"``): they
+        would spread the spikes over the kept time bins only, not over the
+        event, and their shuffles would have time bins without spikes that
+        cannot be dropped. Use "zero", which zeroes each shuffle's own
+        empty time bins.
     criteria : tuple of ReplayCriterion
         Thresholds the event must meet as well.
     segmentation : ReplaySegmentation or None
@@ -561,6 +576,7 @@ class ReplayMethod:
     score: Callable[..., Any] | None
     score_options: Mapping[str, Any] = field(default_factory=dict)
     nulls: tuple[str, ...] = ()
+    null_options: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     n_shuffles: int = 1000
     alpha: float = 0.05
     alternative: Literal["greater", "less", "two-sided"] = "greater"
@@ -586,6 +602,14 @@ class ReplayMethod:
         object.__setattr__(
             self, "nulls", (given,) if isinstance(given, str) else tuple(given)
         )
+        options = self.null_options
+        if isinstance(options, Mapping) and all(
+            isinstance(value, Mapping) for value in options.values()
+        ):
+            options = MappingProxyType(
+                {name: MappingProxyType(dict(value)) for name, value in options.items()}
+            )
+        object.__setattr__(self, "null_options", options)
         object.__setattr__(self, "criteria", tuple(self.criteria))
         object.__setattr__(self, "notes", tuple(self.notes))
         self._check_score()
@@ -722,6 +746,25 @@ class ReplayMethod:
                 "than once; name each null once and set the number of shuffles "
                 "per null with n_shuffles."
             )
+        _checked_null_options(
+            self.null_options, self.nulls, f"ReplayMethod {self.name!r}"
+        )
+        spreading = [name for name in self.nulls if name in _COUNT_CHANGING_NULLS]
+        if spreading and self.empty_time_bins == "drop":
+            raise ValueError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: empty_time_bins='drop' cannot "
+                    f"be used with the {spreading} null"
+                    f"{'s' if len(spreading) > 1 else ''}.",
+                    why="they move each cell's spikes to other time bins of the "
+                    "event: after dropping the time bins without spikes they "
+                    "would spread the spikes over the kept time bins only, and "
+                    "their shuffles have new time bins without spikes, which "
+                    "cannot be dropped",
+                    fix="use empty_time_bins='zero', which zeroes each "
+                    "shuffle's own time bins without spikes, or 'keep'",
+                )
+            )
         if self.alternative not in _ALTERNATIVES:
             raise ValueError(
                 f"ReplayMethod {self.name!r}: alternative must be one of "
@@ -850,7 +893,11 @@ class ReplayMethod:
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
-        return reduce_through_constructor(self)
+        rebuild, (cls, state) = reduce_through_constructor(self)
+        state["null_options"] = {
+            name: dict(options) for name, options in self.null_options.items()
+        }
+        return rebuild, (cls, state)
 
 
 @dataclass(frozen=True)
@@ -1207,7 +1254,7 @@ def detect_replay(
         method tests (its segment, or the time bins with spikes).
     pseudo_event_pool : NDArray[np.float64] or None
         Posterior rows of the session's candidate events, for the
-        pseudo-event null.
+        pseudo-event and weighted column-cycle nulls.
     valid_time_bins : NDArray[np.bool_] or None, shape (n_time_bins,)
         For a method with a segmentation, False for time bins that cannot
         be on a trajectory, such as bins while the animal runs (Widloski &
@@ -1675,6 +1722,7 @@ def detect_replay(
                 score=replay_method.score,
                 score_options=options,
                 nulls=replay_method.nulls,
+                null_options=replay_method.null_options,
                 spike_counts=counts
                 if decodes or replay_method.empty_time_bins == "zero"
                 else None,
@@ -2052,6 +2100,7 @@ def _segment_detection_p_value(
         score=_segment_detected,
         score_options=options,
         nulls=replay_method.nulls,
+        null_options=replay_method.null_options,
         spike_counts=spike_counts if decodes else None,
         encoding_models=encoding_models if decodes else None,
         dt=dt if decodes else None,
@@ -2592,8 +2641,9 @@ def compare_replay_methods(
         event have different times; if ``spike_counts`` or
         ``valid_time_bins`` does not have one entry per event, or an entry
         does not have one row per time bin of its event; if a method
-        draws pseudo-events from joint decodes; or if a rank-order method is
-        given without ``spike_times``, ``encoding_models`` or ``dt``.
+        draws pseudo-events or weighted column cycles from joint decodes; or
+        if a rank-order method is given without ``spike_times``,
+        ``encoding_models`` or ``dt``.
 
     Warns
     -----
@@ -2748,19 +2798,21 @@ def compare_replay_methods(
             )
     pool = None
     if any(
-        "pseudo_event" in method.nulls
+        name in method.nulls
         for method in replay_methods
         if isinstance(method, ReplayMethod)
+        for name in ("pseudo_event", "column_cycle_weighted")
     ):
         if any(isinstance(event, (JointDecodingResult, Mapping)) for event in events):
             raise ValueError(
                 _format_error(
-                    "compare_replay_methods(): the pseudo-event null cannot "
-                    "draw from joint decodes or separately decoded templates.",
-                    why="a joint decode's rows hold several templates, and a "
-                    "pseudo-event draws rows of one posterior",
+                    "compare_replay_methods(): the pseudo-event and weighted "
+                    "column-cycle nulls cannot draw from joint decodes or "
+                    "separately decoded templates.",
+                    why="a joint decode's rows hold several templates, and these "
+                    "nulls draw rows, or the mean row, of one posterior",
                     fix="pass each event's tested share as a DecodingResult, "
-                    "or leave out methods with the pseudo-event null",
+                    "or leave out methods with these nulls",
                 )
             )
         pool = np.vstack(
