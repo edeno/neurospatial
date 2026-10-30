@@ -211,6 +211,7 @@ REQUIRED_DATA_NAMES = {
     *("occupancy", "joint_counts", "autocorr_2d", "rate_map"),
     *("field_bins", "field_bins_1", "field_bins_2", "field_bins_i", "field_bins_j"),
     *("encoding_models", "models", "pattern", "posterior", "log_likelihood"),
+    *("templates", "reference_templates"),
     *("source_probs", "decoded_positions", "actual_positions", "actual_bins"),
     *("template_correlations", "match_correlations", "rates"),
     *("observed", "null_scores", "beta_sin", "beta_cos", "cov_matrix"),
