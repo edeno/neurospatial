@@ -68,6 +68,36 @@ measure each method's false-positive rate on several kinds of null data:
 - `decode_intervals(env, spike_times, intervals, encoding_models, dt=)`
   decodes each interval in non-overlapping time bins of width `dt`.
 
+### Replay methods at a matched false-positive rate
+
+Methods with the same nominal α call different shares of null events
+replay. Takigawa et al. (2024) compared methods at the α that gives each
+one the same false-positive rate. Two new functions in
+`neurospatial.replay` do this. It is one option among several and is not
+the default.
+
+- `matched_alpha(null_table, replay_methods=, target=0.05)` finds, for each
+  method, the largest α at which at most `target` of the null events are
+  called replay. It also reports the method's rate at its own α. The α is
+  computed exactly from the p-values, not read off a grid, so the rate never
+  exceeds the target. `groups=` matches each kind of null data or each
+  session separately. Warnings say when the matched α is the smallest
+  p-value the shuffles can give (run more shuffles), when there are too
+  few null events for the target, and when no α holds the rate: then α is
+  NaN.
+- `apply_alpha(table, alpha=, replay_methods=)` gives the table's verdicts
+  at new α values from its p-values and criteria, without running the
+  shuffles again. The verdicts are the same as running the method with
+  `dataclasses.replace(method, alpha=...)` and the same `rng`.
+- Only methods that test a p-value against α can be matched. Methods
+  without shuffles, the arm methods and Chenani et al.'s pooled SSI test
+  are refused, with their names. So is a rank-order method that chose
+  among several templates (Diba & Buzsáki 2007 with both running
+  directions): it picks among the templates that pass at its α, so its
+  rows change with α.
+- Both functions refuse a table whose verdicts do not follow from the
+  given methods' p-values, criteria and α.
+
 ### Calibrating replay methods on comparison tables
 
 New `neurospatial.replay.calibration` summarizes the table of

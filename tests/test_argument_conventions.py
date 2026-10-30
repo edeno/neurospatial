@@ -215,7 +215,7 @@ REQUIRED_DATA_NAMES = {
     *("template_correlations", "match_correlations", "rates"),
     *("observed", "null_scores", "beta_sin", "beta_cos", "cov_matrix"),
     *("vte_index", "z_head_sweep", "z_speed_inv", "head_sweeps"),
-    *("result", "expected_bins", "table"),
+    *("result", "expected_bins", "table", "null_table"),
     # Calibration measurements and the components of a transform.
     *("landmarks_px", "landmarks_cm", "p1_px", "p2_px", "known_length_cm"),
     *("data_px", "data_cm", "src", "dst", "frame_size_px", "frame_height_px"),
