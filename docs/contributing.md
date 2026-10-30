@@ -16,48 +16,21 @@ activity, evaluating statistical evidence, simulating experiments, visualizing
 results, and exporting them. Grow this coverage through workflows that work
 together and preserve scientific meaning across steps.
 
-The [project vision](vision.md) sets out the long-term goals: measurable and
-shareable environments in 1D, 2D, and 3D; the animal's sensory access and
-interaction opportunities; trustworthy, comparable methods and richer behavioral
-analysis; reusable inputs for statistical models and reinforcement learning;
-simulation of behavior and neurons; agents acting in the same spaces; useful
-visualization; and reusable foundations for future methods. Across these goals,
-support reproducible, statistically defensible comparisons across experiments
-and changing environments, with transparent methods and community validation.
+The [project vision](vision.md) sets out the long-term goals these principles
+serve.
 
 Use these principles when designing and reviewing changes:
 
 - **Start with the scientific task.** Describe what the scientist has and wants
   to learn. Use familiar experimental vocabulary and provide a clear recommended
   path for common tasks, with advanced controls available when needed.
-- **Account for the animal's access to the environment.** Distinguish physical
-  geometry, sensory access, possible interactions, observed behavior, and
-  inferred perception or knowledge. State the assumptions about orientation,
-  sensory capabilities, body size, and environmental state relevant to a method.
-  Preserve uncertainty and missing observations when deriving these quantities.
-- **Make behavioral analyses composable.** Connect movements, encounters,
-  interactions, routes, and behavioral sequences through explicit definitions,
-  timing, and observation support. Account for available actions, sensory cues,
-  task conditions, and history when interpreting behavior or relating it to
-  neural activity. Label behavioral measurements and model-based interpretations
-  clearly.
-- **Make model inputs reusable.** Provide spatial and behavioral regressors,
-  basis representations, and RL observation features with explicit timing,
-  support, units, and definitions. Preserve history requirements and missing
-  data, and keep predictive features free of future or held-out information.
-  Declare which information an agent may observe. Support external consumers
-  through ordinary arrays, tables, and optional adapters; feature generation
-  must not require NeMoS or a particular modeling or RL framework.
 - **Make expected behavior scientifically sound.** Choose defensible defaults
   and document their assumptions. Require an explicit choice when alternatives
   change the scientific question and there is no defensible default. Preserve
   the distinction between missing observations and measured zero activity;
   expose how recording gaps, analysis windows, and insufficient coverage affect
-  the result.
-- **Support defensible scientific inference.** State what a method estimates and
-  what conclusions its validation supports. Where relevant, assess effect sizes,
-  uncertainty, null models, and generalization. Respect temporal dependence and
-  independent experimental units when designing resampling and evaluation.
+  the result. State what a method estimates; where a method supports inference,
+  respect temporal dependence and independent experimental units.
 - **Make the interface learnable across domains.** Keep names, argument order,
   units, shapes, and result methods consistent. Moving from one neuron to a
   population or from encoding to decoding should reuse what the scientist has
@@ -83,12 +56,10 @@ Use these principles when designing and reviewing changes:
   examples. Test scientific invariants and relevant edge cases, including gaps,
   empty data, and mismatched identities, rather than checking only that a call
   completes. Judge added functionality by whether scientists can use it correctly
-  alongside existing operations. Include accessibility and practical memory and
-  runtime requirements for realistic recordings in that assessment.
-- **Make validation inspectable and reusable.** Document method variants and
-  provide independent checks, shared datasets or benchmarks where appropriate,
-  and evidence that others can inspect and rerun. Explain discrepancies and the
-  limits of validation claims as implementations evolve.
+  alongside existing operations, with practical memory and runtime on realistic
+  recordings. Check numerics independently of the code under test, so that two
+  pieces sharing one mistake cannot confirm each other, and state the limits of
+  each validation claim.
 
 ## Getting Started
 
