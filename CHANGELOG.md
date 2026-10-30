@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Replay calibration: review fixes
+
+**Fixed**
+
+- `matched_alpha` and `apply_alpha` refuse a `ReplayMethod` with
+  `tested_quantities` and a segmentation with `choose="any"`, such as
+  `WIDLOSKI_FOSTER_2025`. It reports the longest segment that is replay at
+  its alpha, so at another alpha it can report another segment with another
+  p-value, and rethresholding the table's p-value gave wrong verdicts. Rerun
+  `compare_replay_methods` with `dataclasses.replace(method, alpha=...)`
+  instead.
+
 ### Reactivation recipes: review fixes
 
 **New**
