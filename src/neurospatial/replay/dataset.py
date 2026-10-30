@@ -1543,6 +1543,7 @@ class _NullContext:
     ) -> Iterator[tuple[NDArray[np.float64], NDArray[np.int64] | None]]:
         """Each null data set's shuffle of one event, with its spike counts."""
         from neurospatial.replay.nulls import (
+            _roll_along,
             shuffle_cell_identity,
             shuffle_spike_counts_circular,
             shuffle_spike_counts_uniform,
@@ -1552,14 +1553,9 @@ class _NullContext:
         if _NULL_SPECS[self.null].rolls:
             rows, shifts = self.rolls(index, posterior)
             along = posterior[:, self.order]
-            n_bins = len(self.order)
-            columns = np.arange(n_bins)
             for k in range(self.n_datasets):
                 shuffled = np.array(posterior, dtype=np.float64)
-                shuffled[:, self.order] = along[rows[k]][
-                    np.arange(len(posterior))[:, None],
-                    (columns[None, :] - shifts[k][:, None]) % n_bins,
-                ]
+                shuffled[:, self.order] = _roll_along(along[rows[k]], shifts[k])
                 yield (
                     shuffled,
                     None if counts is None else np.asarray(counts)[rows[k]],
