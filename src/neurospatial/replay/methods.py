@@ -1034,6 +1034,14 @@ class ReplayDetectionResult(ResultMixin):
         return values
 
 
+def _environment_mismatch(first: Environment, second: Environment) -> str | None:
+    """How two environments' bins or connectivity differ, or None if they agree."""
+    from neurospatial.environment import _environment_differences
+
+    bins, topology = _environment_differences(first, second)
+    return bins or topology
+
+
 def detect_replay(
     env: Environment | Mapping[str, Environment],
     posterior: NDArray[np.float64] | JointDecodingResult,
@@ -1181,18 +1189,13 @@ def detect_replay(
         if summed:
             joint_env = joint.conditional[joint.template_names[0]].env
             for name in joint.template_names[1:]:
-                other = joint.conditional[name].env
-                if other is not joint_env and (
-                    other.n_bins != joint_env.n_bins
-                    or other.units != joint_env.units
-                    or other.bin_centers.shape != joint_env.bin_centers.shape
-                    or not np.allclose(other.bin_centers, joint_env.bin_centers)
-                ):
+                mismatch = _environment_mismatch(joint.conditional[name].env, joint_env)
+                if mismatch is not None:
                     raise ValueError(
                         _format_error(
                             f"{_OPERATION}: method {replay_method.name!r} sums "
-                            "the templates' posteriors, but they are on "
-                            "different environments.",
+                            "the templates' posteriors, but their environments "
+                            f"differ in {mismatch}.",
                             why="a summed posterior needs the same bins in every "
                             "template",
                             fix="decode the templates on one environment, or "
@@ -1260,15 +1263,12 @@ def detect_replay(
     else:
         track_env = env
     if joint is not None:
-        decoded_env = joint_env
-        if track_env is not decoded_env and (
-            track_env.n_bins != decoded_env.n_bins
-            or track_env.units != decoded_env.units
-            or not np.allclose(track_env.bin_centers, decoded_env.bin_centers)
-        ):
+        mismatch = _environment_mismatch(track_env, joint_env)
+        if mismatch is not None:
             raise ValueError(
                 _format_error(
-                    f"{_OPERATION}: env is not the environment the joint decode used.",
+                    f"{_OPERATION}: env differs from the environment the joint "
+                    f"decode used in {mismatch}.",
                     why="positions and distances would be read on other bins",
                     fix="pass the environment (or mapping of environments) "
                     "given to decode_jointly",

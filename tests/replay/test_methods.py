@@ -1451,7 +1451,7 @@ class TestMallory:
             endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=1.0, units="cm"
         )
         assert other.n_bins == env.n_bins
-        with pytest.raises(ValueError, match="not the environment the joint"):
+        with pytest.raises(ValueError, match="differs from the environment the joint"):
             detect_replay(
                 other,
                 event,
@@ -2132,7 +2132,7 @@ class TestWeightedCorrelationRecipes:
                 ),
             },
         )
-        with pytest.raises(ValueError, match="different environments"):
+        with pytest.raises(ValueError, match="their environments differ in"):
             detect_replay(env, event, times, replay_method=BERNERS_LEE_2022)
 
     def test_a_sum_cannot_decode_again(self):
