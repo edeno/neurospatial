@@ -225,7 +225,9 @@ class TestBatchedShuffles:
                 regression_line_score(env, p, times, **options).score
                 for p in posteriors
             ]
-            assert_allclose(batched, one_by_one, rtol=0, atol=0, equal_nan=True)
+            # Same arithmetic; a batch's vectorized sums may round in a
+            # different order (CI saw 1e-12 on one score in 300).
+            assert_allclose(batched, one_by_one, rtol=0, atol=1e-11, equal_nan=True)
             assert scorer.observe().score == one_by_one[0]
 
 
