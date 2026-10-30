@@ -18,7 +18,8 @@
 
 Null data for false-positive rates: :func:`null_events` makes events
 without replay from real candidate events (cell identities reassigned,
-spikes shifted, or Poisson spikes), :func:`simulated_null_events` simulates
+spikes shifted, spike times redrawn, or Poisson spikes at each cell's mean
+rate), :func:`simulated_null_events` simulates
 random or stationary events, and :func:`decode_intervals` decodes either.
 
 A single overall false-positive rate hides how it depends on the event:
@@ -1093,7 +1094,7 @@ def _checked_table(
 # Null data
 # --------------------------------------------------------------------------
 
-_NULL_KINDS = ("cell_identity", "spike_shift", "poisson")
+_NULL_KINDS = ("cell_identity", "spike_shift", "spike_time_uniform", "rate_poisson")
 _SIMULATED_KINDS = ("random", "stationary")
 # Seconds between consecutive null events in their session layout.
 _GAP = 1.0
@@ -1173,7 +1174,7 @@ def null_events(
     spike_times: Any,
     intervals: NDArray[np.float64],
     *,
-    kind: Literal["cell_identity", "spike_shift", "poisson"],
+    kind: Literal["cell_identity", "spike_shift", "spike_time_uniform", "rate_poisson"],
     n_copies: int = 1,
     cells: NDArray[np.bool_] | None = None,
     rng: np.random.Generator | int | None = None,
@@ -1181,16 +1182,23 @@ def null_events(
     """Make events without replay from real candidate events.
 
     Each null event keeps a real event's duration and, depending on
-    ``kind``, its cells' spike counts or spike trains, but breaks the
-    order of the cells' firing relative to their fields:
+    ``kind``, its cells' spike counts or spike trains, or only their mean
+    rates, but breaks the order of the cells' firing relative to their
+    fields:
 
     - ``"cell_identity"``: the event's spike trains are reassigned to
       cells at random, so each cell fires with another cell's spikes
       (Takigawa et al. 2024 made three such copies of each event).
     - ``"spike_shift"``: each cell's spikes are shifted circularly within
       the event by an independent random amount.
-    - ``"poisson"``: each cell keeps its number of spikes, placed uniformly
-      at random in the event (a Poisson process given its count).
+    - ``"spike_time_uniform"``: each cell keeps its number of spikes, placed
+      uniformly at random in the event (a Poisson process given its count;
+      the "spike jittering" of Stella et al. 2019).
+    - ``"rate_poisson"``: each cell fires as a Poisson process at its mean
+      rate over all ``intervals``: its number of spikes in a null event is
+      Poisson(rate x the event's duration), placed uniformly in the event.
+      These are the Poisson surrogate data of Silva et al. (2015), Grosmark
+      & Buzsáki (2016), Maboudi et al. (2018) and Farooq et al. (2019).
 
     Parameters
     ----------
@@ -1198,7 +1206,7 @@ def null_events(
         The session's spike times, one train per cell, in seconds.
     intervals : NDArray[np.float64], shape (n_events, 2)
         Start and stop of each real candidate event, in seconds.
-    kind : {"cell_identity", "spike_shift", "poisson"}
+    kind : {"cell_identity", "spike_shift", "spike_time_uniform", "rate_poisson"}
         How each null event is made.
     n_copies : int, default=1
         Null events made from each real event.
@@ -1232,25 +1240,29 @@ def null_events(
     -----
     What each kind keeps and breaks:
 
-    ================  ======================  ==========================
-    kind              keeps                   breaks
-    ================  ======================  ==========================
-    cell_identity     every spike train;      which field each train
-                      the population's        belongs to, and with it
-                      timing                  any link between a cell's
-                                              count and its field
-    spike_shift       each cell's count and   the timing between cells
-                      its spike intervals
-                      (circularly)
-    poisson           each cell's count       all spike timing
-    ================  ======================  ==========================
+    ==================  ======================  ==========================
+    kind                keeps                   breaks
+    ==================  ======================  ==========================
+    cell_identity       every spike train;      which field each train
+                        the population's        belongs to, and with it
+                        timing                  any link between a cell's
+                                                count and its field
+    spike_shift         each cell's count and   the timing between cells
+                        its spike intervals
+                        (circularly)
+    spike_time_uniform  each cell's count       all spike timing
+    rate_poisson        each cell's mean rate   all spike timing, the
+                        over ``intervals``      event's own spike counts
+                                                and its population burst
+    ==================  ======================  ==========================
 
     A null along the same dimension as a method's own shuffle
     underestimates its false-positive rate (Takigawa et al. 2024):
     ``cell_identity`` repeats the unit-identity null of ``DAVIDSON_2009``
     and the cell-order test of ``DIBA_BUZSAKI_2007``, and ``spike_shift``
     the spike-train shift of ``TIROLE_2022``. Rank-order methods can pass
-    ``spike_shift`` and ``poisson`` events more often than ``alpha`` when
+    ``spike_shift`` and ``spike_time_uniform`` events more often than
+    ``alpha`` when
     an event covers part of the track, because which cells spike more then
     still follows their fields; report several kinds side by side.
 
@@ -1260,12 +1272,45 @@ def null_events(
     permuted each template's maps separately, and one permutation of the
     spikes keeps each cell's maps together.
 
+    ``rate_poisson`` does not keep an event's spike count: each cell's
+    count is drawn again from its mean rate, so every null event carries
+    the session's mean activity, not the event's own burst. Its rate is the
+    cell's spikes in all ``intervals`` divided by their summed duration
+    (the pooled rate, as in the nelpy code of Maboudi et al.); Silva et
+    al.'s "mean firing rate across all candidate events" may also be read
+    as the mean of each event's rate. Grosmark & Buzsáki estimated the
+    rates separately for each behavioral epoch and running direction: call
+    this function once per group of intervals. The papers compared whole
+    surrogate data sets with the real one; Grosmark & Buzsáki found that
+    Poisson surrogates decode more cleanly than real events, whose
+    within-ripple firing is burstier than Poisson.
+
     Copies of one real event share its spikes and are not independent:
     the intervals of :func:`detection_rates` treat every event as
     independent and are too narrow with ``n_copies > 1``.
 
     References
     ----------
+    Silva, D., Feng, T., & Foster, D. J. (2015). Trajectory events across
+    hippocampal place cells require previous experience. *Nature
+    Neuroscience*, 18(12), 1772-1779.
+
+    Grosmark, A. D., & Buzsáki, G. (2016). Diversity in neural firing
+    dynamics supports both rigid and learned hippocampal sequences.
+    *Science*, 351(6280), 1440-1443.
+
+    Maboudi, K., Ackermann, E., de Jong, L. W., Pfeiffer, B. E., Foster, D.,
+    Diba, K., & Kemere, C. (2018). Uncovering temporal structure in
+    hippocampal output patterns. *eLife*, 7, e34467.
+
+    Farooq, U., Sibille, J., Liu, K., & Dragoi, G. (2019). Strengthened
+    temporal coordination within pre-existing sequential cell assemblies
+    supports trajectory replay. *Neuron*, 103(4), 719-733.
+
+    Stella, F., Baracskay, P., O'Neill, J., & Csicsvari, J. (2019).
+    Hippocampal reactivation of random trajectories resembling Brownian
+    diffusion. *Neuron*, 102(2), 450-461.
+
     Takigawa, M., Huelin Gorriz, M., Tirole, M., & Bendor, D. (2024).
     Evaluating hippocampal replay without a ground truth. *eLife*, 13,
     e85635.
@@ -1276,10 +1321,19 @@ def null_events(
     >>> from neurospatial.replay import null_events
     >>> spikes = [np.array([1.01, 1.05]), np.array([1.02]), np.array([5.0])]
     >>> null = null_events(
-    ...     spikes, np.array([[1.0, 1.1]]), kind="poisson", n_copies=3, rng=0
+    ...     spikes, np.array([[1.0, 1.1]]), kind="spike_time_uniform", n_copies=3, rng=0
     ... )
     >>> print(null.n_events, [train.size for train in null.spike_times])
     3 [6, 3, 0]
+
+    With ``"rate_poisson"`` each copy draws its counts from the cells'
+    mean rates, here over one 100 ms interval: 20 Hz, 10 Hz and 0 Hz.
+
+    >>> null = null_events(
+    ...     spikes, np.array([[1.0, 1.1]]), kind="rate_poisson", n_copies=3, rng=0
+    ... )
+    >>> print([train.size for train in null.spike_times])
+    [6, 5, 0]
     """
     from neurospatial._spikes import as_spike_trains
 
@@ -1314,6 +1368,22 @@ def null_events(
     randomized = np.flatnonzero(chosen)
     generator = np.random.default_rng(rng)
     durations = windows[:, 1] - windows[:, 0]
+    if kind == "rate_poisson":
+        # Each cell's pooled rate: its spikes in every interval over their
+        # summed duration.
+        rates = (
+            np.array(
+                [
+                    sum(
+                        np.count_nonzero((train >= start) & (train < stop))
+                        for start, stop in windows
+                    )
+                    for train in trains
+                ],
+                dtype=np.float64,
+            )
+            / durations.sum()
+        )
     spacing = float(durations.max()) + _GAP
     placed: list[list[NDArray[np.float64]]] = [[] for _ in trains]
     out_intervals = []
@@ -1336,10 +1406,15 @@ def null_events(
                 for cell in randomized:
                     shift = generator.uniform(0.0, duration)
                     copies[cell] = np.mod(in_event[cell] + shift, duration)
-            else:
+            elif kind == "spike_time_uniform":
                 for cell in randomized:
                     copies[cell] = generator.uniform(
                         0.0, duration, size=in_event[cell].size
+                    )
+            else:
+                for cell in randomized:
+                    copies[cell] = generator.uniform(
+                        0.0, duration, size=generator.poisson(rates[cell] * duration)
                     )
             for cell, spikes in enumerate(copies):
                 placed[cell].append(np.sort(spikes) + offset)

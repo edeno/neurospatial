@@ -488,7 +488,9 @@ def _in_events(trains, intervals):
 
 
 class TestNullEvents:
-    @pytest.mark.parametrize("kind", ["cell_identity", "spike_shift", "poisson"])
+    @pytest.mark.parametrize(
+        "kind", ["cell_identity", "spike_shift", "spike_time_uniform"]
+    )
     def test_layout_and_what_is_kept(self, recording, kind):
         trains, intervals = recording
         null = null_events(trains, intervals, kind=kind, n_copies=3, rng=0)
@@ -531,7 +533,7 @@ class TestNullEvents:
         import pickle
 
         trains, intervals = recording
-        null = null_events(trains, intervals, kind="poisson", rng=0)
+        null = null_events(trains, intervals, kind="spike_time_uniform", rng=0)
         assert not null.intervals.flags.writeable
         assert not null.spike_times[0].flags.writeable
         clone = pickle.loads(pickle.dumps(null))
@@ -543,15 +545,19 @@ class TestNullEvents:
         with pytest.raises(ValueError, match="kind must be"):
             null_events(trains, intervals, kind="jitter")
         with pytest.raises(ValueError, match="n_copies"):
-            null_events(trains, intervals, kind="poisson", n_copies=0)
+            null_events(trains, intervals, kind="spike_time_uniform", n_copies=0)
         with pytest.raises(ValueError, match="start < stop"):
-            null_events(trains, np.array([[1.0, 0.5]]), kind="poisson")
+            null_events(trains, np.array([[1.0, 0.5]]), kind="spike_time_uniform")
         with pytest.raises(ValueError, match="1 intervals overlap"):
             null_events(
-                trains, np.array([[3.0, 3.2], [1.0, 1.2], [3.1, 3.3]]), kind="poisson"
+                trains,
+                np.array([[3.0, 3.2], [1.0, 1.2], [3.1, 3.3]]),
+                kind="spike_time_uniform",
             )
         # Touching intervals are fine: each is closed on the left only.
-        null = null_events(trains, np.array([[1.0, 1.1], [1.1, 1.2]]), kind="poisson")
+        null = null_events(
+            trains, np.array([[1.0, 1.1], [1.1, 1.2]]), kind="spike_time_uniform"
+        )
         assert null.n_events == 2
 
     def test_simulated_events(self, track):
@@ -589,9 +595,9 @@ class TestNullRandomization:
                 )
         assert moved > 10
 
-    def test_poisson_redraws_spike_times(self, recording):
+    def test_spike_time_uniform_redraws_spike_times(self, recording):
         trains, intervals = recording
-        null = null_events(trains, intervals, kind="poisson", rng=0)
+        null = null_events(trains, intervals, kind="spike_time_uniform", rng=0)
         real = _in_events(trains, intervals)
         copies = _in_events(null.spike_times, null.intervals)
         same = sum(
@@ -601,7 +607,9 @@ class TestNullRandomization:
         )
         assert same == 0
 
-    @pytest.mark.parametrize("kind", ["cell_identity", "spike_shift", "poisson"])
+    @pytest.mark.parametrize(
+        "kind", ["cell_identity", "spike_shift", "spike_time_uniform"]
+    )
     def test_a_seed_reproduces_and_copies_differ(self, recording, kind):
         trains, intervals = recording
         first = null_events(trains, intervals, kind=kind, n_copies=2, rng=3)
@@ -617,14 +625,16 @@ class TestNullRandomization:
     def test_cells_outside_the_mask_keep_their_spikes(self, recording):
         trains, intervals = recording
         cells = np.array([True, True, True, False, False, False])
-        null = null_events(trains, intervals, kind="poisson", cells=cells, rng=0)
+        null = null_events(
+            trains, intervals, kind="spike_time_uniform", cells=cells, rng=0
+        )
         real = _in_events(trains, intervals)
         copies = _in_events(null.spike_times, null.intervals)
         for copy, source in zip(copies, null.source_events, strict=True):
             for cell in range(3, 6):
                 np.testing.assert_allclose(copy[cell], real[source][cell])
         with pytest.raises(ValueError, match="one boolean per cell"):
-            null_events(trains, intervals, kind="poisson", cells=cells[:3])
+            null_events(trains, intervals, kind="spike_time_uniform", cells=cells[:3])
 
     def test_simulated_random_events_are_laid_out(self, track):
         x = track.bin_centers[:, 0]
@@ -698,7 +708,7 @@ class TestDecodeIntervals:
             )
 
 
-@pytest.mark.parametrize("kind", ["cell_identity", "spike_shift", "poisson"])
+@pytest.mark.parametrize("kind", ["cell_identity", "spike_shift", "spike_time_uniform"])
 def test_false_positives_on_null_copies(track, kind):
     """Every null kind removes the replay of real sweeps.
 
@@ -857,14 +867,14 @@ class TestMatchedAlpha:
         table = pd.concat(
             [
                 _p_table([0.001, 0.01, 0.5, 0.5]).assign(kind="shift"),
-                _p_table([0.001, 0.03, 0.04, 0.5]).assign(kind="poisson"),
+                _p_table([0.001, 0.03, 0.04, 0.5]).assign(kind="spike_time_uniform"),
             ]
         )
         matched = matched_alpha(
             table, replay_methods=[KF], target=0.25, groups=["kind"]
         ).set_index("kind")
         assert matched.loc["shift", "alpha"] == 0.01
-        assert matched.loc["poisson", "alpha"] == 0.03
+        assert matched.loc["spike_time_uniform", "alpha"] == 0.03
 
     def test_refusals(self):
         table = _p_table([0.01, 0.5])
