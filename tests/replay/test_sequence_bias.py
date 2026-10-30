@@ -98,7 +98,7 @@ class TestPairwiseBiasMatrix:
             pairwise_bias_matrix(trains, (1.0, 0.0))
         with pytest.raises(ValueError, match="unit_ids"):
             pairwise_bias_matrix(trains, (0.0, 1.0), unit_ids=[1, 2, 3])
-        with pytest.raises(ValueError, match="repeat|duplicate"):
+        with pytest.raises(ValueError, match="unit_ids must be unique"):
             pairwise_bias_matrix(trains, (0.0, 1.0), unit_ids=["a", "a"])
         with pytest.raises(ValueError, match="missing label"):
             pairwise_bias_matrix(trains, (0.0, 1.0), unit_ids=["a", None])
