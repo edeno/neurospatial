@@ -47,6 +47,9 @@ from neurospatial.geometry._boundaries import boundary_view as boundary_view
 from neurospatial.geometry._boundaries import clear_segments as clear_segments
 from neurospatial.geometry._boundaries import line_of_sight_clear as line_of_sight_clear
 from neurospatial.geometry._boundaries import (
+    movement_enclosure as movement_enclosure,
+)
+from neurospatial.geometry._boundaries import (
     physical_clear_segments as physical_clear_segments,
 )
 from neurospatial.geometry._boundaries import physical_ray_hits as physical_ray_hits

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 import shapely
 from numpy.typing import NDArray
+from shapely.geometry import LineString, MultiPolygon, Polygon
 from shapely.ops import unary_union
 
 from neurospatial._exceptions import CartesianOnlyError, _format_error
@@ -472,6 +473,37 @@ def physical_walls(arena: Arena, *, blocking: Blocking) -> shapely.Geometry:
             "Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation."
         )
     return unary_union(_physical_boundaries(arena, blocking))
+
+
+def movement_enclosure(
+    binning: Binning, arena: Arena
+) -> tuple[Polygon | MultiPolygon, list[LineString]] | None:
+    """The floor positions lie on and the walls on it that block movement.
+
+    The floor is the closed region that position lookup accepts: the
+    arena's polygonal domain when it is known, else the union of the planar
+    cells. The walls are the arena's named walls that block movement (every
+    physical kind does). A simulated animal moves inside the floor's outline
+    and never crosses a wall.
+
+    Returns
+    -------
+    tuple of (Polygon or MultiPolygon, list of LineString), or None
+        None when neither the domain nor the bins are planar 2-D areas, such
+        as a track's lengths.
+    """
+    floor = arena.polygonal_domain() if arena.domain_known else None
+    if floor is None:
+        bins = binning.bins
+        if bins.n_dims != 2 or not bins.has_measure_dim(2):
+            return None
+        floor = unary_union(list(materialize_cells(binning)))
+    walls = [
+        wall
+        for wall, kind in zip(arena.walls, arena.wall_kinds, strict=True)
+        if blocks(kind, "movement")
+    ]
+    return floor, walls
 
 
 def valid_observers(
