@@ -19,9 +19,10 @@ from neurospatial.ops._types import DistanceMetric
 from neurospatial.ops.distance import distance_field
 from neurospatial.simulation.models.base import (
     _check_point,
-    _check_rates,
     _draw_rng,
     _model_inputs,
+    _set_rates,
+    _tuned_rate,
     geodesic_lookup_bins,
 )
 
@@ -248,15 +249,13 @@ class PlaceCellModel:
 
     def __post_init__(self) -> None:
         env = self.env
-        _check_rates(self.max_rate, self.baseline_rate)
+        _set_rates(self)
         validate_choice(
             self.metric,
             ("euclidean", "geodesic"),
             name="metric",
             owner="PlaceCellModel()",
         )
-        object.__setattr__(self, "max_rate", float(self.max_rate))
-        object.__setattr__(self, "baseline_rate", float(self.baseline_rate))
         if self.center is None:
             center_idx = _draw_rng(self).integers(0, env.n_bins)
             center = read_only_copy(env.bin_centers[center_idx], np.float64)
@@ -422,9 +421,7 @@ class PlaceCellModel:
         # unreachable geodesic distance, inf, gives exactly 0), so the rate
         # settles on the baseline without any clipping.
         gaussian = np.exp(-0.5 * sigmas**2)
-        rates: NDArray[np.float64] = (
-            self.baseline_rate + (self.max_rate - self.baseline_rate) * gaussian
-        )
+        rates = _tuned_rate(self, gaussian)
 
         if self.condition is not None:
             mask = np.asarray(self.condition(positions, times))

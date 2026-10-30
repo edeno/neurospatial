@@ -63,9 +63,10 @@ from neurospatial.simulation._walls import Walls
 from neurospatial.simulation.models.base import (
     _check_angle,
     _check_positive,
-    _check_rates,
     _draw_rng,
     _model_inputs,
+    _set_rates,
+    _tuned_rate,
 )
 
 if TYPE_CHECKING:
@@ -236,14 +237,12 @@ class BorderCellModel:
             )
         _check_positive("distance_tolerance", tolerance)
         _check_positive("preferred_distance", self.preferred_distance, allow_zero=True)
-        _check_rates(self.max_rate, self.baseline_rate)
+        _set_rates(self)
         _require_walls(self.env, self.boundary_source, "BorderCellModel()")
         if self.distance_tolerance is not None:
             object.__setattr__(self, "distance_tolerance", float(tolerance))
         object.__setattr__(self, "_distance_tolerance", float(tolerance))
         object.__setattr__(self, "preferred_distance", float(self.preferred_distance))
-        object.__setattr__(self, "max_rate", float(self.max_rate))
-        object.__setattr__(self, "baseline_rate", float(self.baseline_rate))
 
     @property
     def requires_headings(self) -> bool:
@@ -289,10 +288,7 @@ class BorderCellModel:
             -0.5
             * ((distances - self.preferred_distance) / self._distance_tolerance) ** 2
         )
-        rates: NDArray[np.float64] = (
-            self.baseline_rate + (self.max_rate - self.baseline_rate) * tuning
-        )
-        return rates
+        return _tuned_rate(self, tuning)
 
     @property
     def ground_truth(self) -> dict[str, Any]:
@@ -472,7 +468,7 @@ class BoundaryVectorCellModel:
                     "np.pi / 6 for 30 degrees",
                 )
             )
-        _check_rates(self.max_rate, self.baseline_rate)
+        _set_rates(self)
         _require_walls(env, self.boundary_source, call)
         wrapped = float(wrap_angle(np.asarray(direction, dtype=np.float64)))
         walls = Walls.from_geometry(
@@ -498,8 +494,6 @@ class BoundaryVectorCellModel:
             ("_preferred_direction", wrapped),
             ("_distance_tolerance", float(tolerance)),
             ("direction_tolerance", float(half_width)),
-            ("max_rate", float(self.max_rate)),
-            ("baseline_rate", float(self.baseline_rate)),
             ("_walls", walls),
             ("_directions", directions),
             (
@@ -586,10 +580,7 @@ class BoundaryVectorCellModel:
         if observed.any():
             distances = self._ray_distances(positions[observed])
             drive[observed] = self._drive_terms(distances).sum(axis=1)
-        rates: NDArray[np.float64] = self.baseline_rate + (
-            self.max_rate - self.baseline_rate
-        ) * (drive / self._reference_drive)
-        return rates
+        return _tuned_rate(self, drive / self._reference_drive)
 
     @property
     def ground_truth(self) -> dict[str, Any]:

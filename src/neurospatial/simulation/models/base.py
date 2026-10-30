@@ -252,8 +252,12 @@ def _draw_rng(model: Any) -> np.random.Generator:
     return np.random.default_rng(seed)
 
 
-def _check_rates(max_rate: float, baseline_rate: float) -> None:
-    """Refuse a non-finite or negative rate, or a baseline above the peak."""
+def _set_rates(model: Any) -> None:
+    """Check a model's ``max_rate`` and ``baseline_rate`` and store them as floats.
+
+    Refuses a non-finite or negative rate, or a baseline above the peak.
+    """
+    max_rate, baseline_rate = model.max_rate, model.baseline_rate
     if not (np.isfinite(max_rate) and max_rate > 0):
         raise ValueError(
             _format_error(
@@ -278,6 +282,16 @@ def _check_rates(max_rate: float, baseline_rate: float) -> None:
                 fix="pass a baseline_rate no larger than max_rate",
             )
         )
+    object.__setattr__(model, "max_rate", float(max_rate))
+    object.__setattr__(model, "baseline_rate", float(baseline_rate))
+
+
+def _tuned_rate(model: Any, tuning: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Rate in Hz from tuning in [0, 1]: ``baseline + (max - baseline) * tuning``."""
+    rates: NDArray[np.float64] = (
+        model.baseline_rate + (model.max_rate - model.baseline_rate) * tuning
+    )
+    return rates
 
 
 def _check_positive(
