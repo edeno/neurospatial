@@ -293,7 +293,8 @@ def rank_order_significance(
         ``"greater"`` tests forward order only, ``"less"`` reverse only.
     n_shuffles : int, default=1000
         Number of cell-order permutations. A p-value is at least
-        ``1 / (n_shuffles + 1)``.
+        ``1 / (n_shuffles + 1)``, or ``2 / (n_shuffles + 1)`` with
+        ``alternative="two-sided"``.
     rng : np.random.Generator, int, or None, default=None
         Random number generator or seed. Pass a seed for a reproducible
         result.

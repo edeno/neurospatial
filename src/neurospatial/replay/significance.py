@@ -248,7 +248,8 @@ def replay_significance(
         posterior as decoded, not zeroed. Not available with
         ``"pseudo_event"``, whose pool rows carry no spike counts.
     n_shuffles : int, default=1000
-        Shuffles per null. A p-value is at least ``1 / (n_shuffles + 1)``.
+        Shuffles per null. A p-value is at least ``1 / (n_shuffles + 1)``,
+        or ``2 / (n_shuffles + 1)`` with ``alternative="two-sided"``.
         Davidson et al. (2009) used 1500, Tirole et al. (2022) 1000.
     rng : np.random.Generator, int, or None, default=None
         Random number generator or seed; the nulls draw from it in the order

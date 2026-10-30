@@ -177,7 +177,8 @@ the default.
   computed exactly from the p-values, not read off a grid, so the rate never
   exceeds the target. `groups=` matches each kind of null data or each
   session separately. Warnings say when the matched α is the smallest
-  p-value the shuffles can give (run more shuffles), when there are too
+  p-value the shuffles can give, `1 / (n_shuffles + 1)` or twice that for
+  a two-sided test (run more shuffles), when there are too
   few null events for the target, and when no α holds the rate: then α is
   NaN.
 - `apply_alpha(table, alpha=, replay_methods=)` gives the table's verdicts

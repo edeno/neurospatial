@@ -906,10 +906,15 @@ def _alpha_methods(
 
 
 def _smallest_p_value(method: ReplayMethod | RankOrderMethod) -> float:
-    """The smallest p-value a method's shuffles can give, (0 + 1) / (n + 1)."""
+    """The smallest p-value a method's shuffles can give.
+
+    ``1 / (n + 1)`` for a one-sided test and twice that for a two-sided
+    test, which doubles the smaller tail (``compute_shuffle_pvalue``).
+    """
     if getattr(method, "test", None) == "t_distribution":
         return 0.0
-    return 1.0 / (method.n_shuffles + 1)
+    smallest = 1.0 / (method.n_shuffles + 1)
+    return min(2.0 * smallest, 1.0) if method.alternative == "two-sided" else smallest
 
 
 def _verdicts(
