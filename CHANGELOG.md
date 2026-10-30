@@ -2,6 +2,58 @@
 
 ## [Unreleased]
 
+### Data-set-level replay tests
+
+Several replay papers test a whole data set, not each event:
+`neurospatial.replay.dataset` runs their tests.
+
+**New**
+
+- `dataset_values(env, events, *, replay_method, null=None, n_datasets=1,
+  shared=False, quantities=(), ...)`: each event's score and criterion
+  quantities (raw, such as `max_map_jump` in cm) for the real data set, or
+  for `n_datasets` null data sets that shuffle every event once with a
+  `replay_significance` null (or `"cell_order"` for a rank-order method),
+  measured by the same method. `shared=True` draws one template shuffle
+  (cell identities or shifted rate maps) per data set for every event.
+  For the column-cycle, weighted column-cycle and time-bin nulls with a
+  weighted correlation, per-event moment tables make each shuffle a gather:
+  1,000 events x 5,000 data sets in about 2 s, equal to measuring each
+  shuffle with `detect_replay` to 1e-12.
+- `dataset_test(observed, null_table, *, criteria=None, statistic=None,
+  alternative="greater")` with `CriterionGrid` thresholds: the share of
+  events passing every criterion at each point of a grid against the null
+  data sets, p = (1 + k) / (1 + K) at each point (Silva et al. 2015's
+  significance matrix; `DatasetTestResult.plot()` draws it), and the
+  `percentile` from which Farooq et al.'s and Liu et al.'s `1 - percentile
+  / 100` follows.
+- `distribution_test(observed, null_table, *, column, test="ks" | "rank_sum" |
+  "levene", alternative)`: real events against pooled null events, the side
+  stated in terms of the values (`"greater"` is scipy's `ks_2samp`
+  `alternative="less"`).
+- `shuffle_events()`: null data sets as decoded events, with spike counts
+  permuted along with the rows, for controls analysed with their own
+  per-event shuffles (Silva's time swap, Grosmark's surrogates).
+- `relative_rank_template()` and `template_correlation_test()`: Liu et al.
+  (2019)'s sleep template and its test against shuffled running templates.
+- Recipes with every value and the papers' open choices:
+  `SILVA_2015_MATRIX`, `SILVA_2015_RANK_ORDER`, `GROSMARK_2016_SURROGATES`,
+  `FAROOQ_2019_TIME_BIN`, `FAROOQ_2019_POISSON`, `FAROOQ_2019_SPACE_BIN`,
+  `FAROOQ_2019_WEIGHTED`, `LIU_2019_TEMPLATES`, `STELLA_2019_JITTER`,
+  `XU_2019_ROTATION`; `paper_p_value()` applies a paper's own p rule.
+- `NullSpikeData.copy_index`: which copy of its real event each null event
+  is, so copy `k` of every event forms null data set `k`.
+- `detection_rates(..., expected_rate=, alternative=)`: an exact binomial
+  `p_value` of each rate against a chance rate (Grosmark & Buzsáki's share
+  of p < 0.05 events against 5%).
+- `compare_replay_methods` tables add `value[<criterion>]`, the value each
+  criterion was compared on, and `z_score[<null>]`, the score's z-score
+  against each null (rZ of Grosmark & Buzsáki with `use_absolute=True`);
+  `ReplayDetectionResult.z_scores` holds them.
+- `matched_alpha` and `apply_alpha` take `PairwiseOrderMethod`.
+- `decode_intervals` bins disjoint intervals in one pass and decodes them
+  together, about 70 times faster, with the same posteriors to round-off.
+
 ### Reactivation measures
 
 The pattern and pair-correlation reactivation measures now compute what the

@@ -213,6 +213,19 @@ Detecting the candidate events (ripples, population bursts) is not included.
 - `matched_alpha()`, `apply_alpha()`: Each method's α that holds its
   false-positive rate on null data to a target (Takigawa et al. 2024), and
   a comparison table's verdicts at those α
+- `dataset_values()`, `dataset_test()`, `CriterionGrid`: Data-set-level
+  replay tests: per-event values of the real data set and of null data
+  sets measured by one method, and a Monte Carlo test of the share of
+  events passing a grid of thresholds, such as Silva et al.'s (2015)
+  significance matrix, with `DatasetTestResult.plot()`;
+  `distribution_test()` compares real and pooled null events' values (KS,
+  rank-sum, Levene, side stated in terms of the values);
+  `shuffle_events()` gives shuffled data sets as events;
+  `relative_rank_template()` and `template_correlation_test()` run Liu et
+  al.'s (2019) template test; `neurospatial.replay.dataset` holds the
+  papers' tests as recipes (`SILVA_2015_MATRIX`, `SILVA_2015_RANK_ORDER`,
+  `GROSMARK_2016_SURROGATES`, `FAROOQ_2019_*`, `LIU_2019_TEMPLATES`,
+  `STELLA_2019_JITTER`, `XU_2019_ROTATION`)
 - `detect_arm_replay()`, `ArmReplayMethod`: Single-arm and joint-arm replay
   on a multi-arm maze (Wu & Foster 2014; Berners-Lee et al. 2021)
 - `detect_rank_order_replay()`, `RankOrderMethod`: Apply published
