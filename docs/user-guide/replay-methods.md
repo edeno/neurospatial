@@ -769,6 +769,124 @@ events with similar properties (`event_properties`,
 known, although it is estimated, here from 96 copies of 24 events; make the
 null events from many real events.
 
+## Time-bin size
+
+Replay studies decode candidate events in time bins of about 10 to 50 ms.
+Tingley & Peyrache (2020, p. 8) note that no study had varied the bin size
+systematically, and that it can change what template-based methods detect.
+Here the same 24 events are decoded again in 20 and 40 ms bins and scored by
+the three methods that score the decoded posterior alone (the 10 ms rows come
+from the first table).
+
+<!-- docs-test: run -->
+```python
+decoded_names = ["davidson_2009", "wu_2017", "silva_2015"]
+decoded_methods = [method for method in methods if method.name in decoded_names]
+binned_tables = [table[table["method"].isin(decoded_names)].assign(bin_ms=10)]
+for bin_size in (0.02, 0.04):  # s
+    binned_events, binned_counts = decode_intervals(
+        env, rest_spikes, intervals, rates, dt=bin_size
+    )
+    binned = compare_replay_methods(
+        env,
+        binned_events,
+        replay_methods=decoded_methods,
+        spike_counts=binned_counts,
+        encoding_models=rates,
+        dt=bin_size,
+        rng=0,
+    )
+    binned["kind"] = kinds[binned["event"]]
+    binned_tables.append(binned.assign(bin_ms=round(1000 * bin_size)))
+by_bin_size = pd.concat(binned_tables, ignore_index=True)
+
+bin_rates = detection_rates(by_bin_size, groups=["bin_ms", "kind"])
+print(
+    bin_rates.pivot_table(index=["method", "bin_ms"], columns="kind", values="rate")
+    .round(2)
+)
+verdicts = by_bin_size.pivot_table(
+    index=["method", "event"], columns="bin_ms", values="is_replay"
+)
+print("events whose verdict changes:")
+print((verdicts.nunique(axis=1) > 1).groupby("method").sum().to_string())
+```
+
+The verdicts of 16 of the 24 events change with the bin size under
+`DAVIDSON_2009` and `WU_2017`, and of 7 under `SILVA_2015`, in different
+directions:
+
+- In 20 ms bins `DAVIDSON_2009` calls fewer stationary events replay (1 of 6
+  instead of 5) but also fewer sweeps (5 of 12 instead of 11), and `WU_2017`
+  fewer random events (1 of 6 instead of 4).
+- In 40 ms bins these events have 2 to 5 time bins, too few for these
+  shuffle tests. A time-bin permutation of n bins has n! orders, and an
+  order and its reverse give the same R², so with 4 bins about one shuffle
+  in 12 scores as high as the event and `WU_2017`'s p-value stays near or
+  above 1/12, above its α. With 2 or 3 bins a line passes close to most of
+  the posterior, and many of `DAVIDSON_2009`'s column-cycle shuffles score
+  as high as the event (about 0.99). Neither method detects any event.
+- `SILVA_2015` has no shuffles. With fewer time bins its jump and |r|
+  thresholds pass more easily: it detects 11 of 12 sweeps in 20 ms bins,
+  against 8 in 10 ms bins, and 4 of 6 random events in 40 ms bins.
+
+Choose the bin size before looking at the verdicts, use a recipe's own when
+reproducing a paper (`method.decoding`), and report how many time bins your
+events have.
+
+The bin size changes the decoded position itself, not only the tests.
+Tingley & Peyrache's supplement gives an example: two place cells, one
+firing at f1 = 50 Hz in its field and one at f2 = 25 Hz in another, each
+fire one spike in the same time bin. With equal rates outside the fields,
+the Poisson likelihood of the first field over the second is
+(f1/f2) exp(-τ (f1 - f2)) for a bin of τ seconds. It decodes to the first
+cell's field when τ is shorter than τ* = ln(f1/f2) / (f1 - f2) = 27.7 ms
+and to the second cell's field when τ is longer, as the supplement's 20 and
+50 ms bins show.
+
+<!-- docs-test: run -->
+```python
+from neurospatial import Environment
+from neurospatial.decoding import decode_position
+
+two_cell_track = Environment.linear_track(
+    endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
+)
+track_x = two_cell_track.bin_centers[:, 0]
+f1, f2 = 50.0, 25.0  # Hz, in each cell's field
+two_cells = np.full((2, two_cell_track.n_bins), 0.5)  # Hz, outside the fields
+two_cells[0, (track_x > 20) & (track_x < 30)] = f1
+two_cells[1, (track_x > 70) & (track_x < 80)] = f2
+one_spike_each = np.array([[1, 1]])
+
+
+def decoded_at(bin_size):
+    """Most likely position, in cm, of one spike from each cell."""
+    decoded = decode_position(two_cell_track, one_spike_each, two_cells, dt=bin_size)
+    return decoded.map_position[0, 0]
+
+
+print(f"20 ms bin: {decoded_at(0.02):.0f} cm; 50 ms bin: {decoded_at(0.05):.0f} cm")
+bin_sizes = np.arange(10, 50.5, 0.5) / 1000  # s
+flip = bin_sizes[np.argmax([decoded_at(b) > 50.0 for b in bin_sizes])]
+print(
+    f"flips between {1000 * flip - 0.5:.1f} and {1000 * flip:.1f} ms; "
+    f"ln(f1/f2) / (f1 - f2) = {1000 * np.log(f1 / f2) / (f1 - f2):.1f} ms"
+)
+```
+
+The decode flips from the 50 Hz cell's field to the 25 Hz cell's field
+between 27.5 and 28 ms, as the formula predicts. Both cells carry the same
+information about position; which one wins depends on their rates and the
+bin size.
+
+The decoder also weighs each position by a prior. Tingley & Peyrache's
+equation uses the normalized occupancy map, P(x) (their code's `placeBayes`
+uses a constant prior instead), while `decode_position` and
+`decode_intervals` default to a prior uniform over space. To decode with
+the occupancy map, pass `prior=rates.occupancy` (seconds per bin; bins never
+visited get no mass), and decode the null events with the same prior.
+
 ## Using your own recording
 
 - **Rate maps.** Estimate them from running only, e.g.

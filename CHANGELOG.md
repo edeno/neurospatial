@@ -26,6 +26,14 @@
   t-distribution p-value under random orders (1/3 with 3 cells, 1/12 with
   4 or 5, about 5.4% with 10) and the calibrated permutation and exact
   alternatives. The recipe still uses the paper's test.
+- [Comparing replay methods](docs/user-guide/replay-methods.md) gains
+  executed sections: score agreement with and without signs; PRE and POST
+  epochs tested against each epoch's own null rate, since excitability
+  changes the false-positive rate; the same events decoded in 10, 20 and
+  40 ms bins, with the supplement's two-cell example (the decode flips at
+  ln(f1/f2) / (f1 - f2), 27.7 ms for 50 and 25 Hz) and how to pass an
+  occupancy prior; and how the uniform-time and Poisson nulls measure the
+  confound that faster cells fire first.
 
 ### Fernández-Ruiz-lab replay methods
 
