@@ -430,7 +430,10 @@ papers define.
   instead of the dense grid. At a 3 cm band the dense grid is slow with
   empty time bins: a 200 ms event on a 200 cm track in 2 cm bins took 139 s
   for 5000 shuffles, against 3.5 s with 35,000 random lines. The sinogram
-  then holds one score per line.
+  then holds one score per line. When no drawn line is both within
+  `min_speed` to `max_speed` and on the track, it raises a `ValueError`
+  that counts the lines failing each condition, instead of an
+  `IndexError`.
 - The `column_cycle` null takes `null_options={"column_cycle":
   {"exclude_zero_shift": True}}`, and `shuffle_posterior_circular` takes
   `exclude_zero_shift=True`, to draw shifts of 1 to n_bins - 1 bins, as

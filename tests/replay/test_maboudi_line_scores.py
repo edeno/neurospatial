@@ -208,6 +208,40 @@ class TestRandomLines:
         assert lines.score > 0.9
         assert lines.speed == pytest.approx(100.0, rel=0.1)
 
+    def test_no_line_within_the_speed_bounds_is_refused(self, short_track):
+        # Lines of every slope, but none as slow as 1 cm/s over 10 time bins.
+        posterior = np.full((5, short_track.n_bins), 1.0 / short_track.n_bins)
+        with pytest.raises(ValueError, match=r"none of the 5 random lines") as error:
+            detect_trajectory_radon(
+                short_track,
+                posterior,
+                np.arange(5) * DT,
+                band=2.0,
+                n_lines=5,
+                max_speed=1.0,
+            )
+        assert "0 have speeds between min_speed 0 and max_speed 1" in str(error.value)
+        assert "band / 5" not in str(error.value)  # the dense grid's message
+
+    def test_a_line_off_the_track_is_scored_or_refused(self, short_track):
+        # One line, drawn within half the image's diagonal of its center,
+        # can miss the track at every time bin: about 1 seed in 7 here.
+        posterior = np.full((5, short_track.n_bins), 1.0 / short_track.n_bins)
+        times = np.arange(5) * DT
+        refused = 0
+        for seed in range(50):
+            try:
+                result = detect_trajectory_radon(
+                    short_track, posterior, times, band=2.0, n_lines=1, line_seed=seed
+                )
+            except ValueError as error:
+                assert "none of the 1 random lines" in str(error)
+                assert "0 lie on the track" in str(error)
+                refused += 1
+            else:
+                assert np.isfinite(result.score)
+        assert refused > 0
+
     @pytest.mark.parametrize(
         ("name", "value"), [("n_lines", 0), ("n_lines", 2.5), ("line_seed", -1)]
     )
