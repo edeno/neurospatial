@@ -1366,7 +1366,9 @@ def _otsu_upper(values: NDArray[np.float64]) -> NDArray[np.bool_]:
     Tries every split of the sorted values into a lower and an upper group
     and keeps the one with the smallest within-group variance
     ``p_low var_low + p_high var_high`` (equivalently the largest variance
-    between the groups), the first such split on ties.
+    between the groups). When two splits give the same variance, as can
+    happen with rounded values, floating-point rounding picks one; there
+    is no tie rule.
 
     Parameters
     ----------
