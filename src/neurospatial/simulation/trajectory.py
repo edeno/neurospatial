@@ -969,6 +969,12 @@ def _track_end_to_end(env: Environment, call: str) -> NDArray[np.float64]:
 #: Default lap running speed, in centimeters per second.
 _DEFAULT_LAP_SPEED_CM_PER_S = 20.0
 
+#: Default lap sampling rate, in samples per second.
+_DEFAULT_LAP_SAMPLING_FREQUENCY = 500.0
+
+#: Default pause at the end of each traversal but the last, in seconds.
+_DEFAULT_LAP_PAUSE_DURATION = 0.5
+
 
 def simulate_trajectory_laps(
     env: Environment,
@@ -978,8 +984,8 @@ def simulate_trajectory_laps(
     speed_std: float | None = None,
     outbound_path: list[int] | None = None,
     inbound_path: list[int] | None = None,
-    pause_duration: float = 0.5,
-    sampling_frequency: float = 500.0,
+    pause_duration: float = _DEFAULT_LAP_PAUSE_DURATION,
+    sampling_frequency: float = _DEFAULT_LAP_SAMPLING_FREQUENCY,
     seed: int | None = None,
     return_metadata: bool = False,
 ) -> (
@@ -1175,8 +1181,8 @@ def _simulate_trajectory_laps(
     speed_std: float | None = None,
     outbound_path: list[int] | None = None,
     inbound_path: list[int] | None = None,
-    pause_duration: float = 0.5,
-    sampling_frequency: float = 500.0,
+    pause_duration: float = _DEFAULT_LAP_PAUSE_DURATION,
+    sampling_frequency: float = _DEFAULT_LAP_SAMPLING_FREQUENCY,
     seed: int | None = None,
     return_metadata: bool = False,
     duration: float | None = None,

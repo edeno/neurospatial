@@ -756,6 +756,8 @@ def simulate_session(
     from neurospatial.simulation.models import GridCellModel, PlaceCellModel
     from neurospatial.simulation.spikes import generate_population_spikes
     from neurospatial.simulation.trajectory import (
+        _DEFAULT_LAP_PAUSE_DURATION,
+        _DEFAULT_LAP_SAMPLING_FREQUENCY,
         _simulate_trajectory_laps,
         simulate_trajectory_ou,
         simulate_trajectory_sinusoidal,
@@ -814,9 +816,6 @@ def simulate_session(
             value = kwargs.pop(name)
             for params in model_params.values():
                 params[name] = value
-    place_cell_params = model_params["place"]
-    border_cell_params = model_params["border"]
-    grid_cell_params = model_params["grid"]
 
     # Independent streams for the trajectory, the field parameters and the
     # spikes, so that spike draws are not correlated with the movement.
@@ -835,7 +834,7 @@ def simulate_session(
         positions, times = simulate_trajectory_sinusoidal(
             env, duration=duration, seed=trajectory_seed, **kwargs
         )
-    elif trajectory_method == "laps":
+    else:
         # Ensure return_metadata is False for consistent return signature
         # Extract n_laps separately to avoid duplicate keyword argument
         n_laps = kwargs.pop("n_laps", 10)
@@ -851,8 +850,6 @@ def simulate_session(
         )
         # Type narrowing: return_metadata=False guarantees 2-tuple
         positions, times = result  # type: ignore[misc]
-    else:
-        raise ValueError(f"Unknown trajectory method: {trajectory_method}")
 
     rng = np.random.default_rng(field_center_seed)
 
@@ -873,30 +870,18 @@ def simulate_session(
     if cell_type == "mixed":
         field_centers = field_centers[rng.permutation(len(field_centers))]
 
-    # Create models based on cell_type
-    models: list[NeuralModel] = []
-    if cell_type == "place":
-        for center in field_centers:
-            models.append(PlaceCellModel(env, center=center, **place_cell_params))
-    elif cell_type == "border":
-        models.extend(_border_cells(env, n_border, rng, border_cell_params))
-    elif cell_type == "grid":
-        for center in field_centers:
-            # Use center for phase offset
-            models.append(GridCellModel(env, phase_offset=center, **grid_cell_params))
-    elif cell_type == "mixed":
-        # Create place cells
-        for center in field_centers[:n_place]:
-            models.append(PlaceCellModel(env, center=center, **place_cell_params))
-
-        # Create border cells
-        models.extend(_border_cells(env, n_border, rng, border_cell_params))
-
-        # Create grid cells
-        for center in field_centers[n_place : n_place + n_grid]:
-            models.append(GridCellModel(env, phase_offset=center, **grid_cell_params))
-    else:
-        raise ValueError(f"Unknown cell_type: {cell_type}")
+    # Place cells, then border cells, then grid cells; a type the session
+    # does not simulate has no cells. Grid cells take the centers after the
+    # place cells' as their phase offsets.
+    models: list[NeuralModel] = [
+        PlaceCellModel(env, center=center, **model_params["place"])
+        for center in field_centers[:n_place]
+    ]
+    models.extend(_border_cells(env, n_border, rng, model_params["border"]))
+    models.extend(
+        GridCellModel(env, phase_offset=center, **model_params["grid"])
+        for center in field_centers[n_place:]
+    )
 
     # Generate spikes for all cells using the independent spike seed.
     spike_times = generate_population_spikes(
@@ -923,8 +908,10 @@ def simulate_session(
     if trajectory_method == "laps":
         metadata.update(
             n_laps=n_laps,
-            sampling_frequency=kwargs.get("sampling_frequency", 500.0),
-            pause_duration=kwargs.get("pause_duration", 0.5),
+            sampling_frequency=kwargs.get(
+                "sampling_frequency", _DEFAULT_LAP_SAMPLING_FREQUENCY
+            ),
+            pause_duration=kwargs.get("pause_duration", _DEFAULT_LAP_PAUSE_DURATION),
             sampling_convention="k / sampling_frequency in [0, duration)",
         )
 
