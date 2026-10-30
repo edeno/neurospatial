@@ -17,8 +17,10 @@ from replay_helpers import sweeps_and_jumps
 from scipy import stats
 
 from neurospatial import Environment
+from neurospatial.decoding import bin_spikes_in_time, decode_position
 from neurospatial.replay import (
     compare_replay_methods,
+    decode_intervals,
     detect_replay,
     detection_rates,
     null_events,
@@ -65,6 +67,28 @@ def test_detection_rates_test_against_a_chance_rate():
             stats.binomtest(n_replay, 60, 0.05, alternative="greater").pvalue
         )
     assert "p_value" not in detection_rates(table)
+
+
+def test_batched_decoding_equals_decoding_each_interval(track, session):
+    rates, trains, intervals, _, _ = session
+    start, stop = intervals[0]
+    # Unsorted intervals, one touching another, take the batched path;
+    # overlapping ones are decoded one at a time.
+    for windows in (
+        np.vstack([intervals[::-1], [[stop, stop + 0.1]]]),
+        np.array([[start, stop], [start + 0.05, stop]]),
+    ):
+        events, counts = decode_intervals(track, trains, windows, rates, dt=DT)
+        for (a, b), event, event_counts in zip(windows, events, counts, strict=True):
+            expected_counts, grid = bin_spikes_in_time(
+                trains, dt=DT, t_start=a, t_stop=b
+            )
+            expected = decode_position(track, expected_counts, rates, dt=DT, times=grid)
+            np.testing.assert_array_equal(event_counts, expected_counts)
+            np.testing.assert_array_equal(event.times, grid)
+            np.testing.assert_allclose(
+                event.posterior, expected.posterior, rtol=0, atol=1e-12
+            )
 
 
 def test_compare_table_reports_values_and_z_scores(track, session):

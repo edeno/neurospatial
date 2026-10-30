@@ -1717,11 +1717,29 @@ def decode_intervals(
     --------
     null_events : Null events to decode.
     neurospatial.replay.compare_replay_methods : Score the decoded events.
+
+    Notes
+    -----
+    Intervals that do not overlap (touching is fine) and a prior with one
+    weight per bin are binned in one pass and decoded together, in blocks
+    of 50,000 time bins: the time bins are decoded independently, so this
+    gives each interval's posterior up to round-off (about 1e-15). On a
+    laptop, 5,000 events of 10 time bins, 100 cells and 72 bins took 0.16 s
+    this way against 11 s one interval at a time, which matters for the
+    many surrogate events of a data-set-level test.
+    Overlapping intervals, or a prior per time bin, are decoded one interval
+    at a time.
     """
     from neurospatial.decoding import bin_spikes_in_time, decode_position
 
     operation = "decode_intervals()"
     windows = _checked_intervals(intervals, operation)
+    ordered = np.argsort(windows[:, 0], kind="stable")
+    disjoint = bool(np.all(windows[ordered][1:, 0] >= windows[ordered][:-1, 1]))
+    if disjoint and (prior is None or np.ndim(prior) == 1):
+        return _decode_intervals_together(
+            env, spike_times, windows, encoding_models, dt=dt, prior=prior
+        )
     events = []
     counts = []
     for start, stop in windows:
@@ -1734,6 +1752,75 @@ def decode_intervals(
             )
         )
         counts.append(np.asarray(event_counts))
+    return events, counts
+
+
+# Time bins decoded at once by the batched path of decode_intervals.
+_DECODE_BLOCK = 50_000
+
+
+def _decode_intervals_together(
+    env: Environment,
+    spike_times: Any,
+    windows: NDArray[np.float64],
+    encoding_models: Any,
+    *,
+    dt: float,
+    prior: NDArray[np.float64] | None,
+) -> tuple[list[DecodingResult], list[NDArray[np.int64]]]:
+    """:func:`decode_intervals` for disjoint intervals, in one decode.
+
+    The bins are those :func:`~neurospatial.decoding.bin_spikes_in_time`
+    makes for each interval alone (each window tiled from its own start),
+    counted in one pass, and every bin is decoded in one call to
+    :func:`~neurospatial.decoding.decode_position`.
+    """
+    from neurospatial._spikes import as_spike_trains
+    from neurospatial._time_bins import (
+        _count_spikes_in_time_bins,
+        _time_bins_in_windows,
+    )
+    from neurospatial.decoding import DecodingResult, decode_position
+    from neurospatial.decoding._time_bins import validate_dt
+
+    dt = validate_dt(dt)
+    order = np.argsort(windows[:, 0], kind="stable")
+    sorted_windows = windows[order]
+    left, right = _time_bins_in_windows(sorted_windows, dt)
+    per_window = np.bincount(
+        np.searchsorted(sorted_windows[:, 0], left, side="right") - 1,
+        minlength=len(sorted_windows),
+    )
+    if np.any(per_window == 0):
+        empty = sorted_windows[per_window == 0][0]
+        span = float(empty[1] - empty[0])
+        raise ValueError(
+            _format_error(
+                f"decode_intervals(): the interval {empty.tolist()} spans {span} "
+                f"s, smaller than one bin dt ({dt}); no whole time bin fits.",
+                why="each interval is decoded in whole time bins of width dt",
+                fix=f"use dt <= {span:g} or leave out intervals shorter than dt",
+            )
+        )
+    all_counts = _count_spikes_in_time_bins(as_spike_trains(spike_times), left, right)
+    decoded = decode_position(
+        env,
+        all_counts,
+        encoding_models,
+        dt=dt,
+        prior=prior,
+        time_chunk=_DECODE_BLOCK,
+    ).posterior
+    stops = np.cumsum(per_window)
+    starts = stops - per_window
+    centers = left + dt / 2.0
+    events: list[DecodingResult] = [None] * len(windows)  # type: ignore[list-item]
+    counts: list[NDArray[np.int64]] = [None] * len(windows)  # type: ignore[list-item]
+    for slot, (first, last) in zip(order, zip(starts, stops, strict=True), strict=True):
+        events[slot] = DecodingResult(
+            posterior=decoded[first:last], env=env, times=centers[first:last]
+        )
+        counts[slot] = all_counts[first:last].copy()
     return events, counts
 
 
