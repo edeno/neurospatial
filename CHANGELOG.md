@@ -60,7 +60,13 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
 - **Running it.** The threshold pools every event of an epoch, so the new
   `RankOrderMethod(test="pooled_ssi")` runs in `compare_replay_methods`,
   one epoch per call; `detect_rank_order_replay` refuses it.
-- **Checked.** On 200 random-order bursts, 7% passed at α = 0.05.
+- **Checked.**
+  - On 150 epochs of random-order bursts (5,095 bursts), 4.4% ± 0.3% passed
+    at α = 0.05.
+  - A port of the authors' code agrees on every verdict for 1,018 simulated
+    bursts. The port corrects `testsession.m`, which puts only each event's
+    first shuffle into the null and so passes every burst.
+- `compare_replay_methods` refuses duplicate method names.
 
 ### Rank-order replay recipes
 

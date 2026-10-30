@@ -621,7 +621,9 @@ class RankOrderMethod:
         standard deviation of rho under random orders), the event scores
         its largest SSI over the templates, and it is replay when that
         exceeds the ``1 - alpha`` quantile of the largest SSIs of
-        ``n_shuffles`` cell-order shuffles of every event.
+        ``n_shuffles`` cell-order shuffles of every event, taken on a 0.01
+        grid as in the authors' code; its ``p_value``, the share of pooled
+        shuffles at least as large, is reported but not used for the verdict.
     alternative : {"greater", "less", "two-sided"}
         Tail of the permutation test; the t-distribution test is two-sided
         and the pooled SSI test is one-sided (``"greater"``).
@@ -694,6 +696,11 @@ class RankOrderMethod:
                 raise ValueError(
                     f"{prefix}: the pooled SSI test scores every template and "
                     "keeps the largest SSI; leave template_choice=None."
+                )
+            if self.min_active_fraction is not None:
+                raise ValueError(
+                    f"{prefix}: the pooled SSI test counts active cells only; "
+                    "leave min_active_fraction=None."
                 )
         elif self.min_epoch_events is not None:
             raise ValueError(
@@ -1685,6 +1692,11 @@ def _pooled_ssi_verdicts(
 
     operation = "compare_replay_methods()"
     if isinstance(encoding_models, Mapping):
+        if template is not None and template not in encoding_models:
+            raise ValueError(
+                f"{operation}: template {template!r} is not one of "
+                f"{list(encoding_models)}."
+            )
         names: list[str | None] = (
             [template] if template is not None else list(encoding_models)
         )
@@ -1796,13 +1808,19 @@ def _pooled_ssi_verdicts(
             if np.isfinite(score)
             else np.nan
         )
-        error = (
-            ""
-            if epoch_ok
-            else f"the epoch has {n_events} events with at least "
-            f"{method.min_active_cells} active cells, fewer than "
-            f"{method.min_epoch_events}"
-        )
+        if not finite.any():
+            error = (
+                "rank-order correlation undefined: no variation in the active "
+                "cells' order"
+            )
+        elif not epoch_ok:
+            error = (
+                f"the epoch has {n_events} events with at least "
+                f"{method.min_active_cells} active cells, fewer than "
+                f"{method.min_epoch_events}"
+            )
+        else:
+            error = ""
         verdicts.append(
             (
                 ReplayDetectionResult(
@@ -1812,7 +1830,7 @@ def _pooled_ssi_verdicts(
                     p_value=p_value,
                     criteria={label: True},
                     values={label: float(n_active)},
-                    template=names[best],
+                    template=names[best] if finite.any() else None,
                 ),
                 error,
             )
@@ -1880,10 +1898,12 @@ def compare_replay_methods(
         ``score``, ``p_value``, one ``passes[...]`` column per criterion,
         ``n_segments``, ``segment_start_time`` and ``segment_end_time`` for
         methods with a segmentation (NaN for the others), ``template`` for
-        joint decodes, and ``error``.
-        ``error`` is empty unless the event has fewer than two time bins
-        left to score (after the method drops time bins without spikes);
-        then ``is_replay`` is False and the score and p-value are NaN.
+        joint decodes, and ``error``. ``error`` says why an event has no
+        verdict, and ``is_replay`` is then False: fewer than two time bins
+        left to score (after the method drops time bins without spikes), an
+        undefined rank-order correlation (too few active template cells, or
+        no variation in their order), or, for a pooled SSI method, an epoch
+        with too few events (score and p-value are still reported).
 
     Notes
     -----
@@ -1934,6 +1954,17 @@ def compare_replay_methods(
                     "decode_position(env, counts, rates, dt=dt, times=grid)",
                 )
             )
+    method_names = [method.name for method in replay_methods]
+    if len(set(method_names)) != len(method_names):
+        raise ValueError(
+            _format_error(
+                f"compare_replay_methods(): method names must be unique, got "
+                f"{method_names}.",
+                why="each row and each random stream is labeled by the method's name",
+                fix="give variants their own name, e.g. "
+                "dataclasses.replace(method, name='diba_alpha_0.05', alpha=0.05)",
+            )
+        )
     rank_methods = [m for m in replay_methods if isinstance(m, RankOrderMethod)]
     if rank_methods:
         missing = [
@@ -2609,9 +2640,22 @@ CHENANI_2019 = RankOrderMethod(
         "Only bursts with at least 5 active cells count, and epochs with "
         "fewer than 20 such bursts are excluded (the code keeps exactly 20; "
         "the paper says '20 or less' and the supplement 'more than 20').",
+        "testsession.m indexes the shuffled SSIs with the observed lengths "
+        "(id0R = find(lenR == n)), so only the first shuffle of each event "
+        "enters its null while the cdf divides by all of them: the threshold "
+        "falls to -4 and every burst is significant. The intended null, every "
+        "shuffle of every event, is used here; checked against a port of the "
+        "corrected code on 1,018 simulated bursts, every verdict agrees.",
+        "Ties in field positions or spike times get average ranks; the code's "
+        "sequences are strict orders. Shuffles without an SSI (fewer than two "
+        "shared cells on every template) are left out of the null rather than "
+        "counted below the threshold.",
+        "Each template holds every cell with a field in encoding_models; to "
+        "leave a cell out of one direction's template, set its rate map to NaN "
+        "there.",
         "The session-level binomial tests are not applied; testsession.m "
-        "refers to an undefined ns and its binocdf(..., 'upper') leaves out "
-        "the observed count. Bursts (place-cell rate 1 SD above its mean, "
+        "also refers to an undefined ns and its binocdf(..., 'upper') leaves "
+        "out the observed count. Bursts (place-cell rate 1 SD above its mean, "
         "peaking at 3 SD) are not detected here.",
     ),
 )
