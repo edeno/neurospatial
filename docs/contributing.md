@@ -198,7 +198,11 @@ can differ between combined components) separate from their neighbor pairs
 (`BinConnections`), because they change for different reasons. Walls close
 pairs (`is_open`) instead of deleting them, so environments over the same bins
 keep one pair order; `connections.pairs`, the open pairs, is `env.edge_pairs`,
-and faces and face normals align with it. Engines do not build graphs: a
+and faces and face normals align with it. The arena's outline closes pairs
+too: each bin stands for the piece of its cell inside the arena that holds
+its center (`geometry.center_pieces`), and a pair stays open only where the
+two pieces meet, so a slit or hole thinner than a bin still separates the
+bins beside it. Engines do not build graphs: a
 built-in engine's `connectivity` is a convenience derived on first access
 from its binning with `geometry.graph_from_binning`, the same graph an
 environment publishes, and editing it changes nothing the engine publishes.
@@ -269,6 +273,10 @@ the column count with `require_position_columns` on every path, with or
 without a known arena, so the error names `call`, the operation the scientist
 called. A method that uses positions before the lookup, or returns early
 without one, calls `require_position_columns` first with the same `call`.
+A point within `geometry.coordinate_roundoff` of the outline is on it, and
+so inside; ray casts and the simulated walker's walls use the same
+on-boundary tolerance, so a point one of them puts on a wall the others do
+too.
 
 #### Cartesian-only members
 
