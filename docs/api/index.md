@@ -176,9 +176,10 @@ Detecting the candidate events (ripples, population bursts) is not included.
   position moves smoothly, by the jump, gap, merge and duration rules of
   Pfeiffer & Foster, Igata et al., Carey et al., Widloski & Foster and
   Mallory et al.; keep the longest or all
-- `replay_significance()`: Test any replay score against column-cycle,
-  unit-identity and pseudo-event shuffles; significant when every null
-  rejects the event
+- `replay_significance()`: Test any replay score against shuffles:
+  column-cycle, unit-identity and pseudo-event (the default), spike-train
+  and place-field circular shifts, and time-bin permutation; significant
+  when every null run rejects the event
 - `rank_order_correlation()`, `rank_order_significance()`: Spearman
   correlation of field order and firing order in an event, with a
   cell-order permutation test; needs no decoding

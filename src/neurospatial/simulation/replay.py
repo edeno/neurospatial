@@ -123,8 +123,10 @@ def simulate_replay_event(
 
         - ``"sweep"``: constant ``speed`` along the track from
           ``start_position``, as replay is usually modeled.
-        - ``"stationary"``: a fixed position, which a line fit scores well but
-          the weighted correlation does not (van der Meer et al. 2020).
+        - ``"stationary"``: a fixed position, which Davidson et al.'s line
+          search (``detect_trajectory_radon``) scores well with a flat line,
+          but the weighted correlation does not (van der Meer et al. 2020),
+          nor the R² of ``fit_linear_trajectory`` (NaN for a fixed MAP).
         - ``"jump"``: a sweep at ``speed`` whose second half continues
           ``jump_distance`` further along the track: two fragments with one
           jump between them. Whether it counts as replay depends on the

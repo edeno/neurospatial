@@ -18,6 +18,7 @@ from scipy import stats
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.replay.significance import _ALTERNATIVES
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -26,7 +27,6 @@ if TYPE_CHECKING:
 
 _SPIKE_STATISTICS = ("first", "median", "mean", "all_spikes")
 _FIELD_ORDERS = ("peak", "center")
-_ALTERNATIVES = ("greater", "less", "two-sided")
 # Largest number of (shuffle, pair) values ranked at once.
 _BLOCK_VALUES = 2_000_000
 
@@ -45,12 +45,14 @@ class RankOrderResult(ReadOnlyArraysMixin, ResultMixin):
         cells' field positions or firing times are all equal.
     analytic_p_value : float
         Two-sided p-value of ``score`` assuming independent pairs: exact (all
-        orderings enumerated) for up to 9 pairs, and the t-approximation of
-        Foster & Wilson (2006) above that. MATLAB's ``corr``, used in the
-        Bendor-lab analyses, also uses the exact distribution for small
-        samples. ``spike_statistic="all_spikes"`` breaks
-        the independence (a cell's spikes share one field position):
-        Takigawa et al. (2024) found about 17% false positives with every
+        orderings enumerated) for up to 9 pairs, and the t-approximation
+        above that. Foster & Wilson (2006) used the t-approximation for
+        every number of pairs (``FOSTER_WILSON_2006`` uses
+        ``test="t_distribution"``), so for up to 9 pairs this differs from
+        theirs. MATLAB's ``corr``, used in the Bendor-lab analyses, also
+        uses the exact distribution for small samples.
+        ``spike_statistic="all_spikes"`` breaks the independence (a cell's
+        spikes share one field position): Takigawa et al. (2024) found about 17% false positives with every
         spike when spikes were permuted one by one, which, like this
         p-value, treats them as independent. Use
         :func:`rank_order_significance` instead.
@@ -91,7 +93,7 @@ class RankOrderResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class RankOrderSignificanceResult(ResultMixin):
     """Rank-order correlation of one event tested against cell-order shuffles.
 
@@ -293,7 +295,8 @@ def rank_order_significance(
         ``"greater"`` tests forward order only, ``"less"`` reverse only.
     n_shuffles : int, default=1000
         Number of cell-order permutations. A p-value is at least
-        ``1 / (n_shuffles + 1)``.
+        ``1 / (n_shuffles + 1)``, or ``2 / (n_shuffles + 1)`` with
+        ``alternative="two-sided"``.
     rng : np.random.Generator, int, or None, default=None
         Random number generator or seed. Pass a seed for a reproducible
         result.
@@ -320,9 +323,11 @@ def rank_order_significance(
     The p-value is ``(k + 1) / (n + 1)``, where ``k`` counts permutations at
     least as extreme as the event (Phipson & Smyth 2010). It holds its
     false-positive rate for every ``spike_statistic``, because a cell's
-    spikes move together. Foster & Wilson (2006) used the analytic Spearman
-    p-value per event instead, which :class:`RankOrderResult` reports as
-    ``analytic_p_value``. The z-score of the shuffle test approximates the
+    spikes move together. Foster & Wilson (2006) used an analytic Spearman
+    p-value per event instead, from the t-distribution for every number of
+    pairs (``FOSTER_WILSON_2006``, ``test="t_distribution"``).
+    :class:`RankOrderResult` reports a similar ``analytic_p_value``, which is
+    exact for up to 9 pairs. The z-score of the shuffle test approximates the
     spatial similarity index of Chenani et al. (2019), who z-scored the
     correlation against 100,000 random permutations of the same number of
     cells (``testsession.m`` subtracts their mean and divides by their

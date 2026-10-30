@@ -5,6 +5,8 @@ decoded position sequences, including isotonic regression, linear regression,
 and Radon transform detection.
 """
 
+import dataclasses
+
 import numpy as np
 import pytest
 from environment_helpers import renumbered, strips_1d
@@ -1174,10 +1176,14 @@ class TestLinearFitFollowsThePapers:
         per_neuron = np.random.default_rng(1).poisson(1.0, size=(6, 4))
 
         kwargs = {"n_samples": 300, "n_resamples": 3, "rng": 2}
-        assert fit_linear_trajectory(
-            env, posterior, times, spike_counts=per_neuron, **kwargs
-        ) == fit_linear_trajectory(
-            env, posterior, times, spike_counts=per_neuron.sum(axis=1), **kwargs
+        assert dataclasses.astuple(
+            fit_linear_trajectory(
+                env, posterior, times, spike_counts=per_neuron, **kwargs
+            )
+        ) == dataclasses.astuple(
+            fit_linear_trajectory(
+                env, posterior, times, spike_counts=per_neuron.sum(axis=1), **kwargs
+            )
         )
 
     def test_map_fit_is_least_squares_through_the_map_positions(self):
