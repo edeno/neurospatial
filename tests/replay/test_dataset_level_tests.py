@@ -694,6 +694,68 @@ class TestOpenArena:
             shuffle_events(arena, events, null="column_cycle", rng=0)
 
 
+class TestEventEnvironment:
+    """Each event must have been decoded on the environment passed."""
+
+    @pytest.fixture(scope="class")
+    def longer(self):
+        """A track ten times as long, with the same number of bins."""
+        return Environment.linear_track(
+            endpoints=[[0.0, 0.0], [1000.0, 0.0]], bin_size=50.0, units="cm"
+        )
+
+    def test_dataset_values_refuses_another_environment(self, track, longer, session):
+        _, _, _, events, _ = session
+        assert longer.n_bins == track.n_bins
+        assert dataset_values(track, events, replay_method=SILVA_2015) is not None
+        with pytest.raises(ValueError, match="event 0 was decoded on an environment"):
+            dataset_values(longer, events, replay_method=SILVA_2015)
+        with pytest.raises(ValueError, match="event 0 was decoded on an environment"):
+            dataset_values(
+                longer,
+                events,
+                replay_method=SILVA_2015,
+                null="time_bin_permutation",
+                rng=0,
+            )
+
+    def test_rank_order_refuses_another_environment(self, track, longer, session):
+        """As compare_replay_methods refuses a rank-order method's events."""
+        rates, trains, _, events, _ = session
+        options = {
+            "replay_method": SILVA_2015_RANK_ORDER.method,
+            "spike_times": trains,
+            "encoding_models": rates,
+            "dt": DT,
+        }
+        with pytest.raises(ValueError, match="event 0 was decoded on an environment"):
+            dataset_values(longer, events, **options)
+        with pytest.raises(ValueError, match="event 0 was decoded on an environment"):
+            compare_replay_methods(
+                longer,
+                events,
+                replay_methods=[options.pop("replay_method")],
+                **options,
+            )
+
+    def test_shuffle_events_refuses_another_environment(self, track, longer, session):
+        _, _, _, events, _ = session
+        later = [*events[:2], dataclasses.replace(events[2], env=longer)]
+        with pytest.raises(ValueError, match="event 2 was decoded on an environment"):
+            shuffle_events(track, later, null="time_bin_permutation", rng=0)
+
+    def test_a_copy_of_the_environment_is_accepted(self, track, session):
+        _, _, _, events, _ = session
+        copy = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0, units="cm"
+        )
+        assert copy is not track
+        pd.testing.assert_frame_equal(
+            dataset_values(copy, events, replay_method=SILVA_2015),
+            dataset_values(track, events, replay_method=SILVA_2015),
+        )
+
+
 class TestRankOrderValues:
     def test_real_values_match_compare_replay_methods(self, track, session):
         rates, trains, _, events, _ = session

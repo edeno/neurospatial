@@ -770,11 +770,12 @@ def dataset_values(
         If ``null`` is not a null this method can draw, ``shared`` is given
         for a null that acts on each event, ``n_datasets`` is not a positive
         integer, a quantity is not a scalar of TrajectoryMetrics, an event is
-        not a DecodingResult with times, ``spike_counts`` does not have one
-        entry per event or is missing for a method that counts spikes or
-        active cells, the inputs a null needs are missing, a column-cycle
-        null or a score along the track is used off a track, or decoding
-        the counts does not reproduce an event's posterior.
+        not a DecodingResult with times or was decoded on an environment
+        whose bins or connectivity differ from ``env``'s, ``spike_counts``
+        does not have one entry per event or is missing for a method that
+        counts spikes or active cells, the inputs a null needs are missing,
+        a column-cycle null or a score along the track is used off a track,
+        or decoding the counts does not reproduce an event's posterior.
 
     See Also
     --------
@@ -1025,7 +1026,7 @@ def _replay_values(
             f"{operation}: a replay method takes the one environment the events "
             "were decoded on, not a mapping."
         )
-    decoded = _decoded_events(events, operation)
+    decoded = _decoded_events(env, events, operation)
     counts = _event_counts(spike_counts, decoded, operation)
     scalars = [
         name
@@ -1244,9 +1245,17 @@ def _track_length_or_nan(env: Environment) -> float:
     return float(np.sum(np.asarray(stops) - np.asarray(starts)))
 
 
-def _decoded_events(events: Any, operation: str) -> list[DecodingResult]:
-    """The events, checked to be decodes on one set of rate maps with times."""
+def _decoded_events(
+    env: Environment | Mapping[str, Environment], events: Any, operation: str
+) -> list[DecodingResult]:
+    """The events, checked to be decodes on ``env``, one set of rate maps, with times.
+
+    A mapping of environments (a rank-order method's templates) is not
+    compared, as :func:`~neurospatial.replay.compare_replay_methods` does
+    not compare it.
+    """
     from neurospatial.decoding import DecodingResult
+    from neurospatial.replay.methods import _environment_mismatch
 
     decoded = list(events)
     if not decoded:
@@ -1268,6 +1277,18 @@ def _decoded_events(events: Any, operation: str) -> list[DecodingResult]:
             raise ValueError(
                 f"{operation}: event {index} has no times; decode with times=."
             )
+        if not isinstance(env, Mapping):
+            mismatch = _environment_mismatch(env, event.env)
+            if mismatch is not None:
+                raise ValueError(
+                    _format_error(
+                        f"{operation}: event {index} was decoded on an "
+                        f"environment that differs from env in {mismatch}.",
+                        why="distances, jumps and positions would be read on "
+                        "bins the event was not decoded on",
+                        fix="pass the environment the events were decoded on",
+                    )
+                )
     return decoded
 
 
@@ -1813,7 +1834,7 @@ def _rank_order_values(
                 fix="pass the session's spike_times and the rate maps",
             )
         )
-    windows = _event_windows(events, dt, operation)
+    windows = _event_windows(env, events, dt, operation)
     if isinstance(encoding_models, Mapping):
         names: list[str | None] = list(encoding_models)
         if template is not None:
@@ -1906,7 +1927,10 @@ def _rank_order_values(
 
 
 def _event_windows(
-    events: Any, dt: float | None, operation: str
+    env: Environment | Mapping[str, Environment],
+    events: Any,
+    dt: float | None,
+    operation: str,
 ) -> list[tuple[float, float]]:
     """Each event's (start, stop): given as intervals, or a decode's window."""
     if isinstance(events, np.ndarray) or (
@@ -1918,7 +1942,7 @@ def _event_windows(
 
         windows = _checked_intervals(events, operation)
         return [(float(a), float(b)) for a, b in windows]
-    decoded = _decoded_events(events, operation)
+    decoded = _decoded_events(env, events, operation)
     if dt is None:
         raise ValueError(
             _format_error(
@@ -2112,7 +2136,7 @@ def shuffle_events(
         )
     from neurospatial.decoding import DecodingResult
 
-    decoded = _decoded_events(events, operation)
+    decoded = _decoded_events(env, events, operation)
     counts = _event_counts(spike_counts, decoded, operation)
     options = _null_options_of(null, null_options, operation)
     entropy = _entropy(rng)
