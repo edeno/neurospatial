@@ -4,6 +4,13 @@
 
 ### Replay scoring robustness
 
+- `detect_replay`, `compare_replay_methods` and `event_properties` compare
+  environments with the same check as decoding: coordinate system, units,
+  cells and connectivity. `event_properties` used to measure an event on
+  the `env` it was given without comparing it to the decode's environment,
+  and a track paired with a 2-D arena of as many bins failed with a
+  broadcasting error.
+
 - An event whose score is undefined, such as the R² of a decoded position
   that never changes, no longer stops `compare_replay_methods` for every
   event. `detect_replay` gives it no verdict (`is_replay` and every criterion
