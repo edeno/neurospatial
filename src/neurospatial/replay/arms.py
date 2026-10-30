@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from itertools import combinations
+from itertools import combinations, pairwise
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
@@ -49,9 +49,9 @@ class ArmReplayMethod:
         Standard deviation, in seconds, of the Gaussian that smooths each
         arm's peak posterior over time before the subregion is cut (Wu &
         Foster 2014: 10 ms).
-    min_time_bins : int
-        Fewest time bins in a single-arm subregion (Wu & Foster 2014: 5,
-        that is 50 ms).
+    min_duration : float
+        Shortest single-arm subregion, in seconds: its time bins times their
+        spacing (Wu & Foster 2014: 50 ms, five 10 ms time bins).
     min_coverage : float
         Share of an arm's bins that must be represented in its subregion,
         exceeded strictly (Wu & Foster 2014: 50%).
@@ -71,7 +71,7 @@ class ArmReplayMethod:
     reference: str
     peak_threshold: float = 5.0
     smoothing_sigma: float = 0.01
-    min_time_bins: int = 5
+    min_duration: float = 0.05
     min_coverage: float = 0.5
     min_abs_correlation: float = 0.5
     joint_min_abs_correlation: float = 0.5
@@ -83,7 +83,7 @@ class ArmReplayMethod:
         object.__setattr__(self, "decoding", MappingProxyType(dict(self.decoding)))
         object.__setattr__(self, "notes", tuple(self.notes))
         prefix = f"ArmReplayMethod {self.name!r}"
-        for name in ("peak_threshold", "smoothing_sigma"):
+        for name in ("peak_threshold", "smoothing_sigma", "min_duration"):
             value = getattr(self, name)
             if not (np.isfinite(value) and value >= 0):
                 raise ValueError(f"{prefix}: {name} must be >= 0, got {value!r}.")
@@ -95,16 +95,6 @@ class ArmReplayMethod:
             value = getattr(self, name)
             if not 0 <= value < 1:
                 raise ValueError(f"{prefix}: {name} must be in [0, 1), got {value!r}.")
-        cells = self.min_time_bins
-        if (
-            isinstance(cells, bool)
-            or not isinstance(cells, (int, np.integer))
-            or cells < 2
-        ):
-            raise ValueError(
-                f"{prefix}: min_time_bins must be an integer of at least 2, got "
-                f"{cells!r}."
-            )
 
     def __hash__(self) -> int:
         """Hash by name and reference; the decoding mapping is not hashable."""
@@ -119,7 +109,7 @@ class ArmReplayMethod:
                 self.reference,
                 self.peak_threshold,
                 self.smoothing_sigma,
-                self.min_time_bins,
+                self.min_duration,
                 self.min_coverage,
                 self.min_abs_correlation,
                 self.joint_min_abs_correlation,
@@ -147,7 +137,8 @@ def detect_arm_replay(
     from the first to the last time bin of their subregions, over the
     path from one arm's end through the junction to the other's: it is a
     replay when its correlation passes, both arms' subregions are long
-    and cover enough, and both run the same way along the path. A joint
+    and cover enough, and both arms' correlations have the joint
+    subregion's sign along the path. A joint
     replay is reported only when no other pair is one; single-arm replays
     only when no pair is one (Wu & Foster 2014).
 
@@ -162,8 +153,11 @@ def detect_arm_replay(
         Center time of each posterior row, in seconds, evenly spaced.
     arms : Mapping[str, NDArray[np.intp]]
         The bins of each arm, in order from the junction to the arm's end,
-        such as ``{"center": ..., "left": ..., "right": ...}``. Arms must
-        not share bins; bins in no arm are ignored.
+        such as ``{"center": ..., "left": ..., "right": ...}``. Consecutive
+        bins of an arm must be neighbors in ``env``, and each arm's first
+        bin must be nearer the other arms than its last. Arms must not
+        share bins; bins in no arm are ignored. Names may not contain
+        ``"+"`` or ``","``.
     arm_replay_method : ArmReplayMethod
         The method, for example ``neurospatial.replay.methods.WU_FOSTER_2014``.
 
@@ -174,17 +168,19 @@ def detect_arm_replay(
         (``"center,left"`` for single-arm replays of each), or pair
         (``"center+left"`` for a joint replay); ``score`` is that replay's
         absolute weighted correlation (the largest, for several arms).
-        ``criteria`` and ``values`` hold each arm's ``time bins``,
-        ``coverage`` and ``|wc|`` and each pair's ``|wc|`` and ``same
-        direction``, keyed like ``"left: coverage > 0.5"``.
+        ``criteria`` and ``values`` hold each arm's ``duration``,
+        ``coverage`` and ``|wc|`` and each pair's ``|wc|`` and ``same sign as
+        joint``, keyed like ``"left: coverage > 0.5"``.
 
     Raises
     ------
     ValueError
-        If ``posterior`` does not have one column per bin of ``env``, if
-        ``times`` are not evenly spaced and increasing, or if ``arms`` has
-        fewer than two arms, an arm with fewer than two bins, a bin out of
-        range or a bin in two arms.
+        If ``posterior`` does not have one column per bin of ``env`` or has
+        NaN, Inf or negative entries; if ``times`` are not evenly spaced and
+        increasing; or if ``arms`` has fewer than two arms, an arm with fewer
+        than two bins, a bin out of range or in two arms, an arm whose bins
+        are not neighbors in order or that runs toward the junction, or a
+        name that repeats or contains ``"+"`` or ``","``.
 
     Notes
     -----
@@ -193,7 +189,9 @@ def detect_arm_replay(
     path), weighted by the posterior (Wu & Foster 2014). A position bin is
     represented when its largest posterior over the subregion's time bins
     exceeds the threshold; coverage is the share of the arm's bins that
-    are represented.
+    are represented. The subregion surrounds the first time bin of the
+    largest smoothed peak, and the Gaussian is truncated at 4 standard
+    deviations.
 
     References
     ----------
@@ -248,6 +246,15 @@ def detect_arm_replay(
             f"{_OPERATION}: posterior must have shape (n_time_bins, {n_bins}), "
             f"one column per bin of env, got {posterior.shape}."
         )
+    if not np.all(np.isfinite(posterior)) or np.any(posterior < 0):
+        raise ValueError(
+            _format_error(
+                f"{_OPERATION}: posterior has NaN, Inf or negative entries.",
+                why="each row is a probability mass over the maze's bins",
+                fix="decode the event again, or drop rows that could not be "
+                "decoded and pass their times too",
+            )
+        )
     steps = np.diff(times)
     if (
         times.shape != (len(posterior),)
@@ -265,7 +272,7 @@ def detect_arm_replay(
                 fix="pass the decoding time grid of the event",
             )
         )
-    arm_bins = _validated_arms(arms, n_bins)
+    arm_bins = _validated_arms(arms, env)
     threshold = method.peak_threshold / n_bins
     sigma = method.smoothing_sigma / float(steps[0])
 
@@ -297,7 +304,10 @@ def detect_arm_replay(
             correlation = _pixel_correlation(block)
         local_correlation[name] = correlation
         checks = (
-            (ReplayCriterion(f"{name}: time bins", ">=", method.min_time_bins), n_time),
+            (
+                ReplayCriterion(f"{name}: duration", ">=", method.min_duration),
+                n_time * float(steps[0]),
+            ),
             (ReplayCriterion(f"{name}: coverage", ">", method.min_coverage), coverage),
             (
                 ReplayCriterion(f"{name}: |wc|", ">", method.min_abs_correlation),
@@ -330,6 +340,7 @@ def detect_arm_replay(
             same_way = bool(
                 np.sign(-local_correlation[first])
                 == np.sign(local_correlation[second])
+                == np.sign(correlation)
                 != 0
             )
         else:
@@ -340,8 +351,8 @@ def detect_arm_replay(
         )
         values[criterion.label] = float(abs(correlation))
         passes[criterion.label] = criterion.evaluate(abs(correlation), np.nan)
-        values[f"{pair}: same direction"] = float(same_way)
-        passes[f"{pair}: same direction"] = same_way
+        values[f"{pair}: same sign as joint"] = float(same_way)
+        passes[f"{pair}: same sign as joint"] = same_way
         if (
             passes[criterion.label]
             and same_way
@@ -368,8 +379,9 @@ def detect_arm_replay(
     )
 
 
-def _validated_arms(arms: Any, n_bins: int) -> dict[str, NDArray[np.intp]]:
-    """Each arm's bins as integer arrays, checked to be disjoint and in range."""
+def _validated_arms(arms: Any, env: Environment) -> dict[str, NDArray[np.intp]]:
+    """Each arm's bins: disjoint, in range, contiguous and running outward."""
+    n_bins = env.n_bins
     if not isinstance(arms, Mapping) or len(arms) < 2:
         raise ValueError(
             _format_error(
@@ -381,7 +393,14 @@ def _validated_arms(arms: Any, n_bins: int) -> dict[str, NDArray[np.intp]]:
         )
     checked: dict[str, NDArray[np.intp]] = {}
     seen: set[int] = set()
-    for name, bins in arms.items():
+    graph = env.connectivity
+    for raw_name, bins in arms.items():
+        name = str(raw_name)
+        if name in checked or "+" in name or "," in name:
+            raise ValueError(
+                f"{_OPERATION}: arm name {raw_name!r} repeats another or "
+                "contains '+' or ','; results join arm names with them."
+            )
         array = np.asarray(bins)
         if (
             array.ndim != 1
@@ -400,8 +419,39 @@ def _validated_arms(arms: Any, n_bins: int) -> dict[str, NDArray[np.intp]]:
                 f"{_OPERATION}: arm {name!r} repeats or shares bins "
                 f"{sorted(shared) or 'within itself'}; each bin belongs to one arm."
             )
+        gaps = [
+            (int(a), int(b))
+            for a, b in pairwise(array)
+            if not graph.has_edge(int(a), int(b))
+        ]
+        if gaps:
+            raise ValueError(
+                _format_error(
+                    f"{_OPERATION}: arm {name!r} has consecutive bins that are "
+                    f"not neighbors in env, such as {gaps[0]}.",
+                    why="an arm's bins are its positions in order along it",
+                    fix="list each arm's bins in order from the junction to its end",
+                )
+            )
         seen |= set(array.tolist())
-        checked[str(name)] = array.astype(np.intp)
+        checked[name] = array.astype(np.intp)
+    centers = np.asarray(env.bin_centers, dtype=np.float64)
+    for name, bins in checked.items():
+        others = np.concatenate(
+            [other[:1] for key, other in checked.items() if key != name]
+        )
+        near = np.linalg.norm(centers[others] - centers[bins[0]], axis=1).min()
+        far = np.linalg.norm(centers[others] - centers[bins[-1]], axis=1).min()
+        if near > far:
+            raise ValueError(
+                _format_error(
+                    f"{_OPERATION}: arm {name!r} runs toward the junction: its "
+                    "last bin is nearer the other arms than its first.",
+                    why="positions along each arm, and along a path through "
+                    "the junction, are read from the junction outward",
+                    fix=f"reverse the arm's bins, e.g. arms[{name!r}][::-1]",
+                )
+            )
     return checked
 
 
