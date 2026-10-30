@@ -388,7 +388,9 @@ def _interior_bins(env: Environment, depths: NDArray[np.float64]) -> NDArray[np.
     toward every neighbor; on a straight stretch away from a wall it grows
     by a full step. Measuring the inset against the local half-width, not
     the arena's widest point, keeps narrow arms beside a wide platform
-    (a radial-arm maze) in the layout.
+    (a radial-arm maze) in the layout. Boundary bins touch a wall, so they
+    are neither ridge bins nor in the layout, even a corner bin whose
+    neighbors are all boundary bins too.
     """
     from scipy.spatial import cKDTree
 
@@ -397,18 +399,19 @@ def _interior_bins(env: Environment, depths: NDArray[np.float64]) -> NDArray[np.
     u = np.concatenate([pairs[:, 0], pairs[:, 1]])
     v = np.concatenate([pairs[:, 1], pairs[:, 0]])
     steps = np.linalg.norm(points[u] - points[v], axis=1)
-    rising = np.zeros(env.n_bins, dtype=bool)
-    np.logical_or.at(rising, u, depths[v] >= depths[u] + 0.5 * steps)
-    ridge = np.flatnonzero(~rising)
+    excluded = np.zeros(env.n_bins, dtype=bool)
+    excluded[env.boundary_bins] = True
+    np.logical_or.at(excluded, u, depths[v] >= depths[u] + 0.5 * steps)
+    ridge = np.flatnonzero(~excluded)
     half_widths = np.zeros(env.n_bins)
     tree = cKDTree(points)
     for bin_index, members in zip(
         ridge, tree.query_ball_point(points[ridge], depths[ridge]), strict=True
     ):
         half_widths[members] = np.maximum(half_widths[members], depths[bin_index])
-    return np.flatnonzero(
-        (half_widths > 0) & (depths >= UNIFORM_WALL_INSET * half_widths)
-    )
+    interior = (half_widths > 0) & (depths >= UNIFORM_WALL_INSET * half_widths)
+    interior[env.boundary_bins] = False
+    return np.flatnonzero(interior)
 
 
 def _spread_bins(

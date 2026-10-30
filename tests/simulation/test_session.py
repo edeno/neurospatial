@@ -506,6 +506,42 @@ class TestSimulateSession:
             self._uniform_centers(env, 12, seed=1),
         )
 
+    @staticmethod
+    def _hexagonal_box(bin_size):
+        samples = np.random.default_rng(1).uniform(0, 100, (20000, 2))
+        return Environment.from_samples(
+            samples, bin_size=bin_size, layout="Hexagonal", units="cm"
+        )
+
+    @staticmethod
+    def _triangular_mesh_triangle():
+        from shapely.geometry import Polygon
+
+        from neurospatial.layout import create_layout
+
+        return Environment.from_layout(
+            create_layout(
+                "TriangularMesh",
+                boundary_polygon=Polygon([(0, 0), (100, 0), (50, 80)]),
+                point_spacing=3.0,
+            )
+        ).with_metadata(units="cm")
+
+    @pytest.mark.parametrize(
+        ("arena", "n_cells"),
+        [("hexagonal_5cm", 10), ("hexagonal_2cm", 30), ("triangular_mesh", 10)],
+    )
+    def test_uniform_centers_avoid_the_walls_of_any_layout(self, arena, n_cells):
+        """Corner bins whose neighbors all touch a wall are not field centers."""
+        env = {
+            "hexagonal_5cm": lambda: self._hexagonal_box(5.0),
+            "hexagonal_2cm": lambda: self._hexagonal_box(2.0),
+            "triangular_mesh": self._triangular_mesh_triangle,
+        }[arena]()
+        centers = self._uniform_centers(env, n_cells)
+        assert len(np.unique(centers, axis=0)) == n_cells
+        assert not np.isin(env.bin_at(centers), env.boundary_bins).any()
+
     def test_uniform_coverage_refuses_more_cells_than_bins(self):
         from shapely.geometry import box
 
