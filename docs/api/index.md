@@ -190,11 +190,13 @@ Detecting the candidate events (ripples, population bursts) is not included.
   `null_options=`); significant when every null run rejects the event
 - `rank_order_correlation()`, `rank_order_significance()`: Spearman
   correlation of field order and firing order in an event, with a
-  cell-order permutation test; needs no decoding
+  cell-order permutation test; `multi_field_cells="exclude"` leaves out
+  cells with several place fields; needs no decoding
 - `pairwise_order_score()`, `pairwise_order_significance()`: Firing order
   of every pair of spikes less than 80 ms apart against the cells'
   place-field order, summed (Gupta et al. 2010), with spike-time and
   cell-identity shuffles; cells with several fields take their best field;
+  `unit_groups=` compares only cells on different tetrodes or shanks;
   needs no decoding
 - `detect_replay()`, `compare_replay_methods()`: Apply published replay
   methods (`neurospatial.replay.methods`: Davidson 2009, Karlsson & Frank
@@ -480,7 +482,8 @@ Generate synthetic spatial data, neural activity, and spike trains for testing a
 - `simulation.examples`: Pre-configured example sessions
 - `simulation.replay`: `simulate_replay_event()`, a candidate replay event
   with a known path (sweep, stationary, jump or random), for comparing replay
-  methods
+  methods; `drop_fraction=` and `n_noise_spikes=` degrade it to measure
+  each method's sensitivity (Tingley & Peyrache 2020)
 
 **Key Classes:**
 

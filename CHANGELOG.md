@@ -2,6 +2,45 @@
 
 ## [Unreleased]
 
+### Replay checks from Tingley & Peyrache (2020)
+
+**New**
+
+- `simulate_replay_event(..., drop_fraction=0.0, n_noise_spikes=0)`:
+  degrade a simulated event as in Tingley & Peyrache's Fig. 4. A fraction
+  of the rate-map spikes is removed, chosen without replacement from all
+  cells together, then noise spikes are added to uniformly drawn cells at
+  uniform times. Each draws from its own seeded stream, and the defaults
+  leave the event unchanged bit for bit. `ReplayEventSimulation` records
+  `drop_fraction`, `n_dropped_spikes` and `n_noise_spikes`, also in
+  `summary()`.
+- `pairwise_order_score`, `pairwise_order_significance` and
+  `detect_pairwise_order_replay` take `unit_groups=`, one group (tetrode or
+  shank) per cell: only pairs of spikes from cells in different groups are
+  compared, the rule of `explained_variance_reactivation(unit_groups=)`, so
+  a burst split across two clusters of one tetrode cannot score as a
+  sequence. Each spike train keeps its group in both shuffles, and
+  `n_pairs` counts only the compared pairs.
+- `rank_order_correlation` and `rank_order_significance` take
+  `multi_field_cells="keep" | "exclude"` and `place_fields=`. Tingley &
+  Peyrache note that cells with several place fields have no single place
+  in the order and are typically excluded. `"exclude"` leaves out each cell
+  with more than one field, found by `detect_place_fields` with the rate
+  result's `bandwidth`, or given as `place_fields=` (required for rate maps
+  given as an array). `RankOrderResult` records `multi_field_cells` and
+  `excluded_units`, and `summary()` reports `n_excluded_cells`. The default
+  `"keep"` leaves results unchanged.
+
+**Changed**
+
+- `rank_order_correlation` notes that Tingley & Peyrache's 5-12% false
+  positives are for random 10-cell sequences in sets of 100 events and
+  come from MATLAB's parametric p-value (about 5.4% per event at 10 cells,
+  8.3% at 4-5, 33% at 3); an exact permutation test stays at or below 5%.
+- `neurospatial.simulation.replay` no longer cites Tingley & Peyrache, or
+  Takigawa et al. (2024), for stationary or scattered control events,
+  which neither studied.
+
 ### Event-based reactivation recipes
 
 Several labs count spikes per sharp-wave ripple (SWR) or theta cycle, or

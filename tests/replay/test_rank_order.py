@@ -12,6 +12,7 @@ from numpy.testing import assert_allclose
 from scipy import stats
 
 from neurospatial import Environment
+from neurospatial.encoding import SpatialRatesResult, detect_place_fields
 from neurospatial.replay import (
     RankOrderResult,
     detect_rank_order_replay,
@@ -459,6 +460,165 @@ class TestSignificance:
                 alternative="above",  # type: ignore[arg-type]
                 n_shuffles=9,
             )
+
+
+class TestMultiFieldCells:
+    """Cells with several place fields left out of the rank-order template."""
+
+    @pytest.fixture
+    def two_field(self, track):
+        """Cell 3 also fires at 100 cm, and fires there in the event."""
+        env, rates, _ = track
+        x = env.bin_centers[:, 0]
+        rates = rates.copy()
+        rates[3] += 15.0 * np.exp(-0.5 * ((x - 100.0) / 8.0) ** 2)
+        order = [0, 1, 2, 4, 5, 6, 3, 7]
+        place_fields = [detect_place_fields(env, rate, bandwidth=5.0) for rate in rates]
+        return env, rates, _in_field_order(8, order=order), place_fields
+
+    def test_the_two_field_cell_is_left_out(self, two_field):
+        env, rates, trains, place_fields = two_field
+        n_fields = [len(cell_fields) for cell_fields in place_fields]
+        assert n_fields == [1, 1, 1, 2, 1, 1, 1, 1]
+        kept = rank_order_correlation(env, trains, INTERVAL, rates)
+        excluded = rank_order_correlation(
+            env,
+            trains,
+            INTERVAL,
+            rates,
+            multi_field_cells="exclude",
+            place_fields=place_fields,
+        )
+        medians = np.array([np.median(train) for train in trains])
+        peaks = env.bin_centers[np.argmax(rates, axis=1), 0]
+        others = np.array([0, 1, 2, 4, 5, 6, 7])
+        assert kept.score == pytest.approx(stats.spearmanr(peaks, medians).statistic)
+        assert kept.score < 0.9
+        assert excluded.score == pytest.approx(
+            stats.spearmanr(peaks[others], medians[others]).statistic
+        )
+        assert excluded.score == pytest.approx(1.0)
+        np.testing.assert_array_equal(excluded.excluded_units, [3])
+        np.testing.assert_array_equal(excluded.active_units, others)
+        assert (kept.multi_field_cells, kept.excluded_units.size) == ("keep", 0)
+        assert excluded.summary()["multi_field_cells"] == "exclude"
+        assert excluded.summary()["n_excluded_cells"] == 1
+
+    def test_a_silent_two_field_cell_is_still_listed(self, two_field):
+        env, rates, trains, place_fields = two_field
+        trains[3] = np.empty(0)
+        result = rank_order_correlation(
+            env,
+            trains,
+            INTERVAL,
+            rates,
+            multi_field_cells="exclude",
+            place_fields=place_fields,
+        )
+        np.testing.assert_array_equal(result.excluded_units, [3])
+        assert result.n_active_cells == 7
+
+    def test_a_cell_without_a_detected_field_is_kept(self, two_field):
+        env, rates, trains, place_fields = two_field
+        place_fields = list(place_fields)
+        place_fields[5] = []
+        result = rank_order_correlation(
+            env,
+            trains,
+            INTERVAL,
+            rates,
+            multi_field_cells="exclude",
+            place_fields=place_fields,
+        )
+        assert 5 in result.active_units
+        np.testing.assert_array_equal(result.excluded_units, [3])
+
+    def test_rate_result_detects_fields_with_its_bandwidth(self, two_field):
+        """A 10 cm bump on cell 1 is a field without smoothing, not at 5 cm."""
+        env, rates, trains, _ = two_field
+        x = env.bin_centers[:, 0]
+        rates = rates.copy()
+        rates[1, np.isin(x, [87.5, 92.5])] += 10.0
+        unsmoothed = [detect_place_fields(env, r, bandwidth=0.0) for r in rates]
+        smoothed = [detect_place_fields(env, r, bandwidth=5.0) for r in rates]
+        assert len(unsmoothed[1]) == 2
+        assert len(smoothed[1]) == 1
+        result = SpatialRatesResult(
+            firing_rates=rates,
+            occupancy=np.ones(env.n_bins),
+            env=env,
+            method="binned",
+            bandwidth=5.0,
+            min_occupancy=0.5,
+        )
+        detected = rank_order_correlation(
+            env, trains, INTERVAL, result, multi_field_cells="exclude"
+        )
+        np.testing.assert_array_equal(detected.excluded_units, [3])
+        given = rank_order_correlation(
+            env,
+            trains,
+            INTERVAL,
+            rates,
+            multi_field_cells="exclude",
+            place_fields=smoothed,
+        )
+        assert detected.score == given.score
+
+    def test_shuffles_leave_out_the_excluded_cells(self, two_field):
+        """Excluding a cell equals giving it no field, shuffles included."""
+        env, rates, trains, place_fields = two_field
+        excluded = rank_order_significance(
+            env,
+            trains,
+            INTERVAL,
+            rates,
+            multi_field_cells="exclude",
+            place_fields=place_fields,
+            n_shuffles=99,
+            rng=7,
+        )
+        without_field = rates.copy()
+        without_field[3] = np.nan
+        by_hand = rank_order_significance(
+            env, trains, INTERVAL, without_field, n_shuffles=99, rng=7
+        )
+        assert_allclose(excluded.shuffle.null_scores, by_hand.shuffle.null_scores)
+        assert excluded.p_value == by_hand.p_value
+        np.testing.assert_array_equal(excluded.observed.excluded_units, [3])
+
+    def test_excluded_units_are_read_only_and_pickle(self, two_field):
+        env, rates, trains, place_fields = two_field
+        result = rank_order_correlation(
+            env,
+            trains,
+            INTERVAL,
+            rates,
+            multi_field_cells="exclude",
+            place_fields=place_fields,
+        )
+        with pytest.raises(ValueError, match="read-only"):
+            result.excluded_units[0] = 1
+        for clone in (pickle.loads(pickle.dumps(result)), copy.deepcopy(result)):
+            np.testing.assert_array_equal(clone.excluded_units, [3])
+            assert not clone.excluded_units.flags.writeable
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"multi_field_cells": "drop"}, "multi_field_cells must be one of"),
+            ({"place_fields": [[1]] * 8}, "multi_field_cells='keep'"),
+            ({"multi_field_cells": "exclude"}, "needs place_fields"),
+            (
+                {"multi_field_cells": "exclude", "place_fields": [[1]] * 7},
+                "place_fields has 7 entries",
+            ),
+        ],
+    )
+    def test_refusals(self, track, kwargs, match):
+        env, rates, _ = track
+        with pytest.raises(ValueError, match=match):
+            rank_order_correlation(env, _in_field_order(8), INTERVAL, rates, **kwargs)
 
 
 def test_permutation_p_value_counts_tied_correlations():

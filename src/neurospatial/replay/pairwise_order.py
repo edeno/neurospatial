@@ -75,7 +75,8 @@ class PairwiseOrderResult(ReadOnlyArraysMixin, ResultMixin):
         along the track, ``"backward"`` the reverse.
     n_pairs : int
         Pairs of spikes the score compares: from two different cells with
-        fields, less than ``max_time_lag`` apart.
+        fields, less than ``max_time_lag`` apart, and from different
+        ``unit_groups`` when groups are given.
     n_active_cells : int
         Cells that fired in the event, with or without a field.
     scored_units : NDArray[np.intp], shape (n_scored_cells,)
@@ -277,6 +278,7 @@ def pairwise_order_score(
     field_threshold: float = 0.05,
     merge_gap_bins: int = 1,
     field_center: Literal["rate_weighted", "peak"] = "rate_weighted",
+    unit_groups: NDArray[Any] | Sequence[Any] | None = None,
 ) -> PairwiseOrderResult:
     """Pairwise firing order of nearby spikes in an event (Gupta et al. 2010).
 
@@ -322,6 +324,11 @@ def pairwise_order_score(
     field_center : {"rate_weighted", "peak"}, default="rate_weighted"
         Each field's position: its rate-weighted center (the paper's
         "center", not defined there) or its peak bin.
+    unit_groups : array-like, shape (n_cells,), optional
+        Group of each cell, such as its tetrode or shank, in the order of
+        ``spike_times``. Only pairs of spikes from cells in different groups
+        are compared, the rule of
+        ``explained_variance_reactivation(unit_groups=)``. See Notes.
 
     Returns
     -------
@@ -337,8 +344,9 @@ def pairwise_order_score(
         ``spike_times`` and one column per bin, has negative rates, or is a
         rate result computed on another environment, if ``interval`` is not
         a finite ``(start, stop)`` with ``start < stop``, if an option is
-        out of range, or if the active cells' fields give more than 65,536
-        combinations of one field per cell to search.
+        out of range, if ``unit_groups`` does not hold one group per cell,
+        or if the active cells' fields give more than 65,536 combinations of
+        one field per cell to search.
 
     See Also
     --------
@@ -364,11 +372,23 @@ def pairwise_order_score(
     scanning for events, and dropped the limit when testing them; no limit
     is applied here.
 
+    A burst whose changing waveforms are sorted into two units on one
+    tetrode fires in a fixed order and can look like a sequence. Tingley &
+    Peyrache (2020, supplement) note that only about 5% of cell pairs show
+    such an order asymmetry (citing Skaggs & McNaughton 1996), so rare
+    clustering errors can drive the result (citing Quirk & Wilson 1999),
+    and suggest comparing only cells on separate tetrodes or shanks: pass
+    ``unit_groups=``.
+
     References
     ----------
     Gupta, A. S., van der Meer, M. A. A., Touretzky, D. S., & Redish, A. D.
     (2010). Hippocampal replay is not a simple function of experience.
     *Neuron*, 65(5), 695-705.
+
+    Tingley, D., & Peyrache, A. (2020). On the methods for reactivation and
+    replay analysis. *Philosophical Transactions of the Royal Society B*,
+    375(1799), 20190231.
 
     Examples
     --------
@@ -393,6 +413,14 @@ def pairwise_order_score(
     >>> late = [np.array([1.00]), np.array([1.01]), np.array([1.11])]
     >>> pairwise_order_score(env, late, (1.0, 1.2), rates).score
     1
+
+    With cells 0 and 1 on one tetrode, only their pairs with cell 2 count:
+
+    >>> result = pairwise_order_score(
+    ...     env, spike_times, (1.0, 1.1), rates, unit_groups=["t1", "t1", "t2"]
+    ... )
+    >>> result.score, result.n_pairs
+    (2, 2)
     """
     operation = "pairwise_order_score()"
     _check_direction(operation, direction)
@@ -411,7 +439,7 @@ def pairwise_order_score(
         field_center=field_center,
         operation=operation,
     )
-    event = _event_spikes(spike_times, interval, len(fields), operation)
+    event = _event_spikes(spike_times, interval, len(fields), operation, unit_groups)
     return _observed(event, fields, direction, max_time_lag, operation)
 
 
@@ -428,6 +456,7 @@ def pairwise_order_significance(
     field_center: Literal["rate_weighted", "peak"] = "rate_weighted",
     nulls: Sequence[str] = _NULLS,
     n_shuffles: int = 300,
+    unit_groups: NDArray[Any] | Sequence[Any] | None = None,
     rng: np.random.Generator | int | None = None,
 ) -> PairwiseOrderSignificanceResult:
     """Test an event's pairwise-order score against shuffles (Gupta et al. 2010).
@@ -459,6 +488,11 @@ def pairwise_order_significance(
     n_shuffles : int, default=300
         Shuffles per null (Gupta et al. 2010: 300). A p-value is at least
         ``1 / (n_shuffles + 1)``.
+    unit_groups : array-like, shape (n_cells,), optional
+        As for :func:`pairwise_order_score`. Each spike train keeps its
+        group in the shuffles: after a spike-time permutation, a pair is
+        compared when the cells its spikes now belong to are in different
+        groups; the cell-identity shuffle moves fields, not spike trains.
     rng : np.random.Generator, int, or None, default=None
         Random number generator or seed. Each null draws from its own
         stream, so its shuffles do not depend on the other nulls.
@@ -535,7 +569,7 @@ def pairwise_order_significance(
         field_center=field_center,
         operation=operation,
     )
-    event = _event_spikes(spike_times, interval, len(fields), operation)
+    event = _event_spikes(spike_times, interval, len(fields), operation, unit_groups)
     return _significance(
         event,
         fields,
@@ -556,6 +590,7 @@ def detect_pairwise_order_replay(
     *,
     pairwise_order_method: PairwiseOrderMethod,
     template: str | None = None,
+    unit_groups: NDArray[Any] | Sequence[Any] | None = None,
     rng: np.random.Generator | int | None = None,
 ) -> ReplayDetectionResult:
     """Apply a published pairwise-order method to one candidate event.
@@ -588,6 +623,10 @@ def detect_pairwise_order_replay(
     template : str or None
         With a mapping of rate maps, test only this template; None tests
         every template.
+    unit_groups : array-like, shape (n_cells,), optional
+        Group of each cell, such as its tetrode or shank; only pairs of
+        spikes from cells in different groups are compared (see
+        :func:`pairwise_order_score`).
     rng : np.random.Generator, int, or None
         Random number generator or seed. Each (template, direction) test
         draws from its own stream, derived from ``rng`` and the test's
@@ -698,7 +737,9 @@ def detect_pairwise_order_replay(
             operation=operation,
         )
         if event is None:
-            event = _event_spikes(spike_times, interval, len(fields), operation)
+            event = _event_spikes(
+                spike_times, interval, len(fields), operation, unit_groups
+            )
         elif len(fields) != event.n_cells:
             raise ValueError(
                 f"{operation}: template {name!r} has {len(fields)} rate maps "
@@ -746,13 +787,15 @@ class _EventSpikes:
     """The spikes of one event, in time order.
 
     ``cell`` maps each spike to its position among ``active_units``, the
-    cells (rows of the rate maps) that fired in the event.
+    cells (rows of the rate maps) that fired in the event. ``groups`` holds
+    each active cell's ``unit_groups`` entry, or None without groups.
     """
 
     times: NDArray[np.float64]  # (n_spikes,), sorted
     cell: NDArray[np.intp]  # (n_spikes,)
     active_units: NDArray[np.intp]  # (n_active,)
     n_cells: int  # cells given, active or not
+    groups: NDArray[Any] | None  # (n_active,)
 
 
 def _check_direction(operation: str, direction: str) -> None:
@@ -862,7 +905,11 @@ def _place_fields(
 
 
 def _event_spikes(
-    spike_times: Any, interval: Any, n_cells: int, operation: str
+    spike_times: Any,
+    interval: Any,
+    n_cells: int,
+    operation: str,
+    unit_groups: NDArray[Any] | Sequence[Any] | None = None,
 ) -> _EventSpikes:
     from neurospatial._spikes import as_spike_trains
 
@@ -878,6 +925,20 @@ def _event_spikes(
                 "same order",
             )
         )
+    groups = None
+    if unit_groups is not None:
+        groups = np.asarray(unit_groups)
+        if groups.ndim != 1 or groups.size != n_cells:
+            raise ValueError(
+                _format_error(
+                    f"{operation}: unit_groups must hold one group per cell; got "
+                    f"shape {groups.shape} for {n_cells} cells.",
+                    why="a pair of spikes is compared when its two cells are in "
+                    "different groups, so every cell needs a group",
+                    fix="pass the tetrode or shank of each cell, in the order of "
+                    "spike_times",
+                )
+            )
     in_event = [train[(train >= start) & (train < stop)] for train in trains]
     active = np.array(
         [unit for unit, spikes in enumerate(in_event) if spikes.size], dtype=np.intp
@@ -894,6 +955,7 @@ def _event_spikes(
         cell=cell[order].astype(np.intp),
         active_units=active,
         n_cells=len(trains),
+        groups=None if groups is None else groups[active],
     )
 
 
@@ -915,6 +977,19 @@ def _lag_pairs(
     gaps = times[second] - times[first]
     keep = gaps < max_time_lag
     return first[keep], second[keep], np.sign(gaps[keep])
+
+
+def _cross_group(
+    groups: NDArray[Any] | None,
+    cell: NDArray[np.intp],
+    first: NDArray[np.intp],
+    second: NDArray[np.intp],
+) -> NDArray[np.bool_]:
+    """Whether each pair's two spikes come from cells in different groups."""
+    if groups is None:
+        return np.ones(first.size, dtype=bool)
+    different: NDArray[np.bool_] = groups[cell[first]] != groups[cell[second]]
+    return different
 
 
 def _order_weights(
@@ -993,7 +1068,8 @@ def _observed(
     n_active = event.active_units.size
     active_fields = [fields[unit] for unit in event.active_units]
     first, second, signs = _lag_pairs(event.times, max_time_lag)
-    weights = _order_weights(first, second, signs, event.cell, n_active)
+    compared = _cross_group(event.groups, event.cell, first, second)
+    weights = _order_weights(first, second, signs * compared, event.cell, n_active)
     score, positions = _searched(
         weights, active_fields, 1.0 if direction == "forward" else -1.0, operation
     )
@@ -1003,7 +1079,7 @@ def _observed(
     return PairwiseOrderResult(
         score=score,
         direction=direction,
-        n_pairs=int(np.sum((a != b) & has_field[a] & has_field[b])),
+        n_pairs=int(np.sum((a != b) & has_field[a] & has_field[b] & compared)),
         n_active_cells=int(n_active),
         scored_units=event.active_units[scored],
         assigned_positions=positions[scored],
@@ -1068,11 +1144,18 @@ def _significance(
             first, second, signs = _lag_pairs(event.times[scored], max_time_lag)
             draws = np.argsort(generator.random((n_shuffles, cell.size)), axis=1)
             for k, draw in enumerate(draws):
-                weights = _order_weights(first, second, signs, cell[draw], n_active)
+                shuffled_cell = cell[draw]
+                compared = _cross_group(event.groups, shuffled_cell, first, second)
+                weights = _order_weights(
+                    first, second, signs * compared, shuffled_cell, n_active
+                )
                 null_scores[k] = _searched(weights, active_fields, sign, operation)[0]
         else:
             first, second, signs = _lag_pairs(event.times, max_time_lag)
-            weights = _order_weights(first, second, signs, event.cell, n_active)
+            compared = _cross_group(event.groups, event.cell, first, second)
+            weights = _order_weights(
+                first, second, signs * compared, event.cell, n_active
+            )
             draws = np.argsort(generator.random((n_shuffles, len(fields))), axis=1)
             for k, draw in enumerate(draws):
                 shuffled = [fields[draw[unit]] for unit in event.active_units]
