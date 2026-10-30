@@ -98,6 +98,9 @@ default lap route all changed.
   mixed session passes when its place cells are recovered; before, they
   raised. A place unit that cannot be evaluated still blocks a pass, and a
   selection with no evaluated place unit cannot pass.
+- `SimulationValidationResult.max_center_error` holds a fixed center-error
+  limit, so `report()` states it even for an empty selection, which used to
+  raise `IndexError`.
 - `SimulationSession` compares and hashes by identity, like the models.
   `==` between two sessions used to raise, because it compared their arrays
   element by element.

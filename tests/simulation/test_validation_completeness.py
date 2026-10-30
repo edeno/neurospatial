@@ -144,6 +144,21 @@ def test_empty_selection_cannot_pass():
     assert result.unit_status == result.skip_reasons == ()
 
 
+def test_report_of_an_empty_selection_states_the_fixed_limit():
+    with pytest.warns(UserWarning, match="0 selected"):
+        result = validate_simulation(_session(), unit_ids=[], max_center_error=5.0)
+    assert result.max_center_error == 5.0
+    report = result.report()
+    assert "Threshold: 5.00" in report
+    assert "Overall: FAILED" in report
+
+
+def test_default_rule_has_no_fixed_limit():
+    result = validate_simulation(_session(), method="binned", bandwidth=0.0)
+    assert result.max_center_error is None
+    assert "x each cell's true field width" in result.report()
+
+
 def _with_border_unit(session):
     """``session`` plus a second unit, label 3, whose ground truth is a border cell."""
     return replace(

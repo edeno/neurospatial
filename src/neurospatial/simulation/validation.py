@@ -105,6 +105,9 @@ class SimulationValidationResult(ReadOnlyArraysMixin, ResultMixin):
         How ``max_center_errors`` was set: ``'1.5 x true field width'`` by
         default, or ``'fixed'`` for a ``max_center_error`` passed by the
         caller.
+    max_center_error : float | None
+        The fixed center-error limit passed by the caller, in environment
+        units, or None when each unit's limit follows its field width.
     method : str
         Rate-map estimator used for the detected fields.
     units : str | None
@@ -122,6 +125,7 @@ class SimulationValidationResult(ReadOnlyArraysMixin, ResultMixin):
     skip_reasons: tuple[str | None, ...]
     min_correlation: float
     center_error_rule: str
+    max_center_error: float | None
     method: str
     units: str | None
     n_session_units: int
@@ -232,8 +236,8 @@ class SimulationValidationResult(ReadOnlyArraysMixin, ResultMixin):
         )
         threshold = (
             f"{CENTER_ERROR_WIDTHS:g} x each cell's true field width"
-            if self.center_error_rule != "fixed"
-            else f"{self.max_center_errors[0]:.2f}"
+            if self.max_center_error is None
+            else f"{self.max_center_error:.2f}"
         )
         error_std = _nan_stat(self.center_errors, np.std)
         corr_std = _nan_stat(self.correlations, np.std)
@@ -614,6 +618,7 @@ def validate_simulation(
         center_error_rule="fixed"
         if max_center_error is not None
         else f"{CENTER_ERROR_WIDTHS:g} x true field width",
+        max_center_error=None if max_center_error is None else float(max_center_error),
         method=method,
         units=env.units,
         n_session_units=len(session.unit_ids),
