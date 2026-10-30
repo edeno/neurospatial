@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Line search options
+
+- `detect_trajectory_radon(..., wrap=True)` searches lines on a closed-loop
+  track, such as a circular or square track (Muessig et al. 2019): positions
+  are read along the track modulo the loop's length, so a line and its band
+  wrap across the seam where the end of the track meets its start, and a
+  sweep across the seam scores as it would anywhere else on the loop. The
+  track must be a loop built with `Environment.from_graph`, whose last
+  segment in `edge_order` ends at the node where the first starts; an open
+  track, a band of half the loop or more, and `line_ends="on_track"` are
+  refused.
+- `detect_trajectory_radon(..., line_ends="on_track")` searches only lines
+  that are on the track at the event's first and last time bins (Liu et al.
+  2023, after `FindReplayScore` of ayalab1/neurocode), so the speed is
+  bounded by the track's length over the event's duration; `max_speed=None`
+  then sets no further bound. Band beyond an end of the track holds the
+  time bin's median posterior density, and each time bin's band mass is
+  capped at 1. The default, `line_ends="any"`, is the search of Davidson et
+  al. (2009) and is unchanged.
+- `replay_significance` takes both options in `score_options` and scores
+  shuffles with the same line family.
+
 ### Replay scoring robustness
 
 - Rank-order field peaks and centers ignore bins outside a rate result's
