@@ -617,6 +617,36 @@ class TestDetection:
         assert backward.is_replay and backward.score < 0
         assert forward.p_value == pytest.approx(1 / 301)
         assert forward.n_shuffles_used == 300
+        # z-scores are signed like the score.
+        assert set(forward.z_scores) == set(GUPTA_2010.nulls)
+        assert all(z > 0 for z in forward.z_scores.values())
+        assert all(z < 0 for z in backward.z_scores.values())
+
+    def test_backward_z_scores_are_those_of_the_signed_score(self, track):
+        rates = _rates(track, [[b] for b in range(0, 20, 2)])
+        trains = [np.array([1.09 - 0.01 * k]) for k in range(10)]
+        method = dataclasses.replace(
+            GUPTA_2010, name="backward", directions=("backward",), n_shuffles=50
+        )
+        result = detect_pairwise_order_replay(
+            track, trains, (1.0, 1.1), rates, pairwise_order_method=method, rng=9
+        )
+        tested = pairwise_order_significance(
+            track,
+            trains,
+            (1.0, 1.1),
+            rates,
+            direction="backward",
+            n_shuffles=50,
+            rng=template_stream(9, "backward"),
+        )
+        assert result.score == -tested.observed.score
+        for null, test in tested.shuffles.items():
+            # (-score - mean(-null)) / std(null) is minus the backward z.
+            signed = -test.null_scores
+            expected = (result.score - signed.mean()) / signed.std()
+            assert result.z_scores[null] == pytest.approx(expected)
+            assert result.z_scores[null] == -test.z_score
 
     def test_random_events_are_rarely_replay(self):
         """Per test about alpha; over two directions at most about 2 alpha."""
@@ -699,6 +729,9 @@ class TestDetection:
         )
         assert result.p_value == expected.p_value
         assert result.score == expected.observed.score
+        assert result.z_scores == {
+            null: test.z_score for null, test in expected.shuffles.items()
+        }
 
     def test_fewer_than_three_active_cells_are_not_replay(self, track):
         rates = _rates(track, [[1], [2], [3]])
@@ -795,6 +828,9 @@ class TestCompare:
                 expected.p_value,
                 expected.template,
             )
+            # One z-score column per null.
+            for null in GUPTA_2010.nulls:
+                assert row[f"z_score[{null}]"] == expected.z_scores[null]
 
     def test_a_search_too_large_is_an_error_row(self, track):
         rates = _rates(track, [[2 * k, 2 * k + 10] for k in range(5)] * 4)

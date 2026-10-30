@@ -584,7 +584,9 @@ computes this score and applies the published test.
   `GUPTA_2010`: every template (pass a mapping of rate maps, one per lap)
   is tested forward and backward, and the test with the smallest p-value
   is reported, without a correction, as in the paper; the score is negative
-  for a backward sequence. At least 3 active cells. The recipe's notes list
+  for a backward sequence, and so are its `z_scores`, one per null (the
+  `z_score[...]` columns of `compare_replay_methods`). At least 3 active
+  cells. The recipe's notes list
   the readings taken where the paper is silent and the steps not applied
   (the session scan for events, the 80 cm detection limit, which the paper
   dropped for significance, and the merging of central-stem replays).

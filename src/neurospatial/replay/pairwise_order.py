@@ -644,8 +644,11 @@ def detect_pairwise_order_replay(
         or minus the backward score, so a backward sequence scores below
         zero. ``p_value`` is the largest over the method's nulls,
         ``template`` the tested template (None for one set of rate maps),
-        and ``criteria`` the active-cell rule, counted over every cell
-        given.
+        ``criteria`` the active-cell rule, counted over every cell given,
+        and ``z_scores`` the score's z-score against each null's shuffles,
+        keyed by null name and signed like ``score``: positive for a
+        forward sequence that beats its shuffles, negative for a backward
+        one.
 
     Raises
     ------
@@ -727,7 +730,7 @@ def detect_pairwise_order_replay(
     }
     streams = _template_streams(rng, list(labels.values()))
     event = None
-    best: tuple[float, float, str | None] | None = None
+    best: tuple[float, float, str | None, dict[str, float]] | None = None
     for name in names:
         if isinstance(env, Mapping):
             if name is None or name not in env:
@@ -771,11 +774,15 @@ def detect_pairwise_order_replay(
                 operation,
             )
             sign = 1.0 if direction == "forward" else -1.0
-            candidate = (tested.p_value, sign * tested.observed.score, name)
+            # The z-score of the signed score against the signed shuffles.
+            z_scores = {
+                null: sign * test.z_score for null, test in tested.shuffles.items()
+            }
+            candidate = (tested.p_value, sign * tested.observed.score, name, z_scores)
             if best is None or candidate[0] < best[0]:
                 best = candidate
     assert best is not None and event is not None
-    p_value, score, chosen = best
+    p_value, score, chosen, z_scores = best
     n_active = float(event.active_units.size)
     criterion = method.criteria[0]
     passes = {criterion.label: criterion.evaluate(n_active, np.nan)}
@@ -788,6 +795,7 @@ def detect_pairwise_order_replay(
         values={criterion.label: n_active},
         template=chosen,
         n_shuffles_used=method.n_shuffles,
+        z_scores=z_scores,
     )
 
 
