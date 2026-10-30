@@ -46,6 +46,7 @@ from neurospatial.replay.significance import (
     _ROW_MOVING_NULLS,
 )
 from neurospatial.replay.trajectory import (
+    _SCORE_DECIMALS,
     detect_trajectory_radon,
     fit_isotonic_trajectory,
     fit_linear_trajectory,
@@ -731,8 +732,18 @@ class ReplayMethod:
             options["n_samples"] = options.pop("n_samples_per_time_bin")
         try:
             signature = inspect.signature(self.score)
-        except (TypeError, ValueError):  # no signature to check against
-            return
+        except (TypeError, ValueError) as error:
+            raise TypeError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: cannot read the signature of "
+                    f"score {self.score!r} ({error}).",
+                    why="the signature tells which options the score takes and "
+                    "whether it takes the seeded rng of the shuffle test",
+                    fix="wrap the score in a Python function, def score(env, "
+                    "posterior, times, **options), with an rng keyword if it "
+                    "draws random numbers",
+                )
+            ) from error
         try:
             signature.bind_partial(None, None, None, **options)
         except TypeError as error:
@@ -1034,6 +1045,13 @@ class ReplayDetectionResult(ResultMixin):
         return values
 
 
+def _verdict_uses_score(method: ReplayMethod) -> bool:
+    """Whether a method's verdict reads its score: through nulls or a criterion."""
+    return method.score is not None and (
+        bool(method.nulls) or any(c.quantity == "score" for c in method.criteria)
+    )
+
+
 def _environment_mismatch(first: Environment, second: Environment) -> str | None:
     """How two environments' bins or connectivity differ, or None if they agree."""
     from neurospatial.environment import _environment_differences
@@ -1167,6 +1185,7 @@ def detect_replay(
     from neurospatial.decoding import JointDecodingResult
     from neurospatial.replay.criteria import template_fractions, trajectory_metrics
     from neurospatial.replay.significance import (
+        _UndefinedNullError,
         _UndefinedScoreError,
         replay_significance,
     )
@@ -1482,6 +1501,19 @@ def detect_replay(
             )
         except _UndefinedScoreError:
             pass  # The event's score is NaN: no verdict, below.
+        except _UndefinedNullError as error:
+            # The score is defined but a null left no shuffle to compare with.
+            return ReplayDetectionResult(
+                method=replay_method.name,
+                is_replay=False,
+                score=error.score,
+                p_value=np.nan,
+                criteria={c.label: False for c in replay_method.criteria},
+                values={c.label: np.nan for c in replay_method.criteria},
+                segments=segments,
+                segment=segment,
+                template=template,
+            )
         else:
             score, p_value = float(result.observed.score), float(result.p_value)
             n_shuffles_used = min(result.n_shuffles_used.values())
@@ -1492,7 +1524,7 @@ def detect_replay(
             scored = np.where(counts.sum(axis=1)[:, None] == 0, 0.0, posterior)
         score = float(replay_method.score(track_env, scored, times, **options).score)
 
-    if replay_method.score is not None and not np.isfinite(score):
+    if _verdict_uses_score(replay_method) and not np.isfinite(score):
         # An undefined score (such as R² of a decoded position that does not
         # change) gives no verdict rather than a failed or passed criterion.
         return ReplayDetectionResult(
@@ -1962,7 +1994,9 @@ def _rank_order_verdict(
             # Ties in rho differ by rounding between the two formulas.
             p_value = float(
                 compute_shuffle_pvalue(
-                    round(score, 12), np.round(null, 12), tail=method.alternative
+                    round(score, _SCORE_DECIMALS),
+                    np.round(null, _SCORE_DECIMALS),
+                    tail=method.alternative,
                 )
             )
     n_templates = int(
@@ -2236,10 +2270,14 @@ def compare_replay_methods(
         joint decodes, for rank-order methods given a mapping of rate maps
         and for the arm or pair an arm method found, and ``error``.
         ``error`` says why an event has no verdict, and ``is_replay`` and
-        every ``passes[...]`` of the method are then False: fewer than two time bins left to score (``"fewer than two
-        time bins with spikes to score"`` for a method that drops or zeroes
-        time bins without spikes), an undefined score (for example the R²
-        of a decoded position that does not change; score and p-value are
+        every ``passes[...]`` of the method are then False: fewer than two
+        time bins left to score (``"fewer than two time bins with spikes to
+        score"`` for a method that drops or zeroes time bins without
+        spikes), a null whose every shuffle has an undefined score (the
+        score is kept, the p-value is NaN), an undefined score of a method
+        whose verdict uses it, through nulls or a score criterion (for
+        example the R² of a decoded position that does not change; score
+        and p-value are
         NaN), an undefined rank-order correlation (too few active template
         cells, or no variation in their order), or, for a pooled SSI
         method, an epoch with too few events or without a threshold (score
@@ -2591,17 +2629,18 @@ def _compare_row(
         rng=rng,
     )
     undefined = (
-        method.score is not None
+        _verdict_uses_score(method)
         and not np.isfinite(result.score)
         # A segmentation that finds no segment is a verdict, not an error.
         and (method.segmentation is None or result.segment is not None)
     )
-    return {
-        **result.summary(),
-        "error": "score undefined (e.g. the decoded position does not change)"
-        if undefined
-        else "",
-    }
+    if undefined:
+        error = "score undefined (e.g. the decoded position does not change)"
+    elif method.nulls and np.isfinite(result.score) and np.isnan(result.p_value):
+        error = "every shuffle of a null has an undefined score"
+    else:
+        error = ""
+    return {**result.summary(), "error": error}
 
 
 def _fail_criteria_of_error_rows(

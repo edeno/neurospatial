@@ -13,9 +13,14 @@
 
 - An event whose score is undefined, such as the R² of a decoded position
   that never changes, no longer stops `compare_replay_methods` for every
-  event. `detect_replay` gives it no verdict (`is_replay` and every criterion
-  False, score and p-value NaN), and the table row has the `error` "score
-  undefined (e.g. the decoded position does not change)".
+  event. When the method's verdict uses the score (through its nulls or a
+  score criterion), `detect_replay` gives it no verdict (`is_replay` and
+  every criterion False, score and p-value NaN), and the table row has the
+  `error` "score undefined (e.g. the decoded position does not change)".
+  Criteria that do not read the score still decide otherwise. An event
+  whose score is defined but whose every shuffle of one null is undefined
+  also gets no verdict, with the `error` "every shuffle of a null has an
+  undefined score", instead of stopping the run.
 - The weighted correlation treats a variance at round-off level as no
   variation. With all of the posterior mass in one time bin, it used to
   return 0 or NaN depending on the bin's time. A method that drops or zeroes
@@ -41,7 +46,8 @@
   `rng` reproduces a run made with `rng=None`; and a pooled SSI method whose
   threshold lies beyond the SSI grid says so in `error`.
 - `replay_significance` refuses a custom score whose signature cannot be
-  read, instead of running it without the seeded `rng`.
+  read, instead of running it without the seeded `rng`; `ReplayMethod`
+  refuses it when the method is made.
 
 ### Replay recipe validation
 

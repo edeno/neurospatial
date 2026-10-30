@@ -241,8 +241,8 @@ def _weighted_correlations(
     an offset such as the time since the session started adds no round-off.
     A weighted variance below ``eps * range**2`` (a standard deviation below
     about 1.5e-8 of the range) is round-off, not variation: with all of the
-    mass in one time bin, for example, it is about ``(eps * range)**2`` and
-    its sign is arbitrary, so it counts as no variation.
+    mass in one time bin, for example, it is about ``(eps * range)**2``, and
+    the covariance's sign is then arbitrary, so it counts as no variation.
     """
     times = times - (times.min() + times.max()) / 2.0
     positions = positions - (positions.min() + positions.max()) / 2.0

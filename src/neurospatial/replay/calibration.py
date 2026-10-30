@@ -999,7 +999,10 @@ def _smallest_p_value(method: ReplayMethod | RankOrderMethod) -> float:
     """The smallest p-value a method's shuffles can give.
 
     ``1 / (n + 1)`` for a one-sided test and twice that for a two-sided
-    test, which doubles the smaller tail (``compute_shuffle_pvalue``).
+    test, which doubles the smaller tail (``compute_shuffle_pvalue``). It
+    uses the method's full ``n_shuffles``, not the shuffles a null event
+    kept: the warning asks whether real events, tested with every shuffle,
+    can reach the matched alpha.
     """
     if getattr(method, "test", None) == "t_distribution":
         return 0.0
