@@ -588,7 +588,12 @@ class NullSpikeData(ReadOnlyArraysMixin, ResultMixin):
     events are: decode each interval (for example with
     :func:`decode_intervals`) and pass the decoded events, their spike
     counts and ``spike_times`` to
-    :func:`~neurospatial.replay.compare_replay_methods`.
+    :func:`~neurospatial.replay.compare_replay_methods`. Score null events
+    in their own call, not together with real events: the pseudo-event null
+    draws from every event of a call. Concatenate the tables with a column
+    telling them apart and pass it to ``detection_rates(groups=...)``. The
+    table's ``event`` indexes ``intervals``, so ``source_events[event]``
+    joins a null event to its real event's properties.
 
     Attributes
     ----------
@@ -650,6 +655,7 @@ def null_events(
     *,
     kind: Literal["cell_identity", "spike_shift", "poisson"],
     n_copies: int = 1,
+    cells: NDArray[np.bool_] | None = None,
     rng: np.random.Generator | int | None = None,
 ) -> NullSpikeData:
     """Make events without replay from real candidate events.
@@ -676,6 +682,10 @@ def null_events(
         How each null event is made.
     n_copies : int, default=1
         Null events made from each real event.
+    cells : NDArray[np.bool_] or None, shape (n_cells,)
+        The cells to randomize, such as the place cells of the decoder
+        (Takigawa et al. 2024 reassigned only "good" place cells); the
+        others keep their spikes. None randomizes every cell.
     rng : np.random.Generator, int, or None
         Random number generator or seed.
 
@@ -689,8 +699,9 @@ def null_events(
     ------
     ValueError
         If ``kind`` is not one of the options, ``n_copies`` is not a
-        positive integer, or ``intervals`` is not a list of finite
-        ``(start, stop)`` with ``start < stop``.
+        positive integer, ``cells`` is not one boolean per cell, or
+        ``intervals`` is not a list of finite ``(start, stop)`` with
+        ``start < stop``.
 
     See Also
     --------
@@ -699,11 +710,39 @@ def null_events(
 
     Notes
     -----
-    Reassigning spike trains among cells is the same as reassigning rate
-    maps, which Takigawa et al. (2024) did; it keeps each event's
-    population activity. Pass the cells the method's decoder uses: a
-    reassignment among all recorded cells also moves spikes of cells
-    without a field onto place cells.
+    What each kind keeps and breaks:
+
+    ================  ======================  ==========================
+    kind              keeps                   breaks
+    ================  ======================  ==========================
+    cell_identity     every spike train;      which field each train
+                      the population's        belongs to, and with it
+                      timing                  any link between a cell's
+                                              count and its field
+    spike_shift       each cell's count and   the timing between cells
+                      its spike intervals
+                      (circularly)
+    poisson           each cell's count       all spike timing
+    ================  ======================  ==========================
+
+    A null along the same dimension as a method's own shuffle
+    underestimates its false-positive rate (Takigawa et al. 2024):
+    ``cell_identity`` repeats the unit-identity null of ``DAVIDSON_2009``
+    and the cell-order test of ``DIBA_BUZSAKI_2007``, and ``spike_shift``
+    the spike-train shift of ``TIROLE_2022``. Rank-order methods can pass
+    ``spike_shift`` and ``poisson`` events more often than ``alpha`` when
+    an event covers part of the track, because which cells spike more then
+    still follows their fields; report several kinds side by side.
+
+    Reassigning spike trains is the same as Takigawa et al.'s
+    reassignment of rate maps for one set of rate maps. For a joint decode
+    over several templates (tracks or directions) it differs: they
+    permuted each template's maps separately, and one permutation of the
+    spikes keeps each cell's maps together.
+
+    Copies of one real event share its spikes and are not independent:
+    the intervals of :func:`detection_rates` treat every event as
+    independent and are too narrow with ``n_copies > 1``.
 
     References
     ----------
@@ -732,6 +771,13 @@ def null_events(
     _positive_count(n_copies, "n_copies", operation)
     windows = _checked_intervals(intervals, operation)
     trains = as_spike_trains(spike_times)
+    chosen = np.ones(len(trains), dtype=bool) if cells is None else np.asarray(cells)
+    if chosen.dtype != np.bool_ or chosen.shape != (len(trains),):
+        raise ValueError(
+            f"{operation}: cells must be one boolean per cell, shape "
+            f"({len(trains)},), got dtype {chosen.dtype} and shape {chosen.shape}."
+        )
+    randomized = np.flatnonzero(chosen)
     generator = np.random.default_rng(rng)
     durations = windows[:, 1] - windows[:, 0]
     spacing = float(durations.max()) + _GAP
@@ -747,19 +793,20 @@ def null_events(
         ]
         for _ in range(n_copies):
             offset = slot * spacing
+            copies = list(in_event)
             if kind == "cell_identity":
-                order = generator.permutation(len(in_event))
-                copies = [in_event[source] for source in order]
+                order = generator.permutation(randomized)
+                for cell, source in zip(randomized, order, strict=True):
+                    copies[cell] = in_event[source]
             elif kind == "spike_shift":
-                copies = [
-                    np.mod(spikes + generator.uniform(0.0, duration), duration)
-                    for spikes in in_event
-                ]
+                for cell in randomized:
+                    shift = generator.uniform(0.0, duration)
+                    copies[cell] = np.mod(in_event[cell] + shift, duration)
             else:
-                copies = [
-                    generator.uniform(0.0, duration, size=spikes.size)
-                    for spikes in in_event
-                ]
+                for cell in randomized:
+                    copies[cell] = generator.uniform(
+                        0.0, duration, size=in_event[cell].size
+                    )
             for cell, spikes in enumerate(copies):
                 placed[cell].append(np.sort(spikes) + offset)
             out_intervals.append((offset, offset + duration))
@@ -790,9 +837,12 @@ def simulated_null_events(
     Each event is simulated with
     :func:`~neurospatial.simulation.simulate_replay_event`: cells fire as
     Poisson processes at ``rate_gain`` times their rate at a position that
-    jumps at random every 20 ms (``"random"``) or stays put
-    (``"stationary"``, which line fits score well but correlation scores
-    do not).
+    jumps at random every 20 ms (``"random"``) or stays put, at a position
+    drawn uniformly along the track (``"stationary"``, which line fits
+    score well but correlation scores do not). Match ``rate_gain`` to the
+    real events' spike counts, or stratify rates by active cells: with
+    running rates, many events fail cell criteria and their rates are not
+    comparable.
 
     Parameters
     ----------
@@ -843,6 +893,7 @@ def simulated_null_events(
     >>> null.intervals.round(2).tolist()[:2]
     [[0.0, 0.2], [1.2, 1.4]]
     """
+    from neurospatial.environment._queries import _require_track_extents
     from neurospatial.simulation import simulate_replay_event
 
     operation = "simulated_null_events()"
@@ -852,16 +903,26 @@ def simulated_null_events(
         )
     _positive_count(n_events, "n_events", operation)
     generator = np.random.default_rng(rng)
-    seeds = generator.integers(2**31, size=n_events)
+    seeds = generator.integers(2**63, size=n_events)
+    starts_, stops_ = _require_track_extents(
+        env, operation, alternative="simulate events on a 1-D track"
+    )
+    lengths = stops_ - starts_
     spacing = float(duration) + _GAP
     placed: list[list[NDArray[np.float64]]] = []
     for slot, seed in enumerate(seeds):
+        start_position = None
+        if kind == "stationary":
+            # Uniform along the track: a bin by its length, then inside it.
+            k = generator.choice(len(lengths), p=lengths / lengths.sum())
+            start_position = float(generator.uniform(starts_[k], stops_[k]))
         event = simulate_replay_event(
             env,
             encoding_models,
             kind=kind,
             duration=duration,
             rate_gain=rate_gain,
+            start_position=start_position,
             seed=int(seed),
         )
         if not placed:
@@ -888,9 +949,11 @@ def decode_intervals(
 ) -> tuple[list[DecodingResult], list[NDArray[np.int64]]]:
     """Decode each interval in non-overlapping time bins of width ``dt``.
 
-    A convenience for candidate events and null events alike. Methods that
-    decode in overlapping windows need the same decode as the real events;
-    decode the null events with it instead.
+    A convenience for candidate events and null events alike. Decode real
+    and null events with the same function and settings: this one only
+    makes non-overlapping bins on one set of rate maps, while many
+    published methods decode overlapping windows (their ``decoding``
+    settings) or jointly over templates.
 
     Parameters
     ----------
@@ -918,8 +981,9 @@ def decode_intervals(
     Raises
     ------
     ValueError
-        If an interval is shorter than ``dt``, or for inputs
-        :func:`~neurospatial.decoding.decode_position` refuses.
+        If an interval holds no time bin of width ``dt``, or for inputs
+        :func:`~neurospatial.decoding.bin_spikes_in_time` or
+        :func:`~neurospatial.decoding.decode_position` refuse.
 
     See Also
     --------
@@ -932,12 +996,7 @@ def decode_intervals(
     windows = _checked_intervals(intervals, operation)
     events = []
     counts = []
-    for index, (start, stop) in enumerate(windows):
-        if stop - start < dt:
-            raise ValueError(
-                f"{operation}: interval {index} lasts {stop - start:g} s, shorter "
-                f"than dt = {dt:g} s; it has no time bin."
-            )
+    for start, stop in windows:
         event_counts, grid = bin_spikes_in_time(
             spike_times, dt=dt, t_start=float(start), t_stop=float(stop)
         )
