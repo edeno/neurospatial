@@ -128,9 +128,10 @@ def open_field_session(
 
     **Coverage**:
 
-    Place field centers are uniformly distributed across the arena using
-    coverage='uniform' to ensure representative spatial sampling. This is
-    ideal for testing place field detection algorithms.
+    Each place cell has its own field center, spread over the arena with
+    coverage='uniform' and kept 20% of the side from every wall, where the
+    animal samples well. This is ideal for testing place field detection
+    algorithms.
     """
     # Import here to avoid circular dependencies
     from neurospatial.environment import Environment
@@ -690,7 +691,7 @@ def border_cell_session(
     toward a corner fires along both walls of that corner.
 
     **Place cells** have the default ``PlaceCellModel`` fields, centered on
-    the interior grid of ``simulate_session(coverage='uniform')``. Border
+    the interior layout of ``simulate_session(coverage='uniform')``. Border
     cells are units ``0 .. n_border_cells - 1``, place cells follow.
 
     **Trajectory**:

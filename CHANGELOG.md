@@ -84,10 +84,17 @@ default lap route all changed.
   boundary-vector cells with a preferred direction drawn per cell and a
   preferred distance of 0–8 cm. That range puts field centres at the
   8.8 cm mean that Høydal et al. (2019) report.
-- Uniform field centres cover every axis with exactly `n_cells` centres. The
-  old layout left the last column empty, and mixed sessions put every place
-  cell at low x. `linear_track_session` spreads fields over the whole
-  track, not just 40–160 cm of 200 cm.
+- Uniform field centres give every cell its own bin, spread over arenas of
+  any shape. They are laid out by farthest-point sampling along the bins,
+  over the bins that keep 40% of their local half-width from the walls: 20%
+  of the side in a square arena, the middle of each corridor in a maze. The
+  old layout snapped a grid over the bounding box to the nearest bins, so
+  an L-shaped arena gave 50 cells 27 distinct centres and a plus maze gave
+  20 cells 16, none in the outer part of any arm. It also left the last
+  column empty, and mixed sessions put every place cell at low x. More
+  cells than bins now raise instead of sharing centres.
+  `linear_track_session` spreads fields over the whole track, not just
+  40–160 cm of 200 cm.
 - `grid_cell_session` draws the trajectory, the grid phases and the spikes
   from separate seed streams. It used one seed for all three, which
   correlated unit 0's spikes with the path.

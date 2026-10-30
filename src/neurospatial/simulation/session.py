@@ -346,36 +346,107 @@ def _stream_seeds(seed: int | None, n_streams: int) -> list[int]:
     ]
 
 
-def _even_layout(
-    n_points: int, ranges: Sequence[tuple[float, float]]
-) -> NDArray[np.float64]:
-    """Exactly ``n_points`` points spread evenly over a box, shape (n_points, n_dims).
+#: Share of its local half-width that a uniform field center keeps clear of
+#: the walls (see ``_interior_bins``). In a square arena of side ``L`` every
+#: interior bin's half-width is ``L / 2``, so the centers keep 20% of the side
+#: from every wall, where an exploring animal samples well and no field is
+#: cut by a wall.
+UNIFORM_WALL_INSET = 0.4
 
-    The box is cut into evenly spaced slabs along its first axis, as many as
-    the first side holds at the spacing ``(volume / n_points) ** (1 / n_dims)``;
-    the points are shared among the slabs as evenly as possible and laid out
-    the same way within each slab over the remaining axes. Every slab spans
-    the remaining axes from end to end, so no row or column is left empty.
+
+def _bin_depths(env: Environment) -> NDArray[np.float64] | None:
+    """Each bin's distance to the nearest wall, shape (n_bins,), or None.
+
+    The distance is measured to the nearest boundary bin's center plus half
+    that bin's length, the distance from the bin center to the boundary
+    bin's outer edge. None when the bins have no known outline (point bins
+    without cells) or no boundary.
     """
+    from scipy.spatial import cKDTree
 
-    def spaced(lo: float, hi: float, count: int) -> NDArray[np.float64]:
-        return (
-            np.linspace(lo, hi, count) if count > 1 else np.full(count, (lo + hi) / 2)
-        )
+    try:
+        boundary = env.boundary_bins
+    except NotImplementedError:
+        return None
+    if boundary.size == 0:
+        return None
+    bins = env.binning.bins
+    lengths = bins.sizes ** (1.0 / np.asarray(bins.measure_dims, dtype=float))
+    points = env.coordinate_system.cartesian_embedding(env.bin_centers)
+    gaps, nearest = cKDTree(points[boundary]).query(points)
+    depths: NDArray[np.float64] = gaps + 0.5 * lengths[boundary][nearest]
+    return depths
 
-    (lo, hi), rest = ranges[0], ranges[1:]
-    if not rest:
-        return spaced(lo, hi, n_points)[:, None]
-    sides = np.array([upper - lower for lower, upper in ranges])
-    spacing = (np.prod(sides) / n_points) ** (1.0 / len(ranges))
-    n_slabs = int(np.clip(np.round(sides[0] / spacing), 1, n_points))
-    counts = np.diff(np.round(np.linspace(0, n_points, n_slabs + 1)).astype(int))
-    return np.vstack(
-        [
-            np.column_stack([np.full(count, x), _even_layout(count, rest)])
-            for x, count in zip(spaced(lo, hi, n_slabs), counts, strict=True)
-        ]
+
+def _interior_bins(env: Environment, depths: NDArray[np.float64]) -> NDArray[np.intp]:
+    """Bins at least ``UNIFORM_WALL_INSET`` of their local half-width from the walls.
+
+    A bin's local half-width is the radius of the largest disc (ball in 3-D)
+    centered on a ridge bin of ``depths`` that contains it: the corridor's
+    half-width in a corridor, the inscribed circle's radius in an open
+    arena. Ridge bins are those whose depth grows by less than half a step
+    toward every neighbor; on a straight stretch away from a wall it grows
+    by a full step. Measuring the inset against the local half-width, not
+    the arena's widest point, keeps narrow arms beside a wide platform
+    (a radial-arm maze) in the layout.
+    """
+    from scipy.spatial import cKDTree
+
+    points = env.coordinate_system.cartesian_embedding(env.bin_centers)
+    pairs = env.edge_pairs
+    u = np.concatenate([pairs[:, 0], pairs[:, 1]])
+    v = np.concatenate([pairs[:, 1], pairs[:, 0]])
+    steps = np.linalg.norm(points[u] - points[v], axis=1)
+    rising = np.zeros(env.n_bins, dtype=bool)
+    np.logical_or.at(rising, u, depths[v] >= depths[u] + 0.5 * steps)
+    ridge = np.flatnonzero(~rising)
+    half_widths = np.zeros(env.n_bins)
+    tree = cKDTree(points)
+    for bin_index, members in zip(
+        ridge, tree.query_ball_point(points[ridge], depths[ridge]), strict=True
+    ):
+        half_widths[members] = np.maximum(half_widths[members], depths[bin_index])
+    return np.flatnonzero(
+        (half_widths > 0) & (depths >= UNIFORM_WALL_INSET * half_widths)
     )
+
+
+def _spread_bins(
+    env: Environment,
+    candidates: NDArray[np.intp],
+    n_points: int,
+    depths: NDArray[np.float64],
+) -> NDArray[np.intp]:
+    """``n_points`` distinct bins of ``candidates``, spread by farthest-point sampling.
+
+    Distances are geodesic, along the bins' connections, so fields are
+    spread over the space the animal moves through and centers on either
+    side of a wall count as far apart. One point goes to the deepest
+    candidate. Otherwise the first point is the candidate farthest from the
+    deepest one, and each next point the candidate farthest from all points
+    so far, ties going to the lowest bin index. The layout is deterministic.
+    """
+    from scipy.sparse import coo_array
+    from scipy.sparse.csgraph import dijkstra
+
+    deepest = int(candidates[np.argmax(depths[candidates])])
+    if n_points == 1:
+        return np.array([deepest])
+    pairs = env.edge_pairs
+    graph = coo_array(
+        (env.binning.connections.pair_distances, (pairs[:, 0], pairs[:, 1])),
+        shape=(env.n_bins, env.n_bins),
+    ).tocsr()
+
+    def distances_from(bin_index: int) -> NDArray[np.float64]:
+        return np.asarray(dijkstra(graph, directed=False, indices=bin_index))
+
+    chosen = [int(candidates[np.argmax(distances_from(deepest)[candidates])])]
+    nearest = distances_from(chosen[0])
+    for _ in range(n_points - 1):
+        chosen.append(int(candidates[np.argmax(nearest[candidates])]))
+        nearest = np.minimum(nearest, distances_from(chosen[-1]))
+    return np.array(chosen)
 
 
 def _field_centers(
@@ -386,13 +457,14 @@ def _field_centers(
 ) -> NDArray[np.float64]:
     """Field centers (or grid phases) for ``n_cells`` cells, shape (n_cells, n_dims).
 
-    ``'uniform'`` spaces the centers evenly along a track (a linearized or
-    1-D environment), from one end to the other. In an arena it spreads
-    exactly ``n_cells`` targets evenly over the bounding box inset 20% from
-    each side (``_even_layout``: rows that each span the box) and snaps each
-    to the nearest bin center. The inset keeps fields in the interior that
-    an exploring animal samples well. ``'random'`` draws bin
-    centers with replacement, ``rng.choice(len(env.bin_centers), n_cells)``.
+    ``'uniform'`` gives every cell its own bin center. Along a track (a
+    linearized or 1-D environment) the centers are evenly spaced from one
+    end to the other. In an arena they are spread over the bins by
+    farthest-point sampling (``_spread_bins``), among the bins that keep
+    ``UNIFORM_WALL_INSET`` of their local half-width from the walls
+    (``_interior_bins``) when there are at least ``n_cells`` of them, else
+    among all bins. ``'random'`` draws bin centers with replacement,
+    ``rng.choice(len(env.bin_centers), n_cells)``.
     """
     if n_cells == 0:
         return np.empty((0, env.n_dims))
@@ -401,47 +473,45 @@ def _field_centers(
         random_centers: NDArray[np.float64] = env.bin_centers[indices]
         return random_centers
 
-    ranges = env.dimension_ranges
+    if n_cells > env.n_bins:
+        raise ValueError(
+            _format_error(
+                f"coverage='uniform' needs a bin for each of the {n_cells} "
+                f"cells, but the environment has {env.n_bins} bins.",
+                why="uniform coverage gives every cell its own field center.",
+                fix=f"simulate at most {env.n_bins} cells, use a smaller "
+                "bin_size, or pass coverage='random', which draws centers "
+                "with replacement",
+            )
+        )
     if env.binning.linearization is not None or env.n_dims == 1:
         # Tracks: space centers evenly along the track, so every arm gets
-        # fields. A bounding-box grid snapped to a thin track would pile the
-        # centers onto the few bins nearest its targets.
+        # fields from one end to the other.
         linear = (
             env.bin_centers[:, 0]
             if env.binning.linearization is None
             else env.to_linear(env.bin_centers)
         )
         targets = np.linspace(linear.min(), linear.max(), n_cells)
-        nearest = np.abs(linear[None, :] - targets[:, None]).argmin(axis=1)
-        field_centers: NDArray[np.float64] = env.bin_centers[nearest]
-    elif ranges is None:
-        # Layouts without an axis-aligned bounding box: stride through the
-        # bin centers.
-        step = max(1, len(env.bin_centers) // n_cells)
-        field_centers = env.bin_centers[::step][:n_cells]
+        chosen = np.abs(linear[None, :] - targets[:, None]).argmin(axis=1)
+        if len(np.unique(chosen)) < n_cells:
+            # Targets closer together than the bins around a gap between
+            # track segments: take evenly spaced bins in track order instead.
+            order = np.argsort(linear, kind="stable")
+            chosen = order[
+                np.round(np.linspace(0, env.n_bins - 1, n_cells)).astype(int)
+            ]
     else:
-        margin = 0.2
-        inset = [
-            (lo + margin * (hi - lo), hi - margin * (hi - lo)) for lo, hi in ranges
-        ]
-        targets = _even_layout(n_cells, inset)
-        distances = np.linalg.norm(
-            env.bin_centers[None, :, :] - targets[:, None, :], axis=2
-        )
-        field_centers = env.bin_centers[np.argmin(distances, axis=1)]
-
-    n_unique = len(np.unique(field_centers, axis=0))
-    if n_unique < n_cells:
-        import warnings
-
-        warnings.warn(
-            f"Requested n_cells={n_cells} but only {n_unique} distinct "
-            f"interior bin centers were available for uniform coverage "
-            f"(env has {len(env.bin_centers)} bins). Some cells share a "
-            f"center. Consider coverage='random' or a finer bin_size.",
-            UserWarning,
-            stacklevel=3,
-        )
+        depths = _bin_depths(env)
+        if depths is None:
+            candidates = np.arange(env.n_bins)
+            depths = np.zeros(env.n_bins)
+        else:
+            candidates = _interior_bins(env, depths)
+            if len(candidates) < n_cells:
+                candidates = np.arange(env.n_bins)
+        chosen = _spread_bins(env, candidates, n_cells, depths)
+    field_centers: NDArray[np.float64] = env.bin_centers[chosen]
     return field_centers
 
 
@@ -485,13 +555,17 @@ def simulate_session(
         Spatial distribution of place field centers and grid phases
         (default: 'uniform').
 
-        - 'uniform': Evenly space field centers across the environment. On a
-          track (a linearized or 1-D environment), centers are evenly spaced
-          from one end to the other. In an arena, they are spread evenly over
-          the bounding box inset 20% from each side, so that fields lie where
-          an exploring animal samples well: evenly spaced rows that each span
-          the box, with the cells shared evenly among them, snapped to the
-          nearest bin.
+        - 'uniform': Every cell gets its own bin center, spread over the
+          environment; the layout depends on the environment alone, not on
+          ``seed``. On a track (a linearized or 1-D environment), centers
+          are evenly spaced from one end to the other. In an arena of any
+          shape, they are spread by farthest-point sampling with distances
+          along the bins (so centers on either side of a wall count as far
+          apart), over the bins that keep 40% of their local half-width
+          from the walls: 20% of the side in a square arena, the middle of
+          a corridor in a maze. There fields are sampled well and are not
+          cut by a wall. When fewer bins qualify than there are cells, all
+          bins are used. ``n_cells`` larger than ``env.n_bins`` raises.
         - 'random': Bin centers drawn with replacement from the seeded
           field-parameter stream, ``rng.choice(len(env.bin_centers),
           size=n)``. May result in clustering or gaps in coverage.
@@ -572,7 +646,8 @@ def simulate_session(
     ValueError
         If trajectory_method is not one of: 'ou', 'sinusoidal', 'laps'.
     ValueError
-        If coverage is not one of: 'uniform', 'random'.
+        If coverage is not one of: 'uniform', 'random', or ``coverage`` is
+        'uniform' and ``n_cells`` exceeds the number of bins.
     ValueError
         If grid cells requested but environment is not 2D.
     ValueError

@@ -428,15 +428,94 @@ class TestSimulateSession:
         )
         centers = np.array([truth["center"] for truth in session.ground_truth.values()])
         assert len(np.unique(centers, axis=0)) == n_cells
-        # About sqrt(n) evenly spaced rows of cells on each axis, from 20% to
-        # 80% of the 100 cm arena (snapped to 2 cm bins): no stretch of either
-        # axis is left without centers.
-        spacing = 60.0 / (round(np.sqrt(n_cells)) - 1)
+        # In an open box the centers keep 20% of the side from every wall
+        # (bin centers 21-79 cm in the 100 cm arena of 2 cm bins) and reach
+        # that inset on every side.
         for axis in range(2):
-            columns = np.unique(centers[:, axis])
-            assert columns.min() == pytest.approx(20.0, abs=1.0)
-            assert columns.max() == pytest.approx(80.0, abs=1.0)
-            assert np.diff(columns).max() <= spacing + 2.0
+            assert centers[:, axis].min() == pytest.approx(21.0)
+            assert centers[:, axis].max() == pytest.approx(79.0)
+        # No spot of the inset square is farther from a center than the row
+        # spacing of the largest square lattice of at most n points over it
+        # (farthest-point sampling leaves gaps at most twice the optimum).
+        bins = connected_arena_env.bin_centers
+        inset = bins[np.all((bins >= 21.0) & (bins <= 79.0), axis=1)]
+        gaps = np.linalg.norm(inset[:, None] - centers[None], axis=2).min(axis=1)
+        assert gaps.max() <= 58.0 / (np.floor(np.sqrt(n_cells)) - 1)
+
+    @staticmethod
+    def _uniform_centers(env, n_cells, seed=0):
+        session = simulate_session(
+            env, duration=1.0, n_cells=n_cells, seed=seed, show_progress=False
+        )
+        return np.array([truth["center"] for truth in session.ground_truth.values()])
+
+    def test_uniform_centers_fill_both_arms_of_an_l_shaped_arena(self):
+        """Every center is distinct, away from the walls and in proportion to area."""
+        from shapely.geometry import Polygon
+
+        env = Environment.from_polygon(
+            Polygon([(0, 0), (100, 0), (100, 30), (30, 30), (30, 100), (0, 100)]),
+            bin_size=2.0,
+            units="cm",
+        )
+        centers = self._uniform_centers(env, 50)
+        assert len(np.unique(centers, axis=0)) == 50
+        assert not np.isin(env.bin_at(centers), env.boundary_bins).any()
+        vertical, horizontal = centers[:, 1] > 30.0, centers[:, 0] > 30.0
+        # Each 30 x 70 cm arm is 41% of the arena.
+        assert 15 <= vertical.sum() <= 26
+        assert 15 <= horizontal.sum() <= 26
+        assert centers[vertical, 1].max() > 85.0
+        assert centers[horizontal, 0].max() > 85.0
+
+    def test_uniform_centers_run_to_the_end_of_every_plus_maze_arm(self):
+        from neurospatial.simulation.mazes import make_plus_maze
+
+        env = make_plus_maze().env_2d
+        centers = self._uniform_centers(env, 20)
+        assert len(np.unique(centers, axis=0)) == 20
+        x, y = centers.T
+        half_width = 5.0  # default corridor_width / 2
+        for along, across in ((x, y), (-x, y), (y, x), (-y, x)):
+            arm = (along > half_width) & (np.abs(across) < half_width)
+            assert arm.sum() >= 4
+            # Reach within 5 cm of the 45 cm arm's end wall.
+            assert along[arm].max() >= 40.0
+
+    def test_uniform_centers_reach_every_radial_arm(self):
+        from neurospatial.simulation.mazes import make_radial_arm_maze
+
+        env = make_radial_arm_maze().env_2d
+        centers = self._uniform_centers(env, 16)
+        assert len(np.unique(centers, axis=0)) == 16
+        on_arm = np.hypot(*centers.T) > 17.75  # outside the central platform
+        arm = np.round(np.arctan2(centers[on_arm, 1], centers[on_arm, 0]) / (np.pi / 4))
+        assert set((arm % 8).astype(int)) == set(range(8))
+
+    def test_uniform_centers_are_deterministic(self):
+        """The layout depends on the environment only, not on the seed."""
+        from neurospatial.simulation.mazes import make_plus_maze
+
+        env = make_plus_maze().env_2d
+        np.testing.assert_array_equal(
+            self._uniform_centers(env, 12, seed=0),
+            self._uniform_centers(env, 12, seed=0),
+        )
+        np.testing.assert_array_equal(
+            self._uniform_centers(env, 12, seed=0),
+            self._uniform_centers(env, 12, seed=1),
+        )
+
+    def test_uniform_coverage_refuses_more_cells_than_bins(self):
+        from shapely.geometry import box
+
+        coarse = Environment.from_polygon(
+            box(0, 0, 100, 100), bin_size=25.0, units="cm"
+        )
+        with pytest.raises(
+            ValueError, match=r"16 bins.*\nWhy:.*\nFix:.*coverage='random'"
+        ):
+            simulate_session(coarse, duration=1.0, n_cells=17, show_progress=False)
 
     def test_mixed_place_and_grid_centers_both_cover_the_arena(
         self, connected_arena_env

@@ -195,7 +195,7 @@ rates = compute_spatial_rates(
 )
 assert set(sim.ground_truth) == set(sim.unit_ids)
 print(rates.summary_table().index.tolist())
-validation = validate_simulation(sim, unit_ids=[0, 2, 4])
+validation = validate_simulation(sim, unit_ids=[0, 3, 4])
 print(validation.summary_table()[["center_error", "correlation", "status"]])
 assert validation.unit_status == ("failed", "passed", "failed")
 ```
