@@ -38,10 +38,9 @@ counts). Choices a paper does not specify are listed in each recipe's
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import warnings
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -51,6 +50,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals, times_in_intervals
 from neurospatial._spikes import as_labelled_spike_trains
+from neurospatial._stacklevel import _warnings_with_context
 from neurospatial._time_bins import _count_spikes_in_time_bins
 from neurospatial.reactivation.assemblies import (
     AssemblyPattern,
@@ -1350,20 +1350,6 @@ def _template_counts(
 
 class _MethodError(ValueError):
     """A method cannot be applied to this session; reported in ``error``."""
-
-
-@contextlib.contextmanager
-def _warnings_with_context(context: str) -> Iterator[None]:
-    """Re-emit the warnings raised in the block with ``context`` in front."""
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        yield
-    for caught_warning in caught:
-        warnings.warn(
-            f"{context}: {caught_warning.message}",
-            caught_warning.category,
-            stacklevel=4,
-        )
 
 
 def _checked_groups(

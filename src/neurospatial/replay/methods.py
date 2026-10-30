@@ -27,12 +27,10 @@ reproduced, are listed in each recipe's ``notes``.
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import inspect
 import operator
-import warnings
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType, SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal
@@ -43,6 +41,7 @@ from numpy.typing import NDArray
 from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, reduce_through_constructor
+from neurospatial._stacklevel import _warnings_with_context
 from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
 from neurospatial.replay.circular import fit_circular_sequence
 from neurospatial.replay.correlation import weighted_correlation
@@ -3418,21 +3417,6 @@ def _separate_times(
             )
         )
     return arrays[0]
-
-
-@contextlib.contextmanager
-def _warnings_with_context(context: str) -> Iterator[None]:
-    """Re-emit the warnings raised in the block with ``context`` in front."""
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        yield
-    for caught_warning in caught:
-        # Frames: this generator, contextlib's __exit__, the caller, its caller.
-        warnings.warn(
-            f"{context}: {caught_warning.message}",
-            caught_warning.category,
-            stacklevel=4,
-        )
 
 
 def _compare_row(
