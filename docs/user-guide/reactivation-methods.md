@@ -247,9 +247,10 @@ print(mean_value.unstack().round(3).to_string())
   the pair-correlation pattern of rest after the task nor its rates alone
   produce EV.
 - **Assemblies on null data.** The assembly difference depends on the kind
-  of null. With cell identities permuted it is near 0 (slightly above,
-  because a permutation can send an assembly member's spikes to another
-  member). With trains rotated or redrawn it is negative: the bursts still
+  of null. With cell identities permuted it is small but positive, 0.07 to
+  0.13 or 5 to 10% of the reactivated value, because a permutation can send
+  an assembly member's spikes to another member. With trains rotated or
+  redrawn it is negative: the bursts still
   correlate the cells in rest before the task but no longer in rest after
   it. A null that removes co-firing the control period keeps is not neutral
   for a before-after difference; prefer the cell-identity null, or rotate
@@ -442,8 +443,8 @@ remove the confound. Over six simulated sessions, the members' pair
 correlations after the task exceed those of the other cells by 0.09 at 1 s
 and still by 0.07 at 5 s: the bursts that carry the rate change last
 100 ms, and any bin wider than a burst counts all of it. What changes is
-the noise. Twenty minutes hold only 240 bins of 5 s, so each pair
-correlation scatters by about 0.07, as much as the effect, and EV can no
+the noise. Kudrimoti's 10-minute windows hold only 120 bins of 5 s, so each
+pair correlation scatters by about 0.09, as much as the effect, and EV can no
 longer see it. The real reactivation loses half its EV for the same
 reason. The large bin lost the power to see the confound, and most of the
 power to see reactivation with it.
@@ -484,7 +485,7 @@ print(by_session(compare_sessions(by_bin, names)).round(3).T.to_string())
   difference stays near 1.5. The assembly events last about 10 ms, and the
   100 ms bursts, which every pair shares, make up more of each bin's
   co-firing as the bin grows: the mean pair correlation of rest rises from
-  about 0.06 at 50 ms to 0.11 at 250 ms.
+  0.05 to 0.06 at 50 ms to about 0.10 at 250 ms.
 - **Without reactivation**, both stay near 0 at every bin size.
 - **The rate confound grows with the bin for assemblies** (0.17, 0.23,
   0.28): 50 ms bins split the 100 ms bursts that carry it, and 250 ms bins
@@ -737,7 +738,7 @@ print(by_data.unstack().round(3).to_string())
 
 Without reactivation every statistic is near 0. Doubling the members'
 rates moves the member correlations of El-Gaby et al. by 0.02, EV by less
-than 0.01 and the residual correlations by 0.09, but raises the SWR
+than 0.01 and the residual correlations by about 0.08, but raises the SWR
 responses of the assembly recipes by about 5, more than the reactivation in
 the first session did. With rest before and after z-scored together,
 members that fire more after the task have higher z-scores in every SWR

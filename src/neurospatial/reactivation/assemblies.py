@@ -783,9 +783,11 @@ def marchenko_pastur_threshold(
 
     The bound is the asymptotic edge as both sizes grow at a fixed ratio.
     For a finite recording of independent neurons the largest eigenvalue
-    fluctuates around it on a scale of order :math:`n^{-2/3}` (Tracy-Widom;
-    Peyrache et al., 2010), so an eigenvalue just above the threshold can
-    arise by chance. When it matters, use a surrogate threshold
+    fluctuates around it with a Tracy-Widom distribution, so an eigenvalue
+    just above the threshold can arise by chance. The width of that
+    fluctuation shrinks as the number of time bins grows (Johnstone, 2001):
+    for 30 neurons and 48,000 bins its standard deviation is about 0.003.
+    When it matters, use a surrogate threshold
     (``detect_assemblies(component_threshold="circular_shift", ...)``).
 
     Examples
@@ -812,6 +814,8 @@ def marchenko_pastur_threshold(
         Principal component analysis of ensemble recordings reveals cell
         assemblies at high temporal resolution. J Comput Neurosci
         29(1-2):309-325.
+    Johnstone IM (2001). On the distribution of the largest eigenvalue in
+        principal components analysis. Ann Stat 29(2):295-327.
     """
     if n_neurons <= 0:
         raise ValueError(f"n_neurons must be positive, got {n_neurons}")
@@ -892,11 +896,17 @@ def detect_assemblies(
         - 'marchenko_pastur': the analytical upper edge
           :math:`(1 + \\sqrt{n / B})^2` for ``n`` varying neurons and ``B``
           time bins (Lopes-dos-Santos et al., 2013; Peyrache et al., 2010).
-        - 'tracy_widom': that edge plus :math:`n^{-2/3}`, the scale of the
-          finite-sample fluctuation of the largest eigenvalue, which "lies
-          around λmax with a standard deviation of order N^−2/3" (Peyrache
-          et al., 2010). The Lopes-dos-Santos Python code adds the same term
-          with ``tracywidom=True``.
+        - 'tracy_widom': that edge plus :math:`n^{-2/3}`, the margin of
+          Peyrache et al. (2010), who wrote that the largest eigenvalue
+          "lies around λmax with a standard deviation of order N^−2/3".
+          The Lopes-dos-Santos Python code adds the same term with
+          ``tracywidom=True``. It is a heuristic margin, not a calibrated
+          quantile: the null standard deviation also shrinks with the
+          number of time bins (Johnstone, 2001), so for typical recordings
+          the margin sits many standard deviations above the edge (for 30
+          neurons and 48,000 bins, 0.10 against about 0.003), and a real
+          component just above the edge can fall below it. Use a surrogate
+          threshold for a calibrated cutoff.
         - 'bin_shuffle': the ``percentile``-th percentile of the largest
           eigenvalue of ``n_shuffles`` surrogate matrices in which the time
           bins of each neuron are shuffled independently, which keeps each
@@ -1107,6 +1117,8 @@ def detect_assemblies(
         Principal component analysis of ensemble recordings reveals cell
         assemblies at high temporal resolution. J Comput Neurosci
         29(1-2):309-325.
+    Johnstone IM (2001). On the distribution of the largest eigenvalue in
+        principal components analysis. Ann Stat 29(2):295-327.
     """
     spike_counts = _validated_counts(spike_counts, call="detect_assemblies()")
     n_time_bins, n_neurons = spike_counts.shape
@@ -1354,7 +1366,9 @@ def _otsu_upper(values: NDArray[np.float64]) -> NDArray[np.bool_]:
     Tries every split of the sorted values into a lower and an upper group
     and keeps the one with the smallest within-group variance
     ``p_low var_low + p_high var_high`` (equivalently the largest variance
-    between the groups), the first such split on ties.
+    between the groups). When two splits give the same variance, as can
+    happen with rounded values, floating-point rounding picks one; there
+    is no tie rule.
 
     Parameters
     ----------
@@ -1424,7 +1438,11 @@ def _check_component_threshold(
         )
     if percentile is not None and not 0.0 < float(percentile) < 100.0:
         raise ValueError(f"{call}: percentile must be in (0, 100), got {percentile}.")
-    if isinstance(n_shuffles, bool) or int(n_shuffles) != n_shuffles or n_shuffles < 1:
+    if (
+        isinstance(n_shuffles, bool)
+        or not isinstance(n_shuffles, (int, np.integer))
+        or n_shuffles < 1
+    ):
         raise ValueError(
             f"{call}: n_shuffles must be a positive integer, got {n_shuffles!r}."
         )
@@ -2033,6 +2051,8 @@ def pairwise_activation(
                 f"{only_counts}."
             )
         spike_counts = spike_counts[:, order]
+    else:
+        labels, order = None, np.arange(n_neurons)
 
     undefined = np.isnan(template)
     if np.any(undefined):
@@ -2052,8 +2072,11 @@ def pairwise_activation(
         spike_counts_z, constant = _z_scores(spike_counts)
         silent = constant & np.any(projector != 0, axis=0)
         if np.any(silent):
+            # Name the caller's columns, not their place in template order.
+            columns = np.sort(order[silent])
+            named = "" if labels is None else f" (units {labels[columns].tolist()})"
             warnings.warn(
-                f"{call}: neuron columns {np.flatnonzero(silent).tolist()} have the "
+                f"{call}: neuron columns {columns.tolist()}{named} have the "
                 "same count in every time bin of spike_counts, so they "
                 "contribute 0 to the activation strength.",
                 UserWarning,
@@ -2657,7 +2680,8 @@ def explained_variance_reactivation(
         Required with ``template_unit_ids``.
     control_unit_ids : array-like, shape (n_neurons,), or sequence of them, optional
         Column labels of the counts that ``control_correlations`` came from;
-        with several controls, one label array per control. Required with
+        with several controls, one label array per control. One control
+        takes one label array, alone or in a one-item list. Required with
         ``template_unit_ids`` when ``control_correlations`` is given, and
         refused without it.
 
@@ -3030,6 +3054,29 @@ def _selected_pairs(
                     "given)",
                 )
             )
+        missing = np.array(
+            [
+                group is None
+                or (
+                    isinstance(group, (float, complex, np.inexact))
+                    and not np.isfinite(group)
+                )
+                for group in groups.tolist()
+            ],
+            dtype=bool,
+        )
+        if missing.any():
+            raise ValueError(
+                _format_error(
+                    f"{call}: unit_groups has a missing or non-finite group for "
+                    f"units {np.flatnonzero(missing).tolist()}.",
+                    why="Why: NaN compares unequal to every group, itself "
+                    "included, so units with NaN groups would all be paired as if "
+                    "on different tetrodes.",
+                    fix="give every unit its tetrode, shank or region, or leave "
+                    "units whose group is unknown out of the counts",
+                )
+            )
         first, second = np.triu_indices(n_units, k=1)
         selected &= groups[first] != groups[second]
     return selected
@@ -3285,20 +3332,23 @@ def _pairs_in_template_order(
     )
     if not controls:
         return template, match, []
+    control_labels = labels["control_unit_ids"]
     if len(controls) == 1:
+        # One control may come in a one-item list, its labels too.
+        if len(control_labels) == 1 and np.ndim(control_labels[0]) == 1:
+            control_labels = control_labels[0]
         return (
             template,
             match,
             [
                 in_template_order(
                     controls[0],
-                    labels["control_unit_ids"],
+                    control_labels,
                     "control_correlations",
                     "control_unit_ids",
                 )
             ],
         )
-    control_labels = labels["control_unit_ids"]
     if (
         control_labels is None
         or len(control_labels) != len(controls)

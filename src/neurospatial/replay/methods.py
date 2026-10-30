@@ -5521,8 +5521,10 @@ GUPTA_2010 = PairwiseOrderMethod(
         "Shuffles: 300 permutations of the scored spikes' times (each spike "
         "keeps its cell; the paper 'randomly shuffled the spike times', and "
         "a uniform redraw is the other reading) and 300 permutations of the "
-        "cells' field sets across every cell given (the cell-identity "
-        "shuffle of Davidson et al. 2009). Replay when the score is greater "
+        "field sets among the cells with a field on the template, active or "
+        "not; cells without a field stay unscored (the cell-identity "
+        "shuffle of Davidson et al. 2009, which shuffled among spatially "
+        "tuned units only). Replay when the score is greater "
         "than 95% of both sets: p = (k + 1) / 301 < 0.05 for each, ties "
         "counted against the event.",
         "The 80 cm limit on the distance between the two spikes' field "

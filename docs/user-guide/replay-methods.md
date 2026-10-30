@@ -661,8 +661,12 @@ every shuffle from those tables: 1,000 events and 5,000 data sets took about
 2 s on a laptop, and the 10 x 10 matrix test as long, so Silva et al.'s 9,818
 events take well under a minute (their table holds 49 million rows, about
 2 GB). `decode_intervals` decodes disjoint intervals in one pass, about 70
-times faster than one interval at a time, which matters for Farooq et al.'s
-500 Poisson data sets of 38,820 frames (about 10 minutes to decode). Nested
+times faster than one interval at a time, but holds every time bin's
+posterior and counts at once. For Farooq et al.'s 500 Poisson data sets of
+38,820 frames, make, decode and measure one data set at a time, as
+`FAROOQ_2019_POISSON.notes` show: all 500 in one call would need hundreds of
+gigabytes. Decoding them takes about 10 minutes and measuring them with
+`dataset_values` about 3 hours. Nested
 designs, such as Grosmark & Buzsáki's 100 surrogate data sets each tested
 event by event against 200 place-field shuffles (about an hour per class
 and epoch), parallelize over data sets with seeds from
