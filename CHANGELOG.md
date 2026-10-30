@@ -148,6 +148,21 @@ measure each method's false-positive rate on several kinds of null data:
 - `decode_intervals(env, spike_times, intervals, encoding_models, dt=)`
   decodes each interval in non-overlapping time bins of width `dt`.
 
+### User guide: Comparing replay methods
+
+A new guide, `docs/user-guide/replay-methods.md`, applies five published
+replay methods to the same decoded events (simulated sweeps, stationary
+and random events). It then:
+
+- measures each method's false-positive rate on cell-identity, spike-shift
+  and Poisson copies of the events, broken down by active cells;
+- compares the methods at a matched false-positive rate;
+- shows how to run the same steps on your own recording.
+
+The guide shows where methods fail differently. Davidson et al.'s line fit
+calls stationary and spike-shift events replay. Correlation and rank-order
+tests call short, jumpy random events replay.
+
 ### Replay methods at a matched false-positive rate
 
 Methods with the same nominal α call different shares of null events
