@@ -13,6 +13,11 @@
 - :func:`method_agreement` counts how often every pair of methods agree,
   with Cohen's kappa.
 
+Null data for false-positive rates: :func:`null_events` makes events
+without replay from real candidate events (cell identities reassigned,
+spikes shifted, or Poisson spikes), :func:`simulated_null_events` simulates
+random or stationary events, and :func:`decode_intervals` decodes either.
+
 A single overall false-positive rate hides how it depends on the event:
 Tingley & Peyrache (2020) found the chance rate of rank-order replay
 depends strongly on the number of cells and their firing rates. Report
@@ -23,12 +28,14 @@ from __future__ import annotations
 
 import itertools
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -36,7 +43,15 @@ if TYPE_CHECKING:
     from neurospatial.decoding import DecodingResult, JointDecodingResult
     from neurospatial.environment import Environment
 
-__all__ = ["detection_rates", "event_properties", "method_agreement"]
+__all__ = [
+    "NullSpikeData",
+    "decode_intervals",
+    "detection_rates",
+    "event_properties",
+    "method_agreement",
+    "null_events",
+    "simulated_null_events",
+]
 
 _ERRORS = ("not_replay", "exclude")
 
@@ -552,3 +567,469 @@ def _checked_table(
         else pd.Series(False, index=data.index)
     )
     return data
+
+
+# --------------------------------------------------------------------------
+# Null data
+# --------------------------------------------------------------------------
+
+_NULL_KINDS = ("cell_identity", "spike_shift", "poisson")
+_SIMULATED_KINDS = ("random", "stationary")
+# Seconds between consecutive null events in their session layout.
+_GAP = 1.0
+
+
+@dataclass(frozen=True, repr=False, eq=False)
+class NullSpikeData(ReadOnlyArraysMixin, ResultMixin):
+    """Spike trains of events without replay, laid out like a session.
+
+    Each null event occupies its own interval, separated by a second of
+    silence, so the data can be decoded and scored exactly as the real
+    events are: decode each interval (for example with
+    :func:`decode_intervals`) and pass the decoded events, their spike
+    counts and ``spike_times`` to
+    :func:`~neurospatial.replay.compare_replay_methods`. Score null events
+    in their own call, not together with real events: the pseudo-event null
+    draws from every event of a call. Concatenate the tables with a column
+    telling them apart and pass it to ``detection_rates(groups=...)``. The
+    table's ``event`` indexes ``intervals``, so ``source_events[event]``
+    joins a null event to its real event's properties.
+
+    Attributes
+    ----------
+    spike_times : tuple of NDArray[np.float64]
+        Spike times of each cell, in seconds, in the null layout.
+    intervals : NDArray[np.float64], shape (n_events, 2)
+        Start and stop of each null event, in seconds.
+    source_events : NDArray[np.intp], shape (n_events,)
+        Index of the real event each null event was made from; -1 for a
+        simulated event.
+    kind : str
+        How the null events were made.
+
+    See Also
+    --------
+    null_events : Null events made from real events.
+    simulated_null_events : Simulated events without replay.
+    """
+
+    spike_times: tuple[NDArray[np.float64], ...]
+    intervals: NDArray[np.float64]
+    source_events: NDArray[np.intp]
+    kind: str
+
+    def __post_init__(self) -> None:
+        """Own read-only copies of the arrays, including each spike train."""
+        trains = []
+        for train in self.spike_times:
+            owned = np.array(train, dtype=np.float64)
+            owned.flags.writeable = False
+            trains.append(owned)
+        object.__setattr__(self, "spike_times", tuple(trains))
+        self._own_arrays()
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore from pickle or deepcopy, keeping every array read-only."""
+        super().__setstate__(state)
+        for train in self.spike_times:
+            train.flags.writeable = False
+
+    @property
+    def n_events(self) -> int:
+        """Number of null events."""
+        return len(self.intervals)
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "kind": self.kind,
+            "n_events": self.n_events,
+            "n_cells": len(self.spike_times),
+            "n_spikes": int(sum(train.size for train in self.spike_times)),
+        }
+
+
+def null_events(
+    spike_times: Any,
+    intervals: NDArray[np.float64],
+    *,
+    kind: Literal["cell_identity", "spike_shift", "poisson"],
+    n_copies: int = 1,
+    cells: NDArray[np.bool_] | None = None,
+    rng: np.random.Generator | int | None = None,
+) -> NullSpikeData:
+    """Make events without replay from real candidate events.
+
+    Each null event keeps a real event's duration and, depending on
+    ``kind``, its cells' spike counts or spike trains, but breaks the
+    order of the cells' firing relative to their fields:
+
+    - ``"cell_identity"``: the event's spike trains are reassigned to
+      cells at random, so each cell fires with another cell's spikes
+      (Takigawa et al. 2024 made three such copies of each event).
+    - ``"spike_shift"``: each cell's spikes are shifted circularly within
+      the event by an independent random amount.
+    - ``"poisson"``: each cell keeps its number of spikes, placed uniformly
+      at random in the event (a Poisson process given its count).
+
+    Parameters
+    ----------
+    spike_times : array, sequence of arrays, or spike group
+        The session's spike times, one train per cell, in seconds.
+    intervals : NDArray[np.float64], shape (n_events, 2)
+        Start and stop of each real candidate event, in seconds.
+    kind : {"cell_identity", "spike_shift", "poisson"}
+        How each null event is made.
+    n_copies : int, default=1
+        Null events made from each real event.
+    cells : NDArray[np.bool_] or None, shape (n_cells,)
+        The cells to randomize, such as the place cells of the decoder
+        (Takigawa et al. 2024 reassigned only "good" place cells); the
+        others keep their spikes. None randomizes every cell.
+    rng : np.random.Generator, int, or None
+        Random number generator or seed.
+
+    Returns
+    -------
+    NullSpikeData
+        ``n_events * n_copies`` null events, the copies of each event
+        together, with ``source_events`` naming the real event.
+
+    Raises
+    ------
+    ValueError
+        If ``kind`` is not one of the options, ``n_copies`` is not a
+        positive integer, ``cells`` is not one boolean per cell, or
+        ``intervals`` is not a list of finite ``(start, stop)`` with
+        ``start < stop``.
+
+    See Also
+    --------
+    simulated_null_events : Simulated events without replay.
+    decode_intervals : Decode the null events.
+
+    Notes
+    -----
+    What each kind keeps and breaks:
+
+    ================  ======================  ==========================
+    kind              keeps                   breaks
+    ================  ======================  ==========================
+    cell_identity     every spike train;      which field each train
+                      the population's        belongs to, and with it
+                      timing                  any link between a cell's
+                                              count and its field
+    spike_shift       each cell's count and   the timing between cells
+                      its spike intervals
+                      (circularly)
+    poisson           each cell's count       all spike timing
+    ================  ======================  ==========================
+
+    A null along the same dimension as a method's own shuffle
+    underestimates its false-positive rate (Takigawa et al. 2024):
+    ``cell_identity`` repeats the unit-identity null of ``DAVIDSON_2009``
+    and the cell-order test of ``DIBA_BUZSAKI_2007``, and ``spike_shift``
+    the spike-train shift of ``TIROLE_2022``. Rank-order methods can pass
+    ``spike_shift`` and ``poisson`` events more often than ``alpha`` when
+    an event covers part of the track, because which cells spike more then
+    still follows their fields; report several kinds side by side.
+
+    Reassigning spike trains is the same as Takigawa et al.'s
+    reassignment of rate maps for one set of rate maps. For a joint decode
+    over several templates (tracks or directions) it differs: they
+    permuted each template's maps separately, and one permutation of the
+    spikes keeps each cell's maps together.
+
+    Copies of one real event share its spikes and are not independent:
+    the intervals of :func:`detection_rates` treat every event as
+    independent and are too narrow with ``n_copies > 1``.
+
+    References
+    ----------
+    Takigawa, M., Huelin Gorriz, M., Tirole, M., & Bendor, D. (2024).
+    Evaluating hippocampal replay without a ground truth. *eLife*, 13,
+    e85635.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.replay import null_events
+    >>> spikes = [np.array([1.01, 1.05]), np.array([1.02]), np.array([5.0])]
+    >>> null = null_events(
+    ...     spikes, np.array([[1.0, 1.1]]), kind="poisson", n_copies=3, rng=0
+    ... )
+    >>> print(null.n_events, [train.size for train in null.spike_times])
+    3 [6, 3, 0]
+    """
+    from neurospatial._spikes import as_spike_trains
+
+    operation = "null_events()"
+    if kind not in _NULL_KINDS:
+        raise ValueError(
+            f"{operation}: kind must be one of {_NULL_KINDS}, got {kind!r}."
+        )
+    _positive_count(n_copies, "n_copies", operation)
+    windows = _checked_intervals(intervals, operation)
+    trains = as_spike_trains(spike_times)
+    chosen = np.ones(len(trains), dtype=bool) if cells is None else np.asarray(cells)
+    if chosen.dtype != np.bool_ or chosen.shape != (len(trains),):
+        raise ValueError(
+            f"{operation}: cells must be one boolean per cell, shape "
+            f"({len(trains)},), got dtype {chosen.dtype} and shape {chosen.shape}."
+        )
+    randomized = np.flatnonzero(chosen)
+    generator = np.random.default_rng(rng)
+    durations = windows[:, 1] - windows[:, 0]
+    spacing = float(durations.max()) + _GAP
+    placed: list[list[NDArray[np.float64]]] = [[] for _ in trains]
+    out_intervals = []
+    sources = []
+    slot = 0
+    for index, (start, stop) in enumerate(windows):
+        duration = stop - start
+        in_event = [
+            np.asarray(train[(train >= start) & (train < stop)]) - start
+            for train in trains
+        ]
+        for _ in range(n_copies):
+            offset = slot * spacing
+            copies = list(in_event)
+            if kind == "cell_identity":
+                order = generator.permutation(randomized)
+                for cell, source in zip(randomized, order, strict=True):
+                    copies[cell] = in_event[source]
+            elif kind == "spike_shift":
+                for cell in randomized:
+                    shift = generator.uniform(0.0, duration)
+                    copies[cell] = np.mod(in_event[cell] + shift, duration)
+            else:
+                for cell in randomized:
+                    copies[cell] = generator.uniform(
+                        0.0, duration, size=in_event[cell].size
+                    )
+            for cell, spikes in enumerate(copies):
+                placed[cell].append(np.sort(spikes) + offset)
+            out_intervals.append((offset, offset + duration))
+            sources.append(index)
+            slot += 1
+    return NullSpikeData(
+        spike_times=tuple(
+            np.concatenate(parts) if parts else np.empty(0) for parts in placed
+        ),
+        intervals=np.asarray(out_intervals, dtype=np.float64),
+        source_events=np.asarray(sources, dtype=np.intp),
+        kind=kind,
+    )
+
+
+def simulated_null_events(
+    env: Environment,
+    encoding_models: Any,
+    *,
+    n_events: int,
+    kind: Literal["random", "stationary"] = "random",
+    duration: float = 0.2,
+    rate_gain: float = 1.0,
+    rng: np.random.Generator | int | None = None,
+) -> NullSpikeData:
+    """Simulate events without replay from the cells' rate maps.
+
+    Each event is simulated with
+    :func:`~neurospatial.simulation.simulate_replay_event`: cells fire as
+    Poisson processes at ``rate_gain`` times their rate at a position that
+    jumps at random every 20 ms (``"random"``) or stays put, at a position
+    drawn uniformly along the track (``"stationary"``, which line fits
+    score well but correlation scores do not). Match ``rate_gain`` to the
+    real events' spike counts, or stratify rates by active cells: with
+    running rates, many events fail cell criteria and their rates are not
+    comparable.
+
+    Parameters
+    ----------
+    env : Environment
+        A 1-D environment or a linearized track.
+    encoding_models : array of shape (n_cells, n_bins), or SpatialRatesResult
+        Each cell's rate map on ``env``, in Hz.
+    n_events : int
+        Number of events.
+    kind : {"random", "stationary"}, default="random"
+        The simulated content.
+    duration : float, default=0.2
+        Duration of each event, in seconds.
+    rate_gain : float, default=1.0
+        Multiplier of the rate maps during events.
+    rng : np.random.Generator, int, or None
+        Random number generator or seed.
+
+    Returns
+    -------
+    NullSpikeData
+        The simulated events in a session layout, with ``source_events``
+        of -1.
+
+    Raises
+    ------
+    ValueError
+        If ``kind`` is not one of the options, ``n_events`` is not a
+        positive integer, or for inputs ``simulate_replay_event`` refuses.
+
+    See Also
+    --------
+    null_events : Null events made from real events.
+    decode_intervals : Decode the null events.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.replay import simulated_null_events
+    >>> env = Environment.linear_track(
+    ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=10.0, units="cm"
+    ... )
+    >>> x = env.bin_centers[:, 0]
+    >>> centers = np.linspace(5, 95, 8)[:, None]
+    >>> rates = 20.0 * np.exp(-0.5 * ((x - centers) / 8.0) ** 2)
+    >>> null = simulated_null_events(env, rates, n_events=4, rng=0)
+    >>> null.intervals.round(2).tolist()[:2]
+    [[0.0, 0.2], [1.2, 1.4]]
+    """
+    from neurospatial.environment._queries import _require_track_extents
+    from neurospatial.simulation import simulate_replay_event
+
+    operation = "simulated_null_events()"
+    if kind not in _SIMULATED_KINDS:
+        raise ValueError(
+            f"{operation}: kind must be one of {_SIMULATED_KINDS}, got {kind!r}."
+        )
+    _positive_count(n_events, "n_events", operation)
+    generator = np.random.default_rng(rng)
+    seeds = generator.integers(2**63, size=n_events)
+    starts_, stops_ = _require_track_extents(
+        env, operation, alternative="simulate events on a 1-D track"
+    )
+    lengths = stops_ - starts_
+    spacing = float(duration) + _GAP
+    placed: list[list[NDArray[np.float64]]] = []
+    for slot, seed in enumerate(seeds):
+        start_position = None
+        if kind == "stationary":
+            # Uniform along the track: a bin by its length, then inside it.
+            k = generator.choice(len(lengths), p=lengths / lengths.sum())
+            start_position = float(generator.uniform(starts_[k], stops_[k]))
+        event = simulate_replay_event(
+            env,
+            encoding_models,
+            kind=kind,
+            duration=duration,
+            rate_gain=rate_gain,
+            start_position=start_position,
+            seed=int(seed),
+        )
+        if not placed:
+            placed = [[] for _ in event.spike_times]
+        for cell, train in enumerate(event.spike_times):
+            placed[cell].append(np.asarray(train) + slot * spacing)
+    starts = np.arange(n_events) * spacing
+    return NullSpikeData(
+        spike_times=tuple(np.concatenate(parts) for parts in placed),
+        intervals=np.column_stack([starts, starts + float(duration)]),
+        source_events=np.full(n_events, -1, dtype=np.intp),
+        kind=f"simulated_{kind}",
+    )
+
+
+def decode_intervals(
+    env: Environment,
+    spike_times: Any,
+    intervals: NDArray[np.float64],
+    encoding_models: Any,
+    *,
+    dt: float,
+    prior: NDArray[np.float64] | None = None,
+) -> tuple[list[DecodingResult], list[NDArray[np.int64]]]:
+    """Decode each interval in non-overlapping time bins of width ``dt``.
+
+    A convenience for candidate events and null events alike. Decode real
+    and null events with the same function and settings: this one only
+    makes non-overlapping bins on one set of rate maps, while many
+    published methods decode overlapping windows (their ``decoding``
+    settings) or jointly over templates.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment of the rate maps.
+    spike_times : array, sequence of arrays, or spike group
+        Spike times of each cell, in seconds.
+    intervals : NDArray[np.float64], shape (n_events, 2)
+        Start and stop of each event, in seconds; a trailing part shorter
+        than ``dt`` is dropped.
+    encoding_models : array of shape (n_cells, n_bins), or SpatialRatesResult
+        Each cell's rate map on ``env``, in Hz.
+    dt : float
+        Time-bin width, in seconds.
+    prior : NDArray[np.float64] or None
+        Prior over bins, as for :func:`~neurospatial.decoding.decode_position`.
+
+    Returns
+    -------
+    events : list of DecodingResult
+        Each interval's decoded posterior, with the time-bin centers.
+    spike_counts : list of NDArray[np.int64]
+        Each interval's spike counts, ``(n_time_bins, n_cells)``.
+
+    Raises
+    ------
+    ValueError
+        If an interval holds no time bin of width ``dt``, or for inputs
+        :func:`~neurospatial.decoding.bin_spikes_in_time` or
+        :func:`~neurospatial.decoding.decode_position` refuse.
+
+    See Also
+    --------
+    null_events : Null events to decode.
+    neurospatial.replay.compare_replay_methods : Score the decoded events.
+    """
+    from neurospatial.decoding import bin_spikes_in_time, decode_position
+
+    operation = "decode_intervals()"
+    windows = _checked_intervals(intervals, operation)
+    events = []
+    counts = []
+    for start, stop in windows:
+        event_counts, grid = bin_spikes_in_time(
+            spike_times, dt=dt, t_start=float(start), t_stop=float(stop)
+        )
+        events.append(
+            decode_position(
+                env, event_counts, encoding_models, dt=dt, prior=prior, times=grid
+            )
+        )
+        counts.append(np.asarray(event_counts))
+    return events, counts
+
+
+def _positive_count(value: Any, name: str, operation: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 1:
+        raise ValueError(
+            f"{operation}: {name} must be a positive integer, got {value!r}."
+        )
+
+
+def _checked_intervals(intervals: Any, operation: str) -> NDArray[np.float64]:
+    windows = np.asarray(intervals, dtype=np.float64)
+    if (
+        windows.ndim != 2
+        or windows.shape[1] != 2
+        or len(windows) == 0
+        or not np.all(np.isfinite(windows))
+        or np.any(windows[:, 1] <= windows[:, 0])
+    ):
+        raise ValueError(
+            _format_error(
+                f"{operation}: intervals must be finite (start, stop) rows with "
+                f"start < stop, got shape {windows.shape}.",
+                fix="pass an array of shape (n_events, 2) in seconds",
+            )
+        )
+    return windows

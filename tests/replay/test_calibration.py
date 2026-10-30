@@ -15,10 +15,14 @@ from neurospatial.decoding import (
     decode_position,
 )
 from neurospatial.replay import (
+    NullSpikeData,
     compare_replay_methods,
+    decode_intervals,
     detection_rates,
     event_properties,
     method_agreement,
+    null_events,
+    simulated_null_events,
 )
 from neurospatial.replay.methods import DIBA_BUZSAKI_2007, SILVA_2015, WU_2017
 from neurospatial.simulation import simulate_replay_event
@@ -337,3 +341,250 @@ def test_false_positive_rates_on_simulated_events(track):
     ).all()
     agreement = method_agreement(table)
     assert len(agreement) == 3 and (agreement["n_events"] == 16).all()
+
+
+@pytest.fixture(scope="module")
+def recording():
+    """Three 200 ms events of 6 cells, with spikes outside them too."""
+    rng = np.random.default_rng(2)
+    intervals = np.array([[1.0, 1.2], [3.0, 3.2], [7.0, 7.2]])
+    trains = []
+    for cell in range(6):
+        inside = [start + rng.uniform(0, 0.2, cell + 1) for start, _ in intervals]
+        outside = rng.uniform(0, 10, 5)
+        trains.append(np.sort(np.concatenate([*inside, outside])))
+    return trains, intervals
+
+
+def _in_events(trains, intervals):
+    """Each event's spikes relative to its start, per cell."""
+    return [
+        [np.sort(train[(train >= a) & (train < b)] - a) for train in trains]
+        for a, b in intervals
+    ]
+
+
+class TestNullEvents:
+    @pytest.mark.parametrize("kind", ["cell_identity", "spike_shift", "poisson"])
+    def test_layout_and_what_is_kept(self, recording, kind):
+        trains, intervals = recording
+        null = null_events(trains, intervals, kind=kind, n_copies=3, rng=0)
+        assert null.n_events == 9 and null.kind == kind
+        np.testing.assert_array_equal(null.source_events, np.repeat([0, 1, 2], 3))
+        np.testing.assert_allclose(np.diff(null.intervals, axis=1).ravel(), 0.2)
+        # Null events do not overlap, and no spike falls outside them.
+        assert np.all(null.intervals[1:, 0] >= null.intervals[:-1, 1] + 1.0 - 1e-9)
+        real = _in_events(trains, intervals)
+        copies = _in_events(null.spike_times, null.intervals)
+        assert sum(t.size for t in null.spike_times) == sum(
+            sum(c.size for c in event) for event in copies
+        )
+        for copy, source in zip(copies, null.source_events, strict=True):
+            original = real[source]
+            sizes = sorted(c.size for c in copy)
+            assert sizes == sorted(c.size for c in original)
+            if kind == "cell_identity":
+                rounded = [tuple(np.round(c, 9)) for c in copy]
+                assert sorted(rounded) == sorted(
+                    tuple(np.round(c, 9)) for c in original
+                )
+            else:
+                assert [c.size for c in copy] == [c.size for c in original]
+                assert all(np.all((c >= 0) & (c < 0.2)) for c in copy)
+
+    def test_cell_identity_moves_spike_trains_between_cells(self, recording):
+        trains, intervals = recording
+        null = null_events(trains, intervals, kind="cell_identity", n_copies=5, rng=1)
+        copies = _in_events(null.spike_times, null.intervals)
+        real = _in_events(trains, intervals)
+        moved = sum(
+            copy[cell].size != real[source][cell].size
+            for copy, source in zip(copies, null.source_events, strict=True)
+            for cell in range(6)
+        )
+        assert moved > 0
+
+    def test_results_are_read_only_and_pickle(self, recording):
+        import pickle
+
+        trains, intervals = recording
+        null = null_events(trains, intervals, kind="poisson", rng=0)
+        assert not null.intervals.flags.writeable
+        assert not null.spike_times[0].flags.writeable
+        clone = pickle.loads(pickle.dumps(null))
+        assert not clone.spike_times[0].flags.writeable
+        assert clone.summary() == null.summary()
+
+    def test_refusals(self, recording):
+        trains, intervals = recording
+        with pytest.raises(ValueError, match="kind must be"):
+            null_events(trains, intervals, kind="jitter")
+        with pytest.raises(ValueError, match="n_copies"):
+            null_events(trains, intervals, kind="poisson", n_copies=0)
+        with pytest.raises(ValueError, match="start < stop"):
+            null_events(trains, np.array([[1.0, 0.5]]), kind="poisson")
+
+    def test_simulated_events(self, track):
+        x = track.bin_centers[:, 0]
+        rates = 20.0 * np.exp(-0.5 * ((x - np.linspace(5, 95, 8)[:, None]) / 8.0) ** 2)
+        null = simulated_null_events(track, rates, n_events=3, kind="stationary", rng=0)
+        assert isinstance(null, NullSpikeData)
+        assert null.kind == "simulated_stationary"
+        np.testing.assert_array_equal(null.source_events, [-1, -1, -1])
+        assert len(null.spike_times) == 8
+        with pytest.raises(ValueError, match="kind must be"):
+            simulated_null_events(track, rates, n_events=3, kind="sweep")
+
+
+class TestNullRandomization:
+    def test_spike_shift_moves_spikes_but_keeps_their_intervals(self, recording):
+        trains, intervals = recording
+        null = null_events(trains, intervals, kind="spike_shift", rng=0)
+        real = _in_events(trains, intervals)
+        copies = _in_events(null.spike_times, null.intervals)
+        moved = 0
+        for copy, source in zip(copies, null.source_events, strict=True):
+            for cell, spikes in enumerate(copy):
+                original = real[source][cell]
+                moved += not np.allclose(spikes, original)
+
+                # Circular intervals between consecutive spikes are kept.
+                def circular(t):
+                    return np.sort(np.mod(np.diff(np.r_[t, t[0] + 0.2]), 0.2))
+
+                np.testing.assert_allclose(
+                    circular(spikes), circular(original), atol=1e-9
+                )
+        assert moved > 10
+
+    def test_poisson_redraws_spike_times(self, recording):
+        trains, intervals = recording
+        null = null_events(trains, intervals, kind="poisson", rng=0)
+        real = _in_events(trains, intervals)
+        copies = _in_events(null.spike_times, null.intervals)
+        same = sum(
+            np.allclose(copy[cell], real[source][cell])
+            for copy, source in zip(copies, null.source_events, strict=True)
+            for cell in range(6)
+        )
+        assert same == 0
+
+    @pytest.mark.parametrize("kind", ["cell_identity", "spike_shift", "poisson"])
+    def test_a_seed_reproduces_and_copies_differ(self, recording, kind):
+        trains, intervals = recording
+        first = null_events(trains, intervals, kind=kind, n_copies=2, rng=3)
+        again = null_events(trains, intervals, kind=kind, n_copies=2, rng=3)
+        for a, b in zip(first.spike_times, again.spike_times, strict=True):
+            np.testing.assert_array_equal(a, b)
+        copies = _in_events(first.spike_times, first.intervals)
+        assert any(
+            a.size != b.size or not np.allclose(a, b)
+            for a, b in zip(copies[0], copies[1], strict=True)
+        )
+
+    def test_cells_outside_the_mask_keep_their_spikes(self, recording):
+        trains, intervals = recording
+        cells = np.array([True, True, True, False, False, False])
+        null = null_events(trains, intervals, kind="poisson", cells=cells, rng=0)
+        real = _in_events(trains, intervals)
+        copies = _in_events(null.spike_times, null.intervals)
+        for copy, source in zip(copies, null.source_events, strict=True):
+            for cell in range(3, 6):
+                np.testing.assert_allclose(copy[cell], real[source][cell])
+        with pytest.raises(ValueError, match="one boolean per cell"):
+            null_events(trains, intervals, kind="poisson", cells=cells[:3])
+
+    def test_simulated_random_events_are_laid_out(self, track):
+        x = track.bin_centers[:, 0]
+        rates = 20.0 * np.exp(-0.5 * ((x - np.linspace(5, 95, 8)[:, None]) / 8.0) ** 2)
+        null = simulated_null_events(
+            track, rates, n_events=3, kind="random", duration=0.3, rng=0
+        )
+        np.testing.assert_allclose(null.intervals, [[0, 0.3], [1.3, 1.6], [2.6, 2.9]])
+        inside = _in_events(null.spike_times, null.intervals)
+        assert sum(t.size for t in null.spike_times) == sum(
+            sum(c.size for c in event) for event in inside
+        )
+
+    def test_stationary_events_sit_along_the_whole_track(self, track):
+        x = track.bin_centers[:, 0]
+        rates = 0.5 + 40.0 * np.exp(
+            -0.5 * ((x - np.linspace(5, 95, 10)[:, None]) / 6.0) ** 2
+        )
+        null = simulated_null_events(
+            track, rates, n_events=20, kind="stationary", rate_gain=3.0, rng=0
+        )
+        events, _ = decode_intervals(
+            track, null.spike_times, null.intervals, rates, dt=DT
+        )
+        positions = [
+            x[np.bincount(event.posterior.argmax(axis=1)).argmax()] for event in events
+        ]
+        assert np.ptp(positions) >= 50.0
+
+
+class TestDecodeIntervals:
+    def test_decodes_each_interval(self, track, recording):
+        trains, intervals = recording
+        rates = np.full((6, track.n_bins), 5.0)
+        events, counts = decode_intervals(track, trains, intervals, rates, dt=DT)
+        assert len(events) == len(counts) == 3
+        np.testing.assert_allclose(events[1].times, 3.0 + DT / 2 + DT * np.arange(10))
+        assert counts[0].shape == (10, 6)
+        assert counts[0].sum() == sum(c.size for c in _in_events(trains, intervals)[0])
+
+    def test_drops_a_trailing_remainder_and_keeps_one_whole_bin(self, track, recording):
+        trains, _ = recording
+        rates = np.full((6, track.n_bins), 5.0)
+        events, counts = decode_intervals(
+            track, trains, np.array([[1.0, 1.05], [0.1, 0.12]]), rates, dt=DT
+        )
+        assert [len(event.posterior) for event in events] == [2, 1]
+        assert counts[1].shape == (1, 6)
+
+    def test_refuses_an_interval_shorter_than_a_bin(self, track, recording):
+        trains, _ = recording
+        with pytest.raises(ValueError, match="smaller than one bin"):
+            decode_intervals(
+                track, trains, np.array([[1.0, 1.01]]), np.ones((6, 10)), dt=DT
+            )
+
+
+def test_false_positives_on_cell_identity_copies(track):
+    """Shuffling cell identities of real sweeps removes their replay."""
+    x = track.bin_centers[:, 0]
+    rates = 0.5 + 25.0 * np.exp(
+        -0.5 * ((x - np.linspace(0.0, 100.0, 20)[:, None]) / 8.0) ** 2
+    )
+    trains = [[] for _ in range(20)]
+    intervals = []
+    for index in range(6):
+        event = simulate_replay_event(
+            track, rates, kind="sweep", speed=400.0, rate_gain=4.0, seed=index
+        )
+        start = 2.0 * index
+        for cell, train in enumerate(event.spike_times):
+            trains[cell].append(np.asarray(train) + start)
+        intervals.append((start, start + event.duration))
+    trains = [np.concatenate(parts) for parts in trains]
+    intervals = np.asarray(intervals)
+    real_events, real_counts = decode_intervals(track, trains, intervals, rates, dt=DT)
+    null = null_events(trains, intervals, kind="cell_identity", n_copies=3, rng=0)
+    null_decoded, null_counts = decode_intervals(
+        track, null.spike_times, null.intervals, rates, dt=DT
+    )
+    tables = []
+    for name, events, counts in (
+        ("real", real_events, real_counts),
+        ("cell_identity", null_decoded, null_counts),
+    ):
+        table = compare_replay_methods(
+            track, events, replay_methods=[SILVA_2015], spike_counts=counts, rng=0
+        )
+        table["data"] = name
+        tables.append(table)
+    rates_by_data = detection_rates(pd.concat(tables), groups=["data"]).set_index(
+        "data"
+    )
+    assert rates_by_data.loc["real", "rate"] >= 0.8
+    assert rates_by_data.loc["cell_identity", "rate"] <= 0.25
