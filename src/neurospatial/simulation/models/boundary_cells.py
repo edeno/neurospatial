@@ -50,6 +50,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._units import default_length
 from neurospatial.geometry import (
@@ -376,7 +377,7 @@ class BoundaryVectorCellModel:
     ----------
     ground_truth : dict[str, Any]
         The values the model fires with: the drawn direction, wrapped to
-        [-pi, pi], and the default distance and tolerance. Every parameter is
+        (-pi, pi], and the default distance and tolerance. Every parameter is
         also an attribute holding the argument as passed, so
         ``preferred_distance``, ``preferred_direction`` and
         ``distance_tolerance`` read None when left to their defaults.
@@ -473,7 +474,7 @@ class BoundaryVectorCellModel:
             )
         _check_rates(self.max_rate, self.baseline_rate)
         _require_walls(env, self.boundary_source, call)
-        wrapped = float(np.angle(np.exp(1j * direction)))
+        wrapped = float(wrap_angle(np.asarray(direction, dtype=np.float64)))
         walls = Walls.from_geometry(
             boundary_geometry(
                 env.binning, env.arena, self.boundary_source, blocking="movement"

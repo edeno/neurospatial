@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial.simulation.models.base import (
     _check_angle,
     _check_positive,
@@ -66,7 +67,7 @@ class HeadDirectionCellModel:
     ----------
     ground_truth : dict[str, Any]
         The values the model fires with: read the drawn preferred direction,
-        wrapped to [-π, π], here. Every parameter is also an attribute
+        wrapped to (-π, π], here. Every parameter is also an attribute
         holding the argument as passed, so ``preferred_direction`` reads None
         when it is drawn from ``seed``, and ``dataclasses.replace(model,
         seed=2)`` draws again, as the constructor would. Only ``seed``
@@ -206,7 +207,7 @@ class HeadDirectionCellModel:
         for name, value in (
             (
                 "_preferred_direction",
-                float(np.arctan2(np.sin(direction), np.cos(direction))),
+                float(wrap_angle(np.asarray(direction, dtype=np.float64))),
             ),
             ("concentration", float(self.concentration)),
             ("max_rate", float(self.max_rate)),

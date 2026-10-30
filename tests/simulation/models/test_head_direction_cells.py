@@ -60,17 +60,17 @@ class TestHeadDirectionCellModel:
         assert -np.pi <= hd1 < np.pi
 
     def test_direction_wrapping(self):
-        """The ground truth wraps the preferred direction to [-pi, pi)."""
+        """The ground truth wraps the preferred direction to (-pi, pi]."""
         # Large positive angle
         hd1 = HeadDirectionCellModel(preferred_direction=3 * np.pi)
         assert hd1.preferred_direction == 3 * np.pi
         wrapped = hd1.ground_truth["preferred_direction"]
-        assert -np.pi <= wrapped < np.pi
+        assert -np.pi < wrapped <= np.pi
         assert wrapped == pytest.approx(np.pi, abs=1e-6)
 
         # Large negative angle
         hd2 = HeadDirectionCellModel(preferred_direction=-3 * np.pi)
-        assert -np.pi <= hd2.ground_truth["preferred_direction"] < np.pi
+        assert -np.pi < hd2.ground_truth["preferred_direction"] <= np.pi
 
     def test_peak_firing_at_preferred_direction(self):
         """Test that firing rate peaks at preferred direction."""
