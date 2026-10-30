@@ -92,6 +92,84 @@ class TestClosedLoop:
         )
         assert_allclose(result.sinogram, 2 * LOOP_BAND / LOOP_LENGTH, atol=1e-12)
 
+    def test_rows_without_mass_add_no_band_mass_at_the_seam(self, loop):
+        """An empty time bin scores its line's median, also across the seam.
+
+        With every other row uniform, each line's median band mass is the
+        band's share of the loop, so every line, including those whose band
+        crosses the seam, scores that share.
+        """
+        posterior = np.full((6, loop.n_bins), 1.0 / loop.n_bins)
+        posterior[[1, 4]] = 0.0
+        result = detect_trajectory_radon(
+            loop,
+            posterior,
+            np.arange(6) * 0.02,
+            band=LOOP_BAND,
+            wrap=True,
+            zero_rows="line_median",
+        )
+        assert_allclose(result.sinogram, 2 * LOOP_BAND / LOOP_LENGTH, atol=1e-12)
+
+    def test_empty_row_in_a_sweep_across_the_seam_scores_its_line_median(self, loop):
+        posterior, times = _loop_sweep(first_bin=148)
+        # Time bin 3 is centered on the seam (bin 160, 400 cm), so its band
+        # crosses it.
+        posterior[3] = 0.0
+        result = detect_trajectory_radon(
+            loop,
+            posterior,
+            times,
+            band=LOOP_BAND,
+            max_speed=2500.0,
+            wrap=True,
+            zero_rows="line_median",
+        )
+        # The best line's band mass, integrated bin by bin around the loop.
+        edges = np.arange(loop.n_bins + 1) * BIN_SIZE
+        position = result.start_position + result.speed * (times - times[0])
+        masses = []
+        for row, center in zip(posterior, position, strict=True):
+            mass = 0.0
+            for lap in (-LOOP_LENGTH, 0.0, LOOP_LENGTH):
+                low, high = center - LOOP_BAND + lap, center + LOOP_BAND + lap
+                overlap = np.minimum(edges[1:], high) - np.maximum(edges[:-1], low)
+                mass += float(np.sum(row * np.clip(overlap, 0.0, None)) / BIN_SIZE)
+            masses.append(mass)
+        masses = np.array(masses)
+        with_mass = np.arange(len(times)) != 3
+        expected = (masses[with_mass].sum() + np.median(masses[with_mass])) / len(times)
+        assert result.score == pytest.approx(expected, abs=1e-9)
+        assert result.score <= 1.0
+
+    def test_batched_scores_with_empty_rows_equal_single_scores(self, loop):
+        from neurospatial.replay.significance import _scorer_for
+
+        posteriors, times = _noisy_copies(loop, _event_across_the_seam, 6, seed=4)
+        for index, posterior in enumerate(posteriors):
+            posterior[[2, 5 + index % 3]] = 0.0
+        options = {"band": LOOP_BAND, "wrap": True, "zero_rows": "line_median"}
+        scorer = _scorer_for(
+            detect_trajectory_radon, loop, posteriors[0], times, dict(options)
+        )
+        batched = scorer.scores(iter(posteriors), len(posteriors))
+        single = [
+            detect_trajectory_radon(loop, posterior, times, **options).score
+            for posterior in posteriors
+        ]
+        assert_array_equal(batched, single)
+
+    def test_event_without_mass_is_refused(self, loop):
+        with pytest.raises(ValueError, match="no mass in any time bin"):
+            detect_trajectory_radon(
+                loop,
+                np.zeros((4, loop.n_bins)),
+                np.arange(4) * 0.02,
+                band=LOOP_BAND,
+                wrap=True,
+                zero_rows="line_median",
+            )
+
     def test_open_track_is_refused(self, track):
         posterior = np.full((3, track.n_bins), 1.0 / track.n_bins)
         with pytest.raises(ValueError, match="not a closed-loop track"):

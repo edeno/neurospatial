@@ -1810,7 +1810,9 @@ def detect_trajectory_radon(
         (Maboudi et al. 2018) scores each such row, for every trajectory,
         by the median of that trajectory's band mass over its time bins
         with spikes on the track (0 when it has none); the score is still
-        the mean over all ``n_time_bins``. Dropping the time bins without
+        the mean over all ``n_time_bins``. On a loop (``wrap=True``) such a
+        row holds no mass in any lap its band covers. A posterior with no
+        mass in any time bin is refused. Dropping the time bins without
         spikes, with their times, instead leaves them out of the mean.
     n_lines : int or None, default=None
         None searches the dense grid of speeds and start positions (see
@@ -1844,7 +1846,8 @@ def detect_trajectory_radon(
         its choices, or if ``wrap=True`` on a track that is not a closed
         loop (or has ``edge_spacing``), with ``line_ends="on_track"``, or
         with a ``band`` of half the loop or more; if ``off_track`` or
-        ``zero_rows`` is not one of its choices, or
+        ``zero_rows`` is not one of its choices, if no time bin has mass
+        with ``zero_rows="line_median"``, or
         ``off_track="bin_median"`` is given where no trajectory leaves the
         track (``wrap=True`` or ``line_ends="on_track"``); if ``n_lines`` is
         not a positive integer or ``line_seed`` not a non-negative integer,
@@ -2164,6 +2167,16 @@ def _prepare_replay_lines(
     if wrap:
         _require_closed_loop(env, operation)
     posterior = np.asarray(posterior, dtype=np.float64)
+    if not posterior.any():
+        raise ValueError(
+            _format_error(
+                f"{operation} got a posterior with no mass in any time bin.",
+                why="zero_rows='line_median' scores a time bin without spikes "
+                "by the line's other time bins, and here there are none, so "
+                "no line has a score",
+                fix="leave out events without spikes, or score them as not replay",
+            )
+        )
     times = _require_times(times, len(posterior), operation)
     if np.any(np.diff(times) <= 0):
         raise ValueError(
@@ -2710,8 +2723,6 @@ class _ReplayLines:
             if block.lines.size == 0:  # every speed of the block below min_speed
                 continue
             block_scores = block.operator @ values  # (n_lines, n_events)
-            if block.laps is not None:
-                block_scores += block.laps[:, None]
             if block.padded is not None:
                 # Band mass above 1 at a time bin, from the padding, is cut.
                 excess = np.maximum(block.padded @ values - 1.0, 0.0)
@@ -2870,7 +2881,9 @@ class _ReplayLines:
             values[pairs.columns[lines], events[:, None, None]],
         )
         if pairs.laps is not None:
-            mass += pairs.laps[lines]
+            assert pairs.total_columns is not None  # set with laps
+            # Each whole lap holds the time bin's total mass (0 without mass).
+            mass += pairs.laps[lines] * values[pairs.total_columns][:, events].T
         if pairs.padded is not None:
             # As in the score, band mass above 1 from the padding is cut.
             mass = np.where(pairs.padded[lines], np.minimum(mass, 1.0), mass)
@@ -2937,8 +2950,10 @@ class _ReplayLines:
 
         Each band end is located on the track: its cumulative mass is
         interpolated between bin edges and held flat beyond the track. On a
-        loop, the band end is first brought onto the loop and the whole
-        laps it went round add 1 each. With line ends on the track, band
+        loop, the band end is first brought onto the loop and each whole
+        lap it went round adds the time bin's total mass (1, or 0 for a
+        row without mass; the caller weights the total's value row by
+        ``laps``). With line ends on the track, band
         beyond an end holds that length times the time bin's median density.
 
         Parameters
@@ -2955,7 +2970,8 @@ class _ReplayLines:
         weight : NDArray[np.float64], shape (n_terms,)
             Weights on the values.
         laps : NDArray[np.float64], shape (n_pairs,)
-            Constant mass of the laps the band covers (zero off a loop).
+            Whole laps the band covers, each holding the time bin's total
+            mass (zero off a loop).
         padded : NDArray[np.bool_], shape (n_pairs,)
             Whether the pair's band extends beyond an end of the track and
             holds padding.
@@ -3057,6 +3073,12 @@ class _ReplayLines:
         row, time = np.nonzero(on_track)
         pair, column, weight, laps, padded = self._band_terms(position[row, time], time)
         row_parts, column_parts, weight_parts = [row[pair]], [column], [weight / n_time]
+        if self.wrap:
+            # Each whole lap a band covers holds the time bin's total mass:
+            # 1 for a decoded row, 0 for a row without mass.
+            row_parts.append(row)
+            column_parts.append(time * len(self.knots) + len(self.knots) - 1)
+            weight_parts.append(laps / n_time)
         if not self.wrap and self.line_ends == "any":
             # Off-track time bins are those before the first and after the
             # last on the track (a trajectory is monotonic, so its time bins
@@ -3077,20 +3099,13 @@ class _ReplayLines:
             ),
             shape=(lines.size, n_values),
         )
-        block_laps = (
-            np.bincount(row, weights=laps, minlength=lines.size) / n_time
-            if self.wrap
-            else None
-        )
         pairs = (
             self._pair_terms(on_track, row, time, column, weight, laps, padded)
             if self.zero_rows == "line_median"
             else None
         )
         if not np.any(padded):
-            return _LineBlock(
-                lines=lines, operator=operator, laps=block_laps, pairs=pairs
-            )
+            return _LineBlock(lines=lines, operator=operator, pairs=pairs)
         # The band mass of each padded pair, and the sum over a line's padded
         # pairs, divided by the number of time bins.
         n_padded = int(np.sum(padded))
@@ -3099,7 +3114,6 @@ class _ReplayLines:
         return _LineBlock(
             lines=lines,
             operator=operator,
-            laps=block_laps,
             pairs=pairs,
             padded=sparse.csr_matrix(
                 (weight[keep], (index[pair[keep]], column[keep])),
@@ -3152,15 +3166,18 @@ class _ReplayLines:
             weights[row[padded], time[padded], 4] = weight[4 * n_pairs :]
             pair_padded = np.zeros((n_lines, n_time), dtype=bool)
             pair_padded[row, time] = padded
-        pair_laps = None
+        pair_laps = total_columns = None
         if self.wrap:
             pair_laps = np.zeros((n_lines, n_time))
             pair_laps[row, time] = laps
+            n_knots = len(self.knots)
+            total_columns = np.arange(n_time) * n_knots + n_knots - 1
         return _PairTerms(
             columns=columns,
             weights=weights,
             on_track=on_track,
             laps=pair_laps,
+            total_columns=total_columns,
             padded=pair_padded,
         )
 
@@ -3207,9 +3224,6 @@ class _LineBlock:
     operator : scipy.sparse.csr_matrix
         Shape ``(n_lines, n_values)``: maps the values of
         :meth:`_ReplayLines.event_values` to each trajectory's replay score.
-    laps : NDArray[np.float64] or None, shape (n_lines,)
-        On a loop, the constant part of each score: the whole laps its bands
-        cover, divided by the number of time bins.
     padded : scipy.sparse.csr_matrix or None
         Shape ``(n_padded, n_values)``: the band mass of each trajectory and
         time bin whose band holds padding beyond an end of the track.
@@ -3223,7 +3237,6 @@ class _LineBlock:
 
     lines: NDArray[np.intp]
     operator: Any
-    laps: NDArray[np.float64] | None = None
     padded: Any = None
     padded_lines: Any = None
     pairs: _PairTerms | None = None
@@ -3242,6 +3255,9 @@ class _PairTerms:
         Whether the trajectory is on the track at each time bin.
     laps : NDArray[np.float64] or None, shape (n_lines, n_time_bins)
         On a loop, the whole laps each band covers.
+    total_columns : NDArray[np.intp] or None, shape (n_time_bins,)
+        On a loop, the value row holding each time bin's total mass, which
+        each whole lap holds.
     padded : NDArray[np.bool_] or None, shape (n_lines, n_time_bins)
         Whether the band holds padding beyond an end of the track, and so is
         capped at 1.
@@ -3251,6 +3267,7 @@ class _PairTerms:
     weights: NDArray[np.float64]
     on_track: NDArray[np.bool_]
     laps: NDArray[np.float64] | None = None
+    total_columns: NDArray[np.intp] | None = None
     padded: NDArray[np.bool_] | None = None
 
 
