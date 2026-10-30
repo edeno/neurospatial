@@ -2678,7 +2678,8 @@ def explained_variance_reactivation(
         Required with ``template_unit_ids``.
     control_unit_ids : array-like, shape (n_neurons,), or sequence of them, optional
         Column labels of the counts that ``control_correlations`` came from;
-        with several controls, one label array per control. Required with
+        with several controls, one label array per control. One control
+        takes one label array, alone or in a one-item list. Required with
         ``template_unit_ids`` when ``control_correlations`` is given, and
         refused without it.
 
@@ -3306,20 +3307,23 @@ def _pairs_in_template_order(
     )
     if not controls:
         return template, match, []
+    control_labels = labels["control_unit_ids"]
     if len(controls) == 1:
+        # One control may come in a one-item list, its labels too.
+        if len(control_labels) == 1 and np.ndim(control_labels[0]) == 1:
+            control_labels = control_labels[0]
         return (
             template,
             match,
             [
                 in_template_order(
                     controls[0],
-                    labels["control_unit_ids"],
+                    control_labels,
                     "control_correlations",
                     "control_unit_ids",
                 )
             ],
         )
-    control_labels = labels["control_unit_ids"]
     if (
         control_labels is None
         or len(control_labels) != len(controls)
