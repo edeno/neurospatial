@@ -222,8 +222,9 @@ class TestPickling:
             bases=(base,),
             frozen=True,
             eq=False,
-            module=__name__,
         )
+        # make_dataclass takes module= only from Python 3.12.
+        extended.__module__ = __name__
         globals()[extended.__name__] = extended  # importable for pickle
         original = build()
         fields = {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import pickle
 
 import numpy as np
@@ -13,6 +14,7 @@ from scipy import stats
 from neurospatial import Environment
 from neurospatial.replay import (
     RankOrderResult,
+    detect_rank_order_replay,
     rank_order_correlation,
     rank_order_significance,
 )
@@ -274,6 +276,26 @@ class TestAnalyticPValue:
         assert result.score == pytest.approx(1.0)
         assert result.analytic_p_value == pytest.approx(2 / math.factorial(12))
 
+    def test_many_spike_pairs_do_not_overflow(self):
+        """171 or more pairs: 2 / n! is below the smallest float, not an error."""
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [200.0, 0.0]], bin_size=5.0, units="cm"
+        )
+        x = env.bin_centers[:, 0]
+        rates = 20.0 * np.exp(
+            -0.5 * ((x - np.linspace(10.0, 190.0, 12)[:, None]) / 6.0) ** 2
+        )
+        # 12 cells x 15 spikes = 180 pairs, in field order.
+        trains = [
+            INTERVAL[0] + 0.015 * cell + 0.0008 * np.arange(15) for cell in range(12)
+        ]
+        result = rank_order_correlation(
+            env, trains, INTERVAL, rates, spike_statistic="all_spikes"
+        )
+        assert result.n_active_cells == 12
+        assert result.score > 0.9
+        assert 0.0 <= result.analytic_p_value < 1e-10
+
     def test_calibrated_for_median_spike_times(self, track):
         """Random firing order: P(p < 0.05) is at most about 0.05 (discrete)."""
         env, rates, _ = track
@@ -460,3 +482,39 @@ def test_permutation_p_value_counts_tied_correlations():
     null = result.shuffle.null_scores
     expected = (np.sum(null <= result.observed.score + 1e-9) + 1) / 1000
     assert result.p_value == pytest.approx(expected)
+
+
+def test_field_positions_ignore_bins_outside_spatial_support():
+    """A rate in a bin without occupancy cannot place a cell's field there."""
+    from neurospatial.encoding import SpatialRatesResult
+    from neurospatial.replay.methods import DIBA_BUZSAKI_2007
+
+    env = Environment.linear_track(
+        endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0, units="cm"
+    )
+    x = env.bin_centers[:, 0]
+    maps = 20.0 * np.exp(-0.5 * ((x - np.linspace(40.0, 90.0, 5)[:, None]) / 5.0) ** 2)
+    maps[[1, 3], 0] = 60.0  # finite rates where the animal never went
+    occupancy = np.where(x < 25.0, 0.0, 1.0)
+    result = SpatialRatesResult(
+        firing_rates=maps,
+        occupancy=occupancy,
+        env=env,
+        method="binned",
+        bandwidth=5.0,
+        min_occupancy=0.5,
+    )
+    assert not result.spatial_support[0]
+    trains = _in_field_order(5)
+    assert rank_order_correlation(env, trains, INTERVAL, result).score == pytest.approx(
+        1.0
+    )
+    verdict = detect_rank_order_replay(
+        env,
+        trains,
+        INTERVAL,
+        result,
+        rank_order_method=dataclasses.replace(DIBA_BUZSAKI_2007, n_shuffles=200),
+        rng=0,
+    )
+    assert verdict.score == pytest.approx(1.0)
