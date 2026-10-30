@@ -170,6 +170,9 @@ Detecting the candidate events (ripples, population bursts) is not included.
 - `replay_significance()`: Test any replay score against column-cycle,
   unit-identity and pseudo-event shuffles; significant when every null
   rejects the event
+- `rank_order_correlation()`, `rank_order_significance()`: Spearman
+  correlation of field order and firing order in an event, with a
+  cell-order permutation test; needs no decoding
 - `shuffle_cell_identity()`, `shuffle_place_fields_circular()`,
   `shuffle_place_fields_circular_2d()`, `shuffle_posterior_circular()`,
   `shuffle_posterior_weighted_circular()`: Replay shuffles
