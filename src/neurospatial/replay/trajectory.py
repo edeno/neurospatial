@@ -338,9 +338,9 @@ def _track_positions(
         not 2-D, if it does not have one column per bin, or if a row is not a
         probability mass (see :func:`_require_probability_rows`).
     """
-    from neurospatial.environment._queries import require_track_extents
+    from neurospatial.environment import _require_track_extents
 
-    starts, stops = require_track_extents(
+    starts, stops = _require_track_extents(
         env, operation, alternative=_TRACK_ALTERNATIVE
     )
     posterior = np.asarray(posterior)
@@ -1510,7 +1510,7 @@ def _prepare_replay_lines(
         The validated posterior in bin numbering.
     """
     from neurospatial._units import default_length
-    from neurospatial.environment._queries import require_track_extents
+    from neurospatial.environment import _require_track_extents
 
     # Validates the environment and the posterior rows.
     _, starts, stops = _track_positions(env, posterior, operation)
@@ -1546,7 +1546,7 @@ def _prepare_replay_lines(
                     fix=f"pass a positive value, e.g. {example}",
                 )
             )
-    bin_starts, _ = require_track_extents(
+    bin_starts, _ = _require_track_extents(
         env, operation, alternative=_TRACK_ALTERNATIVE
     )
     order = np.argsort(bin_starts, kind="stable")  # as in _track_positions

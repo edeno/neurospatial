@@ -23,6 +23,17 @@ fit_isotonic_trajectory : Monotonic fit (Michon et al. 2019)
     Weighted isotonic fit of the MAP positions, scored by the mean MAP
     probability times R².
 
+Criteria Metrics
+----------------
+trajectory_metrics : Per-event metrics thresholded by criteria-based detection
+    MAP and posterior-mean jumps, spread, range, path length, dispersion,
+    coverage, peak probability and empty time bins, each named for the
+    papers that threshold it.
+
+template_fractions : Share of a joint decode in each template
+    Directional fraction of Ambrose et al. (2016), with optional masking of
+    the track ends (Mallory et al. 2025).
+
 Rank Order
 ----------
 rank_order_correlation : Field order vs firing order (Foster & Wilson 2006)
@@ -50,6 +61,8 @@ Result Containers
 -----------------
 RadonDetectionResult, LinearFitResult, IsotonicFitResult, WeightedCorrelationResult
     The fitted trajectory or correlation, and its ``score``.
+TrajectoryMetrics
+    Per-time-bin arrays and per-event scalars of one event.
 ReplaySignificanceResult
     The event's score, one shuffle test per null, and the largest p-value.
 
@@ -61,6 +74,11 @@ Monte Carlo p-value helpers and temporal shuffles
 from neurospatial.replay.correlation import (
     WeightedCorrelationResult,
     weighted_correlation,
+)
+from neurospatial.replay.criteria import (
+    TrajectoryMetrics,
+    template_fractions,
+    trajectory_metrics,
 )
 from neurospatial.replay.nulls import (
     shuffle_cell_identity,
@@ -97,12 +115,16 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "RankOrderResult",
     "RankOrderSignificanceResult",
     "ReplaySignificanceResult",
+    "TrajectoryMetrics",
     "WeightedCorrelationResult",
     # Trajectory scores
     "detect_trajectory_radon",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",
     "weighted_correlation",
+    # Criteria metrics
+    "template_fractions",
+    "trajectory_metrics",
     # Significance
     "replay_significance",
     # Rank order

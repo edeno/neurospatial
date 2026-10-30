@@ -33,6 +33,7 @@ from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._style import _head_direction_color, _rate_opacity
 from neurospatial.animation._tracks import track_segments
+from neurospatial.environment import _track_extents
 from neurospatial.environment._fastplotlib import (
     COLORBAR_WIDTH,
     ColorScale,
@@ -63,7 +64,6 @@ from neurospatial.environment._fastplotlib_compat import (
     update_graphic,
 )
 from neurospatial.environment._fastplotlib_volume import resolve_field_rendering
-from neurospatial.environment._queries import track_extents
 
 if TYPE_CHECKING:
     from matplotlib.colors import Colormap
@@ -689,7 +689,7 @@ class _UnitRates:
     def __init__(self, subplot: Any, env: Environment, cmap: str | Colormap) -> None:
         self.subplot, self.cmap = subplot, cmap
         self.raster: _Raster | None = None
-        self.extents = track_extents(env)
+        self.extents = _track_extents(env)
         if self.extents is not None:
             self.line = subplot.add_line(
                 np.full((env.n_bins, 3), np.nan, dtype=np.float32),
