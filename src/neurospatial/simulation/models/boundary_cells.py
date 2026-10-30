@@ -87,6 +87,10 @@ BVC_PREFERRED_DISTANCE_CM = 17.5
 # over (George et al. 2024).
 _N_RAYS = 180
 
+# Positions per block when summing ray terms: bounds the (positions, rays)
+# temporaries to about 24 MB however long the trajectory is.
+_DRIVE_BLOCK = 16_384
+
 
 def _require_walls(
     env: Environment, boundary_source: BoundarySource, call: str
@@ -524,18 +528,32 @@ class BoundaryVectorCellModel:
         _times, positions = _model_inputs(
             times, positions, 2, call="BoundaryVectorCellModel.firing_rate()"
         )
-        observed = valid_observers(
-            self.env.binning, self.env.arena, positions, self.boundary_source
-        )
-        drive = np.full(len(positions), np.nan)
-        if observed.any():
-            # Cells on the same walls share the rays cast from the same positions.
-            origins = positions[observed]
-            distances = _shared(
-                ("boundary_vector_rays", self._rays_key, _digest(origins)),
-                lambda: self._walls.ray_distances(origins, self._directions),
+
+        def cast() -> tuple[NDArray[np.bool_], NDArray[np.float64]]:
+            observed = valid_observers(
+                self.env.binning, self.env.arena, positions, self.boundary_source
             )
-            drive[observed] = self._drive_terms(distances).sum(axis=1)
+            return observed, self._walls.ray_distances(
+                positions[observed], self._directions
+            )
+
+        # Cells on the same walls share the rays cast from the same positions.
+        observed, distances = _shared(
+            (
+                "boundary_vector_rays",
+                self.env,
+                self.boundary_source,
+                self._rays_key,
+                _digest(positions),
+            ),
+            cast,
+        )
+        sums = np.empty(len(distances))
+        for start in range(0, len(distances), _DRIVE_BLOCK):
+            block = slice(start, start + _DRIVE_BLOCK)
+            sums[block] = self._drive_terms(distances[block]).sum(axis=1)
+        drive = np.full(len(positions), np.nan)
+        drive[observed] = sums
         return _tuned_rate(self, drive / self._reference_drive)
 
     @property
