@@ -10,7 +10,12 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.decoding import bin_spikes_in_time, decode_position
+from neurospatial.decoding import (
+    DecodingResult,
+    JointDecodingResult,
+    bin_spikes_in_time,
+    decode_position,
+)
 from neurospatial.replay import (
     ReplayCriterion,
     ReplayMethod,
@@ -24,6 +29,7 @@ from neurospatial.replay.methods import (
     DAVIDSON_2009,
     IGATA_2021,
     KARLSSON_FRANK_2009,
+    MALLORY_2025,
     MICHON_2019,
     PFEIFFER_FOSTER_2013,
     PFEIFFER_FOSTER_2015,
@@ -1168,3 +1174,333 @@ def test_segmentation_recipes_match_the_papers(method, options, criteria, choose
     assert [c.label for c in method.criteria] == criteria
     assert method.segmentation.choose == choose
     assert method.units == "cm"
+
+
+@pytest.fixture(scope="module")
+def direction_track():
+    """A 200 cm track in 2 cm bins, as Mallory et al. (2025) decoded."""
+    return Environment.linear_track(
+        endpoints=[[0.0, 0.0], [200.0, 0.0]], bin_size=2.0, units="cm"
+    )
+
+
+def _joint_event(env, outbound, inbound, p_outbound):
+    """A joint decode whose conditional posteriors are given row by row.
+
+    ``outbound`` and ``inbound`` are (n_time_bins, n_bins) conditional
+    posteriors and ``p_outbound`` the outbound template's probability in
+    each time bin.
+    """
+    p_outbound = np.broadcast_to(np.asarray(p_outbound, dtype=float), len(outbound))
+    times = _steps(len(outbound))
+    return JointDecodingResult(
+        template_names=("outbound", "inbound"),
+        template_probability=np.column_stack([p_outbound, 1.0 - p_outbound]),
+        conditional={
+            "outbound": DecodingResult(posterior=outbound, env=env, times=times),
+            "inbound": DecodingResult(posterior=inbound, env=env, times=times),
+        },
+    )
+
+
+def _parked(env, n_time_bins, bin_index=50):
+    return _one_hot(env, [bin_index] * n_time_bins)
+
+
+class TestMallory:
+    def test_detects_a_sweep_in_the_template_with_more_posterior(self, direction_track):
+        env = direction_track
+        event = _joint_event(
+            env, _parked(env, 60), _one_hot(env, range(10, 70)), p_outbound=0.1
+        )
+        result = detect_replay(
+            env,
+            event,
+            _steps(60),
+            replay_method=MALLORY_2025,
+            spike_counts=np.ones((60, 12), dtype=int),
+        )
+        assert result.is_replay and result.template == "inbound"
+        assert result.values["template_fraction > 0.665"] == pytest.approx(0.9)
+        assert result.values["segment_template_fraction >= 0.5"] == pytest.approx(0.9)
+        assert result.summary()["template"] == "inbound"
+
+    def test_needs_two_thirds_of_the_posterior_in_one_template(self, direction_track):
+        env = direction_track
+        event = _joint_event(
+            env, _one_hot(env, range(10, 70)), _parked(env, 60), p_outbound=0.6
+        )
+        result = detect_replay(
+            env,
+            event,
+            _steps(60),
+            replay_method=MALLORY_2025,
+            spike_counts=np.ones((60, 12), dtype=int),
+        )
+        assert result.template == "outbound" and not result.is_replay
+        assert not result.criteria["template_fraction > 0.665"]
+        assert result.criteria["|score| > 0.6"]
+
+    def test_rejects_a_segment_with_more_posterior_in_the_other_template(
+        self, direction_track
+    ):
+        """Outbound holds most of the event, inbound most of the segment.
+
+        60 blurred time bins put 95% of their posterior in the outbound
+        template but no bin above 5 times chance, so they are not in the
+        segment; the 30-bin sweep after them holds 40% outbound.
+        """
+        env = direction_track
+        flat = np.full((60, env.n_bins), 1.0 / env.n_bins)
+        outbound = np.vstack([flat, _one_hot(env, range(20, 50))])
+        inbound = np.vstack([flat, _parked(env, 30)])
+        p_outbound = np.r_[np.full(60, 0.95), np.full(30, 0.4)]
+        result = detect_replay(
+            env,
+            _joint_event(env, outbound, inbound, p_outbound),
+            _steps(90),
+            replay_method=MALLORY_2025,
+            spike_counts=np.ones((90, 12), dtype=int),
+        )
+        assert result.template == "outbound"
+        assert result.segments.rows(result.segment) == slice(60, 90)
+        assert result.criteria["template_fraction > 0.665"]
+        assert result.values["segment_template_fraction >= 0.5"] == pytest.approx(0.4)
+        assert result.criteria["|score| > 0.6"]
+        assert not result.is_replay
+
+    def test_a_joint_decode_needs_a_template_or_a_choice_rule(self, direction_track):
+        env = direction_track
+        event = _joint_event(
+            env, _one_hot(env, range(10, 70)), _parked(env, 60), p_outbound=0.9
+        )
+        with pytest.raises(ValueError, match="needs template="):
+            detect_replay(env, event, _steps(60), replay_method=SILVA_2015)
+        named = detect_replay(
+            env, event, _steps(60), replay_method=SILVA_2015, template="outbound"
+        )
+        assert named.is_replay and named.template == "outbound"
+
+    def test_template_criteria_need_a_joint_decode(self, direction_track):
+        env = direction_track
+        with pytest.raises(ValueError, match="compare templates"):
+            detect_replay(
+                env,
+                _one_hot(env, range(10, 70)),
+                _steps(60),
+                replay_method=MALLORY_2025,
+                spike_counts=np.ones((60, 12), dtype=int),
+            )
+
+    def test_active_cells_count_the_whole_event(self, place_code):
+        """Cells 1 and 2 spike only before the segment and still count."""
+        env, _ = place_code
+        method = ReplayMethod(
+            name="cells",
+            reference="test",
+            score=None,
+            segmentation=ReplaySegmentation({"max_jump": 20.0}),
+            criteria=(ReplayCriterion("n_active_cells", ">=", 3),),
+        )
+        counts = np.zeros((14, 3), dtype=int)
+        counts[:, 0] = 1
+        counts[:2, 1:] = 1
+        result = detect_replay(
+            env,
+            _one_hot(env, [45, 45, *range(12)]),
+            _steps(14),
+            replay_method=method,
+            spike_counts=counts,
+        )
+        assert result.segments.rows(result.segment) == slice(2, 14)
+        assert result.values["n_active_cells >= 3"] == 3.0
+
+    def test_compare_takes_joint_decodes(self, direction_track):
+        env = direction_track
+        events = [
+            _joint_event(
+                env, _one_hot(env, range(10, 70)), _parked(env, 60), p_outbound=0.9
+            ),
+            _joint_event(
+                env, _parked(env, 60), _one_hot(env, range(10, 70)), p_outbound=0.6
+            ),
+        ]
+        counts = [np.ones((60, 12), dtype=int)] * 2
+        table = compare_replay_methods(
+            env, events, replay_methods=[MALLORY_2025], spike_counts=counts
+        )
+        assert table["template"].tolist() == ["outbound", "outbound"]
+        assert table["is_replay"].tolist() == [True, False]
+        with pytest.raises(ValueError, match="cannot draw from joint decodes"):
+            compare_replay_methods(
+                env, events, replay_methods=[MICHON_2019], spike_counts=counts
+            )
+
+    def test_metrics_use_the_segments_trajectory_time_bins(self, direction_track):
+        """A blurred row inside the sweep has its MAP at the far end.
+
+        Merging bridges it; the code measures the jump and range on the
+        trajectory rows, so the row's MAP does not count.
+        """
+        env = direction_track
+        inbound = _one_hot(env, range(10, 70))
+        inbound[30] = (1.0 - 0.0109) / (env.n_bins - 1)
+        inbound[30, 95] = 0.0109
+        event = _joint_event(env, _parked(env, 60), inbound, p_outbound=0.1)
+        counts = np.ones((60, 12), dtype=int)
+        result = detect_replay(
+            env, event, _steps(60), replay_method=MALLORY_2025, spike_counts=counts
+        )
+        assert result.segments.rows(result.segment) == slice(0, 60)
+        assert not result.segments.trajectory_time_bins[30]
+        assert result.is_replay
+        assert result.values["max_map_jump < 0.4 x track_length"] == pytest.approx(4.0)
+        spanned = detect_replay(
+            env,
+            event,
+            _steps(60),
+            replay_method=_with_segmentation(MALLORY_2025, rows="segment"),
+            spike_counts=counts,
+        )
+        assert not spanned.is_replay
+        assert not spanned.criteria["max_map_jump < 0.4 x track_length"]
+
+    def test_track_ends_are_left_out_when_choosing_the_template(self, direction_track):
+        """55% of the posterior is outbound, but within 20 cm of the start."""
+        import dataclasses
+
+        env = direction_track
+        event = _joint_event(
+            env, _parked(env, 60, bin_index=2), _one_hot(env, range(10, 70)), 0.55
+        )
+        counts = np.ones((60, 12), dtype=int)
+        masked = detect_replay(
+            env, event, _steps(60), replay_method=MALLORY_2025, spike_counts=counts
+        )
+        unmasked = detect_replay(
+            env,
+            event,
+            _steps(60),
+            replay_method=dataclasses.replace(MALLORY_2025, exclude_end_distance=0.0),
+            spike_counts=counts,
+        )
+        assert masked.template == "inbound"
+        assert masked.values["template_fraction > 0.665"] == pytest.approx(1.0)
+        # Unmasked, outbound holds 55% of the segment's bins, so inbound's
+        # segment is rejected.
+        assert not masked.criteria["segment_template_fraction >= 0.5"]
+        assert unmasked.template == "outbound"
+
+    def test_the_second_template_wins_a_tie(self, direction_track):
+        env = direction_track
+        event = _joint_event(env, _parked(env, 60), _parked(env, 60, 60), 0.5)
+        result = detect_replay(
+            env,
+            event,
+            _steps(60),
+            replay_method=MALLORY_2025,
+            spike_counts=np.ones((60, 12), dtype=int),
+        )
+        assert result.template == "inbound"
+
+    def test_chance_counts_both_directions(self, direction_track):
+        # Peak 0.03 in the tested share: above 5 / 200, below 5 / 100.
+        env = direction_track
+        event = _joint_event(
+            env, _parked(env, 60), _one_hot(env, range(10, 70)), p_outbound=0.97
+        )
+        result = detect_replay(
+            env,
+            event,
+            _steps(60),
+            replay_method=MALLORY_2025,
+            spike_counts=np.ones((60, 12), dtype=int),
+            template="inbound",
+        )
+        assert result.template == "inbound"
+        assert result.segments.rows(result.segment) == slice(0, 60)
+
+    def test_a_named_template_must_exist(self, direction_track):
+        env = direction_track
+        event = _joint_event(env, _parked(env, 60), _parked(env, 60, 60), 0.5)
+        with pytest.raises(ValueError, match="'left' is not a template"):
+            detect_replay(
+                env,
+                event,
+                _steps(60),
+                replay_method=MALLORY_2025,
+                spike_counts=np.ones((60, 12), dtype=int),
+                template="left",
+            )
+
+    def test_env_must_be_the_decoded_environment(self, direction_track):
+        env = direction_track
+        event = _joint_event(
+            env, _parked(env, 60), _one_hot(env, range(10, 70)), p_outbound=0.1
+        )
+        other = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=1.0, units="cm"
+        )
+        assert other.n_bins == env.n_bins
+        with pytest.raises(ValueError, match="not the environment template"):
+            detect_replay(
+                other,
+                event,
+                _steps(60),
+                replay_method=MALLORY_2025,
+                spike_counts=np.ones((60, 12), dtype=int),
+            )
+
+    def test_compare_lets_mallory_choose_and_others_take_template(
+        self, direction_track
+    ):
+        env = direction_track
+        event = _joint_event(
+            env, _parked(env, 60), _one_hot(env, range(10, 70)), p_outbound=0.1
+        )
+        table = compare_replay_methods(
+            env,
+            [event],
+            replay_methods=[MALLORY_2025, SILVA_2015],
+            spike_counts=[np.ones((60, 12), dtype=int)],
+            template="outbound",
+        )
+        assert table["template"].tolist() == ["inbound", "outbound"]
+        assert table["is_replay"].tolist() == [True, False]
+
+    def test_result_with_template_pickles(self, direction_track):
+        env = direction_track
+        event = _joint_event(
+            env, _parked(env, 60), _one_hot(env, range(10, 70)), p_outbound=0.1
+        )
+        result = detect_replay(
+            env,
+            event,
+            _steps(60),
+            replay_method=MALLORY_2025,
+            spike_counts=np.ones((60, 12), dtype=int),
+        )
+        clone = pickle.loads(pickle.dumps(result))
+        assert clone.template == "inbound"
+        np.testing.assert_equal(clone.summary(), result.summary())
+
+    def test_recipe_matches_the_code(self):
+        assert MALLORY_2025.segmentation.rows == "trajectory"
+        assert dict(MALLORY_2025.segmentation.options) == {
+            "max_jump": 0.4,
+            "method": "map",
+            "min_peak_probability": 5.0,
+            "merge_max_time_gap": 0.05,
+            "merge_max_distance": 0.4,
+            "min_duration": 0.03,
+        }
+        assert [c.label for c in MALLORY_2025.criteria] == [
+            "segment_template_fraction >= 0.5",
+            "template_fraction > 0.665",
+            "|score| > 0.6",
+            "max_map_jump < 0.4 x track_length",
+            "map_range > 0.2 x track_length",
+            "n_active_cells >= 10",
+        ]
+        assert MALLORY_2025.template_choice == "most_posterior"
+        assert MALLORY_2025.exclude_end_distance == 20.0
