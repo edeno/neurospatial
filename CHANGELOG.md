@@ -40,6 +40,8 @@
 - `WeightedCorrelationResult`, `LinearFitResult` and
   `RankOrderSignificanceResult` compare equal only to themselves, like
   every other replay result. Compare their fields to compare values.
+- `ArmReplayMethod` refuses a bool or a string for its numeric settings;
+  `peak_threshold=True` passed as 1.
 
 ### Published replay methods as comparable recipes
 

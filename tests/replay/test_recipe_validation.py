@@ -509,3 +509,28 @@ def test_shared_replay_constants_are_defined_once(name):
         and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)
     ]
     assert len(defining) == 1, defining
+
+
+class TestArmMethodValidation:
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "peak_threshold",
+            "smoothing_sigma",
+            "min_duration",
+            "min_coverage",
+            "min_abs_correlation",
+            "joint_min_abs_correlation",
+            "merge_max_gap",
+        ],
+    )
+    @pytest.mark.parametrize("value", [True, False, "5"])
+    def test_numeric_settings_refuse_bools_and_strings(self, name, value):
+        with pytest.raises(ValueError, match=f"{name} must be a number"):
+            ArmReplayMethod("x", "y", subregions="runs", **{name: value})
+
+    def test_numpy_numbers_are_accepted(self):
+        method = ArmReplayMethod(
+            "x", "y", peak_threshold=np.int64(5), min_coverage=np.float32(0.5)
+        )
+        assert method.peak_threshold == 5
