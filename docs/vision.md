@@ -6,13 +6,13 @@ should be able to define an environment once, save and share it, measure what
 happens in it, and use it across analysis, modeling, simulation, agent experiments,
 and visualization.
 
-Represent how the animal can sense and interact with its surroundings, and
-analyze behavior in the context of those opportunities, experimental conditions,
-and prior experience.
+The package should represent how the animal can sense and interact with its
+surroundings, and analyze behavior in the context of those opportunities,
+experimental conditions, and prior experience.
 
-Enable reproducible, statistically defensible comparisons of behavior and neural
-activity across animals, sessions, and changing environments, supported by
-transparent methods and community validation.
+It should enable reproducible, statistically defensible comparisons of behavior
+and neural activity across animals, sessions, and changing environments,
+supported by transparent methods and community validation.
 
 These are long-term goals that guide development. They do not imply that every
 capability is available today or that every method applies in every dimension.
@@ -33,8 +33,7 @@ observations distinguishable. An unvisited location can still belong to the
 environment, and an analysis boundary need not be a physical wall.
 
 Represent changes in barriers, rewards, landmarks, and cues over time, with
-explicit experimental conditions. Distinguish the physical environment, what an
-animal could observe, and what it actually experienced.
+explicit experimental conditions.
 
 ### 2. Represent the environment from the animal's perspective
 
@@ -52,12 +51,8 @@ barrier may leave a reward visible while preventing access to it. Body size,
 posture, object properties, and task conditions may affect which actions are
 possible.
 
-Keep physical geometry, modeled sensory access and interaction opportunities,
-observed behavior, and inferred perception or knowledge distinguishable. Label
-predictions and measurements with their assumptions and uncertainty. Visibility
-alone is insufficient evidence that a cue was perceived, and proximity alone is
-insufficient evidence of contact. Missing gaze or interaction measurements should
-remain identifiable as unknown.
+Modeled access is not observed behavior: visibility alone is not evidence that
+a cue was perceived, and proximity alone is not evidence of contact.
 
 ### 3. Make environment information durable and shareable
 
@@ -125,8 +120,6 @@ Interpret behavior relative to available paths, sensory access, opportunities
 for interaction, and prior observations and actions. Connect these measurements
 to neural analyses so scientists can ask how activity at the same location
 depends on what the animal could sense, what it was doing, or where it had been.
-Keep descriptions of observed behavior and model-based interpretations of
-strategy, learning, or knowledge explicit and distinguishable.
 
 ### 7. Provide reusable regressors and features for complex models
 
@@ -139,7 +132,7 @@ opportunities, task conditions, and behavioral history.
 
 Preserve timestamps, observation support, spatial identities, units, feature
 definitions, and assumptions so users can combine these inputs with neural and
-behavioral data. Make missing values and history requirements explicit. Features
+behavioral data. Make history requirements explicit. Features
 intended for prediction should use information available at the prediction time,
 with fitted transformations learned from training observations. For RL, make
 the information available to the agent explicit and distinguish its observations
@@ -184,8 +177,7 @@ and analysis results in their spatial and temporal context. Support useful
 static figures, synchronized exploration, comparisons, and shareable outputs.
 
 Show modeled sensory access, interaction opportunities, and behavioral sequences
-alongside the animal's movement and neural activity, with measured and inferred
-quantities clearly identified.
+alongside the animal's movement and neural activity.
 
 Plots and animations should expose units, spatial relationships, recording gaps,
 and unsupported observations so scientists can interpret results and diagnose
@@ -206,15 +198,36 @@ variants, shared reference datasets and benchmarks, reviewable validation
 evidence, and documented discrepancies between implementations. Keep the scope
 of each validation claim clear as methods and dependencies evolve.
 
+## Not in scope
+
+neurospatial works with the outputs of these steps rather than performing them:
+
+- Spike sorting and other preprocessing of raw electrophysiology.
+- Tracking animals in video and estimating pose.
+- Fitting general statistical models, such as GLMs or state-space models; the
+  package supplies their inputs (goal 7).
+- Training agents: policies and learning rules belong to agent frameworks
+  (goal 9).
+- Managing data across experiments, such as databases and pipelines.
+
 ## How these goals guide development
 
 The scientist's experience remains the highest design priority. Scientific
 correctness, clear assumptions, consistent interfaces, useful errors, and
 interpretable results are part of that experience.
 
-Accessibility, runnable documentation, interoperability, and practical performance
-on realistic recordings apply across all goals. Evaluate memory use and runtime
-alongside scientific correctness so complete workflows remain usable.
+Three rules apply to every goal:
+
+- Keep the physical environment, its discretization, modeled sensory access and
+  interaction opportunities, observed behavior, and inferred perception or
+  knowledge distinguishable.
+- Keep missing observations identifiable as unknown, never as zero.
+- Label predictions and measurements with their assumptions and uncertainty,
+  and label model-based interpretations as interpretations.
+
+Runnable documentation, interoperability, figures that do not rely on color
+alone, and practical memory and runtime on realistic recordings also apply
+across all goals.
 
 Evaluate proposed work by the scientific workflow it enables and the evidence
 that the workflow preserves meaning. In particular:
