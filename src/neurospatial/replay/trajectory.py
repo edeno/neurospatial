@@ -257,9 +257,10 @@ class RadonDetectionResult(ReadOnlyArraysMixin, ResultMixin):
         Replay score of every candidate trajectory: entry ``(i, j)`` is the
         trajectory of speed ``sinogram_speeds[i]`` through
         ``sinogram_start_positions[j]`` at ``times[0]``; NaN for one that is
-        never on the track.
+        never on the track or is slower than the search's ``min_speed``.
     sinogram_speeds : NDArray[np.float64], shape (n_speeds,)
-        Searched speeds, in environment units per second, evenly spaced.
+        Speeds of the sinogram's rows, in environment units per second,
+        evenly spaced; rows slower than ``min_speed`` were not searched.
     sinogram_start_positions : NDArray[np.float64], shape (n_start_positions,)
         Searched start positions along the track, in environment units,
         evenly spaced at most ``band / 5`` apart, reaching beyond both ends
@@ -1724,6 +1725,18 @@ class _ReplayLines:
         )
         self.on_bin_positions = self.start_positions[on_bin]
         self._blocks: list[_LineBlock] | None = None
+        if not np.any(np.abs(self.speeds) >= min_speed - 1e-9):
+            raise ValueError(
+                _format_error(
+                    f"{operation} searches speeds up to "
+                    f"{float(np.abs(self.speeds).max()):g} units/s, all below "
+                    f"min_speed {min_speed:g}.",
+                    why="speeds are spaced so that neighboring trajectories end "
+                    "band / 5 apart, so a short event has few, widely spaced "
+                    "speeds",
+                    fix="lower min_speed, raise max_speed or widen band",
+                )
+            )
 
     def cumulative_mass(self, posteriors: NDArray[np.float64]) -> NDArray[np.float64]:
         """Posterior mass from the track start to each bin's start and stop.

@@ -48,11 +48,12 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
   event is tested against 100 rate-map rotations decoded again, at
   p < 0.025, with more than 5 and at least 15% of the place cells active.
   The notes give where this differs from the paper: zero shifts are kept,
-  the 97.5th-percentile rule differs by one shuffle from p < 0.025, and how
-  off-track time bins count is not stated.
+  the 97.5th-percentile rule differs by one shuffle from p < 0.025, and
+  off-track time bins take Davidson's median rather than 0.
 - `detect_trajectory_radon(..., min_speed=)` leaves out trajectories slower
   than `min_speed`, in either direction. Their sinogram entries are NaN.
-  Shuffle tests via `replay_significance` use the same search.
+  Shuffle tests via `replay_significance` use the same search. A
+  `min_speed` above every searched speed is refused.
 
 ### Weighted-correlation recipes: Ambrose 2016, Grosmark 2016, Berners-Lee 2022
 

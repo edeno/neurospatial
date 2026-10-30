@@ -2484,19 +2484,21 @@ OLAFSDOTTIR_2017 = ReplayMethod(
         ReplayCriterion("active_fraction", ">=", 0.15),
     ),
     units="cm",
-    decoding={"time_bin": 0.01, "position_bin": 2.0, "prior": "uniform"},
+    decoding={"time_bin": 0.01, "position_bin": 2.0},
     notes=(
         "Line fit of Davidson et al. (2009): the mean posterior within 30 cm "
         "of a line, speeds from 2 to 50 m/s in either direction, normalized "
         "by the summed probability with time bins without spikes set to 0. "
-        "Dropping those time bins gives the same best line and p-value (a "
-        "rate-map shuffle keeps them), with the score on another scale. "
-        "Start positions are searched densely here rather than in 1 cm "
-        "steps from -15 to 21 m; how time bins where the line leaves the "
-        "track count is not stated (here the median over positions, as "
-        "Davidson et al.).",
+        "Dropping those time bins gives the same score for every line, so "
+        "the same best line and p-value up to the resolution of the dense "
+        "search, with the score on another scale. Start positions are "
+        "searched densely here rather than in 1 cm steps from -15 to 21 m.",
+        "Time bins where the line leaves the track: Eq. 1 read literally, "
+        "and the Barry-lab port, give 0; here the median over positions of "
+        "Davidson et al.",
         "On short events a 2 m/s line stays within 30 cm of a stationary "
-        "decode, so stationary events can still score highly.",
+        "decode, so stationary events can still score highly, with an "
+        "arbitrary direction.",
         "100 shuffles rotating each cell's rate map by 1 to n_bins - 1 bins, "
         "decoded again; here shifts of 0 to n_bins - 1 (a zero shift for one "
         "cell, probability 1 / n_bins, is kept).",
@@ -2507,14 +2509,17 @@ OLAFSDOTTIR_2017 = ReplayMethod(
         "takes the direction with the higher best-fit score: score each "
         "direction's decode and keep the higher.",
         "Events need at least 15% and more than 5 of the place cells active "
-        "(applied: pass the place cells' counts), with the animal below 3 "
-        "cm/s at a maze corner (event selection). Rate maps in 2 cm bins "
-        "smoothed with a 5-bin Gaussian.",
+        "(applied: pass the place cells' counts). Place cells fire above "
+        "their mean rate over 20 contiguous bins with a peak above 1 Hz; "
+        "events are multi-unit activity above 3 SD lasting at least 40 ms, "
+        "with the animal below 3 cm/s at a maze corner (event selection). "
+        "Rate maps in 2 cm bins smoothed with a Gaussian of sigma 5 bins "
+        "(10 cm).",
         "Ólafsdóttir et al. (2016) used the same line search with p < 0.2 "
-        "for 'robust' events and p < 0.025 for the strongest. The Barry-lab "
-        "Python port differs (speeds of 1 to 50 m/s, zero padding off the "
-        "track, a third of the points on the track) and is not confirmed as "
-        "the lab's code.",
+        "for 'robust' events and p < 0.025 for the strongest, choosing the "
+        "direction with the lower p-value. The Barry-lab Python port differs "
+        "(speeds of 1 to 50 m/s, zero padding off the track, a third of the "
+        "points on the track) and is not confirmed as the lab's code.",
     ),
 )
 

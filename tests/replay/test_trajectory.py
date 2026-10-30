@@ -1717,23 +1717,45 @@ class TestRadonMinSpeed:
                 min_speed=min_speed,
             )
 
-    def test_shuffles_use_the_same_min_speed(self, track):
+    @pytest.mark.parametrize("min_speed", [200.0, 1700.0])
+    def test_shuffles_use_the_same_min_speed(self, track, min_speed):
+        """Each shuffle's score is the line search's with min_speed."""
         from neurospatial.replay import replay_significance
         from neurospatial.replay.trajectory import detect_trajectory_radon
 
-        posterior = np.eye(track.n_bins)[[50] * 40]
-        times = np.arange(40) * 0.01
+        posterior = np.eye(track.n_bins)[np.arange(12) * 4]
+        times = np.arange(12) * 0.01
+        options = {"band": 10.0, "max_speed": 3000.0, "min_speed": min_speed}
         result = replay_significance(
             track,
             posterior,
             times,
             score=detect_trajectory_radon,
-            score_options={"band": 10.0, "min_speed": 200.0},
-            nulls=("column_cycle",),
-            n_shuffles=19,
+            score_options=options,
+            nulls=("time_bin_permutation",),
+            n_shuffles=9,
             rng=0,
         )
-        expected = detect_trajectory_radon(
-            track, posterior, times, band=10.0, min_speed=200.0
+        generator = np.random.default_rng(0)
+        expected = [
+            detect_trajectory_radon(
+                track, posterior[generator.permutation(12)], times, **options
+            ).score
+            for _ in range(9)
+        ]
+        np.testing.assert_allclose(
+            result.shuffles["time_bin_permutation"].null_scores, expected
         )
-        assert result.observed.score == pytest.approx(expected.score)
+
+    def test_a_min_speed_above_every_searched_speed_is_refused(self, track):
+        from neurospatial.replay.trajectory import detect_trajectory_radon
+
+        with pytest.raises(ValueError, match="all below min_speed"):
+            detect_trajectory_radon(
+                track,
+                np.eye(track.n_bins)[:3],
+                np.arange(3) * 0.01,
+                band=30.0,
+                max_speed=3000.0,
+                min_speed=2970.0,
+            )
