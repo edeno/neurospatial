@@ -224,8 +224,8 @@ class RecurringSequencesResult(ReadOnlyArraysMixin, ResultMixin):
     other cells' spikes in the ``window`` after it. A later or earlier
     window of the reference cell, not overlapping the template's, repeats
     the template when every template spike has a spike of the same cell
-    within ``tolerance / 2`` of the same lag; other spikes in the window are
-    allowed.
+    within ``tolerance / 2`` of the same lag, a different spike for each;
+    other spikes in the window are allowed.
 
     Attributes
     ----------
@@ -341,7 +341,7 @@ def recurring_spike_sequences(
     other spike of the reference cell whose window does not overlap the
     template's is an exemplar, which repeats the template when, for every
     template spike, the same cell fires within ``tolerance / 2`` of the
-    same lag after it.
+    same lag after it, with a different spike for each template spike.
 
     Parameters
     ----------
@@ -389,7 +389,8 @@ def recurring_spike_sequences(
     exemplars do not overlap the template's window (so a template does not
     match its own spikes shifted by a few milliseconds), and only templates
     of at least ``min_complexity`` spikes count. A cell may contribute
-    several spikes to a template, each matched on its own.
+    several spikes to a template; each needs its own spike of the cell in
+    the exemplar, taken in time order.
 
     References
     ----------
@@ -487,15 +488,22 @@ def _search(
         cells = pooled_cells[lo:hi]
         lags = pooled[lo:hi] - reference[index]
         candidates = np.flatnonzero(np.abs(reference - reference[index]) >= window)
+        # Each cell's template spikes, in time order, take distinct exemplar
+        # spikes in order: the earliest spike in the match window after the
+        # one the cell's previous template spike took.
+        next_free: dict[int, NDArray[np.intp]] = {}
         for cell, lag in zip(cells, lags, strict=True):
             if not candidates.size:
                 break
             train = onsets[cell]
             shifted = reference[candidates] + lag
-            found = np.searchsorted(train, shifted + half, side="right") > (
-                np.searchsorted(train, shifted - half, side="left")
-            )
+            earliest = np.searchsorted(train, shifted - half, side="left")
+            if cell in next_free:
+                earliest = np.maximum(earliest, next_free[cell])
+            found = np.searchsorted(train, shifted + half, side="right") > earliest
             candidates = candidates[found]
+            next_free = {key: free[found] for key, free in next_free.items()}
+            next_free[int(cell)] = earliest[found] + 1
         kept.append(index)
         repetitions.append(candidates.size)
         elements.append((cells, lags))
@@ -545,7 +553,8 @@ class RecurringSequenceMethod:
         Fewest spikes in a counted template, the reference spike included.
     surrogates : tuple of str
         The surrogates the count is compared with (see
-        :func:`surrogate_spike_trains`).
+        :func:`surrogate_spike_trains`). Default ``("across_trains",)``,
+        the paper's test.
     max_jitter : float
         Largest displacement of the ``"spike_jitter"`` surrogate, in seconds.
     n_surrogates : int
@@ -563,7 +572,7 @@ class RecurringSequenceMethod:
     tolerance: float = 0.01
     burst_isi: float = 0.006
     min_complexity: int = 3
-    surrogates: tuple[str, ...] = _SURROGATES
+    surrogates: tuple[str, ...] = ("across_trains",)
     max_jitter: float = 0.05
     n_surrogates: int = 100
     alpha: float = 0.01
@@ -719,7 +728,11 @@ def recurring_sequences_significance(
     session exceeded those of every one of 100 surrogates (p < 0.01); with
     the ``(k + 1) / (n + 1)`` p-value used here and 100 surrogates, that is
     p = 1/101. They found across-train shuffling gave the most repetitions,
-    making it the strictest surrogate. The statistic here is the number of
+    making it the strictest surrogate, and used it alone for their five
+    rats, as ``NADASDY_1999`` does. It gives every cell the same rate, so
+    when the cells' rates differ, a session of independent cells can beat
+    it; add ``"isi_shuffle"``, which keeps each cell's spikes, to guard
+    against that. The statistic here is the number of
     templates of at least ``min_complexity`` spikes that recur at least
     once; the paper compared repetitions per sequence and per complexity
     without one summary number.
@@ -824,7 +837,7 @@ NADASDY_1999 = RecurringSequenceMethod(
     tolerance=0.01,
     burst_isi=0.006,
     min_complexity=3,
-    surrogates=_SURROGATES,
+    surrogates=("across_trains",),
     max_jitter=0.05,
     n_surrogates=100,
     alpha=0.01,
@@ -838,18 +851,31 @@ NADASDY_1999 = RecurringSequenceMethod(
         "width (+/- 5 ms); an exemplar may hold extra spikes; exemplars do not "
         "overlap the template's window; templates are whole windows of at least "
         "3 spikes (the reference included); a cell may give several spikes to "
-        "a template.",
-        "Surrogates: interspike intervals in random order (the paper swapped "
-        "pairs repeatedly, number not stated; a uniform permutation is its "
-        "limit), spikes moved later by 0-50 ms, spikes given to cells at random "
-        "(every cell equally likely; the paper's most rigorous surrogate), and "
-        "theta cycles of each train in random order with spike phases kept "
-        "(cycles from one theta peak to the next; spikes outside them stay). "
-        "Surrogates are made from the burst-merged trains.",
+        "a template, each matched to its own spike of the cell in the exemplar.",
+        "Surrogate: spikes given to cells at random (every cell equally likely), "
+        "made from the burst-merged trains. The paper's test in all five rats "
+        "(Fig. 6) shuffled across spike trains only, because the trains held "
+        "theta and non-theta epochs; it gave the most repetitions of the four "
+        "shuffles, 'the most rigorous test'. It loses each cell's rate (the "
+        "paper's caveat), so the test is anti-conservative when rates differ: "
+        "for six independent Poisson cells over 2 min, the reference at 8 Hz "
+        "and the others at 3 Hz, 20 of 20 sessions were significant. Adding "
+        "'isi_shuffle', which keeps each cell's spikes and intervals, left 1 "
+        "of 20.",
+        "The paper also compared one rat's wheel running with all four "
+        "surrogates (interspike intervals in random order, spikes moved later "
+        "by 0-50 ms, across trains, and theta cycles in random order with spike "
+        "phases kept), and the session exceeded every one. Run that check with "
+        "dataclasses.replace(NADASDY_1999, surrogates=('isi_shuffle', "
+        "'spike_jitter', 'across_trains', 'theta_phase')) and theta_peak_times=; "
+        "the theta surrogate needs theta and is not defined in sleep. The paper "
+        "swapped interval pairs repeatedly (number not stated); a uniform "
+        "permutation is its limit.",
         "Significant when the number of recurring templates exceeds that of "
-        "every one of 100 surrogates of each kind (p = 1/101 < 0.01); the "
-        "paper compared repetitions per sequence without one summary number, "
-        "and analyzed each state (sleep, run) separately.",
+        "every one of 100 surrogates (p = 1/101 < 0.01; with several surrogate "
+        "kinds, of every kind); the paper compared repetitions per sequence "
+        "without one summary number, and analyzed each state (sleep, run) "
+        "separately.",
         "Session level only; no per-event verdict and no behavioral template, "
         "so it is not in PUBLISHED_METHODS and compare_replay_methods does not "
         "take it. The RUN-to-sleep comparison used joint-probability maps of "

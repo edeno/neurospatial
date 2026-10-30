@@ -31,6 +31,7 @@ from neurospatial.replay.sequence_match import (
     _dense,
     _event_letters,
     _exact_distribution,
+    _firing_order,
     _index_test_size,
     _inversion_p_values,
     _is_count,
@@ -791,8 +792,15 @@ def template_match_dataset_test(
     about twice the size replay. The shuffle test repeats that choice.
 
     Lee & Wilson's shuffles rescore every word that is not a pair or a
-    triplet: 1000 shuffles of 1000 such words take about 15 s. Ji & Wilson's
-    are vectorized and take well under a second.
+    triplet. A word's exact distribution depends only on how many letters
+    each cell gives it, in template order, and is computed once per Python
+    session, so the cost depends on word length. Measured: 1000 shuffles of
+    1000 words of 5 to 8 letters take about 15 s; of 20 ten-letter words
+    with repeated cells about 35 s, and of 200 such words about 1 min.
+    Every pattern of 9 letters together takes about 3 s, every pattern of
+    10 letters about 1 min (ten distinct cells alone about 2.5 s); longer
+    words are sampled. Ji & Wilson's shuffles are vectorized and take well
+    under a second.
 
     Examples
     --------
@@ -928,11 +936,20 @@ def _binomial_tests(
 
 @dataclass
 class _Word:
-    """One word: its letters' cells (in firing order) and template."""
+    """One word: its letters' cells and times, and its template."""
 
     template: str | None
     units: NDArray[np.intp]
+    times: NDArray[np.float64]
     n_distinct: int
+
+    def letter_ranks(self, ranks: NDArray[np.intp]) -> NDArray[np.intp]:
+        """The letters' template ranks in firing order, ties ordered against ``ranks``.
+
+        Re-sorted for each template, real or shuffled, so a tie never helps a
+        match.
+        """
+        return ranks[self.units[_firing_order(self.units, self.times, ranks)]]
 
 
 class _Distributions:
@@ -999,7 +1016,7 @@ def _word_keys(
     for n in np.unique(lengths[lengths >= 2]):
         members = np.flatnonzero(lengths == n)
         rows = np.stack(
-            [_dense(ranks[words[i].template][words[i].units]) for i in members]
+            [_dense(words[i].letter_ranks(ranks[words[i].template])) for i in members]
         )
         keys[members] = _match_keys(rows, match_order)
     return keys
@@ -1020,8 +1037,10 @@ def _word_groups_test(
     words = []
     for name, rows in events.items():
         for start, stop in rows:
-            units, _ = _event_letters(trains, ranks[name], start, stop, method.max_isi)
-            words.append(_Word(name, units, int(np.unique(units).size)))
+            units, times = _event_letters(
+                trains, ranks[name], start, stop, method.max_isi
+            )
+            words.append(_Word(name, units, times, int(np.unique(units).size)))
     distributions = _Distributions(method, rng)
     groups, p_values, sizes = _word_outcomes(words, ranks, distributions)
     chance = {_PAIR: 0.5, _TRIPLET: 1.0 / 6.0, _LOW: probability}

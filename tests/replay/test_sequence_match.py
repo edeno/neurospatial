@@ -241,6 +241,37 @@ class TestBestMatch:
             float(_brute_p(cells, 6)), rel=1e-12
         )
 
+    @pytest.mark.parametrize("match_order", ["interruptions_first", "length_first"])
+    @pytest.mark.parametrize(
+        "pattern",
+        [
+            (0, 0, 0, 1, 2),
+            (0, 1, 2, 2, 2),  # the mirror of the one above
+            (0, 0, 1, 1, 1, 2, 3),
+            (0, 1, 1, 2, 3, 3, 3),
+            (0, 1, 2, 3, 4, 5),
+        ],
+    )
+    def test_the_exact_distribution_counts_every_ordering(self, pattern, match_order):
+        """Distinct words are scored once and counted for each ordering of a
+        cell's letters, and mirrored patterns share one computation; the
+        counts equal those over all n! orderings.
+        """
+        from neurospatial.replay.sequence_match import (
+            _exact_distribution,
+            _match_keys,
+        )
+
+        orderings = np.array(list(itertools.permutations(pattern)))
+        keys = _match_keys(orderings, match_order)
+        values = np.unique(keys)
+        distribution = _exact_distribution(pattern, match_order)
+        assert distribution.total == math.factorial(len(pattern))
+        np.testing.assert_array_equal(distribution.keys, values)
+        np.testing.assert_array_equal(
+            distribution.at_least, [np.sum(keys >= value) for value in values]
+        )
+
     def test_length_first_ranks_more_ordered_letters_higher(self, track):
         """5 6 7 8 1 2 9: (4, 0) has fewer interruptions, (5, 2) more letters."""
         env, rates = track

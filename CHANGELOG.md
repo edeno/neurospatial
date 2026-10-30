@@ -577,14 +577,24 @@ fields, scored from spikes without decoding, as recipes that
   Wilson's binomial Z of pairs, triplets and low-probability words (their
   35 of 270 gives Z = 7.2) with 1000 template shuffles, and Ji & Wilson's
   chance and template-shuffle significance of the number of replaying
-  frames, reassigning frames to templates on every shuffle.
+  frames, reassigning frames to templates on every shuffle. Letters at the
+  same time are ordered against each shuffled template as against the real
+  one, so a tie never helps a match in the shuffles either. Exact
+  probabilities score each distinct word once and share a computation
+  between a pattern and its mirror, so shuffles of ten-letter words with
+  repeated cells take about a minute rather than hours (still exact).
 - `recurring_spike_sequences()`, `recurring_sequences_significance()`,
   `surrogate_spike_trains()` and `RecurringSequenceMethod` with
   `NADASDY_1999`: the session-level search for recurring spike sequences of
-  Nádasdy et al. (1999) against interval-shuffle, 0-50 ms jitter,
-  across-train and theta-phase surrogates. The paper leaves the match
+  Nádasdy et al. (1999). The recipe compares with across-train surrogates,
+  the paper's test in all five rats, so it runs on sleep without theta
+  peaks; interval-shuffle, 0-50 ms jitter and theta-phase surrogates, the
+  paper's one-rat check during running, can be added. Across-train
+  surrogates give every cell the same rate, so add `"isi_shuffle"` when
+  the cells' rates differ. The paper leaves the match
   tolerance, extra spikes and the smallest sequence unstated; the readings
-  are in the recipe's notes. It has no per-event verdict and is not in
+  are in the recipe's notes. A cell's template spikes each need their own
+  spike of that cell in a repeat, so one spike cannot match two of them. It has no per-event verdict and is not in
   `PUBLISHED_METHODS`; the paper's joint-probability-map comparison of
   sleep and running is not implemented.
 
