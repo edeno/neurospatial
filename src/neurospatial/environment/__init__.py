@@ -26,6 +26,10 @@ from neurospatial.environment._publication import (
 )
 from neurospatial.environment._publication import _Provenance as _Provenance
 from neurospatial.environment._publication import _publish as _publish
+from neurospatial.environment._queries import (
+    _require_track_extents as _require_track_extents,
+)
+from neurospatial.environment._queries import _track_extents as _track_extents
 from neurospatial.environment._targets import (
     _validate_sample_targets as _validate_sample_targets,
 )

@@ -212,7 +212,7 @@ def simulate_replay_event(
     >>> event.summary()["n_active_cells"] > 15
     True
     """
-    from neurospatial.environment._queries import require_track_extents
+    from neurospatial.environment import _require_track_extents
     from neurospatial.simulation.spikes import generate_poisson_spikes
 
     if kind not in _KINDS:
@@ -224,7 +224,7 @@ def simulate_replay_event(
     ):
         if not (np.isfinite(value) and value > 0):
             raise ValueError(f"{_OPERATION}: {name} must be positive, got {value!r}.")
-    starts, stops = require_track_extents(
+    starts, stops = _require_track_extents(
         env,
         _OPERATION,
         alternative="simulate a 2-D event by sampling positions yourself",

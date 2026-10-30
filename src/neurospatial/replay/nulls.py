@@ -169,9 +169,9 @@ def _track_order(
         If ``env`` is neither 1-D nor a linearized track, or ``values`` is not
         2-D with one column per bin.
     """
-    from neurospatial.environment._queries import require_track_extents
+    from neurospatial.environment import _require_track_extents
 
-    starts, _ = require_track_extents(env, operation, alternative=alternative)
+    starts, _ = _require_track_extents(env, operation, alternative=alternative)
     if values.ndim != 2 or values.shape[1] != env.n_bins:
         raise ValueError(
             _format_error(

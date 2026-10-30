@@ -13,7 +13,7 @@ from neurospatial.animation._tracks import (
     track_position,
     track_segments,
 )
-from neurospatial.environment._queries import track_extents
+from neurospatial.environment import _track_extents
 
 
 def test_projection_preserves_mass_and_missing_support():
@@ -38,7 +38,7 @@ def test_track_coordinates_retain_segment_spacing_and_missing_positions():
         bin_size=1.0,
         edge_spacing=2.0,
     )
-    extents = track_extents(track)
+    extents = _track_extents(track)
     assert extents is not None
     starts, stops = extents
     np.testing.assert_allclose(starts, [0, 1, 2, 3, 6, 7, 8, 9])
