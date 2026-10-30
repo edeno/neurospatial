@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Reactivation measures
+
+The assembly reactivation measure now computes what the papers define.
+
+**Breaking**
+
+- `reactivation_strength` is removed. It returned the mean activation
+  strength R(t) in the match period divided by its mean in the template
+  period, a ratio that neither Peyrache et al. (2009, 2010) nor any other
+  paper uses. `assembly_reactivation(control_counts, match_counts, pattern,
+  *, percentile=99.0, control_unit_ids=None, match_unit_ids=None)` returns
+  an `AssemblyReactivationResult` with the published comparisons of rest
+  after a task with rest before it: `mean_activation_difference`, the mean
+  R(t) after minus before (the "reactivation strength" of van de Ven et al.
+  2016; Peyrache et al. 2009, Fig. 2c), and
+  `fraction_above_control_threshold`, the share of post-task bins above the
+  99th percentile of the pre-task R(t) (Peyrache et al., 2010). Each period
+  is z-scored on its own, so the period means equal `w @ C @ w - 1`. The
+  name avoids "reactivation strength", which Peyrache et al. use for R(t)
+  itself.
+
+**Documentation**
+
+- The population-analysis and workflow guides use `assembly_reactivation`.
+
 ### Walls thinner than a bin keep the bins beside them apart
 
 A slit, hole or concave corner of the arena's outline that lay inside one

@@ -2,8 +2,8 @@
 Cell assembly detection and reactivation analysis.
 
 This module provides functions for detecting coordinated neural ensembles
-(cell assemblies) and measuring their reactivation strength across behavioral
-states.
+(cell assemblies), measuring their activation strength over time, and
+comparing co-firing between behavioral periods.
 
 Cell assemblies are groups of neurons that fire together more often than
 expected by chance, representing stored neural patterns. Detecting these
@@ -62,6 +62,17 @@ Typical Workflows
    >>> activation = assembly_activation(
    ...     counts_sleep, result.patterns[0], unit_ids=sleep_labels
    ... )  # doctest: +SKIP
+
+5. Compare rest after the task with rest before it:
+
+   >>> comparison = assembly_reactivation(
+   ...     counts_pre_rest,
+   ...     counts_post_rest,
+   ...     result.patterns[0],
+   ...     control_unit_ids=pre_labels,
+   ...     match_unit_ids=post_labels,
+   ... )  # doctest: +SKIP
+   >>> comparison.mean_activation_difference  # doctest: +SKIP
 
 **Reactivation Analysis**:
 
@@ -137,13 +148,14 @@ from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit
 __all__ = [
     "AssemblyDetectionResult",
     "AssemblyPattern",
+    "AssemblyReactivationResult",
     "ExplainedVarianceResult",
     "assembly_activation",
+    "assembly_reactivation",
     "detect_assemblies",
     "explained_variance_reactivation",
     "marchenko_pastur_threshold",
     "pairwise_correlations",
-    "reactivation_strength",
 ]
 
 
@@ -186,8 +198,8 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
         ``unit_ids=`` given to :func:`detect_assemblies`, else
         ``np.arange(n_neurons)``. Pass the column labels of new counts as
         ``unit_ids=`` to :func:`assembly_activation`, or as
-        ``template_unit_ids=`` and ``match_unit_ids=`` to
-        :func:`reactivation_strength`, to match their columns by label
+        ``control_unit_ids=`` and ``match_unit_ids=`` to
+        :func:`assembly_reactivation`, to match their columns by label
         instead of by position.
     member_unit_ids : ndarray
         Labels of the core members, ``unit_ids[member_indices]``.
@@ -433,6 +445,77 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
             "n_significant": self.n_significant,
             "method": self.method,
             "threshold": self.threshold,
+        }
+
+
+@dataclass(frozen=True, repr=False)
+class AssemblyReactivationResult(ResultMixin):
+    """
+    A pattern's activation strength after a task compared with before it.
+
+    Attributes
+    ----------
+    mean_activation_difference : float
+        ``match_mean_activation - control_mean_activation``: the pattern's
+        mean activation strength R(t) in the match period (e.g. rest after
+        the task) minus its mean in the control period (e.g. rest before).
+        van de Ven et al. (2016) call this difference the pattern's
+        "reactivation strength"; Peyrache et al. (2009, Fig. 2c) report it
+        as the difference in average reactivation strength between pre and
+        post sleep. 0 when the pattern is expressed equally in both periods.
+    control_mean_activation, match_mean_activation : float
+        Mean of R(t) over each period. For unit-length weights ``w`` this is
+        ``w @ C @ w - 1`` with ``C`` the period's correlation matrix
+        (Peyrache et al., 2010: "the average reactivation strength is equal
+        to γ − 1"), the pattern's co-firing beyond independent firing.
+    control_threshold : float
+        The ``percentile``-th percentile of R(t) over the control bins
+        (NumPy's default linear interpolation).
+    fraction_above_control_threshold : float
+        Share of match bins with R(t) strictly above ``control_threshold``
+        (Peyrache et al., 2010, "Reactivation is a rare event"). Without
+        reactivation it is about ``1 - percentile / 100``.
+    percentile : float
+        Percentile of the control distribution used for the threshold.
+    n_control_bins, n_match_bins : int
+        Number of time bins in each period.
+
+    Notes
+    -----
+    Peyrache et al. (2009, 2010) call R(t) itself the "reactivation
+    strength"; here R(t) is the activation strength of
+    :func:`assembly_activation`, and the comparison between periods is
+    ``mean_activation_difference``. Both statistics are effect sizes: neither
+    is a p-value.
+
+    Examples
+    --------
+    >>> result = assembly_reactivation(
+    ...     counts_pre_rest, counts_post_rest, pattern
+    ... )  # doctest: +SKIP
+    >>> result.mean_activation_difference  # doctest: +SKIP
+    """
+
+    mean_activation_difference: float
+    control_mean_activation: float
+    match_mean_activation: float
+    control_threshold: float
+    fraction_above_control_threshold: float
+    percentile: float
+    n_control_bins: int
+    n_match_bins: int
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "mean_activation_difference": self.mean_activation_difference,
+            "control_mean_activation": self.control_mean_activation,
+            "match_mean_activation": self.match_mean_activation,
+            "control_threshold": self.control_threshold,
+            "fraction_above_control_threshold": (self.fraction_above_control_threshold),
+            "percentile": self.percentile,
+            "n_control_bins": self.n_control_bins,
+            "n_match_bins": self.n_match_bins,
         }
 
 
@@ -740,7 +823,7 @@ def detect_assemblies(
         sorter's unit IDs. Stored on the result and on every pattern, so
         ``pattern.member_unit_ids`` names the members, and passing the labels
         of new counts to :func:`assembly_activation` (``unit_ids=``) or
-        :func:`reactivation_strength` (``template_unit_ids=`` and
+        :func:`assembly_reactivation` (``control_unit_ids=`` and
         ``match_unit_ids=``) matches columns by label. Default
         ``np.arange(n_neurons)``: column positions, which match new counts
         by position only.
@@ -1333,8 +1416,12 @@ def assembly_activation(
 
     Each period is z-scored with its own mean and standard deviation, so a
     change in firing rate between periods does not by itself change R(t).
-    Use :func:`reactivation_strength` to compare a pattern's mean activation
-    between periods.
+    Use :func:`assembly_reactivation` to compare a pattern's activation
+    after a task with before it.
+
+    Peyrache et al. (2009, 2010) call R(t) the "reactivation strength" and
+    van de Ven et al. (2016) the "expression strength"; this package calls
+    it the activation strength.
 
     Examples
     --------
@@ -1372,13 +1459,16 @@ def assembly_activation(
     See Also
     --------
     detect_assemblies : Detect assembly patterns
-    reactivation_strength : Compare activations between periods
+    assembly_reactivation : Compare activation after a task with before it
 
     References
     ----------
     Lopes-dos-Santos V, Ribeiro S, Tort ABL (2013). Detecting cell
         assemblies in large neuronal populations. J Neurosci Methods
         220(2):149-166.
+    Peyrache A, Khamassi M, Benchenane K, Wiener SI, Battaglia FP (2009).
+        Replay of rule-learning related neural patterns in the prefrontal
+        cortex during sleep. Nat Neurosci 12(7):919-926.
     Peyrache A, Benchenane K, Khamassi M, Wiener SI, Battaglia FP (2010).
         Principal component analysis of ensemble recordings reveals cell
         assemblies at high temporal resolution. J Comput Neurosci
@@ -1657,34 +1747,51 @@ def pairwise_correlations(
     return correlations
 
 
-def reactivation_strength(
-    template_counts: NDArray[np.float64],
+def assembly_reactivation(
+    control_counts: NDArray[np.float64],
     match_counts: NDArray[np.float64],
     pattern: AssemblyPattern,
     *,
-    template_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    percentile: float = 99.0,
+    control_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     match_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
-) -> float:
+) -> AssemblyReactivationResult:
     """
-    Compare a pattern's mean activation strength between two periods.
+    Compare a pattern's activation strength after a task with before it.
 
-    Returns the mean activation strength R(t) of the pattern in the match
-    period divided by its mean in the template period (Peyrache et al., 2009,
-    2010). Values > 1 mean the pattern's neurons fire together more in the
-    match period than in the template period.
+    Computes the activation strength R(t) of the pattern (as in
+    :func:`assembly_activation`) in a control period, such as rest before
+    the task, and in a match period, such as rest after it, and returns the
+    two published comparisons:
+
+    - ``mean_activation_difference``: mean R(t) in the match period minus
+      mean R(t) in the control period. van de Ven et al. (2016) define a
+      pattern's reactivation strength as "its average expression strength
+      during the rest after minus its average expression strength during the
+      rest before"; Peyrache et al. (2009, Fig. 2c) compare the average
+      R(t) of post- and pre-task sleep the same way.
+    - ``fraction_above_control_threshold``: the share of match bins whose
+      R(t) exceeds the ``percentile``-th percentile of the control bins'
+      R(t) (Peyrache et al., 2010: "4.5% of the bins from POST exceeded the
+      99th percentile of the PRE distribution", against an expected 1%).
 
     Parameters
     ----------
-    template_counts : NDArray[np.float64], shape (n_template_bins, n_neurons)
-        Spike counts during template period (e.g., behavior), finite and
-        non-negative.
+    control_counts : NDArray[np.float64], shape (n_control_bins, n_neurons)
+        Spike counts in the control period (e.g. rest before the task),
+        finite and non-negative.
     match_counts : NDArray[np.float64], shape (n_match_bins, n_neurons)
-        Spike counts during match period (e.g., sleep), finite and
-        non-negative.
+        Spike counts in the match period (e.g. rest after the task), finite
+        and non-negative.
     pattern : AssemblyPattern
-        Assembly pattern to measure.
-    template_unit_ids : array-like, shape (n_neurons,), optional
-        Label of the unit in each column of ``template_counts``. Pass it
+        Assembly pattern to measure, usually detected in the task (template)
+        period with :func:`detect_assemblies`.
+    percentile : float, default=99.0
+        Percentile of the control period's R(t) used as the threshold for
+        ``fraction_above_control_threshold``, in (0, 100). Peyrache et al.
+        (2010) used the 99th.
+    control_unit_ids : array-like, shape (n_neurons,), optional
+        Label of the unit in each column of ``control_counts``. Pass it
         together with ``match_unit_ids``: the columns of each period are then
         matched to the pattern's weights by label, as in
         :func:`assembly_activation`, so the two periods may list their units
@@ -1699,55 +1806,65 @@ def reactivation_strength(
 
     Returns
     -------
-    float
-        Mean activation strength in the match period over its mean in the
-        template period. 1 when both periods are the same counts, about 0
-        when the pattern's neurons fire independently in the match period,
-        and negative when they fire in opposition. NaN when the pattern shows
-        no co-activation in the template period (mean activation strength
-        <= 0) or every neuron with nonzero weight is constant in a period,
-        so the ratio is undefined.
+    AssemblyReactivationResult
+        Mean activation strength in each period, their difference, the
+        control threshold and the share of match bins above it. All values
+        are NaN when every neuron with nonzero weight is constant in a
+        period.
 
     Raises
     ------
     ValueError
         If the counts and the pattern have different numbers of neurons,
         either period holds NaN, infinite or negative values, the pattern
-        has no nonzero weight, or with labels, if only one of
-        ``template_unit_ids`` and ``match_unit_ids`` is given, the pattern's
-        labels were generated, or a period's labels differ from the
-        pattern's.
+        has no nonzero weight, ``percentile`` is outside (0, 100), or with
+        labels, if only one of ``control_unit_ids`` and ``match_unit_ids`` is
+        given, the pattern's labels were generated, or a period's labels
+        differ from the pattern's.
 
     Warns
     -----
     UserWarning
         If neurons with nonzero weight have the same count in every bin of
         either period (they are excluded from both periods, named in the
-        warning), or the ratio is undefined.
+        warning).
 
     Notes
     -----
-    Each period is z-scored with its own per-neuron mean and standard
-    deviation, as in the published method. The mean of R(t) over a period is
+    **Terms.** Peyrache et al. (2009, 2010) call R(t) itself the
+    "reactivation strength"; van de Ven et al. (2016) call R(t) the
+    "expression strength" and the after-minus-before difference the
+    "reactivation strength". This package calls R(t) the activation strength
+    and this difference ``mean_activation_difference``, so neither name is
+    ambiguous.
+
+    **Z-scoring.** Each period is z-scored with its own per-neuron mean and
+    standard deviation, as in both papers. The mean of R(t) over a period is
     then :math:`w^T C w - 1` for unit-length weights :math:`w` and the
-    period's correlation matrix :math:`C`, the pattern's co-activation
-    beyond independent firing, so the ratio compares how strongly the
-    pattern's correlation structure is expressed in the two periods.
+    period's correlation matrix :math:`C` (Peyrache et al. 2010: the average
+    reactivation strength "is equal to γ − 1"), so the difference is
+    :math:`w^T (C_{match} - C_{control}) w`, and scaling a period's counts
+    does not change it. A neuron with the same count in every bin of a
+    period has no z-score there. It is excluded from both periods, so both
+    means use the same neurons, and the remaining weights are rescaled to
+    unit length.
 
-    A neuron with the same count in every bin of a period has no z-score
-    there. It is excluded from both periods, so both means use the same
-    neurons, and the remaining weights are rescaled to unit length.
+    **Smoothing.** van de Ven et al. (2016) computed R(t) on spike trains
+    convolved with a Gaussian kernel of standard deviation 25 ms / sqrt(12)
+    and then z-scored (Supplemental Experimental Procedures); this function
+    uses the counts you pass, so their binned version is reproduced exactly
+    only for binned counts.
 
-    **Rate and noise floor**: Because each period is standardized on its
-    own, scaling a period's counts leaves the ratio unchanged. Firing-rate
-    changes still matter when they change the correlations: independent
-    spikes added to the members dilute their correlation and lower the
-    ratio. With no co-activation in the match period the mean activation
-    strength is 0 up to sampling noise of standard deviation about
-    :math:`\\sqrt{2 / n_{match}}` (independent Gaussian z-scores), so the ratio
-    has a noise floor of about :math:`\\sqrt{2 / n_{match}}` divided by the
-    template mean. Compare against a control period (such as pre-task rest)
-    or a shuffle null rather than against 1 or 0.
+    **Noise floor.** Without co-firing, a period's mean R(t) is 0 up to
+    sampling noise of standard deviation about :math:`\\sqrt{2 / n}` for
+    ``n`` independent Gaussian bins; spike counts have heavier tails.
+    Firing-rate changes matter when they change the correlations:
+    independent spikes added to the members dilute their correlation. Neither
+    statistic is a p-value: van de Ven et al. tested the differences of a
+    set of patterns against 0 with a one-sample t-test, and the share of
+    patterns with a positive difference against 50% with a z-test for
+    proportions; Peyrache et al. (2010) built a null by permuting cell
+    identities within each time bin.
 
     For the correlation structure of the whole population rather than one
     pattern, use :func:`explained_variance_reactivation` with pairwise
@@ -1755,23 +1872,24 @@ def reactivation_strength(
 
     Examples
     --------
-    Units 7 and 8 burst together more often in the match period, whose counts
-    list the units in another order:
+    Units 7 and 8 burst together after the task but not before it; the
+    post-task counts list the units in another order:
 
     >>> import numpy as np
-    >>> from neurospatial.reactivation import AssemblyPattern, reactivation_strength
+    >>> from neurospatial.reactivation import AssemblyPattern, assembly_reactivation
     >>> pattern = AssemblyPattern(
     ...     np.array([0.7, 0.7, 0.1]), np.array([0, 1]), 0.5, unit_ids=[7, 8, 9]
     ... )
     >>> rng = np.random.default_rng(0)
-    >>> run = rng.poisson(1.0, (500, 3)).astype(float)
-    >>> run[:, :2] += 2 * rng.poisson(0.2, (500, 1))
-    >>> rest = rng.poisson(1.0, (500, 3)).astype(float)
-    >>> rest[:, 1:] += 2 * rng.poisson(0.6, (500, 1))  # columns: 9, 7, 8
-    >>> strength = reactivation_strength(
-    ...     run, rest, pattern, template_unit_ids=[7, 8, 9], match_unit_ids=[9, 7, 8]
+    >>> pre = rng.poisson(1.0, (2000, 3)).astype(float)
+    >>> post = rng.poisson(1.0, (2000, 3)).astype(float)
+    >>> post[:, 1:] += 2 * rng.poisson(0.3, (2000, 1))  # columns: 9, 7, 8
+    >>> result = assembly_reactivation(
+    ...     pre, post, pattern, control_unit_ids=[7, 8, 9], match_unit_ids=[9, 7, 8]
     ... )
-    >>> bool(strength > 1.0)
+    >>> bool(result.mean_activation_difference > 0.3)
+    True
+    >>> bool(result.fraction_above_control_threshold > 0.01)
     True
 
     References
@@ -1783,13 +1901,27 @@ def reactivation_strength(
         Principal component analysis of ensemble recordings reveals cell
         assemblies at high temporal resolution. J Comput Neurosci
         29(1-2):309-325.
+    van de Ven GM, Trouche S, McNamara CG, Allen K, Dupret D (2016).
+        Hippocampal offline reactivation consolidates recently formed cell
+        assembly patterns during sharp wave-ripples. Neuron 92(5):968-974.
     """
-    call = "reactivation_strength()"
-    if (template_unit_ids is None) != (match_unit_ids is None):
+    call = "assembly_reactivation()"
+    if not 0.0 < percentile < 100.0:
+        raise ValueError(
+            _format_error(
+                f"{call}: percentile must be in (0, 100), got {percentile}.",
+                why="Why: it is the percentile of the control period's "
+                "activation strength used as the threshold for the match "
+                "period.",
+                fix="pass percentile=99.0 (Peyrache et al. 2010) or another "
+                "value between 0 and 100",
+            )
+        )
+    if (control_unit_ids is None) != (match_unit_ids is None):
         given, missing = (
-            ("template_unit_ids", "match_unit_ids")
+            ("control_unit_ids", "match_unit_ids")
             if match_unit_ids is None
-            else ("match_unit_ids", "template_unit_ids")
+            else ("match_unit_ids", "control_unit_ids")
         )
         raise ValueError(
             _format_error(
@@ -1799,19 +1931,19 @@ def reactivation_strength(
                 "a period whose units are listed in another order would "
                 "silently pair weights with the wrong cells.",
                 fix="pass the column labels of both count matrices "
-                "(template_unit_ids= and match_unit_ids=; the same labels when "
+                "(control_unit_ids= and match_unit_ids=; the same labels when "
                 "both were binned from one list of spike trains), or neither "
                 "to pair columns by position",
             )
         )
-    template_counts = _columns_by_label(
-        _validated_counts(template_counts, call=call, argument="template_counts"),
-        template_unit_ids,
+    control_counts = _columns_by_label(
+        _validated_counts(control_counts, call=call, argument="control_counts"),
+        control_unit_ids,
         pattern,
         call=call,
-        argument="template_counts",
-        labels_argument="template_unit_ids",
-    ).T
+        argument="control_counts",
+        labels_argument="control_unit_ids",
+    )
     match_counts = _columns_by_label(
         _validated_counts(match_counts, call=call, argument="match_counts"),
         match_unit_ids,
@@ -1819,25 +1951,26 @@ def reactivation_strength(
         call=call,
         argument="match_counts",
         labels_argument="match_unit_ids",
-    ).T
+    )
 
-    n_template_neurons = template_counts.shape[0]
-    n_match_neurons = match_counts.shape[0]
+    n_control_neurons = control_counts.shape[1]
+    n_match_neurons = match_counts.shape[1]
     n_weights = len(pattern.weights)
-    if n_template_neurons != n_weights or n_match_neurons != n_weights:
+    if n_control_neurons != n_weights or n_match_neurons != n_weights:
         raise ValueError(
-            f"template_counts has {n_template_neurons} neurons and "
+            f"{call}: control_counts has {n_control_neurons} neurons and "
             f"match_counts has {n_match_neurons} neurons but pattern has "
             f"{n_weights} weights. All must match."
         )
 
     weights = _unit_weights(pattern.weights, call=call)
-    template_z, template_constant = _z_scores(template_counts.T)
-    match_z, match_constant = _z_scores(match_counts.T)
+    control_z, control_constant = _z_scores(control_counts)
+    match_z, match_constant = _z_scores(match_counts)
+    n_control_bins, n_match_bins = control_counts.shape[0], match_counts.shape[0]
 
     # A neuron constant in either period has no z-score there; drop it from
     # both so the two means use the same neurons.
-    excluded = (template_constant | match_constant) & (weights != 0)
+    excluded = (control_constant | match_constant) & (weights != 0)
     if np.any(excluded):
         names = np.asarray(pattern.unit_ids)
         warnings.warn(
@@ -1846,7 +1979,7 @@ def reactivation_strength(
             + " and ".join(
                 period
                 for period, constant in (
-                    ("template_counts", template_constant & excluded),
+                    ("control_counts", control_constant & excluded),
                     ("match_counts", match_constant & excluded),
                 )
                 if constant.any()
@@ -1861,28 +1994,37 @@ def reactivation_strength(
         if norm == 0:
             warnings.warn(
                 f"{call}: every unit with nonzero weight is excluded, so the "
-                "strength is undefined (NaN).",
+                "comparison is undefined (NaN).",
                 UserWarning,
                 stacklevel=2,
             )
-            return np.nan
+            return AssemblyReactivationResult(
+                mean_activation_difference=np.nan,
+                control_mean_activation=np.nan,
+                match_mean_activation=np.nan,
+                control_threshold=np.nan,
+                fraction_above_control_threshold=np.nan,
+                percentile=float(percentile),
+                n_control_bins=n_control_bins,
+                n_match_bins=n_match_bins,
+            )
         weights = weights / norm
 
-    mean_template = float(np.mean(_activation_strength(template_z, weights[None])))
-    mean_match = float(np.mean(_activation_strength(match_z, weights[None])))
-
-    if not mean_template > 0:
-        warnings.warn(
-            f"{call}: the pattern's mean activation strength in the template "
-            f"period is {mean_template:.3g}, so its neurons do not fire together "
-            "there and the ratio is undefined (NaN). Measure a pattern detected "
-            "in template_counts, or compare mean assembly_activation() values "
-            "directly.",
-            UserWarning,
-            stacklevel=2,
-        )
-        return np.nan
-    return mean_match / mean_template
+    control_activation = _activation_strength(control_z, weights[None])[:, 0]
+    match_activation = _activation_strength(match_z, weights[None])[:, 0]
+    control_mean = float(np.mean(control_activation))
+    match_mean = float(np.mean(match_activation))
+    threshold = float(np.percentile(control_activation, percentile))
+    return AssemblyReactivationResult(
+        mean_activation_difference=match_mean - control_mean,
+        control_mean_activation=control_mean,
+        match_mean_activation=match_mean,
+        control_threshold=threshold,
+        fraction_above_control_threshold=float(np.mean(match_activation > threshold)),
+        percentile=float(percentile),
+        n_control_bins=n_control_bins,
+        n_match_bins=n_match_bins,
+    )
 
 
 def explained_variance_reactivation(
