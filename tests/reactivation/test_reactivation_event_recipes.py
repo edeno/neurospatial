@@ -603,3 +603,31 @@ def test_needs_events_names_the_arguments() -> None:
 def test_regions_are_required_for_per_region_detection(reactivated) -> None:
     with pytest.raises(ValueError, match=r"unit_groups has no \['region'\]"):
         _compare(reactivated, [ROBINSON_2026_ASSEMBLY], unit_groups={})
+
+
+def test_a_region_too_small_to_detect_in_is_skipped(reactivated) -> None:
+    """Two units in one region: its patterns are left out with a warning,
+    and the other region's and the cross-region patterns are kept."""
+    regions = np.where(np.arange(len(reactivated.spike_times)) < 22, "CA1", "PFC")
+    with pytest.warns(UserWarning, match="units of PFC.*left out"):
+        table = _compare(
+            reactivated, [ROBINSON_2026_ASSEMBLY], unit_groups={"region": regions}
+        )
+    assert (table["error"] == "").all()
+    assert "CA1" in set(table["region"])
+    assert set(table["region"]) <= {"CA1", "cross_region"}
+    for members, region in zip(table["member_unit_ids"], table["region"]):
+        if region == "CA1":
+            assert max(members) < 22
+
+
+def test_every_region_too_small_is_an_error_row(reactivated) -> None:
+    regions = np.arange(len(reactivated.spike_times)) // 2
+    per_region = dataclasses.replace(
+        ROBINSON_2026_ASSEMBLY, name="per_region", detection_units="each_region"
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        table = _compare(reactivated, [per_region], unit_groups={"region": regions})
+    assert len(table) == 1
+    assert "detection failed in every region" in table["error"].iloc[0]

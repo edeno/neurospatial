@@ -460,7 +460,10 @@ class ReactivationMethod:
         their own (``unit_groups["region"]``); or each region and also all
         units together, keeping the patterns of the latter whose members
         lie in at least two regions (Robinson et al. 2026's cross-structural
-        assemblies). The table's ``region`` column says which.
+        assemblies). The table's ``region`` column says which. A region
+        that cannot be detected in (for example one with fewer than 3
+        units) is left out with a warning; the method's row reports an
+        error only when every region fails.
     smoothing_bandwidth : float or None
         For assembly methods, the standard deviation in seconds of a
         Gaussian kernel applied to the spike trains before z-scoring and
@@ -1796,6 +1799,7 @@ def _detected_patterns(
             sets.append((every, "cross_region"))
     generator = stream()
     patterns: list[tuple[AssemblyPattern, str | None]] = []
+    failures = []
     for units, region in sets:
         try:
             detection = detect_assemblies(
@@ -1809,8 +1813,21 @@ def _detected_patterns(
                 unit_ids=session.labels[units],
             )
         except ValueError as error:
-            where = "" if region is None else f" (units of {region})"
-            raise _MethodError(f"{error}{where}") from error
+            if region is None:
+                raise _MethodError(str(error)) from error
+            # One region too small or too sparse to detect in: keep the
+            # patterns of the others.
+            failures.append(f"{error} (units of {region})")
+            if len(failures) == len(sets):
+                raise _MethodError(
+                    "detection failed in every region: " + "; ".join(failures)
+                ) from error
+            warnings.warn(
+                f"{failures[-1]}; the patterns of these units are left out.",
+                UserWarning,
+                stacklevel=2,
+            )
+            continue
         for pattern in detection.patterns:
             members = units[pattern.member_indices]
             if region == "cross_region":
