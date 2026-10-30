@@ -155,8 +155,9 @@ short event decoded in 10 ms bins cannot reach.
 
 The published shuffle counts (1,500 for each of Davidson's three nulls) make
 this guide slow to run, so here each method gets 200 shuffles. With 200
-shuffles the smallest possible p-value is 1/201, which is still below every
-α used here. For your analysis, keep the published counts.
+shuffles the smallest possible p-value is 1/201, or 2/201 for the two-sided
+rank-order test, which is still below every α used here. For your analysis,
+keep the published counts.
 
 <!-- docs-test: run -->
 ```python
@@ -208,7 +209,8 @@ limit). On the events without a path, the methods fail in opposite ways:
   search includes lines of zero speed, and all three of its shuffles spread
   the posterior across the track, so any event whose posterior stays in one
   place beats them. The correlation and regression scores need position to
-  change with time, so they reject all but one stationary event.
+  change with time: the correlation scores reject every stationary event and
+  the regression rejects all but one.
 - The rank-order test calls most random events replay, and the correlation
   and regression methods call four of six. Six events give a noisy rate: in
   a simulation of 60 such events, `WU_2017` and `TIROLE_2022` called 12 to
@@ -439,9 +441,13 @@ warning says why.
   clock as the spike times. `decode_intervals` decodes them in
   non-overlapping time bins with one set of rate maps. Several papers
   decoded overlapping windows (`method.decoding`, e.g. 20 ms windows stepped
-  by 10 ms for `WU_2017`): for those, bin each interval with
-  `neurospatial.decoding.bin_spikes_in_time` and decode with
-  `decode_position`, the same way for real and null events.
+  by 10 ms for `WU_2017`). For those, bin each interval at the step,
+  `counts, grid = bin_spikes_in_time(spike_times, dt=0.01, t_start=start,
+  t_stop=stop)`, and add each pair of neighboring rows to make 20 ms
+  windows, `counts[:-1] + counts[1:]`, centered at
+  `(grid[:-1] + grid[1:]) / 2`. Decode them with
+  `decode_position(env, windows, rates, dt=0.02, times=centers)`. Do the
+  same for real and null events.
 - **Shuffles.** Keep each recipe's published `n_shuffles`. Give `rng` a
   fixed seed and report it.
 - **Two running directions or two tracks.** Decode each event's spike
