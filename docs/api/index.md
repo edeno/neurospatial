@@ -196,6 +196,9 @@ Detecting the candidate events (ripples, population bursts) is not included.
 - `event_properties()`, `detection_rates()`, `method_agreement()`: Calibrate
   methods on a comparison table: rates by event property with confidence
   intervals (false positives on null data), and agreement between methods
+- `matched_alpha()`, `apply_alpha()`: Each method's α that holds its
+  false-positive rate on null data to a target (Takigawa et al. 2024), and
+  a comparison table's verdicts at those α
 - `detect_arm_replay()`, `ArmReplayMethod`: Single-arm and joint-arm replay
   on a multi-arm maze (Wu & Foster 2014; Berners-Lee et al. 2021)
 - `detect_rank_order_replay()`, `RankOrderMethod`: Apply published
