@@ -18,6 +18,7 @@ from neurospatial import Environment
 from neurospatial.replay import (
     compare_replay_methods,
     detect_replay,
+    null_events,
     replay_significance,
 )
 from neurospatial.replay.methods import SILVA_2015
@@ -36,6 +37,15 @@ def track():
 def session(track):
     """Twelve simulated events, sweeps and random jumps, decoded in 20 ms bins."""
     return sweeps_and_jumps(track, dt=DT)
+
+
+def test_null_events_name_each_copy():
+    trains = [np.array([1.01, 1.05, 3.02]), np.array([1.02, 3.05])]
+    null = null_events(
+        trains, np.array([[1.0, 1.1], [3.0, 3.1]]), kind="cell_identity", n_copies=3
+    )
+    np.testing.assert_array_equal(null.copy_index, np.tile([0, 1, 2], 2))
+    np.testing.assert_array_equal(null.source_events, np.repeat([0, 1], 3))
 
 
 def test_compare_table_reports_values_and_z_scores(track, session):

@@ -1166,7 +1166,10 @@ class NullSpikeData(ReadOnlyArraysMixin, ResultMixin):
     draws from every event of a call. Concatenate the tables with a column
     telling them apart and pass it to ``detection_rates(groups=...)``. The
     table's ``event`` indexes ``intervals``, so ``source_events[event]``
-    joins a null event to its real event's properties.
+    joins a null event to its real event's properties, and
+    ``copy_index[event]`` names the null data set it belongs to: copy ``k``
+    of every real event forms the ``k``-th null data set of a data-set-level
+    test (see :mod:`neurospatial.replay.dataset`).
 
     Attributes
     ----------
@@ -1177,6 +1180,10 @@ class NullSpikeData(ReadOnlyArraysMixin, ResultMixin):
     source_events : NDArray[np.intp], shape (n_events,)
         Index of the real event each null event was made from; -1 for a
         simulated event.
+    copy_index : NDArray[np.intp], shape (n_events,)
+        Which copy of its real event each null event is, from 0 to
+        ``n_copies - 1``; 0 for a simulated event. The events with
+        ``copy_index == k`` form one null data set the size of the real one.
     kind : str
         How the null events were made.
 
@@ -1189,6 +1196,7 @@ class NullSpikeData(ReadOnlyArraysMixin, ResultMixin):
     spike_times: tuple[NDArray[np.float64], ...]
     intervals: NDArray[np.float64]
     source_events: NDArray[np.intp]
+    copy_index: NDArray[np.intp]
     kind: str
 
     def __post_init__(self) -> None:
@@ -1273,7 +1281,8 @@ def null_events(
     -------
     NullSpikeData
         ``n_events * n_copies`` null events, the copies of each event
-        together, with ``source_events`` naming the real event.
+        together, with ``source_events`` naming the real event and
+        ``copy_index`` the copy.
 
     Raises
     ------
@@ -1440,6 +1449,7 @@ def null_events(
     placed: list[list[NDArray[np.float64]]] = [[] for _ in trains]
     out_intervals = []
     sources = []
+    copy_numbers = []
     slot = 0
     for index, (start, stop) in enumerate(windows):
         duration = stop - start
@@ -1447,7 +1457,7 @@ def null_events(
             np.asarray(train[(train >= start) & (train < stop)]) - start
             for train in trains
         ]
-        for _ in range(n_copies):
+        for copy_number in range(n_copies):
             offset = slot * spacing
             copies = list(in_event)
             if kind == "cell_identity":
@@ -1472,6 +1482,7 @@ def null_events(
                 placed[cell].append(np.sort(spikes) + offset)
             out_intervals.append((offset, offset + duration))
             sources.append(index)
+            copy_numbers.append(copy_number)
             slot += 1
     return NullSpikeData(
         spike_times=tuple(
@@ -1479,6 +1490,7 @@ def null_events(
         ),
         intervals=np.asarray(out_intervals, dtype=np.float64),
         source_events=np.asarray(sources, dtype=np.intp),
+        copy_index=np.asarray(copy_numbers, dtype=np.intp),
         kind=kind,
     )
 
@@ -1596,6 +1608,7 @@ def simulated_null_events(
         spike_times=tuple(np.concatenate(parts) for parts in placed),
         intervals=np.column_stack([starts, starts + float(duration)]),
         source_events=np.full(n_events, -1, dtype=np.intp),
+        copy_index=np.zeros(n_events, dtype=np.intp),
         kind=f"simulated_{kind}",
     )
 
