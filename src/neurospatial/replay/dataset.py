@@ -1009,6 +1009,7 @@ def _replay_values(
     import pandas as pd
 
     from neurospatial.replay.methods import _criterion_quantities
+    from neurospatial.replay.trajectory import _reusing_replay_lines
 
     if null is not None and null not in _EVENT_NULLS:
         raise ValueError(
@@ -1119,14 +1120,17 @@ def _replay_values(
                 name: [] for name in ("score", *columns)
             }
             stream = _stream(entropy, _EVENT_KEY, index, 1)
-            for shuffled, shuffled_counts in context.shuffles(
-                index, posterior, times, event_counts
-            ):
-                measured = _measure(
-                    env, shuffled, times, shuffled_counts, variant, labels, stream
-                )
-                for name in measured_rows:
-                    measured_rows[name].append(measured.get(name, np.nan))
+            # The shuffles of an event share its times, so a replay line
+            # search is built once for all of them.
+            with _reusing_replay_lines():
+                for shuffled, shuffled_counts in context.shuffles(
+                    index, posterior, times, event_counts
+                ):
+                    measured = _measure(
+                        env, shuffled, times, shuffled_counts, variant, labels, stream
+                    )
+                    for name in measured_rows:
+                        measured_rows[name].append(measured.get(name, np.nan))
             add(
                 index,
                 datasets,

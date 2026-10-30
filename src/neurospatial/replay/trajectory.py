@@ -64,6 +64,8 @@ RegressionLineScoreResult
 
 from __future__ import annotations
 
+import contextlib
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -2045,6 +2047,27 @@ def detect_trajectory_radon(
 _LINE_ENDS = ("any", "on_track")
 _OFF_TRACK = ("band_median", "bin_median")
 _ZERO_ROWS = ("refuse", "line_median")
+# Inside _reusing_replay_lines(): the key and lines of the latest search.
+_REUSED_LINES: ContextVar[list[Any] | None] = ContextVar("_REUSED_LINES", default=None)
+
+
+@contextlib.contextmanager
+def _reusing_replay_lines() -> Iterator[None]:
+    """Reuse the latest line search for searches of the same geometry.
+
+    Building a search's scoring operators costs far more than scoring one
+    posterior with them. A caller that scores many posteriors of one event
+    one call at a time, such as :func:`dataset_values` measuring an event's
+    shuffles with :func:`detect_replay`, runs those calls inside this
+    block: a :func:`detect_trajectory_radon` search with the same bins,
+    times and options as the one before it then reuses its lines and
+    operators. Only the latest search is kept, and only inside the block.
+    """
+    token = _REUSED_LINES.set([])
+    try:
+        yield
+    finally:
+        _REUSED_LINES.reset(token)
 
 
 def _require_closed_loop(env: Environment, operation: str) -> None:
@@ -2238,11 +2261,23 @@ def _prepare_replay_lines(
                 "environment's units",
             )
         )
+    elapsed = times - times[0]
+    reused = _REUSED_LINES.get()
+    key = None
+    if reused is not None:
+        arrays = (starts, stops, order, elapsed)
+        key = (
+            *(np.asarray(values).tobytes() for values in arrays),
+            *(band, speed_bound, min_speed, wrap, line_ends, off_track),
+            *(zero_rows, n_lines, line_seed),
+        )
+        if reused and reused[0] == key:
+            return reused[1], posterior
     lines = _ReplayLines(
         starts,
         stops,
         order,
-        times - times[0],
+        elapsed,
         float(band),
         speed_bound,
         operation,
@@ -2254,6 +2289,8 @@ def _prepare_replay_lines(
         n_lines=None if n_lines is None else int(n_lines),
         line_seed=int(line_seed),
     )
+    if reused is not None:
+        reused[:] = [key, lines]
     return lines, posterior
 
 
