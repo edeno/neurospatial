@@ -67,6 +67,7 @@ from neurospatial.replay.methods import (
 )
 from neurospatial.replay.significance import _ALTERNATIVES, _DECODING_NULLS
 from neurospatial.stats._utils import _entropy, _stream
+from neurospatial.stats.shuffle import _tail_p_values
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -2355,15 +2356,7 @@ def dataset_test(
         below = np.sum(null_statistics < observed_statistic, axis=0)
         n_observed = len(observed)
         labels, thresholds = (), ()
-    p_greater = (1.0 + greater) / (1.0 + n_datasets)
-    p_less = (1.0 + less) / (1.0 + n_datasets)
-    p_value = (
-        p_greater
-        if alternative == "greater"
-        else p_less
-        if alternative == "less"
-        else np.minimum(2.0 * np.minimum(p_greater, p_less), 1.0)
-    )
+    p_value = _tail_p_values(greater, less, n_datasets, alternative)
     percentile = 100.0 * below / n_datasets
 
     def scalar_or_array(values: Any) -> Any:
@@ -2836,15 +2829,7 @@ def template_correlation_test(
     undefined = np.isnan(null)
     greater = int(np.sum(undefined | (null >= statistic)))
     less = int(np.sum(undefined | (null <= statistic)))
-    p_greater = (1.0 + greater) / (1.0 + n_shuffles)
-    p_less = (1.0 + less) / (1.0 + n_shuffles)
-    p_value = (
-        p_greater
-        if alternative == "greater"
-        else p_less
-        if alternative == "less"
-        else min(2.0 * min(p_greater, p_less), 1.0)
-    )
+    p_value = _tail_p_values(greater, less, n_shuffles, alternative)
     return DatasetTestResult(
         statistic=statistic,
         null_statistics=null,

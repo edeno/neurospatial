@@ -56,7 +56,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Generator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -640,28 +640,40 @@ def compute_shuffle_pvalue(
             "shuffle p-value. Check that the shuffle produced valid scores."
         )
 
-    if tail == "greater":
-        # Count how many null values are >= observed
-        k = int(np.sum(null_scores >= observed))
-        return float((k + 1) / (n + 1))
-
-    elif tail == "less":
-        # Count how many null values are <= observed
-        k = int(np.sum(null_scores <= observed))
-        return float((k + 1) / (n + 1))
-
-    elif tail == "two-sided":
-        # Compute both tails and take 2 * min, capped at 1.0
-        k_greater = int(np.sum(null_scores >= observed))
-        k_less = int(np.sum(null_scores <= observed))
-        p_greater = (k_greater + 1) / (n + 1)
-        p_less = (k_less + 1) / (n + 1)
-        return float(min(2 * min(p_greater, p_less), 1.0))
-
-    else:
+    if tail not in ("greater", "less", "two-sided"):
         raise ValueError(
             f"tail must be 'greater', 'less', or 'two-sided', got '{tail}'"
         )
+    k_greater = int(np.sum(null_scores >= observed))
+    k_less = int(np.sum(null_scores <= observed))
+    return float(_tail_p_values(k_greater, k_less, n, tail))
+
+
+def _tail_p_values(k_greater: Any, k_less: Any, n: Any, alternative: str) -> Any:
+    """Monte Carlo p-values ``(k + 1) / (n + 1)`` for one side or both.
+
+    Parameters
+    ----------
+    k_greater, k_less : int or NDArray[np.integer]
+        Null scores at least as large as, and at most as large as, the
+        observed score; arrays broadcast elementwise.
+    n : int or NDArray[np.integer]
+        Null scores counted.
+    alternative : {"greater", "less", "two-sided"}
+        The side; ``"two-sided"`` doubles the smaller side, capped at 1.
+
+    Returns
+    -------
+    float or NDArray[np.float64]
+        The p-values, shaped like the broadcast counts.
+    """
+    p_greater = (1.0 + k_greater) / (1.0 + n)
+    p_less = (1.0 + k_less) / (1.0 + n)
+    if alternative == "greater":
+        return p_greater
+    if alternative == "less":
+        return p_less
+    return np.minimum(2.0 * np.minimum(p_greater, p_less), 1.0)
 
 
 def compute_shuffle_zscore(

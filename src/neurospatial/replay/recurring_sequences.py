@@ -35,6 +35,7 @@ from neurospatial.replay.sequence_match import (
     _sorted_trains,
 )
 from neurospatial.stats._utils import _entropy, _name_key, _stream
+from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -805,8 +806,8 @@ def recurring_sequences_significance(
             dtype=np.int64,
         )
         counts[kind] = kind_counts
-        p_values[kind] = float(
-            (np.sum(kind_counts >= observed.n_recurring) + 1) / (kind_counts.size + 1)
+        p_values[kind] = compute_shuffle_pvalue(
+            observed.n_recurring, kind_counts, tail="greater"
         )
     p_value = max(p_values.values())
     return RecurringSequencesSignificanceResult(
