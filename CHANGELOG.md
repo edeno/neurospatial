@@ -52,21 +52,25 @@ The recipes are `DAVIDSON_2009`, `KARLSSON_FRANK_2009`, `SILVA_2015`,
 - **Single-arm replays** need |weighted correlation| > 0.3 and a posterior
   mean covering more than half the arm.
 - **Joint replays.** The strongest pair of single-arm replays with
-  |weighted correlation| above 0.3 is reported; the paper's same-sign and
-  non-overlap conditions are not checked, as in the code. Without a pair,
-  the strongest single-arm replay is reported.
+  |weighted correlation| above 0.3 is reported. The paper's non-overlap
+  condition is not checked, as in the code. Without a pair, the strongest
+  single-arm replay is reported.
 - **Fallback.** Without either, an arm that stayed above threshold is still
-  an arm-replay, as the paper defines it.
+  an arm-replay, as the paper defines it. `criteria["sequence"]` is False
+  for these, and in simulations they made up 40–70% of single-arm
+  outcomes.
+- **Checked against the code.** A port of the authors' code, with its
+  merge corrected, gives the same outcome on all 24,000 simulated events.
 - **Code quirks not reproduced:** the code drops the end of a chain of
   three or more merged runs, and pads each event by 20 ms on each side.
   Both are documented in the notes.
 
 `ArmReplayMethod` gains the options this needs:
 
-- `subregions="runs"` with `merge_max_gap`;
+- `subregions="runs"` with `merge_max_gap` (inclusive);
 - `coverage="mean_range"`;
 - `joint="strongest_pair"`;
-- `joint_same_sign`;
+- `joint_same_sign`, which now works with either joint rule;
 - `arm_fallback`.
 
 ### Single-arm and joint-arm replay on a maze: Wu & Foster (2014)
