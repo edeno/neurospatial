@@ -21,6 +21,14 @@ fit_linear_trajectory : Linear trajectory fitting
 fit_isotonic_trajectory : Monotonic trajectory fitting
     Isotonic regression on posterior sequence.
 
+Rank Order
+----------
+rank_order_correlation : Field order vs firing order (Foster & Wilson 2006)
+    Spearman correlation between each active cell's field position and when it
+    fired; needs no decoding.
+
+rank_order_significance : Rank-order correlation against cell-order shuffles
+
 Significance
 ------------
 replay_significance : Test any replay score against shuffled events
@@ -58,6 +66,12 @@ from neurospatial.replay.nulls import (
     shuffle_posterior_circular,
     shuffle_posterior_weighted_circular,
 )
+from neurospatial.replay.rank_order import (
+    RankOrderResult,
+    RankOrderSignificanceResult,
+    rank_order_correlation,
+    rank_order_significance,
+)
 from neurospatial.replay.significance import (
     ReplaySignificanceResult,
     replay_significance,
@@ -76,6 +90,8 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
+    "RankOrderResult",
+    "RankOrderSignificanceResult",
     "ReplaySignificanceResult",
     "WeightedCorrelationResult",
     # Trajectory scores
@@ -85,6 +101,9 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "weighted_correlation",
     # Significance
     "replay_significance",
+    # Rank order
+    "rank_order_correlation",
+    "rank_order_significance",
     # Shuffles
     "shuffle_cell_identity",
     "shuffle_place_fields_circular",

@@ -198,7 +198,7 @@ REQUIRED_DATA_NAMES = {
     # Events, intervals, trials and labels.
     *("event_times", "events", "reference_events", "start_events", "stop_events"),
     *("event_types", "entry_time", "reward_times", "lap_times", "crossing_times"),
-    *("intervals", "epochs", "windows", "trials", "trial_labels"),
+    *("interval", "intervals", "epochs", "windows", "trials", "trial_labels"),
     *("laps", "runs", "visits", "labels", "direction_labels", "voronoi_labels"),
     # The window of each event, by position in the canonical events order
     # f(spike_times, event_times, window, *, bin_size).
