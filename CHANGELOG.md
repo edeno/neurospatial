@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Template choices
+
+- `ReplayMethod(template_choice="smallest_p")` tests every template of an
+  event, as `detect_replay(..., template=name)` would, with the method's
+  score, nulls and criteria, and reports the template with the smallest
+  p-value and its verdict (Jadhav et al. 2016; Tang et al. 2017; Shin et
+  al. 2019: the replayed trajectory of the four W-track trajectories;
+  Ólafsdóttir et al. 2016: the running direction with the lower p). As in
+  those papers, the p-value is not corrected for the number of templates,
+  so with `k` templates an event without replay is called replay up to
+  `1 - (1 - alpha)**k` of the time. A tie goes to the first template in the
+  decode's order. The event can be a joint decode or the templates decoded
+  separately; the method needs nulls.
+- `ReplayMethod(template_choice="max_score")` follows Muessig et al.
+  (2019): for templates decoded separately (each with `decode_position` on
+  its own rate maps), the event's score is the largest over the templates,
+  and each shuffle's score is the largest over the templates' shuffles,
+  each template shuffled independently, not yoked to the template that
+  fits the event best (Silva et al. 2015). Comparing the event's largest
+  score with one template's shuffles instead calls about `1 - (1 -
+  alpha)**2` of random events replay with two templates; the maximum
+  inside every shuffle keeps the rate at `alpha`. The method needs a score
+  and nulls with `alternative="greater"`, and refuses a segmentation,
+  template criteria and the pseudo-event null.
+- Separately decoded templates are passed as a mapping of template name to
+  posterior to `detect_replay` and `replay_significance`, or to
+  `DecodingResult` in `compare_replay_methods`, with `encoding_models` (and
+  optionally `prior` or `env`) keyed alike. `replay_significance` then tests
+  the largest score over the templates, and its result's new `template`
+  attribute names the template with the largest score.
+- Each template tested by either choice draws from its own random stream,
+  derived from `rng` and the template's name, so results are reproducible
+  and do not depend on the order of the templates. `compare_replay_methods`
+  records the chosen template in its `template` column.
+
 ### Replay scoring robustness
 
 - Rank-order field peaks and centers ignore bins outside a rate result's
