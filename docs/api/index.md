@@ -170,6 +170,9 @@ Detecting the candidate events (ripples, population bursts) is not included.
   through the start of its linear position (Wikenheiser & Redish 2013)
 - `weighted_correlation()`: Posterior-weighted correlation of time and
   position (Wu & Foster 2014)
+- `regression_line_score()`: Posterior mass within a band of the
+  least-squares line through each time bin's most likely position (Harvey
+  et al. 2023; Soula et al. 2023)
 - `trajectory_metrics()`, `template_fractions()`: Per-event metrics that
   criteria-based replay detection thresholds (jumps, spread, range, path
   length, dispersion, coverage, empty time bins) and the directional

@@ -46,6 +46,9 @@ fit_linear_trajectory
     2009) or to the MAP positions (Wu et al. 2017).
 detect_trajectory_radon
     Fit the replay line holding the most posterior mass (Davidson et al. 2009).
+regression_line_score
+    Posterior mass near the line through the MAP positions (Harvey et al.
+    2023; Soula et al. 2023).
 
 Result Dataclasses
 ------------------
@@ -55,6 +58,8 @@ LinearFitResult
     Container for linear regression results.
 RadonDetectionResult
     Container for Radon transform detection results.
+RegressionLineScoreResult
+    Container for the regression-line score and its line.
 """
 
 from __future__ import annotations
@@ -221,6 +226,60 @@ class LinearFitResult(ResultMixin):
             "intercept": self.intercept,
             "r_squared": self.r_squared,
             "slope_std": self.slope_std,
+        }
+
+
+@dataclass(frozen=True, repr=False, eq=False)
+class RegressionLineScoreResult(ResultMixin):
+    """Posterior mass near the line through a decoded event's MAP positions.
+
+    :func:`regression_line_score` fits one least-squares line of the MAP
+    position on time and scores the posterior mass within ``band`` of it
+    (Harvey et al. 2023; Soula et al. 2023).
+
+    Attributes
+    ----------
+    score : float
+        Mean, over the time bins with posterior mass, of the mass within
+        ``band`` of the line, in [0, 1]. Time bins whose posterior is all
+        zero (no spikes) are left out of the line and of the mean. NaN with
+        fewer than two time bins with mass, which cannot fix a line.
+    slope : float
+        Slope of the line: replay speed along the track in environment
+        units per second (cm/s for a track in cm); positive when position
+        increases along the track with time.
+    intercept : float
+        Position along the track, in environment units, where the line
+        crosses ``times == 0``.
+    r_squared : float
+        R² of the line through the MAP positions, in [0, 1]; NaN when the
+        MAP position never changes.
+    band : float
+        Half-width of the band around the line, in environment units.
+    wrap_band : bool
+        Whether the band wrapped around the track's ends.
+
+    See Also
+    --------
+    regression_line_score : Function that produces this result.
+    """
+
+    score: float
+    slope: float
+    intercept: float
+    r_squared: float
+    band: float
+    wrap_band: bool
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "score": self.score,
+            "slope": self.slope,
+            "intercept": self.intercept,
+            "r_squared": self.r_squared,
+            "band": self.band,
+            "wrap_band": self.wrap_band,
         }
 
 
@@ -1018,6 +1077,283 @@ def fit_linear_trajectory(
         r_squared=float(np.mean(r_squared)),
         slope_std=float(np.std(slopes, ddof=1)) if n_resamples > 1 else None,
     )
+
+
+_REGRESSION_BAND_CM = 10.5
+"""Default half-width of the band of :func:`regression_line_score`, 10.5 cm.
+
+Harvey et al. (2023) and Soula et al. (2023) scored "the sum probability mass
+under the fit line within a bandwidth (21 cm)": read as the band's full width,
+the 2w + 1 = 7 position bins of 3 cm that their code (nelpy's
+``trajectory_score_array`` with ``w=3``) sums around the line.
+"""
+
+
+def regression_line_score(
+    env: Environment,
+    posterior: NDArray[np.float64],
+    times: NDArray[np.float64],
+    *,
+    band: float | None = None,
+    wrap_band: bool = False,
+) -> RegressionLineScoreResult:
+    """Posterior mass near the line through a decoded event's MAP positions.
+
+    Fits one least-squares line of the MAP position on time, through the
+    time bins with posterior mass, and scores the event by the mean over
+    those time bins of the posterior mass within ``band`` of the line
+    (Harvey et al. 2023, "alternative approach"; Soula et al. 2023). The
+    line is not searched for: unlike :func:`detect_trajectory_radon`, which
+    keeps the line holding the most mass, it is the regression line of the
+    decoded positions, and unlike :func:`fit_linear_trajectory`, which
+    scores that line's R², the score is the mass near it. Test the score
+    against shuffles with :func:`~neurospatial.replay.replay_significance`.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment the posterior was decoded on: a 1-D environment or a
+        linearized track. Positions are read along the track, so the result
+        does not depend on how bins are numbered.
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior probability mass over spatial bins for each time bin. Each
+        row sums to 1, or is all zero for a time bin without spikes (as
+        ``empty_time_bins="zero"`` of
+        :func:`~neurospatial.replay.detect_replay` passes them).
+    times : NDArray[np.float64], shape (n_time_bins,)
+        Center time of each posterior row, in seconds; the independent
+        variable of the line.
+    band : float or None, default=None
+        Half-width of the band around the line, in environment units. None
+        means 10.5 cm in the environment's units, which requires metric
+        ``env.units``: Harvey et al. and Soula et al. state a 21 cm
+        bandwidth, which their code sums as 7 position bins of 3 cm centered
+        on the line.
+    wrap_band : bool, default=False
+        Where the band reaches past an end of the track, take the posterior
+        at the other end, as the authors' code (nelpy) does by circularly
+        shifting each time bin's posterior. False counts only the band's
+        part on the track, so a line near an end holds less mass.
+
+    Returns
+    -------
+    RegressionLineScoreResult
+        The score, and the slope, intercept and R² of the line.
+
+    Raises
+    ------
+    TypeError
+        If ``wrap_band`` is not a bool.
+    ValueError
+        If ``env`` is neither 1-D nor a linearized track, if ``posterior``
+        is not 2-D with one column per bin, if a row is neither a
+        probability mass nor all zero, if ``times`` does not have one finite
+        entry per row or holds a single distinct time, or if ``band`` is not
+        positive (or is None on an environment without metric units).
+
+    See Also
+    --------
+    RegressionLineScoreResult : Container for the score and its line.
+    detect_trajectory_radon : The line holding the most posterior mass.
+    fit_linear_trajectory : R² of a line through the MAP positions.
+    neurospatial.replay.replay_significance : Test the score against shuffles.
+
+    Notes
+    -----
+    **Line.** The MAP position of each time bin with mass is the center of
+    its bin of highest posterior density (mass per unit length). The line
+    ``x(t) = slope * t + intercept`` is the least-squares fit of these
+    positions on the times. The authors' code (nelpy's ``linregress_array``)
+    regresses the MAP bin on the time-bin number, which gives the same line
+    for evenly spaced time bins and equal bins.
+
+    **Score.** For each time bin with mass, the posterior mass within
+    ``band`` of ``x(t)``, with each bin's mass spread evenly along it so
+    that the band's mass is exact for any bin sizes and any line position;
+    the score is the mean over those time bins. With ``wrap_band=True``,
+    positions are read modulo the track's length (from the first bin's
+    start to the last bin's end), so band past one end takes the mass at
+    the other, and a band longer than the track holds the whole time bin.
+    nelpy's ``trajectory_score_array`` (``normalize=True``) rounds the line
+    to the nearest bin and sums the ``2w + 1`` bins around it, wrapping
+    around the track's ends; for a line through bin centers and ``band =
+    (w + 1/2) * bin_size`` the two agree.
+
+    **Time bins without spikes.** nelpy leaves them without a posterior
+    (NaN): they are left out of the line and of the mean, and here a row of
+    zeros is treated the same way.
+
+    References
+    ----------
+    Harvey, R. E., Robinson, H. L., Liu, C., Oliva, A., & Fernandez-Ruiz, A.
+    (2023). Hippocampo-cortical circuits for selective memory encoding,
+    routing, and replay. *Neuron*, 111(13), 2076-2090.
+
+    Soula, M., Maslarova, A., Harvey, R. E., Valero, M., Brandner, S.,
+    Hamer, H., Fernández-Ruiz, A., & Buzsáki, G. (2023). Interictal
+    epileptiform discharges affect memory in an Alzheimer's disease mouse
+    model. *PNAS*, 120(34), e2302676120.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.replay import regression_line_score
+    >>>
+    >>> # A 150 cm track in 3 cm bins; the posterior sweeps one bin per
+    >>> # 20 ms time bin, with 0.7 of its mass in the MAP bin and 0.1 in each
+    >>> # of the bins 1, 3 and 6 bins (3, 9 and 18 cm) ahead of it. The
+    >>> # band of 10.5 cm around the line holds all but the last.
+    >>> env = Environment.linear_track(
+    ...     endpoints=[[0.0, 0.0], [150.0, 0.0]], bin_size=3.0, units="cm"
+    ... )
+    >>> posterior = np.zeros((10, env.n_bins))
+    >>> rows = np.arange(10)
+    >>> posterior[rows, 10 + rows] = 0.7
+    >>> for ahead in (1, 3, 6):
+    ...     posterior[rows, 10 + rows + ahead] = 0.1
+    >>> times = np.arange(10) * 0.02
+    >>> result = regression_line_score(env, posterior, times)
+    >>> print(
+    ...     f"{result.slope:.0f} cm/s, score {result.score:.1f} within "
+    ...     f"{result.band:g} cm"
+    ... )
+    150 cm/s, score 0.9 within 10.5 cm
+    """
+    from neurospatial._units import default_length
+
+    operation = "regression_line_score()"
+    if not isinstance(wrap_band, (bool, np.bool_)):
+        raise TypeError(
+            f"{operation} needs wrap_band=True or wrap_band=False, got "
+            f"{wrap_band!r}; True takes band past a track end from the other end."
+        )
+    posterior, starts, stops = _track_positions(
+        env, posterior, operation, allow_zero_rows=True
+    )
+    times = _require_times(times, len(posterior), operation)
+    if band is None:
+        band = default_length(env, _REGRESSION_BAND_CM, name="band", call=operation)
+    if not (np.isfinite(band) and band > 0):
+        raise ValueError(
+            _format_error(
+                f"{operation} needs band > 0 in the environment's units, got {band:g}.",
+                why="band is the half-width of the band around the line",
+                fix="pass a positive value, e.g. band=10.5 for the 21 cm band "
+                "of Harvey et al. (2023) on a track in cm",
+            )
+        )
+    score, slope, intercept, r_squared = _regression_line_scores(
+        posterior[np.newaxis], times, starts, stops, float(band), bool(wrap_band)
+    )
+    return RegressionLineScoreResult(
+        score=float(score[0]),
+        slope=float(slope[0]),
+        intercept=float(intercept[0]),
+        r_squared=float(r_squared[0]),
+        band=float(band),
+        wrap_band=bool(wrap_band),
+    )
+
+
+def _regression_line_scores(
+    posteriors: NDArray[np.float64],
+    times: NDArray[np.float64],
+    starts: NDArray[np.float64],
+    stops: NDArray[np.float64],
+    band: float,
+    wrap_band: bool,
+) -> tuple[
+    NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]
+]:
+    """Regression-line scores of a batch of events with one geometry.
+
+    Parameters
+    ----------
+    posteriors : NDArray[np.float64], shape (n_events, n_time_bins, n_bins)
+        Validated posteriors, bins in track order; rows sum to 1 or 0.
+    times : NDArray[np.float64], shape (n_time_bins,)
+    starts, stops : NDArray[np.float64], shape (n_bins,)
+        Where each bin starts and ends along the track, in track order.
+    band : float
+        Half-width of the band, in environment units.
+    wrap_band : bool
+        Read positions modulo the track's length.
+
+    Returns
+    -------
+    score, slope, intercept, r_squared : NDArray[np.float64], shape (n_events,)
+        As in :class:`RegressionLineScoreResult`; NaN for an event with
+        fewer than two time bins with mass.
+    """
+    n_events, n_time, n_bins = posteriors.shape
+    has_mass = posteriors.sum(axis=2) > 0  # (n_events, n_time)
+    centers = (starts + stops) / 2
+    map_bins = _map_bins(posteriors.reshape(-1, n_bins), starts, stops)
+    positions = centers[map_bins].reshape(n_events, n_time)
+
+    # Least squares over the time bins with mass, about the middle of the
+    # time range so that an offset such as session time adds no round-off.
+    weights = has_mass.astype(np.float64)
+    n_fit = weights.sum(axis=1)
+    fits = n_fit >= 2
+    count = np.where(fits, n_fit, 1.0)
+    middle = (times.min() + times.max()) / 2.0
+    t = times - middle
+    mean_t = (weights @ t) / count
+    mean_x = (weights * positions).sum(axis=1) / count
+    t_dev = t[np.newaxis] - mean_t[:, np.newaxis]
+    x_dev = positions - mean_x[:, np.newaxis]
+    sxx = (weights * t_dev**2).sum(axis=1)
+    fits &= sxx > 0
+    slope = np.where(
+        fits,
+        (weights * t_dev * x_dev).sum(axis=1) / np.where(sxx > 0, sxx, 1.0),
+        np.nan,
+    )
+    line = mean_x[:, np.newaxis] + slope[:, np.newaxis] * t_dev  # (n_events, n_time)
+    intercept = np.where(fits, mean_x - slope * (mean_t + middle), np.nan)
+    ss_res = (weights * (positions - line) ** 2).sum(axis=1)
+    ss_tot = (weights * x_dev**2).sum(axis=1)
+    varies = np.where(has_mass, positions, -np.inf).max(axis=1) > np.where(
+        has_mass, positions, np.inf
+    ).min(axis=1)
+    r_squared = np.where(
+        fits & varies, 1.0 - ss_res / np.where(ss_tot > 0, ss_tot, 1.0), np.nan
+    )
+
+    # Mass within the band: F(line + band) - F(line - band), with F the
+    # cumulative posterior along the track, linear within each bin.
+    cumulative = np.cumsum(posteriors, axis=2) - posteriors  # mass before each bin
+    lengths = stops - starts
+    origin = float(starts[0])
+    loop = float(stops[-1] - starts[0])
+
+    def cumulative_mass(position: NDArray[np.float64]) -> NDArray[np.float64]:
+        turns = np.zeros_like(position)
+        if wrap_band:
+            turns = np.floor((position - origin) / loop)
+            position = position - turns * loop
+        index = np.searchsorted(starts, position, side="right") - 1
+        clipped = np.clip(index, 0, n_bins - 1)[..., np.newaxis]
+        before = np.take_along_axis(cumulative, clipped, axis=2)[..., 0]
+        mass = np.take_along_axis(posteriors, clipped, axis=2)[..., 0]
+        within = np.clip(
+            (position - starts[clipped[..., 0]]) / lengths[clipped[..., 0]], 0.0, 1.0
+        )
+        inside: NDArray[np.float64] = np.where(index >= 0, before + mass * within, 0.0)
+        return inside + turns  # each full turn of the loop holds a row's mass of 1
+
+    safe_line = np.where(np.isfinite(line), line, origin)
+    band_mass = np.minimum(
+        cumulative_mass(safe_line + band) - cumulative_mass(safe_line - band), 1.0
+    )
+    score = np.where(
+        fits,
+        (weights * band_mass).sum(axis=1) / count,
+        np.nan,
+    )
+    return _round_scores(score), slope, intercept, r_squared
 
 
 def _spikes_per_time_bin(
@@ -2850,7 +3186,9 @@ __all__ = [
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
+    "RegressionLineScoreResult",
     "detect_trajectory_radon",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",
+    "regression_line_score",
 ]

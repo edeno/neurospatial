@@ -19,6 +19,10 @@ fit_linear_trajectory : Line fit (Karlsson & Frank 2009; Wu et al. 2017)
     R² of a line through positions sampled from the posterior, or through
     the MAP positions.
 
+regression_line_score : Band mass under the MAP regression line (Harvey et al.
+    2023; Soula et al. 2023)
+    Posterior mass within a band of the least-squares line through each
+    time bin's most likely position.
 fit_isotonic_trajectory : Monotonic fit (Michon et al. 2019)
     Weighted isotonic fit of the MAP positions, scored by the mean MAP
     probability times R².
@@ -156,7 +160,8 @@ shuffle_posterior_weighted_circular : Shift each time bin's peak to a position
 
 Result Containers
 -----------------
-RadonDetectionResult, LinearFitResult, IsotonicFitResult, WeightedCorrelationResult
+RadonDetectionResult, LinearFitResult, IsotonicFitResult, WeightedCorrelationResult,
+RegressionLineScoreResult
     The fitted trajectory or correlation, and its ``score``.
 PairwiseOrderResult, PairwiseOrderSignificanceResult
     A pairwise-order score with its scored cells and assigned fields, and its
@@ -278,9 +283,11 @@ from neurospatial.replay.trajectory import (
     IsotonicFitResult,
     LinearFitResult,
     RadonDetectionResult,
+    RegressionLineScoreResult,
     detect_trajectory_radon,
     fit_isotonic_trajectory,
     fit_linear_trajectory,
+    regression_line_score,
 )
 
 __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
@@ -333,6 +340,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "RankOrderResult",
     "RankOrderSignificanceResult",
     "RecurringSequencesResult",
+    "RegressionLineScoreResult",
     "RecurringSequencesSignificanceResult",
     "ReplaySegmentsResult",
     "ReplaySignificanceResult",
@@ -346,6 +354,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "fit_circular_sequence",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",
+    "regression_line_score",
     "weighted_correlation",
     # Criteria metrics
     "template_fractions",
