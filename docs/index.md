@@ -14,19 +14,10 @@ be easy to discover, behave as a scientist reasonably expects, and produce
 scientifically correct, interpretable results. Clear assumptions, consistent
 interfaces, and useful error messages are part of that experience.
 
-The long-term goal is a shared foundation for spatial neuroscience: define and
-measure complex 1D, 2D, and 3D environments, save and exchange them, and reuse them
-across behavioral and neural analysis, simulation, agent experiments, and
-visualization. This includes modeling what the animal can sense and interact with,
-and analyzing complex behavior in its environmental and historical context.
-It also includes reusable regressors and features for GLMs, state-space models,
-and reinforcement learning, usable independently of any modeling or RL framework.
-
-We aim to provide trustworthy implementations with tested numerics
-that scientists can adopt, compare, and build on, supporting reproducible,
-statistically defensible comparisons across animals, sessions, and changing
-environments through transparent methods and community validation. See the
-[project vision](vision.md) for the goals and the
+The long-term goal is a shared foundation for spatial neuroscience: define an
+environment once, save and share it, and use it for behavior, neural analysis,
+simulation and visualization, with methods that scientists can trust and
+compare. See the [project vision](vision.md) for the goals and the
 [design principles](contributing.md#design-principles) for how we evaluate
 changes toward them.
 
