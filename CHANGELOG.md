@@ -82,6 +82,40 @@ other seeded simulations give the same spikes as before.
   `grid_spacing` used to build grid cells with NaN spacing.
 - Head-direction and boundary-vector `ground_truth` report a preferred
   direction of exactly −π as +π, the package's (−π, π] convention.
+### Replay scoring robustness
+
+- An event whose score is undefined, such as the R² of a decoded position
+  that never changes, no longer stops `compare_replay_methods` for every
+  event. `detect_replay` gives it no verdict (`is_replay` and every criterion
+  False, score and p-value NaN), and the table row has the `error` "score
+  undefined (e.g. the decoded position does not change)".
+- The weighted correlation treats a variance at round-off level as no
+  variation. With all of the posterior mass in one time bin, it used to
+  return 0 or NaN depending on the bin's time. A method that drops or zeroes
+  time bins without spikes now gets the `error` "fewer than two time bins
+  with spikes to score" for an event with fewer than two.
+- Shuffles whose score is undefined are still left out of the p-value, and
+  now also out of the z-score: one undefined shuffle no longer makes
+  `compute_shuffle_zscore` NaN. `ReplaySignificanceResult.n_shuffles_used`
+  gives the shuffles each null counts. `ReplayDetectionResult` and the
+  `compare_replay_methods` table have `n_shuffles_used`, the smallest over the
+  method's nulls (NaN without shuffles). The warning names the null, and from
+  `compare_replay_methods` also the event and the method.
+- Spike counts summed over cells, shape `(n_time_bins,)`, are refused by
+  `event_properties` and by `detect_replay` methods that count active cells;
+  they counted every event as one active cell.
+- A prior with one row per time bin is cut with the time bins a method tests
+  (its segment, or the time bins with spikes) before the shuffles decode
+  again.
+- In `compare_replay_methods`: rows with an `error` have every `passes[...]`
+  of their method False instead of NaN; spike counts and `valid_time_bins`
+  must have one row per time bin of their event, for every method;
+  `table.attrs["rng_entropy"]` holds the seed of the run, so passing it as
+  `rng` reproduces a run made with `rng=None`; and a pooled SSI method whose
+  threshold lies beyond the SSI grid says so in `error`.
+- `replay_significance` refuses a custom score whose signature cannot be
+  read, instead of running it without the seeded `rng`.
+
 ### Published replay methods as comparable recipes
 
 `neurospatial.replay.methods` holds published replay tests as explicit
