@@ -119,6 +119,8 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     ("translate_3d", "tx"),
     ("translate_3d", "ty"),
     ("translate_3d", "tz"),
+    # The control period of a reactivation comparison (rest before the task).
+    ("compare_reactivation_methods", "control_epochs"),
     # Covariance of the fitted coefficients, for the Wald test.
     ("circular_basis_metrics", "cov_matrix"),
     # Observations and fits drawn over the tuning curve or scatter.
@@ -199,6 +201,7 @@ REQUIRED_DATA_NAMES = {
     *("event_times", "events", "reference_events", "start_events", "stop_events"),
     *("event_types", "entry_time", "reward_times", "lap_times", "crossing_times"),
     *("interval", "intervals", "epochs", "windows", "trials", "trial_labels"),
+    *("template_epochs", "match_epochs"),
     *("laps", "runs", "visits", "labels", "direction_labels", "voronoi_labels"),
     # The window of each event, by position in the canonical events order
     # f(spike_times, event_times, window, *, bin_size).

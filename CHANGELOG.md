@@ -54,6 +54,82 @@ Several replay papers test a whole data set, not each event:
 - `decode_intervals` bins disjoint intervals in one pass and decodes them
   together, about 70 times faster, with the same posteriors to round-off.
 
+### Reactivation recipes
+
+**New**
+
+- `detect_assemblies(..., component_threshold=)` chooses the eigenvalue
+  threshold that sets the number of assemblies. `"marchenko_pastur"` (the
+  default, unchanged) is the analytical edge; `"tracy_widom"` adds
+  `n ** (-2/3)`, the finite-sample spread of the largest eigenvalue
+  (Peyrache et al., 2010); `"bin_shuffle"` and `"circular_shift"` take a
+  percentile of the largest eigenvalue of surrogate matrices whose neurons
+  are shuffled or rotated in time (Lopes-dos-Santos et al., 2013).
+  Surrogate thresholds need `percentile=`, because the paper gives no single
+  value (it used the 95th and the 99th), and take `n_shuffles=` (default
+  1000, the authors' code) and `rng=`. Circular shifts keep each neuron's
+  autocorrelation, so neurons whose rates drift slowly, which the
+  Marchenko-Pastur edge calls assemblies, are not. The result records
+  `component_threshold` and `surrogate_max_eigenvalues`.
+- `ReactivationMethod` records a published reactivation analysis: the
+  measure (explained variance or assembly patterns), the time bin, which
+  pairs count, how the control and match periods are cut into windows
+  (`ReactivationWindows`: length, step, from the start or end, and
+  concatenated or clock time), the statistic and the within-session test.
+  Unlike the replay recipes, the bin size is applied, because binning is part
+  of the statistic. Every value is quoted from the paper in the recipe's
+  `notes`, with the choices the paper leaves open.
+- `compare_reactivation_methods(spike_times, template_epochs, match_epochs,
+  control_epochs, *, reactivation_methods, unit_ids=, unit_groups=,
+  pair_mask=, rng=)` applies several recipes to one session and returns one
+  row per (method, match window, component): EV, REV, the partial
+  correlation and its p-value for EV methods; mean activation strength
+  before and after, the share of bins above the control's percentile or
+  above each bin's cell-identity shuffles, and activation rates for
+  assembly methods; `is_reactivated` for methods with a within-session test
+  and `error` for a method that cannot be applied. Each method draws from
+  its own random stream, and `table.attrs["rng_entropy"]` reproduces the
+  table.
+- Recipes in `PUBLISHED_REACTIVATION_METHODS`: `KUDRIMOTI_1999` (100 ms,
+  pairs on different tetrodes, last 10 min of rest before, three 10-min
+  blocks after, partial-correlation t test), `PENNARTZ_2004` (50 ms, all
+  pairs, 10-min clock windows, EV - REV), `TATSUNO_2006` (250 ms, 15-min
+  segments, EV averaged over every control segment), `LANSINK_2009` (50 ms,
+  cross-region pairs, 20-min blocks of concatenated rest, 10,000 pair-triplet
+  bootstrap: reactivated when the 2.5th percentile of EV - REV is above 0),
+  `PEYRACHE_2010` (100 ms, PCA, mean R(t) after minus before, share of bins
+  above the 99th percentile of rest before and of 1000 per-bin cell-identity
+  shuffles), `VAN_DE_VEN_2016` (25 ms, ICA, R(t) on spike trains smoothed with
+  a Gaussian of 25 ms / sqrt(12), activations above 5), `GIRI_2019` and
+  `GIRI_2024` (250 ms, 15-min windows sliding by 5 min, EV averaged over the
+  windows of rest before; pairs on different shanks, or chosen by
+  `pair_mask=`). Tang et al. (2017) is not a recipe: its cross-regional PCA
+  of a rectangular matrix is not specified.
+- `null_reactivation_data(spike_times, match_epochs, *, kind, rng)` replaces
+  the spikes of the match period: `"cell_identity"` gives each unit another
+  unit's spikes (the period keeps its own co-firing), `"circular_shift"`
+  rotates each unit's spikes within each epoch, and `"rate_poisson"` draws
+  Poisson spikes at each unit's rate. The published methods call none of
+  them reactivation in the tests.
+- `simulated_reactivation_session(...)` simulates rest, a task and rest with
+  assemblies that fire together during the task and, by `reactivation`,
+  during rest after it; rest has population bursts. `rate_change` raises the
+  members' rates after the task without any co-firing: the published EV
+  methods call this reactivation in every simulated session, and assembly
+  activation rises too, the rate confound of Tingley & Peyrache (2020).
+- `reactivation_detection_rates(table, *, groups=, confidence=)` gives each
+  method's share of rows called reactivated with a Clopper-Pearson interval,
+  and the mean of its statistic for methods without a within-session test.
+
+**Documentation**
+
+- New guide, [Comparing reactivation methods](docs/user-guide/reactivation-methods.md):
+  the published recipes on one simulated session, what each reports, their
+  values on three kinds of null data and on a session without reactivation,
+  the rate-change confound that every published method calls reactivation,
+  the choice of assembly threshold, and how to run the recipes on your own
+  recording.
+
 ### Reactivation measures
 
 The pattern and pair-correlation reactivation measures now compute what the
