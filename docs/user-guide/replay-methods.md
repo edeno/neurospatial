@@ -5,7 +5,7 @@ of population activity) and decoded them with place fields from running.
 Which events are replay? Published methods answer this differently. Each
 combines a score for how well the decoded positions follow a path, shuffles
 that say how large a score arises by chance, and thresholds. On the same
-events, methods often disagree (Tingley & Peyrache 2020), and their
+events, their scores correlate weakly (Tingley & Peyrache 2020), and their
 false-positive rates differ even at the same α (Takigawa et al. 2024). Before
 you interpret a replay rate, know how much it depends on the method.
 
@@ -345,9 +345,14 @@ More real events, not more copies, narrow them.
 
 ## Rates depend on the event
 
-A single false-positive rate hides how it depends on the event: chance
-replay is more common in events with few active cells (Tingley & Peyrache
-2020). `event_properties` measures each event: active cells, spikes,
+A single false-positive rate hides how it depends on the event. Tingley &
+Peyrache (2020) showed it for one test: random firing orders pass a
+parametric rank-correlation test more often when few cells fire (the
+expected rate is a third with 3 cells, 8% with 5 and 5% with 10; see the
+notes of `FOSTER_WILSON_2006`). A cell-order permutation test holds its
+rate on random orders whatever the number of cells, but other methods, and
+other kinds of null data, can depend on other properties of the event.
+`event_properties` measures each event: active cells, spikes,
 duration, posterior sharpness and the path of the decoded position.
 `detection_rates(by=...)` breaks rates down by any of them.
 

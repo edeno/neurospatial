@@ -22,10 +22,14 @@ spikes shifted, spike times redrawn, or Poisson spikes at each cell's mean
 rate), :func:`simulated_null_events` simulates
 random or stationary events, and :func:`decode_intervals` decodes either.
 
-A single overall false-positive rate hides how it depends on the event:
-Tingley & Peyrache (2020) found the chance rate of rank-order replay
-depends strongly on the number of cells and their firing rates. Report
-rates per stratum, and on several kinds of null data rather than one.
+A single overall false-positive rate hides how it depends on the event.
+Tingley & Peyrache (2020) simulated random firing orders tested with a
+parametric rank-correlation p-value: sets of 100 events passed p < 0.05
+5-12% of the time with 10 cells and up to 20% with 5 (the expected rates
+of that test are 5.4% and 8.3%, and 33% with 3 cells). They simulated only
+the number of cells; that the rate also depends on firing rates and on the
+method, they argued without simulating it. Report rates per stratum, and
+on several kinds of null data rather than one.
 """
 
 from __future__ import annotations
@@ -628,9 +632,16 @@ def method_agreement(
 
     Notes
     -----
-    Tingley & Peyrache (2020) found that rank-order and weighted-correlation
-    scores of the same events correlate weakly (R = 0.13), and weighted
-    correlation and line-fit scores moderately (R = 0.43).
+    This compares verdicts. Tingley & Peyrache (2020, Fig. 3) compared
+    scores instead: the correlation, across one session's events, of two
+    methods' scores, averaged over sessions and templates. The weighted
+    correlation correlated with the rank-order score at R = 0.126, with the
+    Radon line-fit integral (the line-fit score) at R = 0.194 and with the
+    Radon line's slope at R = 0.43; the rank-order score correlated with
+    neither the integral (R = 0.003) nor the slope (R = 0.07). Their
+    rank-order score correlates the two orders' sorting indices (MATLAB's
+    ``sort`` outputs, which list cell numbers) rather than ranks, so it
+    depends on how the cells are numbered.
 
     Examples
     --------
