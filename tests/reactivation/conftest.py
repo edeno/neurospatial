@@ -1,4 +1,4 @@
-"""Shared fixtures for decoding tests.
+"""Shared fixtures for reactivation tests.
 
 Provides deterministic, small synthesized fixtures for the assembly
 reactivation tests (template/match spike counts plus a clear assembly
@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from neurospatial.decoding.assemblies import AssemblyPattern
+from neurospatial.reactivation.assemblies import AssemblyPattern
 
 
 @pytest.fixture

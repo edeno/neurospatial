@@ -1,18 +1,7 @@
-"""Tests for stats.shuffle module - verifies new import paths work.
+"""Behavior tests for the shuffle generators and Monte Carlo p-value helpers.
 
-This file tests the reorganization of shuffle functions into
-the neurospatial.stats.shuffle module.
-
-Functions moved from decoding/shuffle.py:
-- shuffle_time_bins, shuffle_time_bins_coherent
-- shuffle_cell_identity
-- shuffle_place_fields_circular, shuffle_place_fields_circular_2d
-- shuffle_posterior_circular, shuffle_posterior_weighted_circular
-- ShuffleTestResult, compute_shuffle_pvalue, compute_shuffle_zscore
-
-New functions:
-- shuffle_trials(): Shuffle trial labels
-- shuffle_spikes_isi(): Shuffle inter-spike intervals
+Covers the temporal, trial and ISI shuffles in ``neurospatial.stats.shuffle``
+and the replay shuffles in ``neurospatial.replay.nulls``.
 """
 
 import numpy as np
@@ -20,16 +9,17 @@ import pytest
 from environment_helpers import track_for
 from numpy.testing import assert_allclose
 
-# Test imports from new location (stats/shuffle.py)
-from neurospatial.stats.shuffle import (
-    ShuffleTestResult,
-    compute_shuffle_pvalue,
-    compute_shuffle_zscore,
+from neurospatial.replay.nulls import (
     shuffle_cell_identity,
     shuffle_place_fields_circular,
     shuffle_place_fields_circular_2d,
     shuffle_posterior_circular,
     shuffle_posterior_weighted_circular,
+)
+from neurospatial.stats.shuffle import (
+    ShuffleTestResult,
+    compute_shuffle_pvalue,
+    compute_shuffle_zscore,
     shuffle_spikes_isi,
     shuffle_time_bins,
     shuffle_time_bins_coherent,
@@ -311,7 +301,7 @@ class TestShufflePairingDestruction:
     """
 
     def test_cell_identity_preserves_marginal_and_destroys_pairing(self) -> None:
-        from neurospatial.stats.shuffle import shuffle_cell_identity
+        from neurospatial.replay.nulls import shuffle_cell_identity
 
         rng = np.random.default_rng(0)
         n_neurons = 20

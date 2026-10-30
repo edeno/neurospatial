@@ -38,9 +38,20 @@ encoding : Neural encoding analysis
     >>> from neurospatial.encoding import compute_directional_rate, compute_view_rate
 
 decoding : Neural decoding
-    Bayesian position decoding, trajectory detection, cell assemblies.
+    Bayesian position decoding, position estimates, decoding accuracy.
 
     >>> from neurospatial.decoding import decode_position, DecodingResult
+
+replay : Replay analysis
+    Trajectory scores for decoded candidate events, replay shuffles,
+    significance tests.
+
+    >>> from neurospatial.replay import detect_trajectory_radon
+
+reactivation : Reactivation analysis
+    Cell assemblies, assembly activation, pairwise explained variance.
+
+    >>> from neurospatial.reactivation import detect_assemblies
 
 behavior : Behavioral analysis
     Speed and heading, trajectory metrics, segmentation (laps, trials),
@@ -62,7 +73,7 @@ ops : Low-level operations
     >>> from neurospatial.ops import distance_field, normalize_field
 
 stats : Statistical methods
-    Circular statistics, shuffle controls, surrogate generation.
+    Circular statistics, temporal shuffles, Monte Carlo p-values, surrogates.
 
     >>> from neurospatial.stats import rayleigh_test, shuffle_time_bins
 
@@ -265,6 +276,8 @@ _LAZY_SUBMODULES: tuple[str, ...] = (
     "arena",
     "encoding",
     "decoding",
+    "replay",
+    "reactivation",
     "behavior",
     "events",
     "ops",
@@ -353,7 +366,9 @@ __all__ = [
     "layout",
     "ops",
     "peri_event_histogram",
+    "reactivation",
     "regions",
+    "replay",
     "simulation",
     "stats",
 ]

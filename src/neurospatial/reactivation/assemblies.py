@@ -225,7 +225,7 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding import AssemblyPattern
+    >>> from neurospatial.reactivation import AssemblyPattern
     >>> pattern = AssemblyPattern(
     ...     weights=np.array([0.7, 0.1, 0.7]),
     ...     member_indices=np.array([0, 2]),
@@ -816,7 +816,7 @@ def detect_assemblies(
     sorter's unit IDs so the members are named by label:
 
     >>> import numpy as np
-    >>> from neurospatial.decoding import detect_assemblies
+    >>> from neurospatial.reactivation import detect_assemblies
     >>> rng = np.random.default_rng(0)
     >>> counts = rng.poisson(1.0, (2000, 20)).astype(float)
     >>> counts[:, [2, 9, 15]] += 3 * rng.poisson(0.3, (2000, 1))
@@ -1342,7 +1342,7 @@ def assembly_activation(
     the two firing together does:
 
     >>> import numpy as np
-    >>> from neurospatial.decoding import AssemblyPattern, assembly_activation
+    >>> from neurospatial.reactivation import AssemblyPattern, assembly_activation
     >>> counts = np.random.default_rng(0).poisson(1.0, (200, 3)).astype(float)
     >>> counts[10, 0] += 6  # unit 0 alone
     >>> counts[20, :2] += 6  # units 0 and 1 together
@@ -1612,7 +1612,7 @@ def pairwise_correlations(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding import pairwise_correlations
+    >>> from neurospatial.reactivation import pairwise_correlations
     >>> counts = np.random.default_rng(0).poisson(2.0, (500, 4)).astype(float)
     >>> unit_ids = np.array([12, 15, 31, 40])  # the label of each column
     >>> corr = pairwise_correlations(counts)
@@ -1759,7 +1759,7 @@ def reactivation_strength(
     list the units in another order:
 
     >>> import numpy as np
-    >>> from neurospatial.decoding import AssemblyPattern, reactivation_strength
+    >>> from neurospatial.reactivation import AssemblyPattern, reactivation_strength
     >>> pattern = AssemblyPattern(
     ...     np.array([0.7, 0.7, 0.1]), np.array([0, 1]), 0.5, unit_ids=[7, 8, 9]
     ... )
@@ -1993,7 +1993,7 @@ def explained_variance_reactivation(
     correlation with the same two cells as in behavior:
 
     >>> import numpy as np
-    >>> from neurospatial.decoding import (
+    >>> from neurospatial.reactivation import (
     ...     explained_variance_reactivation,
     ...     pairwise_correlations,
     ... )
