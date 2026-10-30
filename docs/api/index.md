@@ -185,10 +185,10 @@ Detecting the candidate events (ripples, population bursts) is not included.
 - `detect_replay()`, `compare_replay_methods()`: Apply published replay
   methods (`neurospatial.replay.methods`: Davidson 2009, Karlsson & Frank
   2009, Pfeiffer & Foster 2013 and 2015, Silva 2015, Ambrose 2016,
-  Grosmark 2016, Wu 2017, Carey 2019, Michon 2019, Igata 2021, Tirole
-  2022, Berners-Lee 2022, Widloski & Foster 2022, Mallory 2025) to decoded
-  events, including joint decodes over running directions, and compare
-  their verdicts; `ReplaySegmentation` sets how
+  Grosmark 2016, Wu 2017, Ólafsdóttir 2017, Carey 2019, Michon 2019,
+  Igata 2021, Tirole 2022, Berners-Lee 2022, Widloski & Foster 2022,
+  Mallory 2025) to decoded events, including joint decodes over running
+  directions, and compare their verdicts; `ReplaySegmentation` sets how
   criteria-based methods find the trajectory segment
 - `detect_rank_order_replay()`, `RankOrderMethod`: Apply published
   rank-order tests (Foster & Wilson 2006, Diba & Buzsáki 2007) to an event's

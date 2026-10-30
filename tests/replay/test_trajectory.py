@@ -1666,3 +1666,96 @@ class TestSampledFitAllocation:
         )
         assert blocked.r_squared == whole.r_squared
         assert blocked.slope_std == whole.slope_std
+
+
+class TestRadonMinSpeed:
+    """Slow trajectories can be left out of the search (Ólafsdóttir 2017)."""
+
+    @pytest.fixture
+    def track(self):
+        return Environment.linear_track(
+            endpoints=[[0.0, 0.0], [200.0, 0.0]], bin_size=2.0, units="cm"
+        )
+
+    def test_slow_trajectories_are_not_searched(self, track):
+        from neurospatial.replay.trajectory import detect_trajectory_radon
+
+        posterior = np.eye(track.n_bins)[[50] * 40]
+        times = np.arange(40) * 0.01
+        free = detect_trajectory_radon(track, posterior, times, band=10.0)
+        fast = detect_trajectory_radon(
+            track, posterior, times, band=10.0, min_speed=200.0
+        )
+        assert free.speed == 0.0 and free.score == pytest.approx(1.0)
+        assert abs(fast.speed) >= 200.0 - 1e-6
+        # A 2 m/s line leaves a 10 cm band around a fixed point in 0.39 s.
+        assert fast.score < 1.0
+        slow = np.abs(fast.sinogram_speeds) < 200.0 - 1e-9
+        assert np.isnan(fast.sinogram[slow]).all()
+
+    def test_a_sweep_keeps_its_speed(self, track):
+        from neurospatial.replay.trajectory import detect_trajectory_radon
+
+        posterior = np.eye(track.n_bins)[np.arange(20) * 3]
+        times = np.arange(20) * 0.01
+        result = detect_trajectory_radon(
+            track, posterior, times, band=30.0, max_speed=5000.0, min_speed=200.0
+        )
+        assert result.score == pytest.approx(1.0)
+        assert abs(result.speed - 600.0) <= _speed_step(result)
+
+    @pytest.mark.parametrize("min_speed", [-1.0, 3000.0])
+    def test_min_speed_must_be_below_max_speed(self, track, min_speed):
+        from neurospatial.replay.trajectory import detect_trajectory_radon
+
+        with pytest.raises(ValueError, match="min_speed"):
+            detect_trajectory_radon(
+                track,
+                np.eye(track.n_bins)[:5],
+                np.arange(5) * 0.01,
+                max_speed=3000.0,
+                min_speed=min_speed,
+            )
+
+    @pytest.mark.parametrize("min_speed", [200.0, 1700.0])
+    def test_shuffles_use_the_same_min_speed(self, track, min_speed):
+        """Each shuffle's score is the line search's with min_speed."""
+        from neurospatial.replay import replay_significance
+        from neurospatial.replay.trajectory import detect_trajectory_radon
+
+        posterior = np.eye(track.n_bins)[np.arange(12) * 4]
+        times = np.arange(12) * 0.01
+        options = {"band": 10.0, "max_speed": 3000.0, "min_speed": min_speed}
+        result = replay_significance(
+            track,
+            posterior,
+            times,
+            score=detect_trajectory_radon,
+            score_options=options,
+            nulls=("time_bin_permutation",),
+            n_shuffles=9,
+            rng=0,
+        )
+        generator = np.random.default_rng(0)
+        expected = [
+            detect_trajectory_radon(
+                track, posterior[generator.permutation(12)], times, **options
+            ).score
+            for _ in range(9)
+        ]
+        np.testing.assert_allclose(
+            result.shuffles["time_bin_permutation"].null_scores, expected
+        )
+
+    def test_a_min_speed_above_every_searched_speed_is_refused(self, track):
+        from neurospatial.replay.trajectory import detect_trajectory_radon
+
+        with pytest.raises(ValueError, match="all below min_speed"):
+            detect_trajectory_radon(
+                track,
+                np.eye(track.n_bins)[:3],
+                np.arange(3) * 0.01,
+                band=30.0,
+                max_speed=3000.0,
+                min_speed=2970.0,
+            )

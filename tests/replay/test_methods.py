@@ -39,6 +39,7 @@ from neurospatial.replay.methods import (
     KARLSSON_FRANK_2009,
     MALLORY_2025,
     MICHON_2019,
+    OLAFSDOTTIR_2017,
     PFEIFFER_FOSTER_2013,
     PFEIFFER_FOSTER_2015,
     PUBLISHED_METHODS,
@@ -2256,3 +2257,65 @@ def dataclasses_replace_nulls(method):
     import dataclasses
 
     return dataclasses.replace(method, nulls=())
+
+
+class TestOlafsdottir:
+    def test_detects_a_sweep_and_rejects_a_random_event(self, place_code):
+        env, rates = place_code
+        verdicts = []
+        for kind, seed in (("sweep", 1), ("random", 9)):
+            decoded, counts = _decoded(
+                env,
+                rates,
+                kind,
+                seed=seed,
+                **({"speed": 900.0} if kind == "sweep" else {}),
+            )
+            verdicts.append(
+                detect_replay(
+                    env,
+                    decoded.posterior,
+                    decoded.times,
+                    replay_method=OLAFSDOTTIR_2017,
+                    spike_counts=counts,
+                    encoding_models=rates,
+                    dt=DT,
+                    rng=0,
+                )
+            )
+        sweep, random_event = verdicts
+        assert sweep.is_replay and sweep.p_value == pytest.approx(1 / 101)
+        assert not random_event.is_replay
+
+    @pytest.mark.parametrize(
+        ("n_active", "n_cells", "expected"),
+        [(5, 20, False), (6, 40, True), (6, 41, False)],
+    )
+    def test_needs_15_percent_and_more_than_5_cells(
+        self, place_code, n_active, n_cells, expected
+    ):
+        env, _ = place_code
+        counts = np.zeros((20, n_cells), dtype=int)
+        counts[np.arange(20), np.arange(20) % n_active] = 1
+        result = detect_replay(
+            env,
+            _one_hot(env, range(20)),
+            np.arange(20) * 0.01,
+            replay_method=dataclasses_replace_nulls(OLAFSDOTTIR_2017),
+            spike_counts=counts,
+        )
+        assert all(result.criteria.values()) is expected
+
+    def test_recipe_matches_the_paper(self):
+        assert dict(OLAFSDOTTIR_2017.score_options) == {
+            "band": 30.0,
+            "max_speed": 5000.0,
+            "min_speed": 200.0,
+        }
+        assert OLAFSDOTTIR_2017.nulls == ("place_field_circular",)
+        assert (OLAFSDOTTIR_2017.n_shuffles, OLAFSDOTTIR_2017.alpha) == (100, 0.025)
+        assert OLAFSDOTTIR_2017.empty_time_bins == "drop"
+        assert [c.label for c in OLAFSDOTTIR_2017.criteria] == [
+            "n_active_cells > 5",
+            "active_fraction >= 0.15",
+        ]
