@@ -188,14 +188,19 @@ Detecting the candidate events (ripples, population bursts) is not included.
 - `rank_order_correlation()`, `rank_order_significance()`: Spearman
   correlation of field order and firing order in an event, with a
   cell-order permutation test; needs no decoding
+- `pairwise_order_score()`, `pairwise_order_significance()`: Firing order
+  of every pair of spikes less than 80 ms apart against the cells'
+  place-field order, summed (Gupta et al. 2010), with spike-time and
+  cell-identity shuffles; cells with several fields take their best field;
+  needs no decoding
 - `detect_replay()`, `compare_replay_methods()`: Apply published replay
   methods (`neurospatial.replay.methods`: Davidson 2009, Karlsson & Frank
   2009, Pfeiffer & Foster 2013 and 2015, Wikenheiser & Redish 2013,
   Ólafsdóttir 2015, 2016 and 2017, Silva 2015, Ambrose 2016, Grosmark
-  2016, Jadhav 2016, Tang 2017, Wu 2017, Yamamoto & Tonegawa 2017, Carey
-  2019, Farooq 2019, Michon 2019, Muessig 2019, Shin 2019, Igata 2021,
+  2016, Jadhav 2016, Tang 2017, Wu 2017, Yamamoto & Tonegawa 2017,
+  Maboudi 2018, Carey 2019, Farooq 2019, Michon 2019, Muessig 2019, Shin 2019, Igata 2021,
   Bush 2022, Tirole 2022, Berners-Lee 2022, Widloski & Foster 2022,
-  Harvey 2023, Liu 2023, Mallory 2025) to decoded events, including joint decodes over running
+  Harvey 2023, Liu 2023, Mallory 2025, Widloski & Foster 2025) to decoded events, including joint decodes over running
   directions, and compare their verdicts; `ReplaySegmentation` sets how
   criteria-based methods find the trajectory segment
 - `null_events()`, `simulated_null_events()`, `decode_intervals()`: Events
@@ -215,6 +220,27 @@ Detecting the candidate events (ripples, population bursts) is not included.
   spikes; `compare_replay_methods(spike_times=...)` compares them with the
   decoded methods and runs Chenani 2019, which tests an epoch's events
   together
+- `best_sequence_match()`, `sequence_matching_index()`: Template matching of
+  firing order without decoding: Lee & Wilson's (2002) best (x, y) match of
+  an event's letters, with the probability over the orderings of its
+  letters, and Ji & Wilson's (2007) matching index with its exact p-value;
+  `burst_onset_times()` and `spike_words()` cut spike trains into letters
+  and words
+- `detect_template_match_replay()`, `TemplateMatchMethod`: Apply the
+  template-matching recipes (`LEE_WILSON_2002`, `JI_WILSON_2007`) to an
+  event; `compare_replay_methods(spike_times=...)` compares them with the
+  other methods, and `template_match_dataset_test()` runs the papers'
+  data-set tests (binomial counts of pairs, triplets and low-probability
+  words; chance and template-shuffle significance of replaying frames)
+- `recurring_spike_sequences()`, `recurring_sequences_significance()`,
+  `surrogate_spike_trains()`, `RecurringSequenceMethod`: Spike sequences
+  that recur within a session, tested against interval-shuffle, jitter,
+  across-train and theta-phase surrogates (Nádasdy et al. 1999,
+  `NADASDY_1999`; session level, no per-event verdict)
+- `detect_pairwise_order_replay()`, `PairwiseOrderMethod`: Apply the
+  pairwise-order test of Gupta et al. 2010 (`GUPTA_2010`) to an event's
+  spikes on every template (such as each lap), forward and backward;
+  `compare_replay_methods(spike_times=...)` runs it with the other methods
 - `shuffle_cell_identity()`, `shuffle_spike_counts_circular()`,
   `shuffle_spike_counts_uniform()`, `shuffle_place_fields_circular()`,
   `shuffle_place_fields_circular_2d()`, `shuffle_posterior_circular()`,

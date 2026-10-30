@@ -928,6 +928,46 @@ class TestSegmentationRecipes:
         assert any_segment.p_value < 1.0
         assert longest.p_value == 1.0 and not longest.is_replay
 
+    def test_detection_test_takes_the_null_options(self, place_code):
+        """Only two cells fire, 12 cm apart: swapping them keeps the segment.
+
+        Permuting only the active cells (Bush et al. 2022) gives shuffles
+        that all hold the segment, so p = 1; permuting every cell moves
+        their spikes to fields far apart.
+        """
+        env, rates = place_code
+        counts = np.zeros((10, len(rates)), dtype=np.int64)
+        counts[:5, 10] = 2
+        counts[5:, 12] = 2
+        times = np.arange(10) * DT
+        posterior = decode_position(env, counts, rates, dt=DT, times=times).posterior
+
+        def p_value(active_only):
+            method = ReplayMethod(
+                name="active_cells",
+                reference="test",
+                score=None,
+                nulls=("unit_identity",),
+                null_options={"unit_identity": {"active_only": active_only}},
+                n_shuffles=19,
+                segmentation=ReplaySegmentation(
+                    {"max_jump": 20.0, "min_time_bins": 10}
+                ),
+            )
+            return detect_replay(
+                env,
+                posterior,
+                times,
+                replay_method=method,
+                spike_counts=counts,
+                encoding_models=rates,
+                dt=DT,
+                rng=0,
+            ).p_value
+
+        assert p_value(True) == 1.0
+        assert p_value(False) < 1.0
+
     def test_chance_counts_every_template_of_a_joint_decode(self, place_code):
         """Peak mass 0.02 on one track of two: 1.5 x chance is 0.015."""
         env, rates = place_code

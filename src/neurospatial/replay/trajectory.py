@@ -264,16 +264,21 @@ class RadonDetectionResult(ReadOnlyArraysMixin, ResultMixin):
         ``sinogram_start_positions[j]`` at ``times[0]``; NaN for one that is
         not searched: never on the track, slower than the search's
         ``min_speed``, or, with ``line_ends="on_track"``, off the track at
-        the first or last time bin.
+        the first or last time bin. With random lines (``n_lines``), shape
+        ``(n_lines,)``: entry ``i`` is the line of speed
+        ``sinogram_speeds[i]`` through ``sinogram_start_positions[i]``, NaN
+        also for one faster than ``max_speed``.
     sinogram_speeds : NDArray[np.float64], shape (n_speeds,)
         Speeds of the sinogram's rows, in environment units per second,
         evenly spaced; rows slower than ``min_speed`` were not searched.
+        With ``n_lines``, each line's speed, shape ``(n_lines,)``.
     sinogram_start_positions : NDArray[np.float64], shape (n_start_positions,)
         Searched start positions along the track, in environment units,
         evenly spaced at most ``band / 5`` apart. With ``line_ends="any"``
         on an open track they reach beyond both ends of the track as far as
         the fastest trajectory travels in the event; otherwise they lie on
-        the track.
+        the track. With ``n_lines``, each line's position at ``times[0]``,
+        shape ``(n_lines,)``.
 
     See Also
     --------
@@ -320,7 +325,11 @@ _TRACK_ALTERNATIVE = (
 
 
 def _track_positions(
-    env: Environment, posterior: NDArray[np.float64], operation: str
+    env: Environment,
+    posterior: NDArray[np.float64],
+    operation: str,
+    *,
+    allow_zero_rows: bool = False,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     """Each bin's extent along the track, in track order.
 
@@ -332,6 +341,8 @@ def _track_positions(
         Posterior mass per bin, in bin numbering.
     operation : str
         The calling function, for the refusal message.
+    allow_zero_rows : bool, default=False
+        Accept rows that are all zero (time bins without spikes).
 
     Returns
     -------
@@ -362,7 +373,9 @@ def _track_positions(
             f"has {env.n_bins} bins. Pass the posterior decoded on this "
             "environment, with one column per bin."
         )
-    posterior = _require_probability_rows(posterior, operation)
+    posterior = _require_probability_rows(
+        posterior, operation, allow_zero_rows=allow_zero_rows
+    )
     # A stable sort keeps bins that are already in track order in place, so
     # sampling below draws the same bins as it would in bin numbering.
     order = np.argsort(starts, kind="stable")
@@ -370,7 +383,7 @@ def _track_positions(
 
 
 def _require_probability_rows(
-    posterior: NDArray[Any], operation: str
+    posterior: NDArray[Any], operation: str, *, allow_zero_rows: bool = False
 ) -> NDArray[np.float64]:
     """Refuse rows that are not a probability mass over the bins.
 
@@ -380,6 +393,9 @@ def _require_probability_rows(
         Posterior mass per bin.
     operation : str
         The calling function, for the refusal message.
+    allow_zero_rows : bool, default=False
+        Accept rows that are all zero, the time bins without spikes that
+        ``empty_time_bins="zero"`` zeroes.
 
     Returns
     -------
@@ -400,6 +416,8 @@ def _require_probability_rows(
     negative = finite & (posterior < 0).any(axis=1)
     sums = posterior.sum(axis=1)
     unnormalized = finite & ~negative & (np.abs(sums - 1.0) > _ROW_SUM_TOLERANCE)
+    if allow_zero_rows:
+        unnormalized &= sums != 0
     bad = ~finite | negative | unnormalized
     if not np.any(bad):
         return posterior
@@ -1350,6 +1368,10 @@ _SCORE_DECIMALS = 12
 arithmetic but summed along different paths compare equal (in particular the
 observed score and a shuffle's)."""
 
+_BOUND_SLACK = 1e-9
+"""Slack on the bound that skips trajectories that cannot reach an event's
+best score with ``zero_rows="line_median"``, far above rounding error."""
+
 _SCORE_TIE = 1e-3
 """Replay scores within this of the best (a tenth of a percent of probability)
 count as equally good when choosing the reported trajectory."""
@@ -1365,6 +1387,10 @@ def detect_trajectory_radon(
     min_speed: float = 0.0,
     wrap: bool = False,
     line_ends: Literal["any", "on_track"] = "any",
+    off_track: Literal["band_median", "bin_median"] = "band_median",
+    zero_rows: Literal["refuse", "line_median"] = "refuse",
+    n_lines: int | None = None,
+    line_seed: int = 0,
 ) -> RadonDetectionResult:
     """Detect the constant-speed replay trajectory in a decoded event.
 
@@ -1399,7 +1425,8 @@ def detect_trajectory_radon(
         direction. None means 30 m/s in the environment's units: Davidson et
         al. found replay speeds up to about 20 m/s (median 8.1 m/s). With
         ``line_ends="on_track"``, None means no bound beyond the one the
-        track sets: the track's length over the event's duration.
+        track sets: the track's length over the event's duration; with
+        ``n_lines``, no bound (lines of every slope are drawn).
     min_speed : float, default=0.0
         Smallest speed searched, in environment units per second, in either
         direction; slower trajectories are not scored, so a stationary
@@ -1415,7 +1442,8 @@ def detect_trajectory_radon(
         so start positions are searched once around it. Needs a closed-loop
         track, built with :meth:`~neurospatial.Environment.from_graph` with
         an ``edge_order`` whose last segment ends at the node where the first
-        starts, and a ``band`` shorter than half the loop. False reads the
+        starts and no ``edge_spacing``, and a ``band`` shorter than half the
+        loop. False reads the
         track as open, so on a loop a sweep across the seam scores low.
     line_ends : {"any", "on_track"}, default="any"
         Which trajectories are searched. ``"any"`` (Davidson et al. 2009)
@@ -1428,6 +1456,36 @@ def detect_trajectory_radon(
         extends beyond an end of the track holds the time bin's median
         posterior density over the bins (see Notes). Not available with
         ``wrap=True``: a loop has no ends.
+    off_track : {"band_median", "bin_median"}, default="band_median"
+        What a time bin where the trajectory lies beyond the ends of the
+        track contributes. ``"band_median"`` (Davidson et al. 2009): the
+        median, over positions on the track, of the posterior mass within
+        ``band`` of the position. ``"bin_median"`` (Maboudi et al. 2018):
+        the median, over the track's bins, of the time bin's posterior mass
+        in one bin, much smaller than a band's mass. Only with
+        ``line_ends="any"`` on an open track, where trajectories can leave
+        the track.
+    zero_rows : {"refuse", "line_median"}, default="refuse"
+        Posterior rows that are all zero: time bins without spikes, as
+        ``empty_time_bins="zero"`` of
+        :func:`~neurospatial.replay.replay_significance` and
+        :func:`~neurospatial.replay.detect_replay` passes them. ``"refuse"``
+        raises, as for any row that does not sum to 1. ``"line_median"``
+        (Maboudi et al. 2018) scores each such row, for every trajectory,
+        by the median of that trajectory's band mass over its time bins
+        with spikes on the track (0 when it has none); the score is still
+        the mean over all ``n_time_bins``. Dropping the time bins without
+        spikes, with their times, instead leaves them out of the mean.
+    n_lines : int or None, default=None
+        None searches the dense grid of speeds and start positions (see
+        Notes). An int searches that many lines drawn at random over every
+        slope, as Maboudi et al. (2018) did after Kloosterman (2012), with
+        35,000: much faster at a narrow ``band``, but the best line can be
+        missed. The same lines are scored in an event and in its shuffles.
+    line_seed : int, default=0
+        Seed of the random lines with ``n_lines``, so a search is
+        reproducible; events with the same numbers of time bins and bins
+        draw the same lines.
 
     Returns
     -------
@@ -1448,8 +1506,12 @@ def detect_trajectory_radon(
         metric units, unless ``line_ends="on_track"``), if ``min_speed`` is
         negative or not below ``max_speed``, if ``line_ends`` is not one of
         its choices, or if ``wrap=True`` on a track that is not a closed
-        loop, with ``line_ends="on_track"``, or with a ``band`` of half the
-        loop or more.
+        loop (or has ``edge_spacing``), with ``line_ends="on_track"``, or
+        with a ``band`` of half the loop or more; if ``off_track`` or
+        ``zero_rows`` is not one of its choices, or
+        ``off_track="bin_median"`` is given where no trajectory leaves the
+        track (``wrap=True`` or ``line_ends="on_track"``); if ``n_lines`` is
+        not a positive integer or ``line_seed`` not a non-negative integer.
 
     See Also
     --------
@@ -1501,6 +1563,17 @@ def detect_trajectory_radon(
     With ``min_speed``, trajectories slower than it are left out of the
     search and have no score in the sinogram (NaN).
 
+    **Random lines** (``n_lines``). Maboudi et al. (2018) "sampled randomly
+    following the approach in (Kloosterman, 2012)" 35,000 lines; their code
+    (nelpy's ``score_Davidson_final_bst_fast``) draws them on the image of
+    the event, time bins by position bins, with the normal of each line at
+    an angle uniform on (-pi/2, pi/2) and its distance from the image's
+    center uniform within half the image's diagonal, so lines of every
+    slope are drawn. Here the image's units are the mean time step and the
+    mean spacing of the bin centers, and positions along a line are exact
+    (the code rounds them to bins). The sinogram then holds one score per
+    line, in the order drawn, with that line's speed and start position.
+
     **Track geometry.** Positions are read along the track (the linear
     position of a linearized track). Gaps between bins, such as
     ``edge_spacing`` between the segments of a maze, count as track for the
@@ -1530,6 +1603,22 @@ def detect_trajectory_radon(
     time bin's band mass is capped at 1. The code rounds line positions to
     bins; positions here are exact.
 
+    **Off-track and empty time bins after Maboudi et al. (2018).** They
+    scored "the mean probability mass under the line, within a bandwidth
+    (of 3 cm)": "For time bins during which the sampled line fell outside
+    of the extent of the track, the median probability mass of the
+    corresponding time bin was used, and for time bins during which no
+    spikes were observed, we used the median probability mass across all
+    on-track time bins". ``off_track="bin_median"`` and
+    ``zero_rows="line_median"`` follow that text. Their code (nelpy's
+    ``score_Davidson_final_bst_fast``) scores a time bin off the track by
+    its median single-bin mass, as written, but computes the median for
+    time bins without spikes and never adds it, so those score 0. Dropping
+    the time bins without spikes, with their times, scores every
+    trajectory as the code does, multiplied by ``n_time_bins`` over the
+    number of time bins with spikes, so it ranks trajectories, and their
+    column-cycle shuffles, as the code does.
+
     References
     ----------
     Davidson, T. J., Kloosterman, F., & Wilson, M. A. (2009). Hippocampal
@@ -1542,6 +1631,10 @@ def detect_trajectory_radon(
     Liu, C., Todorova, R., Tang, W., Oliva, A., & Fernandez-Ruiz, A. (2023).
     Associative and predictive hippocampal codes support memory-guided
     behaviors. *Science*, 382(6668), eadi8237.
+
+    Maboudi, K., Ackermann, E., de Jong, L. W., Pfeiffer, B. E., Foster, D.,
+    Diba, K., & Kemere, C. (2018). Uncovering temporal structure in
+    hippocampal output patterns. *eLife*, 7, e34467.
 
     Examples
     --------
@@ -1596,12 +1689,18 @@ def detect_trajectory_radon(
         min_speed=min_speed,
         wrap=wrap,
         line_ends=line_ends,
+        off_track=off_track,
+        zero_rows=zero_rows,
+        n_lines=n_lines,
+        line_seed=line_seed,
         operation="detect_trajectory_radon()",
     )
     return _best_line(lines, posterior)
 
 
 _LINE_ENDS = ("any", "on_track")
+_OFF_TRACK = ("band_median", "bin_median")
+_ZERO_ROWS = ("refuse", "line_median")
 
 
 def _require_closed_loop(env: Environment, operation: str) -> None:
@@ -1609,19 +1708,30 @@ def _require_closed_loop(env: Environment, operation: str) -> None:
 
     The linear position runs along ``edge_order``, each segment from its
     first node to its second, so it is a loop when the last segment ends at
-    the node where the first starts.
+    the node where the first starts, and it is distance around the loop
+    only without ``edge_spacing``: a gap between segments would count as
+    loop length at every corner but not at the seam.
     """
     linearization = env.binning.linearization
     if linearization is None:
         problem = "it is not a track built from a graph, so it has no loop"
     else:
         first, last = linearization.edge_order[0], linearization.edge_order[-1]
-        if last[1] == first[0]:
+        gaps = np.atleast_1d(np.asarray(linearization.edge_spacing, dtype=np.float64))
+        if last[1] != first[0]:
+            problem = (
+                f"its last segment {tuple(last)!r} ends at node {last[1]!r}, not "
+                f"at node {first[0]!r} where its first segment {tuple(first)!r} "
+                "starts"
+            )
+        elif np.any(gaps > 0):
+            problem = (
+                f"its edge_spacing puts gaps of up to {gaps.max():g} between "
+                "segments, which count as loop length at each corner but not "
+                "where the last segment meets the first"
+            )
+        else:
             return
-        problem = (
-            f"its last segment {tuple(last)!r} ends at node {last[1]!r}, not at "
-            f"node {first[0]!r} where its first segment {tuple(first)!r} starts"
-        )
     raise ValueError(
         _format_error(
             f"{operation} got wrap=True, but this environment is not a "
@@ -1631,8 +1741,9 @@ def _require_closed_loop(env: Environment, operation: str) -> None:
             "on an open track the two ends are different places",
             fix="pass wrap=False on an open track; build a circular or square "
             "track with Environment.from_graph(graph, edge_order=[(0, 1), "
-            "(1, 2), (2, 3), (3, 0)], bin_size=...), so that the last segment "
-            "returns to the node where the first starts",
+            "(1, 2), (2, 3), (3, 0)], bin_size=..., edge_spacing=0.0), so that "
+            "the last segment returns to the node where the first starts with "
+            "no gaps between segments",
         )
     )
 
@@ -1647,6 +1758,10 @@ def _prepare_replay_lines(
     min_speed: float = 0.0,
     wrap: bool = False,
     line_ends: str = "any",
+    off_track: str = "band_median",
+    zero_rows: str = "refuse",
+    n_lines: int | None = None,
+    line_seed: int = 0,
     operation: str,
 ) -> tuple[_ReplayLines, NDArray[np.float64]]:
     """Validate a replay line search and build its scorer.
@@ -1668,6 +1783,29 @@ def _prepare_replay_lines(
             "treats the track as a closed loop."
         )
     validate_choice(line_ends, _LINE_ENDS, name="line_ends", owner=operation)
+    validate_choice(off_track, _OFF_TRACK, name="off_track", owner=operation)
+    validate_choice(zero_rows, _ZERO_ROWS, name="zero_rows", owner=operation)
+    for name, count, smallest in (("n_lines", n_lines, 1), ("line_seed", line_seed, 0)):
+        if count is not None and (
+            isinstance(count, (bool, np.bool_))
+            or not isinstance(count, (int, np.integer))
+            or count < smallest
+        ):
+            raise ValueError(
+                f"{operation} needs {name} to be an integer >= {smallest}, got "
+                f"{count!r}."
+            )
+    if off_track == "bin_median" and (wrap or line_ends == "on_track"):
+        setting = "wrap=True" if wrap else "line_ends='on_track'"
+        raise ValueError(
+            _format_error(
+                f"{operation} got off_track='bin_median' with {setting}.",
+                why=f"with {setting} every searched trajectory stays on the "
+                "track, so off_track would change nothing",
+                fix="leave off_track at its default, or search trajectories "
+                "that may leave the track with line_ends='any' and wrap=False",
+            )
+        )
     if wrap and line_ends == "on_track":
         raise ValueError(
             _format_error(
@@ -1679,7 +1817,9 @@ def _prepare_replay_lines(
             )
         )
     # Validates the environment and the posterior rows.
-    _, starts, stops = _track_positions(env, posterior, operation)
+    _, starts, stops = _track_positions(
+        env, posterior, operation, allow_zero_rows=zero_rows == "line_median"
+    )
     if wrap:
         _require_closed_loop(env, operation)
     posterior = np.asarray(posterior, dtype=np.float64)
@@ -1696,9 +1836,9 @@ def _prepare_replay_lines(
         )
     if band is None:
         band = default_length(env, _DAVIDSON_BAND_CM, name="band", call=operation)
-    # Trajectories that start and end on the track are bounded by it, so
-    # they need no default bound.
-    if max_speed is None and line_ends != "on_track":
+    # Trajectories that start and end on the track are bounded by it, and
+    # random lines are drawn over every slope, so they need no default bound.
+    if max_speed is None and line_ends != "on_track" and n_lines is None:
         max_speed = default_length(
             env, _DEFAULT_MAX_SPEED_CM, name="max_speed", call=operation
         )
@@ -1755,6 +1895,10 @@ def _prepare_replay_lines(
         min_speed=float(min_speed),
         wrap=bool(wrap),
         line_ends=line_ends,
+        off_track=off_track,
+        zero_rows=zero_rows,
+        n_lines=None if n_lines is None else int(n_lines),
+        line_seed=int(line_seed),
     )
     return lines, posterior
 
@@ -1769,8 +1913,13 @@ def _best_line(
     # the posterior mean positions, then the start closest to that line's
     # start. The score reported is the best one, as for the shuffles.
     best = float(np.nanmax(sinogram))
-    speed_indices, start_indices = np.nonzero(sinogram >= best - _SCORE_TIE)
-    mass = posterior[:, lines.order]
+    tied_speeds, tied_starts = lines.line_parameters(
+        np.flatnonzero(sinogram >= best - _SCORE_TIE)
+    )
+    # Rows without mass (time bins without spikes) have no mean position.
+    with_mass = posterior.sum(axis=1) > 0
+    mass = posterior[with_mass][:, lines.order]
+    elapsed = lines.elapsed[with_mass]
     if lines.wrap:
         # On a loop, the circular mean position, unwrapped around the loop.
         angle = 2 * np.pi * (lines.bin_centers - lines.track_start) / lines.length
@@ -1778,17 +1927,22 @@ def _best_line(
         mean_position = lines.track_start + mean_angle * lines.length / (2 * np.pi)
     else:
         mean_position = mass @ lines.bin_centers
-    fit_speed, fit_start = _fit_lines(lines.elapsed, mean_position)
-    start_gap = lines.start_positions[start_indices] - fit_start
+    if elapsed.size >= 2:
+        fit_speed, fit_start = _fit_lines(elapsed, mean_position)
+    else:  # one time bin with mass, or none: no speed to fit
+        fit_speed = 0.0
+        fit_start = (
+            float(mean_position[0])
+            if elapsed.size
+            else (lines.track_start + lines.track_end) / 2
+        )
+    start_gap = tied_starts - fit_start
     if lines.wrap:
         start_gap = (start_gap + lines.length / 2) % lines.length - lines.length / 2
-    closest = np.lexsort(
-        (np.abs(start_gap), np.abs(lines.speeds[speed_indices] - fit_speed))
-    )[0]
-    speed_index, start_index = speed_indices[closest], start_indices[closest]
+    closest = np.lexsort((np.abs(start_gap), np.abs(tied_speeds - fit_speed)))[0]
     return RadonDetectionResult(
-        speed=float(lines.speeds[speed_index]),
-        start_position=float(lines.start_positions[start_index]),
+        speed=float(tied_speeds[closest]),
+        start_position=float(tied_starts[closest]),
         score=best,
         band=lines.band,
         sinogram=sinogram,
@@ -1813,7 +1967,11 @@ class _ReplayLines:
     With ``line_ends="on_track"`` only trajectories on the track at the first
     and last time bins are scored, band beyond an end of the track holds the
     time bin's median posterior density, and each time bin's band mass is
-    capped at 1.
+    capped at 1. With ``off_track="bin_median"`` a time bin off the track
+    holds its median mass per bin instead. With ``zero_rows="line_median"``
+    each all-zero row of an event adds, for each trajectory, the median of
+    its band mass over the time bins with mass on the track, divided by the
+    number of time bins (see :meth:`_add_line_medians`).
 
     Parameters
     ----------
@@ -1836,6 +1994,15 @@ class _ReplayLines:
         Whether the track is a closed loop.
     line_ends : {"any", "on_track"}, default="any"
         Which trajectories are searched (see :func:`detect_trajectory_radon`).
+    off_track : {"band_median", "bin_median"}, default="band_median"
+        What a time bin off the track holds (see
+        :func:`detect_trajectory_radon`).
+    zero_rows : {"refuse", "line_median"}, default="refuse"
+        How all-zero rows are scored (see :func:`detect_trajectory_radon`).
+    n_lines : int or None, default=None
+        None for the dense grid; else the number of random lines.
+    line_seed : int, default=0
+        Seed of the random lines.
     """
 
     # Memory budgets, in array elements of 8 bytes: the nonzeros of one
@@ -1864,74 +2031,47 @@ class _ReplayLines:
         min_speed: float = 0.0,
         wrap: bool = False,
         line_ends: str = "any",
+        off_track: str = "band_median",
+        zero_rows: str = "refuse",
+        n_lines: int | None = None,
+        line_seed: int = 0,
     ) -> None:
         self.order = order
         self.min_speed = min_speed
+        self.max_speed = max_speed
         self.elapsed = elapsed
         self.band = band
         self.wrap = wrap
         self.line_ends = line_ends
+        self.off_track = off_track
+        self.zero_rows = zero_rows
+        self.random = n_lines is not None
         self.track_start, self.track_end = float(starts[0]), float(stops[-1])
         self.length = self.track_end - self.track_start
         n_on_track = int(np.ceil(self.length * _LINES_PER_BAND / band - 1e-9))
         spacing = self.length / n_on_track
-        # Neighboring speeds end one start spacing apart at the last time bin.
-        duration = float(elapsed[-1])
-        speed_step = spacing / duration
-        # A trajectory from the first start position to the last ends one
-        # start spacing short of a track length away.
-        bounds = [n_on_track - 1] if line_ends == "on_track" else []
-        if np.isfinite(max_speed):
-            bounds.append(int(np.floor(max_speed / speed_step + 1e-9)))
-        n_speeds = min(bounds)
-        self.speeds: NDArray[np.float64] = speed_step * np.arange(
-            -n_speeds, n_speeds + 1, dtype=np.float64
-        )
-        # With any line ends, start positions extend beyond the track as far
-        # as the fastest trajectory travels, so a trajectory may enter the
-        # track as well as leave it; only those on the track at some time bin
-        # are scored. On a loop, or with line ends on the track, every
-        # trajectory starts on the track.
-        n_beyond = (
-            0
-            if wrap or line_ends == "on_track"
-            else int(np.ceil(n_speeds * speed_step * duration / spacing - 1e-9))
-        )
-        self.start_positions: NDArray[np.float64] = (
-            self.track_start
-            + (np.arange(-n_beyond, n_on_track + n_beyond, dtype=np.float64) + 0.5)
-            * spacing
-        )
-        search = len(self.speeds) * len(self.start_positions) * len(elapsed)
-        if search > self._MAX_SEARCH:
-            raise ValueError(
-                _format_error(
-                    f"{operation} would score {len(self.speeds)} speeds x "
-                    f"{len(self.start_positions)} start positions over "
-                    f"{len(elapsed)} time bins, more than {self._MAX_SEARCH:.0e}: "
-                    f"the event spans {duration:g} s and speeds reach "
-                    f"{float(self.speeds[-1]):g} units/s, in steps of "
-                    f"{speed_step:.3g}.",
-                    why="neighboring trajectories are spaced band / 5 apart, so "
-                    "the search grows with the event's duration times "
-                    "max_speed, over band",
-                    fix="check that times are in seconds (a replay event spans "
-                    "tens to hundreds of milliseconds); otherwise lower "
-                    "max_speed or widen band",
-                )
-            )
         # The cumulative mass is known at each bin's start and stop and grows
         # linearly within a bin; it stays flat across a gap between bins.
         self.knots = np.column_stack([starts, stops]).ravel()
         self.bin_centers = (starts + stops) / 2
         self.bin_lengths = stops - starts
-        # The off-track median is over the start positions that lie on a bin.
-        within = np.searchsorted(stops, self.start_positions, side="left")
-        on_bin = (within < len(starts)) & (
-            self.start_positions >= starts[np.minimum(within, len(starts) - 1)]
+        # The off-track median is over the positions on the track, at most
+        # band / 5 apart, that lie on a bin.
+        on_track_positions = (
+            self.track_start + (np.arange(n_on_track, dtype=np.float64) + 0.5) * spacing
         )
-        self.on_bin_positions = self.start_positions[on_bin]
+        within = np.searchsorted(stops, on_track_positions, side="left")
+        on_bin = (within < len(starts)) & (
+            on_track_positions >= starts[np.minimum(within, len(starts) - 1)]
+        )
+        self.on_bin_positions = on_track_positions[on_bin]
         self._blocks: list[_LineBlock] | None = None
+        # Speeds and start positions: the grid's two axes, or each line's.
+        self.speeds, self.start_positions = (
+            self._grid(n_on_track, spacing, operation)
+            if n_lines is None
+            else self._random_lines(n_lines, line_seed)
+        )
         if not np.any(np.abs(self.speeds) >= min_speed - 1e-9):
             raise ValueError(
                 _format_error(
@@ -1945,6 +2085,132 @@ class _ReplayLines:
                     fix="lower min_speed, raise max_speed or widen band",
                 )
             )
+
+    def _grid(
+        self, n_on_track: int, spacing: float, operation: str
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """The dense grid's speeds and start positions (its two axes)."""
+        elapsed, max_speed = self.elapsed, self.max_speed
+        wrap, line_ends = self.wrap, self.line_ends
+        # Neighboring speeds end one start spacing apart at the last time bin.
+        duration = float(elapsed[-1])
+        speed_step = spacing / duration
+        # A trajectory from the first start position to the last ends one
+        # start spacing short of a track length away.
+        bounds = [n_on_track - 1] if line_ends == "on_track" else []
+        if np.isfinite(max_speed):
+            bounds.append(int(np.floor(max_speed / speed_step + 1e-9)))
+        n_speeds = min(bounds)
+        speeds = speed_step * np.arange(-n_speeds, n_speeds + 1, dtype=np.float64)
+        # With any line ends, start positions extend beyond the track as far
+        # as the fastest trajectory travels, so a trajectory may enter the
+        # track as well as leave it; only those on the track at some time bin
+        # are scored. On a loop, or with line ends on the track, every
+        # trajectory starts on the track.
+        n_beyond = (
+            0
+            if wrap or line_ends == "on_track"
+            else int(np.ceil(n_speeds * speed_step * duration / spacing - 1e-9))
+        )
+        start_positions = (
+            self.track_start
+            + (np.arange(-n_beyond, n_on_track + n_beyond, dtype=np.float64) + 0.5)
+            * spacing
+        )
+        search = len(speeds) * len(start_positions) * len(elapsed)
+        if search > self._MAX_SEARCH:
+            raise ValueError(
+                _format_error(
+                    f"{operation} would score {len(speeds)} speeds x "
+                    f"{len(start_positions)} start positions over "
+                    f"{len(elapsed)} time bins, more than {self._MAX_SEARCH:.0e}: "
+                    f"the event spans {duration:g} s and speeds reach "
+                    f"{float(speeds[-1]):g} units/s, in steps of "
+                    f"{speed_step:.3g}.",
+                    why="neighboring trajectories are spaced band / 5 apart, so "
+                    "the search grows with the event's duration times "
+                    "max_speed, over band",
+                    fix="check that times are in seconds (a replay event spans "
+                    "tens to hundreds of milliseconds); otherwise lower "
+                    "max_speed or widen band",
+                )
+            )
+        return speeds, start_positions
+
+    def _random_lines(
+        self, n_lines: int, line_seed: int
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Speed and start position of ``n_lines`` lines drawn as nelpy draws them.
+
+        As in nelpy's ``score_Davidson_final_bst_fast`` (Maboudi et al.
+        2018, after Kloosterman 2012), lines are drawn on the image of the
+        event, time bins by position bins: the normal of each line makes an
+        angle uniform on (-pi/2, pi/2) with the time axis, and its distance
+        from the image's center is uniform within half the image's diagonal,
+        so every slope is drawn. Image units are the mean time step and the
+        mean spacing of the bin centers.
+
+        Parameters
+        ----------
+        n_lines : int
+            Number of lines drawn.
+        line_seed : int
+            Seed of the draws: angles first, then distances.
+
+        Returns
+        -------
+        speeds, start_positions : NDArray[np.float64], shape (n_lines,)
+            Each line's speed, in environment units per second, and its
+            position at the first time bin.
+        """
+        n_time, n_bins = self.elapsed.size, self.bin_centers.size
+        time_step = float(self.elapsed[-1]) / (n_time - 1)
+        bin_step = (
+            float(self.bin_centers[-1] - self.bin_centers[0]) / (n_bins - 1)
+            if n_bins > 1
+            else self.length
+        )
+        diagonal = np.hypot(n_time - 1, n_bins - 1)
+        generator = np.random.default_rng(line_seed)
+        angle = np.pi * (generator.random(n_lines) - 0.5)
+        distance = diagonal * (generator.random(n_lines) - 0.5)
+        # nelpy keeps lines off the vertical, whose speed is infinite.
+        angle[np.abs(angle) < 1e-4] = 1e-4
+        # (c - c_mid) cos(angle) + (r - r_mid) sin(angle) = distance, for time
+        # bin c and position bin r about the image's center.
+        slope = -np.cos(angle) / np.sin(angle)
+        start = (distance + (n_time - 1) / 2 * np.cos(angle)) / np.sin(angle)
+        start += (n_bins - 1) / 2
+        speeds: NDArray[np.float64] = slope * bin_step / time_step
+        start_positions: NDArray[np.float64] = self.bin_centers[0] + start * bin_step
+        return speeds, start_positions
+
+    def line_parameters(
+        self, lines: NDArray[np.intp]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Speed and start position of trajectories by flat index.
+
+        Parameters
+        ----------
+        lines : NDArray[np.intp], shape (n,)
+            Flat index into the sinogram: ``speed * n_start_positions +
+            start`` on the grid, the line itself with ``n_lines``.
+
+        Returns
+        -------
+        speeds, start_positions : NDArray[np.float64], shape (n,)
+        """
+        if self.random:
+            return self.speeds[lines], self.start_positions[lines]
+        n_starts = self.start_positions.size
+        return self.speeds[lines // n_starts], self.start_positions[lines % n_starts]
+
+    @property
+    def n_trajectories(self) -> int:
+        """Number of entries of the sinogram."""
+        if self.random:
+            return self.speeds.size
+        return self.speeds.size * self.start_positions.size
 
     def event_values(self, posteriors: NDArray[np.float64]) -> NDArray[np.float64]:
         """What the scoring operators read from each event, one column each.
@@ -1961,7 +2227,8 @@ class _ReplayLines:
             each time bin; the off-track mass summed over the time bins before
             each time bin (``n_time_bins + 1`` prefix sums, zero unless lines
             may leave the track); and each time bin's median posterior density
-            (zero unless ``line_ends="on_track"``).
+            (zero unless ``line_ends="on_track"``). The mass before the last
+            knot of a time bin is its row's total.
         """
         mass = posteriors[..., self.order]
         after = np.cumsum(mass, axis=-1)
@@ -1973,8 +2240,13 @@ class _ReplayLines:
         values = np.zeros((n_cumulative + 2 * n_time + 1, n_events))
         values[:n_cumulative] = cumulative.reshape(n_events, -1).T
         if not self.wrap and self.line_ends == "any":
+            off_track = (
+                np.median(mass, axis=-1)
+                if self.off_track == "bin_median"
+                else self._off_track_mass(cumulative)
+            )
             np.cumsum(
-                self._off_track_mass(cumulative).T,
+                off_track.T,
                 axis=0,
                 out=values[n_cumulative + 1 : n_cumulative + n_time + 1],
             )
@@ -2049,13 +2321,8 @@ class _ReplayLines:
         """
         n_events = values.shape[1]
         best = np.full(n_events, -np.inf)
-        scores = (
-            None
-            if best_only
-            else np.full(
-                (n_events, self.speeds.size * self.start_positions.size), np.nan
-            )
-        )
+        scores = None if best_only else np.full((n_events, self.n_trajectories), np.nan)
+        zero = self._zero_rows_of(values)
         for block in self._line_blocks(n_events):
             if block.lines.size == 0:  # every speed of the block below min_speed
                 continue
@@ -2066,15 +2333,173 @@ class _ReplayLines:
                 # Band mass above 1 at a time bin, from the padding, is cut.
                 excess = np.maximum(block.padded @ values - 1.0, 0.0)
                 block_scores -= block.padded_lines @ excess
+            if zero is not None:
+                self._add_line_medians(
+                    block, values, block_scores, zero, best if best_only else None
+                )
             if scores is None:
                 np.maximum(best, block_scores.max(axis=0), out=best)
             else:
                 scores[:, block.lines] = block_scores.T
         if scores is None:
             return _round_scores(best)
+        if self.random:
+            return _round_scores(scores)
         return _round_scores(
             scores.reshape(n_events, self.speeds.size, self.start_positions.size)
         )
+
+    def _zero_rows_of(self, values: NDArray[np.float64]) -> NDArray[np.bool_] | None:
+        """Which rows of each event are all zero, with ``zero_rows="line_median"``.
+
+        Parameters
+        ----------
+        values : NDArray[np.float64], shape (n_values, n_events)
+            From :meth:`event_values`.
+
+        Returns
+        -------
+        NDArray[np.bool_] or None, shape (n_time_bins, n_events)
+            True for a row without mass; None when no event has one or
+            ``zero_rows`` is not ``"line_median"`` (validation refuses such
+            rows otherwise).
+        """
+        if self.zero_rows != "line_median":
+            return None
+        n_knots = len(self.knots)
+        totals = values[n_knots - 1 : self.elapsed.size * n_knots : n_knots]
+        zero: NDArray[np.bool_] = totals == 0
+        return zero if zero.any() else None
+
+    def _add_line_medians(
+        self,
+        block: _LineBlock,
+        values: NDArray[np.float64],
+        block_scores: NDArray[np.float64],
+        zero: NDArray[np.bool_],
+        best: NDArray[np.float64] | None,
+    ) -> None:
+        """Add the score of each event's all-zero rows to its trajectories.
+
+        Each all-zero row scores, for each trajectory, the median of the
+        trajectory's band mass over its time bins on the track with mass,
+        divided by the number of time bins (Maboudi et al. 2018); 0 when it
+        has none.
+
+        The median is not linear in the posterior, so it is computed per
+        trajectory and event. With ``best`` (only the best score of each
+        event is wanted), it is computed only for trajectories that could
+        reach the best score. A trajectory's score is at least ``s``, its
+        other rows' part (``block_scores`` before this call). The median of
+        its ``k`` band masses is at most their sum over ``ceil(k / 2)``,
+        since at least that many are at or above it; their sum is at most
+        ``n_time * s``, and ``k`` is at least its time bins on the track
+        less the event's ``n_zero`` all-zero rows. So its score is at most
+        ``s * (1 + n_zero / max(ceil((n_on_track - n_zero) / 2), 1))``, and
+        a trajectory whose bound is below a score already reached cannot be
+        the best. The best score is therefore exact.
+
+        Parameters
+        ----------
+        block : _LineBlock
+            The trajectories, with their ``pairs``.
+        values : NDArray[np.float64], shape (n_values, n_events)
+            From :meth:`event_values`.
+        block_scores : NDArray[np.float64], shape (n_lines, n_events)
+            Scores of the block's trajectories without the all-zero rows;
+            updated in place.
+        zero : NDArray[np.bool_], shape (n_time_bins, n_events)
+            From :meth:`_zero_rows_of`.
+        best : NDArray[np.float64] or None, shape (n_events,)
+            Each event's best score so far, or None to score every
+            trajectory.
+        """
+        pairs = block.pairs
+        assert pairs is not None  # built with zero_rows="line_median"
+        n_lines, n_events = block_scores.shape
+        n_zero = zero.sum(axis=0)
+        if best is None:
+            with_zero = np.flatnonzero(n_zero)
+            line_index, event_index = (
+                index.ravel() for index in np.indices((n_lines, with_zero.size))
+            )
+            event_index = with_zero[event_index]
+        else:
+            n_on_track = pairs.on_track.sum(axis=1)
+            line_parts, event_parts = [], []
+            for count in np.unique(n_zero[n_zero > 0]):
+                events = np.flatnonzero(n_zero == count)
+                other = (
+                    block_scores if events.size == n_events else block_scores[:, events]
+                )
+                factor = 1 + count / np.maximum(np.ceil((n_on_track - count) / 2), 1)
+                # A score already reached: the best so far, or the exact
+                # score of the trajectory with the largest other-row part.
+                top = np.argmax(other, axis=0)
+                reached = other[top, np.arange(events.size)] + (
+                    count / self.elapsed.size
+                ) * self._line_medians(pairs, values, top, events, zero)
+                floor = np.maximum(best[events], reached)
+                lines, chosen = np.nonzero(
+                    other * factor[:, None] >= floor - _BOUND_SLACK
+                )
+                line_parts.append(lines)
+                event_parts.append(events[chosen])
+            line_index = np.concatenate(line_parts)
+            event_index = np.concatenate(event_parts)
+        step = max(1, self._BLOCK_SCORES // pairs.columns[0].size)
+        for first in range(0, line_index.size, step):
+            lines = line_index[first : first + step]
+            events = event_index[first : first + step]
+            block_scores[lines, events] += (
+                n_zero[events] / self.elapsed.size
+            ) * self._line_medians(pairs, values, lines, events, zero)
+
+    @staticmethod
+    def _line_medians(
+        pairs: _PairTerms,
+        values: NDArray[np.float64],
+        lines: NDArray[np.intp],
+        events: NDArray[np.intp],
+        zero: NDArray[np.bool_],
+    ) -> NDArray[np.float64]:
+        """Median band mass over each trajectory's time bins on the track with mass.
+
+        Parameters
+        ----------
+        pairs : _PairTerms
+            The block's band terms per trajectory and time bin.
+        values : NDArray[np.float64], shape (n_values, n_events)
+            From :meth:`_ReplayLines.event_values`.
+        lines, events : NDArray[np.intp], shape (n_scored,)
+            Trajectory in the block, and event, of each median.
+        zero : NDArray[np.bool_], shape (n_time_bins, n_events)
+            Rows without mass.
+
+        Returns
+        -------
+        NDArray[np.float64], shape (n_scored,)
+            The median, or 0 when the trajectory has no such time bin.
+        """
+        mass = np.einsum(
+            "ntk,ntk->nt",
+            pairs.weights[lines],
+            values[pairs.columns[lines], events[:, None, None]],
+        )
+        if pairs.laps is not None:
+            mass += pairs.laps[lines]
+        if pairs.padded is not None:
+            # As in the score, band mass above 1 from the padding is cut.
+            mass = np.where(pairs.padded[lines], np.minimum(mass, 1.0), mass)
+        counted = pairs.on_track[lines] & ~zero[:, events].T
+        ordered = np.sort(np.where(counted, mass, np.inf), axis=1)
+        count = counted.sum(axis=1)
+        rows = np.arange(len(lines))
+        middle = (
+            ordered[rows, np.maximum(count - 1, 0) // 2] + ordered[rows, count // 2]
+        ) / 2
+        medians: NDArray[np.float64] = np.where(count > 0, middle, 0.0)
+        return medians
 
     def _line_blocks(self, n_events: int) -> Iterator[_LineBlock]:
         """Blocks of trajectories with their sparse operators.
@@ -2086,7 +2511,9 @@ class _ReplayLines:
         if self._blocks is not None:
             yield from self._blocks
             return
-        n_starts, n_time = self.start_positions.size, self.elapsed.size
+        # On the grid a block is whole speeds, with every start position.
+        n_starts = 1 if self.random else self.start_positions.size
+        n_time = self.elapsed.size
         step = max(
             1,
             min(
@@ -2096,12 +2523,16 @@ class _ReplayLines:
         )
         built: list[_LineBlock] | None = []
         nonzeros = 0
-        for first_speed in range(0, self.speeds.size, step):
-            block = self._block(slice(first_speed, first_speed + step))
+        for first in range(0, self.n_trajectories, step * n_starts):
+            block = self._block(
+                np.arange(first, min(first + step * n_starts, self.n_trajectories))
+            )
             if built is not None:
                 nonzeros += block.operator.nnz
                 if block.padded is not None:
                     nonzeros += block.padded.nnz + block.padded_lines.nnz
+                if block.pairs is not None:
+                    nonzeros += 2 * block.pairs.columns.size
                 if nonzeros <= self._CACHED_NONZEROS:
                     built.append(block)
                 else:
@@ -2178,8 +2609,8 @@ class _ReplayLines:
             padded,
         )
 
-    def _block(self, speeds: slice) -> _LineBlock:
-        """The searched trajectories of ``self.speeds[speeds]``.
+    def _block(self, candidates: NDArray[np.intp]) -> _LineBlock:
+        """The searched trajectories among ``candidates`` (flat indices).
 
         The operator's row ``r`` sums, over time bins on the track, the mass
         within ``band`` of trajectory ``lines[r]`` (see :meth:`_band_terms`),
@@ -2188,15 +2619,14 @@ class _ReplayLines:
         """
         from scipy import sparse
 
-        n_starts, n_time = self.start_positions.size, self.elapsed.size
+        n_time = self.elapsed.size
         n_values = n_time * (len(self.knots) + 2) + 1
-        position = (
-            self.start_positions[None, :, None]
-            + self.speeds[speeds][:, None, None] * self.elapsed[None, None, :]
-        ).reshape(-1, n_time)  # (n_speeds_in_block * n_start_positions, n_time)
-        fast_enough = np.repeat(
-            np.abs(self.speeds[speeds]) >= self.min_speed - 1e-9, n_starts
-        )
+        speeds, start_positions = self.line_parameters(candidates)
+        # (n_candidates, n_time)
+        position = start_positions[:, None] + speeds[:, None] * self.elapsed[None, :]
+        fast_enough = np.abs(speeds) >= self.min_speed - 1e-9
+        if self.random:
+            fast_enough &= np.abs(speeds) <= self.max_speed
         if self.wrap:
             on_track = np.ones(position.shape, dtype=bool)
             searched = fast_enough
@@ -2209,7 +2639,7 @@ class _ReplayLines:
             else:
                 searched = on_track.any(axis=1) & fast_enough
         position, on_track = position[searched], on_track[searched]
-        lines = speeds.start * n_starts + np.flatnonzero(searched)
+        lines = candidates[searched]
         row, time = np.nonzero(on_track)
         pair, column, weight, laps, padded = self._band_terms(position[row, time], time)
         row_parts, column_parts, weight_parts = [row[pair]], [column], [weight / n_time]
@@ -2238,8 +2668,15 @@ class _ReplayLines:
             if self.wrap
             else None
         )
+        pairs = (
+            self._pair_terms(on_track, row, time, column, weight, laps, padded)
+            if self.zero_rows == "line_median"
+            else None
+        )
         if not np.any(padded):
-            return _LineBlock(lines=lines, operator=operator, laps=block_laps)
+            return _LineBlock(
+                lines=lines, operator=operator, laps=block_laps, pairs=pairs
+            )
         # The band mass of each padded pair, and the sum over a line's padded
         # pairs, divided by the number of time bins.
         n_padded = int(np.sum(padded))
@@ -2249,6 +2686,7 @@ class _ReplayLines:
             lines=lines,
             operator=operator,
             laps=block_laps,
+            pairs=pairs,
             padded=sparse.csr_matrix(
                 (weight[keep], (index[pair[keep]], column[keep])),
                 shape=(n_padded, n_values),
@@ -2257,6 +2695,59 @@ class _ReplayLines:
                 (np.full(n_padded, 1.0 / n_time), (row[padded], np.arange(n_padded))),
                 shape=(lines.size, n_padded),
             ),
+        )
+
+    def _pair_terms(
+        self,
+        on_track: NDArray[np.bool_],
+        row: NDArray[np.intp],
+        time: NDArray[np.intp],
+        column: NDArray[np.intp],
+        weight: NDArray[np.float64],
+        laps: NDArray[np.float64],
+        padded: NDArray[np.bool_],
+    ) -> _PairTerms:
+        """Each trajectory's band terms at each time bin, for line medians.
+
+        Parameters
+        ----------
+        on_track : NDArray[np.bool_], shape (n_lines, n_time_bins)
+            Whether each searched trajectory is on the track at each time bin.
+        row, time : NDArray[np.intp], shape (n_pairs,)
+            Trajectory and time bin of each pair on the track.
+        column : NDArray[np.intp], shape (n_terms,)
+            From :meth:`_band_terms`: four terms per pair, in four runs of
+            ``n_pairs``, then one per padded pair.
+        weight : NDArray[np.float64], shape (n_terms,)
+            From :meth:`_band_terms`, in the same order.
+        laps : NDArray[np.float64], shape (n_pairs,)
+            From :meth:`_band_terms`.
+        padded : NDArray[np.bool_], shape (n_pairs,)
+            From :meth:`_band_terms`.
+        """
+        n_lines, n_time = on_track.shape
+        n_pairs = row.size
+        n_terms = 5 if np.any(padded) else 4
+        columns = np.zeros((n_lines, n_time, n_terms), dtype=np.intp)
+        weights = np.zeros((n_lines, n_time, n_terms))
+        columns[row, time, :4] = column[: 4 * n_pairs].reshape(4, n_pairs).T
+        weights[row, time, :4] = weight[: 4 * n_pairs].reshape(4, n_pairs).T
+        pair_padded = None
+        if n_terms == 5:
+            columns[row[padded], time[padded], 4] = column[4 * n_pairs :]
+            weights[row[padded], time[padded], 4] = weight[4 * n_pairs :]
+            pair_padded = np.zeros((n_lines, n_time), dtype=bool)
+            pair_padded[row, time] = padded
+        pair_laps = None
+        if self.wrap:
+            pair_laps = np.zeros((n_lines, n_time))
+            pair_laps[row, time] = laps
+        return _PairTerms(
+            columns=columns,
+            weights=weights,
+            on_track=on_track,
+            laps=pair_laps,
+            padded=pair_padded,
         )
 
     def best_scores_of(self, posteriors: Any, n_shuffles: int) -> NDArray[np.float64]:
@@ -2311,6 +2802,9 @@ class _LineBlock:
     padded_lines : scipy.sparse.csr_matrix or None
         Shape ``(n_lines, n_padded)``: sums a trajectory's padded time bins,
         divided by the number of time bins.
+    pairs : _PairTerms or None
+        Each trajectory's band terms per time bin, with
+        ``zero_rows="line_median"``.
     """
 
     lines: NDArray[np.intp]
@@ -2318,6 +2812,32 @@ class _LineBlock:
     laps: NDArray[np.float64] | None = None
     padded: Any = None
     padded_lines: Any = None
+    pairs: _PairTerms | None = None
+
+
+@dataclass(frozen=True)
+class _PairTerms:
+    """Band mass of each trajectory at each time bin, as weights on event values.
+
+    Attributes
+    ----------
+    columns, weights : NDArray, shape (n_lines, n_time_bins, n_terms)
+        The band mass at a time bin is ``sum(weights * values[columns])``
+        over its terms (zero weights off the track).
+    on_track : NDArray[np.bool_], shape (n_lines, n_time_bins)
+        Whether the trajectory is on the track at each time bin.
+    laps : NDArray[np.float64] or None, shape (n_lines, n_time_bins)
+        On a loop, the whole laps each band covers.
+    padded : NDArray[np.bool_] or None, shape (n_lines, n_time_bins)
+        Whether the band holds padding beyond an end of the track, and so is
+        capped at 1.
+    """
+
+    columns: NDArray[np.intp]
+    weights: NDArray[np.float64]
+    on_track: NDArray[np.bool_]
+    laps: NDArray[np.float64] | None = None
+    padded: NDArray[np.bool_] | None = None
 
 
 def _round_scores(scores: NDArray[np.float64]) -> NDArray[np.float64]:

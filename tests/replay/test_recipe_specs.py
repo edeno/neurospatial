@@ -12,7 +12,13 @@ from typing import Any
 
 import pytest
 
-from neurospatial.replay import ArmReplayMethod, RankOrderMethod, ReplayMethod
+from neurospatial.replay import (
+    ArmReplayMethod,
+    PairwiseOrderMethod,
+    RankOrderMethod,
+    ReplayMethod,
+    TemplateMatchMethod,
+)
 from neurospatial.replay.methods import PUBLISHED_METHODS
 
 # Class defaults: a recipe's fields are these, updated by its entry in SPEC.
@@ -25,6 +31,7 @@ DEFAULTS: dict[type, dict[str, Any]] = {
         "alpha": 0.05,
         "alternative": "greater",
         "use_absolute": None,
+        "tested_quantities": {},
         "empty_time_bins": "keep",
         "criteria": (),
         "segmentation": None,
@@ -46,6 +53,21 @@ DEFAULTS: dict[type, dict[str, Any]] = {
         "min_epoch_events": None,
         "template_choice": None,
     },
+    # Gupta et al. (2010): fields above 5% of the population's highest rate,
+    # merged across one-pixel gaps; spike pairs less than 80 ms apart; left
+    # and right laps forward and backward; 300 spike-time and 300
+    # cell-identity shuffles, beat 95% of both; at least 3 active cells.
+    PairwiseOrderMethod: {
+        "field_threshold": 0.05,
+        "merge_gap_bins": 1,
+        "field_center": "rate_weighted",
+        "max_time_lag": 0.08,
+        "directions": ("forward", "backward"),
+        "nulls": ("spike_time_permutation", "cell_identity"),
+        "n_shuffles": 300,
+        "alpha": 0.05,
+        "min_active_cells": 3,
+    },
     # Wu & Foster (2014): peak above 5x chance, 10 ms smoothing, 50 ms,
     # more than 50% of the arm, |weighted correlation| > 0.5.
     ArmReplayMethod: {
@@ -62,6 +84,23 @@ DEFAULTS: dict[type, dict[str, Any]] = {
         "joint_same_sign": True,
         "arm_fallback": False,
         "decoding": {},
+    },
+    TemplateMatchMethod: {
+        "field_order": "peak",
+        "min_peak_rate": None,
+        "min_template_cells": None,
+        "max_isi": None,
+        "max_gap": None,
+        "match_order": "interruptions_first",
+        "trial_probability": None,
+        "exact_max_letters": 10,
+        "n_samples": 100_000,
+        "bandwidth": None,
+        "min_active_cells": 2,
+        "alpha": 0.05,
+        "p_comparison": "<",
+        "template_choice": None,
+        "n_shuffles": 1000,
     },
 }
 
@@ -84,6 +123,31 @@ def _segmentation(
 
 # Criteria are (quantity, comparison, threshold, relative_to, absolute).
 SPEC: dict[str, tuple[type, dict[str, Any]]] = {
+    # Lee & Wilson (2002): 50 ms bursts, 100 ms word gaps, p <= 1/24; the
+    # number of template shuffles (1000) is not stated in the paper.
+    "lee_wilson_2002": (
+        TemplateMatchMethod,
+        {
+            "statistic": "best_match",
+            "max_isi": 0.05,
+            "max_gap": 0.1,
+            "trial_probability": 1 / 24,
+            "alpha": 1 / 24,
+            "p_comparison": "<=",
+        },
+    ),
+    # Ji & Wilson (2007): sigma 180 ms (CA1), >= 4 active cells, templates of
+    # >= 5 cells, p < 0.05, the higher matching index wins, 1000 shuffles.
+    "ji_wilson_2007": (
+        TemplateMatchMethod,
+        {
+            "statistic": "matching_index",
+            "min_template_cells": 5,
+            "bandwidth": 0.18,
+            "min_active_cells": 4,
+            "template_choice": "largest_score",
+        },
+    ),
     "foster_wilson_2006": (
         RankOrderMethod,
         {
@@ -139,6 +203,7 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
             "decoding": {"time_bin": 0.02, "time_step": 0.005},
         },
     ),
+    "gupta_2010": (PairwiseOrderMethod, {}),
     "wu_foster_2014": (
         ArmReplayMethod,
         {"decoding": {"time_bin": 0.01, "position_bin": 1.85}},
@@ -386,6 +451,39 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
             },
         },
     ),
+    "widloski_foster_2025": (
+        ReplayMethod,
+        {
+            "score": None,
+            "nulls": ("unit_identity",),
+            "n_shuffles": 100,
+            "alpha": 0.05,
+            "tested_quantities": {"mean_spread": "less", "mean_mean_jump": "less"},
+            "criteria": (
+                ("segment_duration", ">", 0.1, None, False),
+                ("segment_dispersion", ">", 12.0, None, False),
+            ),
+            "segmentation": _segmentation(
+                {
+                    "max_jump": 20.0,
+                    "method": "expected",
+                    "jump_rule": "drop_earlier",
+                    "max_spread": 10.0,
+                    "merge_max_time_gap": 0.05,
+                    "merge_max_distance": 20.0,
+                },
+                choose="any",
+            ),
+            "units": "cm",
+            "decoding": {
+                "time_bin": 0.08,
+                "time_step": 0.005,
+                "position_bin": 2.0,
+                "rate_map_smoothing_sd": 8.0,
+                "prior": "uniform",
+            },
+        },
+    ),
     "wikenheiser_redish_2013": (
         ReplayMethod,
         {
@@ -574,6 +672,32 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
             },
         },
     ),
+    "maboudi_2018": (
+        ReplayMethod,
+        {
+            "score": "detect_trajectory_radon",
+            "score_options": {
+                "band": 3.0,
+                "off_track": "bin_median",
+                "zero_rows": "line_median",
+                "n_lines": 35000,
+            },
+            "nulls": ("column_cycle",),
+            "n_shuffles": 5000,
+            "alpha": 0.01,
+            "empty_time_bins": "zero",
+            "criteria": (
+                ("n_active_cells", ">=", 4, None, False),
+                ("n_time_bins", ">=", 4, None, False),
+            ),
+            "units": "cm",
+            "decoding": {
+                "time_bin": 0.02,
+                "prior": "uniform",
+                "rate_map_time_bin": 0.1,
+            },
+        },
+    ),
     "liu_2023": (
         ReplayMethod,
         {
@@ -617,7 +741,7 @@ def _plain(name: str, value: Any) -> Any:
             "min_active_cells_per_time_bin": value.min_active_cells_per_time_bin,
             "rows": value.rows,
         }
-    if name in ("score_options", "decoding"):
+    if name in ("score_options", "decoding", "tested_quantities"):
         return dict(value)
     if name == "null_options":
         return {null: dict(options) for null, options in value.items()}

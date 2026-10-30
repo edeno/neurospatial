@@ -499,9 +499,31 @@ warning says why.
   `Environment.from_graph` from a cycle, with an `edge_order` whose last
   segment ends where the first starts, so a sequence that runs past the
   point where the linear position starts again is scored whole.
+- **Criteria with a shuffle test.** `WIDLOSKI_FOSTER_2025` finds each
+  candidate as `WIDLOSKI_FOSTER_2022` does, then decodes the candidate's
+  time bins again with the rate maps permuted across cells. Its mean
+  posterior spread and mean center-of-mass jump must each be smaller than
+  in at least 96 of 100 shuffles (`tested_quantities`). Pass the 80 ms
+  windows stepped by 5 ms as the event, `dt=0.08`, the rate maps as
+  `encoding_models` and the animal's speed rule as `valid_time_bins`. The
+  table reports each quantity and its p-value, such as `mean_spread` and
+  `p_value[mean_spread]`.
 - **Mazes with arms.** `ArmReplayMethod` recipes (`WU_FOSTER_2014`,
   `BERNERS_LEE_2021`) classify replay per arm: pass `arms=` to
   `compare_replay_methods`.
+- **Firing order without decoding.** `LEE_WILSON_2002` and
+  `JI_WILSON_2007` test whether the cells fire in the order of their
+  fields, from the spike times and rate maps alone (pass `spike_times=` as
+  for the rank-order methods). Their p-values are exact and take few
+  values, so a 1/24 cutoff counts a perfect four-letter word. Both papers
+  drew their conclusions from counts of matching events over a data set:
+  run `template_match_dataset_test` for those. Lee & Wilson's events are
+  words cut from sleep spikes, one template's cells at a time:
+  `spike_words(spike_times, max_isi=0.05, max_gap=0.1, cells=template_cells,
+  epochs=sws).intervals`. `NADASDY_1999` asks a different question, whether
+  spike sequences recur within one session more often than in surrogate
+  trains (`recurring_sequences_significance`), and has no per-event
+  verdict.
 - **Several sessions.** Score each session's events in its own call, add a
   `session` column, and pass it as `groups=` to `detection_rates`,
   `method_agreement` and `matched_alpha`.

@@ -315,20 +315,25 @@ def _roll_rows_along_track(
     order: NDArray[np.intp],
     n_shuffles: int,
     generator: np.random.Generator,
+    *,
+    exclude_zero_shift: bool = False,
 ) -> Generator[NDArray[np.float64], None, None]:
     """Roll each row by its own random number of bins, in track order.
 
     Only the bins in ``order`` move; any other column is copied unchanged.
+    Shifts are uniform on 0 to ``n_bins - 1`` bins, or on 1 to ``n_bins - 1``
+    with ``exclude_zero_shift``.
     """
     n_rows = values.shape[0]
     n_bins = len(order)
     along = values[:, order]
     col_indices = np.arange(n_bins)
     rows = np.arange(n_rows)[:, np.newaxis]
+    smallest = 1 if exclude_zero_shift else 0
 
     for _ in range(n_shuffles):
         # Generate random shift amounts for each row
-        shifts = np.asarray(generator.integers(0, n_bins, size=n_rows))
+        shifts = np.asarray(generator.integers(smallest, n_bins, size=n_rows))
 
         # For each row i, take columns (col_indices - shifts[i]) % n_bins
         shifted_indices = (col_indices - shifts[:, np.newaxis]) % n_bins
@@ -508,6 +513,7 @@ def shuffle_posterior_circular(
     *,
     n_shuffles: int = 1000,
     rng: np.random.Generator | int | None = None,
+    exclude_zero_shift: bool = False,
 ) -> Generator[NDArray[np.float64], None, None]:
     """Circularly shift posterior at each time bin independently.
 
@@ -532,6 +538,11 @@ def shuffle_posterior_circular(
         - If Generator: Use directly
         - If int: Seed for ``np.random.default_rng()``
         - If None: Use default RNG (not reproducible)
+    exclude_zero_shift : bool, default=False
+        Draw each row's shift from 1 to ``n_bins - 1`` bins, so no row stays
+        in place, as nelpy does (Maboudi et al. 2018). The default draws
+        from 0 to ``n_bins - 1``, every circular shift equally likely, the
+        exact permutation null of the column cycle.
 
     Yields
     ------
@@ -594,7 +605,18 @@ def shuffle_posterior_circular(
     order = _track_order(
         env, posterior, "shuffle_posterior_circular()", _POSTERIOR_SHUFFLE_ALTERNATIVE
     )
-    return _roll_rows_along_track(posterior, order, n_shuffles, _ensure_rng(rng))
+    if not isinstance(exclude_zero_shift, (bool, np.bool_)):
+        raise TypeError(
+            "shuffle_posterior_circular() needs exclude_zero_shift=True or "
+            f"False, got {exclude_zero_shift!r}."
+        )
+    return _roll_rows_along_track(
+        posterior,
+        order,
+        n_shuffles,
+        _ensure_rng(rng),
+        exclude_zero_shift=bool(exclude_zero_shift),
+    )
 
 
 def shuffle_posterior_weighted_circular(
@@ -918,7 +940,8 @@ def shuffle_spike_counts_uniform(
     shuffle_spike_counts_circular : Shift each cell's counts in time,
         keeping its spike intervals.
     neurospatial.replay.replay_significance : Runs this shuffle as the
-        ``"spike_time_uniform"`` null, and refuses overlapping time bins.
+        ``"spike_time_uniform"`` null, and refuses time bins that overlap
+        or leave gaps.
     neurospatial.replay.null_events : ``kind="spike_time_uniform"`` makes
         the same null events from spike times.
 
