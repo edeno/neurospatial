@@ -240,7 +240,8 @@ def replay_significance(
         larger for a better trajectory. :func:`detect_trajectory_radon`,
         :func:`weighted_correlation`, :func:`fit_linear_trajectory` and
         :func:`fit_isotonic_trajectory` all qualify; the first two are
-        scored in batches (also when wrapped in :func:`functools.partial`).
+        scored in batches (also when wrapped in :func:`functools.partial`),
+        as is :func:`~neurospatial.replay.fit_circular_sequence`.
         A score that takes ``rng`` gets one derived from ``rng`` unless
         ``score_options`` sets it, so sampled fits are reproducible too; the
         event and every shuffle then draw the same uniforms; whether it takes
@@ -946,6 +947,12 @@ def _scorer_for(
     options: dict[str, Any],
 ) -> _Scorer:
     """A scorer for ``score``: batched for the scores that support it."""
+    # circular.py builds its scorer on _Scorer, so it is imported here.
+    from neurospatial.replay.circular import (
+        _CircularSequenceScorer,
+        fit_circular_sequence,
+    )
+
     batched: dict[
         Callable[..., Any], tuple[Callable[..., _Scorer], tuple[str, ...]]
     ] = {
@@ -954,6 +961,7 @@ def _scorer_for(
             ("band", "max_speed", "min_speed", "wrap", "line_ends"),
         ),
         weighted_correlation: (_WeightedCorrelationScorer, ("row_normalization",)),
+        fit_circular_sequence: (_CircularSequenceScorer, ()),
     }
     if score in batched:
         scorer_class, accepted = batched[score]

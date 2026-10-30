@@ -135,6 +135,7 @@ def _criterion_quantities() -> tuple[str, ...]:
         "score",
         "n_active_cells",
         "active_fraction",
+        "n_spikes",
         *_SEGMENT_QUANTITIES,
         *_TEMPLATE_QUANTITIES,
         *scalars,
@@ -151,7 +152,9 @@ class ReplayCriterion:
         ``"score"`` (the method's score), ``"n_active_cells"`` (cells with a
         spike anywhere in the event, also for a method with a
         segmentation), ``"active_fraction"`` (``n_active_cells`` over the
-        columns of ``spike_counts``), a scalar attribute (not a method)
+        columns of ``spike_counts``), ``"n_spikes"`` (the spikes of all
+        cells in the event, before any time bins are dropped; Wikenheiser &
+        Redish 2013 required at least 5), a scalar attribute (not a method)
         of :class:`~neurospatial.replay.TrajectoryMetrics`, such as
         ``"max_map_jump"``, or, for a method with a
         :class:`ReplaySegmentation`, a value of the tested segment:
@@ -1320,6 +1323,7 @@ def detect_replay(
         segmentation is not None
         and segmentation.min_active_cells_per_time_bin is not None
     )
+    counts_spikes = any(c.quantity == "n_spikes" for c in replay_method.criteria)
     counts = None if spike_counts is None else np.asarray(spike_counts)
     if counts is not None and counts.ndim == 1:
         if counts_cells:
@@ -1344,19 +1348,24 @@ def detect_replay(
         event_values["active_fraction"] = event_values["n_active_cells"] / max(
             counts.shape[1], 1
         )
+    if counts is not None and counts_spikes:
+        event_values["n_spikes"] = float(counts.sum())
     if valid_time_bins is not None:
         from neurospatial.replay.segments import _valid_time_bins
 
         valid_time_bins = _valid_time_bins(
             valid_time_bins, len(posterior), operation=_OPERATION
         )
-    needs_counts = replay_method.empty_time_bins != "keep" or counts_cells
+    needs_counts = (
+        replay_method.empty_time_bins != "keep" or counts_cells or counts_spikes
+    )
     if needs_counts and counts is None:
         raise ValueError(
             _format_error(
                 f"{_OPERATION}: method {replay_method.name!r} needs spike_counts.",
-                why="it drops or zeroes time bins without spikes, or counts "
-                "the cells active in the event or in each time bin",
+                why="it drops or zeroes time bins without spikes, counts the "
+                "event's spikes, or counts the cells active in the event or in "
+                "each time bin",
                 fix="pass the event's spike_counts, one row per posterior row",
             )
         )
@@ -1563,6 +1572,7 @@ def detect_replay(
             "score",
             "n_active_cells",
             "active_fraction",
+            "n_spikes",
             *_SEGMENT_QUANTITIES,
             *_TEMPLATE_QUANTITIES,
         )
