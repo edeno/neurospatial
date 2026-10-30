@@ -43,7 +43,6 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from neurospatial.decoding import DecodingResult, JointDecodingResult
-    from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
     from neurospatial.replay.segments import ReplaySegmentsResult
 
@@ -581,9 +580,9 @@ class RankOrderMethod:
     """A published rank-order replay test.
 
     The event's score is the Spearman correlation between when each active
-    cell fired and where its field lies on the track
+    template cell fired and where its field lies on the track
     (:func:`~neurospatial.replay.rank_order_correlation`), tested with the
-    analytic p-value or against cell-order permutations
+    t-distribution of Spearman's rho or against cell-order permutations
     (:func:`~neurospatial.replay.rank_order_significance`).
 
     Attributes
@@ -597,21 +596,35 @@ class RankOrderMethod:
         :func:`~neurospatial.replay.rank_order_correlation`).
     field_order : {"peak", "center"}
         Each cell's field position: its peak or rate-weighted center.
+    min_peak_rate : float or None
+        Template cells: cells whose rate map peaks at this rate or more, in
+        Hz (Foster & Wilson 2006; Diba & Buzsáki 2007: 5 Hz). Other cells'
+        spikes are ignored and they do not count toward
+        ``min_active_fraction``. None makes every cell with a field a
+        template cell.
     min_active_cells : int
-        Fewest active cells; with fewer the event is not replay.
+        Fewest active template cells; with fewer the event is not replay.
     min_active_fraction : float or None
-        Fewest active cells as a fraction of the cells with a field in
-        ``encoding_models`` (Foster & Wilson 2006: one third; Diba & Buzsáki
-        2007: 30%). Pass the rate maps of the paper's template cells.
-    test : {"analytic", "cell_order"}
-        The analytic two-sided Spearman p-value (Foster & Wilson 2006), or
+        Fewest active template cells as a fraction of all template cells
+        (Foster & Wilson 2006: one third; Diba & Buzsáki 2007: 30%).
+    test : {"t_distribution", "cell_order"}
+        The two-sided p-value of rho from the t-distribution with
+        ``n - 2`` degrees of freedom over the ``n`` (time, field) pairs, as
+        Numerical Recipes' ``spear`` computes it (Foster & Wilson 2006); or
         ``n_shuffles`` cell-order permutations (Diba & Buzsáki 2007).
     alternative : {"greater", "less", "two-sided"}
-        Tail of the permutation test; the analytic test is two-sided.
+        Tail of the permutation test; the t-distribution test is two-sided.
     n_shuffles : int
         Cell-order permutations.
     alpha : float
         Significance level: the p-value must be below it.
+    template_choice : {"most_active"} or None
+        With several templates (one rate-map set per running direction) and
+        no ``template=``, which template is reported. ``"most_active"``
+        takes, among the templates on which the event is replay, the one
+        with the most active cells and then the larger ``|rho|`` (Diba &
+        Buzsáki 2007); without such a template, the same rule over all
+        templates. None needs ``template=``.
     notes : tuple of str
         Choices the paper does not specify, and event-selection rules not
         applied.
@@ -621,55 +634,71 @@ class RankOrderMethod:
     reference: str
     spike_statistic: Literal["first", "median", "mean", "all_spikes"] = "median"
     field_order: Literal["peak", "center"] = "peak"
+    min_peak_rate: float | None = None
     min_active_cells: int = 5
     min_active_fraction: float | None = None
-    test: Literal["analytic", "cell_order"] = "cell_order"
+    test: Literal["t_distribution", "cell_order"] = "cell_order"
     alternative: Literal["greater", "less", "two-sided"] = "two-sided"
     n_shuffles: int = 1000
     alpha: float = 0.05
+    template_choice: Literal["most_active"] | None = None
     notes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Refuse settings that cannot run."""
+        from neurospatial.replay.rank_order import _FIELD_ORDERS, _SPIKE_STATISTICS
+
         object.__setattr__(self, "notes", tuple(self.notes))
         prefix = f"RankOrderMethod {self.name!r}"
-        if self.test not in ("analytic", "cell_order"):
+        choices = {
+            "spike_statistic": _SPIKE_STATISTICS,
+            "field_order": _FIELD_ORDERS,
+            "test": ("t_distribution", "cell_order"),
+            "alternative": ("greater", "less", "two-sided"),
+            "template_choice": (None, "most_active"),
+        }
+        for field_name, allowed in choices.items():
+            if getattr(self, field_name) not in allowed:
+                raise ValueError(
+                    f"{prefix}: {field_name} must be one of {list(allowed)}, got "
+                    f"{getattr(self, field_name)!r}."
+                )
+        if self.test == "t_distribution" and self.alternative != "two-sided":
             raise ValueError(
-                f"{prefix}: test must be 'analytic' or 'cell_order', got {self.test!r}."
-            )
-        if self.alternative not in ("greater", "less", "two-sided"):
-            raise ValueError(
-                f"{prefix}: alternative must be 'greater', 'less' or "
-                f"'two-sided', got {self.alternative!r}."
-            )
-        if self.test == "analytic" and self.alternative != "two-sided":
-            raise ValueError(
-                f"{prefix}: the analytic Spearman p-value is two-sided; use "
+                f"{prefix}: the t-distribution test of rho is two-sided; use "
                 "test='cell_order' for a one-sided test."
             )
         if not 0 < self.alpha < 1:
             raise ValueError(f"{prefix}: alpha must be in (0, 1), got {self.alpha!r}.")
-        for field_name in ("min_active_cells", "n_shuffles"):
+        for field_name, minimum in (("min_active_cells", 3), ("n_shuffles", 1)):
             value = getattr(self, field_name)
             if (
                 isinstance(value, bool)
                 or not isinstance(value, (int, np.integer))
-                or value < (3 if field_name == "min_active_cells" else 1)
+                or value < minimum
             ):
                 raise ValueError(
                     f"{prefix}: {field_name} must be an integer of at least "
-                    f"{3 if field_name == 'min_active_cells' else 1}, got {value!r}."
+                    f"{minimum}, got {value!r}."
                 )
-        fraction = self.min_active_fraction
-        if fraction is not None and not (
-            isinstance(fraction, (int, float, np.floating))
-            and not isinstance(fraction, bool)
-            and 0 < fraction <= 1
+        for field_name, upper in (
+            ("min_active_fraction", 1.0),
+            ("min_peak_rate", None),
         ):
-            raise ValueError(
-                f"{prefix}: min_active_fraction must be in (0, 1] or None, got "
-                f"{fraction!r}."
-            )
+            value = getattr(self, field_name)
+            if value is None:
+                continue
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float, np.integer, np.floating))
+                or not np.isfinite(value)
+                or value <= 0
+                or (upper is not None and value > upper)
+            ):
+                bounds = "in (0, 1]" if upper is not None else "a positive rate in Hz"
+                raise ValueError(
+                    f"{prefix}: {field_name} must be {bounds} or None, got {value!r}."
+                )
 
     @property
     def criteria(self) -> tuple[ReplayCriterion, ...]:
@@ -1370,48 +1399,56 @@ def _segment_detection_p_value(
 
 
 def detect_rank_order_replay(
-    env: Environment,
+    env: Environment | Mapping[str, Environment],
     spike_times: Any,
     interval: tuple[float, float] | NDArray[np.float64],
-    encoding_models: NDArray[np.float64] | SpatialRatesResult,
+    encoding_models: Any,
     *,
     rank_order_method: RankOrderMethod,
+    template: str | None = None,
     rng: np.random.Generator | int | None = None,
 ) -> ReplayDetectionResult:
     """Apply one published rank-order method to one candidate event.
 
     Parameters
     ----------
-    env : Environment
+    env : Environment or Mapping[str, Environment]
         The environment of the rate maps: a 1-D environment or a linearized
-        track.
+        track; or one environment per template.
     spike_times : array, sequence of arrays, or spike group
         Spike times in seconds, one train per cell, in the order of the rows
         of ``encoding_models``.
     interval : (start, stop)
         The candidate event, in seconds.
-    encoding_models : array of shape (n_cells, n_bins), or SpatialRatesResult
-        Each cell's rate map on ``env``, in Hz: the template cells of the
-        method's paper.
+    encoding_models : array of shape (n_cells, n_bins), SpatialRatesResult, or Mapping
+        Each cell's rate map on ``env``, in Hz; or a mapping of such rate
+        maps, one per template (such as each running direction), with the
+        cells in the same order.
     rank_order_method : RankOrderMethod
         The method, for example
         ``neurospatial.replay.methods.DIBA_BUZSAKI_2007``.
+    template : str or None
+        With a mapping of rate maps, the template to test; None lets the
+        method's ``template_choice`` choose.
     rng : np.random.Generator, int, or None
         Random number generator or seed for the cell-order permutations.
 
     Returns
     -------
     ReplayDetectionResult
-        The verdict, the rank-order correlation as ``score``, its p-value
-        and the active-cell criteria. An event with too few active cells, or
-        with all field positions or firing times equal, has a NaN score and
-        is not replay.
+        The verdict, the rank-order correlation as ``score``, its p-value,
+        the active-cell criteria and, with several templates, the tested
+        ``template``. An event with too few active template cells, or with
+        all field positions or firing times equal, has a NaN score and is
+        not replay.
 
     Raises
     ------
     ValueError
-        For inputs :func:`~neurospatial.replay.rank_order_correlation`
-        refuses.
+        If a mapping of rate maps is given without ``template=`` to a method
+        without a ``template_choice``, or ``template`` is not one of its
+        keys; or for inputs
+        :func:`~neurospatial.replay.rank_order_correlation` refuses.
 
     See Also
     --------
@@ -1442,47 +1479,129 @@ def detect_rank_order_replay(
     >>> result.is_replay, result.score
     (True, -1.0)
     """
-    from neurospatial.replay.rank_order import (
-        _field_positions,
-        rank_order_correlation,
-        rank_order_significance,
-    )
-
     method = rank_order_method
-    options: dict[str, Any] = {
-        "spike_statistic": method.spike_statistic,
-        "field_order": method.field_order,
-        "min_active_cells": method.min_active_cells,
-    }
-    observed = rank_order_correlation(
-        env, spike_times, interval, encoding_models, **options
+    if isinstance(encoding_models, Mapping):
+        names: list[str | None] = list(encoding_models)
+        if template is not None:
+            if template not in encoding_models:
+                raise ValueError(
+                    f"detect_rank_order_replay(): template {template!r} is not "
+                    f"one of {list(encoding_models)}."
+                )
+            names = [template]
+        elif method.template_choice is None:
+            raise ValueError(
+                _format_error(
+                    f"detect_rank_order_replay(): method {method.name!r} needs "
+                    "template= with several rate-map sets.",
+                    why="it tests one template and has no rule to choose one",
+                    fix=f"pass template= one of {list(encoding_models)}",
+                )
+            )
+    else:
+        names = [None]
+    generator = np.random.default_rng(rng)
+    seeds = generator.integers(2**63, size=len(names))
+    results = []
+    for name, seed in zip(names, seeds, strict=True):
+        if isinstance(env, Mapping):
+            if name is None:
+                raise ValueError(
+                    "detect_rank_order_replay(): a mapping of environments "
+                    "needs a mapping of rate maps with the same templates."
+                )
+            template_env = env[name]
+        else:
+            template_env = env
+        results.append(
+            _rank_order_verdict(
+                template_env,
+                spike_times,
+                interval,
+                encoding_models if name is None else encoding_models[name],
+                method,
+                template=name,
+                rng=np.random.default_rng(seed),
+            )
+        )
+    if len(results) == 1:
+        return results[0]
+    detected = [result for result in results if result.is_replay]
+
+    def strength(result: ReplayDetectionResult) -> tuple[float, float]:
+        cells = result.values[method.criteria[0].label]
+        return cells, abs(result.score) if np.isfinite(result.score) else -1.0
+
+    return max(detected or results, key=strength)
+
+
+def _rank_order_verdict(
+    env: Environment,
+    spike_times: Any,
+    interval: Any,
+    encoding_models: Any,
+    method: RankOrderMethod,
+    *,
+    template: str | None,
+    rng: np.random.Generator,
+) -> ReplayDetectionResult:
+    """One template's rank-order verdict."""
+    from scipy import stats
+
+    from neurospatial.replay.rank_order import (
+        _event_pairs,
+        _field_positions,
+        _permuted_correlations,
+        _result,
     )
+    from neurospatial.stats.shuffle import compute_shuffle_pvalue
+
+    operation = "detect_rank_order_replay()"
+    # Validates the rates against env, then keeps the template cells' maps.
+    _field_positions(env, encoding_models, method.field_order, operation)
+    rates = np.asarray(
+        getattr(encoding_models, "firing_rates", encoding_models), dtype=np.float64
+    )
+    if method.min_peak_rate is not None:
+        peak = np.where(np.isfinite(rates), rates, 0.0).max(axis=1)
+        rates = np.where((peak >= method.min_peak_rate)[:, None], rates, np.nan)
+    pairs = _event_pairs(
+        env,
+        spike_times,
+        interval,
+        rates,
+        spike_statistic=method.spike_statistic,
+        field_order=method.field_order,
+        min_active_cells=method.min_active_cells,
+        operation=operation,
+    )
+    observed = _result(pairs, method.spike_statistic, method.field_order)
     score = float(observed.score)
     p_value = np.nan
     if np.isfinite(score):
-        if method.test == "analytic":
-            p_value = float(observed.analytic_p_value)
+        if method.test == "t_distribution":
+            n = pairs.times.size
+            if abs(score) >= 1.0:
+                p_value = 0.0
+            else:
+                t = score * np.sqrt((n - 2) / (1.0 - score**2))
+                p_value = float(2.0 * stats.t.sf(abs(t), n - 2))
         else:
+            n_active = observed.n_active_cells
+            permutations = np.argsort(rng.random((method.n_shuffles, n_active)), axis=1)
+            null = _permuted_correlations(pairs, permutations)
+            # Ties in rho differ by rounding between the two formulas.
             p_value = float(
-                rank_order_significance(
-                    env,
-                    spike_times,
-                    interval,
-                    encoding_models,
-                    **options,
-                    alternative=method.alternative,
-                    n_shuffles=method.n_shuffles,
-                    rng=rng,
-                ).p_value
+                compute_shuffle_pvalue(
+                    round(score, 12), np.round(null, 12), tail=method.alternative
+                )
             )
-    with_field = np.isfinite(
-        _field_positions(
-            env, encoding_models, method.field_order, "detect_rank_order_replay()"
-        )
+    n_templates = int(
+        np.isfinite(_field_positions(env, rates, method.field_order, operation)).sum()
     )
     event_values = {
         "n_active_cells": float(observed.n_active_cells),
-        "active_fraction": observed.n_active_cells / max(int(with_field.sum()), 1),
+        "active_fraction": observed.n_active_cells / max(n_templates, 1),
     }
     passes: dict[str, bool] = {}
     values: dict[str, float] = {}
@@ -1498,6 +1617,7 @@ def detect_rank_order_replay(
         p_value=p_value,
         criteria=passes,
         values=values,
+        template=template,
     )
 
 
@@ -1530,8 +1650,9 @@ def compare_replay_methods(
         The methods to compare. A rank-order method scores each event's
         spikes over the event's decoding windows, from the first window's
         start to the last window's end (``times[0] - dt / 2`` to
-        ``times[-1] + dt / 2``), against ``encoding_models`` (for a mapping,
-        ``encoding_models[template]``).
+        ``times[-1] + dt / 2``), against ``encoding_models``: with a mapping
+        of rate maps, the one named by ``template``, or the one its
+        ``template_choice`` picks.
     spike_counts : sequence of arrays or None
         Each event's spike counts, for methods that need them.
     encoding_models, dt, prior, template
@@ -1634,28 +1755,6 @@ def compare_replay_methods(
                     "encoding_models and the decoding window dt",
                 )
             )
-        if (isinstance(encoding_models, Mapping) or isinstance(env, Mapping)) and (
-            template is None
-        ):
-            raise ValueError(
-                _format_error(
-                    "compare_replay_methods(): rank-order methods need "
-                    "template= with a mapping of rate maps or environments.",
-                    why="a rank-order correlation compares the spikes with one "
-                    "template's field order",
-                    fix="pass template=, the name of the template to test",
-                )
-            )
-        rank_models = (
-            encoding_models[template]
-            if isinstance(encoding_models, Mapping)
-            else encoding_models
-        )
-        if isinstance(env, Mapping):
-            assert template is not None
-            rank_env = env[template]
-        else:
-            rank_env = env
     pool = None
     if any(
         "pseudo_event" in method.nulls
@@ -1697,14 +1796,24 @@ def compare_replay_methods(
                 assert dt is not None
                 centers = np.asarray(event_times[index], dtype=np.float64)
                 ranked = detect_rank_order_replay(
-                    rank_env,
+                    env,
                     spike_times,
                     (centers[0] - dt / 2, centers[-1] + dt / 2),
-                    rank_models,
+                    encoding_models,
                     rank_order_method=method,
+                    template=None
+                    if isinstance(encoding_models, Mapping)
+                    and method.template_choice is not None
+                    else template,
                     rng=stream,
                 )
-                rows.append({"event": index, **ranked.summary(), "error": ""})
+                error = (
+                    ""
+                    if np.isfinite(ranked.score)
+                    else "rank-order correlation undefined: too few active "
+                    "template cells, or no variation in their order"
+                )
+                rows.append({"event": index, **ranked.summary(), "error": error})
                 continue
             counts = None if spike_counts is None else np.asarray(spike_counts[index])
             usable = np.asarray(event_times[index])
@@ -2172,22 +2281,30 @@ FOSTER_WILSON_2006 = RankOrderMethod(
     ),
     spike_statistic="all_spikes",
     field_order="peak",
+    min_peak_rate=5.0,
     min_active_cells=3,
     min_active_fraction=1 / 3,
-    test="analytic",
+    test="t_distribution",
     alpha=0.05,
     notes=(
         "Rank-order correlation between cell number, in order of field "
-        "peaks, and spike time, with its analytic probability; P < 0.05. "
-        "The paper does not say which spikes; Silva et al. (2015) describe "
-        "the same measure as the time of every spike against its cell's "
-        "ranked peak, which is used here.",
-        "Takigawa et al. (2024) found about 17% false positives for every "
-        "spike with the analytic p-value, because a cell's spikes share one "
-        "field position.",
-        "Events are proto-events in which at least a third of the probe "
-        "sequence's cells fired: pass the probe-sequence cells (peak rate "
-        "of at least 5 Hz, interneurons excluded) as encoding_models.",
+        "peaks, and time, with its probability from Numerical Recipes "
+        "(the t-distribution for every sample size); P < 0.05.",
+        "The paper does not say which spikes it correlated. Every spike is "
+        "used here; Takigawa et al. (2024) group Foster & Wilson with "
+        "analyses of whole proto-events rather than of all spikes, so first "
+        "or median spikes are defensible readings too. With every spike, a "
+        "cell's spikes share one field position, and Takigawa et al. found "
+        "about 17% false positives when spikes were permuted one by one, "
+        "which, like this p-value, treats them as independent.",
+        "Probe sequence: cells with a peak rate of at least 5 Hz for one "
+        "running direction, interneurons excluded (exclude them from "
+        "encoding_models); events are proto-events in which at least a "
+        "third of them fired. The paper gives no fewer-cell limit; 3 is the "
+        "fewest for a correlation.",
+        "Each running direction was analyzed with its own probe sequence, "
+        "during stops facing the direction just run: pass that direction's "
+        "rate maps, or a mapping of both with template=.",
         "Events longer than 500 ms were rejected; event selection is not "
         "applied here. The 100 cell-order permutations per event fed a "
         "session-level Kolmogorov-Smirnov test, not a per-event test.",
@@ -2203,20 +2320,30 @@ DIBA_BUZSAKI_2007 = RankOrderMethod(
     ),
     spike_statistic="first",
     field_order="peak",
+    min_peak_rate=5.0,
     min_active_cells=5,
     min_active_fraction=0.3,
     test="cell_order",
     alternative="two-sided",
     n_shuffles=500,
     alpha=0.1,
+    template_choice="most_active",
     notes=(
         "First spike of each cell against the place-field order; 500 "
         "shuffles of neuron identity. An event is significant when its "
         "correlation is more positive or more negative than 95% of the "
         "shuffles: 5% in each tail, a two-sided p-value below 0.10.",
+        "Templates are each trajectory's cells with a stable, single place "
+        "field peaking at 5 Hz or more; the peak rule is applied, stability "
+        "and single fields are left to the rate maps passed.",
+        "Events were detected for each trajectory template; an event "
+        "detected on both was assigned to the one with more participating "
+        "cells, or else the stronger correlation: pass a mapping of both "
+        "templates' rate maps.",
         "Events are 300 ms windows, preceded by at least 60 ms of silence, "
-        "in which at least 30% or 5 of the place cells fired, whichever was "
-        "greater; the cell thresholds are applied, the windows are not.",
+        "in which at least 30% or 5 of a template's place cells fired, "
+        "whichever was greater; the cell thresholds are applied, the "
+        "windows are not.",
     ),
 )
 

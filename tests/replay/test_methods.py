@@ -1562,18 +1562,63 @@ class TestRankOrderMethods:
         assert result.values["active_fraction >= 0.3"] == pytest.approx(0.2)
         assert not result.is_replay
 
-    def test_foster_uses_every_spike_and_the_analytic_p(self, place_code):
+    def test_foster_uses_every_spike_and_the_t_distribution(self, place_code):
+        """First spikes run in field order, second spikes in reverse.
+
+        Every spike gives a weaker correlation than first spikes alone, and
+        its p-value comes from the t-distribution over all 28 spikes.
+        """
+        from scipy import stats
+
+        from neurospatial.replay import rank_order_correlation
+
         env, rates = place_code
+        cells = list(range(10, 24))  # 14 of 40 cells
+        trains = [np.array([]) for _ in range(40)]
+        for k, cell in enumerate(cells):
+            trains[cell] = np.array([1.0 + 0.005 * k, 1.2 - 0.003 * k])
+        result = detect_rank_order_replay(
+            env, trains, (1.0, 1.3), rates, rank_order_method=FOSTER_WILSON_2006
+        )
+        every = rank_order_correlation(
+            env, trains, (1.0, 1.3), rates, spike_statistic="all_spikes"
+        )
+        first = rank_order_correlation(
+            env, trains, (1.0, 1.3), rates, spike_statistic="first"
+        )
+        assert result.score == pytest.approx(every.score)
+        assert result.score < first.score
+        t = every.score * np.sqrt(26 / (1 - every.score**2))
+        assert result.p_value == pytest.approx(2 * stats.t.sf(abs(t), 26))
+
+    def test_only_template_cells_count(self, place_code):
+        """14 template cells peak at 20 Hz; 26 others peak at 1 Hz.
+
+        Six template cells fire in field order and eight weak cells fire at
+        random: the weak cells neither join the correlation nor dilute the
+        active fraction.
+        """
+        env, rates = place_code
+        template = np.zeros(40, dtype=bool)
+        template[np.arange(0, 40, 3)[:14]] = True
+        scaled = rates / rates.max(axis=1, keepdims=True)
+        mixed = np.where(template[:, None], 20.0 * scaled, 1.0 * scaled)
+        firing = list(np.flatnonzero(template)[2:8])
+        weak = np.flatnonzero(~template)[::-3][:8]
+        trains = _firing(firing)
+        for k, cell in enumerate(weak):
+            trains[cell] = np.array([1.003 + 0.007 * k])
         result = detect_rank_order_replay(
             env,
-            _firing(range(10, 24), spikes_per_cell=2),  # 14 of 40 cells
+            trains,
             (1.0, 1.2),
-            rates,
-            rank_order_method=FOSTER_WILSON_2006,
+            mixed,
+            rank_order_method=DIBA_BUZSAKI_2007,
+            rng=0,
         )
+        assert result.score == pytest.approx(1.0)
+        assert result.values["active_fraction >= 0.3"] == pytest.approx(6 / 14)
         assert result.is_replay
-        assert result.criteria["active_fraction >= 0.333333"]
-        assert result.p_value < 1e-6
 
     def test_too_few_cells_is_not_replay(self, place_code):
         env, rates = place_code
@@ -1628,7 +1673,9 @@ class TestRankOrderMethods:
     @pytest.mark.parametrize(
         ("kwargs", "match"),
         [
-            ({"test": "analytic", "alternative": "greater"}, "two-sided"),
+            ({"test": "t_distribution", "alternative": "greater"}, "two-sided"),
+            ({"spike_statistic": "last"}, "spike_statistic"),
+            ({"min_peak_rate": -1.0}, "min_peak_rate"),
             ({"test": "bootstrap"}, "test must be"),
             ({"min_active_cells": 2}, "min_active_cells"),
             ({"min_active_fraction": 1.5}, "min_active_fraction"),
@@ -1647,9 +1694,11 @@ class TestRankOrderMethods:
                 {
                     "spike_statistic": "all_spikes",
                     "field_order": "peak",
+                    "min_peak_rate": 5.0,
                     "min_active_fraction": 1 / 3,
-                    "test": "analytic",
+                    "test": "t_distribution",
                     "alpha": 0.05,
+                    "template_choice": None,
                 },
             ),
             (
@@ -1657,8 +1706,10 @@ class TestRankOrderMethods:
                 {
                     "spike_statistic": "first",
                     "field_order": "peak",
+                    "min_peak_rate": 5.0,
                     "min_active_cells": 5,
                     "min_active_fraction": 0.3,
+                    "template_choice": "most_active",
                     "test": "cell_order",
                     "alternative": "two-sided",
                     "n_shuffles": 500,
@@ -1671,3 +1722,121 @@ class TestRankOrderMethods:
     def test_rank_order_recipes_match_the_papers(self, method, expected):
         for name, value in expected.items():
             assert getattr(method, name) == value, name
+
+
+class TestRankOrderTemplates:
+    @pytest.fixture(scope="class")
+    def directions(self, place_code):
+        """Outbound fields in cell order; inbound fields in a shuffled order."""
+        env, rates = place_code
+        inbound = rates[np.random.default_rng(7).permutation(40)]
+        return env, {"outbound": rates, "inbound": inbound}
+
+    def test_diba_takes_the_template_the_event_is_replay_on(self, directions):
+        env, templates = directions
+        result = detect_rank_order_replay(
+            env,
+            _firing(range(10, 25)),
+            (1.0, 1.2),
+            templates,
+            rank_order_method=DIBA_BUZSAKI_2007,
+            rng=0,
+        )
+        assert result.template == "outbound" and result.is_replay
+
+    def test_diba_breaks_a_tie_by_active_cells(self, place_code):
+        """The event is reverse replay on both; inbound has fewer cells."""
+        env, rates = place_code
+        inbound = rates[::-1].copy()
+        inbound[25:30] = 1.0  # below 5 Hz: not template cells
+        result = detect_rank_order_replay(
+            env,
+            _firing(range(10, 30)),
+            (1.0, 1.3),
+            {"inbound": inbound, "outbound": rates},
+            rank_order_method=DIBA_BUZSAKI_2007,
+            rng=0,
+        )
+        assert result.template == "outbound"
+        assert result.values["n_active_cells >= 5"] == 20.0
+
+    def test_a_named_template_is_tested(self, directions):
+        env, templates = directions
+        result = detect_rank_order_replay(
+            env,
+            _firing(range(10, 25)),
+            (1.0, 1.2),
+            templates,
+            rank_order_method=DIBA_BUZSAKI_2007,
+            template="inbound",
+            rng=0,
+        )
+        assert result.template == "inbound" and not result.is_replay
+        with pytest.raises(ValueError, match="'sideways' is not one of"):
+            detect_rank_order_replay(
+                env,
+                _firing(range(10, 25)),
+                (1.0, 1.2),
+                templates,
+                rank_order_method=DIBA_BUZSAKI_2007,
+                template="sideways",
+            )
+
+    def test_foster_needs_the_direction(self, directions):
+        env, templates = directions
+        with pytest.raises(ValueError, match="needs template="):
+            detect_rank_order_replay(
+                env,
+                _firing(range(10, 25)),
+                (1.0, 1.2),
+                templates,
+                rank_order_method=FOSTER_WILSON_2006,
+            )
+
+    def test_compare_scores_only_spikes_in_the_decoding_windows(self, place_code):
+        """Cells fire in reverse field order just before the event.
+
+        The event's windows span 0.99 to 1.21 s; counted, the earlier
+        reversed spikes would be every cell's first spike.
+        """
+        env, rates = place_code
+        trains = _firing(range(10, 25))
+        for k, cell in enumerate(range(10, 25)):
+            trains[cell] = np.r_[0.95 - 0.003 * k, trains[cell]]
+        grid = 1.0 + DT * np.arange(11)  # windows from 0.99 to 1.21 s
+        decoded = decode_position(
+            env, np.zeros((11, 40), dtype=int), rates, dt=DT, times=grid
+        )
+        tables = [
+            compare_replay_methods(
+                env,
+                [decoded],
+                replay_methods=[DIBA_BUZSAKI_2007],
+                spike_times=trains,
+                encoding_models=rates,
+                dt=DT,
+                rng=5,
+            )
+            for _ in range(2)
+        ]
+        assert tables[0]["score"].iloc[0] == pytest.approx(1.0)
+        assert tables[0]["is_replay"].iloc[0]
+        np.testing.assert_equal(
+            tables[0]["p_value"].to_numpy(), tables[1]["p_value"].to_numpy()
+        )
+
+    def test_compare_explains_an_undefined_correlation(self, place_code):
+        env, rates = place_code
+        grid = 1.0 + DT * np.arange(5)
+        decoded = decode_position(
+            env, np.zeros((5, 40), dtype=int), rates, dt=DT, times=grid
+        )
+        table = compare_replay_methods(
+            env,
+            [decoded],
+            replay_methods=[DIBA_BUZSAKI_2007],
+            spike_times=_firing([10, 11]),
+            encoding_models=rates,
+            dt=DT,
+        )
+        assert "too few active template cells" in table["error"].iloc[0]
