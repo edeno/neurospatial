@@ -60,7 +60,8 @@ event_properties, detection_rates, method_agreement : Calibrate methods on a
     comparison table: rates (false positives on null data) by event
     property, with confidence intervals, and agreement between methods
 null_events, simulated_null_events, decode_intervals : Events without replay
-    (cell-identity, spike-shift and Poisson copies of real events, or
+    (cell-identity, spike-shift, uniform-spike-time and rate-matched
+    Poisson copies of real events, or
     simulated random and stationary events) to measure false positives
 matched_alpha, apply_alpha : Each method's alpha that holds its
     false-positive rate on null data to a target, and verdicts at it

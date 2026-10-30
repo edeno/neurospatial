@@ -195,7 +195,8 @@ Detecting the candidate events (ripples, population bursts) is not included.
   directions, and compare their verdicts; `ReplaySegmentation` sets how
   criteria-based methods find the trajectory segment
 - `null_events()`, `simulated_null_events()`, `decode_intervals()`: Events
-  without replay (cell-identity, spike-shift and Poisson copies of real events,
+  without replay (cell-identity, spike-shift, uniform-spike-time and
+  rate-matched Poisson copies of real events,
   simulated random and stationary events) for false-positive rates
 - `event_properties()`, `detection_rates()`, `method_agreement()`: Calibrate
   methods on a comparison table: rates by event property with confidence

@@ -112,6 +112,14 @@ other seeded simulations give the same spikes as before.
   `"spike_train_circular"` or `"spike_time_uniform"`: after the drop they
   would spread spikes over the kept time bins only, and their shuffles have
   new empty time bins that cannot be dropped. Use `"zero"`.
+- `null_events(kind="poisson")` is renamed `kind="spike_time_uniform"`: it
+  keeps each cell's count and redraws the spike times, Stella et al.'s
+  spike jittering, not the papers' Poisson surrogate. The new
+  `kind="rate_poisson"` is that surrogate: each cell's count in a null
+  event is Poisson(rate x duration), with the cell's rate pooled over all
+  `intervals` (as in nelpy), so it does not keep the event's own count.
+  Grosmark & Buzsáki estimated rates per behavioral epoch and running
+  direction: call `null_events` once per group.
 - The `time_bin_permutation` docs say it is the "time swap" of Silva et al.
   (2015) and Maboudi et al. (2018) and the "time-bin shuffle" of Grosmark &
   Buzsáki (2016) and Farooq et al. (2019).
@@ -266,14 +274,19 @@ New functions in `neurospatial.replay` make events without replay, to
 measure each method's false-positive rate on several kinds of null data:
 
 - `null_events(spike_times, intervals, kind=, n_copies=, cells=)` copies
-  real candidate events and breaks their order in one of three ways. Only
+  real candidate events and breaks their order in one of four ways. Only
   the `cells` you select are randomized, for example the decoder's place
   cells; the rest keep their spikes:
   - `"cell_identity"`: spike trains reassigned to cells at random
     (Takigawa et al. 2024);
   - `"spike_shift"`: each cell's spikes shifted circularly within the
     event;
-  - `"poisson"`: each cell keeps its count, with spikes placed at random.
+  - `"spike_time_uniform"`: each cell keeps its count, with spikes placed
+    at random (Stella et al. 2019);
+  - `"rate_poisson"`: each cell's count is drawn from its mean rate over
+    all the intervals, with spikes placed at random (the Poisson surrogates
+    of Silva et al. 2015, Grosmark & Buzsáki 2016 and Farooq et al. 2019);
+    the event's own counts are not kept.
 
   Overlapping intervals are refused: their shared spikes would be copied
   into two null events.
@@ -297,7 +310,7 @@ replay methods to the same decoded events (simulated sweeps, stationary
 and random events). It then:
 
 - measures each method's false-positive rate on cell-identity, spike-shift
-  and Poisson copies of the events, broken down by active cells;
+  and uniform-spike-time copies of the events, broken down by active cells;
 - compares the methods at a matched false-positive rate;
 - shows how to run the same steps on your own recording.
 

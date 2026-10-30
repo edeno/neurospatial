@@ -249,7 +249,7 @@ A false-positive rate needs events known to contain no replay. No single
 kind of null event is right. Each keeps some structure of real events and
 breaks the rest, and a method looks best on null data that repeats its own
 shuffle (Takigawa et al. 2024). `null_events` makes null events from your
-own candidate events in three ways:
+own candidate events in four ways:
 
 - `"cell_identity"` reassigns spike trains among cells (Takigawa et al.
   2024). It keeps the population's timing but breaks the link between cells
@@ -258,17 +258,28 @@ own candidate events in three ways:
 - `"spike_shift"` shifts each cell's spikes circularly within the event. It
   keeps which cells fire and how much, but breaks their order. Tirole's
   spike-train shuffle does the same.
-- `"poisson"` keeps each cell's spike count and draws new spike times.
+- `"spike_time_uniform"` keeps each cell's spike count and draws new spike
+  times, uniformly over the event (the "spike jittering" of Stella et al.
+  2019).
+- `"rate_poisson"` draws each cell's count again, from its mean rate over
+  all the events you pass, and places the spikes uniformly. These are the
+  Poisson surrogate data of Silva et al. (2015), Grosmark & Buzsáki (2016)
+  and Farooq et al. (2019). Unlike the other kinds, it does not keep an
+  event's own spike counts, so every null event carries the session's mean
+  activity rather than the event's burst. Grosmark & Buzsáki estimated the
+  rates separately for each behavioral epoch and running direction: call
+  `null_events` once per group of events.
 
-Here we make two copies of each sweep for each kind. Each kind is decoded
-like the real events and scored in its own `compare_replay_methods` call,
-because the pseudo-event shuffle draws from every event in a call.
+Here we make two copies of each sweep for the first three kinds, which
+keep each event's spike counts. Each kind is decoded like the real events and scored in its own
+`compare_replay_methods` call, because the pseudo-event shuffle draws from
+every event in a call.
 
 <!-- docs-test: run -->
 ```python
 sweeps = intervals[kinds == "sweep"]
 null_tables, decoded_nulls = [], {}
-for null_kind in ("cell_identity", "spike_shift", "poisson"):
+for null_kind in ("cell_identity", "spike_shift", "spike_time_uniform"):
     null = null_events(rest_spikes, sweeps, kind=null_kind, n_copies=2, rng=2)
     null_decoded, null_counts = decode_intervals(
         env, null.spike_times, null.intervals, rates, dt=dt
@@ -319,16 +330,16 @@ its spikes, so they are not independent and these intervals are too narrow.
 More real events, not more copies, narrow them.
 
 - `DAVIDSON_2009` calls none of the cell-identity copies replay, which its
-  own cell-identity shuffle repeats, but a third to a half of the spike-shift
-  and Poisson copies. Those copies keep which cells fire, so their posterior
-  stays in the part of the track the sweep covered. As with stationary
-  events, its shuffles test only that the posterior is concentrated
-  somewhere.
+  own cell-identity shuffle repeats, but a third to a half of the
+  spike-shift and uniform-spike-time copies. Those copies keep which cells
+  fire, so their posterior stays in the part of the track the sweep
+  covered. As with stationary events, its shuffles test only that the
+  posterior is concentrated somewhere.
 - `WU_2017` calls 12% of the cell-identity copies replay at α = 0.05, and
   `TIROLE_2022` stays near its α. `DIBA_BUZSAKI_2007` calls 17% of the
-  spike-shift and Poisson copies replay at α = 0.1: those copies keep which
-  cells fire, and in a sweep that covers part of the track those cells'
-  fields still lie along it.
+  spike-shift and uniform-spike-time copies replay at α = 0.1: those copies
+  keep which cells fire, and in a sweep that covers part of the track
+  those cells' fields still lie along it.
 - `SILVA_2015` has no shuffles, and its thresholds keep its rate low on
   every kind.
 
@@ -425,9 +436,9 @@ and the rank-order cell-order test already repeat. Those methods look
 conservative on these copies, so they get a larger α. Takigawa et al.
 matched on cell-identity copies for methods without such a shuffle. The last
 table applies the matched α to the other kinds: `DAVIDSON_2009`, now at
-α = 0.18, calls nearly every spike-shift and Poisson copy replay. Match on
-null data that none of the compared methods repeats, and report the rates
-on the other kinds and on simulated replay with it. The `alpha` column of
+α = 0.18, calls nearly every spike-shift and uniform-spike-time copy
+replay. Match on null data that none of the compared methods repeats, and
+report the rates on the other kinds and on simulated replay with it. The `alpha` column of
 `matched_alpha` is NaN for a method no α can hold to the target, and a
 warning says why.
 
