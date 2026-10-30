@@ -70,7 +70,7 @@ class ArmReplayMethod:
         (Berners-Lee et al. 2021).
     merge_max_gap : float or None
         With ``"runs"``, runs merge when the time between the last time bin
-        of one and the first of the next is below this, in seconds.
+        of one and the first of the next is at most this, in seconds.
     coverage : {"represented", "mean_range"}
         ``"represented"``: the share of the arm's bins whose largest
         posterior over the subregion exceeds the threshold (Wu & Foster
@@ -87,7 +87,8 @@ class ArmReplayMethod:
         al. 2021).
     joint_same_sign : bool
         A joint replay also needs both arms' correlations to have the joint
-        subregion's sign along the path (Wu & Foster 2014).
+        subregion's sign along the path (Wu & Foster 2014), for either
+        ``joint``.
     arm_fallback : bool
         Without a replay, an event with a run on some arm is still a replay
         of that arm, the run with the largest absolute correlation if it is
@@ -143,6 +144,12 @@ class ArmReplayMethod:
                     f"{prefix}: {name} must be one of {list(allowed)}, got "
                     f"{getattr(self, name)!r}."
                 )
+        for name in ("joint_same_sign", "arm_fallback"):
+            if not isinstance(getattr(self, name), bool):
+                raise ValueError(
+                    f"{prefix}: {name} must be True or False, got "
+                    f"{getattr(self, name)!r}."
+                )
         gap = self.merge_max_gap
         if gap is not None and (self.subregions != "runs" or not gap >= 0):
             raise ValueError(
@@ -189,18 +196,20 @@ def detect_arm_replay(
 ) -> ReplayDetectionResult:
     """Find a single-arm or joint-arm replay in one decoded event.
 
-    Each arm's subregion is the run of time bins around the largest peak
-    of the arm's smoothed peak posterior, while that stays above
-    ``peak_threshold`` times chance. A single-arm subregion is a replay
-    when it is long enough, covers enough of the arm and its posterior
-    is correlated with time. Each pair of arms forms a joint subregion,
-    from the first to the last time bin of their subregions, over the
-    path from one arm's end through the junction to the other's: it is a
-    replay when its correlation passes, both arms' subregions are long
-    and cover enough, and both arms' correlations have the joint
-    subregion's sign along the path. A joint
-    replay is reported only when no other pair is one; single-arm replays
-    only when no pair is one (Wu & Foster 2014).
+    An arm's subregions are runs of time bins in which the arm's smoothed
+    peak posterior stays above ``peak_threshold`` times chance: the run
+    around its largest peak (Wu & Foster 2014), or every long-enough run,
+    merged across short gaps (Berners-Lee et al. 2021). A subregion is a
+    single-arm replay when it is long enough, covers enough of the arm and
+    its posterior is correlated with time. Two arms form a joint
+    subregion over the path from one arm's end through the junction to
+    the other's, which is a joint replay when its correlation passes,
+    both arms' subregions are long and cover enough and, with
+    ``joint_same_sign``, both arms' correlations have the joint's sign.
+    ``joint`` sets which replay is reported: the only joint pair, else
+    every single arm (Wu & Foster 2014), or the strongest joint pair,
+    else the strongest single arm (Berners-Lee et al. 2021); with
+    ``arm_fallback``, else the strongest sustained run.
 
     Parameters
     ----------
@@ -226,11 +235,15 @@ def detect_arm_replay(
     ReplayDetectionResult
         ``is_replay`` and ``template``: the replayed arm (``"left"``), arms
         (``"center,left"`` for single-arm replays of each), or pair
-        (``"center+left"`` for a joint replay); ``score`` is that replay's
-        absolute weighted correlation (the largest, for several arms).
-        ``criteria`` and ``values`` hold each arm's ``duration``,
-        ``coverage`` and ``|wc|`` and each pair's ``|wc|`` and ``same sign as
-        joint``, keyed like ``"left: coverage > 0.5"``.
+        (``"center+left"``, in time order for ``"strongest_pair"``);
+        ``score`` is that replay's absolute weighted correlation (the
+        largest, for several arms). ``criteria`` and ``values`` hold each
+        arm's ``duration``, ``coverage`` and ``|wc|`` (of its strongest
+        subregion) and each pair's ``|wc|`` and, with ``joint_same_sign``,
+        ``same sign as joint``, keyed like ``"left: coverage > 0.5"``. With
+        ``arm_fallback``, ``criteria["sequence"]`` is False for an
+        arm-replay that met none of the sequence rules; its ``score`` may
+        be below the threshold or NaN.
 
     Raises
     ------
@@ -248,13 +261,18 @@ def detect_arm_replay(
     bin's index against the position's index along the arm (or the
     path), weighted by the posterior (Wu & Foster 2014). A position bin is
     represented when its largest posterior over the subregion's time bins
-    exceeds the threshold; coverage is the share of the arm's bins that
-    are represented. The subregion surrounds the first time bin of the
-    largest smoothed peak, and the Gaussian is truncated at 4 standard
-    deviations.
+    exceeds the threshold; ``coverage="represented"`` is the share of the
+    arm's bins that are represented and ``"mean_range"`` the range of the
+    posterior mean, in bins, over the arm's bins. A largest-peak
+    subregion surrounds the first time bin of the largest smoothed peak,
+    and the Gaussian is truncated at 4 standard deviations.
 
     References
     ----------
+    Berners-Lee, A., Wu, X., & Foster, D. J. (2021). Prefrontal cortical
+    neurons are selective for non-local hippocampal representations during
+    replay and behavior. *Journal of Neuroscience*, 41(27), 5894-5908.
+
     Wu, X., & Foster, D. J. (2014). Hippocampal replay captures the unique
     topological structure of a novel environment. *Journal of
     Neuroscience*, 34(19), 6459-6469.
@@ -367,28 +385,35 @@ def detect_arm_replay(
         path = np.r_[arm_bins[first.arm][::-1], arm_bins[second.arm]]
         return _pixel_correlation(posterior[start:stop][:, path])
 
+    def same_sign(first: _Run, second: _Run, correlation: float) -> bool:
+        # Along the path, the first arm is read from its end inward.
+        return bool(
+            np.sign(-first.correlation)
+            == np.sign(second.correlation)
+            == np.sign(correlation)
+            != 0
+        )
+
+    def strongest(arm_runs: list[_Run]) -> _Run:
+        return max(arm_runs, key=lambda run: run.strength)
+
     joint_criterion = ReplayCriterion("|wc|", ">", method.joint_min_abs_correlation)
     template: str | None = None
     score = np.nan
+    sequence = True
     if method.joint == "only_pair":
         joint: list[tuple[str, float]] = []
         for first_arm, second_arm in combinations(arm_bins, 2):
             pair = f"{first_arm}+{second_arm}"
             if runs[first_arm] and runs[second_arm]:
-                first, second = runs[first_arm][0], runs[second_arm][0]
+                first, second = strongest(runs[first_arm]), strongest(runs[second_arm])
                 correlation = joint_correlation(
                     first,
                     second,
                     min(first.start, second.start),
                     max(first.stop, second.stop),
                 )
-                # Along the path, the first arm is read from its end inward.
-                same_way = bool(
-                    np.sign(-first.correlation)
-                    == np.sign(second.correlation)
-                    == np.sign(correlation)
-                    != 0
-                )
+                same_way = same_sign(first, second, correlation)
                 long_and_covered = first.long_and_covered and second.long_and_covered
             else:
                 correlation, same_way, long_and_covered = np.nan, False, False
@@ -405,13 +430,15 @@ def detect_arm_replay(
             ):
                 joint.append((pair, abs(correlation)))
         single = [
-            name for name, arm_runs in runs.items() if arm_runs and arm_runs[0].passes
+            name
+            for name, arm_runs in runs.items()
+            if arm_runs and strongest(arm_runs).passes
         ]
         if len(joint) == 1:
             template, score = joint[0]
         elif not joint and single:
             template = ",".join(single)
-            score = max(abs(runs[name][0].correlation) for name in single)
+            score = max(abs(strongest(runs[name]).correlation) for name in single)
     else:
         replays = [run for arm_runs in runs.values() for run in arm_runs if run.passes]
         best_pair: tuple[str, float] | None = None
@@ -422,28 +449,38 @@ def detect_arm_replay(
             pair = f"{first.arm}+{second.arm}"
             # From the first replay's start to the second's end, as the
             # Berners-Lee et al. code does.
-            correlation = abs(
-                joint_correlation(first, second, first.start, second.stop)
-            )
+            signed = joint_correlation(first, second, first.start, second.stop)
+            correlation = abs(signed)
             label = f"{pair}: {joint_criterion.label}"
             if correlation > values.get(label, -np.inf):
                 values[label] = float(correlation)
                 passes[label] = joint_criterion.evaluate(correlation, np.nan)
-            if joint_criterion.evaluate(correlation, np.nan) and (
-                best_pair is None or correlation > best_pair[1]
+            agrees = same_sign(first, second, signed)
+            if method.joint_same_sign:
+                sign_label = f"{pair}: same sign as joint"
+                passes[sign_label] = passes.get(sign_label, False) or agrees
+                values[sign_label] = float(passes[sign_label])
+            if (
+                joint_criterion.evaluate(correlation, np.nan)
+                and (agrees or not method.joint_same_sign)
+                and (best_pair is None or correlation > best_pair[1])
             ):
                 best_pair = (pair, correlation)
         if best_pair is not None:
             template, score = best_pair
         elif replays:
-            strongest = max(replays, key=lambda run: run.strength)
-            template, score = strongest.arm, abs(strongest.correlation)
+            best = strongest(replays)
+            template, score = best.arm, abs(best.correlation)
     if template is None and method.arm_fallback:
         sustained = [run for arm_runs in runs.values() for run in arm_runs]
         strengths = [run.strength for run in sustained]
         if sustained and strengths.count(max(strengths)) == 1:
-            strongest = sustained[strengths.index(max(strengths))]
-            template, score = strongest.arm, abs(strongest.correlation)
+            best = sustained[strengths.index(max(strengths))]
+            template, score = best.arm, abs(best.correlation)
+            sequence = False
+    if method.arm_fallback:
+        passes["sequence"] = template is not None and sequence
+        values["sequence"] = float(passes["sequence"])
     return ReplayDetectionResult(
         method=method.name,
         is_replay=template is not None,
@@ -504,7 +541,7 @@ def _arm_runs(
             if long_enough.evaluate((span[1] - span[0]) * dt, np.nan)
         ]
         if method.merge_max_gap is not None:
-            gap = ReplayCriterion("gap", "<", method.merge_max_gap)
+            gap = ReplayCriterion("gap", "<=", method.merge_max_gap)
             merged: list[tuple[int, int]] = []
             for span in spans:
                 # Time between the previous run's last bin and this run's first.

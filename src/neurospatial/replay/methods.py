@@ -3022,7 +3022,7 @@ BERNERS_LEE_2021 = ArmReplayMethod(
     min_abs_correlation=0.3,
     joint_min_abs_correlation=0.3,
     subregions="runs",
-    merge_max_gap=0.055,
+    merge_max_gap=0.05,
     coverage="mean_range",
     joint="strongest_pair",
     joint_same_sign=False,
@@ -3034,12 +3034,12 @@ BERNERS_LEE_2021 = ArmReplayMethod(
         "directions (D = OutMatrix + InMatrix), e.g. the joint decode's "
         "shares added together.",
         "Each arm's largest posterior per window, smoothed with a Gaussian "
-        "of one 5 ms step (the paper cites Wu & Foster's 10 ms), against 4 "
-        "/ (bins of the maze). Runs of at least 11 windows (end - start >= "
-        "10 steps: min_duration 55 ms here) are kept and merged when the "
-        "next starts fewer than 11 steps after the previous ends. The "
-        "code's merge loses the end of a chain of three or more runs; the "
-        "whole chain is merged here.",
+        "of one 5 ms step (the paper cites Wu & Foster for the smoothing "
+        "without a width), against 4 / (bins of the maze). Runs of at least "
+        "11 windows (end - start >= 10 steps: min_duration 55 ms here) are "
+        "kept and merged when the next starts at most 10 steps after the "
+        "previous ends (merge_max_gap 50 ms). The code's merge loses the end "
+        "of a chain of three or more runs; the whole chain is merged here.",
         "Single-arm replay: |weighted correlation| > 0.3, the range of the "
         "posterior mean along the arm over more than 50% of its bins, and "
         "at least 50 ms; the code's maximum jump (< the arm's length) never "
@@ -3047,18 +3047,22 @@ BERNERS_LEE_2021 = ArmReplayMethod(
         "Joint replay: among single-arm replays on different arms, ordered "
         "by start, the subregion runs from the first's start to the second's "
         "end along the path through the junction; the strongest pair with "
-        "|weighted correlation| >= 0.3 in the code (> here). Neither the "
-        "same-sign nor the non-overlap condition of the paper is checked by "
-        "the code, nor here.",
+        "|weighted correlation| >= 0.3 in the code (> here). The paper's "
+        "condition that the two replays do not overlap is not checked by the "
+        "code, nor here; Wu & Foster's same-sign rule is off "
+        "(joint_same_sign=False).",
         "Otherwise the strongest single-arm replay; otherwise, as the paper "
         "defines arm-replays, the run with the largest correlation on any "
         "arm that stayed above the threshold for 50 ms, if it is the only "
-        "one, even when it fails the correlation and coverage rules.",
+        "one, even when it fails the correlation and coverage rules "
+        "(criteria['sequence'] is False for these). In simulations these "
+        "were 40-70% of the single-arm outcomes.",
         "Events were padded by 20 ms on each side and centered on whole "
         "20 ms windows; column-cycle shuffles (5,000, resampling time bins "
         "with replacement) are computed but not part of the arm-replay "
         "definition. Place fields were smoothed with 2 bins in the code, 3 "
-        "in the paper.",
+        "in the paper. A port of the code agrees with this recipe on 24,000 "
+        "of 24,000 simulated events once its merge is corrected.",
     ),
 )
 
