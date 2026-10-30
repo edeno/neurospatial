@@ -3364,39 +3364,43 @@ def compare_replay_methods(
                     template,
                     [stream_for(index, rank_method) for index in range(len(events))],
                 )
+    from neurospatial.replay.significance import _checking_pool_once
+
     rows = []
-    for index, event in enumerate(events):
-        for method in replay_methods:
-            stream = stream_for(index, method)
-            # A shuffle test's warning names the event and method it is about.
-            with _warnings_with_context(
-                f"compare_replay_methods(): event {index}, method {method.name!r}"
-            ):
-                row = _compare_row(
-                    env,
-                    event,
-                    np.asarray(event_times[index]),
-                    method,
-                    spike_counts=None
-                    if spike_counts is None
-                    else np.asarray(spike_counts[index]),
-                    encoding_models=encoding_models,
-                    dt=dt,
-                    prior=prior,
-                    template=template,
-                    valid_time_bins=None
-                    if valid_time_bins is None
-                    else valid_time_bins[index],
-                    spike_times=spike_times,
-                    arms=arms,
-                    template_bias=template_bias,
-                    pool=pool,
-                    pooled=pooled_verdicts[method.name][index]
-                    if method.name in pooled_verdicts
-                    else None,
-                    rng=stream,
-                )
-            rows.append({"event": index, **row})
+    # Every event and method tests against the same pool: check it once.
+    with _checking_pool_once(pool):
+        for index, event in enumerate(events):
+            for method in replay_methods:
+                stream = stream_for(index, method)
+                # A shuffle test's warning names the event and method it is about.
+                with _warnings_with_context(
+                    f"compare_replay_methods(): event {index}, method {method.name!r}"
+                ):
+                    row = _compare_row(
+                        env,
+                        event,
+                        np.asarray(event_times[index]),
+                        method,
+                        spike_counts=None
+                        if spike_counts is None
+                        else np.asarray(spike_counts[index]),
+                        encoding_models=encoding_models,
+                        dt=dt,
+                        prior=prior,
+                        template=template,
+                        valid_time_bins=None
+                        if valid_time_bins is None
+                        else valid_time_bins[index],
+                        spike_times=spike_times,
+                        arms=arms,
+                        template_bias=template_bias,
+                        pool=pool,
+                        pooled=pooled_verdicts[method.name][index]
+                        if method.name in pooled_verdicts
+                        else None,
+                        rng=stream,
+                    )
+                rows.append({"event": index, **row})
     table = _fail_criteria_of_error_rows(pd.DataFrame(rows), replay_methods)
     table.attrs["rng_entropy"] = entropy
     return table

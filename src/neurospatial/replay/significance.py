@@ -9,10 +9,12 @@ the largest among the nulls run (Davidson et al. 2009; Tirole et al. 2022).
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import inspect
 import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
@@ -774,7 +776,7 @@ def replay_significance(
         weighted = shuffle_posterior_weighted_circular(
             track_env,
             posterior,
-            pool.mean(axis=0),
+            _pool_mean(pool),
             **options_of["column_cycle_weighted"],
             n_shuffles=n_shuffles,
             rng=generator,
@@ -1454,6 +1456,39 @@ def _supported_rates(
     return rates, base * support
 
 
+@dataclass
+class _CheckedPool:
+    """A pseudo-event pool shared by many tests, with its rows once checked."""
+
+    pool: Any
+    rows: NDArray[np.float64] | None = None
+    mean: NDArray[np.float64] | None = None
+
+
+# Inside _checking_pool_once(pool): that pool, and its rows once checked.
+_CHECKED_POOL: ContextVar[_CheckedPool | None] = ContextVar(
+    "_CHECKED_POOL", default=None
+)
+
+
+@contextlib.contextmanager
+def _checking_pool_once(pool: Any) -> Iterator[None]:
+    """Check ``pool``'s rows, and take its mean row, once inside this block.
+
+    A caller that runs many tests on one pseudo-event pool, such as
+    :func:`compare_replay_methods` testing every event with every method,
+    runs them inside this block, which the pool must not change in: a test
+    given this same pool object reuses the first check that passed instead
+    of checking every row again. A pool that fails is checked, and refused,
+    by every test, as outside the block.
+    """
+    token = _CHECKED_POOL.set(_CheckedPool(pool))
+    try:
+        yield
+    finally:
+        _CHECKED_POOL.reset(token)
+
+
 def _validated_pool(pool: Any, env: Environment) -> NDArray[np.float64]:
     from neurospatial.replay.trajectory import _require_probability_rows
 
@@ -1469,7 +1504,23 @@ def _validated_pool(pool: Any, env: Environment) -> NDArray[np.float64]:
                 "events, e.g. np.vstack([r.posterior for r in others])",
             )
         )
-    return _require_probability_rows(rows, _OPERATION)
+    shared = _CHECKED_POOL.get()
+    if shared is None or shared.pool is not pool:
+        return _require_probability_rows(rows, _OPERATION)
+    if shared.rows is None:
+        shared.rows = _require_probability_rows(rows, _OPERATION)
+    return shared.rows
+
+
+def _pool_mean(pool: NDArray[np.float64]) -> NDArray[np.float64]:
+    """The mean row of a checked pool, taken once inside :func:`_checking_pool_once`."""
+    shared = _CHECKED_POOL.get()
+    if shared is None or shared.rows is not pool:
+        mean: NDArray[np.float64] = pool.mean(axis=0)
+        return mean
+    if shared.mean is None:
+        shared.mean = pool.mean(axis=0)
+    return shared.mean
 
 
 def _unwrap_partial(
