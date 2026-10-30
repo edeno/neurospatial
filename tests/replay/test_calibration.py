@@ -32,6 +32,8 @@ from neurospatial.replay import (
 from neurospatial.replay.methods import (
     CHENANI_2019,
     DIBA_BUZSAKI_2007,
+    FOSTER_WILSON_2006,
+    IGATA_2021,
     KARLSSON_FRANK_2009,
     SILVA_2015,
     WU_2017,
@@ -612,16 +614,18 @@ def _p_table(p_values, criteria=None, errors=None, method=KF):
     criteria = np.ones(n, bool) if criteria is None else np.asarray(criteria)
     errors = np.zeros(n, bool) if errors is None else np.asarray(errors)
     p_values = np.asarray(p_values, dtype=float)
-    return pd.DataFrame(
+    table = pd.DataFrame(
         {
             "event": np.arange(n),
             "method": method.name,
             "is_replay": criteria & ~errors & (p_values < method.alpha),
             "p_value": p_values,
-            KF_CRITERION: criteria,
             "error": np.where(errors, "fewer than two time bins to score", ""),
         }
     )
+    for criterion in method.criteria:
+        table[f"passes[{criterion.label}]"] = criteria
+    return table
 
 
 class TestMatchedAlpha:
@@ -665,11 +669,40 @@ class TestMatchedAlpha:
         row = matched_alpha(table, replay_methods=[KF]).iloc[0]
         assert row["alpha"] == 1.0 and row["rate"] == 0.0
 
-    def test_warns_when_null_events_crowd_the_smallest_p_value(self):
-        table = _p_table([1 / 101] * 3 + [0.5] * 17)
+    def test_warns_at_the_smallest_p_value_the_shuffles_give(self):
+        floor = 1 / (KF.n_shuffles + 1)
+        table = _p_table([floor] * 3 + [0.5] * 17)
         with pytest.warns(UserWarning, match="more shuffles"):
             row = matched_alpha(table, replay_methods=[KF]).iloc[0]
-        assert row["alpha"] == pytest.approx(1 / 101) and row["rate"] == 0.0
+        assert row["alpha"] == floor and row["rate"] == 0.0
+
+    def test_warns_with_too_few_null_events(self):
+        table = _p_table([0.3] + [0.6] * 9)
+        with pytest.warns(UserWarning, match="more null events"):
+            row = matched_alpha(table, replay_methods=[KF]).iloc[0]
+        assert row["alpha"] == 0.3 and row["rate"] == 0.0
+
+    def test_no_alpha_when_too_many_correlations_are_perfect(self):
+        fw = FOSTER_WILSON_2006
+        table = _p_table([0.0] * 3 + [0.5] * 17, method=fw)
+        with pytest.warns(UserWarning, match="p = 0"):
+            row = matched_alpha(table, replay_methods=[fw]).iloc[0]
+        assert np.isnan(row["alpha"]) and np.isnan(row["rate"])
+        with pytest.raises(ValueError, match="no alpha holds"):
+            apply_alpha(table, alpha={fw.name: row["alpha"]}, replay_methods=[fw])
+
+    def test_an_ordinary_match_does_not_warn(self):
+        table = _p_table([0.002, 0.01, 0.03, 0.04] + [0.5] * 16)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            matched_alpha(table, replay_methods=[KF])
+
+    def test_a_missing_group_is_its_own_group(self):
+        table = _p_table([0.01, 0.5, 0.01, 0.5]).assign(session=["a", "a", None, None])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            matched = matched_alpha(table, replay_methods=[KF], groups=["session"])
+        assert matched["n_events"].tolist() == [2, 2]
 
     def test_matches_each_group_separately(self):
         table = pd.concat(
@@ -701,6 +734,14 @@ class TestMatchedAlpha:
             other = table.assign(method=method.name)
             with pytest.raises(ValueError, match="do not test a p-value"):
                 matched_alpha(other, replay_methods=[method])
+        diba = _p_table([0.01, 0.5], method=DIBA_BUZSAKI_2007)
+        with pytest.warns(UserWarning, match="more null events"):
+            matched_alpha(diba, replay_methods=[DIBA_BUZSAKI_2007])
+        with pytest.raises(ValueError, match="several templates"):
+            matched_alpha(
+                diba.assign(template=["inbound", "outbound"]),
+                replay_methods=[DIBA_BUZSAKI_2007],
+            )
 
 
 class TestApplyAlpha:
@@ -731,6 +772,9 @@ class TestApplyAlpha:
             apply_alpha(table, alpha={KF.name: 0.0}, replay_methods=[KF])
         with pytest.raises(ValueError, match="not in the table"):
             apply_alpha(table, alpha={"kf": 0.01}, replay_methods=[KF])
+        per_kind = pd.Series([0.01, 0.02], index=[KF.name, KF.name])
+        with pytest.raises(ValueError, match="more than once"):
+            apply_alpha(table, alpha=per_kind, replay_methods=[KF])
         with pytest.raises(ValueError, match="do not test a p-value"):
             apply_alpha(
                 table.assign(method=SILVA_2015.name),
@@ -778,22 +822,34 @@ def _compare(track, rates, trains, intervals, methods):
 
 def test_apply_alpha_matches_running_the_method_at_that_alpha(track, sweeps_and_nulls):
     """Rethresholding the table equals running the method at the new alpha."""
-    rates, real, _ = sweeps_and_nulls
+    # Real sweeps and their cell-identity copies, so p-values spread out.
+    rates, real, null = sweeps_and_nulls
+    trains = [
+        np.concatenate([a, b + 100.0]) for a, b in zip(*[real[0], null[0]], strict=True)
+    ]
+    intervals = np.vstack([real[1], null[1] + 100.0])
     methods = [
         dataclasses.replace(WU_2017, n_shuffles=200),
         dataclasses.replace(DIBA_BUZSAKI_2007, n_shuffles=200),
+        FOSTER_WILSON_2006,
+        # A segment-detection test with a decoding null.
+        dataclasses.replace(IGATA_2021, n_shuffles=50),
     ]
-    table = _compare(track, rates, *real, methods)
-    alphas = {methods[0].name: 0.011, methods[1].name: 0.3}
+    table = _compare(track, rates, trains, intervals, methods)
+    alphas = dict(zip([m.name for m in methods], [0.011, 0.3, 0.5, 0.5], strict=True))
     rerun = _compare(
         track,
         rates,
-        *real,
+        trains,
+        intervals,
         [dataclasses.replace(m, alpha=alphas[m.name]) for m in methods],
     )
     applied = apply_alpha(table, alpha=alphas, replay_methods=methods)
     np.testing.assert_array_equal(applied["is_replay"], rerun["is_replay"])
     np.testing.assert_array_equal(applied["p_value"], rerun["p_value"])
+    # Each method's verdicts change at its new alpha, so the check bites.
+    changed = applied["is_replay"].to_numpy() != table["is_replay"].to_numpy()
+    assert set(table.loc[changed, "method"]) == set(alphas)
 
 
 def test_matched_alpha_holds_the_false_positive_rate(track, sweeps_and_nulls):
