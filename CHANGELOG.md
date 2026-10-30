@@ -84,6 +84,22 @@ other seeded simulations give the same spikes as before.
   direction of exactly −π as +π, the package's (−π, π] convention.
 ### Replay scoring robustness
 
+- Rank-order field peaks and centers ignore bins outside a rate result's
+  `spatial_support`: a finite rate where the animal never went could place
+  a field there and reverse the event's correlation.
+- The exact Spearman bound `2 / n!` no longer overflows for 171 or more
+  spike-time pairs (`FOSTER_WILSON_2006` with every spike).
+- One template's share of a joint decode is scored as the posterior given
+  the template (rows divided by their sums) for every score except the
+  weighted correlation with `row_normalization="none"`, which uses the
+  joint weights; `WU_2017` or a line search with `template=` refused the
+  share's rows, which sum to the template's probability. Nulls that decode
+  again condition each shuffle the same way.
+- A sampled score of a method without shuffles draws from the method's
+  seed, so `rng` and `table.attrs["rng_entropy"]` reproduce it.
+- `compare_replay_methods` refuses an event decoded on an environment that
+  differs from `env`; distances were read on the wrong bins.
+
 - `detect_replay`, `compare_replay_methods` and `event_properties` compare
   environments with the same check as decoding: coordinate system, units,
   cells and connectivity. `event_properties` used to measure an event on
