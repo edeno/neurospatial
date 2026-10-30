@@ -21,6 +21,7 @@ reproduced, are listed in each recipe's ``notes``.
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import operator
 from collections.abc import Callable, Mapping, Sequence
@@ -33,9 +34,15 @@ from numpy.typing import NDArray
 
 from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ResultMixin
+from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
 from neurospatial.replay.correlation import weighted_correlation
+from neurospatial.replay.significance import (
+    _ALTERNATIVES,
+    _DECODING_NULLS,
+    _NULLS,
+    _ROW_MOVING_NULLS,
+)
 from neurospatial.replay.trajectory import (
     detect_trajectory_radon,
     fit_isotonic_trajectory,
@@ -83,9 +90,6 @@ __all__ = [
 ]
 
 _OPERATION = "detect_replay()"
-_DECODING_NULLS = ("unit_identity", "spike_train_circular", "place_field_circular")
-# Nulls whose shuffled rows no longer match the event's valid time bins.
-_ROW_MOVING_NULLS = ("pseudo_event", "spike_train_circular", "time_bin_permutation")
 # Criterion quantities read from the tested segment of ReplaySegmentsResult.
 _SEGMENT_QUANTITIES = {
     "segment_duration": "durations",
@@ -93,6 +97,14 @@ _SEGMENT_QUANTITIES = {
     "segment_dispersion": "dispersions",
     "segment_start_to_end_distance": "start_to_end_distances",
     "segment_path_length": "path_lengths",
+}
+# The scale each ReplaySegmentation option may be given relative to.
+_SEGMENT_OPTION_SCALES = {
+    "max_jump": "track_length",
+    "max_spread": "track_length",
+    "merge_max_distance": "track_length",
+    "min_dispersion": "track_length",
+    "min_peak_probability": "chance",
 }
 # Criterion quantities that compare the templates of a joint decode.
 _TEMPLATE_QUANTITIES = ("template_fraction", "segment_template_fraction")
@@ -102,6 +114,28 @@ _COMPARISONS: dict[str, Callable[[float, float], bool]] = {
     ">": operator.gt,
     ">=": operator.ge,
 }
+
+
+def _criterion_quantities() -> tuple[str, ...]:
+    """The quantities a criterion of a :class:`ReplayMethod` can test."""
+    from typing import get_type_hints
+
+    from neurospatial.replay.criteria import TrajectoryMetrics
+
+    hints = get_type_hints(TrajectoryMetrics)
+    scalars = [
+        item.name
+        for item in dataclasses.fields(TrajectoryMetrics)
+        if hints[item.name] in (int, float)
+    ]
+    return (
+        "score",
+        "n_active_cells",
+        "active_fraction",
+        *_SEGMENT_QUANTITIES,
+        *_TEMPLATE_QUANTITIES,
+        *scalars,
+    )
 
 
 @dataclass(frozen=True)
@@ -148,7 +182,27 @@ class ReplayCriterion:
     absolute: bool = False
 
     def __post_init__(self) -> None:
-        """Refuse unknown comparisons and scales."""
+        """Refuse unknown comparisons and scales, and non-numeric thresholds."""
+        threshold = self.threshold
+        if (
+            isinstance(threshold, bool)
+            or not isinstance(threshold, (int, float, np.integer, np.floating))
+            or not np.isfinite(threshold)
+        ):
+            raise ValueError(
+                _format_error(
+                    f"ReplayCriterion {self.quantity!r}: threshold must be a "
+                    f"finite number, got {threshold!r}.",
+                    why="an event is compared with the threshold, and a NaN "
+                    "threshold fails every event",
+                    fix="give the paper's threshold as a number, such as 0.5",
+                )
+            )
+        if not isinstance(self.absolute, (bool, np.bool_)):
+            raise ValueError(
+                f"ReplayCriterion {self.quantity!r}: absolute must be True or "
+                f"False, got {self.absolute!r}."
+            )
         if self.comparison not in _COMPARISONS:
             raise ValueError(
                 f"ReplayCriterion: comparison must be one of "
@@ -205,10 +259,11 @@ class ReplaySegmentation:
         ``units``.
     relative_to : Mapping[str, {"track_length", "chance"}]
         Options given as a multiple of a property of the environment.
-        ``"track_length"`` multiplies the option by the track's length;
-        ``"chance"`` multiplies it by ``1 / env.n_bins``, the mass per bin
-        of a uniform posterior on equal bins (Igata et al. 2021: a MAP
-        above 5 times chance).
+        ``"track_length"`` multiplies a distance option (``max_jump``,
+        ``max_spread``, ``merge_max_distance``, ``min_dispersion``) by the
+        track's length; ``"chance"`` multiplies ``min_peak_probability`` by
+        ``1 / env.n_bins``, the mass per bin of a uniform posterior on equal
+        bins (Igata et al. 2021: a MAP above 5 times chance).
     choose : {"longest", "any"}
         Which segment is tested. ``"longest"`` tests the longest segment,
         as papers that truncate the event to its longest sequence and then
@@ -239,16 +294,21 @@ class ReplaySegmentation:
     rows: Literal["segment", "trajectory"] = "segment"
 
     def __post_init__(self) -> None:
-        """Freeze the mappings and refuse options replay_segments does not take."""
-        from neurospatial.replay.segments import replay_segments
+        """Freeze the mappings and refuse options replay_segments would refuse."""
+        from neurospatial.replay.segments import (
+            _checked_options,
+            _threshold,
+            replay_segments,
+        )
 
         object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
         object.__setattr__(
             self, "relative_to", MappingProxyType(dict(self.relative_to))
         )
+        parameters = inspect.signature(replay_segments).parameters
         accepted = [
             name
-            for name, parameter in inspect.signature(replay_segments).parameters.items()
+            for name, parameter in parameters.items()
             if parameter.kind is inspect.Parameter.KEYWORD_ONLY
             and name != "valid_time_bins"
         ]
@@ -271,11 +331,39 @@ class ReplaySegmentation:
                 "not in options; add their values to options or remove them "
                 "from relative_to."
             )
-        scales = sorted(set(self.relative_to.values()) - {"track_length", "chance"})
-        if scales:
+        mismatched = {
+            name: scale
+            for name, scale in self.relative_to.items()
+            if _SEGMENT_OPTION_SCALES.get(name) != scale
+        }
+        if mismatched:
             raise ValueError(
-                f"ReplaySegmentation: relative_to values must be 'track_length' "
-                f"or 'chance', got {scales}."
+                _format_error(
+                    f"ReplaySegmentation: relative_to={mismatched} scales "
+                    "options by a property they are not measured in.",
+                    why="'track_length' multiplies a distance (max_jump, "
+                    "max_spread, merge_max_distance, min_dispersion) and "
+                    "'chance' multiplies min_peak_probability, a posterior "
+                    "mass; times and counts have no scale",
+                    fix="pair each option with its scale, or give it in its own "
+                    "units and leave it out of relative_to",
+                )
+            )
+        # Check every option as replay_segments would; an option relative to
+        # chance is checked against 1 only once n_bins is known.
+        chance = [name for name, scale in self.relative_to.items() if scale == "chance"]
+        defaults = {
+            name: parameters[name].default
+            for name in accepted
+            if parameters[name].default is not inspect.Parameter.empty
+        }
+        given = {
+            name: value for name, value in self.options.items() if name not in chance
+        }
+        _checked_options("ReplaySegmentation", **{**defaults, **given})
+        for name in chance:
+            _threshold(
+                name, self.options[name], minimum="zero", operation="ReplaySegmentation"
             )
         if self.choose not in ("longest", "any"):
             raise ValueError(
@@ -312,16 +400,7 @@ class ReplaySegmentation:
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
-        return (
-            type(self),
-            (
-                dict(self.options),
-                dict(self.relative_to),
-                self.choose,
-                self.min_active_cells_per_time_bin,
-                self.rows,
-            ),
-        )
+        return reduce_through_constructor(self)
 
     def resolved_options(
         self, env: Environment, *, n_decoded_bins: int | None = None
@@ -381,14 +460,17 @@ class ReplayMethod:
         the p-value is the share of shuffles that also have one (Igata et
         al. 2021).
     score_options : Mapping[str, Any]
-        Options for ``score``. ``"n_samples_per_time_bin"`` is converted to
+        Options for ``score``, checked against its signature when the
+        method is made. ``"n_samples_per_time_bin"`` is converted to
         ``n_samples`` for each event, for samplers like
         :func:`~neurospatial.replay.fit_linear_trajectory` whose papers
         give a count per time bin.
     nulls : tuple of str
         Shuffles the score is tested against (see
-        :func:`~neurospatial.replay.replay_significance`). Empty for a method
-        without a per-event shuffle test.
+        :func:`~neurospatial.replay.replay_significance`), each named once;
+        a single name is one null. Empty for a method without a per-event
+        shuffle test. A method needs nulls, criteria or a segmentation:
+        without any, it would call every event replay.
     n_shuffles : int
         Shuffles per null.
     alpha : float
@@ -463,9 +545,38 @@ class ReplayMethod:
             self, "score_options", MappingProxyType(dict(self.score_options))
         )
         object.__setattr__(self, "decoding", MappingProxyType(dict(self.decoding)))
-        object.__setattr__(self, "nulls", tuple(self.nulls))
+        given: Any = self.nulls  # one name is one null, as in replay_significance
+        object.__setattr__(
+            self, "nulls", (given,) if isinstance(given, str) else tuple(given)
+        )
         object.__setattr__(self, "criteria", tuple(self.criteria))
         object.__setattr__(self, "notes", tuple(self.notes))
+        self._check_score()
+        quantities = _criterion_quantities()
+        unknown = sorted({c.quantity for c in self.criteria} - set(quantities))
+        if unknown:
+            raise ValueError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: criteria test {unknown}, which "
+                    "are not quantities of an event.",
+                    why="a criterion compares one number per event with its threshold",
+                    fix=f"use one of {list(quantities)}",
+                )
+            )
+        labels = [c.label for c in self.criteria]
+        repeated = sorted({label for label in labels if labels.count(label) > 1})
+        if repeated:
+            raise ValueError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: criteria {repeated} appear "
+                    "more than once.",
+                    why="each criterion's verdict and value are reported under "
+                    "its label, so criteria with one label would overwrite "
+                    "each other",
+                    fix="keep one criterion per label; two thresholds on one "
+                    "quantity in one direction reduce to the stricter one",
+                )
+            )
         if self.score is None and any(c.quantity == "score" for c in self.criteria):
             raise ValueError(
                 f"ReplayMethod {self.name!r}: a method without a score cannot "
@@ -549,29 +660,87 @@ class ReplayMethod:
                 f"ReplayMethod {self.name!r}: segment_template_fraction needs a "
                 "segmentation; give the method a ReplaySegmentation."
             )
-        from neurospatial.replay.significance import _NULLS
-
         unknown = [name for name in self.nulls if name not in _NULLS]
         if unknown:
             raise ValueError(
                 f"ReplayMethod {self.name!r}: unknown nulls {unknown}; choose "
                 f"from {list(_NULLS)}."
             )
-        if self.alternative not in ("greater", "less", "two-sided"):
+        repeated = sorted({name for name in self.nulls if self.nulls.count(name) > 1})
+        if repeated:
             raise ValueError(
-                f"ReplayMethod {self.name!r}: alternative must be 'greater', "
-                f"'less' or 'two-sided', got {self.alternative!r}."
+                f"ReplayMethod {self.name!r}: nulls {repeated} are named more "
+                "than once; name each null once and set the number of shuffles "
+                "per null with n_shuffles."
+            )
+        if self.alternative not in _ALTERNATIVES:
+            raise ValueError(
+                f"ReplayMethod {self.name!r}: alternative must be one of "
+                f"{list(_ALTERNATIVES)}, got {self.alternative!r}."
             )
         if not 0 < self.alpha < 1:
             raise ValueError(
                 f"ReplayMethod {self.name!r}: alpha must be in (0, 1), got "
                 f"{self.alpha!r}."
             )
-        if isinstance(self.n_shuffles, bool) or int(self.n_shuffles) < 1:
+        if (
+            isinstance(self.n_shuffles, bool)
+            or not isinstance(self.n_shuffles, (int, np.integer))
+            or self.n_shuffles < 1
+        ):
             raise ValueError(
                 f"ReplayMethod {self.name!r}: n_shuffles must be a positive "
                 f"integer, got {self.n_shuffles!r}."
             )
+        if not (self.nulls or self.criteria or self.segmentation is not None):
+            raise ValueError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: the method has no nulls, "
+                    "criteria or segmentation, so it tests nothing.",
+                    why="without a shuffle test, a threshold or a trajectory "
+                    "segment to find, every event would be called replay",
+                    fix="give nulls such as ('column_cycle',), criteria such as "
+                    "(ReplayCriterion('score', '>', 0.5, absolute=True),), or a "
+                    "ReplaySegmentation",
+                )
+            )
+
+    def _check_score(self) -> None:
+        """Refuse a score that is not callable or does not take score_options."""
+        if self.score is None:
+            if self.score_options:
+                raise ValueError(
+                    f"ReplayMethod {self.name!r}: score_options "
+                    f"{sorted(self.score_options)} need a score; give one or "
+                    "remove them."
+                )
+            return
+        if not callable(self.score):
+            raise TypeError(
+                f"ReplayMethod {self.name!r}: score must be a function "
+                "score(env, posterior, times, **score_options), such as "
+                f"weighted_correlation, or None; got {self.score!r}."
+            )
+        options = dict(self.score_options)
+        if "n_samples_per_time_bin" in options:
+            options["n_samples"] = options.pop("n_samples_per_time_bin")
+        try:
+            signature = inspect.signature(self.score)
+        except (TypeError, ValueError):  # no signature to check against
+            return
+        try:
+            signature.bind_partial(None, None, None, **options)
+        except TypeError as error:
+            name = getattr(self.score, "__name__", repr(self.score))
+            raise ValueError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: score_options "
+                    f"{sorted(self.score_options)} do not fit {name}"
+                    "(env, posterior, times, ...).",
+                    why=str(error),
+                    fix=f"use options {name} takes: {list(signature.parameters)[3:]}",
+                )
+            ) from None
 
     def __hash__(self) -> int:
         """Hash by name and reference; the option mappings are not hashable."""
@@ -579,28 +748,7 @@ class ReplayMethod:
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
-        return (
-            type(self),
-            (
-                self.name,
-                self.reference,
-                self.score,
-                dict(self.score_options),
-                self.nulls,
-                self.n_shuffles,
-                self.alpha,
-                self.alternative,
-                self.use_absolute,
-                self.empty_time_bins,
-                self.criteria,
-                self.segmentation,
-                self.units,
-                self.template_choice,
-                self.exclude_end_distance,
-                dict(self.decoding),
-                self.notes,
-            ),
-        )
+        return reduce_through_constructor(self)
 
 
 @dataclass(frozen=True)
@@ -698,7 +846,7 @@ class RankOrderMethod:
             "spike_statistic": _SPIKE_STATISTICS,
             "field_order": _FIELD_ORDERS,
             "test": ("t_distribution", "cell_order", "pooled_ssi"),
-            "alternative": ("greater", "less", "two-sided"),
+            "alternative": _ALTERNATIVES,
             "template_choice": (None, "most_active"),
         }
         for field_name, allowed in choices.items():
@@ -833,20 +981,7 @@ class ReplayDetectionResult(ResultMixin):
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
-        return (
-            type(self),
-            (
-                self.method,
-                self.is_replay,
-                self.score,
-                self.p_value,
-                dict(self.criteria),
-                dict(self.values),
-                self.segments,
-                self.segment,
-                self.template,
-            ),
-        )
+        return reduce_through_constructor(self)
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result.
