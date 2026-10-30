@@ -82,6 +82,58 @@ other seeded simulations give the same spikes as before.
   `grid_spacing` used to build grid cells with NaN spacing.
 - Head-direction and boundary-vector `ground_truth` report a preferred
   direction of exactly −π as +π, the package's (−π, π] convention.
+### Line and monotonic replay fits follow their papers
+
+`fit_linear_trajectory` and `fit_isotonic_trajectory` now compute the
+published scores, so their R² and scores can be compared with the papers
+and with the other replay scores.
+
+**`fit_linear_trajectory`**
+
+- `method="sample"` (default) follows Karlsson & Frank (2009). It draws
+  positions from each time bin's posterior and fits one least-squares line
+  through all the sampled points. `r_squared` is the R² of that line, so a
+  wide posterior lowers it. Before, a line was fit to each sampled sequence
+  separately and R² was computed from the posterior mean positions.
+- `n_samples` is now the total number of samples (default 10,000). Karlsson &
+  Frank drew 10,000 per decoded time bin; pass
+  `n_samples=10000 * n_decoded_time_bins` to match them.
+- New `spike_counts=` leaves out time bins without spikes, which cannot be
+  decoded (Karlsson & Frank 2009; Wu et al. 2017).
+- New `allocation=` sets how the samples are split among the time bins
+  sampled. `"equal"` (default) gives each the same number (Karlsson & Frank).
+  `"spikes"` gives each a random share in proportion to its spike count, as
+  the Jadhav-lab replay code does. The two weight time bins differently, so
+  their R² differ. With many samples the R² approaches the square of
+  `weighted_correlation` with those weights.
+- In `replay_significance`, `spike_counts` in `score_options` is refused with
+  nulls that move time bins (time-bin permutation, spike-train shift,
+  pseudo-events), because the counts would stay with the original rows.
+  Drop the spike-free time bins and their times before testing instead.
+- New `n_resamples=` (default 1) repeats the sampled fit. Slope, intercept
+  and R² are means over resamples, as in the Jadhav-lab code (500
+  resamples). `slope_std` is the standard deviation of the slope over
+  resamples, or None for a single resample. It shows how much the fit
+  changes between random draws, not how uncertain the replay speed is.
+- `method="map"` fits a line through the MAP positions (Wu et al. 2017).
+  With `spike_counts`, time bins without spikes are left out.
+- Fits that would have points at fewer than two times are refused, with
+  the reason and a fix.
+
+**`fit_isotonic_trajectory`**
+
+- Follows Michon et al. (2019). It fits the MAP positions (now the default
+  `method`) by isotonic regression, weighting each time bin by the posterior
+  probability of its MAP bin.
+- `score` is now Michon et al.'s score, the mean MAP probability times R²,
+  instead of R². `IsotonicFitResult` gains `mean_map_probability`, and
+  `summary()` reports both. Increasing and decreasing fits are both tried
+  and the one with the higher score is kept.
+- `r_squared` uses the same weights as the fit. Michon et al. do not say
+  whether R² is weighted; this is a choice made here.
+- `method="expected"` (posterior mean positions) is still available as a
+  variant not in Michon et al., with the same weights.
+
 ### Spike-train, place-field and time-bin nulls
 
 `replay_significance` gains three nulls, run when named in `nulls=`:

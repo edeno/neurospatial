@@ -40,9 +40,10 @@ times to build a peri-ripple histogram. For example::
 Functions
 ---------
 fit_isotonic_trajectory
-    Fit monotonic trajectory using isotonic regression.
+    Weighted isotonic fit of the MAP positions (Michon et al. 2019).
 fit_linear_trajectory
-    Fit linear trajectory with optional Monte Carlo uncertainty.
+    Line fit to positions sampled from the posterior (Karlsson & Frank
+    2009) or to the MAP positions (Wu et al. 2017).
 detect_trajectory_radon
     Fit the replay line holding the most posterior mass (Davidson et al. 2009).
 
@@ -76,12 +77,12 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, repr=False, eq=False)
 class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
-    """Container for isotonic regression trajectory fit results.
+    """A monotonic trajectory fit to a decoded event (Michon et al. 2019).
 
-    Isotonic regression fits a monotonic (non-decreasing or non-increasing)
-    function to the decoded position sequence. This is useful
-    for detecting replay events that represent sequential traversal of
-    spatial locations.
+    :func:`fit_isotonic_trajectory` fits a non-decreasing or non-increasing
+    position sequence to the decoded positions, weighting each time bin by
+    the posterior probability of its MAP position, and scores the fit by
+    the mean of those probabilities times the R² of the fit.
 
     Attributes
     ----------
@@ -90,10 +91,15 @@ class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
         shape (n_time_bins,). These are constrained to be non-decreasing or
         non-increasing in time.
     r_squared : float
-        Coefficient of determination (R²) measuring goodness of fit.
-        Range [0, 1] where 1 indicates perfect fit. NaN when the decoded
-        position never changes (a stationary decode), which has no variance
-        to explain.
+        Weighted coefficient of determination (R²) of the fit, with the same
+        weights as the fit (the posterior probability of each time bin's MAP
+        position). Range [0, 1] where 1 indicates a perfect fit. NaN when the
+        decoded position never changes (a stationary decode), which has no
+        variance to explain.
+    mean_map_probability : float
+        Mean over time bins of the posterior probability of each time bin's
+        MAP bin, :math:`\\frac{1}{T}\\sum_t P_{MAP,t}`, in (0, 1]. Near 1 when
+        every time bin decodes one bin with certainty.
     direction : {"increasing", "decreasing"} or None
         Monotonic constraint of the reported fit. "increasing" means
         position along the track does not decrease with time, "decreasing"
@@ -114,7 +120,7 @@ class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
     --------
     >>> result = fit_isotonic_trajectory(env, posterior, times)  # doctest: +SKIP
     >>> print(
-    ...     f"R² = {result.r_squared:.3f}, direction = {result.direction}"
+    ...     f"score = {result.score:.3f}, direction = {result.direction}"
     ... )  # doctest: +SKIP
     >>> replay_speed_cm_s = np.diff(result.fitted_positions) / np.diff(
     ...     times
@@ -123,6 +129,7 @@ class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
 
     fitted_positions: NDArray[np.float64]
     r_squared: float
+    mean_map_probability: float
     direction: Literal["increasing", "decreasing"] | None
     residuals: NDArray[np.float64]
 
@@ -132,21 +139,31 @@ class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
 
     @property
     def score(self) -> float:
-        """The replay score of this fit: its R²."""
-        return self.r_squared
+        """Replay score of Michon et al. (2019): ``mean_map_probability * r_squared``.
+
+        :math:`\\frac{1}{T}\\sum_t P_{MAP,t} \\times R^2`, in [0, 1]; NaN for a
+        stationary decode.
+        """
+        return self.mean_map_probability * self.r_squared
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
-        return {"r_squared": self.r_squared, "direction": self.direction}
+        return {
+            "score": self.score,
+            "r_squared": self.r_squared,
+            "mean_map_probability": self.mean_map_probability,
+            "direction": self.direction,
+        }
 
 
 @dataclass(frozen=True, repr=False)
 class LinearFitResult(ResultMixin):
-    """Container for linear trajectory fit results.
+    """A straight-line trajectory fit to a decoded event.
 
-    Linear regression fits a straight line to the decoded position sequence.
-    This provides slope (replay speed) and intercept estimates, optionally
-    with uncertainty quantification via Monte Carlo sampling.
+    :func:`fit_linear_trajectory` fits one least-squares line of position on
+    time, either to positions sampled from the posterior (Karlsson & Frank
+    2009) or to the MAP positions (Wu et al. 2017). With several resamples,
+    the slope, intercept and R² are means over resamples.
 
     Attributes
     ----------
@@ -162,15 +179,17 @@ class LinearFitResult(ResultMixin):
         values passed in, so shift ``times`` to the event start to read the
         intercept as the start position.
     r_squared : float
-        Coefficient of determination (R²) measuring goodness of fit, at
-        most 1 (a perfect linear relationship). NaN when the decoded
-        position never changes (a stationary decode), which has no variance
-        to explain.
+        Coefficient of determination (R²) of the line, in [0, 1] (1 for a
+        perfect linear relationship); for ``method="sample"`` the mean over
+        resamples of the R² of the line through each resample's sampled
+        positions. NaN when the decoded or sampled position never changes
+        (a stationary decode), which has no variance to explain.
     slope_std : float | None
-        Standard deviation of slope estimates from Monte Carlo sampling.
-        Measures the spread of sampled slopes across different draws from
-        the posterior. Only available when method="sample".
-        None when method="map" (deterministic fit).
+        Standard deviation of the slope over resamples, in environment units
+        per second: the Monte Carlo spread of the sampled fit, which shrinks
+        as ``n_samples`` grows. It is not an uncertainty of the replay speed
+        given the posterior. None for ``method="map"`` and for a single
+        resample.
 
     See Also
     --------
@@ -179,11 +198,9 @@ class LinearFitResult(ResultMixin):
 
     Examples
     --------
-    >>> result = fit_linear_trajectory(
-    ...     env, posterior, times, method="sample", rng=42
-    ... )  # doctest: +SKIP
+    >>> result = fit_linear_trajectory(env, posterior, times, rng=42)  # doctest: +SKIP
     >>> print(
-    ...     f"speed = {result.slope:.0f} ± {result.slope_std:.0f} cm/s"
+    ...     f"speed = {result.slope:.0f} cm/s, R² = {result.r_squared:.2f}"
     ... )  # doctest: +SKIP
     """
 
@@ -194,7 +211,7 @@ class LinearFitResult(ResultMixin):
 
     @property
     def score(self) -> float:
-        """The replay score of this fit: its R²."""
+        """The replay score of this fit: its R², as in both papers."""
         return self.r_squared
 
     def summary(self) -> dict[str, Any]:
@@ -404,6 +421,34 @@ def _require_probability_rows(
     )
 
 
+def _map_bins(
+    posterior: NDArray[np.float64],
+    starts: NDArray[np.float64],
+    stops: NDArray[np.float64],
+) -> NDArray[np.int64]:
+    """Bin of highest posterior density (mass per unit length) per time bin.
+
+    As :func:`~neurospatial.decoding.map_bin` does, so a long bin does not win
+    only by holding more track.
+
+    Parameters
+    ----------
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior mass per bin, bins in track order.
+    starts, stops : NDArray[np.float64], shape (n_bins,)
+        Where each bin starts and ends along the track, in track order.
+
+    Returns
+    -------
+    NDArray[np.int64], shape (n_time_bins,)
+        Column of ``posterior`` holding each time bin's MAP bin.
+    """
+    from neurospatial.decoding import _density_mode
+
+    lengths = stops - starts
+    return _density_mode(posterior, lengths / lengths.max())
+
+
 def _decoded_positions(
     posterior: NDArray[np.float64],
     starts: NDArray[np.float64],
@@ -419,24 +464,17 @@ def _decoded_positions(
     starts, stops : NDArray[np.float64], shape (n_bins,)
         Where each bin starts and ends along the track, in track order.
     method : {"map", "expected"}
-        ``"map"`` takes the center of the bin of highest density (mass per
-        unit length along the track), as :func:`~neurospatial.decoding.map_bin`
-        does, so a long bin does not win only by holding more track.
-        ``"expected"`` takes the posterior mean position.
+        ``"map"`` takes the center of the bin of highest density (see
+        :func:`_map_bins`). ``"expected"`` takes the posterior mean position.
 
     Returns
     -------
     NDArray[np.float64], shape (n_time_bins,)
         Position along the track, in environment units.
     """
-    from neurospatial.decoding import _density_mode
-
     centers = (starts + stops) / 2
     if method == "map":
-        lengths = stops - starts
-        positions: NDArray[np.float64] = centers[
-            _density_mode(posterior, lengths / lengths.max())
-        ]
+        positions: NDArray[np.float64] = centers[_map_bins(posterior, starts, stops)]
         return positions
     # The posterior is a probability mass per bin, so its mean position is
     # the mass-weighted mean of the bin centers.
@@ -449,14 +487,24 @@ def fit_isotonic_trajectory(
     times: NDArray[np.float64],
     *,
     increasing: bool | None = None,
-    method: Literal["map", "expected"] = "expected",
+    method: Literal["map", "expected"] = "map",
 ) -> IsotonicFitResult:
-    """Fit monotonic trajectory using isotonic regression.
+    """Fit a monotonic trajectory to a decoded event (Michon et al. 2019).
 
-    Isotonic regression fits a monotonic (non-decreasing or non-increasing)
-    function to the decoded position along the track. This is useful for
-    detecting replay events that represent sequential traversal of spatial
-    locations.
+    Fits the decoded positions with weighted isotonic regression: the best
+    non-decreasing (or non-increasing) position sequence in time, where each
+    time bin is weighted by the posterior probability of its MAP position,
+    so time bins decoded with confidence count more. The replay score of
+    Michon et al. combines how sharp the decode is with how monotonic it is,
+
+    .. math:: \\text{score} = \\frac{1}{T} \\sum_{t=1}^{T} P_{MAP,t}
+              \\times R^2,
+
+    where :math:`T` is the number of time bins and :math:`P_{MAP,t}` the
+    posterior probability of time bin ``t``'s MAP bin. An increasing and a
+    decreasing trajectory are both fit, and the one with the higher score is
+    kept. Test the score against shuffles with
+    :func:`~neurospatial.replay.replay_significance`.
 
     Parameters
     ----------
@@ -466,27 +514,27 @@ def fit_isotonic_trajectory(
         position of a track, or the coordinate of a 1-D environment), so the
         fit does not depend on how bins are numbered.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
-        Posterior probability distribution over spatial bins for each time bin.
-        Each row should sum to 1.
+        Posterior probability mass over spatial bins for each time bin. Each
+        row must sum to 1.
     times : NDArray[np.float64], shape (n_time_bins,)
-        Time values for each time bin. Used as the independent variable (x)
-        in the regression.
-    increasing : bool | None, optional
-        Direction constraint for the isotonic fit:
-        - True: Fit increasing (non-decreasing) monotonic function
-        - False: Fit decreasing (non-increasing) monotonic function
-        - None (default): Try both directions and return the one with higher R²
-    method : {"map", "expected"}, optional
-        How to extract position from the posterior for fitting:
-        - "map": Use the center of the MAP bin, the bin of highest posterior
-          density (mass per unit length along the track)
-        - "expected" (default): Use the posterior mean position
+        Center time of each posterior row, in seconds; the independent
+        variable of the fit.
+    increasing : bool or None, default=None
+        Direction of the fit. True fits a non-decreasing trajectory, False a
+        non-increasing one, and None (Michon et al.) fits both and keeps the
+        one with the higher score.
+    method : {"map", "expected"}, default="map"
+        The position fit at each time bin. ``"map"`` (Michon et al.) is the
+        center of the MAP bin, the bin of highest posterior density (mass
+        per unit length along the track). ``"expected"`` is the posterior
+        mean position, a variant not in Michon et al.; the weights and the
+        score are the same.
 
     Returns
     -------
     IsotonicFitResult
-        Container with fitted_positions, r_squared, direction, and residuals,
-        with positions in environment units along the track.
+        The fitted positions, R², mean MAP probability and direction of the
+        better fit; ``score`` is the replay score above.
 
     Raises
     ------
@@ -500,40 +548,63 @@ def fit_isotonic_trajectory(
     See Also
     --------
     IsotonicFitResult : Container for isotonic fit results.
-    fit_linear_trajectory : For unconstrained linear fits.
+    fit_linear_trajectory : For straight-line fits.
+    neurospatial.replay.replay_significance : Test the score against shuffles.
 
     Notes
     -----
-    This function uses scikit-learn's IsotonicRegression, which implements
-    the pool adjacent violators algorithm (PAVA). The R² is computed as:
+    **Fit.** The fit minimizes :math:`\\sum_t w_t (x_t - \\hat{x}_t)^2` over
+    monotonic :math:`\\hat{x}` with weights :math:`w_t = P_{MAP,t}`, by the
+    pool adjacent violators algorithm of scikit-learn's
+    ``IsotonicRegression``.
 
-    .. math::
+    **R².** Michon et al. do not say whether R² is weighted. Here it uses the
+    same weights as the fit,
 
-        R^2 = 1 - \\frac{SS_{res}}{SS_{tot}}
+    .. math:: R^2 = 1 - \\frac{\\sum_t w_t (x_t - \\hat{x}_t)^2}
+              {\\sum_t w_t (x_t - \\bar{x}_w)^2},
 
-    where :math:`SS_{res}` is the sum of squared residuals and :math:`SS_{tot}`
-    is the total sum of squares. If the decoded position never changes,
-    :math:`SS_{tot} = 0`: R² is NaN and ``direction`` is None.
+    with :math:`\\bar{x}_w` the weighted mean position, so it is the share of
+    the weighted variance that the weighted fit explains and lies in
+    [0, 1]. If the decoded position never changes, R² is NaN and
+    ``direction`` is None, so a stationary decode does not pass a score
+    screen. Both directions share :math:`P_{MAP,t}`, so the direction with
+    the higher score is the one with the higher R².
+
+    **Time bins.** Michon et al. used 10 ms time bins and do not say how
+    time bins without spikes were handled. Rows are fit as given: drop
+    undecodable time bins, together with their times, before fitting.
+
+    References
+    ----------
+    Michon, F., Sun, J.-J., Kim, C. Y., Ciliberti, D., & Kloosterman, F.
+    (2019). Post-learning hippocampal replay selectively reinforces spatial
+    memory for highly rewarded locations. *Current Biology*, 29(9),
+    1436-1444. https://doi.org/10.1016/j.cub.2019.03.048
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.replay.trajectory import fit_isotonic_trajectory
+    >>> from neurospatial.replay import fit_isotonic_trajectory
     >>>
-    >>> # A 100 cm track in 2 cm bins and a posterior that moves along it
+    >>> # A 100 cm track in 2 cm bins and a posterior that moves along it,
+    >>> # holding 0.8 of its mass in one bin per 10 ms time bin
     >>> env = Environment.linear_track(
     ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
     ... )
     >>> n_time_bins = 20
-    >>> posterior = np.zeros((n_time_bins, env.n_bins))
-    >>> for t in range(n_time_bins):
-    ...     posterior[t, t * 2] = 1.0  # Delta posteriors
-    >>> times = np.linspace(0, 1, n_time_bins)
+    >>> posterior = np.full((n_time_bins, env.n_bins), 0.2 / (env.n_bins - 1))
+    >>> posterior[np.arange(n_time_bins), 2 * np.arange(n_time_bins)] = 0.8
+    >>> times = np.arange(n_time_bins) * 0.01
     >>>
     >>> result = fit_isotonic_trajectory(env, posterior, times)
-    >>> print(f"R² = {result.r_squared:.3f}, direction = {result.direction}")
-    R² = 1.000, direction = increasing
+    >>> print(
+    ...     f"score = {result.score:.2f} (R² = {result.r_squared:.2f}, "
+    ...     f"mean MAP probability = {result.mean_map_probability:.2f}), "
+    ...     f"{result.direction}"
+    ... )
+    score = 0.80 (R² = 1.00, mean MAP probability = 0.80), increasing
     """
     from sklearn.isotonic import IsotonicRegression
 
@@ -545,14 +616,18 @@ def fit_isotonic_trajectory(
     )
     times = _require_times(times, len(posterior), "fit_isotonic_trajectory()")
     positions = _decoded_positions(posterior, starts, stops, method)
+    weights = posterior[np.arange(len(posterior)), _map_bins(posterior, starts, stops)]
 
-    # Fit the requested direction, or both and keep the better fit.
+    # Fit the requested direction, or both and keep the higher score; both
+    # share the MAP probabilities, so that is the higher R².
     directions = [True, False] if increasing is None else [increasing]
     fits = [
-        IsotonicRegression(increasing=direction).fit_transform(times, positions)
+        IsotonicRegression(increasing=direction).fit_transform(
+            times, positions, sample_weight=weights
+        )
         for direction in directions
     ]
-    r_squared = [_compute_r_squared(positions, fitted) for fitted in fits]
+    r_squared = [_compute_r_squared(positions, fitted, weights) for fitted in fits]
     best = 1 if len(fits) == 2 and r_squared[1] > r_squared[0] else 0
     # A decoded position that never changes has no direction.
     direction: Literal["increasing", "decreasing"] | None = None
@@ -561,13 +636,16 @@ def fit_isotonic_trajectory(
     return IsotonicFitResult(
         fitted_positions=fits[best],
         r_squared=r_squared[best],
+        mean_map_probability=float(np.mean(weights)),
         direction=direction,
         residuals=positions - fits[best],
     )
 
 
 def _compute_r_squared(
-    observed: NDArray[np.float64], predicted: NDArray[np.float64]
+    observed: NDArray[np.float64],
+    predicted: NDArray[np.float64],
+    weights: NDArray[np.float64] | None = None,
 ) -> float:
     """Compute R² (coefficient of determination), ``1 - SS_res / SS_tot``.
 
@@ -577,19 +655,26 @@ def _compute_r_squared(
         Observed values.
     predicted : NDArray[np.float64], shape (n_time_bins,)
         Predicted (fitted) values.
+    weights : NDArray[np.float64] or None, shape (n_time_bins,)
+        Positive weight of each value in both sums, about the weighted mean
+        of ``observed``; None weighs every value the same.
 
     Returns
     -------
     float
-        At most 1, and in [0, 1] when ``predicted`` is the least-squares fit
-        of a model that includes constants. NaN when ``observed`` never
-        changes: with no variance to explain, R² is undefined, and a
-        stationary decode must not pass a replay screen as a perfect fit.
+        At most 1, and in [0, 1] when ``predicted`` is the (weighted)
+        least-squares fit of a model that includes constants. NaN when
+        ``observed`` never changes: with no variance to explain, R² is
+        undefined, and a stationary decode must not pass a replay screen as
+        a perfect fit.
     """
     if np.ptp(observed) == 0:
         return float("nan")
-    ss_res = np.sum((observed - predicted) ** 2)
-    ss_tot = np.sum((observed - np.mean(observed)) ** 2)
+    if weights is None:
+        weights = np.ones_like(observed)
+    mean = np.average(observed, weights=weights)
+    ss_res = np.sum(weights * (observed - predicted) ** 2)
+    ss_tot = np.sum(weights * (observed - mean) ** 2)
     return float(1.0 - ss_res / ss_tot)
 
 
@@ -598,15 +683,27 @@ def fit_linear_trajectory(
     posterior: NDArray[np.float64],
     times: NDArray[np.float64],
     *,
-    n_samples: int = 1000,
-    method: Literal["map", "sample"] = "sample",
+    method: Literal["sample", "map"] = "sample",
+    n_samples: int = 10_000,
+    n_resamples: int = 1,
+    spike_counts: NDArray[np.int64] | None = None,
+    allocation: Literal["equal", "spikes"] = "equal",
     rng: np.random.Generator | int | None = None,
 ) -> LinearFitResult:
-    """Fit linear trajectory to posterior using linear regression.
+    """Fit a straight-line trajectory to a decoded event.
 
-    Fits a straight line to the decoded position along the track, providing
-    slope (replay speed) and intercept estimates. Optionally uses Monte Carlo
-    sampling to quantify uncertainty in the slope estimate.
+    Fits one least-squares line of position along the track on time. The
+    slope is the replay speed and R² the replay score.
+
+    - ``method="sample"`` (Karlsson & Frank 2009): positions are drawn at
+      random from each time bin's posterior, and one line is fit to all the
+      sampled points, so the R² reflects both how linear the decoded
+      sequence is and how sharp each time bin's posterior is.
+    - ``method="map"`` (Wu et al. 2017): one line is fit to the MAP position
+      of each time bin.
+
+    Test the R² against shuffles with
+    :func:`~neurospatial.replay.replay_significance`.
 
     Parameters
     ----------
@@ -617,153 +714,521 @@ def fit_linear_trajectory(
         slope is a physical speed and does not depend on how bins are
         numbered.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
-        Posterior probability distribution over spatial bins for each time bin.
-        Each row should sum to 1.
+        Posterior probability mass over spatial bins for each time bin. Each
+        row must sum to 1.
     times : NDArray[np.float64], shape (n_time_bins,)
-        Time values for each time bin. Used as the independent variable (x)
-        in the regression. Need not be uniformly spaced.
-    n_samples : int, optional
-        Number of Monte Carlo samples from the posterior for uncertainty
-        estimation (only used when method="sample"), at least 2. Default is
-        1000, which estimates slope_std to within about 2% (its relative
-        standard error is about ``1 / sqrt(2 * (n_samples - 1))``).
-    method : {"map", "sample"}, optional
-        How to fit the linear trajectory:
-        - "map": Use the center of the MAP bin, the bin of highest posterior
-          density (mass per unit length along the track). Fast but ignores
-          uncertainty.
-        - "sample" (default): Sample from posterior, fit to each sample,
-          average coefficients. Provides uncertainty estimate via slope_std.
-    rng : np.random.Generator | int | None, optional
-        Random number generator for reproducibility (method="sample" only).
-        - If Generator: Use directly
-        - If int: Seed for np.random.default_rng()
-        - If None: Use default RNG (not reproducible)
+        Center time of each posterior row, in seconds; the independent
+        variable of the fit. Need not be evenly spaced.
+    method : {"sample", "map"}, default="sample"
+        ``"sample"`` fits positions sampled from the posterior (Karlsson &
+        Frank 2009); ``"map"`` fits the center of each time bin's MAP bin,
+        the bin of highest posterior density (mass per unit length along the
+        track; Wu et al. 2017).
+    n_samples : int, default=10000
+        Total number of positions sampled from the posterior in each
+        resample (``method="sample"`` only), at least 2 and at least the
+        number of time bins sampled. Karlsson & Frank drew 10,000 per decoded
+        time bin: pass ``n_samples=10000 * n_decoded_time_bins`` with
+        ``allocation="equal"`` to match them. The Jadhav-lab code draws
+        10,000 in total, as the default does, with ``allocation="spikes"``.
+    n_resamples : int, default=1
+        Number of independent resamples (``method="sample"`` only), at least
+        1. The slope, intercept and R² are means over resamples and
+        ``slope_std`` their slopes' standard deviation. Karlsson & Frank
+        used 1; the Jadhav-lab code uses 500.
+    spike_counts : NDArray[np.int64] or None, default=None
+        Spike counts behind each posterior row, shape ``(n_time_bins,)`` or
+        ``(n_time_bins, n_neurons)`` (summed over neurons): non-negative
+        whole numbers. Time bins without spikes are left out of the fit, as
+        Karlsson & Frank and Wu et al. do, since they cannot be decoded. None
+        fits every row.
+    allocation : {"equal", "spikes"}, default="equal"
+        How ``method="sample"`` splits ``n_samples`` among the time bins it
+        samples. ``"equal"``: the same number for each (Karlsson & Frank
+        2009). ``"spikes"``: at random in each resample, multinomially in
+        proportion to each time bin's spike count, as the Jadhav-lab code
+        does; needs ``spike_counts``. The two weight time bins differently,
+        so they estimate different R².
+    rng : np.random.Generator, int, or None, default=None
+        Random number generator or seed for ``method="sample"``. Pass a seed
+        for a reproducible result.
 
     Returns
     -------
     LinearFitResult
-        Container with slope (environment units per second), intercept
-        (environment units), r_squared, and slope_std. slope_std is None
-        when method="map".
+        Slope (environment units per second), intercept (environment units),
+        R², and ``slope_std``, the spread of slopes over resamples (None for
+        ``method="map"`` or a single resample).
 
     Raises
     ------
     ValueError
-        If method is not "map" or "sample".
-        If ``env`` is neither 1-D nor a linearized track.
-        If posterior is not 2D or does not have one column per bin.
-        If ``times`` does not have one finite entry per posterior row, or
-        holds a single distinct time.
-        If ``n_samples`` is less than 2.
-        If a posterior row is not a probability mass: NaN or Inf, negative,
-        or not summing to 1.
+        If ``method`` is not "sample" or "map", if ``env`` is neither 1-D
+        nor a linearized track, if ``posterior`` is not 2-D with one column
+        per bin, if a posterior row is not a probability mass (NaN or Inf,
+        negative, or not summing to 1), if ``times`` does not have one
+        finite entry per row or holds a single distinct time, if
+        ``n_samples`` is less than 2 or ``n_resamples`` less than 1, if
+        ``spike_counts`` does not have one row of non-negative whole numbers
+        per time bin, or if the fit would have points at fewer than two
+        distinct times.
 
     See Also
     --------
     LinearFitResult : Container for linear fit results.
-    fit_isotonic_trajectory : For monotonic (non-linear) fits.
+    fit_isotonic_trajectory : For monotonic fits.
+    detect_trajectory_radon : Replay line holding the most posterior mass.
+    neurospatial.replay.replay_significance : Test the score against shuffles.
 
     Notes
     -----
-    **Slope interpretation**: The slope is replay speed along the track, in
+    **Sampled fit.** Karlsson & Frank (2009) "drew 10,000 random samples from
+    the P(X|N) distribution for each decoded bin and assigned the sampled
+    locations to that bin", then regressed the sampled locations on the
+    time-bin number. Each draw here takes a bin at random with probability
+    equal to its posterior mass (inverting the cumulative posterior with
+    bins in track order) and uses the bin's center as the sampled position.
+    Each sample is placed at its time bin's time, and one ordinary
+    least-squares line is fit to all the samples of a resample. The papers
+    regress on the time-bin number; for evenly spaced time bins that gives
+    the same R² and a slope in positions per time bin rather than per
+    second.
+
+    **How many samples each time bin gets.** The time bins sampled are all
+    of them, or with ``spike_counts`` those with spikes. With
+    ``allocation="equal"`` each gets ``n_samples // n_sampled`` and the
+    earliest ``n_samples % n_sampled`` one more. With
+    ``allocation="spikes"`` the split is random and proportional to spike
+    count, as in the Jadhav-lab code (``jds_replay_decoding_CA1_M.m`` in
+    JadhavLab/PrefrontalRipples: 10,000 samples per resample, 500
+    resamples, and the mean R², slope and intercept over resamples). As the
+    number of samples grows, the R² approaches the square of
+    :func:`~neurospatial.replay.weighted_correlation` with each time bin
+    weighted equally (``"equal"``) or by its spike count (``"spikes"``).
+
+    The fit runs along the track's linear coordinate. On a track with
+    several arms that coordinate joins the arms end to end; Michon et al.
+    (2019) fit each arm separately, as do the Jadhav-lab analyses for each
+    trajectory, so restrict the posterior to one arm first to match them.
+
+    **Monte Carlo spread.** ``slope_std`` is the standard deviation of the
+    slope over resamples. It measures how much the fit changes between
+    random draws and shrinks as ``n_samples`` grows; it is not the
+    uncertainty of the replay speed given the posterior. The R² of a
+    sampled fit is below that of the MAP fit when time bins' posteriors are
+    wide, because the spread of positions within a time bin is variance the
+    line cannot explain. Mass spread along the track also pulls the sampled
+    line toward the middle of the track, so its slope can be shallower than
+    the MAP fit's. Samples are drawn and fit in blocks, so memory stays at a
+    few arrays of 2 million samples however many resamples are asked for.
+
+    **Track geometry.** The slope is replay speed along the track, in
     environment units per second (cm/s for a track in cm). Bins of unequal
     length are placed at their centers, so a constant-speed sweep gives a
     straight line. On a linearized track the position includes any
     ``edge_spacing`` gap between segments.
 
-    **Sampling implementation** (for method="sample"):
+    **Stationary decodes.** If the decoded (or every sampled) position never
+    changes, the slope is 0 and R² is NaN, so a stationary decode does not
+    pass an R² screen.
 
-    Each sample draws one bin per time bin from the posterior, by inverting
-    the cumulative posterior with bins in track order, and takes that bin's
-    center. A line is fit to each sampled sequence; the result averages the
-    coefficients and ``slope_std`` is the spread of the sampled slopes.
+    Karlsson & Frank used 15 ms time bins and 2 cm position bins; Wu et al.
+    20 ms time bins stepped by 10 ms, decoding only time bins with at least
+    one spike.
 
-    **Stationary decodes**: If the decoded position never changes, the slope
-    is 0 and R² is NaN, so a stationary decode does not pass an R² screen.
+    References
+    ----------
+    Karlsson, M. P., & Frank, L. M. (2009). Awake replay of remote
+    experiences in the hippocampus. *Nature Neuroscience*, 12(7), 913-918.
+    https://doi.org/10.1038/nn.2344
+
+    Wu, C.-T., Haggerty, D., Kemere, C., & Ji, D. (2017). Hippocampal awake
+    replay in fear memory retrieval. *Nature Neuroscience*, 20(4), 571-580.
+    https://doi.org/10.1038/nn.4507
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.replay.trajectory import fit_linear_trajectory
+    >>> from neurospatial.replay import fit_linear_trajectory
     >>>
-    >>> # A 100 cm track in 2 cm bins and a posterior that sweeps along it
+    >>> # A 100 cm track in 2 cm bins and a posterior that sweeps 4 cm per
+    >>> # 10 ms time bin, holding 0.8 of its mass in one bin
     >>> env = Environment.linear_track(
     ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
     ... )
     >>> n_time_bins = 20
-    >>> posterior = np.zeros((n_time_bins, env.n_bins))
-    >>> for t in range(n_time_bins):
-    ...     posterior[t, t * 2] = 1.0  # 4 cm per time bin
-    >>> times = np.linspace(0, 1, n_time_bins)
+    >>> posterior = np.full((n_time_bins, env.n_bins), 0.2 / (env.n_bins - 1))
+    >>> posterior[np.arange(n_time_bins), 2 * np.arange(n_time_bins)] = 0.8
+    >>> times = np.arange(n_time_bins) * 0.01
     >>>
-    >>> result = fit_linear_trajectory(env, posterior, times, method="map")
-    >>> print(f"speed = {result.slope:.0f} cm/s, R² = {result.r_squared:.3f}")
-    speed = 76 cm/s, R² = 1.000
+    >>> # Wu et al. (2017): a line through the MAP positions
+    >>> map_fit = fit_linear_trajectory(env, posterior, times, method="map")
+    >>> print(f"{map_fit.slope:.0f} cm/s, R² = {map_fit.r_squared:.2f}")
+    400 cm/s, R² = 1.00
+    >>>
+    >>> # Karlsson & Frank (2009): 10,000 samples per time bin. The 0.2 of
+    >>> # each row spread along the track lowers the R² and pulls the line
+    >>> # toward the middle of the track, flattening its slope.
+    >>> sampled = fit_linear_trajectory(
+    ...     env, posterior, times, n_samples=10_000 * n_time_bins, rng=0
+    ... )
+    >>> print(f"{sampled.slope:.0f} cm/s, R² = {sampled.r_squared:.2f}")
+    319 cm/s, R² = 0.55
+    >>>
+    >>> # Jadhav-lab code: 10,000 samples split by spike count, 500 resamples
+    >>> spikes = np.random.default_rng(1).poisson(2.0, size=n_time_bins)
+    >>> jadhav = fit_linear_trajectory(
+    ...     env,
+    ...     posterior,
+    ...     times,
+    ...     n_resamples=500,
+    ...     spike_counts=spikes,
+    ...     allocation="spikes",
+    ...     rng=0,
+    ... )
+    >>> print(f"R² = {jadhav.r_squared:.2f}, slope_std = {jadhav.slope_std:.1f} cm/s")
+    R² = 0.55, slope_std = 3.5 cm/s
     """
-    if method not in ("map", "sample"):
-        raise ValueError(f"method must be 'map' or 'sample', got {method!r}")
-
-    if n_samples < 2:
-        raise ValueError(
-            _format_error(
-                f"fit_linear_trajectory() needs n_samples of at least 2, got "
-                f"{n_samples}.",
-                why="slope_std is the spread of the sampled slopes, which "
-                "needs at least two samples",
-                fix="keep the default n_samples=1000, or use method='map' for "
-                "a fit without sampling",
-            )
-        )
-    posterior, starts, stops = _track_positions(
-        env, posterior, "fit_linear_trajectory()"
+    if method not in ("sample", "map"):
+        raise ValueError(f"method must be 'sample' or 'map', got {method!r}")
+    operation = "fit_linear_trajectory()"
+    posterior, starts, stops = _track_positions(env, posterior, operation)
+    times = _require_times(times, len(posterior), operation)
+    spikes = (
+        None
+        if spike_counts is None
+        else _spikes_per_time_bin(spike_counts, len(posterior), times, operation)
     )
-    times = _require_times(times, len(posterior), "fit_linear_trajectory()")
 
     if method == "map":
         positions = _decoded_positions(posterior, starts, stops, "map")
+        if spikes is not None:
+            positions, times = positions[spikes > 0], times[spikes > 0]
         slope, intercept = _fit_lines(times, positions)
-        r_squared = _compute_r_squared(positions, slope * times + intercept)
         return LinearFitResult(
             slope=float(slope),
             intercept=float(intercept),
-            r_squared=r_squared,
+            r_squared=_compute_r_squared(positions, slope * times + intercept),
             slope_std=None,
         )
 
-    # method == "sample"
+    for name, value, least in (
+        ("n_samples", n_samples, 2),
+        ("n_resamples", n_resamples, 1),
+    ):
+        if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+            raise TypeError(
+                f"{operation}: {name} must be an integer, got {value!r} "
+                f"({type(value).__name__})."
+            )
+        if value < least:
+            raise ValueError(
+                _format_error(
+                    f"{operation} needs {name} of at least {least}, got {value}.",
+                    why="n_samples is the total number of positions sampled "
+                    "from the posterior in each resample, and a line needs two "
+                    "points; n_resamples is the number of independent resamples",
+                    fix="keep the defaults (n_samples=10000, n_resamples=1), "
+                    "or use method='map' for a fit without sampling",
+                )
+            )
+
+    if allocation not in ("equal", "spikes"):
+        raise ValueError(
+            f"{operation}: allocation must be 'equal' or 'spikes', got {allocation!r}."
+        )
+    if allocation == "spikes" and spikes is None:
+        raise ValueError(
+            _format_error(
+                f"{operation}: allocation='spikes' needs spike_counts.",
+                why="it splits the samples among time bins in proportion to "
+                "their spike counts",
+                fix="pass spike_counts, or use allocation='equal'",
+            )
+        )
+    n_sampled = len(posterior) if spikes is None else int(np.sum(spikes > 0))
+    if allocation == "equal" and n_samples < n_sampled:
+        raise ValueError(
+            _format_error(
+                f"{operation}: n_samples={n_samples} is fewer than the "
+                f"{n_sampled} time bins it samples.",
+                why="an equal split gives every sampled time bin at least one "
+                "position; fewer samples would leave the event's last time "
+                "bins out",
+                fix=f"pass n_samples of at least {n_sampled}",
+            )
+        )
+
     from neurospatial.stats import _ensure_rng
 
-    rng_gen = _ensure_rng(rng)
-
-    # Invert each row's cumulative mass (bins in track order): the drawn bin
-    # is the first whose cumulative mass exceeds u times the row's total, so
-    # a bin with no mass is never drawn and rounding in the row sum cannot
-    # push a draw past the last bin.
-    cumsum = np.cumsum(posterior, axis=1)
-    u = rng_gen.random((n_samples, len(posterior), 1)) * cumsum[:, -1:]
-    centers = (starts + stops) / 2
-    # Shape: (n_samples, n_time_bins)
-    sampled_positions = centers[np.argmax(cumsum > u, axis=-1)]
-    slopes, intercepts = _fit_lines(times, sampled_positions)
-
-    # Average coefficients
-    mean_slope = float(np.mean(slopes))
-    mean_intercept = float(np.mean(intercepts))
-
-    # Compute R² using mean coefficients on the posterior mean positions
-    expected_positions = _decoded_positions(posterior, starts, stops, "expected")
-    r_squared = _compute_r_squared(
-        expected_positions, mean_slope * times + mean_intercept
+    generator = _ensure_rng(rng)
+    samples_per_bin = _samples_per_time_bin(
+        int(n_samples), int(n_resamples), len(posterior), spikes, allocation, generator
     )
-
+    sampled = samples_per_bin > 0
+    latest = np.where(sampled, times, -np.inf).max(axis=1)
+    earliest = np.where(sampled, times, np.inf).min(axis=1)
+    if np.any(latest == earliest):
+        raise ValueError(
+            _format_error(
+                f"{operation}: in {int(np.sum(latest == earliest))} of "
+                f"{n_resamples} resamples, all {n_samples} samples fall in "
+                "time bins with one time.",
+                why="a line along time needs sampled positions at two or "
+                "more times; n_samples is the total over all time bins, and "
+                "with allocation='spikes' each time bin's share is random",
+                fix="raise n_samples (the default is 10000)",
+            )
+        )
+    slopes, intercepts, r_squared = _sampled_lines(
+        posterior, (starts + stops) / 2, times, samples_per_bin, generator
+    )
     return LinearFitResult(
-        slope=mean_slope,
-        intercept=mean_intercept,
-        r_squared=r_squared,
-        slope_std=float(np.std(slopes, ddof=1)),
+        slope=float(np.mean(slopes)),
+        intercept=float(np.mean(intercepts)),
+        r_squared=float(np.mean(r_squared)),
+        slope_std=float(np.std(slopes, ddof=1)) if n_resamples > 1 else None,
     )
+
+
+def _spikes_per_time_bin(
+    spike_counts: NDArray[Any],
+    n_time_bins: int,
+    times: NDArray[np.float64],
+    operation: str,
+) -> NDArray[np.int64]:
+    """Validate spike counts and sum them over neurons.
+
+    Parameters
+    ----------
+    spike_counts : NDArray, shape (n_time_bins,) or (n_time_bins, n_neurons)
+        Spike counts behind each posterior row.
+    n_time_bins : int
+        Number of posterior rows.
+    times : NDArray[np.float64], shape (n_time_bins,)
+        Time of each posterior row, in seconds.
+    operation : str
+        The calling function, for the refusal message.
+
+    Returns
+    -------
+    NDArray[np.int64], shape (n_time_bins,)
+        Spikes in each time bin, summed over neurons.
+
+    Raises
+    ------
+    ValueError
+        If ``spike_counts`` does not have one row per time bin, holds
+        anything but non-negative whole numbers, or leaves fewer than two
+        distinct times with spikes.
+    """
+    counts = np.asarray(spike_counts)
+    if counts.ndim not in (1, 2) or counts.shape[0] != n_time_bins:
+        raise ValueError(
+            _format_error(
+                f"{operation}: spike_counts has shape {counts.shape}, but "
+                f"posterior has {n_time_bins} rows.",
+                why="spike_counts gives the spikes behind each posterior row, "
+                "which decides which time bins are fit",
+                fix="pass the counts the posterior was decoded from, shape "
+                "(n_time_bins, n_neurons), or their sum over neurons, shape "
+                "(n_time_bins,)",
+            )
+        )
+    whole = np.issubdtype(counts.dtype, np.integer) or (
+        np.issubdtype(counts.dtype, np.floating)
+        and bool(np.all(np.isfinite(counts)))
+        and bool(np.all(counts == np.round(counts)))
+    )
+    if not whole or np.any(counts < 0):
+        raise ValueError(
+            _format_error(
+                f"{operation} needs spike_counts of non-negative whole numbers "
+                f"of spikes, got dtype {counts.dtype} with values from "
+                f"{np.min(counts)} to {np.max(counts)}.",
+                why="time bins are fit, and sampled, in proportion to how many "
+                "spikes they hold",
+                fix="pass spike counts per time bin (not rates or "
+                "probabilities), e.g. from np.histogram of each neuron's "
+                "spike times over the time-bin edges",
+            )
+        )
+    spikes = counts.astype(np.int64)
+    if spikes.ndim == 2:
+        spikes = spikes.sum(axis=1)
+    if np.unique(times[spikes > 0]).size < 2:
+        raise ValueError(
+            _format_error(
+                f"{operation}: only {int(np.sum(spikes > 0))} of {n_time_bins} "
+                "time bins have spikes, at fewer than two distinct times.",
+                why="time bins without spikes cannot be decoded and are left "
+                "out, and a line along time needs two or more times",
+                fix="leave this event out of the analysis: it has too few "
+                "active time bins to show a trajectory",
+            )
+        )
+    return spikes
+
+
+def _samples_per_time_bin(
+    n_samples: int,
+    n_resamples: int,
+    n_time_bins: int,
+    spikes: NDArray[np.int64] | None,
+    allocation: str,
+    generator: np.random.Generator,
+) -> NDArray[np.int64]:
+    """Number of posterior samples each time bin gets in each resample.
+
+    Parameters
+    ----------
+    n_samples : int
+        Total samples per resample.
+    n_resamples : int
+        Number of resamples.
+    n_time_bins : int
+        Number of time bins.
+    spikes : NDArray[np.int64] or None, shape (n_time_bins,)
+        Spikes per time bin; time bins without spikes get no samples. None
+        samples every time bin.
+    allocation : {"equal", "spikes"}
+        ``"equal"`` splits ``n_samples`` equally among the sampled time bins,
+        the earliest taking the remainder; ``"spikes"`` splits it in each
+        resample multinomially in proportion to spike count.
+    generator : np.random.Generator
+        Source of the multinomial split.
+
+    Returns
+    -------
+    NDArray[np.int64], shape (n_resamples, n_time_bins)
+        Samples per time bin; each row sums to ``n_samples``.
+    """
+    sampled = np.arange(n_time_bins) if spikes is None else np.flatnonzero(spikes)
+    if allocation == "equal":
+        base, extra = divmod(n_samples, len(sampled))
+        counts = np.zeros(n_time_bins, dtype=np.int64)
+        counts[sampled] = base
+        counts[sampled[:extra]] += 1
+        return np.broadcast_to(counts, (n_resamples, n_time_bins))
+    assert spikes is not None  # allocation="spikes" needs spike_counts
+    # Only time bins with spikes are categories, so a spike-free time bin
+    # cannot receive a sample through rounding in the multinomial draw.
+    active = np.flatnonzero(spikes)
+    split = np.zeros((n_resamples, n_time_bins), dtype=np.int64)
+    split[:, active] = generator.multinomial(
+        n_samples, spikes[active] / spikes[active].sum(), size=n_resamples
+    )
+    return split
+
+
+_SAMPLE_BLOCK = 2_000_000
+"""Samples drawn and fit together, bounding memory to a few arrays of this
+size (16 MB each) however many resamples are requested; a resample larger
+than this is drawn and fit alone."""
+
+
+def _sampled_lines(
+    posterior: NDArray[np.float64],
+    centers: NDArray[np.float64],
+    times: NDArray[np.float64],
+    samples_per_bin: NDArray[np.int64],
+    generator: np.random.Generator,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """Draw positions from each time bin's posterior and fit a line per resample.
+
+    Each draw inverts the time bin's cumulative posterior (bins in track
+    order): the drawn bin is the first whose cumulative mass exceeds ``u``
+    times the row's total, for ``u`` uniform on [0, 1), so a bin with no
+    mass is never drawn, and the sampled position is the bin's center.
+
+    Parameters
+    ----------
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior mass per bin, bins in track order.
+    centers : NDArray[np.float64], shape (n_bins,)
+        Bin centers along the track, in track order.
+    times : NDArray[np.float64], shape (n_time_bins,)
+        Time of each time bin, in seconds.
+    samples_per_bin : NDArray[np.int64], shape (n_resamples, n_time_bins)
+        Draws from each time bin in each resample; each row sums to
+        ``n_samples``.
+    generator : np.random.Generator
+        Source of the uniforms on [0, 1), drawn block by block; consecutive
+        resamples use consecutive draws, used in time-bin order within each
+        resample.
+
+    Returns
+    -------
+    slopes, intercepts, r_squared : NDArray[np.float64], shape (n_resamples,)
+        The line through each resample's samples (see :func:`_pooled_lines`).
+    """
+    n_resamples, n_time_bins = samples_per_bin.shape
+    n_bins = posterior.shape[1]
+    cumulative = np.cumsum(posterior, axis=1)
+    totals = cumulative[:, -1]
+    # Rows laid end to end, row t shifted by 2 t so that rows never overlap,
+    # make one sorted array that a single searchsorted inverts for every
+    # sample, without an (n_samples, n_bins) comparison.
+    offsets = 2.0 * np.arange(n_time_bins)
+    flat = (cumulative + offsets[:, None]).ravel()
+    last = n_bins - 1 - np.argmax(posterior[:, ::-1] > 0, axis=1)
+    n_samples = int(samples_per_bin[0].sum())
+    step = max(1, _SAMPLE_BLOCK // n_samples)
+    lines = []
+    for first in range(0, n_resamples, step):
+        counts = samples_per_bin[first : first + step]
+        time_bin = np.repeat(
+            np.tile(np.arange(n_time_bins), len(counts)), counts.ravel()
+        ).reshape(len(counts), -1)
+        uniforms = generator.random((len(counts), n_samples))
+        keys = offsets[time_bin] + uniforms * totals[time_bin]
+        drawn = np.searchsorted(flat, keys, side="right") - time_bin * n_bins
+        # A key rounded up to its row's total lands past the row; that draw
+        # is the row's last bin with mass.
+        drawn = np.minimum(drawn, last[time_bin])
+        lines.append(_pooled_lines(times[time_bin], centers[drawn]))
+    slopes, intercepts, r_squared = (
+        np.concatenate(parts) for parts in zip(*lines, strict=True)
+    )
+    return slopes, intercepts, r_squared
+
+
+def _pooled_lines(
+    sample_times: NDArray[np.float64], sample_positions: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """Ordinary least-squares line through each resample's samples.
+
+    Parameters
+    ----------
+    sample_times, sample_positions : NDArray[np.float64], shape (n_resamples, n_samples)
+        Samples of each resample, at two or more distinct times.
+
+    Returns
+    -------
+    slopes, intercepts, r_squared : NDArray[np.float64], shape (n_resamples,)
+        Coefficients and R² of each resample's line; R² is NaN for a
+        resample whose positions never change.
+    """
+    mean_time = sample_times.mean(axis=1, keepdims=True)
+    mean_position = sample_positions.mean(axis=1, keepdims=True)
+    dt = sample_times - mean_time
+    dx = sample_positions - mean_position
+    sxx = np.sum(dt * dt, axis=1)
+    sxy = np.sum(dt * dx, axis=1)
+    syy = np.sum(dx * dx, axis=1)
+    slopes = sxy / sxx
+    intercepts = mean_position[:, 0] - slopes * mean_time[:, 0]
+    # With an intercept, R² of the least-squares line is the squared
+    # correlation; it is undefined when the positions never change.
+    stationary = np.ptp(sample_positions, axis=1) == 0
+    r_squared = np.divide(
+        sxy**2,
+        sxx * syy,
+        out=np.full(len(sxx), np.nan),
+        where=~stationary,
+    )
+    return slopes, intercepts, r_squared
 
 
 def _require_times(

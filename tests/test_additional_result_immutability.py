@@ -174,6 +174,7 @@ CASES = [
         {
             "fitted_positions": np.ones(2),
             "r_squared": 1.0,
+            "mean_map_probability": 1.0,
             "direction": "increasing",
             "residuals": np.zeros(2),
         },
