@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import pickle
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -13,17 +14,23 @@ from neurospatial.decoding import bin_spikes_in_time, decode_position
 from neurospatial.replay import (
     ReplayCriterion,
     ReplayMethod,
+    ReplaySegmentation,
     compare_replay_methods,
     detect_replay,
     weighted_correlation,
 )
 from neurospatial.replay.methods import (
+    CAREY_2019,
     DAVIDSON_2009,
+    IGATA_2021,
     KARLSSON_FRANK_2009,
     MICHON_2019,
+    PFEIFFER_FOSTER_2013,
+    PFEIFFER_FOSTER_2015,
     PUBLISHED_METHODS,
     SILVA_2015,
     TIROLE_2022,
+    WIDLOSKI_FOSTER_2022,
     WU_2017,
 )
 from neurospatial.simulation import simulate_replay_event
@@ -540,3 +547,624 @@ class TestCompareStreamsAndPool:
         assert not row["is_replay"] and np.isnan(row["score"])
         assert row["error"] == "fewer than two time bins to score"
         assert table[table["event"] == 0].iloc[0]["error"] == ""
+
+
+def _one_hot(env, bins):
+    return np.eye(env.n_bins)[list(bins)]
+
+
+def _steps(times_or_n, dt=0.005):
+    return np.arange(times_or_n) * dt
+
+
+def _with_segmentation(method, **changes):
+    import dataclasses
+
+    return dataclasses.replace(
+        method, segmentation=dataclasses.replace(method.segmentation, **changes)
+    )
+
+
+class TestSegmentationRecipes:
+    def test_pfeiffer_tests_the_longest_segment_only(self, place_code):
+        """12 stationary bins, a jump, then 11 bins covering 40 cm.
+
+        Pfeiffer & Foster (2013) truncate to the longest sequence, which
+        travels nowhere, so the event fails; testing any segment, the
+        sweep passes.
+        """
+        env, _ = place_code
+        posterior = _one_hot(env, [10] * 12 + list(range(30, 41)))
+        times = _steps(23)
+        longest = detect_replay(
+            env, posterior, times, replay_method=PFEIFFER_FOSTER_2013
+        )
+        assert not longest.is_replay
+        assert longest.segments.rows(longest.segment) == slice(0, 12)
+        assert longest.values["segment_start_to_end_distance >= 40"] == 0.0
+
+        any_segment = detect_replay(
+            env,
+            posterior,
+            times,
+            replay_method=_with_segmentation(PFEIFFER_FOSTER_2013, choose="any"),
+        )
+        assert any_segment.is_replay
+        assert any_segment.segments.rows(any_segment.segment) == slice(12, 23)
+        assert any_segment.values[
+            "segment_start_to_end_distance >= 40"
+        ] == pytest.approx(40.0)
+
+    def test_pfeiffer_2015_needs_80_cm(self, place_code):
+        env, _ = place_code
+        # 11 time bins either way; means move 8 cm (80 cm) or 4 cm (40 cm).
+        passes = detect_replay(
+            env,
+            _one_hot(env, range(0, 22, 2)),
+            _steps(11),
+            replay_method=PFEIFFER_FOSTER_2015,
+        )
+        fails = detect_replay(
+            env,
+            _one_hot(env, range(11)),
+            _steps(11),
+            replay_method=PFEIFFER_FOSTER_2015,
+        )
+        assert passes.is_replay
+        assert fails.segment == 0 and not fails.is_replay
+        assert fails.values["segment_start_to_end_distance >= 80"] == pytest.approx(
+            40.0
+        )
+
+    def test_pfeiffer_2015_follows_the_posterior_mean(self, place_code):
+        """The MAP alternates between two bins 112 cm apart; the mean glides.
+
+        Row t holds 0.52 in one of bins 2t and 2t + 28 and 0.48 in the
+        other, so the mean moves about 8 cm per step and the MAP jumps.
+        """
+        env, _ = place_code
+        posterior = np.zeros((11, env.n_bins))
+        for t in range(11):
+            near, far = (2 * t, 2 * t + 28) if t % 2 == 0 else (2 * t + 28, 2 * t)
+            posterior[t, near], posterior[t, far] = 0.52, 0.48
+        result = detect_replay(
+            env, posterior, _steps(11), replay_method=PFEIFFER_FOSTER_2015
+        )
+        assert result.is_replay
+        assert result.values["segment_start_to_end_distance >= 80"] == pytest.approx(
+            80.0
+        )
+        by_map = _with_segmentation(
+            PFEIFFER_FOSTER_2015,
+            options={**PFEIFFER_FOSTER_2015.segmentation.options, "method": "map"},
+        )
+        assert not detect_replay(
+            env, posterior, _steps(11), replay_method=by_map
+        ).is_replay
+
+    def test_carey_needs_50_ms(self, place_code):
+        env, _ = place_code
+        for n_time_bins, expected in ((10, False), (11, True)):
+            result = detect_replay(
+                env,
+                _one_hot(env, range(n_time_bins)),
+                _steps(n_time_bins),
+                replay_method=CAREY_2019,
+                spike_counts=np.ones((n_time_bins, 6), dtype=int),
+            )
+            assert result.is_replay is expected
+
+    @pytest.mark.parametrize(("n_time_bins", "expected"), [(21, False), (22, True)])
+    def test_widloski_duration_is_strictly_above_100_ms(
+        self, place_code, n_time_bins, expected
+    ):
+        # 21 bins on 5 ms steps last exactly 100 ms, which the code rejects.
+        env, _ = place_code
+        result = detect_replay(
+            env,
+            _one_hot(env, range(n_time_bins)),
+            _steps(n_time_bins),
+            replay_method=WIDLOSKI_FOSTER_2022,
+        )
+        assert result.is_replay is expected
+        assert result.criteria["segment_dispersion > 12"]
+
+    def test_widloski_tests_any_segment_and_takes_the_speed_rule(self, place_code):
+        """A stationary 29-bin piece and a dispersed 25-bin sweep.
+
+        The longest segment is stationary; the event is replay because the
+        sweep passes. Marking most of the sweep as running leaves two
+        15 ms pieces 100 ms apart, too far to merge, so it is not.
+        """
+        env, _ = place_code
+        posterior = _one_hot(env, [5] * 30 + list(range(20, 45)))
+        times = _steps(55)
+        result = detect_replay(
+            env, posterior, times, replay_method=WIDLOSKI_FOSTER_2022
+        )
+        assert result.is_replay
+        assert result.segments.n_segments == 2
+        assert result.segments.rows(result.segment) == slice(30, 55)
+
+        running = np.ones(55, dtype=bool)
+        running[34:52] = False
+        slowed = detect_replay(
+            env,
+            posterior,
+            times,
+            replay_method=WIDLOSKI_FOSTER_2022,
+            valid_time_bins=running,
+        )
+        assert not slowed.is_replay
+
+    def test_carey_needs_four_active_cells_per_time_bin(self, place_code):
+        env, _ = place_code
+        posterior = _one_hot(env, range(24))
+        counts = np.ones((24, 6), dtype=int)
+        with pytest.raises(ValueError, match="needs spike_counts"):
+            detect_replay(env, posterior, _steps(24), replay_method=CAREY_2019)
+
+        counts[9, 3:] = 0  # 3 active cells
+        split = detect_replay(
+            env, posterior, _steps(24), replay_method=CAREY_2019, spike_counts=counts
+        )
+        assert split.is_replay
+        assert split.segments.segments.tolist() == [[10, 24]]
+
+        counts[19, 3:] = 0
+        broken = detect_replay(
+            env, posterior, _steps(24), replay_method=CAREY_2019, spike_counts=counts
+        )
+        assert not broken.is_replay and broken.segment is None
+
+    def test_igata_p_is_the_share_of_surrogates_with_a_trajectory(self, monkeypatch):
+        """On a 10 m track, few shifted-field surrogates hold a trajectory.
+
+        The test statistic is detection itself: each surrogate scores 1
+        when it has a trajectory event, so p = (k + 1) / (n + 1) over the
+        k surrogates that do.
+        """
+        import neurospatial.replay.significance as significance
+
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [1000.0, 0.0]], bin_size=4.0, units="cm"
+        )
+        x = env.bin_centers[:, 0]
+        rates = 0.5 + 25.0 * np.exp(
+            -0.5 * ((x - np.linspace(0.0, 1000.0, 200)[:, None]) / 10.0) ** 2
+        )
+        sweep, counts = _decoded(env, rates, "sweep", seed=1, speed=900.0)
+        tests = []
+        original = significance.replay_significance
+
+        def spy(*args, **kwargs):
+            tests.append(original(*args, **kwargs))
+            return tests[-1]
+
+        monkeypatch.setattr(significance, "replay_significance", spy)
+        result = detect_replay(
+            env,
+            sweep.posterior,
+            sweep.times,
+            replay_method=_fast(IGATA_2021),
+            spike_counts=counts,
+            encoding_models=rates,
+            dt=DT,
+            rng=1,
+        )
+        null = tests[0].shuffles["place_field_circular"].null_scores
+        assert set(np.unique(null)) <= {0.0, 1.0}
+        assert result.p_value == pytest.approx((null.sum() + 1) / (len(null) + 1))
+        assert result.criteria["segment_path_length > 20"]
+        assert result.is_replay and result.p_value < 0.05
+
+    def test_an_undetected_event_has_p_one_without_shuffles(
+        self, place_code, monkeypatch
+    ):
+        import neurospatial.replay.significance as significance
+
+        def refuse(*args, **kwargs):
+            raise AssertionError("no shuffles are needed")
+
+        monkeypatch.setattr(significance, "replay_significance", refuse)
+        env, rates = place_code
+        posterior = np.full((10, env.n_bins), 1.0 / env.n_bins)
+        result = detect_replay(
+            env,
+            posterior,
+            np.arange(10) * DT,
+            replay_method=IGATA_2021,
+            spike_counts=np.ones((10, rates.shape[0]), dtype=int),
+            encoding_models=rates,
+            dt=DT,
+        )
+        assert result.p_value == 1.0 and not result.is_replay
+
+    def test_score_and_criteria_apply_to_the_tested_segment(self, place_code):
+        env, _ = place_code
+        method = ReplayMethod(
+            name="segment_then_correlate",
+            reference="test",
+            score=weighted_correlation,
+            segmentation=ReplaySegmentation({"max_jump": 20.0, "min_time_bins": 5}),
+            criteria=(ReplayCriterion("duration", "<", 1.0),),
+        )
+        bins = [45, 2, 40, 2, *range(10, 20)]
+        posterior = _one_hot(env, bins)
+        times = np.arange(len(bins)) * DT
+        result = detect_replay(env, posterior, times, replay_method=method)
+        assert result.segments.rows(result.segment) == slice(4, 14)
+        assert result.score == pytest.approx(1.0)
+        assert result.values["duration < 1"] == pytest.approx(9 * DT)
+        whole = weighted_correlation(env, posterior, times).score
+        assert whole < 0.9
+
+    def test_thresholds_in_cm_need_an_environment_in_cm(self):
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=0.04, units="m"
+        )
+        with pytest.raises(ValueError, match="thresholds in 'cm'"):
+            detect_replay(
+                env,
+                _one_hot(env, range(12)),
+                _steps(12),
+                replay_method=PFEIFFER_FOSTER_2013,
+            )
+        unitless = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [200.0, 0.0]], bin_size=4.0
+        )
+        with pytest.raises(ValueError, match="has no units"):
+            detect_replay(
+                unitless,
+                _one_hot(unitless, range(12)),
+                _steps(12),
+                replay_method=PFEIFFER_FOSTER_2013,
+            )
+
+    def test_empty_time_bins_are_invalid_rows_not_deleted(self, place_code):
+        """Four empty bins decoded 160 cm away sit between two sweeps.
+
+        Deleting them would join the sweeps into one segment; as invalid
+        rows they split it, and the segments index the caller's rows.
+        """
+        env, _ = place_code
+        posterior = _one_hot(env, [0, 1, 2, 3, 45, 45, 45, 45, 4, 5, 6, 7])
+        counts = np.ones((12, 3), dtype=int)
+        counts[4:8] = 0
+        method = ReplayMethod(
+            name="drop_then_segment",
+            reference="test",
+            score=None,
+            empty_time_bins="drop",
+            segmentation=ReplaySegmentation({"max_jump": 20.0}),
+        )
+        result = detect_replay(
+            env, posterior, _steps(12), replay_method=method, spike_counts=counts
+        )
+        assert result.segments.n_time_bins == 12
+        assert result.segments.segments.tolist() == [[0, 4], [8, 12]]
+
+    def test_samples_per_time_bin_count_the_segment(self, place_code):
+        env, _ = place_code
+        seen = []
+
+        def score(env, posterior, times, n_samples):
+            seen.append((n_samples, len(posterior)))
+            return SimpleNamespace(score=0.0)
+
+        method = ReplayMethod(
+            name="sampled",
+            reference="test",
+            score=score,
+            score_options={"n_samples_per_time_bin": 10},
+            segmentation=ReplaySegmentation({"max_jump": 20.0}),
+        )
+        posterior = _one_hot(env, [40, 41, 0, 1, 2, 3, 4, 5, 6, 7, 8])
+        detect_replay(env, posterior, _steps(11), replay_method=method)
+        assert seen == [(90, 9)]
+
+    def test_misaligned_spike_counts_are_refused(self, place_code):
+        env, _ = place_code
+        with pytest.raises(ValueError, match="spike_counts has 23 rows"):
+            detect_replay(
+                env,
+                _one_hot(env, range(24)),
+                _steps(24),
+                replay_method=CAREY_2019,
+                spike_counts=np.ones((23, 6), dtype=int),
+            )
+
+    def test_detection_test_refuses_missing_inputs_on_any_event(self, place_code):
+        # A flat posterior holds no trajectory; the missing rate maps are
+        # still refused, as they are for an event that holds one.
+        env, _ = place_code
+        with pytest.raises(ValueError, match="without their inputs"):
+            detect_replay(
+                env,
+                np.full((10, env.n_bins), 1.0 / env.n_bins),
+                np.arange(10) * DT,
+                replay_method=IGATA_2021,
+            )
+
+    def test_detection_test_with_any_segment(self, place_code):
+        """A stationary piece is longest; the sweep after it meets 20 cm."""
+        env, _ = place_code
+        method = ReplayMethod(
+            name="any_detected",
+            reference="test",
+            score=None,
+            nulls=("column_cycle",),
+            n_shuffles=19,
+            segmentation=ReplaySegmentation({"max_jump": 20.0}, choose="any"),
+            criteria=(ReplayCriterion("segment_path_length", ">", 20.0),),
+        )
+        posterior = _one_hot(env, [10] * 12 + list(range(30, 38)))
+        any_segment = detect_replay(
+            env, posterior, _steps(20), replay_method=method, rng=0
+        )
+        longest = detect_replay(
+            env,
+            posterior,
+            _steps(20),
+            replay_method=_with_segmentation(method, choose="longest"),
+            rng=0,
+        )
+        assert any_segment.segments.rows(any_segment.segment) == slice(12, 20)
+        assert any_segment.p_value < 1.0
+        assert longest.p_value == 1.0 and not longest.is_replay
+
+    def test_chance_counts_every_template_of_a_joint_decode(self, place_code):
+        """Peak mass 0.02 on one track of two: 1.5 x chance is 0.015."""
+        env, rates = place_code
+        method = ReplayMethod(
+            name="chance",
+            reference="test",
+            score=None,
+            segmentation=ReplaySegmentation(
+                {"max_jump": 20.0, "min_peak_probability": 1.5},
+                relative_to={"min_peak_probability": "chance"},
+            ),
+        )
+        share = 0.02 * _one_hot(env, range(10))
+        times = _steps(10)
+        joint = detect_replay(
+            {"a": env, "b": env}, share, times, replay_method=method, template="a"
+        )
+        alone = detect_replay(env, share, times, replay_method=method)
+        assert joint.is_replay and not alone.is_replay
+        both = detect_replay(
+            env,
+            share,
+            times,
+            replay_method=method,
+            template="a",
+            encoding_models={"a": rates, "b": rates},
+        )
+        assert both.is_replay
+        with pytest.raises(ValueError, match="every template's rate maps"):
+            detect_replay(env, share, times, replay_method=method, template="a")
+
+    def test_methods_without_segmentation_ignore_valid_time_bins(self, place_code):
+        env, _ = place_code
+        posterior = _one_hot(env, range(20))
+        times = np.arange(20) * DT
+        plain = detect_replay(env, posterior, times, replay_method=SILVA_2015)
+        masked = detect_replay(
+            env,
+            posterior,
+            times,
+            replay_method=SILVA_2015,
+            valid_time_bins=np.zeros(20, dtype=bool),
+        )
+        np.testing.assert_equal(plain.summary(), masked.summary())
+        assert "n_segments" not in plain.summary()
+
+    def test_a_detection_test_refuses_valid_bins_with_row_moving_nulls(
+        self, place_code
+    ):
+        env, _ = place_code
+        method = ReplayMethod(
+            name="x",
+            reference="y",
+            score=None,
+            nulls=("time_bin_permutation",),
+            segmentation=ReplaySegmentation({"max_jump": 20.0}),
+        )
+        with pytest.raises(ValueError, match="valid_time_bins cannot be used"):
+            detect_replay(
+                env,
+                _one_hot(env, range(12)),
+                _steps(12),
+                replay_method=method,
+                valid_time_bins=np.ones(12, dtype=bool),
+            )
+
+    def test_result_with_segments_pickles(self, place_code):
+        env, _ = place_code
+        result = detect_replay(
+            env,
+            _one_hot(env, range(14)),
+            _steps(14),
+            replay_method=PFEIFFER_FOSTER_2013,
+        )
+        clone = pickle.loads(pickle.dumps(result))
+        np.testing.assert_equal(clone.summary(), result.summary())
+        assert clone.segment == 0
+        assert not clone.segments.segments.flags.writeable
+        assert result.summary()["segment_end_time"] == pytest.approx(13 * 0.005)
+
+    def test_compare_passes_each_events_valid_time_bins(self, place_code):
+        env, rates = place_code
+        events = [
+            decode_position(
+                env,
+                np.zeros((22, rates.shape[0]), dtype=int),
+                rates,
+                dt=0.005,
+                times=_steps(22),
+            )
+        ]
+        # A flat posterior has no trajectory with or without the mask.
+        table = compare_replay_methods(
+            env,
+            events,
+            replay_methods=[WIDLOSKI_FOSTER_2022, SILVA_2015],
+            valid_time_bins=[np.ones(22, dtype=bool)],
+        )
+        assert list(table["n_segments"].iloc[:1]) == [0]
+        assert np.isnan(table["n_segments"].iloc[1])
+        with pytest.raises(ValueError, match="valid_time_bins has 2 entries"):
+            compare_replay_methods(
+                env,
+                events,
+                replay_methods=[WIDLOSKI_FOSTER_2022],
+                valid_time_bins=[np.ones(22, dtype=bool)] * 2,
+            )
+
+
+def test_criteria_treat_a_rounded_threshold_as_equal(place_code):
+    """21 bins at t0 + 0.005 k last 100 ms up to rounding: not > 100 ms."""
+    env, _ = place_code
+    times = 100.0 + _steps(21)
+    assert times[-1] - times[0] != 0.1
+    result = detect_replay(
+        env, _one_hot(env, range(21)), times, replay_method=WIDLOSKI_FOSTER_2022
+    )
+    assert not result.criteria["segment_duration > 0.1"]
+    assert ReplayCriterion("q", ">=", 0.1).evaluate(0.1 - 1e-12, np.nan)
+
+
+class TestSegmentationValidation:
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"options": {"max_jump": 20.0, "jump": 1}}, "does not take"),
+            (
+                {"options": {"max_jump": 20.0, "valid_time_bins": None}},
+                "does not take",
+            ),
+            ({"options": {"min_time_bins": 5}}, "needs max_jump"),
+            (
+                {
+                    "options": {"max_jump": 0.4},
+                    "relative_to": {"min_duration": "chance"},
+                },
+                "not in options",
+            ),
+            (
+                {"options": {"max_jump": 0.4}, "relative_to": {"max_jump": "arena"}},
+                "relative_to values",
+            ),
+            ({"options": {"max_jump": 20.0}, "choose": "all"}, "choose"),
+            (
+                {"options": {"max_jump": 20.0}, "min_active_cells_per_time_bin": 0},
+                "positive integer",
+            ),
+        ],
+    )
+    def test_invalid_segmentations_are_refused(self, kwargs, match):
+        with pytest.raises(ValueError, match=match):
+            ReplaySegmentation(**kwargs)
+
+    def test_relative_options_scale_with_the_environment(self, place_code):
+        env, _ = place_code
+        segmentation = ReplaySegmentation(
+            {"max_jump": 0.4, "min_peak_probability": 5.0},
+            relative_to={"max_jump": "track_length", "min_peak_probability": "chance"},
+        )
+        options = segmentation.resolved_options(env)
+        assert options["max_jump"] == pytest.approx(0.4 * 200.0)
+        assert options["min_peak_probability"] == pytest.approx(5.0 / env.n_bins)
+        arena = Environment.from_samples(
+            np.random.default_rng(0).uniform(0, 50, (500, 2)), bin_size=5.0, units="cm"
+        )
+        with pytest.raises(ValueError, match="track"):
+            segmentation.resolved_options(arena)
+
+    def test_segment_criteria_need_a_segmentation(self):
+        with pytest.raises(ValueError, match="no segmentation"):
+            ReplayMethod(
+                name="x",
+                reference="y",
+                score=None,
+                criteria=(ReplayCriterion("segment_path_length", ">", 20.0),),
+            )
+
+    def test_detection_tests_are_one_sided(self):
+        with pytest.raises(ValueError, match="one-sided"):
+            ReplayMethod(
+                name="x",
+                reference="y",
+                score=None,
+                nulls=("column_cycle",),
+                alternative="two-sided",
+                segmentation=ReplaySegmentation({"max_jump": 20.0}),
+            )
+
+    def test_active_cell_rule_refuses_nulls_that_change_spikes(self):
+        with pytest.raises(ValueError, match="active-cell"):
+            ReplayMethod(
+                name="x",
+                reference="y",
+                score=None,
+                nulls=("spike_train_circular",),
+                segmentation=ReplaySegmentation(
+                    {"max_jump": 20.0}, min_active_cells_per_time_bin=4
+                ),
+            )
+
+
+@pytest.mark.parametrize(
+    ("method", "options", "criteria", "choose"),
+    [
+        (
+            PFEIFFER_FOSTER_2013,
+            {"max_jump": 20.0, "method": "map", "min_time_bins": 11},
+            ["segment_start_to_end_distance >= 40"],
+            "longest",
+        ),
+        (
+            PFEIFFER_FOSTER_2015,
+            {"max_jump": 50.0, "method": "expected", "min_time_bins": 11},
+            ["segment_start_to_end_distance >= 80"],
+            "longest",
+        ),
+        (
+            CAREY_2019,
+            {"max_jump": 40.0, "method": "map", "min_time_bins": 10},
+            ["segment_duration >= 0.05"],
+            "any",
+        ),
+        (
+            IGATA_2021,
+            {
+                "max_jump": 40.0,
+                "method": "map",
+                "max_gap_bins": 1,
+                "min_peak_probability": 5.0,
+                "min_time_bins": 5,
+            },
+            ["segment_path_length > 20"],
+            "longest",
+        ),
+        (
+            WIDLOSKI_FOSTER_2022,
+            {
+                "max_jump": 20.0,
+                "method": "expected",
+                "jump_rule": "drop_earlier",
+                "max_spread": 10.0,
+                "merge_max_time_gap": 0.05,
+                "merge_max_distance": 20.0,
+            },
+            ["segment_duration > 0.1", "segment_dispersion > 12"],
+            "any",
+        ),
+    ],
+    ids=lambda value: getattr(value, "name", ""),
+)
+def test_segmentation_recipes_match_the_papers(method, options, criteria, choose):
+    assert dict(method.segmentation.options) == options
+    assert [c.label for c in method.criteria] == criteria
+    assert method.segmentation.choose == choose
+    assert method.units == "cm"
