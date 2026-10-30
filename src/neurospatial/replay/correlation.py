@@ -161,10 +161,10 @@ def weighted_correlation(
 
 def _track_bin_centers(env: Environment, operation: str) -> NDArray[np.float64]:
     """Each bin's center along the track, in bin numbering."""
-    from neurospatial.environment._queries import require_track_extents
+    from neurospatial.environment import _require_track_extents
     from neurospatial.replay.trajectory import _TRACK_ALTERNATIVE
 
-    starts, stops = require_track_extents(
+    starts, stops = _require_track_extents(
         env, operation, alternative=_TRACK_ALTERNATIVE
     )
     return (np.asarray(starts) + np.asarray(stops)) / 2.0

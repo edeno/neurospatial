@@ -53,7 +53,7 @@ def _track_linearization(
     return linearization
 
 
-def track_extents(
+def _track_extents(
     env: Environment,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]] | None:
     """Where each bin starts and ends along a track; None off a track.
@@ -74,14 +74,14 @@ def track_extents(
     return None
 
 
-def require_track_extents(
+def _require_track_extents(
     env: Environment, operation: str, *, alternative: str
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Return :func:`track_extents`, or refuse ``operation`` off a track.
+    """Return :func:`_track_extents`, or refuse ``operation`` off a track.
 
     ``alternative`` names what works on other environments.
     """
-    extents = track_extents(env)
+    extents = _track_extents(env)
     if extents is None:
         raise ValueError(
             _format_error(
