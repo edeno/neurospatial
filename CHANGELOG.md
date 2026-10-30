@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Reactivation recipes: review fixes
+
+**New**
+
+- `ReactivationWindows(allow_shorter=True)` makes a period shorter than one
+  window a single window of all of it. `HARVEY_2023_ASSEMBLY` and
+  `LIU_2023_ASSEMBLY` use it, so a sleep period of less than an hour is used
+  whole, as in the labs' code, instead of giving an error row.
+
+**Changed**
+
+- `OLIVA_2020_ASSEMBLY` z-scores the task and both rest periods together
+  (`zscore_over="all_periods"`), following the paper's "binned in 20-ms
+  intervals for the whole session and z-scored". Its values change.
+- With `n_rate_subsamples`, a row reports the subsample whose statistic is
+  the median (the lower middle one for an even count). EV, REV, the partial
+  correlation, its p-value and the verdict come from that subsample and
+  agree with each other; before, each was a separate median.
+- With `detection_units` by region, a region that cannot be detected in (for
+  example one with fewer than 3 units) is left out with a warning instead of
+  removing every pattern of the method.
+
+**Fixed**
+
+- A control or match window with no event starting inside it is an error row
+  of that method; before, it raised and lost every method's rows. An empty
+  `(0, 2)` events array is accepted.
+- An EV method on fewer than 3 pairs of units is an error row instead of
+  raising.
+- An `EventResponse` response or baseline window that holds no lag of the
+  method's R(t) step is refused when the method is built, instead of giving
+  NaN rows.
+- `n_shuffles`, `n_rate_subsamples`, `min_events` and
+  `ReactivationWindows.count` refuse floats such as `20.0`.
+
 ### Replay checks from Tingley & Peyrache (2020)
 
 **New**
