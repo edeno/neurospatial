@@ -308,6 +308,32 @@ def validate_integer_at_least(
         raise ValueError(f"{owner}: {name} must be {bound}, got {value!r}.")
 
 
+def validate_alpha(alpha: object, *, owner: str) -> None:
+    """Require a significance level strictly between 0 and 1.
+
+    Booleans and non-numeric values are rejected rather than coerced.
+
+    Parameters
+    ----------
+    alpha : object
+        The significance level to check.
+    owner : str
+        What received the value, as the message names it, such as
+        ``"ReplayMethod 'x'"``.
+
+    Raises
+    ------
+    ValueError
+        If ``alpha`` is not a number in (0, 1).
+    """
+    if (
+        isinstance(alpha, (bool, np.bool_))
+        or not isinstance(alpha, (int, float, np.integer, np.floating))
+        or not 0 < alpha < 1
+    ):
+        raise ValueError(f"{owner}: alpha must be in (0, 1), got {alpha!r}.")
+
+
 def validate_float_dtype(
     dtype: Any, *, stored: str
 ) -> type[np.float32] | type[np.float64]:

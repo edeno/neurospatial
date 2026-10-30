@@ -27,6 +27,7 @@ from neurospatial._results import (
     read_only_copy,
     reduce_through_constructor,
 )
+from neurospatial._validation import validate_alpha
 from neurospatial.replay.sequence_match import (
     _check_seconds,
     _is_count,
@@ -599,8 +600,7 @@ class RecurringSequenceMethod:
                     f"{prefix}: {field_name} must be an integer of at least "
                     f"{minimum}, got {value!r}."
                 )
-        if not 0 < self.alpha < 1:
-            raise ValueError(f"{prefix}: alpha must be in (0, 1), got {self.alpha!r}.")
+        validate_alpha(self.alpha, owner=prefix)
 
 
 @dataclass(frozen=True, repr=False, eq=False)

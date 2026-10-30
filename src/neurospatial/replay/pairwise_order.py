@@ -29,6 +29,7 @@ from neurospatial._results import (
     ResultMixin,
     reduce_through_constructor,
 )
+from neurospatial._validation import validate_alpha
 from neurospatial.replay.rank_order import _supported_rates, _validated_interval
 
 if TYPE_CHECKING:
@@ -242,12 +243,7 @@ class PairwiseOrderMethod:
                     f"{list(allowed)}, got {values!r}."
                 )
         _check_n_shuffles(prefix, self.n_shuffles)
-        if (
-            isinstance(self.alpha, bool)
-            or not isinstance(self.alpha, (int, float, np.integer, np.floating))
-            or not 0 < self.alpha < 1
-        ):
-            raise ValueError(f"{prefix}: alpha must be in (0, 1), got {self.alpha!r}.")
+        validate_alpha(self.alpha, owner=prefix)
         value = self.min_active_cells
         if (
             isinstance(value, bool)

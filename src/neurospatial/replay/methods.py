@@ -40,7 +40,11 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial._stacklevel import _warnings_with_context
-from neurospatial._validation import is_integer_at_least, validate_integer_at_least
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_alpha,
+    validate_integer_at_least,
+)
 from neurospatial.replay._compare import (
     _check_criterion_settings,
     _compare,
@@ -884,11 +888,7 @@ class ReplayMethod:
                 f"ReplayMethod {self.name!r}: alternative must be one of "
                 f"{list(_ALTERNATIVES)}, got {self.alternative!r}."
             )
-        if not 0 < self.alpha < 1:
-            raise ValueError(
-                f"ReplayMethod {self.name!r}: alpha must be in (0, 1), got "
-                f"{self.alpha!r}."
-            )
+        validate_alpha(self.alpha, owner=f"ReplayMethod {self.name!r}")
         validate_integer_at_least(
             self.n_shuffles, 1, name="n_shuffles", owner=f"ReplayMethod {self.name!r}"
         )
@@ -1206,8 +1206,7 @@ class RankOrderMethod:
             raise ValueError(
                 f"{prefix}: min_epoch_events applies only to test='pooled_ssi'."
             )
-        if not 0 < self.alpha < 1:
-            raise ValueError(f"{prefix}: alpha must be in (0, 1), got {self.alpha!r}.")
+        validate_alpha(self.alpha, owner=prefix)
         for field_name, minimum in (
             ("min_active_cells", 3),
             ("n_shuffles", 1),

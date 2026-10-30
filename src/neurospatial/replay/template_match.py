@@ -22,6 +22,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import validate_alpha
 from neurospatial.replay.sequence_match import (
     _FIELD_ORDERS,
     _MATCH_ORDERS,
@@ -258,8 +259,7 @@ class TemplateMatchMethod:
                 f"{prefix}: min_template_cells must be an integer of at least 2 or "
                 f"None, got {self.min_template_cells!r}."
             )
-        if not 0 < self.alpha < 1:
-            raise ValueError(f"{prefix}: alpha must be in (0, 1), got {self.alpha!r}.")
+        validate_alpha(self.alpha, owner=prefix)
         rate = self.min_peak_rate
         if rate is not None and (
             isinstance(rate, bool)
