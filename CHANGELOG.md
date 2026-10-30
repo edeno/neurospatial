@@ -114,7 +114,9 @@ paper leaves open and the reading taken here:
   (`wrap=True`), the largest score over clockwise and counterclockwise
   decodes in the event and in each of 500 cell-identity shuffles
   (`template_choice="max_score"`).
-- `BUSH_2022`: line search with a 15 cm half-width band at 1-50 m/s on
+- `BUSH_2022`: line search with a 15 cm half-width band (the paper's "30cm"
+  width read as the full width; the notes give the 30 cm half-width
+  reading) at 1-50 m/s on
   time bins with spikes, against 100 shuffles of the active cells'
   identities (`null_options={"unit_identity": {"active_only": True}}`), at
   least 5 active cells and 15% of the cells.
