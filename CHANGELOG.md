@@ -85,6 +85,14 @@ other seeded simulations give the same spikes as before.
 
 ### Widloski & Foster (2025): trajectory quantities tested against shuffles
 
+- `WIDLOSKI_FOSTER_2025`: the candidates of `WIDLOSKI_FOSTER_2022`, each
+  decoded again 100 times with the rate maps permuted across all place
+  cells (`"unit_identity"`). Its mean posterior spread and its mean
+  center-of-mass jump must each have p = (k + 1) / 101 < 0.05 against the
+  shuffles, as in the authors' per-event test. The notes say why leaving
+  out zero jumps, as the code does, does not change the p-value, and that
+  the bugs found in the deposited code are in the session-level chance
+  script, not in this test.
 - `ReplayMethod.tested_quantities` tests scalar `TrajectoryMetrics` of the
   tested rows against every null, in a stated tail, such as
   `{"mean_spread": "less", "mean_mean_jump": "less"}`. Each quantity's

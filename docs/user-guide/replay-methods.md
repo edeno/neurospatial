@@ -499,6 +499,15 @@ warning says why.
   `Environment.from_graph` from a cycle, with an `edge_order` whose last
   segment ends where the first starts, so a sequence that runs past the
   point where the linear position starts again is scored whole.
+- **Criteria with a shuffle test.** `WIDLOSKI_FOSTER_2025` finds each
+  candidate as `WIDLOSKI_FOSTER_2022` does, then decodes the candidate's
+  time bins again with the rate maps permuted across cells. Its mean
+  posterior spread and mean center-of-mass jump must each be smaller than
+  in at least 96 of 100 shuffles (`tested_quantities`). Pass the 80 ms
+  windows stepped by 5 ms as the event, `dt=0.08`, the rate maps as
+  `encoding_models` and the animal's speed rule as `valid_time_bins`. The
+  table reports each quantity and its p-value, such as `mean_spread` and
+  `p_value[mean_spread]`.
 - **Mazes with arms.** `ArmReplayMethod` recipes (`WU_FOSTER_2014`,
   `BERNERS_LEE_2021`) classify replay per arm: pass `arms=` to
   `compare_replay_methods`.

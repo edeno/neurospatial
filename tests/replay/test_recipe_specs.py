@@ -387,6 +387,39 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
             },
         },
     ),
+    "widloski_foster_2025": (
+        ReplayMethod,
+        {
+            "score": None,
+            "nulls": ("unit_identity",),
+            "n_shuffles": 100,
+            "alpha": 0.05,
+            "tested_quantities": {"mean_spread": "less", "mean_mean_jump": "less"},
+            "criteria": (
+                ("segment_duration", ">", 0.1, None, False),
+                ("segment_dispersion", ">", 12.0, None, False),
+            ),
+            "segmentation": _segmentation(
+                {
+                    "max_jump": 20.0,
+                    "method": "expected",
+                    "jump_rule": "drop_earlier",
+                    "max_spread": 10.0,
+                    "merge_max_time_gap": 0.05,
+                    "merge_max_distance": 20.0,
+                },
+                choose="any",
+            ),
+            "units": "cm",
+            "decoding": {
+                "time_bin": 0.08,
+                "time_step": 0.005,
+                "position_bin": 2.0,
+                "rate_map_smoothing_sd": 8.0,
+                "prior": "uniform",
+            },
+        },
+    ),
     "wikenheiser_redish_2013": (
         ReplayMethod,
         {

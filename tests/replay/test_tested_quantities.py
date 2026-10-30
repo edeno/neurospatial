@@ -20,6 +20,7 @@ from neurospatial.replay import (
     trajectory_metrics,
     weighted_correlation,
 )
+from neurospatial.replay.methods import WIDLOSKI_FOSTER_2022, WIDLOSKI_FOSTER_2025
 from neurospatial.simulation import simulate_replay_event
 from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
@@ -432,3 +433,89 @@ class TestValidation:
             segmentation=ReplaySegmentation({"max_jump": 20.0}),
         )
         assert tested.tested_quantities == TESTED
+
+
+class TestWidloskiFoster2025:
+    @pytest.fixture(scope="class")
+    def windows(self):
+        """80 ms windows stepped by 5 ms over a 100 cm/s sweep in 2 cm bins."""
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [200.0, 0.0]], bin_size=2.0, units="cm"
+        )
+        x = env.bin_centers[:, 0]
+        rates = 0.5 + 25.0 * np.exp(
+            -0.5 * ((x - np.linspace(0.0, 200.0, 60)[:, None]) / 10.0) ** 2
+        )
+        event = simulate_replay_event(
+            env,
+            rates,
+            kind="sweep",
+            speed=100.0,
+            duration=0.8,
+            start_position=40.0,
+            seed=1,
+        )
+        counts, grid = bin_spikes_in_time(
+            list(event.spike_times), dt=0.005, t_start=0.0, t_stop=event.duration
+        )
+        summed = np.lib.stride_tricks.sliding_window_view(counts, 16, axis=0)
+        windows = summed.sum(axis=-1)
+        centers = (grid[:-15] + grid[15:]) / 2
+        posterior = decode_position(env, windows, rates, dt=0.08).posterior
+        return env, rates, posterior, centers, windows
+
+    def test_the_recipe_is_the_2022_detection_with_a_shuffle_test(self):
+        changed = {
+            item.name
+            for item in dataclasses.fields(WIDLOSKI_FOSTER_2025)
+            if getattr(WIDLOSKI_FOSTER_2025, item.name)
+            != getattr(WIDLOSKI_FOSTER_2022, item.name)
+        }
+        assert changed == {
+            "name",
+            "reference",
+            "nulls",
+            "n_shuffles",
+            "tested_quantities",
+            "decoding",
+            "notes",
+        }
+
+    def test_a_slow_sweep_is_replay(self, windows):
+        env, rates, posterior, times, counts = windows
+        result = detect_replay(
+            env,
+            posterior,
+            times,
+            replay_method=WIDLOSKI_FOSTER_2025,
+            spike_counts=counts,
+            encoding_models=rates,
+            dt=0.08,
+            valid_time_bins=np.ones(len(times), dtype=bool),
+            rng=0,
+        )
+        assert result.segments.n_segments == 1
+        assert result.criteria == {
+            "segment_duration > 0.1": True,
+            "segment_dispersion > 12": True,
+        }
+        assert dict(result.tested_p_values) == pytest.approx(
+            {"mean_spread": 1 / 101, "mean_mean_jump": 1 / 101}
+        )
+        assert result.is_replay
+
+    def test_running_bins_are_not_replay(self, windows):
+        env, rates, posterior, times, counts = windows
+        result = detect_replay(
+            env,
+            posterior,
+            times,
+            replay_method=WIDLOSKI_FOSTER_2025,
+            spike_counts=counts,
+            encoding_models=rates,
+            dt=0.08,
+            valid_time_bins=np.zeros(len(times), dtype=bool),
+            rng=0,
+        )
+        assert result.segment is None and not result.is_replay
+        assert np.isnan(result.tested_p_values["mean_spread"])

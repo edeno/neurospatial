@@ -93,6 +93,7 @@ __all__ = [
     "TANG_2017",
     "TIROLE_2022",
     "WIDLOSKI_FOSTER_2022",
+    "WIDLOSKI_FOSTER_2025",
     "WIKENHEISER_REDISH_2013",
     "WU_2017",
     "WU_FOSTER_2014",
@@ -3965,6 +3966,77 @@ WIDLOSKI_FOSTER_2022 = ReplayMethod(
     ),
 )
 
+WIDLOSKI_FOSTER_2025 = dataclasses.replace(
+    WIDLOSKI_FOSTER_2022,
+    name="widloski_foster_2025",
+    reference=(
+        "Widloski, J., & Foster, D. J. (2025). Replay without sharp wave "
+        "ripples in a spatial memory task. Nature Communications, 16, 10287. "
+        "https://doi.org/10.1038/s41467-025-65181-5"
+    ),
+    nulls=("unit_identity",),
+    n_shuffles=100,
+    alpha=0.05,
+    tested_quantities={"mean_spread": "less", "mean_mean_jump": "less"},
+    decoding={
+        "time_bin": 0.08,
+        "time_step": 0.005,
+        "position_bin": 2.0,
+        "rate_map_smoothing_sd": 8.0,
+        "prior": "uniform",
+    },
+    notes=(
+        "Candidate events are found as in Widloski & Foster (2022), which "
+        "the paper cites for the procedure (Methods, p. 11): time bins are "
+        "kept when the animal is slower than 5 cm/s, the posterior spread is "
+        "below 10 cm and the center-of-mass jump is below 20 cm (pass the "
+        "speed rule as valid_time_bins); subsequences are merged across gaps "
+        "below 50 ms and 20 cm; a candidate lasts more than 100 ms and has a "
+        "dispersion above 12 cm. The deposited code gives each time bin the "
+        "jump to the next one, so a jump rejects the earlier bin.",
+        "Each candidate is decoded again 100 times with the rate maps of all "
+        "decoding place cells permuted across cells "
+        "(load_replayEvents_cellIDshuffle_sameEvents.m, randperm over every "
+        "place cell: the unit_identity null with active_only=False). Its mean "
+        "posterior spread over every time bin of the merged segment, and its "
+        "mean center-of-mass jump over consecutive time bins, are compared "
+        "with the shuffles'. The segmentation is not run on the shuffles.",
+        "Each p-value is (k + 1) / 101, k the shuffles at least as small as "
+        "the event, and both must be below 0.05. The code counts strictly "
+        "smaller shuffles and keeps p <= 0.05, and the paper states p < "
+        "0.05; with 100 shuffles all three readings allow at most 4 smaller "
+        "shuffles.",
+        "The code leaves out zero jumps, between overlapping windows with "
+        "the same spike counts. These decode to the same posterior under any "
+        "permutation, so they are zero in the event and in every shuffle, "
+        "and leaving them out rescales every mean alike: the p-value does "
+        "not change. The code also counts the last jump twice (padding for "
+        "the per-bin jump rule); that is not reproduced.",
+        "The paper prints the spread as a product of the x and y deviations, "
+        "which has units of area against a 10 cm threshold. The deposited "
+        "compute_imageSpread.m takes the exponent as an argument, but the "
+        "decoder that calls it is not deposited; the isotropic spread of "
+        "TrajectoryMetrics is used, as in WIDLOSKI_FOSTER_2022.",
+        "The bugs in load_replayEvents_cellIDshuffle.m (shuffled jumps "
+        "computed from the p-value vector, l. 137, which makes every jump "
+        "test pass; the wrong segment's time bins, l. 123) are in the "
+        "session-level script that repeats the whole detection on cell-ID "
+        "shuffles to count replays expected by chance (Supplementary "
+        "Fig. 3C-D), not in the per-event test used for the published "
+        "replays; they are not reproduced.",
+        "The code tests every candidate. detect_replay reports one segment "
+        "per window: the segments that meet the duration and dispersion "
+        "criteria are tested from the longest down, and the first whose "
+        "spread and jump are both significant is reported. Pass windows "
+        "that hold the whole sequence, since the method scans the whole "
+        "stopping period and a sequence that crosses a window's edge is cut.",
+        "Decoding: 80 ms windows stepped by 5 ms, all of the session's place "
+        "cells, 2 cm square bins and a uniform prior; rate maps from running "
+        "faster than 10 cm/s, smoothed with an 8 cm SD Gaussian. Pass "
+        "dt=0.08 so the shuffles are decoded with the windows' duration.",
+    ),
+)
+
 MALLORY_2025 = ReplayMethod(
     name="mallory_2025",
     reference=(
@@ -4948,5 +5020,6 @@ PUBLISHED_METHODS: tuple[ReplayMethod | RankOrderMethod | ArmReplayMethod, ...] 
     HARVEY_2023,
     LIU_2023,
     MALLORY_2025,
+    WIDLOSKI_FOSTER_2025,
 )
 """Every published method recipe in this module."""
