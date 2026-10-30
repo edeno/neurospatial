@@ -96,6 +96,20 @@ other seeded simulations give the same spikes as before.
   thresholds 2.0 and 2.000001 on one quantity: results are keyed by label,
   so one criterion overwrote the other and the verdict depended on their
   order.
+- `ReplayMethod` checks its settings when it is made rather than partway
+  through `detect_replay`:
+  - a method without nulls, criteria or a segmentation is refused, since
+    it would call every event replay;
+  - criteria must test a quantity of an event: `"score"`,
+    `"n_active_cells"`, `"active_fraction"`, a `segment_*` or template
+    quantity, or a scalar of `TrajectoryMetrics`. A typo, a per-time-bin
+    array such as `"map_jumps"` or a method name is refused;
+  - `score` must be callable, and `score_options` must be options it
+    takes;
+  - `n_shuffles` must be an integer (NumPy integers included), not 2.5 or
+    `"99"`;
+  - `nulls="column_cycle"` is one null, as in `replay_significance`, and a
+    null named twice is refused.
 
 ### Published replay methods as comparable recipes
 

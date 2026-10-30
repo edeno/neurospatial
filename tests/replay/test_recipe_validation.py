@@ -271,3 +271,120 @@ class TestCriterionValidation:
         )
         method = ReplayMethod("x", "y", score=weighted_correlation, criteria=criteria)
         assert method.criteria == criteria
+
+
+class TestMethodValidation:
+    @pytest.mark.parametrize("score", [weighted_correlation, None])
+    def test_a_method_that_tests_nothing_is_refused(self, score):
+        with pytest.raises(ValueError, match="tests nothing"):
+            ReplayMethod("x", "y", score=score)
+
+    @pytest.mark.parametrize("n_shuffles", [2.5, np.float64(99.0), "99", True, 0])
+    def test_n_shuffles_must_be_a_positive_integer(self, n_shuffles):
+        with pytest.raises(ValueError, match="n_shuffles must be a positive integer"):
+            ReplayMethod(
+                "x",
+                "y",
+                score=weighted_correlation,
+                nulls=("column_cycle",),
+                n_shuffles=n_shuffles,
+            )
+
+    def test_numpy_integer_n_shuffles_is_accepted(self):
+        method = ReplayMethod(
+            "x",
+            "y",
+            score=weighted_correlation,
+            nulls=("column_cycle",),
+            n_shuffles=np.int64(99),
+        )
+        assert method.n_shuffles == 99
+
+    @pytest.mark.parametrize(
+        "quantity",
+        [
+            "max_map_jmp",  # a typo
+            "map_jumps",  # one value per time bin
+            "well_decoded_fraction",  # a method
+            "metric",
+            "units",
+        ],
+    )
+    def test_criteria_must_test_a_scalar_quantity(self, quantity):
+        with pytest.raises(ValueError, match="not quantities of an event"):
+            ReplayMethod(
+                "x",
+                "y",
+                score=weighted_correlation,
+                criteria=(ReplayCriterion(quantity, "<", 40.0),),
+            )
+
+    @pytest.mark.parametrize(
+        "quantity",
+        [
+            "score",
+            "n_active_cells",
+            "active_fraction",
+            "max_map_jump",
+            "map_range",
+            "mean_peak_probability",
+            "template_fraction",
+        ],
+    )
+    def test_event_quantities_are_accepted(self, quantity):
+        method = ReplayMethod(
+            "x",
+            "y",
+            score=weighted_correlation,
+            criteria=(ReplayCriterion(quantity, ">", 0.1),),
+        )
+        assert method.criteria[0].quantity == quantity
+
+    def test_score_must_be_callable(self):
+        with pytest.raises(TypeError, match="score must be a function"):
+            ReplayMethod("x", "y", score="radon", nulls=("column_cycle",))
+
+    def test_score_options_must_fit_the_score(self):
+        with pytest.raises(ValueError, match=r"\['band'\] do not fit"):
+            ReplayMethod(
+                "x",
+                "y",
+                score=weighted_correlation,
+                score_options={"band": 5},
+                nulls=("column_cycle",),
+            )
+
+    def test_samples_per_time_bin_needs_a_sampling_score(self):
+        with pytest.raises(ValueError, match="do not fit"):
+            ReplayMethod(
+                "x",
+                "y",
+                score=weighted_correlation,
+                score_options={"n_samples_per_time_bin": 10},
+                nulls=("column_cycle",),
+            )
+
+    def test_score_options_need_a_score(self):
+        with pytest.raises(ValueError, match="need a score"):
+            ReplayMethod(
+                "x",
+                "y",
+                score=None,
+                score_options={"band": 5},
+                criteria=(ReplayCriterion("max_map_jump", "<", 40.0),),
+            )
+
+    def test_a_single_null_name_is_one_null(self):
+        method = ReplayMethod(
+            "x", "y", score=weighted_correlation, nulls="column_cycle", n_shuffles=19
+        )
+        assert method.nulls == ("column_cycle",)
+
+    def test_a_null_named_twice_is_refused(self):
+        with pytest.raises(ValueError, match="named more than once"):
+            ReplayMethod(
+                "x",
+                "y",
+                score=weighted_correlation,
+                nulls=("column_cycle", "column_cycle"),
+            )

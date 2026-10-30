@@ -21,6 +21,7 @@ reproduced, are listed in each recipe's ``notes``.
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import operator
 from collections.abc import Callable, Mapping, Sequence
@@ -102,6 +103,28 @@ _COMPARISONS: dict[str, Callable[[float, float], bool]] = {
     ">": operator.gt,
     ">=": operator.ge,
 }
+
+
+def _criterion_quantities() -> tuple[str, ...]:
+    """The quantities a criterion of a :class:`ReplayMethod` can test."""
+    from typing import get_type_hints
+
+    from neurospatial.replay.criteria import TrajectoryMetrics
+
+    hints = get_type_hints(TrajectoryMetrics)
+    scalars = [
+        item.name
+        for item in dataclasses.fields(TrajectoryMetrics)
+        if hints[item.name] in (int, float)
+    ]
+    return (
+        "score",
+        "n_active_cells",
+        "active_fraction",
+        *_SEGMENT_QUANTITIES,
+        *_TEMPLATE_QUANTITIES,
+        *scalars,
+    )
 
 
 @dataclass(frozen=True)
@@ -392,14 +415,17 @@ class ReplayMethod:
         the p-value is the share of shuffles that also have one (Igata et
         al. 2021).
     score_options : Mapping[str, Any]
-        Options for ``score``. ``"n_samples_per_time_bin"`` is converted to
+        Options for ``score``, checked against its signature when the
+        method is made. ``"n_samples_per_time_bin"`` is converted to
         ``n_samples`` for each event, for samplers like
         :func:`~neurospatial.replay.fit_linear_trajectory` whose papers
         give a count per time bin.
     nulls : tuple of str
         Shuffles the score is tested against (see
-        :func:`~neurospatial.replay.replay_significance`). Empty for a method
-        without a per-event shuffle test.
+        :func:`~neurospatial.replay.replay_significance`), each named once;
+        a single name is one null. Empty for a method without a per-event
+        shuffle test. A method needs nulls, criteria or a segmentation:
+        without any, it would call every event replay.
     n_shuffles : int
         Shuffles per null.
     alpha : float
@@ -474,9 +500,22 @@ class ReplayMethod:
             self, "score_options", MappingProxyType(dict(self.score_options))
         )
         object.__setattr__(self, "decoding", MappingProxyType(dict(self.decoding)))
-        object.__setattr__(self, "nulls", tuple(self.nulls))
+        nulls = (self.nulls,) if isinstance(self.nulls, str) else tuple(self.nulls)
+        object.__setattr__(self, "nulls", nulls)
         object.__setattr__(self, "criteria", tuple(self.criteria))
         object.__setattr__(self, "notes", tuple(self.notes))
+        self._check_score()
+        quantities = _criterion_quantities()
+        unknown = sorted({c.quantity for c in self.criteria} - set(quantities))
+        if unknown:
+            raise ValueError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: criteria test {unknown}, which "
+                    "are not quantities of an event.",
+                    why="a criterion compares one number per event with its threshold",
+                    fix=f"use one of {list(quantities)}",
+                )
+            )
         labels = [c.label for c in self.criteria]
         repeated = sorted({label for label in labels if labels.count(label) > 1})
         if repeated:
@@ -582,6 +621,13 @@ class ReplayMethod:
                 f"ReplayMethod {self.name!r}: unknown nulls {unknown}; choose "
                 f"from {list(_NULLS)}."
             )
+        repeated = sorted({name for name in self.nulls if self.nulls.count(name) > 1})
+        if repeated:
+            raise ValueError(
+                f"ReplayMethod {self.name!r}: nulls {repeated} are named more "
+                "than once; name each null once and set the number of shuffles "
+                "per null with n_shuffles."
+            )
         if self.alternative not in ("greater", "less", "two-sided"):
             raise ValueError(
                 f"ReplayMethod {self.name!r}: alternative must be 'greater', "
@@ -592,11 +638,64 @@ class ReplayMethod:
                 f"ReplayMethod {self.name!r}: alpha must be in (0, 1), got "
                 f"{self.alpha!r}."
             )
-        if isinstance(self.n_shuffles, bool) or int(self.n_shuffles) < 1:
+        if (
+            isinstance(self.n_shuffles, bool)
+            or not isinstance(self.n_shuffles, (int, np.integer))
+            or self.n_shuffles < 1
+        ):
             raise ValueError(
                 f"ReplayMethod {self.name!r}: n_shuffles must be a positive "
                 f"integer, got {self.n_shuffles!r}."
             )
+        if not (self.nulls or self.criteria or self.segmentation is not None):
+            raise ValueError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: the method has no nulls, "
+                    "criteria or segmentation, so it tests nothing.",
+                    why="without a shuffle test, a threshold or a trajectory "
+                    "segment to find, every event would be called replay",
+                    fix="give nulls such as ('column_cycle',), criteria such as "
+                    "(ReplayCriterion('score', '>', 0.5, absolute=True),), or a "
+                    "ReplaySegmentation",
+                )
+            )
+
+    def _check_score(self) -> None:
+        """Refuse a score that is not callable or does not take score_options."""
+        if self.score is None:
+            if self.score_options:
+                raise ValueError(
+                    f"ReplayMethod {self.name!r}: score_options "
+                    f"{sorted(self.score_options)} need a score; give one or "
+                    "remove them."
+                )
+            return
+        if not callable(self.score):
+            raise TypeError(
+                f"ReplayMethod {self.name!r}: score must be a function "
+                "score(env, posterior, times, **score_options), such as "
+                f"weighted_correlation, or None; got {self.score!r}."
+            )
+        options = dict(self.score_options)
+        if "n_samples_per_time_bin" in options:
+            options["n_samples"] = options.pop("n_samples_per_time_bin")
+        try:
+            signature = inspect.signature(self.score)
+        except (TypeError, ValueError):  # no signature to check against
+            return
+        try:
+            signature.bind_partial(None, None, None, **options)
+        except TypeError as error:
+            name = getattr(self.score, "__name__", repr(self.score))
+            raise ValueError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: score_options "
+                    f"{sorted(self.score_options)} do not fit {name}"
+                    "(env, posterior, times, ...).",
+                    why=str(error),
+                    fix=f"use options {name} takes: {list(signature.parameters)[3:]}",
+                )
+            ) from None
 
     def __hash__(self) -> int:
         """Hash by name and reference; the option mappings are not hashable."""
