@@ -16,7 +16,9 @@ the published recipes to one session and asks:
 1. What does each method report, and how do they differ?
 2. What do they report on data without reactivation, and which kinds of
    "no reactivation" fool them?
-3. How do the methods that count spikes in sharp-wave ripples (SWRs) or
+3. Can equal firing rates or larger time bins separate reactivation from
+   a change in rate, and how much does the time bin matter?
+4. How do the methods that count spikes in sharp-wave ripples (SWRs) or
    theta cycles, or follow the assemblies around SWRs, differ from those
    that bin time?
 
@@ -272,9 +274,267 @@ print(tested.assign(called=called).pivot(index="data", columns="method", values=
 Kudrimoti's t test and Lansink's bootstrap call none of the null data
 reactivated, and both call the rate-change session reactivated. A
 within-session test of EV cannot tell a change in co-firing from a change
-in rate. Check the members' rates before and after the task, or equalize
-them: Giri et al. (2019) repeated their analysis on spikes subsampled to the
-same count before and after, and found the same EV.
+in rate. The next section applies the two controls Tingley & Peyrache
+(2020) propose.
+
+## Controlling for a change in rate
+
+Tingley & Peyrache (2020) name two controls for the rate confound: "It is
+possible to control for this by subsampling spike trains to equalize rates
+[Giri et al. 2019], or greatly increase the time bin size in order to
+estimate the contribution of slow time-scale rate fluctuations." Both are
+applied below to four simulated sessions: the reactivated one, one without
+reactivation, one whose assembly members only fire twice as much after the
+task, and one with both reactivation and the rate change.
+
+<!-- docs-test: run -->
+```python
+from neurospatial.reactivation import (
+    GIRI_2019,
+    PEYRACHE_2010,
+    equalize_firing_rates,
+    explained_variance_reactivation,
+    pairwise_activation,
+)
+
+sessions = {
+    "reactivated": session,
+    "no_reactivation": simulated_reactivation_session(
+        n_units=30, duration=1200.0, rng=2, reactivation=0.0
+    ),
+    "rate_change": simulated_reactivation_session(
+        n_units=30, duration=1200.0, rng=2, reactivation=0.0, rate_change=1.0
+    ),
+    "reactivated_and_rate_change": simulated_reactivation_session(
+        n_units=30, duration=1200.0, rng=2, rate_change=1.0
+    ),
+}
+
+
+def compare_sessions(methods, names):
+    tables = []
+    for name in names:
+        data = sessions[name]
+        table = compare_reactivation_methods(
+            data.spike_times,
+            data.template_epochs,
+            data.match_epochs,
+            data.control_epochs,
+            reactivation_methods=methods,
+            unit_groups=unit_groups,
+            rng=0,
+        )
+        tables.append(table.assign(data=name))
+    return pd.concat(tables, ignore_index=True)
+
+
+def by_session(table, column="value"):
+    return table.groupby(["data", "method"], sort=False)[column].mean().unstack()
+```
+
+### Equal rates (Giri et al. 2019)
+
+Giri et al. "repeated this analysis after subsampling to equalize the
+firing rate for each neuron in PRE and POST", over "100 different random
+subsamples equalizing PRE and POST spike counts of each cell", and reported
+the median correlation and p-value. `equalize_firing_rates` draws one such
+subsample from binned counts: for each unit, the rest period in which it
+fires more per bin loses spikes chosen at random until it fires at its rate
+in the other period. The task is not subsampled. A recipe with
+`n_rate_subsamples=` does this for each pair of windows of rest before and
+after and reports the medians over the subsamples. Giri et al. drew 100;
+10 keep this guide fast.
+
+<!-- docs-test: run -->
+```python
+equal_rates = []
+for method in (KUDRIMOTI_1999, GIRI_2019):
+    equal_rates += [
+        method,
+        dataclasses.replace(
+            method, name=f"{method.name}_equal_rates", n_rate_subsamples=10
+        ),
+    ]
+equal_table = compare_sessions(equal_rates, sessions)
+print("EV:")
+print(by_session(equal_table).round(3).to_string())
+print("Kudrimoti windows called reactivated (of 2):")
+called = by_session(equal_table, "is_reactivated").dropna(axis=1)
+print(called.mul(2).astype(int).to_string())
+```
+
+- **The rate change alone.** With every spike, Kudrimoti's EV is 0.12 and
+  Giri's 0.14, and Kudrimoti's t test calls both windows reactivated. With
+  equal rates both fall to 0.002 to 0.004, the EV of the session without
+  reactivation, and the test calls neither window.
+- **Real reactivation survives.** EV stays at 0.84 to 0.89 in the
+  reactivated session and 0.70 to 0.74 when the rates also change. It is
+  lower than with every spike because the subsample also removes spikes of
+  the assembly events after the task, which raise the members' rates too.
+  The control is conservative: it can lower a genuine effect.
+
+On your own counts, draw the subsamples from one generator and take the
+median of the statistic:
+
+<!-- docs-test: run -->
+```python
+rate_session = sessions["rate_change"]
+
+
+def counts_of(data, epochs, bin_size=0.1):
+    return bin_spikes_in_time(data.spike_times, dt=bin_size, epochs=epochs)[0]
+
+
+template_correlations = pairwise_correlations(
+    counts_of(rate_session, rate_session.template_epochs)
+)
+before = counts_of(rate_session, rate_session.control_epochs)
+after = counts_of(rate_session, rate_session.match_epochs)
+members = list(rate_session.assemblies[0])
+print("member spikes before:   ", before[:, members].sum(axis=0))
+print("member spikes after:    ", after[:, members].sum(axis=0))
+
+generator = np.random.default_rng(0)
+explained = []
+for _ in range(10):
+    equal_before, equal_after = equalize_firing_rates(before, after, rng=generator)
+    explained.append(
+        explained_variance_reactivation(
+            template_correlations,
+            pairwise_correlations(equal_after),
+            control_correlations=pairwise_correlations(equal_before),
+        ).explained_variance
+    )
+print("after, equal rates:     ", equal_after[:, members].sum(axis=0))
+print(f"median EV over 10 subsamples: {np.median(explained):.4f}")
+```
+
+The members of the first assembly fired about 2,900 spikes each in the 20
+minutes before the task and about 5,700 after it. After subsampling each
+fires exactly as many spikes after as before, and EV falls to 0.001. Bin
+both periods with the same bin size: the rate being equalized is spikes per
+bin. This uses every pair and all 20 minutes, so the numbers differ a
+little from Kudrimoti's recipe, which keeps pairs on different tetrodes and
+cuts rest after into 10-minute windows.
+
+### Larger time bins
+
+The second control bins the same spikes in much larger bins. Kudrimoti's
+analysis at 0.1 to 5 s:
+
+<!-- docs-test: run -->
+```python
+wide = [
+    dataclasses.replace(KUDRIMOTI_1999, name=f"{bin_size:g} s", bin_size=bin_size)
+    for bin_size in (0.1, 0.25, 1.0, 5.0)
+]
+names = ["reactivated", "no_reactivation", "rate_change"]
+wide_table = compare_sessions(wide, names)
+print("EV:")
+print(by_session(wide_table).round(3).to_string())
+print("windows called reactivated (of 2):")
+print(by_session(wide_table, "is_reactivated").mul(2).astype(int).to_string())
+```
+
+At 5 s the rate-change session is no longer called reactivated (EV 0.006),
+while the reactivated session still is (EV 0.49). The large bin did not
+remove the confound. Over six simulated sessions, the members' pair
+correlations after the task exceed those of the other cells by 0.09 at 1 s
+and still by 0.07 at 5 s: the bursts that carry the rate change last
+100 ms, and any bin wider than a burst counts all of it. What changes is
+the noise. Twenty minutes hold only 240 bins of 5 s, so each pair
+correlation scatters by about 0.07, as much as the effect, and EV can no
+longer see it. The real reactivation loses half its EV for the same
+reason. The large bin lost the power to see the confound, and most of the
+power to see reactivation with it.
+
+What a large bin does measure is co-firing on slow timescales. If EV stays
+as high at seconds as at 100 ms, slow co-fluctuations of rates, such as
+cells whose rates drift together over sleep, may carry it rather than the
+fast co-firing of SWRs and theta sequences. It does not correct a
+difference in rate between the two rest periods; equal rates do.
+
+## How much does the time bin matter?
+
+Published reactivation analyses use bins of 25 to 250 ms; Kudrimoti et al.
+found "comparable results" at 50 and 200 ms and Giri et al. "highly similar
+and consistent results" from 50 to 500 ms. Tingley & Peyrache (2020) note
+that "a systemic variation of bin size and its impact on pattern detection
+is lacking". Here are Kudrimoti's EV and Peyrache's assembly difference
+(without the cell-identity shuffles, for speed) at 50, 100 and 250 ms on
+three sessions:
+
+<!-- docs-test: run -->
+```python
+bin_sizes = (0.05, 0.1, 0.25)
+by_bin = [
+    dataclasses.replace(KUDRIMOTI_1999, name=f"EV {b * 1000:g} ms", bin_size=b)
+    for b in bin_sizes
+] + [
+    dataclasses.replace(
+        PEYRACHE_2010, name=f"assembly {b * 1000:g} ms", bin_size=b, test=None
+    )
+    for b in bin_sizes
+]
+print(by_session(compare_sessions(by_bin, names)).round(3).T.to_string())
+```
+
+- **With reactivation**, both measures find it at every bin size. EV falls
+  slightly as the bin grows (0.97, 0.95, 0.91) while the assembly
+  difference stays near 1.5. The assembly events last about 10 ms, and the
+  100 ms bursts, which every pair shares, make up more of each bin's
+  co-firing as the bin grows: the mean pair correlation of rest rises from
+  about 0.06 at 50 ms to 0.11 at 250 ms.
+- **Without reactivation**, both stay near 0 at every bin size.
+- **The rate confound grows with the bin for assemblies** (0.17, 0.23,
+  0.28): 50 ms bins split the 100 ms bursts that carry it, and 250 ms bins
+  count them whole. For EV it stays at 0.11 to 0.12.
+
+Which bin is right depends on the timescale of the co-firing you are
+after. Report the bin, and check that the conclusion holds at its
+neighbors, as Kudrimoti et al. and Giri et al. did.
+
+## Following reactivation in time
+
+EV summarizes a whole period. The reactivation strength of Tingley &
+Peyrache (2020) follows it bin by bin: each bin's z-scored population
+vector is projected on the task's correlation matrix, with the diagonal set
+to 0 so that a cell firing alone adds nothing. With an assembly pattern in
+place of the whole matrix this is `assembly_activation`; with the whole
+matrix ("in the simplest case, the correlation matrix") it is
+`pairwise_activation`. Its mean over a period is the sum, over pairs of
+cells, of the products of their correlations in the task and in that
+period.
+
+<!-- docs-test: run -->
+```python
+for name in names:
+    data = sessions[name]
+    template_correlations = pairwise_correlations(
+        counts_of(data, data.template_epochs)
+    )
+    before = pairwise_activation(
+        counts_of(data, data.control_epochs), template_correlations
+    )
+    after = pairwise_activation(
+        counts_of(data, data.match_epochs), template_correlations
+    )
+    above = np.mean(after > np.percentile(before, 99))
+    print(
+        f"{name:16s} mean before {before.mean():5.2f}, after {after.mean():5.2f}; "
+        f"{above:.1%} of bins after above the 99th percentile before"
+    )
+```
+
+In the reactivated session the mean rises from about 2.3 before the task to
+13 after it, and 5.7% of the bins after it exceed the 99th percentile of
+those before, against 1.0% without reactivation. The 2.3 before the task
+comes from the population bursts, which correlate every pair in both rest
+periods. The measure sums over all pairs, weighted by their correlations
+in the task, so it grows with the number of cells and keeps every noisy
+pair; assembly patterns keep only the components above chance. The rate
+change raises it too, from 2.35 to 3.95, so the rate controls above apply
+to it as well.
 
 ## How many assemblies?
 
@@ -511,6 +771,12 @@ in the two rest periods.
   Pairs on the same tetrode can share spike-sorting errors. For Giri et al.
   (2024), pass the pairs with waveform similarity below 0.8 as
   `pair_mask=`, in `np.triu_indices(n_units, k=1)` order.
+- **Rates.** Compare each unit's firing rate in the two rest periods. If
+  they differ, also run the EV recipes with equal rates,
+  `dataclasses.replace(method, name=..., n_rate_subsamples=100)`, or draw
+  the subsamples yourself with `equalize_firing_rates`, and report both.
+  Event-binned rest (`rest_bins="events"`) is refused: spikes per event and
+  spikes per second disagree when events differ in length.
 - **Shuffles.** Keep the published `n_shuffles`, give `rng` a fixed seed and
   report `table.attrs["rng_entropy"]`.
 - **Sessions.** Most papers tested across sessions (Wilcoxon signed-rank of

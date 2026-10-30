@@ -288,6 +288,10 @@ by position:
   cells) in each bin of a chosen period; descriptive rather than a
   calibrated bin-level significance test
 - `pairwise_correlations()`: Upper-triangle neuron-pair correlations
+- `pairwise_activation()`: co-firing in each bin weighted by every pair's
+  template correlation, the full-matrix reactivation strength of Tingley &
+  Peyrache (2020); its mean over a period is the inner product of the two
+  periods' pair correlations
 - `explained_variance_reactivation()`: EV (Kudrimoti et al., 1999) and REV
   (Pennartz et al., 2004) effect sizes over all pairs or selected pairs
   (`unit_groups=` for different tetrodes or regions, `pair_mask=`), with one
@@ -318,6 +322,8 @@ by position:
 - `null_reactivation_data()`, `simulated_reactivation_session()` and
   `reactivation_detection_rates()`: data without reactivation, a simulated
   session with a rate-change confound, and verdict rates with exact intervals
+- `equalize_firing_rates()`: subsample spikes so each unit fires at one rate
+  before and after the task, the rate control of Giri et al. (2019)
 
 See [Comparing reactivation methods](../user-guide/reactivation-methods.md) and
 the [complete public workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).

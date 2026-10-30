@@ -288,6 +288,47 @@ Several replay papers test a whole data set, not each event:
   the choice of assembly threshold, and how to run the recipes on your own
   recording.
 
+### Reactivation checks from Tingley & Peyrache (2020)
+
+**New**
+
+- `equalize_firing_rates(control_counts, match_counts, *, rng=)` is the rate
+  control of Giri et al. (2019): for each unit, the period in which it fires
+  more per bin loses spikes chosen uniformly at random until both periods
+  have its lower rate. With periods of equal length each unit's counts are
+  equal exactly. Pair correlations grow with firing rate, so this separates
+  more co-firing after the task from more firing (Tingley & Peyrache 2020).
+- `ReactivationMethod(n_rate_subsamples=)` applies that control inside
+  `compare_reactivation_methods`: each pair of control and match windows is
+  subsampled this many times, and EV, REV, the partial correlation and its
+  p-value are the medians over subsamples, as Giri et al. reported them. On
+  a simulated session whose assembly members only fire more after the task,
+  Kudrimoti's EV falls from 0.11-0.13 to the level of a session without the
+  rate change; with real reactivation it stays above 0.7. `GIRI_2019` keeps
+  its main analysis; its notes say where the paper applied the control
+  (`dataclasses.replace(GIRI_2019, n_rate_subsamples=100)`).
+- `pairwise_activation(spike_counts, template_correlations, *,
+  z_score_input=, unit_ids=, template_unit_ids=)` is the reactivation
+  strength of Tingley & Peyrache (2020) in its simplest case: each bin's
+  z-scored population vector projected on the template's whole correlation
+  matrix with a zero diagonal (the "cell-pair coherogram" of their
+  supplement). Its mean over a period is the sum over neuron pairs of the
+  products of the two periods' correlations, which the tests check against
+  `np.corrcoef`; a rank-one template gives `assembly_activation`.
+
+**Documentation**
+
+- [Comparing reactivation methods](docs/user-guide/reactivation-methods.md)
+  applies both of Tingley & Peyrache's rate controls to sessions with and
+  without reactivation and a rate change. Equal rates bring the rate-change
+  EV to the null level and keep real reactivation. Bins of 5 s also stop
+  the rate-change session being called reactivated, but only because 240
+  bins estimate each correlation too poorly to see it; the member-pair
+  excess is unchanged and real EV halves. The guide also compares EV and
+  assembly differences at 50, 100 and 250 ms (the assembly rate confound
+  grows with the bin) and follows reactivation in time with
+  `pairwise_activation`.
+
 ### Reactivation measures
 
 The pattern and pair-correlation reactivation measures now compute what the

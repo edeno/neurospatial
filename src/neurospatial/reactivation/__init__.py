@@ -35,6 +35,8 @@ Pairwise Reactivation
 ---------------------
 pairwise_correlations : Compute pairwise correlations between neurons
     Extract upper triangle of correlation matrix.
+pairwise_activation : Co-firing per time bin, weighted by template correlations
+    The full-matrix reactivation strength of Tingley & Peyrache (2020).
 
 explained_variance_reactivation : Explained variance reactivation analysis
     Partial correlation of template and match pair correlations controlling
@@ -72,6 +74,8 @@ simulated_reactivation_session : Rest, task and rest with assemblies
     Reactivation strength and a rate-change confound are settings.
 reactivation_detection_rates : Share of rows called reactivated
     With Clopper-Pearson intervals, overall or by group.
+equalize_firing_rates : Subsample spikes to one rate before and after
+    The rate control of Giri et al. (2019).
 SimulatedReactivationSession : Spike times, epochs and assemblies
 
 Result Containers
@@ -101,10 +105,12 @@ from neurospatial.reactivation.assemblies import (
     detect_assemblies,
     explained_variance_reactivation,
     marchenko_pastur_threshold,
+    pairwise_activation,
     pairwise_correlations,
 )
 from neurospatial.reactivation.calibration import (
     SimulatedReactivationSession,
+    equalize_firing_rates,
     null_reactivation_data,
     reactivation_detection_rates,
     simulated_reactivation_session,
@@ -169,6 +175,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "explained_variance_contributions",
     "ev_rev_contrast",
     "pairwise_correlations",
+    "pairwise_activation",
     # Published methods
     "EventResponse",
     "ReactivationMethod",
@@ -195,6 +202,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "VAN_DE_VEN_2016",
     # Null data and calibration
     "SimulatedReactivationSession",
+    "equalize_firing_rates",
     "null_reactivation_data",
     "reactivation_detection_rates",
     "simulated_reactivation_session",

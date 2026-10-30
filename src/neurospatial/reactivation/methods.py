@@ -61,6 +61,7 @@ from neurospatial.reactivation.assemblies import (
     detect_assemblies,
     explained_variance_reactivation,
 )
+from neurospatial.reactivation.calibration import equalize_firing_rates
 from neurospatial.reactivation.coactivity import (
     _in_lag_window,
     _lags,
@@ -527,6 +528,16 @@ class ReactivationMethod:
         Resamples or shuffles of the test.
     alpha : float
         Significance level of the test.
+    n_rate_subsamples : int or None
+        For EV methods, the rate control of Giri et al. (2019): for each
+        pair of control and match windows, each unit's spikes are subsampled
+        so it fires at the same rate in both
+        (:func:`~neurospatial.reactivation.equalize_firing_rates`), this
+        many times; EV, REV, the partial correlation and its p-value are the
+        medians over the subsamples ("median Pearson's r … median p … for
+        100 different random subsamples"), and ``value`` is computed from
+        them. None (default) uses every spike. Needs ``rest_bins="fixed"``
+        and is not combined with ``test="pair_bootstrap"``.
     notes : tuple of str
         Each value's source in the paper and the choices it leaves open.
 
@@ -591,6 +602,7 @@ class ReactivationMethod:
     percentile: float | None = None
     n_shuffles: int = 1000
     alpha: float = 0.05
+    n_rate_subsamples: int | None = None
     notes: tuple[str, ...] = ()
 
     @property
@@ -766,6 +778,52 @@ class ReactivationMethod:
             )
         if not 0 < self.alpha < 1:
             raise ValueError(f"{where}: alpha must be in (0, 1), got {self.alpha!r}.")
+        subsamples = self.n_rate_subsamples
+        if subsamples is not None:
+            if (
+                isinstance(subsamples, bool)
+                or int(subsamples) != subsamples
+                or subsamples < 1
+            ):
+                raise ValueError(
+                    f"{where}: n_rate_subsamples must be a positive integer or "
+                    f"None, got {subsamples!r}."
+                )
+            if self.measure != "explained_variance":
+                raise ValueError(
+                    _format_error(
+                        f"{where}: n_rate_subsamples applies only to EV methods.",
+                        why="Why: Giri et al. (2019) equalized rates for the "
+                        "pair correlations of fixed time bins; activation "
+                        "strength and member co-firing z-score each period on "
+                        "its own.",
+                        fix="drop n_rate_subsamples, or use measure="
+                        "'explained_variance'",
+                    )
+                )
+            if self.rest_bins == "events":
+                raise ValueError(
+                    _format_error(
+                        f"{where}: n_rate_subsamples needs rest_bins='fixed'.",
+                        why="Why: it equalizes each unit's spikes per bin; "
+                        "events of different durations make spikes per event "
+                        "and spikes per second disagree, and Giri et al. "
+                        "(2019) equalized fixed 250 ms bins.",
+                        fix="drop n_rate_subsamples, or bin rest periods with "
+                        "rest_bins='fixed' and bin_size=",
+                    )
+                )
+            if self.test == "pair_bootstrap":
+                raise ValueError(
+                    _format_error(
+                        f"{where}: n_rate_subsamples cannot be combined with "
+                        "the pair bootstrap.",
+                        why="Why: the bootstrap resamples one set of pair "
+                        "correlations, and each rate subsample has its own.",
+                        fix="use test='partial_correlation_t' or None with "
+                        "n_rate_subsamples",
+                    )
+                )
 
 
 # =============================================================================
@@ -1401,12 +1459,13 @@ def _explained_variance_rows(
 ) -> list[dict[str, Any]]:
     """One row per match window of an EV method."""
     template_correlations = _pair_correlations(_template_counts(method, session))
-    control_correlations = []
+    control_counts = []
     control_events = []
     for window in _windows_or_error(method.control_windows, session.control, "control"):
         counts, n_events = _rest_counts(method, session, window, "control")
-        control_correlations.append(_pair_correlations(counts))
+        control_counts.append(counts)
         control_events.append(n_events)
+    control_correlations = [_pair_correlations(counts) for counts in control_counts]
     n_controls = len(control_correlations)
     if (
         method.test is not None or method.statistic in _ONE_CONTROL_STATISTICS
@@ -1417,28 +1476,31 @@ def _explained_variance_rows(
     for index, window in enumerate(
         _windows_or_error(method.match_windows, session.match, "match")
     ):
-        counts, n_match_events = _rest_counts(method, session, window, "match")
-        match_correlations = _pair_correlations(counts)
-        # One partial correlation per control window, each on the pairs
-        # defined in the template, the match and that control window.
-        results = [
-            explained_variance_reactivation(
+        match_counts, n_match_events = _rest_counts(method, session, window, "match")
+        if method.n_rate_subsamples is None:
+            match_correlations = _pair_correlations(match_counts)
+            summary = _ev_summary(
                 template_correlations,
-                match_correlations,
-                control_correlations=correlations,
-                pair_mask=pair_rule,
+                [(match_correlations, control) for control in control_correlations],
+                pair_rule,
             )
-            for correlations in control_correlations
-        ]
-        explained = _nanmean([result.explained_variance for result in results])
-        reversed_ = _nanmean([result.reversed_explained_variance for result in results])
-        one_control = n_controls == 1
+        else:
+            summary = _rate_equalized_ev_summary(
+                template_correlations,
+                match_counts,
+                control_counts,
+                pair_rule,
+                method.n_rate_subsamples,
+                stream(index, 1),
+            )
+        explained = summary["explained_variance"]
+        reversed_ = summary["reversed_explained_variance"]
         values = {
             "explained_variance": explained,
             "ev_minus_rev": explained - reversed_,
             "ev_rev_contrast": ev_rev_contrast(explained, reversed_),
-            "partial_correlation": results[0].partial_correlation,
-            "semipartial_correlation": results[0].semipartial_correlation,
+            "partial_correlation": summary["partial_correlation"],
+            "semipartial_correlation": summary["semipartial_correlation"],
         }
         row: dict[str, Any] = {
             **_window_columns(index, window),
@@ -1446,23 +1508,19 @@ def _explained_variance_rows(
             "value": values[method.statistic],
             "explained_variance": explained,
             "reversed_explained_variance": reversed_,
-            "partial_correlation": results[0].partial_correlation
-            if one_control
-            else np.nan,
-            "semipartial_correlation": results[0].semipartial_correlation
-            if one_control
-            else np.nan,
-            "n_pairs": min(result.n_pairs for result in results),
+            "partial_correlation": summary["partial_correlation"],
+            "semipartial_correlation": summary["semipartial_correlation"],
+            "n_pairs": summary["n_pairs"],
             "n_control_windows": n_controls,
         }
         if method.rest_bins == "events":
             row["n_control_events"] = min(n for n in control_events if n is not None)
             row["n_match_events"] = n_match_events
         if method.test == "partial_correlation_t":
-            p_value = results[0].p_value
+            p_value = summary["p_value"]
             row["p_value"] = p_value
             row["is_reactivated"] = (
-                bool(p_value < method.alpha and results[0].partial_correlation > 0)
+                bool(p_value < method.alpha and summary["partial_correlation"] > 0)
                 if np.isfinite(p_value)
                 else _missing()
             )
@@ -1490,6 +1548,124 @@ def _explained_variance_rows(
                 row["is_reactivated"] = _missing()
         rows.append(row)
     return rows
+
+
+def _ev_summary(
+    template_correlations: NDArray[np.float64],
+    periods: list[tuple[NDArray[np.float64], NDArray[np.float64]]],
+    pair_rule: NDArray[np.bool_],
+) -> dict[str, float]:
+    """EV and REV of one match window, averaged over the control windows.
+
+    Parameters
+    ----------
+    template_correlations : ndarray, shape (n_pairs,)
+        Pair correlations of the template.
+    periods : list of (ndarray, ndarray), each shape (n_pairs,)
+        Pair correlations of the match window and of one control window,
+        one tuple per control window.
+    pair_rule : ndarray of bool, shape (n_pairs,)
+        Pairs the method may use.
+
+    Returns
+    -------
+    dict
+        ``explained_variance`` and ``reversed_explained_variance`` (means
+        over control windows), ``partial_correlation``,
+        ``semipartial_correlation`` and ``p_value`` (NaN unless there is one
+        control window) and ``n_pairs`` (fewest over control windows).
+    """
+    # One partial correlation per control window, each on the pairs
+    # defined in the template, the match and that control window.
+    results = [
+        explained_variance_reactivation(
+            template_correlations,
+            match_correlations,
+            control_correlations=control_correlations,
+            pair_mask=pair_rule,
+        )
+        for match_correlations, control_correlations in periods
+    ]
+    single = len(results) == 1
+    return {
+        "explained_variance": _nanmean(
+            [result.explained_variance for result in results]
+        ),
+        "reversed_explained_variance": _nanmean(
+            [result.reversed_explained_variance for result in results]
+        ),
+        "partial_correlation": results[0].partial_correlation if single else np.nan,
+        "semipartial_correlation": results[0].semipartial_correlation
+        if single
+        else np.nan,
+        "p_value": results[0].p_value if single else np.nan,
+        "n_pairs": min(result.n_pairs for result in results),
+    }
+
+
+def _rate_equalized_ev_summary(
+    template_correlations: NDArray[np.float64],
+    match_counts: NDArray[np.float64],
+    control_counts: list[NDArray[np.float64]],
+    pair_rule: NDArray[np.bool_],
+    n_subsamples: int,
+    generator: np.random.Generator,
+) -> dict[str, float]:
+    """:func:`_ev_summary` medians over rate-equalizing subsamples.
+
+    In each subsample, every (control window, match window) pair gets its
+    own draw of :func:`equalize_firing_rates`, so each unit fires at one
+    rate in both windows of the pair; the template is not subsampled (Giri
+    et al. 2019).
+
+    Parameters
+    ----------
+    template_correlations : ndarray, shape (n_pairs,)
+        Pair correlations of the template.
+    match_counts : ndarray, shape (n_match_bins, n_units)
+        Spike counts of the match window.
+    control_counts : list of ndarray, each shape (n_control_bins, n_units)
+        Spike counts of each control window.
+    pair_rule : ndarray of bool, shape (n_pairs,)
+        Pairs the method may use.
+    n_subsamples : int
+        Number of subsamples.
+    generator : numpy.random.Generator
+        Source of the subsamples.
+
+    Returns
+    -------
+    dict
+        The keys of :func:`_ev_summary`: medians over subsamples of the
+        statistics, NaN where no subsample defines one; ``n_pairs`` is the
+        fewest over subsamples.
+    """
+    draws = []
+    for _ in range(n_subsamples):
+        periods = []
+        for counts in control_counts:
+            control, match = equalize_firing_rates(counts, match_counts, rng=generator)
+            periods.append((_pair_correlations(match), _pair_correlations(control)))
+        draws.append(_ev_summary(template_correlations, periods, pair_rule))
+    summary = {
+        key: _nanmedian([draw[key] for draw in draws])
+        for key in (
+            "explained_variance",
+            "reversed_explained_variance",
+            "partial_correlation",
+            "semipartial_correlation",
+            "p_value",
+        )
+    }
+    summary["n_pairs"] = min(draw["n_pairs"] for draw in draws)
+    return summary
+
+
+def _nanmedian(values: Sequence[float]) -> float:
+    """Median over the defined values, NaN when none is (no warning)."""
+    array = np.asarray(values, dtype=np.float64)
+    finite = array[np.isfinite(array)]
+    return float(np.median(finite)) if finite.size else np.nan
 
 
 def _missing() -> Any:
@@ -2289,8 +2465,19 @@ GIRI_2019 = ReactivationMethod(
         "every PRE window is averaged. REV 'as proposed in a previous study "
         "(Tatsuno et al., 2006)'. 'Error bars … indicate SD over PRE(k)' "
         "(not reported here).",
-        "No per-session test. The rate control (100 subsamples equalizing "
-        "PRE and POST spike counts of each cell) is not applied.",
+        "No per-session test.",
+        "Rate control, not applied here: 'we repeated this analysis after "
+        "subsampling to equalize the firing rate for each neuron in PRE and "
+        "POST … (median Pearson's r = 0.454, median p = 6.417 × 10−197 for "
+        "100 different random subsamples equalizing PRE and POST spike "
+        "counts of each cell; no. of pairs = 3809)' (Results). It checked "
+        "the pooled comparison of whole PRE and POST NREM sleep (pairs of "
+        "all sessions, Fig. 1c-e), not the 15-min windows. "
+        "dataclasses.replace(GIRI_2019, n_rate_subsamples=100) applies it to "
+        "every pair of PRE and POST windows, where equal rates and equal "
+        "counts are the same, and reports medians over the subsamples. "
+        "Which spikes were removed is not stated; here a uniform random "
+        "subset of each unit's spikes in the window that fires more.",
     ),
 )
 

@@ -42,6 +42,7 @@ DEFAULTS: dict[str, Any] = {
     "percentile": None,
     "n_shuffles": 1000,
     "alpha": 0.05,
+    "n_rate_subsamples": None,
 }
 
 SPEC: dict[str, dict[str, Any]] = {
@@ -112,7 +113,9 @@ SPEC: dict[str, dict[str, Any]] = {
         "statistic": "mean_activation_difference",
     },
     # Giri et al. (2019): 250 ms, different shanks, 15-min windows sliding
-    # in 5-min steps, EV averaged over PRE windows.
+    # in 5-min steps, EV averaged over PRE windows. The rate control (100
+    # rate-equalizing subsamples) checked a pooled whole-period comparison,
+    # not this main analysis, so n_rate_subsamples stays None.
     "giri_2019": {
         "measure": "explained_variance",
         "bin_size": 0.25,

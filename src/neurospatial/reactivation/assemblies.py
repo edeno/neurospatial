@@ -161,6 +161,7 @@ __all__ = [
     "detect_assemblies",
     "explained_variance_reactivation",
     "marchenko_pastur_threshold",
+    "pairwise_activation",
     "pairwise_correlations",
 ]
 
@@ -1855,6 +1856,215 @@ def assembly_activation(
         spike_counts_z = spike_counts
 
     return _activation_strength(spike_counts_z, weights[None, :])[:, 0]
+
+
+def pairwise_activation(
+    spike_counts: NDArray[np.float64],
+    template_correlations: NDArray[np.float64],
+    *,
+    z_score_input: bool = True,
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    template_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+) -> NDArray[np.float64]:
+    """Co-firing in each time bin, weighted by every pair's template correlation.
+
+    The reactivation strength of Tingley & Peyrache (2020) in its "simplest
+    case": the z-scored population vector of each bin is projected on the
+    template period's whole correlation matrix with its diagonal set to 0,
+    instead of on one assembly pattern (:func:`assembly_activation`). The
+    supplementary material calls it the "cell-pair coherogram". It tracks
+    in time how much the co-firing of a period resembles the template's pair
+    correlations, which explained variance summarizes over a whole period.
+
+    Parameters
+    ----------
+    spike_counts : NDArray[np.float64], shape (n_time_bins, n_neurons)
+        Population activity of the period to track (e.g. rest after the
+        task), finite. Raw counts must be non-negative.
+    template_correlations : NDArray[np.float64], shape (n_pairs,)
+        Pair correlations of the template period (e.g. running), from
+        :func:`pairwise_correlations`, in ``np.triu_indices(n_neurons, k=1)``
+        order; ``n_pairs = n_neurons * (n_neurons - 1) / 2``. A NaN pair (a
+        neuron constant in the template) gets weight 0.
+    z_score_input : bool, default=True
+        If True, z-score each neuron's counts with this period's own mean
+        and standard deviation, as in the published method. Set to False if
+        ``spike_counts`` is already z-scored.
+    unit_ids, template_unit_ids : array-like, shape (n_neurons,), optional
+        Labels of the columns of ``spike_counts`` and of the counts that
+        ``template_correlations`` came from. Given together, the columns
+        are matched to the template's units by label, in any order, and
+        must hold the same units. Without them, column ``i`` is the
+        template's unit ``i``.
+
+    Returns
+    -------
+    activation : NDArray[np.float64], shape (n_time_bins,)
+        :math:`R(t) = z(t)^T P z(t)`, in units of squared z-scores times
+        correlation.
+
+    Raises
+    ------
+    ValueError
+        If ``spike_counts`` holds NaN, infinite (or negative raw) values,
+        ``template_correlations`` does not hold one finite-or-NaN value in
+        [-1, 1] per pair of the columns, or the labels are given alone or
+        name different units.
+
+    Warns
+    -----
+    UserWarning
+        If some template pairs are NaN, or a neuron with a defined template
+        correlation has the same count in every bin of ``spike_counts`` (its
+        z-score is undefined; it contributes 0).
+
+    Notes
+    -----
+    With :math:`C` the template's correlation matrix and :math:`P = C` with
+    :math:`P_{ii} = 0`,
+
+    .. math::
+
+        R(t) = z(t)^T P z(t) = \\sum_{i \\neq j} C_{ij} z_i(t) z_j(t).
+
+    Removing the diagonal removes each neuron's own squared deviation, so a
+    neuron firing alone adds nothing (Tingley & Peyrache 2020: "To make the
+    measure independent of single-neuron rate fluctuation, the diagonal of
+    the matrix can be set at 0").
+
+    **Time average.** A period's correlation matrix is the average of
+    :math:`z(t) z(t)^T` over its bins, so the mean of R(t) over the bins
+    of the z-scored period is
+
+    .. math::
+
+        \\overline{R} = \\sum_{i \\neq j} C^{template}_{ij} C^{period}_{ij}
+        = 2 \\sum_{pairs} \\rho^{template}_{pair} \\rho^{period}_{pair},
+
+    the inner product of the two periods' pair correlations: what the
+    supplementary material calls "the variance during the sleep epoch
+    explained by the correlation of the wake epoch". Unlike the cell-pair
+    coherence (the Pearson correlation of the two pair vectors, whose
+    square is EV without a control), it is neither centered nor
+    normalized: it grows with the number of pairs and with the size of the
+    correlations in both periods, so compare it between periods recorded
+    with the same units, for example after the task minus before it.
+
+    Every pair counts, weighted by its template correlation, including
+    pairs whose template correlation is noise; the assembly projectors of
+    :func:`assembly_activation` keep only the components above chance
+    (Tingley & Peyrache 2020: using the correlation matrix "does not
+    address the possibility that noisy correlations can potentially
+    overshadow the actual signal").
+
+    Examples
+    --------
+    Units 0, 1 and 2 fire together during the task, and twice during rest:
+
+    >>> import numpy as np
+    >>> from neurospatial.reactivation import (
+    ...     pairwise_activation,
+    ...     pairwise_correlations,
+    ... )
+    >>> rng = np.random.default_rng(0)
+    >>> task = rng.poisson(1.0, (2000, 6)).astype(float)
+    >>> task[:, :3] += rng.poisson(1.0, (2000, 1))
+    >>> rest = rng.poisson(1.0, (300, 6)).astype(float)
+    >>> rest[[100, 200], :3] += 5
+    >>> activation = pairwise_activation(rest, pairwise_correlations(task))
+    >>> int(np.argmax(activation[:150])), int(150 + np.argmax(activation[150:]))
+    (100, 200)
+
+    The mean over the period is twice the sum of products of the two
+    periods' pair correlations:
+
+    >>> mean = 2 * np.sum(pairwise_correlations(task) * pairwise_correlations(rest))
+    >>> bool(np.isclose(activation.mean(), mean))
+    True
+
+    See Also
+    --------
+    assembly_activation : The same projection on one assembly pattern
+    explained_variance_reactivation : Whole-period comparison of pair correlations
+
+    References
+    ----------
+    Tingley D, Peyrache A (2020). On the methods for reactivation and
+        replay analysis. Phil Trans R Soc B 375:20190231 (and its
+        electronic supplementary material).
+    Peyrache A, Khamassi M, Benchenane K, Wiener SI, Battaglia FP (2009).
+        Replay of rule-learning related neural patterns in the prefrontal
+        cortex during sleep. Nat Neurosci 12(7):919-926.
+    """
+    call = "pairwise_activation()"
+    spike_counts = _validated_counts(spike_counts, call=call, nonnegative=z_score_input)
+    n_neurons = spike_counts.shape[1]
+    template = np.asarray(template_correlations, dtype=np.float64)
+    n_pairs = n_neurons * (n_neurons - 1) // 2
+    if template.shape != (n_pairs,):
+        raise ValueError(
+            _format_error(
+                f"{call}: template_correlations has shape {template.shape}, but "
+                f"{n_neurons} neurons have {n_pairs} pairs.",
+                fix="pass pairwise_correlations(template_counts) of the same "
+                "units as spike_counts",
+            )
+        )
+    if np.any(np.isinf(template)) or np.any(np.abs(template) > 1 + 1e-12):
+        raise ValueError(
+            f"{call}: template_correlations must be correlations in [-1, 1] "
+            "or NaN; pass pairwise_correlations(template_counts)."
+        )
+    if (unit_ids is None) != (template_unit_ids is None):
+        raise ValueError(
+            f"{call}: pass unit_ids= and template_unit_ids= together, so the "
+            "columns can be matched to the template's units by label."
+        )
+    if unit_ids is not None:
+        labels = resolve_unit_ids(unit_ids, n_neurons, context=f"{call} for unit_ids")
+        reference = resolve_unit_ids(
+            template_unit_ids, n_neurons, context=f"{call} for template_unit_ids"
+        )
+        order, only_template, only_counts = _label_order(labels, reference)
+        if only_template or only_counts:
+            raise ValueError(
+                f"{call}: spike_counts must hold the template's units; only in "
+                f"the template: {only_template}, only in spike_counts: "
+                f"{only_counts}."
+            )
+        spike_counts = spike_counts[:, order]
+
+    undefined = np.isnan(template)
+    if np.any(undefined):
+        warnings.warn(
+            f"{call}: {int(undefined.sum())} of {n_pairs} template pairs are NaN "
+            "(a neuron constant in the template) and get weight 0.",
+            UserWarning,
+            stacklevel=2,
+        )
+    first, second = np.triu_indices(n_neurons, k=1)
+    weights = np.where(undefined, 0.0, template)
+    projector = np.zeros((n_neurons, n_neurons))
+    projector[first, second] = weights
+    projector[second, first] = weights
+
+    if z_score_input:
+        spike_counts_z, constant = _z_scores(spike_counts)
+        silent = constant & np.any(projector != 0, axis=0)
+        if np.any(silent):
+            warnings.warn(
+                f"{call}: neuron columns {np.flatnonzero(silent).tolist()} have the "
+                "same count in every time bin of spike_counts, so they "
+                "contribute 0 to the activation strength.",
+                UserWarning,
+                stacklevel=2,
+            )
+    else:
+        spike_counts_z = spike_counts
+    activation: NDArray[np.float64] = np.sum(
+        (spike_counts_z @ projector) * spike_counts_z, axis=1
+    )
+    return activation
 
 
 def _unit_weights(weights: NDArray[np.float64], *, call: str) -> NDArray[np.float64]:
