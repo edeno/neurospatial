@@ -38,6 +38,7 @@ replay_significance : Test any replay score against shuffled events
 Shuffles
 --------
 shuffle_cell_identity : Permute which spike train goes with which rate map
+shuffle_spike_counts_circular : Shift each cell's counts in time within an event
 shuffle_place_fields_circular : Circularly shift each 1-D rate map
 shuffle_place_fields_circular_2d : Circularly shift each 2-D rate map
 shuffle_posterior_circular : Shift each time bin's posterior along the track
@@ -65,6 +66,7 @@ from neurospatial.replay.nulls import (
     shuffle_place_fields_circular_2d,
     shuffle_posterior_circular,
     shuffle_posterior_weighted_circular,
+    shuffle_spike_counts_circular,
 )
 from neurospatial.replay.rank_order import (
     RankOrderResult,
@@ -110,4 +112,5 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "shuffle_place_fields_circular_2d",
     "shuffle_posterior_circular",
     "shuffle_posterior_weighted_circular",
+    "shuffle_spike_counts_circular",
 ]

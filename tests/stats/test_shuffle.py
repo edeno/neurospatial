@@ -76,7 +76,11 @@ def _draw(name: str, data: np.ndarray, rng, n: int = 5) -> list[np.ndarray]:
     function = getattr(nulls if hasattr(nulls, name) else shuffle, name)
     if name == "shuffle_place_fields_circular_2d":
         return list(function(_grid_env(), data, n_shuffles=n, rng=rng))
-    if name in ("shuffle_time_bins", "shuffle_time_bins_coherent"):
+    if name in (
+        "shuffle_time_bins",
+        "shuffle_time_bins_coherent",
+        "shuffle_spike_counts_circular",
+    ):
         return list(function(data, n_shuffles=n, rng=rng))
     return list(function(track_for(data), data, n_shuffles=n, rng=rng))
 
@@ -85,6 +89,7 @@ def _draw(name: str, data: np.ndarray, rng, n: int = 5) -> list[np.ndarray]:
 GENERATOR_INPUTS = {
     "shuffle_time_bins": _counts(10, 5),
     "shuffle_time_bins_coherent": _counts(10, 5),
+    "shuffle_spike_counts_circular": _counts(10, 5),
     "shuffle_cell_identity": _counts(10, 5),
     "shuffle_place_fields_circular": _rows(3, 8),
     "shuffle_place_fields_circular_2d": _rows(3, 36),

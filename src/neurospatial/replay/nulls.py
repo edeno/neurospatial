@@ -7,6 +7,7 @@ the rest:
 | Shuffle | Acts on | Breaks |
 |---------|---------|--------|
 | ``shuffle_cell_identity`` | spike counts vs. rate maps | the place code |
+| ``shuffle_spike_counts_circular`` | each cell's counts in time | co-firing order |
 | ``shuffle_place_fields_circular`` | 1-D rate maps | field positions |
 | ``shuffle_place_fields_circular_2d`` | 2-D rate maps | field positions |
 | ``shuffle_posterior_circular`` | posterior rows | alignment along a trajectory |
@@ -203,6 +204,10 @@ def shuffle_place_fields_circular(
     preserves the shape of each place field but destroys the spatial
     relationships between neurons.
 
+    Bins where any cell's rate is NaN (no training data) are left as they
+    are, and each field is shifted only over the other bins, in track order,
+    so the shuffled maps keep the same training support.
+
     Parameters
     ----------
     env : Environment
@@ -283,6 +288,12 @@ def shuffle_place_fields_circular(
         "on a full rectangular 2-D grid use shuffle_place_fields_circular_2d; "
         "otherwise shift spike times with shuffle_spike_times_circular",
     )
+    # Bins without a rate for every cell (no training data) stay as they are;
+    # each field is shifted over the remaining bins, in track order.
+    supported: NDArray[np.bool_] = np.asarray(
+        np.isfinite(np.asarray(encoding_models)).all(axis=0)
+    )
+    order = order[supported[order]]
     return _roll_rows_along_track(encoding_models, order, n_shuffles, _ensure_rng(rng))
 
 
@@ -292,8 +303,12 @@ def _roll_rows_along_track(
     n_shuffles: int,
     generator: np.random.Generator,
 ) -> Generator[NDArray[np.float64], None, None]:
-    """Roll each row by its own random number of bins, in track order."""
-    n_rows, n_bins = values.shape
+    """Roll each row by its own random number of bins, in track order.
+
+    Only the bins in ``order`` move; any other column is copied unchanged.
+    """
+    n_rows = values.shape[0]
+    n_bins = len(order)
     along = values[:, order]
     col_indices = np.arange(n_bins)
     rows = np.arange(n_rows)[:, np.newaxis]
@@ -304,7 +319,7 @@ def _roll_rows_along_track(
 
         # For each row i, take columns (col_indices - shifts[i]) % n_bins
         shifted_indices = (col_indices - shifts[:, np.newaxis]) % n_bins
-        shuffled = np.empty_like(values)
+        shuffled = values.copy()
         shuffled[:, order] = along[rows, shifted_indices]
 
         yield shuffled
@@ -758,3 +773,83 @@ def _weighted_rolls(
         shuffled = np.empty_like(posterior)
         shuffled[:, order] = shuffled_along
         yield shuffled
+
+
+def shuffle_spike_counts_circular(
+    spike_counts: NDArray[np.int64],
+    *,
+    n_shuffles: int = 1000,
+    rng: np.random.Generator | int | None = None,
+) -> Generator[NDArray[np.int64], None, None]:
+    """Circularly shift each cell's spike counts in time, within one event.
+
+    Each cell's binned spike counts are rotated along the event's time bins by
+    its own random number of bins, from 0 to ``n_time_bins - 1``, wrapping the
+    end of the event to its start. Each cell keeps its spike count and burst
+    structure, but the order in which cells fire is broken. Decoding the
+    shifted counts gives the "spike train circular shift" null of Tirole et
+    al. (2022) and the "temporal shuffle" of Maboudi et al. (2018).
+
+    Parameters
+    ----------
+    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
+        Spike counts of one event.
+    n_shuffles : int, default=1000
+        Number of shuffles to yield.
+    rng : np.random.Generator, int, or None, default=None
+        Random number generator or seed.
+
+    Yields
+    ------
+    NDArray[np.int64], shape (n_time_bins, n_neurons)
+        Counts with each column rotated along time.
+
+    Raises
+    ------
+    ValueError
+        If ``spike_counts`` is not 2-D.
+
+    See Also
+    --------
+    neurospatial.stats.shuffle_spike_times_circular : Shift spike times across
+        a whole session, for tuning tests.
+    neurospatial.stats.shuffle_time_bins : Permute time bins, all cells together.
+
+    Notes
+    -----
+    The shift of each cell is drawn uniformly from all ``n_time_bins`` shifts.
+    The Bendor-lab code draws ``ceil(rand * n_time_bins)``, which is the same
+    distribution, since a shift by the whole event leaves a cell unchanged.
+
+    References
+    ----------
+    Tirole, M., Huelin Gorriz, M., Takigawa, M., Kukovska, L., & Bendor, D.
+    (2022). Experience-driven rate modulation is reinstated during
+    hippocampal replay. *eLife*, 11, e79031.
+
+    Maboudi, K., Ackermann, E., de Jong, L. W., Pfeiffer, B. E., Foster, D.,
+    Diba, K., & Kemere, C. (2018). Uncovering temporal structure in
+    hippocampal output patterns. *eLife*, 7, e34467.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.replay import shuffle_spike_counts_circular
+    >>> counts = np.array([[1, 0], [2, 0], [0, 3]])
+    >>> shuffled = next(shuffle_spike_counts_circular(counts, n_shuffles=1, rng=0))
+    >>> shuffled.sum(axis=0).tolist()  # each cell keeps its spikes
+    [3, 3]
+    """
+    counts = np.asarray(spike_counts)
+    if counts.ndim != 2:
+        raise ValueError(
+            f"spike_counts must be 2-D (n_time_bins, n_neurons), got shape "
+            f"{counts.shape}."
+        )
+    generator = _ensure_rng(rng)
+    n_time, n_neurons = counts.shape
+    rows = np.arange(n_time)[:, np.newaxis]
+    columns = np.arange(n_neurons)[np.newaxis, :]
+    for _ in range(n_shuffles):
+        shifts = generator.integers(0, max(n_time, 1), size=n_neurons)
+        yield counts[(rows - shifts[np.newaxis, :]) % max(n_time, 1), columns]
