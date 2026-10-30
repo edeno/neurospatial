@@ -184,8 +184,10 @@ Detecting the candidate events (ripples, population bursts) is not included.
   cell-order permutation test; needs no decoding
 - `detect_replay()`, `compare_replay_methods()`: Apply published replay
   methods (`neurospatial.replay.methods`: Davidson 2009, Karlsson & Frank
-  2009, Silva 2015, Wu 2017, Michon 2019, Tirole 2022) to decoded events and
-  compare their verdicts
+  2009, Pfeiffer & Foster 2013 and 2015, Silva 2015, Wu 2017, Carey 2019,
+  Michon 2019, Igata 2021, Tirole 2022, Widloski & Foster 2022) to decoded
+  events and compare their verdicts; `ReplaySegmentation` sets how
+  criteria-based methods find the trajectory segment
 - `shuffle_cell_identity()`, `shuffle_spike_counts_circular()`,
   `shuffle_place_fields_circular()`, `shuffle_place_fields_circular_2d()`,
   `shuffle_posterior_circular()`, `shuffle_posterior_weighted_circular()`:

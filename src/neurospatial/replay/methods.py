@@ -233,7 +233,8 @@ class ReplaySegmentation:
         if unscaled:
             raise ValueError(
                 f"ReplaySegmentation: relative_to names {unscaled}, which are "
-                "not in options."
+                "not in options; add their values to options or remove them "
+                "from relative_to."
             )
         scales = sorted(set(self.relative_to.values()) - {"track_length", "chance"})
         if scales:
@@ -280,13 +281,19 @@ class ReplaySegmentation:
             ),
         )
 
-    def resolved_options(self, env: Environment) -> dict[str, Any]:
+    def resolved_options(
+        self, env: Environment, *, n_decoded_bins: int | None = None
+    ) -> dict[str, Any]:
         """The options for ``replay_segments`` on ``env``, with scales applied.
 
         Parameters
         ----------
         env : Environment
             The environment the event was decoded on.
+        n_decoded_bins : int or None, default=None
+            Bins decoded together, for options relative to chance. For one
+            template's share of a joint decode, the bins of every template
+            (:func:`detect_replay` counts them); None uses ``env.n_bins``.
 
         Returns
         -------
@@ -302,7 +309,9 @@ class ReplaySegmentation:
         options = dict(self.options)
         for name, scale in self.relative_to.items():
             if scale == "chance":
-                options[name] = options[name] / env.n_bins
+                options[name] = options[name] / (
+                    env.n_bins if n_decoded_bins is None else n_decoded_bins
+                )
             else:
                 options[name] = options[name] * _track_length(
                     env, f"ReplaySegmentation with {name} relative to track_length"
@@ -350,7 +359,9 @@ class ReplayMethod:
     empty_time_bins : {"keep", "drop", "zero"}
         Time bins without spikes: keep them, drop them with their times
         (Karlsson & Frank 2009; Wu et al. 2017), or set their posterior to
-        zero (the Bendor-lab code).
+        zero (the Bendor-lab code). With a ``segmentation``, "drop" and
+        "zero" also make them invalid time bins, so no jump is measured
+        across them, and "drop" removes them from the tested segment.
     criteria : tuple of ReplayCriterion
         Thresholds the event must meet as well.
     segmentation : ReplaySegmentation or None
@@ -413,19 +424,29 @@ class ReplayMethod:
         if segment_criteria and self.segmentation is None:
             raise ValueError(
                 f"ReplayMethod {self.name!r}: criteria {segment_criteria} "
-                "describe a segment, but the method has no segmentation."
+                "describe a segment, but the method has no segmentation; give "
+                "it a ReplaySegmentation or use event-level quantities."
             )
-        if (
-            self.score is None
-            and self.segmentation is not None
-            and self.segmentation.min_active_cells_per_time_bin is not None
-        ):
-            moving = [name for name in self.nulls if name in _ROW_MOVING_NULLS]
-            if moving:
+        if self.score is None and self.segmentation is not None and self.nulls:
+            # The detection test scores 0 or 1 against shuffles at least as
+            # extreme, with the event's time-bin rules applied to each shuffle.
+            if self.alternative != "greater" or self.use_absolute is not None:
                 raise ValueError(
-                    f"ReplayMethod {self.name!r}: nulls {moving} change the "
-                    "spikes in each time bin, so the active-cell rule of the "
-                    "event does not apply to its shuffles."
+                    f"ReplayMethod {self.name!r}: a segment-detection test is "
+                    "one-sided on a 0/1 score; leave alternative='greater' and "
+                    "use_absolute=None."
+                )
+            moving = [name for name in self.nulls if name in _ROW_MOVING_NULLS]
+            row_rules = (
+                self.segmentation.min_active_cells_per_time_bin is not None
+                or self.empty_time_bins != "keep"
+            )
+            if moving and row_rules:
+                raise ValueError(
+                    f"ReplayMethod {self.name!r}: nulls {moving} move or change "
+                    "the spikes in each time bin, so the event's active-cell "
+                    "and empty-time-bin rules do not apply to its shuffles; "
+                    "use nulls that keep the time bins in place."
                 )
         if self.empty_time_bins not in ("keep", "drop", "zero"):
             raise ValueError(
@@ -687,15 +708,17 @@ def detect_replay(
     else:
         track_env = env
     if replay_method.units is not None and track_env.units != replay_method.units:
+        stated = (
+            "has no units" if track_env.units is None else f"is in {track_env.units!r}"
+        )
         raise ValueError(
             _format_error(
                 f"{_OPERATION}: method {replay_method.name!r} has thresholds in "
-                f"{replay_method.units!r}, but the environment is in "
-                f"{track_env.units!r}.",
+                f"{replay_method.units!r}, but the environment {stated}.",
                 why="its distance thresholds would be compared with distances "
                 "in other units",
-                fix=f"build the environment in {replay_method.units!r}, e.g. "
-                f"env.apply_transform(scale, units={replay_method.units!r})",
+                fix=f"build the environment with units={replay_method.units!r}, "
+                "converting its coordinates first if they are in other units",
             )
         )
     posterior = np.asarray(posterior, dtype=np.float64)
@@ -703,6 +726,11 @@ def detect_replay(
     counts = None if spike_counts is None else np.asarray(spike_counts)
     if counts is not None and counts.ndim == 1:
         counts = counts[:, np.newaxis]
+    if counts is not None and len(counts) != len(posterior):
+        raise ValueError(
+            f"{_OPERATION}: spike_counts has {len(counts)} rows but posterior "
+            f"has {len(posterior)}; pass one row of counts per posterior row."
+        )
     segmentation = replay_method.segmentation
     needs_counts = (
         replay_method.empty_time_bins != "keep"
@@ -721,22 +749,13 @@ def detect_replay(
                 fix="pass the event's spike_counts, one row per posterior row",
             )
         )
+    # A method that segments keeps time bins without spikes as invalid rows,
+    # so no jump is measured across them; it drops them from the segment.
     valid = (
         None
         if segmentation is None
-        else _valid_rows(segmentation, counts, valid_time_bins, len(posterior))
+        else _valid_rows(replay_method, counts, valid_time_bins, len(posterior))
     )
-    if replay_method.empty_time_bins == "drop":
-        assert counts is not None
-        keep = counts.sum(axis=1) > 0
-        posterior, times, counts = posterior[keep], times[keep], counts[keep]
-        valid = None if valid is None else valid[keep]
-
-    options = dict(replay_method.score_options)
-    if "n_samples_per_time_bin" in options:
-        options["n_samples"] = int(options.pop("n_samples_per_time_bin")) * len(
-            posterior
-        )
 
     score = np.nan
     p_value = np.nan
@@ -750,9 +769,14 @@ def detect_replay(
     if segmentation is not None:
         from neurospatial.replay.segments import replay_segments
 
-        segment_options = segmentation.resolved_options(track_env)
+        segment_options = segmentation.resolved_options(
+            track_env,
+            n_decoded_bins=_decoded_bins(env, track_env, template, encoding_models)
+            if "chance" in segmentation.relative_to.values()
+            else None,
+        )
         if replay_method.score is None and replay_method.nulls:
-            if valid is not None and any(
+            if valid_time_bins is not None and any(
                 name in _ROW_MOVING_NULLS for name in replay_method.nulls
             ):
                 raise ValueError(
@@ -800,6 +824,17 @@ def detect_replay(
         rows = segments.rows(segment)
         posterior, times = posterior[rows], times[rows]
         counts = None if counts is None else counts[rows]
+
+    if replay_method.empty_time_bins == "drop":
+        assert counts is not None
+        keep = counts.sum(axis=1) > 0
+        posterior, times, counts = posterior[keep], times[keep], counts[keep]
+
+    options = dict(replay_method.score_options)
+    if "n_samples_per_time_bin" in options:
+        options["n_samples"] = int(options.pop("n_samples_per_time_bin")) * len(
+            posterior
+        )
 
     if replay_method.score is not None and replay_method.nulls:
         # The test needs the counts only to decode shuffles again or to zero
@@ -885,25 +920,54 @@ def _track_length(env: Environment, operation: str) -> float:
     return float(np.sum(stops - starts))
 
 
+def _decoded_bins(
+    env: Environment | Mapping[str, Environment],
+    track_env: Environment,
+    template: str | None,
+    encoding_models: Any,
+) -> int:
+    """Bins of every template decoded together, for thresholds over chance."""
+    if template is None:
+        return track_env.n_bins
+    if isinstance(env, Mapping):
+        return sum(template_env.n_bins for template_env in env.values())
+    if isinstance(encoding_models, Mapping):
+        return len(encoding_models) * track_env.n_bins
+    raise ValueError(
+        _format_error(
+            f"{_OPERATION}: a threshold relative to chance on one template's "
+            "share needs every template's rate maps to count the decoded bins.",
+            why="chance is 1 / (bins of all templates decoded together)",
+            fix="pass encoding_models, the mapping of every template's rate "
+            "maps given to decode_jointly",
+        )
+    )
+
+
 def _valid_rows(
-    segmentation: ReplaySegmentation,
+    replay_method: ReplayMethod,
     counts: NDArray[np.int64] | None,
     valid_time_bins: NDArray[np.bool_] | None,
     n_time_bins: int,
 ) -> NDArray[np.bool_] | None:
-    """The caller's valid time bins and the active-cell rule, combined."""
+    """The caller's valid time bins, the active-cell rule and empty bins."""
     from neurospatial.replay.segments import _valid_time_bins
 
+    assert replay_method.segmentation is not None
     valid = (
         None
         if valid_time_bins is None
-        else _valid_time_bins(valid_time_bins, n_time_bins)
+        else _valid_time_bins(valid_time_bins, n_time_bins, operation=_OPERATION)
     )
-    cells = segmentation.min_active_cells_per_time_bin
+    cells = replay_method.segmentation.min_active_cells_per_time_bin
     if cells is not None:
         assert counts is not None
         active = np.sum(counts > 0, axis=1) >= cells
         valid = active if valid is None else valid & active
+    if replay_method.empty_time_bins != "keep":
+        assert counts is not None
+        spiking = counts.sum(axis=1) > 0
+        valid = spiking if valid is None else valid & spiking
     return valid
 
 
@@ -983,8 +1047,17 @@ def _segment_detection_p_value(
     Without such a segment in the event, every shuffle is at least as
     extreme and the p-value is 1, so no shuffle is drawn.
     """
-    from neurospatial.replay.significance import replay_significance
+    from neurospatial.replay.significance import _nulls_to_run, replay_significance
 
+    decodes = any(name in _DECODING_NULLS for name in replay_method.nulls)
+    # Refuse missing null inputs whether or not the event has a segment.
+    _nulls_to_run(
+        replay_method.nulls,
+        spike_counts if decodes else None,
+        encoding_models if decodes else None,
+        dt if decodes else None,
+        pseudo_event_pool,
+    )
     options: dict[str, Any] = {
         "replay_method": replay_method,
         "segment_options": segment_options,
@@ -993,7 +1066,6 @@ def _segment_detection_p_value(
     }
     if not _segment_detected(track_env, posterior, times, **options).score:
         return 1.0
-    decodes = any(name in _DECODING_NULLS for name in replay_method.nulls)
     result = replay_significance(
         env if decodes else track_env,
         posterior,
@@ -1058,11 +1130,16 @@ def compare_replay_methods(
         One row per (event, method): ``event``, ``method``, ``is_replay``,
         ``score``, ``p_value``, one ``passes[...]`` column per criterion,
         ``n_segments``, ``segment_start_time`` and ``segment_end_time`` for
-        methods with a segmentation (NaN for the others), and ``error``, empty unless the event has fewer than two time bins left
-        to score (after the method drops time bins without spikes), in which
-        case ``is_replay`` is False and the score and p-value are NaN. The pseudo-event null draws
-        from the posterior rows of every event, as Davidson et al. (2009) and
-        Michon et al. (2019) drew from the complete set of candidate events.
+        methods with a segmentation (NaN for the others), and ``error``.
+        ``error`` is empty unless the event has fewer than two time bins
+        left to score (after the method drops time bins without spikes);
+        then ``is_replay`` is False and the score and p-value are NaN.
+
+    Notes
+    -----
+    The pseudo-event null draws from the posterior rows of every event, as
+    Davidson et al. (2009) and Michon et al. (2019) drew from the complete
+    set of candidate events.
 
     Raises
     ------
@@ -1327,7 +1404,13 @@ PFEIFFER_FOSTER_2013 = ReplayMethod(
         "10 steps (11 time bins) or a start-to-end distance below 40 cm are "
         "eliminated.",
         "Decoded in a 2-D open field; distances are Euclidean there.",
-        "No per-event shuffle test.",
+        "Each trajectory event was also tested against 5,000 cell-identity "
+        "and 5,000 2-D place-field shuffles, p = (n + 1) / (r + 1) over the "
+        "shuffles classified as trajectory events. Every trajectory event had "
+        "p < 0.02 for both, so the test did not change which events counted "
+        "and is not applied. To add it, use dataclasses.replace(..., "
+        "nulls=('unit_identity',), n_shuffles=5000, alpha=0.02); the 2-D "
+        "place-field shuffle is not available as a named null.",
     ),
 )
 
@@ -1350,8 +1433,9 @@ PFEIFFER_FOSTER_2015 = ReplayMethod(
         "posterior mean lies less than 50 cm from the previous one; events "
         "with fewer than 10 steps (11 time bins) or a start-to-end distance "
         "below 80 cm are eliminated.",
-        "Fig. S9 repeats the analysis with steps below 20 cm and 50 cm of "
-        "distance; build that variant with dataclasses.replace.",
+        "Fig. S9 repeats the analysis with steps of at most 20 cm and a "
+        "total distance of 50 cm or more; build that variant with "
+        "dataclasses.replace.",
         "No per-event shuffle test.",
     ),
 )
@@ -1369,6 +1453,7 @@ CAREY_2019 = ReplayMethod(
         choose="any",
         min_active_cells_per_time_bin=4,
     ),
+    criteria=(ReplayCriterion("segment_duration", ">=", 0.05),),
     units="cm",
     decoding={"time_bin": 0.025, "time_step": 0.005, "position_bin": 3.0},
     notes=(
@@ -1376,12 +1461,19 @@ CAREY_2019 = ReplayMethod(
         "moves round(40 / bin size) bins or fewer, which on 3 cm bins is "
         "less than 40 cm; time bins with fewer than 4 active cells break "
         "sequences.",
+        "getEligibleSequences.m then keeps sequences of at least 50 ms, "
+        "between the first and last time-bin centers: 11 time bins on 5 ms "
+        "steps.",
         "The code scans whole sessions and keeps every sequence; here an "
-        "event is replay when it holds one.",
+        "event is replay when it holds one. The paper also kept only "
+        "sequences that overlap a sharp-wave ripple and match one arm, not "
+        "both; those event-level rules are not applied here.",
         "Counts in 5 ms bins summed over a 25 ms boxcar.",
-        "The session-level cell-identity shuffle (Generate_DecSeqShuf.m) "
-        "reads every shuffled time bin from the first one, so it is not the "
-        "intended null; no per-event shuffle test is applied.",
+        "The paper discards sequences whose time bins appear in more than "
+        "5% of sequences found in per-time-bin cell-identity shuffles of the "
+        "session. Generate_DecSeqShuf.m reads every shuffled time bin from "
+        "the first one, so its shuffles are not that null; the session-level "
+        "test is not applied.",
     ),
 )
 
@@ -1468,8 +1560,10 @@ WIDLOSKI_FOSTER_2022 = ReplayMethod(
         "The paper prints the spread as a product of the x and y deviations, "
         "which has units of area against a 10 cm threshold; the isotropic "
         "spread of TrajectoryMetrics is used.",
-        "Cell-identity shuffles estimated false detections per session; no "
-        "per-event shuffle test.",
+        "The 2022 method scans the whole immobility period rather than "
+        "candidate events; applied to event windows, sequences that cross a "
+        "window's edge are cut. Pass windows that hold the whole sequence.",
+        "No per-event shuffle test in the 2022 paper.",
     ),
 )
 
