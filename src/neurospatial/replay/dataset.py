@@ -46,7 +46,11 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial._validation import is_integer_at_least, validate_integer_at_least
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_choice,
+    validate_integer_at_least,
+)
 from neurospatial.replay._compare import (
     _check_criterion_settings,
     _compare,
@@ -2096,10 +2100,7 @@ def shuffle_events(
     """
     operation = "shuffle_events()"
     validate_integer_at_least(n_datasets, 1, name="n_datasets", owner=operation)
-    if null not in _EVENT_NULLS:
-        raise ValueError(
-            f"{operation}: null must be one of {list(_EVENT_NULLS)}, got {null!r}."
-        )
+    validate_choice(null, _EVENT_NULLS, name="null", owner=operation)
     from neurospatial.decoding import DecodingResult
 
     decoded = _decoded_events(env, events, operation)
@@ -2260,11 +2261,7 @@ def dataset_test(
                 fix="pass criteria=[CriterionGrid(...)] or statistic=lambda table: ...",
             )
         )
-    if alternative not in _ALTERNATIVES:
-        raise ValueError(
-            f"{operation}: alternative must be one of {_ALTERNATIVES}, got "
-            f"{alternative!r}."
-        )
+    validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=operation)
     if "dataset" not in null_table:
         raise ValueError(
             _format_error(
@@ -2514,13 +2511,8 @@ def distribution_test(
 
     operation = "distribution_test()"
     tests = ("ks", "rank_sum", "levene")
-    if test not in tests:
-        raise ValueError(f"{operation}: test must be one of {tests}, got {test!r}.")
-    if alternative not in _ALTERNATIVES:
-        raise ValueError(
-            f"{operation}: alternative must be one of {_ALTERNATIVES}, got "
-            f"{alternative!r}."
-        )
+    validate_choice(test, tests, name="test", owner=operation)
+    validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=operation)
     if test == "levene" and alternative != "two-sided":
         raise ValueError(
             _format_error(
@@ -2655,11 +2647,9 @@ def relative_rank_template(
         "first": np.min,
         "median": np.median,
     }
-    if spike_statistic not in statistics:
-        raise ValueError(
-            f"{operation}: spike_statistic must be one of {list(statistics)}, got "
-            f"{spike_statistic!r}."
-        )
+    validate_choice(
+        spike_statistic, tuple(statistics), name="spike_statistic", owner=operation
+    )
     if not is_integer_at_least(min_active_cells, 2):
         raise ValueError(
             f"{operation}: min_active_cells must be an integer of at least 2, got "
@@ -2792,11 +2782,7 @@ def template_correlation_test(
 
     operation = "template_correlation_test()"
     validate_integer_at_least(n_shuffles, 1, name="n_shuffles", owner=operation)
-    if alternative not in _ALTERNATIVES:
-        raise ValueError(
-            f"{operation}: alternative must be one of {_ALTERNATIVES}, got "
-            f"{alternative!r}."
-        )
+    validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=operation)
     if len(templates) != len(reference_templates) or not len(templates):
         raise ValueError(
             f"{operation}: templates and reference_templates must pair one to one "

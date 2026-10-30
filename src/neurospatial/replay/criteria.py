@@ -21,7 +21,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial._validation import is_integer_at_least
+from neurospatial._validation import is_integer_at_least, validate_choice
 
 if TYPE_CHECKING:
     from neurospatial.decoding import JointDecodingResult
@@ -442,10 +442,7 @@ def trajectory_metrics(
 
 def _check_metric(metric: Any, operation: str) -> None:
     """Refuse a distance metric other than geodesic, Euclidean or None."""
-    if metric is not None and metric not in _METRICS:
-        raise ValueError(
-            f"{operation}: metric must be one of {_METRICS} or None, got {metric!r}."
-        )
+    validate_choice(metric, (*_METRICS, None), name="metric", owner=operation)
 
 
 def _trajectory_metrics(

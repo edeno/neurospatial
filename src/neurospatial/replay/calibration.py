@@ -46,7 +46,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial._validation import validate_integer_at_least
+from neurospatial._validation import validate_choice, validate_integer_at_least
 from neurospatial.replay._compare import _tolerance
 
 if TYPE_CHECKING:
@@ -422,10 +422,7 @@ def detection_rates(
     from scipy.stats import binomtest
 
     operation = "detection_rates()"
-    if errors not in _ERRORS:
-        raise ValueError(
-            f"{operation}: errors must be one of {_ERRORS}, got {errors!r}."
-        )
+    validate_choice(errors, _ERRORS, name="errors", owner=operation)
     if not 0 < confidence < 1:
         raise ValueError(
             f"{operation}: confidence must be in (0, 1), got {confidence}."
@@ -669,10 +666,7 @@ def method_agreement(
     import pandas as pd
 
     operation = "method_agreement()"
-    if errors not in _ERRORS:
-        raise ValueError(
-            f"{operation}: errors must be one of {_ERRORS}, got {errors!r}."
-        )
+    validate_choice(errors, _ERRORS, name="errors", owner=operation)
     data = _checked_table(table, groups, operation)
     if errors == "exclude":
         data = data[~data["_error"]]
@@ -1668,10 +1662,7 @@ def null_events(
     from neurospatial._spikes import as_spike_trains
 
     operation = "null_events()"
-    if kind not in _NULL_KINDS:
-        raise ValueError(
-            f"{operation}: kind must be one of {_NULL_KINDS}, got {kind!r}."
-        )
+    validate_choice(kind, _NULL_KINDS, name="kind", owner=operation)
     validate_integer_at_least(n_copies, 1, name="n_copies", owner=operation)
     windows = _checked_intervals(intervals, operation)
     ordered = windows[np.argsort(windows[:, 0], kind="stable")]
@@ -1840,10 +1831,7 @@ def simulated_null_events(
     from neurospatial.simulation import simulate_replay_event
 
     operation = "simulated_null_events()"
-    if kind not in _SIMULATED_KINDS:
-        raise ValueError(
-            f"{operation}: kind must be one of {_SIMULATED_KINDS}, got {kind!r}."
-        )
+    validate_choice(kind, _SIMULATED_KINDS, name="kind", owner=operation)
     validate_integer_at_least(n_events, 1, name="n_events", owner=operation)
     generator = np.random.default_rng(rng)
     seeds = generator.integers(2**63, size=n_events)

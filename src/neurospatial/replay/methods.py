@@ -43,6 +43,7 @@ from neurospatial._stacklevel import _warnings_with_context
 from neurospatial._validation import (
     is_integer_at_least,
     validate_alpha,
+    validate_choice,
     validate_integer_at_least,
 )
 from neurospatial.replay._compare import (
@@ -437,16 +438,15 @@ class ReplaySegmentation:
             _threshold(
                 name, self.options[name], minimum="zero", operation="ReplaySegmentation"
             )
-        if self.choose not in ("longest", "any"):
-            raise ValueError(
-                f"ReplaySegmentation: choose must be 'longest' or 'any', got "
-                f"{self.choose!r}."
-            )
-        if self.rows not in ("segment", "trajectory"):
-            raise ValueError(
-                f"ReplaySegmentation: rows must be 'segment' or 'trajectory', "
-                f"got {self.rows!r}."
-            )
+        validate_choice(
+            self.choose, ("longest", "any"), name="choose", owner="ReplaySegmentation"
+        )
+        validate_choice(
+            self.rows,
+            ("segment", "trajectory"),
+            name="rows",
+            owner="ReplaySegmentation",
+        )
         cells = self.min_active_cells_per_time_bin
         if cells is not None and not is_integer_at_least(cells, 1):
             raise ValueError(
@@ -782,16 +782,18 @@ class ReplayMethod:
                     "and empty-time-bin rules do not apply to its shuffles; "
                     "use nulls that keep the time bins in place."
                 )
-        if self.empty_time_bins not in ("keep", "drop", "zero"):
-            raise ValueError(
-                f"ReplayMethod {self.name!r}: empty_time_bins must be 'keep', "
-                f"'drop' or 'zero', got {self.empty_time_bins!r}."
-            )
-        if self.template_choice not in _TEMPLATE_CHOICES:
-            raise ValueError(
-                f"ReplayMethod {self.name!r}: template_choice must be one of "
-                f"{list(_TEMPLATE_CHOICES)}, got {self.template_choice!r}."
-            )
+        validate_choice(
+            self.empty_time_bins,
+            ("keep", "drop", "zero"),
+            name="empty_time_bins",
+            owner=f"ReplayMethod {self.name!r}",
+        )
+        validate_choice(
+            self.template_choice,
+            _TEMPLATE_CHOICES,
+            name="template_choice",
+            owner=f"ReplayMethod {self.name!r}",
+        )
         if self.template_choice == "smallest_p" and not self.nulls:
             raise ValueError(
                 _format_error(
@@ -883,11 +885,12 @@ class ReplayMethod:
                     "test the segment's detection with score=None",
                 )
             )
-        if self.alternative not in _ALTERNATIVES:
-            raise ValueError(
-                f"ReplayMethod {self.name!r}: alternative must be one of "
-                f"{list(_ALTERNATIVES)}, got {self.alternative!r}."
-            )
+        validate_choice(
+            self.alternative,
+            _ALTERNATIVES,
+            name="alternative",
+            owner=f"ReplayMethod {self.name!r}",
+        )
         validate_alpha(self.alpha, owner=f"ReplayMethod {self.name!r}")
         validate_integer_at_least(
             self.n_shuffles, 1, name="n_shuffles", owner=f"ReplayMethod {self.name!r}"
@@ -1175,11 +1178,9 @@ class RankOrderMethod:
             "template_choice": (None, "most_active"),
         }
         for field_name, allowed in choices.items():
-            if getattr(self, field_name) not in allowed:
-                raise ValueError(
-                    f"{prefix}: {field_name} must be one of {list(allowed)}, got "
-                    f"{getattr(self, field_name)!r}."
-                )
+            validate_choice(
+                getattr(self, field_name), allowed, name=field_name, owner=prefix
+            )
         if self.test == "t_distribution" and self.alternative != "two-sided":
             raise ValueError(
                 f"{prefix}: the t-distribution test of rho is two-sided; use "

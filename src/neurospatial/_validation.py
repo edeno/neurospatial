@@ -414,7 +414,7 @@ def validate_finite_scalar(
 
 
 def validate_choice(
-    value: object, choices: Sequence[str], *, name: str, owner: str
+    value: object, choices: Sequence[object], *, name: str, owner: str
 ) -> None:
     """Require ``value`` to be one of the documented ``choices``.
 
@@ -422,8 +422,8 @@ def validate_choice(
     ----------
     value : object
         The value to check.
-    choices : sequence of str
-        Allowed values.
+    choices : sequence
+        Allowed values, usually strings and possibly ``None``.
     name : str
         Argument or field name, used in the error message.
     owner : str

@@ -15,6 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
+from neurospatial._validation import validate_choice
 
 # The comparisons a criterion can state, elementwise.
 _COMPARISONS: dict[str, Callable[[Any, Any], Any]] = {
@@ -62,16 +63,10 @@ def _check_criterion_settings(
     prefix: str, comparison: Any, relative_to: Any, absolute: Any
 ) -> None:
     """Refuse an unknown comparison or scale, or a non-bool ``absolute``."""
-    if comparison not in _COMPARISONS:
-        raise ValueError(
-            f"{prefix}: comparison must be one of {list(_COMPARISONS)}, got "
-            f"{comparison!r}."
-        )
-    if relative_to not in (None, "track_length"):
-        raise ValueError(
-            f"{prefix}: relative_to must be None or 'track_length', got "
-            f"{relative_to!r}."
-        )
+    validate_choice(comparison, tuple(_COMPARISONS), name="comparison", owner=prefix)
+    validate_choice(
+        relative_to, (None, "track_length"), name="relative_to", owner=prefix
+    )
     if not isinstance(absolute, (bool, np.bool_)):
         raise ValueError(f"{prefix}: absolute must be True or False, got {absolute!r}.")
 

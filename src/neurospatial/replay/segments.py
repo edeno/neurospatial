@@ -20,7 +20,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial._validation import is_integer_at_least
+from neurospatial._validation import is_integer_at_least, validate_choice
 from neurospatial.replay._compare import _compare
 from neurospatial.replay.criteria import (
     _bin_distance_lookup,
@@ -747,10 +747,7 @@ def _checked_options(
     Thresholds come back as floats and counts as ints; errors name
     ``operation``.
     """
-    if method not in _METHODS:
-        raise ValueError(
-            f"{operation}: method must be one of {_METHODS}, got {method!r}."
-        )
+    validate_choice(method, _METHODS, name="method", owner=operation)
     if jump_rule not in _JUMP_RULES:
         raise ValueError(
             _format_error(

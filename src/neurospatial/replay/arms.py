@@ -24,6 +24,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import reduce_through_constructor
+from neurospatial._validation import validate_choice
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -156,11 +157,7 @@ class ArmReplayMethod:
             "joint": ("only_pair", "strongest_pair"),
         }
         for name, allowed in choices.items():
-            if getattr(self, name) not in allowed:
-                raise ValueError(
-                    f"{prefix}: {name} must be one of {list(allowed)}, got "
-                    f"{getattr(self, name)!r}."
-                )
+            validate_choice(getattr(self, name), allowed, name=name, owner=prefix)
         for name in ("joint_same_sign", "arm_fallback"):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError(

@@ -17,6 +17,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin
+from neurospatial._validation import validate_choice
 from neurospatial.replay.trajectory import _SCORE_DECIMALS
 
 if TYPE_CHECKING:
@@ -173,11 +174,12 @@ def _validated_weights(
     posterior: Any, n_bins: int, row_normalization: str
 ) -> NDArray[np.float64]:
     """Check the posterior and apply the row normalization."""
-    if row_normalization not in _ROW_NORMALIZATIONS:
-        raise ValueError(
-            f"{_OPERATION}: row_normalization must be one of "
-            f"{_ROW_NORMALIZATIONS}, got {row_normalization!r}."
-        )
+    validate_choice(
+        row_normalization,
+        _ROW_NORMALIZATIONS,
+        name="row_normalization",
+        owner=_OPERATION,
+    )
     weights = np.asarray(posterior, dtype=np.float64)
     if weights.ndim != 2 or weights.shape[1] != n_bins:
         raise ValueError(
