@@ -276,7 +276,11 @@ between two signed scores, which then also agree on direction (0.89 to
 with the unsigned Radon line fit (R = 0.194), so part of that low value can
 come from the signs alone. `DAVIDSON_2009`'s line fit correlates weakly
 with every other score even without signs, because it scores stationary
-events as high as sweeps.
+events as high as sweeps. Tingley & Peyrache also asked how each score
+holds up as an event degrades (their Fig. 4): `simulate_replay_event(...,
+drop_fraction=..., n_noise_spikes=...)` removes a share of a simulated
+event's spikes and adds spikes at random cells and times, so you can score
+such events with every method and compare.
 
 ## False positives on null data
 
@@ -970,6 +974,11 @@ visited get no mass), and decode the null events with the same prior.
   dt=dt)`. Liu et al. report the share of significant post-task events
   minus the share in pre-task sleep: run both sets of events and subtract
   their `detection_rates`.
+- **Cells with several place fields.** A cell with two fields has no
+  single place in a rank order; Tingley & Peyrache note such cells are
+  typically excluded. Pass `multi_field_cells="exclude"` to
+  `rank_order_correlation` or `rank_order_significance` (with
+  `place_fields=` for rate maps given as an array).
 - **Firing order without decoding.** `LEE_WILSON_2002` and
   `JI_WILSON_2007` test whether the cells fire in the order of their
   fields, from the spike times and rate maps alone (pass `spike_times=` as
