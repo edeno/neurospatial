@@ -2712,7 +2712,9 @@ def template_correlation_test(
     ValueError
         If the two sequences differ in length, a pair of templates differs
         in its number of cells or shares fewer than three cells with values
-        in both, or ``n_shuffles`` is not a positive integer.
+        in both, a template or its reference is constant over the shared
+        cells (no rank correlation), or ``n_shuffles`` is not a positive
+        integer.
 
     See Also
     --------
@@ -2724,7 +2726,10 @@ def template_correlation_test(
     running template holds place cells, the sleep template the cells
     active in sleep). A shuffle permutes the reference values among the
     cells of the reference template, a random order of its cells, and the
-    correlation is again over the cells in both. Liu et al. also mention a
+    correlation is again over the cells in both. A shuffle that puts tied
+    reference values on every shared cell has no correlation; it counts as
+    at least as extreme as the observed statistic on either side, and is
+    NaN in ``null_statistics``. Liu et al. also mention a
     Wilcoxon signed-rank test of the real correlation against the shuffled
     ones; its result is not reported, and a one-sample test of 1,000
     shuffles against one value does not test their hypothesis, so it is
@@ -2783,7 +2788,19 @@ def template_correlation_test(
                 f"{operation}: template {unit} shares {int(both.sum())} cells with "
                 "its reference; a rank correlation needs at least three."
             )
-        observed.append(_spearman_rows(y[both][None, :], x[both])[0])
+        correlation = _spearman_rows(y[both][None, :], x[both])[0]
+        if not np.isfinite(correlation):
+            raise ValueError(
+                _format_error(
+                    f"{operation}: the correlation of template {unit} with its "
+                    "reference is not defined.",
+                    why="one of the two templates has the same value on every "
+                    "cell they share, so the cells have no rank order",
+                    fix="leave this unit out, or give templates whose shared "
+                    "cells differ in value",
+                )
+            )
+        observed.append(correlation)
         order = np.argsort(generator.random((n_shuffles, in_reference.size)), axis=1)
         permuted = np.tile(y, (n_shuffles, 1))
         permuted[:, in_reference] = y[in_reference][order]
@@ -2793,8 +2810,10 @@ def template_correlation_test(
         values, shuffled = np.abs(values), np.abs(shuffled)
     statistic = float(np.mean(values))
     null = shuffled.mean(axis=1)
-    greater = int(np.sum(null >= statistic))
-    less = int(np.sum(null <= statistic))
+    # A shuffle without a correlation counts as at least as extreme.
+    undefined = np.isnan(null)
+    greater = int(np.sum(undefined | (null >= statistic)))
+    less = int(np.sum(undefined | (null <= statistic)))
     p_greater = (1.0 + greater) / (1.0 + n_shuffles)
     p_less = (1.0 + less) / (1.0 + n_shuffles)
     p_value = (

@@ -247,6 +247,11 @@ Several replay papers test a whole data set, not each event:
   given. Null data sets measured on the moment tables used to fill
   `n_active_cells` with the MAP range instead. The `FAROOQ_2019_*` notes
   now pass `spike_counts`.
+- `template_correlation_test` refuses a template or reference that is
+  constant over the cells they share. Its correlation is undefined, and
+  the NaN statistic used to be reported with the smallest p. A shuffle
+  without a correlation (tied reference values on every shared cell) now
+  counts as at least as extreme, so it can no longer shrink p.
 
 ### Reactivation recipes
 

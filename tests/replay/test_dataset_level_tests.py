@@ -761,6 +761,40 @@ class TestTemplateCorrelation:
         assert signed.statistic == pytest.approx(0.0)
         assert absolute.statistic == pytest.approx(1.0)
 
+    @pytest.mark.parametrize("constant", ["template", "reference"])
+    def test_refuses_an_undefined_correlation(self, constant):
+        """A template constant over the shared cells has no rank correlation."""
+        sleep = [np.full(6, 0.5), np.arange(8.0) / 7]
+        run = [np.arange(6.0), np.arange(8.0)]
+        if constant == "reference":
+            sleep[0], run[0] = run[0], np.full(6, 2.0)
+        with pytest.raises(ValueError, match="template 0 with its reference is not defined"):
+            template_correlation_test(sleep, run, n_shuffles=99, rng=0)
+
+    def test_undefined_shuffles_count_as_at_least_as_extreme(self):
+        """A shuffle that puts tied reference values on every shared cell.
+
+        Three of the six cells have a sleep value, and three of the six
+        reference values are tied, so 1 in 20 shuffles gives the shared cells
+        one value and no correlation. Each such shuffle counts against the
+        observed correlation on both sides, so p never shrinks.
+        """
+        sleep = [np.array([0.1, 0.5, np.nan, 0.3, np.nan, np.nan])]
+        run = [np.array([1.0, 1.0, 1.0, 2.0, 3.0, 4.0])]
+        result = template_correlation_test(sleep, run, n_shuffles=2000, rng=0)
+        undefined = np.isnan(result.null_statistics)
+        assert 0.03 < undefined.mean() < 0.07
+        defined = result.null_statistics[~undefined]
+        for alternative, extreme in (
+            ("greater", defined >= result.statistic),
+            ("less", defined <= result.statistic),
+        ):
+            sided = template_correlation_test(
+                sleep, run, n_shuffles=2000, alternative=alternative, rng=0
+            )
+            assert sided.p_value == (1 + undefined.sum() + extreme.sum()) / 2001
+        assert result.percentile == 100 * np.sum(defined < result.statistic) / 2000
+
     def test_refuses_templates_without_three_shared_cells(self):
         with pytest.raises(ValueError, match="shares 2 cells"):
             template_correlation_test(
