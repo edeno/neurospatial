@@ -55,9 +55,10 @@ compare_replay_methods : Several methods on several events, as a table
 ReplayMethod, ReplayCriterion : A method's score, shuffles and thresholds
 ReplaySegmentation : How a criteria-based method finds the trajectory segment
 detect_rank_order_replay, RankOrderMethod : Published rank-order tests on spikes
+detect_arm_replay, ArmReplayMethod : Single-arm and joint-arm replay on a maze
 neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
     DIBA_BUZSAKI_2007, DAVIDSON_2009, KARLSSON_FRANK_2009,
-    PFEIFFER_FOSTER_2013, PFEIFFER_FOSTER_2015, SILVA_2015, AMBROSE_2016,
+    PFEIFFER_FOSTER_2013, WU_FOSTER_2014, PFEIFFER_FOSTER_2015, SILVA_2015, AMBROSE_2016,
     GROSMARK_2016, WU_2017, OLAFSDOTTIR_2017, CAREY_2019, CHENANI_2019,
     MICHON_2019, IGATA_2021, TIROLE_2022, BERNERS_LEE_2022,
     WIDLOSKI_FOSTER_2022, MALLORY_2025)
@@ -94,6 +95,7 @@ Monte Carlo p-value helpers and temporal shuffles
 :mod:`neurospatial.stats`.
 """
 
+from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
 from neurospatial.replay.correlation import (
     WeightedCorrelationResult,
     weighted_correlation,
@@ -143,12 +145,14 @@ from neurospatial.replay.trajectory import (
 
 __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Published methods
+    "ArmReplayMethod",
     "ReplayCriterion",
     "ReplayDetectionResult",
     "RankOrderMethod",
     "ReplayMethod",
     "ReplaySegmentation",
     "compare_replay_methods",
+    "detect_arm_replay",
     "detect_rank_order_replay",
     "detect_replay",
     # Result containers
