@@ -240,8 +240,8 @@ def make_plus_maze(
         arena=OpenArena(plus_polygon, outline="drop"),
         name="plus_maze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     # Add regions for key locations
     region_builder = Regions()

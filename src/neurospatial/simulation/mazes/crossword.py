@@ -273,8 +273,8 @@ def make_crossword_maze(
         arena=OpenArena(floor, outline="drop"),
         name="crossword_maze",
         connect_diagonal_neighbors=False,  # Manhattan grid only
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     region_builder = Regions()
     landmarks = []
@@ -374,15 +374,15 @@ def _create_crossword_track_graph(
             graph.add_edge(names[a], names[b], distance=abs(b[axis] - a[axis]))
             edge_order.append((names[a], names[b]))
 
-    env_track = Environment.from_graph(
+    return Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
         edge_spacing=0.0,
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="crossword_maze_1d",
+        units="cm",
     )
-    return env_track.with_metadata(units="cm")
 
 
 def _on_segment(

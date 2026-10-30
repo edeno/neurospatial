@@ -301,8 +301,8 @@ def make_repeated_t_maze(
         bin_size=bin_size,
         name="repeated_t_maze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     # The food box is the end of the last alley, which runs in +x.
     end_x, end_y = positions["food_box"]
@@ -421,12 +421,12 @@ def _create_repeated_t_maze_track_graph(
         distance = float(np.linalg.norm(np.subtract(positions[v], positions[u])))
         graph.add_edge(u, v, distance=distance)
 
-    env_track = Environment.from_graph(
+    return Environment.from_graph(
         graph=graph,
         edge_order=edges,
         edge_spacing=0.0,
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="repeated_t_maze_1d",
+        units="cm",
     )
-    return env_track.with_metadata(units="cm")

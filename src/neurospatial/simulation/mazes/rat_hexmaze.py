@@ -289,8 +289,8 @@ def make_rat_hexmaze(
         bin_size=bin_size,
         name="rat_hexmaze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     region_builder = Regions()
     for letter, module in modules.items():
@@ -310,8 +310,8 @@ def make_rat_hexmaze(
             bin_size=bin_size,
             track_width=dims.corridor_width,
             name="rat_hexmaze_1d",
+            units="cm",
         )
-        env_track = env_track.with_metadata(units="cm")
 
     warn_if_bins_too_coarse(
         env_2d,

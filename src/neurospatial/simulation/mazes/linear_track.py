@@ -183,8 +183,8 @@ def make_linear_track(
         arena=OpenArena(polygon, outline="drop"),
         name="linear_track",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     # One food well at each end; Kim & Frank (2009) do not give its size
     wells = {
@@ -263,7 +263,7 @@ def _create_linear_track_graph(
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="linear_track_1d",
+        units="cm",
     )
-    env_track = env_track.with_metadata(units="cm")
 
     return env_track

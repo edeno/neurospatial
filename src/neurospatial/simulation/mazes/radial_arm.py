@@ -321,8 +321,8 @@ def make_radial_arm_maze(
         arena=OpenArena(radial_polygon, outline="drop"),
         name="radial_arm_maze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     # Regions for the start platform and each food cup's footprint; each cup
     # is also a reward-port landmark at its centre
@@ -399,7 +399,7 @@ def _create_radial_arm_track_graph(
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="radial_arm_maze_1d",
+        units="cm",
     )
-    env_track = env_track.with_metadata(units="cm")
 
     return env_track

@@ -252,8 +252,8 @@ def make_honeycomb_maze(
         arena=OpenArena(floor, outline="drop"),
         name="honeycomb_maze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     region_builder = Regions()
     for i, pos in enumerate(positions):
@@ -445,7 +445,7 @@ def _create_honeycomb_track_graph(
         bin_size=bin_size,
         track_width=2.0 * dims.platform_side,
         name="honeycomb_1d",
+        units="cm",
     )
-    env_track = env_track.with_metadata(units="cm")
 
     return env_track

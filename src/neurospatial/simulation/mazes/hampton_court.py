@@ -266,8 +266,8 @@ def make_hampton_court_maze(
         bin_size=bin_size,
         name="hampton_court_maze",
         connect_diagonal_neighbors=True,
+        units="cm",
     )
-    env_2d = env_2d.with_metadata(units="cm")
 
     regions = Regions()
     regions.add("entrance", point=_entrance(dims))
@@ -460,12 +460,12 @@ def _create_hampton_court_track_graph(
             distance = float(np.linalg.norm(position(current) - position(node)))
             graph.add_edge(name(node), name(current), distance=distance)
 
-    env_track = Environment.from_graph(
+    return Environment.from_graph(
         graph=graph,
         edge_order=list(nx.edge_dfs(graph, "entrance")),
         edge_spacing=0.0,
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="hampton_court_1d",
+        units="cm",
     )
-    return env_track.with_metadata(units="cm")
