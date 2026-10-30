@@ -48,6 +48,7 @@ from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import shapely
 from numpy.typing import NDArray
 
 from neurospatial._angles import wrap_angle
@@ -124,8 +125,8 @@ def _digest(*arrays: NDArray[Any]) -> bytes:
 
 def _require_walls(
     env: Environment, boundary_source: BoundarySource, call: str
-) -> None:
-    """Refuse an environment whose walls are unknown, before any rate is asked."""
+) -> shapely.Geometry:
+    """The walls a cell measures; refuses unknown walls before any rate is asked."""
     require_cartesian(
         env.coordinate_system,
         call,
@@ -133,7 +134,9 @@ def _require_walls(
         "the animal's allocentric Cartesian position.",
         fix="simulate on the allocentric environment the animal moves in",
     )
-    boundary_geometry(env.binning, env.arena, boundary_source, blocking="movement")
+    return boundary_geometry(
+        env.binning, env.arena, boundary_source, blocking="movement"
+    )
 
 
 @dataclass(frozen=True, eq=False)
@@ -469,13 +472,8 @@ class BoundaryVectorCellModel:
                 )
             )
         _set_rates(self)
-        _require_walls(env, self.boundary_source, call)
+        walls = Walls.from_geometry(_require_walls(env, self.boundary_source, call))
         wrapped = float(wrap_angle(np.asarray(direction, dtype=np.float64)))
-        walls = Walls.from_geometry(
-            boundary_geometry(
-                env.binning, env.arena, self.boundary_source, blocking="movement"
-            )
-        )
         directions = boundary_directions(n_directions=_N_RAYS)
         # von Mises concentration with half-maximum at direction_tolerance.
         kappa = np.log(2.0) / (1.0 - np.cos(half_width))
