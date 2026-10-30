@@ -120,6 +120,7 @@ def replay_significance(
     pseudo_event_pool: NDArray[np.float64] | None = None,
     alternative: Literal["greater", "less", "two-sided"] = "greater",
     use_absolute: bool | None = None,
+    empty_time_bins: Literal["keep", "zero"] = "keep",
     n_shuffles: int = 1000,
     rng: np.random.Generator | int | None = None,
 ) -> ReplaySignificanceResult:
@@ -225,6 +226,16 @@ def replay_significance(
         :func:`weighted_correlation`, whose sign is the replay direction, as
         Grosmark & Buzsáki (2016) and Tirole et al. (2022) do, and the score
         itself otherwise (the replay line score and R² are not signed).
+    empty_time_bins : {"keep", "zero"}, default="keep"
+        ``"zero"`` sets the posterior of every time bin without spikes to
+        zero before scoring, in the event and in every shuffle, as the
+        Bendor-lab analyses do (Tirole et al. 2022): for the nulls that decode
+        again, the time bins without spikes are those of the shuffled counts,
+        and for the column-cycle and time-bin nulls the zeroed rows move with
+        their rows. Needs ``spike_counts`` and a score that accepts rows
+        without mass, such as :func:`weighted_correlation`; pass the
+        posterior as decoded, not zeroed. Not available with
+        ``"pseudo_event"``, whose pool rows carry no spike counts.
     n_shuffles : int, default=1000
         Shuffles per null. A p-value is at least ``1 / (n_shuffles + 1)``.
         Davidson et al. (2009) used 1500, Tirole et al. (2022) 1000.
@@ -343,6 +354,23 @@ def replay_significance(
             f"{_OPERATION}: alternative must be one of {_ALTERNATIVES}, got "
             f"{alternative!r}."
         )
+    if empty_time_bins not in ("keep", "zero"):
+        raise ValueError(
+            f"{_OPERATION}: empty_time_bins must be 'keep' or 'zero', got "
+            f"{empty_time_bins!r}."
+        )
+    decoded_posterior = np.asarray(posterior, dtype=np.float64)
+    if empty_time_bins == "zero":
+        if spike_counts is None:
+            raise ValueError(
+                _format_error(
+                    f"{_OPERATION}: empty_time_bins='zero' needs spike_counts.",
+                    why="the time bins whose posterior is set to zero are those "
+                    "without spikes",
+                    fix="pass the event's spike_counts, one row per posterior row",
+                )
+            )
+        posterior = _zero_empty_rows(decoded_posterior, np.asarray(spike_counts))
     score, options = _unwrap_partial(score, dict(score_options or {}))
     if use_absolute is None:
         use_absolute = score is weighted_correlation
@@ -365,6 +393,18 @@ def replay_significance(
             )
         )
     if "pseudo_event" in run:
+        if empty_time_bins == "zero":
+            raise ValueError(
+                _format_error(
+                    f"{_OPERATION}: empty_time_bins='zero' cannot be used with "
+                    "the pseudo_event null.",
+                    why="pseudo-events draw posterior rows from other events, "
+                    "whose spike counts are not given, so their empty time bins "
+                    "cannot be zeroed",
+                    fix="leave pseudo_event out of nulls, or use "
+                    "empty_time_bins='keep'",
+                )
+            )
         pool = _validated_pool(pseudo_event_pool, env)
 
     observed_result = scorer.observe()
@@ -393,7 +433,9 @@ def replay_significance(
         # _nulls_to_run runs these nulls only when all three inputs are given.
         assert encoding_models is not None and dt is not None
         counts = np.asarray(spike_counts)
-        _require_reproducible_decode(env, counts, encoding_models, dt, prior, posterior)
+        _require_reproducible_decode(
+            env, counts, encoding_models, dt, prior, decoded_posterior
+        )
 
         from neurospatial.decoding import decode_position
 
@@ -401,9 +443,12 @@ def replay_significance(
             event_counts: Any, models: Any = encoding_models, event_prior: Any = prior
         ) -> Any:
             """Decode shuffled counts or rate maps as the posterior was decoded."""
-            return decode_position(
+            decoded = decode_position(
                 env, event_counts, models, dt=dt, prior=event_prior
             ).posterior
+            if empty_time_bins == "zero":
+                return _zero_empty_rows(decoded, np.asarray(event_counts))
+            return decoded
 
     if "unit_identity" in run:
         rates = np.asarray(getattr(encoding_models, "firing_rates", encoding_models))
@@ -469,6 +514,21 @@ def replay_significance(
         alternative=alternative,
         use_absolute=use_absolute,
     )
+
+
+def _zero_empty_rows(
+    posterior: NDArray[np.float64], spike_counts: NDArray[Any]
+) -> NDArray[np.float64]:
+    """The posterior with the rows of time bins without spikes set to zero."""
+    counts = np.asarray(spike_counts)
+    if counts.ndim != 2 or len(counts) != len(posterior):
+        raise ValueError(
+            f"{_OPERATION}: spike_counts must have one row per posterior row "
+            f"({len(posterior)}), got shape {counts.shape}."
+        )
+    empty = counts.sum(axis=1) == 0
+    zeroed: NDArray[np.float64] = np.where(empty[:, np.newaxis], 0.0, posterior)
+    return zeroed
 
 
 def _statistic(scores: NDArray[np.float64], use_absolute: bool) -> NDArray[np.float64]:
