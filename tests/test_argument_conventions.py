@@ -214,6 +214,8 @@ REQUIRED_DATA_NAMES = {
     *("occupancy", "joint_counts", "autocorr_2d", "rate_map"),
     *("field_bins", "field_bins_1", "field_bins_2", "field_bins_i", "field_bins_j"),
     *("encoding_models", "models", "pattern", "posterior", "log_likelihood"),
+    *("patterns", "reference_patterns", "activation"),
+    *("explained_variance", "reversed_explained_variance"),
     *("templates", "reference_templates"),
     *("source_probs", "decoded_positions", "actual_positions", "actual_bins"),
     *("template_correlations", "match_correlations", "rates"),

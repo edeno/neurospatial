@@ -155,7 +155,7 @@ class TestReactivationWindows:
         ({"bin_size": 0.0}, "bin_size must be a positive"),
         ({"statistic": "mean_activation_difference"}, "does not fit measure"),
         ({"test": "cell_identity_shuffle"}, "does not fit measure"),
-        ({"percentile": 99.0}, "apply only to assembly methods"),
+        ({"percentile": 99.0}, "do not apply to explained_variance methods"),
         ({"n_shuffles": 0}, "n_shuffles must be a positive integer"),
         ({"alpha": 1.0}, r"alpha must be in \(0, 1\)"),
     ],

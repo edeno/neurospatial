@@ -181,6 +181,8 @@ _COMPONENT_THRESHOLDS = (
     "circular_shift",
 )
 _SURROGATE_THRESHOLDS = ("bin_shuffle", "circular_shift")
+MemberRule = Literal["abs_z", "positive_z", "otsu", "inverse_sqrt_n"]
+_MEMBER_RULES = ("abs_z", "positive_z", "otsu", "inverse_sqrt_n")
 _THRESHOLD_NAMES = {
     "marchenko_pastur": "Marchenko-Pastur bound",
     "tracy_widom": "Marchenko-Pastur bound plus the Tracy-Widom term",
@@ -202,8 +204,8 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
         each pattern to unit length and orients it so its largest-magnitude
         weight is positive.
     member_indices : NDArray[np.int64], shape (n_members,)
-        Column positions of neurons whose absolute-weight z-scores exceed
-        z_threshold, the "core" members of the assembly: unique integers in
+        Column positions of the "core" members of the assembly, chosen by
+        ``detect_assemblies(member_rule=...)``: unique integers in
         ``[0, n_neurons)``, in increasing order.
     explained_variance_ratio : float
         Fraction of the population's variance this pattern accounts for, in
@@ -244,9 +246,10 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
 
     **Member Selection**:
 
-    Members are selected by z-scoring absolute weights across neurons and
-    thresholding. With the default cutoff of 2.0, an absolute weight must be
-    more than two standard deviations above their mean to be selected.
+    By default members are selected by z-scoring absolute weights across
+    neurons and thresholding (``member_rule="abs_z"``). With the default
+    cutoff of 2.0, an absolute weight must be more than two standard
+    deviations above their mean to be selected.
     This is a heuristic weight cutoff,
     not a calibrated per-neuron significance test. A detected pattern can have
     no core members even when its underlying dimension exceeds the
@@ -254,7 +257,7 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
     neurons and the rest 0, the members' z-score is
     :math:`\\sqrt{(n - k) / k}`: 3 members of 9 neurons reach only 1.41,
     below the default cutoff, so small recordings or large assemblies need a
-    lower ``z_threshold``.
+    lower ``member_threshold``.
 
     Examples
     --------
@@ -581,7 +584,20 @@ class ExplainedVarianceResult(ResultMixin):
         and with several controls (REV is defined for one).
     partial_correlation : float
         Partial correlation between template and match, controlling for the
-        control periods; without a control, their plain correlation.
+        control periods; without a control, their plain correlation. It is
+        also the correlation between the residuals of the template and of
+        the match correlations, each regressed (with an intercept) on the
+        controls (Robinson et al., 2026's pairwise reactivation).
+    semipartial_correlation : float
+        Correlation between the template correlations and the residuals of
+        the match correlations regressed (with an intercept) on the
+        controls; only the match side is residualized. With one control,
+        ``(r_tm - r_tc * r_mc) / sqrt(1 - r_mc**2)``. Liu et al. (2023),
+        after Giri et al. (2019), "used linear regression between CPOST and
+        CPRE to remove the portion of the variance in CPOST that can be
+        explained by preexisting patterns, and ... correlated the resultant
+        residuals CRESIDUAL with C". Its magnitude is at most that of
+        ``partial_correlation``. Without a control, the plain correlation.
     p_value : float
         Two-sided p-value of ``partial_correlation`` from the t test
         ``t = r * sqrt(df / (1 - r**2))`` with
@@ -626,6 +642,7 @@ class ExplainedVarianceResult(ResultMixin):
     explained_variance: float
     reversed_explained_variance: float
     partial_correlation: float
+    semipartial_correlation: float
     p_value: float
     n_pairs: int
     n_controls: int
@@ -636,6 +653,7 @@ class ExplainedVarianceResult(ResultMixin):
             "explained_variance": self.explained_variance,
             "reversed_explained_variance": self.reversed_explained_variance,
             "partial_correlation": self.partial_correlation,
+            "semipartial_correlation": self.semipartial_correlation,
             "p_value": self.p_value,
             "n_pairs": self.n_pairs,
             "n_controls": self.n_controls,
@@ -830,7 +848,8 @@ def detect_assemblies(
     component_threshold: ComponentThreshold = "marchenko_pastur",
     percentile: float | None = None,
     n_shuffles: int = 1000,
-    z_threshold: float = 2.0,
+    member_rule: MemberRule = "abs_z",
+    member_threshold: float = 2.0,
     rng: int | np.random.Generator | None = None,
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> AssemblyDetectionResult:
@@ -902,9 +921,32 @@ def detect_assemblies(
         default of the authors' Python code (``nshu=1000``). Ignored by
         the analytical thresholds.
 
-    z_threshold : float, default=2.0
-        Z-score threshold for assembly membership. Neurons with absolute-weight
-        z-scores above this are selected as core members.
+    member_rule : {'abs_z', 'positive_z', 'otsu', 'inverse_sqrt_n'}, default='abs_z'
+        How the core members of each pattern are chosen from its weights,
+        which are scaled to unit length and oriented so the largest absolute
+        weight is positive:
+
+        - 'abs_z': absolute weights z-scored across the varying neurons, above
+          ``member_threshold``.
+        - 'positive_z': signed weights above ``mean + member_threshold * SD``
+          of the pattern's weights, and positive (El-Gaby et al., 2021: "the
+          direction where weights were highest was assigned positive weights,
+          and ... neurons whose weight was positive and exceeded 2 standard
+          deviations from the mean were defined as pattern 'members'"). A
+          large negative weight lowers the mean and raises the SD of the
+          signed weights, so this can differ from 'abs_z'.
+        - 'otsu': Otsu's split of the absolute weights into the two groups
+          with the smallest within-group variance; the group with the larger
+          absolute weights are members (Harvey et al., 2023). Every split of
+          the sorted weights is tried, so the result is exact.
+          ``member_threshold`` is not used.
+        - 'inverse_sqrt_n': weights above ``1 / sqrt(n_neurons)``, the weight
+          every neuron would have in a uniform unit-length pattern (Robinson
+          et al., 2026: "units whose weights exceeded 1/√N, where N is the
+          number of recorded units"). ``member_threshold`` is not used.
+
+    member_threshold : float, default=2.0
+        Z-score cutoff of the 'abs_z' and 'positive_z' rules.
 
         - 2.0: Default heuristic weight cutoff
         - 2.5: Select fewer core members
@@ -1077,6 +1119,11 @@ def detect_assemblies(
     unit_ids_generated = unit_ids is None
     labels = resolve_unit_ids(unit_ids, n_neurons, context="detect_assemblies()")
     _check_component_threshold(component_threshold, percentile, n_shuffles)
+    if member_rule not in _MEMBER_RULES:
+        raise ValueError(
+            f"detect_assemblies(): member_rule must be one of {_MEMBER_RULES}, "
+            f"got {member_rule!r}."
+        )
 
     if n_time_bins < n_neurons:
         warnings.warn(
@@ -1235,9 +1282,8 @@ def detect_assemblies(
     # shape (n_time_bins, n_found); excluded neurons have weight 0.
     activations = _activation_strength(spike_counts_z.T, patterns)
 
-    # Members: absolute weights z-scored across the retained neurons, then
-    # thresholded; shape (n_found, n_retained).
-    member_masks = stats.zscore(np.abs(patterns), axis=1) > z_threshold
+    # Members among the retained neurons; shape (n_found, n_retained).
+    member_masks = _member_masks(patterns, member_rule, member_threshold, n_neurons)
     full_patterns = np.zeros((n_found, n_neurons))
     full_patterns[:, retained] = patterns
 
@@ -1264,6 +1310,71 @@ def detect_assemblies(
         surrogate_max_eigenvalues=surrogate_max,
         _unit_ids_generated=unit_ids_generated,
     )
+
+
+def _member_masks(
+    patterns: NDArray[np.float64],
+    rule: str,
+    threshold: float,
+    n_neurons: int,
+) -> NDArray[np.bool_]:
+    """Core members of each pattern by ``rule``.
+
+    Parameters
+    ----------
+    patterns : ndarray, shape (n_patterns, n_retained)
+        Unit-length weights of the varying neurons, each pattern oriented so
+        its largest absolute weight is positive.
+    rule : {"abs_z", "positive_z", "otsu", "inverse_sqrt_n"}
+        Membership rule (see :func:`detect_assemblies`).
+    threshold : float
+        Z-score cutoff of the ``"abs_z"`` and ``"positive_z"`` rules.
+    n_neurons : int
+        Number of recorded neurons, the ``N`` of ``"inverse_sqrt_n"``.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_patterns, n_retained)
+    """
+    if rule == "abs_z":
+        return np.asarray(stats.zscore(np.abs(patterns), axis=1) > threshold)
+    if rule == "positive_z":
+        return np.asarray((patterns > 0) & (stats.zscore(patterns, axis=1) > threshold))
+    if rule == "inverse_sqrt_n":
+        return np.asarray(patterns > 1.0 / np.sqrt(n_neurons))
+    return np.array([_otsu_upper(np.abs(weights)) for weights in patterns]).reshape(
+        patterns.shape
+    )
+
+
+def _otsu_upper(values: NDArray[np.float64]) -> NDArray[np.bool_]:
+    """The upper group of Otsu's two-group split of ``values``.
+
+    Tries every split of the sorted values into a lower and an upper group
+    and keeps the one with the smallest within-group variance
+    ``p_low var_low + p_high var_high`` (equivalently the largest variance
+    between the groups), the first such split on ties.
+
+    Parameters
+    ----------
+    values : ndarray, shape (n,)
+
+    Returns
+    -------
+    ndarray of bool, shape (n,)
+        True for values above the split.
+    """
+    ordered = np.sort(values)
+    n = ordered.size
+    if n < 2:
+        return np.zeros(n, dtype=bool)
+    size_low = np.arange(1, n)
+    sums = np.cumsum(ordered)[:-1]
+    total, total_squares = ordered.sum(), (ordered**2).sum()
+    # n * within-group variance = sum of squares minus each group's n * mean^2.
+    within = total_squares - sums**2 / size_low - (total - sums) ** 2 / (n - size_low)
+    split = ordered[int(np.argmin(within))]
+    return np.asarray(values > split)
 
 
 def _check_component_threshold(
@@ -2561,6 +2672,7 @@ def explained_variance_reactivation(
             explained_variance=np.nan,
             reversed_explained_variance=np.nan,
             partial_correlation=np.nan,
+            semipartial_correlation=np.nan,
             p_value=np.nan,
             n_pairs=n_valid,
             n_controls=n_controls,
@@ -2601,6 +2713,9 @@ def explained_variance_reactivation(
         explained_variance=float(ev),
         reversed_explained_variance=float(rev),
         partial_correlation=float(partial_corr),
+        semipartial_correlation=_semipartial_correlation(
+            period_correlations, 0, 1, control_rows
+        ),
         p_value=_partial_correlation_p_value(partial_corr, n_valid - 2 - n_controls),
         n_pairs=n_valid,
         n_controls=n_controls,
@@ -2795,6 +2910,46 @@ def _partial_correlation(
     if not (unexplained_x > 1e-12 and unexplained_y > 1e-12):
         return np.nan
     return float(residual[0, 1] / np.sqrt(unexplained_x * unexplained_y))
+
+
+def _semipartial_correlation(
+    correlations: NDArray[np.float64], x: int, y: int, controls: Sequence[int]
+) -> float:
+    """Correlation of x with the residual of y regressed on ``controls``.
+
+    Parameters
+    ----------
+    correlations : ndarray, shape (n_vectors, n_vectors)
+        Correlation matrix of all vectors; NaN propagates.
+    x, y : int
+        Rows of the vector kept and of the vector residualized.
+    controls : sequence of int
+        Rows of the vectors regressed out of y; empty for the plain
+        correlation.
+
+    Returns
+    -------
+    float
+        ``S_xy / sqrt(S_yy)`` with ``S`` the Schur complement of the
+        controls' block (the controls' share of x is not removed). With one
+        control, ``(r_xy - r_xz r_yz) / sqrt(1 - r_yz**2)``. NaN when the
+        controls are collinear or explain y completely.
+    """
+    if not controls:
+        return float(correlations[x, y])
+    pair, rows = [x, y], list(controls)
+    if np.isnan(correlations[np.ix_(pair + rows, pair + rows)]).any():
+        return np.nan
+    between_controls = correlations[np.ix_(rows, rows)]
+    if not np.linalg.eigvalsh(between_controls).min() > 1e-12:
+        return np.nan
+    with_controls = correlations[np.ix_(pair, rows)]
+    residual = correlations[np.ix_(pair, pair)] - with_controls @ np.linalg.solve(
+        between_controls, with_controls.T
+    )
+    if not residual[1, 1] > 1e-12:
+        return np.nan
+    return float(residual[0, 1] / np.sqrt(residual[1, 1]))
 
 
 def _partial_correlation_p_value(correlation: float, df: int) -> float:
