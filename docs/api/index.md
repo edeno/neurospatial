@@ -304,6 +304,8 @@ by position:
 - `null_reactivation_data()`, `simulated_reactivation_session()` and
   `reactivation_detection_rates()`: data without reactivation, a simulated
   session with a rate-change confound, and verdict rates with exact intervals
+- `equalize_firing_rates()`: subsample spikes so each unit fires at one rate
+  before and after the task, the rate control of Giri et al. (2019)
 
 See [Comparing reactivation methods](../user-guide/reactivation-methods.md) and
 the [complete public workflow](../user-guide/workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics).

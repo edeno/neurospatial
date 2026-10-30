@@ -173,6 +173,17 @@ Several replay papers test a whole data set, not each event:
   the choice of assembly threshold, and how to run the recipes on your own
   recording.
 
+### Reactivation checks from Tingley & Peyrache (2020)
+
+**New**
+
+- `equalize_firing_rates(control_counts, match_counts, *, rng=)` is the rate
+  control of Giri et al. (2019): for each unit, the period in which it fires
+  more per bin loses spikes chosen uniformly at random until both periods
+  have its lower rate. With periods of equal length each unit's counts are
+  equal exactly. Pair correlations grow with firing rate, so this separates
+  more co-firing after the task from more firing (Tingley & Peyrache 2020).
+
 ### Reactivation measures
 
 The pattern and pair-correlation reactivation measures now compute what the

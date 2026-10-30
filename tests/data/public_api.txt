@@ -448,6 +448,7 @@ neurospatial.reactivation.assembly_activation(spike_counts, pattern, *, z_score_
 neurospatial.reactivation.assembly_reactivation(control_counts, match_counts, pattern, *, percentile=99.0, control_unit_ids=None, match_unit_ids=None)
 neurospatial.reactivation.compare_reactivation_methods(spike_times, template_epochs, match_epochs, control_epochs=None, *, reactivation_methods, unit_ids=None, unit_groups=None, pair_mask=None, rng=None)
 neurospatial.reactivation.detect_assemblies(spike_counts, *, method='ica', n_components='auto', component_threshold='marchenko_pastur', percentile=None, n_shuffles=1000, z_threshold=2.0, rng=None, unit_ids=None)
+neurospatial.reactivation.equalize_firing_rates(control_counts, match_counts, *, rng=None)
 neurospatial.reactivation.explained_variance_reactivation(template_correlations, match_correlations, *, control_correlations=None, unit_groups=None, pair_mask=None, template_unit_ids=None, match_unit_ids=None, control_unit_ids=None)
 neurospatial.reactivation.marchenko_pastur_threshold(n_neurons, n_time_bins)
 neurospatial.reactivation.null_reactivation_data(spike_times, match_epochs, *, kind, rng=None)

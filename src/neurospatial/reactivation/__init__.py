@@ -48,6 +48,8 @@ simulated_reactivation_session : Rest, task and rest with assemblies
     Reactivation strength and a rate-change confound are settings.
 reactivation_detection_rates : Share of rows called reactivated
     With Clopper-Pearson intervals, overall or by group.
+equalize_firing_rates : Subsample spikes to one rate before and after
+    The rate control of Giri et al. (2019).
 SimulatedReactivationSession : Spike times, epochs and assemblies
 
 Result Containers
@@ -76,6 +78,7 @@ from neurospatial.reactivation.assemblies import (
 )
 from neurospatial.reactivation.calibration import (
     SimulatedReactivationSession,
+    equalize_firing_rates,
     null_reactivation_data,
     reactivation_detection_rates,
     simulated_reactivation_session,
@@ -124,6 +127,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "VAN_DE_VEN_2016",
     # Null data and calibration
     "SimulatedReactivationSession",
+    "equalize_firing_rates",
     "null_reactivation_data",
     "reactivation_detection_rates",
     "simulated_reactivation_session",
