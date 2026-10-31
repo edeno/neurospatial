@@ -445,6 +445,12 @@ been recorded wherever position was tracked. Use the group's time support as
 `TsGroup` built from spike times alone gets a default support that runs from
 its first spike to its last, which is not recording coverage.
 
+Event times passed as `event_times=`, `reward_times=` or `theta_peak_times=`
+accept a pynapple `Ts` or `Tsd` directly, and are read by its timestamps: a
+`Tsd` of reward sizes aligns to the reward times, not to the sizes. A `TsGroup`
+there is refused, because it holds one spike train per unit; pass
+`tsgroup[unit_id]` for one unit's spikes.
+
 Egress turns a decoded MAP track back into a pynapple `Tsd` / `TsdFrame`. Its
 time support is the decode's `spike_window`, so decoding over several windows
 stays several intervals instead of one interval spanning the gaps:
