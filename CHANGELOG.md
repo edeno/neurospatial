@@ -32,6 +32,8 @@
   gets the same hint.
 - Warnings that replay and reactivation comparisons re-emit with context are
   no longer lost when the comparison then raises.
+- Warnings point at the caller's line when neurospatial is imported through
+  a symlinked path, instead of inside the library.
 - A `TsGroup` passed to a population encoder or
   `population_peri_event_histogram` keeps its metadata as `unit_table`
   (pynapple's computed `rate` column is dropped). `SpikeTrains` metadata now
