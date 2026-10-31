@@ -498,14 +498,14 @@ conditions = to_pynapple(labels_to_epochs(times, task_phase))  # label column
 A record covers `[start_time, end_time)`. The exported interval ends one float
 below `end_time`, so `restrict` selects exactly the samples that
 `in_epochs(t, (start_time, end_time))` selects: a sample at a lap's end belongs
-to the next lap, not to both. Two cases are refused instead of exported. A
-record without duration, such as a region visit observed in a single sample at
-the end of the recording, holds no time; keep the others with
-`[r for r in records if r.end_time > r.start_time]`. Overlapping records, such
-as visits to overlapping regions, must be exported separately, because
-pynapple merges overlapping intervals and drops all their metadata. An empty
-list is also refused, because it does not say what kind of record it would
-hold; skip the export when nothing was detected.
+to the next lap, not to both. A record without duration, such as a region
+visit seen in a single sample just before a tracking loss longer than
+`max_gap`, holds no time and cannot be a pynapple interval, so it is dropped
+with a warning that says how many were dropped. Overlapping records, such as
+visits to overlapping regions, are refused: pynapple merges overlapping
+intervals and drops all their metadata, so export them in separate calls. An
+empty list is also refused, because it does not say what kind of record it
+would hold; skip the export when nothing was detected.
 
 **Region crossings.** pynapple time series carry no per-event labels, so
 crossings become a `TsGroup` with one `Tsd` per region and direction. Its

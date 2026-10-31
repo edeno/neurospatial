@@ -25,8 +25,8 @@
   `IntervalSet` with a `label` column; region crossings become a `TsGroup`
   with one `Tsd` of bin indices per region and direction. Intervals end one
   float below each record's `end_time`, so `restrict` selects the samples
-  `in_epochs` selects. Records without duration, overlapping records and empty
-  lists are refused.
+  `in_epochs` selects. Records without duration are dropped with a warning;
+  overlapping records and empty lists are refused.
 
 **Changed**
 

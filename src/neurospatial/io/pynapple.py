@@ -26,6 +26,7 @@ to_pynapple
 from __future__ import annotations
 
 import dataclasses
+import warnings
 from typing import Any, Literal
 
 import numpy as np
@@ -35,6 +36,7 @@ from neurospatial._pynapple import (
     interval_rows,
     refuse_permuted_spatial_columns,
 )
+from neurospatial._stacklevel import _external_stacklevel
 
 __all__ = ["from_pynapple", "to_pynapple"]
 
@@ -216,8 +218,9 @@ or None, optional
         ``epochs=`` argument. Every timestamp must lie inside a row
         (pynapple would silently drop the others). Default ``None``: a
         decode result's ``time_support``, else pynapple's default, one
-        interval from the first to the last timestamp. For region crossings,
-        pass the ``epochs`` they were detected in, or the recording span.
+        interval from the first to the last timestamp. For
+        region crossings, pass the ``epochs`` they were detected in, or the
+        recording span.
         Not accepted for interval records, which have no time support.
     quantity : {"map_position", "mean_position", "posterior"}, \
 default="map_position"
@@ -249,8 +252,13 @@ default="map_position"
         leaves a timestamp outside, a decode result has no ``times``,
         ``quantity`` is unknown or ``"posterior"`` for a
         ``DecodingSummary``, the list of records is empty, or interval
-        records have no duration or overlap. These checks run before
+        records overlap. These checks run before
         pynapple is imported.
+
+    Warns
+    -----
+    UserWarning
+        If interval records without duration are dropped.
 
     Notes
     -----
@@ -286,9 +294,11 @@ default="map_position"
     **Behavior records.** Each record ``[start_time, end_time)`` becomes one
     interval, sorted by start; every scalar field becomes a metadata column
     (``Run.bins``, one bin per sample, is not exported). A record without
-    duration holds no half-open time, and pynapple merges overlapping
-    intervals and then drops all metadata, so both are refused: export
-    overlapping records (for example visits to overlapping regions) in
+    duration (``end_time == start_time``, such as a visit seen in one sample
+    before a tracking loss) holds no half-open time and cannot be a pynapple
+    interval, so it is dropped with a warning. pynapple merges overlapping
+    intervals and then drops all metadata, so overlapping records are
+    refused: export them (for example visits to overlapping regions) in
     separate calls. A ``LabelEpochsResult`` becomes one interval per epoch,
     with its label in a ``label`` column. An empty list carries no record
     type, so it is refused rather than guessed; skip the export when no
@@ -624,19 +634,20 @@ def _intervals_to_pynapple(
     starts, stops = starts[order], stops[order]
     metadata = {name: column[order] for name, column in metadata.items()}
     ends = stop_to_pynapple_end(stops)
-    empty = np.flatnonzero(ends <= starts)
-    if empty.size:
-        i = int(empty[0])
-        raise ValueError(
-            f"{empty.size} of {starts.size} {kind} record(s) have no duration "
-            f"(first [{starts[i]!r}, {stops[i]!r}) in time order).\n"
-            "Why: a half-open [start_time, end_time) window with "
-            "end_time == start_time holds no time, and pynapple drops "
-            "intervals without duration together with every interval's "
-            "metadata.\n"
-            "Fix: export the records with duration, e.g. "
-            "to_pynapple([r for r in records if r.end_time > r.start_time])."
+    timed = ends > starts
+    if not timed.all():
+        n_empty = int(np.count_nonzero(~timed))
+        warnings.warn(
+            f"to_pynapple dropped {n_empty} of {starts.size} {kind} record(s) "
+            "without duration (end_time == start_time), such as a visit seen "
+            "in one sample before a tracking loss. A half-open "
+            "[start_time, end_time) window then holds no time, and a pynapple "
+            "IntervalSet cannot hold an interval without duration.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
         )
+        starts, stops, ends = starts[timed], stops[timed], ends[timed]
+        metadata = {name: column[timed] for name, column in metadata.items()}
     overlap = np.flatnonzero(starts[1:] < np.maximum.accumulate(stops)[:-1])
     if overlap.size:
         i = int(overlap[0]) + 1
