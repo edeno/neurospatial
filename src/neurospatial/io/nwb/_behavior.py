@@ -7,12 +7,14 @@ data from pynwb.behavior containers.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
+from neurospatial._units import _UNIT_SPELLINGS
 from neurospatial.io.nwb._adapters import (
     data_from_series,
     missing_error,
@@ -22,9 +24,15 @@ from neurospatial.io.nwb._adapters import (
     timestamps_handle_from_series,
 )
 from neurospatial.io.nwb._core import _find_containers_by_type, _require_pynwb, logger
-from neurospatial.io.nwb._holders import NWBHeadDirection, NWBPosition
+from neurospatial.io.nwb._holders import (
+    NWBHeadDirection,
+    NWBPosition,
+    _declared_units,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from pynwb import NWBFile
     from pynwb.behavior import SpatialSeries
 
@@ -35,6 +43,7 @@ def read_position(
     *,
     processing_module: str | None = None,
     position_name: str | None = None,
+    columns: Sequence[int] | None = None,
     lazy: bool = False,
 ) -> NWBPosition:
     """
@@ -51,6 +60,13 @@ def read_position(
         Name of the SpatialSeries within a Position container, or its full
         path such as ``"processing/behavior/Position/position"``. Required
         when the search finds more than one series.
+    columns : sequence of int, optional
+        Indices of the spatial columns of a 2-D series, in the order to
+        return them, for a series that also stores non-spatial values, for
+        example ``columns=[0, 1]`` for x and y when column 2 is speed.
+        Default returns every column. Required when the series has more than
+        two columns and its unit is not one length or pixel unit, or when the
+        unit lists several units (``"centimeters; centimeters/second"``).
     lazy : bool, default False
         If ``False`` (default), positions and timestamps are fully materialized
         into ``NDArray[np.float64]``. If ``True``, the h5py-backed
@@ -70,6 +86,10 @@ def read_position(
         read-only float64 by default; lazy handles remain inside the holder. ``frame``
         preserves a nonempty SpatialSeries ``reference_frame`` verbatim,
         or is None when undeclared. No coordinate transform is inferred.
+        With ``columns=``, ``positions`` has one column per selected index,
+        and ``units`` is the series unit only when that is one recognized
+        length or pixel unit; otherwise it is None, because the declaration
+        may describe the other columns.
 
     Raises
     ------
@@ -77,8 +97,9 @@ def read_position(
         If no Position container found, or if specified position_name not found.
     ValueError
         If more than one Position series matches (pass ``position_name=``),
-        or ``lazy=True`` and the series declares a non-identity
-        ``conversion`` or ``offset``.
+        ``lazy=True`` and the series declares a non-identity ``conversion``
+        or ``offset``, the series needs ``columns=`` (see above), or
+        ``columns`` does not name distinct column indices of a 2-D series.
     ImportError
         If pynwb is not installed.
 
@@ -95,7 +116,14 @@ def read_position(
 
     ``lazy=True`` returns the **stored** dtype (whatever the SpatialSeries was
     written with, e.g. ``float32``), whereas ``lazy=False`` casts to
-    ``float64``. The values are equal; only the dtype may differ.
+    ``float64``. The values are equal; only the dtype may differ. With
+    ``columns=``, the lazy handle reads the requested rows and keeps the
+    selected columns each time it is sliced.
+
+    NWB gives a SpatialSeries one ``unit`` string for all its columns, so a
+    file that stores x, y and speed together cannot say which column is
+    which in a machine-readable way; its ``description`` and ``comments``
+    often do, and the error for an ambiguous series quotes them.
 
     Examples
     --------
@@ -114,7 +142,7 @@ def read_position(
     ...         data=np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]),
     ...         timestamps=np.arange(3) / 30.0,
     ...         reference_frame="arena origin",
-    ...         unit="cm",
+    ...         unit="centimeters",
     ...     )
     ... )
     >>> _ = nwbfile.create_processing_module("behavior", "Tracking").add(position)
@@ -142,21 +170,170 @@ def read_position(
         "position_name",
     )
 
+    shape = np.shape(spatial_series.data)
+    unit = spatial_series.unit
+    if columns is None:
+        _require_unambiguous_columns(spatial_series, shape)
+    else:
+        columns = _checked_columns(columns, spatial_series.name, shape)
+        if _declared_units(unit) not in _SPATIAL_UNITS:
+            # The declaration may describe the columns left out.
+            unit = None
+
     if lazy:
         require_unscaled_for_lazy(spatial_series, context="read_position")
         # The h5py-backed handles materialize on slice / np.asarray; the
         # holder checks their lengths from .shape without reading values.
         timestamps = timestamps_handle_from_series(spatial_series)
         positions = spatial_series.data
+        if columns is not None:
+            positions = _ColumnView(positions, columns)
     else:
         timestamps = timestamps_from_series(spatial_series)
         positions = data_from_series(spatial_series)
+        if columns is not None:
+            positions = positions[:, columns]
     return NWBPosition(
         timestamps,
         positions,
-        spatial_series.unit,
+        unit,
         frame=spatial_series.reference_frame,
     )
+
+
+_SPATIAL_UNITS = frozenset(_UNIT_SPELLINGS.values())
+
+# pynwb's placeholders for an empty description and comments.
+_NWB_TEXT_DEFAULTS = frozenset({"", "no description", "no comments"})
+
+
+def _require_unambiguous_columns(series: SpatialSeries, shape: tuple[int, ...]) -> None:
+    """Refuse a series whose columns may not all be spatial coordinates.
+
+    A unit that lists several units (``"centimeters; centimeters/second"``)
+    or, with three or more columns, any unit that is not one length or pixel
+    unit leaves open that a column is speed or another non-spatial value.
+    """
+    n_columns = shape[1] if len(shape) == 2 else 1
+    unit = str(series.unit or "")
+    compound = any(separator in unit for separator in ";,")
+    if n_columns < 2 or not (
+        compound or (n_columns > 2 and _declared_units(unit) not in _SPATIAL_UNITS)
+    ):
+        return
+    notes = [
+        str(text).strip()
+        for text in (series.description, series.comments)
+        if text is not None and str(text).strip().lower() not in _NWB_TEXT_DEFAULTS
+    ]
+    described = (
+        " The series describes its data as: " + " / ".join(repr(n) for n in notes) + "."
+        if notes
+        else ""
+    )
+    raise ValueError(
+        _format_error(
+            f"Position series '{series.name}' has {n_columns} columns and "
+            f"declares unit {series.unit!r}, which is not one length or pixel "
+            "unit.",
+            why="a column may hold speed or another non-spatial value; using "
+            f"every column would bin it as a spatial axis of a {n_columns}-D "
+            "environment.",
+            fix="pass columns= with the spatial columns, e.g. columns=[0, 1] "
+            f"for x and y, or columns={list(range(n_columns))} if all are "
+            f"spatial.{described}",
+        )
+    )
+
+
+def _checked_columns(
+    columns: Sequence[int], name: str, shape: tuple[int, ...]
+) -> list[int]:
+    """Validate ``columns=`` against a series of the given ``shape``."""
+    if len(shape) != 2:
+        raise ValueError(
+            _format_error(
+                f"read_position(columns=...) selects columns, but Position "
+                f"series '{name}' stores one value per sample (shape {shape}).",
+                fix="omit columns= for this series.",
+            )
+        )
+    n_columns = shape[1]
+    fix = (
+        f"pass distinct integer column indices from 0 to {n_columns - 1}, "
+        "e.g. columns=[0, 1]."
+    )
+    selected = list(columns)
+    if not selected:
+        raise ValueError(
+            _format_error("columns= must name at least one column.", fix=fix)
+        )
+    for column in selected:
+        if isinstance(column, bool) or not isinstance(column, (int, np.integer)):
+            raise ValueError(
+                _format_error(
+                    f"columns= takes integer column indices, got {column!r}.",
+                    fix=fix,
+                )
+            )
+        if not 0 <= column < n_columns:
+            raise ValueError(
+                _format_error(
+                    f"columns=: column {column} is out of range for Position "
+                    f"series '{name}', which has {n_columns} columns.",
+                    fix=fix,
+                )
+            )
+    repeated = sorted({int(c) for c in selected if selected.count(c) > 1})
+    if repeated:
+        raise ValueError(
+            _format_error(f"columns= repeats column {repeated[0]}.", fix=fix)
+        )
+    return [int(c) for c in selected]
+
+
+class _ColumnView:
+    """Lazy view of some columns of a 2-D file-backed dataset.
+
+    Slicing reads the requested rows from the dataset and keeps the selected
+    columns; ``np.asarray`` reads every row. Valid only while the backing
+    file is open.
+    """
+
+    __slots__ = ("_columns", "_data")
+
+    def __init__(self, data: Any, columns: list[int]) -> None:
+        self._data = data
+        self._columns = columns
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        return (int(self._data.shape[0]), len(self._columns))
+
+    @property
+    def ndim(self) -> int:
+        return 2
+
+    @property
+    def dtype(self) -> np.dtype[Any]:
+        dtype: np.dtype[Any] = np.dtype(self._data.dtype)
+        return dtype
+
+    def __len__(self) -> int:
+        return self.shape[0]
+
+    def __getitem__(self, key: Any) -> Any:
+        rows, *rest = key if isinstance(key, tuple) else (key,)
+        if len(rest) > 1:
+            raise IndexError(
+                f"too many indices for a 2-D position array: {len(rest) + 1}"
+            )
+        selected = np.asarray(self._data[rows])[..., self._columns]
+        return selected[..., rest[0]] if rest else selected
+
+    def __array__(self, dtype: Any = None, copy: bool | None = None) -> NDArray[Any]:
+        values: NDArray[Any] = np.asarray(self[:])
+        return values if dtype is None else values.astype(dtype)
 
 
 def _get_spatial_series(

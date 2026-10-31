@@ -411,7 +411,7 @@ class TestEnvironmentFromPosition:
 
         monkeypatch.setattr(neurospatial.environment, "_from_samples", record)
         # units and frame are checked against the series declarations.
-        not_options = {"nwbfile", "processing_module", "position_name"}
+        not_options = {"nwbfile", "processing_module", "position_name", "columns"}
         not_options |= {"units", "frame"}
         names = [
             name
@@ -444,7 +444,7 @@ class TestEnvironmentFromPosition:
 
         builder = options(
             environment_from_position,
-            {"nwbfile", "processing_module", "position_name"},
+            {"nwbfile", "processing_module", "position_name", "columns"},
         )
         assert builder == options(Environment.from_samples, {"positions"})
 

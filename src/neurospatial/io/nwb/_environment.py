@@ -285,6 +285,7 @@ def environment_from_position(
     bin_size: float | Sequence[float],
     processing_module: str | None = None,
     position_name: str | None = None,
+    columns: Sequence[int] | None = None,
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
@@ -319,6 +320,11 @@ def environment_from_position(
         Name of processing module containing Position.
     position_name : str, optional
         Name of specific SpatialSeries within Position.
+    columns : sequence of int, optional
+        Spatial columns of the series to bin, e.g. ``[0, 1]`` when the
+        series also stores speed; see :func:`read_position`. Default bins
+        every column. The selected columns take the series unit only when it
+        is one length or pixel unit; otherwise pass ``units=``.
     name : str, default ""
         Name of the environment.
     units : str, optional
@@ -368,7 +374,8 @@ def environment_from_position(
         If no Position container found, or if specified position_name not found.
     ValueError
         If the series declares no unit and `units` is not given, if `units`
-        or `frame` conflicts with the series declaration, if
+        or `frame` conflicts with the series declaration, if the series
+        needs `columns` or `columns` is invalid (see :func:`read_position`), if
         `layout` is neither "RegularGrid" nor "Hexagonal", or an option
         that the chosen layout or ``infer_active_bins=False`` ignores differs
         from its default. The message names ``environment_from_position``.
@@ -391,6 +398,12 @@ def environment_from_position(
     ...     infer_active_bins=True,
     ...     bin_count_threshold=5,
     ... )
+
+    Bin only x and y of a series that also stores speed in column 2:
+
+    >>> env = environment_from_position(  # doctest: +SKIP
+    ...     nwbfile, bin_size=2.0, columns=[0, 1], units="cm"
+    ... )
     """
     _require_pynwb()
 
@@ -401,12 +414,31 @@ def environment_from_position(
         nwbfile,
         processing_module=processing_module,
         position_name=position_name,
+        columns=columns,
     )
     series = (
         "The Position series"
         if position_name is None
         else f"Position series {position_name!r}"
     )
+    if columns is not None and units is None and position_data.units is None:
+        from neurospatial._exceptions import _format_error
+
+        raise ValueError(
+            _format_error(
+                f"{series} states no single unit for columns={list(columns)}.",
+                why=(
+                    "Why: its unit is missing or is not one length or pixel "
+                    "unit, so it may describe the columns left out; bin_size "
+                    "and every distance derived from the environment are in "
+                    "the position units."
+                ),
+                fix=(
+                    "pass units= with the unit of the selected columns, e.g. "
+                    "units='cm' for 'centimeters; centimeters/second'"
+                ),
+            )
+        )
     units, frame = _series_coordinates(
         series,
         {"units": position_data.units, "frame": position_data.frame},
