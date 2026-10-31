@@ -1098,25 +1098,41 @@ class CircularBasisResult(ReadOnlyArraysMixin):
 # =============================================================================
 
 
-def _validated_cov(cov_matrix: NDArray[np.float64]) -> NDArray[np.float64]:
+def _validated_cov(
+    cov_matrix: NDArray[np.float64], *, intercept_allowed: bool = False
+) -> NDArray[np.float64]:
     """
     The [beta_sin, beta_cos] covariance as a checked float64 2x2 array.
+
+    With ``intercept_allowed``, a 3x3 covariance of [intercept, beta_sin,
+    beta_cos] is accepted too and returned whole.
 
     Raises
     ------
     ValueError
         If ``cov_matrix`` is not a finite, symmetric positive semi-definite
-        2x2 matrix.
+        matrix of an accepted shape.
     """
     cov_matrix = np.asarray(cov_matrix, dtype=np.float64)
     fix = (
         "Fix: pass model.cov_params()[1:3, 1:3], the rows and columns for "
-        "[sin, cos] of the fitted GLM's covariance."
+        "[sin, cos] of the fitted GLM's covariance"
+        + (
+            ", or model.cov_params()[:3, :3] for [intercept, sin, cos]."
+            if intercept_allowed
+            else "."
+        )
     )
-    if cov_matrix.shape != (2, 2):
+    shapes = ((2, 2), (3, 3)) if intercept_allowed else ((2, 2),)
+    if cov_matrix.shape not in shapes:
+        expected = (
+            "2x2 matrix for [beta_sin, beta_cos] or a 3x3 matrix for "
+            "[intercept, beta_sin, beta_cos]"
+            if intercept_allowed
+            else "2x2 matrix for [beta_sin, beta_cos]"
+        )
         raise ValueError(
-            f"cov_matrix must be a 2x2 matrix for [beta_sin, beta_cos], got "
-            f"shape {cov_matrix.shape}.\n{fix}"
+            f"cov_matrix must be a {expected}, got shape {cov_matrix.shape}.\n{fix}"
         )
     if not np.all(np.isfinite(cov_matrix)):
         raise ValueError(
@@ -1502,11 +1518,13 @@ def plot_circular_basis_tuning(
         ``exp(intercept + beta_sin sin + beta_cos cos)``: a rate in Hz if
         the GLM had a ``log(dt)`` offset, otherwise the expected count per
         time bin.
-    cov_matrix : ndarray, shape (2, 2), optional
-        Covariance matrix for [beta_sin, beta_cos] from GLM fit.
-        Required if ``show_ci=True`` to compute confidence bands. The band
-        leaves out the intercept's uncertainty, so it is narrower than a
-        full pointwise interval for the rate.
+    cov_matrix : ndarray, shape (3, 3) or (2, 2), optional
+        Covariance of the GLM coefficients, required if ``show_ci=True``.
+        Pass the 3x3 covariance of [intercept, beta_sin, beta_cos]
+        (``model.cov_params()[:3, :3]``) for the pointwise interval of the
+        rate. A 2x2 covariance of [beta_sin, beta_cos] leaves out the
+        intercept's uncertainty: its band shows only the uncertainty of the
+        tuning's shape and is narrower than the interval for the rate.
     projection : {'polar', 'linear'}, default='polar'
         Plot projection type.
     n_points : int, default=100
@@ -1590,7 +1608,7 @@ def plot_circular_basis_tuning(
         raise ValueError(
             "show_ci=True requires cov_matrix argument.\n\n"
             "To show confidence bands:\n"
-            "  cov = model.cov_params()[1:3, 1:3]  # Extract sin/cos covariance\n"
+            "  cov = model.cov_params()[:3, :3]  # intercept, sin, cos\n"
             "  plot_circular_basis_tuning(beta_sin, beta_cos, cov_matrix=cov, show_ci=True)"
         )
 
@@ -1625,8 +1643,15 @@ def plot_circular_basis_tuning(
 
     if show_ci:
         # Pointwise band on the linear predictor, then mapped through exp.
-        cov = _validated_cov(cast("NDArray[np.float64]", cov_matrix))
-        se_linear = np.sqrt(np.maximum(np.sum((design @ cov) * design, axis=1), 0))
+        cov = _validated_cov(
+            cast("NDArray[np.float64]", cov_matrix), intercept_allowed=True
+        )
+        rows = (
+            np.column_stack([np.ones_like(theta), design])
+            if cov.shape == (3, 3)
+            else design
+        )
+        se_linear = np.sqrt(np.maximum(np.sum((rows @ cov) * rows, axis=1), 0))
         z = stats.norm.ppf((1 + ci) / 2)
         ax.fill_between(
             theta,

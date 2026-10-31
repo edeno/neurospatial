@@ -179,6 +179,10 @@
   call needed about 10^10 grid points; it now covers the analyzed time,
   cutting each break to a length that changes no lag the estimate reads,
   and gives the same value.
+- `plot_circular_basis_tuning` accepts the 3x3 covariance of
+  `[intercept, beta_sin, beta_cos]` (`model.cov_params()[:3, :3]`) and then
+  draws the full pointwise interval of the rate. A 2x2 `[sin, cos]`
+  covariance still draws the narrower band of the tuning's shape alone.
 - `TriangularMesh` layouts triangulate a triangular lattice of points instead
   of a square one, so interior triangles are equilateral. On the right
   triangles of the square lattice, the line between neighboring centers

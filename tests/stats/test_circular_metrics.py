@@ -1494,10 +1494,10 @@ class TestPlotCircularBasisTuning:
 
         beta_cos = 1.0
         beta_sin = 0.5
-        # Wrong shape (3x3 instead of 2x2)
-        cov = np.eye(3)
+        # Neither [sin, cos] (2x2) nor [intercept, sin, cos] (3x3)
+        cov = np.eye(4)
 
-        with pytest.raises(ValueError, match=r"cov_matrix must be.*2x2"):
+        with pytest.raises(ValueError, match=r"cov_matrix must be.*2x2.*3x3"):
             plot_circular_basis_tuning(beta_sin, beta_cos, cov_matrix=cov, show_ci=True)
 
     def test_ci_band_color_parameter(self) -> None:
