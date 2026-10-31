@@ -27,11 +27,12 @@ from __future__ import annotations
 
 import dataclasses
 import warnings
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._optional import require_optional
 from neurospatial._pynapple import (
     interval_rows,
@@ -43,7 +44,7 @@ from neurospatial._stacklevel import _external_stacklevel
 __all__ = ["from_pynapple", "to_pynapple"]
 
 _DecodeQuantity = Literal["map_position", "mean_position", "posterior"]
-_DECODE_QUANTITIES = ("map_position", "mean_position", "posterior")
+_DECODE_QUANTITIES = get_args(_DecodeQuantity)
 
 # Record fields that become IntervalSet bounds, or that hold an array per
 # record and so cannot be an IntervalSet metadata column.
@@ -322,10 +323,9 @@ default="map_position"
 
     >>> tsd = to_pynapple(times, linear_positions, epochs=run_epochs)  # doctest: +SKIP
     """
-    records = _behavior_records(data)
-    # An empty list with values is an empty time series, not empty records.
-    if records is not None and not (records[0] == "empty" and values is not None):
-        return _records_to_pynapple(records, values, columns, epochs, quantity)
+    exported = _records_to_pynapple(data, values, columns, epochs, quantity)
+    if exported is not None:
+        return exported
 
     if values is None:
         if not (hasattr(data, "times") and hasattr(data, "map_position")):
@@ -508,12 +508,14 @@ def _series_to_pynapple(
     )
 
 
-def _behavior_records(data: Any) -> tuple[str, Any] | None:
-    """Classify ``data`` as behavior records, or return None if it is not.
+def _records_to_pynapple(
+    data: Any, values: Any, columns: Any, epochs: Any, quantity: str
+) -> Any:
+    """Export behavior records, or return None if ``data`` is not records.
 
-    Returns ``("intervals", (starts, stops, metadata, kind))`` for interval
-    records or a ``LabelEpochsResult``, ``("crossings", crossings)`` for
-    region crossings, and ``("empty", None)`` for an empty list or tuple.
+    Interval records and a ``LabelEpochsResult`` become an ``IntervalSet``,
+    region crossings a ``TsGroup``. An empty list or tuple is refused, unless
+    ``values`` are given: then it is an empty time series, not records.
     """
     from neurospatial.behavior import (
         Crossing,
@@ -526,15 +528,26 @@ def _behavior_records(data: Any) -> tuple[str, Any] | None:
     )
 
     if isinstance(data, LabelEpochsResult):
+        _refuse_record_arguments(values, columns, quantity, epochs)
         labels = np.empty(len(data.labels), dtype=object)
         labels[:] = data.labels  # element-wise, so tuple labels stay whole
         bounds = np.array(data.epoch_bounds)
         metadata = {"label": labels[data.epoch_labels]}
-        return "intervals", (bounds[:, 0], bounds[:, 1], metadata, "epoch")
-    if not isinstance(data, (list, tuple)):
+        return _intervals_to_pynapple(bounds[:, 0], bounds[:, 1], metadata, "epoch")
+    if not isinstance(data, (list, tuple)) or (not data and values is not None):
         return None
     if not data:
-        return "empty", None
+        _refuse_record_arguments(values, columns, quantity, epochs=None)
+        raise ValueError(
+            _format_error(
+                "to_pynapple got an empty list.",
+                why="an empty list carries no record type, so whether it should "
+                "become an IntervalSet (laps, trials, runs, visits) or a TsGroup "
+                "(crossings) is unknown.",
+                fix="skip the export when no records were detected, or build the "
+                "empty object directly, e.g. nap.IntervalSet(start=[], end=[]).",
+            )
+        )
     kinds = (Lap, Trial, Run, RegionVisit, RegionTransition, Crossing)
     first = type(data[0])
     if first not in kinds:
@@ -542,14 +555,18 @@ def _behavior_records(data: Any) -> tuple[str, Any] | None:
     mixed = sorted({type(r).__name__ for r in data} - {first.__name__})
     if mixed:
         raise TypeError(
-            f"to_pynapple got a list of {first.__name__} records mixed with "
-            f"{', '.join(mixed)}.\n"
-            "Why: one pynapple object holds one kind of record, with one set "
-            "of metadata columns.\n"
-            "Fix: export each kind of record separately."
+            _format_error(
+                f"to_pynapple got a list of {first.__name__} records mixed with "
+                f"{', '.join(mixed)}.",
+                why="one pynapple object holds one kind of record, with one set "
+                "of metadata columns.",
+                fix="export each kind of record separately.",
+            )
         )
     if first is Crossing:
-        return "crossings", data
+        _refuse_record_arguments(values, columns, quantity, epochs=None)
+        return _crossings_to_pynapple(data, epochs)
+    _refuse_record_arguments(values, columns, quantity, epochs)
     names = [
         f.name
         for f in dataclasses.fields(first)
@@ -558,48 +575,36 @@ def _behavior_records(data: Any) -> tuple[str, Any] | None:
     metadata = {name: np.array([getattr(r, name) for r in data]) for name in names}
     starts = np.array([r.start_time for r in data], dtype=np.float64)
     stops = np.array([r.end_time for r in data], dtype=np.float64)
-    return "intervals", (starts, stops, metadata, first.__name__)
+    return _intervals_to_pynapple(starts, stops, metadata, first.__name__)
 
 
-def _records_to_pynapple(
-    records: tuple[str, Any],
-    values: Any,
-    columns: Any,
-    epochs: Any,
-    quantity: str,
-) -> Any:
-    """Export behavior records after refusing arguments that do not apply."""
-    kind, payload = records
+def _refuse_record_arguments(
+    values: Any, columns: Any, quantity: str, epochs: Any
+) -> None:
+    """Refuse time-series arguments given with behavior records.
+
+    ``epochs`` is None for records that take a time support (crossings).
+    """
     misplaced = [
         name
         for name, given in (
             ("values", values is not None),
             ("columns", columns is not None),
             ("quantity", quantity != "map_position"),
-            ("epochs", epochs is not None and kind == "intervals"),
+            ("epochs", epochs is not None),
         )
         if given
     ]
     if misplaced:
         raise TypeError(
-            f"to_pynapple got {', '.join(misplaced)} with behavior records.\n"
-            "Why: records carry their own times and fields; values, columns "
-            "and quantity describe time series and decode results, and an "
-            "IntervalSet has no time support.\n"
-            f"Fix: call to_pynapple(records) without {', '.join(misplaced)}."
+            _format_error(
+                f"to_pynapple got {', '.join(misplaced)} with behavior records.",
+                why="records carry their own times and fields; values, columns "
+                "and quantity describe time series and decode results, and an "
+                "IntervalSet has no time support.",
+                fix=f"call to_pynapple(records) without {', '.join(misplaced)}.",
+            )
         )
-    if kind == "empty":
-        raise ValueError(
-            "to_pynapple got an empty list.\n"
-            "Why: an empty list carries no record type, so whether it should "
-            "become an IntervalSet (laps, trials, runs, visits) or a TsGroup "
-            "(crossings) is unknown.\n"
-            "Fix: skip the export when no records were detected, or build the "
-            "empty object directly, e.g. nap.IntervalSet(start=[], end=[])."
-        )
-    if kind == "crossings":
-        return _crossings_to_pynapple(payload, epochs)
-    return _intervals_to_pynapple(*payload)
 
 
 def _intervals_to_pynapple(
