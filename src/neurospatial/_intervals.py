@@ -688,6 +688,12 @@ def interval_valid_mask(
         the animal's place during an interval is known only when both of its
         samples are inside the environment; one that ends outside is left
         out rather than imputing where the animal was. Needs ``start_bin``.
+        Frame-binned rate maps leave it False: in head-direction maps every
+        observed sample has a heading bin, so the gate would change nothing;
+        view maps pass no ``start_bin``; and in egocentric (object-vector)
+        maps ``-1`` also marks an object closer than ``distance_range[0]``,
+        a normal state rather than lost tracking, so requiring it would drop
+        observed time.
     epochs, spike_window : ndarray, shape (n_windows, 2), or None
         Already normalized, sorted and merged half-open windows in seconds.
         Each kept gap must lie wholly inside one row of each supplied
