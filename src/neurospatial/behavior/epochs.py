@@ -75,6 +75,7 @@ from neurospatial._results import (
     as_label_array,
     read_only_copy,
 )
+from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -347,7 +348,7 @@ def restrict(
                 "you use these sliced arrays, pass epochs= again; max_gap alone "
                 "is insufficient.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=_external_stacklevel(),
             )
     return (times_kept, *(arr[mask] for arr in coerced))
 

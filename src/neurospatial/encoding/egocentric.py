@@ -73,6 +73,7 @@ from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
 from neurospatial._spikes import spike_unit_table
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.encoding._base import (
     PopulationRateMixin,
     SingleUnitRateMixin,
@@ -2167,7 +2168,7 @@ def _warn_if_directions_unsampled(
             "over the sampled arc only",
         ),
         UserWarning,
-        stacklevel=3,
+        stacklevel=_external_stacklevel(),
     )
 
 
@@ -2214,7 +2215,7 @@ def _warn_if_peak_at_range_edge(
             fix="widen distance_range (the default covers the whole environment)",
         ),
         UserWarning,
-        stacklevel=3,
+        stacklevel=_external_stacklevel(),
     )
 
 

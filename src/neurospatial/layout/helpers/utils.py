@@ -184,7 +184,7 @@ def _infer_dimension_ranges_from_samples(
                 f"Dimension {dim_idx} has zero extent and no buffer specified. "
                 "Extending it by 0.5 on each side of the point.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=_external_stacklevel(),
             )
             buffer = 0.5
         d_min -= buffer

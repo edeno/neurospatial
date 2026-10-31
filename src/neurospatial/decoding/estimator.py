@@ -24,6 +24,7 @@ from numpy.typing import NDArray
 
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike
@@ -1267,7 +1268,7 @@ warn_on_drop
                 f"ground truth and were excluded "
                 f"from the score.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=_external_stacklevel(),
             )
 
         if metric == "median_error":

@@ -444,3 +444,23 @@ def test_sample_arguments_read_pynapple_objects():
                 undocumented.append(name)
     assert not undecorated, sorted(undecorated)
     assert not undocumented, sorted(undocumented)
+
+
+def test_warnings_from_sample_functions_point_at_the_caller():
+    """The pynapple-reading wrapper adds a frame; warnings must skip it."""
+    import warnings
+
+    import numpy as np
+
+    from neurospatial.behavior import heading_from_velocity, restrict
+
+    times = np.arange(10.0)
+    positions = np.zeros((10, 2))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        # Sliced samples from two windows lose the gap between them.
+        restrict(times, positions, epochs=[(0.0, 3.0), (5.0, 9.0)])
+        # A stationary animal has no heading.
+        heading_from_velocity(times, positions, allow_all_nan=True)
+    assert len(caught) == 2, [str(w.message) for w in caught]
+    assert {w.filename for w in caught} == {__file__}

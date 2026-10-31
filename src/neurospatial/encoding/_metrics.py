@@ -42,6 +42,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.encoding._base import _is_jax_array
 from neurospatial.encoding._field_metrics import _relative_measures
 
@@ -1230,7 +1231,7 @@ def _score_units(
             "NaN. Inspect the `failures` mask on the returned "
             "BatchScoresResult to identify which neurons failed.",
             UserWarning,
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
         )
     return BatchScoresResult(scores=scores, failures=failures)
 

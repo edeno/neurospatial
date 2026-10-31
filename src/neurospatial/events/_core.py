@@ -27,6 +27,7 @@ from neurospatial._results import (
     label_at,
     resolve_unit_ids,
 )
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._time_bins import _time_bin_rounding, _time_bins_in_windows
 from neurospatial._validation import timestamps_of
 
@@ -165,7 +166,7 @@ def _validate_window(
                 fix="use window=(-0.5, 1.0) if you meant milliseconds",
             ),
             UserWarning,
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
         )
     return float(bounds[0]), float(bounds[1])
 

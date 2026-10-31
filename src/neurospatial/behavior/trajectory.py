@@ -45,6 +45,7 @@ from neurospatial._observation import (
 )
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     validate_strictly_increasing,
     validate_times_positions,
@@ -626,7 +627,7 @@ def heading_from_velocity(
             f"min_speed={min_speed} or zero; returning an all-NaN heading "
             "array because allow_all_nan=True.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
     return heading
 

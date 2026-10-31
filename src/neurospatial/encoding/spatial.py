@@ -65,6 +65,7 @@ from neurospatial._results import (
     read_only_copy,
 )
 from neurospatial._spikes import spike_unit_table
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.encoding._base import (
     KERNEL_ESTIMATORS,
     BandwidthRule,
@@ -2809,7 +2810,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
                 + " cannot be computed on this environment, so cells are "
                 f"labeled 'undetermined'. Reason: {reasons}",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=_external_stacklevel(),
             )
         from neurospatial.encoding._metrics import _debiased_information
 
@@ -7006,7 +7007,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
                 + " could not be computed on this environment, so cells are "
                 f"labeled 'undetermined'. Reason: {reasons}",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=_external_stacklevel(),
             )
         return _cell_type_labels(self._outcomes(alpha, min_spatial_info, correction))
 

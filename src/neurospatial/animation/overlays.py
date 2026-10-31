@@ -53,6 +53,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._units import same_coordinate_declaration
 from neurospatial._validation import timestamps_of, validate_finite
 from neurospatial.animation._resources import _OwnedReaders
@@ -1527,7 +1528,7 @@ class EventOverlay(_Overlay):
                     f"the frame time range [{frame_t_min:.3f}, {frame_t_max:.3f}] "
                     "and will be excluded.",
                     UserWarning,
-                    stacklevel=2,
+                    stacklevel=_external_stacklevel(),
                 )
 
             # Get filtered event times
@@ -2888,7 +2889,7 @@ class VideoOverlay(_Overlay):
                 "Consider providing a VideoCalibration via calibrate_from_scale_bar() "
                 "or calibrate_from_landmarks().",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=_external_stacklevel(),
             )
 
         with ExitStack() as cleanup:
@@ -4153,7 +4154,7 @@ def _validate_temporal_alignment(
             f"Frames outside overlap will have NaN values (extrapolation disabled).\n"
             f"Consider adjusting time ranges for better coverage.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
 
@@ -4231,7 +4232,7 @@ def _validate_bounds(
             f"Fix: Confirm that overlay coordinates use the same coordinate system "
             f"and units as the environment (check env.units and env.frame).",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
 

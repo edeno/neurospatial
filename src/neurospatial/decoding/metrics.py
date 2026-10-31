@@ -25,6 +25,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_choice
 from neurospatial.decoding.estimates import _egocentric_plane
 from neurospatial.geometry import require_cartesian
@@ -189,7 +190,7 @@ def decoding_error(
             "is NaN. Check those positions for tracking glitches or a "
             "different coordinate frame, or use metric='euclidean'.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
     measured = valid & ~far
     if np.any(measured):
