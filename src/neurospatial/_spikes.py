@@ -13,8 +13,8 @@ The main function is `as_spike_trains()`, which accepts:
 - list/tuple of scalars (single neuron) → converted to 1D array, wrapped in list
 - list/tuple of 1D arrays (canonical format) → each element converted to array
 - one unit's train (pynapple ``Ts``, pandas ``Series``) → wrapped in list
-- a spike group (pynapple ``TsGroup``, ``SpikeTrains``, dict of trains) →
-  one train per unit
+- a spike group (pynapple ``TsGroup``, ``SpikeTrains``, dict of trains, pandas
+  ``Series`` of per-unit arrays) → one train per unit
 
 Every spike time must be finite. This coercion happens at the entry point of encoding, decoding and peri-event
 functions, ensuring consistent internal handling regardless of how the user
@@ -63,8 +63,9 @@ def as_spike_trains(
           to float64 array
         - One unit's train (pynapple ``Ts``/``Tsd``, pandas ``Series``) →
           its timestamps (``.t``) or values, wrapped in list
-        - A spike group (pynapple ``TsGroup``, ``SpikeTrains``, or a dict
-          mapping unit id to train) → one train per unit, in the group's order
+        - A spike group (pynapple ``TsGroup``, ``SpikeTrains``, a dict
+          mapping unit id to train, or a pandas ``Series`` of per-unit arrays
+          indexed by unit id) → one train per unit, in the group's order
 
     Returns
     -------
@@ -319,7 +320,10 @@ def _single_train(obj: Any) -> Any | None:
     A pynapple ``Ts``/``Tsd`` exposes its timestamps as ``.t``; a pandas
     ``Series`` holds them as values. Both have a non-callable ``.index``
     (timestamps or row labels), so they must be recognized before a spike
-    group, whose ``.index`` holds unit ids.
+    group, whose ``.index`` holds unit ids. A ``Series`` whose values are
+    arrays (``units.to_dataframe()["spike_times"]``,
+    ``df.groupby("unit")["time"].apply(np.array)``) holds one train per unit
+    keyed by its index, so it is a spike group, not one train.
     """
     if isinstance(obj, Mapping):
         return None
@@ -328,7 +332,10 @@ def _single_train(obj: Any) -> Any | None:
         if t is not None and np.ndim(t) == 1:
             return t
     if getattr(obj, "ndim", None) == 1 and hasattr(obj, "to_numpy"):
-        return obj.to_numpy()
+        values = obj.to_numpy()
+        if values.dtype == object and any(np.ndim(v) > 0 for v in values):
+            return None
+        return values
     return None
 
 

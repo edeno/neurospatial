@@ -662,3 +662,35 @@ class TestRastersAndZeroPadding:
         padded = np.array([[10.0, 20.0, 0.0, 0.0], [5.0, 6.0, 7.0, 8.0]])
         with pytest.raises(ValueError, match="decrease"):
             bin_spikes_in_time(padded, dt=1.0, t_start=0.0, t_stop=30.0)
+
+
+class TestLabelledSpikeContainers:
+    """Containers that carry unit ids keep them, whatever the id type."""
+
+    def test_series_of_trains_is_a_group_keyed_by_index(self) -> None:
+        pd = pytest.importorskip("pandas")
+        from neurospatial._spikes import as_labelled_spike_trains
+
+        # As from units.to_dataframe()["spike_times"] or
+        # df.groupby("unit")["time"].apply(np.array).
+        series = pd.Series(
+            [np.array([0.1, 0.2]), np.array([0.3])], index=[7, 9], name="spike_times"
+        )
+        trains, ids, supplied = as_labelled_spike_trains(series, None, context="demo")
+        assert ids.tolist() == [7, 9]
+        assert supplied
+        np.testing.assert_array_equal(trains[0], [0.1, 0.2])
+        np.testing.assert_array_equal(trains[1], [0.3])
+
+    def test_groupby_long_table_round_trips(self) -> None:
+        pd = pytest.importorskip("pandas")
+        from neurospatial._spikes import as_labelled_spike_trains
+
+        table = pd.DataFrame(
+            {"unit": ["b", "a", "b", "a", "a"], "time": [0.4, 0.1, 0.5, 0.2, 0.3]}
+        )
+        series = table.groupby("unit")["time"].apply(np.array)
+        trains, ids, _ = as_labelled_spike_trains(series, None, context="demo")
+        assert ids.tolist() == ["a", "b"]
+        np.testing.assert_array_equal(trains[0], [0.1, 0.2, 0.3])
+        np.testing.assert_array_equal(trains[1], [0.4, 0.5])
