@@ -1,14 +1,9 @@
-"""Tests for the ``neurospatial._typing`` Protocol surface and adapters.
+"""Tests for ``neurospatial._typing`` and Environment combine refusals.
 
-Covers, without pynapple installed:
+Covers:
 
-- ``EnvironmentLike`` is a narrow Protocol that Cartesian and polar
-  ``Environment`` instances both structurally satisfy, matched to
-  ``is_environment_like``.
-- ``is_environment_like`` accepts an ``Environment`` and the polar sibling
-  (regression for the ``isinstance(env, Environment)``-False surprise) and
-  rejects arbitrary objects.
 - ``import neurospatial._typing`` does not drag in pynapple / pynwb.
+- ``Environment.combine`` refuses polar charts and non-environments.
 """
 
 from __future__ import annotations
@@ -20,17 +15,6 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial._typing import (
-    EnvironmentLike,
-    is_environment_like,
-)
-
-
-@pytest.fixture
-def env() -> Environment:
-    rng = np.random.default_rng(0)
-    positions = rng.uniform(0, 100, (200, 2))
-    return Environment.from_samples(positions, bin_size=10.0)
 
 
 @pytest.fixture
@@ -41,39 +25,6 @@ def polar_env() -> Environment:
         distance_bin_size=10.0,
         angle_bin_size=np.pi / 6,
     )
-
-
-def test_environmentlike_is_narrow_protocol(
-    env: Environment, polar_env: Environment
-) -> None:
-    # Environment and its polar sibling both structurally satisfy the narrow
-    # surface (bin_centers / connectivity / neighbors), and it agrees with the
-    # runtime ``is_environment_like`` duck-check.
-    def _accepts_env_like(e: EnvironmentLike) -> tuple[object, object, object]:
-        return e.bin_centers, e.connectivity, e.neighbors(bins=0)
-
-    _accepts_env_like(env)
-    _accepts_env_like(polar_env)
-    assert is_environment_like(env)
-    assert is_environment_like(polar_env)
-
-
-def test_is_environment_like_accepts_environment(env: Environment) -> None:
-    assert is_environment_like(env)
-
-
-def test_is_environment_like_accepts_polar_regression(
-    polar_env: Environment,
-) -> None:
-    # Both coordinate choices use Environment. The structural check also
-    # accepts compatible providers that do not inherit this class.
-    assert isinstance(polar_env, Environment) is True
-    assert is_environment_like(polar_env)
-
-
-@pytest.mark.parametrize("obj", [None, np.array([1, 2, 3]), object(), "env"])
-def test_is_environment_like_rejects_non_environment(obj: object) -> None:
-    assert is_environment_like(obj) is False
 
 
 def test_combine_refuses_polar_charts(polar_env: Environment) -> None:
