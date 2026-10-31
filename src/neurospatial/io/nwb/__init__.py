@@ -22,7 +22,7 @@ Reading Functions:
 Writing Functions:
     write_spatial_rates : Write a SpatialRatesResult with its occupancy and environment
     write_events : Write generic events DataFrame to NWB EventsTable
-    write_laps : Write lap events to NWB processing/behavior/
+    write_laps : Write laps to an NWB TimeIntervals table
     write_region_crossings : Write region crossing events
     write_environment : Write Environment to NWB scratch space
 
