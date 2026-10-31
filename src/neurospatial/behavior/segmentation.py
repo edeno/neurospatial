@@ -84,12 +84,12 @@ from scipy.stats import pearsonr
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
+    EMPTY_RESULT,
     as_intervals,
-    observed_runs,
     run_sample_bounds,
     times_in_intervals,
 )
-from neurospatial._observation import validate_break_before
+from neurospatial._observation import resolve_sample_support, validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_choice, validate_finite_scalar
@@ -192,19 +192,20 @@ def _event_runs(
 ) -> list[NDArray[np.intp]]:
     """Observed runs holding only samples inside the half-open ``epochs``.
 
-    :func:`observed_runs` keeps the sample at an epoch's ``stop``, because the
+    An observed run keeps the sample at an epoch's ``stop``, because the
     interval that ends there lies inside the epoch. That instant is outside
     ``[start, stop)``, so an event detector must not report an entry, exit
     or trial end there: such a run ends at its last sample before ``stop``,
     as :func:`detect_region_visits` does.
     """
-    runs = observed_runs(
+    runs = resolve_sample_support(
         times,
+        sample_valid,
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
-        sample_valid=sample_valid,
-    )
+        result=EMPTY_RESULT,
+    ).run_samples()
     windows = as_intervals(epochs, name="epochs")
     if windows is None:
         return runs
@@ -3333,13 +3334,14 @@ def detect_goal_directed_runs(
         env.connectivity, weight="distance", operation="detect_goal_directed_runs()"
     )
     results: list[tuple[float, float]] = []
-    for run in observed_runs(
+    for run in resolve_sample_support(
         times,
+        _located(position_bins),
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins),
-    ):
+        result=EMPTY_RESULT,
+    ).run_samples():
         results.extend(
             _detect_goal_directed_runs_contiguous(
                 position_bins[run],

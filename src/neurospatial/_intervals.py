@@ -120,6 +120,10 @@ class TimeSupport(ReadOnlyArraysMixin):
         }
 
 
+#: What an all-excluded selection leaves, named by the excluded-interval
+#: warning when the analysis does not say more precisely.
+EMPTY_RESULT = "the result is empty or NaN rather than a measurement"
+
 #: Default longest stretch of missing tracking, in seconds, that is bridged.
 #: Calibrated by simulation; see the Notes of :func:`validate_max_gap`.
 DEFAULT_MAX_GAP = 1.0
@@ -541,6 +545,41 @@ def run_sample_bounds(interval_mask: NDArray[np.bool_]) -> NDArray[np.intp]:
     return np.column_stack([edges[0::2], edges[1::2]]).astype(np.intp)
 
 
+def valid_run_samples(
+    interval_mask: NDArray[np.bool_], sample_valid: NDArray[np.bool_]
+) -> list[NDArray[np.intp]]:
+    """Indices of the valid samples of every maximal run of valid intervals.
+
+    Parameters
+    ----------
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        Per-interval validity, with missing samples bridged
+        (``interval_valid_mask`` output with ``sample_valid``).
+    sample_valid : ndarray of bool, shape (n_samples,)
+        False at missing samples.
+
+    Returns
+    -------
+    list of ndarray of intp
+        One array per run of :func:`run_sample_bounds`, in time order: the
+        run's samples with the missing ones skipped, as if their rows were
+        deleted.
+
+    Examples
+    --------
+    >>> runs = valid_run_samples(
+    ...     np.array([True, True, False, True]),
+    ...     np.array([True, False, True, True, True]),
+    ... )
+    >>> [run.tolist() for run in runs]
+    [[0, 2], [3, 4]]
+    """
+    return [
+        first + np.flatnonzero(sample_valid[first : last + 1])
+        for first, last in run_sample_bounds(interval_mask)
+    ]
+
+
 def run_time_bounds(
     times: NDArray[np.float64], interval_mask: NDArray[np.bool_]
 ) -> NDArray[np.float64]:
@@ -946,7 +985,7 @@ def observed_interval_mask(
     epochs: Any,
     break_before: NDArray[np.bool_] | None = None,
     sample_valid: NDArray[np.bool_] | None = None,
-    result: str = "the result is empty or NaN rather than a measurement",
+    result: str = EMPTY_RESULT,
 ) -> NDArray[np.bool_]:
     """Per-interval validity for position-only analyses (gap, epochs, breaks).
 
@@ -994,7 +1033,7 @@ def warn_excluded_intervals(
     samples: Literal["positions", "headings"] = "positions",
     break_before: NDArray[np.bool_] | None = None,
     sample_valid: NDArray[np.bool_] | None = None,
-    result: str = "the result is empty or NaN rather than a measurement",
+    result: str = EMPTY_RESULT,
     suppress_hint: str = "",
 ) -> None:
     """Warn when the interval gates leave no data or ``times`` look wrong.
@@ -1170,31 +1209,3 @@ def warn_excluded_intervals(
         f"{result}. Fix: {'; '.join(fixes)}. {suppress_hint}"
     )
     warnings.warn(message.rstrip(), UserWarning, stacklevel=_external_stacklevel())
-
-
-def observed_runs(
-    times: NDArray[np.float64],
-    *,
-    max_gap: float | None,
-    epochs: Any,
-    break_before: NDArray[np.bool_] | None = None,
-    sample_valid: NDArray[np.bool_] | None = None,
-) -> list[NDArray[np.intp]]:
-    """Indices of the valid samples of each maximal run, in time order.
-
-    A run is a maximal sequence of valid samples joined by bridged gaps
-    (:func:`interval_valid_mask`), so missing samples inside it are skipped
-    exactly as if their rows were deleted.
-    """
-    mask = observed_interval_mask(
-        times,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=break_before,
-        sample_valid=sample_valid,
-    )
-    runs = [np.arange(a, b + 1, dtype=np.intp) for a, b in run_sample_bounds(mask)]
-    if sample_valid is None:
-        return runs
-    valid = np.asarray(sample_valid, dtype=bool)
-    return [run[valid[run]] for run in runs]

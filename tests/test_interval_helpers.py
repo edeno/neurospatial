@@ -248,7 +248,8 @@ def test_run_bounds(mask, expected):
 
 
 def test_break_before_drops_only_the_interval_it_starts():
-    from neurospatial._intervals import interval_valid_mask, observed_runs
+    from neurospatial._intervals import interval_valid_mask
+    from neurospatial._observation import resolve_sample_support
 
     times = np.arange(6) * 0.1
     breaks = np.array([True, False, False, True, False, False])
@@ -256,7 +257,14 @@ def test_break_before_drops_only_the_interval_it_starts():
     # Entry 0 is ignored; the break at sample 3 drops interval (2, 3) only.
     mask = interval_valid_mask(times, max_gap=0.5, break_before=breaks)
     np.testing.assert_array_equal(mask, [True, True, False, True, True])
-    runs = observed_runs(times, max_gap=0.5, epochs=None, break_before=breaks)
+    runs = resolve_sample_support(
+        times,
+        np.ones(times.size, dtype=bool),
+        max_gap=0.5,
+        epochs=None,
+        break_before=breaks,
+        result="the result is empty",
+    ).run_samples()
     assert [run.tolist() for run in runs] == [[0, 1, 2], [3, 4, 5]]
 
 

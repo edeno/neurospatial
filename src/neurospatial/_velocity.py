@@ -59,7 +59,7 @@ def smoothed_velocity(
         Velocity in position units per second; NaN at missing samples and at
         samples in no run of at least two valid samples.
     """
-    from neurospatial._intervals import run_sample_bounds
+    from neurospatial._intervals import valid_run_samples
 
     if (
         isinstance(smooth_window, (bool, np.bool_))
@@ -86,9 +86,8 @@ def smoothed_velocity(
     # A zero-length interval (duplicate timestamps) has no defined velocity.
     mask = np.asarray(interval_mask, dtype=bool) & (np.diff(times) > 0)
     velocity = np.full(positions.shape, np.nan, dtype=np.float64)
-    for first, last in run_sample_bounds(mask):
-        # Missing samples inside a run are skipped, exactly like deleted rows.
-        run = first + np.flatnonzero(finite[first : last + 1])
+    # Missing samples inside a run are skipped, exactly like deleted rows.
+    for run in valid_run_samples(mask, finite):
         if run.size < 2:
             continue
         run_times = times[run]

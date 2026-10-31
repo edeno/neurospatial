@@ -1659,7 +1659,7 @@ def _sample_dwell_times(
     run's last sample receives the median gap of the run, as if the missing
     rows were deleted.
     """
-    from neurospatial._intervals import hold_last_valid, run_sample_bounds
+    from neurospatial._intervals import hold_last_valid, valid_run_samples
 
     dt = np.diff(times)
     held = hold_last_valid(np.arange(len(times)), sample_valid, fill=-1)[:-1]
@@ -1667,9 +1667,8 @@ def _sample_dwell_times(
     weights: NDArray[np.float64] = np.bincount(
         held[used], weights=dt[used], minlength=len(times)
     ).astype(np.float64)
-    for first, last in run_sample_bounds(interval_mask):
-        valid_times = times[first : last + 1][sample_valid[first : last + 1]]
-        weights[last] = np.median(np.diff(valid_times))
+    for run in valid_run_samples(interval_mask, sample_valid):
+        weights[run[-1]] = np.median(np.diff(times[run]))
     return weights
 
 

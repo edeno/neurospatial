@@ -32,6 +32,7 @@ from neurospatial._intervals import (
     ragged_arange,
     run_sample_bounds,
     times_in_intervals,
+    valid_run_samples,
     validate_max_gap,
     warn_excluded_intervals,
 )
@@ -141,27 +142,18 @@ class ObservationSupport(ReadOnlyArraysMixin):
         ... ).interval_mask
         array([ True, False, False,  True])
         """
-        raw_gates = interval_valid_mask(
-            times,
-            max_gap=self.max_gap,
-            epochs=self.epochs,
-            break_before=self.break_before,
-        )
-        return _support_from_gates(
+        return resolve_sample_support(
             times,
             self.sample_valid & np.asarray(defined, dtype=bool),
-            raw_gates,
             max_gap=self.max_gap,
             epochs=self.epochs,
             break_before=self.break_before,
+            result=None,
         )
 
     def run_samples(self) -> list[NDArray[np.intp]]:
         """Indices of the valid samples of each run, in time order."""
-        return [
-            first + np.flatnonzero(self.sample_valid[first : last + 1])
-            for first, last in self.run_sample_bounds
-        ]
+        return valid_run_samples(self.interval_mask, self.sample_valid)
 
 
 def validate_break_before(

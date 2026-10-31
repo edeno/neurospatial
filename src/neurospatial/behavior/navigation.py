@@ -3328,14 +3328,13 @@ def _time_smoothed_positions(
     -------
     ndarray, shape (n_samples, n_dims)
     """
-    from neurospatial._intervals import run_sample_bounds
+    from neurospatial._intervals import valid_run_samples
     from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, gaussian_pair_weights
 
     finite = np.all(np.isfinite(positions), axis=1)
     smoothed = positions.astype(np.float64, copy=True)
     mask = np.asarray(interval_mask, dtype=bool) & (np.diff(times) > 0)
-    for first, last in run_sample_bounds(mask):
-        run = first + np.flatnonzero(finite[first : last + 1])
+    for run in valid_run_samples(mask, finite):
         if run.size < 2:
             continue
         t, p = times[run], positions[run]

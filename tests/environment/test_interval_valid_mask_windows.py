@@ -116,8 +116,21 @@ def test_interval_valid_mask_gap_without_positions():
     assert interval_valid_mask(np.array([0.0])).shape == (0,)
 
 
-def test_observed_runs(two_epoch_recording):
-    from neurospatial._intervals import observed_runs
+def test_observed_run_samples(two_epoch_recording):
+    from neurospatial._observation import resolve_sample_support
+
+    def observed_runs(times, *, max_gap, epochs, sample_valid=None):
+        valid = (
+            np.ones(times.size, dtype=bool) if sample_valid is None else sample_valid
+        )
+        return resolve_sample_support(
+            times,
+            valid,
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=None,
+            result="the result is empty",
+        ).run_samples()
 
     def bounds(runs):
         return [(int(run[0]), int(run[-1]) + 1) for run in runs]
