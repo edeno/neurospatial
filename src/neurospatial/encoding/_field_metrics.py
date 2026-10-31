@@ -1376,83 +1376,40 @@ def compute_field_emd(
     if metric == "geodesic":
         return _graph_transport_cost(env, active_bins, p - q)
 
-    # Compute distance matrix between active bins
-    if metric == "euclidean":
-        # Euclidean distance between bin centers using scipy (vectorized)
-        positions = env.bin_centers[active_bins]
-        # pdist computes condensed distance matrix, squareform converts to full
-        dist_matrix = squareform(pdist(positions, metric="euclidean"))
-
-    else:  # metric == "geodesic"
-        from neurospatial.ops.distance import pairwise_distances
-
-        dist_matrix = pairwise_distances(env.connectivity, active_bins)
-
-    # Mass cannot travel between parts of the environment with no path
-    # between them. Label each active bin by the first active bin it can
-    # reach (reachability is an equivalence relation); if any part holds
-    # different mass in the two maps, no transport plan exists.
-    reachable = np.isfinite(dist_matrix)
-    component = np.argmax(reachable, axis=1)
-    mass_1 = np.bincount(component, weights=p, minlength=len(p))
-    mass_2 = np.bincount(component, weights=q, minlength=len(q))
-    if not np.allclose(mass_1, mass_2, rtol=1e-9, atol=1e-12 * np.sum(p)):
-        return np.inf
-
-    # Solve the optimal transport problem using linear programming
-    # Variables: T[i,j] = mass transported from bin i (source) to bin j (target)
+    # Euclidean: a transport plan over every pair of bins with mass.
+    # Variables: T[i,j] = mass moved from bin i (first map) to bin j (second)
     # Objective: minimize sum(T[i,j] * dist[i,j])
-    # Constraints:
-    #   - sum_j T[i,j] = p[i]  (all mass from source i is transported)
-    #   - sum_i T[i,j] = q[j]  (all mass to target j is received)
-    #   - T[i,j] >= 0, and T[i,j] = 0 where no path joins i and j
-
+    # Constraints: sum_j T[i,j] = p[i], sum_i T[i,j] = q[j], T >= 0.
+    dist_matrix = squareform(pdist(env.bin_centers[active_bins], metric="euclidean"))
     n = len(p)
-
-    # Flatten distance matrix for objective function (unreachable pairs carry
-    # no mass, so their cost is irrelevant)
-    c = np.where(reachable, dist_matrix, 0.0).flatten()
-    upper = np.where(reachable.flatten(), np.inf, 0.0)
-
-    # Equality constraints: Ax = b
-    # Row constraints: sum over j of T[i,j] = p[i]
-    # Column constraints: sum over i of T[i,j] = q[j]
-    #
-    # Sparse construction using Kronecker products (2n² nonzeros of a
-    # (2n, n²) matrix, which dense would hold 432 MB at n = 300):
-    # - Row constraints: each row i has 1s in columns [i*n, i*n+1, ..., i*n+n-1]
-    #   This is kron(I_n, ones(1,n)) = block diagonal of row vectors
-    # - Column constraints: each column j has 1s in columns [j, n+j, 2n+j, ...]
-    #   This is kron(ones(1,n), I_n) = tiled identity matrices
+    # Sparse construction using Kronecker products (2n^2 nonzeros of a
+    # (2n, n^2) matrix): row i of the first block sums T[i, :], column j of
+    # the second sums T[:, j].
     ones_row = np.ones((1, n))
     identity = sparse.eye(n)
     a_eq = sparse.vstack(
         [sparse.kron(identity, ones_row), sparse.kron(ones_row, identity)],
-        format="csc",
-    )  # Shape: (2n, n*n)
-
+        format="csr",
+    )
     b_eq = np.concatenate([p, q])
-
-    # Solve linear program
+    # The row sums and column sums both total the mass, so one constraint is
+    # implied by the others. Keeping it makes the problem infeasible whenever
+    # the two totals differ by roundoff, as normalized maps do; drop it.
     result = linprog(
-        c,
-        A_eq=a_eq,
-        b_eq=b_eq,
-        bounds=np.column_stack([np.zeros_like(upper), upper]),
+        dist_matrix.ravel(),
+        A_eq=a_eq[:-1],
+        b_eq=b_eq[:-1],
+        bounds=(0, None),
         method="highs",
     )
-
     if not result.success:
         warnings.warn(
             f"Optimal transport optimization failed: {result.message}. Returning NaN.",
             category=UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         return np.nan
-
-    # EMD is the optimal cost
-    emd = float(result.fun)
-    return emd
+    return float(result.fun)
 
 
 def _graph_transport_cost(

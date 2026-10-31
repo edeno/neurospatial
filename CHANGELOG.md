@@ -39,8 +39,14 @@
   bins. The result is the same (it is exact for shortest-path distances),
   and it scales: 0.5 s at 3,600 bins (a 1.5 m box at 2.5 cm), where the
   pairwise solve took 14 s and then failed, returning NaN for a valid pair
-  of maps, and 3 s at 10,000 bins. `metric="euclidean"` still solves the
-  pairwise plan and remains slow on finely binned maps.
+  of maps, and 3 s at 10,000 bins.
+- `compute_field_emd(..., metric="euclidean")` (the default) no longer
+  returns NaN on ordinary maps: its pairwise plan fixes every row and column
+  sum, one of those constraints is implied by the rest, and with the two
+  totals equal only to roundoff the solver called the problem infeasible
+  (seen from 625 bins, a 1.5 m box at 6 cm). It still solves the pairwise
+  plan, which grows with the square of the bin count (30 s at 1,444 bins);
+  use `metric="geodesic"` for finely binned maps.
 
 ### Shared helpers: one rule each, faster
 

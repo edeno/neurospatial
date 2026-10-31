@@ -94,3 +94,17 @@ def test_geodesic_emd_scales_to_a_finely_binned_arena():
     emd = compute_field_emd(env, field_1, field_2, metric="geodesic")
     assert time.perf_counter() - start < 10.0
     assert 80 < emd < 95  # 86 cm between the centers, plus the grid's excess
+
+
+def test_euclidean_emd_solves_a_balanced_problem_on_a_full_box():
+    """The pairwise plan fixes every row and column sum, so one constraint is
+    redundant; with the two totals equal only to roundoff, the solver called
+    this valid 625-bin problem infeasible and the EMD came back NaN."""
+    env = Environment.from_polygon(box(0, 0, 150, 150), bin_size=6.0, units="cm")
+    centers = env.bin_centers
+    field_1 = np.exp(-np.sum((centers - [42, 42]) ** 2, axis=1) / 200)
+    field_2 = np.exp(-np.sum((centers - [108, 90]) ** 2, axis=1) / 200)
+    # The same field shifted by whole bins: it moves by the shift.
+    assert compute_field_emd(
+        env, field_1, field_2, metric="euclidean"
+    ) == pytest.approx(np.hypot(66, 48), rel=1e-4)
