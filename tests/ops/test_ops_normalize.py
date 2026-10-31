@@ -39,6 +39,29 @@ class TestNormalizeField:
         with pytest.raises(ValueError, match="negative"):
             normalize_field(field)
 
+    def test_accepts_the_noise_of_smoothing_a_nonnegative_field(self):
+        """A smoothed impulse has ~1e-9 negative tails; they normalize to 0."""
+        from neurospatial import Environment
+        from neurospatial.ops.normalize import normalize_field
+
+        env = Environment.from_samples(
+            np.arange(100.0)[:, None], bin_size=1, infer_active_bins=False
+        )
+        impulse = np.zeros(env.n_bins)
+        impulse[0] = 1.0
+        smoothed = env.smooth(impulse, bandwidth=8.0, mode="transition")
+        assert smoothed.min() < 0  # the truncated eigenbasis rings below 0
+        result = normalize_field(smoothed)
+        assert result.min() >= 0.0
+        assert result.sum() == pytest.approx(1.0)
+        np.testing.assert_allclose(result, smoothed / smoothed.sum(), atol=1e-8)
+
+    def test_rejects_negatives_larger_than_smoothing_noise(self):
+        from neurospatial.ops.normalize import normalize_field
+
+        with pytest.raises(ValueError, match="negative"):
+            normalize_field(np.array([1.0, -1e-4, 3.0]))
+
 
 class TestClamp:
     """Basic smoke tests for clamp function."""

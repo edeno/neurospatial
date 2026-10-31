@@ -341,6 +341,39 @@ class TestNormalizeToPosterior:
             normalize_to_posterior(simple_log_likelihood, prior=prior)
 
 
+def _smoothed_impulse_prior() -> tuple[Environment, np.ndarray]:
+    """A prior smoothed from an impulse, with ~1e-9 negative tails."""
+    env = Environment.from_samples(
+        np.arange(100.0)[:, None], bin_size=1, infer_active_bins=False, units="cm"
+    )
+    impulse = np.zeros(env.n_bins)
+    impulse[0] = 1.0
+    prior = env.smooth(impulse, bandwidth=8.0, mode="density")
+    assert prior.min() < 0
+    return env, prior
+
+
+def test_a_smoothed_prior_with_noise_tails_is_accepted():
+    """Smoothing noise below zero is weight 0, not a refused negative weight."""
+    from neurospatial.decoding.posterior import normalize_to_posterior
+
+    _, prior = _smoothed_impulse_prior()
+    posterior = normalize_to_posterior(np.zeros((2, prior.size)), prior=prior)
+    assert posterior.min() >= 0.0
+    np.testing.assert_allclose(posterior.sum(axis=1), 1.0)
+
+
+def test_decode_position_accepts_a_smoothed_prior():
+    from neurospatial.decoding.posterior import decode_position
+
+    env, prior = _smoothed_impulse_prior()
+    rates = np.full((2, env.n_bins), 2.0)
+    result = decode_position(
+        env, np.array([[0, 1], [1, 0]]), rates, dt=0.025, prior=prior
+    )
+    assert np.asarray(result.posterior).min() >= 0.0
+
+
 # =============================================================================
 # Tests for decode_position
 # =============================================================================
