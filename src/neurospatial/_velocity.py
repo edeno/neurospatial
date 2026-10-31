@@ -148,38 +148,6 @@ def gaussian_pair_weights(
         yield lag, weight
 
 
-def smooth_in_time(
-    values: NDArray[np.float64],
-    times: NDArray[np.float64],
-    run_bounds: NDArray[np.intp],
-    sigma: float,
-) -> NDArray[np.float64]:
-    """Gaussian-weighted mean in time of the finite rows of each run.
-
-    Runs are smoothed independently (:func:`smooth_run_in_time`).
-
-    Parameters
-    ----------
-    values : NDArray[np.float64], shape (n_samples,) or (n_samples, n_dims)
-    times : NDArray[np.float64], shape (n_samples,)
-        Strictly increasing within each run, in seconds.
-    run_bounds : NDArray[np.intp], shape (n_runs, 2)
-        Inclusive first and last sample of each run.
-    sigma : float
-        Positive standard deviation in seconds.
-
-    Returns
-    -------
-    NDArray[np.float64], same shape as ``values``
-        NaN at non-finite rows and outside every run.
-    """
-    smoothed = np.full(values.shape, np.nan)
-    for first, last in run_bounds:
-        run = slice(first, last + 1)
-        smoothed[run] = smooth_run_in_time(values[run], times[run], sigma)
-    return smoothed
-
-
 def smooth_run_in_time(
     values: NDArray[np.float64], times: NDArray[np.float64], sigma: float
 ) -> NDArray[np.float64]:

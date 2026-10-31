@@ -51,7 +51,7 @@ from neurospatial._validation import (
     validate_strictly_increasing,
     validate_times_positions,
 )
-from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smooth_in_time
+from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smooth_run_in_time
 from neurospatial.behavior._metric import metric_paths, require_metric
 from neurospatial.behavior.epochs import _mask_in_intervals
 
@@ -1087,9 +1087,12 @@ def compute_planar_turn_angles(
         )
     turns = signed_turns(a, b)
     if smooth_window > 0:
-        turns = smooth_in_time(
-            turns, t, support.run_sample_bounds, float(smooth_window)
-        )
+        # Each run is smoothed on its own, so no average spans a run boundary.
+        smoothed = np.full(turns.shape, np.nan)
+        for first, last in support.run_sample_bounds:
+            run = slice(first, last + 1)
+            smoothed[run] = smooth_run_in_time(turns[run], t[run], float(smooth_window))
+        turns = smoothed
     return turns
 
 
