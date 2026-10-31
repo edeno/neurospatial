@@ -23,6 +23,7 @@ from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
     UnitSelectionMixin,
+    _copy_unit_table,
     align_unit_table,
     label_at,
     resolve_unit_ids,
@@ -582,6 +583,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         return plot_peri_event_histogram(self, ax=ax, **kwargs)
 
 
+@_copy_unit_table
 @dataclass(frozen=True, repr=False, eq=False)
 class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMixin):
     """
