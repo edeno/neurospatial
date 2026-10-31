@@ -131,14 +131,10 @@ class _VideoReader:
     ----------
     n_frames : int
         Total number of frames in video.
-    fps : float
-        Frames per second of video.
     frame_size_px : tuple of (width, height)
         Size of returned frames after crop and downsample.
     original_size_px : tuple of (width, height)
         Original video frame size before any processing.
-    duration : float
-        Total video duration in seconds.
     crop_offset_px : tuple of (x, y)
         Offset of crop region from top-left corner.
     prefetch_ahead : int
@@ -202,7 +198,6 @@ class _VideoReader:
 
         try:
             self._n_frames: int = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            self._fps: float = float(cap.get(cv2.CAP_PROP_FPS))
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             self._original_size_px: tuple[int, int] = (width, height)
@@ -396,28 +391,10 @@ class _VideoReader:
             currsize=info.currsize,
         )
 
-    def get_timestamps(self) -> NDArray[np.float64]:
-        """Get timestamps for all frames.
-
-        Returns
-        -------
-        NDArray[np.float64]
-            Array of timestamps in seconds, shape (n_frames,).
-        """
-        timestamps: NDArray[np.float64] = (
-            np.arange(self._n_frames, dtype=np.float64) / self._fps
-        )
-        return timestamps
-
     @property
     def n_frames(self) -> int:
         """Total number of frames in video."""
         return self._n_frames
-
-    @property
-    def fps(self) -> float:
-        """Frames per second."""
-        return self._fps
 
     @property
     def frame_size_px(self) -> tuple[int, int]:
@@ -433,11 +410,6 @@ class _VideoReader:
     def crop_offset_px(self) -> tuple[int, int]:
         """Crop offset (x, y) from top-left corner."""
         return self._crop_offset_px
-
-    @property
-    def duration(self) -> float:
-        """Total video duration in seconds."""
-        return float(self._n_frames) / self._fps
 
     @property
     def prefetch_ahead(self) -> int:

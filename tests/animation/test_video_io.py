@@ -91,10 +91,8 @@ class TestVideoReaderBasics:
         reader = _VideoReader(tiny_video_path)
 
         assert reader.n_frames == 5
-        assert reader.fps == pytest.approx(10.0, rel=0.1)
         assert reader.frame_size_px == (8, 8)  # (width, height)
         assert reader.original_size_px == (8, 8)
-        assert reader.duration == pytest.approx(0.5, rel=0.1)  # 5 frames / 10 fps
 
     def test_reader_lazy_loading(self, tiny_video_path: Path):
         """Test that _VideoReader does not load frames until accessed."""
@@ -212,7 +210,6 @@ class TestVideoReaderPickle:
 
         # Restored reader should work
         assert restored.n_frames == 5
-        assert restored.fps == pytest.approx(10.0, rel=0.1)
 
         # Cache should be empty after unpickling (dropped for pickle safety)
         assert restored.cache_info().currsize == 0
@@ -236,39 +233,6 @@ class TestVideoReaderPickle:
         # Settings should be preserved
         assert restored._downsample == 2
         assert restored._crop == (4, 4, 16, 16)
-
-
-class TestVideoReaderTimestamps:
-    """Test timestamp retrieval functionality."""
-
-    def test_reader_timestamps_length(self, tiny_video_path: Path):
-        """Test that get_timestamps returns correct number of timestamps."""
-        reader = _VideoReader(tiny_video_path)
-
-        timestamps = reader.get_timestamps()
-
-        assert len(timestamps) == 5
-        assert timestamps.dtype == np.float64
-
-    def test_reader_timestamps_monotonic(self, tiny_video_path: Path):
-        """Test that timestamps are monotonically increasing."""
-        reader = _VideoReader(tiny_video_path)
-
-        timestamps = reader.get_timestamps()
-
-        # Check monotonicity
-        assert np.all(np.diff(timestamps) > 0)
-
-    def test_reader_timestamps_spacing(self, tiny_video_path: Path):
-        """Test that timestamps have correct spacing based on fps."""
-        reader = _VideoReader(tiny_video_path)
-
-        timestamps = reader.get_timestamps()
-
-        # At 10 fps, frames should be 0.1s apart
-        expected_spacing = 1.0 / 10.0
-        actual_spacing = np.diff(timestamps)
-        assert np.allclose(actual_spacing, expected_spacing, rtol=0.1)
 
 
 class TestVideoReaderCropDownsample:
