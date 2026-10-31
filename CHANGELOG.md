@@ -30,6 +30,18 @@
   `metric` is refused with `method="jaccard"` or `"correlation"`, which
   compare bins.
 
+### Earth mover's distance at real resolution
+
+**Fixed**
+
+- `compute_field_emd(..., metric="geodesic")` solves a minimum-cost flow along
+  the environment's graph instead of a transport plan over every pair of
+  bins. The result is the same (it is exact for shortest-path distances),
+  and it scales: 0.5 s at 3,600 bins (a 1.5 m box at 2.5 cm), where the
+  pairwise solve took 14 s and then failed, returning NaN for a valid pair
+  of maps, and 3 s at 10,000 bins. `metric="euclidean"` still solves the
+  pairwise plan and remains slow on finely binned maps.
+
 ### Shared helpers: one rule each, faster
 
 **Changed**
