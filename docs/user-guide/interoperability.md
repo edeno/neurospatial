@@ -470,11 +470,17 @@ Read components explicitly. These readers return frozen, non-iterable holders:
 | Reader | Holder attributes |
 | --- | --- |
 | `read_position` | `NWBPosition.times`, `.positions`, `.units`, `.frame` |
-| `read_head_direction` | `NWBHeadDirection.times`, `.headings` (radians) |
+| `read_head_direction` | `NWBHeadDirection.times`, `.headings` (radians), `.frame` |
+| `read_pose` | `NWBPose.bodyparts`, `.times`, `.skeleton`, `.units`, `.frame`, `.confidence` |
 | `read_units` | `NWBUnits.spike_times`, `.unit_ids`, `.obs_intervals`, `.spike_window` |
 
+When a file holds more than one matching series or container, for example raw
+pixel and calibrated position, the reader raises and lists their paths instead
+of picking one. Pass the name or full path to `position_name=`,
+`compass_name=` or `pose_estimation_name=`.
+
 Position values already include the stored conversion and offset. Recognized
-unit aliases become `m`, `cm`, `mm` or `px` without scaling those values again.
+unit aliases become `m`, `cm`, `mm`, `um` or `px` without scaling those values again.
 Other nonempty declarations remain visible; `None` means no unit was declared.
 Choose the physical unit explicitly in that case before creating an environment.
 `environment_from_position` retains its warned cm fallback when used without
@@ -486,8 +492,17 @@ keyword overrides that would erase or change a known declaration. Supply missing
 metadata explicitly, or transform the coordinates before using a different
 frame or physical unit. Equivalent unit spellings do not require conversion.
 
-`read_pose` returns `(bodyparts, times, skeleton)` and checks that every bodypart
-uses the same sample clock, units and reference frame. Different clocks must be
+Head direction angles stored with unit `radians` or `degrees` are returned in
+radians; any other unit, including pynwb's default `meters`, raises because
+the angles could be either. `.frame` carries the series reference frame
+verbatim. The headings are assumed to be zero East and counterclockwise; if
+`.frame` says otherwise (for example "0 = North, clockwise"), convert with
+`np.pi / 2 - hd.headings`.
+
+`read_pose` returns an `NWBPose` and checks that every bodypart
+uses the same sample clock, units and reference frame. Untracked keypoints stay
+NaN, and low-confidence keypoints are returned unchanged with their scores in
+`.confidence`; choose a threshold for your tracker and mask them yourself. Different clocks must be
 aligned explicitly before combining them into a pose. The
 `bodypart_overlay_from_nwb` adapter carries the declared units and reference
 frame into `BodypartOverlay`, which checks them against the environment. Convert

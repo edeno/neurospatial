@@ -170,23 +170,16 @@ def bodypart_overlay_from_nwb(
     """
     from neurospatial.animation.overlays import BodypartOverlay
     from neurospatial.io.nwb._adapters import merge_overlay_coordinate_metadata
-    from neurospatial.io.nwb._pose import _read_pose_with_metadata
+    from neurospatial.io.nwb._pose import read_pose
 
-    # Read pose data from NWB
-    bodyparts, timestamps, skeleton, units, frame = _read_pose_with_metadata(
-        nwbfile,
-        pose_estimation_name=pose_estimation_name,
-    )
-
+    pose = read_pose(nwbfile, pose_estimation_name=pose_estimation_name)
     declarations = merge_overlay_coordinate_metadata(
-        units, frame, kwargs, context="BodypartOverlay", source="pose"
+        pose.units, pose.frame, kwargs, context="BodypartOverlay", source="pose"
     )
-
-    # Create and return BodypartOverlay
     return BodypartOverlay(
-        data=bodyparts,
-        times=timestamps,
-        skeleton=skeleton,  # Auto-extracted from PoseEstimation.skeleton
+        data=dict(pose.bodyparts),
+        times=pose.times,
+        skeleton=pose.skeleton,
         colors=colors,
         units=declarations["units"],
         frame=declarations["frame"],

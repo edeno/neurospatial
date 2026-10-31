@@ -570,8 +570,11 @@ pynwb.
 
 **NWB adapters** ([neurospatial.io.nwb](neurospatial/io/nwb/index.md)) — requires `neurospatial[nwb]`:
 
-- `read_position(...)` → `NWBPosition(times, positions, units)` and
-  `read_head_direction(...)` → `NWBHeadDirection(times, headings)`.
+- `read_position(...)` → `NWBPosition(times, positions, units, *, frame)`,
+  `read_head_direction(...)` → `NWBHeadDirection(times, headings, *, frame)`
+  and `read_pose(...)` → `NWBPose(bodyparts, times, skeleton, *, units,
+  frame, confidence)`. Several matching series or containers raise; choose
+  one by name or path.
 - `read_units(nwbfile, *, unit_ids=None, lazy=False)` →
   `NWBUnits(spike_times, unit_ids, obs_intervals)`. Unit labels are unique
   table IDs; the derived `spike_window` intersects the selected units'

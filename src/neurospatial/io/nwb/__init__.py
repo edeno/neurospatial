@@ -138,6 +138,9 @@ if TYPE_CHECKING:
         NWBHeadDirection as NWBHeadDirection,
     )
     from neurospatial.io.nwb._holders import (
+        NWBPose as NWBPose,
+    )
+    from neurospatial.io.nwb._holders import (
         NWBPosition as NWBPosition,
     )
     from neurospatial.io.nwb._holders import (
@@ -168,6 +171,7 @@ _LAZY_IMPORTS: dict[str, str] = {
     # Named array holders (no optional dependency imports)
     "NWBPosition": "neurospatial.io.nwb._holders:NWBPosition",
     "NWBHeadDirection": "neurospatial.io.nwb._holders:NWBHeadDirection",
+    "NWBPose": "neurospatial.io.nwb._holders:NWBPose",
     "NWBUnits": "neurospatial.io.nwb._holders:NWBUnits",
     # Reading functions
     "read_position": "neurospatial.io.nwb._behavior:read_position",
@@ -211,6 +215,7 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "NWBHeadDirection",
+    "NWBPose",
     "NWBPosition",
     "NWBUnits",
     "bodypart_overlay_from_nwb",

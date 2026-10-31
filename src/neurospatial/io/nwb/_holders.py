@@ -8,15 +8,23 @@ without reading values.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ReadOnlyArraysMixin, read_only_copy
+from neurospatial._results import (
+    ReadOnlyArraysMixin,
+    read_only_copy,
+    reduce_through_constructor,
+)
+
+if TYPE_CHECKING:
+    from neurospatial.animation.skeleton import Skeleton
 
 
 def _declared_units(units: str | None) -> str | None:
@@ -294,3 +302,109 @@ def _shared_window(
             normalized if window is None else intersect_intervals(window, normalized)
         )
     return np.empty((0, 2), dtype=np.float64) if window is None else window
+
+
+@dataclass(frozen=True)
+class NWBPose(ReadOnlyArraysMixin):
+    """Pose-estimation keypoints and their coordinate declarations from NWB.
+
+    Attributes
+    ----------
+    bodyparts : Mapping[str, NDArray[np.float64] or lazy handle]
+        Read-only mapping from ``PoseEstimationSeries`` name to keypoint
+        coordinates, each shape (n_samples, n_dims), after the stored
+        conversion and offset. Untracked samples stay NaN.
+    times : NDArray[np.float64] or lazy handle
+        Timestamps in seconds shared by every bodypart, shape (n_samples,).
+    skeleton : Skeleton or None
+        Skeleton linked from the ``PoseEstimation`` container, or None when
+        the container links none.
+    units : str or None, default None
+        Unit shared by every bodypart, normalized to m/cm/mm/um/px when
+        recognized; None means undeclared.
+    frame : str or None, default None
+        Shared reference-frame description, preserved verbatim; None means
+        undeclared.
+    confidence : Mapping[str, NDArray[np.float64] or lazy handle] or None, default None
+        Read-only mapping from bodypart name to the pose estimator's
+        per-sample confidence, shape (n_samples,), for each bodypart whose
+        series stores one. None when no series stores confidence.
+
+    Raises
+    ------
+    ValueError
+        If there are no bodyparts, ``times`` is not 1-D, a bodypart or
+        confidence array does not have one row per timestamp, or
+        ``confidence`` names a bodypart that is not in ``bodyparts``.
+
+    Notes
+    -----
+    Low-confidence keypoints are not masked: no confidence threshold suits
+    every tracker and recording. Choose one for your data and mask before
+    analysis, for example
+    ``np.where((pose.confidence["nose"] < 0.9)[:, None], np.nan, xy)``.
+    NumPy arrays are stored as read-only copies; lazy handles as given.
+
+    Examples
+    --------
+    >>> from neurospatial.io.nwb import NWBPose
+    >>> pose = NWBPose(
+    ...     {"nose": np.array([[1.0, 2.0], [np.nan, np.nan]])},
+    ...     np.array([0.0, 0.1]),
+    ...     None,
+    ...     units="centimeters",
+    ...     confidence={"nose": np.array([0.98, 0.01])},
+    ... )
+    >>> pose.units, pose.bodyparts["nose"].shape
+    ('cm', (2, 2))
+    """
+
+    bodyparts: Mapping[str, NDArray[np.float64] | Any]
+    times: NDArray[np.float64] | Any
+    skeleton: Skeleton | None
+    units: str | None = field(default=None, kw_only=True)
+    frame: str | None = field(default=None, kw_only=True)
+    confidence: Mapping[str, NDArray[np.float64] | Any] | None = field(
+        default=None, kw_only=True
+    )
+
+    def __post_init__(self) -> None:
+        if not self.bodyparts:
+            raise ValueError(
+                _format_error(
+                    "NWBPose has no bodyparts.",
+                    fix="pass at least one bodypart trajectory.",
+                )
+            )
+        arrays = {
+            f"bodyparts[{name!r}]": (value, (2,))
+            for name, value in self.bodyparts.items()
+        }
+        if self.confidence is not None:
+            unknown = sorted(set(self.confidence) - set(self.bodyparts))
+            if unknown:
+                raise ValueError(
+                    _format_error(
+                        f"NWBPose confidence names unknown bodyparts {unknown}.",
+                        fix=f"use bodypart names from {sorted(self.bodyparts)}.",
+                    )
+                )
+            arrays |= {
+                f"confidence[{name!r}]": (value, (1,))
+                for name, value in self.confidence.items()
+            }
+            object.__setattr__(self, "confidence", _owned_mapping(self.confidence))
+        _require_rows("NWBPose", self.times, **arrays)
+        object.__setattr__(self, "bodyparts", _owned_mapping(self.bodyparts))
+        object.__setattr__(self, "units", _declared_units(self.units))
+        object.__setattr__(self, "frame", _declared_frame(self.frame))
+        self._own_arrays()
+
+    def __reduce__(self) -> Any:
+        """Pickle through the constructor; read-only mappings cannot pickle."""
+        return reduce_through_constructor(self)
+
+
+def _owned_mapping(mapping: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Read-only mapping of read-only array copies (lazy handles kept)."""
+    return MappingProxyType({name: _own(value) for name, value in mapping.items()})

@@ -976,8 +976,12 @@ class TestReadPoseLazy:
 
         with NWBHDF5IO(str(nwb_path), "r") as io:
             nwb = io.read()
-            bp_lazy, ts_lazy, _ = read_pose(nwb, lazy=True)
-            bp_eager, ts_eager, _ = read_pose(nwb, lazy=False)
+            pose = read_pose(nwb, lazy=True)
+            bp_lazy = pose.bodyparts
+            ts_lazy = pose.times
+            pose = read_pose(nwb, lazy=False)
+            bp_eager = pose.bodyparts
+            ts_eager = pose.times
 
             assert set(bp_lazy) == set(bp_eager)
             for name, handle in bp_lazy.items():
