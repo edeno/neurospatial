@@ -40,6 +40,7 @@ from neurospatial._intervals import (
     resolve_time_windows,
     run_time_bounds,
     start_allocated_occupancy,
+    times_in_intervals,
     warn_excluded_intervals,
 )
 from neurospatial._stacklevel import _external_stacklevel
@@ -542,12 +543,9 @@ def _bin_spike_train_with_stats(
         spike_bins = track.frame_bins[spike_interval]
     else:
         runs = linear_intervals.support.runs
-        if len(runs) == 0:
-            spike_times_valid = spike_times_valid[:0]
-        elif len(spike_times_valid) > 0:
-            run = np.searchsorted(runs[:, 0], spike_times_valid, side="right") - 1
-            keep = (run >= 0) & (spike_times_valid < runs[np.maximum(run, 0), 1])
-            spike_times_valid = spike_times_valid[keep]
+        spike_times_valid = spike_times_valid[
+            times_in_intervals(runs, spike_times_valid)
+        ]
         n_after_time = len(spike_times_valid)
         if n_after_time == 0:
             return spike_counts, n_time_dropped, 0, n_total, 0

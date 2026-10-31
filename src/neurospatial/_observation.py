@@ -432,8 +432,7 @@ def sample_feature(
 
     at_sample = exact.copy()
     if epochs is not None:
-        row = np.searchsorted(epochs[:, 0], q, side="right") - 1
-        at_sample &= (row >= 0) & (q < epochs[np.maximum(row, 0), 1])
+        at_sample &= times_in_intervals(epochs, q)
 
     between = ~exact & (k >= 0) & (k < n_samples - 1)
     if n_samples > 1:
