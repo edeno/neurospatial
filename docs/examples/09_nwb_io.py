@@ -170,7 +170,6 @@ with NWBHDF5IO(str(source_path), "r") as io:
         units=pos.units,
         processing_module="behavior",
         position_name="head_position",
-        frame="arena",
     )
 
 print(f"Position units: {pos.units}; units loaded: {units.unit_ids.tolist()}")

@@ -259,15 +259,28 @@ class TestEnvironmentFromPosition:
         # Should auto-detect units from SpatialSeries
         assert env.units == "cm"
 
-    def test_frame_parameter_propagation(self, sample_nwb_with_position):
-        """Test frame parameter is set on Environment."""
+    def test_frame_defaults_from_spatial_series(self, sample_nwb_with_position):
+        """The series reference_frame becomes the environment's frame."""
         from neurospatial.io.nwb import environment_from_position
 
-        env = environment_from_position(
-            sample_nwb_with_position, bin_size=5.0, frame="session_001"
+        env = environment_from_position(sample_nwb_with_position, bin_size=5.0)
+        assert env.frame == "Corner of arena (0, 0)"
+        restated = environment_from_position(
+            sample_nwb_with_position, bin_size=5.0, frame="Corner of arena (0, 0)"
         )
+        assert restated.frame == "Corner of arena (0, 0)"
 
-        assert env.frame == "session_001"
+    def test_conflicting_frame_is_refused(self, sample_nwb_with_position):
+        from neurospatial.io.nwb import environment_from_position
+
+        with pytest.raises(
+            ValueError,
+            match=r"environment_from_position\(frame='session_001'\) conflicts "
+            r"with the Position series, which declares frame 'Corner of arena",
+        ):
+            environment_from_position(
+                sample_nwb_with_position, bin_size=5.0, frame="session_001"
+            )
 
     def test_infer_active_bins_parameter(self, sample_nwb_with_position):
         """Test infer_active_bins parameter is forwarded."""
@@ -397,7 +410,9 @@ class TestEnvironmentFromPosition:
             received.update(options)
 
         monkeypatch.setattr(neurospatial.environment, "_from_samples", record)
+        # units and frame are checked against the series declarations.
         not_options = {"nwbfile", "processing_module", "position_name"}
+        not_options |= {"units", "frame"}
         names = [
             name
             for name in inspect.signature(environment_from_position).parameters
@@ -407,6 +422,8 @@ class TestEnvironmentFromPosition:
         passed = {name: object() for name in names}
         environment_from_position(sample_nwb_with_position, **passed)
         assert received.pop("factory") == "environment_from_position"
+        assert received.pop("units") == "cm"
+        assert received.pop("frame") == "Corner of arena (0, 0)"
         assert received.keys() == passed.keys()
         assert all(received[name] is passed[name] for name in names)
 
@@ -2430,25 +2447,38 @@ def test_environment_from_position_uses_converted_meters(make_scaled_position_nw
     assert env.bin_centers.max() <= 1.1 + 0.05
 
 
-def test_empty_unit_warns_and_assumes_cm(make_scaled_position_nwb):
-    """A series that declares no unit warns once, then assumes 'cm'."""
+def test_undeclared_unit_requires_units(make_scaled_position_nwb):
+    """With no declared unit the scale is unknown, so units= is required."""
     import warnings
 
     from neurospatial.io.nwb import environment_from_position
 
     nwbfile = make_scaled_position_nwb(unit="", conversion=1.0, offset=0.0)
-
-    with pytest.warns(UserWarning, match="declares no unit") as record:
-        env = environment_from_position(nwbfile, bin_size=50.0)
-    messages = [str(w.message) for w in record if "declares no unit" in str(w.message)]
-    assert len(messages) == 1
-    assert "Fix: pass units=" in messages[0]
-    assert env.units == "cm"
+    with pytest.raises(ValueError, match="declares no unit") as error:
+        environment_from_position(nwbfile, bin_size=50.0)
+    assert "Fix: pass units='cm'" in str(error.value)
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         env = environment_from_position(nwbfile, bin_size=50.0, units="cm")
     assert env.units == "cm"
+
+
+def test_conflicting_units_are_refused_not_relabeled(make_scaled_position_nwb):
+    """Positions converted to meters cannot be labelled centimeters."""
+    from neurospatial.io.nwb import environment_from_position
+
+    nwbfile = make_scaled_position_nwb()
+    with pytest.raises(
+        ValueError,
+        match=r"environment_from_position\(units='cm'\) conflicts with the "
+        r"Position series, which declares units 'm'",
+    ):
+        environment_from_position(nwbfile, bin_size=0.05, units="cm")
+    # An alias of the declared unit restates it.
+    env = environment_from_position(nwbfile, bin_size=0.05, units="meters")
+    assert env.units == "m"
+    assert env.frame == "Image corner (0, 0)"
 
 
 @pytest.fixture

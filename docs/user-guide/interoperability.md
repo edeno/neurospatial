@@ -482,9 +482,10 @@ of picking one. Pass the name or full path to `position_name=`,
 Position values already include the stored conversion and offset. Recognized
 unit aliases become `m`, `cm`, `mm`, `um` or `px` without scaling those values again.
 Other nonempty declarations remain visible; `None` means no unit was declared.
-Choose the physical unit explicitly in that case before creating an environment.
-`environment_from_position` retains its warned cm fallback when used without
-an explicit unit.
+Choose the physical unit explicitly in that case before creating an environment:
+`environment_from_position` refuses an undeclared unit unless you pass `units=`,
+and refuses `units=` or `frame=` values that conflict with the series
+declarations.
 Position reads also preserve nonempty `SpatialSeries.reference_frame`
 descriptions verbatim in `.frame`; `None` means no frame was declared. The
 `position_overlay_from_nwb` adapter forwards both units and frame and rejects
