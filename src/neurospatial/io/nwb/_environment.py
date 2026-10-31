@@ -205,17 +205,33 @@ def _payload_fingerprint(
     return digest.hexdigest()
 
 
+def _record_arrays(record: Any, metadata: dict[str, Any]) -> dict[str, np.ndarray]:
+    """The arrays of a one-row environment record, in their described shapes.
+
+    Dtypes are not checked here; ``files._restore_environment`` validates
+    every array against ``array_specs``.
+
+    Raises
+    ------
+    ValueError, TypeError, KeyError, IndexError
+        If the record has other than one row, or its columns do not match
+        ``metadata["array_specs"]``.
+    """
+    if len(record) != 1:
+        raise ValueError("a binning record must contain exactly one row")
+    return {
+        key: np.array(record[spec["column"]][0]).reshape(spec["shape"])
+        for key, spec in metadata["array_specs"].items()
+    }
+
+
 def _record_fingerprint(record: Any) -> str | None:
     """Content fingerprint of a stored environment record; None if unreadable."""
     metadata = _record_metadata(record)
     if metadata is None:
         return None
     try:
-        arrays = {
-            key: np.asarray(record[spec["column"]][0])
-            for key, spec in metadata["array_specs"].items()
-        }
-        return _payload_fingerprint(metadata, arrays)
+        return _payload_fingerprint(metadata, _record_arrays(record, metadata))
     except (KeyError, TypeError, ValueError, IndexError, AttributeError):
         return None
 
@@ -476,19 +492,13 @@ def read_environment(
     )
     _check_schema(metadata, source)
     try:
-        if len(record) != 1:
-            raise ValueError("a binning record must contain exactly one row")
-        arrays = {}
-        for key, spec in metadata["array_specs"].items():
-            values = np.asarray(record[spec["column"]][0])
-            if values.dtype.str != spec["dtype"]:
-                raise ValueError(f"array {key!r} does not match its stored dtype")
-            arrays[key] = values.reshape(spec["shape"]).copy()
+        arrays = _record_arrays(record, metadata)
     except (ValueError, TypeError, KeyError, IndexError) as error:
         raise ValueError(
             _format_error(
                 f"Invalid environment arrays in {source}: {error}",
-                why="Why: the record holds one row whose columns match the shapes and dtypes in its description.",
+                why="Why: the record holds one row whose columns match the "
+                "shapes in its description.",
                 fix="restore the original environment record, or re-save the original environment",
             )
         ) from error

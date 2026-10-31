@@ -942,7 +942,8 @@ class TestReadEnvironment:
         metadata["array_specs"]["bin_centers"]["dtype"] = "<f4"
         record.fields["description"] = json.dumps(metadata)
         with pytest.raises(
-            ValueError, match="array 'bin_centers' does not match its stored dtype"
+            ValueError,
+            match="array 'bin_centers' does not match its stored shape or dtype",
         ) as error:
             read_environment(empty_nwb)
         assert "Fix:" in str(error.value)
